@@ -5,8 +5,7 @@
  * model tier and test strategy.
  */
 
-import type { Complexity, TestStrategy, NgentConfig } from "../config";
-import type { ModelTier } from "../agents";
+import type { Complexity, TestStrategy, ModelTier, NgentConfig } from "../config";
 
 /** Routing decision for a story */
 export interface RoutingDecision {
@@ -117,7 +116,7 @@ function complexityToModelTier(
   config: NgentConfig,
 ): ModelTier {
   const mapping = config.autoMode.complexityRouting;
-  return (mapping[complexity] ?? "standard") as ModelTier;
+  return (mapping[complexity] ?? "balanced") as ModelTier;
 }
 
 /** Route a task: classify, pick model, pick test strategy */

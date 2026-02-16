@@ -39,17 +39,17 @@ describe("determineTestStrategy", () => {
 });
 
 describe("routeTask", () => {
-  test("routes simple task to cheap model with test-after", () => {
+  test("routes simple task to fast model with test-after", () => {
     const result = routeTask("Fix typo", "Fix a typo", ["Typo fixed"], [], DEFAULT_CONFIG);
     expect(result.complexity).toBe("simple");
-    expect(result.modelTier).toBe("cheap");
+    expect(result.modelTier).toBe("fast");
     expect(result.testStrategy).toBe("test-after");
   });
 
-  test("routes security task to premium with three-session-tdd", () => {
+  test("routes security task to powerful with three-session-tdd", () => {
     const result = routeTask("Auth fix", "Fix JWT auth bypass", ["Auth works"], ["security"], DEFAULT_CONFIG);
     expect(result.complexity).toBe("complex");
-    expect(result.modelTier).toBe("premium");
+    expect(result.modelTier).toBe("powerful");
     expect(result.testStrategy).toBe("three-session-tdd");
   });
 });

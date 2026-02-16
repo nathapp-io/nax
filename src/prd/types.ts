@@ -5,7 +5,7 @@
  */
 
 import type { Complexity, TestStrategy } from "../config";
-import type { ModelTier } from "../agents";
+import type { ModelTier } from "../config";
 
 /** User story status */
 export type StoryStatus = "pending" | "in-progress" | "passed" | "failed" | "skipped";

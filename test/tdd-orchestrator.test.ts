@@ -21,7 +21,6 @@ function createMockAgent(results: Partial<AgentResult>[]): AgentAdapter {
     name: "mock",
     displayName: "Mock Agent",
     binary: "mock",
-    models: { cheap: "mock-cheap", standard: "mock-standard", premium: "mock-premium" },
     isInstalled: async () => true,
     buildCommand: () => ["mock"],
     run: mock(async () => {
@@ -117,7 +116,7 @@ describe("runThreeSessionTdd", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "standard");
+    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
 
     expect(result.success).toBe(true);
     expect(result.sessions).toHaveLength(3);
@@ -140,7 +139,7 @@ describe("runThreeSessionTdd", () => {
       { success: false, exitCode: 1, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "standard");
+    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
 
     expect(result.success).toBe(false);
     expect(result.sessions).toHaveLength(1);
@@ -161,7 +160,7 @@ describe("runThreeSessionTdd", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "standard");
+    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
 
     expect(result.success).toBe(false);
     expect(result.sessions).toHaveLength(1);
@@ -188,7 +187,7 @@ describe("runThreeSessionTdd", () => {
       { success: false, exitCode: 1, estimatedCost: 0.02 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "standard");
+    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
 
     expect(result.success).toBe(false);
     expect(result.sessions).toHaveLength(2);
@@ -214,7 +213,7 @@ describe("runThreeSessionTdd", () => {
       { success: true, estimatedCost: 0.02 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "standard");
+    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
 
     expect(result.success).toBe(false);
     expect(result.sessions).toHaveLength(2);

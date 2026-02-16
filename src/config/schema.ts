@@ -16,6 +16,25 @@ export interface EscalationEntry {
   to: string;
 }
 
+/** Model tier names */
+export type ModelTier = "fast" | "balanced" | "powerful";
+
+/** Per-tier model definition */
+export interface ModelDef {
+  /** Provider name (e.g., "anthropic", "openai", "ollama") */
+  provider: string;
+  /** Model identifier (e.g., "claude-sonnet-4-5", "gpt-5-mini") */
+  model: string;
+  /** Environment variable overrides passed to the agent process */
+  env?: Record<string, string>;
+}
+
+/** Shorthand: either a full ModelDef or just a model string */
+export type ModelEntry = ModelDef | string;
+
+/** Model mapping — maps abstract tiers to model definitions */
+export type ModelMap = Record<ModelTier, ModelEntry>;
+
 /** Auto mode configuration */
 export interface AutoModeConfig {
   enabled: boolean;
@@ -24,7 +43,7 @@ export interface AutoModeConfig {
   /** Fallback order when agent is rate-limited */
   fallbackOrder: string[];
   /** Model tier per complexity */
-  complexityRouting: Record<Complexity, string>;
+  complexityRouting: Record<Complexity, ModelTier>;
   /** Escalation config */
   escalation: {
     enabled: boolean;
@@ -74,6 +93,8 @@ export interface TddConfig {
 export interface NgentConfig {
   /** Schema version */
   version: 1;
+  /** Model mapping — abstract tiers to actual model identifiers */
+  models: ModelMap;
   /** Auto mode / routing config */
   autoMode: AutoModeConfig;
   /** Execution limits */
@@ -84,18 +105,39 @@ export interface NgentConfig {
   tdd: TddConfig;
 }
 
+/** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */
+export function resolveModel(entry: ModelEntry): ModelDef {
+  if (typeof entry === "string") {
+    // Infer provider from model name
+    const provider = entry.startsWith("claude")
+      ? "anthropic"
+      : entry.startsWith("gpt") || entry.startsWith("o1") || entry.startsWith("o3")
+        ? "openai"
+        : entry.startsWith("gemini")
+          ? "google"
+          : "unknown";
+    return { provider, model: entry };
+  }
+  return entry;
+}
+
 /** Default configuration */
 export const DEFAULT_CONFIG: NgentConfig = {
   version: 1,
+  models: {
+    fast: { provider: "anthropic", model: "claude-haiku-4-5" },
+    balanced: { provider: "anthropic", model: "claude-sonnet-4-5" },
+    powerful: { provider: "anthropic", model: "claude-opus-4" },
+  },
   autoMode: {
     enabled: true,
     defaultAgent: "claude",
     fallbackOrder: ["claude", "codex", "opencode", "gemini"],
     complexityRouting: {
-      simple: "cheap",
-      medium: "standard",
-      complex: "premium",
-      expert: "premium",
+      simple: "fast",
+      medium: "balanced",
+      complex: "powerful",
+      expert: "powerful",
     },
     escalation: {
       enabled: true,

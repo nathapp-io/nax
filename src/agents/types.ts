@@ -6,8 +6,7 @@
  * collect results from them uniformly.
  */
 
-/** Model tier for cost-based routing */
-export type ModelTier = "cheap" | "standard" | "premium";
+import type { ModelTier, ModelDef } from "../config/schema";
 
 /** Agent execution result */
 export interface AgentResult {
@@ -31,19 +30,14 @@ export interface AgentRunOptions {
   prompt: string;
   /** Working directory */
   workdir: string;
-  /** Model tier to use */
+  /** Model tier (for cost estimation) */
   modelTier: ModelTier;
+  /** Resolved model definition */
+  modelDef: ModelDef;
   /** Maximum runtime in seconds */
   timeoutSeconds: number;
   /** Environment variables to pass */
   env?: Record<string, string>;
-}
-
-/** Model mapping per tier for a specific agent */
-export interface AgentModelMap {
-  cheap: string;
-  standard: string;
-  premium: string;
 }
 
 /** Agent adapter — one per supported coding agent */
@@ -56,9 +50,6 @@ export interface AgentAdapter {
 
   /** Binary command to check if agent is installed */
   readonly binary: string;
-
-  /** Model mapping per tier */
-  readonly models: AgentModelMap;
 
   /** Check if the agent binary is available on this machine */
   isInstalled(): Promise<boolean>;

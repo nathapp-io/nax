@@ -2,19 +2,13 @@
  * Claude Code Agent Adapter
  */
 
-import type { AgentAdapter, AgentModelMap, AgentResult, AgentRunOptions } from "./types";
+import type { AgentAdapter, AgentResult, AgentRunOptions } from "./types";
 import { estimateCostFromOutput, estimateCostByDuration } from "./cost";
 
 export class ClaudeCodeAdapter implements AgentAdapter {
   readonly name = "claude";
   readonly displayName = "Claude Code";
   readonly binary = "claude";
-
-  readonly models: AgentModelMap = {
-    cheap: "haiku",
-    standard: "sonnet",
-    premium: "opus",
-  };
 
   async isInstalled(): Promise<boolean> {
     try {
@@ -27,7 +21,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   }
 
   buildCommand(options: AgentRunOptions): string[] {
-    const model = this.models[options.modelTier];
+    const model = options.modelDef.model;
     return [
       this.binary,
       "--model", model,
@@ -46,6 +40,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       stderr: "pipe",
       env: {
         ...process.env,
+        ...options.modelDef.env,
         ...options.env,
       },
     });

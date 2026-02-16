@@ -10,8 +10,9 @@
  */
 
 import chalk from "chalk";
-import type { NgentConfig } from "../config";
-import type { AgentAdapter, ModelTier } from "../agents";
+import type { NgentConfig, ModelTier } from "../config";
+import { resolveModel } from "../config";
+import type { AgentAdapter } from "../agents";
 import { getAgent, getInstalledAgents } from "../agents";
 import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryPassed, markStoryFailed } from "../prd";
 import type { PRD, UserStory } from "../prd";
@@ -70,7 +71,7 @@ Use test-after approach: implement first, then add tests to verify.`;
 
 /** Escalate model tier */
 function escalateTier(current: ModelTier): ModelTier | null {
-  const path: ModelTier[] = ["cheap", "standard", "premium"];
+  const path: ModelTier[] = ["fast", "balanced", "powerful"];
   const idx = path.indexOf(current);
   if (idx < 0 || idx >= path.length - 1) return null;
   return path[idx + 1];
@@ -208,6 +209,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         prompt,
         workdir,
         modelTier: routing.modelTier,
+        modelDef: resolveModel(config.models[routing.modelTier]),
         timeoutSeconds: config.execution.sessionTimeoutSeconds,
       });
 

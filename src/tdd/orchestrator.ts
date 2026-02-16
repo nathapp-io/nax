@@ -10,7 +10,8 @@
 import chalk from "chalk";
 import type { AgentAdapter } from "../agents";
 import type { UserStory } from "../prd";
-import type { NgentConfig } from "../config";
+import type { NgentConfig, ModelTier } from "../config";
+import { resolveModel } from "../config";
 import type {
   TddSessionResult,
   ThreeSessionTddResult,
@@ -125,7 +126,7 @@ async function runTddSession(
   story: UserStory,
   config: NgentConfig,
   workdir: string,
-  modelTier: string,
+  modelTier: ModelTier,
   beforeRef: string,
 ): Promise<TddSessionResult> {
   const startTime = Date.now();
@@ -150,7 +151,8 @@ async function runTddSession(
   const result = await agent.run({
     prompt,
     workdir,
-    modelTier: modelTier as any,
+    modelTier,
+    modelDef: resolveModel(config.models[modelTier]),
     timeoutSeconds: config.execution.sessionTimeoutSeconds,
   });
 
@@ -192,7 +194,7 @@ export async function runThreeSessionTdd(
   story: UserStory,
   config: NgentConfig,
   workdir: string,
-  modelTier: string,
+  modelTier: ModelTier,
 ): Promise<ThreeSessionTddResult> {
   console.log(chalk.cyan(`\n🔄 Three-Session TDD: ${story.title}`));
 

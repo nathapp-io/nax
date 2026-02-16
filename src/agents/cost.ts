@@ -5,7 +5,7 @@
  * Parses agent output for token usage and calculates costs.
  */
 
-import type { ModelTier } from "./types";
+import type { ModelTier } from "../config/schema";
 
 /** Cost rates per 1M tokens (USD) */
 export interface ModelCostRates {
@@ -21,18 +21,18 @@ export interface TokenUsage {
 
 /** Model tier cost rates (as of 2025-01) */
 export const COST_RATES: Record<ModelTier, ModelCostRates> = {
-  cheap: {
+  fast: {
     // Haiku 4.5
     inputPer1M: 0.80,
     outputPer1M: 4.00,
   },
-  standard: {
+  balanced: {
     // Sonnet 4.5
     inputPer1M: 3.00,
     outputPer1M: 15.00,
   },
-  premium: {
-    // Opus 4.6
+  powerful: {
+    // Opus 4
     inputPer1M: 15.00,
     outputPer1M: 75.00,
   },
@@ -102,9 +102,9 @@ export function estimateCostByDuration(
   durationMs: number,
 ): number {
   const costPerMinute: Record<ModelTier, number> = {
-    cheap: 0.01,
-    standard: 0.05,
-    premium: 0.15,
+    fast: 0.01,
+    balanced: 0.05,
+    powerful: 0.15,
   };
   const minutes = durationMs / 60000;
   return minutes * costPerMinute[modelTier];

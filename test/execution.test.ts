@@ -111,7 +111,7 @@ describe("execution runner", () => {
         tags: [],
         routing: {
           complexity: "simple",
-          modelTier: "cheap",
+          modelTier: "fast",
           testStrategy: "test-after",
           reasoning: "Simple task",
         },
