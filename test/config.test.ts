@@ -119,4 +119,58 @@ describe("Config Validation", () => {
     expect(result.valid).toBe(false);
     expect(result.errors.length).toBeGreaterThanOrEqual(4);
   });
+
+  test("rejects invalid complexityRouting tier", () => {
+    const config: NgentConfig = {
+      ...DEFAULT_CONFIG,
+      autoMode: {
+        ...DEFAULT_CONFIG.autoMode,
+        complexityRouting: {
+          ...DEFAULT_CONFIG.autoMode.complexityRouting,
+          simple: "invalid-tier" as any,
+        },
+      },
+    };
+    const result = validateConfig(config);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("complexityRouting.simple"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("fast, balanced, powerful"))).toBe(true);
+  });
+
+  test("accepts all valid tiers in complexityRouting", () => {
+    const config: NgentConfig = {
+      ...DEFAULT_CONFIG,
+      autoMode: {
+        ...DEFAULT_CONFIG.autoMode,
+        complexityRouting: {
+          simple: "fast",
+          medium: "balanced",
+          complex: "powerful",
+          expert: "powerful",
+        },
+      },
+    };
+    const result = validateConfig(config);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  test("validates all complexity levels have valid tiers", () => {
+    const config: NgentConfig = {
+      ...DEFAULT_CONFIG,
+      autoMode: {
+        ...DEFAULT_CONFIG.autoMode,
+        complexityRouting: {
+          simple: "invalid" as any,
+          medium: "bad-tier" as any,
+          complex: "powerful",
+          expert: "fast",
+        },
+      },
+    };
+    const result = validateConfig(config);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("complexityRouting.simple"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("complexityRouting.medium"))).toBe(true);
+  });
 });

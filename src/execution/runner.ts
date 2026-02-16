@@ -117,12 +117,19 @@ async function buildStoryContext(
   }
 }
 
-/** Escalate model tier */
-function escalateTier(current: ModelTier): ModelTier | null {
-  const path: ModelTier[] = ["fast", "balanced", "powerful"];
-  const idx = path.indexOf(current);
-  if (idx < 0 || idx >= path.length - 1) return null;
-  return path[idx + 1];
+/** Escalate model tier through explicit 3-tier chain: fast → balanced → powerful → null */
+export function escalateTier(current: ModelTier): ModelTier | null {
+  // Explicit escalation chain
+  switch (current) {
+    case "fast":
+      return "balanced";
+    case "balanced":
+      return "powerful";
+    case "powerful":
+      return null; // Max tier reached
+    default:
+      return null;
+  }
 }
 
 /** Build a hook context */

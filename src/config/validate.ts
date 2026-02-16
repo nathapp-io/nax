@@ -77,6 +77,16 @@ export function validateConfig(config: NgentConfig): ValidationResult {
     errors.push(`escalation.maxAttempts must be > 0, got ${config.autoMode.escalation.maxAttempts}`);
   }
 
+  // Validate complexityRouting values are valid ModelTier keys
+  const validTiers = ["fast", "balanced", "powerful"] as const;
+  const complexities = ["simple", "medium", "complex", "expert"] as const;
+  for (const complexity of complexities) {
+    const tier = config.autoMode.complexityRouting[complexity];
+    if (!validTiers.includes(tier as any)) {
+      errors.push(`complexityRouting.${complexity} must be one of: ${validTiers.join(", ")} (got '${tier}')`);
+    }
+  }
+
   return {
     valid: errors.length === 0,
     errors,

@@ -162,3 +162,44 @@ export const DEFAULT_CONFIG: NgentConfig = {
     autoApproveVerifier: true,
   },
 };
+
+/** Validate NgentConfig — throws on invalid config */
+export function validateConfig(config: NgentConfig): void {
+  // Validate version
+  if (config.version !== 1) {
+    throw new Error(`Invalid config version: ${config.version} (expected 1)`);
+  }
+
+  // Validate model tiers exist
+  const validTiers: ModelTier[] = ["fast", "balanced", "powerful"];
+  for (const tier of validTiers) {
+    if (!config.models[tier]) {
+      throw new Error(`Missing model definition for tier: ${tier}`);
+    }
+  }
+
+  // Validate complexityRouting values are valid ModelTier keys
+  const complexities: Complexity[] = ["simple", "medium", "complex", "expert"];
+  for (const complexity of complexities) {
+    const tier = config.autoMode.complexityRouting[complexity];
+    if (!validTiers.includes(tier)) {
+      throw new Error(`Invalid model tier '${tier}' for complexity '${complexity}' (must be one of: ${validTiers.join(", ")})`);
+    }
+  }
+
+  // Validate escalation maxAttempts >= 1
+  if (config.autoMode.escalation.maxAttempts < 1) {
+    throw new Error(`escalation.maxAttempts must be >= 1 (got ${config.autoMode.escalation.maxAttempts})`);
+  }
+
+  // Validate execution limits
+  if (config.execution.maxIterations < 1) {
+    throw new Error(`execution.maxIterations must be >= 1 (got ${config.execution.maxIterations})`);
+  }
+  if (config.execution.costLimit < 0) {
+    throw new Error(`execution.costLimit must be >= 0 (got ${config.execution.costLimit})`);
+  }
+  if (config.execution.sessionTimeoutSeconds < 1) {
+    throw new Error(`execution.sessionTimeoutSeconds must be >= 1 (got ${config.execution.sessionTimeoutSeconds})`);
+  }
+}

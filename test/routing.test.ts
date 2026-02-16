@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { classifyComplexity, determineTestStrategy, routeTask } from "../src/routing";
 import { DEFAULT_CONFIG } from "../src/config";
+import { escalateTier } from "../src/execution/runner";
 
 describe("classifyComplexity", () => {
   test("simple: few criteria, no keywords", () => {
@@ -51,5 +52,48 @@ describe("routeTask", () => {
     expect(result.complexity).toBe("complex");
     expect(result.modelTier).toBe("powerful");
     expect(result.testStrategy).toBe("three-session-tdd");
+  });
+
+  test("routes all complexity levels correctly", () => {
+    const simpleResult = routeTask("Fix typo", "Fix a typo", ["Typo fixed"], [], DEFAULT_CONFIG);
+    expect(simpleResult.complexity).toBe("simple");
+    expect(simpleResult.modelTier).toBe("fast");
+
+    const mediumResult = routeTask("Add validation", "Add DTO validation", ["a", "b", "c", "d", "e"], [], DEFAULT_CONFIG);
+    expect(mediumResult.complexity).toBe("medium");
+    expect(mediumResult.modelTier).toBe("balanced");
+
+    const complexResult = routeTask("Auth refactor", "Refactor JWT authentication", ["Token works"], ["security"], DEFAULT_CONFIG);
+    expect(complexResult.complexity).toBe("complex");
+    expect(complexResult.modelTier).toBe("powerful");
+
+    const expertResult = routeTask("Real-time sync", "Real-time distributed consensus", ["Sync works"], [], DEFAULT_CONFIG);
+    expect(expertResult.complexity).toBe("expert");
+    expect(expertResult.modelTier).toBe("powerful");
+  });
+});
+
+describe("escalateTier", () => {
+  test("escalates fast → balanced", () => {
+    expect(escalateTier("fast")).toBe("balanced");
+  });
+
+  test("escalates balanced → powerful", () => {
+    expect(escalateTier("balanced")).toBe("powerful");
+  });
+
+  test("escalates powerful → null (max reached)", () => {
+    expect(escalateTier("powerful")).toBeNull();
+  });
+
+  test("explicit 3-tier escalation chain: fast → balanced → powerful → null", () => {
+    let tier = escalateTier("fast");
+    expect(tier).toBe("balanced");
+
+    tier = escalateTier(tier!);
+    expect(tier).toBe("powerful");
+
+    tier = escalateTier(tier!);
+    expect(tier).toBeNull();
   });
 });
