@@ -1,0 +1,29 @@
+{
+  "name": "ngent",
+  "version": "0.1.0",
+  "description": "AI Coding Agent Orchestrator — loops until done",
+  "type": "module",
+  "bin": {
+    "ngent": "./bin/ngent.ts"
+  },
+  "scripts": {
+    "dev": "bun run bin/ngent.ts",
+    "build": "bun build bin/ngent.ts --outdir dist --target bun",
+    "typecheck": "bun x tsc --noEmit",
+    "lint": "bun x biome check src/ bin/",
+    "test": "bun test",
+    "test:watch": "bun test --watch"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/bun": "^1.2.4",
+    "typescript": "^5.7.3"
+  },
+  "license": "MIT",
+  "author": "William Khoo",
+  "keywords": ["ai", "agent", "orchestrator", "tdd", "coding"]
+}
