@@ -12,3 +12,4 @@ export {
   verifyTestWriterIsolation,
   verifyImplementerIsolation,
 } from "./isolation";
+export { runThreeSessionTdd } from "./orchestrator";
