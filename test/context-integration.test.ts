@@ -177,8 +177,6 @@ describe('Context Builder Integration', () => {
           availableForContext: 9000,
         },
         prioritizeErrors: true,
-        includeConfig: false,
-        includeDependencies: false,
         maxFileSize: 1024 * 100,
       };
 
@@ -212,8 +210,6 @@ describe('Context Builder Integration', () => {
           availableForContext: 9000,
         },
         prioritizeErrors: true,
-        includeConfig: false,
-        includeDependencies: false,
         maxFileSize: 100000, // 100KB max
       };
 
@@ -238,8 +234,6 @@ describe('Context Builder Integration', () => {
           availableForContext: 9000,
         },
         prioritizeErrors: true,
-        includeConfig: false,
-        includeDependencies: false,
         maxFileSize: 1024 * 100,
       };
 
@@ -272,8 +266,6 @@ describe('Context Builder Integration', () => {
           availableForContext: 9000,
         },
         prioritizeErrors: true,
-        includeConfig: false,
-        includeDependencies: false,
         maxFileSize: 1024 * 100,
       };
 
@@ -312,8 +304,6 @@ describe('Context Builder Integration', () => {
           availableForContext: 1500, // Small budget
         },
         prioritizeErrors: true,
-        includeConfig: false,
-        includeDependencies: false,
         maxFileSize: 1024 * 100,
       };
 
@@ -352,8 +342,6 @@ describe('Context Builder Integration', () => {
           availableForContext: 9000,
         },
         prioritizeErrors: true,
-        includeConfig: false,
-        includeDependencies: false,
         maxFileSize: 1024 * 100,
       };
 
@@ -386,8 +374,6 @@ describe('Context Builder Integration', () => {
           availableForContext: 9000,
         },
         prioritizeErrors: false,
-        includeConfig: false,
-        includeDependencies: false,
         maxFileSize: 1024 * 100,
       };
 
@@ -416,8 +402,6 @@ describe('Context Builder Integration', () => {
           availableForContext: 9000,
         },
         prioritizeErrors: true,
-        includeConfig: false,
-        includeDependencies: false,
         maxFileSize: 1024 * 100,
       };
 
@@ -450,8 +434,6 @@ describe('Context Builder Integration', () => {
           availableForContext: 10, // Extremely small
         },
         prioritizeErrors: false,
-        includeConfig: false,
-        includeDependencies: false,
         maxFileSize: 1024 * 100,
       };
 
@@ -479,8 +461,6 @@ describe('Context Builder Integration', () => {
           availableForContext: 4000,
         },
         prioritizeErrors: true,
-        includeConfig: false,
-        includeDependencies: false,
         maxFileSize: 1024 * 100,
       };
 

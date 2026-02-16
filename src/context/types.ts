@@ -50,7 +50,5 @@ export interface BuiltContext {
 export interface ContextBuilderConfig {
   budget: ContextBudget;
   prioritizeErrors: boolean;
-  includeConfig: boolean;
-  includeDependencies: boolean;
   maxFileSize: number; // Max bytes per file
 }

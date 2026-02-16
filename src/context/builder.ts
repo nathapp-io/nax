@@ -11,10 +11,10 @@ import type {
 } from './types';
 
 /**
- * Estimate token count for text (rough approximation: 1 token ≈ 4 chars)
+ * Estimate token count for text (rough approximation: 1 token ≈ 3 chars)
  */
 export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+  return Math.ceil(text.length / 3);
 }
 
 /**

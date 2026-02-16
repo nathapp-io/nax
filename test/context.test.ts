@@ -22,8 +22,8 @@ import type {
 describe('Context Builder', () => {
   describe('estimateTokens', () => {
     test('should estimate tokens correctly', () => {
-      expect(estimateTokens('test')).toBe(1); // 4 chars = 1 token
-      expect(estimateTokens('hello world')).toBe(3); // 11 chars = 3 tokens
+      expect(estimateTokens('test')).toBe(2); // 4 chars = 2 tokens (1 token ≈ 3 chars)
+      expect(estimateTokens('hello world')).toBe(4); // 11 chars = 4 tokens
       expect(estimateTokens('')).toBe(0);
     });
   });
@@ -122,8 +122,6 @@ describe('Context Builder', () => {
           availableForContext: 800,
         },
         prioritizeErrors: true,
-        includeConfig: false,
-        includeDependencies: false,
         maxFileSize: 1024 * 100, // 100KB
       };
 
@@ -151,8 +149,6 @@ describe('Context Builder', () => {
           availableForContext: 800,
         },
         prioritizeErrors: true,
-        includeConfig: false,
-        includeDependencies: false,
         maxFileSize: 1024 * 100,
       };
 
@@ -164,14 +160,14 @@ describe('Context Builder', () => {
     });
 
     test('should truncate when exceeding budget', async () => {
-      const longText = 'x'.repeat(1000); // ~250 tokens
+      const longText = 'x'.repeat(1000); // ~334 tokens
 
       const story: StoryContext = {
         storyId: 'story-1',
         storyTitle: 'Test Story',
         relevantFiles: [],
         dependencies: [],
-        customContext: [longText, longText, longText, longText], // ~1000 tokens total
+        customContext: [longText, longText, longText, longText], // ~1336 tokens total
       };
 
       const config: ContextBuilderConfig = {
@@ -181,8 +177,6 @@ describe('Context Builder', () => {
           availableForContext: 400, // Can only fit ~1-2 elements
         },
         prioritizeErrors: false,
-        includeConfig: false,
-        includeDependencies: false,
         maxFileSize: 1024 * 100,
       };
 
@@ -208,8 +202,6 @@ describe('Context Builder', () => {
           availableForContext: 800,
         },
         prioritizeErrors: true,
-        includeConfig: false,
-        includeDependencies: false,
         maxFileSize: 1024 * 100,
       };
 

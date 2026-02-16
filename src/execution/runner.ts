@@ -105,8 +105,6 @@ async function buildStoryContext(
         availableForContext: 90000,
       },
       prioritizeErrors: true,
-      includeConfig: true,
-      includeDependencies: true,
       maxFileSize: 500000, // 500KB max per file
     };
 
@@ -141,6 +139,24 @@ function hookCtx(
     feature,
     ...opts,
   };
+}
+
+/** Maybe build context if enabled */
+async function maybeGetContext(
+  story: UserStory,
+  config: NgentConfig,
+  useContext: boolean,
+): Promise<string | undefined> {
+  if (!useContext) {
+    return undefined;
+  }
+
+  console.log(chalk.dim(`   ⚙️  Building context...`));
+  const contextMarkdown = await buildStoryContext(story, config);
+  if (contextMarkdown) {
+    console.log(chalk.dim(`   ✓ Context built`));
+  }
+  return contextMarkdown;
 }
 
 /**
@@ -234,14 +250,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
     if (routing.testStrategy === "three-session-tdd") {
       // Three-session TDD: test-writer → implementer → verifier
-      let contextMarkdown: string | undefined;
-      if (useContext) {
-        console.log(chalk.dim(`   ⚙️  Building context...`));
-        contextMarkdown = await buildStoryContext(story, config);
-        if (contextMarkdown) {
-          console.log(chalk.dim(`   ✓ Context built`));
-        }
-      }
+      const contextMarkdown = await maybeGetContext(story, config, useContext);
 
       const tddResult = await runThreeSessionTdd(
         agent,
@@ -266,14 +275,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       }
     } else {
       // test-after: single agent session
-      let contextMarkdown: string | undefined;
-      if (useContext) {
-        console.log(chalk.dim(`   ⚙️  Building context...`));
-        contextMarkdown = await buildStoryContext(story, config);
-        if (contextMarkdown) {
-          console.log(chalk.dim(`   ✓ Context built`));
-        }
-      }
+      const contextMarkdown = await maybeGetContext(story, config, useContext);
 
       const prompt = buildSingleSessionPrompt(story, contextMarkdown);
       console.log(chalk.cyan(`\n   → Single session (test-after)`));
