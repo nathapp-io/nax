@@ -31,6 +31,45 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   }
 
   async run(options: AgentRunOptions): Promise<AgentResult> {
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await this.runOnce(options, attempt);
+
+        // If rate limited, retry with exponential backoff
+        if (result.rateLimited && attempt < maxRetries) {
+          const backoffMs = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
+          console.warn(`Rate limited, retrying in ${backoffMs / 1000}s (attempt ${attempt}/${maxRetries})`);
+          await Bun.sleep(backoffMs);
+          continue;
+        }
+
+        // If transient error (non-zero exit but not timeout), retry with backoff
+        if (!result.success && result.exitCode !== 124 && attempt < maxRetries) {
+          const backoffMs = Math.pow(2, attempt) * 1000;
+          console.warn(`Agent failed with exit code ${result.exitCode}, retrying in ${backoffMs / 1000}s (attempt ${attempt}/${maxRetries})`);
+          await Bun.sleep(backoffMs);
+          continue;
+        }
+
+        return result;
+      } catch (error) {
+        lastError = error as Error;
+        if (attempt < maxRetries) {
+          const backoffMs = Math.pow(2, attempt) * 1000;
+          console.warn(`Agent error: ${lastError.message}, retrying in ${backoffMs / 1000}s (attempt ${attempt}/${maxRetries})`);
+          await Bun.sleep(backoffMs);
+        }
+      }
+    }
+
+    // All retries failed
+    throw lastError || new Error("Agent execution failed after all retries");
+  }
+
+  private async runOnce(options: AgentRunOptions, attempt: number): Promise<AgentResult> {
     const cmd = this.buildCommand(options);
     const startTime = Date.now();
 
@@ -46,7 +85,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     });
 
     // Set up timeout
+    let timedOut = false;
     const timeoutId = setTimeout(() => {
+      timedOut = true;
       proc.kill("SIGTERM");
     }, options.timeoutSeconds * 1000);
 
@@ -72,9 +113,12 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       cost = estimateCostByDuration(options.modelTier, durationMs);
     }
 
+    // Exit code 124 indicates timeout (convention), use 143 for SIGTERM
+    const actualExitCode = timedOut ? 124 : exitCode;
+
     return {
-      success: exitCode === 0,
-      exitCode,
+      success: exitCode === 0 && !timedOut,
+      exitCode: actualExitCode,
       output: stdout.slice(-5000), // Last 5k chars
       rateLimited,
       durationMs,

@@ -11,7 +11,7 @@ import chalk from "chalk";
 import { join } from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
 
-import { loadConfig, DEFAULT_CONFIG, findProjectDir } from "../src/config";
+import { loadConfig, DEFAULT_CONFIG, findProjectDir, validateDirectory } from "../src/config";
 import { checkAgentHealth, getAllAgentNames } from "../src/agents";
 import { loadPRD, countStories } from "../src/prd";
 import { loadHooksConfig } from "../src/hooks";
@@ -34,7 +34,16 @@ program
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .option("-f, --force", "Force overwrite existing files", false)
   .action(async (options) => {
-    const ngentDir = join(options.dir, "ngent");
+    // Validate directory path
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    const ngentDir = join(workdir, "ngent");
 
     if (existsSync(ngentDir) && !options.force) {
       console.log(chalk.yellow("ngent already initialized. Use --force to overwrite."));
@@ -91,8 +100,17 @@ program
   .option("--no-batch", "Disable story batching (execute all stories individually)")
   .option("-d, --dir <path>", "Working directory", process.cwd())
   .action(async (options) => {
+    // Validate directory path
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
     const config = await loadConfig();
-    const ngentDir = findProjectDir(options.dir);
+    const ngentDir = findProjectDir(workdir);
 
     if (!ngentDir) {
       console.error(chalk.red("ngent not initialized. Run: ngent init"));
@@ -117,7 +135,7 @@ program
 
     const result = await run({
       prdPath,
-      workdir: options.dir,
+      workdir,
       config,
       hooks,
       feature: options.feature,
@@ -145,7 +163,16 @@ features
   .description("Create a new feature")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .action(async (name, options) => {
-    const ngentDir = findProjectDir(options.dir);
+    // Validate directory path
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    const ngentDir = findProjectDir(workdir);
     if (!ngentDir) {
       console.error(chalk.red("ngent not initialized. Run: ngent init"));
       process.exit(1);
@@ -174,7 +201,16 @@ features
   .description("List all features")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .action(async (options) => {
-    const ngentDir = findProjectDir(options.dir);
+    // Validate directory path
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    const ngentDir = findProjectDir(workdir);
     if (!ngentDir) {
       console.error(chalk.red("ngent not initialized."));
       process.exit(1);
@@ -218,7 +254,16 @@ program
   .option("-b, --branch <name>", "Branch name", "feat/<feature>")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .action(async (options) => {
-    const ngentDir = findProjectDir(options.dir);
+    // Validate directory path
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    const ngentDir = findProjectDir(workdir);
     if (!ngentDir) {
       console.error(chalk.red("ngent not initialized. Run: ngent init"));
       process.exit(1);
@@ -276,7 +321,16 @@ program
   .requiredOption("-f, --feature <name>", "Feature name")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .action(async (options) => {
-    const ngentDir = findProjectDir(options.dir);
+    // Validate directory path
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    const ngentDir = findProjectDir(workdir);
     if (!ngentDir) {
       console.error(chalk.red("ngent not initialized."));
       process.exit(1);

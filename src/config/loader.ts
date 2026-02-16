@@ -5,10 +5,11 @@
  */
 
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { DEFAULT_CONFIG, type NgentConfig } from "./schema";
 import { validateConfig } from "./validate";
+import { MAX_DIRECTORY_DEPTH } from "./path-security";
 
 /** Global config path */
 export function globalConfigPath(): string {
@@ -17,8 +18,10 @@ export function globalConfigPath(): string {
 
 /** Find project ngent directory (walks up from cwd) */
 export function findProjectDir(startDir: string = process.cwd()): string | null {
-  let dir = startDir;
-  while (true) {
+  let dir = resolve(startDir);
+  let depth = 0;
+
+  while (depth < MAX_DIRECTORY_DEPTH) {
     const candidate = join(dir, "ngent");
     if (existsSync(join(candidate, "config.json"))) {
       return candidate;
@@ -26,7 +29,9 @@ export function findProjectDir(startDir: string = process.cwd()): string | null 
     const parent = join(dir, "..");
     if (parent === dir) break; // Root reached
     dir = parent;
+    depth++;
   }
+
   return null;
 }
 

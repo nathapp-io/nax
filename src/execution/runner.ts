@@ -335,6 +335,20 @@ export async function run(options: RunOptions): Promise<RunResult> {
   // Fire on-start hook
   await fireHook(hooks, "on-start", hookCtx(feature), workdir);
 
+  // Check agent installation before starting
+  const agent = getAgent(config.autoMode.defaultAgent);
+  if (!agent) {
+    console.error(chalk.red(`Agent "${config.autoMode.defaultAgent}" not found`));
+    process.exit(1);
+  }
+
+  const installed = await agent.isInstalled();
+  if (!installed) {
+    console.error(chalk.red(`Agent "${config.autoMode.defaultAgent}" (${agent.binary}) is not installed or not in PATH`));
+    console.error(chalk.yellow(`Please install the agent and try again.`));
+    process.exit(1);
+  }
+
   // Load PRD
   let prd = await loadPRD(prdPath);
   const counts = countStories(prd);
@@ -523,13 +537,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
     if (dryRun) {
       console.log(chalk.yellow("   [DRY RUN] Would execute agent here"));
       continue;
-    }
-
-    // Get agent
-    const agent = getAgent(config.autoMode.defaultAgent);
-    if (!agent) {
-      console.error(chalk.red(`Agent "${config.autoMode.defaultAgent}" not found`));
-      break;
     }
 
     // Execute based on test strategy
