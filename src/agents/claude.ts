@@ -105,12 +105,13 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       stdout.includes("rate limit") ||
       stdout.includes("Too many requests");
 
-    // Try to parse token usage from output, fallback to duration-based estimate
+    // Try to parse token usage from output, fallback to pessimistic duration-based estimate (BUG-3)
     const fullOutput = stdout + stderr;
     let cost = estimateCostFromOutput(options.modelTier, fullOutput);
     if (cost === 0) {
-      // Fallback to duration-based estimate if tokens not found
-      cost = estimateCostByDuration(options.modelTier, durationMs);
+      // Fallback to conservative duration-based estimate if tokens not found
+      // Use 1.5x multiplier to account for parsing uncertainty
+      cost = estimateCostByDuration(options.modelTier, durationMs) * 1.5;
     }
 
     // Exit code 124 indicates timeout (convention), use 143 for SIGTERM

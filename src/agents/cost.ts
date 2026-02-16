@@ -40,23 +40,68 @@ export const COST_RATES: Record<ModelTier, ModelCostRates> = {
 
 /**
  * Parse Claude Code output for token usage.
- * Looks for patterns like:
- * - "Input tokens: 1234"
- * - "Output tokens: 5678"
- * - "Total tokens: 6912"
+ * Supports multiple formats:
+ * - JSON: {"usage": {"input_tokens": 1234, "output_tokens": 5678}}
+ * - Markdown: "Input tokens: 1234" / "Output tokens: 5678"
+ * - Plain: "input: 1234, output: 5678"
+ *
+ * Uses specific regex patterns to reduce false positives (BUG-3).
  */
 export function parseTokenUsage(output: string): TokenUsage | null {
-  const inputMatch = output.match(/input\s+tokens?:\s*(\d+)/i);
-  const outputMatch = output.match(/output\s+tokens?:\s*(\d+)/i);
+  // Try JSON format first (most reliable)
+  try {
+    const jsonMatch = output.match(/\{[^}]*"usage"\s*:\s*\{[^}]*"input_tokens"\s*:\s*(\d+)[^}]*"output_tokens"\s*:\s*(\d+)[^}]*\}[^}]*\}/);
+    if (jsonMatch) {
+      return {
+        inputTokens: Number.parseInt(jsonMatch[1], 10),
+        outputTokens: Number.parseInt(jsonMatch[2], 10),
+      };
+    }
 
-  if (!inputMatch || !outputMatch) {
-    return null;
+    // Try parsing as full JSON object
+    const lines = output.split('\n');
+    for (const line of lines) {
+      if (line.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.usage?.input_tokens && parsed.usage?.output_tokens) {
+            return {
+              inputTokens: parsed.usage.input_tokens,
+              outputTokens: parsed.usage.output_tokens,
+            };
+          }
+        } catch {
+          // Not valid JSON, continue
+        }
+      }
+    }
+  } catch {
+    // JSON parsing failed, try regex patterns
   }
 
-  return {
-    inputTokens: Number.parseInt(inputMatch[1], 10),
-    outputTokens: Number.parseInt(outputMatch[1], 10),
-  };
+  // Try specific markdown-style patterns (more specific to reduce false positives)
+  // Match "Input tokens: 1234" or "input_tokens: 1234" or "INPUT TOKENS: 1234"
+  // Use word boundary at start, require colon or space after keyword, then digits
+  const inputMatch = output.match(/\b(?:input|input_tokens)\s*:\s*(\d{2,})|(?:input)\s+(?:tokens?)\s*:\s*(\d{2,})/i);
+  const outputMatch = output.match(/\b(?:output|output_tokens)\s*:\s*(\d{2,})|(?:output)\s+(?:tokens?)\s*:\s*(\d{2,})/i);
+
+  if (inputMatch && outputMatch) {
+    // Extract token counts (may be in capture group 1 or 2)
+    const inputTokens = Number.parseInt(inputMatch[1] || inputMatch[2], 10);
+    const outputTokens = Number.parseInt(outputMatch[1] || outputMatch[2], 10);
+
+    // Sanity check: reject if tokens seem unreasonably large (> 1M each)
+    if (inputTokens > 1_000_000 || outputTokens > 1_000_000) {
+      return null;
+    }
+
+    return {
+      inputTokens,
+      outputTokens,
+    };
+  }
+
+  return null;
 }
 
 /**

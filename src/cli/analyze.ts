@@ -7,12 +7,14 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { PRD, UserStory } from "../prd";
+import type { NgentConfig } from "../config";
 
 /** Parse spec.md and tasks.md into PRD */
 export async function analyzeFeature(
   featureDir: string,
   featureName: string,
   branchName: string,
+  config?: NgentConfig,
 ): Promise<PRD> {
   const specPath = join(featureDir, "spec.md");
   const tasksPath = join(featureDir, "tasks.md");
@@ -27,6 +29,14 @@ export async function analyzeFeature(
 
   if (userStories.length === 0) {
     throw new Error("No user stories found in tasks.md. Expected '## US-xxx' or '## Story' headings.");
+  }
+
+  // Check story count limit (MEM-1: prevent memory exhaustion)
+  if (config && userStories.length > config.execution.maxStoriesPerFeature) {
+    throw new Error(
+      `Feature has ${userStories.length} stories, exceeding limit of ${config.execution.maxStoriesPerFeature}.\n` +
+      `  Split this feature into smaller features or increase maxStoriesPerFeature in config.`
+    );
   }
 
   // Build PRD

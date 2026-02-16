@@ -63,6 +63,8 @@ export interface ExecutionConfig {
   costLimit: number;
   /** Timeout per agent session (seconds) */
   sessionTimeoutSeconds: number;
+  /** Max stories per feature (prevents memory exhaustion) */
+  maxStoriesPerFeature: number;
 }
 
 /** Quality gate config */
@@ -152,6 +154,7 @@ export const DEFAULT_CONFIG: NgentConfig = {
     iterationDelayMs: 2000,
     costLimit: 5.0,
     sessionTimeoutSeconds: 600, // 10 minutes
+    maxStoriesPerFeature: 500,
   },
   quality: {
     requireTypecheck: true,

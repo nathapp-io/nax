@@ -446,6 +446,14 @@ export async function run(options: RunOptions): Promise<RunResult> {
   // Load PRD
   let prd = await loadPRD(prdPath);
   const counts = countStories(prd);
+
+  // MEM-1: Validate story count doesn't exceed limit
+  if (counts.total > config.execution.maxStoriesPerFeature) {
+    console.error(chalk.red(`❌ Feature has ${counts.total} stories, exceeding limit of ${config.execution.maxStoriesPerFeature}`));
+    console.error(chalk.yellow("   Split this feature into smaller features or increase maxStoriesPerFeature in config."));
+    process.exit(1);
+  }
+
   console.log(chalk.cyan(`\n🚀 ngent: Starting ${feature}`));
   console.log(chalk.dim(`   Stories: ${counts.total} (${counts.passed} done, ${counts.pending} pending)`));
   if (useBatch) {
@@ -455,6 +463,14 @@ export async function run(options: RunOptions): Promise<RunResult> {
   // Main loop
   while (iterations < config.execution.maxIterations) {
     iterations++;
+
+    // MEM-1: Check memory usage (warn if > 1GB heap)
+    const memUsage = process.memoryUsage();
+    const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    if (heapUsedMB > 1024) {
+      console.log(chalk.yellow(`\n⚠️  High memory usage: ${heapUsedMB} MB`));
+      console.log(chalk.yellow("   Consider pausing (echo PAUSE > .queue.txt) if this continues to grow"));
+    }
 
     // Reload PRD each iteration (agent may have updated it)
     prd = await loadPRD(prdPath);

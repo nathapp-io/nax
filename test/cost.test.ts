@@ -38,6 +38,59 @@ Total tokens: 19134
     const output = "Input tokens: 1000";
     expect(parseTokenUsage(output)).toBeNull();
   });
+
+  test("parses JSON-structured token report (BUG-3)", () => {
+    const output = `{"usage": {"input_tokens": 15000, "output_tokens": 8500}}`;
+    const usage = parseTokenUsage(output);
+    expect(usage).not.toBeNull();
+    expect(usage?.inputTokens).toBe(15000);
+    expect(usage?.outputTokens).toBe(8500);
+  });
+
+  test("parses JSON with surrounding text (BUG-3)", () => {
+    const output = `
+Agent completed.
+{"usage": {"input_tokens": 12000, "output_tokens": 4000}}
+Done.
+    `;
+    const usage = parseTokenUsage(output);
+    expect(usage).not.toBeNull();
+    expect(usage?.inputTokens).toBe(12000);
+    expect(usage?.outputTokens).toBe(4000);
+  });
+
+  test("parses underscore format (BUG-3)", () => {
+    const output = "input_tokens: 9000\noutput_tokens: 3000";
+    const usage = parseTokenUsage(output);
+    expect(usage).not.toBeNull();
+    expect(usage?.inputTokens).toBe(9000);
+    expect(usage?.outputTokens).toBe(3000);
+  });
+
+  test("rejects unreasonably large token counts (BUG-3 sanity check)", () => {
+    const output = "Input tokens: 5000000\nOutput tokens: 2000000";
+    // Should reject tokens > 1M as likely false positive
+    expect(parseTokenUsage(output)).toBeNull();
+  });
+
+  test("requires at least 2 digits to avoid false positives (BUG-3)", () => {
+    const output = "version: 1\ninput: 5\noutput: 8";
+    // Should not match single-digit numbers
+    expect(parseTokenUsage(output)).toBeNull();
+  });
+
+  test("handles mixed format with word boundaries (BUG-3)", () => {
+    const output = `
+Model: claude-sonnet-4-5
+input tokens: 15432
+output tokens: 7891
+Status: success
+    `;
+    const usage = parseTokenUsage(output);
+    expect(usage).not.toBeNull();
+    expect(usage?.inputTokens).toBe(15432);
+    expect(usage?.outputTokens).toBe(7891);
+  });
 });
 
 describe("estimateCost", () => {

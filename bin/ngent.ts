@@ -277,8 +277,11 @@ program
 
     const branchName = options.branch.replace("<feature>", options.feature);
 
+    // Load config for validation
+    const config = await loadConfig(workdir);
+
     try {
-      const prd = await analyzeFeature(featureDir, options.feature, branchName);
+      const prd = await analyzeFeature(featureDir, options.feature, branchName, config);
       const prdPath = join(featureDir, "prd.json");
       await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
