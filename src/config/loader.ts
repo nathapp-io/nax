@@ -8,6 +8,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { DEFAULT_CONFIG, type NgentConfig } from "./schema";
+import { validateConfig } from "./validate";
 
 /** Global config path */
 export function globalConfigPath(): string {
@@ -82,6 +83,12 @@ export async function loadConfig(projectDir?: string): Promise<NgentConfig> {
     if (projConf) {
       config = deepMerge(config as unknown as Record<string, unknown>, projConf) as unknown as NgentConfig;
     }
+  }
+
+  // Validate merged config
+  const validation = validateConfig(config);
+  if (!validation.valid) {
+    throw new Error(`Invalid configuration:\n${validation.errors.join("\n")}`);
   }
 
   return config;
