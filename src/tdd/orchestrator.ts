@@ -24,8 +24,8 @@ import {
 } from "./isolation";
 
 /** Build prompt for test-writer session */
-function buildTestWriterPrompt(story: UserStory): string {
-  return `# Test-Driven Development — Session 1: Write Tests
+function buildTestWriterPrompt(story: UserStory, contextMarkdown?: string): string {
+  const basePrompt = `# Test-Driven Development — Session 1: Write Tests
 
 You are in the first session of a three-session TDD workflow. Your ONLY job is to write comprehensive tests.
 
@@ -48,11 +48,21 @@ ${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
 The implementer in the next session will make these tests pass. Your job is ONLY to write the tests.
 
 When done, commit your changes with message: "test: add tests for ${story.title}"`;
+
+  if (contextMarkdown) {
+    return `${basePrompt}
+
+---
+
+${contextMarkdown}`;
+  }
+
+  return basePrompt;
 }
 
 /** Build prompt for implementer session */
-function buildImplementerPrompt(story: UserStory): string {
-  return `# Test-Driven Development — Session 2: Implement Code
+function buildImplementerPrompt(story: UserStory, contextMarkdown?: string): string {
+  const basePrompt = `# Test-Driven Development — Session 2: Implement Code
 
 You are in the second session of a three-session TDD workflow. Tests have already been written in session 1.
 
@@ -75,6 +85,16 @@ ${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
 The tests were written in session 1. Your job is to implement the code to make them pass.
 
 When done, commit your changes with message: "feat: implement ${story.title}"`;
+
+  if (contextMarkdown) {
+    return `${basePrompt}
+
+---
+
+${contextMarkdown}`;
+  }
+
+  return basePrompt;
 }
 
 /** Build prompt for verifier session */
@@ -128,6 +148,7 @@ async function runTddSession(
   workdir: string,
   modelTier: ModelTier,
   beforeRef: string,
+  contextMarkdown?: string,
 ): Promise<TddSessionResult> {
   const startTime = Date.now();
 
@@ -135,10 +156,10 @@ async function runTddSession(
   let prompt: string;
   switch (role) {
     case "test-writer":
-      prompt = buildTestWriterPrompt(story);
+      prompt = buildTestWriterPrompt(story, contextMarkdown);
       break;
     case "implementer":
-      prompt = buildImplementerPrompt(story);
+      prompt = buildImplementerPrompt(story, contextMarkdown);
       break;
     case "verifier":
       prompt = buildVerifierPrompt(story);
@@ -195,6 +216,7 @@ export async function runThreeSessionTdd(
   config: NgentConfig,
   workdir: string,
   modelTier: ModelTier,
+  contextMarkdown?: string,
 ): Promise<ThreeSessionTddResult> {
   console.log(chalk.cyan(`\n🔄 Three-Session TDD: ${story.title}`));
 
@@ -215,6 +237,7 @@ export async function runThreeSessionTdd(
     workdir,
     modelTier,
     session1Ref,
+    contextMarkdown,
   );
   sessions.push(session1);
 
@@ -244,6 +267,7 @@ export async function runThreeSessionTdd(
     workdir,
     modelTier,
     session2Ref,
+    contextMarkdown,
   );
   sessions.push(session2);
 

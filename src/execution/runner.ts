@@ -21,6 +21,8 @@ import { fireHook, type HooksConfig } from "../hooks";
 import type { HookContext } from "../hooks";
 import { runThreeSessionTdd } from "../tdd";
 import { appendProgress } from "./progress";
+import { buildContext, formatContextAsMarkdown } from "../context";
+import type { StoryContext, ContextBuilderConfig } from "../context";
 
 /** Run options */
 export interface RunOptions {
@@ -38,6 +40,8 @@ export interface RunOptions {
   featureDir?: string;
   /** Dry run */
   dryRun: boolean;
+  /** Use context builder (default: true) */
+  useContext?: boolean;
 }
 
 /** Run result */
@@ -50,8 +54,8 @@ export interface RunResult {
 }
 
 /** Build prompt for single-session (test-after) execution */
-function buildSingleSessionPrompt(story: UserStory): string {
-  return `# Task: ${story.title}
+function buildSingleSessionPrompt(story: UserStory, contextMarkdown?: string): string {
+  const basePrompt = `# Task: ${story.title}
 
 **Description:**
 ${story.description}
@@ -67,6 +71,56 @@ ${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
 5. Commit your changes when done
 
 Use test-after approach: implement first, then add tests to verify.`;
+
+  if (contextMarkdown) {
+    return `${basePrompt}
+
+---
+
+${contextMarkdown}`;
+  }
+
+  return basePrompt;
+}
+
+/** Build story context for context builder */
+async function buildStoryContext(
+  story: UserStory,
+  config: NgentConfig,
+): Promise<string | undefined> {
+  try {
+    const storyContext: StoryContext = {
+      storyId: story.id,
+      storyTitle: story.title,
+      relevantFiles: [], // TODO: Add relevantFiles to UserStory type
+      dependencies: story.dependencies || [],
+      priorErrors: undefined, // TODO: Add priorErrors to UserStory type
+      customContext: undefined, // TODO: Add customContext to UserStory type
+    };
+
+    const contextConfig: ContextBuilderConfig = {
+      budget: {
+        maxTokens: 100000, // Conservative limit for Claude
+        reservedForInstructions: 10000,
+        availableForContext: 90000,
+      },
+      prioritizeErrors: true,
+      includeConfig: true,
+      includeDependencies: true,
+      maxFileSize: 500000, // 500KB max per file
+    };
+
+    const built = await buildContext(storyContext, contextConfig);
+
+    if (built.elements.length === 0) {
+      return undefined;
+    }
+
+    return formatContextAsMarkdown(built);
+  } catch (error) {
+    console.warn(chalk.yellow(`   ⚠️  Context builder failed: ${(error as Error).message}`));
+    return undefined;
+  }
 }
 
 /** Escalate model tier */
@@ -93,7 +147,7 @@ function hookCtx(
  * Main execution loop
  */
 export async function run(options: RunOptions): Promise<RunResult> {
-  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun } = options;
+  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useContext = true } = options;
   const startTime = Date.now();
   let iterations = 0;
   let storiesCompleted = 0;
@@ -180,12 +234,22 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
     if (routing.testStrategy === "three-session-tdd") {
       // Three-session TDD: test-writer → implementer → verifier
+      let contextMarkdown: string | undefined;
+      if (useContext) {
+        console.log(chalk.dim(`   ⚙️  Building context...`));
+        contextMarkdown = await buildStoryContext(story, config);
+        if (contextMarkdown) {
+          console.log(chalk.dim(`   ✓ Context built`));
+        }
+      }
+
       const tddResult = await runThreeSessionTdd(
         agent,
         story,
         config,
         workdir,
         routing.modelTier,
+        contextMarkdown,
       );
 
       sessionSuccess = tddResult.success && !tddResult.needsHumanReview;
@@ -202,7 +266,16 @@ export async function run(options: RunOptions): Promise<RunResult> {
       }
     } else {
       // test-after: single agent session
-      const prompt = buildSingleSessionPrompt(story);
+      let contextMarkdown: string | undefined;
+      if (useContext) {
+        console.log(chalk.dim(`   ⚙️  Building context...`));
+        contextMarkdown = await buildStoryContext(story, config);
+        if (contextMarkdown) {
+          console.log(chalk.dim(`   ✓ Context built`));
+        }
+      }
+
+      const prompt = buildSingleSessionPrompt(story, contextMarkdown);
       console.log(chalk.cyan(`\n   → Single session (test-after)`));
 
       const result = await agent.run({
