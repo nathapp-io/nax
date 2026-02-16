@@ -2,21 +2,14 @@
  * Context builder module for story-scoped prompt optimization
  */
 
-export type {
-  ContextElement,
-  ContextBudget,
-  StoryContext,
-  BuiltContext,
-  ContextBuilderConfig,
-} from './types';
+export type { ContextElement, ContextBudget, StoryContext, BuiltContext } from './types';
 
 export {
   estimateTokens,
-  readFileSafe,
-  createFileContext,
-  createConfigContext,
+  createStoryContext,
+  createDependencyContext,
   createErrorContext,
-  createCustomContext,
+  createProgressContext,
   sortContextElements,
   buildContext,
   formatContextAsMarkdown,

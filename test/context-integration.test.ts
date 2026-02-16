@@ -8,7 +8,7 @@ import type { RunOptions } from '../src/execution/runner';
 import type { PRD, UserStory } from '../src/prd';
 import { DEFAULT_CONFIG } from '../src/config';
 import { buildContext, formatContextAsMarkdown } from '../src/context/builder';
-import type { StoryContext, ContextBuilderConfig } from '../src/context/types';
+import type { StoryContext, ContextBudget } from '../src/context/types';
 
 // Sample PRD for testing
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
@@ -29,6 +29,7 @@ const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
     escalations: s.escalations || [],
     attempts: s.attempts || 0,
     routing: s.routing,
+    priorErrors: s.priorErrors,
   })),
 });
 
@@ -123,8 +124,8 @@ describe('Context Builder Integration', () => {
       const prd = createTestPRD([
         {
           id: 'US-001',
-          title: 'Task with invalid file reference',
-          description: 'This task references a non-existent file',
+          title: 'Task with invalid reference',
+          description: 'This task has an issue',
           acceptanceCriteria: ['Works'],
           tags: [],
         },
@@ -154,321 +155,456 @@ describe('Context Builder Integration', () => {
     });
   });
 
-  describe('Context Building with Real Files', () => {
-    test('should include file content in context', async () => {
-      const tmpDir = await createTmpDir();
-
-      // Create a test file
-      const testFilePath = `${tmpDir}/test.ts`;
-      const testFileContent = 'export function hello() { return "world"; }';
-      await Bun.write(testFilePath, testFileContent);
-
-      const story: StoryContext = {
-        storyId: 'US-001',
-        storyTitle: 'Test Story',
-        relevantFiles: [testFilePath],
-        dependencies: [],
-      };
-
-      const config: ContextBuilderConfig = {
-        budget: {
-          maxTokens: 10000,
-          reservedForInstructions: 1000,
-          availableForContext: 9000,
+  describe('Story Extraction', () => {
+    test('should extract current story from PRD', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'First Story',
+          description: 'First description',
+          acceptanceCriteria: ['AC1'],
         },
-        prioritizeErrors: true,
-        maxFileSize: 1024 * 100,
+        {
+          id: 'US-002',
+          title: 'Second Story',
+          description: 'Second description',
+          acceptanceCriteria: ['AC2'],
+        },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
       };
 
-      const built = await buildContext(story, config);
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
 
-      expect(built.elements.length).toBe(1);
-      expect(built.elements[0].type).toBe('file');
-      expect(built.elements[0].content).toBe(testFileContent);
-      expect(built.elements[0].path).toBe(testFilePath);
+      const built = await buildContext(storyContext, budget);
+
+      expect(built.elements.some((e) => e.type === 'story' && e.storyId === 'US-001')).toBe(true);
+      expect(built.elements.some((e) => e.type === 'story' && e.storyId === 'US-002')).toBe(false);
     });
 
-    test('should respect file size limits', async () => {
-      const tmpDir = await createTmpDir();
-
-      // Create a large file
-      const largeFilePath = `${tmpDir}/large.ts`;
-      const largeContent = 'x'.repeat(200000); // 200KB
-      await Bun.write(largeFilePath, largeContent);
-
-      const story: StoryContext = {
-        storyId: 'US-001',
-        storyTitle: 'Test Story',
-        relevantFiles: [largeFilePath],
-        dependencies: [],
-      };
-
-      const config: ContextBuilderConfig = {
-        budget: {
-          maxTokens: 10000,
-          reservedForInstructions: 1000,
-          availableForContext: 9000,
+    test('should include dependency stories', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Dependency Story',
+          description: 'Dependency description',
+          acceptanceCriteria: ['AC1'],
+          status: 'passed',
+          passes: true,
         },
-        prioritizeErrors: true,
-        maxFileSize: 100000, // 100KB max
+        {
+          id: 'US-002',
+          title: 'Current Story',
+          description: 'Current description',
+          acceptanceCriteria: ['AC2'],
+          dependencies: ['US-001'],
+        },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-002',
       };
 
-      const built = await buildContext(story, config);
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
 
-      expect(built.elements.length).toBe(1);
-      expect(built.elements[0].content).toContain('[File too large');
+      const built = await buildContext(storyContext, budget);
+      const markdown = formatContextAsMarkdown(built);
+
+      expect(built.elements.some((e) => e.type === 'dependency' && e.storyId === 'US-001')).toBe(
+        true,
+      );
+      expect(markdown).toContain('## Dependency Stories');
+      expect(markdown).toContain('US-001');
     });
 
-    test('should handle non-existent files gracefully', async () => {
-      const story: StoryContext = {
-        storyId: 'US-001',
-        storyTitle: 'Test Story',
-        relevantFiles: ['/non/existent/file.ts'],
-        dependencies: [],
+    test('should include progress summary', async () => {
+      const prd = createTestPRD([
+        { id: 'US-001', status: 'passed', passes: true },
+        { id: 'US-002', status: 'passed', passes: true },
+        { id: 'US-003', status: 'failed', passes: false },
+        { id: 'US-004', status: 'pending', passes: false },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-004',
       };
 
-      const config: ContextBuilderConfig = {
-        budget: {
-          maxTokens: 10000,
-          reservedForInstructions: 1000,
-          availableForContext: 9000,
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
+
+      const built = await buildContext(storyContext, budget);
+      const markdown = formatContextAsMarkdown(built);
+
+      expect(markdown).toContain('Progress:');
+      expect(markdown).toContain('3/4 stories complete');
+      expect(markdown).toContain('2 passed');
+      expect(markdown).toContain('1 failed');
+    });
+
+    test('should include prior errors', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Failed Story',
+          description: 'Story with errors',
+          acceptanceCriteria: ['AC1'],
+          priorErrors: ['TypeError: Cannot read property', 'ReferenceError: x is not defined'],
         },
-        prioritizeErrors: true,
-        maxFileSize: 1024 * 100,
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
       };
 
-      const built = await buildContext(story, config);
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
 
-      // Non-existent files should be skipped
-      expect(built.elements.length).toBe(0);
+      const built = await buildContext(storyContext, budget);
+      const markdown = formatContextAsMarkdown(built);
+
+      expect(markdown).toContain('## Prior Errors');
+      expect(markdown).toContain('TypeError: Cannot read property');
+      expect(markdown).toContain('ReferenceError: x is not defined');
+    });
+
+    test('should handle missing dependency gracefully', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Story with missing dependency',
+          description: 'Current story',
+          acceptanceCriteria: ['AC1'],
+          dependencies: ['US-999'], // Non-existent
+        },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
+      };
+
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
+
+      const built = await buildContext(storyContext, budget);
+
+      // Should not crash, just skip the missing dependency
+      expect(built.elements.some((e) => e.type === 'dependency')).toBe(false);
     });
   });
 
   describe('Context Prioritization', () => {
-    test('should prioritize errors over files', async () => {
-      const tmpDir = await createTmpDir();
-
-      const testFilePath = `${tmpDir}/test.ts`;
-      await Bun.write(testFilePath, 'export const x = 1;');
-
-      const story: StoryContext = {
-        storyId: 'US-001',
-        storyTitle: 'Test Story',
-        relevantFiles: [testFilePath],
-        dependencies: [],
-        priorErrors: ['TypeError: Cannot read property', 'ReferenceError: x is not defined'],
-      };
-
-      const config: ContextBuilderConfig = {
-        budget: {
-          maxTokens: 10000,
-          reservedForInstructions: 1000,
-          availableForContext: 9000,
+    test('should prioritize progress over other elements', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Story',
+          priorErrors: ['Error 1'],
+          dependencies: ['US-002'],
         },
-        prioritizeErrors: true,
-        maxFileSize: 1024 * 100,
+        { id: 'US-002', status: 'passed', passes: true },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
       };
 
-      const built = await buildContext(story, config);
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
 
-      // Errors should come first
-      expect(built.elements[0].type).toBe('error');
-      expect(built.elements[1].type).toBe('error');
-      expect(built.elements[2].type).toBe('file');
+      const built = await buildContext(storyContext, budget);
+
+      // Progress should be first (highest priority)
+      expect(built.elements[0].type).toBe('progress');
+    });
+
+    test('should prioritize errors over stories', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Story',
+          priorErrors: ['Critical error'],
+          dependencies: ['US-002'],
+        },
+        { id: 'US-002', status: 'passed', passes: true },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
+      };
+
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
+
+      const built = await buildContext(storyContext, budget);
+
+      // Errors should come before story and dependencies
+      const errorIndex = built.elements.findIndex((e) => e.type === 'error');
+      const storyIndex = built.elements.findIndex((e) => e.type === 'story');
+      const depIndex = built.elements.findIndex((e) => e.type === 'dependency');
+
+      expect(errorIndex).toBeLessThan(storyIndex);
+      expect(errorIndex).toBeLessThan(depIndex);
     });
 
     test('should truncate low-priority items when budget exceeded', async () => {
-      const tmpDir = await createTmpDir();
-
-      // Create multiple files with substantial content
-      const files = [];
-      for (let i = 0; i < 10; i++) {
-        const filePath = `${tmpDir}/file${i}.ts`;
-        const content = `export const data${i} = '${'x'.repeat(1000)}';`;
-        await Bun.write(filePath, content);
-        files.push(filePath);
-      }
-
-      const story: StoryContext = {
-        storyId: 'US-001',
-        storyTitle: 'Test Story',
-        relevantFiles: files,
-        dependencies: [],
-        priorErrors: ['Critical error'], // High priority
-      };
-
-      const config: ContextBuilderConfig = {
-        budget: {
-          maxTokens: 2000,
-          reservedForInstructions: 500,
-          availableForContext: 1500, // Small budget
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Story with many dependencies',
+          description: 'x'.repeat(2000),
+          acceptanceCriteria: ['AC1'],
+          dependencies: ['US-002', 'US-003', 'US-004', 'US-005'],
         },
-        prioritizeErrors: true,
-        maxFileSize: 1024 * 100,
+        { id: 'US-002', description: 'x'.repeat(2000), acceptanceCriteria: ['AC2'] },
+        { id: 'US-003', description: 'x'.repeat(2000), acceptanceCriteria: ['AC3'] },
+        { id: 'US-004', description: 'x'.repeat(2000), acceptanceCriteria: ['AC4'] },
+        { id: 'US-005', description: 'x'.repeat(2000), acceptanceCriteria: ['AC5'] },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
       };
 
-      const built = await buildContext(story, config);
+      const budget: ContextBudget = {
+        maxTokens: 2000,
+        reservedForInstructions: 1000,
+        availableForContext: 1000, // Small budget
+      };
+
+      const built = await buildContext(storyContext, budget);
 
       expect(built.truncated).toBe(true);
-      expect(built.totalTokens).toBeLessThanOrEqual(1500);
-      // Error should be included
-      expect(built.elements.some((e) => e.type === 'error')).toBe(true);
-      // Not all files should be included
-      expect(built.elements.length).toBeLessThan(11); // 1 error + 10 files
+      expect(built.totalTokens).toBeLessThanOrEqual(1000);
+      // Progress should always be included (highest priority)
+      expect(built.elements.some((e) => e.type === 'progress')).toBe(true);
+      // Current story should be included (high priority)
+      expect(built.elements.some((e) => e.type === 'story')).toBe(true);
+      // Some dependencies may be truncated (lower priority)
+      const depCount = built.elements.filter((e) => e.type === 'dependency').length;
+      expect(depCount).toBeLessThan(4); // Not all dependencies included
     });
   });
 
   describe('Markdown Formatting', () => {
-    test('should format context with multiple element types', async () => {
-      const tmpDir = await createTmpDir();
-
-      const testFilePath = `${tmpDir}/test.ts`;
-      const testFileContent = 'export const test = true;';
-      await Bun.write(testFilePath, testFileContent);
-
-      const story: StoryContext = {
-        storyId: 'US-001',
-        storyTitle: 'Complex Story',
-        relevantFiles: [testFilePath],
-        dependencies: [],
-        priorErrors: ['Error: Test failed'],
-        customContext: ['Additional context information'],
-      };
-
-      const config: ContextBuilderConfig = {
-        budget: {
-          maxTokens: 10000,
-          reservedForInstructions: 1000,
-          availableForContext: 9000,
+    test('should format context with all sections', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Dependency',
+          description: 'Dep description',
+          acceptanceCriteria: ['AC1'],
+          status: 'passed',
+          passes: true,
         },
-        prioritizeErrors: true,
-        maxFileSize: 1024 * 100,
+        {
+          id: 'US-002',
+          title: 'Current',
+          description: 'Current description',
+          acceptanceCriteria: ['AC2'],
+          dependencies: ['US-001'],
+          priorErrors: ['Test error'],
+        },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-002',
       };
 
-      const built = await buildContext(story, config);
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
+
+      const built = await buildContext(storyContext, budget);
       const markdown = formatContextAsMarkdown(built);
 
-      // Verify markdown structure
+      // Verify all sections are present
       expect(markdown).toContain('# Story Context');
+      expect(markdown).toContain('## Progress');
       expect(markdown).toContain('## Prior Errors');
-      expect(markdown).toContain('## Relevant Files');
-      expect(markdown).toContain('## Additional Context');
-      expect(markdown).toContain('Error: Test failed');
-      expect(markdown).toContain(testFileContent);
-      expect(markdown).toContain('Additional context information');
+      expect(markdown).toContain('## Current Story');
+      expect(markdown).toContain('## Dependency Stories');
+
+      // Verify content
+      expect(markdown).toContain('US-001');
+      expect(markdown).toContain('US-002');
+      expect(markdown).toContain('Test error');
+      expect(markdown).toContain('Dep description');
+      expect(markdown).toContain('Current description');
     });
 
     test('should include summary with token count', async () => {
-      const story: StoryContext = {
-        storyId: 'US-001',
-        storyTitle: 'Test Story',
-        relevantFiles: [],
-        dependencies: [],
-        customContext: ['Test context'],
+      const prd = createTestPRD([{ id: 'US-001', title: 'Story' }]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
       };
 
-      const config: ContextBuilderConfig = {
-        budget: {
-          maxTokens: 10000,
-          reservedForInstructions: 1000,
-          availableForContext: 9000,
-        },
-        prioritizeErrors: false,
-        maxFileSize: 1024 * 100,
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
       };
 
-      const built = await buildContext(story, config);
+      const built = await buildContext(storyContext, budget);
       const markdown = formatContextAsMarkdown(built);
 
       expect(markdown).toContain('Context:');
       expect(markdown).toContain('tokens');
       expect(markdown).toContain(built.totalTokens.toString());
     });
+
+    test('should show truncation indicator', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          description: 'x'.repeat(3000),
+          dependencies: ['US-002', 'US-003'],
+        },
+        { id: 'US-002', description: 'x'.repeat(3000) },
+        { id: 'US-003', description: 'x'.repeat(3000) },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
+      };
+
+      const budget: ContextBudget = {
+        maxTokens: 500,
+        reservedForInstructions: 250,
+        availableForContext: 250,
+      };
+
+      const built = await buildContext(storyContext, budget);
+      const markdown = formatContextAsMarkdown(built);
+
+      expect(markdown).toContain('[TRUNCATED]');
+    });
   });
 
   describe('Edge Cases', () => {
-    test('should handle empty story gracefully', async () => {
-      const story: StoryContext = {
-        storyId: 'US-001',
-        storyTitle: 'Empty Story',
-        relevantFiles: [],
-        dependencies: [],
-      };
-
-      const config: ContextBuilderConfig = {
-        budget: {
-          maxTokens: 10000,
-          reservedForInstructions: 1000,
-          availableForContext: 9000,
+    test('should handle single story PRD', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Only Story',
+          description: 'The only story',
+          acceptanceCriteria: ['AC1'],
         },
-        prioritizeErrors: true,
-        maxFileSize: 1024 * 100,
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
       };
 
-      const built = await buildContext(story, config);
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
+
+      const built = await buildContext(storyContext, budget);
       const markdown = formatContextAsMarkdown(built);
 
-      expect(built.elements.length).toBe(0);
-      expect(built.totalTokens).toBe(0);
-      expect(built.truncated).toBe(false);
-      expect(markdown).toContain('# Story Context');
+      expect(built.elements.length).toBeGreaterThan(0);
+      expect(markdown).toContain('US-001');
+      expect(markdown).toContain('Progress: 0/1 stories complete');
     });
 
-    test('should handle extremely small budget', async () => {
-      const story: StoryContext = {
-        storyId: 'US-001',
-        storyTitle: 'Test Story',
-        relevantFiles: [],
-        dependencies: [],
-        customContext: [
-          'This is a longer context that will exceed the budget',
-          'Another longer context that definitely exceeds budget',
-          'Yet another context to ensure truncation',
-        ],
-      };
-
-      const config: ContextBuilderConfig = {
-        budget: {
-          maxTokens: 100,
-          reservedForInstructions: 90,
-          availableForContext: 10, // Extremely small
+    test('should handle story with no dependencies', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Independent Story',
+          description: 'No dependencies',
+          acceptanceCriteria: ['AC1'],
+          dependencies: [],
         },
-        prioritizeErrors: false,
-        maxFileSize: 1024 * 100,
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
       };
 
-      const built = await buildContext(story, config);
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
 
-      expect(built.totalTokens).toBeLessThanOrEqual(10);
+      const built = await buildContext(storyContext, budget);
+
+      expect(built.elements.some((e) => e.type === 'dependency')).toBe(false);
+    });
+
+    test('should handle extremely small budget gracefully', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          description: 'x'.repeat(5000),
+          priorErrors: ['Error'.repeat(1000)],
+          dependencies: ['US-002', 'US-003'],
+        },
+        { id: 'US-002', description: 'x'.repeat(5000) },
+        { id: 'US-003', description: 'x'.repeat(5000) },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
+      };
+
+      const budget: ContextBudget = {
+        maxTokens: 100,
+        reservedForInstructions: 50,
+        availableForContext: 50, // Extremely small
+      };
+
+      const built = await buildContext(storyContext, budget);
+
+      expect(built.totalTokens).toBeLessThanOrEqual(50);
       expect(built.truncated).toBe(true);
-    });
-
-    test('should handle multiple errors with truncation', async () => {
-      const errors = Array.from({ length: 20 }, (_, i) => `Error ${i}: ${'x'.repeat(100)}`);
-
-      const story: StoryContext = {
-        storyId: 'US-001',
-        storyTitle: 'Error-Heavy Story',
-        relevantFiles: [],
-        dependencies: [],
-        priorErrors: errors,
-      };
-
-      const config: ContextBuilderConfig = {
-        budget: {
-          maxTokens: 5000,
-          reservedForInstructions: 1000,
-          availableForContext: 4000,
-        },
-        prioritizeErrors: true,
-        maxFileSize: 1024 * 100,
-      };
-
-      const built = await buildContext(story, config);
-
-      expect(built.elements.every((e) => e.type === 'error')).toBe(true);
-      expect(built.totalTokens).toBeLessThanOrEqual(4000);
-      expect(built.summary).toContain('errors');
+      // At minimum, progress should fit
+      expect(built.elements.length).toBeGreaterThan(0);
     });
   });
 });

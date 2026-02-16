@@ -2,12 +2,14 @@
  * Context builder types for story-scoped prompt optimization
  */
 
+import type { PRD } from '../prd';
+
 /**
  * Context element that can be included in agent prompts
  */
 export interface ContextElement {
-  type: 'file' | 'config' | 'dependency' | 'error' | 'custom';
-  path?: string;
+  type: 'story' | 'dependency' | 'error' | 'progress';
+  storyId?: string;
   content: string;
   priority: number; // Higher = more important
   tokens: number; // Estimated token count
@@ -23,15 +25,11 @@ export interface ContextBudget {
 }
 
 /**
- * Story context metadata
+ * Story context metadata (PRD + current story)
  */
 export interface StoryContext {
-  storyId: string;
-  storyTitle: string;
-  relevantFiles: string[];
-  dependencies: string[];
-  priorErrors?: string[];
-  customContext?: string[];
+  prd: PRD;
+  currentStoryId: string;
 }
 
 /**
@@ -42,13 +40,4 @@ export interface BuiltContext {
   totalTokens: number;
   truncated: boolean;
   summary: string;
-}
-
-/**
- * Context builder configuration
- */
-export interface ContextBuilderConfig {
-  budget: ContextBudget;
-  prioritizeErrors: boolean;
-  maxFileSize: number; // Max bytes per file
 }

@@ -1,14 +1,12 @@
 /**
  * Context builder for story-scoped prompt optimization
+ *
+ * Extracts current story + dependency stories from PRD and builds context within token budget.
  */
 
-import type {
-  ContextElement,
-  ContextBudget,
-  StoryContext,
-  BuiltContext,
-  ContextBuilderConfig,
-} from './types';
+import type { ContextElement, ContextBudget, StoryContext, BuiltContext } from './types';
+import type { UserStory } from '../prd';
+import { countStories } from '../prd';
 
 /**
  * Estimate token count for text (rough approximation: 1 token ≈ 3 chars)
@@ -18,43 +16,13 @@ export function estimateTokens(text: string): number {
 }
 
 /**
- * Read file content safely with size limit
+ * Create context element from story
  */
-export async function readFileSafe(
-  path: string,
-  maxSize: number,
-): Promise<string | null> {
-  try {
-    const file = Bun.file(path);
-    const size = file.size;
-
-    if (size > maxSize) {
-      return `[File too large: ${size} bytes, max ${maxSize}]`;
-    }
-
-    return await file.text();
-  } catch (error) {
-    return null;
-  }
-}
-
-/**
- * Create context element from file
- */
-export async function createFileContext(
-  path: string,
-  priority: number,
-  maxSize: number,
-): Promise<ContextElement | null> {
-  const content = await readFileSafe(path, maxSize);
-
-  if (!content) {
-    return null;
-  }
-
+export function createStoryContext(story: UserStory, priority: number): ContextElement {
+  const content = formatStoryAsText(story);
   return {
-    type: 'file',
-    path,
+    type: 'story',
+    storyId: story.id,
     content,
     priority,
     tokens: estimateTokens(content),
@@ -62,27 +30,23 @@ export async function createFileContext(
 }
 
 /**
- * Create context element from config
+ * Create context element from dependency story
  */
-export function createConfigContext(
-  configContent: string,
-  priority: number,
-): ContextElement {
+export function createDependencyContext(story: UserStory, priority: number): ContextElement {
+  const content = formatStoryAsText(story);
   return {
-    type: 'config',
-    content: configContent,
+    type: 'dependency',
+    storyId: story.id,
+    content,
     priority,
-    tokens: estimateTokens(configContent),
+    tokens: estimateTokens(content),
   };
 }
 
 /**
  * Create context element from error
  */
-export function createErrorContext(
-  errorMessage: string,
-  priority: number,
-): ContextElement {
+export function createErrorContext(errorMessage: string, priority: number): ContextElement {
   return {
     type: 'error',
     content: errorMessage,
@@ -92,18 +56,55 @@ export function createErrorContext(
 }
 
 /**
- * Create context element from custom text
+ * Create context element from progress summary
  */
-export function createCustomContext(
-  content: string,
-  priority: number,
-): ContextElement {
+export function createProgressContext(progressText: string, priority: number): ContextElement {
   return {
-    type: 'custom',
-    content,
+    type: 'progress',
+    content: progressText,
     priority,
-    tokens: estimateTokens(content),
+    tokens: estimateTokens(progressText),
   };
+}
+
+/**
+ * Format story as text for context
+ */
+function formatStoryAsText(story: UserStory): string {
+  const parts: string[] = [];
+
+  parts.push(`## ${story.id}: ${story.title}`);
+  parts.push('');
+  parts.push(`**Description:** ${story.description}`);
+  parts.push('');
+  parts.push('**Acceptance Criteria:**');
+  for (const ac of story.acceptanceCriteria) {
+    parts.push(`- ${ac}`);
+  }
+
+  if (story.tags && story.tags.length > 0) {
+    parts.push('');
+    parts.push(`**Tags:** ${story.tags.join(', ')}`);
+  }
+
+  return parts.join('\n');
+}
+
+/**
+ * Generate progress summary
+ */
+function generateProgressSummary(prd: StoryContext['prd']): string {
+  const counts = countStories(prd);
+  const total = counts.total;
+  const complete = counts.passed + counts.failed;
+  const passed = counts.passed;
+  const failed = counts.failed;
+
+  if (failed > 0) {
+    return `Progress: ${complete}/${total} stories complete (${passed} passed, ${failed} failed)`;
+  }
+
+  return `Progress: ${complete}/${total} stories complete (${passed} passed)`;
 }
 
 /**
@@ -119,37 +120,42 @@ export function sortContextElements(elements: ContextElement[]): ContextElement[
 }
 
 /**
- * Build context from story metadata within token budget
+ * Build context from PRD + current story within token budget
  */
 export async function buildContext(
-  story: StoryContext,
-  config: ContextBuilderConfig,
+  storyContext: StoryContext,
+  budget: ContextBudget,
 ): Promise<BuiltContext> {
+  const { prd, currentStoryId } = storyContext;
   const elements: ContextElement[] = [];
 
-  // Add prior errors (highest priority if enabled)
-  if (config.prioritizeErrors && story.priorErrors) {
-    for (const error of story.priorErrors) {
-      elements.push(createErrorContext(error, 100));
+  // Find current story
+  const currentStory = prd.userStories.find((s) => s.id === currentStoryId);
+  if (!currentStory) {
+    throw new Error(`Story ${currentStoryId} not found in PRD`);
+  }
+
+  // Add progress summary (highest priority)
+  const progressText = generateProgressSummary(prd);
+  elements.push(createProgressContext(progressText, 100));
+
+  // Add prior errors from current story (high priority)
+  if (currentStory.priorErrors && currentStory.priorErrors.length > 0) {
+    for (const error of currentStory.priorErrors) {
+      elements.push(createErrorContext(error, 90));
     }
   }
 
-  // Add relevant files
-  for (const filePath of story.relevantFiles) {
-    const fileContext = await createFileContext(
-      filePath,
-      50, // Medium priority
-      config.maxFileSize,
-    );
-    if (fileContext) {
-      elements.push(fileContext);
-    }
-  }
+  // Add current story (high priority)
+  elements.push(createStoryContext(currentStory, 80));
 
-  // Add custom context
-  if (story.customContext) {
-    for (const custom of story.customContext) {
-      elements.push(createCustomContext(custom, 30));
+  // Add dependency stories (medium priority)
+  if (currentStory.dependencies && currentStory.dependencies.length > 0) {
+    for (const depId of currentStory.dependencies) {
+      const depStory = prd.userStories.find((s) => s.id === depId);
+      if (depStory) {
+        elements.push(createDependencyContext(depStory, 50));
+      }
     }
   }
 
@@ -162,7 +168,7 @@ export async function buildContext(
   let truncated = false;
 
   for (const element of sorted) {
-    if (totalTokens + element.tokens <= config.budget.availableForContext) {
+    if (totalTokens + element.tokens <= budget.availableForContext) {
       selected.push(element);
       totalTokens += element.tokens;
     } else {
@@ -190,11 +196,10 @@ function generateSummary(
   truncated: boolean,
 ): string {
   const counts = {
-    file: 0,
-    config: 0,
-    error: 0,
+    story: 0,
     dependency: 0,
-    custom: 0,
+    error: 0,
+    progress: 0,
   };
 
   for (const element of elements) {
@@ -203,11 +208,10 @@ function generateSummary(
 
   const parts: string[] = [];
 
-  if (counts.file > 0) parts.push(`${counts.file} files`);
-  if (counts.error > 0) parts.push(`${counts.error} errors`);
-  if (counts.config > 0) parts.push(`${counts.config} configs`);
+  if (counts.progress > 0) parts.push(`${counts.progress} progress`);
+  if (counts.story > 0) parts.push(`${counts.story} story`);
   if (counts.dependency > 0) parts.push(`${counts.dependency} dependencies`);
-  if (counts.custom > 0) parts.push(`${counts.custom} custom`);
+  if (counts.error > 0) parts.push(`${counts.error} errors`);
 
   const summary = `Context: ${parts.join(', ')} (${totalTokens} tokens)`;
 
@@ -232,7 +236,16 @@ export function formatContextAsMarkdown(built: BuiltContext): string {
     byType.set(element.type, existing);
   }
 
-  // Errors first
+  // Progress first
+  if (byType.has('progress')) {
+    sections.push('## Progress\n');
+    for (const element of byType.get('progress')!) {
+      sections.push(element.content);
+      sections.push('\n');
+    }
+  }
+
+  // Errors second
   if (byType.has('error')) {
     sections.push('## Prior Errors\n');
     for (const element of byType.get('error')!) {
@@ -242,31 +255,19 @@ export function formatContextAsMarkdown(built: BuiltContext): string {
     }
   }
 
-  // Files
-  if (byType.has('file')) {
-    sections.push('## Relevant Files\n');
-    for (const element of byType.get('file')!) {
-      sections.push(`### ${element.path}\n`);
-      sections.push('```');
+  // Current story
+  if (byType.has('story')) {
+    sections.push('## Current Story\n');
+    for (const element of byType.get('story')!) {
       sections.push(element.content);
-      sections.push('```\n');
+      sections.push('\n');
     }
   }
 
-  // Config
-  if (byType.has('config')) {
-    sections.push('## Configuration\n');
-    for (const element of byType.get('config')!) {
-      sections.push('```json');
-      sections.push(element.content);
-      sections.push('```\n');
-    }
-  }
-
-  // Custom
-  if (byType.has('custom')) {
-    sections.push('## Additional Context\n');
-    for (const element of byType.get('custom')!) {
+  // Dependencies
+  if (byType.has('dependency')) {
+    sections.push('## Dependency Stories\n');
+    for (const element of byType.get('dependency')!) {
       sections.push(element.content);
       sections.push('\n');
     }

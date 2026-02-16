@@ -22,7 +22,7 @@ import type { HookContext } from "../hooks";
 import { runThreeSessionTdd } from "../tdd";
 import { appendProgress } from "./progress";
 import { buildContext, formatContextAsMarkdown } from "../context";
-import type { StoryContext, ContextBuilderConfig } from "../context";
+import type { StoryContext, ContextBudget } from "../context";
 
 /** Run options */
 export interface RunOptions {
@@ -85,30 +85,23 @@ ${contextMarkdown}`;
 
 /** Build story context for context builder */
 async function buildStoryContext(
+  prd: PRD,
   story: UserStory,
   config: NgentConfig,
 ): Promise<string | undefined> {
   try {
     const storyContext: StoryContext = {
-      storyId: story.id,
-      storyTitle: story.title,
-      relevantFiles: story.relevantFiles || [],
-      dependencies: story.dependencies || [],
-      priorErrors: story.priorErrors,
-      customContext: story.customContext,
+      prd,
+      currentStoryId: story.id,
     };
 
-    const contextConfig: ContextBuilderConfig = {
-      budget: {
-        maxTokens: 100000, // Conservative limit for Claude
-        reservedForInstructions: 10000,
-        availableForContext: 90000,
-      },
-      prioritizeErrors: true,
-      maxFileSize: 500000, // 500KB max per file
+    const budget: ContextBudget = {
+      maxTokens: 100000, // Conservative limit for Claude
+      reservedForInstructions: 10000,
+      availableForContext: 90000,
     };
 
-    const built = await buildContext(storyContext, contextConfig);
+    const built = await buildContext(storyContext, budget);
 
     if (built.elements.length === 0) {
       return undefined;
@@ -143,6 +136,7 @@ function hookCtx(
 
 /** Maybe build context if enabled */
 async function maybeGetContext(
+  prd: PRD,
   story: UserStory,
   config: NgentConfig,
   useContext: boolean,
@@ -152,7 +146,7 @@ async function maybeGetContext(
   }
 
   console.log(chalk.dim(`   ⚙️  Building context...`));
-  const contextMarkdown = await buildStoryContext(story, config);
+  const contextMarkdown = await buildStoryContext(prd, story, config);
   if (contextMarkdown) {
     console.log(chalk.dim(`   ✓ Context built`));
   }
@@ -250,7 +244,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
     if (routing.testStrategy === "three-session-tdd") {
       // Three-session TDD: test-writer → implementer → verifier
-      const contextMarkdown = await maybeGetContext(story, config, useContext);
+      const contextMarkdown = await maybeGetContext(prd, story, config, useContext);
 
       const tddResult = await runThreeSessionTdd(
         agent,
@@ -275,7 +269,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       }
     } else {
       // test-after: single agent session
-      const contextMarkdown = await maybeGetContext(story, config, useContext);
+      const contextMarkdown = await maybeGetContext(prd, story, config, useContext);
 
       const prompt = buildSingleSessionPrompt(story, contextMarkdown);
       console.log(chalk.cyan(`\n   → Single session (test-after)`));
