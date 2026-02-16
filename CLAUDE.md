@@ -18,12 +18,15 @@ bun run build         # Bundle for distribution
 bin/ngent.ts          # CLI entry point (commander)
 src/
   agents/             # AgentAdapter interface + implementations (claude.ts)
-  config/             # NgentConfig schema + layered loader (global → project)
+  cli/                # CLI commands (init, run, features, agents, status)
+  config/             # NgentConfig schema + layered loader + validation (global → project)
   execution/          # Main orchestration loop (the core)
   hooks/              # Lifecycle hooks (hooks.json → shell commands + NGENT_* env)
+  pipeline/           # Pipeline orchestration utilities
   prd/                # PRD/user-story loader, ordering, completion tracking
+  queue/              # Queue manager for multi-agent parallel execution
   routing/            # Complexity classifier + test strategy decision tree
-  tdd/                # Three-session TDD types + file isolation checker
+  tdd/                # Three-session TDD types + file isolation checker + orchestrator
 test/                 # Bun test files (*.test.ts)
 ```
 
@@ -65,22 +68,22 @@ test/                 # Bun test files (*.test.ts)
 ### Done
 - [x] Agent adapter interface + Claude Code implementation
 - [x] Config schema + layered loader
+- [x] Config validation (version, limits, escalation settings)
 - [x] Hook lifecycle system
 - [x] Complexity-based routing + test strategy decision tree
 - [x] TDD isolation checker
+- [x] Three-session TDD orchestrator
 - [x] PRD loader/saver with dependency-aware ordering
-- [x] Execution loop skeleton
-- [x] CLI: init, run, features create/list, agents, status
-- [x] 17 tests passing
+- [x] Execution runner with cost tracking
+- [x] Queue manager module
+- [x] CLI: init, run, analyze, features create/list, agents, status
+- [x] 67 tests passing
 
 ### TODO (Priority Order)
 1. **Agent execution** — Actually spawn Claude Code sessions with prompts via Bun.spawn
-2. **Three-session TDD orchestration** — Wire up test-writer → implementer → verifier pipeline with isolation checks between sessions
-3. **`analyze` command** — Generate prd.json from spec.md + tasks.md (uses an agent to parse)
-4. **Cost tracking** — Parse Claude Code output for token/cost data
-5. **Auto-escalation** — On failure, escalate model tier (cheap → standard → premium) and retry
-6. **Progress file** — Append to progress.txt after each story completion
-7. **Queue module** — For future multi-agent parallel execution
+2. **Progress logging** — Append to progress.txt after each story completion
+3. **Auto-escalation** — On failure, escalate model tier (cheap → standard → premium) and retry
+4. **Pipeline module** — Wire up full execution flow with quality gates
 
 ## Git
 
