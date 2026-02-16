@@ -883,3 +883,120 @@ describe("Queue Commands Before Batch Execution", () => {
     // In actual runner, these would be marked as skipped via markStorySkipped()
   });
 });
+
+describe("Configurable Escalation Chain", () => {
+  test("escalateTier with default chain (no tierOrder provided)", () => {
+    // Default chain: fast → balanced → powerful → null
+    expect(escalateTier("fast")).toBe("balanced");
+    expect(escalateTier("balanced")).toBe("powerful");
+    expect(escalateTier("powerful")).toBeNull();
+    expect(escalateTier("fast", undefined)).toBe("balanced");
+  });
+
+  test("escalateTier with custom tierOrder", () => {
+    // Custom chain: fast → powerful (skip balanced)
+    const customOrder: ("fast" | "balanced" | "powerful")[] = ["fast", "powerful"];
+    expect(escalateTier("fast", customOrder)).toBe("powerful");
+    expect(escalateTier("powerful", customOrder)).toBeNull();
+
+    // balanced not in order, should return null
+    expect(escalateTier("balanced", customOrder)).toBeNull();
+  });
+
+  test("escalateTier with single-tier order", () => {
+    // Only one tier in order, should not escalate
+    const singleTier: ("fast" | "balanced" | "powerful")[] = ["fast"];
+    expect(escalateTier("fast", singleTier)).toBeNull();
+  });
+
+  test("escalateTier with reversed order", () => {
+    // Custom chain: powerful → balanced → fast (cost reduction strategy)
+    const reversedOrder: ("fast" | "balanced" | "powerful")[] = ["powerful", "balanced", "fast"];
+    expect(escalateTier("powerful", reversedOrder)).toBe("balanced");
+    expect(escalateTier("balanced", reversedOrder)).toBe("fast");
+    expect(escalateTier("fast", reversedOrder)).toBeNull();
+  });
+
+  test("escalateTier with empty tierOrder fallbacks to default", () => {
+    // Empty tierOrder should fallback to default chain
+    const emptyOrder: ("fast" | "balanced" | "powerful")[] = [];
+    expect(escalateTier("fast", emptyOrder)).toBe("balanced");
+    expect(escalateTier("balanced", emptyOrder)).toBe("powerful");
+    expect(escalateTier("powerful", emptyOrder)).toBeNull();
+  });
+
+  test("escalateTier with three-tier standard order", () => {
+    // Explicit standard order: fast → balanced → powerful
+    const standardOrder: ("fast" | "balanced" | "powerful")[] = ["fast", "balanced", "powerful"];
+    expect(escalateTier("fast", standardOrder)).toBe("balanced");
+    expect(escalateTier("balanced", standardOrder)).toBe("powerful");
+    expect(escalateTier("powerful", standardOrder)).toBeNull();
+  });
+
+  test("escalateTier with tier not in custom order returns null", () => {
+    // Custom order only includes fast and powerful
+    const customOrder: ("fast" | "balanced" | "powerful")[] = ["fast", "powerful"];
+
+    // balanced is not in order, should return null (cannot escalate)
+    expect(escalateTier("balanced", customOrder)).toBeNull();
+  });
+
+  test("escalateTier should be idempotent for null tier", () => {
+    // Escalating beyond the max tier should always return null
+    const maxTier = escalateTier("powerful");
+    expect(maxTier).toBeNull();
+
+    // With custom order
+    const customOrder: ("fast" | "balanced" | "powerful")[] = ["fast", "balanced", "powerful"];
+    const maxTierCustom = escalateTier("powerful", customOrder);
+    expect(maxTierCustom).toBeNull();
+  });
+
+  test("config schema includes optional tierOrder", () => {
+    // Test that config schema supports escalation.tierOrder
+    const configWithTierOrder = {
+      version: 1,
+      models: {
+        fast: { provider: "anthropic", model: "claude-haiku-4-5" },
+        balanced: { provider: "anthropic", model: "claude-sonnet-4-5" },
+        powerful: { provider: "anthropic", model: "claude-opus-4" },
+      },
+      autoMode: {
+        enabled: true,
+        defaultAgent: "claude",
+        fallbackOrder: ["claude"],
+        complexityRouting: {
+          simple: "fast" as const,
+          medium: "balanced" as const,
+          complex: "powerful" as const,
+          expert: "powerful" as const,
+        },
+        escalation: {
+          enabled: true,
+          maxAttempts: 3,
+          tierOrder: ["fast", "powerful"] as ("fast" | "balanced" | "powerful")[],
+        },
+      },
+      execution: {
+        maxIterations: 20,
+        iterationDelayMs: 2000,
+        costLimit: 5.0,
+        sessionTimeoutSeconds: 600,
+      },
+      quality: {
+        requireTypecheck: true,
+        requireLint: true,
+        requireTests: true,
+        commands: {},
+      },
+      tdd: {
+        maxRetries: 2,
+        autoVerifyIsolation: true,
+        autoApproveVerifier: true,
+      },
+    };
+
+    expect(configWithTierOrder.autoMode.escalation.tierOrder).toEqual(["fast", "powerful"]);
+    expect(escalateTier("fast", configWithTierOrder.autoMode.escalation.tierOrder)).toBe("powerful");
+  });
+});

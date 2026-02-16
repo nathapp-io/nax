@@ -48,6 +48,151 @@ describe('Context Builder', () => {
     });
   });
 
+  describe('defensive checks', () => {
+    test('should handle story with null acceptanceCriteria', async () => {
+      // Create PRD directly to bypass helper defaults
+      const prd: PRD = {
+        project: 'test-project',
+        feature: 'test-feature',
+        branchName: 'test-branch',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userStories: [
+          {
+            id: 'US-001',
+            title: 'Malformed Story',
+            description: 'Test',
+            acceptanceCriteria: null as any, // Simulate malformed data
+            dependencies: [],
+            tags: [],
+            status: 'pending',
+            passes: false,
+            escalations: [],
+            attempts: 0,
+          },
+        ],
+      };
+
+      const context: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
+      };
+
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
+
+      const built = await buildContext(context, budget);
+      expect(built.elements.length).toBeGreaterThan(0);
+      const storyElement = built.elements.find((e) => e.type === 'story');
+      expect(storyElement?.content).toContain('(No acceptance criteria defined)');
+    });
+
+    test('should handle story with undefined acceptanceCriteria', async () => {
+      // Create PRD directly to bypass helper defaults
+      const prd: PRD = {
+        project: 'test-project',
+        feature: 'test-feature',
+        branchName: 'test-branch',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userStories: [
+          {
+            id: 'US-001',
+            title: 'Malformed Story',
+            description: 'Test',
+            acceptanceCriteria: undefined as any, // Simulate malformed data
+            dependencies: [],
+            tags: [],
+            status: 'pending',
+            passes: false,
+            escalations: [],
+            attempts: 0,
+          },
+        ],
+      };
+
+      const context: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
+      };
+
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
+
+      const built = await buildContext(context, budget);
+      expect(built.elements.length).toBeGreaterThan(0);
+      const storyElement = built.elements.find((e) => e.type === 'story');
+      expect(storyElement?.content).toContain('(No acceptance criteria defined)');
+    });
+
+    test('should log warning for missing dependency story', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Story with Missing Dependency',
+          description: 'Test',
+          acceptanceCriteria: ['AC1'],
+          dependencies: ['US-999'], // Non-existent dependency
+        },
+      ]);
+
+      const context: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
+      };
+
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
+
+      // Capture console.warn
+      const originalWarn = console.warn;
+      const warnings: string[] = [];
+      console.warn = (msg: string) => warnings.push(msg);
+
+      const built = await buildContext(context, budget);
+
+      console.warn = originalWarn;
+
+      expect(warnings.some((w) => w.includes('Dependency story US-999 not found'))).toBe(true);
+      expect(built.elements.find((e) => e.type === 'dependency')).toBeUndefined();
+    });
+
+    test('should handle story with non-array priorErrors', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Story with Malformed Errors',
+          description: 'Test',
+          acceptanceCriteria: ['AC1'],
+          priorErrors: 'not an array' as any, // Malformed data
+        },
+      ]);
+
+      const context: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
+      };
+
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
+
+      const built = await buildContext(context, budget);
+      expect(built.elements.find((e) => e.type === 'error')).toBeUndefined();
+    });
+  });
+
   describe('createStoryContext', () => {
     test('should create story context element', () => {
       const story: UserStory = {

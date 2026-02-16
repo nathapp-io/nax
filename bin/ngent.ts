@@ -87,8 +87,8 @@ program
   .option("-a, --agent <name>", "Force a specific agent")
   .option("-m, --max-iterations <n>", "Max iterations", "20")
   .option("--dry-run", "Show plan without executing", false)
-  .option("--no-context", "Disable context builder (skip file context in prompts)", false)
-  .option("--no-batch", "Disable story batching (execute all stories individually)", false)
+  .option("--no-context", "Disable context builder (skip file context in prompts)")
+  .option("--no-batch", "Disable story batching (execute all stories individually)")
   .option("-d, --dir <path>", "Working directory", process.cwd())
   .action(async (options) => {
     const config = await loadConfig();
@@ -123,8 +123,8 @@ program
       feature: options.feature,
       featureDir,
       dryRun: options.dryRun,
-      useContext: !options.noContext,
-      useBatch: !options.noBatch,
+      useContext: options.context ?? true,
+      useBatch: options.batch ?? true,
     });
 
     // Summary

@@ -216,9 +216,18 @@ async function buildStoryContext(
   }
 }
 
-/** Escalate model tier through explicit 3-tier chain: fast → balanced → powerful → null */
-export function escalateTier(current: ModelTier): ModelTier | null {
-  // Explicit escalation chain
+/** Escalate model tier through configurable 3-tier chain (default: fast → balanced → powerful → null) */
+export function escalateTier(current: ModelTier, tierOrder?: ModelTier[]): ModelTier | null {
+  // Use config tierOrder if provided, fallback to hardcoded chain
+  if (tierOrder && tierOrder.length > 0) {
+    const currentIndex = tierOrder.indexOf(current);
+    if (currentIndex === -1 || currentIndex === tierOrder.length - 1) {
+      return null; // Not in order or at max tier
+    }
+    return tierOrder[currentIndex + 1];
+  }
+
+  // Fallback: explicit escalation chain
   switch (current) {
     case "fast":
       return "balanced";
@@ -383,17 +392,10 @@ export async function run(options: RunOptions): Promise<RunResult> {
         const batchCandidates = [story];
         for (let i = currentIndex + 1; i < readyStories.length && batchCandidates.length < 4; i++) {
           const candidate = readyStories[i];
-          const candidateRouting = routeTask(
-            candidate.title,
-            candidate.description,
-            candidate.acceptanceCriteria,
-            candidate.tags,
-            config,
-          );
-
+          // Use pre-computed routing from analyze phase instead of re-computing
           if (
-            candidateRouting.complexity === "simple" &&
-            candidateRouting.testStrategy === "test-after"
+            candidate.routing?.complexity === "simple" &&
+            candidate.routing?.testStrategy === "test-after"
           ) {
             batchCandidates.push(candidate);
           } else {
@@ -709,7 +711,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       // - Default to current behavior (Option B), allow users to opt into Option A
       //
       const failedStory = storiesToExecute[0];
-      const nextTier = escalateTier(routing.modelTier);
+      const nextTier = escalateTier(routing.modelTier, config.autoMode.escalation.tierOrder);
 
       if (isBatchExecution) {
         console.log(chalk.yellow(`   ⚠️  Batch execution failed — will retry stories individually at same tier first`));

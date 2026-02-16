@@ -48,6 +48,8 @@ export interface AutoModeConfig {
   escalation: {
     enabled: boolean;
     maxAttempts: number;
+    /** Escalation tier order (default: ["fast", "balanced", "powerful"]) */
+    tierOrder?: ModelTier[];
   };
 }
 
@@ -142,6 +144,7 @@ export const DEFAULT_CONFIG: NgentConfig = {
     escalation: {
       enabled: true,
       maxAttempts: 3,
+      tierOrder: ["fast", "balanced", "powerful"],
     },
   },
   execution: {

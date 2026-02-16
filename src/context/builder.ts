@@ -9,7 +9,23 @@ import type { UserStory } from '../prd';
 import { countStories } from '../prd';
 
 /**
- * Estimate token count for text (rough approximation: 1 token ≈ 3 chars)
+ * Estimate token count for text.
+ *
+ * Uses rough approximation: 1 token ≈ 3 chars (divide by 3).
+ *
+ * Rationale:
+ * - Real tokenization varies by content: "hello" = 1 token, "anthropic" = 2 tokens
+ * - English prose: ~4 chars/token (GPT tokenizer standard)
+ * - Code/technical text: ~2-3 chars/token (more special chars, symbols)
+ * - Our formula (divide by 3) is a middle ground optimized for mixed content
+ *
+ * Accuracy tradeoffs:
+ * - ✅ Fast: O(1) calculation, no external dependencies
+ * - ✅ Conservative: Slightly overestimates tokens, prevents budget overflow
+ * - ❌ Can be off by 20-40% for specific content types
+ * - Alternative: Use @anthropic-ai/tokenizer for exact counts (adds dependency)
+ *
+ * For MVP, this approximation is sufficient. Context budget has safety margins.
  */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
@@ -68,7 +84,7 @@ export function createProgressContext(progressText: string, priority: number): C
 }
 
 /**
- * Format story as text for context
+ * Format story as text for context (defensive checks for malformed PRD data)
  */
 function formatStoryAsText(story: UserStory): string {
   const parts: string[] = [];
@@ -78,8 +94,15 @@ function formatStoryAsText(story: UserStory): string {
   parts.push(`**Description:** ${story.description}`);
   parts.push('');
   parts.push('**Acceptance Criteria:**');
-  for (const ac of story.acceptanceCriteria) {
-    parts.push(`- ${ac}`);
+
+  // Defensive check: handle undefined/null acceptanceCriteria
+  if (story.acceptanceCriteria && Array.isArray(story.acceptanceCriteria)) {
+    for (const ac of story.acceptanceCriteria) {
+      parts.push(`- ${ac}`);
+    }
+  } else {
+    console.warn(`⚠️  Story ${story.id} has invalid acceptanceCriteria (expected array, got ${typeof story.acceptanceCriteria})`);
+    parts.push('- (No acceptance criteria defined)');
   }
 
   if (story.tags && story.tags.length > 0) {
@@ -140,7 +163,8 @@ export async function buildContext(
   elements.push(createProgressContext(progressText, 100));
 
   // Add prior errors from current story (high priority)
-  if (currentStory.priorErrors && currentStory.priorErrors.length > 0) {
+  // Defensive check: validate priorErrors is an array before iterating
+  if (currentStory.priorErrors && Array.isArray(currentStory.priorErrors) && currentStory.priorErrors.length > 0) {
     for (const error of currentStory.priorErrors) {
       elements.push(createErrorContext(error, 90));
     }
@@ -155,6 +179,9 @@ export async function buildContext(
       const depStory = prd.userStories.find((s) => s.id === depId);
       if (depStory) {
         elements.push(createDependencyContext(depStory, 50));
+      } else {
+        // Log warning when dependency story is not found (instead of silently skipping)
+        console.warn(`⚠️  Dependency story ${depId} not found in PRD (referenced by ${currentStory.id})`);
       }
     }
   }
