@@ -19,6 +19,7 @@ import { routeTask, type RoutingDecision } from "../routing";
 import { fireHook, type HooksConfig } from "../hooks";
 import type { HookContext } from "../hooks";
 import { runThreeSessionTdd } from "../tdd";
+import { appendProgress } from "./progress";
 
 /** Run options */
 export interface RunOptions {
@@ -32,6 +33,8 @@ export interface RunOptions {
   hooks: HooksConfig;
   /** Feature name */
   feature: string;
+  /** Feature directory (for progress logging) */
+  featureDir?: string;
   /** Dry run */
   dryRun: boolean;
 }
@@ -89,7 +92,7 @@ function hookCtx(
  * Main execution loop
  */
 export async function run(options: RunOptions): Promise<RunResult> {
-  const { prdPath, workdir, config, hooks, feature, dryRun } = options;
+  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun } = options;
   const startTime = Date.now();
   let iterations = 0;
   let storiesCompleted = 0;
@@ -232,6 +235,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
       console.log(chalk.green(`   ✓ Story ${story.id} passed`));
 
+      // Log progress
+      if (featureDir) {
+        await appendProgress(featureDir, story.id, "passed", `${story.title} — Cost: $${sessionCost.toFixed(4)}`);
+      }
+
       // Fire story-complete hook
       await fireHook(hooks, "on-story-complete", hookCtx(feature, {
         storyId: story.id,
@@ -261,6 +269,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
         await savePRD(prd, prdPath);
 
         console.log(chalk.red(`   ✗ Story ${story.id} failed`));
+
+        // Log progress
+        if (featureDir) {
+          await appendProgress(featureDir, story.id, "failed", `${story.title} — Agent execution failed`);
+        }
 
         await fireHook(hooks, "on-story-fail", hookCtx(feature, {
           storyId: story.id,

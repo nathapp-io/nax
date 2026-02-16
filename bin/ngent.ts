@@ -16,6 +16,7 @@ import { checkAgentHealth, getAllAgentNames } from "../src/agents";
 import { loadPRD, countStories } from "../src/prd";
 import { loadHooksConfig } from "../src/hooks";
 import { run } from "../src/execution";
+import { analyzeFeature } from "../src/cli";
 
 const pkg = await Bun.file(join(import.meta.dir, "..", "package.json")).json();
 
@@ -202,6 +203,48 @@ features
       }
     }
     console.log();
+  });
+
+// ── analyze ──────────────────────────────────────────
+program
+  .command("analyze")
+  .description("Parse spec.md + tasks.md into prd.json")
+  .requiredOption("-f, --feature <name>", "Feature name")
+  .option("-b, --branch <name>", "Branch name", "feat/<feature>")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (options) => {
+    const ngentDir = findProjectDir(options.dir);
+    if (!ngentDir) {
+      console.error(chalk.red("ngent not initialized. Run: ngent init"));
+      process.exit(1);
+    }
+
+    const featureDir = join(ngentDir, "features", options.feature);
+    if (!existsSync(featureDir)) {
+      console.error(chalk.red(`Feature "${options.feature}" not found.`));
+      process.exit(1);
+    }
+
+    const branchName = options.branch.replace("<feature>", options.feature);
+
+    try {
+      const prd = await analyzeFeature(featureDir, options.feature, branchName);
+      const prdPath = join(featureDir, "prd.json");
+      await Bun.write(prdPath, JSON.stringify(prd, null, 2));
+
+      const c = countStories(prd);
+      console.log(chalk.green(`\n✅ Generated prd.json for ${options.feature}`));
+      console.log(chalk.dim(`   Stories: ${c.total}`));
+      console.log(chalk.dim(`   Path: ${prdPath}`));
+
+      for (const story of prd.userStories) {
+        console.log(chalk.dim(`   ${story.id}: ${story.title} (${story.acceptanceCriteria.length} criteria)`));
+      }
+      console.log();
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
   });
 
 // ── agents ───────────────────────────────────────────
