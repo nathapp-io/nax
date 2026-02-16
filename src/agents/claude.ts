@@ -3,6 +3,7 @@
  */
 
 import type { AgentAdapter, AgentModelMap, AgentResult, AgentRunOptions } from "./types";
+import { estimateCostFromOutput, estimateCostByDuration } from "./cost";
 
 export class ClaudeCodeAdapter implements AgentAdapter {
   readonly name = "claude";
@@ -68,24 +69,21 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       stdout.includes("rate limit") ||
       stdout.includes("Too many requests");
 
+    // Try to parse token usage from output, fallback to duration-based estimate
+    const fullOutput = stdout + stderr;
+    let cost = estimateCostFromOutput(options.modelTier, fullOutput);
+    if (cost === 0) {
+      // Fallback to duration-based estimate if tokens not found
+      cost = estimateCostByDuration(options.modelTier, durationMs);
+    }
+
     return {
       success: exitCode === 0,
       exitCode,
       output: stdout.slice(-5000), // Last 5k chars
       rateLimited,
       durationMs,
-      estimatedCost: this.estimateCost(options.modelTier, durationMs),
+      estimatedCost: cost,
     };
-  }
-
-  private estimateCost(tier: string, durationMs: number): number {
-    // Rough estimates per minute of agent runtime
-    const costPerMinute: Record<string, number> = {
-      cheap: 0.01,    // Haiku
-      standard: 0.05, // Sonnet
-      premium: 0.15,  // Opus
-    };
-    const minutes = durationMs / 60000;
-    return minutes * (costPerMinute[tier] ?? 0.05);
   }
 }
