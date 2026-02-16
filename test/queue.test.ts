@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { QueueManager } from "../src/queue/manager";
+import { QueueManager, parseQueueFile } from "../src/queue/manager";
 
 describe("QueueManager", () => {
   test("enqueue and dequeue in priority order (highest first)", () => {
@@ -76,5 +76,133 @@ describe("QueueManager", () => {
 
     expect(qm.getItem("US-001")?.status).toBe("pending");
     expect(qm.hasPending()).toBe(true);
+  });
+});
+
+describe("parseQueueFile", () => {
+  test("parses PAUSE command (case-insensitive)", () => {
+    const content = "PAUSE\n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0]).toBe("PAUSE");
+    expect(result.guidance).toHaveLength(0);
+  });
+
+  test("parses ABORT command (case-insensitive)", () => {
+    const content = "abort\n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0]).toBe("ABORT");
+    expect(result.guidance).toHaveLength(0);
+  });
+
+  test("parses SKIP command with story ID", () => {
+    const content = "SKIP US-042\n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0]).toEqual({ type: "SKIP", storyId: "US-042" });
+    expect(result.guidance).toHaveLength(0);
+  });
+
+  test("parses SKIP command case-insensitive", () => {
+    const content = "skip US-001\n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0]).toEqual({ type: "SKIP", storyId: "US-001" });
+  });
+
+  test("parses multiple commands", () => {
+    const content = "SKIP US-001\nSKIP US-002\nPAUSE\n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(3);
+    expect(result.commands[0]).toEqual({ type: "SKIP", storyId: "US-001" });
+    expect(result.commands[1]).toEqual({ type: "SKIP", storyId: "US-002" });
+    expect(result.commands[2]).toBe("PAUSE");
+  });
+
+  test("separates commands from guidance text", () => {
+    const content = `--- PENDING ---
+PAUSE
+Some guidance text here
+More guidance on another line`;
+
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0]).toBe("PAUSE");
+    expect(result.guidance).toHaveLength(2);
+    expect(result.guidance[0]).toBe("Some guidance text here");
+    expect(result.guidance[1]).toBe("More guidance on another line");
+  });
+
+  test("mixed commands and guidance", () => {
+    const content = `ABORT
+--- PENDING ---
+Focus on error handling
+SKIP US-003
+Ensure test coverage`;
+
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(2);
+    expect(result.commands[0]).toBe("ABORT");
+    expect(result.commands[1]).toEqual({ type: "SKIP", storyId: "US-003" });
+    expect(result.guidance).toHaveLength(2);
+    expect(result.guidance[0]).toBe("Focus on error handling");
+    expect(result.guidance[1]).toBe("Ensure test coverage");
+  });
+
+  test("empty content returns empty result", () => {
+    const result = parseQueueFile("");
+
+    expect(result.commands).toHaveLength(0);
+    expect(result.guidance).toHaveLength(0);
+  });
+
+  test("only guidance text (no commands)", () => {
+    const content = `--- PENDING ---
+Just some guidance
+No commands here`;
+
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(0);
+    expect(result.guidance).toHaveLength(2);
+  });
+
+  test("ignores whitespace-only lines", () => {
+    const content = `PAUSE
+
+
+ABORT
+`;
+
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(2);
+    expect(result.commands[0]).toBe("PAUSE");
+    expect(result.commands[1]).toBe("ABORT");
+  });
+
+  test("handles SKIP without story ID gracefully", () => {
+    const content = "SKIP\n";
+    const result = parseQueueFile(content);
+
+    // Should treat as guidance text if no story ID provided
+    expect(result.commands).toHaveLength(0);
+    expect(result.guidance).toHaveLength(1);
+  });
+
+  test("trims whitespace from story IDs", () => {
+    const content = "SKIP   US-042   \n";
+    const result = parseQueueFile(content);
+
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0]).toEqual({ type: "SKIP", storyId: "US-042" });
   });
 });

@@ -10,11 +10,12 @@
  */
 
 import chalk from "chalk";
+import path from "node:path";
 import type { NgentConfig, ModelTier } from "../config";
 import { resolveModel } from "../config";
 import type { AgentAdapter } from "../agents";
 import { getAgent, getInstalledAgents } from "../agents";
-import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryPassed, markStoryFailed } from "../prd";
+import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryPassed, markStoryFailed, markStorySkipped } from "../prd";
 import type { PRD, UserStory } from "../prd";
 import { routeTask, type RoutingDecision } from "../routing";
 import { fireHook, type HooksConfig } from "../hooks";
@@ -23,6 +24,8 @@ import { runThreeSessionTdd } from "../tdd";
 import { appendProgress } from "./progress";
 import { buildContext, formatContextAsMarkdown } from "../context";
 import type { StoryContext, ContextBudget } from "../context";
+import { parseQueueFile } from "../queue";
+import type { QueueCommand } from "../queue";
 
 /** Run options */
 export interface RunOptions {
@@ -151,6 +154,34 @@ async function maybeGetContext(
     console.log(chalk.dim(`   ✓ Context built`));
   }
   return contextMarkdown;
+}
+
+/** Read and parse queue file */
+async function readQueueFile(workdir: string): Promise<QueueCommand[]> {
+  const queuePath = path.join(workdir, ".queue.txt");
+  try {
+    const file = Bun.file(queuePath);
+    const exists = await file.exists();
+    if (!exists) {
+      return [];
+    }
+    const content = await file.text();
+    const result = parseQueueFile(content);
+    return result.commands;
+  } catch (error) {
+    console.warn(chalk.yellow(`   ⚠️  Failed to read queue file: ${(error as Error).message}`));
+    return [];
+  }
+}
+
+/** Clear queue file after processing commands */
+async function clearQueueFile(workdir: string): Promise<void> {
+  const queuePath = path.join(workdir, ".queue.txt");
+  try {
+    await Bun.write(queuePath, "");
+  } catch (error) {
+    console.warn(chalk.yellow(`   ⚠️  Failed to clear queue file: ${(error as Error).message}`));
+  }
 }
 
 /**
@@ -317,6 +348,56 @@ export async function run(options: RunOptions): Promise<RunResult> {
         status: "passed",
         cost: sessionCost,
       }), workdir);
+
+      // Check queue file for commands after story completion
+      const queueCommands = await readQueueFile(workdir);
+
+      for (const cmd of queueCommands) {
+        if (cmd === "PAUSE") {
+          console.log(chalk.yellow("\n⏸️  Paused by user (PAUSE command in .queue.txt)"));
+          await clearQueueFile(workdir);
+          await fireHook(hooks, "on-pause", hookCtx(feature, {
+            storyId: story.id,
+            reason: "User requested pause via .queue.txt",
+            cost: totalCost,
+          }), workdir);
+          return {
+            success: false,
+            iterations,
+            storiesCompleted,
+            totalCost,
+            durationMs: Date.now() - startTime,
+          };
+        } else if (cmd === "ABORT") {
+          console.log(chalk.yellow("\n🛑 Aborting: marking remaining stories as skipped"));
+
+          // Mark all pending stories as skipped
+          prd.userStories.forEach((s) => {
+            if (s.status === "pending") {
+              markStorySkipped(prd, s.id);
+            }
+          });
+          await savePRD(prd, prdPath);
+          await clearQueueFile(workdir);
+
+          return {
+            success: false,
+            iterations,
+            storiesCompleted,
+            totalCost,
+            durationMs: Date.now() - startTime,
+          };
+        } else if (typeof cmd === "object" && cmd.type === "SKIP") {
+          console.log(chalk.yellow(`   ⏭️  Skipping story ${cmd.storyId} by user request`));
+          markStorySkipped(prd, cmd.storyId);
+          await savePRD(prd, prdPath);
+        }
+      }
+
+      // Clear processed commands
+      if (queueCommands.length > 0) {
+        await clearQueueFile(workdir);
+      }
     } else {
       // Handle failure — either escalate or mark failed
       const nextTier = escalateTier(routing.modelTier);

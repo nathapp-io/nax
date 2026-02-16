@@ -78,3 +78,11 @@ export function markStoryFailed(prd: PRD, storyId: string): void {
     story.attempts += 1;
   }
 }
+
+/** Mark a story as skipped */
+export function markStorySkipped(prd: PRD, storyId: string): void {
+  const story = prd.userStories.find((s) => s.id === storyId);
+  if (story) {
+    story.status = "skipped";
+  }
+}

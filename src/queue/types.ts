@@ -40,3 +40,14 @@ export interface QueueStats {
   completed: number;
   failed: number;
 }
+
+/** Queue command for mid-run control */
+export type QueueCommand = "PAUSE" | "ABORT" | { type: "SKIP"; storyId: string };
+
+/** Result of parsing a queue file */
+export interface QueueFileResult {
+  /** Parsed commands from the queue file */
+  commands: QueueCommand[];
+  /** Non-command lines (existing guidance behavior) */
+  guidance: string[];
+}

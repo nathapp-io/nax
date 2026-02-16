@@ -5,7 +5,7 @@
  * Supports dependency-based ordering and multi-agent execution.
  */
 
-import type { QueueItem, QueueItemStatus, QueueStats } from "./types";
+import type { QueueItem, QueueItemStatus, QueueStats, QueueCommand, QueueFileResult } from "./types";
 
 export class QueueManager {
   private items: QueueItem[] = [];
@@ -175,4 +175,80 @@ export class QueueManager {
   hasPending(): boolean {
     return this.items.some((i) => i.status === "pending");
   }
+
+  /**
+   * Mark a story as skipped.
+   */
+  markSkipped(storyId: string): void {
+    const item = this.items.find((i) => i.storyId === storyId);
+    if (!item) {
+      throw new Error(`Story ${storyId} not found in queue`);
+    }
+
+    // Mark as failed with skip reason (skipped is a type of failure)
+    item.status = "failed";
+    item.error = "Skipped by user command";
+    item.completedAt = new Date();
+  }
+}
+
+/**
+ * Parse queue file content into commands and guidance.
+ *
+ * Commands:
+ * - PAUSE: Pause execution after current story
+ * - ABORT: Mark all remaining stories as skipped and stop
+ * - SKIP US-XXX: Skip a specific story
+ *
+ * Everything else after "--- PENDING ---" is treated as guidance text.
+ */
+export function parseQueueFile(content: string): QueueFileResult {
+  const commands: QueueCommand[] = [];
+  const guidance: string[] = [];
+
+  const lines = content.split("\n");
+  let inPendingSection = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Skip empty lines
+    if (!trimmed) {
+      continue;
+    }
+
+    // Check for pending section marker
+    if (trimmed === "--- PENDING ---") {
+      inPendingSection = true;
+      continue;
+    }
+
+    // Parse commands (case-insensitive)
+    const upper = trimmed.toUpperCase();
+
+    if (upper === "PAUSE") {
+      commands.push("PAUSE");
+    } else if (upper === "ABORT") {
+      commands.push("ABORT");
+    } else if (upper.startsWith("SKIP ")) {
+      // Extract story ID after "SKIP"
+      const storyId = trimmed.substring(5).trim();
+      if (storyId) {
+        commands.push({ type: "SKIP", storyId });
+      } else {
+        // No story ID, treat as guidance
+        guidance.push(trimmed);
+      }
+    } else if (upper === "SKIP") {
+      // SKIP with no story ID, treat as guidance
+      guidance.push(trimmed);
+    } else {
+      // Not a command, treat as guidance if in pending section
+      if (inPendingSection) {
+        guidance.push(trimmed);
+      }
+    }
+  }
+
+  return { commands, guidance };
 }
