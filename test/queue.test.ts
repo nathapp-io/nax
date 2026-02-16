@@ -77,6 +77,35 @@ describe("QueueManager", () => {
     expect(qm.getItem("US-001")?.status).toBe("pending");
     expect(qm.hasPending()).toBe(true);
   });
+
+  test("markSkipped sets status to skipped", () => {
+    const qm = new QueueManager();
+    qm.enqueue("US-001", "Task", 1);
+    qm.markSkipped("US-001");
+
+    const item = qm.getItem("US-001");
+    expect(item?.status).toBe("skipped");
+    expect(item?.error).toBe("Skipped by user command");
+    expect(item?.completedAt).toBeDefined();
+  });
+
+  test("getStats tracks skipped count separately", () => {
+    const qm = new QueueManager();
+    qm.enqueue("US-001", "A", 1);
+    qm.enqueue("US-002", "B", 2);
+    qm.enqueue("US-003", "C", 3);
+    qm.enqueue("US-004", "D", 4);
+    qm.markComplete("US-001");
+    qm.markFailed("US-002", "err");
+    qm.markSkipped("US-003");
+
+    const stats = qm.getStats();
+    expect(stats.total).toBe(4);
+    expect(stats.pending).toBe(1);
+    expect(stats.completed).toBe(1);
+    expect(stats.failed).toBe(1);
+    expect(stats.skipped).toBe(1);
+  });
 });
 
 describe("parseQueueFile", () => {

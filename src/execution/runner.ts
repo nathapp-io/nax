@@ -409,6 +409,86 @@ export async function run(options: RunOptions): Promise<RunResult> {
       }
     }
 
+    // Check queue file for commands BEFORE executing batch
+    const queueCommands = await readQueueFile(workdir);
+    let skippedAnyStory = false;
+
+    for (const cmd of queueCommands) {
+      if (cmd === "PAUSE") {
+        console.log(chalk.yellow("\n⏸️  Paused by user (PAUSE command in .queue.txt)"));
+        await clearQueueFile(workdir);
+        await fireHook(hooks, "on-pause", hookCtx(feature, {
+          storyId: story.id,
+          reason: "User requested pause via .queue.txt",
+          cost: totalCost,
+        }), workdir);
+        return {
+          success: false,
+          iterations,
+          storiesCompleted,
+          totalCost,
+          durationMs: Date.now() - startTime,
+        };
+      } else if (cmd === "ABORT") {
+        console.log(chalk.yellow("\n🛑 Aborting: marking remaining stories as skipped"));
+
+        // Mark all pending stories as skipped
+        prd.userStories.forEach((s) => {
+          if (s.status === "pending") {
+            markStorySkipped(prd, s.id);
+          }
+        });
+        await savePRD(prd, prdPath);
+        await clearQueueFile(workdir);
+
+        return {
+          success: false,
+          iterations,
+          storiesCompleted,
+          totalCost,
+          durationMs: Date.now() - startTime,
+        };
+      } else if (typeof cmd === "object" && cmd.type === "SKIP") {
+        // Filter out skipped story from batch
+        const storyIndex = storiesToExecute.findIndex((s) => s.id === cmd.storyId);
+        if (storyIndex !== -1) {
+          console.log(chalk.yellow(`   ⏭️  Skipping story ${cmd.storyId} by user request (removing from batch)`));
+          storiesToExecute.splice(storyIndex, 1);
+          markStorySkipped(prd, cmd.storyId);
+          skippedAnyStory = true;
+        } else {
+          // Story not in current batch, but might be in PRD
+          const prdStory = prd.userStories.find((s) => s.id === cmd.storyId);
+          if (prdStory && prdStory.status === "pending") {
+            console.log(chalk.yellow(`   ⏭️  Skipping story ${cmd.storyId} by user request`));
+            markStorySkipped(prd, cmd.storyId);
+            skippedAnyStory = true;
+          }
+        }
+      }
+    }
+
+    // Save PRD if any stories were skipped
+    if (skippedAnyStory) {
+      await savePRD(prd, prdPath);
+    }
+
+    // Clear processed commands
+    if (queueCommands.length > 0) {
+      await clearQueueFile(workdir);
+    }
+
+    // If all stories in batch were skipped, continue to next iteration
+    if (storiesToExecute.length === 0) {
+      console.log(chalk.yellow("   ⏭️  All stories in batch were skipped, continuing to next iteration"));
+      continue;
+    }
+
+    // Re-check if this is still a batch after filtering
+    if (isBatchExecution && storiesToExecute.length === 1) {
+      isBatchExecution = false;
+    }
+
     // Check cost limit
     if (totalCost >= config.execution.costLimit) {
       console.log(chalk.yellow(`\n⏸  Cost limit reached ($${totalCost.toFixed(2)} >= $${config.execution.costLimit})`));

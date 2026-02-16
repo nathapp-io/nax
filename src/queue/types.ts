@@ -6,7 +6,7 @@
  */
 
 /** Queue item status */
-export type QueueItemStatus = "pending" | "in-progress" | "completed" | "failed";
+export type QueueItemStatus = "pending" | "in-progress" | "completed" | "failed" | "skipped";
 
 /** Queue item representing a user story to be executed */
 export interface QueueItem {
@@ -39,6 +39,7 @@ export interface QueueStats {
   inProgress: number;
   completed: number;
   failed: number;
+  skipped: number;
 }
 
 /** Queue command for mid-run control */

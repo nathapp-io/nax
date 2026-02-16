@@ -141,6 +141,7 @@ export class QueueManager {
       inProgress: this.items.filter((i) => i.status === "in-progress").length,
       completed: this.items.filter((i) => i.status === "completed").length,
       failed: this.items.filter((i) => i.status === "failed").length,
+      skipped: this.items.filter((i) => i.status === "skipped").length,
     };
   }
 
@@ -185,8 +186,7 @@ export class QueueManager {
       throw new Error(`Story ${storyId} not found in queue`);
     }
 
-    // Mark as failed with skip reason (skipped is a type of failure)
-    item.status = "failed";
+    item.status = "skipped";
     item.error = "Skipped by user command";
     item.completedAt = new Date();
   }
