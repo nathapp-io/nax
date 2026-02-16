@@ -271,17 +271,40 @@ async function maybeGetContext(
   return contextMarkdown;
 }
 
-/** Read and parse queue file */
+/**
+ * Read and parse queue file atomically.
+ * Uses rename-before-read pattern to prevent race conditions:
+ * 1. Rename .queue.txt → .queue.txt.processing (atomic operation)
+ * 2. Read from .queue.txt.processing
+ * 3. Delete .queue.txt.processing after processing
+ *
+ * This ensures commands written during processing aren't lost.
+ */
 async function readQueueFile(workdir: string): Promise<QueueCommand[]> {
   const queuePath = path.join(workdir, ".queue.txt");
+  const processingPath = path.join(workdir, ".queue.txt.processing");
+
   try {
+    // Check if queue file exists
     const file = Bun.file(queuePath);
     const exists = await file.exists();
     if (!exists) {
       return [];
     }
-    const content = await file.text();
+
+    // Atomically rename to .processing (prevents concurrent reads)
+    try {
+      await Bun.spawn(["mv", queuePath, processingPath], { stdout: "pipe" }).exited;
+    } catch (error) {
+      // File was already moved by another process, or doesn't exist anymore
+      return [];
+    }
+
+    // Read from processing file
+    const processingFile = Bun.file(processingPath);
+    const content = await processingFile.text();
     const result = parseQueueFile(content);
+
     return result.commands;
   } catch (error) {
     console.warn(chalk.yellow(`   ⚠️  Failed to read queue file: ${(error as Error).message}`));
@@ -289,11 +312,18 @@ async function readQueueFile(workdir: string): Promise<QueueCommand[]> {
   }
 }
 
-/** Clear queue file after processing commands */
+/**
+ * Clear queue file after processing commands.
+ * Deletes .queue.txt.processing file.
+ */
 async function clearQueueFile(workdir: string): Promise<void> {
-  const queuePath = path.join(workdir, ".queue.txt");
+  const processingPath = path.join(workdir, ".queue.txt.processing");
   try {
-    await Bun.write(queuePath, "");
+    const file = Bun.file(processingPath);
+    const exists = await file.exists();
+    if (exists) {
+      await Bun.spawn(["rm", processingPath], { stdout: "pipe" }).exited;
+    }
   } catch (error) {
     console.warn(chalk.yellow(`   ⚠️  Failed to clear queue file: ${(error as Error).message}`));
   }
@@ -323,6 +353,61 @@ function getAllReadyStories(prd: PRD): UserStory[] {
 }
 
 /**
+ * Acquire execution lock to prevent concurrent runs in same directory.
+ * Creates ngent.lock file with PID and timestamp.
+ * Returns true if lock acquired, false if another process holds it.
+ */
+async function acquireLock(workdir: string): Promise<boolean> {
+  const lockPath = path.join(workdir, "ngent.lock");
+  const lockFile = Bun.file(lockPath);
+
+  try {
+    const exists = await lockFile.exists();
+    if (exists) {
+      // Check if lock is stale (> 1 hour old)
+      const lockContent = await lockFile.text();
+      const lockData = JSON.parse(lockContent);
+      const lockAge = Date.now() - lockData.timestamp;
+      const ONE_HOUR = 60 * 60 * 1000;
+
+      if (lockAge > ONE_HOUR) {
+        console.warn(chalk.yellow(`   ⚠️  Removing stale lock (${Math.round(lockAge / 1000 / 60)} minutes old)`));
+        await Bun.spawn(["rm", lockPath], { stdout: "pipe" }).exited;
+      } else {
+        return false;
+      }
+    }
+
+    // Create lock file
+    const lockData = {
+      pid: process.pid,
+      timestamp: Date.now(),
+    };
+    await Bun.write(lockPath, JSON.stringify(lockData));
+    return true;
+  } catch (error) {
+    console.warn(chalk.yellow(`   ⚠️  Failed to acquire lock: ${(error as Error).message}`));
+    return false;
+  }
+}
+
+/**
+ * Release execution lock by deleting ngent.lock file.
+ */
+async function releaseLock(workdir: string): Promise<void> {
+  const lockPath = path.join(workdir, "ngent.lock");
+  try {
+    const file = Bun.file(lockPath);
+    const exists = await file.exists();
+    if (exists) {
+      await Bun.spawn(["rm", lockPath], { stdout: "pipe" }).exited;
+    }
+  } catch (error) {
+    console.warn(chalk.yellow(`   ⚠️  Failed to release lock: ${(error as Error).message}`));
+  }
+}
+
+/**
  * Main execution loop
  */
 export async function run(options: RunOptions): Promise<RunResult> {
@@ -332,8 +417,17 @@ export async function run(options: RunOptions): Promise<RunResult> {
   let storiesCompleted = 0;
   let totalCost = 0;
 
-  // Fire on-start hook
-  await fireHook(hooks, "on-start", hookCtx(feature), workdir);
+  // Acquire lock to prevent concurrent execution
+  const lockAcquired = await acquireLock(workdir);
+  if (!lockAcquired) {
+    console.error(chalk.red("❌ Another ngent process is already running in this directory"));
+    console.error(chalk.yellow("   If you believe this is an error, remove ngent.lock manually"));
+    process.exit(1);
+  }
+
+  try {
+    // Fire on-start hook
+    await fireHook(hooks, "on-start", hookCtx(feature), workdir);
 
   // Check agent installation before starting
   const agent = getAgent(config.autoMode.defaultAgent);
@@ -379,8 +473,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
       break;
     }
 
-    // Route the task
-    const routing = routeTask(
+    // Route the task (use pre-computed routing if available, otherwise compute)
+    const routing = story.routing || routeTask(
       story.title,
       story.description,
       story.acceptanceCriteria,
@@ -397,16 +491,18 @@ export async function run(options: RunOptions): Promise<RunResult> {
       routing.complexity === "simple" &&
       routing.testStrategy === "test-after"
     ) {
-      // Get all ready stories and try to form a batch
+      // OPTIMIZATION: Get all ready stories ONCE per iteration (not per story)
+      // This avoids O(n²) complexity when processing multiple stories
       const readyStories = getAllReadyStories(prd);
       const currentIndex = readyStories.findIndex((s) => s.id === story.id);
 
       if (currentIndex !== -1) {
         // Collect consecutive simple stories (max 4 total)
+        // Use pre-computed routing from analyze phase to avoid re-classification
         const batchCandidates = [story];
         for (let i = currentIndex + 1; i < readyStories.length && batchCandidates.length < 4; i++) {
           const candidate = readyStories[i];
-          // Use pre-computed routing from analyze phase instead of re-computing
+          // Check pre-computed routing (set during analyze phase)
           if (
             candidate.routing?.complexity === "simple" &&
             candidate.routing?.testStrategy === "test-after"
@@ -782,4 +878,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
     totalCost,
     durationMs,
   };
+  } finally {
+    // Always release lock, even if execution fails
+    await releaseLock(workdir);
+  }
 }
