@@ -119,6 +119,7 @@ program
       config,
       hooks,
       feature: options.feature,
+      featureDir,
       dryRun: options.dryRun,
     });
 
