@@ -51,6 +51,12 @@ export interface UserStory {
   escalations: EscalationAttempt[];
   /** Number of attempts */
   attempts: number;
+  /** Relevant source files for context injection */
+  relevantFiles?: string[];
+  /** Prior error messages from failed attempts */
+  priorErrors?: string[];
+  /** Custom context strings */
+  customContext?: string[];
 }
 
 /** The full PRD document */

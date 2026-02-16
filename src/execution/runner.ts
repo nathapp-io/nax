@@ -92,10 +92,10 @@ async function buildStoryContext(
     const storyContext: StoryContext = {
       storyId: story.id,
       storyTitle: story.title,
-      relevantFiles: [], // TODO: Add relevantFiles to UserStory type
+      relevantFiles: story.relevantFiles || [],
       dependencies: story.dependencies || [],
-      priorErrors: undefined, // TODO: Add priorErrors to UserStory type
-      customContext: undefined, // TODO: Add customContext to UserStory type
+      priorErrors: story.priorErrors,
+      customContext: story.customContext,
     };
 
     const contextConfig: ContextBuilderConfig = {
@@ -328,6 +328,10 @@ export async function run(options: RunOptions): Promise<RunResult> {
       const nextTier = escalateTier(routing.modelTier);
       if (nextTier && config.autoMode.escalation.enabled && story.attempts < config.autoMode.escalation.maxAttempts) {
         console.log(chalk.yellow(`   ⬆️  Escalating to ${nextTier}`));
+
+        // Capture failure reason for context
+        const errorMessage = `Attempt ${story.attempts + 1} failed with model tier: ${routing.modelTier}`;
+
         // Update PRD with escalation (not marking as failed yet)
         prd.userStories = prd.userStories.map((s) =>
           s.id === story.id
@@ -337,6 +341,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
                 routing: s.routing
                   ? { ...s.routing, modelTier: nextTier }
                   : undefined,
+                priorErrors: [...(s.priorErrors || []), errorMessage],
               }
             : s,
         );
