@@ -45,6 +45,8 @@ export interface RunOptions {
   dryRun: boolean;
   /** Use context builder (default: true) */
   useContext?: boolean;
+  /** Enable story batching (default: true) */
+  useBatch?: boolean;
 }
 
 /** Run result */
@@ -84,6 +86,103 @@ ${contextMarkdown}`;
   }
 
   return basePrompt;
+}
+
+/** Build prompt for batched stories (multiple simple stories in one session) */
+export function buildBatchPrompt(stories: UserStory[], contextMarkdown?: string): string {
+  const storyPrompts = stories
+    .map((story, idx) => {
+      return `## Story ${idx + 1}: ${story.id} — ${story.title}
+
+**Description:**
+${story.description}
+
+**Acceptance Criteria:**
+${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}`;
+    })
+    .join("\n\n");
+
+  const basePrompt = `# Batch Task: ${stories.length} Stories
+
+You are assigned ${stories.length} related stories to implement in sequence. Each story should be implemented, tested, and committed separately.
+
+${storyPrompts}
+
+**Instructions:**
+1. Implement each story in order
+2. Write tests to verify all acceptance criteria are met for each story
+3. Ensure all tests pass for each story
+4. **Commit each story separately** with a clear commit message referencing the story ID
+5. Follow existing code patterns and conventions
+
+Use test-after approach: implement first, then add tests to verify.`;
+
+  if (contextMarkdown) {
+    return `${basePrompt}
+
+---
+
+${contextMarkdown}`;
+  }
+
+  return basePrompt;
+}
+
+/** Story batch for grouped execution */
+export interface StoryBatch {
+  stories: UserStory[];
+  isBatch: boolean;
+}
+
+/**
+ * Group consecutive simple-complexity stories into batches (max 4 per batch).
+ * Non-simple stories execute individually.
+ */
+export function groupStoriesIntoBatches(
+  stories: UserStory[],
+  maxBatchSize = 4,
+): StoryBatch[] {
+  const batches: StoryBatch[] = [];
+  let currentBatch: UserStory[] = [];
+
+  for (const story of stories) {
+    const isSimple = story.routing?.complexity === "simple";
+
+    if (isSimple && currentBatch.length < maxBatchSize) {
+      // Add to current batch
+      currentBatch.push(story);
+    } else {
+      // Flush current batch if it exists
+      if (currentBatch.length > 0) {
+        batches.push({
+          stories: [...currentBatch],
+          isBatch: currentBatch.length > 1,
+        });
+        currentBatch = [];
+      }
+
+      // Add non-simple story as individual batch
+      if (!isSimple) {
+        batches.push({
+          stories: [story],
+          isBatch: false,
+        });
+      } else {
+        // Start new batch with this simple story
+        currentBatch.push(story);
+      }
+    }
+  }
+
+  // Flush remaining batch
+  if (currentBatch.length > 0) {
+    batches.push({
+      stories: [...currentBatch],
+      isBatch: currentBatch.length > 1,
+    });
+  }
+
+  return batches;
 }
 
 /** Build story context for context builder */
@@ -191,11 +290,34 @@ async function clearQueueFile(workdir: string): Promise<void> {
   }
 }
 
+/** Result from executing a batch or single story */
+interface ExecutionResult {
+  success: boolean;
+  cost: number;
+  storiesProcessed: string[];
+}
+
+/** Get all stories that are ready to execute (pending, dependencies satisfied) */
+function getAllReadyStories(prd: PRD): UserStory[] {
+  const completedIds = new Set(
+    prd.userStories
+      .filter((s) => s.passes || s.status === "skipped")
+      .map((s) => s.id),
+  );
+
+  return prd.userStories.filter(
+    (s) =>
+      !s.passes &&
+      s.status !== "skipped" &&
+      s.dependencies.every((dep) => completedIds.has(dep)),
+  );
+}
+
 /**
  * Main execution loop
  */
 export async function run(options: RunOptions): Promise<RunResult> {
-  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useContext = true } = options;
+  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useContext = true, useBatch = true } = options;
   const startTime = Date.now();
   let iterations = 0;
   let storiesCompleted = 0;
@@ -209,6 +331,9 @@ export async function run(options: RunOptions): Promise<RunResult> {
   const counts = countStories(prd);
   console.log(chalk.cyan(`\n🚀 ngent: Starting ${feature}`));
   console.log(chalk.dim(`   Stories: ${counts.total} (${counts.passed} done, ${counts.pending} pending)`));
+  if (useBatch) {
+    console.log(chalk.dim(`   Batching: enabled (groups consecutive simple stories, max 4/batch)`));
+  }
 
   // Main loop
   while (iterations < config.execution.maxIterations) {
@@ -240,6 +365,50 @@ export async function run(options: RunOptions): Promise<RunResult> {
       config,
     );
 
+    // Check if we should batch this story with others
+    let storiesToExecute: UserStory[] = [story];
+    let isBatchExecution = false;
+
+    if (
+      useBatch &&
+      routing.complexity === "simple" &&
+      routing.testStrategy === "test-after"
+    ) {
+      // Get all ready stories and try to form a batch
+      const readyStories = getAllReadyStories(prd);
+      const currentIndex = readyStories.findIndex((s) => s.id === story.id);
+
+      if (currentIndex !== -1) {
+        // Collect consecutive simple stories (max 4 total)
+        const batchCandidates = [story];
+        for (let i = currentIndex + 1; i < readyStories.length && batchCandidates.length < 4; i++) {
+          const candidate = readyStories[i];
+          const candidateRouting = routeTask(
+            candidate.title,
+            candidate.description,
+            candidate.acceptanceCriteria,
+            candidate.tags,
+            config,
+          );
+
+          if (
+            candidateRouting.complexity === "simple" &&
+            candidateRouting.testStrategy === "test-after"
+          ) {
+            batchCandidates.push(candidate);
+          } else {
+            // Stop at first non-simple story
+            break;
+          }
+        }
+
+        if (batchCandidates.length > 1) {
+          storiesToExecute = batchCandidates;
+          isBatchExecution = true;
+        }
+      }
+    }
+
     // Check cost limit
     if (totalCost >= config.execution.costLimit) {
       console.log(chalk.yellow(`\n⏸  Cost limit reached ($${totalCost.toFixed(2)} >= $${config.execution.costLimit})`));
@@ -252,9 +421,14 @@ export async function run(options: RunOptions): Promise<RunResult> {
     }
 
     console.log(chalk.cyan(`\n── Iteration ${iterations} ──────────────────────`));
-    console.log(chalk.white(`   Story: ${story.id} — ${story.title}`));
-    console.log(chalk.dim(`   Complexity: ${routing.complexity} | Model: ${routing.modelTier} | TDD: ${routing.testStrategy}`));
-    console.log(chalk.dim(`   Routing: ${routing.reasoning}`));
+    if (isBatchExecution) {
+      console.log(chalk.white(`   Batch: ${storiesToExecute.length} stories (${storiesToExecute.map(s => s.id).join(", ")})`));
+      console.log(chalk.dim(`   Complexity: ${routing.complexity} | Model: ${routing.modelTier} | TDD: ${routing.testStrategy}`));
+    } else {
+      console.log(chalk.white(`   Story: ${story.id} — ${story.title}`));
+      console.log(chalk.dim(`   Complexity: ${routing.complexity} | Model: ${routing.modelTier} | TDD: ${routing.testStrategy}`));
+      console.log(chalk.dim(`   Routing: ${routing.reasoning}`));
+    }
 
     // Fire story-start hook
     await fireHook(hooks, "on-story-start", hookCtx(feature, {
@@ -306,11 +480,18 @@ export async function run(options: RunOptions): Promise<RunResult> {
         break;
       }
     } else {
-      // test-after: single agent session
+      // test-after: single or batch agent session
       const contextMarkdown = await maybeGetContext(prd, story, config, useContext);
 
-      const prompt = buildSingleSessionPrompt(story, contextMarkdown);
-      console.log(chalk.cyan(`\n   → Single session (test-after)`));
+      const prompt = isBatchExecution
+        ? buildBatchPrompt(storiesToExecute, contextMarkdown)
+        : buildSingleSessionPrompt(story, contextMarkdown);
+
+      if (isBatchExecution) {
+        console.log(chalk.cyan(`\n   → Batch session (${storiesToExecute.length} stories, test-after)`));
+      } else {
+        console.log(chalk.cyan(`\n   → Single session (test-after)`));
+      }
 
       const result = await agent.run({
         prompt,
@@ -338,23 +519,33 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
     // Update PRD based on success
     if (sessionSuccess) {
-      markStoryPassed(prd, story.id);
-      await savePRD(prd, prdPath);
-      storiesCompleted++;
+      // Mark all stories in the batch/single as passed
+      for (const completedStory of storiesToExecute) {
+        markStoryPassed(prd, completedStory.id);
+        storiesCompleted++;
 
-      console.log(chalk.green(`   ✓ Story ${story.id} passed`));
+        console.log(chalk.green(`   ✓ Story ${completedStory.id} passed`));
 
-      // Log progress
-      if (featureDir) {
-        await appendProgress(featureDir, story.id, "passed", `${story.title} — Cost: $${sessionCost.toFixed(4)}`);
+        // Log progress
+        if (featureDir) {
+          const costPerStory = sessionCost / storiesToExecute.length;
+          await appendProgress(
+            featureDir,
+            completedStory.id,
+            "passed",
+            `${completedStory.title} — Cost: $${costPerStory.toFixed(4)}${isBatchExecution ? " (batched)" : ""}`,
+          );
+        }
+
+        // Fire story-complete hook
+        await fireHook(hooks, "on-story-complete", hookCtx(feature, {
+          storyId: completedStory.id,
+          status: "passed",
+          cost: sessionCost / storiesToExecute.length,
+        }), workdir);
       }
 
-      // Fire story-complete hook
-      await fireHook(hooks, "on-story-complete", hookCtx(feature, {
-        storyId: story.id,
-        status: "passed",
-        cost: sessionCost,
-      }), workdir);
+      await savePRD(prd, prdPath);
 
       // Check queue file for commands after story completion
       const queueCommands = await readQueueFile(workdir);
@@ -407,16 +598,24 @@ export async function run(options: RunOptions): Promise<RunResult> {
       }
     } else {
       // Handle failure — either escalate or mark failed
+      // For batched execution, only mark the first story for escalation/failure
+      // Others will be retried individually on next iteration
+      const failedStory = storiesToExecute[0];
       const nextTier = escalateTier(routing.modelTier);
-      if (nextTier && config.autoMode.escalation.enabled && story.attempts < config.autoMode.escalation.maxAttempts) {
-        console.log(chalk.yellow(`   ⬆️  Escalating to ${nextTier}`));
+
+      if (isBatchExecution) {
+        console.log(chalk.yellow(`   ⚠️  Batch execution failed — will retry stories individually`));
+      }
+
+      if (nextTier && config.autoMode.escalation.enabled && failedStory.attempts < config.autoMode.escalation.maxAttempts) {
+        console.log(chalk.yellow(`   ⬆️  Escalating ${failedStory.id} to ${nextTier}`));
 
         // Capture failure reason for context
-        const errorMessage = `Attempt ${story.attempts + 1} failed with model tier: ${routing.modelTier}`;
+        const errorMessage = `Attempt ${failedStory.attempts + 1} failed with model tier: ${routing.modelTier}${isBatchExecution ? " (in batch)" : ""}`;
 
         // Update PRD with escalation (not marking as failed yet)
         prd.userStories = prd.userStories.map((s) =>
-          s.id === story.id
+          s.id === failedStory.id
             ? {
                 ...s,
                 attempts: s.attempts + 1,
@@ -429,18 +628,18 @@ export async function run(options: RunOptions): Promise<RunResult> {
         );
         await savePRD(prd, prdPath);
       } else {
-        markStoryFailed(prd, story.id);
+        markStoryFailed(prd, failedStory.id);
         await savePRD(prd, prdPath);
 
-        console.log(chalk.red(`   ✗ Story ${story.id} failed`));
+        console.log(chalk.red(`   ✗ Story ${failedStory.id} failed`));
 
         // Log progress
         if (featureDir) {
-          await appendProgress(featureDir, story.id, "failed", `${story.title} — Agent execution failed`);
+          await appendProgress(featureDir, failedStory.id, "failed", `${failedStory.title} — Agent execution failed`);
         }
 
         await fireHook(hooks, "on-story-fail", hookCtx(feature, {
-          storyId: story.id,
+          storyId: failedStory.id,
           status: "failed",
           reason: "Agent execution failed",
           cost: totalCost,
