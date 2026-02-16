@@ -678,13 +678,41 @@ export async function run(options: RunOptions): Promise<RunResult> {
       }
     } else {
       // Handle failure — either escalate or mark failed
-      // For batched execution, only mark the first story for escalation/failure
-      // Others will be retried individually on next iteration
+      //
+      // BATCH FAILURE STRATEGY (Option B: Individual Retry at Same Tier First)
+      // ========================================================================
+      // When a batch execution fails (e.g., batch [US-001, US-002, US-003, US-004] on 'fast' tier),
+      // we use a conservative escalation approach:
+      //
+      // 1. Only the FIRST story in the batch gets escalation treatment
+      //    - If escalation is enabled and attempts < maxAttempts, first story escalates to next tier
+      //    - Otherwise, first story is marked as failed
+      //
+      // 2. Remaining stories (2-4) remain at their CURRENT tier and status
+      //    - They return to "pending" status (not included in this batch's processing)
+      //    - They will be retried INDIVIDUALLY on the next iteration at the SAME tier
+      //    - If individual retry fails, they THEN escalate according to normal escalation rules
+      //
+      // RATIONALE:
+      // - Batch failures are often due to a single problematic story, not all stories
+      // - Retrying individually at the same tier first avoids premature escalation
+      // - This approach minimizes cost (doesn't escalate entire batch unnecessarily)
+      // - Individual retries provide better error isolation and debugging
+      //
+      // ALTERNATIVE CONSIDERED (Option A: Escalate Entire Batch Together)
+      // - Would escalate all stories in batch to next tier immediately
+      // - More conservative but potentially wasteful if only one story was problematic
+      // - Not implemented in current version
+      //
+      // FUTURE ENHANCEMENT:
+      // - Add config option: `batch.escalateEntireBatchOnFailure: boolean`
+      // - Default to current behavior (Option B), allow users to opt into Option A
+      //
       const failedStory = storiesToExecute[0];
       const nextTier = escalateTier(routing.modelTier);
 
       if (isBatchExecution) {
-        console.log(chalk.yellow(`   ⚠️  Batch execution failed — will retry stories individually`));
+        console.log(chalk.yellow(`   ⚠️  Batch execution failed — will retry stories individually at same tier first`));
       }
 
       if (nextTier && config.autoMode.escalation.enabled && failedStory.attempts < config.autoMode.escalation.maxAttempts) {

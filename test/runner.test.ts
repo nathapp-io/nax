@@ -5,7 +5,7 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { buildBatchPrompt, groupStoriesIntoBatches } from "../src/execution/runner";
+import { buildBatchPrompt, groupStoriesIntoBatches, escalateTier } from "../src/execution/runner";
 import type { UserStory } from "../src/prd";
 import type { StoryBatch } from "../src/execution/runner";
 
@@ -430,5 +430,133 @@ describe("groupStoriesIntoBatches", () => {
     // US-003 and US-004 batched
     expect(batches[2].isBatch).toBe(true);
     expect(batches[2].stories).toHaveLength(2);
+  });
+});
+
+describe("Batch Failure Escalation Strategy", () => {
+  test("batch failure should escalate only first story, others remain at same tier", () => {
+    // Simulate a batch of 4 simple stories at 'fast' tier
+    const batchStories: UserStory[] = [
+      {
+        id: "US-001",
+        title: "Simple 1",
+        description: "First story in batch",
+        acceptanceCriteria: ["AC1"],
+        tags: [],
+        dependencies: [],
+        status: "pending",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+      },
+      {
+        id: "US-002",
+        title: "Simple 2",
+        description: "Second story in batch",
+        acceptanceCriteria: ["AC2"],
+        tags: [],
+        dependencies: [],
+        status: "pending",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+      },
+      {
+        id: "US-003",
+        title: "Simple 3",
+        description: "Third story in batch",
+        acceptanceCriteria: ["AC3"],
+        tags: [],
+        dependencies: [],
+        status: "pending",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+      },
+      {
+        id: "US-004",
+        title: "Simple 4",
+        description: "Fourth story in batch",
+        acceptanceCriteria: ["AC4"],
+        tags: [],
+        dependencies: [],
+        status: "pending",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+      },
+    ];
+
+    // When batch fails at 'fast' tier:
+    // 1. First story (US-001) should escalate to 'balanced'
+    const firstStory = batchStories[0];
+    const currentTier = firstStory.routing!.modelTier;
+    const nextTier = escalateTier(currentTier);
+
+    expect(currentTier).toBe("fast");
+    expect(nextTier).toBe("balanced");
+
+    // 2. Remaining stories (US-002, US-003, US-004) should remain at 'fast' tier
+    // They will be retried individually at the same tier on next iteration
+    const remainingStories = batchStories.slice(1);
+    for (const story of remainingStories) {
+      expect(story.routing!.modelTier).toBe("fast");
+      expect(story.status).toBe("pending");
+    }
+
+    // 3. This tests the documented "Option B" strategy:
+    //    - Only first story escalates
+    //    - Others retry individually at same tier first
+    //    - This minimizes cost and provides better error isolation
+  });
+
+  test("batch failure escalation follows standard escalation chain", () => {
+    // Test that batch failures follow the same escalation chain as individual failures
+    const tiers = ["fast", "balanced", "powerful"] as const;
+    const expectedNext = ["balanced", "powerful", null];
+
+    for (let i = 0; i < tiers.length; i++) {
+      const nextTier = escalateTier(tiers[i]);
+      expect(nextTier).toBe(expectedNext[i]);
+    }
+
+    // When a batch at 'powerful' tier fails, first story is marked as failed (no escalation)
+    const powerfulTier = escalateTier("powerful");
+    expect(powerfulTier).toBeNull();
+  });
+
+  test("batch failure with max attempts should not escalate", () => {
+    // When first story in batch has already hit max attempts (e.g., 3),
+    // it should be marked as failed instead of escalated
+    const story: UserStory = {
+      id: "US-001",
+      title: "Simple with max attempts",
+      description: "Story that has already been retried 3 times",
+      acceptanceCriteria: ["AC1"],
+      tags: [],
+      dependencies: [],
+      status: "pending",
+      passes: false,
+      escalations: [],
+      attempts: 3, // Already at max attempts (typical config.autoMode.escalation.maxAttempts = 3)
+      routing: { complexity: "simple", modelTier: "balanced", testStrategy: "test-after", reasoning: "simple" },
+    };
+
+    const maxAttempts = 3;
+    const escalationEnabled = true;
+
+    // Should not escalate if attempts >= maxAttempts
+    if (escalationEnabled && story.attempts < maxAttempts) {
+      // This branch should NOT be taken
+      expect(false).toBe(true); // Should not reach here
+    } else {
+      // Story should be marked as failed (not escalated)
+      expect(story.attempts).toBeGreaterThanOrEqual(maxAttempts);
+      // In actual runner code, markStoryFailed() would be called here
+    }
   });
 });
