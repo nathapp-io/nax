@@ -445,6 +445,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   // Load PRD
   let prd = await loadPRD(prdPath);
+  let prdDirty = false; // Track if PRD needs reloading
   const counts = countStories(prd);
 
   // MEM-1: Validate story count doesn't exceed limit
@@ -472,8 +473,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
       console.log(chalk.yellow("   Consider pausing (echo PAUSE > .queue.txt) if this continues to grow"));
     }
 
-    // Reload PRD each iteration (agent may have updated it)
-    prd = await loadPRD(prdPath);
+    // Reload PRD only if dirty (modified since last load)
+    if (prdDirty) {
+      prd = await loadPRD(prdPath);
+      prdDirty = false;
+    }
 
     // Check completion
     if (isComplete(prd)) {
@@ -567,6 +571,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
           }
         });
         await savePRD(prd, prdPath);
+        prdDirty = true;
         await clearQueueFile(workdir);
 
         return {
@@ -599,6 +604,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     // Save PRD if any stories were skipped
     if (skippedAnyStory) {
       await savePRD(prd, prdPath);
+      prdDirty = true;
     }
 
     // Clear processed commands
@@ -747,6 +753,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       }
 
       await savePRD(prd, prdPath);
+      prdDirty = true;
 
       // Check queue file for commands after story completion
       const queueCommands = await readQueueFile(workdir);
@@ -777,6 +784,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
             }
           });
           await savePRD(prd, prdPath);
+          prdDirty = true;
           await clearQueueFile(workdir);
 
           return {
@@ -790,6 +798,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
           console.log(chalk.yellow(`   ⏭️  Skipping story ${cmd.storyId} by user request`));
           markStorySkipped(prd, cmd.storyId);
           await savePRD(prd, prdPath);
+          prdDirty = true;
         }
       }
 
@@ -856,9 +865,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
             : s,
         );
         await savePRD(prd, prdPath);
+        prdDirty = true;
       } else {
         markStoryFailed(prd, failedStory.id);
         await savePRD(prd, prdPath);
+        prdDirty = true;
 
         console.log(chalk.red(`   ✗ Story ${failedStory.id} failed`));
 

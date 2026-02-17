@@ -1,11 +1,13 @@
 /**
  * Tests for BUG-2 (queue race condition) and PERF-1 (batching optimization)
+ * Tests for PERF-2 (PRD dirty-flag reload optimization) and MEM-1 (file size limit)
  */
 
 import { describe, expect, test, beforeEach } from "bun:test";
 import path from "node:path";
 import { groupStoriesIntoBatches } from "../src/execution/runner";
-import type { UserStory } from "../src/prd";
+import type { UserStory, PRD } from "../src/prd";
+import { loadPRD, PRD_MAX_FILE_SIZE } from "../src/prd";
 
 // Helper to create test stories
 function createStory(
@@ -295,5 +297,106 @@ describe("PERF-1: Batch optimization", () => {
     expect(batches).toHaveLength(1);
     expect(batches[0].stories).toHaveLength(2);
     expect(batches[0].isBatch).toBe(true);
+  });
+});
+
+describe("PERF-2 & MEM-1: PRD file size limit and dirty-flag optimization", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = `/tmp/ngent-prd-test-${Date.now()}`;
+    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+  });
+
+  test("rejects PRD files exceeding size limit", async () => {
+    const prdPath = path.join(tmpDir, "prd.json");
+
+    // Create a minimal PRD structure
+    const largePRD: PRD = {
+      project: "test-project",
+      feature: "test-feature",
+      branchName: "test-branch",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userStories: [],
+    };
+
+    // Add enough stories to exceed 5MB limit
+    // Each story is roughly 500 bytes, so we need ~10,000 stories
+    const storyTemplate = {
+      title: "Test Story with long description and multiple acceptance criteria",
+      description: "A".repeat(200), // 200 character description
+      acceptanceCriteria: Array.from({ length: 5 }, (_, i) => `Acceptance criterion ${i}: ${"x".repeat(50)}`),
+      dependencies: [],
+      tags: ["test", "performance", "large-prd"],
+      status: "pending" as const,
+      passes: false,
+      escalations: [],
+      attempts: 0,
+    };
+
+    for (let i = 0; i < 11000; i++) {
+      largePRD.userStories.push({
+        ...storyTemplate,
+        id: `US-${String(i + 1).padStart(5, "0")}`,
+      });
+    }
+
+    // Write large PRD
+    await Bun.write(prdPath, JSON.stringify(largePRD, null, 2));
+
+    // Verify file size exceeds limit
+    const stats = await Bun.file(prdPath).stat();
+    expect(stats.size).toBeGreaterThan(PRD_MAX_FILE_SIZE);
+
+    // Try to load — should throw error
+    try {
+      await loadPRD(prdPath);
+      expect(true).toBe(false); // Should not reach here
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain("too large");
+      expect((error as Error).message).toContain("exceeds");
+      expect((error as Error).message).toContain("MB");
+    }
+
+    // Cleanup
+    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+  });
+
+  test("accepts PRD files within size limit", async () => {
+    const prdPath = path.join(tmpDir, "prd.json");
+
+    // Create a normal-sized PRD
+    const prd: PRD = {
+      project: "test-project",
+      feature: "test-feature",
+      branchName: "test-branch",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userStories: [
+        createStory("US-001", "simple", "test-after"),
+        createStory("US-002", "simple", "test-after"),
+      ],
+    };
+
+    // Write PRD
+    await Bun.write(prdPath, JSON.stringify(prd, null, 2));
+
+    // Verify file size is within limit
+    const stats = await Bun.file(prdPath).stat();
+    expect(stats.size).toBeLessThan(PRD_MAX_FILE_SIZE);
+
+    // Should load successfully
+    const loaded = await loadPRD(prdPath);
+    expect(loaded.userStories).toHaveLength(2);
+    expect(loaded.project).toBe("test-project");
+
+    // Cleanup
+    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+  });
+
+  test("PRD_MAX_FILE_SIZE constant is 5MB", () => {
+    expect(PRD_MAX_FILE_SIZE).toBe(5 * 1024 * 1024);
   });
 });

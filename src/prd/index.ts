@@ -2,16 +2,31 @@
  * PRD Operations
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import type { PRD, UserStory } from "./types";
 
 export type { PRD, UserStory, StoryRouting, StoryStatus, EscalationAttempt } from "./types";
+
+/** Maximum PRD file size (5MB) - reject larger PRDs to prevent memory issues */
+export const PRD_MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 /** Load PRD from file */
 export async function loadPRD(path: string): Promise<PRD> {
   if (!existsSync(path)) {
     throw new Error(`PRD file not found: ${path}`);
   }
+
+  // Check file size to prevent loading oversized PRDs
+  const stats = statSync(path);
+  if (stats.size > PRD_MAX_FILE_SIZE) {
+    const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+    const limitMB = (PRD_MAX_FILE_SIZE / (1024 * 1024)).toFixed(2);
+    throw new Error(
+      `PRD file is too large (${sizeMB} MB exceeds ${limitMB} MB limit). ` +
+      `Split this feature into smaller features or reduce story count.`
+    );
+  }
+
   return Bun.file(path).json();
 }
 
