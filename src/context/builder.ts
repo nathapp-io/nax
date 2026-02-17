@@ -143,7 +143,41 @@ export function sortContextElements(elements: ContextElement[]): ContextElement[
 }
 
 /**
- * Build context from PRD + current story within token budget
+ * Build context from PRD + current story within token budget.
+ *
+ * Prioritizes and selects context elements to fit within available token budget:
+ * - Priority 100: Progress summary
+ * - Priority 90: Prior errors from current story
+ * - Priority 80: Current story (title, description, acceptance criteria)
+ * - Priority 50: Dependency stories
+ *
+ * Elements are sorted by priority and token count. If budget is exceeded,
+ * lower-priority elements are dropped and result is marked as truncated.
+ *
+ * @param storyContext - Story context with PRD and current story ID
+ * @param budget - Token budget constraints
+ * @returns Built context with selected elements, total tokens, and truncation flag
+ *
+ * @example
+ * ```ts
+ * const built = await buildContext(
+ *   {
+ *     prd: { userStories: [...], ... },
+ *     currentStoryId: "US-003",
+ *   },
+ *   {
+ *     totalTokens: 8000,
+ *     reservedForPrompt: 2000,
+ *     availableForContext: 6000,
+ *   }
+ * );
+ *
+ * console.log(built.summary);
+ * // "Context: 1 progress, 1 story, 2 dependencies (4200 tokens)"
+ *
+ * const markdown = formatContextAsMarkdown(built);
+ * // Use as agent prompt context
+ * ```
  */
 export async function buildContext(
   storyContext: StoryContext,
@@ -246,7 +280,22 @@ function generateSummary(
 }
 
 /**
- * Format built context as markdown for agent consumption
+ * Format built context as markdown for agent consumption.
+ *
+ * Generates markdown with sections:
+ * - Progress (story completion stats)
+ * - Prior Errors (code blocks)
+ * - Current Story (title, description, acceptance criteria)
+ * - Dependency Stories (if any)
+ *
+ * @param built - Built context with selected elements
+ * @returns Markdown-formatted context string ready for agent prompt
+ *
+ * @example
+ * ```ts
+ * const markdown = formatContextAsMarkdown(built);
+ * const prompt = `${taskInstructions}\n\n---\n\n${markdown}`;
+ * ```
  */
 export function formatContextAsMarkdown(built: BuiltContext): string {
   const sections: string[] = [];

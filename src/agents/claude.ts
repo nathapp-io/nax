@@ -5,11 +5,46 @@
 import type { AgentAdapter, AgentResult, AgentRunOptions } from "./types";
 import { estimateCostFromOutput, estimateCostByDuration } from "./cost";
 
+/**
+ * Claude Code agent adapter implementation.
+ *
+ * Implements the AgentAdapter interface for Claude Code CLI,
+ * supporting model routing, rate limit retry, and cost tracking.
+ *
+ * @example
+ * ```ts
+ * const adapter = new ClaudeCodeAdapter();
+ * const installed = await adapter.isInstalled();
+ *
+ * if (installed) {
+ *   const result = await adapter.run({
+ *     prompt: "Add unit tests for src/utils.ts",
+ *     workdir: "/path/to/project",
+ *     modelTier: "balanced",
+ *     modelDef: { model: "claude-sonnet-4.5", env: {} },
+ *     timeoutSeconds: 600,
+ *   });
+ * }
+ * ```
+ */
 export class ClaudeCodeAdapter implements AgentAdapter {
   readonly name = "claude";
   readonly displayName = "Claude Code";
   readonly binary = "claude";
 
+  /**
+   * Check if Claude Code CLI is installed on this machine.
+   *
+   * @returns true if the `claude` binary is available in PATH
+   *
+   * @example
+   * ```ts
+   * const adapter = new ClaudeCodeAdapter();
+   * if (await adapter.isInstalled()) {
+   *   console.log("Claude Code is ready");
+   * }
+   * ```
+   */
   async isInstalled(): Promise<boolean> {
     try {
       const proc = Bun.spawn(["which", this.binary], { stdout: "pipe", stderr: "pipe" });
@@ -20,6 +55,28 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     }
   }
 
+  /**
+   * Build the CLI command array for a given run.
+   *
+   * Constructs the `claude` command with model, permissions, and prompt flags.
+   * Used for dry-run display and debugging.
+   *
+   * @param options - Agent run options
+   * @returns Command array suitable for Bun.spawn()
+   *
+   * @example
+   * ```ts
+   * const cmd = adapter.buildCommand({
+   *   prompt: "Fix bug in auth.ts",
+   *   workdir: "/project",
+   *   modelTier: "fast",
+   *   modelDef: { model: "claude-haiku-4.5", env: {} },
+   *   timeoutSeconds: 300,
+   * });
+   * console.log(cmd.join(" "));
+   * // ["claude", "--model", "claude-haiku-4.5", "--dangerously-skip-permissions", "-p", "Fix bug in auth.ts"]
+   * ```
+   */
   buildCommand(options: AgentRunOptions): string[] {
     const model = options.modelDef.model;
     return [
@@ -30,6 +87,33 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     ];
   }
 
+  /**
+   * Run the Claude Code agent with automatic retry on transient failures.
+   *
+   * Retries up to 3 times with exponential backoff for rate limits and transient errors.
+   * Captures stdout, stderr, exit code, duration, and cost estimate.
+   *
+   * @param options - Agent run configuration
+   * @returns Agent execution result with success status, output, and cost
+   * @throws Error if all 3 retry attempts fail
+   *
+   * @example
+   * ```ts
+   * const result = await adapter.run({
+   *   prompt: "Implement feature X",
+   *   workdir: "/project",
+   *   modelTier: "balanced",
+   *   modelDef: { model: "claude-sonnet-4.5", env: {} },
+   *   timeoutSeconds: 600,
+   * });
+   *
+   * if (result.success) {
+   *   console.log(`Cost: $${result.estimatedCost.toFixed(4)}`);
+   * } else if (result.rateLimited) {
+   *   console.log("Rate limited after retries");
+   * }
+   * ```
+   */
   async run(options: AgentRunOptions): Promise<AgentResult> {
     const maxRetries = 3;
     let lastError: Error | null = null;

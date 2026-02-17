@@ -55,12 +55,30 @@ export interface TokenUsageWithConfidence {
 
 /**
  * Parse Claude Code output for token usage.
- * Supports multiple formats:
- * - JSON: {"usage": {"input_tokens": 1234, "output_tokens": 5678}} → exact
- * - Markdown: "Input tokens: 1234" / "Output tokens: 5678" → estimated
- * - Plain: "input: 1234, output: 5678" → estimated
  *
- * Uses specific regex patterns to reduce false positives (BUG-3).
+ * Supports multiple formats with varying confidence levels:
+ * - JSON structured output → "exact" confidence
+ * - Markdown/plain text patterns → "estimated" confidence
+ *
+ * Uses specific regex patterns to reduce false positives.
+ *
+ * @param output - Agent stdout + stderr combined
+ * @returns Token usage with confidence indicator, or null if tokens cannot be parsed
+ *
+ * @example
+ * ```ts
+ * // JSON format (exact)
+ * const usage1 = parseTokenUsage('{"usage": {"input_tokens": 1234, "output_tokens": 5678}}');
+ * // { inputTokens: 1234, outputTokens: 5678, confidence: 'exact' }
+ *
+ * // Markdown format (estimated)
+ * const usage2 = parseTokenUsage('Input tokens: 1234\nOutput tokens: 5678');
+ * // { inputTokens: 1234, outputTokens: 5678, confidence: 'estimated' }
+ *
+ * // Unparseable
+ * const usage3 = parseTokenUsage('No token data here');
+ * // null
+ * ```
  */
 export function parseTokenUsage(output: string): TokenUsageWithConfidence | null {
   // Try JSON format first (most reliable) - confidence: exact
@@ -125,6 +143,19 @@ export function parseTokenUsage(output: string): TokenUsageWithConfidence | null
 
 /**
  * Estimate cost in USD based on token usage.
+ *
+ * Calculates total cost using tier-specific rates per 1M tokens.
+ *
+ * @param modelTier - Model tier (fast/balanced/powerful)
+ * @param inputTokens - Number of input tokens consumed
+ * @param outputTokens - Number of output tokens generated
+ * @returns Total cost in USD
+ *
+ * @example
+ * ```ts
+ * const cost = estimateCost("balanced", 10000, 5000);
+ * // Sonnet 4.5: (10000/1M * $3.00) + (5000/1M * $15.00) = $0.105
+ * ```
  */
 export function estimateCost(
   modelTier: ModelTier,
@@ -138,11 +169,24 @@ export function estimateCost(
 }
 
 /**
- * Estimate cost from agent output (parses tokens, then calculates).
- * Returns cost estimate with confidence indicator:
- * - 'exact': Parsed from structured JSON output
- * - 'estimated': Extracted via regex patterns
- * Returns null if tokens cannot be parsed.
+ * Estimate cost from agent output by parsing token usage.
+ *
+ * Attempts to extract token counts from stdout/stderr, then calculates cost.
+ * Returns null if tokens cannot be parsed (caller should use fallback estimation).
+ *
+ * @param modelTier - Model tier for cost calculation
+ * @param output - Agent stdout + stderr combined
+ * @returns Cost estimate with confidence indicator, or null if unparseable
+ *
+ * @example
+ * ```ts
+ * const estimate = estimateCostFromOutput("balanced", agentOutput);
+ * if (estimate) {
+ *   console.log(`Cost: $${estimate.cost.toFixed(4)} (${estimate.confidence})`);
+ * } else {
+ *   // Fall back to duration-based estimation
+ * }
+ * ```
  */
 export function estimateCostFromOutput(
   modelTier: ModelTier,
@@ -161,14 +205,20 @@ export function estimateCostFromOutput(
 
 /**
  * Fallback cost estimation based on runtime duration.
- * Used when token usage cannot be parsed from output.
  *
- * Rough estimates per minute of agent runtime:
- * - fast (Haiku): ~$0.01/min
- * - balanced (Sonnet): ~$0.05/min
- * - powerful (Opus): ~$0.15/min
+ * Used when token usage cannot be parsed from agent output.
+ * Provides conservative estimates using per-minute rates.
  *
- * Returns cost estimate with 'fallback' confidence.
+ * @param modelTier - Model tier for cost calculation
+ * @param durationMs - Agent runtime in milliseconds
+ * @returns Cost estimate with 'fallback' confidence
+ *
+ * @example
+ * ```ts
+ * const estimate = estimateCostByDuration("balanced", 120000); // 2 minutes
+ * // { cost: 0.10, confidence: 'fallback' }
+ * // Sonnet: 2 min * $0.05/min = $0.10
+ * ```
  */
 export function estimateCostByDuration(
   modelTier: ModelTier,
@@ -188,11 +238,22 @@ export function estimateCostByDuration(
 }
 
 /**
- * Format cost estimate with confidence indicator.
- * Examples:
- * - exact: "$0.12"
- * - estimated: "~$0.15"
- * - fallback: "~$0.05 (duration-based)"
+ * Format cost estimate with confidence indicator for display.
+ *
+ * @param estimate - Cost estimate with confidence level
+ * @returns Formatted cost string with confidence indicator
+ *
+ * @example
+ * ```ts
+ * formatCostWithConfidence({ cost: 0.12, confidence: 'exact' });
+ * // "$0.12"
+ *
+ * formatCostWithConfidence({ cost: 0.15, confidence: 'estimated' });
+ * // "~$0.15"
+ *
+ * formatCostWithConfidence({ cost: 0.05, confidence: 'fallback' });
+ * // "~$0.05 (duration-based)"
+ * ```
  */
 export function formatCostWithConfidence(estimate: CostEstimate): string {
   const formattedCost = `$${estimate.cost.toFixed(2)}`;

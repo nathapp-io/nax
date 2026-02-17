@@ -42,7 +42,40 @@ const PUBLIC_API_KEYWORDS = [
   "sdk", "npm publish", "release", "endpoint",
 ];
 
-/** Classify a story's complexity based on its content */
+/**
+ * Classify a story's complexity based on keywords and acceptance criteria count.
+ *
+ * Classification rules:
+ * - expert: matches expert keywords (cryptography, distributed consensus, real-time)
+ * - complex: matches complex keywords or >8 acceptance criteria
+ * - medium: >4 acceptance criteria
+ * - simple: default
+ *
+ * @param title - Story title
+ * @param description - Story description
+ * @param acceptanceCriteria - Array of acceptance criteria
+ * @param tags - Optional story tags
+ * @returns Classified complexity level
+ *
+ * @example
+ * ```ts
+ * classifyComplexity(
+ *   "Add JWT authentication",
+ *   "Implement JWT auth with refresh tokens",
+ *   ["Secure token storage", "Token refresh", "Expiry handling"],
+ *   ["security", "auth"]
+ * );
+ * // "complex" (matches security keywords)
+ *
+ * classifyComplexity(
+ *   "Fix typo in README",
+ *   "Correct spelling mistake",
+ *   ["Update README.md"],
+ *   []
+ * );
+ * // "simple"
+ * ```
+ */
 export function classifyComplexity(
   title: string,
   description: string,
@@ -75,15 +108,37 @@ export function classifyComplexity(
 }
 
 /**
- * Determine test strategy using the embedded decision tree
- * from dev-workflow.
+ * Determine test strategy using decision tree logic.
  *
  * Decision tree:
- *   Is it public API or security-critical?
- *     YES → three-session-tdd
- *     NO → Is complexity complex/expert?
- *       YES → three-session-tdd
- *       NO → test-after
+ * 1. Is it public API or security-critical? → three-session-tdd
+ * 2. Is complexity complex/expert? → three-session-tdd
+ * 3. Otherwise → test-after
+ *
+ * @param complexity - Pre-classified complexity level
+ * @param title - Story title
+ * @param description - Story description
+ * @param tags - Optional story tags
+ * @returns Test strategy (three-session-tdd or test-after)
+ *
+ * @example
+ * ```ts
+ * determineTestStrategy(
+ *   "complex",
+ *   "Add OAuth integration",
+ *   "Implement OAuth 2.0 flow",
+ *   ["security", "auth"]
+ * );
+ * // "three-session-tdd" (security-critical + complex)
+ *
+ * determineTestStrategy(
+ *   "simple",
+ *   "Update button color",
+ *   "Change primary button to blue",
+ *   ["ui"]
+ * );
+ * // "test-after"
+ * ```
  */
 export function determineTestStrategy(
   complexity: Complexity,
@@ -119,7 +174,38 @@ function complexityToModelTier(
   return (mapping[complexity] ?? "balanced") as ModelTier;
 }
 
-/** Route a task: classify, pick model, pick test strategy */
+/**
+ * Route a task through complexity classification, model tier selection, and test strategy.
+ *
+ * This is the main entry point for the routing system. It orchestrates:
+ * 1. Complexity classification based on keywords and criteria count
+ * 2. Model tier mapping from config (fast/balanced/powerful)
+ * 3. Test strategy decision tree (three-session-tdd vs test-after)
+ *
+ * @param title - Story title
+ * @param description - Story description
+ * @param acceptanceCriteria - Array of acceptance criteria
+ * @param tags - Story tags
+ * @param config - ngent configuration with complexity routing mappings
+ * @returns Routing decision with complexity, model tier, test strategy, and reasoning
+ *
+ * @example
+ * ```ts
+ * const decision = routeTask(
+ *   "Add JWT authentication",
+ *   "Implement secure JWT auth with refresh tokens",
+ *   ["Token storage", "Refresh logic", "Expiry handling"],
+ *   ["security"],
+ *   config
+ * );
+ * // {
+ * //   complexity: "complex",
+ * //   modelTier: "balanced",
+ * //   testStrategy: "three-session-tdd",
+ * //   reasoning: "three-session-tdd: security-critical, complexity:complex"
+ * // }
+ * ```
+ */
 export function routeTask(
   title: string,
   description: string,

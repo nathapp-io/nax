@@ -208,7 +208,47 @@ async function runTddSession(
 }
 
 /**
- * Run the full three-session TDD pipeline
+ * Run the full three-session TDD pipeline for a user story.
+ *
+ * Orchestrates the complete TDD workflow:
+ * 1. Session 1 (test-writer): Agent writes tests only, no source changes
+ * 2. Session 2 (implementer): Agent implements code to pass tests, no test changes
+ * 3. Session 3 (verifier): Agent runs tests and verifies implementation quality
+ *
+ * Each session enforces file isolation via git diff checking. If any session fails
+ * isolation or exits with error, the workflow stops and flags for human review.
+ *
+ * @param agent - Agent adapter to use for all three sessions
+ * @param story - User story with title, description, acceptance criteria
+ * @param config - ngent configuration for timeouts and model settings
+ * @param workdir - Working directory (git repository root)
+ * @param modelTier - Model tier for all sessions (fast/balanced/powerful)
+ * @param contextMarkdown - Optional context from PRD (dependencies, progress)
+ * @returns Three-session TDD result with success status, session details, and cost
+ *
+ * @example
+ * ```ts
+ * const result = await runThreeSessionTdd(
+ *   claudeAdapter,
+ *   {
+ *     id: "US-001",
+ *     title: "Add user authentication",
+ *     description: "Implement JWT-based authentication",
+ *     acceptanceCriteria: ["Secure token storage", "Token refresh"],
+ *     // ...
+ *   },
+ *   config,
+ *   "/project",
+ *   "balanced",
+ *   "## Dependencies\n- US-000: Database setup\n"
+ * );
+ *
+ * if (result.success) {
+ *   console.log(`✅ TDD complete, cost: $${result.totalCost.toFixed(4)}`);
+ * } else if (result.needsHumanReview) {
+ *   console.log(`⚠️ Needs review: ${result.reviewReason}`);
+ * }
+ * ```
  */
 export async function runThreeSessionTdd(
   agent: AgentAdapter,

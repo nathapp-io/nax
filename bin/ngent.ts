@@ -2,8 +2,39 @@
 /**
  * ngent — AI Coding Agent Orchestrator
  *
- * Loops until done. Three-session TDD for quality.
- * Smart routing for cost. Hooks for everything.
+ * CLI entry point for the ngent orchestration system.
+ *
+ * Features:
+ * - `init`: Initialize ngent in a project directory
+ * - `run`: Execute the orchestration loop for a feature
+ * - `features create/list`: Manage feature definitions
+ * - `analyze`: Parse spec.md + tasks.md into prd.json
+ * - `agents`: Check available coding agent installations
+ * - `status`: Show current feature progress
+ *
+ * Architecture:
+ * - Complexity-based routing to model tiers (fast/balanced/powerful)
+ * - Three-session TDD for security-critical and complex stories
+ * - Story batching for simple stories to reduce overhead
+ * - Lifecycle hooks for custom automation (on-start, on-complete, etc.)
+ *
+ * @example
+ * ```bash
+ * # Initialize in project
+ * ngent init
+ *
+ * # Create feature
+ * ngent features create auth-system
+ *
+ * # Analyze spec/tasks into PRD
+ * ngent analyze --feature auth-system
+ *
+ * # Run orchestration
+ * ngent run --feature auth-system
+ *
+ * # Check status
+ * ngent status --feature auth-system
+ * ```
  */
 
 import { Command } from "commander";
