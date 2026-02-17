@@ -10,24 +10,26 @@
  */
 
 import chalk from "chalk";
-import path from "node:path";
-import type { NgentConfig, ModelTier } from "../config";
+import type { NgentConfig } from "../config";
 import { resolveModel } from "../config";
-import type { AgentAdapter } from "../agents";
-import { getAgent, getInstalledAgents } from "../agents";
+import { getAgent } from "../agents";
 import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryPassed, markStoryFailed, markStorySkipped } from "../prd";
-import type { PRD, UserStory } from "../prd";
-import { routeTask, type RoutingDecision } from "../routing";
+import type { UserStory } from "../prd";
+import { routeTask } from "../routing";
 import { fireHook, type HooksConfig } from "../hooks";
-import type { HookContext } from "../hooks";
 import { runThreeSessionTdd } from "../tdd";
 import { appendProgress } from "./progress";
-import { buildContext, formatContextAsMarkdown } from "../context";
-import type { StoryContext, ContextBudget } from "../context";
-import { parseQueueFile } from "../queue";
-import type { QueueCommand } from "../queue";
 import { buildSingleSessionPrompt, buildBatchPrompt } from "./prompts";
 import { groupStoriesIntoBatches, type StoryBatch } from "./batching";
+import { escalateTier } from "./escalation";
+import { readQueueFile, clearQueueFile } from "./queue-handler";
+import {
+  hookCtx,
+  maybeGetContext,
+  getAllReadyStories,
+  acquireLock,
+  releaseLock,
+} from "./helpers";
 
 /** Run options */
 export interface RunOptions {
@@ -58,228 +60,6 @@ export interface RunResult {
   storiesCompleted: number;
   totalCost: number;
   durationMs: number;
-}
-
-/** Build story context for context builder */
-async function buildStoryContext(
-  prd: PRD,
-  story: UserStory,
-  config: NgentConfig,
-): Promise<string | undefined> {
-  try {
-    const storyContext: StoryContext = {
-      prd,
-      currentStoryId: story.id,
-    };
-
-    const budget: ContextBudget = {
-      maxTokens: 100000, // Conservative limit for Claude
-      reservedForInstructions: 10000,
-      availableForContext: 90000,
-    };
-
-    const built = await buildContext(storyContext, budget);
-
-    if (built.elements.length === 0) {
-      return undefined;
-    }
-
-    return formatContextAsMarkdown(built);
-  } catch (error) {
-    console.warn(chalk.yellow(`   ⚠️  Context builder failed: ${(error as Error).message}`));
-    return undefined;
-  }
-}
-
-/** Escalate model tier through configurable 3-tier chain (default: fast → balanced → powerful → null) */
-export function escalateTier(current: ModelTier, tierOrder?: ModelTier[]): ModelTier | null {
-  // Use config tierOrder if provided, fallback to hardcoded chain
-  if (tierOrder && tierOrder.length > 0) {
-    const currentIndex = tierOrder.indexOf(current);
-    if (currentIndex === -1 || currentIndex === tierOrder.length - 1) {
-      return null; // Not in order or at max tier
-    }
-    return tierOrder[currentIndex + 1];
-  }
-
-  // Fallback: explicit escalation chain
-  switch (current) {
-    case "fast":
-      return "balanced";
-    case "balanced":
-      return "powerful";
-    case "powerful":
-      return null; // Max tier reached
-    default:
-      return null;
-  }
-}
-
-/** Build a hook context */
-function hookCtx(
-  feature: string,
-  opts?: Partial<Omit<HookContext, "event" | "feature">>,
-): HookContext {
-  return {
-    event: "on-start", // overridden by fireHook
-    feature,
-    ...opts,
-  };
-}
-
-/** Maybe build context if enabled */
-async function maybeGetContext(
-  prd: PRD,
-  story: UserStory,
-  config: NgentConfig,
-  useContext: boolean,
-): Promise<string | undefined> {
-  if (!useContext) {
-    return undefined;
-  }
-
-  console.log(chalk.dim(`   ⚙️  Building context...`));
-  const contextMarkdown = await buildStoryContext(prd, story, config);
-  if (contextMarkdown) {
-    console.log(chalk.dim(`   ✓ Context built`));
-  }
-  return contextMarkdown;
-}
-
-/**
- * Read and parse queue file atomically.
- * Uses rename-before-read pattern to prevent race conditions:
- * 1. Rename .queue.txt → .queue.txt.processing (atomic operation)
- * 2. Read from .queue.txt.processing
- * 3. Delete .queue.txt.processing after processing
- *
- * This ensures commands written during processing aren't lost.
- */
-async function readQueueFile(workdir: string): Promise<QueueCommand[]> {
-  const queuePath = path.join(workdir, ".queue.txt");
-  const processingPath = path.join(workdir, ".queue.txt.processing");
-
-  try {
-    // Check if queue file exists
-    const file = Bun.file(queuePath);
-    const exists = await file.exists();
-    if (!exists) {
-      return [];
-    }
-
-    // Atomically rename to .processing (prevents concurrent reads)
-    try {
-      await Bun.spawn(["mv", queuePath, processingPath], { stdout: "pipe" }).exited;
-    } catch (error) {
-      // File was already moved by another process, or doesn't exist anymore
-      return [];
-    }
-
-    // Read from processing file
-    const processingFile = Bun.file(processingPath);
-    const content = await processingFile.text();
-    const result = parseQueueFile(content);
-
-    return result.commands;
-  } catch (error) {
-    console.warn(chalk.yellow(`   ⚠️  Failed to read queue file: ${(error as Error).message}`));
-    return [];
-  }
-}
-
-/**
- * Clear queue file after processing commands.
- * Deletes .queue.txt.processing file.
- */
-async function clearQueueFile(workdir: string): Promise<void> {
-  const processingPath = path.join(workdir, ".queue.txt.processing");
-  try {
-    const file = Bun.file(processingPath);
-    const exists = await file.exists();
-    if (exists) {
-      await Bun.spawn(["rm", processingPath], { stdout: "pipe" }).exited;
-    }
-  } catch (error) {
-    console.warn(chalk.yellow(`   ⚠️  Failed to clear queue file: ${(error as Error).message}`));
-  }
-}
-
-/** Result from executing a batch or single story */
-interface ExecutionResult {
-  success: boolean;
-  cost: number;
-  storiesProcessed: string[];
-}
-
-/** Get all stories that are ready to execute (pending, dependencies satisfied) */
-function getAllReadyStories(prd: PRD): UserStory[] {
-  const completedIds = new Set(
-    prd.userStories
-      .filter((s) => s.passes || s.status === "skipped")
-      .map((s) => s.id),
-  );
-
-  return prd.userStories.filter(
-    (s) =>
-      !s.passes &&
-      s.status !== "skipped" &&
-      s.dependencies.every((dep) => completedIds.has(dep)),
-  );
-}
-
-/**
- * Acquire execution lock to prevent concurrent runs in same directory.
- * Creates ngent.lock file with PID and timestamp.
- * Returns true if lock acquired, false if another process holds it.
- */
-async function acquireLock(workdir: string): Promise<boolean> {
-  const lockPath = path.join(workdir, "ngent.lock");
-  const lockFile = Bun.file(lockPath);
-
-  try {
-    const exists = await lockFile.exists();
-    if (exists) {
-      // Check if lock is stale (> 1 hour old)
-      const lockContent = await lockFile.text();
-      const lockData = JSON.parse(lockContent);
-      const lockAge = Date.now() - lockData.timestamp;
-      const ONE_HOUR = 60 * 60 * 1000;
-
-      if (lockAge > ONE_HOUR) {
-        console.warn(chalk.yellow(`   ⚠️  Removing stale lock (${Math.round(lockAge / 1000 / 60)} minutes old)`));
-        await Bun.spawn(["rm", lockPath], { stdout: "pipe" }).exited;
-      } else {
-        return false;
-      }
-    }
-
-    // Create lock file
-    const lockData = {
-      pid: process.pid,
-      timestamp: Date.now(),
-    };
-    await Bun.write(lockPath, JSON.stringify(lockData));
-    return true;
-  } catch (error) {
-    console.warn(chalk.yellow(`   ⚠️  Failed to acquire lock: ${(error as Error).message}`));
-    return false;
-  }
-}
-
-/**
- * Release execution lock by deleting ngent.lock file.
- */
-async function releaseLock(workdir: string): Promise<void> {
-  const lockPath = path.join(workdir, "ngent.lock");
-  try {
-    const file = Bun.file(lockPath);
-    const exists = await file.exists();
-    if (exists) {
-      await Bun.spawn(["rm", lockPath], { stdout: "pipe" }).exited;
-    }
-  } catch (error) {
-    console.warn(chalk.yellow(`   ⚠️  Failed to release lock: ${(error as Error).message}`));
-  }
 }
 
 /**
@@ -789,3 +569,4 @@ export async function run(options: RunOptions): Promise<RunResult> {
 // Re-exports for backward compatibility with existing test imports
 export { buildSingleSessionPrompt, buildBatchPrompt } from "./prompts";
 export { groupStoriesIntoBatches, type StoryBatch } from "./batching";
+export { escalateTier } from "./escalation";
