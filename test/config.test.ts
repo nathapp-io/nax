@@ -1,92 +1,104 @@
 import { describe, test, expect } from "bun:test";
-import { DEFAULT_CONFIG } from "../src/config/schema";
-import { validateConfig } from "../src/config/validate";
-import type { NgentConfig } from "../src/config";
+import { DEFAULT_CONFIG, NgentConfigSchema } from "../src/config/schema";
 
 describe("Config Validation", () => {
   test("accepts valid default config", () => {
-    const result = validateConfig(DEFAULT_CONFIG);
-    expect(result.valid).toBe(true);
-    expect(result.errors).toHaveLength(0);
+    const result = NgentConfigSchema.safeParse(DEFAULT_CONFIG);
+    expect(result.success).toBe(true);
   });
 
   test("rejects invalid version", () => {
-    const config: NgentConfig = {
+    const config = {
       ...DEFAULT_CONFIG,
-      version: 2 as 1, // Invalid version
+      version: 2, // Invalid version
     };
-    const result = validateConfig(config);
-    expect(result.valid).toBe(false);
-    expect(result.errors).toContain("Invalid version: expected 1, got 2");
+    const result = NgentConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errorMessages = result.error.issues.map((e) => e.message);
+      expect(errorMessages.some((msg) => msg.includes("Invalid version"))).toBe(true);
+    }
   });
 
   test("rejects maxIterations <= 0", () => {
-    const config: NgentConfig = {
+    const config = {
       ...DEFAULT_CONFIG,
       execution: {
         ...DEFAULT_CONFIG.execution,
         maxIterations: 0,
       },
     };
-    const result = validateConfig(config);
-    expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("maxIterations must be > 0"))).toBe(true);
+    const result = NgentConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errorMessages = result.error.issues.map((e) => e.message);
+      expect(errorMessages.some((e) => e.includes("maxIterations must be > 0"))).toBe(true);
+    }
   });
 
   test("rejects costLimit <= 0", () => {
-    const config: NgentConfig = {
+    const config = {
       ...DEFAULT_CONFIG,
       execution: {
         ...DEFAULT_CONFIG.execution,
         costLimit: -1,
       },
     };
-    const result = validateConfig(config);
-    expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("costLimit must be > 0"))).toBe(true);
+    const result = NgentConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errorMessages = result.error.issues.map((e) => e.message);
+      expect(errorMessages.some((e) => e.includes("costLimit must be > 0"))).toBe(true);
+    }
   });
 
   test("rejects sessionTimeoutSeconds <= 0", () => {
-    const config: NgentConfig = {
+    const config = {
       ...DEFAULT_CONFIG,
       execution: {
         ...DEFAULT_CONFIG.execution,
         sessionTimeoutSeconds: 0,
       },
     };
-    const result = validateConfig(config);
-    expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("sessionTimeoutSeconds must be > 0"))).toBe(true);
+    const result = NgentConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errorMessages = result.error.issues.map((e) => e.message);
+      expect(errorMessages.some((e) => e.includes("sessionTimeoutSeconds must be > 0"))).toBe(true);
+    }
   });
 
   test("rejects empty defaultAgent", () => {
-    const config: NgentConfig = {
+    const config = {
       ...DEFAULT_CONFIG,
       autoMode: {
         ...DEFAULT_CONFIG.autoMode,
         defaultAgent: "",
       },
     };
-    const result = validateConfig(config);
-    expect(result.valid).toBe(false);
-    expect(result.errors).toContain("defaultAgent must be non-empty");
+    const result = NgentConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errorMessages = result.error.issues.map((e) => e.message);
+      expect(errorMessages.some((msg) => msg.includes("defaultAgent must be non-empty"))).toBe(true);
+    }
   });
 
   test("rejects whitespace-only defaultAgent", () => {
-    const config: NgentConfig = {
+    const config = {
       ...DEFAULT_CONFIG,
       autoMode: {
         ...DEFAULT_CONFIG.autoMode,
         defaultAgent: "   ",
       },
     };
-    const result = validateConfig(config);
-    expect(result.valid).toBe(false);
-    expect(result.errors).toContain("defaultAgent must be non-empty");
+    const result = NgentConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+    // Zod's min(1) validation will trim and reject whitespace
   });
 
   test("rejects escalation.maxAttempts <= 0", () => {
-    const config: NgentConfig = {
+    const config = {
       ...DEFAULT_CONFIG,
       autoMode: {
         ...DEFAULT_CONFIG.autoMode,
@@ -96,15 +108,18 @@ describe("Config Validation", () => {
         },
       },
     };
-    const result = validateConfig(config);
-    expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("escalation.maxAttempts must be > 0"))).toBe(true);
+    const result = NgentConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errorMessages = result.error.issues.map((e) => e.message);
+      expect(errorMessages.some((e) => e.includes("escalation.maxAttempts must be > 0"))).toBe(true);
+    }
   });
 
   test("collects multiple validation errors", () => {
-    const config: NgentConfig = {
+    const config = {
       ...DEFAULT_CONFIG,
-      version: 99 as 1,
+      version: 99,
       execution: {
         ...DEFAULT_CONFIG.execution,
         maxIterations: 0,
@@ -115,13 +130,15 @@ describe("Config Validation", () => {
         defaultAgent: "",
       },
     };
-    const result = validateConfig(config);
-    expect(result.valid).toBe(false);
-    expect(result.errors.length).toBeGreaterThanOrEqual(4);
+    const result = NgentConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.length).toBeGreaterThanOrEqual(4);
+    }
   });
 
   test("rejects invalid complexityRouting tier", () => {
-    const config: NgentConfig = {
+    const config = {
       ...DEFAULT_CONFIG,
       autoMode: {
         ...DEFAULT_CONFIG.autoMode,
@@ -131,14 +148,16 @@ describe("Config Validation", () => {
         },
       },
     };
-    const result = validateConfig(config);
-    expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("complexityRouting.simple"))).toBe(true);
-    expect(result.errors.some((e) => e.includes("fast, balanced, powerful"))).toBe(true);
+    const result = NgentConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errorMessages = result.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`);
+      expect(errorMessages.some((e) => e.includes("complexityRouting.simple"))).toBe(true);
+    }
   });
 
   test("accepts all valid tiers in complexityRouting", () => {
-    const config: NgentConfig = {
+    const config = {
       ...DEFAULT_CONFIG,
       autoMode: {
         ...DEFAULT_CONFIG.autoMode,
@@ -150,13 +169,12 @@ describe("Config Validation", () => {
         },
       },
     };
-    const result = validateConfig(config);
-    expect(result.valid).toBe(true);
-    expect(result.errors).toHaveLength(0);
+    const result = NgentConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
   });
 
   test("validates all complexity levels have valid tiers", () => {
-    const config: NgentConfig = {
+    const config = {
       ...DEFAULT_CONFIG,
       autoMode: {
         ...DEFAULT_CONFIG.autoMode,
@@ -168,9 +186,12 @@ describe("Config Validation", () => {
         },
       },
     };
-    const result = validateConfig(config);
-    expect(result.valid).toBe(false);
-    expect(result.errors.some((e) => e.includes("complexityRouting.simple"))).toBe(true);
-    expect(result.errors.some((e) => e.includes("complexityRouting.medium"))).toBe(true);
+    const result = NgentConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const errorMessages = result.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`);
+      expect(errorMessages.some((e) => e.includes("complexityRouting.simple"))).toBe(true);
+      expect(errorMessages.some((e) => e.includes("complexityRouting.medium"))).toBe(true);
+    }
   });
 });

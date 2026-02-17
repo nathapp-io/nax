@@ -1,6 +1,9 @@
 /**
  * Configuration Validation
  *
+ * @deprecated Use NgentConfigSchema.safeParse() from schema.ts instead.
+ * This module is kept for backward compatibility only.
+ *
  * Validates NgentConfig structure and constraints.
  */
 

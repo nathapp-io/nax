@@ -4,6 +4,8 @@
  * Global (~/.ngent/config.json) + Project (ngent/config.json)
  */
 
+import { z } from "zod";
+
 /** Complexity classification */
 export type Complexity = "simple" | "medium" | "complex" | "expert";
 
@@ -124,6 +126,85 @@ export function resolveModel(entry: ModelEntry): ModelDef {
   }
   return entry;
 }
+
+/** Zod schema for runtime validation */
+const ModelDefSchema = z.object({
+  provider: z.string().min(1, "Provider must be non-empty"),
+  model: z.string().min(1, "Model must be non-empty"),
+  env: z.record(z.string(), z.string()).optional(),
+});
+
+const ModelEntrySchema = z.union([
+  z.string().min(1, "Model identifier must be non-empty"),
+  ModelDefSchema,
+]);
+
+const ModelMapSchema = z.object({
+  fast: ModelEntrySchema,
+  balanced: ModelEntrySchema,
+  powerful: ModelEntrySchema,
+});
+
+const ModelTierSchema = z.enum(["fast", "balanced", "powerful"]);
+
+const AutoModeConfigSchema = z.object({
+  enabled: z.boolean(),
+  defaultAgent: z
+    .string()
+    .trim()
+    .min(1, "defaultAgent must be non-empty"),
+  fallbackOrder: z.array(z.string()),
+  complexityRouting: z.object({
+    simple: ModelTierSchema,
+    medium: ModelTierSchema,
+    complex: ModelTierSchema,
+    expert: ModelTierSchema,
+  }),
+  escalation: z.object({
+    enabled: z.boolean(),
+    maxAttempts: z.number().int().positive({ message: "escalation.maxAttempts must be > 0" }),
+    tierOrder: z.array(ModelTierSchema).optional(),
+  }),
+});
+
+const ExecutionConfigSchema = z.object({
+  maxIterations: z.number().int().positive({ message: "maxIterations must be > 0" }),
+  iterationDelayMs: z.number().int().nonnegative(),
+  costLimit: z.number().positive({ message: "costLimit must be > 0" }),
+  sessionTimeoutSeconds: z.number().int().positive({ message: "sessionTimeoutSeconds must be > 0" }),
+  maxStoriesPerFeature: z.number().int().positive(),
+});
+
+const QualityConfigSchema = z.object({
+  requireTypecheck: z.boolean(),
+  requireLint: z.boolean(),
+  requireTests: z.boolean(),
+  commands: z.object({
+    typecheck: z.string().optional(),
+    lint: z.string().optional(),
+    test: z.string().optional(),
+  }),
+});
+
+const TddConfigSchema = z.object({
+  maxRetries: z.number().int().nonnegative(),
+  autoVerifyIsolation: z.boolean(),
+  autoApproveVerifier: z.boolean(),
+});
+
+export const NgentConfigSchema = z
+  .object({
+    version: z.number(),
+    models: ModelMapSchema,
+    autoMode: AutoModeConfigSchema,
+    execution: ExecutionConfigSchema,
+    quality: QualityConfigSchema,
+    tdd: TddConfigSchema,
+  })
+  .refine((data) => data.version === 1, {
+    message: "Invalid version: expected 1",
+    path: ["version"],
+  });
 
 /** Default configuration */
 export const DEFAULT_CONFIG: NgentConfig = {

@@ -7,8 +7,7 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { DEFAULT_CONFIG, type NgentConfig } from "./schema";
-import { validateConfig } from "./validate";
+import { DEFAULT_CONFIG, NgentConfigSchema, type NgentConfig } from "./schema";
 import { MAX_DIRECTORY_DEPTH } from "./path-security";
 
 /** Global config path */
@@ -72,13 +71,13 @@ function deepMerge(a: Record<string, unknown>, b: Record<string, unknown>): Reco
 
 /** Load merged configuration (defaults < global < project) */
 export async function loadConfig(projectDir?: string): Promise<NgentConfig> {
-  // Start with defaults
-  let config: NgentConfig = { ...DEFAULT_CONFIG };
+  // Start with defaults as a plain object
+  let rawConfig: Record<string, unknown> = structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>);
 
   // Layer global config
   const globalConf = await loadJsonFile<Record<string, unknown>>(globalConfigPath());
   if (globalConf) {
-    config = deepMerge(config as unknown as Record<string, unknown>, globalConf) as unknown as NgentConfig;
+    rawConfig = deepMerge(rawConfig, globalConf);
   }
 
   // Layer project config
@@ -86,15 +85,19 @@ export async function loadConfig(projectDir?: string): Promise<NgentConfig> {
   if (projDir) {
     const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"));
     if (projConf) {
-      config = deepMerge(config as unknown as Record<string, unknown>, projConf) as unknown as NgentConfig;
+      rawConfig = deepMerge(rawConfig, projConf);
     }
   }
 
-  // Validate merged config
-  const validation = validateConfig(config);
-  if (!validation.valid) {
-    throw new Error(`Invalid configuration:\n${validation.errors.join("\n")}`);
+  // Parse and validate with Zod
+  const result = NgentConfigSchema.safeParse(rawConfig);
+  if (!result.success) {
+    const errors = result.error.issues.map((err) => {
+      const path = err.path.join(".");
+      return path ? `${path}: ${err.message}` : err.message;
+    });
+    throw new Error(`Invalid configuration:\n${errors.join("\n")}`);
   }
 
-  return config;
+  return result.data as NgentConfig;
 }
