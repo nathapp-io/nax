@@ -8,7 +8,7 @@ import type { AgentAdapter } from "./types";
 import { ClaudeCodeAdapter } from "./claude";
 
 /** All known agent adapters */
-const ALL_AGENTS: AgentAdapter[] = [
+export const ALL_AGENTS: AgentAdapter[] = [
   new ClaudeCodeAdapter(),
   // Future: new CodexAdapter(),
   // Future: new OpenCodeAdapter(),
