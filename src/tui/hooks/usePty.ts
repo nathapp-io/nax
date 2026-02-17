@@ -6,22 +6,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type * as pty from "node-pty";
-
-/**
- * PTY handle interface for managing spawned PTY process.
- *
- * Provides methods to write input, resize terminal, and kill process.
- */
-export interface PtyHandle {
-  /** Write input to PTY stdin */
-  write(data: string): void;
-  /** Resize PTY terminal */
-  resize(cols: number, rows: number): void;
-  /** Kill PTY process */
-  kill(): void;
-  /** Process ID */
-  pid: number;
-}
+import type { PtyHandle } from "../../agents/types";
 
 /**
  * Options for spawning PTY process.

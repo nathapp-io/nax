@@ -29,18 +29,31 @@ export interface PipelineState {
 }
 
 /**
- * Hook for subscribing to pipeline events.
+ * Hook for subscribing to pipeline events and managing TUI state.
  *
- * @param events - Pipeline event emitter
+ * Subscribes to pipeline lifecycle events (story:start, story:complete,
+ * story:escalate, stage:enter, run:complete) and updates story display
+ * states, cost accumulator, elapsed time, and current stage in real-time.
+ *
+ * The elapsed timer only runs while a story is active to avoid unnecessary
+ * re-renders during idle periods.
+ *
+ * @param events - Pipeline event emitter (from pipeline runner)
  * @param initialStories - Initial story list from PRD
- * @returns Pipeline state updated by events
+ * @returns Pipeline state: stories (with status/cost), totalCost, elapsedMs, currentStory, currentStage, summary
  *
  * @example
  * ```tsx
  * const emitter = new PipelineEventEmitter();
  * const state = usePipelineEvents(emitter, prd.userStories);
  *
- * return <StoriesPanel stories={state.stories} />;
+ * // State automatically updates as pipeline emits events
+ * return (
+ *   <>
+ *     <StoriesPanel stories={state.stories} totalCost={state.totalCost} />
+ *     <StatusBar currentStory={state.currentStory} currentStage={state.currentStage} />
+ *   </>
+ * );
  * ```
  */
 export function usePipelineEvents(
@@ -61,16 +74,30 @@ export function usePipelineEvents(
   const startTime = Date.now();
 
   useEffect(() => {
-    // Update elapsed time every second
-    const timer = setInterval(() => {
-      setState((prev) => ({
-        ...prev,
-        elapsedMs: Date.now() - startTime,
-      }));
-    }, 1000);
+    // Elapsed timer — only runs when a story is active
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const startTimer = () => {
+      if (!timer) {
+        timer = setInterval(() => {
+          setState((prev) => ({
+            ...prev,
+            elapsedMs: Date.now() - startTime,
+          }));
+        }, 1000);
+      }
+    };
+
+    const stopTimer = () => {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
 
     // story:start — Mark story as running
     const onStoryStart = (story: UserStory) => {
+      startTimer();
       setState((prev) => ({
         ...prev,
         currentStory: story,
@@ -82,6 +109,7 @@ export function usePipelineEvents(
 
     // story:complete — Mark story as complete (passed/failed/skipped)
     const onStoryComplete = (story: UserStory, result: { action: string; cost?: number }) => {
+      stopTimer();
       setState((prev) => {
         const newStories = prev.stories.map((s) => {
           if (s.story.id === story.id) {
@@ -149,7 +177,7 @@ export function usePipelineEvents(
     events.on("run:complete", onRunComplete);
 
     return () => {
-      clearInterval(timer);
+      stopTimer();
       events.off("story:start", onStoryStart);
       events.off("story:complete", onStoryComplete);
       events.off("story:escalate", onStoryEscalate);

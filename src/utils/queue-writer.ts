@@ -42,9 +42,10 @@ export async function writeQueueCommand(
     case "SKIP":
       commandLine = `SKIP ${command.storyId}`;
       break;
-    default:
-      // Type guard should prevent this, but handle it anyway
-      throw new Error(`Unknown queue command type: ${(command as QueueCommand).type}`);
+    default: {
+      const _exhaustive: never = command;
+      throw new Error(`Unhandled queue command: ${_exhaustive}`);
+    }
   }
 
   // Append command to queue file (create if doesn't exist)

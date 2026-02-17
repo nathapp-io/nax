@@ -78,6 +78,26 @@ export function useLayout(): LayoutConfig {
 export const MIN_TERMINAL_WIDTH = 60;
 
 /**
+ * Breakpoint: below this width, use single-column layout.
+ */
+const BREAKPOINT_NARROW = 80;
+
+/**
+ * Breakpoint: above this width, use wide two-column layout.
+ */
+const BREAKPOINT_WIDE = 140;
+
+/**
+ * Stories panel width in narrow two-column mode.
+ */
+const PANEL_WIDTH_NARROW = 30;
+
+/**
+ * Stories panel width in wide two-column mode.
+ */
+const PANEL_WIDTH_WIDE = 35;
+
+/**
  * Maximum stories to show in compact mode (single-column).
  */
 export const COMPACT_MAX_VISIBLE_STORIES = 8;
@@ -102,18 +122,15 @@ function computeLayout(): LayoutConfig {
   let mode: LayoutMode;
   let storiesPanelWidth: number;
 
-  if (width < 80) {
-    // Single column mode (stacked)
+  if (width < BREAKPOINT_NARROW) {
     mode = "single";
     storiesPanelWidth = width;
-  } else if (width < 140) {
-    // Narrow 2-column mode
+  } else if (width < BREAKPOINT_WIDE) {
     mode = "narrow";
-    storiesPanelWidth = 30; // Fixed width for stories panel
+    storiesPanelWidth = PANEL_WIDTH_NARROW;
   } else {
-    // Wide 2-column mode
     mode = "wide";
-    storiesPanelWidth = 35; // Slightly wider stories panel
+    storiesPanelWidth = PANEL_WIDTH_WIDE;
   }
 
   return { mode, width, height, storiesPanelWidth };

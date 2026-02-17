@@ -6,6 +6,7 @@
  */
 
 import { Box, Text } from "ink";
+import Spinner from "ink-spinner";
 
 /**
  * Props for AgentPanel component.
@@ -68,7 +69,7 @@ export function AgentPanel({ focused = false, outputLines = [] }: AgentPanelProp
             <Text key={i}>{line}</Text>
           ))
         ) : (
-          <Text dimColor>Waiting for agent...</Text>
+          <Text dimColor><Spinner type="dots" /> Waiting for agent...</Text>
         )}
       </Box>
     </Box>
