@@ -3,6 +3,23 @@
  *
  * Spawns the agent session(s) to execute the story/stories.
  * Handles both single-session (test-after) and three-session TDD.
+ *
+ * @returns
+ * - `continue`: Agent session succeeded
+ * - `fail`: Agent not found or prompt missing
+ * - `escalate`: Agent session failed (will retry with higher tier)
+ * - `pause`: Three-session TDD needs human review
+ *
+ * @example
+ * ```ts
+ * // Single session (test-after)
+ * await executionStage.execute(ctx);
+ * // ctx.agentResult: { success: true, estimatedCost: 0.05, ... }
+ *
+ * // Three-session TDD
+ * await executionStage.execute(ctx);
+ * // ctx.agentResult: { success: true, estimatedCost: 0.15, ... }
+ * ```
  */
 
 import chalk from "chalk";
@@ -16,6 +33,7 @@ export const executionStage: PipelineStage = {
   enabled: () => true,
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
+    // HARD FAILURE: No agent available — cannot proceed without an agent
     const agent = getAgent(ctx.config.autoMode.defaultAgent);
     if (!agent) {
       return {
@@ -59,6 +77,7 @@ export const executionStage: PipelineStage = {
     }
 
     // Single/batch session (test-after) path
+    // HARD FAILURE: Missing prompt indicates pipeline misconfiguration
     if (!ctx.prompt) {
       return { action: "fail", reason: "Prompt not built (prompt stage skipped?)" };
     }

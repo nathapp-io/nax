@@ -3,6 +3,20 @@
  *
  * Loads the project constitution (if enabled) and stores it in context.
  * Constitution defines coding standards, architectural rules, and forbidden patterns.
+ *
+ * @returns
+ * - `continue`: Always continues (soft failure if constitution missing)
+ *
+ * @example
+ * ```ts
+ * // Constitution enabled and found
+ * await constitutionStage.execute(ctx);
+ * // ctx.constitution: { content: "...", tokens: 500, truncated: false }
+ *
+ * // Constitution enabled but not found
+ * await constitutionStage.execute(ctx);
+ * // ctx.constitution: undefined (stage logs warning and continues)
+ * ```
  */
 
 import chalk from "chalk";
@@ -39,6 +53,10 @@ export const constitutionStage: PipelineStage = {
           ),
         );
       }
+    } else {
+      // SOFT FAILURE: Constitution missing or failed to load — continue without it
+      // This is acceptable because constitution is optional project governance
+      console.log(chalk.dim("   Constitution: not found or failed to load (continuing without it)"));
     }
 
     return { action: "continue" };

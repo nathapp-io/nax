@@ -2,7 +2,7 @@
  * Queue Check Stage
  *
  * Checks for queue commands (PAUSE/ABORT/SKIP) before executing a story.
- * If a command is found, processes it and returns appropriate action.
+ * Processes commands atomically and updates PRD accordingly.
  */
 
 import chalk from "chalk";
@@ -10,6 +10,24 @@ import type { PipelineStage, PipelineContext, StageResult } from "../types";
 import { readQueueFile, clearQueueFile } from "../../execution/queue-handler";
 import { markStorySkipped, savePRD } from "../../prd";
 
+/**
+ * Queue Check Stage
+ *
+ * Checks for queue commands (PAUSE/ABORT/SKIP) before executing a story.
+ * If a command is found, processes it and returns appropriate action.
+ *
+ * @returns
+ * - `continue`: No queue commands, proceed
+ * - `pause`: PAUSE/ABORT command found, stop execution
+ * - `skip`: SKIP command removed all stories from batch
+ *
+ * @example
+ * ```ts
+ * // User writes: echo "PAUSE" > .queue.txt
+ * const result = await queueCheckStage.execute(ctx);
+ * // result: { action: "pause", reason: "User requested pause via .queue.txt" }
+ * ```
+ */
 export const queueCheckStage: PipelineStage = {
   name: "queue-check",
   enabled: () => true,

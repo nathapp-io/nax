@@ -5,6 +5,20 @@
  * - Story/stories (batch or single)
  * - Context markdown
  * - Constitution content
+ *
+ * @returns
+ * - `continue`: Prompt built successfully
+ *
+ * @example
+ * ```ts
+ * // Single story with constitution
+ * await promptStage.execute(ctx);
+ * // ctx.prompt: "# CONSTITUTION\n...\n\n# Task: Add login button\n..."
+ *
+ * // Batch of stories without constitution
+ * await promptStage.execute(ctx);
+ * // ctx.prompt: "# Batch Task: 3 Stories\n## Story 1: US-001...\n"
+ * ```
  */
 
 import chalk from "chalk";

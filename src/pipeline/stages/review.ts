@@ -2,7 +2,22 @@
  * Review Stage
  *
  * Runs post-implementation review phase if enabled.
- * Checks code quality, tests, linting, etc.
+ * Checks code quality, tests, linting, etc. via review module.
+ *
+ * @returns
+ * - `continue`: Review passed
+ * - `fail`: Review failed (hard failure)
+ *
+ * @example
+ * ```ts
+ * // Review enabled and passes
+ * await reviewStage.execute(ctx);
+ * // ctx.reviewResult: { success: true, totalDurationMs: 1500, ... }
+ *
+ * // Review enabled but fails
+ * await reviewStage.execute(ctx);
+ * // Returns: { action: "fail", reason: "Review failed: typecheck errors" }
+ * ```
  */
 
 import chalk from "chalk";
@@ -19,6 +34,7 @@ export const reviewStage: PipelineStage = {
     const reviewResult = await runReview(ctx.config.review, ctx.workdir);
     ctx.reviewResult = reviewResult;
 
+    // HARD FAILURE: Review failure means code quality gate not met
     if (!reviewResult.success) {
       console.log(chalk.red(`   ✗ Review failed: ${reviewResult.failureReason}`));
       return { action: "fail", reason: `Review failed: ${reviewResult.failureReason}` };

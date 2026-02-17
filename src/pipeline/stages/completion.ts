@@ -3,6 +3,22 @@
  *
  * Marks stories as passed, logs progress, fires completion hooks.
  * This is the final stage in the pipeline for successful executions.
+ *
+ * @returns
+ * - `continue`: Stories marked complete, hooks fired
+ *
+ * @example
+ * ```ts
+ * // Single story completion
+ * await completionStage.execute(ctx);
+ * // Logs: "✓ Story US-001 passed"
+ * // Fires: on-story-complete hook
+ *
+ * // Batch completion
+ * await completionStage.execute(ctx);
+ * // Logs: "✓ Story US-001 passed", "✓ Story US-002 passed", ...
+ * // Progress: "📊 Progress: 5/20 stories | ✅ 5 passed | ❌ 0 failed"
+ * ```
  */
 
 import chalk from "chalk";

@@ -1,13 +1,23 @@
 /**
  * Verify Stage
  *
- * Verifies the agent's work meets basic requirements:
- * - Tests pass (if applicable)
- * - Build succeeds (if applicable)
- * - No obvious failures
+ * Verifies the agent's work meets basic requirements by running tests.
+ * This is a lightweight verification before the full review stage.
  *
- * This stage runs a basic test verification to ensure agent output is valid.
- * For full quality checks (typecheck, lint, test), use the review stage instead.
+ * @returns
+ * - `continue`: Tests passed
+ * - `fail`: Tests failed (hard failure)
+ *
+ * @example
+ * ```ts
+ * // Tests pass
+ * await verifyStage.execute(ctx);
+ * // Logs: "✓ Tests passed"
+ *
+ * // Tests fail
+ * await verifyStage.execute(ctx);
+ * // Returns: { action: "fail", reason: "Tests failed (exit code 1)" }
+ * ```
  */
 
 import chalk from "chalk";
@@ -70,6 +80,7 @@ export const verifyStage: PipelineStage = {
     // Run tests
     const result = await runTests(testCommand, ctx.workdir);
 
+    // HARD FAILURE: Tests must pass for story to be marked complete
     if (!result.success) {
       console.log(chalk.red(`   ✗ Tests failed (exit code ${result.exitCode})`));
 

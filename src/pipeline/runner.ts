@@ -5,6 +5,7 @@
  * controlling the flow (continue/skip/fail/escalate/pause).
  */
 
+import chalk from "chalk";
 import type { PipelineContext, PipelineStage, StageResult } from "./types";
 
 /**
@@ -29,17 +30,28 @@ export interface PipelineRunResult {
  * Iterates through each enabled stage, executing them in sequence.
  * Stops early if a stage returns skip/fail/escalate/pause.
  *
+ * **IMPORTANT - Context Mutation Contract:**
+ * This function mutates the input context in-place. Stages modify the context
+ * object directly (e.g., `ctx.constitution = result`, `ctx.routing = routing`).
+ * The returned `context` in PipelineRunResult is the same object reference,
+ * not a clone. If you need immutability, clone the context before calling
+ * runPipeline.
+ *
  * @param stages - Array of pipeline stages to execute
- * @param context - Initial pipeline context
- * @returns Pipeline execution result
+ * @param context - Initial pipeline context (WILL BE MUTATED IN-PLACE)
+ * @returns Pipeline execution result with mutated context
  *
  * @example
  * ```ts
  * const stages = [routingStage, contextStage, executionStage];
- * const result = await runPipeline(stages, initialContext);
+ * const ctx = createInitialContext(); // { config, prd, story, ... }
+ *
+ * const result = await runPipeline(stages, ctx);
  *
  * if (result.success) {
  *   console.log("Pipeline completed successfully");
+ *   // ctx and result.context are the same object
+ *   console.log(ctx.agentResult === result.context.agentResult); // true
  * } else {
  *   console.log(`Pipeline stopped: ${result.finalAction} - ${result.reason}`);
  * }
@@ -52,6 +64,7 @@ export async function runPipeline(
   for (const stage of stages) {
     // Skip disabled stages
     if (!stage.enabled(context)) {
+      console.log(chalk.dim(`   → Stage "${stage.name}" skipped (disabled)`));
       continue;
     }
 

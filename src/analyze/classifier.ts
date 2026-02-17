@@ -12,6 +12,18 @@ import type { CodebaseScan, ClassificationResult, StoryClassification } from "./
 import { classifyComplexity } from "../routing";
 
 /**
+ * Raw LLM classification item (before validation)
+ */
+interface LLMClassificationItem {
+  storyId: unknown;
+  complexity: unknown;
+  relevantFiles: unknown;
+  reasoning: unknown;
+  estimatedLOC: unknown;
+  risks: unknown;
+}
+
+/**
  * Classify stories using LLM-enhanced analysis with fallback to keyword matching.
  *
  * Makes a single Anthropic API call (haiku tier) to classify all stories.
@@ -102,14 +114,14 @@ async function classifyWithLLM(
   });
 
   // Extract text from response
-  const textContent = response.content.find((c: any) => c.type === "text");
+  const textContent = response.content.find((c) => c.type === "text");
   if (!textContent || textContent.type !== "text") {
     throw new Error("No text response from LLM");
   }
 
   // Parse JSON response
   const jsonText = extractJSON(textContent.text);
-  const parsed = JSON.parse(jsonText);
+  const parsed: unknown = JSON.parse(jsonText);
 
   // Validate structure
   if (!Array.isArray(parsed)) {
@@ -117,14 +129,19 @@ async function classifyWithLLM(
   }
 
   // Map to StoryClassification[]
-  const classifications: StoryClassification[] = parsed.map((item: any) => ({
-    storyId: item.storyId,
-    complexity: validateComplexity(item.complexity),
-    relevantFiles: Array.isArray(item.relevantFiles) ? item.relevantFiles : [],
-    reasoning: String(item.reasoning || "No reasoning provided"),
-    estimatedLOC: Number(item.estimatedLOC) || 0,
-    risks: Array.isArray(item.risks) ? item.risks : [],
-  }));
+  const classifications: StoryClassification[] = parsed.map((item: unknown) => {
+    const rawItem = item as LLMClassificationItem;
+    return {
+      storyId: String(rawItem.storyId),
+      complexity: validateComplexity(rawItem.complexity),
+      relevantFiles: Array.isArray(rawItem.relevantFiles)
+        ? rawItem.relevantFiles.map(String)
+        : [],
+      reasoning: String(rawItem.reasoning || "No reasoning provided"),
+      estimatedLOC: Number(rawItem.estimatedLOC) || 0,
+      risks: Array.isArray(rawItem.risks) ? rawItem.risks.map(String) : [],
+    };
+  });
 
   // Ensure all stories are classified
   const classifiedIds = new Set(classifications.map((c) => c.storyId));
@@ -245,7 +262,7 @@ function extractJSON(text: string): string {
  * @param value - Complexity value from LLM
  * @returns Valid Complexity type
  */
-function validateComplexity(value: any): "simple" | "medium" | "complex" | "expert" {
+function validateComplexity(value: unknown): "simple" | "medium" | "complex" | "expert" {
   if (value === "simple" || value === "medium" || value === "complex" || value === "expert") {
     return value;
   }
