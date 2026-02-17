@@ -81,3 +81,71 @@ export function groupStoriesIntoBatches(
 
   return batches;
 }
+
+/**
+ * Precompute the full batch plan from ready stories.
+ * This eliminates O(n²) re-checking by computing all batches upfront.
+ * Maintains original story order from PRD.
+ *
+ * @param stories - Array of ready user stories (already filtered for dependencies)
+ * @param maxBatchSize - Maximum stories per batch (default: 4)
+ * @returns Array of story batches ready for sequential execution
+ *
+ * @example
+ * ```typescript
+ * const readyStories = getAllReadyStories(prd);
+ * const batchPlan = precomputeBatchPlan(readyStories);
+ * // Iterate through batches sequentially
+ * for (const batch of batchPlan) {
+ *   await executeBatch(batch);
+ * }
+ * ```
+ */
+export function precomputeBatchPlan(
+  stories: UserStory[],
+  maxBatchSize = 4,
+): StoryBatch[] {
+  const batches: StoryBatch[] = [];
+  let currentBatch: UserStory[] = [];
+
+  for (const story of stories) {
+    const isSimple =
+      story.routing?.complexity === "simple" &&
+      story.routing?.testStrategy === "test-after";
+
+    if (isSimple && currentBatch.length < maxBatchSize) {
+      // Add to current batch
+      currentBatch.push(story);
+    } else {
+      // Flush current batch if it exists
+      if (currentBatch.length > 0) {
+        batches.push({
+          stories: [...currentBatch],
+          isBatch: currentBatch.length > 1,
+        });
+        currentBatch = [];
+      }
+
+      // Add non-simple story as individual batch
+      if (!isSimple) {
+        batches.push({
+          stories: [story],
+          isBatch: false,
+        });
+      } else {
+        // Start new batch with this simple story
+        currentBatch.push(story);
+      }
+    }
+  }
+
+  // Flush remaining batch
+  if (currentBatch.length > 0) {
+    batches.push({
+      stories: [...currentBatch],
+      isBatch: currentBatch.length > 1,
+    });
+  }
+
+  return batches;
+}

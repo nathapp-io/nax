@@ -20,7 +20,7 @@ import { fireHook, type HooksConfig } from "../hooks";
 import { runThreeSessionTdd } from "../tdd";
 import { appendProgress } from "./progress";
 import { buildSingleSessionPrompt, buildBatchPrompt } from "./prompts";
-import { groupStoriesIntoBatches, type StoryBatch } from "./batching";
+import { groupStoriesIntoBatches, precomputeBatchPlan, type StoryBatch } from "./batching";
 import { escalateTier } from "./escalation";
 import { readQueueFile, clearQueueFile } from "./queue-handler";
 import {
@@ -116,6 +116,14 @@ export async function run(options: RunOptions): Promise<RunResult> {
     console.log(chalk.dim(`   Batching: enabled (groups consecutive simple stories, max 4/batch)`));
   }
 
+  // PERF-1: Precompute batch plan once from ready stories
+  let batchPlan: StoryBatch[] = [];
+  let currentBatchIndex = 0;
+  if (useBatch) {
+    const readyStories = getAllReadyStories(prd);
+    batchPlan = precomputeBatchPlan(readyStories, 4);
+  }
+
   // Main loop
   while (iterations < config.execution.maxIterations) {
     iterations++;
@@ -132,6 +140,13 @@ export async function run(options: RunOptions): Promise<RunResult> {
     if (prdDirty) {
       prd = await loadPRD(prdPath);
       prdDirty = false;
+
+      // PERF-1: Recompute batch plan after PRD reload
+      if (useBatch) {
+        const readyStories = getAllReadyStories(prd);
+        batchPlan = precomputeBatchPlan(readyStories, 4);
+        currentBatchIndex = 0;
+      }
     }
 
     // Check completion
@@ -141,59 +156,54 @@ export async function run(options: RunOptions): Promise<RunResult> {
       break;
     }
 
-    // Find next story
-    const story = getNextStory(prd);
-    if (!story) {
-      console.log(chalk.yellow("\n⚠️  No actionable stories (check dependencies)"));
-      break;
-    }
+    // PERF-1: Use precomputed batch plan instead of recomputing batches each iteration
+    let storiesToExecute: UserStory[];
+    let isBatchExecution: boolean;
+    let story: UserStory;
+    let routing: ReturnType<typeof routeTask>;
 
-    // Route the task (use pre-computed routing if available, otherwise compute)
-    const routing = story.routing || routeTask(
-      story.title,
-      story.description,
-      story.acceptanceCriteria,
-      story.tags,
-      config,
-    );
+    if (useBatch && currentBatchIndex < batchPlan.length) {
+      // Get next batch from precomputed plan
+      const batch = batchPlan[currentBatchIndex];
+      currentBatchIndex++;
 
-    // Check if we should batch this story with others
-    let storiesToExecute: UserStory[] = [story];
-    let isBatchExecution = false;
+      // Filter out already-completed stories (may have been completed in previous iteration)
+      storiesToExecute = batch.stories.filter(s => !s.passes && s.status !== "skipped");
+      isBatchExecution = batch.isBatch && storiesToExecute.length > 1;
 
-    if (
-      useBatch &&
-      routing.complexity === "simple" &&
-      routing.testStrategy === "test-after"
-    ) {
-      // OPTIMIZATION: Get all ready stories ONCE per iteration (not per story)
-      // This avoids O(n²) complexity when processing multiple stories
-      const readyStories = getAllReadyStories(prd);
-      const currentIndex = readyStories.findIndex((s) => s.id === story.id);
-
-      if (currentIndex !== -1) {
-        // Collect consecutive simple stories (max 4 total)
-        // Use pre-computed routing from analyze phase to avoid re-classification
-        const batchCandidates = [story];
-        for (let i = currentIndex + 1; i < readyStories.length && batchCandidates.length < 4; i++) {
-          const candidate = readyStories[i];
-          // Check pre-computed routing (set during analyze phase)
-          if (
-            candidate.routing?.complexity === "simple" &&
-            candidate.routing?.testStrategy === "test-after"
-          ) {
-            batchCandidates.push(candidate);
-          } else {
-            // Stop at first non-simple story
-            break;
-          }
-        }
-
-        if (batchCandidates.length > 1) {
-          storiesToExecute = batchCandidates;
-          isBatchExecution = true;
-        }
+      if (storiesToExecute.length === 0) {
+        // All stories in this batch already completed, move to next batch
+        continue;
       }
+
+      // Use first story as the primary story for routing/context
+      story = storiesToExecute[0];
+      routing = story.routing || routeTask(
+        story.title,
+        story.description,
+        story.acceptanceCriteria,
+        story.tags,
+        config,
+      );
+    } else {
+      // Fallback to single-story mode (when batching disabled or batch plan exhausted)
+      const nextStory = getNextStory(prd);
+      if (!nextStory) {
+        console.log(chalk.yellow("\n⚠️  No actionable stories (check dependencies)"));
+        break;
+      }
+
+      story = nextStory;
+      storiesToExecute = [story];
+      isBatchExecution = false;
+
+      routing = story.routing || routeTask(
+        story.title,
+        story.description,
+        story.acceptanceCriteria,
+        story.tags,
+        config,
+      );
     }
 
     // Check queue file for commands BEFORE executing batch

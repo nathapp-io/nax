@@ -5,9 +5,11 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { buildBatchPrompt, groupStoriesIntoBatches, escalateTier } from "../src/execution/runner";
+import { buildBatchPrompt } from "../src/execution/prompts";
+import { groupStoriesIntoBatches, precomputeBatchPlan } from "../src/execution/batching";
+import { escalateTier } from "../src/execution/escalation";
 import type { UserStory } from "../src/prd";
-import type { StoryBatch } from "../src/execution/runner";
+import type { StoryBatch } from "../src/execution/batching";
 
 describe("buildBatchPrompt", () => {
   test("generates prompt with multiple stories", () => {
@@ -433,6 +435,211 @@ describe("groupStoriesIntoBatches", () => {
   });
 });
 
+describe("precomputeBatchPlan", () => {
+  test("precomputes batch plan from ready stories", () => {
+    const stories: UserStory[] = [
+      {
+        id: "US-001",
+        title: "Simple 1",
+        description: "First simple",
+        acceptanceCriteria: ["AC1"],
+        tags: [],
+        dependencies: [],
+        status: "pending",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+      },
+      {
+        id: "US-002",
+        title: "Simple 2",
+        description: "Second simple",
+        acceptanceCriteria: ["AC2"],
+        tags: [],
+        dependencies: [],
+        status: "pending",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+      },
+      {
+        id: "US-003",
+        title: "Complex",
+        description: "Complex story",
+        acceptanceCriteria: ["AC3"],
+        tags: [],
+        dependencies: [],
+        status: "pending",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { complexity: "complex", modelTier: "balanced", testStrategy: "three-session-tdd", reasoning: "complex" },
+      },
+    ];
+
+    const plan = precomputeBatchPlan(stories);
+
+    expect(plan).toHaveLength(2);
+    // First batch: 2 simple stories
+    expect(plan[0].stories).toHaveLength(2);
+    expect(plan[0].isBatch).toBe(true);
+    expect(plan[0].stories.map(s => s.id)).toEqual(["US-001", "US-002"]);
+    // Second batch: 1 complex story
+    expect(plan[1].stories).toHaveLength(1);
+    expect(plan[1].isBatch).toBe(false);
+    expect(plan[1].stories[0].id).toBe("US-003");
+  });
+
+  test("maintains story order from PRD", () => {
+    const stories: UserStory[] = [
+      {
+        id: "US-001",
+        title: "Simple 1",
+        description: "First",
+        acceptanceCriteria: ["AC1"],
+        tags: [],
+        dependencies: [],
+        status: "pending",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+      },
+      {
+        id: "US-002",
+        title: "Complex",
+        description: "Middle",
+        acceptanceCriteria: ["AC2"],
+        tags: [],
+        dependencies: [],
+        status: "pending",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { complexity: "medium", modelTier: "balanced", testStrategy: "test-after", reasoning: "medium" },
+      },
+      {
+        id: "US-003",
+        title: "Simple 2",
+        description: "Last",
+        acceptanceCriteria: ["AC3"],
+        tags: [],
+        dependencies: [],
+        status: "pending",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+      },
+    ];
+
+    const plan = precomputeBatchPlan(stories);
+
+    // Should maintain order: US-001, US-002, US-003
+    expect(plan).toHaveLength(3);
+    expect(plan[0].stories[0].id).toBe("US-001");
+    expect(plan[1].stories[0].id).toBe("US-002");
+    expect(plan[2].stories[0].id).toBe("US-003");
+  });
+
+  test("only batches simple stories with test-after strategy", () => {
+    const stories: UserStory[] = [
+      {
+        id: "US-001",
+        title: "Simple TDD",
+        description: "Simple but uses TDD",
+        acceptanceCriteria: ["AC1"],
+        tags: [],
+        dependencies: [],
+        status: "pending",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "three-session-tdd", reasoning: "simple" },
+      },
+      {
+        id: "US-002",
+        title: "Simple test-after",
+        description: "Simple with test-after",
+        acceptanceCriteria: ["AC2"],
+        tags: [],
+        dependencies: [],
+        status: "pending",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+      },
+    ];
+
+    const plan = precomputeBatchPlan(stories);
+
+    // US-001 should be individual (TDD), US-002 should be individual (no other simple test-after to batch with)
+    expect(plan).toHaveLength(2);
+    expect(plan[0].isBatch).toBe(false);
+    expect(plan[0].stories[0].id).toBe("US-001");
+    expect(plan[1].isBatch).toBe(false);
+    expect(plan[1].stories[0].id).toBe("US-002");
+  });
+
+  test("handles empty story list", () => {
+    const stories: UserStory[] = [];
+    const plan = precomputeBatchPlan(stories);
+    expect(plan).toHaveLength(0);
+  });
+
+  test("respects max batch size", () => {
+    const stories: UserStory[] = Array.from({ length: 6 }, (_, i) => ({
+      id: `US-00${i + 1}`,
+      title: `Simple ${i + 1}`,
+      description: `Story ${i + 1}`,
+      acceptanceCriteria: [`AC${i + 1}`],
+      tags: [],
+      dependencies: [],
+      status: "pending" as const,
+      passes: false,
+      escalations: [],
+      attempts: 0,
+      routing: { complexity: "simple" as const, modelTier: "fast" as const, testStrategy: "test-after" as const, reasoning: "simple" },
+    }));
+
+    const plan = precomputeBatchPlan(stories, 3);
+
+    // Should create 2 batches of 3
+    expect(plan).toHaveLength(2);
+    expect(plan[0].stories).toHaveLength(3);
+    expect(plan[0].isBatch).toBe(true);
+    expect(plan[1].stories).toHaveLength(3);
+    expect(plan[1].isBatch).toBe(true);
+  });
+
+  test("handles all stories already passed", () => {
+    const stories: UserStory[] = [
+      {
+        id: "US-001",
+        title: "Passed",
+        description: "Already done",
+        acceptanceCriteria: ["AC1"],
+        tags: [],
+        dependencies: [],
+        status: "passed",
+        passes: true,
+        escalations: [],
+        attempts: 1,
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+      },
+    ];
+
+    const plan = precomputeBatchPlan(stories);
+
+    // Should still include passed story in plan (filtering happens at runtime)
+    expect(plan).toHaveLength(1);
+    expect(plan[0].stories[0].id).toBe("US-001");
+  });
+});
+
 describe("Batch Failure Escalation Strategy", () => {
   test("batch failure should escalate only first story, others remain at same tier", () => {
     // Simulate a batch of 4 simple stories at 'fast' tier
@@ -831,12 +1038,12 @@ describe("Queue Commands Before Batch Execution", () => {
     const allStories: UserStory[] = [
       {
         id: "US-001",
-        title: "Completed",
+        title: "Passed",
         description: "Already done",
         acceptanceCriteria: ["AC1"],
         tags: [],
         dependencies: [],
-        status: "completed",
+        status: "passed",
         passes: true,
         escalations: [],
         attempts: 1,
