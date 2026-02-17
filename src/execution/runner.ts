@@ -35,6 +35,7 @@ import {
   convertFixStoryToUserStory,
 } from "../acceptance";
 import { saveRunMetrics, type StoryMetrics } from "../metrics";
+import type { PipelineEventEmitter } from "../pipeline/events";
 
 /** Run options */
 export interface RunOptions {
@@ -54,6 +55,8 @@ export interface RunOptions {
   dryRun: boolean;
   /** Enable story batching (default: true) */
   useBatch?: boolean;
+  /** Optional event emitter for TUI integration */
+  eventEmitter?: PipelineEventEmitter;
 }
 
 /** Run result */
@@ -69,7 +72,7 @@ export interface RunResult {
  * Main execution loop
  */
 export async function run(options: RunOptions): Promise<RunResult> {
-  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useBatch = true } = options;
+  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useBatch = true, eventEmitter } = options;
   const startTime = Date.now();
   const runStartedAt = new Date().toISOString();
   const runId = `run-${new Date().toISOString().replace(/[:.]/g, "-")}`;
@@ -270,7 +273,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       };
 
       // Run pipeline
-      const pipelineResult = await runPipeline(defaultPipeline, pipelineContext);
+      const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, eventEmitter);
 
       // Update PRD reference (pipeline may have modified it)
       prd = pipelineResult.context.prd;
@@ -586,7 +589,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
               storyStartTime: fixStoryStartTime,
             };
 
-            const fixResult = await runPipeline(defaultPipeline, fixContext);
+            const fixResult = await runPipeline(defaultPipeline, fixContext, eventEmitter);
             prd = fixResult.context.prd;
 
             if (fixResult.success) {

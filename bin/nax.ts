@@ -55,6 +55,7 @@ import {
   displayLastRunMetrics,
   displayModelEfficiency,
 } from "../src/cli";
+import { renderTui, PipelineEventEmitter, type StoryDisplayState } from "../src/tui";
 
 const pkg = await Bun.file(join(import.meta.dir, "..", "package.json")).json();
 
@@ -241,11 +242,28 @@ program
     const headlessEnv = process.env.NAX_HEADLESS === "1";
     const useHeadless = !isTTY || headlessFlag || headlessEnv;
 
-    // For Phase 1, both modes run the same way (TUI rendering comes in Phase 2)
-    // This variable will be consumed in Phase 2 to determine rendering mode
+    // Create event emitter for TUI integration
+    const eventEmitter = new PipelineEventEmitter();
+
+    // Render TUI if not in headless mode
+    let tuiInstance: ReturnType<typeof renderTui> | undefined;
     if (!useHeadless) {
-      // TUI mode would activate here in Phase 2
-      console.log(chalk.dim("   [TUI mode detected — rendering in Phase 2]"));
+      // Load PRD to get initial story states
+      const prd = await loadPRD(prdPath);
+      const initialStories: StoryDisplayState[] = prd.userStories.map((story) => ({
+        story,
+        status: story.passes ? "passed" : "pending",
+        routing: story.routing,
+        cost: 0,
+      }));
+
+      tuiInstance = renderTui({
+        feature: options.feature,
+        stories: initialStories,
+        totalCost: 0,
+        elapsedMs: 0,
+        events: eventEmitter,
+      });
     } else {
       console.log(chalk.dim("   [Headless mode — pipe output]"));
     }
@@ -259,14 +277,22 @@ program
       featureDir,
       dryRun: options.dryRun,
       useBatch: options.batch ?? true,
+      eventEmitter,
     });
 
-    // Summary
-    console.log(chalk.dim("\n── Summary ──────────────────────────────────"));
-    console.log(chalk.dim(`   Iterations:  ${result.iterations}`));
-    console.log(chalk.dim(`   Completed:   ${result.storiesCompleted}`));
-    console.log(chalk.dim(`   Cost:        $${result.totalCost.toFixed(4)}`));
-    console.log(chalk.dim(`   Duration:    ${(result.durationMs / 1000 / 60).toFixed(1)} min`));
+    // Cleanup TUI if it was rendered
+    if (tuiInstance) {
+      tuiInstance.unmount();
+    }
+
+    // Summary (only in headless mode; TUI shows summary itself)
+    if (useHeadless) {
+      console.log(chalk.dim("\n── Summary ──────────────────────────────────"));
+      console.log(chalk.dim(`   Iterations:  ${result.iterations}`));
+      console.log(chalk.dim(`   Completed:   ${result.storiesCompleted}`));
+      console.log(chalk.dim(`   Cost:        $${result.totalCost.toFixed(4)}`));
+      console.log(chalk.dim(`   Duration:    ${(result.durationMs / 1000 / 60).toFixed(1)} min`));
+    }
 
     process.exit(result.success ? 0 : 1);
   });
