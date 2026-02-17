@@ -63,27 +63,57 @@ test/                 # Bun test files (*.test.ts)
 - Barrel exports via `index.ts` — import from module path, not deep paths
 - Config defaults co-located with schema (`DEFAULT_CONFIG` in `schema.ts`)
 
-## Current Status (v0.1.0)
+## Current Status (v0.2.0-dev)
 
-### Done
+**Tests:** 222 passing across 16 files, 504 assertions
+**Last Review:** 2026-02-17 — Grade B+ (82/100) — see `docs/20260217-post-impl-review.md`
+
+### Implemented (v0.1 → v0.2)
 - [x] Agent adapter interface + Claude Code implementation
-- [x] Config schema + layered loader
-- [x] Config validation (version, limits, escalation settings)
-- [x] Hook lifecycle system
+- [x] Config schema + layered loader + validation
+- [x] Hook lifecycle system + **command injection prevention** (SEC-1 ✅)
 - [x] Complexity-based routing + test strategy decision tree
-- [x] TDD isolation checker
-- [x] Three-session TDD orchestrator
+- [x] TDD isolation checker + three-session TDD orchestrator
 - [x] PRD loader/saver with dependency-aware ordering
 - [x] Execution runner with cost tracking
-- [x] Queue manager module
+- [x] Queue manager + **PAUSE/ABORT/SKIP commands** (v0.2 Phase 2 ✅)
 - [x] CLI: init, run, analyze, features create/list, agents, status
-- [x] 67 tests passing
+- [x] **Story-scoped context extraction from PRD** (v0.2 Phase 1 ✅)
+- [x] **Explicit 3-tier escalation chain** fast→balanced→powerful (v0.2 Phase 3 ✅)
+- [x] **Story batching for simple stories** with --no-batch flag (v0.2 Phase 4 ✅)
+- [x] **Path validation + bounds checking** (SEC-2 ✅) — `src/config/path-security.ts`
+- [x] **Agent installation check + retry with exponential backoff** (BUG-1 partial ✅)
+- [x] **Atomic queue file handling** — rename-before-read pattern (BUG-2 ✅)
+- [x] **PRD size limits** — `maxStoriesPerFeature` config + validation (MEM-1 partial ✅)
+- [x] **Improved cost estimation** — structured output parsing + confidence (BUG-3 partial ✅)
+- [x] **Story dependency validation** in analyze command (BUG-6 ✅)
+- [x] **Hook timeout messages** — clear timeout vs failure distinction (BUG-5 ✅)
 
-### TODO (Priority Order)
-1. **Agent execution** — Actually spawn Claude Code sessions with prompts via Bun.spawn
-2. **Progress logging** — Append to progress.txt after each story completion
-3. **Auto-escalation** — On failure, escalate model tier (cheap → standard → premium) and retry
-4. **Pipeline module** — Wire up full execution flow with quality gates
+### Remaining Issues (from review, by priority)
+
+#### P1 — Reliability
+- [ ] **MEM-1 (partial):** Lazy loading for large PRDs not implemented — only size limit validation exists. No memory pressure detection or streaming JSON parsing.
+- [ ] **PERF-1:** O(n²) batch story selection — not yet optimized with pre-computed eligible stories.
+- [ ] **BUG-3 (partial):** Cost estimation still falls back to duration-based guessing when structured output unavailable. No per-story confidence scores.
+
+#### P2 — Quality
+- [ ] **ENH-1:** JSDoc coverage ~40% — `src/agents/claude.ts` (1 JSDoc), `bin/ngent.ts` (1 JSDoc) are underserved. Most exported functions in runner.ts have docs but `routeTask()`, `buildContext()`, `runThreeSessionTdd()` lack usage examples.
+- [ ] **TYPE-1:** Config loader still uses `as unknown as` double-casting (2 instances). No Zod runtime validation.
+- [ ] **BUG-4:** Batch failure still escalates only first story. No config option for batch-wide escalation.
+- [ ] **ENH-2:** No agent capability negotiation — adapters don't declare supported tiers/features.
+- [ ] **PERF-2:** PRD reloaded every iteration — no dirty flag optimization.
+- [ ] **ENH-3:** Context builder doesn't load file content — stories only, no source code context.
+
+#### P3 — Polish
+- [ ] **STYLE-1:** `runner.ts` is 901 lines (was 779, grew with fixes). Needs splitting into prompts/batching/queue-handler/escalation modules.
+- [ ] **ENH-4:** No progress bar or ETA display — only line-by-line iteration logging.
+- [ ] **TYPE-2:** `QueueCommand` still mixed string literals + object — not discriminated union.
+- [ ] **ENH-5:** No dry-run mode for three-session TDD.
+- [ ] **PERF-3:** Token estimation still uses `Math.ceil(text.length / 3)` — no improved heuristic.
+
+#### P4 — Consistency
+- [ ] **STYLE-2:** Inconsistent error handling patterns (throw vs return null vs log warning).
+- [ ] **STYLE-3:** Magic numbers not extracted as named constants.
 
 ## Git
 
