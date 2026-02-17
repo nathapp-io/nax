@@ -97,6 +97,16 @@ export interface TddConfig {
   autoApproveVerifier: boolean;
 }
 
+/** Constitution config */
+export interface ConstitutionConfig {
+  /** Enable constitution loading and injection */
+  enabled: boolean;
+  /** Path to constitution file relative to ngent/ directory */
+  path: string;
+  /** Maximum tokens allowed for constitution content */
+  maxTokens: number;
+}
+
 /** Full ngent configuration */
 export interface NgentConfig {
   /** Schema version */
@@ -111,6 +121,8 @@ export interface NgentConfig {
   quality: QualityConfig;
   /** TDD settings */
   tdd: TddConfig;
+  /** Constitution settings */
+  constitution: ConstitutionConfig;
 }
 
 /** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */
@@ -195,6 +207,12 @@ const TddConfigSchema = z.object({
   autoApproveVerifier: z.boolean(),
 });
 
+const ConstitutionConfigSchema = z.object({
+  enabled: z.boolean(),
+  path: z.string().min(1, "constitution.path must be non-empty"),
+  maxTokens: z.number().int().positive({ message: "constitution.maxTokens must be > 0" }),
+});
+
 export const NgentConfigSchema = z
   .object({
     version: z.number(),
@@ -203,6 +221,7 @@ export const NgentConfigSchema = z
     execution: ExecutionConfigSchema,
     quality: QualityConfigSchema,
     tdd: TddConfigSchema,
+    constitution: ConstitutionConfigSchema,
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",
@@ -251,6 +270,11 @@ export const DEFAULT_CONFIG: NgentConfig = {
     maxRetries: 2,
     autoVerifyIsolation: true,
     autoApproveVerifier: true,
+  },
+  constitution: {
+    enabled: true,
+    path: "constitution.md",
+    maxTokens: 2000,
   },
 };
 

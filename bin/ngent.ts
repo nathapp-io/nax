@@ -110,9 +110,68 @@ program
       "# ngent temp files\n*.tmp\n.paused.json\n",
     );
 
+    // Write starter constitution.md
+    await Bun.write(
+      join(ngentDir, "constitution.md"),
+      `# Project Constitution
+
+This document defines the coding standards, architectural rules, testing requirements, and forbidden patterns for this project. All AI agents must follow these rules strictly.
+
+## Coding Standards
+
+- Follow the project's existing code style and conventions
+- Write clear, self-documenting code with meaningful names
+- Keep functions small and focused (single responsibility)
+- Prefer immutability over mutation
+- Use consistent formatting throughout the codebase
+
+## Testing Requirements
+
+- All new code must include tests
+- Tests should cover happy paths, edge cases, and error conditions
+- Aim for high test coverage (80%+ recommended)
+- Tests must pass before marking a story as complete
+
+## Architecture Rules
+
+- Follow the project's existing architecture patterns
+- Each module should have a clear, single purpose
+- Avoid tight coupling between modules
+- Use dependency injection where appropriate
+- Document architectural decisions in comments or docs
+
+## Forbidden Patterns
+
+- No hardcoded secrets, API keys, or credentials
+- No console.log in production code (use proper logging)
+- No \`any\` types in TypeScript (use proper typing)
+- No commented-out code (use version control instead)
+- No large files (split into smaller, focused modules)
+
+## Commit Standards
+
+- Write clear, descriptive commit messages
+- Follow conventional commits format (feat:, fix:, refactor:, etc.)
+- Commit early and often with atomic changes
+- Reference story IDs in commit messages
+
+## Documentation
+
+- Add JSDoc comments for public APIs
+- Update README when adding new features
+- Document complex algorithms or business logic
+- Keep documentation up-to-date with code changes
+
+---
+
+**Note:** Customize this constitution to match your project's specific needs. The AI agents will reference this document when implementing stories.
+`,
+    );
+
     console.log(chalk.green("✅ Initialized ngent"));
     console.log(chalk.dim(`   ${ngentDir}/`));
     console.log(chalk.dim("   ├── config.json"));
+    console.log(chalk.dim("   ├── constitution.md"));
     console.log(chalk.dim("   ├── hooks.json"));
     console.log(chalk.dim("   ├── features/"));
     console.log(chalk.dim("   └── hooks/"));

@@ -10,6 +10,7 @@
  */
 
 import chalk from "chalk";
+import { join, dirname } from "node:path";
 import type { NgentConfig } from "../config";
 import { resolveModel } from "../config";
 import { getAgent, validateAgentForTier } from "../agents";
@@ -23,6 +24,7 @@ import { buildSingleSessionPrompt, buildBatchPrompt } from "./prompts";
 import { groupStoriesIntoBatches, precomputeBatchPlan, type StoryBatch } from "./batching";
 import { escalateTier } from "./escalation";
 import { readQueueFile, clearQueueFile } from "./queue-handler";
+import { loadConstitution, type ConstitutionResult } from "../constitution";
 import {
   hookCtx,
   maybeGetContext,
@@ -109,6 +111,17 @@ export async function run(options: RunOptions): Promise<RunResult> {
     console.error(chalk.red(`❌ Feature has ${counts.total} stories, exceeding limit of ${config.execution.maxStoriesPerFeature}`));
     console.error(chalk.yellow("   Split this feature into smaller features or increase maxStoriesPerFeature in config."));
     process.exit(1);
+  }
+
+  // Load constitution (if enabled)
+  const ngentDir = dirname(dirname(prdPath)); // prd.json is in features/<name>/, ngent/ is two levels up
+  const constitution = await loadConstitution(ngentDir, config.constitution);
+
+  if (constitution) {
+    console.log(chalk.dim(`   Constitution: loaded (${constitution.tokens} tokens${constitution.truncated ? ", truncated" : ""})`));
+    if (constitution.truncated) {
+      console.log(chalk.yellow(`   ⚠️  Constitution truncated from ${constitution.originalTokens} to ${constitution.tokens} tokens (max: ${config.constitution.maxTokens})`));
+    }
   }
 
   console.log(chalk.cyan(`\n🚀 ngent: Starting ${feature}`));
@@ -358,8 +371,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
       const contextMarkdown = await maybeGetContext(prd, story, config, useContext);
 
       const prompt = isBatchExecution
-        ? buildBatchPrompt(storiesToExecute, contextMarkdown)
-        : buildSingleSessionPrompt(story, contextMarkdown);
+        ? buildBatchPrompt(storiesToExecute, contextMarkdown, constitution ?? undefined)
+        : buildSingleSessionPrompt(story, contextMarkdown, constitution ?? undefined);
 
       if (isBatchExecution) {
         console.log(chalk.cyan(`\n   → Batch session (${storiesToExecute.length} stories, test-after)`));
