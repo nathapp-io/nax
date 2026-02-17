@@ -231,7 +231,6 @@ program
       feature: options.feature,
       featureDir,
       dryRun: options.dryRun,
-      useContext: options.context ?? true,
       useBatch: options.batch ?? true,
     });
 
