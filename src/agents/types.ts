@@ -100,6 +100,59 @@ export interface AgentCapabilities {
 }
 
 /**
+ * Configuration options for running an agent in plan mode.
+ *
+ * Plan mode spawns the agent interactively (or non-interactively with input file)
+ * to gather requirements, ask clarifying questions, and produce a structured spec.
+ *
+ * @example
+ * ```ts
+ * const options: PlanOptions = {
+ *   prompt: "Add URL shortener with analytics",
+ *   workdir: "/home/user/project",
+ *   interactive: true,
+ *   codebaseContext: "File tree:\nsrc/\n  index.ts\n  utils.ts\n",
+ * };
+ * ```
+ */
+export interface PlanOptions {
+  /** The initial planning prompt or task description */
+  prompt: string;
+  /** Working directory */
+  workdir: string;
+  /** Whether to run in interactive mode (agent takes over terminal) */
+  interactive: boolean;
+  /** Optional codebase context (file tree, dependencies, test patterns) */
+  codebaseContext?: string;
+  /** Optional input file path for non-interactive mode */
+  inputFile?: string;
+  /** Model tier to use for planning (default: "balanced") */
+  modelTier?: ModelTier;
+  /** Resolved model definition */
+  modelDef?: ModelDef;
+}
+
+/**
+ * Result from running an agent in plan mode.
+ *
+ * Contains the generated specification content and optional conversation log.
+ *
+ * @example
+ * ```ts
+ * const result: PlanResult = {
+ *   specContent: "# Feature: URL Shortener\n\n## Problem\n...",
+ *   conversationLog: "Agent: What storage backend should we use?\nUser: PostgreSQL\n...",
+ * };
+ * ```
+ */
+export interface PlanResult {
+  /** The generated specification markdown content */
+  specContent: string;
+  /** Optional conversation log (for debugging/review) */
+  conversationLog?: string;
+}
+
+/**
  * Agent adapter interface — one implementation per supported coding agent.
  *
  * Provides uniform interface for checking installation, running agents,
@@ -127,6 +180,10 @@ export interface AgentCapabilities {
  *
  *   buildCommand(options: AgentRunOptions): string[] {
  *     return [this.binary, "--prompt", options.prompt];
+ *   }
+ *
+ *   async plan(options: PlanOptions): Promise<PlanResult> {
+ *     // spawn agent in plan mode
  *   }
  * }
  * ```
@@ -166,4 +223,15 @@ export interface AgentAdapter {
    * @returns Command array suitable for process spawning
    */
   buildCommand(options: AgentRunOptions): string[];
+
+  /**
+   * Run the agent in plan mode to generate a feature specification.
+   *
+   * Spawns the agent interactively or with an input file to gather requirements,
+   * ask clarifying questions, and produce a structured spec document.
+   *
+   * @param options - Plan mode configuration
+   * @returns Generated specification and optional conversation log
+   */
+  plan(options: PlanOptions): Promise<PlanResult>;
 }

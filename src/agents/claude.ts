@@ -2,7 +2,7 @@
  * Claude Code Agent Adapter
  */
 
-import type { AgentAdapter, AgentCapabilities, AgentResult, AgentRunOptions } from "./types";
+import type { AgentAdapter, AgentCapabilities, AgentResult, AgentRunOptions, PlanOptions, PlanResult } from "./types";
 import { estimateCostFromOutput, estimateCostByDuration } from "./cost";
 
 /**
@@ -242,5 +242,128 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       durationMs,
       estimatedCost: cost,
     };
+  }
+
+  /**
+   * Run Claude Code in plan mode to generate a feature specification.
+   *
+   * Uses the `--plan` flag to spawn Claude Code in planning mode.
+   * In interactive mode, the agent takes over the terminal and can ask questions.
+   * In non-interactive mode, reads from an input file.
+   *
+   * @param options - Plan mode configuration
+   * @returns Generated specification content and conversation log
+   * @throws Error if plan mode fails
+   *
+   * @example
+   * ```ts
+   * const adapter = new ClaudeCodeAdapter();
+   * const result = await adapter.plan({
+   *   prompt: "Add URL shortener with analytics",
+   *   workdir: "/project",
+   *   interactive: true,
+   *   codebaseContext: "File tree:\nsrc/\n  index.ts\n",
+   * });
+   * console.log(result.specContent);
+   * ```
+   */
+  async plan(options: PlanOptions): Promise<PlanResult> {
+    const cmd = this.buildPlanCommand(options);
+
+    // In interactive mode, inherit stdio so agent can interact with user
+    // In non-interactive mode, capture output
+    const spawnOptions = options.interactive
+      ? {
+          cwd: options.workdir,
+          stdin: "inherit" as const,
+          stdout: "inherit" as const,
+          stderr: "inherit" as const,
+          env: {
+            ...process.env,
+            ...(options.modelDef?.env || {}),
+          },
+        }
+      : {
+          cwd: options.workdir,
+          stdin: "pipe" as const,
+          stdout: "pipe" as const,
+          stderr: "pipe" as const,
+          env: {
+            ...process.env,
+            ...(options.modelDef?.env || {}),
+          },
+        };
+
+    const proc = Bun.spawn(cmd, spawnOptions);
+
+    // In non-interactive mode, send input file content if provided
+    if (!options.interactive && options.inputFile) {
+      try {
+        const inputContent = await Bun.file(options.inputFile).text();
+        if (proc.stdin) {
+          proc.stdin.write(inputContent);
+          proc.stdin.end();
+        }
+      } catch (error) {
+        throw new Error(`Failed to read input file ${options.inputFile}: ${(error as Error).message}`);
+      }
+    }
+
+    const exitCode = await proc.exited;
+
+    if (exitCode !== 0) {
+      if (options.interactive) {
+        throw new Error(`Plan mode failed with exit code ${exitCode}`);
+      } else {
+        const stderr = await new Response(proc.stderr!).text();
+        throw new Error(`Plan mode failed with exit code ${exitCode}: ${stderr}`);
+      }
+    }
+
+    // In interactive mode, the agent writes the spec directly to the file system
+    // We need to capture it from the expected location (handled by CLI)
+    // In non-interactive mode, capture stdout
+    let specContent = "";
+    let conversationLog = "";
+
+    if (!options.interactive) {
+      const stdout = await new Response(proc.stdout!).text();
+      const stderr = await new Response(proc.stderr!).text();
+      specContent = stdout;
+      conversationLog = stderr;
+    }
+
+    return {
+      specContent,
+      conversationLog,
+    };
+  }
+
+  /**
+   * Build the CLI command for plan mode.
+   *
+   * @param options - Plan mode options
+   * @returns Command array for spawning the plan process
+   */
+  private buildPlanCommand(options: PlanOptions): string[] {
+    const cmd = [this.binary, "--plan"];
+
+    // Add model if specified
+    if (options.modelDef) {
+      cmd.push("--model", options.modelDef.model);
+    }
+
+    // Add dangerously-skip-permissions for automation
+    cmd.push("--dangerously-skip-permissions");
+
+    // Add prompt with codebase context if available
+    let fullPrompt = options.prompt;
+    if (options.codebaseContext) {
+      fullPrompt = `${options.codebaseContext}\n\n${options.prompt}`;
+    }
+
+    cmd.push("-p", fullPrompt);
+
+    return cmd;
   }
 }

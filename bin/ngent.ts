@@ -47,7 +47,7 @@ import { checkAgentHealth, getAllAgentNames } from "../src/agents";
 import { loadPRD, countStories } from "../src/prd";
 import { loadHooksConfig } from "../src/hooks";
 import { run } from "../src/execution";
-import { analyzeFeature } from "../src/cli";
+import { analyzeFeature, planCommand } from "../src/cli";
 
 const pkg = await Bun.file(join(import.meta.dir, "..", "package.json")).json();
 
@@ -333,6 +333,46 @@ features
       }
     }
     console.log();
+  });
+
+// ── plan ─────────────────────────────────────────────
+program
+  .command("plan <description>")
+  .description("Interactive planning via agent plan mode")
+  .option("--from <file>", "Non-interactive mode: read from input file")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (description: string, options) => {
+    // Validate directory path
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    const ngentDir = findProjectDir(workdir);
+    if (!ngentDir) {
+      console.error(chalk.red("ngent not initialized. Run: ngent init"));
+      process.exit(1);
+    }
+
+    // Load config
+    const config = await loadConfig(workdir);
+
+    try {
+      const specPath = await planCommand(description, workdir, config, {
+        interactive: !options.from,
+        from: options.from,
+      });
+
+      console.log(chalk.green(`\n✅ Planning complete`));
+      console.log(chalk.dim(`   Spec: ${specPath}`));
+      console.log(chalk.dim(`\nNext: ngent analyze -f <feature-name>`));
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
   });
 
 // ── analyze ──────────────────────────────────────────

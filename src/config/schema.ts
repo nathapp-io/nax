@@ -133,6 +133,14 @@ export interface ReviewConfig {
   };
 }
 
+/** Plan config */
+export interface PlanConfig {
+  /** Model tier for planning (default: balanced) */
+  model: ModelTier;
+  /** Output path for generated spec (relative to ngent/ directory) */
+  outputPath: string;
+}
+
 /** Full ngent configuration */
 export interface NgentConfig {
   /** Schema version */
@@ -153,6 +161,8 @@ export interface NgentConfig {
   analyze: AnalyzeConfig;
   /** Review settings */
   review: ReviewConfig;
+  /** Plan settings */
+  plan: PlanConfig;
 }
 
 /** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */
@@ -260,6 +270,11 @@ const ReviewConfigSchema = z.object({
   }),
 });
 
+const PlanConfigSchema = z.object({
+  model: ModelTierSchema,
+  outputPath: z.string().min(1, "plan.outputPath must be non-empty"),
+});
+
 export const NgentConfigSchema = z
   .object({
     version: z.number(),
@@ -271,6 +286,7 @@ export const NgentConfigSchema = z
     constitution: ConstitutionConfigSchema,
     analyze: AnalyzeConfigSchema,
     review: ReviewConfigSchema,
+    plan: PlanConfigSchema,
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",
@@ -335,6 +351,10 @@ export const DEFAULT_CONFIG: NgentConfig = {
     enabled: true,
     checks: ["typecheck", "lint", "test"],
     commands: {},
+  },
+  plan: {
+    model: "balanced",
+    outputPath: "spec.md",
   },
 };
 
