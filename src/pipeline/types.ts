@@ -90,15 +90,15 @@ export interface PipelineContext {
  */
 export type StageAction =
   /** Continue to the next stage */
-  | { action: "continue" }
+  | { action: "continue"; cost?: number }
   /** Skip this story (mark as skipped, don't run further stages) */
-  | { action: "skip"; reason: string }
+  | { action: "skip"; reason: string; cost?: number }
   /** Mark story as failed (don't run further stages) */
-  | { action: "fail"; reason: string }
+  | { action: "fail"; reason: string; cost?: number }
   /** Escalate to a higher tier and retry the pipeline */
-  | { action: "escalate" }
+  | { action: "escalate"; cost?: number }
   /** Pause execution (user intervention required via queue command) */
-  | { action: "pause"; reason: string };
+  | { action: "pause"; reason: string; cost?: number };
 
 /**
  * Result returned by a pipeline stage after execution.

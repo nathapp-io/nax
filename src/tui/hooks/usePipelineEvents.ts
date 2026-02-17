@@ -81,7 +81,7 @@ export function usePipelineEvents(
     };
 
     // story:complete — Mark story as complete (passed/failed/skipped)
-    const onStoryComplete = (story: UserStory, result: { action: string }) => {
+    const onStoryComplete = (story: UserStory, result: { action: string; cost?: number }) => {
       setState((prev) => {
         const newStories = prev.stories.map((s) => {
           if (s.story.id === story.id) {
@@ -96,15 +96,21 @@ export function usePipelineEvents(
               status = "paused";
             }
 
-            return { ...s, status };
+            // Accumulate cost from result
+            const storyCost = (s.cost || 0) + (result.cost || 0);
+            return { ...s, status, cost: storyCost };
           }
           return s;
         });
+
+        // Update total cost accumulator
+        const totalCost = newStories.reduce((sum, s) => sum + (s.cost || 0), 0);
 
         return {
           ...prev,
           stories: newStories,
           currentStory: undefined,
+          totalCost,
         };
       });
     };

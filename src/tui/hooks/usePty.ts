@@ -61,6 +61,13 @@ export interface PtyState {
 const MAX_PTY_BUFFER_LINES = 500;
 
 /**
+ * Maximum length per line in characters.
+ *
+ * Prevents memory exhaustion from single extremely long lines.
+ */
+const MAX_LINE_LENGTH = 10_000;
+
+/**
  * Hook for managing PTY lifecycle.
  *
  * Spawns a PTY process, buffers output, and provides a handle for input/resize/kill.
@@ -127,9 +134,21 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
       const lines = (currentLine + data).split("\n");
       currentLine = lines.pop() || "";
 
+      // Truncate incomplete line if too long
+      if (currentLine.length > MAX_LINE_LENGTH) {
+        currentLine = currentLine.slice(-MAX_LINE_LENGTH);
+      }
+
       if (lines.length > 0) {
+        // Truncate each complete line
+        const truncatedLines = lines.map((line) =>
+          line.length > MAX_LINE_LENGTH
+            ? line.slice(0, MAX_LINE_LENGTH) + "…"
+            : line,
+        );
+
         setState((prev) => {
-          const newLines = [...prev.outputLines, ...lines];
+          const newLines = [...prev.outputLines, ...truncatedLines];
           // Keep only last N lines
           const trimmed = newLines.length > MAX_PTY_BUFFER_LINES
             ? newLines.slice(-MAX_PTY_BUFFER_LINES)
