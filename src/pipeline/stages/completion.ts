@@ -27,6 +27,7 @@ import { markStoryPassed, savePRD, countStories } from "../../prd";
 import { appendProgress } from "../../execution/progress";
 import { fireHook } from "../../hooks";
 import { hookCtx } from "../../execution/helpers";
+import { collectStoryMetrics, collectBatchMetrics } from "../../metrics";
 
 export const completionStage: PipelineStage = {
   name: "completion",
@@ -40,6 +41,14 @@ export const completionStage: PipelineStage = {
     const prdPath = ctx.featureDir
       ? `${ctx.featureDir}/prd.json`
       : `${ctx.workdir}/ngent/features/unknown/prd.json`;
+
+    // Collect story metrics
+    const storyStartTime = ctx.storyStartTime || new Date().toISOString();
+    if (isBatch) {
+      ctx.storyMetrics = collectBatchMetrics(ctx, storyStartTime);
+    } else {
+      ctx.storyMetrics = [collectStoryMetrics(ctx, storyStartTime)];
+    }
 
     // Mark all stories in batch as passed
     for (const completedStory of ctx.stories) {

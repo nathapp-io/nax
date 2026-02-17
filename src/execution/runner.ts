@@ -34,6 +34,7 @@ import {
   generateFixStories,
   convertFixStoryToUserStory,
 } from "../acceptance";
+import { saveRunMetrics, type StoryMetrics } from "../metrics";
 
 /** Run options */
 export interface RunOptions {
@@ -70,9 +71,12 @@ export interface RunResult {
 export async function run(options: RunOptions): Promise<RunResult> {
   const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useBatch = true } = options;
   const startTime = Date.now();
+  const runStartedAt = new Date().toISOString();
+  const runId = `run-${new Date().toISOString().replace(/[:.]/g, "-")}`;
   let iterations = 0;
   let storiesCompleted = 0;
   let totalCost = 0;
+  const allStoryMetrics: StoryMetrics[] = [];
 
   // Acquire lock to prevent concurrent execution
   const lockAcquired = await acquireLock(workdir);
@@ -252,6 +256,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       }
 
       // Build pipeline context
+      const storyStartTime = new Date().toISOString();
       const pipelineContext: PipelineContext = {
         config,
         prd,
@@ -261,6 +266,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         workdir,
         featureDir,
         hooks,
+        storyStartTime,
       };
 
       // Run pipeline
@@ -275,6 +281,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
         storiesCompleted += storiesToExecute.length;
         totalCost += pipelineResult.context.agentResult?.estimatedCost || 0;
         prdDirty = true;
+
+        // Collect story metrics (set by completionStage)
+        if (pipelineResult.context.storyMetrics) {
+          allStoryMetrics.push(...pipelineResult.context.storyMetrics);
+        }
 
         // Display progress
         const updatedCounts = countStories(prd);
@@ -562,6 +573,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
               iteration: iterations,
             }), workdir);
 
+            const fixStoryStartTime = new Date().toISOString();
             const fixContext: PipelineContext = {
               config,
               prd,
@@ -571,6 +583,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
               workdir,
               featureDir,
               hooks,
+              storyStartTime: fixStoryStartTime,
             };
 
             const fixResult = await runPipeline(defaultPipeline, fixContext);
@@ -580,6 +593,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
               storiesCompleted++;
               totalCost += fixResult.context.agentResult?.estimatedCost || 0;
               console.log(chalk.green(`   ✓ Fix story ${userStory.id} passed`));
+
+              // Collect fix story metrics
+              if (fixResult.context.storyMetrics) {
+                allStoryMetrics.push(...fixResult.context.storyMetrics);
+              }
             } else {
               console.log(chalk.red(`   ✗ Fix story ${userStory.id} failed`));
             }
@@ -599,6 +617,23 @@ export async function run(options: RunOptions): Promise<RunResult> {
     }
 
     const durationMs = Date.now() - startTime;
+
+    // Save run metrics
+    const runCompletedAt = new Date().toISOString();
+    const runMetrics = {
+      runId,
+      feature,
+      startedAt: runStartedAt,
+      completedAt: runCompletedAt,
+      totalCost,
+      totalStories: allStoryMetrics.length,
+      storiesCompleted,
+      storiesFailed: countStories(prd).failed,
+      totalDurationMs: durationMs,
+      stories: allStoryMetrics,
+    };
+
+    await saveRunMetrics(workdir, runMetrics);
 
     return {
       success: isComplete(prd),

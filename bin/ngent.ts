@@ -47,7 +47,14 @@ import { checkAgentHealth, getAllAgentNames } from "../src/agents";
 import { loadPRD, countStories } from "../src/prd";
 import { loadHooksConfig } from "../src/hooks";
 import { run } from "../src/execution";
-import { analyzeFeature, planCommand, acceptCommand } from "../src/cli";
+import {
+  analyzeFeature,
+  planCommand,
+  acceptCommand,
+  displayCostMetrics,
+  displayLastRunMetrics,
+  displayModelEfficiency,
+} from "../src/cli";
 
 const pkg = await Bun.file(join(import.meta.dir, "..", "package.json")).json();
 
@@ -461,8 +468,11 @@ program
 program
   .command("status")
   .description("Show current run status")
-  .requiredOption("-f, --feature <name>", "Feature name")
+  .option("-f, --feature <name>", "Feature name")
   .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("--cost", "Show cost metrics across all runs", false)
+  .option("--last", "Show last run metrics (requires --cost)", false)
+  .option("--model", "Show per-model efficiency (requires --cost)", false)
   .action(async (options) => {
     // Validate directory path
     let workdir: string;
@@ -476,6 +486,25 @@ program
     const ngentDir = findProjectDir(workdir);
     if (!ngentDir) {
       console.error(chalk.red("ngent not initialized."));
+      process.exit(1);
+    }
+
+    // Handle cost metrics flags
+    if (options.cost) {
+      if (options.last) {
+        await displayLastRunMetrics(workdir);
+      } else if (options.model) {
+        await displayModelEfficiency(workdir);
+      } else {
+        await displayCostMetrics(workdir);
+      }
+      return;
+    }
+
+    // Default status: show feature progress
+    if (!options.feature) {
+      console.error(chalk.red("Feature name required (use -f, --feature <name>)"));
+      console.error(chalk.dim("Or use --cost to show cost metrics"));
       process.exit(1);
     }
 

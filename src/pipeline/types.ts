@@ -10,6 +10,7 @@ import type { AgentResult } from "../agents/types";
 import type { ReviewResult } from "../review/types";
 import type { HooksConfig } from "../hooks/types";
 import type { ConstitutionResult } from "../constitution/types";
+import type { StoryMetrics } from "../metrics/types";
 
 /**
  * Routing result from complexity classification
@@ -78,6 +79,10 @@ export interface PipelineContext {
     failedACs: string[];
     testOutput: string;
   };
+  /** Story start timestamp (ISO string, set by runner before pipeline) */
+  storyStartTime?: string;
+  /** Collected story metrics (set by completionStage) */
+  storyMetrics?: StoryMetrics[];
 }
 
 /**
