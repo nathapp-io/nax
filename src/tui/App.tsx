@@ -11,7 +11,7 @@ import { AgentPanel } from "./components/AgentPanel";
 import { StatusBar } from "./components/StatusBar";
 import { HelpOverlay } from "./components/HelpOverlay";
 import { CostOverlay } from "./components/CostOverlay";
-import { useLayout } from "./hooks/useLayout";
+import { useLayout, MIN_TERMINAL_WIDTH } from "./hooks/useLayout";
 import { usePipelineEvents } from "./hooks/usePipelineEvents";
 import { useKeyboard, type KeyboardAction } from "./hooks/useKeyboard";
 import { PanelFocus } from "./types";
@@ -157,6 +157,9 @@ export function App({ feature, stories: initialStories, events, queueFilePath }:
 
   const currentRouting = state.currentStory?.routing;
 
+  // Warn if terminal is too small
+  const isTooSmall = layout.width < MIN_TERMINAL_WIDTH;
+
   return (
     <Box flexDirection="column" height="100%">
       {/* Header */}
@@ -166,6 +169,15 @@ export function App({ feature, stories: initialStories, events, queueFilePath }:
         </Text>
       </Box>
 
+      {/* Warning for very small terminals */}
+      {isTooSmall && (
+        <Box paddingX={1} backgroundColor="yellow">
+          <Text color="black">
+            ⚠️  Terminal too narrow ({layout.width} cols). Minimum {MIN_TERMINAL_WIDTH} cols recommended.
+          </Text>
+        </Box>
+      )}
+
       {/* Main content area */}
       <Box flexDirection={layout.mode === "single" ? "column" : "row"} flexGrow={1}>
         {/* Stories panel */}
@@ -174,6 +186,8 @@ export function App({ feature, stories: initialStories, events, queueFilePath }:
           totalCost={state.totalCost}
           elapsedMs={state.elapsedMs}
           width={layout.mode === "single" ? layout.width : layout.storiesPanelWidth}
+          compact={layout.mode === "single"}
+          maxHeight={layout.mode === "single" ? 10 : undefined}
         />
 
         {/* Agent panel */}
