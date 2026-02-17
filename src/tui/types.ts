@@ -34,6 +34,24 @@ export enum PanelFocus {
 }
 
 /**
+ * PTY spawn options for agent integration.
+ */
+export interface PtySpawnOptions {
+  /** Command to execute (e.g., "claude") */
+  command: string;
+  /** Command arguments */
+  args?: string[];
+  /** Working directory */
+  cwd?: string;
+  /** Environment variables */
+  env?: Record<string, string>;
+  /** Terminal columns (default: 80) */
+  cols?: number;
+  /** Terminal rows (default: 24) */
+  rows?: number;
+}
+
+/**
  * Props for the root TUI component.
  */
 export interface TuiProps {
@@ -53,4 +71,6 @@ export interface TuiProps {
   events: PipelineEventEmitter;
   /** Path to queue file for writing commands (optional) */
   queueFilePath?: string;
+  /** PTY spawn options for agent session (optional) */
+  ptyOptions?: PtySpawnOptions | null;
 }

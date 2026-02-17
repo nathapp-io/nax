@@ -263,6 +263,7 @@ program
         totalCost: 0,
         elapsedMs: 0,
         events: eventEmitter,
+        ptyOptions: null, // TODO: Pass actual PTY spawn options when runner supports it
       });
     } else {
       console.log(chalk.dim("   [Headless mode — pipe output]"));

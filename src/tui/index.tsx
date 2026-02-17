@@ -34,5 +34,5 @@ export function renderTui(props: TuiProps) {
   return render(<App {...props} />);
 }
 
-export type { TuiProps, StoryDisplayState, PanelFocus } from "./types";
+export type { TuiProps, StoryDisplayState, PanelFocus, PtySpawnOptions } from "./types";
 export { PipelineEventEmitter } from "../pipeline/events";

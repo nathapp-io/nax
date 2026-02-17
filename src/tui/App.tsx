@@ -14,6 +14,7 @@ import { CostOverlay } from "./components/CostOverlay";
 import { useLayout, MIN_TERMINAL_WIDTH } from "./hooks/useLayout";
 import { usePipelineEvents } from "./hooks/usePipelineEvents";
 import { useKeyboard, type KeyboardAction } from "./hooks/useKeyboard";
+import { usePty } from "./hooks/usePty";
 import { PanelFocus } from "./types";
 import type { TuiProps } from "./types";
 import { writeQueueCommand } from "../utils/queue-writer";
@@ -42,7 +43,7 @@ import { writeQueueCommand } from "../utils/queue-writer";
  * );
  * ```
  */
-export function App({ feature, stories: initialStories, events, queueFilePath }: TuiProps) {
+export function App({ feature, stories: initialStories, events, queueFilePath, ptyOptions }: TuiProps) {
   const layout = useLayout();
   const state = usePipelineEvents(events, initialStories.map((s) => s.story));
   const { exit } = useApp();
@@ -56,8 +57,8 @@ export function App({ feature, stories: initialStories, events, queueFilePath }:
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
   const [showAbortConfirm, setShowAbortConfirm] = useState(false);
 
-  // Agent output buffer (will be populated by PTY in future)
-  const [agentOutputLines, _setAgentOutputLines] = useState<string[]>([]);
+  // Wire PTY hook for agent session
+  const { outputLines: agentOutputLines, handle: ptyHandle } = usePty(ptyOptions ?? null);
 
   // Handle keyboard actions
   const handleKeyboardAction = async (action: KeyboardAction) => {
@@ -127,23 +128,34 @@ export function App({ feature, stories: initialStories, events, queueFilePath }:
     }
   };
 
-  // Custom input handler for confirmation dialogs
-  useInput((input) => {
+  // Custom input handler for confirmation dialogs and PTY routing
+  useInput((input, key) => {
     // Handle confirmation dialogs
     if (showQuitConfirm || showAbortConfirm) {
-      const key = input.toLowerCase();
-      if (key === "y") {
+      const inputKey = input.toLowerCase();
+      if (inputKey === "y") {
         if (showQuitConfirm) {
           exit();
         } else if (showAbortConfirm && queueFilePath) {
           writeQueueCommand(queueFilePath, { type: "ABORT" });
           setShowAbortConfirm(false);
         }
-      } else if (key === "n" || key === "\x1b") {
+      } else if (inputKey === "n" || input === "\x1b") {
         // n or Esc cancels
         setShowQuitConfirm(false);
         setShowAbortConfirm(false);
       }
+      return;
+    }
+
+    // Route input to PTY when agent panel is focused
+    if (focus === PanelFocus.Agent && ptyHandle) {
+      // Ctrl+] escapes back to TUI controls (handled by useKeyboard)
+      if (key.ctrl && input === "]") {
+        return; // Let useKeyboard handle it
+      }
+      // All other input goes to PTY
+      ptyHandle.write(input);
     }
   });
 
