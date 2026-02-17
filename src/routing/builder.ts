@@ -7,7 +7,7 @@
 import type { NgentConfig } from "../config";
 import type { RoutingStrategy } from "./strategy";
 import { StrategyChain } from "./chain";
-import { keywordStrategy, llmStrategy, manualStrategy } from "./strategies";
+import { keywordStrategy, llmStrategy, manualStrategy, adaptiveStrategy } from "./strategies";
 import { loadCustomStrategy } from "./loader";
 
 /**
@@ -47,9 +47,7 @@ export async function buildStrategyChain(
       break;
 
     case "adaptive":
-      // TODO v0.5 Phase 3: Add adaptive strategy
-      // strategies.push(adaptiveStrategy);
-      // For now, fall through to keyword
+      strategies.push(adaptiveStrategy);
       break;
 
     case "custom":

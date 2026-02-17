@@ -5,3 +5,4 @@
 export { keywordStrategy } from "./keyword";
 export { llmStrategy } from "./llm";
 export { manualStrategy } from "./manual";
+export { adaptiveStrategy } from "./adaptive";

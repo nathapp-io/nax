@@ -156,12 +156,24 @@ export interface AcceptanceConfig {
 /** Routing strategy name */
 export type RoutingStrategyName = "keyword" | "llm" | "manual" | "adaptive" | "custom";
 
+/** Adaptive routing config */
+export interface AdaptiveRoutingConfig {
+  /** Minimum samples needed before adaptive routing kicks in (default: 10) */
+  minSamples: number;
+  /** Cost threshold for switching tiers (0-1, default: 0.8) */
+  costThreshold: number;
+  /** Fallback strategy when insufficient data (default: "llm") */
+  fallbackStrategy: "keyword" | "llm" | "manual";
+}
+
 /** Routing config */
 export interface RoutingConfig {
   /** Strategy to use (default: "keyword") */
   strategy: RoutingStrategyName;
   /** Path to custom strategy file (required if strategy = "custom") */
   customStrategyPath?: string;
+  /** Adaptive routing settings (used when strategy = "adaptive") */
+  adaptive?: AdaptiveRoutingConfig;
 }
 
 /** Full ngent configuration */
@@ -309,9 +321,16 @@ const AcceptanceConfigSchema = z.object({
   testPath: z.string().min(1, "acceptance.testPath must be non-empty"),
 });
 
+const AdaptiveRoutingConfigSchema = z.object({
+  minSamples: z.number().int().positive({ message: "adaptive.minSamples must be > 0" }),
+  costThreshold: z.number().min(0).max(1, { message: "adaptive.costThreshold must be 0-1" }),
+  fallbackStrategy: z.enum(["keyword", "llm", "manual"]),
+});
+
 const RoutingConfigSchema = z.object({
   strategy: z.enum(["keyword", "llm", "manual", "adaptive", "custom"]),
   customStrategyPath: z.string().optional(),
+  adaptive: AdaptiveRoutingConfigSchema.optional(),
 }).refine(
   (data) => {
     // If strategy is "custom", customStrategyPath is required
@@ -373,6 +392,11 @@ export const DEFAULT_CONFIG: NgentConfig = {
   },
   routing: {
     strategy: "keyword",
+    adaptive: {
+      minSamples: 10,
+      costThreshold: 0.8,
+      fallbackStrategy: "llm",
+    },
   },
   execution: {
     maxIterations: 20,
