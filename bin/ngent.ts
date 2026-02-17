@@ -378,9 +378,11 @@ program
 // ── analyze ──────────────────────────────────────────
 program
   .command("analyze")
-  .description("Parse spec.md + tasks.md into prd.json")
+  .description("Parse spec.md into prd.json via agent decompose")
   .requiredOption("-f, --feature <name>", "Feature name")
   .option("-b, --branch <name>", "Branch name", "feat/<feature>")
+  .option("--from <path>", "Explicit spec path (overrides default spec.md)")
+  .option("--reclassify", "Re-classify existing prd.json without decompose", false)
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .action(async (options) => {
     // Validate directory path
@@ -410,7 +412,15 @@ program
     const config = await loadConfig(workdir);
 
     try {
-      const prd = await analyzeFeature(featureDir, options.feature, branchName, config);
+      const prd = await analyzeFeature({
+        featureDir,
+        featureName: options.feature,
+        branchName,
+        config,
+        specPath: options.from,
+        reclassify: options.reclassify,
+      });
+
       const prdPath = join(featureDir, "prd.json");
       await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -420,7 +430,8 @@ program
       console.log(chalk.dim(`   Path: ${prdPath}`));
 
       for (const story of prd.userStories) {
-        console.log(chalk.dim(`   ${story.id}: ${story.title} (${story.acceptanceCriteria.length} criteria)`));
+        const routing = story.routing ? chalk.dim(` [${story.routing.complexity}]`) : "";
+        console.log(chalk.dim(`   ${story.id}: ${story.title}${routing}`));
       }
       console.log();
     } catch (err) {

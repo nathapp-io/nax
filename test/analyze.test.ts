@@ -4,11 +4,11 @@ import { DEFAULT_CONFIG } from "../src/config/schema";
 import type { NgentConfig } from "../src/config";
 
 describe("analyzeFeature", () => {
-  test("parses tasks.md into user stories", async () => {
+  test("parses spec.md into user stories (LLM disabled, keyword fallback)", async () => {
     const tmpDir = `/tmp/ngent-analyze-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
 
-    await Bun.write(`${tmpDir}/tasks.md`, `# Tasks: auth
+    await Bun.write(`${tmpDir}/spec.md`, `# Feature: Auth System
 
 ## US-001: Add login endpoint
 
@@ -35,7 +35,21 @@ Create a POST /auth/logout endpoint.
 Dependencies: US-001
 `);
 
-    const prd = await analyzeFeature(tmpDir, "auth", "feat/auth");
+    // Disable LLM for keyword-based classification
+    const config: NgentConfig = {
+      ...DEFAULT_CONFIG,
+      analyze: {
+        ...DEFAULT_CONFIG.analyze,
+        llmEnhanced: false,
+      },
+    };
+
+    const prd = await analyzeFeature({
+      featureDir: tmpDir,
+      featureName: "auth",
+      branchName: "feat/auth",
+      config,
+    });
 
     expect(prd.feature).toBe("auth");
     expect(prd.branchName).toBe("feat/auth");
@@ -57,11 +71,17 @@ Dependencies: US-001
     await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
   });
 
-  test("throws when tasks.md is missing", async () => {
+  test("throws when spec.md is missing", async () => {
     const tmpDir = `/tmp/ngent-analyze-empty-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
 
-    expect(analyzeFeature(tmpDir, "test", "feat/test")).rejects.toThrow("tasks.md not found");
+    await expect(
+      analyzeFeature({
+        featureDir: tmpDir,
+        featureName: "test",
+        branchName: "feat/test",
+      })
+    ).rejects.toThrow("spec.md not found");
 
     await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
   });
@@ -70,7 +90,7 @@ Dependencies: US-001
     const tmpDir = `/tmp/ngent-analyze-limit-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
 
-    // Generate tasks.md with 6 stories
+    // Generate spec.md with 6 stories
     const stories = Array.from({ length: 6 }, (_, i) => `
 ## US-${String(i + 1).padStart(3, "0")}: Story ${i + 1}
 
@@ -81,21 +101,30 @@ Description for story ${i + 1}
 - [ ] Criterion 1
 `).join("\n");
 
-    await Bun.write(`${tmpDir}/tasks.md`, `# Tasks\n${stories}`);
+    await Bun.write(`${tmpDir}/spec.md`, `# Feature\n${stories}`);
 
-    // Create config with limit of 5 stories
+    // Create config with limit of 5 stories (LLM disabled)
     const config: NgentConfig = {
       ...DEFAULT_CONFIG,
       execution: {
         ...DEFAULT_CONFIG.execution,
         maxStoriesPerFeature: 5,
       },
+      analyze: {
+        ...DEFAULT_CONFIG.analyze,
+        llmEnhanced: false,
+      },
     };
 
     // Should throw because 6 > 5
-    await expect(analyzeFeature(tmpDir, "test", "feat/test", config)).rejects.toThrow(
-      /Feature has 6 stories, exceeding limit of 5/
-    );
+    await expect(
+      analyzeFeature({
+        featureDir: tmpDir,
+        featureName: "test",
+        branchName: "feat/test",
+        config,
+      })
+    ).rejects.toThrow(/Feature has 6 stories, exceeding limit of 5/);
 
     await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
   });
@@ -104,7 +133,7 @@ Description for story ${i + 1}
     const tmpDir = `/tmp/ngent-analyze-ok-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
 
-    // Generate tasks.md with exactly 5 stories
+    // Generate spec.md with exactly 5 stories
     const stories = Array.from({ length: 5 }, (_, i) => `
 ## US-${String(i + 1).padStart(3, "0")}: Story ${i + 1}
 
@@ -115,20 +144,68 @@ Description for story ${i + 1}
 - [ ] Criterion 1
 `).join("\n");
 
-    await Bun.write(`${tmpDir}/tasks.md`, `# Tasks\n${stories}`);
+    await Bun.write(`${tmpDir}/spec.md`, `# Feature\n${stories}`);
 
-    // Create config with limit of 5 stories
+    // Create config with limit of 5 stories (LLM disabled)
     const config: NgentConfig = {
       ...DEFAULT_CONFIG,
       execution: {
         ...DEFAULT_CONFIG.execution,
         maxStoriesPerFeature: 5,
       },
+      analyze: {
+        ...DEFAULT_CONFIG.analyze,
+        llmEnhanced: false,
+      },
     };
 
     // Should NOT throw because 5 === 5
-    const prd = await analyzeFeature(tmpDir, "test", "feat/test", config);
+    const prd = await analyzeFeature({
+      featureDir: tmpDir,
+      featureName: "test",
+      branchName: "feat/test",
+      config,
+    });
     expect(prd.userStories).toHaveLength(5);
+
+    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+  });
+
+  test("reads spec from explicit --from path", async () => {
+    const tmpDir = `/tmp/ngent-analyze-from-${Date.now()}`;
+    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+
+    const customSpecPath = `${tmpDir}/custom-spec.md`;
+    await Bun.write(customSpecPath, `# Custom Spec
+
+## US-001: Custom story
+
+### Description
+A custom story from explicit path
+
+### Acceptance Criteria
+- [ ] Works with --from flag
+`);
+
+    const config: NgentConfig = {
+      ...DEFAULT_CONFIG,
+      analyze: {
+        ...DEFAULT_CONFIG.analyze,
+        llmEnhanced: false,
+      },
+    };
+
+    const prd = await analyzeFeature({
+      featureDir: tmpDir,
+      featureName: "custom",
+      branchName: "feat/custom",
+      config,
+      specPath: customSpecPath,
+    });
+
+    expect(prd.userStories).toHaveLength(1);
+    expect(prd.userStories[0].id).toBe("US-001");
+    expect(prd.userStories[0].title).toBe("Custom story");
 
     await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
   });

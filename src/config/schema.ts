@@ -111,8 +111,8 @@ export interface ConstitutionConfig {
 export interface AnalyzeConfig {
   /** Enable LLM-enhanced analysis */
   llmEnhanced: boolean;
-  /** Model tier for classifier (default: fast) */
-  classifierModel: ModelTier;
+  /** Model tier for decompose+classify (default: balanced) */
+  model: ModelTier;
   /** Fall back to keyword matching on LLM failure */
   fallbackToKeywords: boolean;
   /** Max tokens for codebase summary */
@@ -255,7 +255,7 @@ const ConstitutionConfigSchema = z.object({
 
 const AnalyzeConfigSchema = z.object({
   llmEnhanced: z.boolean(),
-  classifierModel: ModelTierSchema,
+  model: ModelTierSchema,
   fallbackToKeywords: z.boolean(),
   maxCodebaseSummaryTokens: z.number().int().positive(),
 });
@@ -343,7 +343,7 @@ export const DEFAULT_CONFIG: NgentConfig = {
   },
   analyze: {
     llmEnhanced: true,
-    classifierModel: "fast",
+    model: "balanced",
     fallbackToKeywords: true,
     maxCodebaseSummaryTokens: 5000,
   },

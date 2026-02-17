@@ -1,38 +1,158 @@
 /**
- * Analyze Command — Parse spec.md + tasks.md into prd.json
+ * Analyze Command — Parse spec.md into prd.json via agent decompose
  *
- * Converts markdown user stories into structured PRD format.
- * Optionally uses LLM-enhanced classification to improve routing accuracy.
+ * Uses agent adapter's decompose() method to break spec into classified stories
+ * in a single LLM call. Falls back to keyword classification if decompose fails.
  */
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { PRD, UserStory } from "../prd";
 import type { NgentConfig } from "../config";
+import type { CodebaseScan } from "../analyze/types";
 import { scanCodebase } from "../analyze/scanner";
-import { classifyStories } from "../analyze/classifier";
-import { routeTask } from "../routing";
+import { routeTask, classifyComplexity } from "../routing";
+import { getAgent } from "../agents/registry";
+import { resolveModel } from "../config/schema";
+import { loadPRD } from "../prd";
 
-/** Parse spec.md and tasks.md into PRD */
-export async function analyzeFeature(
-  featureDir: string,
-  featureName: string,
-  branchName: string,
-  config?: NgentConfig,
-): Promise<PRD> {
-  const specPath = join(featureDir, "spec.md");
-  const tasksPath = join(featureDir, "tasks.md");
+export interface AnalyzeOptions {
+  /** Feature directory path */
+  featureDir: string;
+  /** Feature name */
+  featureName: string;
+  /** Branch name */
+  branchName: string;
+  /** Config (optional) */
+  config?: NgentConfig;
+  /** Explicit spec path (overrides default spec.md) */
+  specPath?: string;
+  /** Re-classify existing prd.json without decompose */
+  reclassify?: boolean;
+}
 
-  if (!existsSync(tasksPath)) {
-    throw new Error(`tasks.md not found in ${featureDir}`);
+/** Parse spec.md into PRD via agent decompose */
+export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
+  const {
+    featureDir,
+    featureName,
+    branchName,
+    config,
+    specPath: explicitSpecPath,
+    reclassify = false,
+  } = options;
+
+  const workdir = join(featureDir, "../.."); // Go up from ngent/features/<name> to project root
+
+  // Re-classify mode: re-run classification on existing prd.json
+  if (reclassify) {
+    return await reclassifyExistingPRD(featureDir, featureName, branchName, workdir, config);
   }
 
-  // Read tasks.md (required)
-  const tasksContent = await Bun.file(tasksPath).text();
-  let userStories = parseUserStories(tasksContent);
+  // Determine spec path
+  const specPath = explicitSpecPath || join(featureDir, "spec.md");
 
-  if (userStories.length === 0) {
-    throw new Error("No user stories found in tasks.md. Expected '## US-xxx' or '## Story' headings.");
+  if (!existsSync(specPath)) {
+    throw new Error(`spec.md not found at ${specPath}`);
+  }
+
+  // Read spec content
+  const specContent = await Bun.file(specPath).text();
+
+  let userStories: UserStory[];
+
+  // LLM-enhanced decompose+classify (if enabled)
+  if (config && config.analyze.llmEnhanced) {
+    console.log("Running agent decompose (decompose + classify in single LLM call)...");
+
+    try {
+      // Scan codebase
+      const scan = await scanCodebase(workdir);
+
+      // Build codebase context string
+      const codebaseContext = buildCodebaseContext(scan);
+
+      // Get agent adapter
+      const agentName = config.autoMode.defaultAgent;
+      const adapter = getAgent(agentName);
+
+      if (!adapter) {
+        throw new Error(`Agent "${agentName}" not found`);
+      }
+
+      // Resolve model for analyze
+      const modelTier = config.analyze.model;
+      const modelEntry = config.models[modelTier];
+      const modelDef = resolveModel(modelEntry);
+
+      // Run decompose
+      const result = await adapter.decompose({
+        specContent,
+        workdir,
+        codebaseContext,
+        modelTier,
+        modelDef,
+      });
+
+      console.log(`✓ Agent decompose complete — ${result.stories.length} stories`);
+
+      // Convert decomposed stories to UserStory format with routing
+      userStories = result.stories.map((ds) => {
+        // Route task to get model tier and test strategy
+        const routing = routeTask(
+          ds.title,
+          ds.description,
+          ds.acceptanceCriteria,
+          ds.tags,
+          config,
+        );
+
+        return {
+          id: ds.id,
+          title: ds.title,
+          description: ds.description,
+          acceptanceCriteria: ds.acceptanceCriteria,
+          tags: ds.tags,
+          dependencies: ds.dependencies,
+          status: "pending" as const,
+          passes: false,
+          escalations: [],
+          attempts: 0,
+          routing: {
+            ...routing,
+            complexity: ds.complexity, // Use decompose complexity
+            reasoning: ds.reasoning,
+            estimatedLOC: ds.estimatedLOC,
+            risks: ds.risks,
+          },
+          relevantFiles: ds.relevantFiles,
+        };
+      });
+    } catch (error) {
+      // Fall back to keyword-based classification
+      console.warn(`⚠ Agent decompose failed: ${(error as Error).message}`);
+      console.warn("Falling back to manual story extraction + keyword classification");
+
+      userStories = parseUserStoriesFromSpec(specContent);
+
+      if (userStories.length === 0) {
+        throw new Error("No user stories found in spec.md. Expected '## US-xxx' headings or agent decompose to succeed.");
+      }
+
+      // Apply keyword-based classification
+      userStories = applyKeywordClassification(userStories, config);
+    }
+  } else {
+    // Manual parsing + keyword classification
+    console.log("LLM-enhanced analysis disabled, using manual parsing + keyword classification");
+
+    userStories = parseUserStoriesFromSpec(specContent);
+
+    if (userStories.length === 0) {
+      throw new Error("No user stories found in spec.md. Expected '## US-xxx' headings.");
+    }
+
+    userStories = applyKeywordClassification(userStories, config);
   }
 
   // Check story count limit (MEM-1: prevent memory exhaustion)
@@ -41,51 +161,6 @@ export async function analyzeFeature(
       `Feature has ${userStories.length} stories, exceeding limit of ${config.execution.maxStoriesPerFeature}.\n` +
       `  Split this feature into smaller features or increase maxStoriesPerFeature in config.`
     );
-  }
-
-  // LLM-enhanced classification (if enabled)
-  if (config && config.analyze.llmEnhanced) {
-    console.log("Running LLM-enhanced classification...");
-
-    // Scan codebase
-    const workdir = join(featureDir, "../.."); // Go up from ngent/features/<name> to project root
-    const scan = await scanCodebase(workdir);
-
-    // Classify stories with LLM
-    const classificationResult = await classifyStories(userStories, scan, config);
-
-    if (classificationResult.method === "keyword-fallback") {
-      console.warn(`⚠ LLM classification failed, using keyword fallback: ${classificationResult.fallbackReason}`);
-    } else {
-      console.log("✓ LLM classification complete");
-    }
-
-    // Merge LLM output into stories
-    userStories = userStories.map((story) => {
-      const classification = classificationResult.classifications.find((c) => c.storyId === story.id);
-      if (!classification) return story;
-
-      // Route task to get model tier and test strategy
-      const baseRouting = routeTask(
-        story.title,
-        story.description,
-        story.acceptanceCriteria,
-        story.tags,
-        config,
-      );
-
-      return {
-        ...story,
-        routing: {
-          ...baseRouting,
-          complexity: classification.complexity, // Override with LLM complexity
-          reasoning: classification.reasoning, // Use LLM reasoning
-          estimatedLOC: classification.estimatedLOC,
-          risks: classification.risks,
-        },
-        relevantFiles: classification.relevantFiles,
-      };
-    });
   }
 
   // Build PRD
@@ -216,4 +291,225 @@ function finalizeStory(
     escalations: [],
     attempts: 0,
   };
+}
+
+/** Parse user stories from spec.md (same format as tasks.md) */
+function parseUserStoriesFromSpec(markdown: string): UserStory[] {
+  return parseUserStories(markdown);
+}
+
+/**
+ * Build codebase context string from scan result.
+ */
+function buildCodebaseContext(scan: CodebaseScan): string {
+  return `FILE TREE:
+${scan.fileTree}
+
+DEPENDENCIES:
+${Object.entries(scan.dependencies)
+  .map(([name, version]) => `- ${name}: ${version}`)
+  .join("\n")}
+
+DEV DEPENDENCIES:
+${Object.entries(scan.devDependencies)
+  .map(([name, version]) => `- ${name}: ${version}`)
+  .join("\n")}
+
+TEST PATTERNS:
+${scan.testPatterns.map((p) => `- ${p}`).join("\n")}`.trim();
+}
+
+/**
+ * Apply keyword-based classification to user stories.
+ */
+function applyKeywordClassification(stories: UserStory[], config?: NgentConfig): UserStory[] {
+  return stories.map((story) => {
+    const complexity = classifyComplexity(
+      story.title,
+      story.description,
+      story.acceptanceCriteria,
+      story.tags
+    );
+
+    const routing = config
+      ? routeTask(
+          story.title,
+          story.description,
+          story.acceptanceCriteria,
+          story.tags,
+          config
+        )
+      : {
+          complexity,
+          modelTier: "balanced" as const,
+          testStrategy: "test-after" as const,
+          reasoning: "No config provided",
+        };
+
+    return {
+      ...story,
+      routing: {
+        ...routing,
+        complexity,
+        reasoning: `Keyword-based classification: ${complexity}`,
+        estimatedLOC: estimateLOCFromComplexity(complexity),
+        risks: [],
+      },
+    };
+  });
+}
+
+/**
+ * Re-classify existing prd.json without decomposing.
+ */
+async function reclassifyExistingPRD(
+  featureDir: string,
+  featureName: string,
+  branchName: string,
+  workdir: string,
+  config?: NgentConfig,
+): Promise<PRD> {
+  const prdPath = join(featureDir, "prd.json");
+
+  if (!existsSync(prdPath)) {
+    throw new Error(`prd.json not found at ${prdPath}. Run analyze without --reclassify first.`);
+  }
+
+  // Load existing PRD
+  const prd = await loadPRD(prdPath);
+
+  console.log("Re-classifying existing stories...");
+
+  // Scan codebase
+  const scan = await scanCodebase(workdir);
+  const codebaseContext = buildCodebaseContext(scan);
+
+  // Re-classify each story
+  const updatedStories: UserStory[] = [];
+
+  for (const story of prd.userStories) {
+    // Build a mini-spec for this story
+    const storySpec = `## ${story.id}: ${story.title}
+
+${story.description}
+
+### Acceptance Criteria
+${story.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
+
+    try {
+      if (config && config.analyze.llmEnhanced) {
+        // Use agent to classify this single story
+        const agentName = config.autoMode.defaultAgent;
+        const adapter = getAgent(agentName);
+
+        if (!adapter) {
+          throw new Error(`Agent "${agentName}" not found`);
+        }
+
+        const modelTier = config.analyze.model;
+        const modelEntry = config.models[modelTier];
+        const modelDef = resolveModel(modelEntry);
+
+        const result = await adapter.decompose({
+          specContent: storySpec,
+          workdir,
+          codebaseContext,
+          modelTier,
+          modelDef,
+        });
+
+        if (result.stories.length > 0) {
+          const ds = result.stories[0];
+
+          const routing = routeTask(
+            story.title,
+            story.description,
+            story.acceptanceCriteria,
+            story.tags,
+            config,
+          );
+
+          updatedStories.push({
+            ...story,
+            routing: {
+              ...routing,
+              complexity: ds.complexity,
+              reasoning: ds.reasoning,
+              estimatedLOC: ds.estimatedLOC,
+              risks: ds.risks,
+            },
+            relevantFiles: ds.relevantFiles,
+          });
+
+          console.log(`  ✓ ${story.id} → ${ds.complexity}`);
+        } else {
+          // Keep original if decompose failed
+          updatedStories.push(story);
+          console.warn(`  ⚠ ${story.id} → kept original`);
+        }
+      } else {
+        // Keyword classification
+        const complexity = classifyComplexity(
+          story.title,
+          story.description,
+          story.acceptanceCriteria,
+          story.tags
+        );
+
+        const routing = config
+          ? routeTask(
+              story.title,
+              story.description,
+              story.acceptanceCriteria,
+              story.tags,
+              config
+            )
+          : {
+              complexity,
+              modelTier: "balanced" as const,
+              testStrategy: "test-after" as const,
+              reasoning: "No config provided",
+            };
+
+        updatedStories.push({
+          ...story,
+          routing: {
+            ...routing,
+            complexity,
+            reasoning: `Keyword-based classification: ${complexity}`,
+            estimatedLOC: estimateLOCFromComplexity(complexity),
+            risks: [],
+          },
+        });
+
+        console.log(`  ✓ ${story.id} → ${complexity}`);
+      }
+    } catch (error) {
+      console.warn(`  ⚠ ${story.id} → error: ${(error as Error).message}`);
+      updatedStories.push(story); // Keep original on error
+    }
+  }
+
+  // Return updated PRD
+  return {
+    ...prd,
+    updatedAt: new Date().toISOString(),
+    userStories: updatedStories,
+  };
+}
+
+/**
+ * Estimate LOC from complexity level (rough heuristic).
+ */
+function estimateLOCFromComplexity(complexity: "simple" | "medium" | "complex" | "expert"): number {
+  switch (complexity) {
+    case "simple":
+      return 50;
+    case "medium":
+      return 150;
+    case "complex":
+      return 400;
+    case "expert":
+      return 800;
+  }
 }

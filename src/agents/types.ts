@@ -153,6 +153,87 @@ export interface PlanResult {
 }
 
 /**
+ * Configuration options for running an agent in decompose mode.
+ *
+ * Decompose mode reads a spec document and breaks it down into classified user stories
+ * in a single LLM call (decompose + classify combined).
+ *
+ * @example
+ * ```ts
+ * const options: DecomposeOptions = {
+ *   specContent: "# Feature: URL Shortener\n\n## Requirements...",
+ *   workdir: "/home/user/project",
+ *   codebaseContext: "File tree:\nsrc/\n  index.ts\n",
+ *   modelTier: "balanced",
+ * };
+ * ```
+ */
+export interface DecomposeOptions {
+  /** The spec document content to decompose */
+  specContent: string;
+  /** Working directory */
+  workdir: string;
+  /** Codebase context (file tree, dependencies, test patterns) */
+  codebaseContext: string;
+  /** Model tier to use for decomposition (default: "balanced") */
+  modelTier?: ModelTier;
+  /** Resolved model definition */
+  modelDef?: ModelDef;
+}
+
+/**
+ * A single classified user story from decompose result.
+ */
+export interface DecomposedStory {
+  /** Story ID (e.g., "US-001") */
+  id: string;
+  /** Story title */
+  title: string;
+  /** Story description */
+  description: string;
+  /** Acceptance criteria */
+  acceptanceCriteria: string[];
+  /** Tags for routing */
+  tags: string[];
+  /** Dependencies (story IDs) */
+  dependencies: string[];
+  /** Classified complexity */
+  complexity: "simple" | "medium" | "complex" | "expert";
+  /** Relevant source files */
+  relevantFiles: string[];
+  /** Classification reasoning */
+  reasoning: string;
+  /** Estimated lines of code */
+  estimatedLOC: number;
+  /** Implementation risks */
+  risks: string[];
+}
+
+/**
+ * Result from running an agent in decompose mode.
+ *
+ * Contains the decomposed and classified user stories.
+ *
+ * @example
+ * ```ts
+ * const result: DecomposeResult = {
+ *   stories: [
+ *     {
+ *       id: "US-001",
+ *       title: "Add URL shortening endpoint",
+ *       complexity: "medium",
+ *       ...
+ *     },
+ *   ],
+ * };
+ * ```
+ */
+export interface DecomposeResult {
+  /** The decomposed and classified user stories */
+  stories: DecomposedStory[];
+}
+
+/**
  * Agent adapter interface — one implementation per supported coding agent.
  *
  * Provides uniform interface for checking installation, running agents,
@@ -234,4 +315,16 @@ export interface AgentAdapter {
    * @returns Generated specification and optional conversation log
    */
   plan(options: PlanOptions): Promise<PlanResult>;
+
+  /**
+   * Run the agent in decompose mode to break spec into classified stories.
+   *
+   * Spawns the agent with spec content and codebase context to decompose
+   * the specification into user stories and classify each story's complexity,
+   * relevant files, risks, and estimated LOC in a single LLM call.
+   *
+   * @param options - Decompose mode configuration
+   * @returns Decomposed and classified user stories
+   */
+  decompose(options: DecomposeOptions): Promise<DecomposeResult>;
 }
