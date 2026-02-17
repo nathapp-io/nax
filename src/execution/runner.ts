@@ -493,64 +493,91 @@ export async function run(options: RunOptions): Promise<RunResult> {
     } else {
       // Handle failure — either escalate or mark failed
       //
-      // BATCH FAILURE STRATEGY (Option B: Individual Retry at Same Tier First)
+      // BATCH FAILURE STRATEGY
       // ========================================================================
-      // When a batch execution fails (e.g., batch [US-001, US-002, US-003, US-004] on 'fast' tier),
-      // we use a conservative escalation approach:
+      // When a batch execution fails, behavior depends on escalateEntireBatch config:
       //
-      // 1. Only the FIRST story in the batch gets escalation treatment
-      //    - If escalation is enabled and attempts < maxAttempts, first story escalates to next tier
-      //    - Otherwise, first story is marked as failed
+      // Option A (escalateEntireBatch: true, DEFAULT):
+      // - Escalate ALL stories in the failed batch to the next tier together
+      // - More conservative, prevents wasted retries at same tier
+      // - Best for when batch failures indicate systematic issues
       //
-      // 2. Remaining stories (2-4) remain at their CURRENT tier and status
-      //    - They return to "pending" status (not included in this batch's processing)
-      //    - They will be retried INDIVIDUALLY on the next iteration at the SAME tier
-      //    - If individual retry fails, they THEN escalate according to normal escalation rules
+      // Option B (escalateEntireBatch: false):
+      // - Only FIRST story escalates to next tier
+      // - Remaining stories retry individually at same tier first
+      // - Minimizes cost if only one story was problematic
+      // - Better for debugging individual story issues
       //
-      // RATIONALE:
-      // - Batch failures are often due to a single problematic story, not all stories
-      // - Retrying individually at the same tier first avoids premature escalation
-      // - This approach minimizes cost (doesn't escalate entire batch unnecessarily)
-      // - Individual retries provide better error isolation and debugging
-      //
-      // ALTERNATIVE CONSIDERED (Option A: Escalate Entire Batch Together)
-      // - Would escalate all stories in batch to next tier immediately
-      // - More conservative but potentially wasteful if only one story was problematic
-      // - Not implemented in current version
-      //
-      // FUTURE ENHANCEMENT:
-      // - Add config option: `batch.escalateEntireBatchOnFailure: boolean`
-      // - Default to current behavior (Option B), allow users to opt into Option A
-      //
-      const failedStory = storiesToExecute[0];
       const nextTier = escalateTier(routing.modelTier, config.autoMode.escalation.tierOrder);
+      const escalateWholeBatch = config.autoMode.escalation.escalateEntireBatch ?? true;
+      const storiesToEscalate = isBatchExecution && escalateWholeBatch
+        ? storiesToExecute
+        : [storiesToExecute[0]];
 
       if (isBatchExecution) {
-        console.log(chalk.yellow(`   ⚠️  Batch execution failed — will retry stories individually at same tier first`));
+        if (escalateWholeBatch) {
+          console.log(chalk.yellow(`   ⚠️  Batch execution failed — escalating all ${storiesToExecute.length} stories to next tier`));
+        } else {
+          console.log(chalk.yellow(`   ⚠️  Batch execution failed — will retry stories individually at same tier first`));
+        }
       }
 
-      if (nextTier && config.autoMode.escalation.enabled && failedStory.attempts < config.autoMode.escalation.maxAttempts) {
-        console.log(chalk.yellow(`   ⬆️  Escalating ${failedStory.id} to ${nextTier}`));
+      if (nextTier && config.autoMode.escalation.enabled) {
+        // Check if all stories to escalate are within maxAttempts
+        const canEscalate = storiesToEscalate.every(s => s.attempts < config.autoMode.escalation.maxAttempts);
 
-        // Capture failure reason for context
-        const errorMessage = `Attempt ${failedStory.attempts + 1} failed with model tier: ${routing.modelTier}${isBatchExecution ? " (in batch)" : ""}`;
+        if (canEscalate) {
+          // Escalate the selected stories
+          for (const story of storiesToEscalate) {
+            console.log(chalk.yellow(`   ⬆️  Escalating ${story.id} to ${nextTier}`));
+          }
 
-        // Update PRD with escalation (not marking as failed yet)
-        prd.userStories = prd.userStories.map((s) =>
-          s.id === failedStory.id
-            ? {
-                ...s,
-                attempts: s.attempts + 1,
-                routing: s.routing
-                  ? { ...s.routing, modelTier: nextTier }
-                  : undefined,
-                priorErrors: [...(s.priorErrors || []), errorMessage],
-              }
-            : s,
-        );
-        await savePRD(prd, prdPath);
-        prdDirty = true;
+          // Capture failure reason for context
+          const errorMessage = `Attempt ${storiesToEscalate[0].attempts + 1} failed with model tier: ${routing.modelTier}${isBatchExecution ? " (in batch)" : ""}`;
+
+          // Update PRD with escalation (not marking as failed yet)
+          prd.userStories = prd.userStories.map((s) => {
+            const shouldEscalate = storiesToEscalate.some(story => story.id === s.id);
+            return shouldEscalate
+              ? {
+                  ...s,
+                  attempts: s.attempts + 1,
+                  routing: s.routing
+                    ? { ...s.routing, modelTier: nextTier }
+                    : undefined,
+                  priorErrors: [...(s.priorErrors || []), errorMessage],
+                }
+              : s;
+          });
+          await savePRD(prd, prdPath);
+          prdDirty = true;
+        } else {
+          // At least one story has exhausted attempts — mark first story as failed
+          const failedStory = storiesToEscalate[0];
+          markStoryFailed(prd, failedStory.id);
+          await savePRD(prd, prdPath);
+          prdDirty = true;
+
+          console.log(chalk.red(`   ✗ Story ${failedStory.id} failed (max attempts reached)`));
+
+          // Log progress
+          if (featureDir) {
+            await appendProgress(featureDir, failedStory.id, "failed", `${failedStory.title} — Agent execution failed`);
+          }
+
+          await fireHook(hooks, "on-story-fail", hookCtx(feature, {
+            storyId: failedStory.id,
+            status: "failed",
+            reason: "Agent execution failed (max attempts reached)",
+            cost: totalCost,
+          }), workdir);
+
+          // Stop on failure if not escalating
+          break;
+        }
       } else {
+        // No next tier or escalation disabled — mark first story as failed
+        const failedStory = storiesToEscalate[0];
         markStoryFailed(prd, failedStory.id);
         await savePRD(prd, prdPath);
         prdDirty = true;

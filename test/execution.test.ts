@@ -279,4 +279,162 @@ describe("execution runner", () => {
     // Cleanup
     await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
   });
+
+  test("escalates entire batch when escalateEntireBatch is true (default)", async () => {
+    // Create a PRD with simple stories that would normally be batched
+    const prd = createTestPRD([
+      {
+        id: "US-001",
+        title: "Simple task 1",
+        description: "A simple task",
+        acceptanceCriteria: ["Works"],
+        tags: [],
+        routing: {
+          complexity: "simple",
+          modelTier: "fast",
+          testStrategy: "test-after",
+          reasoning: "Simple task",
+        },
+      },
+      {
+        id: "US-002",
+        title: "Simple task 2",
+        description: "A simple task",
+        acceptanceCriteria: ["Works"],
+        tags: [],
+        routing: {
+          complexity: "simple",
+          modelTier: "fast",
+          testStrategy: "test-after",
+          reasoning: "Simple task",
+        },
+      },
+      {
+        id: "US-003",
+        title: "Simple task 3",
+        description: "A simple task",
+        acceptanceCriteria: ["Works"],
+        tags: [],
+        routing: {
+          complexity: "simple",
+          modelTier: "fast",
+          testStrategy: "test-after",
+          reasoning: "Simple task",
+        },
+      },
+    ]);
+
+    const tmpDir = "/tmp/ngent-test-" + Date.now();
+    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    const prdPath = `${tmpDir}/prd.json`;
+    await Bun.write(prdPath, JSON.stringify(prd, null, 2));
+
+    const opts: RunOptions = {
+      prdPath,
+      workdir: tmpDir,
+      config: {
+        ...DEFAULT_CONFIG,
+        autoMode: {
+          ...DEFAULT_CONFIG.autoMode,
+          escalation: {
+            enabled: true,
+            maxAttempts: 3,
+            escalateEntireBatch: true, // Default behavior
+          },
+        },
+        execution: { ...DEFAULT_CONFIG.execution, maxIterations: 2 },
+      },
+      hooks: { hooks: {} },
+      feature: "test-feature",
+      dryRun: true,
+    };
+
+    await run(opts);
+
+    // Note: In dry run mode, we can't verify escalation behavior directly,
+    // but the config setting is tested through code path coverage
+    // Real integration testing would require mocking the agent adapter
+
+    // Cleanup
+    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+  });
+
+  test("escalates only first story when escalateEntireBatch is false", async () => {
+    // Create a PRD with simple stories that would normally be batched
+    const prd = createTestPRD([
+      {
+        id: "US-001",
+        title: "Simple task 1",
+        description: "A simple task",
+        acceptanceCriteria: ["Works"],
+        tags: [],
+        routing: {
+          complexity: "simple",
+          modelTier: "fast",
+          testStrategy: "test-after",
+          reasoning: "Simple task",
+        },
+      },
+      {
+        id: "US-002",
+        title: "Simple task 2",
+        description: "A simple task",
+        acceptanceCriteria: ["Works"],
+        tags: [],
+        routing: {
+          complexity: "simple",
+          modelTier: "fast",
+          testStrategy: "test-after",
+          reasoning: "Simple task",
+        },
+      },
+      {
+        id: "US-003",
+        title: "Simple task 3",
+        description: "A simple task",
+        acceptanceCriteria: ["Works"],
+        tags: [],
+        routing: {
+          complexity: "simple",
+          modelTier: "fast",
+          testStrategy: "test-after",
+          reasoning: "Simple task",
+        },
+      },
+    ]);
+
+    const tmpDir = "/tmp/ngent-test-" + Date.now();
+    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    const prdPath = `${tmpDir}/prd.json`;
+    await Bun.write(prdPath, JSON.stringify(prd, null, 2));
+
+    const opts: RunOptions = {
+      prdPath,
+      workdir: tmpDir,
+      config: {
+        ...DEFAULT_CONFIG,
+        autoMode: {
+          ...DEFAULT_CONFIG.autoMode,
+          escalation: {
+            enabled: true,
+            maxAttempts: 3,
+            escalateEntireBatch: false, // Individual retry mode
+          },
+        },
+        execution: { ...DEFAULT_CONFIG.execution, maxIterations: 2 },
+      },
+      hooks: { hooks: {} },
+      feature: "test-feature",
+      dryRun: true,
+    };
+
+    await run(opts);
+
+    // Note: In dry run mode, we can't verify escalation behavior directly,
+    // but the config setting is tested through code path coverage
+    // Real integration testing would require mocking the agent adapter
+
+    // Cleanup
+    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+  });
 });

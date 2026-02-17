@@ -52,6 +52,8 @@ export interface AutoModeConfig {
     maxAttempts: number;
     /** Escalation tier order (default: ["fast", "balanced", "powerful"]) */
     tierOrder?: ModelTier[];
+    /** When a batch fails, escalate all stories in the batch (default: true) */
+    escalateEntireBatch?: boolean;
   };
 }
 
@@ -164,6 +166,7 @@ const AutoModeConfigSchema = z.object({
     enabled: z.boolean(),
     maxAttempts: z.number().int().positive({ message: "escalation.maxAttempts must be > 0" }),
     tierOrder: z.array(ModelTierSchema).optional(),
+    escalateEntireBatch: z.boolean().optional(),
   }),
 });
 
@@ -228,6 +231,7 @@ export const DEFAULT_CONFIG: NgentConfig = {
       enabled: true,
       maxAttempts: 3,
       tierOrder: ["fast", "balanced", "powerful"],
+      escalateEntireBatch: true,
     },
   },
   execution: {
