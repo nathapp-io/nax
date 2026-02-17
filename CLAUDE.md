@@ -38,6 +38,66 @@ test/                 # Bun test files (*.test.ts)
 - **Hook System**: `hooks.json` maps lifecycle events (on-start, on-complete, on-pause, on-error, on-story-start, on-story-end) to shell commands
 - **Layered Config**: `~/.ngent/config.json` (global) merged with `<project>/ngent/config.json` (project overrides)
 
+### Pipeline Architecture (v0.3 target)
+
+The execution loop should be refactored from a monolithic `run()` into composable pipeline stages. This enables adding/removing/reordering stages without editing a 600+ line function.
+
+```typescript
+// src/pipeline/types.ts
+interface PipelineStage {
+  name: string;                                          // unique stage identifier
+  enabled: (ctx: PipelineContext) => boolean;             // skip if false
+  execute: (ctx: PipelineContext) => Promise<StageResult>; // do the work
+}
+
+interface PipelineContext {
+  config: NgentConfig;
+  prd: PRD;
+  story: UserStory;           // current story (or batch leader)
+  stories: UserStory[];       // batch (length 1 for single)
+  routing: RoutingResult;
+  workdir: string;
+  featureDir?: string;
+  hooks: HooksConfig;
+  // accumulated through stages
+  constitution?: string;
+  contextMarkdown?: string;
+  prompt?: string;
+  agentResult?: AgentResult;
+  reviewResult?: ReviewResult;
+}
+
+type StageResult =
+  | { action: 'continue' }                    // proceed to next stage
+  | { action: 'skip'; reason: string }        // skip this story
+  | { action: 'fail'; reason: string }        // mark story failed
+  | { action: 'escalate' }                    // retry with higher tier
+  | { action: 'pause'; reason: string }       // pause execution (queue command)
+```
+
+**Default pipeline stages (in order):**
+```typescript
+const defaultPipeline: PipelineStage[] = [
+  queueCheckStage,       // check for PAUSE/ABORT/SKIP commands
+  routingStage,          // classify complexity → model tier
+  constitutionStage,     // load & inject project constitution
+  contextStage,          // build file context from relevant sources
+  promptStage,           // assemble final prompt from story + context + constitution
+  executionStage,        // spawn agent session (single, batch, or TDD)
+  verifyStage,           // check agent output, tests pass
+  reviewStage,           // post-impl quality gate (typecheck/lint/test)
+  completionStage,       // mark story done, fire hooks, log progress
+];
+```
+
+**Design rules:**
+- Each stage is a separate file: `src/pipeline/stages/<name>.ts`
+- Stages communicate via `PipelineContext` — no side-channel state
+- The pipeline runner (`src/pipeline/runner.ts`) iterates stages, handles StageResult actions
+- The outer loop (load PRD → pick story → run pipeline → repeat) stays in `src/execution/runner.ts` but delegates per-story work to the pipeline
+- Hooks fire inside stages (e.g., `completionStage` fires `on-story-complete`), not in the outer loop
+- Config can override stage order or disable stages: `config.pipeline.stages`
+
 ## Code Style
 
 - Bun-native APIs preferred (Bun.file, Bun.write, Bun.spawn, Bun.sleep)
