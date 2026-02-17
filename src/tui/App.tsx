@@ -1,14 +1,17 @@
 /**
  * App — root TUI component.
  *
- * Orchestrates the layout, stories panel, and status bar.
+ * Orchestrates the layout, stories panel, agent panel, and status bar.
  */
 
-import { Box, Text } from "ink";
+import { Box, Text, useInput } from "ink";
+import { useState } from "react";
 import { StoriesPanel } from "./components/StoriesPanel";
+import { AgentPanel } from "./components/AgentPanel";
 import { StatusBar } from "./components/StatusBar";
 import { useLayout } from "./hooks/useLayout";
 import { usePipelineEvents } from "./hooks/usePipelineEvents";
+import { PanelFocus } from "./types";
 import type { TuiProps } from "./types";
 
 /**
@@ -39,6 +42,30 @@ export function App({ feature, stories: initialStories, events }: TuiProps) {
   const layout = useLayout();
   const state = usePipelineEvents(events, initialStories.map((s) => s.story));
 
+  // Focus management (Tab toggles between Stories and Agent panels)
+  const [focus, setFocus] = useState<PanelFocus>(PanelFocus.Stories);
+
+  // Agent output buffer (will be populated by PTY in future)
+  const [agentOutputLines, _setAgentOutputLines] = useState<string[]>([]);
+
+  // Keyboard input handling
+  useInput((_input, key) => {
+    // Tab key toggles focus
+    if (key.tab) {
+      setFocus((prev) =>
+        prev === PanelFocus.Stories ? PanelFocus.Agent : PanelFocus.Stories
+      );
+      return;
+    }
+
+    // When Agent panel is focused, route input to PTY
+    // (PTY handle will be wired in later when we integrate with execution runner)
+    if (focus === PanelFocus.Agent) {
+      // TODO: route input to PTY handle
+      // For now, we just capture the fact that agent panel is focused
+    }
+  });
+
   const currentRouting = state.currentStory?.routing;
 
   return (
@@ -60,12 +87,11 @@ export function App({ feature, stories: initialStories, events }: TuiProps) {
           width={layout.mode === "single" ? layout.width : layout.storiesPanelWidth}
         />
 
-        {/* Agent panel placeholder (Phase 3) */}
-        {layout.mode !== "single" && (
-          <Box flexGrow={1} borderStyle="single" borderColor="gray" paddingX={1}>
-            <Text dimColor>[Agent output — Phase 3]</Text>
-          </Box>
-        )}
+        {/* Agent panel */}
+        <AgentPanel
+          focused={focus === PanelFocus.Agent}
+          outputLines={agentOutputLines}
+        />
       </Box>
 
       {/* Status bar */}

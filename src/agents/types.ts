@@ -234,6 +234,64 @@ export interface DecomposeResult {
 }
 
 /**
+ * PTY handle interface for managing spawned PTY process.
+ *
+ * Provides methods to write input, resize terminal, and kill process.
+ * Returned by runInteractive() for TUI integration.
+ *
+ * @example
+ * ```ts
+ * const handle = adapter.runInteractive({
+ *   prompt: "Add tests",
+ *   workdir: "/project",
+ *   modelTier: "balanced",
+ *   onOutput: (data) => console.log(data),
+ *   onExit: (code) => console.log("exit:", code),
+ * });
+ *
+ * handle.write("y\n"); // Send input to agent
+ * handle.resize(120, 40); // Resize terminal
+ * handle.kill(); // Terminate agent
+ * ```
+ */
+export interface PtyHandle {
+  /** Write input to PTY stdin */
+  write(data: string): void;
+  /** Resize PTY terminal */
+  resize(cols: number, rows: number): void;
+  /** Kill PTY process */
+  kill(): void;
+  /** Process ID */
+  pid: number;
+}
+
+/**
+ * Configuration options for running an agent in interactive PTY mode.
+ *
+ * Extends AgentRunOptions with PTY-specific callbacks for output streaming
+ * and exit handling. Used by TUI to embed agent sessions.
+ *
+ * @example
+ * ```ts
+ * const options: InteractiveRunOptions = {
+ *   prompt: "Add unit tests",
+ *   workdir: "/project",
+ *   modelTier: "balanced",
+ *   modelDef: { model: "claude-sonnet-4.5", env: {} },
+ *   timeoutSeconds: 600,
+ *   onOutput: (data) => appendToBuffer(data),
+ *   onExit: (code) => markComplete(code),
+ * };
+ * ```
+ */
+export interface InteractiveRunOptions extends AgentRunOptions {
+  /** Callback fired when PTY outputs data */
+  onOutput: (data: Buffer) => void;
+  /** Callback fired when PTY process exits */
+  onExit: (code: number) => void;
+}
+
+/**
  * Agent adapter interface — one implementation per supported coding agent.
  *
  * Provides uniform interface for checking installation, running agents,
@@ -265,6 +323,10 @@ export interface DecomposeResult {
  *
  *   async plan(options: PlanOptions): Promise<PlanResult> {
  *     // spawn agent in plan mode
+ *   }
+ *
+ *   runInteractive?(options: InteractiveRunOptions): PtyHandle {
+ *     // spawn agent in PTY mode for TUI
  *   }
  * }
  * ```
@@ -327,4 +389,36 @@ export interface AgentAdapter {
    * @returns Decomposed and classified user stories
    */
   decompose(options: DecomposeOptions): Promise<DecomposeResult>;
+
+  /**
+   * Run the agent in interactive PTY mode for TUI embedding.
+   *
+   * Spawns the agent in a PTY (without -p flag) and provides a handle
+   * for writing input, resizing, and killing the process. Agent output
+   * is streamed via onOutput callback, and exit is signaled via onExit.
+   *
+   * This method is optional — only implemented by agents that support
+   * interactive terminal sessions (e.g., Claude Code).
+   *
+   * @param options - Interactive run options with PTY callbacks
+   * @returns PTY handle for input/resize/kill
+   *
+   * @example
+   * ```ts
+   * const handle = adapter.runInteractive({
+   *   prompt: "Add tests for auth.ts",
+   *   workdir: "/project",
+   *   modelTier: "balanced",
+   *   onOutput: (data) => appendToTuiBuffer(data),
+   *   onExit: (code) => markStoryComplete(code),
+   * });
+   *
+   * // Send user input to agent
+   * handle.write("y\n");
+   *
+   * // Cleanup on TUI exit
+   * handle.kill();
+   * ```
+   */
+  runInteractive?(options: InteractiveRunOptions): PtyHandle;
 }

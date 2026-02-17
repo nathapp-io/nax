@@ -2,7 +2,7 @@
  * Claude Code Agent Adapter
  */
 
-import type { AgentAdapter, AgentCapabilities, AgentResult, AgentRunOptions, PlanOptions, PlanResult, DecomposeOptions, DecomposeResult, DecomposedStory } from "./types";
+import type { AgentAdapter, AgentCapabilities, AgentResult, AgentRunOptions, PlanOptions, PlanResult, DecomposeOptions, DecomposeResult, DecomposedStory, InteractiveRunOptions, PtyHandle } from "./types";
 import { estimateCostFromOutput, estimateCostByDuration } from "./cost";
 
 /**
@@ -559,5 +559,84 @@ Respond with ONLY a JSON array (no markdown code fences):
     }
     // Default to medium if invalid
     return "medium";
+  }
+
+  /**
+   * Run Claude Code in interactive PTY mode for TUI embedding.
+   *
+   * Spawns the agent in a PTY (without -p flag) and provides a handle
+   * for writing input, resizing, and killing the process. Agent output
+   * is streamed via onOutput callback, and exit is signaled via onExit.
+   *
+   * @param options - Interactive run options with PTY callbacks
+   * @returns PTY handle for input/resize/kill
+   *
+   * @example
+   * ```ts
+   * const adapter = new ClaudeCodeAdapter();
+   * const handle = adapter.runInteractive({
+   *   prompt: "Add tests for auth.ts",
+   *   workdir: "/project",
+   *   modelTier: "balanced",
+   *   modelDef: { model: "claude-sonnet-4.5", env: {} },
+   *   timeoutSeconds: 600,
+   *   onOutput: (data) => appendToTuiBuffer(data),
+   *   onExit: (code) => markStoryComplete(code),
+   * });
+   *
+   * // Send user input to agent
+   * handle.write("y\n");
+   *
+   * // Cleanup on TUI exit
+   * handle.kill();
+   * ```
+   */
+  runInteractive(options: InteractiveRunOptions): PtyHandle {
+    // Lazy load node-pty
+    let nodePty: typeof import("node-pty");
+    try {
+      nodePty = require("node-pty");
+    } catch (error) {
+      throw new Error(`node-pty not available: ${(error as Error).message}`);
+    }
+
+    // Build command without -p flag (interactive mode)
+    const model = options.modelDef.model;
+    const cmd = [
+      this.binary,
+      "--model", model,
+      options.prompt,
+    ];
+
+    // Spawn in PTY mode
+    const ptyProc = nodePty.spawn(cmd[0], cmd.slice(1), {
+      name: "xterm-256color",
+      cols: 80,
+      rows: 24,
+      cwd: options.workdir,
+      env: {
+        ...process.env,
+        ...options.modelDef.env,
+        ...options.env,
+      },
+    });
+
+    // Stream output to callback
+    ptyProc.onData((data) => {
+      options.onOutput(Buffer.from(data));
+    });
+
+    // Handle exit
+    ptyProc.onExit((event) => {
+      options.onExit(event.exitCode);
+    });
+
+    // Return handle
+    return {
+      write: (data: string) => ptyProc.write(data),
+      resize: (cols: number, rows: number) => ptyProc.resize(cols, rows),
+      kill: () => ptyProc.kill(),
+      pid: ptyProc.pid,
+    };
   }
 }
