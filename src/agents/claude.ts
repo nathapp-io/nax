@@ -2,7 +2,7 @@
  * Claude Code Agent Adapter
  */
 
-import type { AgentAdapter, AgentResult, AgentRunOptions } from "./types";
+import type { AgentAdapter, AgentCapabilities, AgentResult, AgentRunOptions } from "./types";
 import { estimateCostFromOutput, estimateCostByDuration } from "./cost";
 
 /**
@@ -31,6 +31,18 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   readonly name = "claude";
   readonly displayName = "Claude Code";
   readonly binary = "claude";
+
+  /**
+   * Claude Code capability metadata.
+   *
+   * Supports all three model tiers (fast=Haiku, balanced=Sonnet, powerful=Opus),
+   * has a 200k token context window, and handles all workflow features.
+   */
+  readonly capabilities: AgentCapabilities = {
+    supportedTiers: ["fast", "balanced", "powerful"],
+    maxContextTokens: 200_000,
+    features: new Set(["tdd", "review", "refactor", "batch"]),
+  };
 
   /**
    * Check if Claude Code CLI is installed on this machine.

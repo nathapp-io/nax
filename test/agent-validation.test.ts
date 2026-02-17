@@ -1,6 +1,7 @@
 import { describe, test, expect, mock } from "bun:test";
 import { ClaudeCodeAdapter } from "../src/agents/claude";
-import type { AgentRunOptions } from "../src/agents";
+import { validateAgentForTier, validateAgentFeature, describeAgentCapabilities } from "../src/agents/validation";
+import type { AgentAdapter, AgentRunOptions } from "../src/agents";
 
 describe("Agent Validation and Retry Logic", () => {
   describe("ClaudeCodeAdapter.isInstalled", () => {
@@ -266,6 +267,152 @@ describe("Agent Validation and Retry Logic", () => {
         "-p",
         "test prompt",
       ]);
+    });
+  });
+
+  describe("Agent Capability Metadata", () => {
+    const claudeAdapter = new ClaudeCodeAdapter();
+
+    describe("ClaudeCodeAdapter capabilities", () => {
+      test("declares all expected tiers", () => {
+        const caps = claudeAdapter.capabilities;
+        expect(caps.supportedTiers).toContain("fast");
+        expect(caps.supportedTiers).toContain("balanced");
+        expect(caps.supportedTiers).toContain("powerful");
+        expect(caps.supportedTiers.length).toBe(3);
+      });
+
+      test("declares all expected features", () => {
+        const caps = claudeAdapter.capabilities;
+        expect(caps.features.has("tdd")).toBe(true);
+        expect(caps.features.has("review")).toBe(true);
+        expect(caps.features.has("refactor")).toBe(true);
+        expect(caps.features.has("batch")).toBe(true);
+        expect(caps.features.size).toBe(4);
+      });
+
+      test("declares 200k token context window", () => {
+        expect(claudeAdapter.capabilities.maxContextTokens).toBe(200_000);
+      });
+    });
+
+    describe("validateAgentForTier", () => {
+      test("returns true for supported tiers", () => {
+        expect(validateAgentForTier(claudeAdapter, "fast")).toBe(true);
+        expect(validateAgentForTier(claudeAdapter, "balanced")).toBe(true);
+        expect(validateAgentForTier(claudeAdapter, "powerful")).toBe(true);
+      });
+
+      test("returns false for unsupported tiers (custom agent)", () => {
+        // Create a mock agent that only supports fast tier
+        const limitedAgent: AgentAdapter = {
+          name: "limited",
+          displayName: "Limited Agent",
+          binary: "limited",
+          capabilities: {
+            supportedTiers: ["fast"],
+            maxContextTokens: 50_000,
+            features: new Set(["review"]),
+          },
+          async isInstalled() { return true; },
+          async run() {
+            return {
+              success: true,
+              exitCode: 0,
+              output: "",
+              rateLimited: false,
+              durationMs: 1000,
+              estimatedCost: 0.01
+            };
+          },
+          buildCommand() { return ["limited"]; },
+        };
+
+        expect(validateAgentForTier(limitedAgent, "fast")).toBe(true);
+        expect(validateAgentForTier(limitedAgent, "balanced")).toBe(false);
+        expect(validateAgentForTier(limitedAgent, "powerful")).toBe(false);
+      });
+    });
+
+    describe("validateAgentFeature", () => {
+      test("returns true for supported features", () => {
+        expect(validateAgentFeature(claudeAdapter, "tdd")).toBe(true);
+        expect(validateAgentFeature(claudeAdapter, "review")).toBe(true);
+        expect(validateAgentFeature(claudeAdapter, "refactor")).toBe(true);
+        expect(validateAgentFeature(claudeAdapter, "batch")).toBe(true);
+      });
+
+      test("returns false for unsupported features (custom agent)", () => {
+        const reviewOnlyAgent: AgentAdapter = {
+          name: "reviewer",
+          displayName: "Review Agent",
+          binary: "reviewer",
+          capabilities: {
+            supportedTiers: ["fast", "balanced"],
+            maxContextTokens: 100_000,
+            features: new Set(["review"]),
+          },
+          async isInstalled() { return true; },
+          async run() {
+            return {
+              success: true,
+              exitCode: 0,
+              output: "",
+              rateLimited: false,
+              durationMs: 1000,
+              estimatedCost: 0.01
+            };
+          },
+          buildCommand() { return ["reviewer"]; },
+        };
+
+        expect(validateAgentFeature(reviewOnlyAgent, "review")).toBe(true);
+        expect(validateAgentFeature(reviewOnlyAgent, "tdd")).toBe(false);
+        expect(validateAgentFeature(reviewOnlyAgent, "refactor")).toBe(false);
+        expect(validateAgentFeature(reviewOnlyAgent, "batch")).toBe(false);
+      });
+    });
+
+    describe("describeAgentCapabilities", () => {
+      test("formats Claude Code capabilities correctly", () => {
+        const description = describeAgentCapabilities(claudeAdapter);
+        expect(description).toContain("claude:");
+        expect(description).toContain("tiers=[fast,balanced,powerful]");
+        expect(description).toContain("maxTokens=200000");
+        expect(description).toContain("features=");
+        expect(description).toContain("tdd");
+        expect(description).toContain("review");
+        expect(description).toContain("refactor");
+        expect(description).toContain("batch");
+      });
+
+      test("formats limited agent capabilities correctly", () => {
+        const limitedAgent: AgentAdapter = {
+          name: "tiny",
+          displayName: "Tiny Agent",
+          binary: "tiny",
+          capabilities: {
+            supportedTiers: ["fast"],
+            maxContextTokens: 10_000,
+            features: new Set(["review"]),
+          },
+          async isInstalled() { return true; },
+          async run() {
+            return {
+              success: true,
+              exitCode: 0,
+              output: "",
+              rateLimited: false,
+              durationMs: 1000,
+              estimatedCost: 0.01
+            };
+          },
+          buildCommand() { return ["tiny"]; },
+        };
+
+        const description = describeAgentCapabilities(limitedAgent);
+        expect(description).toBe("tiny: tiers=[fast], maxTokens=10000, features=[review]");
+      });
     });
   });
 });

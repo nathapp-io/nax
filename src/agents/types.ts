@@ -76,6 +76,30 @@ export interface AgentRunOptions {
 }
 
 /**
+ * Agent capability metadata describing what features and tiers the agent supports.
+ *
+ * Used for runtime validation and optimization — ensures the orchestrator only
+ * routes tasks to agents that can actually handle them.
+ *
+ * @example
+ * ```ts
+ * const capabilities: AgentCapabilities = {
+ *   supportedTiers: ["fast", "balanced", "powerful"],
+ *   maxContextTokens: 200_000,
+ *   features: new Set(["tdd", "review", "refactor", "batch"]),
+ * };
+ * ```
+ */
+export interface AgentCapabilities {
+  /** Model tiers this agent supports (e.g., fast/balanced/powerful) */
+  readonly supportedTiers: readonly ModelTier[];
+  /** Maximum context window size in tokens */
+  readonly maxContextTokens: number;
+  /** Feature flags — what workflows this agent can handle */
+  readonly features: ReadonlySet<"tdd" | "review" | "refactor" | "batch">;
+}
+
+/**
  * Agent adapter interface — one implementation per supported coding agent.
  *
  * Provides uniform interface for checking installation, running agents,
@@ -87,6 +111,11 @@ export interface AgentRunOptions {
  *   readonly name = "myagent";
  *   readonly displayName = "My Coding Agent";
  *   readonly binary = "myagent";
+ *   readonly capabilities = {
+ *     supportedTiers: ["fast", "balanced"],
+ *     maxContextTokens: 100_000,
+ *     features: new Set(["tdd", "review"]),
+ *   };
  *
  *   async isInstalled(): Promise<boolean> {
  *     // check if binary exists
@@ -111,6 +140,9 @@ export interface AgentAdapter {
 
   /** Binary command to check if agent is installed */
   readonly binary: string;
+
+  /** Capability metadata describing supported tiers and features */
+  readonly capabilities: AgentCapabilities;
 
   /**
    * Check if the agent binary is available on this machine.

@@ -12,7 +12,7 @@
 import chalk from "chalk";
 import type { NgentConfig } from "../config";
 import { resolveModel } from "../config";
-import { getAgent } from "../agents";
+import { getAgent, validateAgentForTier } from "../agents";
 import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryPassed, markStoryFailed, markStorySkipped } from "../prd";
 import type { UserStory } from "../prd";
 import { routeTask } from "../routing";
@@ -365,6 +365,15 @@ export async function run(options: RunOptions): Promise<RunResult> {
         console.log(chalk.cyan(`\n   → Batch session (${storiesToExecute.length} stories, test-after)`));
       } else {
         console.log(chalk.cyan(`\n   → Single session (test-after)`));
+      }
+
+      // Validate agent supports the requested tier
+      if (!validateAgentForTier(agent, routing.modelTier)) {
+        console.log(chalk.yellow(
+          `   ⚠️  Agent ${agent.name} does not declare support for tier "${routing.modelTier}"\n` +
+          `      Supported tiers: [${agent.capabilities.supportedTiers.join(", ")}]\n` +
+          `      Proceeding anyway — agent may fail or fall back to different model`
+        ));
       }
 
       const result = await agent.run({
