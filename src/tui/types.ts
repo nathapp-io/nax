@@ -51,4 +51,6 @@ export interface TuiProps {
   elapsedMs: number;
   /** Pipeline event emitter for live updates */
   events: PipelineEventEmitter;
+  /** Path to queue file for writing commands (optional) */
+  queueFilePath?: string;
 }

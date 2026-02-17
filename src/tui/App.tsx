@@ -4,15 +4,19 @@
  * Orchestrates the layout, stories panel, agent panel, and status bar.
  */
 
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useApp, useInput } from "ink";
 import { useState } from "react";
 import { StoriesPanel } from "./components/StoriesPanel";
 import { AgentPanel } from "./components/AgentPanel";
 import { StatusBar } from "./components/StatusBar";
+import { HelpOverlay } from "./components/HelpOverlay";
+import { CostOverlay } from "./components/CostOverlay";
 import { useLayout } from "./hooks/useLayout";
 import { usePipelineEvents } from "./hooks/usePipelineEvents";
+import { useKeyboard, type KeyboardAction } from "./hooks/useKeyboard";
 import { PanelFocus } from "./types";
 import type { TuiProps } from "./types";
+import { writeQueueCommand } from "../utils/queue-writer";
 
 /**
  * Root TUI application component.
@@ -38,32 +42,117 @@ import type { TuiProps } from "./types";
  * );
  * ```
  */
-export function App({ feature, stories: initialStories, events }: TuiProps) {
+export function App({ feature, stories: initialStories, events, queueFilePath }: TuiProps) {
   const layout = useLayout();
   const state = usePipelineEvents(events, initialStories.map((s) => s.story));
+  const { exit } = useApp();
 
   // Focus management (Tab toggles between Stories and Agent panels)
   const [focus, setFocus] = useState<PanelFocus>(PanelFocus.Stories);
 
+  // Overlay state
+  const [showHelp, setShowHelp] = useState(false);
+  const [showCost, setShowCost] = useState(false);
+  const [showQuitConfirm, setShowQuitConfirm] = useState(false);
+  const [showAbortConfirm, setShowAbortConfirm] = useState(false);
+
   // Agent output buffer (will be populated by PTY in future)
   const [agentOutputLines, _setAgentOutputLines] = useState<string[]>([]);
 
-  // Keyboard input handling
-  useInput((_input, key) => {
-    // Tab key toggles focus
-    if (key.tab) {
-      setFocus((prev) =>
-        prev === PanelFocus.Stories ? PanelFocus.Agent : PanelFocus.Stories
-      );
-      return;
-    }
+  // Handle keyboard actions
+  const handleKeyboardAction = async (action: KeyboardAction) => {
+    switch (action.type) {
+      case "TOGGLE_FOCUS":
+        setFocus((prev) =>
+          prev === PanelFocus.Stories ? PanelFocus.Agent : PanelFocus.Stories
+        );
+        break;
 
-    // When Agent panel is focused, route input to PTY
-    // (PTY handle will be wired in later when we integrate with execution runner)
-    if (focus === PanelFocus.Agent) {
-      // TODO: route input to PTY handle
-      // For now, we just capture the fact that agent panel is focused
+      case "ESCAPE_AGENT":
+        setFocus(PanelFocus.Stories);
+        break;
+
+      case "SHOW_HELP":
+        setShowHelp(true);
+        break;
+
+      case "SHOW_COST":
+        setShowCost(true);
+        break;
+
+      case "CLOSE_OVERLAY":
+        setShowHelp(false);
+        setShowCost(false);
+        setShowQuitConfirm(false);
+        setShowAbortConfirm(false);
+        break;
+
+      case "QUIT":
+        // If a story is running, show confirmation
+        if (state.currentStory) {
+          setShowQuitConfirm(true);
+        } else {
+          exit();
+        }
+        break;
+
+      case "PAUSE":
+        if (queueFilePath) {
+          await writeQueueCommand(queueFilePath, { type: "PAUSE" });
+        }
+        break;
+
+      case "ABORT":
+        // If a story is running, show confirmation
+        if (state.currentStory) {
+          setShowAbortConfirm(true);
+        } else if (queueFilePath) {
+          await writeQueueCommand(queueFilePath, { type: "ABORT" });
+        }
+        break;
+
+      case "SKIP":
+        if (queueFilePath) {
+          await writeQueueCommand(queueFilePath, { type: "SKIP", storyId: action.storyId });
+        }
+        break;
+
+      case "RETRY":
+        // TODO: Implement retry logic for last failed story
+        // This would require tracking the last failed story and resetting its status
+        break;
+
+      default:
+        break;
     }
+  };
+
+  // Custom input handler for confirmation dialogs
+  useInput((input) => {
+    // Handle confirmation dialogs
+    if (showQuitConfirm || showAbortConfirm) {
+      const key = input.toLowerCase();
+      if (key === "y") {
+        if (showQuitConfirm) {
+          exit();
+        } else if (showAbortConfirm && queueFilePath) {
+          writeQueueCommand(queueFilePath, { type: "ABORT" });
+          setShowAbortConfirm(false);
+        }
+      } else if (key === "n" || key === "\x1b") {
+        // n or Esc cancels
+        setShowQuitConfirm(false);
+        setShowAbortConfirm(false);
+      }
+    }
+  });
+
+  // Wire keyboard hook (disabled during confirmation dialogs)
+  useKeyboard({
+    focus,
+    currentStory: state.currentStory,
+    onAction: handleKeyboardAction,
+    disabled: showQuitConfirm || showAbortConfirm,
   });
 
   const currentRouting = state.currentStory?.routing;
@@ -101,6 +190,60 @@ export function App({ feature, stories: initialStories, events }: TuiProps) {
         modelTier={currentRouting?.modelTier}
         testStrategy={currentRouting?.testStrategy}
       />
+
+      {/* Overlays */}
+      <HelpOverlay visible={showHelp} />
+      <CostOverlay visible={showCost} stories={state.stories} totalCost={state.totalCost} />
+
+      {/* Quit confirmation */}
+      {showQuitConfirm && (
+        <Box
+          position="absolute"
+          width="100%"
+          height="100%"
+          justifyContent="center"
+          alignItems="center"
+        >
+          <Box
+            flexDirection="column"
+            borderStyle="double"
+            borderColor="yellow"
+            paddingX={2}
+            paddingY={1}
+            backgroundColor="black"
+          >
+            <Text color="yellow">⚠️  Story is running. Quit anyway?</Text>
+            <Box paddingTop={1}>
+              <Text dimColor>Press <Text color="yellow">y</Text> to confirm, <Text color="yellow">n</Text> to cancel</Text>
+            </Box>
+          </Box>
+        </Box>
+      )}
+
+      {/* Abort confirmation */}
+      {showAbortConfirm && (
+        <Box
+          position="absolute"
+          width="100%"
+          height="100%"
+          justifyContent="center"
+          alignItems="center"
+        >
+          <Box
+            flexDirection="column"
+            borderStyle="double"
+            borderColor="red"
+            paddingX={2}
+            paddingY={1}
+            backgroundColor="black"
+          >
+            <Text color="red">⚠️  Story is running. Abort anyway?</Text>
+            <Box paddingTop={1}>
+              <Text dimColor>Press <Text color="yellow">y</Text> to confirm, <Text color="yellow">n</Text> to cancel</Text>
+            </Box>
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 }
