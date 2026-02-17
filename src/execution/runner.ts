@@ -25,6 +25,7 @@ import { groupStoriesIntoBatches, precomputeBatchPlan, type StoryBatch } from ".
 import { escalateTier } from "./escalation";
 import { readQueueFile, clearQueueFile } from "./queue-handler";
 import { loadConstitution, type ConstitutionResult } from "../constitution";
+import { runReview, type ReviewResult } from "../review";
 import {
   hookCtx,
   maybeGetContext,
@@ -415,6 +416,50 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
     // Update PRD based on success
     if (sessionSuccess) {
+      // Run review phase if enabled
+      let reviewResult: ReviewResult | undefined;
+      if (config.review.enabled) {
+        console.log(chalk.cyan("\n   → Running review phase..."));
+        reviewResult = await runReview(config.review, workdir);
+
+        if (!reviewResult.success) {
+          console.log(chalk.red(`   ✗ Review failed: ${reviewResult.failureReason}`));
+
+          // Mark all stories in the batch as failed due to review
+          for (const failedStory of storiesToExecute) {
+            markStoryFailed(prd, failedStory.id);
+
+            console.log(chalk.red(`   ✗ Story ${failedStory.id} failed review`));
+
+            // Log failure
+            if (featureDir) {
+              await appendProgress(
+                featureDir,
+                failedStory.id,
+                "failed",
+                `${failedStory.title} — Review failed: ${reviewResult.failureReason}`,
+              );
+            }
+
+            // Fire story-complete hook with failed status
+            await fireHook(hooks, "on-story-complete", hookCtx(feature, {
+              storyId: failedStory.id,
+              status: "failed",
+              cost: sessionCost / storiesToExecute.length,
+            }), workdir);
+          }
+
+          await savePRD(prd, prdPath);
+          prdDirty = true;
+
+          // Continue to next iteration (don't mark as passed)
+          iterations++;
+          continue;
+        } else {
+          console.log(chalk.green(`   ✓ Review passed (${reviewResult.totalDurationMs}ms)`));
+        }
+      }
+
       // Mark all stories in the batch/single as passed
       for (const completedStory of storiesToExecute) {
         markStoryPassed(prd, completedStory.id);

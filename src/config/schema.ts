@@ -119,6 +119,20 @@ export interface AnalyzeConfig {
   maxCodebaseSummaryTokens: number;
 }
 
+/** Review config */
+export interface ReviewConfig {
+  /** Enable review phase */
+  enabled: boolean;
+  /** List of checks to run */
+  checks: Array<"typecheck" | "lint" | "test">;
+  /** Custom commands per check */
+  commands: {
+    typecheck?: string;
+    lint?: string;
+    test?: string;
+  };
+}
+
 /** Full ngent configuration */
 export interface NgentConfig {
   /** Schema version */
@@ -137,6 +151,8 @@ export interface NgentConfig {
   constitution: ConstitutionConfig;
   /** Analyze settings */
   analyze: AnalyzeConfig;
+  /** Review settings */
+  review: ReviewConfig;
 }
 
 /** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */
@@ -234,6 +250,16 @@ const AnalyzeConfigSchema = z.object({
   maxCodebaseSummaryTokens: z.number().int().positive(),
 });
 
+const ReviewConfigSchema = z.object({
+  enabled: z.boolean(),
+  checks: z.array(z.enum(["typecheck", "lint", "test"])),
+  commands: z.object({
+    typecheck: z.string().optional(),
+    lint: z.string().optional(),
+    test: z.string().optional(),
+  }),
+});
+
 export const NgentConfigSchema = z
   .object({
     version: z.number(),
@@ -244,6 +270,7 @@ export const NgentConfigSchema = z
     tdd: TddConfigSchema,
     constitution: ConstitutionConfigSchema,
     analyze: AnalyzeConfigSchema,
+    review: ReviewConfigSchema,
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",
@@ -303,6 +330,11 @@ export const DEFAULT_CONFIG: NgentConfig = {
     classifierModel: "fast",
     fallbackToKeywords: true,
     maxCodebaseSummaryTokens: 5000,
+  },
+  review: {
+    enabled: true,
+    checks: ["typecheck", "lint", "test"],
+    commands: {},
   },
 };
 
