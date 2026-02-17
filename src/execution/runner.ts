@@ -26,6 +26,8 @@ import { buildContext, formatContextAsMarkdown } from "../context";
 import type { StoryContext, ContextBudget } from "../context";
 import { parseQueueFile } from "../queue";
 import type { QueueCommand } from "../queue";
+import { buildSingleSessionPrompt, buildBatchPrompt } from "./prompts";
+import { groupStoriesIntoBatches, type StoryBatch } from "./batching";
 
 /** Run options */
 export interface RunOptions {
@@ -56,133 +58,6 @@ export interface RunResult {
   storiesCompleted: number;
   totalCost: number;
   durationMs: number;
-}
-
-/** Build prompt for single-session (test-after) execution */
-function buildSingleSessionPrompt(story: UserStory, contextMarkdown?: string): string {
-  const basePrompt = `# Task: ${story.title}
-
-**Description:**
-${story.description}
-
-**Acceptance Criteria:**
-${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
-
-**Instructions:**
-1. Implement the functionality described above
-2. Write tests to verify all acceptance criteria are met
-3. Ensure all tests pass
-4. Follow existing code patterns and conventions
-5. Commit your changes when done
-
-Use test-after approach: implement first, then add tests to verify.`;
-
-  if (contextMarkdown) {
-    return `${basePrompt}
-
----
-
-${contextMarkdown}`;
-  }
-
-  return basePrompt;
-}
-
-/** Build prompt for batched stories (multiple simple stories in one session) */
-export function buildBatchPrompt(stories: UserStory[], contextMarkdown?: string): string {
-  const storyPrompts = stories
-    .map((story, idx) => {
-      return `## Story ${idx + 1}: ${story.id} — ${story.title}
-
-**Description:**
-${story.description}
-
-**Acceptance Criteria:**
-${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}`;
-    })
-    .join("\n\n");
-
-  const basePrompt = `# Batch Task: ${stories.length} Stories
-
-You are assigned ${stories.length} related stories to implement in sequence. Each story should be implemented, tested, and committed separately.
-
-${storyPrompts}
-
-**Instructions:**
-1. Implement each story in order
-2. Write tests to verify all acceptance criteria are met for each story
-3. Ensure all tests pass for each story
-4. **Commit each story separately** with a clear commit message referencing the story ID
-5. Follow existing code patterns and conventions
-
-Use test-after approach: implement first, then add tests to verify.`;
-
-  if (contextMarkdown) {
-    return `${basePrompt}
-
----
-
-${contextMarkdown}`;
-  }
-
-  return basePrompt;
-}
-
-/** Story batch for grouped execution */
-export interface StoryBatch {
-  stories: UserStory[];
-  isBatch: boolean;
-}
-
-/**
- * Group consecutive simple-complexity stories into batches (max 4 per batch).
- * Non-simple stories execute individually.
- */
-export function groupStoriesIntoBatches(
-  stories: UserStory[],
-  maxBatchSize = 4,
-): StoryBatch[] {
-  const batches: StoryBatch[] = [];
-  let currentBatch: UserStory[] = [];
-
-  for (const story of stories) {
-    const isSimple = story.routing?.complexity === "simple";
-
-    if (isSimple && currentBatch.length < maxBatchSize) {
-      // Add to current batch
-      currentBatch.push(story);
-    } else {
-      // Flush current batch if it exists
-      if (currentBatch.length > 0) {
-        batches.push({
-          stories: [...currentBatch],
-          isBatch: currentBatch.length > 1,
-        });
-        currentBatch = [];
-      }
-
-      // Add non-simple story as individual batch
-      if (!isSimple) {
-        batches.push({
-          stories: [story],
-          isBatch: false,
-        });
-      } else {
-        // Start new batch with this simple story
-        currentBatch.push(story);
-      }
-    }
-  }
-
-  // Flush remaining batch
-  if (currentBatch.length > 0) {
-    batches.push({
-      stories: [...currentBatch],
-      isBatch: currentBatch.length > 1,
-    });
-  }
-
-  return batches;
 }
 
 /** Build story context for context builder */
@@ -910,3 +785,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     await releaseLock(workdir);
   }
 }
+
+// Re-exports for backward compatibility with existing test imports
+export { buildSingleSessionPrompt, buildBatchPrompt } from "./prompts";
+export { groupStoriesIntoBatches, type StoryBatch } from "./batching";
