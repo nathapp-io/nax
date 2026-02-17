@@ -15,6 +15,7 @@ import { routeTask, classifyComplexity } from "../routing";
 import { getAgent } from "../agents/registry";
 import { resolveModel } from "../config/schema";
 import { loadPRD } from "../prd";
+import { generateAcceptanceTests } from "../acceptance";
 
 export interface AnalyzeOptions {
   /** Feature directory path */
@@ -173,6 +174,49 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
     updatedAt: now,
     userStories,
   };
+
+  // Generate acceptance tests if enabled
+  if (config && config.acceptance.enabled && config.acceptance.generateTests) {
+    console.log("Generating acceptance tests from spec.md...");
+
+    try {
+      // Scan codebase (reuse existing scan if available)
+      const scan = await scanCodebase(workdir);
+      const codebaseContext = buildCodebaseContext(scan);
+
+      // Get agent adapter
+      const agentName = config.autoMode.defaultAgent;
+      const adapter = getAgent(agentName);
+
+      if (!adapter) {
+        throw new Error(`Agent "${agentName}" not found`);
+      }
+
+      // Resolve model for acceptance test generation (use analyze tier)
+      const modelTier = config.analyze.model;
+      const modelEntry = config.models[modelTier];
+      const modelDef = resolveModel(modelEntry);
+
+      // Generate acceptance tests
+      const result = await generateAcceptanceTests(adapter, {
+        specContent,
+        featureName,
+        workdir,
+        codebaseContext,
+        modelTier,
+        modelDef,
+      });
+
+      // Write acceptance.test.ts to feature directory
+      const acceptanceTestPath = join(featureDir, config.acceptance.testPath);
+      await Bun.write(acceptanceTestPath, result.testCode);
+
+      console.log(`✓ Acceptance tests generated — ${result.criteria.length} criteria → ${acceptanceTestPath}`);
+    } catch (error) {
+      console.warn(`⚠ Failed to generate acceptance tests: ${(error as Error).message}`);
+      // Continue with PRD creation even if test generation fails
+    }
+  }
 
   return prd;
 }

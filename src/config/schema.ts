@@ -141,6 +141,18 @@ export interface PlanConfig {
   outputPath: string;
 }
 
+/** Acceptance validation config */
+export interface AcceptanceConfig {
+  /** Enable acceptance test generation and validation */
+  enabled: boolean;
+  /** Maximum retry loops for fix stories (default: 2) */
+  maxRetries: number;
+  /** Generate acceptance tests during analyze (default: true) */
+  generateTests: boolean;
+  /** Path to acceptance test file (relative to feature directory) */
+  testPath: string;
+}
+
 /** Full ngent configuration */
 export interface NgentConfig {
   /** Schema version */
@@ -163,6 +175,8 @@ export interface NgentConfig {
   review: ReviewConfig;
   /** Plan settings */
   plan: PlanConfig;
+  /** Acceptance validation settings */
+  acceptance: AcceptanceConfig;
 }
 
 /** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */
@@ -275,6 +289,13 @@ const PlanConfigSchema = z.object({
   outputPath: z.string().min(1, "plan.outputPath must be non-empty"),
 });
 
+const AcceptanceConfigSchema = z.object({
+  enabled: z.boolean(),
+  maxRetries: z.number().int().nonnegative(),
+  generateTests: z.boolean(),
+  testPath: z.string().min(1, "acceptance.testPath must be non-empty"),
+});
+
 export const NgentConfigSchema = z
   .object({
     version: z.number(),
@@ -287,6 +308,7 @@ export const NgentConfigSchema = z
     analyze: AnalyzeConfigSchema,
     review: ReviewConfigSchema,
     plan: PlanConfigSchema,
+    acceptance: AcceptanceConfigSchema,
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",
@@ -355,6 +377,12 @@ export const DEFAULT_CONFIG: NgentConfig = {
   plan: {
     model: "balanced",
     outputPath: "spec.md",
+  },
+  acceptance: {
+    enabled: true,
+    maxRetries: 2,
+    generateTests: true,
+    testPath: "acceptance.test.ts",
   },
 };
 
