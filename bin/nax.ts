@@ -139,6 +139,10 @@ This document defines the coding standards, architectural rules, testing require
 - Tests should cover happy paths, edge cases, and error conditions
 - Aim for high test coverage (80%+ recommended)
 - Tests must pass before marking a story as complete
+- **Before writing tests, read existing test files** to understand what is already covered
+- Do not duplicate test coverage that prior stories already wrote
+- Focus on testing NEW behavior introduced by this story
+- 2-3 tests per validation rule is sufficient (e.g., missing, empty, wrong type) — do not exhaustively test every falsy value
 
 ## Architecture Rules
 
