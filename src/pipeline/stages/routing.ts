@@ -2,16 +2,18 @@
  * Routing Stage
  *
  * Classifies story complexity and determines model tier + test strategy.
- * Uses cached routing from story if available, otherwise performs fresh classification.
+ * Uses cached complexity/testStrategy from story if available, but ALWAYS
+ * derives modelTier from current config (never cached).
  *
  * @returns
  * - `continue`: Routing determined, proceed to next stage
  *
  * @example
  * ```ts
- * // Story has no cached routing
+ * // Story has cached routing with complexity
  * await routingStage.execute(ctx);
  * // ctx.routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "..." }
+ * // modelTier is derived from current config.autoMode.complexityRouting
  * ```
  */
 
@@ -24,16 +26,31 @@ export const routingStage: PipelineStage = {
   enabled: () => true,
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
-    // Use cached routing from story if available, otherwise classify
-    const routing =
-      ctx.story.routing ||
-      routeTask(
+    // If story has cached routing, use it but re-derive modelTier from current config
+    // Otherwise, perform fresh classification
+    let routing;
+    if (ctx.story.routing) {
+      // Use cached complexity/testStrategy, but re-derive modelTier from current config
+      routing = routeTask(
         ctx.story.title,
         ctx.story.description,
         ctx.story.acceptanceCriteria,
         ctx.story.tags,
         ctx.config,
       );
+      // Override with cached complexity if available
+      routing.complexity = ctx.story.routing.complexity;
+      routing.testStrategy = ctx.story.routing.testStrategy;
+    } else {
+      // Fresh classification
+      routing = routeTask(
+        ctx.story.title,
+        ctx.story.description,
+        ctx.story.acceptanceCriteria,
+        ctx.story.tags,
+        ctx.config,
+      );
+    }
 
     ctx.routing = routing;
 

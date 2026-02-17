@@ -40,7 +40,7 @@ export async function savePRD(prd: PRD, path: string): Promise<void> {
 export function getNextStory(prd: PRD): UserStory | null {
   const completedIds = new Set(
     prd.userStories
-      .filter((s) => s.passes || s.status === "skipped")
+      .filter((s) => s.passes || s.status === "passed" || s.status === "skipped")
       .map((s) => s.id),
   );
 
@@ -48,6 +48,7 @@ export function getNextStory(prd: PRD): UserStory | null {
     prd.userStories.find(
       (s) =>
         !s.passes &&
+        s.status !== "passed" &&
         s.status !== "skipped" &&
         s.dependencies.every((dep) => completedIds.has(dep)),
     ) ?? null
@@ -56,7 +57,7 @@ export function getNextStory(prd: PRD): UserStory | null {
 
 /** Check if all stories are complete */
 export function isComplete(prd: PRD): boolean {
-  return prd.userStories.every((s) => s.passes || s.status === "skipped");
+  return prd.userStories.every((s) => s.passes || s.status === "passed" || s.status === "skipped");
 }
 
 /** Count stories by status */
@@ -69,9 +70,11 @@ export function countStories(prd: PRD): {
 } {
   return {
     total: prd.userStories.length,
-    passed: prd.userStories.filter((s) => s.passes).length,
+    passed: prd.userStories.filter((s) => s.passes || s.status === "passed").length,
     failed: prd.userStories.filter((s) => s.status === "failed").length,
-    pending: prd.userStories.filter((s) => s.status === "pending").length,
+    pending: prd.userStories.filter(
+      (s) => !s.passes && s.status !== "passed" && s.status !== "failed" && s.status !== "skipped"
+    ).length,
     skipped: prd.userStories.filter((s) => s.status === "skipped").length,
   };
 }

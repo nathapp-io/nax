@@ -98,7 +98,7 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
 
       // Convert decomposed stories to UserStory format with routing
       userStories = result.stories.map((ds) => {
-        // Route task to get model tier and test strategy
+        // Route task to get test strategy (modelTier derived at runtime)
         const routing = routeTask(
           ds.title,
           ds.description,
@@ -119,8 +119,8 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
           escalations: [],
           attempts: 0,
           routing: {
-            ...routing,
             complexity: ds.complexity, // Use decompose complexity
+            testStrategy: routing.testStrategy,
             reasoning: ds.reasoning,
             estimatedLOC: ds.estimatedLOC,
             risks: ds.risks,
@@ -341,7 +341,6 @@ function applyKeywordClassification(stories: UserStory[], config?: NgentConfig):
         )
       : {
           complexity,
-          modelTier: "balanced" as const,
           testStrategy: "test-after" as const,
           reasoning: "No config provided",
         };
@@ -349,8 +348,8 @@ function applyKeywordClassification(stories: UserStory[], config?: NgentConfig):
     return {
       ...story,
       routing: {
-        ...routing,
         complexity,
+        testStrategy: routing.testStrategy,
         reasoning: `Keyword-based classification: ${complexity}`,
         estimatedLOC: estimateLOCFromComplexity(complexity),
         risks: [],
@@ -432,8 +431,8 @@ ${story.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
           updatedStories.push({
             ...story,
             routing: {
-              ...routing,
               complexity: ds.complexity,
+              testStrategy: routing.testStrategy,
               reasoning: ds.reasoning,
               estimatedLOC: ds.estimatedLOC,
               risks: ds.risks,
@@ -466,7 +465,6 @@ ${story.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
             )
           : {
               complexity,
-              modelTier: "balanced" as const,
               testStrategy: "test-after" as const,
               reasoning: "No config provided",
             };
@@ -474,8 +472,8 @@ ${story.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
         updatedStories.push({
           ...story,
           routing: {
-            ...routing,
             complexity,
+            testStrategy: routing.testStrategy,
             reasoning: `Keyword-based classification: ${complexity}`,
             estimatedLOC: estimateLOCFromComplexity(complexity),
             risks: [],

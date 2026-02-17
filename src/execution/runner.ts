@@ -174,13 +174,19 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
         // Use first story as the primary story for routing/context
         story = storiesToExecute[0];
-        routing = story.routing || routeTask(
+        // Always derive routing from current config (modelTier not cached)
+        routing = routeTask(
           story.title,
           story.description,
           story.acceptanceCriteria,
           story.tags,
           config,
         );
+        // Override with cached complexity if available
+        if (story.routing) {
+          routing.complexity = story.routing.complexity;
+          routing.testStrategy = story.routing.testStrategy;
+        }
       } else {
         // Fallback to single-story mode (when batching disabled or batch plan exhausted)
         const nextStory = getNextStory(prd);
@@ -193,13 +199,19 @@ export async function run(options: RunOptions): Promise<RunResult> {
         storiesToExecute = [story];
         isBatchExecution = false;
 
-        routing = story.routing || routeTask(
+        // Always derive routing from current config (modelTier not cached)
+        routing = routeTask(
           story.title,
           story.description,
           story.acceptanceCriteria,
           story.tags,
           config,
         );
+        // Override with cached complexity if available
+        if (story.routing) {
+          routing.complexity = story.routing.complexity;
+          routing.testStrategy = story.routing.testStrategy;
+        }
       }
 
       // Check cost limit

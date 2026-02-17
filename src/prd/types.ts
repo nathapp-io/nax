@@ -13,7 +13,8 @@ export type StoryStatus = "pending" | "in-progress" | "passed" | "failed" | "ski
 /** Routing metadata per story */
 export interface StoryRouting {
   complexity: Complexity;
-  modelTier: ModelTier;
+  /** Model tier (derived at runtime from config, not persisted) */
+  modelTier?: ModelTier;
   testStrategy: TestStrategy;
   reasoning: string;
   estimatedCost?: number;
