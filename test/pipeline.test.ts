@@ -7,7 +7,7 @@
 import { describe, test, expect } from "bun:test";
 import { runPipeline } from "../src/pipeline/runner";
 import type { PipelineContext, PipelineStage } from "../src/pipeline/types";
-import type { NgentConfig } from "../src/config/schema";
+import type { NaxConfig } from "../src/config/schema";
 import type { PRD, UserStory } from "../src/prd/types";
 
 /** Helper: Create minimal test context */
@@ -35,7 +35,7 @@ function createTestContext(overrides?: Partial<PipelineContext>): PipelineContex
   };
 
   return {
-    config: {} as NgentConfig,
+    config: {} as NaxConfig,
     prd,
     story,
     stories: [story],

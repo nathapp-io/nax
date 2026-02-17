@@ -2,7 +2,7 @@
  * Agent Adapter Interface
  *
  * Every coding agent (Claude Code, Codex, OpenCode, etc.)
- * implements this interface so ngent can spawn, monitor, and
+ * implements this interface so nax can spawn, monitor, and
  * collect results from them uniformly.
  */
 

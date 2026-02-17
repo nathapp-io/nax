@@ -5,7 +5,7 @@
 import { describe, test, expect } from "bun:test";
 import { verifyStage } from "../src/pipeline/stages/verify";
 import type { PipelineContext } from "../src/pipeline/types";
-import type { NgentConfig } from "../src/config/schema";
+import type { NaxConfig } from "../src/config/schema";
 import type { PRD, UserStory } from "../src/prd/types";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
@@ -35,7 +35,7 @@ function createTestContext(overrides?: Partial<PipelineContext>): PipelineContex
     userStories: [story],
   };
 
-  const config: NgentConfig = {
+  const config: NaxConfig = {
     version: 1,
     models: {
       fast: "claude-sonnet-4-5",
@@ -44,8 +44,8 @@ function createTestContext(overrides?: Partial<PipelineContext>): PipelineContex
     },
     autoMode: {
       enabled: true,
-      defaultAgent: "ngent-agent-claude",
-      fallbackOrder: ["ngent-agent-claude"],
+      defaultAgent: "nax-agent-claude",
+      fallbackOrder: ["nax-agent-claude"],
       complexityRouting: {
         simple: "fast",
         medium: "balanced",
@@ -121,7 +121,7 @@ describe("Verify Stage", () => {
   });
 
   test("passes when tests succeed", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ngent-verify-test-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "nax-verify-test-"));
 
     const ctx = createTestContext({
       workdir: tempDir,
@@ -143,7 +143,7 @@ describe("Verify Stage", () => {
   });
 
   test("fails when tests fail", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ngent-verify-test-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "nax-verify-test-"));
 
     const ctx = createTestContext({
       workdir: tempDir,
@@ -170,7 +170,7 @@ describe("Verify Stage", () => {
   });
 
   test("uses default test command when not configured", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ngent-verify-test-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "nax-verify-test-"));
 
     // Create a simple package.json to make bun test work
     await Bun.write(
@@ -198,7 +198,7 @@ describe("Verify Stage", () => {
   });
 
   test("uses custom test command from config", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ngent-verify-test-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "nax-verify-test-"));
 
     const ctx = createTestContext({
       workdir: tempDir,
@@ -220,7 +220,7 @@ describe("Verify Stage", () => {
   });
 
   test("handles test command with arguments", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ngent-verify-test-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "nax-verify-test-"));
 
     const ctx = createTestContext({
       workdir: tempDir,
@@ -242,7 +242,7 @@ describe("Verify Stage", () => {
   });
 
   test("handles test command that throws error", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ngent-verify-test-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "nax-verify-test-"));
 
     const ctx = createTestContext({
       workdir: tempDir,

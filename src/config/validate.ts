@@ -1,13 +1,13 @@
 /**
  * Configuration Validation
  *
- * @deprecated Use NgentConfigSchema.safeParse() from schema.ts instead.
+ * @deprecated Use NaxConfigSchema.safeParse() from schema.ts instead.
  * This module is kept for backward compatibility only.
  *
- * Validates NgentConfig structure and constraints.
+ * Validates NaxConfig structure and constraints.
  */
 
-import type { NgentConfig } from "./schema";
+import type { NaxConfig } from "./schema";
 
 /** Validation result */
 export interface ValidationResult {
@@ -16,7 +16,7 @@ export interface ValidationResult {
 }
 
 /**
- * Validate NgentConfig
+ * Validate NaxConfig
  *
  * Checks:
  * - version === 1
@@ -26,7 +26,7 @@ export interface ValidationResult {
  * - defaultAgent is non-empty
  * - escalation.maxAttempts > 0
  */
-export function validateConfig(config: NgentConfig): ValidationResult {
+export function validateConfig(config: NaxConfig): ValidationResult {
   const errors: string[] = [];
 
   // Version check

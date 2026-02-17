@@ -6,7 +6,7 @@ import { validateDirectory, validateFilePath, isWithinDirectory, MAX_DIRECTORY_D
 import { findProjectDir } from "../src/config/loader";
 
 // Create a temporary test directory
-const testRoot = join(tmpdir(), `ngent-path-test-${Date.now()}`);
+const testRoot = join(tmpdir(), `nax-path-test-${Date.now()}`);
 const testProject = join(testRoot, "project");
 const testOutside = join(testRoot, "outside");
 
@@ -14,8 +14,8 @@ beforeAll(() => {
   // Create test directory structure
   mkdirSync(testProject, { recursive: true });
   mkdirSync(join(testProject, "src"), { recursive: true });
-  mkdirSync(join(testProject, "ngent"), { recursive: true });
-  writeFileSync(join(testProject, "ngent", "config.json"), "{}");
+  mkdirSync(join(testProject, "nax"), { recursive: true });
+  writeFileSync(join(testProject, "nax", "config.json"), "{}");
   mkdirSync(testOutside, { recursive: true });
 
   // Create a deep directory structure for max depth testing
@@ -53,7 +53,7 @@ describe("Path Security", () => {
     });
 
     test("rejects file path (not a directory)", () => {
-      const filePath = join(testProject, "ngent", "config.json");
+      const filePath = join(testProject, "nax", "config.json");
       expect(() => {
         validateDirectory(filePath);
       }).toThrow("Not a directory");
@@ -89,7 +89,7 @@ describe("Path Security", () => {
 
   describe("validateFilePath", () => {
     test("accepts file within base directory", () => {
-      const filePath = join(testProject, "ngent", "config.json");
+      const filePath = join(testProject, "nax", "config.json");
       const result = validateFilePath(filePath, testProject);
       expect(result).toBe(filePath);
     });
@@ -145,7 +145,7 @@ describe("Path Security", () => {
         deepPath = join(deepPath, `level${i}`);
       }
 
-      // Should not find the ngent directory because it's > 10 levels up
+      // Should not find the nax directory because it's > 10 levels up
       const result = findProjectDir(deepPath);
       expect(result).toBeNull();
     });
@@ -157,9 +157,9 @@ describe("Path Security", () => {
         deepPath = join(deepPath, `level${i}`);
       }
 
-      // Should find the ngent directory (5 levels up < 10 max)
+      // Should find the nax directory (5 levels up < 10 max)
       const result = findProjectDir(deepPath);
-      expect(result).toBe(join(testProject, "ngent"));
+      expect(result).toBe(join(testProject, "nax"));
     });
 
     test("MAX_DIRECTORY_DEPTH is reasonable (10)", () => {

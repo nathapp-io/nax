@@ -20,7 +20,7 @@ import {
  *
  * @example
  * ```bash
- * ngent status --cost
+ * nax status --cost
  * ```
  */
 export async function displayCostMetrics(workdir: string): Promise<void> {
@@ -28,7 +28,7 @@ export async function displayCostMetrics(workdir: string): Promise<void> {
 
   if (runs.length === 0) {
     console.log(chalk.yellow("\nNo metrics data available yet."));
-    console.log(chalk.dim("   Run ngent run to generate metrics."));
+    console.log(chalk.dim("   Run nax run to generate metrics."));
     return;
   }
 
@@ -54,7 +54,7 @@ export async function displayCostMetrics(workdir: string): Promise<void> {
  *
  * @example
  * ```bash
- * ngent status --cost --last
+ * nax status --cost --last
  * ```
  */
 export async function displayLastRunMetrics(workdir: string): Promise<void> {
@@ -62,7 +62,7 @@ export async function displayLastRunMetrics(workdir: string): Promise<void> {
 
   if (runs.length === 0) {
     console.log(chalk.yellow("\nNo metrics data available yet."));
-    console.log(chalk.dim("   Run ngent run to generate metrics."));
+    console.log(chalk.dim("   Run nax run to generate metrics."));
     return;
   }
 
@@ -109,7 +109,7 @@ export async function displayLastRunMetrics(workdir: string): Promise<void> {
  *
  * @example
  * ```bash
- * ngent status --cost --model
+ * nax status --cost --model
  * ```
  */
 export async function displayModelEfficiency(workdir: string): Promise<void> {
@@ -117,7 +117,7 @@ export async function displayModelEfficiency(workdir: string): Promise<void> {
 
   if (runs.length === 0) {
     console.log(chalk.yellow("\nNo metrics data available yet."));
-    console.log(chalk.dim("   Run ngent run to generate metrics."));
+    console.log(chalk.dim("   Run nax run to generate metrics."));
     return;
   }
 

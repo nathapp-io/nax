@@ -1,9 +1,9 @@
 import { describe, test, expect } from "bun:test";
-import { DEFAULT_CONFIG, NgentConfigSchema } from "../src/config/schema";
+import { DEFAULT_CONFIG, NaxConfigSchema } from "../src/config/schema";
 
 describe("Config Validation", () => {
   test("accepts valid default config", () => {
-    const result = NgentConfigSchema.safeParse(DEFAULT_CONFIG);
+    const result = NaxConfigSchema.safeParse(DEFAULT_CONFIG);
     expect(result.success).toBe(true);
   });
 
@@ -12,7 +12,7 @@ describe("Config Validation", () => {
       ...DEFAULT_CONFIG,
       version: 2, // Invalid version
     };
-    const result = NgentConfigSchema.safeParse(config);
+    const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
     if (!result.success) {
       const errorMessages = result.error.issues.map((e) => e.message);
@@ -28,7 +28,7 @@ describe("Config Validation", () => {
         maxIterations: 0,
       },
     };
-    const result = NgentConfigSchema.safeParse(config);
+    const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
     if (!result.success) {
       const errorMessages = result.error.issues.map((e) => e.message);
@@ -44,7 +44,7 @@ describe("Config Validation", () => {
         costLimit: -1,
       },
     };
-    const result = NgentConfigSchema.safeParse(config);
+    const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
     if (!result.success) {
       const errorMessages = result.error.issues.map((e) => e.message);
@@ -60,7 +60,7 @@ describe("Config Validation", () => {
         sessionTimeoutSeconds: 0,
       },
     };
-    const result = NgentConfigSchema.safeParse(config);
+    const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
     if (!result.success) {
       const errorMessages = result.error.issues.map((e) => e.message);
@@ -76,7 +76,7 @@ describe("Config Validation", () => {
         defaultAgent: "",
       },
     };
-    const result = NgentConfigSchema.safeParse(config);
+    const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
     if (!result.success) {
       const errorMessages = result.error.issues.map((e) => e.message);
@@ -92,7 +92,7 @@ describe("Config Validation", () => {
         defaultAgent: "   ",
       },
     };
-    const result = NgentConfigSchema.safeParse(config);
+    const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
     // Zod's min(1) validation will trim and reject whitespace
   });
@@ -108,7 +108,7 @@ describe("Config Validation", () => {
         },
       },
     };
-    const result = NgentConfigSchema.safeParse(config);
+    const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
     if (!result.success) {
       const errorMessages = result.error.issues.map((e) => e.message);
@@ -130,7 +130,7 @@ describe("Config Validation", () => {
         defaultAgent: "",
       },
     };
-    const result = NgentConfigSchema.safeParse(config);
+    const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.issues.length).toBeGreaterThanOrEqual(4);
@@ -148,7 +148,7 @@ describe("Config Validation", () => {
         },
       },
     };
-    const result = NgentConfigSchema.safeParse(config);
+    const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
     if (!result.success) {
       const errorMessages = result.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`);
@@ -169,7 +169,7 @@ describe("Config Validation", () => {
         },
       },
     };
-    const result = NgentConfigSchema.safeParse(config);
+    const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
   });
 
@@ -186,7 +186,7 @@ describe("Config Validation", () => {
         },
       },
     };
-    const result = NgentConfigSchema.safeParse(config);
+    const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
     if (!result.success) {
       const errorMessages = result.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`);

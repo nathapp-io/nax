@@ -29,11 +29,11 @@ export const constitutionStage: PipelineStage = {
   enabled: (ctx) => ctx.config.constitution.enabled,
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
-    // Constitution file is in ngent/constitution.md
-    // featureDir is ngent/features/<name>/, so we need to go up two levels
+    // Constitution file is in nax/constitution.md
+    // featureDir is nax/features/<name>/, so we need to go up two levels
     const ngentDir = ctx.featureDir
       ? dirname(dirname(ctx.featureDir))
-      : `${ctx.workdir}/ngent`;
+      : `${ctx.workdir}/nax`;
 
     const result = await loadConstitution(ngentDir, ctx.config.constitution);
 

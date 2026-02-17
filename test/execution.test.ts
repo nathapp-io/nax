@@ -39,7 +39,7 @@ describe("execution runner", () => {
     ]);
 
     // Create temporary PRD file
-    const tmpDir = "/tmp/ngent-test-" + Date.now();
+    const tmpDir = "/tmp/nax-test-" + Date.now();
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -79,7 +79,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = "/tmp/ngent-test-" + Date.now();
+    const tmpDir = "/tmp/nax-test-" + Date.now();
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -118,7 +118,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = "/tmp/ngent-test-" + Date.now();
+    const tmpDir = "/tmp/nax-test-" + Date.now();
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -171,7 +171,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = "/tmp/ngent-test-" + Date.now();
+    const tmpDir = "/tmp/nax-test-" + Date.now();
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -211,7 +211,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = "/tmp/ngent-test-" + Date.now();
+    const tmpDir = "/tmp/nax-test-" + Date.now();
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -256,7 +256,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = "/tmp/ngent-test-" + Date.now();
+    const tmpDir = "/tmp/nax-test-" + Date.now();
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -324,7 +324,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = "/tmp/ngent-test-" + Date.now();
+    const tmpDir = "/tmp/nax-test-" + Date.now();
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -403,7 +403,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = "/tmp/ngent-test-" + Date.now();
+    const tmpDir = "/tmp/nax-test-" + Date.now();
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));

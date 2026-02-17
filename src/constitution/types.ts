@@ -10,7 +10,7 @@
 export interface ConstitutionConfig {
   /** Enable constitution loading and injection */
   enabled: boolean;
-  /** Path to constitution file relative to ngent/ directory */
+  /** Path to constitution file relative to nax/ directory */
   path: string;
   /** Maximum tokens allowed for constitution content */
   maxTokens: number;

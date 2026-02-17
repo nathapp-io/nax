@@ -52,17 +52,17 @@ function escapeEnvValue(value: string): string {
  */
 function buildEnv(ctx: HookContext): Record<string, string> {
   const env: Record<string, string> = {
-    NGENT_EVENT: escapeEnvValue(ctx.event),
-    NGENT_FEATURE: escapeEnvValue(ctx.feature),
+    NAX_EVENT: escapeEnvValue(ctx.event),
+    NAX_FEATURE: escapeEnvValue(ctx.feature),
   };
 
-  if (ctx.storyId) env.NGENT_STORY_ID = escapeEnvValue(ctx.storyId);
-  if (ctx.status) env.NGENT_STATUS = escapeEnvValue(ctx.status);
-  if (ctx.reason) env.NGENT_REASON = escapeEnvValue(ctx.reason);
-  if (ctx.cost !== undefined) env.NGENT_COST = ctx.cost.toFixed(4);
-  if (ctx.model) env.NGENT_MODEL = escapeEnvValue(ctx.model);
-  if (ctx.agent) env.NGENT_AGENT = escapeEnvValue(ctx.agent);
-  if (ctx.iteration !== undefined) env.NGENT_ITERATION = String(ctx.iteration);
+  if (ctx.storyId) env.NAX_STORY_ID = escapeEnvValue(ctx.storyId);
+  if (ctx.status) env.NAX_STATUS = escapeEnvValue(ctx.status);
+  if (ctx.reason) env.NAX_REASON = escapeEnvValue(ctx.reason);
+  if (ctx.cost !== undefined) env.NAX_COST = ctx.cost.toFixed(4);
+  if (ctx.model) env.NAX_MODEL = escapeEnvValue(ctx.model);
+  if (ctx.agent) env.NAX_AGENT = escapeEnvValue(ctx.agent);
+  if (ctx.iteration !== undefined) env.NAX_ITERATION = String(ctx.iteration);
 
   return env;
 }

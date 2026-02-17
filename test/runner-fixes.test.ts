@@ -39,7 +39,7 @@ describe("BUG-2: Queue race condition", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = `/tmp/ngent-race-test-${Date.now()}`;
+    tmpDir = `/tmp/nax-race-test-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
   });
 
@@ -132,12 +132,12 @@ describe("BUG-2: File locking", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = `/tmp/ngent-lock-test-${Date.now()}`;
+    tmpDir = `/tmp/nax-lock-test-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
   });
 
   test("lock file prevents concurrent execution", async () => {
-    const lockPath = path.join(tmpDir, "ngent.lock");
+    const lockPath = path.join(tmpDir, "nax.lock");
 
     // Create lock
     const lockData = {
@@ -161,7 +161,7 @@ describe("BUG-2: File locking", () => {
   });
 
   test("stale lock is removed after 1 hour", async () => {
-    const lockPath = path.join(tmpDir, "ngent.lock");
+    const lockPath = path.join(tmpDir, "nax.lock");
 
     // Create stale lock (2 hours old)
     const staleLockData = {
@@ -182,7 +182,7 @@ describe("BUG-2: File locking", () => {
   });
 
   test("lock is released after execution", async () => {
-    const lockPath = path.join(tmpDir, "ngent.lock");
+    const lockPath = path.join(tmpDir, "nax.lock");
 
     // Create lock
     const lockData = {
@@ -304,7 +304,7 @@ describe("PERF-2 & MEM-1: PRD file size limit and dirty-flag optimization", () =
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = `/tmp/ngent-prd-test-${Date.now()}`;
+    tmpDir = `/tmp/nax-prd-test-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
   });
 

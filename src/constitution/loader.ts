@@ -57,7 +57,7 @@ export function truncateToTokens(text: string, maxTokens: number): string {
  * Reads the constitution file, estimates token count, and truncates if needed.
  * Returns null if constitution is disabled or file doesn't exist.
  *
- * @param ngentDir - Path to ngent/ directory
+ * @param ngentDir - Path to nax/ directory
  * @param config - Constitution configuration
  * @returns Constitution result or null if disabled/missing
  */

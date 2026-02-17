@@ -7,7 +7,7 @@ import { adaptiveStrategy } from "../src/routing/strategies/adaptive";
 import type { UserStory } from "../src/prd/types";
 import type { RoutingContext } from "../src/routing/strategy";
 import type { AggregateMetrics } from "../src/metrics/types";
-import type { NgentConfig } from "../src/config";
+import type { NaxConfig } from "../src/config";
 import { DEFAULT_CONFIG } from "../src/config/schema";
 
 /**
@@ -39,7 +39,7 @@ function createStory(
  */
 function createContext(
   metrics?: AggregateMetrics,
-  config: NgentConfig = DEFAULT_CONFIG,
+  config: NaxConfig = DEFAULT_CONFIG,
 ): RoutingContext {
   return {
     config,
@@ -152,7 +152,7 @@ describe("Adaptive Routing Strategy", () => {
         ["Docs are updated"],
       );
 
-      const config: NgentConfig = {
+      const config: NaxConfig = {
         ...DEFAULT_CONFIG,
         routing: {
           ...DEFAULT_CONFIG.routing,
@@ -336,7 +336,7 @@ describe("Adaptive Routing Strategy", () => {
       );
 
       // Lower threshold = more aggressive switching
-      const config: NgentConfig = {
+      const config: NaxConfig = {
         ...DEFAULT_CONFIG,
         routing: {
           ...DEFAULT_CONFIG.routing,

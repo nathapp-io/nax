@@ -141,7 +141,7 @@ describe("formatProgress", () => {
 
 describe("acquireLock and releaseLock", () => {
   const testDir = path.join(import.meta.dir, ".test-locks");
-  const lockPath = path.join(testDir, "ngent.lock");
+  const lockPath = path.join(testDir, "nax.lock");
 
   beforeEach(() => {
     // Create clean test directory

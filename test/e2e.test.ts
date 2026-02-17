@@ -1,7 +1,7 @@
 /**
  * End-to-End Integration Tests
  *
- * Tests the full ngent workflow: plan → analyze → run
+ * Tests the full nax workflow: plan → analyze → run
  * Uses a MockAgentAdapter to avoid requiring real Claude Code installation
  */
 
@@ -22,7 +22,7 @@ import { planCommand } from "../src/cli/plan";
 import { analyzeFeature } from "../src/cli/analyze";
 import { run } from "../src/execution/runner";
 import { DEFAULT_CONFIG } from "../src/config";
-import type { NgentConfig } from "../src/config";
+import type { NaxConfig } from "../src/config";
 import { loadPRD } from "../src/prd";
 import { ALL_AGENTS } from "../src/agents/registry";
 
@@ -283,7 +283,7 @@ describe("E2E: plan → analyze → run workflow", () => {
 
   beforeEach(() => {
     // Create temp directory
-    testDir = `/tmp/ngent-e2e-test-${Date.now()}`;
+    testDir = `/tmp/nax-e2e-test-${Date.now()}`;
     mkdirSync(testDir, { recursive: true });
 
     // Create mock agent and register
@@ -303,7 +303,7 @@ describe("E2E: plan → analyze → run workflow", () => {
   });
 
   test("full workflow: init → plan → analyze → run", { timeout: 120000 }, async () => {
-    const ngentDir = join(testDir, "ngent");
+    const ngentDir = join(testDir, "nax");
     const featureDir = join(ngentDir, "features/url-shortener");
     mkdirSync(featureDir, { recursive: true });
 
@@ -375,7 +375,7 @@ describe("E2E: plan → analyze → run workflow", () => {
   });
 
   test("pipeline stages execute in correct order", async () => {
-    const ngentDir = join(testDir, "ngent");
+    const ngentDir = join(testDir, "nax");
     const featureDir = join(ngentDir, "features/simple-task");
     mkdirSync(featureDir, { recursive: true });
 
@@ -450,7 +450,7 @@ describe("E2E: plan → analyze → run workflow", () => {
   });
 
   test("agent failure triggers escalation", { timeout: 60000 }, async () => {
-    const ngentDir = join(testDir, "ngent");
+    const ngentDir = join(testDir, "nax");
     const featureDir = join(ngentDir, "features/fail-task");
     mkdirSync(featureDir, { recursive: true });
 
@@ -529,7 +529,7 @@ describe("E2E: plan → analyze → run workflow", () => {
   });
 
   test("rate limit triggers retry with backoff", { timeout: 60000 }, async () => {
-    const ngentDir = join(testDir, "ngent");
+    const ngentDir = join(testDir, "nax");
     const featureDir = join(ngentDir, "features/rate-limit-task");
     mkdirSync(featureDir, { recursive: true });
 
@@ -596,7 +596,7 @@ describe("E2E: plan → analyze → run workflow", () => {
   });
 
   test("story batching groups simple stories", async () => {
-    const ngentDir = join(testDir, "ngent");
+    const ngentDir = join(testDir, "nax");
     const featureDir = join(ngentDir, "features/batch-test");
     mkdirSync(featureDir, { recursive: true });
 
@@ -773,8 +773,8 @@ async function initializeNgent(ngentDir: string) {
     JSON.stringify(
       {
         hooks: {
-          "on-start": { command: "echo ngent started", enabled: false },
-          "on-complete": { command: "echo ngent complete", enabled: false },
+          "on-start": { command: "echo nax started", enabled: false },
+          "on-complete": { command: "echo nax complete", enabled: false },
         },
       },
       null,
@@ -802,7 +802,7 @@ async function initializeNgent(ngentDir: string) {
   );
 }
 
-function createTestConfig(): NgentConfig {
+function createTestConfig(): NaxConfig {
   return {
     ...DEFAULT_CONFIG,
     autoMode: {

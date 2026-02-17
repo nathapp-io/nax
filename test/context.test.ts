@@ -521,7 +521,7 @@ describe('Context Builder', () => {
 
     test('should load relevant source files', async () => {
       // Create temp directory and files
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ngent-test-'));
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nax-test-'));
       const testFile1 = path.join(tempDir, 'helper.ts');
       const testFile2 = path.join(tempDir, 'utils.ts');
 
@@ -567,7 +567,7 @@ describe('Context Builder', () => {
     });
 
     test('should respect max 5 files limit', async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ngent-test-'));
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nax-test-'));
 
       try {
         // Create 10 test files
@@ -610,7 +610,7 @@ describe('Context Builder', () => {
     });
 
     test('should skip files larger than 10KB', async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ngent-test-'));
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nax-test-'));
 
       try {
         const smallFile = path.join(tempDir, 'small.ts');
@@ -660,7 +660,7 @@ describe('Context Builder', () => {
     });
 
     test('should warn on missing files', async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ngent-test-'));
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nax-test-'));
 
       try {
         const prd = createTestPRD([
@@ -731,7 +731,7 @@ describe('Context Builder', () => {
     });
 
     test('should respect token budget when loading files', async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ngent-test-'));
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nax-test-'));
 
       try {
         // Create files with substantial content
@@ -867,7 +867,7 @@ describe('Context Builder', () => {
     });
 
     test('should format context with file elements', async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ngent-test-'));
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nax-test-'));
 
       try {
         await fs.writeFile(path.join(tempDir, 'helper.ts'), 'export function helper() {}');

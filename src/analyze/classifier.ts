@@ -7,7 +7,7 @@
 
 import { Anthropic } from "@anthropic-ai/sdk";
 import type { UserStory } from "../prd";
-import type { NgentConfig } from "../config";
+import type { NaxConfig } from "../config";
 import type { CodebaseScan, ClassificationResult, StoryClassification } from "./types";
 import { classifyComplexity } from "../routing";
 
@@ -46,7 +46,7 @@ interface LLMClassificationItem {
 export async function classifyStories(
   stories: UserStory[],
   scan: CodebaseScan,
-  config: NgentConfig,
+  config: NaxConfig,
 ): Promise<ClassificationResult> {
   // Check if LLM-enhanced analysis is enabled
   if (!config.analyze?.llmEnhanced) {
@@ -88,7 +88,7 @@ export async function classifyStories(
 async function classifyWithLLM(
   stories: UserStory[],
   scan: CodebaseScan,
-  config: NgentConfig,
+  config: NaxConfig,
 ): Promise<StoryClassification[]> {
   // Check API key
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -165,7 +165,7 @@ async function classifyWithLLM(
 function buildClassificationPrompt(
   stories: UserStory[],
   scan: CodebaseScan,
-  config: NgentConfig,
+  config: NaxConfig,
 ): string {
   // Format codebase summary
   const codebaseSummary = `

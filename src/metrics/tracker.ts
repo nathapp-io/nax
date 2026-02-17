@@ -133,7 +133,7 @@ export function collectBatchMetrics(
 }
 
 /**
- * Save run metrics to ngent/metrics.json.
+ * Save run metrics to nax/metrics.json.
  *
  * Appends the run metrics to the existing metrics file (or creates it if missing).
  * Each run is a separate entry in the JSON array.
@@ -156,7 +156,7 @@ export async function saveRunMetrics(
   workdir: string,
   runMetrics: RunMetrics,
 ): Promise<void> {
-  const metricsPath = path.join(workdir, "ngent", "metrics.json");
+  const metricsPath = path.join(workdir, "nax", "metrics.json");
 
   let allMetrics: RunMetrics[] = [];
 
@@ -180,7 +180,7 @@ export async function saveRunMetrics(
 }
 
 /**
- * Load all run metrics from ngent/metrics.json.
+ * Load all run metrics from nax/metrics.json.
  *
  * @param workdir - Project root directory
  * @returns Array of run metrics, or empty array if file doesn't exist
@@ -192,7 +192,7 @@ export async function saveRunMetrics(
  * ```
  */
 export async function loadRunMetrics(workdir: string): Promise<RunMetrics[]> {
-  const metricsPath = path.join(workdir, "ngent", "metrics.json");
+  const metricsPath = path.join(workdir, "nax", "metrics.json");
 
   if (!existsSync(metricsPath)) {
     return [];

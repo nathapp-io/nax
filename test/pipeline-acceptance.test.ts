@@ -6,13 +6,13 @@ import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { acceptanceStage } from "../src/pipeline/stages/acceptance";
 import type { PipelineContext } from "../src/pipeline/types";
 import type { PRD } from "../src/prd/types";
-import type { NgentConfig } from "../src/config/schema";
+import type { NaxConfig } from "../src/config/schema";
 import { DEFAULT_CONFIG } from "../src/config/schema";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const testDir = `/tmp/ngent-acceptance-test-${Date.now()}`;
-const featureDir = path.join(testDir, "ngent/features/test-feature");
+const testDir = `/tmp/nax-acceptance-test-${Date.now()}`;
+const featureDir = path.join(testDir, "nax/features/test-feature");
 
 beforeEach(async () => {
   // Create test directory structure
@@ -26,13 +26,13 @@ afterEach(async () => {
 
 function createTestContext(
   prd: PRD,
-  config: Partial<NgentConfig> = {},
+  config: Partial<NaxConfig> = {},
 ): PipelineContext {
   return {
     config: {
       ...DEFAULT_CONFIG,
       ...config,
-    } as NgentConfig,
+    } as NaxConfig,
     prd,
     story: prd.userStories[0],
     stories: [prd.userStories[0]],

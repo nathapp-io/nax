@@ -10,7 +10,7 @@
 import chalk from "chalk";
 import type { AgentAdapter } from "../agents";
 import type { UserStory } from "../prd";
-import type { NgentConfig, ModelTier } from "../config";
+import type { NaxConfig, ModelTier } from "../config";
 import { resolveModel } from "../config";
 import type {
   TddSessionResult,
@@ -144,7 +144,7 @@ async function runTddSession(
   role: TddSessionRole,
   agent: AgentAdapter,
   story: UserStory,
-  config: NgentConfig,
+  config: NaxConfig,
   workdir: string,
   modelTier: ModelTier,
   beforeRef: string,
@@ -214,7 +214,7 @@ export interface ThreeSessionTddOptions {
   /** User story to implement */
   story: UserStory;
   /** Ngent configuration */
-  config: NgentConfig;
+  config: NaxConfig;
   /** Working directory */
   workdir: string;
   /** Model tier for all sessions */
@@ -238,7 +238,7 @@ export interface ThreeSessionTddOptions {
  *
  * @param agent - Agent adapter to use for all three sessions
  * @param story - User story with title, description, acceptance criteria
- * @param config - ngent configuration for timeouts and model settings
+ * @param config - nax configuration for timeouts and model settings
  * @param workdir - Working directory (git repository root)
  * @param modelTier - Model tier for all sessions (fast/balanced/powerful)
  * @param contextMarkdown - Optional context from PRD (dependencies, progress)
@@ -273,7 +273,7 @@ export interface ThreeSessionTddOptions {
 export async function runThreeSessionTdd(
   agent: AgentAdapter,
   story: UserStory,
-  config: NgentConfig,
+  config: NaxConfig,
   workdir: string,
   modelTier: ModelTier,
   contextMarkdown?: string,

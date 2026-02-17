@@ -10,7 +10,7 @@
 
 import chalk from "chalk";
 import path from "node:path";
-import type { NgentConfig } from "../config";
+import type { NaxConfig } from "../config";
 import { getAgent } from "../agents";
 import { resolveModel } from "../config/schema";
 import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryFailed } from "../prd";
@@ -43,7 +43,7 @@ export interface RunOptions {
   /** Working directory */
   workdir: string;
   /** Ngent config */
-  config: NgentConfig;
+  config: NaxConfig;
   /** Hooks config */
   hooks: HooksConfig;
   /** Feature name */
@@ -81,8 +81,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
   // Acquire lock to prevent concurrent execution
   const lockAcquired = await acquireLock(workdir);
   if (!lockAcquired) {
-    console.error(chalk.red("❌ Another ngent process is already running in this directory"));
-    console.error(chalk.yellow("   If you believe this is an error, remove ngent.lock manually"));
+    console.error(chalk.red("❌ Another nax process is already running in this directory"));
+    console.error(chalk.yellow("   If you believe this is an error, remove nax.lock manually"));
     process.exit(1);
   }
 
@@ -116,7 +116,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       process.exit(1);
     }
 
-    console.log(chalk.cyan(`\n🚀 ngent: Starting ${feature}`));
+    console.log(chalk.cyan(`\n🚀 nax: Starting ${feature}`));
     console.log(chalk.dim(`   Stories: ${counts.total} (${counts.passed} done, ${counts.pending} pending)`));
     if (useBatch) {
       console.log(chalk.dim(`   Batching: enabled (groups consecutive simple stories, max 4/batch)`));
@@ -489,7 +489,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
           if (acceptanceRetries >= maxRetries) {
             console.log(chalk.red("\n❌ Max acceptance retries reached"));
             console.log(chalk.yellow("   Manual intervention required"));
-            console.log(chalk.dim("   Run: ngent accept --override AC-N \"reason\" to skip specific ACs"));
+            console.log(chalk.dim("   Run: nax accept --override AC-N \"reason\" to skip specific ACs"));
             await fireHook(hooks, "on-pause", hookCtx(feature, {
               reason: `Acceptance validation failed after ${maxRetries} retries: ${failures.failedACs.join(", ")}`,
               cost: totalCost,

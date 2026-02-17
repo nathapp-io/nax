@@ -3,7 +3,7 @@ import { appendProgress } from "../src/execution/progress";
 
 describe("appendProgress", () => {
   test("creates progress.txt and appends entry", async () => {
-    const tmpDir = `/tmp/ngent-progress-${Date.now()}`;
+    const tmpDir = `/tmp/nax-progress-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
 
     await appendProgress(tmpDir, "US-001", "passed", "Add login endpoint — Cost: $0.0200");
@@ -17,7 +17,7 @@ describe("appendProgress", () => {
   });
 
   test("appends multiple entries", async () => {
-    const tmpDir = `/tmp/ngent-progress-multi-${Date.now()}`;
+    const tmpDir = `/tmp/nax-progress-multi-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
 
     await appendProgress(tmpDir, "US-001", "passed", "First story done");

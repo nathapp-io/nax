@@ -5,7 +5,7 @@
  * Falls back to keyword-based classification for backward compatibility.
  */
 
-import type { Complexity, TestStrategy, ModelTier, NgentConfig } from "../config";
+import type { Complexity, TestStrategy, ModelTier, NaxConfig } from "../config";
 import type { UserStory } from "../prd/types";
 import type { RoutingContext } from "./strategy";
 import { buildStrategyChain } from "./builder";
@@ -171,7 +171,7 @@ export function determineTestStrategy(
 /** Map complexity to model tier */
 function complexityToModelTier(
   complexity: Complexity,
-  config: NgentConfig,
+  config: NaxConfig,
 ): ModelTier {
   const mapping = config.autoMode.complexityRouting;
   return (mapping[complexity] ?? "balanced") as ModelTier;
@@ -220,7 +220,7 @@ export async function routeStory(
  * @param description - Story description
  * @param acceptanceCriteria - Array of acceptance criteria
  * @param tags - Story tags
- * @param config - ngent configuration with complexity routing mappings
+ * @param config - nax configuration with complexity routing mappings
  * @returns Routing decision with complexity, model tier, test strategy, and reasoning
  *
  * @deprecated Use routeStory() with a UserStory object instead
@@ -230,7 +230,7 @@ export function routeTask(
   description: string,
   acceptanceCriteria: string[],
   tags: string[],
-  config: NgentConfig,
+  config: NaxConfig,
 ): RoutingDecision {
   const complexity = classifyComplexity(title, description, acceptanceCriteria, tags);
   const modelTier = complexityToModelTier(complexity, config);

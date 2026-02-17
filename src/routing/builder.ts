@@ -4,7 +4,7 @@
  * Builds the strategy chain based on configuration.
  */
 
-import type { NgentConfig } from "../config";
+import type { NaxConfig } from "../config";
 import type { RoutingStrategy } from "./strategy";
 import { StrategyChain } from "./chain";
 import { keywordStrategy, llmStrategy, manualStrategy, adaptiveStrategy } from "./strategies";
@@ -20,7 +20,7 @@ import { loadCustomStrategy } from "./loader";
  * - adaptive (if strategy = "adaptive") [v0.5 Phase 3]
  * - keyword (always last — never returns null)
  *
- * @param config - ngent configuration
+ * @param config - nax configuration
  * @param workdir - Working directory for resolving custom strategy paths
  * @returns Strategy chain instance
  *
@@ -31,7 +31,7 @@ import { loadCustomStrategy } from "./loader";
  * ```
  */
 export async function buildStrategyChain(
-  config: NgentConfig,
+  config: NaxConfig,
   workdir: string,
 ): Promise<StrategyChain> {
   const strategies: RoutingStrategy[] = [];

@@ -4,7 +4,7 @@
  * Composable stage-based execution pipeline for refactoring the monolithic runner.
  */
 
-import type { NgentConfig } from "../config/schema";
+import type { NaxConfig } from "../config/schema";
 import type { PRD, UserStory } from "../prd/types";
 import type { AgentResult } from "../agents/types";
 import type { ReviewResult } from "../review/types";
@@ -49,7 +49,7 @@ export interface RoutingResult {
  */
 export interface PipelineContext {
   /** Ngent configuration */
-  config: NgentConfig;
+  config: NaxConfig;
   /** Full PRD document */
   prd: PRD;
   /** Current story (or batch leader) */
@@ -60,7 +60,7 @@ export interface PipelineContext {
   routing: RoutingResult;
   /** Working directory (project root) */
   workdir: string;
-  /** Feature directory (optional, e.g., ngent/features/my-feature/) */
+  /** Feature directory (optional, e.g., nax/features/my-feature/) */
   featureDir?: string;
   /** Hooks configuration */
   hooks: HooksConfig;

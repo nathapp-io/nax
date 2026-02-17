@@ -6,7 +6,7 @@
  */
 
 import type { UserStory } from "../prd/types";
-import type { NgentConfig, Complexity, ModelTier, TestStrategy } from "../config";
+import type { NaxConfig, Complexity, ModelTier, TestStrategy } from "../config";
 
 /** Aggregate metrics (v0.5 Phase 1 — not yet implemented) */
 export interface AggregateMetrics {
@@ -34,7 +34,7 @@ export interface AggregateMetrics {
 /** Context passed to routing strategies */
 export interface RoutingContext {
   /** Full configuration */
-  config: NgentConfig;
+  config: NaxConfig;
   /** Optional codebase context summary */
   codebaseContext?: string;
   /** Optional historical metrics (v0.5 Phase 1) */

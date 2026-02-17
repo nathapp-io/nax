@@ -225,9 +225,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         cost: fallbackEstimate.cost * 1.5,
         confidence: 'fallback',
       };
-      console.warn(`[ngent] Cost estimation fallback (duration-based) for ${options.modelTier} tier: ${costEstimate.cost.toFixed(4)} USD`);
+      console.warn(`[nax] Cost estimation fallback (duration-based) for ${options.modelTier} tier: ${costEstimate.cost.toFixed(4)} USD`);
     } else if (costEstimate.confidence === 'estimated') {
-      console.warn(`[ngent] Cost estimation using regex parsing (estimated confidence): ${costEstimate.cost.toFixed(4)} USD`);
+      console.warn(`[nax] Cost estimation using regex parsing (estimated confidence): ${costEstimate.cost.toFixed(4)} USD`);
     }
     const cost = costEstimate.cost;
 

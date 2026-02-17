@@ -7,7 +7,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { NgentConfig } from "../config";
+import type { NaxConfig } from "../config";
 import { resolveModel } from "../config/schema";
 import { scanCodebase } from "../analyze/scanner";
 import { ClaudeCodeAdapter } from "../agents/claude";
@@ -50,20 +50,20 @@ What this does NOT include.
 export async function planCommand(
   prompt: string,
   workdir: string,
-  config: NgentConfig,
+  config: NaxConfig,
   options: {
     interactive?: boolean;
     from?: string;
   } = {},
 ): Promise<string> {
   const interactive = options.interactive !== false; // Default to true
-  const ngentDir = join(workdir, "ngent");
+  const ngentDir = join(workdir, "nax");
   const outputPath = join(ngentDir, config.plan.outputPath);
 
-  // Ensure ngent directory exists
+  // Ensure nax directory exists
   if (!existsSync(ngentDir)) {
     throw new Error(
-      `ngent directory not found. Run 'ngent init' first in ${workdir}`,
+      `nax directory not found. Run 'nax init' first in ${workdir}`,
     );
   }
 

@@ -237,7 +237,7 @@ describe("Hook Configuration Loading", () => {
 });
 
 describe("Hook Environment Variables", () => {
-  test("sets NGENT_EVENT", async () => {
+  test("sets NAX_EVENT", async () => {
     const config: HooksConfig = {
       hooks: {
         "on-start": {
@@ -256,7 +256,7 @@ describe("Hook Environment Variables", () => {
     // Environment variables should be set
   });
 
-  test("sets NGENT_FEATURE", async () => {
+  test("sets NAX_FEATURE", async () => {
     const config: HooksConfig = {
       hooks: {
         "on-start": {
@@ -272,10 +272,10 @@ describe("Hook Environment Variables", () => {
     };
 
     await fireHook(config, "on-start", ctx, process.cwd());
-    // NGENT_FEATURE should be set to "payment-system"
+    // NAX_FEATURE should be set to "payment-system"
   });
 
-  test("sets NGENT_STORY_ID when provided", async () => {
+  test("sets NAX_STORY_ID when provided", async () => {
     const config: HooksConfig = {
       hooks: {
         "on-story-start": {
@@ -292,10 +292,10 @@ describe("Hook Environment Variables", () => {
     };
 
     await fireHook(config, "on-story-start", ctx, process.cwd());
-    // NGENT_STORY_ID should be set
+    // NAX_STORY_ID should be set
   });
 
-  test("sets NGENT_COST when provided", async () => {
+  test("sets NAX_COST when provided", async () => {
     const config: HooksConfig = {
       hooks: {
         "on-complete": {
@@ -312,10 +312,10 @@ describe("Hook Environment Variables", () => {
     };
 
     await fireHook(config, "on-complete", ctx, process.cwd());
-    // NGENT_COST should be set to "2.5678"
+    // NAX_COST should be set to "2.5678"
   });
 
-  test("sets NGENT_MODEL when provided", async () => {
+  test("sets NAX_MODEL when provided", async () => {
     const config: HooksConfig = {
       hooks: {
         "on-complete": {
@@ -332,10 +332,10 @@ describe("Hook Environment Variables", () => {
     };
 
     await fireHook(config, "on-complete", ctx, process.cwd());
-    // NGENT_MODEL should be set
+    // NAX_MODEL should be set
   });
 
-  test("sets NGENT_ITERATION when provided", async () => {
+  test("sets NAX_ITERATION when provided", async () => {
     const config: HooksConfig = {
       hooks: {
         "on-error": {
@@ -352,6 +352,6 @@ describe("Hook Environment Variables", () => {
     };
 
     await fireHook(config, "on-error", ctx, process.cwd());
-    // NGENT_ITERATION should be set to "3"
+    // NAX_ITERATION should be set to "3"
   });
 });

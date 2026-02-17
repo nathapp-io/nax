@@ -10,7 +10,7 @@
 
 import chalk from "chalk";
 import path from "node:path";
-import type { NgentConfig } from "../config";
+import type { NaxConfig } from "../config";
 import type { PRD, UserStory } from "../prd";
 import type { HookContext } from "../hooks";
 import { buildContext, formatContextAsMarkdown } from "../context";
@@ -41,7 +41,7 @@ import type { StoryContext, ContextBudget } from "../context";
  *    - Example: Dependency story not found in PRD, context truncated, hook timeout
  *    - Caller: No action needed, execution continues with degraded functionality
  *
- * Use this pattern to maintain consistency across all ngent modules.
+ * Use this pattern to maintain consistency across all nax modules.
  */
 
 /**
@@ -128,7 +128,7 @@ export function hookCtx(
 export async function maybeGetContext(
   prd: PRD,
   story: UserStory,
-  config: NgentConfig,
+  config: NaxConfig,
   useContext: boolean,
 ): Promise<string | undefined> {
   if (!useContext) {
@@ -162,7 +162,7 @@ export async function maybeGetContext(
 export async function buildStoryContext(
   prd: PRD,
   story: UserStory,
-  _config: NgentConfig,
+  _config: NaxConfig,
 ): Promise<string | undefined> {
   try {
     const storyContext: StoryContext = {
@@ -235,7 +235,7 @@ function isProcessAlive(pid: number): boolean {
 
 /**
  * Acquire execution lock to prevent concurrent runs in same directory.
- * Creates ngent.lock file with PID and timestamp.
+ * Creates nax.lock file with PID and timestamp.
  * Returns true if lock acquired, false if another process holds it.
  *
  * Handles stale locks from crashed/OOM-killed processes:
@@ -257,7 +257,7 @@ function isProcessAlive(pid: number): boolean {
  * ```
  */
 export async function acquireLock(workdir: string): Promise<boolean> {
-  const lockPath = path.join(workdir, "ngent.lock");
+  const lockPath = path.join(workdir, "nax.lock");
   const lockFile = Bun.file(lockPath);
 
   try {
@@ -293,7 +293,7 @@ export async function acquireLock(workdir: string): Promise<boolean> {
 }
 
 /**
- * Release execution lock by deleting ngent.lock file.
+ * Release execution lock by deleting nax.lock file.
  *
  * @param workdir - Working directory to unlock
  *
@@ -307,7 +307,7 @@ export async function acquireLock(workdir: string): Promise<boolean> {
  * ```
  */
 export async function releaseLock(workdir: string): Promise<void> {
-  const lockPath = path.join(workdir, "ngent.lock");
+  const lockPath = path.join(workdir, "nax.lock");
   try {
     const file = Bun.file(lockPath);
     const exists = await file.exists();

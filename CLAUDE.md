@@ -1,6 +1,8 @@
-# ngent — AI Coding Agent Orchestrator
+# @nathapp/nax — AI Coding Agent Orchestrator
 
 Standalone CLI (Bun + TypeScript) that orchestrates AI coding agents with smart model routing, three-session TDD, and lifecycle hooks. NOT an OpenClaw skill — independent npm package.
+
+**CLI command:** `nax`
 
 ## Commands
 
@@ -15,13 +17,13 @@ bun run build         # Bundle for distribution
 ## Architecture
 
 ```
-bin/ngent.ts          # CLI entry point (commander)
+bin/nax.ts          # CLI entry point (commander)
 src/
   agents/             # AgentAdapter interface + implementations (claude.ts)
   cli/                # CLI commands (init, run, features, agents, status)
-  config/             # NgentConfig schema + layered loader + validation (global → project)
+  config/             # NaxConfig schema + layered loader + validation (global → project)
   execution/          # Main orchestration loop (the core)
-  hooks/              # Lifecycle hooks (hooks.json → shell commands + NGENT_* env)
+  hooks/              # Lifecycle hooks (hooks.json → shell commands + NAX_* env)
   pipeline/           # Pipeline orchestration utilities
   prd/                # PRD/user-story loader, ordering, completion tracking
   queue/              # Queue manager for multi-agent parallel execution
@@ -36,7 +38,7 @@ test/                 # Bun test files (*.test.ts)
 - **Three-Session TDD**: Session 1 (test-writer, only test files) → Session 2 (implementer, only source files) → Session 3 (verifier, auto-approves legitimate fixes)
 - **Isolation Enforcement**: Git diff verification between TDD sessions — test-writer can't touch source, implementer can't touch tests
 - **Hook System**: `hooks.json` maps lifecycle events (on-start, on-complete, on-pause, on-error, on-story-start, on-story-end) to shell commands
-- **Layered Config**: `~/.ngent/config.json` (global) merged with `<project>/ngent/config.json` (project overrides)
+- **Layered Config**: `~/.nax/config.json` (global) merged with `<project>/nax/config.json` (project overrides)
 
 ### Pipeline Architecture (v0.3 target)
 
@@ -51,7 +53,7 @@ interface PipelineStage {
 }
 
 interface PipelineContext {
-  config: NgentConfig;
+  config: NaxConfig;
   prd: PRD;
   story: UserStory;           // current story (or batch leader)
   stories: UserStory[];       // batch (length 1 for single)
@@ -157,7 +159,7 @@ const defaultPipeline: PipelineStage[] = [
 - [ ] **BUG-3 (partial):** Cost estimation still falls back to duration-based guessing when structured output unavailable. No per-story confidence scores.
 
 #### P2 — Quality
-- [ ] **ENH-1:** JSDoc coverage ~40% — `src/agents/claude.ts` (1 JSDoc), `bin/ngent.ts` (1 JSDoc) are underserved. Most exported functions in runner.ts have docs but `routeTask()`, `buildContext()`, `runThreeSessionTdd()` lack usage examples.
+- [ ] **ENH-1:** JSDoc coverage ~40% — `src/agents/claude.ts` (1 JSDoc), `bin/nax.ts` (1 JSDoc) are underserved. Most exported functions in runner.ts have docs but `routeTask()`, `buildContext()`, `runThreeSessionTdd()` lack usage examples.
 - [ ] **TYPE-1:** Config loader still uses `as unknown as` double-casting (2 instances). No Zod runtime validation.
 - [ ] **BUG-4:** Batch failure still escalates only first story. No config option for batch-wide escalation.
 - [ ] **ENH-2:** No agent capability negotiation — adapters don't declare supported tiers/features.

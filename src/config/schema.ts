@@ -1,7 +1,7 @@
 /**
  * Configuration Schema
  *
- * Global (~/.ngent/config.json) + Project (ngent/config.json)
+ * Global (~/.nax/config.json) + Project (nax/config.json)
  */
 
 import { z } from "zod";
@@ -111,7 +111,7 @@ export interface TddConfig {
 export interface ConstitutionConfig {
   /** Enable constitution loading and injection */
   enabled: boolean;
-  /** Path to constitution file relative to ngent/ directory */
+  /** Path to constitution file relative to nax/ directory */
   path: string;
   /** Maximum tokens allowed for constitution content */
   maxTokens: number;
@@ -147,7 +147,7 @@ export interface ReviewConfig {
 export interface PlanConfig {
   /** Model tier for planning (default: balanced) */
   model: ModelTier;
-  /** Output path for generated spec (relative to ngent/ directory) */
+  /** Output path for generated spec (relative to nax/ directory) */
   outputPath: string;
 }
 
@@ -186,8 +186,8 @@ export interface RoutingConfig {
   adaptive?: AdaptiveRoutingConfig;
 }
 
-/** Full ngent configuration */
-export interface NgentConfig {
+/** Full nax configuration */
+export interface NaxConfig {
   /** Schema version */
   version: 1;
   /** Model mapping — abstract tiers to actual model identifiers */
@@ -361,7 +361,7 @@ const RoutingConfigSchema = z.object({
   }
 );
 
-export const NgentConfigSchema = z
+export const NaxConfigSchema = z
   .object({
     version: z.number(),
     models: ModelMapSchema,
@@ -382,7 +382,7 @@ export const NgentConfigSchema = z
   });
 
 /** Default configuration */
-export const DEFAULT_CONFIG: NgentConfig = {
+export const DEFAULT_CONFIG: NaxConfig = {
   version: 1,
   models: {
     fast: { provider: "anthropic", model: "claude-haiku-4-5" },

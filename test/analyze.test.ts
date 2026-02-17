@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { analyzeFeature } from "../src/cli/analyze";
 import { DEFAULT_CONFIG } from "../src/config/schema";
-import type { NgentConfig } from "../src/config";
+import type { NaxConfig } from "../src/config";
 
 describe("analyzeFeature", () => {
   test("parses spec.md into user stories (LLM disabled, keyword fallback)", async () => {
-    const tmpDir = `/tmp/ngent-analyze-${Date.now()}`;
+    const tmpDir = `/tmp/nax-analyze-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
 
     await Bun.write(`${tmpDir}/spec.md`, `# Feature: Auth System
@@ -36,7 +36,7 @@ Dependencies: US-001
 `);
 
     // Disable LLM for keyword-based classification
-    const config: NgentConfig = {
+    const config: NaxConfig = {
       ...DEFAULT_CONFIG,
       analyze: {
         ...DEFAULT_CONFIG.analyze,
@@ -72,7 +72,7 @@ Dependencies: US-001
   });
 
   test("throws when spec.md is missing", async () => {
-    const tmpDir = `/tmp/ngent-analyze-empty-${Date.now()}`;
+    const tmpDir = `/tmp/nax-analyze-empty-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
 
     await expect(
@@ -87,7 +87,7 @@ Dependencies: US-001
   });
 
   test("throws when story count exceeds maxStoriesPerFeature limit (MEM-1)", async () => {
-    const tmpDir = `/tmp/ngent-analyze-limit-${Date.now()}`;
+    const tmpDir = `/tmp/nax-analyze-limit-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
 
     // Generate spec.md with 6 stories
@@ -104,7 +104,7 @@ Description for story ${i + 1}
     await Bun.write(`${tmpDir}/spec.md`, `# Feature\n${stories}`);
 
     // Create config with limit of 5 stories (LLM disabled)
-    const config: NgentConfig = {
+    const config: NaxConfig = {
       ...DEFAULT_CONFIG,
       execution: {
         ...DEFAULT_CONFIG.execution,
@@ -130,7 +130,7 @@ Description for story ${i + 1}
   });
 
   test("allows story count at maxStoriesPerFeature limit", async () => {
-    const tmpDir = `/tmp/ngent-analyze-ok-${Date.now()}`;
+    const tmpDir = `/tmp/nax-analyze-ok-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
 
     // Generate spec.md with exactly 5 stories
@@ -147,7 +147,7 @@ Description for story ${i + 1}
     await Bun.write(`${tmpDir}/spec.md`, `# Feature\n${stories}`);
 
     // Create config with limit of 5 stories (LLM disabled)
-    const config: NgentConfig = {
+    const config: NaxConfig = {
       ...DEFAULT_CONFIG,
       execution: {
         ...DEFAULT_CONFIG.execution,
@@ -172,7 +172,7 @@ Description for story ${i + 1}
   });
 
   test("reads spec from explicit --from path", async () => {
-    const tmpDir = `/tmp/ngent-analyze-from-${Date.now()}`;
+    const tmpDir = `/tmp/nax-analyze-from-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
 
     const customSpecPath = `${tmpDir}/custom-spec.md`;
@@ -187,7 +187,7 @@ A custom story from explicit path
 - [ ] Works with --from flag
 `);
 
-    const config: NgentConfig = {
+    const config: NaxConfig = {
       ...DEFAULT_CONFIG,
       analyze: {
         ...DEFAULT_CONFIG.analyze,

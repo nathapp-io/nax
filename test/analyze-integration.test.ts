@@ -9,8 +9,8 @@ import { join } from "node:path";
 import { mkdirSync, rmSync, existsSync } from "node:fs";
 
 describe("analyzeFeature integration", () => {
-  const testDir = "/tmp/ngent-analyze-test";
-  const featureDir = join(testDir, "ngent/features/test-feature");
+  const testDir = "/tmp/nax-analyze-test";
+  const featureDir = join(testDir, "nax/features/test-feature");
 
   beforeAll(() => {
     // Create test directory structure
@@ -91,7 +91,7 @@ Dependencies: none
       config,
     });
 
-    expect(prd.project).toBe("ngent");
+    expect(prd.project).toBe("nax");
     expect(prd.feature).toBe("test-feature");
     expect(prd.branchName).toBe("feat/test-feature");
     expect(prd.userStories).toHaveLength(2);
@@ -182,7 +182,7 @@ Dependencies: none
   });
 
   test("throws error when spec.md missing", async () => {
-    const emptyDir = "/tmp/ngent-empty-test";
+    const emptyDir = "/tmp/nax-empty-test";
     mkdirSync(emptyDir, { recursive: true });
 
     try {
@@ -199,8 +199,8 @@ Dependencies: none
   });
 
   test("throws error when no stories found", async () => {
-    const noStoriesDir = "/tmp/ngent-no-stories-test";
-    const featurePath = join(noStoriesDir, "ngent/features/test");
+    const noStoriesDir = "/tmp/nax-no-stories-test";
+    const featurePath = join(noStoriesDir, "nax/features/test");
     mkdirSync(featurePath, { recursive: true });
 
     // Create empty spec.md
@@ -220,8 +220,8 @@ Dependencies: none
   });
 
   test("enforces maxStoriesPerFeature limit", async () => {
-    const manyStoriesDir = "/tmp/ngent-many-stories-test";
-    const featurePath = join(manyStoriesDir, "ngent/features/test");
+    const manyStoriesDir = "/tmp/nax-many-stories-test";
+    const featurePath = join(manyStoriesDir, "nax/features/test");
     mkdirSync(featurePath, { recursive: true });
 
     // Create spec.md with 600 stories (exceeds default limit of 500)

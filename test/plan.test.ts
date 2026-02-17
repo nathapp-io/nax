@@ -2,14 +2,14 @@ import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { existsSync } from "node:fs";
 import { planCommand } from "../src/cli/plan";
 import { DEFAULT_CONFIG } from "../src/config/schema";
-import type { NgentConfig } from "../src/config";
+import type { NaxConfig } from "../src/config";
 
 describe("planCommand", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = `/tmp/ngent-plan-${Date.now()}`;
-    await Bun.spawn(["mkdir", "-p", `${tmpDir}/ngent`], { stdout: "pipe" }).exited;
+    tmpDir = `/tmp/nax-plan-${Date.now()}`;
+    await Bun.spawn(["mkdir", "-p", `${tmpDir}/nax`], { stdout: "pipe" }).exited;
     await Bun.spawn(["mkdir", "-p", `${tmpDir}/src`], { stdout: "pipe" }).exited;
 
     // Create minimal package.json
@@ -32,19 +32,19 @@ describe("planCommand", () => {
     }
   });
 
-  test("throws when ngent not initialized", async () => {
-    const emptyDir = `/tmp/ngent-plan-empty-${Date.now()}`;
+  test("throws when nax not initialized", async () => {
+    const emptyDir = `/tmp/nax-plan-empty-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", emptyDir], { stdout: "pipe" }).exited;
 
     expect(
       planCommand("Add feature X", emptyDir, DEFAULT_CONFIG),
-    ).rejects.toThrow("ngent directory not found");
+    ).rejects.toThrow("nax directory not found");
 
     await Bun.spawn(["rm", "-rf", emptyDir], { stdout: "pipe" }).exited;
   });
 
   test("validates config.plan settings", () => {
-    const config: NgentConfig = {
+    const config: NaxConfig = {
       ...DEFAULT_CONFIG,
       plan: {
         model: "balanced",
@@ -57,7 +57,7 @@ describe("planCommand", () => {
   });
 
   test("resolves model tier from config", () => {
-    const config: NgentConfig = {
+    const config: NaxConfig = {
       ...DEFAULT_CONFIG,
       plan: {
         model: "powerful",
@@ -72,7 +72,7 @@ describe("planCommand", () => {
   test("builds codebase context from scanner", async () => {
     // This test would require mocking the agent adapter
     // For now, we just verify the structure is set up correctly
-    const config: NgentConfig = {
+    const config: NaxConfig = {
       ...DEFAULT_CONFIG,
       plan: {
         model: "balanced",
@@ -89,7 +89,7 @@ describe("planCommand", () => {
   });
 
   test("supports custom output path", () => {
-    const config: NgentConfig = {
+    const config: NaxConfig = {
       ...DEFAULT_CONFIG,
       plan: {
         model: "balanced",
@@ -108,7 +108,7 @@ describe("planCommand", () => {
     ];
 
     for (const tier of validTiers) {
-      const config: NgentConfig = {
+      const config: NaxConfig = {
         ...DEFAULT_CONFIG,
         plan: {
           model: tier,

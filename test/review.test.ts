@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 
 describe("Review Phase", () => {
   test("runReview - all checks pass", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ngent-review-test-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-test-"));
 
     const config: ReviewConfig = {
       enabled: true,
@@ -32,7 +32,7 @@ describe("Review Phase", () => {
   });
 
   test("runReview - check fails", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ngent-review-test-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-test-"));
 
     const config: ReviewConfig = {
       enabled: true,
@@ -53,7 +53,7 @@ describe("Review Phase", () => {
   });
 
   test("runReview - multiple checks, stop on first failure", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ngent-review-test-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-test-"));
 
     const config: ReviewConfig = {
       enabled: true,
@@ -78,7 +78,7 @@ describe("Review Phase", () => {
   });
 
   test("runReview - uses default commands when not specified", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ngent-review-test-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-test-"));
 
     const config: ReviewConfig = {
       enabled: true,
@@ -93,7 +93,7 @@ describe("Review Phase", () => {
   });
 
   test("runReview - empty checks array", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ngent-review-test-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-test-"));
 
     const config: ReviewConfig = {
       enabled: true,
@@ -109,7 +109,7 @@ describe("Review Phase", () => {
   });
 
   test("runReview - captures command output", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ngent-review-test-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-test-"));
 
     const config: ReviewConfig = {
       enabled: true,
@@ -127,7 +127,7 @@ describe("Review Phase", () => {
   });
 
   test("runReview - records duration", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ngent-review-test-"));
+    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-test-"));
 
     const config: ReviewConfig = {
       enabled: true,

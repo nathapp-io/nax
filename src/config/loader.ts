@@ -7,21 +7,21 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { DEFAULT_CONFIG, NgentConfigSchema, type NgentConfig } from "./schema";
+import { DEFAULT_CONFIG, NaxConfigSchema, type NaxConfig } from "./schema";
 import { MAX_DIRECTORY_DEPTH } from "./path-security";
 
 /** Global config path */
 export function globalConfigPath(): string {
-  return join(homedir(), ".ngent", "config.json");
+  return join(homedir(), ".nax", "config.json");
 }
 
-/** Find project ngent directory (walks up from cwd) */
+/** Find project nax directory (walks up from cwd) */
 export function findProjectDir(startDir: string = process.cwd()): string | null {
   let dir = resolve(startDir);
   let depth = 0;
 
   while (depth < MAX_DIRECTORY_DEPTH) {
-    const candidate = join(dir, "ngent");
+    const candidate = join(dir, "nax");
     if (existsSync(join(candidate, "config.json"))) {
       return candidate;
     }
@@ -70,7 +70,7 @@ function deepMerge(a: Record<string, unknown>, b: Record<string, unknown>): Reco
 }
 
 /** Load merged configuration (defaults < global < project) */
-export async function loadConfig(projectDir?: string): Promise<NgentConfig> {
+export async function loadConfig(projectDir?: string): Promise<NaxConfig> {
   // Start with defaults as a plain object
   let rawConfig: Record<string, unknown> = structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>);
 
@@ -90,14 +90,14 @@ export async function loadConfig(projectDir?: string): Promise<NgentConfig> {
   }
 
   // Parse and validate with Zod
-  const result = NgentConfigSchema.safeParse(rawConfig);
+  const result = NaxConfigSchema.safeParse(rawConfig);
   if (!result.success) {
     const errors = result.error.issues.map((err) => {
-      const path = err.path.join(".");
+      const path = String(err.path.join("."));
       return path ? `${path}: ${err.message}` : err.message;
     });
     throw new Error(`Invalid configuration:\n${errors.join("\n")}`);
   }
 
-  return result.data as NgentConfig;
+  return result.data as NaxConfig;
 }

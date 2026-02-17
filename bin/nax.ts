@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 /**
- * ngent — AI Coding Agent Orchestrator
+ * nax — AI Coding Agent Orchestrator
  *
- * CLI entry point for the ngent orchestration system.
+ * CLI entry point for the nax orchestration system.
  *
  * Features:
- * - `init`: Initialize ngent in a project directory
+ * - `init`: Initialize nax in a project directory
  * - `run`: Execute the orchestration loop for a feature
  * - `features create/list`: Manage feature definitions
  * - `analyze`: Parse spec.md + tasks.md into prd.json
@@ -21,19 +21,19 @@
  * @example
  * ```bash
  * # Initialize in project
- * ngent init
+ * nax init
  *
  * # Create feature
- * ngent features create auth-system
+ * nax features create auth-system
  *
  * # Analyze spec/tasks into PRD
- * ngent analyze --feature auth-system
+ * nax analyze --feature auth-system
  *
  * # Run orchestration
- * ngent run --feature auth-system
+ * nax run --feature auth-system
  *
  * # Check status
- * ngent status --feature auth-system
+ * nax status --feature auth-system
  * ```
  */
 
@@ -61,14 +61,14 @@ const pkg = await Bun.file(join(import.meta.dir, "..", "package.json")).json();
 const program = new Command();
 
 program
-  .name("ngent")
+  .name("nax")
   .description("AI Coding Agent Orchestrator — loops until done")
   .version(pkg.version);
 
 // ── init ─────────────────────────────────────────────
 program
   .command("init")
-  .description("Initialize ngent in the current project")
+  .description("Initialize nax in the current project")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .option("-f, --force", "Force overwrite existing files", false)
   .action(async (options) => {
@@ -81,45 +81,45 @@ program
       process.exit(1);
     }
 
-    const ngentDir = join(workdir, "ngent");
+    const naxDir = join(workdir, "nax");
 
-    if (existsSync(ngentDir) && !options.force) {
-      console.log(chalk.yellow("ngent already initialized. Use --force to overwrite."));
+    if (existsSync(naxDir) && !options.force) {
+      console.log(chalk.yellow("nax already initialized. Use --force to overwrite."));
       return;
     }
 
     // Create directory structure
-    mkdirSync(join(ngentDir, "features"), { recursive: true });
-    mkdirSync(join(ngentDir, "hooks"), { recursive: true });
+    mkdirSync(join(naxDir, "features"), { recursive: true });
+    mkdirSync(join(naxDir, "hooks"), { recursive: true });
 
     // Write default config
     await Bun.write(
-      join(ngentDir, "config.json"),
+      join(naxDir, "config.json"),
       JSON.stringify(DEFAULT_CONFIG, null, 2),
     );
 
     // Write default hooks.json
     await Bun.write(
-      join(ngentDir, "hooks.json"),
+      join(naxDir, "hooks.json"),
       JSON.stringify({
         hooks: {
-          "on-start": { command: "echo \"ngent started: $NGENT_FEATURE\"", enabled: false },
-          "on-complete": { command: "echo \"ngent complete: $NGENT_FEATURE\"", enabled: false },
-          "on-pause": { command: "echo \"ngent paused: $NGENT_REASON\"", enabled: false },
-          "on-error": { command: "echo \"ngent error: $NGENT_REASON\"", enabled: false },
+          "on-start": { command: "echo \"nax started: $NAX_FEATURE\"", enabled: false },
+          "on-complete": { command: "echo \"nax complete: $NAX_FEATURE\"", enabled: false },
+          "on-pause": { command: "echo \"nax paused: $NAX_REASON\"", enabled: false },
+          "on-error": { command: "echo \"nax error: $NAX_REASON\"", enabled: false },
         },
       }, null, 2),
     );
 
     // Write .gitignore
     await Bun.write(
-      join(ngentDir, ".gitignore"),
-      "# ngent temp files\n*.tmp\n.paused.json\n",
+      join(naxDir, ".gitignore"),
+      "# nax temp files\n*.tmp\n.paused.json\n",
     );
 
     // Write starter constitution.md
     await Bun.write(
-      join(ngentDir, "constitution.md"),
+      join(naxDir, "constitution.md"),
       `# Project Constitution
 
 This document defines the coding standards, architectural rules, testing requirements, and forbidden patterns for this project. All AI agents must follow these rules strictly.
@@ -175,14 +175,14 @@ This document defines the coding standards, architectural rules, testing require
 `,
     );
 
-    console.log(chalk.green("✅ Initialized ngent"));
-    console.log(chalk.dim(`   ${ngentDir}/`));
+    console.log(chalk.green("✅ Initialized nax"));
+    console.log(chalk.dim(`   ${naxDir}/`));
     console.log(chalk.dim("   ├── config.json"));
     console.log(chalk.dim("   ├── constitution.md"));
     console.log(chalk.dim("   ├── hooks.json"));
     console.log(chalk.dim("   ├── features/"));
     console.log(chalk.dim("   └── hooks/"));
-    console.log(chalk.dim("\nNext: ngent features create <name>"));
+    console.log(chalk.dim("\nNext: nax features create <name>"));
   });
 
 // ── run ──────────────────────────────────────────────
@@ -207,14 +207,14 @@ program
     }
 
     const config = await loadConfig();
-    const ngentDir = findProjectDir(workdir);
+    const naxDir = findProjectDir(workdir);
 
-    if (!ngentDir) {
-      console.error(chalk.red("ngent not initialized. Run: ngent init"));
+    if (!naxDir) {
+      console.error(chalk.red("nax not initialized. Run: nax init"));
       process.exit(1);
     }
 
-    const featureDir = join(ngentDir, "features", options.feature);
+    const featureDir = join(naxDir, "features", options.feature);
     const prdPath = join(featureDir, "prd.json");
 
     if (!existsSync(prdPath)) {
@@ -228,7 +228,7 @@ program
     }
     config.execution.maxIterations = Number.parseInt(options.maxIterations, 10);
 
-    const hooks = await loadHooksConfig(ngentDir);
+    const hooks = await loadHooksConfig(naxDir);
 
     const result = await run({
       prdPath,
@@ -268,13 +268,13 @@ features
       process.exit(1);
     }
 
-    const ngentDir = findProjectDir(workdir);
-    if (!ngentDir) {
-      console.error(chalk.red("ngent not initialized. Run: ngent init"));
+    const naxDir = findProjectDir(workdir);
+    if (!naxDir) {
+      console.error(chalk.red("nax not initialized. Run: nax init"));
       process.exit(1);
     }
 
-    const featureDir = join(ngentDir, "features", name);
+    const featureDir = join(naxDir, "features", name);
     mkdirSync(featureDir, { recursive: true });
 
     // Create empty templates
@@ -289,7 +289,7 @@ features
     console.log(chalk.dim("   ├── plan.md"));
     console.log(chalk.dim("   ├── tasks.md"));
     console.log(chalk.dim("   └── progress.txt"));
-    console.log(chalk.dim("\nNext: Edit spec.md and tasks.md, then: ngent analyze --feature " + name));
+    console.log(chalk.dim("\nNext: Edit spec.md and tasks.md, then: nax analyze --feature " + name));
   });
 
 features
@@ -306,13 +306,13 @@ features
       process.exit(1);
     }
 
-    const ngentDir = findProjectDir(workdir);
-    if (!ngentDir) {
-      console.error(chalk.red("ngent not initialized."));
+    const naxDir = findProjectDir(workdir);
+    if (!naxDir) {
+      console.error(chalk.red("nax not initialized."));
       process.exit(1);
     }
 
-    const featuresDir = join(ngentDir, "features");
+    const featuresDir = join(naxDir, "features");
     if (!existsSync(featuresDir)) {
       console.log(chalk.dim("No features yet."));
       return;
@@ -358,9 +358,9 @@ program
       process.exit(1);
     }
 
-    const ngentDir = findProjectDir(workdir);
-    if (!ngentDir) {
-      console.error(chalk.red("ngent not initialized. Run: ngent init"));
+    const naxDir = findProjectDir(workdir);
+    if (!naxDir) {
+      console.error(chalk.red("nax not initialized. Run: nax init"));
       process.exit(1);
     }
 
@@ -375,7 +375,7 @@ program
 
       console.log(chalk.green(`\n✅ Planning complete`));
       console.log(chalk.dim(`   Spec: ${specPath}`));
-      console.log(chalk.dim(`\nNext: ngent analyze -f <feature-name>`));
+      console.log(chalk.dim(`\nNext: nax analyze -f <feature-name>`));
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);
@@ -401,13 +401,13 @@ program
       process.exit(1);
     }
 
-    const ngentDir = findProjectDir(workdir);
-    if (!ngentDir) {
-      console.error(chalk.red("ngent not initialized. Run: ngent init"));
+    const naxDir = findProjectDir(workdir);
+    if (!naxDir) {
+      console.error(chalk.red("nax not initialized. Run: nax init"));
       process.exit(1);
     }
 
-    const featureDir = join(ngentDir, "features", options.feature);
+    const featureDir = join(naxDir, "features", options.feature);
     if (!existsSync(featureDir)) {
       console.error(chalk.red(`Feature "${options.feature}" not found.`));
       process.exit(1);
@@ -483,9 +483,9 @@ program
       process.exit(1);
     }
 
-    const ngentDir = findProjectDir(workdir);
-    if (!ngentDir) {
-      console.error(chalk.red("ngent not initialized."));
+    const naxDir = findProjectDir(workdir);
+    if (!naxDir) {
+      console.error(chalk.red("nax not initialized."));
       process.exit(1);
     }
 
@@ -508,7 +508,7 @@ program
       process.exit(1);
     }
 
-    const prdPath = join(ngentDir, "features", options.feature, "prd.json");
+    const prdPath = join(naxDir, "features", options.feature, "prd.json");
     if (!existsSync(prdPath)) {
       console.error(chalk.red(`Feature "${options.feature}" not found.`));
       process.exit(1);

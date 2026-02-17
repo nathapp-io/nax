@@ -59,7 +59,7 @@ export const queueCheckStage: PipelineStage = {
         // Save PRD path from featureDir
         const prdPath = ctx.featureDir
           ? `${ctx.featureDir}/prd.json`
-          : `${ctx.workdir}/ngent/features/unknown/prd.json`;
+          : `${ctx.workdir}/nax/features/unknown/prd.json`;
         await savePRD(ctx.prd, prdPath);
         await clearQueueFile(ctx.workdir);
 
@@ -79,7 +79,7 @@ export const queueCheckStage: PipelineStage = {
           // Save PRD
           const prdPath = ctx.featureDir
             ? `${ctx.featureDir}/prd.json`
-            : `${ctx.workdir}/ngent/features/unknown/prd.json`;
+            : `${ctx.workdir}/nax/features/unknown/prd.json`;
           await savePRD(ctx.prd, prdPath);
 
           // Remove from batch

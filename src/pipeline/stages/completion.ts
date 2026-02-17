@@ -40,7 +40,7 @@ export const completionStage: PipelineStage = {
     // Calculate PRD path
     const prdPath = ctx.featureDir
       ? `${ctx.featureDir}/prd.json`
-      : `${ctx.workdir}/ngent/features/unknown/prd.json`;
+      : `${ctx.workdir}/nax/features/unknown/prd.json`;
 
     // Collect story metrics
     const storyStartTime = ctx.storyStartTime || new Date().toISOString();

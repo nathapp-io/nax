@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 describe("scanCodebase", () => {
   test("scans project codebase successfully", async () => {
-    // Use the ngent project itself as test data
+    // Use the nax project itself as test data
     const workdir = join(import.meta.dir, "..");
 
     const scan = await scanCodebase(workdir);
@@ -34,7 +34,7 @@ describe("scanCodebase", () => {
   });
 
   test("handles missing src directory", async () => {
-    const workdir = "/tmp/ngent-test-no-src";
+    const workdir = "/tmp/nax-test-no-src";
 
     // Create temp dir without src/
     await Bun.write(join(workdir, "package.json"), JSON.stringify({}));

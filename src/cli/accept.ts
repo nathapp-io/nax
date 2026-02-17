@@ -5,7 +5,7 @@
  * Stores override in prd.json with reason.
  *
  * Usage:
- *   ngent accept --override AC-2 "intentional: using lazy expiry instead of exact timing"
+ *   nax accept --override AC-2 "intentional: using lazy expiry instead of exact timing"
  */
 
 import chalk from "chalk";
@@ -34,7 +34,7 @@ export interface AcceptOptions {
  *
  * @example
  * ```bash
- * ngent accept --feature auth-system --override AC-2 "intentional: lazy expiry"
+ * nax accept --feature auth-system --override AC-2 "intentional: lazy expiry"
  * ```
  */
 export async function acceptCommand(options: AcceptOptions): Promise<void> {
@@ -53,8 +53,8 @@ export async function acceptCommand(options: AcceptOptions): Promise<void> {
   // Find project directory
   const projectDirResult = findProjectDir(process.cwd());
   if (!projectDirResult) {
-    console.error(chalk.red("❌ Not in a ngent project directory"));
-    console.error(chalk.yellow("   Run 'ngent init' first"));
+    console.error(chalk.red("❌ Not in a nax project directory"));
+    console.error(chalk.yellow("   Run 'nax init' first"));
     process.exit(1);
   }
   const projectDir = projectDirResult;
@@ -68,7 +68,7 @@ export async function acceptCommand(options: AcceptOptions): Promise<void> {
   }
 
   // Build path to feature PRD
-  const featureDir = path.join(projectDir, "ngent", "features", feature);
+  const featureDir = path.join(projectDir, "nax", "features", feature);
   const prdPath = path.join(featureDir, "prd.json");
 
   // Check if feature exists

@@ -8,7 +8,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { PRD, UserStory } from "../prd";
-import type { NgentConfig } from "../config";
+import type { NaxConfig } from "../config";
 import type { CodebaseScan } from "../analyze/types";
 import { scanCodebase } from "../analyze/scanner";
 import { routeTask, classifyComplexity } from "../routing";
@@ -25,7 +25,7 @@ export interface AnalyzeOptions {
   /** Branch name */
   branchName: string;
   /** Config (optional) */
-  config?: NgentConfig;
+  config?: NaxConfig;
   /** Explicit spec path (overrides default spec.md) */
   specPath?: string;
   /** Re-classify existing prd.json without decompose */
@@ -43,7 +43,7 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
     reclassify = false,
   } = options;
 
-  const workdir = join(featureDir, "../.."); // Go up from ngent/features/<name> to project root
+  const workdir = join(featureDir, "../.."); // Go up from nax/features/<name> to project root
 
   // Re-classify mode: re-run classification on existing prd.json
   if (reclassify) {
@@ -167,7 +167,7 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
   // Build PRD
   const now = new Date().toISOString();
   const prd: PRD = {
-    project: "ngent", // could be inferred from package.json
+    project: "nax", // could be inferred from package.json
     feature: featureName,
     branchName,
     createdAt: now,
@@ -366,7 +366,7 @@ ${scan.testPatterns.map((p) => `- ${p}`).join("\n")}`.trim();
 /**
  * Apply keyword-based classification to user stories.
  */
-function applyKeywordClassification(stories: UserStory[], config?: NgentConfig): UserStory[] {
+function applyKeywordClassification(stories: UserStory[], config?: NaxConfig): UserStory[] {
   return stories.map((story) => {
     const complexity = classifyComplexity(
       story.title,
@@ -410,7 +410,7 @@ async function reclassifyExistingPRD(
   featureName: string,
   branchName: string,
   workdir: string,
-  config?: NgentConfig,
+  config?: NaxConfig,
 ): Promise<PRD> {
   const prdPath = join(featureDir, "prd.json");
 

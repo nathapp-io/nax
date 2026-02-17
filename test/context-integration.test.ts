@@ -36,7 +36,7 @@ const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
 let tmpDirs: string[] = [];
 
 const createTmpDir = async (): Promise<string> => {
-  const tmpDir = `/tmp/ngent-context-test-${Date.now()}-${Math.random()}`;
+  const tmpDir = `/tmp/nax-context-test-${Date.now()}-${Math.random()}`;
   await Bun.spawn(['mkdir', '-p', tmpDir], { stdout: 'pipe' }).exited;
   tmpDirs.push(tmpDir);
   return tmpDir;
