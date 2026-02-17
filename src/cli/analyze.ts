@@ -2,12 +2,16 @@
  * Analyze Command — Parse spec.md + tasks.md into prd.json
  *
  * Converts markdown user stories into structured PRD format.
+ * Optionally uses LLM-enhanced classification to improve routing accuracy.
  */
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { PRD, UserStory } from "../prd";
 import type { NgentConfig } from "../config";
+import { scanCodebase } from "../analyze/scanner";
+import { classifyStories } from "../analyze/classifier";
+import { routeTask } from "../routing";
 
 /** Parse spec.md and tasks.md into PRD */
 export async function analyzeFeature(
@@ -25,7 +29,7 @@ export async function analyzeFeature(
 
   // Read tasks.md (required)
   const tasksContent = await Bun.file(tasksPath).text();
-  const userStories = parseUserStories(tasksContent);
+  let userStories = parseUserStories(tasksContent);
 
   if (userStories.length === 0) {
     throw new Error("No user stories found in tasks.md. Expected '## US-xxx' or '## Story' headings.");
@@ -37,6 +41,51 @@ export async function analyzeFeature(
       `Feature has ${userStories.length} stories, exceeding limit of ${config.execution.maxStoriesPerFeature}.\n` +
       `  Split this feature into smaller features or increase maxStoriesPerFeature in config.`
     );
+  }
+
+  // LLM-enhanced classification (if enabled)
+  if (config && config.analyze.llmEnhanced) {
+    console.log("Running LLM-enhanced classification...");
+
+    // Scan codebase
+    const workdir = join(featureDir, "../.."); // Go up from ngent/features/<name> to project root
+    const scan = await scanCodebase(workdir);
+
+    // Classify stories with LLM
+    const classificationResult = await classifyStories(userStories, scan, config);
+
+    if (classificationResult.method === "keyword-fallback") {
+      console.warn(`⚠ LLM classification failed, using keyword fallback: ${classificationResult.fallbackReason}`);
+    } else {
+      console.log("✓ LLM classification complete");
+    }
+
+    // Merge LLM output into stories
+    userStories = userStories.map((story) => {
+      const classification = classificationResult.classifications.find((c) => c.storyId === story.id);
+      if (!classification) return story;
+
+      // Route task to get model tier and test strategy
+      const baseRouting = routeTask(
+        story.title,
+        story.description,
+        story.acceptanceCriteria,
+        story.tags,
+        config,
+      );
+
+      return {
+        ...story,
+        routing: {
+          ...baseRouting,
+          complexity: classification.complexity, // Override with LLM complexity
+          reasoning: classification.reasoning, // Use LLM reasoning
+          estimatedLOC: classification.estimatedLOC,
+          risks: classification.risks,
+        },
+        relevantFiles: classification.relevantFiles,
+      };
+    });
   }
 
   // Build PRD

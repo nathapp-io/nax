@@ -107,6 +107,18 @@ export interface ConstitutionConfig {
   maxTokens: number;
 }
 
+/** Analyze config */
+export interface AnalyzeConfig {
+  /** Enable LLM-enhanced analysis */
+  llmEnhanced: boolean;
+  /** Model tier for classifier (default: fast) */
+  classifierModel: ModelTier;
+  /** Fall back to keyword matching on LLM failure */
+  fallbackToKeywords: boolean;
+  /** Max tokens for codebase summary */
+  maxCodebaseSummaryTokens: number;
+}
+
 /** Full ngent configuration */
 export interface NgentConfig {
   /** Schema version */
@@ -123,6 +135,8 @@ export interface NgentConfig {
   tdd: TddConfig;
   /** Constitution settings */
   constitution: ConstitutionConfig;
+  /** Analyze settings */
+  analyze: AnalyzeConfig;
 }
 
 /** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */
@@ -213,6 +227,13 @@ const ConstitutionConfigSchema = z.object({
   maxTokens: z.number().int().positive({ message: "constitution.maxTokens must be > 0" }),
 });
 
+const AnalyzeConfigSchema = z.object({
+  llmEnhanced: z.boolean(),
+  classifierModel: ModelTierSchema,
+  fallbackToKeywords: z.boolean(),
+  maxCodebaseSummaryTokens: z.number().int().positive(),
+});
+
 export const NgentConfigSchema = z
   .object({
     version: z.number(),
@@ -222,6 +243,7 @@ export const NgentConfigSchema = z
     quality: QualityConfigSchema,
     tdd: TddConfigSchema,
     constitution: ConstitutionConfigSchema,
+    analyze: AnalyzeConfigSchema,
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",
@@ -275,6 +297,12 @@ export const DEFAULT_CONFIG: NgentConfig = {
     enabled: true,
     path: "constitution.md",
     maxTokens: 2000,
+  },
+  analyze: {
+    llmEnhanced: true,
+    classifierModel: "fast",
+    fallbackToKeywords: true,
+    maxCodebaseSummaryTokens: 5000,
   },
 };
 

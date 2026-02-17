@@ -17,6 +17,10 @@ export interface StoryRouting {
   testStrategy: TestStrategy;
   reasoning: string;
   estimatedCost?: number;
+  /** Estimated lines of code (from LLM classifier) */
+  estimatedLOC?: number;
+  /** Implementation risks (from LLM classifier) */
+  risks?: string[];
 }
 
 /** Escalation attempt tracking */
