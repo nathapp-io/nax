@@ -9,6 +9,7 @@ import type { PRD, UserStory } from "../prd/types";
 import type { AgentResult } from "../agents/types";
 import type { ReviewResult } from "../review/types";
 import type { HooksConfig } from "../hooks/types";
+import type { ConstitutionResult } from "../constitution/types";
 
 /**
  * Routing result from complexity classification
@@ -62,8 +63,8 @@ export interface PipelineContext {
   featureDir?: string;
   /** Hooks configuration */
   hooks: HooksConfig;
-  /** Constitution content (set by constitutionStage) */
-  constitution?: string;
+  /** Constitution result (set by constitutionStage) */
+  constitution?: ConstitutionResult;
   /** Context markdown for the agent (set by contextStage) */
   contextMarkdown?: string;
   /** Final prompt sent to agent (set by promptStage) */

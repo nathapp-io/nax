@@ -24,7 +24,7 @@ export const constitutionStage: PipelineStage = {
     const result = await loadConstitution(ngentDir, ctx.config.constitution);
 
     if (result) {
-      ctx.constitution = result.content;
+      ctx.constitution = result;
 
       console.log(
         chalk.dim(
