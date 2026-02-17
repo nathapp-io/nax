@@ -7,6 +7,20 @@
 import type { UserStory } from "../prd";
 
 /**
+ * Default maximum number of stories per batch.
+ *
+ * Rationale:
+ * - Batch size must balance efficiency vs. blast radius
+ * - 4 stories is optimal for most simple tasks (e.g., add 4 similar util functions)
+ * - Keeps prompts manageable (~1500 tokens per story = ~6000 tokens total context)
+ * - If one story in batch fails, only 3 others retry at next tier (acceptable waste)
+ * - Larger batches (8+) increase risk of cascading failures and context overload
+ *
+ * This default can be overridden via config or function parameter.
+ */
+const DEFAULT_MAX_BATCH_SIZE = 4;
+
+/**
  * Story batch for grouped execution
  */
 export interface StoryBatch {
@@ -37,7 +51,7 @@ export interface StoryBatch {
  */
 export function groupStoriesIntoBatches(
   stories: UserStory[],
-  maxBatchSize = 4,
+  maxBatchSize = DEFAULT_MAX_BATCH_SIZE,
 ): StoryBatch[] {
   const batches: StoryBatch[] = [];
   let currentBatch: UserStory[] = [];
@@ -103,7 +117,7 @@ export function groupStoriesIntoBatches(
  */
 export function precomputeBatchPlan(
   stories: UserStory[],
-  maxBatchSize = 4,
+  maxBatchSize = DEFAULT_MAX_BATCH_SIZE,
 ): StoryBatch[] {
   const batches: StoryBatch[] = [];
   let currentBatch: UserStory[] = [];

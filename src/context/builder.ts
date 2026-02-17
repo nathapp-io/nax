@@ -10,15 +10,13 @@ import type { UserStory } from '../prd';
 import { countStories } from '../prd';
 
 /**
- * Estimate token count for text.
- *
- * Uses rough approximation: 1 token ≈ 3 chars (divide by 3).
+ * Approximate character-to-token ratio for token estimation.
  *
  * Rationale:
  * - Real tokenization varies by content: "hello" = 1 token, "anthropic" = 2 tokens
  * - English prose: ~4 chars/token (GPT tokenizer standard)
  * - Code/technical text: ~2-3 chars/token (more special chars, symbols)
- * - Our formula (divide by 3) is a middle ground optimized for mixed content
+ * - Value of 3 is a middle ground optimized for mixed content (prose + code + markdown)
  *
  * Accuracy tradeoffs:
  * - ✅ Fast: O(1) calculation, no external dependencies
@@ -28,8 +26,16 @@ import { countStories } from '../prd';
  *
  * For MVP, this approximation is sufficient. Context budget has safety margins.
  */
+const CHARS_PER_TOKEN = 3;
+
+/**
+ * Estimate token count for text using character-to-token ratio.
+ *
+ * Uses rough approximation: 1 token ≈ 3 chars (divide by 3).
+ * See CHARS_PER_TOKEN constant for detailed rationale.
+ */
 export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 3);
+  return Math.ceil(text.length / CHARS_PER_TOKEN);
 }
 
 /**

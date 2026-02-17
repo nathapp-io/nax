@@ -16,6 +16,65 @@ import type { HookContext } from "../hooks";
 import { buildContext, formatContextAsMarkdown } from "../context";
 import type { StoryContext, ContextBudget } from "../context";
 
+/**
+ * Error Handling Pattern for Ngent
+ *
+ * Established pattern for consistent error handling across modules:
+ *
+ * 1. Critical Errors (invalid config, missing required files, security violations):
+ *    - Action: throw Error with descriptive message
+ *    - Example: Missing PRD file, invalid config schema, path traversal attempt
+ *    - Caller: Should catch and abort execution (process.exit(1) at top level)
+ *
+ * 2. Expected Conditions (no more stories, queue empty, optional feature unavailable):
+ *    - Action: return null or undefined
+ *    - Example: No next story to execute, queue command not found
+ *    - Caller: Should check return value and handle gracefully (skip, continue loop)
+ *
+ * 3. Validation Issues (multiple collected errors, partial data problems):
+ *    - Action: collect errors in array and return as { errors: string[] }
+ *    - Example: Dependency validation failures, malformed PRD stories
+ *    - Caller: Should display all errors to user, then abort or prompt for fix
+ *
+ * 4. Non-Fatal Warnings (context build failures, optional file missing, rate limit):
+ *    - Action: console.warn() + continue execution
+ *    - Example: Dependency story not found in PRD, context truncated, hook timeout
+ *    - Caller: No action needed, execution continues with degraded functionality
+ *
+ * Use this pattern to maintain consistency across all ngent modules.
+ */
+
+/**
+ * Maximum tokens allowed in context budget for Claude agents.
+ *
+ * Rationale:
+ * - Claude has 200k token context window, but we reserve space for:
+ *   - System prompt (~5k tokens)
+ *   - Agent instructions/prompts (~10k tokens)
+ *   - Conversation history (~10k tokens in long sessions)
+ *   - Output buffer (~5k tokens)
+ * - 100k token limit for story context is conservative but safe
+ * - Prevents context overflow that would cause agent failures
+ * - Leaves 100k tokens for agent reasoning and responses
+ *
+ * This limit is used in buildStoryContext() to set ContextBudget.maxTokens.
+ */
+const CONTEXT_MAX_TOKENS = 100_000;
+
+/**
+ * Tokens reserved for agent instructions and prompts.
+ *
+ * Rationale:
+ * - Agent needs space for task instructions, TDD prompts, hook output
+ * - Typical instruction template: 2-3k tokens (TDD session, testing requirements)
+ * - Hook output (on-story-start, on-error): 1-2k tokens
+ * - Story batch prompts (up to 4 stories): 3-5k tokens
+ * - 10k token reservation is safe upper bound for all instruction scenarios
+ *
+ * This is subtracted from CONTEXT_MAX_TOKENS to calculate availableForContext.
+ */
+const CONTEXT_RESERVED_TOKENS = 10_000;
+
 /** Result from executing a batch or single story */
 export interface ExecutionResult {
   success: boolean;
@@ -112,9 +171,9 @@ export async function buildStoryContext(
     };
 
     const budget: ContextBudget = {
-      maxTokens: 100000, // Conservative limit for Claude
-      reservedForInstructions: 10000,
-      availableForContext: 90000,
+      maxTokens: CONTEXT_MAX_TOKENS,
+      reservedForInstructions: CONTEXT_RESERVED_TOKENS,
+      availableForContext: CONTEXT_MAX_TOKENS - CONTEXT_RESERVED_TOKENS,
     };
 
     const built = await buildContext(storyContext, budget);

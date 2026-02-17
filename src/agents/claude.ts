@@ -6,6 +6,19 @@ import type { AgentAdapter, AgentCapabilities, AgentResult, AgentRunOptions } fr
 import { estimateCostFromOutput, estimateCostByDuration } from "./cost";
 
 /**
+ * Maximum characters to capture from agent stdout.
+ *
+ * Rationale:
+ * - Claude Code agents can produce very large output (test results, diffs, stack traces)
+ * - Capturing full output can consume excessive memory for long-running sessions
+ * - Last 5000 chars typically contain the most relevant info (final status, summary, errors)
+ * - Earlier output is usually verbose build logs or test details that aren't critical for result parsing
+ *
+ * This limit prevents memory bloat while preserving actionable output for debugging and cost estimation.
+ */
+const MAX_AGENT_OUTPUT_CHARS = 5000;
+
+/**
  * Claude Code agent adapter implementation.
  *
  * Implements the AgentAdapter interface for Claude Code CLI,
@@ -224,7 +237,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     return {
       success: exitCode === 0 && !timedOut,
       exitCode: actualExitCode,
-      output: stdout.slice(-5000), // Last 5k chars
+      output: stdout.slice(-MAX_AGENT_OUTPUT_CHARS),
       rateLimited,
       durationMs,
       estimatedCost: cost,
