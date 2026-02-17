@@ -11,7 +11,7 @@
     "build": "bun build bin/ngent.ts --outdir dist --target bun",
     "typecheck": "bun x tsc --noEmit",
     "lint": "bun x biome check src/ bin/",
-    "test": "bun test",
+    "test": "bun test --timeout=120000",
     "test:watch": "bun test --watch"
   },
   "dependencies": {

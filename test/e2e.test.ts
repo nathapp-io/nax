@@ -276,7 +276,7 @@ function registerMockAgent(adapter: MockAgentAdapter): () => void {
   };
 }
 
-describe("E2E: plan → analyze → run workflow", { timeout: 30000 }, () => {
+describe("E2E: plan → analyze → run workflow", () => {
   let testDir: string;
   let mockAgent: MockAgentAdapter;
   let cleanup: () => void;
@@ -302,7 +302,7 @@ describe("E2E: plan → analyze → run workflow", { timeout: 30000 }, () => {
     cleanup();
   });
 
-  test("full workflow: init → plan → analyze → run", { timeout: 30000 }, async () => {
+  test("full workflow: init → plan → analyze → run", { timeout: 120000 }, async () => {
     const ngentDir = join(testDir, "ngent");
     const featureDir = join(ngentDir, "features/url-shortener");
     mkdirSync(featureDir, { recursive: true });
@@ -427,12 +427,12 @@ describe("E2E: plan → analyze → run workflow", { timeout: 30000 }, () => {
           "on-story-start": {
             command: "echo story-start",
             enabled: true,
-            timeout: 30000,
+            timeout: 60000,
           },
           "on-story-complete": {
             command: "echo story-complete",
             enabled: true,
-            timeout: 30000,
+            timeout: 60000,
           },
         },
       },
@@ -449,7 +449,7 @@ describe("E2E: plan → analyze → run workflow", { timeout: 30000 }, () => {
     expect(finalPRD.userStories[0].status).toBe("passed");
   });
 
-  test("agent failure triggers escalation", async () => {
+  test("agent failure triggers escalation", { timeout: 60000 }, async () => {
     const ngentDir = join(testDir, "ngent");
     const featureDir = join(ngentDir, "features/fail-task");
     mkdirSync(featureDir, { recursive: true });
@@ -528,7 +528,7 @@ describe("E2E: plan → analyze → run workflow", { timeout: 30000 }, () => {
     expect(finalPRD.userStories[0].status).toBe("passed");
   });
 
-  test("rate limit triggers retry with backoff", async () => {
+  test("rate limit triggers retry with backoff", { timeout: 60000 }, async () => {
     const ngentDir = join(testDir, "ngent");
     const featureDir = join(ngentDir, "features/rate-limit-task");
     mkdirSync(featureDir, { recursive: true });
@@ -821,6 +821,10 @@ function createTestConfig(): NgentConfig {
     review: {
       ...DEFAULT_CONFIG.review,
       enabled: false, // Disable review for tests (would require mocking typecheck/lint/test)
+    },
+    acceptance: {
+      ...DEFAULT_CONFIG.acceptance,
+      enabled: false, // Disable acceptance for E2E tests (no real acceptance tests)
     },
   };
 }

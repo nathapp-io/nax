@@ -11,7 +11,7 @@ import { DEFAULT_CONFIG } from "../src/config/schema";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const testDir = path.join(import.meta.dir, "tmp-acceptance-test");
+const testDir = `/tmp/ngent-acceptance-test-${Date.now()}`;
 const featureDir = path.join(testDir, "ngent/features/test-feature");
 
 beforeEach(async () => {
