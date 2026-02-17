@@ -14,3 +14,6 @@ export type {
 
 export { runPipeline } from "./runner";
 export type { PipelineRunResult } from "./runner";
+
+export { PipelineEventEmitter } from "./events";
+export type { PipelineEvents, RunSummary } from "./events";

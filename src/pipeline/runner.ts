@@ -7,6 +7,7 @@
 
 import chalk from "chalk";
 import type { PipelineContext, PipelineStage, StageResult } from "./types";
+import type { PipelineEventEmitter } from "./events";
 
 /**
  * Pipeline execution result.
@@ -39,6 +40,7 @@ export interface PipelineRunResult {
  *
  * @param stages - Array of pipeline stages to execute
  * @param context - Initial pipeline context (WILL BE MUTATED IN-PLACE)
+ * @param eventEmitter - Optional event emitter for TUI integration
  * @returns Pipeline execution result with mutated context
  *
  * @example
@@ -60,6 +62,7 @@ export interface PipelineRunResult {
 export async function runPipeline(
   stages: PipelineStage[],
   context: PipelineContext,
+  eventEmitter?: PipelineEventEmitter,
 ): Promise<PipelineRunResult> {
   for (const stage of stages) {
     // Skip disabled stages
@@ -68,20 +71,34 @@ export async function runPipeline(
       continue;
     }
 
+    // Emit stage:enter event
+    eventEmitter?.emit("stage:enter", stage.name, context.story);
+
     // Execute the stage
     let result: StageResult;
     try {
       result = await stage.execute(context);
     } catch (error) {
       // Stage execution failed with an exception
+      const failResult: StageResult = {
+        action: "fail",
+        reason: `Stage "${stage.name}" threw error: ${error instanceof Error ? error.message : String(error)}`,
+      };
+
+      // Emit stage:exit event
+      eventEmitter?.emit("stage:exit", stage.name, failResult);
+
       return {
         success: false,
         finalAction: "fail",
-        reason: `Stage "${stage.name}" threw error: ${error instanceof Error ? error.message : String(error)}`,
+        reason: failResult.reason,
         stoppedAtStage: stage.name,
         context,
       };
     }
+
+    // Emit stage:exit event
+    eventEmitter?.emit("stage:exit", stage.name, result);
 
     // Handle stage result
     switch (result.action) {

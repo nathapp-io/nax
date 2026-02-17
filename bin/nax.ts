@@ -195,6 +195,7 @@ program
   .option("--dry-run", "Show plan without executing", false)
   .option("--no-context", "Disable context builder (skip file context in prompts)")
   .option("--no-batch", "Disable story batching (execute all stories individually)")
+  .option("--headless", "Force headless mode (disable TUI, use pipe mode)", false)
   .option("-d, --dir <path>", "Working directory", process.cwd())
   .action(async (options) => {
     // Validate directory path
@@ -229,6 +230,25 @@ program
     config.execution.maxIterations = Number.parseInt(options.maxIterations, 10);
 
     const hooks = await loadHooksConfig(naxDir);
+
+    // Determine TUI vs headless mode
+    // TUI activates when:
+    // 1. stdout is a TTY, AND
+    // 2. --headless flag is NOT passed, AND
+    // 3. NAX_HEADLESS env var is NOT set
+    const isTTY = process.stdout.isTTY ?? false;
+    const headlessFlag = options.headless ?? false;
+    const headlessEnv = process.env.NAX_HEADLESS === "1";
+    const useHeadless = !isTTY || headlessFlag || headlessEnv;
+
+    // For Phase 1, both modes run the same way (TUI rendering comes in Phase 2)
+    // This variable will be consumed in Phase 2 to determine rendering mode
+    if (!useHeadless) {
+      // TUI mode would activate here in Phase 2
+      console.log(chalk.dim("   [TUI mode detected — rendering in Phase 2]"));
+    } else {
+      console.log(chalk.dim("   [Headless mode — pipe output]"));
+    }
 
     const result = await run({
       prdPath,
