@@ -107,12 +107,20 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     // Try to parse token usage from output, fallback to pessimistic duration-based estimate (BUG-3)
     const fullOutput = stdout + stderr;
-    let cost = estimateCostFromOutput(options.modelTier, fullOutput);
-    if (cost === 0) {
+    let costEstimate = estimateCostFromOutput(options.modelTier, fullOutput);
+    if (!costEstimate) {
       // Fallback to conservative duration-based estimate if tokens not found
       // Use 1.5x multiplier to account for parsing uncertainty
-      cost = estimateCostByDuration(options.modelTier, durationMs) * 1.5;
+      const fallbackEstimate = estimateCostByDuration(options.modelTier, durationMs);
+      costEstimate = {
+        cost: fallbackEstimate.cost * 1.5,
+        confidence: 'fallback',
+      };
+      console.warn(`[ngent] Cost estimation fallback (duration-based) for ${options.modelTier} tier: ${costEstimate.cost.toFixed(4)} USD`);
+    } else if (costEstimate.confidence === 'estimated') {
+      console.warn(`[ngent] Cost estimation using regex parsing (estimated confidence): ${costEstimate.cost.toFixed(4)} USD`);
     }
+    const cost = costEstimate.cost;
 
     // Exit code 124 indicates timeout (convention), use 143 for SIGTERM
     const actualExitCode = timedOut ? 124 : exitCode;

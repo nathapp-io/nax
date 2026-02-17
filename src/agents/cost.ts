@@ -19,6 +19,12 @@ export interface TokenUsage {
   outputTokens: number;
 }
 
+/** Cost estimate with confidence indicator */
+export interface CostEstimate {
+  cost: number;
+  confidence: 'exact' | 'estimated' | 'fallback';
+}
+
 /** Model tier cost rates (as of 2025-01) */
 export const COST_RATES: Record<ModelTier, ModelCostRates> = {
   fast: {
@@ -39,22 +45,32 @@ export const COST_RATES: Record<ModelTier, ModelCostRates> = {
 };
 
 /**
+ * Token usage with confidence indicator.
+ */
+export interface TokenUsageWithConfidence {
+  inputTokens: number;
+  outputTokens: number;
+  confidence: 'exact' | 'estimated';
+}
+
+/**
  * Parse Claude Code output for token usage.
  * Supports multiple formats:
- * - JSON: {"usage": {"input_tokens": 1234, "output_tokens": 5678}}
- * - Markdown: "Input tokens: 1234" / "Output tokens: 5678"
- * - Plain: "input: 1234, output: 5678"
+ * - JSON: {"usage": {"input_tokens": 1234, "output_tokens": 5678}} → exact
+ * - Markdown: "Input tokens: 1234" / "Output tokens: 5678" → estimated
+ * - Plain: "input: 1234, output: 5678" → estimated
  *
  * Uses specific regex patterns to reduce false positives (BUG-3).
  */
-export function parseTokenUsage(output: string): TokenUsage | null {
-  // Try JSON format first (most reliable)
+export function parseTokenUsage(output: string): TokenUsageWithConfidence | null {
+  // Try JSON format first (most reliable) - confidence: exact
   try {
     const jsonMatch = output.match(/\{[^}]*"usage"\s*:\s*\{[^}]*"input_tokens"\s*:\s*(\d+)[^}]*"output_tokens"\s*:\s*(\d+)[^}]*\}[^}]*\}/);
     if (jsonMatch) {
       return {
         inputTokens: Number.parseInt(jsonMatch[1], 10),
         outputTokens: Number.parseInt(jsonMatch[2], 10),
+        confidence: 'exact',
       };
     }
 
@@ -68,6 +84,7 @@ export function parseTokenUsage(output: string): TokenUsage | null {
             return {
               inputTokens: parsed.usage.input_tokens,
               outputTokens: parsed.usage.output_tokens,
+              confidence: 'exact',
             };
           }
         } catch {
@@ -82,6 +99,7 @@ export function parseTokenUsage(output: string): TokenUsage | null {
   // Try specific markdown-style patterns (more specific to reduce false positives)
   // Match "Input tokens: 1234" or "input_tokens: 1234" or "INPUT TOKENS: 1234"
   // Use word boundary at start, require colon or space after keyword, then digits
+  // confidence: estimated (regex-based)
   const inputMatch = output.match(/\b(?:input|input_tokens)\s*:\s*(\d{2,})|(?:input)\s+(?:tokens?)\s*:\s*(\d{2,})/i);
   const outputMatch = output.match(/\b(?:output|output_tokens)\s*:\s*(\d{2,})|(?:output)\s+(?:tokens?)\s*:\s*(\d{2,})/i);
 
@@ -98,6 +116,7 @@ export function parseTokenUsage(output: string): TokenUsage | null {
     return {
       inputTokens,
       outputTokens,
+      confidence: 'estimated',
     };
   }
 
@@ -120,17 +139,24 @@ export function estimateCost(
 
 /**
  * Estimate cost from agent output (parses tokens, then calculates).
- * Returns 0 if tokens cannot be parsed.
+ * Returns cost estimate with confidence indicator:
+ * - 'exact': Parsed from structured JSON output
+ * - 'estimated': Extracted via regex patterns
+ * Returns null if tokens cannot be parsed.
  */
 export function estimateCostFromOutput(
   modelTier: ModelTier,
   output: string,
-): number {
+): CostEstimate | null {
   const usage = parseTokenUsage(output);
   if (!usage) {
-    return 0;
+    return null;
   }
-  return estimateCost(modelTier, usage.inputTokens, usage.outputTokens);
+  const cost = estimateCost(modelTier, usage.inputTokens, usage.outputTokens);
+  return {
+    cost,
+    confidence: usage.confidence,
+  };
 }
 
 /**
@@ -138,19 +164,45 @@ export function estimateCostFromOutput(
  * Used when token usage cannot be parsed from output.
  *
  * Rough estimates per minute of agent runtime:
- * - cheap (Haiku): ~$0.01/min
- * - standard (Sonnet): ~$0.05/min
- * - premium (Opus): ~$0.15/min
+ * - fast (Haiku): ~$0.01/min
+ * - balanced (Sonnet): ~$0.05/min
+ * - powerful (Opus): ~$0.15/min
+ *
+ * Returns cost estimate with 'fallback' confidence.
  */
 export function estimateCostByDuration(
   modelTier: ModelTier,
   durationMs: number,
-): number {
+): CostEstimate {
   const costPerMinute: Record<ModelTier, number> = {
     fast: 0.01,
     balanced: 0.05,
     powerful: 0.15,
   };
   const minutes = durationMs / 60000;
-  return minutes * costPerMinute[modelTier];
+  const cost = minutes * costPerMinute[modelTier];
+  return {
+    cost,
+    confidence: 'fallback',
+  };
+}
+
+/**
+ * Format cost estimate with confidence indicator.
+ * Examples:
+ * - exact: "$0.12"
+ * - estimated: "~$0.15"
+ * - fallback: "~$0.05 (duration-based)"
+ */
+export function formatCostWithConfidence(estimate: CostEstimate): string {
+  const formattedCost = `$${estimate.cost.toFixed(2)}`;
+
+  switch (estimate.confidence) {
+    case 'exact':
+      return formattedCost;
+    case 'estimated':
+      return `~${formattedCost}`;
+    case 'fallback':
+      return `~${formattedCost} (duration-based)`;
+  }
 }

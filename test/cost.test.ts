@@ -4,11 +4,12 @@ import {
   estimateCost,
   estimateCostFromOutput,
   estimateCostByDuration,
+  formatCostWithConfidence,
   COST_RATES,
 } from "../src/agents/cost";
 
 describe("parseTokenUsage", () => {
-  test("parses Claude Code token output", () => {
+  test("parses Claude Code token output with estimated confidence", () => {
     const output = `
 Agent completed successfully.
 Input tokens: 12345
@@ -19,14 +20,16 @@ Total tokens: 19134
     expect(usage).not.toBeNull();
     expect(usage?.inputTokens).toBe(12345);
     expect(usage?.outputTokens).toBe(6789);
+    expect(usage?.confidence).toBe('estimated');
   });
 
-  test("handles case-insensitive matches", () => {
+  test("handles case-insensitive matches with estimated confidence", () => {
     const output = "INPUT TOKENS: 1000\nOUTPUT TOKENS: 2000";
     const usage = parseTokenUsage(output);
     expect(usage).not.toBeNull();
     expect(usage?.inputTokens).toBe(1000);
     expect(usage?.outputTokens).toBe(2000);
+    expect(usage?.confidence).toBe('estimated');
   });
 
   test("returns null when tokens not found", () => {
@@ -39,15 +42,16 @@ Total tokens: 19134
     expect(parseTokenUsage(output)).toBeNull();
   });
 
-  test("parses JSON-structured token report (BUG-3)", () => {
+  test("parses JSON-structured token report with exact confidence (BUG-3)", () => {
     const output = `{"usage": {"input_tokens": 15000, "output_tokens": 8500}}`;
     const usage = parseTokenUsage(output);
     expect(usage).not.toBeNull();
     expect(usage?.inputTokens).toBe(15000);
     expect(usage?.outputTokens).toBe(8500);
+    expect(usage?.confidence).toBe('exact');
   });
 
-  test("parses JSON with surrounding text (BUG-3)", () => {
+  test("parses JSON with surrounding text with exact confidence (BUG-3)", () => {
     const output = `
 Agent completed.
 {"usage": {"input_tokens": 12000, "output_tokens": 4000}}
@@ -57,14 +61,16 @@ Done.
     expect(usage).not.toBeNull();
     expect(usage?.inputTokens).toBe(12000);
     expect(usage?.outputTokens).toBe(4000);
+    expect(usage?.confidence).toBe('exact');
   });
 
-  test("parses underscore format (BUG-3)", () => {
+  test("parses underscore format with estimated confidence (BUG-3)", () => {
     const output = "input_tokens: 9000\noutput_tokens: 3000";
     const usage = parseTokenUsage(output);
     expect(usage).not.toBeNull();
     expect(usage?.inputTokens).toBe(9000);
     expect(usage?.outputTokens).toBe(3000);
+    expect(usage?.confidence).toBe('estimated');
   });
 
   test("rejects unreasonably large token counts (BUG-3 sanity check)", () => {
@@ -79,7 +85,7 @@ Done.
     expect(parseTokenUsage(output)).toBeNull();
   });
 
-  test("handles mixed format with word boundaries (BUG-3)", () => {
+  test("handles mixed format with word boundaries and estimated confidence (BUG-3)", () => {
     const output = `
 Model: claude-sonnet-4-5
 input tokens: 15432
@@ -90,6 +96,7 @@ Status: success
     expect(usage).not.toBeNull();
     expect(usage?.inputTokens).toBe(15432);
     expect(usage?.outputTokens).toBe(7891);
+    expect(usage?.confidence).toBe('estimated');
   });
 });
 
@@ -125,39 +132,80 @@ describe("estimateCost", () => {
 });
 
 describe("estimateCostFromOutput", () => {
-  test("estimates cost from parsed output", () => {
+  test("estimates cost from parsed output with confidence", () => {
     const output = "Input tokens: 100000\nOutput tokens: 50000";
-    const cost = estimateCostFromOutput("fast", output);
+    const estimate = estimateCostFromOutput("fast", output);
     // (100k/1M * 0.80) + (50k/1M * 4.00) = 0.08 + 0.20 = 0.28
-    expect(cost).toBeCloseTo(0.28, 2);
+    expect(estimate).not.toBeNull();
+    expect(estimate?.cost).toBeCloseTo(0.28, 2);
+    expect(estimate?.confidence).toBe('estimated');
   });
 
-  test("returns 0 when tokens cannot be parsed", () => {
+  test("returns exact confidence for JSON output", () => {
+    const output = '{"usage": {"input_tokens": 100000, "output_tokens": 50000}}';
+    const estimate = estimateCostFromOutput("fast", output);
+    expect(estimate).not.toBeNull();
+    expect(estimate?.cost).toBeCloseTo(0.28, 2);
+    expect(estimate?.confidence).toBe('exact');
+  });
+
+  test("returns null when tokens cannot be parsed", () => {
     const output = "Agent completed successfully.";
-    const cost = estimateCostFromOutput("balanced", output);
-    expect(cost).toBe(0);
+    const estimate = estimateCostFromOutput("balanced", output);
+    expect(estimate).toBeNull();
   });
 });
 
 describe("estimateCostByDuration", () => {
-  test("estimates cost for 1 minute fast tier", () => {
-    const cost = estimateCostByDuration("fast", 60000);
-    expect(cost).toBeCloseTo(0.01, 2);
+  test("estimates cost for 1 minute fast tier with fallback confidence", () => {
+    const estimate = estimateCostByDuration("fast", 60000);
+    expect(estimate.cost).toBeCloseTo(0.01, 2);
+    expect(estimate.confidence).toBe('fallback');
   });
 
-  test("estimates cost for 2 minutes balanced tier", () => {
-    const cost = estimateCostByDuration("balanced", 120000);
-    expect(cost).toBeCloseTo(0.10, 2);
+  test("estimates cost for 2 minutes balanced tier with fallback confidence", () => {
+    const estimate = estimateCostByDuration("balanced", 120000);
+    expect(estimate.cost).toBeCloseTo(0.10, 2);
+    expect(estimate.confidence).toBe('fallback');
   });
 
-  test("estimates cost for 30 seconds powerful tier", () => {
-    const cost = estimateCostByDuration("powerful", 30000);
-    expect(cost).toBeCloseTo(0.075, 3);
+  test("estimates cost for 30 seconds powerful tier with fallback confidence", () => {
+    const estimate = estimateCostByDuration("powerful", 30000);
+    expect(estimate.cost).toBeCloseTo(0.075, 3);
+    expect(estimate.confidence).toBe('fallback');
   });
 
-  test("handles zero duration", () => {
-    const cost = estimateCostByDuration("balanced", 0);
-    expect(cost).toBe(0);
+  test("handles zero duration with fallback confidence", () => {
+    const estimate = estimateCostByDuration("balanced", 0);
+    expect(estimate.cost).toBe(0);
+    expect(estimate.confidence).toBe('fallback');
+  });
+});
+
+describe("formatCostWithConfidence", () => {
+  test("formats exact confidence without prefix", () => {
+    const estimate = { cost: 0.12, confidence: 'exact' as const };
+    expect(formatCostWithConfidence(estimate)).toBe("$0.12");
+  });
+
+  test("formats estimated confidence with tilde prefix", () => {
+    const estimate = { cost: 0.15, confidence: 'estimated' as const };
+    expect(formatCostWithConfidence(estimate)).toBe("~$0.15");
+  });
+
+  test("formats fallback confidence with tilde and label", () => {
+    const estimate = { cost: 0.05, confidence: 'fallback' as const };
+    expect(formatCostWithConfidence(estimate)).toBe("~$0.05 (duration-based)");
+  });
+
+  test("formats very small costs correctly", () => {
+    const estimate = { cost: 0.001, confidence: 'exact' as const };
+    expect(formatCostWithConfidence(estimate)).toBe("$0.00");
+  });
+
+  test("formats large costs correctly", () => {
+    const estimate = { cost: 12.345, confidence: 'estimated' as const };
+    expect(formatCostWithConfidence(estimate)).toBe("~$12.35");
   });
 });
 
