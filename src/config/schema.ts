@@ -21,12 +21,22 @@ export interface EscalationEntry {
 /** Model tier names */
 export type ModelTier = "fast" | "balanced" | "powerful";
 
+/** Per-tier token pricing (USD per 1M tokens) */
+export interface TokenPricing {
+  /** Cost per 1M input tokens */
+  inputPer1M: number;
+  /** Cost per 1M output tokens */
+  outputPer1M: number;
+}
+
 /** Per-tier model definition */
 export interface ModelDef {
   /** Provider name (e.g., "anthropic", "openai", "ollama") */
   provider: string;
   /** Model identifier (e.g., "claude-sonnet-4-5", "gpt-5-mini") */
   model: string;
+  /** Optional token pricing override (defaults to built-in rates) */
+  pricing?: TokenPricing;
   /** Environment variable overrides passed to the agent process */
   env?: Record<string, string>;
 }
@@ -221,9 +231,15 @@ export function resolveModel(entry: ModelEntry): ModelDef {
 }
 
 /** Zod schema for runtime validation */
+const TokenPricingSchema = z.object({
+  inputPer1M: z.number().min(0),
+  outputPer1M: z.number().min(0),
+});
+
 const ModelDefSchema = z.object({
   provider: z.string().min(1, "Provider must be non-empty"),
   model: z.string().min(1, "Model must be non-empty"),
+  pricing: TokenPricingSchema.optional(),
   env: z.record(z.string(), z.string()).optional(),
 });
 

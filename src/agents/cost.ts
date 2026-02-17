@@ -161,8 +161,9 @@ export function estimateCost(
   modelTier: ModelTier,
   inputTokens: number,
   outputTokens: number,
+  customRates?: ModelCostRates,
 ): number {
-  const rates = COST_RATES[modelTier];
+  const rates = customRates ?? COST_RATES[modelTier];
   const inputCost = (inputTokens / 1_000_000) * rates.inputPer1M;
   const outputCost = (outputTokens / 1_000_000) * rates.outputPer1M;
   return inputCost + outputCost;
