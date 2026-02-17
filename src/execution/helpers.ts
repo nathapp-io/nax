@@ -217,9 +217,32 @@ export function getAllReadyStories(prd: PRD): UserStory[] {
 }
 
 /**
+ * Check if a process with given PID is still alive
+ *
+ * @param pid - Process ID to check
+ * @returns true if process exists and is running
+ */
+function isProcessAlive(pid: number): boolean {
+  try {
+    // kill(pid, 0) checks if process exists without actually sending a signal
+    // Returns 0 if process exists, throws if not
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Acquire execution lock to prevent concurrent runs in same directory.
  * Creates ngent.lock file with PID and timestamp.
  * Returns true if lock acquired, false if another process holds it.
+ *
+ * Handles stale locks from crashed/OOM-killed processes:
+ * - Reads PID from existing lock file
+ * - Checks if process is still alive using kill(pid, 0)
+ * - Removes stale lock if process is dead
+ * - Re-acquires lock after removal
  *
  * @param workdir - Working directory to lock
  * @returns true if lock acquired, false if already locked
@@ -240,18 +263,20 @@ export async function acquireLock(workdir: string): Promise<boolean> {
   try {
     const exists = await lockFile.exists();
     if (exists) {
-      // Check if lock is stale (> 1 hour old)
+      // Read lock data
       const lockContent = await lockFile.text();
       const lockData = JSON.parse(lockContent);
-      const lockAge = Date.now() - lockData.timestamp;
-      const ONE_HOUR = 60 * 60 * 1000;
+      const lockPid = lockData.pid;
 
-      if (lockAge > ONE_HOUR) {
-        console.warn(chalk.yellow(`   ⚠️  Removing stale lock (${Math.round(lockAge / 1000 / 60)} minutes old)`));
-        await Bun.spawn(["rm", lockPath], { stdout: "pipe" }).exited;
-      } else {
+      // Check if the process is still alive
+      if (isProcessAlive(lockPid)) {
+        // Process is alive, lock is valid
         return false;
       }
+
+      // Process is dead, remove stale lock
+      console.warn(chalk.yellow(`   ⚠️  Removing stale lock (process ${lockPid} not found)`));
+      await Bun.spawn(["rm", lockPath], { stdout: "pipe" }).exited;
     }
 
     // Create lock file

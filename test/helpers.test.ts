@@ -1,6 +1,9 @@
-import { describe, expect, test } from "bun:test";
-import { formatProgress } from "../src/execution/helpers";
+import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { formatProgress, acquireLock, releaseLock } from "../src/execution/helpers";
 import type { StoryCounts } from "../src/execution/helpers";
+import { mkdirSync, rmSync } from "node:fs";
+import path from "node:path";
+import { spawn } from "bun";
 
 describe("formatProgress", () => {
   test("formats progress with all stories pending", () => {
@@ -133,5 +136,160 @@ describe("formatProgress", () => {
     expect(progress).toContain("❌"); // Failed emoji
     expect(progress).toContain("💰"); // Cost emoji
     expect(progress).toContain("⏱️"); // Time emoji
+  });
+});
+
+describe("acquireLock and releaseLock", () => {
+  const testDir = path.join(import.meta.dir, ".test-locks");
+  const lockPath = path.join(testDir, "ngent.lock");
+
+  beforeEach(() => {
+    // Create clean test directory
+    rmSync(testDir, { recursive: true, force: true });
+    mkdirSync(testDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    // Clean up test directory
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  test("acquires lock when no lock file exists", async () => {
+    const acquired = await acquireLock(testDir);
+    expect(acquired).toBe(true);
+
+    // Verify lock file was created
+    const lockFile = Bun.file(lockPath);
+    expect(await lockFile.exists()).toBe(true);
+
+    // Verify lock file contains current PID
+    const lockContent = await lockFile.text();
+    const lockData = JSON.parse(lockContent);
+    expect(lockData.pid).toBe(process.pid);
+    expect(typeof lockData.timestamp).toBe("number");
+
+    await releaseLock(testDir);
+  });
+
+  test("fails to acquire lock when another process holds it", async () => {
+    // First process acquires lock
+    const acquired1 = await acquireLock(testDir);
+    expect(acquired1).toBe(true);
+
+    // Second process tries to acquire lock
+    const acquired2 = await acquireLock(testDir);
+    expect(acquired2).toBe(false);
+
+    await releaseLock(testDir);
+  });
+
+  test("releases lock successfully", async () => {
+    await acquireLock(testDir);
+    await releaseLock(testDir);
+
+    // Verify lock file was deleted
+    const lockFile = Bun.file(lockPath);
+    expect(await lockFile.exists()).toBe(false);
+  });
+
+  test("can re-acquire lock after release", async () => {
+    const acquired1 = await acquireLock(testDir);
+    expect(acquired1).toBe(true);
+
+    await releaseLock(testDir);
+
+    const acquired2 = await acquireLock(testDir);
+    expect(acquired2).toBe(true);
+
+    await releaseLock(testDir);
+  });
+
+  test("removes stale lock when process is dead", async () => {
+    // Create a lock file with a fake PID that doesn't exist
+    const stalePid = 999999; // Very unlikely to be a real process
+    const staleLock = {
+      pid: stalePid,
+      timestamp: Date.now() - 60000, // 1 minute ago
+    };
+    await Bun.write(lockPath, JSON.stringify(staleLock));
+
+    // Try to acquire lock - should detect stale lock and remove it
+    const acquired = await acquireLock(testDir);
+    expect(acquired).toBe(true);
+
+    // Verify new lock file has current PID
+    const lockFile = Bun.file(lockPath);
+    const lockContent = await lockFile.text();
+    const lockData = JSON.parse(lockContent);
+    expect(lockData.pid).toBe(process.pid);
+
+    await releaseLock(testDir);
+  });
+
+  test("detects stale lock from OOM-killed process", async () => {
+    // Spawn a short-lived child process
+    const proc = spawn({
+      cmd: ["sleep", "0.1"],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    // Get the child PID
+    const childPid = proc.pid;
+
+    // Wait for it to exit
+    await proc.exited;
+
+    // Create a lock file with the dead child's PID
+    const staleLock = {
+      pid: childPid,
+      timestamp: Date.now() - 60000, // 1 minute ago
+    };
+    await Bun.write(lockPath, JSON.stringify(staleLock));
+
+    // Now try to acquire lock - should detect child process is dead
+    const acquired = await acquireLock(testDir);
+    expect(acquired).toBe(true);
+
+    // Verify new lock has current PID
+    const lockFile = Bun.file(lockPath);
+    const lockContent = await lockFile.text();
+    const lockData = JSON.parse(lockContent);
+    expect(lockData.pid).toBe(process.pid);
+
+    await releaseLock(testDir);
+  });
+
+  test("does not remove lock when process is still alive", async () => {
+    // Create lock with current process PID
+    const validLock = {
+      pid: process.pid,
+      timestamp: Date.now() - 60000, // 1 minute ago
+    };
+    await Bun.write(lockPath, JSON.stringify(validLock));
+
+    // Try to acquire lock - should NOT remove it since process is alive
+    const acquired = await acquireLock(testDir);
+    expect(acquired).toBe(false);
+
+    // Verify lock still exists with same PID
+    const lockFile = Bun.file(lockPath);
+    const lockContent = await lockFile.text();
+    const lockData = JSON.parse(lockContent);
+    expect(lockData.pid).toBe(process.pid);
+  });
+
+  test("handles corrupted lock file gracefully", async () => {
+    // Create invalid JSON lock file
+    await Bun.write(lockPath, "not valid json");
+
+    // Should fail to acquire but not crash
+    const acquired = await acquireLock(testDir);
+    expect(acquired).toBe(false);
+  });
+
+  test("handles release when lock file doesn't exist", async () => {
+    // Should not throw when releasing non-existent lock
+    await expect(releaseLock(testDir)).resolves.toBeUndefined();
   });
 });

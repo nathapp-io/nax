@@ -74,6 +74,12 @@ export const verifyStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     console.log(chalk.cyan("\n   → Running verification..."));
 
+    // Wait 2 seconds to let agent child processes fully terminate
+    // This prevents OOM on low-RAM systems when TypeScript language servers
+    // are still in memory while we spawn `bun test`
+    console.log(chalk.dim("   ⏱️  Waiting for agent processes to terminate..."));
+    await Bun.sleep(2000);
+
     // Get test command from config or use default
     const testCommand = ctx.config.review?.commands?.test ?? "bun test";
 
