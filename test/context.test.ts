@@ -3,12 +3,16 @@
  */
 
 import { describe, test, expect } from 'bun:test';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
 import {
   estimateTokens,
   createStoryContext,
   createDependencyContext,
   createErrorContext,
   createProgressContext,
+  createFileContext,
   sortContextElements,
   buildContext,
   formatContextAsMarkdown,
@@ -36,6 +40,7 @@ const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
     attempts: s.attempts || 0,
     routing: s.routing,
     priorErrors: s.priorErrors,
+    relevantFiles: s.relevantFiles,
   })),
 });
 
@@ -270,6 +275,20 @@ describe('Context Builder', () => {
     });
   });
 
+  describe('createFileContext', () => {
+    test('should create file context element', () => {
+      const filePath = 'src/utils/helper.ts';
+      const content = 'export function helper() { return "test"; }';
+      const element = createFileContext(filePath, content, 60);
+
+      expect(element.type).toBe('file');
+      expect(element.filePath).toBe(filePath);
+      expect(element.content).toBe(content);
+      expect(element.priority).toBe(60);
+      expect(element.tokens).toBeGreaterThan(0);
+    });
+  });
+
   describe('sortContextElements', () => {
     test('should sort by priority descending', () => {
       const elements: ContextElement[] = [
@@ -499,6 +518,257 @@ describe('Context Builder', () => {
         'Story US-999 not found in PRD',
       );
     });
+
+    test('should load relevant source files', async () => {
+      // Create temp directory and files
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ngent-test-'));
+      const testFile1 = path.join(tempDir, 'helper.ts');
+      const testFile2 = path.join(tempDir, 'utils.ts');
+
+      await fs.writeFile(testFile1, 'export function helper() { return "test"; }');
+      await fs.writeFile(testFile2, 'export function utils() { return "util"; }');
+
+      try {
+        const prd = createTestPRD([
+          {
+            id: 'US-001',
+            title: 'Story with Files',
+            description: 'Test',
+            acceptanceCriteria: ['AC1'],
+            relevantFiles: ['helper.ts', 'utils.ts'],
+          },
+        ]);
+
+        const storyContext: StoryContext = {
+          prd,
+          currentStoryId: 'US-001',
+          workdir: tempDir,
+        };
+
+        const budget: ContextBudget = {
+          maxTokens: 10000,
+          reservedForInstructions: 1000,
+          availableForContext: 9000,
+        };
+
+        const built = await buildContext(storyContext, budget);
+
+        const fileElements = built.elements.filter((e) => e.type === 'file');
+        expect(fileElements.length).toBe(2);
+        expect(fileElements[0].filePath).toBe('helper.ts');
+        expect(fileElements[1].filePath).toBe('utils.ts');
+        expect(fileElements[0].content).toContain('helper()');
+        expect(fileElements[1].content).toContain('utils()');
+        expect(built.summary).toContain('2 files');
+      } finally {
+        // Cleanup
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    test('should respect max 5 files limit', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ngent-test-'));
+
+      try {
+        // Create 10 test files
+        const files: string[] = [];
+        for (let i = 0; i < 10; i++) {
+          const filename = `file${i}.ts`;
+          files.push(filename);
+          await fs.writeFile(path.join(tempDir, filename), `export const file${i} = ${i};`);
+        }
+
+        const prd = createTestPRD([
+          {
+            id: 'US-001',
+            title: 'Story with Many Files',
+            description: 'Test',
+            acceptanceCriteria: ['AC1'],
+            relevantFiles: files,
+          },
+        ]);
+
+        const storyContext: StoryContext = {
+          prd,
+          currentStoryId: 'US-001',
+          workdir: tempDir,
+        };
+
+        const budget: ContextBudget = {
+          maxTokens: 10000,
+          reservedForInstructions: 1000,
+          availableForContext: 9000,
+        };
+
+        const built = await buildContext(storyContext, budget);
+
+        const fileElements = built.elements.filter((e) => e.type === 'file');
+        expect(fileElements.length).toBe(5); // Max 5 files
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    test('should skip files larger than 10KB', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ngent-test-'));
+
+      try {
+        const smallFile = path.join(tempDir, 'small.ts');
+        const largeFile = path.join(tempDir, 'large.ts');
+
+        await fs.writeFile(smallFile, 'export const small = "ok";');
+        await fs.writeFile(largeFile, 'x'.repeat(11 * 1024)); // 11KB
+
+        const prd = createTestPRD([
+          {
+            id: 'US-001',
+            title: 'Story with Large File',
+            description: 'Test',
+            acceptanceCriteria: ['AC1'],
+            relevantFiles: ['small.ts', 'large.ts'],
+          },
+        ]);
+
+        const storyContext: StoryContext = {
+          prd,
+          currentStoryId: 'US-001',
+          workdir: tempDir,
+        };
+
+        const budget: ContextBudget = {
+          maxTokens: 20000,
+          reservedForInstructions: 1000,
+          availableForContext: 19000,
+        };
+
+        // Capture warnings
+        const originalWarn = console.warn;
+        const warnings: string[] = [];
+        console.warn = (msg: string) => warnings.push(msg);
+
+        const built = await buildContext(storyContext, budget);
+
+        console.warn = originalWarn;
+
+        const fileElements = built.elements.filter((e) => e.type === 'file');
+        expect(fileElements.length).toBe(1); // Only small file loaded
+        expect(fileElements[0].filePath).toBe('small.ts');
+        expect(warnings.some((w) => w.includes('File too large') && w.includes('large.ts'))).toBe(true);
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    test('should warn on missing files', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ngent-test-'));
+
+      try {
+        const prd = createTestPRD([
+          {
+            id: 'US-001',
+            title: 'Story with Missing File',
+            description: 'Test',
+            acceptanceCriteria: ['AC1'],
+            relevantFiles: ['nonexistent.ts'],
+          },
+        ]);
+
+        const storyContext: StoryContext = {
+          prd,
+          currentStoryId: 'US-001',
+          workdir: tempDir,
+        };
+
+        const budget: ContextBudget = {
+          maxTokens: 10000,
+          reservedForInstructions: 1000,
+          availableForContext: 9000,
+        };
+
+        // Capture warnings
+        const originalWarn = console.warn;
+        const warnings: string[] = [];
+        console.warn = (msg: string) => warnings.push(msg);
+
+        const built = await buildContext(storyContext, budget);
+
+        console.warn = originalWarn;
+
+        const fileElements = built.elements.filter((e) => e.type === 'file');
+        expect(fileElements.length).toBe(0);
+        expect(warnings.some((w) => w.includes('Relevant file not found') && w.includes('nonexistent.ts'))).toBe(true);
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    test('should handle empty relevantFiles array', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Story with Empty Files',
+          description: 'Test',
+          acceptanceCriteria: ['AC1'],
+          relevantFiles: [],
+        },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
+      };
+
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
+
+      const built = await buildContext(storyContext, budget);
+
+      const fileElements = built.elements.filter((e) => e.type === 'file');
+      expect(fileElements.length).toBe(0);
+    });
+
+    test('should respect token budget when loading files', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ngent-test-'));
+
+      try {
+        // Create files with substantial content
+        await fs.writeFile(path.join(tempDir, 'file1.ts'), 'x'.repeat(5000));
+        await fs.writeFile(path.join(tempDir, 'file2.ts'), 'x'.repeat(5000));
+
+        const prd = createTestPRD([
+          {
+            id: 'US-001',
+            title: 'Story',
+            description: 'x'.repeat(1000),
+            acceptanceCriteria: ['AC1'],
+            relevantFiles: ['file1.ts', 'file2.ts'],
+          },
+        ]);
+
+        const storyContext: StoryContext = {
+          prd,
+          currentStoryId: 'US-001',
+          workdir: tempDir,
+        };
+
+        const budget: ContextBudget = {
+          maxTokens: 2000,
+          reservedForInstructions: 500,
+          availableForContext: 1500, // Small budget
+        };
+
+        const built = await buildContext(storyContext, budget);
+
+        expect(built.totalTokens).toBeLessThanOrEqual(1500);
+        // Files have lower priority (60) than story (80), so story should be included
+        expect(built.elements.some((e) => e.type === 'story')).toBe(true);
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
   });
 
   describe('formatContextAsMarkdown', () => {
@@ -594,6 +864,46 @@ describe('Context Builder', () => {
       const markdown = formatContextAsMarkdown(built);
 
       expect(markdown).toContain('[TRUNCATED]');
+    });
+
+    test('should format context with file elements', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ngent-test-'));
+
+      try {
+        await fs.writeFile(path.join(tempDir, 'helper.ts'), 'export function helper() {}');
+
+        const prd = createTestPRD([
+          {
+            id: 'US-001',
+            title: 'Story with File',
+            description: 'Test',
+            acceptanceCriteria: ['AC1'],
+            relevantFiles: ['helper.ts'],
+          },
+        ]);
+
+        const storyContext: StoryContext = {
+          prd,
+          currentStoryId: 'US-001',
+          workdir: tempDir,
+        };
+
+        const budget: ContextBudget = {
+          maxTokens: 10000,
+          reservedForInstructions: 1000,
+          availableForContext: 9000,
+        };
+
+        const built = await buildContext(storyContext, budget);
+        const markdown = formatContextAsMarkdown(built);
+
+        expect(markdown).toContain('# Story Context');
+        expect(markdown).toContain('## Relevant Source Files');
+        expect(markdown).toContain('helper.ts');
+        expect(markdown).toContain('helper()');
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
     });
   });
 });

@@ -8,8 +8,9 @@ import type { PRD } from '../prd';
  * Context element that can be included in agent prompts
  */
 export interface ContextElement {
-  type: 'story' | 'dependency' | 'error' | 'progress';
+  type: 'story' | 'dependency' | 'error' | 'progress' | 'file';
   storyId?: string;
+  filePath?: string; // For file context elements
   content: string;
   priority: number; // Higher = more important
   tokens: number; // Estimated token count
@@ -30,6 +31,7 @@ export interface ContextBudget {
 export interface StoryContext {
   prd: PRD;
   currentStoryId: string;
+  workdir?: string; // Optional working directory for resolving relative file paths
 }
 
 /**

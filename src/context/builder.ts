@@ -4,6 +4,7 @@
  * Extracts current story + dependency stories from PRD and builds context within token budget.
  */
 
+import path from 'node:path';
 import type { ContextElement, ContextBudget, StoryContext, BuiltContext } from './types';
 import type { UserStory } from '../prd';
 import { countStories } from '../prd';
@@ -80,6 +81,23 @@ export function createProgressContext(progressText: string, priority: number): C
     content: progressText,
     priority,
     tokens: estimateTokens(progressText),
+  };
+}
+
+/**
+ * Create context element from file content
+ */
+export function createFileContext(
+  filePath: string,
+  content: string,
+  priority: number,
+): ContextElement {
+  return {
+    type: 'file',
+    filePath,
+    content,
+    priority,
+    tokens: estimateTokens(content),
   };
 }
 
@@ -220,6 +238,46 @@ export async function buildContext(
     }
   }
 
+  // Add relevant source files (lower priority - priority 60)
+  // Load file content from currentStory.relevantFiles if present
+  // Constraints: max 10KB per file, max 5 files, respect token budget
+  const MAX_FILE_SIZE_BYTES = 10 * 1024; // 10KB
+  const MAX_FILES = 5;
+
+  if (currentStory.relevantFiles && Array.isArray(currentStory.relevantFiles) && currentStory.relevantFiles.length > 0) {
+    const filesToLoad = currentStory.relevantFiles.slice(0, MAX_FILES);
+
+    for (const relativeFilePath of filesToLoad) {
+      try {
+        // Resolve path relative to workdir (passed via storyContext)
+        const workdir = storyContext.workdir || process.cwd();
+        const absolutePath = path.resolve(workdir, relativeFilePath);
+
+        // Read file
+        const file = Bun.file(absolutePath);
+        const exists = await file.exists();
+
+        if (!exists) {
+          console.warn(`⚠️  Relevant file not found: ${relativeFilePath} (story: ${currentStory.id})`);
+          continue;
+        }
+
+        const fileSize = file.size;
+        if (fileSize > MAX_FILE_SIZE_BYTES) {
+          console.warn(`⚠️  File too large (${Math.round(fileSize / 1024)}KB > 10KB): ${relativeFilePath} (story: ${currentStory.id})`);
+          continue;
+        }
+
+        const content = await file.text();
+        const fileContext = `\`\`\`${path.extname(relativeFilePath).slice(1) || 'txt'}\n// File: ${relativeFilePath}\n${content}\n\`\`\``;
+
+        elements.push(createFileContext(relativeFilePath, fileContext, 60));
+      } catch (error) {
+        console.warn(`⚠️  Error loading file ${relativeFilePath}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
   // Sort by priority
   const sorted = sortContextElements(elements);
 
@@ -261,6 +319,7 @@ function generateSummary(
     dependency: 0,
     error: 0,
     progress: 0,
+    file: 0,
   };
 
   for (const element of elements) {
@@ -273,6 +332,7 @@ function generateSummary(
   if (counts.story > 0) parts.push(`${counts.story} story`);
   if (counts.dependency > 0) parts.push(`${counts.dependency} dependencies`);
   if (counts.error > 0) parts.push(`${counts.error} errors`);
+  if (counts.file > 0) parts.push(`${counts.file} files`);
 
   const summary = `Context: ${parts.join(', ')} (${totalTokens} tokens)`;
 
@@ -344,6 +404,15 @@ export function formatContextAsMarkdown(built: BuiltContext): string {
   if (byType.has('dependency')) {
     sections.push('## Dependency Stories\n');
     for (const element of byType.get('dependency')!) {
+      sections.push(element.content);
+      sections.push('\n');
+    }
+  }
+
+  // Relevant Files
+  if (byType.has('file')) {
+    sections.push('## Relevant Source Files\n');
+    for (const element of byType.get('file')!) {
       sections.push(element.content);
       sections.push('\n');
     }

@@ -10,6 +10,7 @@ export {
   createDependencyContext,
   createErrorContext,
   createProgressContext,
+  createFileContext,
   sortContextElements,
   buildContext,
   formatContextAsMarkdown,
