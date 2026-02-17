@@ -207,6 +207,24 @@ async function runTddSession(
   };
 }
 
+/** Options for three-session TDD */
+export interface ThreeSessionTddOptions {
+  /** Agent adapter to use */
+  agent: AgentAdapter;
+  /** User story to implement */
+  story: UserStory;
+  /** Ngent configuration */
+  config: NgentConfig;
+  /** Working directory */
+  workdir: string;
+  /** Model tier for all sessions */
+  modelTier: ModelTier;
+  /** Optional context markdown */
+  contextMarkdown?: string;
+  /** Dry-run mode: log what would happen without executing */
+  dryRun?: boolean;
+}
+
 /**
  * Run the full three-session TDD pipeline for a user story.
  *
@@ -224,6 +242,7 @@ async function runTddSession(
  * @param workdir - Working directory (git repository root)
  * @param modelTier - Model tier for all sessions (fast/balanced/powerful)
  * @param contextMarkdown - Optional context from PRD (dependencies, progress)
+ * @param dryRun - If true, log what would happen without executing sessions
  * @returns Three-session TDD result with success status, session details, and cost
  *
  * @example
@@ -240,7 +259,8 @@ async function runTddSession(
  *   config,
  *   "/project",
  *   "balanced",
- *   "## Dependencies\n- US-000: Database setup\n"
+ *   "## Dependencies\n- US-000: Database setup\n",
+ *   false // not a dry run
  * );
  *
  * if (result.success) {
@@ -257,8 +277,26 @@ export async function runThreeSessionTdd(
   workdir: string,
   modelTier: ModelTier,
   contextMarkdown?: string,
+  dryRun = false,
 ): Promise<ThreeSessionTddResult> {
   console.log(chalk.cyan(`\n🔄 Three-Session TDD: ${story.title}`));
+
+  // Dry-run mode: log what would happen without executing
+  if (dryRun) {
+    const modelDef = resolveModel(config.models[modelTier]);
+    console.log(chalk.dim("   [DRY RUN] Would run 3-session TDD:"));
+    console.log(chalk.dim(`     Session 1: test-writer (model: ${modelDef.model})`));
+    console.log(chalk.dim(`     Session 2: implementer (model: ${modelDef.model})`));
+    console.log(chalk.dim(`     Session 3: verifier (model: ${modelDef.model})`));
+    console.log(chalk.green("\n   ✅ Dry run complete (no sessions executed)"));
+
+    return {
+      success: true,
+      sessions: [],
+      needsHumanReview: false,
+      totalCost: 0,
+    };
+  }
 
   const sessions: TddSessionResult[] = [];
   let needsHumanReview = false;

@@ -29,6 +29,7 @@ import {
   getAllReadyStories,
   acquireLock,
   releaseLock,
+  formatProgress,
 } from "./helpers";
 
 /** Run options */
@@ -337,6 +338,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         workdir,
         routing.modelTier,
         contextMarkdown,
+        dryRun,
       );
 
       sessionSuccess = tddResult.success && !tddResult.needsHumanReview;
@@ -419,6 +421,23 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
       await savePRD(prd, prdPath);
       prdDirty = true;
+
+      // Display progress after story completion
+      const updatedCounts = countStories(prd);
+      const elapsedMs = Date.now() - startTime;
+      const progressLine = formatProgress(
+        {
+          total: updatedCounts.total,
+          passed: updatedCounts.passed,
+          failed: updatedCounts.failed,
+          pending: updatedCounts.pending,
+        },
+        totalCost,
+        config.execution.costLimit,
+        elapsedMs,
+        updatedCounts.total,
+      );
+      console.log(chalk.cyan(`\n${progressLine}`));
 
       // Check queue file for commands after story completion
       const queueCommands = await readQueueFile(workdir);

@@ -234,3 +234,58 @@ export async function releaseLock(workdir: string): Promise<void> {
     console.warn(chalk.yellow(`   ⚠️  Failed to release lock: ${(error as Error).message}`));
   }
 }
+
+/** Story counts for progress display */
+export interface StoryCounts {
+  total: number;
+  passed: number;
+  failed: number;
+  pending: number;
+}
+
+/**
+ * Format a progress line with counts, cost, and ETA
+ *
+ * @param counts - Story counts (total, passed, failed, pending)
+ * @param totalCost - Total cost so far
+ * @param costLimit - Cost limit from config
+ * @param elapsedMs - Elapsed time in milliseconds
+ * @param totalStories - Total number of stories (for ETA calculation)
+ * @returns Formatted progress string with emoji indicators
+ *
+ * @example
+ * ```typescript
+ * const progress = formatProgress(
+ *   { total: 12, passed: 5, failed: 1, pending: 6 },
+ *   0.45,
+ *   5.0,
+ *   600000, // 10 minutes
+ *   12
+ * );
+ * console.log(progress);
+ * // 📊 Progress: 6/12 stories | ✅ 5 passed | ❌ 1 failed | 💰 $0.45/$5.00 | ⏱️ ~8 min remaining
+ * ```
+ */
+export function formatProgress(
+  counts: StoryCounts,
+  totalCost: number,
+  costLimit: number,
+  elapsedMs: number,
+  totalStories: number,
+): string {
+  const completedStories = counts.passed + counts.failed;
+  const remainingStories = totalStories - completedStories;
+
+  // Calculate ETA from average story duration
+  let etaText = "calculating...";
+  if (completedStories > 0 && remainingStories > 0) {
+    const avgDurationPerStory = elapsedMs / completedStories;
+    const etaMs = avgDurationPerStory * remainingStories;
+    const etaMinutes = Math.round(etaMs / 1000 / 60);
+    etaText = `~${etaMinutes} min remaining`;
+  } else if (remainingStories === 0) {
+    etaText = "complete";
+  }
+
+  return `📊 Progress: ${completedStories}/${totalStories} stories | ✅ ${counts.passed} passed | ❌ ${counts.failed} failed | 💰 $${totalCost.toFixed(2)}/$${costLimit.toFixed(2)} | ⏱️ ${etaText}`;
+}

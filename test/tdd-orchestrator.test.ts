@@ -220,4 +220,46 @@ describe("runThreeSessionTdd", () => {
     expect(result.sessions[1].success).toBe(false);
     expect(result.needsHumanReview).toBe(true);
   });
+
+  test("dry-run mode logs sessions without executing", async () => {
+    const agent = createMockAgent([]);
+
+    const result = await runThreeSessionTdd(
+      agent,
+      story,
+      DEFAULT_CONFIG,
+      "/tmp/test",
+      "balanced",
+      undefined,
+      true, // dryRun = true
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.sessions).toHaveLength(0);
+    expect(result.needsHumanReview).toBe(false);
+    expect(result.totalCost).toBe(0);
+    // Agent should not have been called
+    expect(agent.run).not.toHaveBeenCalled();
+  });
+
+  test("dry-run mode works with context markdown", async () => {
+    const agent = createMockAgent([]);
+    const contextMarkdown = "## Dependencies\n- US-000: Setup database\n";
+
+    const result = await runThreeSessionTdd(
+      agent,
+      story,
+      DEFAULT_CONFIG,
+      "/tmp/test",
+      "powerful",
+      contextMarkdown,
+      true, // dryRun = true
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.sessions).toHaveLength(0);
+    expect(result.totalCost).toBe(0);
+    // Agent should not have been called
+    expect(agent.run).not.toHaveBeenCalled();
+  });
 });

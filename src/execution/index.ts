@@ -12,5 +12,7 @@ export {
   getAllReadyStories,
   acquireLock,
   releaseLock,
+  formatProgress,
   type ExecutionResult,
+  type StoryCounts,
 } from "./helpers";
