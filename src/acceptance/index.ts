@@ -16,3 +16,15 @@ export {
   generateAcceptanceTests,
   generateSkeletonTests,
 } from "./generator";
+
+export type {
+  FixStory,
+  GenerateFixStoriesOptions,
+} from "./fix-generator";
+
+export {
+  generateFixStories,
+  findRelatedStories,
+  parseACTextFromSpec,
+  convertFixStoryToUserStory,
+} from "./fix-generator";

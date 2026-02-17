@@ -73,6 +73,11 @@ export interface PipelineContext {
   agentResult?: AgentResult;
   /** Review result (set by reviewStage) */
   reviewResult?: ReviewResult;
+  /** Acceptance test failures (set by acceptanceStage) */
+  acceptanceFailures?: {
+    failedACs: string[];
+    testOutput: string;
+  };
 }
 
 /**

@@ -47,7 +47,7 @@ import { checkAgentHealth, getAllAgentNames } from "../src/agents";
 import { loadPRD, countStories } from "../src/prd";
 import { loadHooksConfig } from "../src/hooks";
 import { run } from "../src/execution";
-import { analyzeFeature, planCommand } from "../src/cli";
+import { analyzeFeature, planCommand, acceptCommand } from "../src/cli";
 
 const pkg = await Bun.file(join(import.meta.dir, "..", "package.json")).json();
 
@@ -507,6 +507,26 @@ program
       console.log(`   ${icon} ${story.id}: ${story.title}${routing}`);
     }
     console.log();
+  });
+
+// ── accept ───────────────────────────────────────────
+program
+  .command("accept")
+  .description("Override failed acceptance criteria")
+  .requiredOption("-f, --feature <name>", "Feature name")
+  .requiredOption("--override <ac-id>", "AC ID to override (e.g., AC-2)")
+  .requiredOption("-r, --reason <reason>", "Reason for accepting despite test failure")
+  .action(async (options) => {
+    try {
+      await acceptCommand({
+        feature: options.feature,
+        override: options.override,
+        reason: options.reason,
+      });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
   });
 
 program.parse();

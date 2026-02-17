@@ -185,6 +185,12 @@ export const acceptanceStage: PipelineStage = {
       console.log(chalk.gray("\nTest output:"));
       console.log(chalk.gray(output));
 
+      // Store failed ACs and test output in context for fix generation
+      ctx.acceptanceFailures = {
+        failedACs: actualFailures,
+        testOutput: output,
+      };
+
       return {
         action: "fail",
         reason: `Acceptance tests failed: ${actualFailures.join(", ")}`,

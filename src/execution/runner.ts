@@ -9,8 +9,10 @@
  */
 
 import chalk from "chalk";
+import path from "node:path";
 import type { NgentConfig } from "../config";
 import { getAgent } from "../agents";
+import { resolveModel } from "../config/schema";
 import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryFailed } from "../prd";
 import type { UserStory } from "../prd";
 import { routeTask } from "../routing";
@@ -28,6 +30,10 @@ import { appendProgress } from "./progress";
 import { runPipeline } from "../pipeline/runner";
 import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext } from "../pipeline/types";
+import {
+  generateFixStories,
+  convertFixStoryToUserStory,
+} from "../acceptance";
 
 /** Run options */
 export interface RunOptions {
@@ -412,6 +418,183 @@ export async function run(options: RunOptions): Promise<RunResult> {
       // Delay between iterations
       if (config.execution.iterationDelayMs > 0) {
         await Bun.sleep(config.execution.iterationDelayMs);
+      }
+    }
+
+    // After main loop: Check if we need acceptance retry loop
+    if (config.acceptance.enabled && isComplete(prd)) {
+      console.log(chalk.cyan("\n🔄 All stories complete — running acceptance validation..."));
+
+      let acceptanceRetries = 0;
+      const maxRetries = config.acceptance.maxRetries;
+
+      while (acceptanceRetries < maxRetries) {
+        // Build context for acceptance stage only
+        const firstStory = prd.userStories[0]; // Use first story as placeholder
+        const acceptanceContext: PipelineContext = {
+          config,
+          prd,
+          story: firstStory,
+          stories: [firstStory],
+          routing: {
+            complexity: "simple",
+            modelTier: "balanced",
+            testStrategy: "test-after",
+            reasoning: "Acceptance validation",
+          },
+          workdir,
+          featureDir,
+          hooks,
+        };
+
+        // Run acceptance stage
+        const { acceptanceStage } = await import("../pipeline/stages/acceptance");
+        const acceptanceResult = await acceptanceStage.execute(acceptanceContext);
+
+        if (acceptanceResult.action === "continue") {
+          // All acceptance tests passed
+          console.log(chalk.green("\n✅ Acceptance validation passed!"));
+          break;
+        }
+
+        // Acceptance tests failed
+        if (acceptanceResult.action === "fail") {
+          const failures = acceptanceContext.acceptanceFailures;
+
+          if (!failures || failures.failedACs.length === 0) {
+            console.log(chalk.red("\n❌ Acceptance tests failed but no specific failures detected"));
+            console.log(chalk.yellow("   Manual intervention required"));
+            await fireHook(hooks, "on-pause", hookCtx(feature, {
+              reason: "Acceptance tests failed (no failures detected)",
+              cost: totalCost,
+            }), workdir);
+            break;
+          }
+
+          acceptanceRetries++;
+          console.log(chalk.yellow(`\n⚠️  Acceptance retry ${acceptanceRetries}/${maxRetries}`));
+          console.log(chalk.yellow(`   Failed ACs: ${failures.failedACs.join(", ")}`));
+
+          if (acceptanceRetries >= maxRetries) {
+            console.log(chalk.red("\n❌ Max acceptance retries reached"));
+            console.log(chalk.yellow("   Manual intervention required"));
+            console.log(chalk.dim("   Run: ngent accept --override AC-N \"reason\" to skip specific ACs"));
+            await fireHook(hooks, "on-pause", hookCtx(feature, {
+              reason: `Acceptance validation failed after ${maxRetries} retries: ${failures.failedACs.join(", ")}`,
+              cost: totalCost,
+            }), workdir);
+            break;
+          }
+
+          // Generate fix stories
+          console.log(chalk.cyan("\n🔧 Generating fix stories..."));
+
+          // Load spec.md for AC text
+          let specContent = "";
+          if (featureDir) {
+            const specPath = path.join(featureDir, "spec.md");
+            const specFile = Bun.file(specPath);
+            if (await specFile.exists()) {
+              specContent = await specFile.text();
+            }
+          }
+
+          const agent = getAgent(config.autoMode.defaultAgent);
+          if (!agent) {
+            console.error(chalk.red("❌ Agent not found — cannot generate fix stories"));
+            break;
+          }
+
+          const modelTier = config.analyze.model;
+          const modelEntry = config.models[modelTier];
+          const modelDef = resolveModel(modelEntry);
+
+          const fixStories = await generateFixStories(agent, {
+            failedACs: failures.failedACs,
+            testOutput: failures.testOutput,
+            prd,
+            specContent,
+            workdir,
+            modelDef,
+          });
+
+          if (fixStories.length === 0) {
+            console.log(chalk.red("\n❌ Failed to generate fix stories"));
+            break;
+          }
+
+          console.log(chalk.green(`\n✓ Generated ${fixStories.length} fix stories`));
+
+          // Append fix stories to PRD
+          for (const fixStory of fixStories) {
+            const userStory = convertFixStoryToUserStory(fixStory);
+            prd.userStories.push(userStory);
+            console.log(chalk.dim(`   ${userStory.id}: ${userStory.title}`));
+          }
+
+          await savePRD(prd, prdPath);
+          prdDirty = true;
+
+          // Re-run pipeline for fix stories only
+          console.log(chalk.cyan("\n🔄 Running fix stories..."));
+
+          for (const fixStory of fixStories) {
+            const userStory = prd.userStories.find(s => s.id === fixStory.id);
+            if (!userStory || userStory.status !== "pending") continue;
+
+            iterations++;
+
+            const routing = routeTask(
+              userStory.title,
+              userStory.description,
+              userStory.acceptanceCriteria,
+              userStory.tags,
+              config,
+            );
+
+            console.log(chalk.cyan(`\n── Fix Story: ${userStory.id} ──────────────────────`));
+            console.log(chalk.white(`   ${userStory.title}`));
+
+            await fireHook(hooks, "on-story-start", hookCtx(feature, {
+              storyId: userStory.id,
+              model: routing.modelTier,
+              agent: config.autoMode.defaultAgent,
+              iteration: iterations,
+            }), workdir);
+
+            const fixContext: PipelineContext = {
+              config,
+              prd,
+              story: userStory,
+              stories: [userStory],
+              routing,
+              workdir,
+              featureDir,
+              hooks,
+            };
+
+            const fixResult = await runPipeline(defaultPipeline, fixContext);
+            prd = fixResult.context.prd;
+
+            if (fixResult.success) {
+              storiesCompleted++;
+              totalCost += fixResult.context.agentResult?.estimatedCost || 0;
+              console.log(chalk.green(`   ✓ Fix story ${userStory.id} passed`));
+            } else {
+              console.log(chalk.red(`   ✗ Fix story ${userStory.id} failed`));
+            }
+
+            await savePRD(prd, prdPath);
+            prdDirty = true;
+          }
+
+          console.log(chalk.cyan("\n🔄 Re-running acceptance tests..."));
+          // Loop will re-run acceptance tests
+        } else {
+          // Unexpected result from acceptance stage
+          console.log(chalk.yellow(`\n⚠️  Unexpected acceptance result: ${acceptanceResult.action}`));
+          break;
+        }
       }
     }
 
