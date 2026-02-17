@@ -15,6 +15,7 @@ import { executionStage } from "./execution";
 import { verifyStage } from "./verify";
 import { reviewStage } from "./review";
 import { completionStage } from "./completion";
+import { acceptanceStage } from "./acceptance";
 
 /**
  * Default pipeline stages in execution order.
@@ -29,6 +30,7 @@ import { completionStage } from "./completion";
  * 7. Verify output (tests pass, build succeeds)
  * 8. Review (quality checks, linting, etc.)
  * 9. Mark complete (save PRD, fire hooks, log progress)
+ * 10. Acceptance (run acceptance tests when all stories complete)
  */
 export const defaultPipeline: PipelineStage[] = [
   queueCheckStage,
@@ -40,6 +42,7 @@ export const defaultPipeline: PipelineStage[] = [
   verifyStage,
   reviewStage,
   completionStage,
+  acceptanceStage,
 ];
 
 // Re-export individual stages for custom pipeline construction
@@ -52,3 +55,4 @@ export { executionStage } from "./execution";
 export { verifyStage } from "./verify";
 export { reviewStage } from "./review";
 export { completionStage } from "./completion";
+export { acceptanceStage } from "./acceptance";

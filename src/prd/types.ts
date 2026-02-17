@@ -78,4 +78,6 @@ export interface PRD {
   updatedAt: string;
   /** All user stories */
   userStories: UserStory[];
+  /** Acceptance test overrides (AC-N → reason for accepting despite test failure) */
+  acceptanceOverrides?: Record<string, string>;
 }
