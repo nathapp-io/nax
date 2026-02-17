@@ -1,11 +1,14 @@
 /**
  * Task Router
  *
- * Classifies task complexity and routes to the appropriate
- * model tier and test strategy.
+ * Routes stories using pluggable strategy system.
+ * Falls back to keyword-based classification for backward compatibility.
  */
 
 import type { Complexity, TestStrategy, ModelTier, NgentConfig } from "../config";
+import type { UserStory } from "../prd/types";
+import type { RoutingContext } from "./strategy";
+import { buildStrategyChain } from "./builder";
 
 /** Routing decision for a story */
 export interface RoutingDecision {
@@ -175,12 +178,43 @@ function complexityToModelTier(
 }
 
 /**
+ * Route a story using the pluggable strategy system.
+ *
+ * This is the new main entry point for the routing system. It:
+ * 1. Builds the strategy chain based on config
+ * 2. Routes the story through the chain
+ * 3. Returns the first non-null decision
+ *
+ * @param story - User story to route
+ * @param context - Routing context (config, codebase, metrics)
+ * @param workdir - Working directory for resolving custom strategy paths
+ * @returns Routing decision from the strategy chain
+ *
+ * @example
+ * ```ts
+ * const decision = await routeStory(story, { config }, "/path/to/project");
+ * // {
+ * //   complexity: "complex",
+ * //   modelTier: "balanced",
+ * //   testStrategy: "three-session-tdd",
+ * //   reasoning: "three-session-tdd: security-critical, complexity:complex"
+ * // }
+ * ```
+ */
+export async function routeStory(
+  story: UserStory,
+  context: RoutingContext,
+  workdir: string,
+): Promise<RoutingDecision> {
+  const chain = await buildStrategyChain(context.config, workdir);
+  return chain.route(story, context);
+}
+
+/**
  * Route a task through complexity classification, model tier selection, and test strategy.
  *
- * This is the main entry point for the routing system. It orchestrates:
- * 1. Complexity classification based on keywords and criteria count
- * 2. Model tier mapping from config (fast/balanced/powerful)
- * 3. Test strategy decision tree (three-session-tdd vs test-after)
+ * DEPRECATED: Use routeStory() instead. This function is kept for backward compatibility
+ * and uses only the keyword strategy.
  *
  * @param title - Story title
  * @param description - Story description
@@ -189,22 +223,7 @@ function complexityToModelTier(
  * @param config - ngent configuration with complexity routing mappings
  * @returns Routing decision with complexity, model tier, test strategy, and reasoning
  *
- * @example
- * ```ts
- * const decision = routeTask(
- *   "Add JWT authentication",
- *   "Implement secure JWT auth with refresh tokens",
- *   ["Token storage", "Refresh logic", "Expiry handling"],
- *   ["security"],
- *   config
- * );
- * // {
- * //   complexity: "complex",
- * //   modelTier: "balanced",
- * //   testStrategy: "three-session-tdd",
- * //   reasoning: "three-session-tdd: security-critical, complexity:complex"
- * // }
- * ```
+ * @deprecated Use routeStory() with a UserStory object instead
  */
 export function routeTask(
   title: string,

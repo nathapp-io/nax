@@ -153,6 +153,17 @@ export interface AcceptanceConfig {
   testPath: string;
 }
 
+/** Routing strategy name */
+export type RoutingStrategyName = "keyword" | "llm" | "manual" | "adaptive" | "custom";
+
+/** Routing config */
+export interface RoutingConfig {
+  /** Strategy to use (default: "keyword") */
+  strategy: RoutingStrategyName;
+  /** Path to custom strategy file (required if strategy = "custom") */
+  customStrategyPath?: string;
+}
+
 /** Full ngent configuration */
 export interface NgentConfig {
   /** Schema version */
@@ -161,6 +172,8 @@ export interface NgentConfig {
   models: ModelMap;
   /** Auto mode / routing config */
   autoMode: AutoModeConfig;
+  /** Routing strategy config */
+  routing: RoutingConfig;
   /** Execution limits */
   execution: ExecutionConfig;
   /** Quality gates */
@@ -296,11 +309,29 @@ const AcceptanceConfigSchema = z.object({
   testPath: z.string().min(1, "acceptance.testPath must be non-empty"),
 });
 
+const RoutingConfigSchema = z.object({
+  strategy: z.enum(["keyword", "llm", "manual", "adaptive", "custom"]),
+  customStrategyPath: z.string().optional(),
+}).refine(
+  (data) => {
+    // If strategy is "custom", customStrategyPath is required
+    if (data.strategy === "custom" && !data.customStrategyPath) {
+      return false;
+    }
+    return true;
+  },
+  {
+    message: "routing.customStrategyPath is required when strategy is 'custom'",
+    path: ["customStrategyPath"],
+  }
+);
+
 export const NgentConfigSchema = z
   .object({
     version: z.number(),
     models: ModelMapSchema,
     autoMode: AutoModeConfigSchema,
+    routing: RoutingConfigSchema,
     execution: ExecutionConfigSchema,
     quality: QualityConfigSchema,
     tdd: TddConfigSchema,
@@ -339,6 +370,9 @@ export const DEFAULT_CONFIG: NgentConfig = {
       tierOrder: ["fast", "balanced", "powerful"],
       escalateEntireBatch: true,
     },
+  },
+  routing: {
+    strategy: "keyword",
   },
   execution: {
     maxIterations: 20,
