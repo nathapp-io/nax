@@ -211,7 +211,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     let skippedAnyStory = false;
 
     for (const cmd of queueCommands) {
-      if (cmd === "PAUSE") {
+      if (cmd.type === "PAUSE") {
         console.log(chalk.yellow("\n⏸️  Paused by user (PAUSE command in .queue.txt)"));
         await clearQueueFile(workdir);
         await fireHook(hooks, "on-pause", hookCtx(feature, {
@@ -226,7 +226,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
           totalCost,
           durationMs: Date.now() - startTime,
         };
-      } else if (cmd === "ABORT") {
+      } else if (cmd.type === "ABORT") {
         console.log(chalk.yellow("\n🛑 Aborting: marking remaining stories as skipped"));
 
         // Mark all pending stories as skipped
@@ -246,7 +246,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
           totalCost,
           durationMs: Date.now() - startTime,
         };
-      } else if (typeof cmd === "object" && cmd.type === "SKIP") {
+      } else if (cmd.type === "SKIP") {
         // Filter out skipped story from batch
         const storyIndex = storiesToExecute.findIndex((s) => s.id === cmd.storyId);
         if (storyIndex !== -1) {
@@ -424,7 +424,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       const queueCommands = await readQueueFile(workdir);
 
       for (const cmd of queueCommands) {
-        if (cmd === "PAUSE") {
+        if (cmd.type === "PAUSE") {
           console.log(chalk.yellow("\n⏸️  Paused by user (PAUSE command in .queue.txt)"));
           await clearQueueFile(workdir);
           await fireHook(hooks, "on-pause", hookCtx(feature, {
@@ -439,7 +439,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
             totalCost,
             durationMs: Date.now() - startTime,
           };
-        } else if (cmd === "ABORT") {
+        } else if (cmd.type === "ABORT") {
           console.log(chalk.yellow("\n🛑 Aborting: marking remaining stories as skipped"));
 
           // Mark all pending stories as skipped
@@ -459,7 +459,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
             totalCost,
             durationMs: Date.now() - startTime,
           };
-        } else if (typeof cmd === "object" && cmd.type === "SKIP") {
+        } else if (cmd.type === "SKIP") {
           console.log(chalk.yellow(`   ⏭️  Skipping story ${cmd.storyId} by user request`));
           markStorySkipped(prd, cmd.storyId);
           await savePRD(prd, prdPath);

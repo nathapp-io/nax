@@ -114,7 +114,7 @@ describe("parseQueueFile", () => {
     const result = parseQueueFile(content);
 
     expect(result.commands).toHaveLength(1);
-    expect(result.commands[0]).toBe("PAUSE");
+    expect(result.commands[0]).toEqual({ type: "PAUSE" });
     expect(result.guidance).toHaveLength(0);
   });
 
@@ -123,7 +123,7 @@ describe("parseQueueFile", () => {
     const result = parseQueueFile(content);
 
     expect(result.commands).toHaveLength(1);
-    expect(result.commands[0]).toBe("ABORT");
+    expect(result.commands[0]).toEqual({ type: "ABORT" });
     expect(result.guidance).toHaveLength(0);
   });
 
@@ -151,7 +151,7 @@ describe("parseQueueFile", () => {
     expect(result.commands).toHaveLength(3);
     expect(result.commands[0]).toEqual({ type: "SKIP", storyId: "US-001" });
     expect(result.commands[1]).toEqual({ type: "SKIP", storyId: "US-002" });
-    expect(result.commands[2]).toBe("PAUSE");
+    expect(result.commands[2]).toEqual({ type: "PAUSE" });
   });
 
   test("separates commands from guidance text", () => {
@@ -163,7 +163,7 @@ More guidance on another line`;
     const result = parseQueueFile(content);
 
     expect(result.commands).toHaveLength(1);
-    expect(result.commands[0]).toBe("PAUSE");
+    expect(result.commands[0]).toEqual({ type: "PAUSE" });
     expect(result.guidance).toHaveLength(2);
     expect(result.guidance[0]).toBe("Some guidance text here");
     expect(result.guidance[1]).toBe("More guidance on another line");
@@ -179,7 +179,7 @@ Ensure test coverage`;
     const result = parseQueueFile(content);
 
     expect(result.commands).toHaveLength(2);
-    expect(result.commands[0]).toBe("ABORT");
+    expect(result.commands[0]).toEqual({ type: "ABORT" });
     expect(result.commands[1]).toEqual({ type: "SKIP", storyId: "US-003" });
     expect(result.guidance).toHaveLength(2);
     expect(result.guidance[0]).toBe("Focus on error handling");
@@ -214,8 +214,8 @@ ABORT
     const result = parseQueueFile(content);
 
     expect(result.commands).toHaveLength(2);
-    expect(result.commands[0]).toBe("PAUSE");
-    expect(result.commands[1]).toBe("ABORT");
+    expect(result.commands[0]).toEqual({ type: "PAUSE" });
+    expect(result.commands[1]).toEqual({ type: "ABORT" });
   });
 
   test("handles SKIP without story ID gracefully", () => {

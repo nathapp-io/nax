@@ -227,9 +227,9 @@ export function parseQueueFile(content: string): QueueFileResult {
     const upper = trimmed.toUpperCase();
 
     if (upper === "PAUSE") {
-      commands.push("PAUSE");
+      commands.push({ type: "PAUSE" });
     } else if (upper === "ABORT") {
-      commands.push("ABORT");
+      commands.push({ type: "ABORT" });
     } else if (upper.startsWith("SKIP ")) {
       // Extract story ID after "SKIP"
       const storyId = trimmed.substring(5).trim();

@@ -26,7 +26,7 @@ import type { QueueCommand } from "../queue";
  * ```typescript
  * const commands = await readQueueFile("/path/to/project");
  * for (const cmd of commands) {
- *   if (cmd === "PAUSE") {
+ *   if (cmd.type === "PAUSE") {
  *     // Handle pause
  *   }
  * }
