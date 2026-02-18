@@ -13,5 +13,19 @@ export {
   createFileContext,
   sortContextElements,
   buildContext,
+  createTestCoverageContext,
   formatContextAsMarkdown,
 } from './builder';
+
+export {
+  generateTestCoverageSummary,
+  scanTestFiles,
+  extractTestStructure,
+  formatTestSummary,
+  truncateToTokenBudget,
+  type TestScanOptions,
+  type TestScanResult,
+  type TestFileInfo,
+  type DescribeBlock,
+  type TestSummaryDetail,
+} from './test-scanner';

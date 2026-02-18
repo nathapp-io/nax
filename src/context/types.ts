@@ -8,7 +8,7 @@ import type { PRD } from '../prd';
  * Context element that can be included in agent prompts
  */
 export interface ContextElement {
-  type: 'story' | 'dependency' | 'error' | 'progress' | 'file';
+  type: 'story' | 'dependency' | 'error' | 'progress' | 'file' | 'test-coverage';
   storyId?: string;
   filePath?: string; // For file context elements
   content: string;
@@ -32,6 +32,7 @@ export interface StoryContext {
   prd: PRD;
   currentStoryId: string;
   workdir?: string; // Optional working directory for resolving relative file paths
+  config?: import('../config').NaxConfig; // Optional config for context features (test coverage, etc.)
 }
 
 /**

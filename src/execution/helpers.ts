@@ -168,6 +168,8 @@ export async function buildStoryContext(
     const storyContext: StoryContext = {
       prd,
       currentStoryId: story.id,
+      workdir: process.cwd(),
+      config: _config,
     };
 
     const budget: ContextBudget = {
