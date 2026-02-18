@@ -36,7 +36,8 @@ ${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
 2. Write tests to verify all acceptance criteria are met
 3. Ensure all tests pass
 4. Follow existing code patterns and conventions
-5. Commit your changes when done
+5. If existing test coverage is listed below, do NOT duplicate those tests — only test NEW behavior
+6. Commit your changes when done
 
 Use test-after approach: implement first, then add tests to verify.`;
 
@@ -100,6 +101,7 @@ ${storyPrompts}
 3. Ensure all tests pass for each story
 4. **Commit each story separately** with a clear commit message referencing the story ID
 5. Follow existing code patterns and conventions
+6. If existing test coverage is listed below, do NOT duplicate those tests — only test NEW behavior
 
 Use test-after approach: implement first, then add tests to verify.`;
 
