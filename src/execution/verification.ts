@@ -141,6 +141,7 @@ export async function executeWithTimeout(
   const gracePeriodMs = options?.gracePeriodMs ?? 5000;
   const drainTimeoutMs = options?.drainTimeoutMs ?? 2000;
 
+  /** @design Shell command is from config.quality.commands.test (operator-controlled), not user/PRD input */
   const proc = Bun.spawn([shell, "-c", command], {
     stdout: "pipe",
     stderr: "pipe",

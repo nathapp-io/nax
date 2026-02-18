@@ -58,7 +58,13 @@ export function getNextStory(prd: PRD): UserStory | null {
   );
 }
 
-/** Check if all stories are complete */
+/**
+ * Check if all stories are complete (passed or skipped).
+ *
+ * @design Does NOT account for blocked/failed stories — a PRD with blocked stories
+ * is NOT complete. Use `isStalled()` separately to detect when forward progress
+ * is impossible (all remaining stories blocked or depend on blocked).
+ */
 export function isComplete(prd: PRD): boolean {
   return prd.userStories.every((s) => s.passes || s.status === "passed" || s.status === "skipped");
 }

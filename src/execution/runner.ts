@@ -27,7 +27,7 @@ import {
   formatProgress,
 } from "./helpers";
 import { appendProgress } from "./progress";
-import { runVerification, parseTestOutput } from "./verification";
+import { runPostAgentVerification } from "./post-verify";
 import { runPipeline } from "../pipeline/runner";
 import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext } from "../pipeline/types";
@@ -290,83 +290,12 @@ export async function run(options: RunOptions): Promise<RunResult> {
         }
 
         // ADR-003: Post-agent verification (if quality.commands.test is configured)
-        let verificationPassed = true;
-        if (config.quality.commands.test) {
-          console.log(chalk.dim(`   🔍 Running verification: ${config.quality.commands.test}`));
-
-          const timeoutRetryCount = timeoutRetryCountMap.get(story.id) || 0;
-          const verificationResult = await runVerification({
-            workingDirectory: workdir,
-            relevantFiles: story.relevantFiles,
-            command: config.quality.commands.test,
-            timeoutSeconds: config.execution.verificationTimeoutSeconds,
-            forceExit: config.quality.forceExit,
-            detectOpenHandles: config.quality.detectOpenHandles,
-            detectOpenHandlesRetries: config.quality.detectOpenHandlesRetries,
-            timeoutRetryCount,
-            gracePeriodMs: config.quality.gracePeriodMs,
-            drainTimeoutMs: config.quality.drainTimeoutMs,
-            shell: config.quality.shell,
-            stripEnvVars: config.quality.stripEnvVars,
-          });
-
-          if (!verificationResult.success) {
-            verificationPassed = false;
-
-            // BUG-1 fix: Undo story metrics added by completionStage since verification failed.
-            // The completion stage marks stories as passed before verification runs.
-            // TODO: Refactor verification into a pipeline stage to avoid this post-hoc revert.
-            const storyIds = new Set(storiesToExecute.map(s => s.id));
-            const metricsCountBefore = allStoryMetrics.length;
-            for (let i = allStoryMetrics.length - 1; i >= 0; i--) {
-              if (storyIds.has(allStoryMetrics[i].storyId)) {
-                allStoryMetrics.splice(i, 1);
-              }
-            }
-
-            // Track timeout retries for --detectOpenHandles escalation
-            if (verificationResult.status === "TIMEOUT") {
-              timeoutRetryCountMap.set(story.id, timeoutRetryCount + 1);
-            }
-
-            // Revert ALL stories in this batch/single back to pending (completionStage marked them passed)
-            const diagnosticContext = verificationResult.error || `Verification failed: ${verificationResult.status}`;
-            prd.userStories = prd.userStories.map(s =>
-              storyIds.has(s.id)
-                ? { ...s, priorErrors: [...(s.priorErrors || []), diagnosticContext], status: "pending" as const, passes: false }
-                : s
-            );
-
-            console.log(chalk.yellow(`   ⚠️  Verification ${verificationResult.status}: ${verificationResult.error?.split("\n")[0]}`));
-
-            if (verificationResult.output && verificationResult.passCount !== undefined) {
-              console.log(chalk.dim(`   Tests: ${verificationResult.passCount} pass, ${verificationResult.failCount} fail`));
-            }
-
-            // Don't count toward escalation for timeouts (environmental issue)
-            if (verificationResult.countsTowardEscalation) {
-              // Increment attempts — this drives tier escalation
-              prd.userStories = prd.userStories.map(s =>
-                s.id === story.id ? { ...s, attempts: s.attempts + 1 } : s
-              );
-            }
-
-            await savePRD(prd, prdPath);
-
-            if (featureDir) {
-              await appendProgress(featureDir, story.id, "verification-failed",
-                `${story.title} — ${verificationResult.status}: ${verificationResult.error?.split("\n")[0]}`);
-            }
-          } else {
-            console.log(chalk.green(`   ✓ Verification passed`));
-            if (verificationResult.output) {
-              const analysis = parseTestOutput(verificationResult.output!, 0);
-              if (analysis.passCount > 0) {
-                console.log(chalk.dim(`   Tests: ${analysis.passCount} pass, ${analysis.failCount} fail`));
-              }
-            }
-          }
-        }
+        const verifyResult = await runPostAgentVerification({
+          config, prd, prdPath, workdir, featureDir,
+          story, storiesToExecute, allStoryMetrics, timeoutRetryCountMap,
+        });
+        const verificationPassed = verifyResult.passed;
+        prd = verifyResult.prd;
 
         if (verificationPassed) {
           storiesCompleted += storiesToExecute.length;

@@ -20,6 +20,7 @@ export {
   type AssetVerificationResult,
   type TimeoutExecutionResult,
 } from "./verification";
+export { runPostAgentVerification, type PostVerifyOptions, type PostVerifyResult } from "./post-verify";
 export { readQueueFile, clearQueueFile } from "./queue-handler";
 export {
   hookCtx,
