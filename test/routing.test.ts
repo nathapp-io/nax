@@ -74,26 +74,32 @@ describe("routeTask", () => {
 });
 
 describe("escalateTier", () => {
+  const defaultTiers = [
+    { tier: "fast", attempts: 5 },
+    { tier: "balanced", attempts: 3 },
+    { tier: "powerful", attempts: 2 },
+  ];
+
   test("escalates fast → balanced", () => {
-    expect(escalateTier("fast")).toBe("balanced");
+    expect(escalateTier("fast", defaultTiers)).toBe("balanced");
   });
 
   test("escalates balanced → powerful", () => {
-    expect(escalateTier("balanced")).toBe("powerful");
+    expect(escalateTier("balanced", defaultTiers)).toBe("powerful");
   });
 
   test("escalates powerful → null (max reached)", () => {
-    expect(escalateTier("powerful")).toBeNull();
+    expect(escalateTier("powerful", defaultTiers)).toBeNull();
   });
 
   test("explicit 3-tier escalation chain: fast → balanced → powerful → null", () => {
-    let tier = escalateTier("fast");
+    let tier: string | null = escalateTier("fast", defaultTiers);
     expect(tier).toBe("balanced");
 
-    tier = escalateTier(tier!);
+    tier = escalateTier(tier!, defaultTiers);
     expect(tier).toBe("powerful");
 
-    tier = escalateTier(tier!);
+    tier = escalateTier(tier!, defaultTiers);
     expect(tier).toBeNull();
   });
 });

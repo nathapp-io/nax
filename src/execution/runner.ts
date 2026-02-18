@@ -13,12 +13,12 @@ import path from "node:path";
 import type { NaxConfig } from "../config";
 import { getAgent } from "../agents";
 import { resolveModel } from "../config/schema";
-import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryFailed } from "../prd";
+import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryFailed, isStalled, markStoryAsBlocked, generateHumanHaltSummary } from "../prd";
 import type { UserStory } from "../prd";
 import { routeTask } from "../routing";
 import { fireHook, type HooksConfig } from "../hooks";
 import { precomputeBatchPlan, type StoryBatch } from "./batching";
-import { escalateTier, calculateMaxIterations } from "./escalation";
+import { escalateTier, calculateMaxIterations, getTierConfig } from "./escalation";
 import {
   hookCtx,
   getAllReadyStories,
@@ -27,6 +27,7 @@ import {
   formatProgress,
 } from "./helpers";
 import { appendProgress } from "./progress";
+import { runVerification } from "./verification";
 import { runPipeline } from "../pipeline/runner";
 import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext } from "../pipeline/types";
@@ -77,6 +78,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
   let storiesCompleted = 0;
   let totalCost = 0;
   const allStoryMetrics: StoryMetrics[] = [];
+  // ADR-003: Track timeout retries per story for --detectOpenHandles escalation
+  const timeoutRetryCountMap = new Map<string, number>();
 
   // Acquire lock to prevent concurrent execution
   const lockAcquired = await acquireLock(workdir);
@@ -278,13 +281,86 @@ export async function run(options: RunOptions): Promise<RunResult> {
       // Handle pipeline result
       if (pipelineResult.success) {
         // Pipeline completed successfully — stories marked as passed in completion stage
-        storiesCompleted += storiesToExecute.length;
         totalCost += pipelineResult.context.agentResult?.estimatedCost || 0;
         prdDirty = true;
 
         // Collect story metrics (set by completionStage)
         if (pipelineResult.context.storyMetrics) {
           allStoryMetrics.push(...pipelineResult.context.storyMetrics);
+        }
+
+        // ADR-003: Post-agent verification (if quality.commands.test is configured)
+        let verificationPassed = true;
+        if (config.quality.commands.test) {
+          console.log(chalk.dim(`   🔍 Running verification: ${config.quality.commands.test}`));
+
+          const timeoutRetryCount = timeoutRetryCountMap.get(story.id) || 0;
+          const verificationResult = await runVerification({
+            workingDirectory: workdir,
+            relevantFiles: story.relevantFiles,
+            command: config.quality.commands.test,
+            timeoutSeconds: config.execution.verificationTimeoutSeconds,
+            forceExit: config.quality.forceExit,
+            detectOpenHandles: config.quality.detectOpenHandles,
+            detectOpenHandlesRetries: config.quality.detectOpenHandlesRetries,
+            timeoutRetryCount,
+            gracePeriodMs: config.quality.gracePeriodMs,
+            drainTimeoutMs: config.quality.drainTimeoutMs,
+            shell: config.quality.shell,
+            stripEnvVars: config.quality.stripEnvVars,
+          });
+
+          if (!verificationResult.success) {
+            verificationPassed = false;
+
+            // Track timeout retries for --detectOpenHandles escalation
+            if (verificationResult.status === "TIMEOUT") {
+              timeoutRetryCountMap.set(story.id, timeoutRetryCount + 1);
+            }
+
+            // Append diagnostic info to story for next agent iteration
+            const diagnosticContext = verificationResult.error || `Verification failed: ${verificationResult.status}`;
+            prd.userStories = prd.userStories.map(s =>
+              s.id === story.id
+                ? { ...s, priorErrors: [...(s.priorErrors || []), diagnosticContext], status: "pending" as const, passes: false }
+                : s
+            );
+
+            console.log(chalk.yellow(`   ⚠️  Verification ${verificationResult.status}: ${verificationResult.error?.split("\n")[0]}`));
+
+            if (verificationResult.output && verificationResult.passCount !== undefined) {
+              console.log(chalk.dim(`   Tests: ${verificationResult.passCount} pass, ${verificationResult.failCount} fail`));
+            }
+
+            // Don't count toward escalation for timeouts (environmental issue)
+            if (verificationResult.countsTowardEscalation) {
+              // Increment attempts — this drives tier escalation
+              prd.userStories = prd.userStories.map(s =>
+                s.id === story.id ? { ...s, attempts: s.attempts + 1 } : s
+              );
+            }
+
+            await savePRD(prd, prdPath);
+
+            if (featureDir) {
+              await appendProgress(featureDir, story.id, "verification-failed",
+                `${story.title} — ${verificationResult.status}: ${verificationResult.error?.split("\n")[0]}`);
+            }
+          } else {
+            console.log(chalk.green(`   ✓ Verification passed`));
+            if (verificationResult.output) {
+              const analysis = await import("./verification").then(m =>
+                m.parseTestOutput(verificationResult.output!, 0)
+              );
+              if (analysis.passCount > 0) {
+                console.log(chalk.dim(`   Tests: ${analysis.passCount} pass, ${analysis.failCount} fail`));
+              }
+            }
+          }
+        }
+
+        if (verificationPassed) {
+          storiesCompleted += storiesToExecute.length;
         }
 
         // Display progress
@@ -425,6 +501,21 @@ export async function run(options: RunOptions): Promise<RunResult> {
             }
             break;
         }
+      }
+
+      // ADR-003: Stall detection — all remaining stories blocked or dependent on blocked
+      if (prdDirty) {
+        prd = await loadPRD(prdPath);
+        prdDirty = false;
+      }
+      if (isStalled(prd)) {
+        const summary = generateHumanHaltSummary(prd);
+        console.log(chalk.red(`\n${summary}`));
+        await fireHook(hooks, "on-pause", hookCtx(feature, {
+          reason: "All remaining stories blocked or dependent on blocked stories",
+          cost: totalCost,
+        }), workdir);
+        break;
       }
 
       // Delay between iterations
