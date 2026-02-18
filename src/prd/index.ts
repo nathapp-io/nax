@@ -6,6 +6,7 @@ import { existsSync, statSync } from "node:fs";
 import type { PRD, UserStory } from "./types";
 
 export type { PRD, UserStory, StoryRouting, StoryStatus, EscalationAttempt } from "./types";
+export { isStalled, markStoryAsBlocked, generateHumanHaltSummary } from "./types";
 
 /** Maximum PRD file size (5MB) - reject larger PRDs to prevent memory issues */
 export const PRD_MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -50,6 +51,8 @@ export function getNextStory(prd: PRD): UserStory | null {
         !s.passes &&
         s.status !== "passed" &&
         s.status !== "skipped" &&
+        s.status !== "blocked" &&
+        s.status !== "failed" &&
         s.dependencies.every((dep) => completedIds.has(dep)),
     ) ?? null
   );
@@ -67,15 +70,17 @@ export function countStories(prd: PRD): {
   failed: number;
   pending: number;
   skipped: number;
+  blocked: number;
 } {
   return {
     total: prd.userStories.length,
     passed: prd.userStories.filter((s) => s.passes || s.status === "passed").length,
     failed: prd.userStories.filter((s) => s.status === "failed").length,
     pending: prd.userStories.filter(
-      (s) => !s.passes && s.status !== "passed" && s.status !== "failed" && s.status !== "skipped"
+      (s) => !s.passes && s.status !== "passed" && s.status !== "failed" && s.status !== "skipped" && s.status !== "blocked"
     ).length,
     skipped: prd.userStories.filter((s) => s.status === "skipped").length,
+    blocked: prd.userStories.filter((s) => s.status === "blocked").length,
   };
 }
 

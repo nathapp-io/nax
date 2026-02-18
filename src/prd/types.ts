@@ -8,7 +8,7 @@ import type { Complexity, TestStrategy } from "../config";
 import type { ModelTier } from "../config";
 
 /** User story status */
-export type StoryStatus = "pending" | "in-progress" | "passed" | "failed" | "skipped";
+export type StoryStatus = "pending" | "in-progress" | "passed" | "failed" | "skipped" | "blocked";
 
 /** Routing metadata per story */
 export interface StoryRouting {
@@ -62,6 +62,71 @@ export interface UserStory {
   priorErrors?: string[];
   /** Custom context strings */
   customContext?: string[];
+}
+
+// ============================================================================
+// ADR-003: Stall Detection Helpers
+// ============================================================================
+
+/**
+ * Check if a PRD run is stalled — all remaining stories are blocked or
+ * depend on blocked stories, making forward progress impossible.
+ */
+export function isStalled(prd: PRD): boolean {
+  const remaining = prd.userStories.filter(
+    s => s.status !== "passed" && s.status !== "skipped"
+  );
+  if (remaining.length === 0) return false;
+
+  const blockedIds = new Set(
+    prd.userStories.filter(s => s.status === "blocked" || s.status === "failed").map(s => s.id)
+  );
+
+  return remaining.every(s =>
+    s.status === "blocked" ||
+    s.status === "failed" ||
+    s.dependencies.some(dep => blockedIds.has(dep))
+  );
+}
+
+/**
+ * Mark a story as blocked (e.g., dependency failed, unresolvable issue).
+ */
+export function markStoryAsBlocked(prd: PRD, storyId: string, reason: string): void {
+  const story = prd.userStories.find(s => s.id === storyId);
+  if (story) {
+    story.status = "blocked";
+    story.priorErrors = [...(story.priorErrors || []), `BLOCKED: ${reason}`];
+  }
+}
+
+/**
+ * Generate a human-readable summary when all progress is stalled.
+ */
+export function generateHumanHaltSummary(prd: PRD): string {
+  const blocked = prd.userStories.filter(s => s.status === "blocked");
+  const failed = prd.userStories.filter(s => s.status === "failed");
+  const pending = prd.userStories.filter(s => s.status === "pending" || s.status === "in-progress");
+
+  const lines = [
+    `🛑 STALLED: ${prd.feature}`,
+    ``,
+    `Blocked (${blocked.length}):`,
+    ...blocked.map(s => `  ${s.id}: ${s.title} — ${s.priorErrors?.slice(-1)[0] || "unknown"}`),
+    ``,
+    `Failed (${failed.length}):`,
+    ...failed.map(s => `  ${s.id}: ${s.title} — ${s.priorErrors?.slice(-1)[0] || "unknown"}`),
+  ];
+
+  if (pending.length > 0) {
+    lines.push(
+      ``,
+      `Waiting on blocked dependencies (${pending.length}):`,
+      ...pending.map(s => `  ${s.id}: ${s.title} — depends on: ${s.dependencies.join(", ")}`)
+    );
+  }
+
+  return lines.join("\n");
 }
 
 /** The full PRD document */
