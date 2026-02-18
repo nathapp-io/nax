@@ -24,7 +24,7 @@ export interface ValidationResult {
  * - costLimit > 0
  * - sessionTimeoutSeconds > 0
  * - defaultAgent is non-empty
- * - escalation.maxAttempts > 0
+ * - escalation.tierOrder has at least one tier with valid attempts
  */
 export function validateConfig(config: NaxConfig): ValidationResult {
   const errors: string[] = [];
@@ -76,17 +76,24 @@ export function validateConfig(config: NaxConfig): ValidationResult {
     errors.push("defaultAgent must be non-empty");
   }
 
-  if (config.autoMode.escalation.maxAttempts <= 0) {
-    errors.push(`escalation.maxAttempts must be > 0, got ${config.autoMode.escalation.maxAttempts}`);
+  if (!config.autoMode.escalation.tierOrder || config.autoMode.escalation.tierOrder.length === 0) {
+    errors.push("escalation.tierOrder must have at least one tier");
+  } else {
+    for (const tc of config.autoMode.escalation.tierOrder) {
+      if (tc.attempts < 1 || tc.attempts > 20) {
+        errors.push(`escalation.tierOrder: tier "${tc.tier}" attempts must be 1-20, got ${tc.attempts}`);
+      }
+    }
   }
 
-  // Validate complexityRouting values are valid ModelTier keys
-  const validTiers = ["fast", "balanced", "powerful"] as const;
+  // Validate complexityRouting values reference tiers that exist in models config
+  const configuredTiers = Object.keys(config.models);
   const complexities = ["simple", "medium", "complex", "expert"] as const;
   for (const complexity of complexities) {
     const tier = config.autoMode.complexityRouting[complexity];
-    if (!validTiers.includes(tier as any)) {
-      errors.push(`complexityRouting.${complexity} must be one of: ${validTiers.join(", ")} (got '${tier}')`);
+    if (!configuredTiers.includes(tier)) {
+      errors.push(`complexityRouting.${complexity} must be one of: ${configuredTiers.join(", ")} (got '${tier}')`);
+
     }
   }
 

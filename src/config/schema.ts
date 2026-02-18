@@ -18,8 +18,8 @@ export interface EscalationEntry {
   to: string;
 }
 
-/** Model tier names */
-export type ModelTier = "fast" | "balanced" | "powerful";
+/** Model tier names — extensible (supports custom tiers like "ultra", "free") */
+export type ModelTier = string;
 
 /** Per-tier token pricing (USD per 1M tokens) */
 export interface TokenPricing {
@@ -47,6 +47,14 @@ export type ModelEntry = ModelDef | string;
 /** Model mapping — maps abstract tiers to model definitions */
 export type ModelMap = Record<ModelTier, ModelEntry>;
 
+/** Per-tier attempt configuration for escalation */
+export interface TierConfig {
+  /** Tier name (e.g., "fast", "balanced", "powerful") */
+  tier: string;
+  /** Number of attempts at this tier before escalating */
+  attempts: number;
+}
+
 /** Auto mode configuration */
 export interface AutoModeConfig {
   enabled: boolean;
@@ -59,9 +67,8 @@ export interface AutoModeConfig {
   /** Escalation config */
   escalation: {
     enabled: boolean;
-    maxAttempts: number;
-    /** Escalation tier order (default: ["fast", "balanced", "powerful"]) */
-    tierOrder?: ModelTier[];
+    /** Ordered tier escalation with per-tier attempt budgets */
+    tierOrder: TierConfig[];
     /** When a batch fails, escalate all stories in the batch (default: true) */
     escalateEntireBatch?: boolean;
   };
@@ -69,14 +76,16 @@ export interface AutoModeConfig {
 
 /** Execution limits */
 export interface ExecutionConfig {
-  /** Max iterations per feature run */
+  /** Max iterations per feature run (auto-calculated from tierOrder sum if not set) */
   maxIterations: number;
   /** Delay between iterations (ms) */
   iterationDelayMs: number;
   /** Max cost (USD) before pausing */
   costLimit: number;
-  /** Timeout per agent session (seconds) */
+  /** Timeout per agent coding session (seconds) */
   sessionTimeoutSeconds: number;
+  /** Verification subprocess timeout in seconds (ADR-003 Decision 4) */
+  verificationTimeoutSeconds: number;
   /** Max stories per feature (prevents memory exhaustion) */
   maxStoriesPerFeature: number;
 }
@@ -95,6 +104,22 @@ export interface QualityConfig {
     lint?: string;
     test?: string;
   };
+  /** Append --forceExit to test command to prevent open handle hangs (default: false) */
+  forceExit: boolean;
+  /** Append --detectOpenHandles on timeout retry to diagnose hangs (default: true) */
+  detectOpenHandles: boolean;
+  /** Max retries with --detectOpenHandles before falling back to --forceExit (default: 1) */
+  detectOpenHandlesRetries: number;
+  /** Grace period in ms after SIGTERM before sending SIGKILL (default: 5000) */
+  gracePeriodMs: number;
+  /** Deadline in ms to drain stdout/stderr after killing process (Bun stream workaround, default: 2000) */
+  drainTimeoutMs: number;
+  /** Shell to use for running verification commands (default: /bin/sh) */
+  shell: string;
+  /** Environment variables to strip during verification (prevents AI-optimized output) */
+  stripEnvVars: string[];
+  /** Divisor for environmental failure early escalation (default: 2 = half the tier budget) */
+  environmentalEscalationDivisor: number;
 }
 
 /** TDD config */
@@ -254,7 +279,12 @@ const ModelMapSchema = z.object({
   powerful: ModelEntrySchema,
 });
 
-const ModelTierSchema = z.enum(["fast", "balanced", "powerful"]);
+const ModelTierSchema = z.string().min(1, "Tier name must be non-empty");
+
+const TierConfigSchema = z.object({
+  tier: z.string().min(1, "Tier name must be non-empty"),
+  attempts: z.number().int().min(1).max(20, { message: "attempts must be 1-20" }),
+});
 
 const AutoModeConfigSchema = z.object({
   enabled: z.boolean(),
@@ -271,8 +301,7 @@ const AutoModeConfigSchema = z.object({
   }),
   escalation: z.object({
     enabled: z.boolean(),
-    maxAttempts: z.number().int().positive({ message: "escalation.maxAttempts must be > 0" }),
-    tierOrder: z.array(ModelTierSchema).optional(),
+    tierOrder: z.array(TierConfigSchema).min(1, { message: "tierOrder must have at least one tier" }),
     escalateEntireBatch: z.boolean().optional(),
   }),
 });
@@ -282,6 +311,7 @@ const ExecutionConfigSchema = z.object({
   iterationDelayMs: z.number().int().nonnegative(),
   costLimit: z.number().positive({ message: "costLimit must be > 0" }),
   sessionTimeoutSeconds: z.number().int().positive({ message: "sessionTimeoutSeconds must be > 0" }),
+  verificationTimeoutSeconds: z.number().int().min(1).max(3600).default(300),
   maxStoriesPerFeature: z.number().int().positive(),
 });
 
@@ -294,6 +324,14 @@ const QualityConfigSchema = z.object({
     lint: z.string().optional(),
     test: z.string().optional(),
   }),
+  forceExit: z.boolean().default(false),
+  detectOpenHandles: z.boolean().default(true),
+  detectOpenHandlesRetries: z.number().int().min(0).max(5).default(1),
+  gracePeriodMs: z.number().int().min(500).max(30000).default(5000),
+  drainTimeoutMs: z.number().int().min(0).max(10000).default(2000),
+  shell: z.string().default("/bin/sh"),
+  stripEnvVars: z.array(z.string()).default(["CLAUDECODE", "REPL_ID", "AGENT"]),
+  environmentalEscalationDivisor: z.number().min(1).max(10).default(2),
 });
 
 const TddConfigSchema = z.object({
@@ -401,8 +439,11 @@ export const DEFAULT_CONFIG: NaxConfig = {
     },
     escalation: {
       enabled: true,
-      maxAttempts: 3,
-      tierOrder: ["fast", "balanced", "powerful"],
+      tierOrder: [
+        { tier: "fast", attempts: 5 },
+        { tier: "balanced", attempts: 3 },
+        { tier: "powerful", attempts: 2 },
+      ],
       escalateEntireBatch: true,
     },
   },
@@ -415,10 +456,11 @@ export const DEFAULT_CONFIG: NaxConfig = {
     },
   },
   execution: {
-    maxIterations: 20,
+    maxIterations: 10, // auto-calculated: sum of tier attempts (5+3+2=10)
     iterationDelayMs: 2000,
     costLimit: 5.0,
     sessionTimeoutSeconds: 600, // 10 minutes
+    verificationTimeoutSeconds: 300, // 5 minutes
     maxStoriesPerFeature: 500,
   },
   quality: {
@@ -426,6 +468,14 @@ export const DEFAULT_CONFIG: NaxConfig = {
     requireLint: true,
     requireTests: true,
     commands: {},
+    forceExit: false,
+    detectOpenHandles: true,
+    detectOpenHandlesRetries: 1,
+    gracePeriodMs: 5000,
+    drainTimeoutMs: 2000,
+    shell: "/bin/sh",
+    stripEnvVars: ["CLAUDECODE", "REPL_ID", "AGENT"],
+    environmentalEscalationDivisor: 2,
   },
   tdd: {
     maxRetries: 2,

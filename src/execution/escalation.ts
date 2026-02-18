@@ -1,53 +1,44 @@
 /**
- * Model Tier Escalation
+ * Model Tier Escalation (ADR-003)
  *
- * Handles escalating model tiers through configurable 3-tier chain.
- * Default chain: fast → balanced → powerful → null (max tier reached)
+ * Handles escalating model tiers through configurable tier chain
+ * with per-tier attempt budgets.
  */
 
-import type { ModelTier } from "../config";
+import type { TierConfig } from "../config";
 
 /**
- * Escalate model tier through configurable 3-tier chain (default: fast → balanced → powerful → null)
+ * Escalate to the next tier in the configured order.
  *
- * @param current - Current model tier
- * @param tierOrder - Optional tier order from config (e.g., ["fast", "balanced", "powerful"])
- * @returns Next tier in chain, or null if at max tier
+ * @param currentTier - Current tier name
+ * @param tierOrder - Ordered tier config array from config (e.g., [{tier:"fast",attempts:5}, ...])
+ * @returns Next tier name, or null if at max tier
  *
  * @example
  * ```typescript
- * // Using config tier order
- * const next = escalateTier("fast", ["fast", "balanced", "powerful"]);
- * // => "balanced"
- *
- * // At max tier
- * const maxed = escalateTier("powerful", ["fast", "balanced", "powerful"]);
- * // => null
- *
- * // Fallback to hardcoded chain
- * const fallback = escalateTier("fast");
- * // => "balanced"
+ * const tiers = [{tier:"fast",attempts:5}, {tier:"balanced",attempts:3}, {tier:"powerful",attempts:2}];
+ * escalateTier("fast", tiers);    // => "balanced"
+ * escalateTier("powerful", tiers); // => null
  * ```
  */
-export function escalateTier(current: ModelTier, tierOrder?: ModelTier[]): ModelTier | null {
-  // Use config tierOrder if provided, fallback to hardcoded chain
-  if (tierOrder && tierOrder.length > 0) {
-    const currentIndex = tierOrder.indexOf(current);
-    if (currentIndex === -1 || currentIndex === tierOrder.length - 1) {
-      return null; // Not in order or at max tier
-    }
-    return tierOrder[currentIndex + 1];
+export function escalateTier(currentTier: string, tierOrder: TierConfig[]): string | null {
+  const currentIndex = tierOrder.findIndex(t => t.tier === currentTier);
+  if (currentIndex === -1 || currentIndex === tierOrder.length - 1) {
+    return null;
   }
+  return tierOrder[currentIndex + 1].tier;
+}
 
-  // Fallback: explicit escalation chain
-  switch (current) {
-    case "fast":
-      return "balanced";
-    case "balanced":
-      return "powerful";
-    case "powerful":
-      return null; // Max tier reached
-    default:
-      return null;
-  }
+/**
+ * Get the tier config for a given tier name.
+ */
+export function getTierConfig(tierName: string, tierOrder: TierConfig[]): TierConfig | undefined {
+  return tierOrder.find(t => t.tier === tierName);
+}
+
+/**
+ * Calculate total max iterations from tier order (sum of all attempts).
+ */
+export function calculateMaxIterations(tierOrder: TierConfig[]): number {
+  return tierOrder.reduce((sum, t) => sum + t.attempts, 0);
 }

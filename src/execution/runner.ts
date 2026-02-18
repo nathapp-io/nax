@@ -18,7 +18,7 @@ import type { UserStory } from "../prd";
 import { routeTask } from "../routing";
 import { fireHook, type HooksConfig } from "../hooks";
 import { precomputeBatchPlan, type StoryBatch } from "./batching";
-import { escalateTier } from "./escalation";
+import { escalateTier, calculateMaxIterations } from "./escalation";
 import {
   hookCtx,
   getAllReadyStories,
@@ -356,7 +356,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
               : [story];
 
             if (nextTier && config.autoMode.escalation.enabled) {
-              const canEscalate = storiesToEscalate.every(s => s.attempts < config.autoMode.escalation.maxAttempts);
+              const maxAttempts = calculateMaxIterations(config.autoMode.escalation.tierOrder);
+              const canEscalate = storiesToEscalate.every(s => s.attempts < maxAttempts);
 
               if (canEscalate) {
                 for (const s of storiesToEscalate) {
