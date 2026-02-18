@@ -160,7 +160,7 @@ export async function executeWithTimeout(
 
   const processPromise = proc.exited;
 
-  await Promise.race([processPromise, timeoutPromise]);
+  const raceResult = await Promise.race([processPromise, timeoutPromise]);
 
   if (timedOut) {
     const pid = proc.pid;
@@ -204,7 +204,7 @@ export async function executeWithTimeout(
     clearTimeout(timeoutId);
   }
 
-  const exitCode = await proc.exited;
+  const exitCode = raceResult as number;
   const stdout = await new Response(proc.stdout).text();
   const stderr = await new Response(proc.stderr).text();
   const output = stdout + "\n" + stderr;
@@ -259,20 +259,22 @@ export function parseTestOutput(
   let failCount = 0;
 
   for (const pattern of patterns) {
-    const match = output.match(pattern);
-    if (match) {
-      passCount = parseInt(match[1], 10);
+    // Match ALL occurrences — use the LAST one (final summary line)
+    const matches = [...output.matchAll(new RegExp(pattern, "gi"))];
+    if (matches.length > 0) {
+      const lastMatch = matches[matches.length - 1];
+      passCount = parseInt(lastMatch[1], 10);
       // Some formats only show pass count
-      failCount = match[2] ? parseInt(match[2], 10) : 0;
+      failCount = lastMatch[2] ? parseInt(lastMatch[2], 10) : 0;
       break;
     }
   }
 
   // Check for explicit fail count if not found
   if (failCount === 0) {
-    const failMatch = output.match(/(\d+)\s+fail/i);
-    if (failMatch) {
-      failCount = parseInt(failMatch[1], 10);
+    const failMatches = [...output.matchAll(/(\d+)\s+fail/gi)];
+    if (failMatches.length > 0) {
+      failCount = parseInt(failMatches[failMatches.length - 1][1], 10);
     }
   }
 

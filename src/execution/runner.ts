@@ -27,7 +27,7 @@ import {
   formatProgress,
 } from "./helpers";
 import { appendProgress } from "./progress";
-import { runVerification } from "./verification";
+import { runVerification, parseTestOutput } from "./verification";
 import { runPipeline } from "../pipeline/runner";
 import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext } from "../pipeline/types";
@@ -177,7 +177,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         currentBatchIndex++;
 
         // Filter out already-completed stories (may have been completed in previous iteration)
-        storiesToExecute = batch.stories.filter(s => !s.passes && s.status !== "skipped");
+        storiesToExecute = batch.stories.filter(s => !s.passes && s.status !== "skipped" && s.status !== "blocked" && s.status !== "failed");
         isBatchExecution = batch.isBatch && storiesToExecute.length > 1;
 
         if (storiesToExecute.length === 0) {
@@ -313,15 +313,26 @@ export async function run(options: RunOptions): Promise<RunResult> {
           if (!verificationResult.success) {
             verificationPassed = false;
 
+            // BUG-1 fix: Undo story metrics added by completionStage since verification failed.
+            // The completion stage marks stories as passed before verification runs.
+            // TODO: Refactor verification into a pipeline stage to avoid this post-hoc revert.
+            const storyIds = new Set(storiesToExecute.map(s => s.id));
+            const metricsCountBefore = allStoryMetrics.length;
+            for (let i = allStoryMetrics.length - 1; i >= 0; i--) {
+              if (storyIds.has(allStoryMetrics[i].storyId)) {
+                allStoryMetrics.splice(i, 1);
+              }
+            }
+
             // Track timeout retries for --detectOpenHandles escalation
             if (verificationResult.status === "TIMEOUT") {
               timeoutRetryCountMap.set(story.id, timeoutRetryCount + 1);
             }
 
-            // Append diagnostic info to story for next agent iteration
+            // Revert ALL stories in this batch/single back to pending (completionStage marked them passed)
             const diagnosticContext = verificationResult.error || `Verification failed: ${verificationResult.status}`;
             prd.userStories = prd.userStories.map(s =>
-              s.id === story.id
+              storyIds.has(s.id)
                 ? { ...s, priorErrors: [...(s.priorErrors || []), diagnosticContext], status: "pending" as const, passes: false }
                 : s
             );
@@ -349,9 +360,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
           } else {
             console.log(chalk.green(`   ✓ Verification passed`));
             if (verificationResult.output) {
-              const analysis = await import("./verification").then(m =>
-                m.parseTestOutput(verificationResult.output!, 0)
-              );
+              const analysis = parseTestOutput(verificationResult.output!, 0);
               if (analysis.passCount > 0) {
                 console.log(chalk.dim(`   Tests: ${analysis.passCount} pass, ${analysis.failCount} fail`));
               }
