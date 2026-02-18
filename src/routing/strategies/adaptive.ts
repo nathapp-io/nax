@@ -204,7 +204,7 @@ export const adaptiveStrategy: RoutingStrategy = {
     }
 
     // We have sufficient data — calculate optimal tier
-    const tierOrder = config.autoMode.escalation.tierOrder || ["fast", "balanced", "powerful"];
+    const tierOrder = config.autoMode.escalation.tierOrder.map(t => t.tier);
     const { tier, reasoning } = selectOptimalTier(
       complexity,
       metrics,

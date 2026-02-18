@@ -13,12 +13,12 @@ import path from "node:path";
 import type { NaxConfig } from "../config";
 import { getAgent } from "../agents";
 import { resolveModel } from "../config/schema";
-import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryFailed } from "../prd";
+import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryFailed, isStalled, markStoryAsBlocked, generateHumanHaltSummary } from "../prd";
 import type { UserStory } from "../prd";
 import { routeTask } from "../routing";
 import { fireHook, type HooksConfig } from "../hooks";
 import { precomputeBatchPlan, type StoryBatch } from "./batching";
-import { escalateTier } from "./escalation";
+import { escalateTier, calculateMaxIterations, getTierConfig } from "./escalation";
 import {
   hookCtx,
   getAllReadyStories,
@@ -27,6 +27,7 @@ import {
   formatProgress,
 } from "./helpers";
 import { appendProgress } from "./progress";
+import { runPostAgentVerification } from "./post-verify";
 import { runPipeline } from "../pipeline/runner";
 import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext } from "../pipeline/types";
@@ -80,6 +81,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
   let storiesCompleted = 0;
   let totalCost = 0;
   const allStoryMetrics: StoryMetrics[] = [];
+  // ADR-003: Track timeout retries per story for --detectOpenHandles escalation
+  const timeoutRetryCountMap = new Map<string, number>();
 
   // Acquire lock to prevent concurrent execution
   const lockAcquired = await acquireLock(workdir);
@@ -177,7 +180,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         currentBatchIndex++;
 
         // Filter out already-completed stories (may have been completed in previous iteration)
-        storiesToExecute = batch.stories.filter(s => !s.passes && s.status !== "skipped");
+        storiesToExecute = batch.stories.filter(s => !s.passes && s.status !== "skipped" && s.status !== "blocked" && s.status !== "failed");
         isBatchExecution = batch.isBatch && storiesToExecute.length > 1;
 
         if (storiesToExecute.length === 0) {
@@ -281,13 +284,24 @@ export async function run(options: RunOptions): Promise<RunResult> {
       // Handle pipeline result
       if (pipelineResult.success) {
         // Pipeline completed successfully — stories marked as passed in completion stage
-        storiesCompleted += storiesToExecute.length;
         totalCost += pipelineResult.context.agentResult?.estimatedCost || 0;
         prdDirty = true;
 
         // Collect story metrics (set by completionStage)
         if (pipelineResult.context.storyMetrics) {
           allStoryMetrics.push(...pipelineResult.context.storyMetrics);
+        }
+
+        // ADR-003: Post-agent verification (if quality.commands.test is configured)
+        const verifyResult = await runPostAgentVerification({
+          config, prd, prdPath, workdir, featureDir,
+          story, storiesToExecute, allStoryMetrics, timeoutRetryCountMap,
+        });
+        const verificationPassed = verifyResult.passed;
+        prd = verifyResult.prd;
+
+        if (verificationPassed) {
+          storiesCompleted += storiesToExecute.length;
         }
 
         // Display progress
@@ -359,7 +373,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
               : [story];
 
             if (nextTier && config.autoMode.escalation.enabled) {
-              const canEscalate = storiesToEscalate.every(s => s.attempts < config.autoMode.escalation.maxAttempts);
+              const maxAttempts = calculateMaxIterations(config.autoMode.escalation.tierOrder);
+              const canEscalate = storiesToEscalate.every(s => s.attempts < maxAttempts);
 
               if (canEscalate) {
                 for (const s of storiesToEscalate) {
@@ -427,6 +442,21 @@ export async function run(options: RunOptions): Promise<RunResult> {
             }
             break;
         }
+      }
+
+      // ADR-003: Stall detection — all remaining stories blocked or dependent on blocked
+      if (prdDirty) {
+        prd = await loadPRD(prdPath);
+        prdDirty = false;
+      }
+      if (isStalled(prd)) {
+        const summary = generateHumanHaltSummary(prd);
+        console.log(chalk.red(`\n${summary}`));
+        await fireHook(hooks, "on-pause", hookCtx(feature, {
+          reason: "All remaining stories blocked or dependent on blocked stories",
+          cost: totalCost,
+        }), workdir);
+        break;
       }
 
       // Delay between iterations

@@ -97,14 +97,14 @@ describe("Config Validation", () => {
     // Zod's min(1) validation will trim and reject whitespace
   });
 
-  test("rejects escalation.maxAttempts <= 0", () => {
+  test("rejects empty tierOrder", () => {
     const config = {
       ...DEFAULT_CONFIG,
       autoMode: {
         ...DEFAULT_CONFIG.autoMode,
         escalation: {
           ...DEFAULT_CONFIG.autoMode.escalation,
-          maxAttempts: 0,
+          tierOrder: [],
         },
       },
     };
@@ -112,8 +112,41 @@ describe("Config Validation", () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       const errorMessages = result.error.issues.map((e) => e.message);
-      expect(errorMessages.some((e) => e.includes("escalation.maxAttempts must be > 0"))).toBe(true);
+      expect(errorMessages.some((e) => e.includes("tierOrder must have at least one tier"))).toBe(true);
     }
+  });
+
+  test("rejects tierOrder with attempts out of range", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      autoMode: {
+        ...DEFAULT_CONFIG.autoMode,
+        escalation: {
+          ...DEFAULT_CONFIG.autoMode.escalation,
+          tierOrder: [{ tier: "fast", attempts: 0 }],
+        },
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+  });
+
+  test("accepts custom tier names in tierOrder", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      autoMode: {
+        ...DEFAULT_CONFIG.autoMode,
+        escalation: {
+          ...DEFAULT_CONFIG.autoMode.escalation,
+          tierOrder: [
+            { tier: "free", attempts: 10 },
+            { tier: "ultra", attempts: 1 },
+          ],
+        },
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
   });
 
   test("collects multiple validation errors", () => {
@@ -137,23 +170,35 @@ describe("Config Validation", () => {
     }
   });
 
-  test("rejects invalid complexityRouting tier", () => {
+  test("accepts any non-empty string as complexityRouting tier", () => {
+    // Tiers are now extensible (z.string), validated against models at runtime
     const config = {
       ...DEFAULT_CONFIG,
       autoMode: {
         ...DEFAULT_CONFIG.autoMode,
         complexityRouting: {
           ...DEFAULT_CONFIG.autoMode.complexityRouting,
-          simple: "invalid-tier" as any,
+          simple: "custom-tier",
+        },
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects empty string as complexityRouting tier", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      autoMode: {
+        ...DEFAULT_CONFIG.autoMode,
+        complexityRouting: {
+          ...DEFAULT_CONFIG.autoMode.complexityRouting,
+          simple: "",
         },
       },
     };
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
-    if (!result.success) {
-      const errorMessages = result.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`);
-      expect(errorMessages.some((e) => e.includes("complexityRouting.simple"))).toBe(true);
-    }
   });
 
   test("accepts all valid tiers in complexityRouting", () => {
@@ -173,25 +218,42 @@ describe("Config Validation", () => {
     expect(result.success).toBe(true);
   });
 
-  test("validates all complexity levels have valid tiers", () => {
+  test("validates verificationTimeoutSeconds bounds", () => {
+    const tooLow = {
+      ...DEFAULT_CONFIG,
+      execution: { ...DEFAULT_CONFIG.execution, verificationTimeoutSeconds: 0 },
+    };
+    expect(NaxConfigSchema.safeParse(tooLow).success).toBe(false);
+
+    const tooHigh = {
+      ...DEFAULT_CONFIG,
+      execution: { ...DEFAULT_CONFIG.execution, verificationTimeoutSeconds: 7200 },
+    };
+    expect(NaxConfigSchema.safeParse(tooHigh).success).toBe(false);
+
+    const valid = {
+      ...DEFAULT_CONFIG,
+      execution: { ...DEFAULT_CONFIG.execution, verificationTimeoutSeconds: 120 },
+    };
+    expect(NaxConfigSchema.safeParse(valid).success).toBe(true);
+  });
+
+  test("validates quality config extensions", () => {
     const config = {
       ...DEFAULT_CONFIG,
-      autoMode: {
-        ...DEFAULT_CONFIG.autoMode,
-        complexityRouting: {
-          simple: "invalid" as any,
-          medium: "bad-tier" as any,
-          complex: "powerful",
-          expert: "fast",
-        },
+      quality: {
+        ...DEFAULT_CONFIG.quality,
+        forceExit: true,
+        detectOpenHandles: false,
+        detectOpenHandlesRetries: 3,
+        gracePeriodMs: 10000,
+        drainTimeoutMs: 5000,
+        shell: "/bin/bash",
+        stripEnvVars: ["CLAUDECODE", "CUSTOM_VAR"],
+        environmentalEscalationDivisor: 3,
       },
     };
     const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const errorMessages = result.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`);
-      expect(errorMessages.some((e) => e.includes("complexityRouting.simple"))).toBe(true);
-      expect(errorMessages.some((e) => e.includes("complexityRouting.medium"))).toBe(true);
-    }
+    expect(result.success).toBe(true);
   });
 });
