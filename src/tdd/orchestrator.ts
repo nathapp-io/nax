@@ -23,6 +23,7 @@ import {
   getChangedFiles,
 } from "./isolation";
 import { executeWithTimeout } from "../execution/verification";
+import { cleanupProcessTree } from "./cleanup";
 
 /** Build prompt for test-writer session */
 function buildTestWriterPrompt(story: UserStory, contextMarkdown?: string): string {
@@ -177,6 +178,11 @@ async function runTddSession(
     modelDef: resolveModel(config.models[modelTier]),
     timeoutSeconds: config.execution.sessionTimeoutSeconds,
   });
+
+  // BUG-21 Fix: Clean up orphaned child processes if agent failed
+  if (!result.success && result.pid) {
+    await cleanupProcessTree(result.pid);
+  }
 
   // Check isolation based on role
   let isolation;
