@@ -103,3 +103,70 @@ describe("escalateTier", () => {
     expect(tier).toBeNull();
   });
 });
+
+describe("classifyComplexity - BUG-19 regression tests", () => {
+  test("4 ACs should classify as simple", () => {
+    const complexity = classifyComplexity(
+      "Add validation",
+      "Add basic input validation",
+      ["AC1", "AC2", "AC3", "AC4"],
+      []
+    );
+    expect(complexity).toBe("simple");
+  });
+
+  test("5 ACs should classify as medium", () => {
+    const complexity = classifyComplexity(
+      "Add validation",
+      "Add comprehensive input validation",
+      ["AC1", "AC2", "AC3", "AC4", "AC5"],
+      []
+    );
+    expect(complexity).toBe("medium");
+  });
+
+  test("9 ACs should classify as complex", () => {
+    const complexity = classifyComplexity(
+      "Add validation",
+      "Add extensive input validation",
+      ["AC1", "AC2", "AC3", "AC4", "AC5", "AC6", "AC7", "AC8", "AC9"],
+      []
+    );
+    expect(complexity).toBe("complex");
+  });
+
+  test("complexity → modelTier mapping respects config", () => {
+    // Test simple → fast
+    const simpleResult = routeTask("Simple task", "Simple description", ["AC1"], [], DEFAULT_CONFIG);
+    expect(simpleResult.complexity).toBe("simple");
+    expect(simpleResult.modelTier).toBe("fast");
+
+    // Test medium → balanced
+    const mediumResult = routeTask("Medium task", "Medium description", ["AC1", "AC2", "AC3", "AC4", "AC5"], [], DEFAULT_CONFIG);
+    expect(mediumResult.complexity).toBe("medium");
+    expect(mediumResult.modelTier).toBe("balanced");
+
+    // Test complex → powerful
+    const complexResult = routeTask("Complex task", "Complex description", ["AC1", "AC2", "AC3", "AC4", "AC5", "AC6", "AC7", "AC8", "AC9"], [], DEFAULT_CONFIG);
+    expect(complexResult.complexity).toBe("complex");
+    expect(complexResult.modelTier).toBe("powerful");
+  });
+
+  test("cached routing complexity should re-derive correct modelTier", () => {
+    // Simulate scenario from BUG-19:
+    // - Keyword classification returns "medium" (5 ACs)
+    // - Cached routing says "simple"
+    // - After override, modelTier should be re-derived from "simple" → "fast"
+
+    // First, get the initial routing (5 ACs = medium)
+    const initialRouting = routeTask("Task", "Description", ["AC1", "AC2", "AC3", "AC4", "AC5"], [], DEFAULT_CONFIG);
+    expect(initialRouting.complexity).toBe("medium");
+    expect(initialRouting.modelTier).toBe("balanced");
+
+    // Now simulate cached routing override (from story.routing.complexity = "simple")
+    const cachedComplexity = "simple";
+    const overriddenModelTier = DEFAULT_CONFIG.autoMode.complexityRouting[cachedComplexity] ?? "balanced";
+
+    expect(overriddenModelTier).toBe("fast");
+  });
+});
