@@ -286,27 +286,23 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       return { specContent: "", conversationLog: "" };
     }
 
-    // Non-interactive: redirect to temp files to avoid Bun pipe buffering
+    // Non-interactive: redirect stdout to temp file via Bun.file()
     const { join } = require("node:path");
-    const { mkdtempSync, readFileSync, rmSync, openSync, closeSync } = require("node:fs");
+    const { mkdtempSync, readFileSync, rmSync } = require("node:fs");
     const { tmpdir } = require("node:os");
     const tempDir = mkdtempSync(join(tmpdir(), "nax-plan-"));
     const outFile = join(tempDir, "stdout.txt");
     const errFile = join(tempDir, "stderr.txt");
-    const outFd = openSync(outFile, "w");
-    const errFd = openSync(errFile, "w");
 
     try {
       const proc = Bun.spawn(cmd, {
         cwd: options.workdir,
         stdin: "ignore",
-        stdout: outFd as any,
-        stderr: errFd as any,
+        stdout: Bun.file(outFile),
+        stderr: Bun.file(errFile),
         env: { ...process.env, ...(options.modelDef?.env || {}) },
       });
       const exitCode = await proc.exited;
-      closeSync(outFd);
-      closeSync(errFd);
 
       const specContent = readFileSync(outFile, "utf-8");
       const conversationLog = readFileSync(errFile, "utf-8");
@@ -314,6 +310,12 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       if (exitCode !== 0) {
         throw new Error(`Plan mode failed with exit code ${exitCode}: ${conversationLog || "unknown error"}`);
       }
+
+      return { specContent, conversationLog };
+    } finally {
+      try { rmSync(tempDir, { recursive: true }); } catch {}
+    }
+  }
 
       return { specContent, conversationLog };
     } finally {
