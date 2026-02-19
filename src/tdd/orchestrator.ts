@@ -335,6 +335,37 @@ export async function runThreeSessionTdd(
     };
   }
 
+  // BUG-20 Fix: Verify that test-writer session actually created test files
+  // Check if any test files were created (*.test.ts, *.spec.ts, etc.)
+  const testFilePatterns = /\.(test|spec)\.(ts|js|tsx|jsx)$/;
+  const testFilesCreated = session1.filesChanged.filter((f) =>
+    testFilePatterns.test(f),
+  );
+
+  if (testFilesCreated.length === 0) {
+    needsHumanReview = true;
+    reviewReason = "Test writer session created no test files";
+    console.log(chalk.yellow(`\n⚠️  ${reviewReason}`));
+    console.log(
+      chalk.dim(
+        `   Files changed: ${session1.filesChanged.length > 0 ? session1.filesChanged.join(", ") : "(none)"}`,
+      ),
+    );
+
+    // Return early — no point running implementer without tests
+    return {
+      success: false,
+      sessions,
+      needsHumanReview,
+      reviewReason,
+      totalCost: sessions.reduce((sum, s) => sum + s.estimatedCost, 0),
+    };
+  }
+
+  console.log(
+    chalk.green(`   ✓ Created ${testFilesCreated.length} test file(s)`),
+  );
+
   // Capture state after session 1
   const session2Ref = await captureGitRef(workdir);
 

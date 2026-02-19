@@ -334,6 +334,86 @@ describe("runThreeSessionTdd", () => {
     expect(result.reviewReason).toBeUndefined();
   });
 
+  test("BUG-20: failure when test-writer creates no test files", async () => {
+    // Scenario: Test-writer session succeeds and passes isolation but creates no test files
+    // (e.g., creates requirements.md instead)
+    // Expected: Should fail with needsHumanReview and specific reason
+    mockGitSpawn({
+      diffFiles: [
+        // Isolation check: only non-test files
+        ["requirements.md", "docs/plan.md"],
+        // getChangedFiles
+        ["requirements.md", "docs/plan.md"],
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 }, // test-writer succeeds but creates wrong files
+    ]);
+
+    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+
+    expect(result.success).toBe(false);
+    expect(result.sessions).toHaveLength(1); // Should stop after session 1
+    expect(result.needsHumanReview).toBe(true);
+    expect(result.reviewReason).toBe("Test writer session created no test files");
+  });
+
+  test("BUG-20: failure when test-writer creates zero files", async () => {
+    // Scenario: Test-writer session succeeds but creates no files at all
+    // Expected: Should fail with needsHumanReview
+    mockGitSpawn({
+      diffFiles: [
+        // Isolation check: no files
+        [],
+        // getChangedFiles: no files
+        [],
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 }, // test-writer succeeds but creates nothing
+    ]);
+
+    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+
+    expect(result.success).toBe(false);
+    expect(result.sessions).toHaveLength(1);
+    expect(result.needsHumanReview).toBe(true);
+    expect(result.reviewReason).toBe("Test writer session created no test files");
+  });
+
+  test("BUG-20: success when test-writer creates test files with various extensions", async () => {
+    // Scenario: Test-writer creates test files with different valid extensions
+    // Expected: Should succeed and continue to session 2
+    mockGitSpawn({
+      diffFiles: [
+        // Isolation check: various test file formats
+        ["test/user.test.ts", "test/auth.spec.js", "test/api.test.tsx"],
+        // getChangedFiles
+        ["test/user.test.ts", "test/auth.spec.js", "test/api.test.tsx"],
+        // Session 2 isolation
+        ["src/user.ts", "src/auth.js"],
+        // Session 2 getChangedFiles
+        ["src/user.ts", "src/auth.js"],
+        // Session 3 getChangedFiles
+        ["src/user.ts"],
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCost: 0.02 },
+      { success: true, estimatedCost: 0.01 },
+    ]);
+
+    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+
+    expect(result.success).toBe(true);
+    expect(result.sessions).toHaveLength(3); // All sessions run
+    expect(result.needsHumanReview).toBe(false);
+  });
+
   test("BUG-22: post-TDD verification does not override when tests actually fail", async () => {
     // Scenario: Sessions complete with failures AND independent test run also fails
     // Expected: Result should remain failed
