@@ -1,6 +1,6 @@
 {
   "name": "@nathapp/nax",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "description": "AI Coding Agent Orchestrator — loops until done",
   "type": "module",
   "bin": {
@@ -33,5 +33,11 @@
   },
   "license": "MIT",
   "author": "William Khoo",
-  "keywords": ["ai", "agent", "orchestrator", "tdd", "coding"]
+  "keywords": [
+    "ai",
+    "agent",
+    "orchestrator",
+    "tdd",
+    "coding"
+  ]
 }
