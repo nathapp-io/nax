@@ -16,6 +16,7 @@ import { resolveModel } from "../config/schema";
 import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryFailed, isStalled, markStoryAsBlocked, generateHumanHaltSummary } from "../prd";
 import type { UserStory } from "../prd";
 import { routeTask } from "../routing";
+import { routeBatch as llmRouteBatch, clearCache as clearLlmCache } from "../routing/strategies/llm";
 import { fireHook, type HooksConfig } from "../hooks";
 import { precomputeBatchPlan, type StoryBatch } from "./batching";
 import { escalateTier, calculateMaxIterations, getTierConfig } from "./escalation";
@@ -128,12 +129,27 @@ export async function run(options: RunOptions): Promise<RunResult> {
       console.log(chalk.dim(`   Batching: enabled (groups consecutive simple stories, max 4/batch)`));
     }
 
+    // Clear LLM routing cache at start of new run
+    clearLlmCache();
+
     // PERF-1: Precompute batch plan once from ready stories
     let batchPlan: StoryBatch[] = [];
     let currentBatchIndex = 0;
     if (useBatch) {
       const readyStories = getAllReadyStories(prd);
       batchPlan = precomputeBatchPlan(readyStories, 4);
+
+      // LLM batch routing: pre-populate cache for all ready stories
+      if (config.routing.strategy === "llm" && config.routing.llm?.batchMode && readyStories.length > 0) {
+        try {
+          console.log(chalk.dim(`   LLM batch routing: routing ${readyStories.length} stories...`));
+          await llmRouteBatch(readyStories, { config });
+          console.log(chalk.dim(`   LLM batch routing: complete`));
+        } catch (err) {
+          console.warn(chalk.yellow(`   LLM batch routing failed: ${(err as Error).message}`));
+          console.log(chalk.dim(`   Will fall back to individual routing per story`));
+        }
+      }
     }
 
     // Main loop
@@ -158,6 +174,16 @@ export async function run(options: RunOptions): Promise<RunResult> {
           const readyStories = getAllReadyStories(prd);
           batchPlan = precomputeBatchPlan(readyStories, 4);
           currentBatchIndex = 0;
+
+          // LLM batch routing: re-route newly ready stories
+          if (config.routing.strategy === "llm" && config.routing.llm?.batchMode && readyStories.length > 0) {
+            try {
+              console.log(chalk.dim(`   LLM batch routing: re-routing ${readyStories.length} stories...`));
+              await llmRouteBatch(readyStories, { config });
+            } catch (err) {
+              console.warn(chalk.yellow(`   LLM batch routing failed: ${(err as Error).message}`));
+            }
+          }
         }
       }
 

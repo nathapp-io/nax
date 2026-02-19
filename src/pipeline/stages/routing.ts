@@ -19,7 +19,8 @@
 
 import chalk from "chalk";
 import type { PipelineStage, PipelineContext, StageResult } from "../types";
-import { routeTask } from "../../routing";
+import { routeStory } from "../../routing";
+import { routeBatch, clearCache } from "../../routing/strategies/llm";
 
 export const routingStage: PipelineStage = {
   name: "routing",
@@ -31,25 +32,13 @@ export const routingStage: PipelineStage = {
     let routing;
     if (ctx.story.routing) {
       // Use cached complexity/testStrategy, but re-derive modelTier from current config
-      routing = routeTask(
-        ctx.story.title,
-        ctx.story.description,
-        ctx.story.acceptanceCriteria,
-        ctx.story.tags,
-        ctx.config,
-      );
+      routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir);
       // Override with cached complexity if available
       routing.complexity = ctx.story.routing.complexity;
       routing.testStrategy = ctx.story.routing.testStrategy;
     } else {
       // Fresh classification
-      routing = routeTask(
-        ctx.story.title,
-        ctx.story.description,
-        ctx.story.acceptanceCriteria,
-        ctx.story.tags,
-        ctx.config,
-      );
+      routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir);
     }
 
     ctx.routing = routing;
