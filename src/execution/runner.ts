@@ -234,6 +234,58 @@ export async function run(options: RunOptions): Promise<RunResult> {
         }
       }
 
+      // BUG-16 + BUG-17: Pre-iteration tier escalation check
+      // Check if story has exceeded current tier's attempt budget BEFORE spawning agent
+      const currentTier = story.routing?.modelTier || routing.modelTier;
+      const tierOrder = config.autoMode.escalation?.tierOrder || [];
+      const tierCfg = tierOrder.length > 0 ? getTierConfig(currentTier, tierOrder) : undefined;
+
+      if (tierCfg && story.attempts >= tierCfg.attempts) {
+        // Exceeded current tier budget — try to escalate
+        const nextTier = escalateTier(currentTier, tierOrder);
+
+        if (nextTier && config.autoMode.escalation.enabled) {
+          console.log(chalk.yellow(`   ⬆️  Story ${story.id} exceeded tier budget (${story.attempts}/${tierCfg.attempts}) — escalating to ${nextTier}`));
+
+          // Update story routing in PRD
+          prd.userStories = prd.userStories.map(s =>
+            s.id === story.id
+              ? {
+                  ...s,
+                  routing: s.routing
+                    ? { ...s.routing, modelTier: nextTier }
+                    : { ...routing, modelTier: nextTier },
+                }
+              : s
+          );
+          await savePRD(prd, prdPath);
+          prdDirty = true;
+
+          // Skip to next iteration (will reload PRD and use new tier)
+          continue;
+        } else {
+          // No next tier or escalation disabled — mark story as failed
+          console.log(chalk.red(`   ✗ Story ${story.id} failed (all tiers exhausted: ${story.attempts} attempts)`));
+          markStoryFailed(prd, story.id);
+          await savePRD(prd, prdPath);
+          prdDirty = true;
+
+          if (featureDir) {
+            await appendProgress(featureDir, story.id, "failed", `${story.title} — All tiers exhausted`);
+          }
+
+          await fireHook(hooks, "on-story-fail", hookCtx(feature, {
+            storyId: story.id,
+            status: "failed",
+            reason: `All tiers exhausted (${story.attempts} attempts)`,
+            cost: totalCost,
+          }), workdir);
+
+          // Skip to next iteration (will pick next story)
+          continue;
+        }
+      }
+
       // Check cost limit
       if (totalCost >= config.execution.costLimit) {
         console.log(chalk.yellow(`\n⏸  Cost limit reached ($${totalCost.toFixed(2)} >= $${config.execution.costLimit})`));
