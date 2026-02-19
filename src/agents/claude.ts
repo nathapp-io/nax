@@ -296,31 +296,27 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     const proc = Bun.spawn(cmd, spawnOptions);
 
-    // Non-interactive stdin piping removed — input file content is now
-    // included directly in the prompt via buildPlanCommand()
+    // For non-interactive mode, start reading stdout/stderr immediately
+    // (must read before proc.exited or streams will be consumed/closed)
+    let stdoutPromise: Promise<string> | null = null;
+    let stderrPromise: Promise<string> | null = null;
+    if (!options.interactive) {
+      stdoutPromise = new Response(proc.stdout!).text();
+      stderrPromise = new Response(proc.stderr!).text();
+    }
 
     const exitCode = await proc.exited;
 
-    if (exitCode !== 0) {
-      if (options.interactive) {
-        throw new Error(`Plan mode failed with exit code ${exitCode}`);
-      } else {
-        const stderr = await new Response(proc.stderr!).text();
-        throw new Error(`Plan mode failed with exit code ${exitCode}: ${stderr}`);
-      }
-    }
-
-    // In interactive mode, the agent writes the spec directly to the file system
-    // We need to capture it from the expected location (handled by CLI)
-    // In non-interactive mode, capture stdout
     let specContent = "";
     let conversationLog = "";
 
     if (!options.interactive) {
-      const stdout = await new Response(proc.stdout!).text();
-      const stderr = await new Response(proc.stderr!).text();
-      specContent = stdout;
-      conversationLog = stderr;
+      specContent = await stdoutPromise!;
+      conversationLog = await stderrPromise!;
+    }
+
+    if (exitCode !== 0) {
+      throw new Error(`Plan mode failed with exit code ${exitCode}: ${conversationLog || "unknown error"}`);
     }
 
     return {
