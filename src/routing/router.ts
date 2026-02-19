@@ -207,7 +207,7 @@ export async function routeStory(
   workdir: string,
 ): Promise<RoutingDecision> {
   const chain = await buildStrategyChain(context.config, workdir);
-  return chain.route(story, context);
+  return await chain.route(story, context);
 }
 
 /**

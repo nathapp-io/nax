@@ -93,7 +93,7 @@ function createMockMetrics(
 
 describe("Adaptive Routing Strategy", () => {
   describe("No metrics available", () => {
-    test("should fallback to configured strategy when no metrics", () => {
+    test("should fallback to configured strategy when no metrics", async () => {
       const story = createStory(
         "US-001",
         "Add user login",
@@ -102,7 +102,7 @@ describe("Adaptive Routing Strategy", () => {
       );
 
       const context = createContext(undefined); // No metrics
-      const decision = adaptiveStrategy.route(story, context);
+      const decision = await adaptiveStrategy.route(story, context);
 
       expect(decision).not.toBeNull();
       expect(decision?.reasoning).toContain("no metrics available");
@@ -111,7 +111,7 @@ describe("Adaptive Routing Strategy", () => {
   });
 
   describe("Insufficient data fallback", () => {
-    test("should fallback when samples below minSamples threshold", () => {
+    test("should fallback when samples below minSamples threshold", async () => {
       const metrics = createMockMetrics({
         simple: {
           predicted: 5, // Below default minSamples = 10
@@ -128,7 +128,7 @@ describe("Adaptive Routing Strategy", () => {
       );
 
       const context = createContext(metrics);
-      const decision = adaptiveStrategy.route(story, context);
+      const decision = await adaptiveStrategy.route(story, context);
 
       expect(decision).not.toBeNull();
       expect(decision?.reasoning).toContain("insufficient data");
@@ -136,7 +136,7 @@ describe("Adaptive Routing Strategy", () => {
       expect(decision?.reasoning).toContain("fallback to");
     });
 
-    test("should respect custom minSamples config", () => {
+    test("should respect custom minSamples config", async () => {
       const metrics = createMockMetrics({
         simple: {
           predicted: 3, // Below custom minSamples = 5
@@ -166,7 +166,7 @@ describe("Adaptive Routing Strategy", () => {
       };
 
       const context = createContext(metrics, config);
-      const decision = adaptiveStrategy.route(story, context);
+      const decision = await adaptiveStrategy.route(story, context);
 
       expect(decision).not.toBeNull();
       expect(decision?.reasoning).toContain("insufficient data");
@@ -176,7 +176,7 @@ describe("Adaptive Routing Strategy", () => {
   });
 
   describe("Sufficient data - adaptive routing", () => {
-    test("should route to fast tier when low mismatch rate", () => {
+    test("should route to fast tier when low mismatch rate", async () => {
       const metrics = createMockMetrics({
         simple: {
           predicted: 50, // Sufficient samples
@@ -193,7 +193,7 @@ describe("Adaptive Routing Strategy", () => {
       );
 
       const context = createContext(metrics);
-      const decision = adaptiveStrategy.route(story, context);
+      const decision = await adaptiveStrategy.route(story, context);
 
       expect(decision).not.toBeNull();
       expect(decision?.complexity).toBe("simple");
@@ -204,7 +204,7 @@ describe("Adaptive Routing Strategy", () => {
       expect(decision?.reasoning).toContain("mismatch: 10.0%");
     });
 
-    test("should route to higher tier when high mismatch rate", () => {
+    test("should route to higher tier when high mismatch rate", async () => {
       const metrics = createMockMetrics({
         medium: {
           predicted: 30,
@@ -227,7 +227,7 @@ describe("Adaptive Routing Strategy", () => {
       );
 
       const context = createContext(metrics);
-      const decision = adaptiveStrategy.route(story, context);
+      const decision = await adaptiveStrategy.route(story, context);
 
       expect(decision).not.toBeNull();
       expect(decision?.complexity).toBe("medium");
@@ -237,7 +237,7 @@ describe("Adaptive Routing Strategy", () => {
       expect(decision?.reasoning).toContain("samples: 30");
     });
 
-    test("should include cost information in reasoning", () => {
+    test("should include cost information in reasoning", async () => {
       const metrics = createMockMetrics({
         complex: {
           predicted: 15,
@@ -255,7 +255,7 @@ describe("Adaptive Routing Strategy", () => {
       );
 
       const context = createContext(metrics);
-      const decision = adaptiveStrategy.route(story, context);
+      const decision = await adaptiveStrategy.route(story, context);
 
       expect(decision).not.toBeNull();
       expect(decision?.reasoning).toContain("cost:");
@@ -264,7 +264,7 @@ describe("Adaptive Routing Strategy", () => {
   });
 
   describe("Cost calculation", () => {
-    test("should prefer fast tier when effective cost is lower", () => {
+    test("should prefer fast tier when effective cost is lower", async () => {
       // Fast tier with low fail rate should beat balanced tier
       const metrics = createMockMetrics({
         simple: {
@@ -282,7 +282,7 @@ describe("Adaptive Routing Strategy", () => {
       );
 
       const context = createContext(metrics);
-      const decision = adaptiveStrategy.route(story, context);
+      const decision = await adaptiveStrategy.route(story, context);
 
       expect(decision).not.toBeNull();
       expect(decision?.modelTier).toBe("fast");
@@ -290,7 +290,7 @@ describe("Adaptive Routing Strategy", () => {
       // This beats balanced: ~0.02
     });
 
-    test("should prefer balanced tier when fast has high fail rate", () => {
+    test("should prefer balanced tier when fast has high fail rate", async () => {
       // Fast tier with high fail rate should lose to balanced tier
       const metrics = createMockMetrics({
         medium: {
@@ -308,7 +308,7 @@ describe("Adaptive Routing Strategy", () => {
       );
 
       const context = createContext(metrics);
-      const decision = adaptiveStrategy.route(story, context);
+      const decision = await adaptiveStrategy.route(story, context);
 
       expect(decision).not.toBeNull();
       // Fast effective cost: 0.005 + 0.8 * 0.02 = 0.021
@@ -319,7 +319,7 @@ describe("Adaptive Routing Strategy", () => {
   });
 
   describe("Threshold switching", () => {
-    test("should respect costThreshold configuration", () => {
+    test("should respect costThreshold configuration", async () => {
       const metrics = createMockMetrics({
         simple: {
           predicted: 40,
@@ -350,7 +350,7 @@ describe("Adaptive Routing Strategy", () => {
       };
 
       const context = createContext(metrics, config);
-      const decision = adaptiveStrategy.route(story, context);
+      const decision = await adaptiveStrategy.route(story, context);
 
       expect(decision).not.toBeNull();
       expect(decision?.reasoning).toContain("adaptive");
@@ -358,7 +358,7 @@ describe("Adaptive Routing Strategy", () => {
   });
 
   describe("Test strategy inheritance", () => {
-    test("should use fallback strategy's test strategy decision", () => {
+    test("should use fallback strategy's test strategy decision", async () => {
       const metrics = createMockMetrics({
         complex: {
           predicted: 20,
@@ -377,13 +377,13 @@ describe("Adaptive Routing Strategy", () => {
       );
 
       const context = createContext(metrics);
-      const decision = adaptiveStrategy.route(story, context);
+      const decision = await adaptiveStrategy.route(story, context);
 
       expect(decision).not.toBeNull();
       expect(decision?.testStrategy).toBe("three-session-tdd");
     });
 
-    test("should use test-after for simple non-critical stories", () => {
+    test("should use test-after for simple non-critical stories", async () => {
       const metrics = createMockMetrics({
         simple: {
           predicted: 30,
@@ -400,7 +400,7 @@ describe("Adaptive Routing Strategy", () => {
       );
 
       const context = createContext(metrics);
-      const decision = adaptiveStrategy.route(story, context);
+      const decision = await adaptiveStrategy.route(story, context);
 
       expect(decision).not.toBeNull();
       expect(decision?.testStrategy).toBe("test-after");
@@ -408,7 +408,7 @@ describe("Adaptive Routing Strategy", () => {
   });
 
   describe("Multiple complexity levels", () => {
-    test("should handle metrics for multiple complexity levels", () => {
+    test("should handle metrics for multiple complexity levels", async () => {
       const metrics = createMockMetrics({
         simple: {
           predicted: 50,
@@ -434,7 +434,7 @@ describe("Adaptive Routing Strategy", () => {
 
       // Simple story
       const simpleStory = createStory("US-012", "Fix typo", "Fix typo", ["Done"]);
-      const simpleDecision = adaptiveStrategy.route(simpleStory, createContext(metrics));
+      const simpleDecision = await adaptiveStrategy.route(simpleStory, createContext(metrics));
       expect(simpleDecision?.complexity).toBe("simple");
       expect(simpleDecision?.modelTier).toBe("fast");
 
@@ -445,13 +445,13 @@ describe("Adaptive Routing Strategy", () => {
         "Refactor API module",
         Array.from({ length: 10 }, (_, i) => `Criterion ${i + 1}`),
       );
-      const complexDecision = adaptiveStrategy.route(complexStory, createContext(metrics));
+      const complexDecision = await adaptiveStrategy.route(complexStory, createContext(metrics));
       expect(complexDecision?.complexity).toBe("complex");
     });
   });
 
   describe("Edge cases", () => {
-    test("should handle zero mismatch rate gracefully", () => {
+    test("should handle zero mismatch rate gracefully", async () => {
       const metrics = createMockMetrics({
         simple: {
           predicted: 100,
@@ -462,13 +462,13 @@ describe("Adaptive Routing Strategy", () => {
 
       const story = createStory("US-014", "Add text", "Add help text", ["Text added"]);
       const context = createContext(metrics);
-      const decision = adaptiveStrategy.route(story, context);
+      const decision = await adaptiveStrategy.route(story, context);
 
       expect(decision).not.toBeNull();
       expect(decision?.modelTier).toBe("fast");
     });
 
-    test("should handle 100% mismatch rate", () => {
+    test("should handle 100% mismatch rate", async () => {
       const metrics = createMockMetrics({
         medium: {
           predicted: 10,
@@ -485,14 +485,14 @@ describe("Adaptive Routing Strategy", () => {
       );
 
       const context = createContext(metrics);
-      const decision = adaptiveStrategy.route(story, context);
+      const decision = await adaptiveStrategy.route(story, context);
 
       expect(decision).not.toBeNull();
       // With 100% mismatch from fast, should prefer higher tier
       expect(decision?.reasoning).toContain("adaptive");
     });
 
-    test("should handle missing complexity level in metrics", () => {
+    test("should handle missing complexity level in metrics", async () => {
       // Metrics only have data for 'simple', not 'expert'
       const metrics = createMockMetrics({
         simple: {
@@ -511,7 +511,7 @@ describe("Adaptive Routing Strategy", () => {
       );
 
       const context = createContext(metrics);
-      const decision = adaptiveStrategy.route(story, context);
+      const decision = await adaptiveStrategy.route(story, context);
 
       expect(decision).not.toBeNull();
       // Should fallback for expert complexity (no data)

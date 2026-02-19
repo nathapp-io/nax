@@ -11,7 +11,7 @@ import { buildStrategyChain } from "../src/routing/builder";
 import { DEFAULT_CONFIG } from "../src/config/schema";
 
 describe("StrategyChain", () => {
-  test("uses first strategy that returns non-null", () => {
+  test("uses first strategy that returns non-null", async () => {
     const alwaysNullStrategy: RoutingStrategy = {
       name: "always-null",
       route: () => null,
@@ -43,12 +43,12 @@ describe("StrategyChain", () => {
     };
 
     const context: RoutingContext = { config: DEFAULT_CONFIG };
-    const decision = chain.route(story, context);
+    const decision = await chain.route(story, context);
 
     expect(decision.reasoning).toBe("Always return strategy");
   });
 
-  test("throws error if all strategies return null", () => {
+  test("throws error if all strategies return null", async () => {
     const alwaysNullStrategy: RoutingStrategy = {
       name: "always-null",
       route: () => null,
@@ -71,7 +71,7 @@ describe("StrategyChain", () => {
 
     const context: RoutingContext = { config: DEFAULT_CONFIG };
 
-    expect(() => chain.route(story, context)).toThrow(
+    await expect(chain.route(story, context)).rejects.toThrow(
       "No routing strategy returned a decision"
     );
   });
