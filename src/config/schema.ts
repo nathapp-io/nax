@@ -188,6 +188,26 @@ export interface AcceptanceConfig {
   testPath: string;
 }
 
+/** Test coverage context config */
+export interface TestCoverageConfig {
+  /** Enable test coverage context injection (default: true) */
+  enabled: boolean;
+  /** Detail level for test summary */
+  detail: "names-only" | "names-and-counts" | "describe-blocks";
+  /** Max tokens for the summary (default: 500) */
+  maxTokens: number;
+  /** Test directory relative to workdir (default: auto-detect) */
+  testDir?: string;
+  /** Glob pattern for test files */
+  testPattern: string;
+}
+
+/** Context config */
+export interface ContextConfig {
+  /** Test coverage summary injection */
+  testCoverage: TestCoverageConfig;
+}
+
 /** Routing strategy name */
 export type RoutingStrategyName = "keyword" | "llm" | "manual" | "adaptive" | "custom";
 
@@ -237,6 +257,8 @@ export interface NaxConfig {
   plan: PlanConfig;
   /** Acceptance validation settings */
   acceptance: AcceptanceConfig;
+  /** Context injection settings */
+  context: ContextConfig;
 }
 
 /** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */
@@ -375,6 +397,18 @@ const AcceptanceConfigSchema = z.object({
   testPath: z.string().min(1, "acceptance.testPath must be non-empty"),
 });
 
+const TestCoverageConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  detail: z.enum(["names-only", "names-and-counts", "describe-blocks"]).default("names-and-counts"),
+  maxTokens: z.number().int().min(50).max(5000).default(500),
+  testDir: z.string().optional(),
+  testPattern: z.string().default("**/*.test.{ts,js,tsx,jsx}"),
+});
+
+const ContextConfigSchema = z.object({
+  testCoverage: TestCoverageConfigSchema,
+});
+
 const AdaptiveRoutingConfigSchema = z.object({
   minSamples: z.number().int().positive({ message: "adaptive.minSamples must be > 0" }),
   costThreshold: z.number().min(0).max(1, { message: "adaptive.costThreshold must be 0-1" }),
@@ -413,6 +447,7 @@ export const NaxConfigSchema = z
     review: ReviewConfigSchema,
     plan: PlanConfigSchema,
     acceptance: AcceptanceConfigSchema,
+    context: ContextConfigSchema,
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",
@@ -507,6 +542,14 @@ export const DEFAULT_CONFIG: NaxConfig = {
     maxRetries: 2,
     generateTests: true,
     testPath: "acceptance.test.ts",
+  },
+  context: {
+    testCoverage: {
+      enabled: true,
+      detail: "names-and-counts",
+      maxTokens: 500,
+      testPattern: "**/*.test.{ts,js,tsx,jsx}",
+    },
   },
 };
 

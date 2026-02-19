@@ -7,7 +7,9 @@
 import path from 'node:path';
 import type { ContextElement, ContextBudget, StoryContext, BuiltContext } from './types';
 import type { UserStory } from '../prd';
+import type { NaxConfig } from '../config';
 import { countStories } from '../prd';
+import { generateTestCoverageSummary } from './test-scanner';
 
 /**
  * Approximate character-to-token ratio for token estimation.
@@ -104,6 +106,18 @@ export function createFileContext(
     content,
     priority,
     tokens: estimateTokens(content),
+  };
+}
+
+/**
+ * Create context element from test coverage summary
+ */
+export function createTestCoverageContext(content: string, tokens: number, priority: number): ContextElement {
+  return {
+    type: 'test-coverage',
+    content,
+    priority,
+    tokens,
   };
 }
 
@@ -244,6 +258,25 @@ export async function buildContext(
     }
   }
 
+  // Add test coverage summary (priority 85 — below prior errors, above current story)
+  if (storyContext.config?.context?.testCoverage?.enabled !== false && storyContext.workdir) {
+    try {
+      const tcConfig = storyContext.config?.context?.testCoverage;
+      const scanResult = await generateTestCoverageSummary({
+        workdir: storyContext.workdir,
+        testDir: tcConfig?.testDir,
+        testPattern: tcConfig?.testPattern,
+        maxTokens: tcConfig?.maxTokens ?? 500,
+        detail: tcConfig?.detail ?? "names-and-counts",
+      });
+      if (scanResult.summary) {
+        elements.push(createTestCoverageContext(scanResult.summary, scanResult.tokens, 85));
+      }
+    } catch (error) {
+      console.warn(`⚠️  Test coverage scan failed: ${(error as Error).message}`);
+    }
+  }
+
   // Add relevant source files (lower priority - priority 60)
   // Load file content from currentStory.relevantFiles if present
   // Constraints: max 10KB per file, max 5 files, respect token budget
@@ -320,12 +353,13 @@ function generateSummary(
   totalTokens: number,
   truncated: boolean,
 ): string {
-  const counts = {
+  const counts: Record<string, number> = {
     story: 0,
     dependency: 0,
     error: 0,
     progress: 0,
     file: 0,
+    'test-coverage': 0,
   };
 
   for (const element of elements) {
@@ -339,6 +373,7 @@ function generateSummary(
   if (counts.dependency > 0) parts.push(`${counts.dependency} dependencies`);
   if (counts.error > 0) parts.push(`${counts.error} errors`);
   if (counts.file > 0) parts.push(`${counts.file} files`);
+  if (counts['test-coverage'] > 0) parts.push('test coverage');
 
   const summary = `Context: ${parts.join(', ')} (${totalTokens} tokens)`;
 
@@ -394,6 +429,14 @@ export function formatContextAsMarkdown(built: BuiltContext): string {
       sections.push('```');
       sections.push(element.content);
       sections.push('```\n');
+    }
+  }
+
+  // Test coverage (before current story)
+  if (byType.has('test-coverage')) {
+    for (const element of byType.get('test-coverage')!) {
+      sections.push(element.content);
+      sections.push('\n');
     }
   }
 
