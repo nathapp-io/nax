@@ -202,6 +202,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
         if (story.routing) {
           routing.complexity = story.routing.complexity;
           routing.testStrategy = story.routing.testStrategy;
+          // BUG-19: Re-derive modelTier from cached complexity
+          routing.modelTier = config.autoMode.complexityRouting[routing.complexity] ?? "balanced";
         }
       } else {
         // Fallback to single-story mode (when batching disabled or batch plan exhausted)
@@ -227,6 +229,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
         if (story.routing) {
           routing.complexity = story.routing.complexity;
           routing.testStrategy = story.routing.testStrategy;
+          // BUG-19: Re-derive modelTier from cached complexity
+          routing.modelTier = config.autoMode.complexityRouting[routing.complexity] ?? "balanced";
         }
       }
 
