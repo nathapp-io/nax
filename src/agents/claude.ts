@@ -270,59 +270,51 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   async plan(options: PlanOptions): Promise<PlanResult> {
     const cmd = this.buildPlanCommand(options);
 
-    // In interactive mode, inherit stdio so agent can interact with user
-    // In non-interactive mode, capture output
-    const spawnOptions = options.interactive
-      ? {
-          cwd: options.workdir,
-          stdin: "inherit" as const,
-          stdout: "inherit" as const,
-          stderr: "inherit" as const,
-          env: {
-            ...process.env,
-            ...(options.modelDef?.env || {}),
-          },
-        }
-      : {
-          cwd: options.workdir,
-          stdin: "pipe" as const,
-          stdout: "pipe" as const,
-          stderr: "pipe" as const,
-          env: {
-            ...process.env,
-            ...(options.modelDef?.env || {}),
-          },
-        };
-
-    const proc = Bun.spawn(cmd, spawnOptions);
-
-    // For non-interactive mode, start reading stdout/stderr immediately
-    // (must read before proc.exited or streams will be consumed/closed)
-    let stdoutPromise: Promise<string> | null = null;
-    let stderrPromise: Promise<string> | null = null;
-    if (!options.interactive) {
-      stdoutPromise = new Response(proc.stdout!).text();
-      stderrPromise = new Response(proc.stderr!).text();
+    if (options.interactive) {
+      // Interactive mode: inherit stdio
+      const proc = Bun.spawn(cmd, {
+        cwd: options.workdir,
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+        env: { ...process.env, ...(options.modelDef?.env || {}) },
+      });
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        throw new Error(`Plan mode failed with exit code ${exitCode}`);
+      }
+      return { specContent: "", conversationLog: "" };
     }
 
-    const exitCode = await proc.exited;
+    // Non-interactive: use shell redirect to temp files to avoid Bun pipe buffering issues
+    const { join } = require("node:path");
+    const { mkdtempSync, readFileSync, unlinkSync, rmSync } = require("node:fs");
+    const { tmpdir } = require("node:os");
+    const tempDir = mkdtempSync(join(tmpdir(), "nax-plan-"));
+    const outFile = join(tempDir, "stdout.txt");
+    const errFile = join(tempDir, "stderr.txt");
 
-    let specContent = "";
-    let conversationLog = "";
+    try {
+      const shellCmd = cmd.map((s: string) => `'${s.replace(/'/g, "'\\''")}' `).join(" ");
+      const fullCmd = `${shellCmd} > '${outFile}' 2> '${errFile}'`;
 
-    if (!options.interactive) {
-      specContent = await stdoutPromise!;
-      conversationLog = await stderrPromise!;
+      const proc = Bun.spawn(["bash", "-c", fullCmd], {
+        cwd: options.workdir,
+        env: { ...process.env, ...(options.modelDef?.env || {}) },
+      });
+      const exitCode = await proc.exited;
+
+      const specContent = readFileSync(outFile, "utf-8");
+      const conversationLog = readFileSync(errFile, "utf-8").toString();
+
+      if (exitCode !== 0) {
+        throw new Error(`Plan mode failed with exit code ${exitCode}: ${conversationLog || "unknown error"}`);
+      }
+
+      return { specContent, conversationLog };
+    } finally {
+      try { rmSync(tempDir, { recursive: true }); } catch {}
     }
-
-    if (exitCode !== 0) {
-      throw new Error(`Plan mode failed with exit code ${exitCode}: ${conversationLog || "unknown error"}`);
-    }
-
-    return {
-      specContent,
-      conversationLog,
-    };
   }
 
   /**
