@@ -129,13 +129,13 @@ describe("execution runner", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
-      config: { 
+      config: {
         ...DEFAULT_CONFIG,
         autoMode: {
           ...DEFAULT_CONFIG.autoMode,
           escalation: {
+            ...DEFAULT_CONFIG.autoMode.escalation,
             enabled: true,
-            maxAttempts: 3,
           },
         },
       },
@@ -337,8 +337,8 @@ describe("execution runner", () => {
         autoMode: {
           ...DEFAULT_CONFIG.autoMode,
           escalation: {
+            ...DEFAULT_CONFIG.autoMode.escalation,
             enabled: true,
-            maxAttempts: 3,
             escalateEntireBatch: true, // Default behavior
           },
         },
@@ -416,8 +416,8 @@ describe("execution runner", () => {
         autoMode: {
           ...DEFAULT_CONFIG.autoMode,
           escalation: {
+            ...DEFAULT_CONFIG.autoMode.escalation,
             enabled: true,
-            maxAttempts: 3,
             escalateEntireBatch: false, // Individual retry mode
           },
         },
