@@ -317,12 +317,6 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     }
   }
 
-      return { specContent, conversationLog };
-    } finally {
-      try { rmSync(tempDir, { recursive: true }); } catch {}
-    }
-  }
-
   /**
    * Build the CLI command for plan mode.
    *
