@@ -296,18 +296,8 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     const proc = Bun.spawn(cmd, spawnOptions);
 
-    // In non-interactive mode, send input file content if provided
-    if (!options.interactive && options.inputFile) {
-      try {
-        const inputContent = await Bun.file(options.inputFile).text();
-        if (proc.stdin) {
-          proc.stdin.write(inputContent);
-          proc.stdin.end();
-        }
-      } catch (error) {
-        throw new Error(`Failed to read input file ${options.inputFile}: ${(error as Error).message}`);
-      }
-    }
+    // Non-interactive stdin piping removed — input file content is now
+    // included directly in the prompt via buildPlanCommand()
 
     const exitCode = await proc.exited;
 
@@ -346,7 +336,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
    * @returns Command array for spawning the plan process
    */
   private buildPlanCommand(options: PlanOptions): string[] {
-    const cmd = [this.binary, "--plan"];
+    const cmd = [this.binary, "--permission-mode", "plan"];
 
     // Add model if specified
     if (options.modelDef) {
@@ -356,13 +346,31 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     // Add dangerously-skip-permissions for automation
     cmd.push("--dangerously-skip-permissions");
 
-    // Add prompt with codebase context if available
+    // Add prompt with codebase context and input file if available
     let fullPrompt = options.prompt;
     if (options.codebaseContext) {
       fullPrompt = `${options.codebaseContext}\n\n${options.prompt}`;
     }
 
-    cmd.push("-p", fullPrompt);
+    // For non-interactive mode, include input file content in the prompt
+    if (options.inputFile) {
+      try {
+        const inputContent = require("node:fs").readFileSync(
+          require("node:path").resolve(options.workdir, options.inputFile),
+          "utf-8",
+        );
+        fullPrompt = `${fullPrompt}\n\n## Input Requirements\n\n${inputContent}`;
+      } catch (error) {
+        throw new Error(`Failed to read input file ${options.inputFile}: ${(error as Error).message}`);
+      }
+    }
+
+    if (!options.interactive) {
+      cmd.push("-p", fullPrompt);
+    } else {
+      // Interactive mode: pass prompt as initial message, agent will ask follow-ups
+      cmd.push("-p", fullPrompt);
+    }
 
     return cmd;
   }
