@@ -200,10 +200,13 @@ export async function run(options: RunOptions): Promise<RunResult> {
         );
         // Override with cached complexity if available
         if (story.routing) {
-          routing.complexity = story.routing.complexity;
-          routing.testStrategy = story.routing.testStrategy;
-          // BUG-19: Re-derive modelTier from cached complexity
-          routing.modelTier = config.autoMode.complexityRouting[routing.complexity] ?? "balanced";
+          if (story.routing.complexity) {
+            routing.complexity = story.routing.complexity;
+            routing.modelTier = config.autoMode.complexityRouting[routing.complexity] ?? "balanced";
+          }
+          if (story.routing.testStrategy) {
+            routing.testStrategy = story.routing.testStrategy;
+          }
         }
       } else {
         // Fallback to single-story mode (when batching disabled or batch plan exhausted)
@@ -227,16 +230,19 @@ export async function run(options: RunOptions): Promise<RunResult> {
         );
         // Override with cached complexity if available
         if (story.routing) {
-          routing.complexity = story.routing.complexity;
-          routing.testStrategy = story.routing.testStrategy;
-          // BUG-19: Re-derive modelTier from cached complexity
-          routing.modelTier = config.autoMode.complexityRouting[routing.complexity] ?? "balanced";
+          if (story.routing.complexity) {
+            routing.complexity = story.routing.complexity;
+            routing.modelTier = config.autoMode.complexityRouting[routing.complexity] ?? "balanced";
+          }
+          if (story.routing.testStrategy) {
+            routing.testStrategy = story.routing.testStrategy;
+          }
         }
       }
 
       // BUG-16 + BUG-17: Pre-iteration tier escalation check
       // Check if story has exceeded current tier's attempt budget BEFORE spawning agent
-      const currentTier = story.routing?.modelTier || routing.modelTier;
+      const currentTier = story.routing?.modelTier ?? routing.modelTier;
       const tierOrder = config.autoMode.escalation?.tierOrder || [];
       const tierCfg = tierOrder.length > 0 ? getTierConfig(currentTier, tierOrder) : undefined;
 
@@ -247,11 +253,12 @@ export async function run(options: RunOptions): Promise<RunResult> {
         if (nextTier && config.autoMode.escalation.enabled) {
           console.log(chalk.yellow(`   ⬆️  Story ${story.id} exceeded tier budget (${story.attempts}/${tierCfg.attempts}) — escalating to ${nextTier}`));
 
-          // Update story routing in PRD
+          // Update story routing in PRD and reset attempts for new tier
           prd.userStories = prd.userStories.map(s =>
             s.id === story.id
               ? {
                   ...s,
+                  attempts: 0, // Reset attempts for new tier
                   routing: s.routing
                     ? { ...s.routing, modelTier: nextTier }
                     : { ...routing, modelTier: nextTier },
