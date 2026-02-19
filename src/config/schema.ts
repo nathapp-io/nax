@@ -230,6 +230,22 @@ export interface AdaptiveRoutingConfig {
   fallbackStrategy: "keyword" | "llm" | "manual";
 }
 
+/** LLM routing config */
+export interface LlmRoutingConfig {
+  /** Model tier for routing call (default: "fast") */
+  model?: string;
+  /** Fall back to keyword strategy on LLM failure (default: true) */
+  fallbackToKeywords?: boolean;
+  /** Max input tokens for story context (default: 2000) */
+  maxInputTokens?: number;
+  /** Cache routing decisions per story ID (default: true) */
+  cacheDecisions?: boolean;
+  /** Batch mode: route multiple stories in one LLM call (default: true) */
+  batchMode?: boolean;
+  /** Timeout for LLM call in milliseconds (default: 15000) */
+  timeoutMs?: number;
+}
+
 /** Routing config */
 export interface RoutingConfig {
   /** Strategy to use (default: "keyword") */
@@ -238,6 +254,8 @@ export interface RoutingConfig {
   customStrategyPath?: string;
   /** Adaptive routing settings (used when strategy = "adaptive") */
   adaptive?: AdaptiveRoutingConfig;
+  /** LLM routing settings (used when strategy = "llm") */
+  llm?: LlmRoutingConfig;
 }
 
 /** Full nax configuration */
@@ -429,10 +447,20 @@ const AdaptiveRoutingConfigSchema = z.object({
   fallbackStrategy: z.enum(["keyword", "llm", "manual"]),
 });
 
+const LlmRoutingConfigSchema = z.object({
+  model: z.string().optional(),
+  fallbackToKeywords: z.boolean().optional(),
+  maxInputTokens: z.number().int().positive({ message: "llm.maxInputTokens must be > 0" }).optional(),
+  cacheDecisions: z.boolean().optional(),
+  batchMode: z.boolean().optional(),
+  timeoutMs: z.number().int().positive({ message: "llm.timeoutMs must be > 0" }).optional(),
+});
+
 const RoutingConfigSchema = z.object({
   strategy: z.enum(["keyword", "llm", "manual", "adaptive", "custom"]),
   customStrategyPath: z.string().optional(),
   adaptive: AdaptiveRoutingConfigSchema.optional(),
+  llm: LlmRoutingConfigSchema.optional(),
 }).refine(
   (data) => {
     // If strategy is "custom", customStrategyPath is required
@@ -502,6 +530,14 @@ export const DEFAULT_CONFIG: NaxConfig = {
       minSamples: 10,
       costThreshold: 0.8,
       fallbackStrategy: "llm",
+    },
+    llm: {
+      model: "fast",
+      fallbackToKeywords: true,
+      maxInputTokens: 2000,
+      cacheDecisions: true,
+      batchMode: true,
+      timeoutMs: 15000,
     },
   },
   execution: {
