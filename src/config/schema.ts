@@ -33,7 +33,7 @@ export interface TokenPricing {
 export interface ModelDef {
   /** Provider name (e.g., "anthropic", "openai", "ollama") */
   provider: string;
-  /** Model identifier (e.g., "claude-sonnet-4-5", "gpt-5-mini") */
+  /** Model identifier (e.g., "sonnet", "gpt-5-mini") */
   model: string;
   /** Optional token pricing override (defaults to built-in rates) */
   pricing?: TokenPricing;
@@ -458,9 +458,9 @@ export const NaxConfigSchema = z
 export const DEFAULT_CONFIG: NaxConfig = {
   version: 1,
   models: {
-    fast: { provider: "anthropic", model: "claude-haiku-4-5" },
-    balanced: { provider: "anthropic", model: "claude-sonnet-4-5" },
-    powerful: { provider: "anthropic", model: "claude-opus-4" },
+    fast: { provider: "anthropic", model: "haiku" },
+    balanced: { provider: "anthropic", model: "sonnet" },
+    powerful: { provider: "anthropic", model: "opus" },
   },
   autoMode: {
     enabled: true,
