@@ -422,13 +422,55 @@ export function formatContextAsMarkdown(built: BuiltContext): string {
     }
   }
 
-  // Errors second
+  // Errors second (split into ASSET_CHECK and others)
   if (byType.has('error')) {
-    sections.push('## Prior Errors\n');
-    for (const element of byType.get('error')!) {
-      sections.push('```');
-      sections.push(element.content);
-      sections.push('```\n');
+    const errorElements = byType.get('error')!;
+    const assetCheckErrors: ContextElement[] = [];
+    const otherErrors: ContextElement[] = [];
+
+    // Separate ASSET_CHECK_FAILED errors from others
+    for (const element of errorElements) {
+      if (element.content.startsWith('ASSET_CHECK_FAILED:')) {
+        assetCheckErrors.push(element);
+      } else {
+        otherErrors.push(element);
+      }
+    }
+
+    // Render ASSET_CHECK errors as MANDATORY instructions (highest visibility)
+    if (assetCheckErrors.length > 0) {
+      sections.push('## ⚠️ MANDATORY: Missing Files from Previous Attempts\n');
+      sections.push('**CRITICAL:** Previous attempts failed because these files were not created.\n');
+      sections.push('You MUST create these exact files. Do NOT use alternative filenames.\n\n');
+
+      for (const element of assetCheckErrors) {
+        // Parse error message to extract file list
+        // Format: "ASSET_CHECK_FAILED: Missing files: [file1, file2, ...]\nAction: ..."
+        const match = element.content.match(/Missing files: \[([^\]]+)\]/);
+        if (match) {
+          const fileList = match[1].split(',').map(f => f.trim());
+          sections.push('**Required files:**\n');
+          for (const file of fileList) {
+            sections.push(`- \`${file}\``);
+          }
+          sections.push('\n');
+        } else {
+          // Fallback if parsing fails
+          sections.push('```');
+          sections.push(element.content);
+          sections.push('```\n');
+        }
+      }
+    }
+
+    // Render other errors normally
+    if (otherErrors.length > 0) {
+      sections.push('## Prior Errors\n');
+      for (const element of otherErrors) {
+        sections.push('```');
+        sections.push(element.content);
+        sections.push('```\n');
+      }
     }
   }
 
