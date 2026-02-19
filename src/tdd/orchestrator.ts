@@ -307,13 +307,14 @@ export async function runThreeSessionTdd(
 
   // Session 1: Test Writer
   const session1Ref = initialRef;
+  const testWriterTier = config.tdd.sessionTiers?.testWriter ?? "balanced";
   const session1 = await runTddSession(
     "test-writer",
     agent,
     story,
     config,
     workdir,
-    modelTier,
+    testWriterTier,
     session1Ref,
     contextMarkdown,
   );
@@ -336,14 +337,15 @@ export async function runThreeSessionTdd(
   // Capture state after session 1
   const session2Ref = await captureGitRef(workdir);
 
-  // Session 2: Implementer
+  // Session 2: Implementer (uses story's routed tier by default)
+  const implementerTier = config.tdd.sessionTiers?.implementer ?? modelTier;
   const session2 = await runTddSession(
     "implementer",
     agent,
     story,
     config,
     workdir,
-    modelTier,
+    implementerTier,
     session2Ref,
     contextMarkdown,
   );
@@ -367,13 +369,14 @@ export async function runThreeSessionTdd(
   const session3Ref = await captureGitRef(workdir);
 
   // Session 3: Verifier
+  const verifierTier = config.tdd.sessionTiers?.verifier ?? "fast";
   const session3 = await runTddSession(
     "verifier",
     agent,
     story,
     config,
     workdir,
-    modelTier,
+    verifierTier,
     session3Ref,
   );
   sessions.push(session3);

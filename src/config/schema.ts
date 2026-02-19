@@ -130,6 +130,15 @@ export interface TddConfig {
   autoVerifyIsolation: boolean;
   /** Session 3 verifier: auto-approve legitimate fixes */
   autoApproveVerifier: boolean;
+  /** Per-session model tier overrides. Defaults: test-writer=balanced, implementer=story tier, verifier=fast */
+  sessionTiers?: {
+    /** Model tier for test-writer session (default: "balanced") */
+    testWriter?: ModelTier;
+    /** Model tier for implementer session (default: uses story's routed tier) */
+    implementer?: ModelTier;
+    /** Model tier for verifier session (default: "fast") */
+    verifier?: ModelTier;
+  };
 }
 
 /** Constitution config */
@@ -360,6 +369,11 @@ const TddConfigSchema = z.object({
   maxRetries: z.number().int().nonnegative(),
   autoVerifyIsolation: z.boolean(),
   autoApproveVerifier: z.boolean(),
+  sessionTiers: z.object({
+    testWriter: z.string().optional(),
+    implementer: z.string().optional(),
+    verifier: z.string().optional(),
+  }).optional(),
 });
 
 const ConstitutionConfigSchema = z.object({
@@ -516,6 +530,11 @@ export const DEFAULT_CONFIG: NaxConfig = {
     maxRetries: 2,
     autoVerifyIsolation: true,
     autoApproveVerifier: true,
+    sessionTiers: {
+      testWriter: "balanced",
+      // implementer: undefined = uses story's routed tier
+      verifier: "fast",
+    },
   },
   constitution: {
     enabled: true,
