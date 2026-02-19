@@ -48,6 +48,7 @@ export async function getPgid(pid: number): Promise<number | null> {
  * Handles the case where the process is already dead gracefully.
  *
  * @param pid - Root process ID whose process group should be cleaned up
+ * @param gracePeriodMs - Time to wait between SIGTERM and SIGKILL (default: 3000ms)
  *
  * @example
  * ```ts
@@ -57,7 +58,7 @@ export async function getPgid(pid: number): Promise<number | null> {
  * }
  * ```
  */
-export async function cleanupProcessTree(pid: number): Promise<void> {
+export async function cleanupProcessTree(pid: number, gracePeriodMs = 3000): Promise<void> {
   try {
     // Get the process group ID
     const pgid = await getPgid(pid);
@@ -79,14 +80,23 @@ export async function cleanupProcessTree(pid: number): Promise<void> {
       return;
     }
 
-    // Wait 3 seconds for graceful shutdown
-    await Bun.sleep(3000);
+    // Wait for graceful shutdown
+    await Bun.sleep(gracePeriodMs);
 
-    // Send SIGKILL to any remaining processes
-    try {
-      process.kill(-pgid, "SIGKILL");
-    } catch {
-      // Ignore errors — processes may have exited during the wait
+    // Re-check PGID before SIGKILL to prevent race condition
+    // If the original process exited and a new process inherited its PID,
+    // we don't want to kill the wrong process group
+    const pgidAfterWait = await getPgid(pid);
+
+    // Only send SIGKILL if:
+    // 1. Process still exists (pgidAfterWait is not null)
+    // 2. PGID hasn't changed (still the same process group)
+    if (pgidAfterWait && pgidAfterWait === pgid) {
+      try {
+        process.kill(-pgid, "SIGKILL");
+      } catch {
+        // Ignore errors — processes may have exited during the wait
+      }
     }
   } catch (error) {
     // Log but don't throw — cleanup is best-effort

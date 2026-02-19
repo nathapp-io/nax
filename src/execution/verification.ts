@@ -135,6 +135,7 @@ export async function executeWithTimeout(
     shell?: string;
     gracePeriodMs?: number;
     drainTimeoutMs?: number;
+    cwd?: string;
   }
 ): Promise<TimeoutExecutionResult> {
   const shell = options?.shell ?? "/bin/sh";
@@ -146,6 +147,7 @@ export async function executeWithTimeout(
     stdout: "pipe",
     stderr: "pipe",
     env: env || normalizeEnvironment(process.env),
+    cwd: options?.cwd,
   });
 
   const timeoutMs = timeoutSeconds * 1000;
@@ -486,6 +488,7 @@ export async function runVerification(options: {
   drainTimeoutMs?: number;
   shell?: string;
   stripEnvVars?: string[];
+  cwd?: string;
 }): Promise<VerificationResult> {
   // Decision 3: Pre-flight asset verification
   const assetCheck = await verifyAssets(options.workingDirectory, options.relevantFiles);
@@ -518,6 +521,7 @@ export async function runVerification(options: {
     shell: options.shell,
     gracePeriodMs: options.gracePeriodMs,
     drainTimeoutMs: options.drainTimeoutMs,
+    cwd: options.cwd,
   });
 
   if (execution.timeout) {

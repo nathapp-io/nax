@@ -431,7 +431,9 @@ export async function runThreeSessionTdd(
     const testCmd = config.quality?.commands?.test ?? "bun test";
     const timeoutSeconds = config.quality?.verificationTimeoutSeconds ?? 120;
 
-    const postVerify = await executeWithTimeout(testCmd, timeoutSeconds);
+    const postVerify = await executeWithTimeout(testCmd, timeoutSeconds, undefined, {
+      cwd: workdir,
+    });
     const testsActuallyPass = postVerify.success && postVerify.exitCode === 0;
 
     if (testsActuallyPass) {
