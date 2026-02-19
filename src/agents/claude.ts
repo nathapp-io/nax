@@ -332,7 +332,11 @@ export class ClaudeCodeAdapter implements AgentAdapter {
    * @returns Command array for spawning the plan process
    */
   private buildPlanCommand(options: PlanOptions): string[] {
-    const cmd = [this.binary, "--permission-mode", "plan"];
+    // Use --permission-mode plan only for interactive sessions
+    // In non-interactive (-p) mode, plan mode hangs waiting for user approval
+    const cmd = options.interactive
+      ? [this.binary, "--permission-mode", "plan"]
+      : [this.binary];
 
     // Add model if specified
     if (options.modelDef) {
