@@ -5,7 +5,6 @@
  * Runs verification after the agent completes, reverts story state on failure.
  */
 
-import chalk from "chalk";
 import type { NaxConfig } from "../config";
 import type { PRD, UserStory } from "../prd";
 import { savePRD } from "../prd";
@@ -13,6 +12,18 @@ import { runVerification, parseTestOutput, getEnvironmentalEscalationThreshold }
 import { getTierConfig } from "./escalation";
 import { appendProgress } from "./progress";
 import type { StoryMetrics } from "../metrics";
+import { getLogger } from "../logger";
+
+/**
+ * Safely get logger instance, returns null if not initialized
+ */
+function getSafeLogger() {
+  try {
+    return getLogger();
+  } catch {
+    return null;
+  }
+}
 
 export interface PostVerifyOptions {
   config: NaxConfig;
@@ -46,12 +57,15 @@ export interface PostVerifyResult {
  */
 export async function runPostAgentVerification(opts: PostVerifyOptions): Promise<PostVerifyResult> {
   const { config, prd, prdPath, workdir, featureDir, story, storiesToExecute, allStoryMetrics, timeoutRetryCountMap } = opts;
+  const logger = getSafeLogger();
 
   if (!config.quality.commands.test) {
     return { passed: true, prd };
   }
 
-  console.log(chalk.dim(`   🔍 Running verification: ${config.quality.commands.test}`));
+  logger?.debug("verification", "Running verification", {
+    command: config.quality.commands.test,
+  });
 
   const timeoutRetryCount = timeoutRetryCountMap.get(story.id) || 0;
   const verificationResult = await runVerification({
@@ -70,11 +84,14 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
   });
 
   if (verificationResult.success) {
-    console.log(chalk.green(`   ✓ Verification passed`));
+    logger?.info("verification", "Verification passed");
     if (verificationResult.output) {
       const analysis = parseTestOutput(verificationResult.output, 0);
       if (analysis.passCount > 0) {
-        console.log(chalk.dim(`   Tests: ${analysis.passCount} pass, ${analysis.failCount} fail`));
+        logger?.debug("verification", "Test results", {
+          passCount: analysis.passCount,
+          failCount: analysis.failCount,
+        });
       }
     }
     return { passed: true, prd };
@@ -103,10 +120,16 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
       : s
   );
 
-  console.log(chalk.yellow(`   ⚠️  Verification ${verificationResult.status}: ${verificationResult.error?.split("\n")[0]}`));
+  logger?.warn("verification", `Verification ${verificationResult.status}`, {
+    status: verificationResult.status,
+    error: verificationResult.error?.split("\n")[0],
+  });
 
   if (verificationResult.output && verificationResult.passCount !== undefined) {
-    console.log(chalk.dim(`   Tests: ${verificationResult.passCount} pass, ${verificationResult.failCount} fail`));
+    logger?.debug("verification", "Test results", {
+      passCount: verificationResult.passCount,
+      failCount: verificationResult.failCount,
+    });
   }
 
   // Don't count toward escalation for timeouts (environmental issue)
@@ -124,7 +147,10 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
         const threshold = getEnvironmentalEscalationThreshold(tierCfg.attempts, config.quality.environmentalEscalationDivisor);
         const currentAttempts = (prd.userStories.find(s => s.id === story.id)?.attempts ?? 0);
         if (currentAttempts >= threshold) {
-          console.log(chalk.yellow(`   ⬆️  Environmental failure hit early escalation threshold (${currentAttempts}/${threshold})`));
+          logger?.warn("verification", "Environmental failure hit early escalation threshold", {
+            currentAttempts,
+            threshold,
+          });
         }
       }
     }
@@ -133,7 +159,7 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
   await savePRD(prd, prdPath);
 
   if (featureDir) {
-    await appendProgress(featureDir, story.id, "verification-failed",
+    await appendProgress(featureDir, story.id, "failed",
       `${story.title} — ${verificationResult.status}: ${verificationResult.error?.split("\n")[0]}`);
   }
 

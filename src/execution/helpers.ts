@@ -8,13 +8,24 @@
  * - Ready story filtering
  */
 
-import chalk from "chalk";
 import path from "node:path";
 import type { NaxConfig } from "../config";
 import type { PRD, UserStory } from "../prd";
 import type { HookContext } from "../hooks";
 import { buildContext, formatContextAsMarkdown } from "../context";
 import type { StoryContext, ContextBudget } from "../context";
+import { getLogger } from "../logger";
+
+/**
+ * Safely get logger instance, returns null if not initialized
+ */
+function getSafeLogger() {
+  try {
+    return getLogger();
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Error Handling Pattern for Ngent
@@ -135,10 +146,11 @@ export async function maybeGetContext(
     return undefined;
   }
 
-  console.log(chalk.dim(`   ⚙️  Building context...`));
+  const logger = getSafeLogger();
+  logger?.debug("context", "Building context...");
   const contextMarkdown = await buildStoryContext(prd, story, config);
   if (contextMarkdown) {
-    console.log(chalk.dim(`   ✓ Context built`));
+    logger?.debug("context", "Context built successfully");
   }
   return contextMarkdown;
 }
@@ -186,7 +198,10 @@ export async function buildStoryContext(
 
     return formatContextAsMarkdown(built);
   } catch (error) {
-    console.warn(chalk.yellow(`   ⚠️  Context builder failed: ${(error as Error).message}`));
+    const logger = getSafeLogger();
+    logger?.warn("context", "Context builder failed", {
+      error: (error as Error).message,
+    });
     return undefined;
   }
 }
@@ -277,7 +292,10 @@ export async function acquireLock(workdir: string): Promise<boolean> {
       }
 
       // Process is dead, remove stale lock
-      console.warn(chalk.yellow(`   ⚠️  Removing stale lock (process ${lockPid} not found)`));
+      const logger = getSafeLogger();
+      logger?.warn("execution", "Removing stale lock", {
+        pid: lockPid,
+      });
       await Bun.spawn(["rm", lockPath], { stdout: "pipe" }).exited;
     }
 
@@ -289,7 +307,10 @@ export async function acquireLock(workdir: string): Promise<boolean> {
     await Bun.write(lockPath, JSON.stringify(lockData));
     return true;
   } catch (error) {
-    console.warn(chalk.yellow(`   ⚠️  Failed to acquire lock: ${(error as Error).message}`));
+    const logger = getSafeLogger();
+    logger?.warn("execution", "Failed to acquire lock", {
+      error: (error as Error).message,
+    });
     return false;
   }
 }
@@ -317,7 +338,10 @@ export async function releaseLock(workdir: string): Promise<void> {
       await Bun.spawn(["rm", lockPath], { stdout: "pipe" }).exited;
     }
   } catch (error) {
-    console.warn(chalk.yellow(`   ⚠️  Failed to release lock: ${(error as Error).message}`));
+    const logger = getSafeLogger();
+    logger?.warn("execution", "Failed to release lock", {
+      error: (error as Error).message,
+    });
   }
 }
 

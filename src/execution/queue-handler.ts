@@ -5,10 +5,21 @@
  * Uses rename-before-read pattern to prevent race conditions.
  */
 
-import chalk from "chalk";
 import path from "node:path";
 import { parseQueueFile } from "../queue";
 import type { QueueCommand } from "../queue";
+import { getLogger } from "../logger";
+
+/**
+ * Safely get logger instance, returns null if not initialized
+ */
+function getSafeLogger() {
+  try {
+    return getLogger();
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Read and parse queue file atomically.
@@ -36,6 +47,7 @@ import type { QueueCommand } from "../queue";
 export async function readQueueFile(workdir: string): Promise<QueueCommand[]> {
   const queuePath = path.join(workdir, ".queue.txt");
   const processingPath = path.join(workdir, ".queue.txt.processing");
+  const logger = getSafeLogger();
 
   try {
     // Check if queue file exists
@@ -60,7 +72,9 @@ export async function readQueueFile(workdir: string): Promise<QueueCommand[]> {
 
     return result.commands;
   } catch (error) {
-    console.warn(chalk.yellow(`   ⚠️  Failed to read queue file: ${(error as Error).message}`));
+    logger?.warn("queue", "Failed to read queue file", {
+      error: (error as Error).message,
+    });
     return [];
   }
 }
@@ -80,6 +94,7 @@ export async function readQueueFile(workdir: string): Promise<QueueCommand[]> {
  */
 export async function clearQueueFile(workdir: string): Promise<void> {
   const processingPath = path.join(workdir, ".queue.txt.processing");
+  const logger = getSafeLogger();
   try {
     const file = Bun.file(processingPath);
     const exists = await file.exists();
@@ -87,6 +102,8 @@ export async function clearQueueFile(workdir: string): Promise<void> {
       await Bun.spawn(["rm", processingPath], { stdout: "pipe" }).exited;
     }
   } catch (error) {
-    console.warn(chalk.yellow(`   ⚠️  Failed to clear queue file: ${(error as Error).message}`));
+    logger?.warn("queue", "Failed to clear queue file", {
+      error: (error as Error).message,
+    });
   }
 }
