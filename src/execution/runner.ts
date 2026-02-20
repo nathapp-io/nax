@@ -38,8 +38,20 @@ import {
 } from "../acceptance";
 import { saveRunMetrics, type StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
+import { getLogger } from "../logger";
 
 /** Run options */
+
+/**
+ * Safely get logger instance, returns null if not initialized
+ */
+function getSafeLogger() {
+  try {
+    return getLogger();
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Try LLM batch routing for ready stories. Logs and swallows errors (falls back to per-story routing).
@@ -124,6 +136,16 @@ export async function run(options: RunOptions): Promise<RunResult> {
   }
 
   try {
+    // Log run start
+    const logger = getSafeLogger();
+    logger?.info("run.start", `Starting feature: ${feature}`, {
+      runId,
+      feature,
+      workdir,
+      dryRun,
+      useBatch,
+    });
+
     // Fire on-start hook
     await fireHook(hooks, "on-start", hookCtx(feature), workdir);
 
@@ -331,6 +353,17 @@ export async function run(options: RunOptions): Promise<RunResult> {
         console.log(chalk.white(`   Story: ${story.id} — ${story.title}`));
       }
 
+      // Log iteration start
+      logger?.info("iteration.start", `Starting iteration ${iterations}`, {
+        iteration: iterations,
+        storyId: story.id,
+        storyTitle: story.title,
+        isBatch: isBatchExecution,
+        batchSize: isBatchExecution ? storiesToExecute.length : 1,
+        modelTier: routing.modelTier,
+        complexity: routing.complexity,
+      });
+
       // Fire story-start hook
       await fireHook(hooks, "on-story-start", hookCtx(feature, {
         storyId: story.id,
@@ -358,8 +391,25 @@ export async function run(options: RunOptions): Promise<RunResult> {
         storyStartTime,
       };
 
+      // Log agent start
+      logger?.info("agent.start", `Starting agent execution`, {
+        storyId: story.id,
+        agent: config.autoMode.defaultAgent,
+        modelTier: routing.modelTier,
+        testStrategy: routing.testStrategy,
+        isBatch: isBatchExecution,
+      });
+
       // Run pipeline
       const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, eventEmitter);
+
+      // Log agent complete
+      logger?.info("agent.complete", `Agent execution completed`, {
+        storyId: story.id,
+        success: pipelineResult.success,
+        finalAction: pipelineResult.finalAction,
+        estimatedCost: pipelineResult.context.agentResult?.estimatedCost,
+      });
 
       // Update PRD reference (pipeline may have modified it)
       prd = pipelineResult.context.prd;
@@ -385,6 +435,16 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
         if (verificationPassed) {
           storiesCompleted += storiesToExecute.length;
+
+          // Log story completion
+          for (const completedStory of storiesToExecute) {
+            logger?.info("story.complete", `Story completed successfully`, {
+              storyId: completedStory.id,
+              storyTitle: completedStory.title,
+              totalCost,
+              durationMs: Date.now() - startTime,
+            });
+          }
         }
 
         // Display progress
@@ -750,6 +810,21 @@ export async function run(options: RunOptions): Promise<RunResult> {
     };
 
     await saveRunMetrics(workdir, runMetrics);
+
+    // Log run completion
+    const finalCounts = countStories(prd);
+    logger?.info("run.complete", `Feature execution completed`, {
+      runId,
+      feature,
+      success: isComplete(prd),
+      iterations,
+      totalStories: finalCounts.total,
+      storiesCompleted,
+      storiesFailed: finalCounts.failed,
+      storiesPending: finalCounts.pending,
+      totalCost,
+      durationMs,
+    });
 
     return {
       success: isComplete(prd),
