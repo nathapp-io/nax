@@ -8,10 +8,10 @@
  *   nax accept --override AC-2 "intentional: using lazy expiry instead of exact timing"
  */
 
-import chalk from "chalk";
 import { loadPRD, savePRD } from "../prd";
 import { findProjectDir, validateDirectory } from "../config";
 import path from "node:path";
+import { getLogger } from "../logger";
 
 /**
  * Accept command options.
@@ -38,12 +38,12 @@ export interface AcceptOptions {
  * ```
  */
 export async function acceptCommand(options: AcceptOptions): Promise<void> {
+  const logger = getLogger();
   const { feature, override, reason } = options;
 
   // Validate AC ID format
   if (!override.match(/^AC-\d+$/i)) {
-    console.error(chalk.red(`❌ Invalid AC ID format: ${override}`));
-    console.error(chalk.yellow("   Expected format: AC-1, AC-2, etc."));
+    logger.error("cli", "Invalid AC ID format", { override, expected: "AC-1, AC-2, etc." });
     process.exit(1);
   }
 
@@ -53,8 +53,7 @@ export async function acceptCommand(options: AcceptOptions): Promise<void> {
   // Find project directory
   const projectDirResult = findProjectDir(process.cwd());
   if (!projectDirResult) {
-    console.error(chalk.red("❌ Not in a nax project directory"));
-    console.error(chalk.yellow("   Run 'nax init' first"));
+    logger.error("cli", "Not in a nax project directory", { hint: "Run 'nax init' first" });
     process.exit(1);
   }
   const projectDir = projectDirResult;
@@ -63,7 +62,7 @@ export async function acceptCommand(options: AcceptOptions): Promise<void> {
   try {
     validateDirectory(projectDir);
   } catch (err) {
-    console.error(chalk.red(`❌ Invalid project directory: ${(err as Error).message}`));
+    logger.error("cli", "Invalid project directory", { error: (err as Error).message });
     process.exit(1);
   }
 
@@ -74,8 +73,7 @@ export async function acceptCommand(options: AcceptOptions): Promise<void> {
   // Check if feature exists
   const prdFile = Bun.file(prdPath);
   if (!(await prdFile.exists())) {
-    console.error(chalk.red(`❌ Feature not found: ${feature}`));
-    console.error(chalk.yellow(`   Expected PRD at: ${prdPath}`));
+    logger.error("cli", "Feature not found", { feature, prdPath });
     process.exit(1);
   }
 
@@ -88,9 +86,11 @@ export async function acceptCommand(options: AcceptOptions): Promise<void> {
   }
 
   if (prd.acceptanceOverrides[acId]) {
-    console.log(chalk.yellow(`⚠️  Override already exists for ${acId}`));
-    console.log(chalk.dim(`   Previous: ${prd.acceptanceOverrides[acId]}`));
-    console.log(chalk.dim(`   New:      ${reason}`));
+    logger.warn("cli", "Override already exists", {
+      acId,
+      previous: prd.acceptanceOverrides[acId],
+      new: reason,
+    });
   }
 
   prd.acceptanceOverrides[acId] = reason;
@@ -98,9 +98,10 @@ export async function acceptCommand(options: AcceptOptions): Promise<void> {
   // Save PRD
   await savePRD(prd, prdPath);
 
-  console.log(chalk.green(`✓ Override added for ${acId}`));
-  console.log(chalk.dim(`   Reason: ${reason}`));
-  console.log(chalk.dim(`   PRD updated: ${prdPath}`));
-  console.log(chalk.cyan("\n💡 Re-run acceptance tests to verify:"));
-  console.log(chalk.dim(`   bun test ${path.join(featureDir, "acceptance.test.ts")}`));
+  logger.info("cli", "✓ Override added", {
+    acId,
+    reason,
+    prdPath,
+    hint: `Re-run acceptance tests: bun test ${path.join(featureDir, "acceptance.test.ts")}`,
+  });
 }

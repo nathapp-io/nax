@@ -8,6 +8,7 @@
 import type { AgentAdapter } from "../agents/types";
 import type { UserStory, PRD } from "../prd/types";
 import type { ModelDef } from "../config/schema";
+import { getLogger } from "../logger";
 
 /**
  * A fix story generated from a failed acceptance criterion.
@@ -205,17 +206,18 @@ export async function generateFixStories(
   // Parse spec to get AC text
   const acTextMap = parseACTextFromSpec(specContent);
 
+  const logger = getLogger();
   for (let i = 0; i < failedACs.length; i++) {
     const failedAC = failedACs[i];
     const acText = acTextMap[failedAC] || "No description available";
 
-    console.log(`\nGenerating fix for ${failedAC}...`);
+    logger.info("acceptance", "Generating fix for failed AC", { failedAC });
 
     // Find related stories
     const relatedStories = findRelatedStories(failedAC, prd);
 
     if (relatedStories.length === 0) {
-      console.warn(`⚠ No related stories found for ${failedAC} — skipping`);
+      logger.warn("acceptance", "⚠ No related stories found for failed AC — skipping", { failedAC });
       continue;
     }
 
@@ -254,7 +256,7 @@ export async function generateFixStories(
       const stderr = await new Response(proc.stderr).text();
 
       if (exitCode !== 0) {
-        console.warn(`⚠ Agent fix generation failed for ${failedAC}: ${stderr}`);
+        logger.warn("acceptance", "⚠ Agent fix generation failed", { failedAC, stderr });
         // Use fallback description
         fixStories.push({
           id: `US-FIX-${String(i + 1).padStart(3, "0")}`,
@@ -279,11 +281,12 @@ export async function generateFixStories(
         description: fixDescription,
       });
 
-      console.log(`✓ Generated fix story: ${fixStories[fixStories.length - 1].id}`);
+      logger.info("acceptance", "✓ Generated fix story", { storyId: fixStories[fixStories.length - 1].id });
     } catch (error) {
-      console.warn(
-        `⚠ Error generating fix for ${failedAC}: ${(error as Error).message}`,
-      );
+      logger.warn("acceptance", "⚠ Error generating fix", {
+        failedAC,
+        error: (error as Error).message,
+      });
       // Use fallback
       fixStories.push({
         id: `US-FIX-${String(i + 1).padStart(3, "0")}`,

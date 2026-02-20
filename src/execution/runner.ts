@@ -860,6 +860,21 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
     // Log run completion
     const finalCounts = countStories(prd);
+
+    // Prepare per-story metrics summary
+    const storyMetricsSummary = allStoryMetrics.map((sm) => ({
+      storyId: sm.storyId,
+      complexity: sm.complexity,
+      modelTier: sm.modelTier,
+      modelUsed: sm.modelUsed,
+      attempts: sm.attempts,
+      finalTier: sm.finalTier,
+      success: sm.success,
+      cost: sm.cost,
+      durationMs: sm.durationMs,
+      firstPassSuccess: sm.firstPassSuccess,
+    }));
+
     logger?.info("run.complete", `Feature execution completed`, {
       runId,
       feature,
@@ -871,6 +886,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       storiesPending: finalCounts.pending,
       totalCost,
       durationMs,
+      storyMetrics: storyMetricsSummary,
     });
 
     return {

@@ -54,6 +54,8 @@ import {
   displayCostMetrics,
   displayLastRunMetrics,
   displayModelEfficiency,
+  runsListCommand,
+  runsShowCommand,
 } from "../src/cli";
 import { renderTui, PipelineEventEmitter, type StoryDisplayState } from "../src/tui";
 import { initLogger, type LogLevel } from "../src/logger";
@@ -634,6 +636,45 @@ program
       console.log(`   ${icon} ${story.id}: ${story.title}${routing}`);
     }
     console.log();
+  });
+
+// ── runs ─────────────────────────────────────────────
+const runs = program
+  .command("runs")
+  .description("Manage and view run history");
+
+runs
+  .command("list")
+  .description("List all runs for a feature")
+  .requiredOption("-f, --feature <name>", "Feature name")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (options) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    await runsListCommand({ feature: options.feature, workdir });
+  });
+
+runs
+  .command("show <run-id>")
+  .description("Show detailed information for a specific run")
+  .requiredOption("-f, --feature <name>", "Feature name")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (runId, options) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    await runsShowCommand({ runId, feature: options.feature, workdir });
   });
 
 // ── accept ───────────────────────────────────────────

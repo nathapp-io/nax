@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import type { StoryMetrics, RunMetrics } from "./types";
 import type { PipelineContext } from "../pipeline/types";
 import { resolveModel } from "../config/schema";
+import { getLogger } from "../logger";
 
 /**
  * Collect metrics for a single story execution.
@@ -161,13 +162,14 @@ export async function saveRunMetrics(
   let allMetrics: RunMetrics[] = [];
 
   // Load existing metrics if file exists
+  const logger = getLogger();
   if (existsSync(metricsPath)) {
     try {
       const file = Bun.file(metricsPath);
       const content = await file.json();
       allMetrics = Array.isArray(content) ? content : [];
     } catch (err) {
-      console.warn(`Warning: Could not parse ${metricsPath}, starting fresh`);
+      logger.warn("metrics", "Could not parse metrics file, starting fresh", { metricsPath });
       allMetrics = [];
     }
   }
@@ -203,7 +205,8 @@ export async function loadRunMetrics(workdir: string): Promise<RunMetrics[]> {
     const content = await file.json();
     return Array.isArray(content) ? content : [];
   } catch (err) {
-    console.warn(`Warning: Could not parse ${metricsPath}`);
+    const logger = getLogger();
+    logger.warn("metrics", "Could not parse metrics file", { metricsPath });
     return [];
   }
 }

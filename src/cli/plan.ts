@@ -12,6 +12,7 @@ import { resolveModel } from "../config/schema";
 import { scanCodebase } from "../analyze/scanner";
 import { ClaudeCodeAdapter } from "../agents/claude";
 import type { PlanOptions } from "../agents/types";
+import { getLogger } from "../logger";
 
 /**
  * Template for structured specification output.
@@ -68,7 +69,8 @@ export async function planCommand(
   }
 
   // Scan codebase for context
-  console.log("Scanning codebase...");
+  const logger = getLogger();
+  logger.info("cli", "Scanning codebase...");
   const scan = await scanCodebase(workdir);
 
   // Build codebase context markdown
@@ -96,10 +98,12 @@ export async function planCommand(
   // Run agent in plan mode
   const adapter = new ClaudeCodeAdapter();
 
-  console.log(
+  logger.info(
+    "cli",
     interactive
       ? "Starting interactive planning session..."
       : `Reading from ${options.from}...`,
+    { interactive, from: options.from }
   );
 
   const result = await adapter.plan(planOptions);
@@ -126,7 +130,7 @@ export async function planCommand(
     await Bun.write(outputPath, result.specContent);
   }
 
-  console.log(`✓ Specification written to ${outputPath}`);
+  logger.info("cli", "✓ Specification written to output", { outputPath });
 
   return outputPath;
 }

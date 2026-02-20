@@ -7,6 +7,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { HookContext, HookDef, HookEvent, HooksConfig } from "./types";
+import { getLogger } from "../logger";
 
 const DEFAULT_TIMEOUT = 5000;
 
@@ -148,13 +149,12 @@ async function executeHook(
   }
 
   // Warn if shell operators detected
+  const logger = getLogger();
   if (hasShellOperators(hookDef.command)) {
-    console.warn(
-      `[SECURITY] Hook command contains shell operators: ${hookDef.command}`,
-    );
-    console.warn(
-      "[SECURITY] Shell operators may enable injection attacks. Consider using simple commands only.",
-    );
+    logger.warn("hooks", "[SECURITY] Hook command contains shell operators", {
+      command: hookDef.command,
+      warning: "Shell operators may enable injection attacks. Consider using simple commands only.",
+    });
   }
 
   const timeout = hookDef.timeout ?? DEFAULT_TIMEOUT;
@@ -214,12 +214,13 @@ export async function fireHook(
   const hookDef = config.hooks[event];
   if (!hookDef || hookDef.enabled === false) return;
 
+  const logger = getLogger();
   try {
     const result = await executeHook(hookDef, { ...ctx, event }, workdir);
     if (!result.success) {
-      console.warn(`Hook ${event} failed: ${result.output}`);
+      logger.warn("hooks", `Hook ${event} failed`, { event, output: result.output });
     }
   } catch (err) {
-    console.warn(`Hook ${event} error: ${err}`);
+    logger.warn("hooks", `Hook ${event} error`, { event, error: String(err) });
   }
 }

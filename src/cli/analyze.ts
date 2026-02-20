@@ -16,6 +16,7 @@ import { getAgent } from "../agents/registry";
 import { resolveModel } from "../config/schema";
 import { loadPRD } from "../prd";
 import { generateAcceptanceTests } from "../acceptance";
+import { getLogger } from "../logger";
 
 export interface AnalyzeOptions {
   /** Feature directory path */
@@ -63,8 +64,9 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
   let userStories: UserStory[];
 
   // LLM-enhanced decompose+classify (if enabled)
+  const logger = getLogger();
   if (config && config.analyze.llmEnhanced) {
-    console.log("Running agent decompose (decompose + classify in single LLM call)...");
+    logger.info("cli", "Running agent decompose (decompose + classify in single LLM call)");
 
     try {
       // Scan codebase
@@ -95,7 +97,7 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
         modelDef,
       });
 
-      console.log(`✓ Agent decompose complete — ${result.stories.length} stories`);
+      logger.info("cli", "✓ Agent decompose complete", { storiesCount: result.stories.length });
 
       // Convert decomposed stories to UserStory format with routing
       userStories = result.stories.map((ds) => {
@@ -131,8 +133,9 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
       });
     } catch (error) {
       // Fall back to keyword-based classification
-      console.warn(`⚠ Agent decompose failed: ${(error as Error).message}`);
-      console.warn("Falling back to manual story extraction + keyword classification");
+      logger.warn("cli", "Agent decompose failed, falling back to manual story extraction", {
+        error: (error as Error).message,
+      });
 
       userStories = parseUserStoriesFromSpec(specContent);
 
@@ -145,7 +148,7 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
     }
   } else {
     // Manual parsing + keyword classification
-    console.log("LLM-enhanced analysis disabled, using manual parsing + keyword classification");
+    logger.info("cli", "LLM-enhanced analysis disabled, using manual parsing + keyword classification");
 
     userStories = parseUserStoriesFromSpec(specContent);
 
@@ -177,7 +180,7 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
 
   // Generate acceptance tests if enabled
   if (config && config.acceptance.enabled && config.acceptance.generateTests) {
-    console.log("Generating acceptance tests from spec.md...");
+    logger.info("cli", "Generating acceptance tests from spec.md");
 
     try {
       // Scan codebase (reuse existing scan if available)
@@ -211,9 +214,12 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
       const acceptanceTestPath = join(featureDir, config.acceptance.testPath);
       await Bun.write(acceptanceTestPath, result.testCode);
 
-      console.log(`✓ Acceptance tests generated — ${result.criteria.length} criteria → ${acceptanceTestPath}`);
+      logger.info("cli", "✓ Acceptance tests generated", {
+        criteriaCount: result.criteria.length,
+        testPath: acceptanceTestPath,
+      });
     } catch (error) {
-      console.warn(`⚠ Failed to generate acceptance tests: ${(error as Error).message}`);
+      logger.warn("cli", "Failed to generate acceptance tests", { error: (error as Error).message });
       // Continue with PRD creation even if test generation fails
     }
   }
@@ -420,8 +426,9 @@ async function reclassifyExistingPRD(
 
   // Load existing PRD
   const prd = await loadPRD(prdPath);
+  const logger = getLogger();
 
-  console.log("Re-classifying existing stories...");
+  logger.info("cli", "Re-classifying existing stories");
 
   // Scan codebase
   const scan = await scanCodebase(workdir);
@@ -484,11 +491,11 @@ ${story.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
             relevantFiles: ds.relevantFiles,
           });
 
-          console.log(`  ✓ ${story.id} → ${ds.complexity}`);
+          logger.info("cli", `✓ ${story.id} → ${ds.complexity}`, { storyId: story.id, complexity: ds.complexity });
         } else {
           // Keep original if decompose failed
           updatedStories.push(story);
-          console.warn(`  ⚠ ${story.id} → kept original`);
+          logger.warn("cli", `⚠ ${story.id} → kept original`, { storyId: story.id });
         }
       } else {
         // Keyword classification
@@ -524,10 +531,10 @@ ${story.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
           },
         });
 
-        console.log(`  ✓ ${story.id} → ${complexity}`);
+        logger.info("cli", `✓ ${story.id} → ${complexity}`, { storyId: story.id, complexity });
       }
     } catch (error) {
-      console.warn(`  ⚠ ${story.id} → error: ${(error as Error).message}`);
+      logger.warn("cli", `⚠ ${story.id} → error`, { storyId: story.id, error: (error as Error).message });
       updatedStories.push(story); // Keep original on error
     }
   }

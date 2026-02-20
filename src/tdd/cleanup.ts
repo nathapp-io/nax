@@ -5,6 +5,8 @@
  * Prevents zombie processes from consuming CPU after agent crashes.
  */
 
+import { getLogger } from "../logger";
+
 /**
  * Get process group ID (PGID) for a given process ID.
  *
@@ -100,8 +102,10 @@ export async function cleanupProcessTree(pid: number, gracePeriodMs = 3000): Pro
     }
   } catch (error) {
     // Log but don't throw — cleanup is best-effort
-    console.warn(
-      `[cleanup] Failed to cleanup process tree for PID ${pid}: ${(error as Error).message}`,
-    );
+    const logger = getLogger();
+    logger.warn("tdd", "Failed to cleanup process tree", {
+      pid,
+      error: (error as Error).message,
+    });
   }
 }

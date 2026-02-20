@@ -11,6 +11,7 @@ import type {
   AcceptanceTestResult,
 } from "./types";
 import type { AgentAdapter } from "../agents/types";
+import { getLogger } from "../logger";
 
 /**
  * Parse acceptance criteria from spec.md content.
@@ -164,18 +165,19 @@ export async function generateAcceptanceTests(
   options: GenerateAcceptanceTestsOptions,
 ): Promise<AcceptanceTestResult> {
   // Parse acceptance criteria from spec
+  const logger = getLogger();
   const criteria = parseAcceptanceCriteria(options.specContent);
 
   if (criteria.length === 0) {
     // No AC found — generate empty skeleton
-    console.warn("⚠ No acceptance criteria found in spec.md");
+    logger.warn("acceptance", "⚠ No acceptance criteria found in spec.md");
     return {
       testCode: generateSkeletonTests(options.featureName, []),
       criteria: [],
     };
   }
 
-  console.log(`Found ${criteria.length} acceptance criteria`);
+  logger.info("acceptance", "Found acceptance criteria", { count: criteria.length });
 
   // Build prompt
   const prompt = buildAcceptanceTestPrompt(
@@ -208,7 +210,7 @@ export async function generateAcceptanceTests(
     const stderr = await new Response(proc.stderr).text();
 
     if (exitCode !== 0) {
-      console.warn(`⚠ Agent test generation failed: ${stderr}`);
+      logger.warn("acceptance", "⚠ Agent test generation failed", { stderr });
       // Fall back to skeleton
       return {
         testCode: generateSkeletonTests(options.featureName, criteria),
@@ -224,7 +226,7 @@ export async function generateAcceptanceTests(
       criteria,
     };
   } catch (error) {
-    console.warn(`⚠ Agent test generation error: ${(error as Error).message}`);
+    logger.warn("acceptance", "⚠ Agent test generation error", { error: (error as Error).message });
     // Fall back to skeleton
     return {
       testCode: generateSkeletonTests(options.featureName, criteria),

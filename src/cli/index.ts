@@ -10,3 +10,9 @@ export {
   displayLastRunMetrics,
   displayModelEfficiency,
 } from "./status";
+export {
+  runsListCommand,
+  runsShowCommand,
+  type RunsListOptions,
+  type RunsShowOptions,
+} from "./runs";

@@ -7,7 +7,6 @@
  * 3. Session 3 (verifier): Verify tests pass and changes are legitimate
  */
 
-import chalk from "chalk";
 import type { AgentAdapter } from "../agents";
 import type { UserStory } from "../prd";
 import type { NaxConfig, ModelTier } from "../config";
@@ -24,6 +23,7 @@ import {
 } from "./isolation";
 import { executeWithTimeout } from "../execution/verification";
 import { cleanupProcessTree } from "./cleanup";
+import { getLogger } from "../logger";
 
 /** Build prompt for test-writer session */
 function buildTestWriterPrompt(story: UserStory, contextMarkdown?: string): string {
@@ -168,7 +168,8 @@ async function runTddSession(
       break;
   }
 
-  console.log(chalk.cyan(`\n   → Session: ${role}`));
+  const logger = getLogger();
+  logger.info("tdd", `→ Session: ${role}`, { role, storyId: story.id });
 
   // Run the agent
   const result = await agent.run({
@@ -198,10 +199,14 @@ async function runTddSession(
   const durationMs = Date.now() - startTime;
 
   if (isolation && !isolation.passed) {
-    console.log(chalk.red(`   ✗ Isolation violated: ${isolation.description}`));
-    console.log(chalk.red(`     Violations: ${isolation.violations.join(", ")}`));
+    logger.error("tdd", "✗ Isolation violated", {
+      role,
+      storyId: story.id,
+      description: isolation.description,
+      violations: isolation.violations,
+    });
   } else if (isolation) {
-    console.log(chalk.green(`   ✓ Isolation maintained`));
+    logger.info("tdd", "✓ Isolation maintained", { role, storyId: story.id });
   }
 
   return {
@@ -286,16 +291,18 @@ export async function runThreeSessionTdd(
   contextMarkdown?: string,
   dryRun = false,
 ): Promise<ThreeSessionTddResult> {
-  console.log(chalk.cyan(`\n🔄 Three-Session TDD: ${story.title}`));
+  const logger = getLogger();
+  logger.info("tdd", "🔄 Three-Session TDD", { storyId: story.id, title: story.title });
 
   // Dry-run mode: log what would happen without executing
   if (dryRun) {
     const modelDef = resolveModel(config.models[modelTier]);
-    console.log(chalk.dim("   [DRY RUN] Would run 3-session TDD:"));
-    console.log(chalk.dim(`     Session 1: test-writer (model: ${modelDef.model})`));
-    console.log(chalk.dim(`     Session 2: implementer (model: ${modelDef.model})`));
-    console.log(chalk.dim(`     Session 3: verifier (model: ${modelDef.model})`));
-    console.log(chalk.green("\n   ✅ Dry run complete (no sessions executed)"));
+    logger.info("tdd", "[DRY RUN] Would run 3-session TDD", {
+      storyId: story.id,
+      session1: { role: "test-writer", model: modelDef.model },
+      session2: { role: "implementer", model: modelDef.model },
+      session3: { role: "verifier", model: modelDef.model },
+    });
 
     return {
       success: true,
@@ -330,7 +337,7 @@ export async function runThreeSessionTdd(
   if (!session1.success) {
     needsHumanReview = true;
     reviewReason = "Test writer session failed or violated isolation";
-    console.log(chalk.yellow(`\n⚠️  ${reviewReason}`));
+    logger.warn("tdd", "⚠️ Test writer session failed", { storyId: story.id, reviewReason });
 
     return {
       success: false,
@@ -351,12 +358,11 @@ export async function runThreeSessionTdd(
   if (testFilesCreated.length === 0) {
     needsHumanReview = true;
     reviewReason = "Test writer session created no test files";
-    console.log(chalk.yellow(`\n⚠️  ${reviewReason}`));
-    console.log(
-      chalk.dim(
-        `   Files changed: ${session1.filesChanged.length > 0 ? session1.filesChanged.join(", ") : "(none)"}`,
-      ),
-    );
+    logger.warn("tdd", "⚠️ Test writer created no test files", {
+      storyId: story.id,
+      reviewReason,
+      filesChanged: session1.filesChanged,
+    });
 
     // Return early — no point running implementer without tests
     return {
@@ -368,9 +374,11 @@ export async function runThreeSessionTdd(
     };
   }
 
-  console.log(
-    chalk.green(`   ✓ Created ${testFilesCreated.length} test file(s)`),
-  );
+  logger.info("tdd", "✓ Created test files", {
+    storyId: story.id,
+    testFilesCount: testFilesCreated.length,
+    testFiles: testFilesCreated,
+  });
 
   // Capture state after session 1
   const session2Ref = await captureGitRef(workdir);
@@ -392,7 +400,7 @@ export async function runThreeSessionTdd(
   if (!session2.success) {
     needsHumanReview = true;
     reviewReason = "Implementer session failed or violated isolation";
-    console.log(chalk.yellow(`\n⚠️  ${reviewReason}`));
+    logger.warn("tdd", "⚠️ Implementer session failed", { storyId: story.id, reviewReason });
 
     return {
       success: false,
@@ -426,10 +434,10 @@ export async function runThreeSessionTdd(
   // If sessions had failures but we need to verify if tests actually pass,
   // run an independent test verification to check final state
   if (!allSuccessful) {
-    console.log(chalk.dim("\n   → Running post-TDD test verification..."));
+    logger.info("tdd", "→ Running post-TDD test verification", { storyId: story.id });
 
     const testCmd = config.quality?.commands?.test ?? "bun test";
-    const timeoutSeconds = config.quality?.verificationTimeoutSeconds ?? 120;
+    const timeoutSeconds = 120;
 
     const postVerify = await executeWithTimeout(testCmd, timeoutSeconds, undefined, {
       cwd: workdir,
@@ -437,12 +445,14 @@ export async function runThreeSessionTdd(
     const testsActuallyPass = postVerify.success && postVerify.exitCode === 0;
 
     if (testsActuallyPass) {
-      console.log(chalk.dim("   ℹ️  Sessions had non-zero exits but tests pass — treating as success"));
+      logger.info("tdd", "ℹ️ Sessions had non-zero exits but tests pass — treating as success", {
+        storyId: story.id,
+      });
       allSuccessful = true;
       needsHumanReview = false;
       reviewReason = undefined;
     } else {
-      console.log(chalk.dim("   ⚠️  Post-TDD verification: tests still failing"));
+      logger.warn("tdd", "⚠️ Post-TDD verification: tests still failing", { storyId: story.id });
       needsHumanReview = true;
       reviewReason = "Verifier session identified issues and tests still fail";
     }
@@ -453,12 +463,13 @@ export async function runThreeSessionTdd(
 
   const totalCost = sessions.reduce((sum, s) => sum + s.estimatedCost, 0);
 
-  console.log(
-    allSuccessful
-      ? chalk.green(`\n✅ Three-session TDD complete`)
-      : chalk.yellow(`\n⚠️  Three-session TDD needs review`),
-  );
-  console.log(chalk.dim(`   Total cost: $${totalCost.toFixed(4)}`));
+  logger.info("tdd", allSuccessful ? "✅ Three-session TDD complete" : "⚠️ Three-session TDD needs review", {
+    storyId: story.id,
+    success: allSuccessful,
+    totalCost,
+    needsHumanReview,
+    reviewReason,
+  });
 
   return {
     success: allSuccessful,

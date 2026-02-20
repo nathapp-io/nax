@@ -42,14 +42,23 @@ describe("Logger", () => {
       );
     });
 
-    test("throws when getting logger before init", () => {
-      expect(() => getLogger()).toThrow("Logger not initialized");
+    test("returns no-op logger when getting logger before init", () => {
+      const logger = getLogger();
+      expect(logger).toBeDefined();
+      // No-op logger should have all methods but not throw
+      expect(typeof logger.info).toBe("function");
+      expect(typeof logger.warn).toBe("function");
+      expect(typeof logger.error).toBe("function");
+      expect(typeof logger.debug).toBe("function");
     });
 
     test("resets singleton for testing", () => {
       initLogger({ level: "info" });
       resetLogger();
-      expect(() => getLogger()).toThrow("Logger not initialized");
+      const logger = getLogger();
+      expect(logger).toBeDefined();
+      // After reset, should return no-op logger
+      expect(typeof logger.info).toBe("function");
     });
 
     test("creates log file directory if it doesn't exist", () => {
