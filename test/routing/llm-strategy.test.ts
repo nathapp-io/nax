@@ -5,7 +5,7 @@
  */
 
 import { describe, test, expect, beforeEach, mock, spyOn } from "bun:test";
-import { llmStrategy, buildRoutingPrompt, buildBatchPrompt, parseRoutingResponse, clearCache, routeBatch } from "../../src/routing/strategies/llm";
+import { llmStrategy, buildRoutingPrompt, buildBatchPrompt, parseRoutingResponse, clearCache, routeBatch, validateRoutingDecision, stripCodeFences } from "../../src/routing/strategies/llm";
 import type { UserStory } from "../../src/prd/types";
 import type { RoutingContext } from "../../src/routing/strategy";
 import type { NaxConfig } from "../../src/config";
@@ -537,5 +537,104 @@ describe("LLM Routing Strategy - Edge Cases", () => {
     expect(decision?.complexity).toBe("complex");
 
     mockSpawn.mockRestore();
+  });
+});
+
+describe("stripCodeFences", () => {
+  test("returns plain JSON unchanged", () => {
+    const input = '{"complexity":"simple"}';
+    expect(stripCodeFences(input)).toBe('{"complexity":"simple"}');
+  });
+
+  test("strips ```json ... ``` fences", () => {
+    const input = '```json\n{"complexity":"simple"}\n```';
+    expect(stripCodeFences(input)).toBe('{"complexity":"simple"}');
+  });
+
+  test("strips ``` ... ``` fences without language tag", () => {
+    const input = '```\n{"complexity":"simple"}\n```';
+    expect(stripCodeFences(input)).toBe('{"complexity":"simple"}');
+  });
+
+  test("strips leading 'json' keyword (no backticks)", () => {
+    const input = 'json\n{"complexity":"simple"}';
+    expect(stripCodeFences(input)).toBe('{"complexity":"simple"}');
+  });
+
+  test("trims whitespace", () => {
+    const input = '  \n {"complexity":"simple"} \n  ';
+    expect(stripCodeFences(input)).toBe('{"complexity":"simple"}');
+  });
+
+  test("handles multiline JSON inside fences", () => {
+    const input = '```json\n{\n  "complexity": "simple",\n  "modelTier": "fast"\n}\n```';
+    expect(stripCodeFences(input)).toBe('{\n  "complexity": "simple",\n  "modelTier": "fast"\n}');
+  });
+});
+
+describe("validateRoutingDecision", () => {
+  test("returns valid decision for correct input", () => {
+    const input = { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "trivial" };
+    const result = validateRoutingDecision(input, DEFAULT_CONFIG);
+    expect(result).toEqual({
+      complexity: "simple",
+      modelTier: "fast",
+      testStrategy: "test-after",
+      reasoning: "trivial",
+    });
+  });
+
+  test("accepts all valid complexity values", () => {
+    for (const c of ["simple", "medium", "complex", "expert"]) {
+      const input = { complexity: c, modelTier: "fast", testStrategy: "test-after", reasoning: "test" };
+      expect(validateRoutingDecision(input, DEFAULT_CONFIG).complexity).toBe(c);
+    }
+  });
+
+  test("accepts all valid test strategies", () => {
+    for (const ts of ["test-after", "three-session-tdd"]) {
+      const input = { complexity: "simple", modelTier: "fast", testStrategy: ts, reasoning: "test" };
+      expect(validateRoutingDecision(input, DEFAULT_CONFIG).testStrategy).toBe(ts);
+    }
+  });
+
+  test("throws on missing complexity", () => {
+    const input = { modelTier: "fast", testStrategy: "test-after", reasoning: "test" };
+    expect(() => validateRoutingDecision(input, DEFAULT_CONFIG)).toThrow("Missing required fields");
+  });
+
+  test("throws on missing modelTier", () => {
+    const input = { complexity: "simple", testStrategy: "test-after", reasoning: "test" };
+    expect(() => validateRoutingDecision(input, DEFAULT_CONFIG)).toThrow("Missing required fields");
+  });
+
+  test("throws on missing testStrategy", () => {
+    const input = { complexity: "simple", modelTier: "fast", reasoning: "test" };
+    expect(() => validateRoutingDecision(input, DEFAULT_CONFIG)).toThrow("Missing required fields");
+  });
+
+  test("throws on missing reasoning", () => {
+    const input = { complexity: "simple", modelTier: "fast", testStrategy: "test-after" };
+    expect(() => validateRoutingDecision(input, DEFAULT_CONFIG)).toThrow("Missing required fields");
+  });
+
+  test("throws on invalid complexity value", () => {
+    const input = { complexity: "mega", modelTier: "fast", testStrategy: "test-after", reasoning: "test" };
+    expect(() => validateRoutingDecision(input, DEFAULT_CONFIG)).toThrow("Invalid complexity: mega");
+  });
+
+  test("throws on invalid testStrategy value", () => {
+    const input = { complexity: "simple", modelTier: "fast", testStrategy: "yolo", reasoning: "test" };
+    expect(() => validateRoutingDecision(input, DEFAULT_CONFIG)).toThrow("Invalid testStrategy: yolo");
+  });
+
+  test("throws on modelTier not in config", () => {
+    const input = { complexity: "simple", modelTier: "ultra", testStrategy: "test-after", reasoning: "test" };
+    expect(() => validateRoutingDecision(input, DEFAULT_CONFIG)).toThrow("Invalid modelTier: ultra");
+  });
+
+  test("throws on empty string fields", () => {
+    const input = { complexity: "", modelTier: "fast", testStrategy: "test-after", reasoning: "test" };
+    expect(() => validateRoutingDecision(input, DEFAULT_CONFIG)).toThrow("Missing required fields");
   });
 });

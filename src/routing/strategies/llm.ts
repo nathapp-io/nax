@@ -134,7 +134,6 @@ async function callLlm(modelTier: string, prompt: string, config: NaxConfig): Pr
 
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
-      proc.kill();
       reject(new Error(`LLM call timeout after ${timeoutMs}ms`));
     }, timeoutMs);
   });
@@ -172,7 +171,7 @@ async function callLlm(modelTier: string, prompt: string, config: NaxConfig): Pr
  * @returns Validated routing decision
  * @throws Error if validation fails
  */
-function validateRoutingDecision(parsed: Record<string, unknown>, config: NaxConfig): RoutingDecision {
+export function validateRoutingDecision(parsed: Record<string, unknown>, config: NaxConfig): RoutingDecision {
   // Validate required fields
   if (!parsed.complexity || !parsed.modelTier || !parsed.testStrategy || !parsed.reasoning) {
     throw new Error(`Missing required fields in LLM response: ${JSON.stringify(parsed)}`);
@@ -206,7 +205,7 @@ function validateRoutingDecision(parsed: Record<string, unknown>, config: NaxCon
 /**
  * Strip markdown code fences from LLM output.
  */
-function stripCodeFences(text: string): string {
+export function stripCodeFences(text: string): string {
   let result = text.trim();
   if (result.startsWith("```")) {
     const lines = result.split("\n");
