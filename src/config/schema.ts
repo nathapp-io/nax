@@ -237,7 +237,6 @@ export interface LlmRoutingConfig {
   /** Fall back to keyword strategy on LLM failure (default: true) */
   fallbackToKeywords?: boolean;
   /** Max input tokens for story context (default: 2000) */
-  maxInputTokens?: number;
   /** Cache routing decisions per story ID (default: true) */
   cacheDecisions?: boolean;
   /** Batch mode: route multiple stories in one LLM call (default: true) */
@@ -450,7 +449,6 @@ const AdaptiveRoutingConfigSchema = z.object({
 const LlmRoutingConfigSchema = z.object({
   model: z.string().optional(),
   fallbackToKeywords: z.boolean().optional(),
-  maxInputTokens: z.number().int().positive({ message: "llm.maxInputTokens must be > 0" }).optional(),
   cacheDecisions: z.boolean().optional(),
   batchMode: z.boolean().optional(),
   timeoutMs: z.number().int().positive({ message: "llm.timeoutMs must be > 0" }).optional(),
@@ -534,7 +532,6 @@ export const DEFAULT_CONFIG: NaxConfig = {
     llm: {
       model: "fast",
       fallbackToKeywords: true,
-      maxInputTokens: 2000,
       cacheDecisions: true,
       batchMode: true,
       timeoutMs: 15000,

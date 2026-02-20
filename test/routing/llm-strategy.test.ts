@@ -170,6 +170,7 @@ describe("LLM Routing Strategy - Cache", () => {
         stdout,
         stderr,
         exited: Promise.resolve(0),
+        kill: () => {},
       } as any;
     });
 
@@ -227,6 +228,7 @@ describe("LLM Routing Strategy - Integration", () => {
         stdout,
         stderr,
         exited: Promise.resolve(0),
+        kill: () => {},
       } as any;
     });
 
@@ -256,6 +258,7 @@ describe("LLM Routing Strategy - Integration", () => {
         stdout: new ReadableStream({ start() {} }),
         stderr: new ReadableStream({ start() {} }),
         exited: new Promise(() => {}), // never resolves
+        kill: () => {}, // mock kill for timeout cleanup
       } as any;
     });
 
@@ -302,6 +305,7 @@ describe("LLM Routing Strategy - Integration", () => {
         stdout,
         stderr,
         exited: Promise.resolve(0),
+        kill: () => {},
       } as any;
     });
 
@@ -341,6 +345,7 @@ describe("LLM Routing Strategy - Batch Routing", () => {
         stdout,
         stderr,
         exited: Promise.resolve(0),
+        kill: () => {},
       } as any;
     });
 
@@ -380,6 +385,7 @@ describe("LLM Routing Strategy - Batch Routing", () => {
         stdout,
         stderr,
         exited: Promise.resolve(0),
+        kill: () => {},
       } as any;
     });
 
@@ -433,6 +439,7 @@ describe("LLM Routing Strategy - Batch Routing", () => {
         stdout,
         stderr,
         exited: Promise.resolve(0),
+        kill: () => {},
       } as any;
     });
 
@@ -487,6 +494,7 @@ describe("LLM Routing Strategy - Edge Cases", () => {
         stdout,
         stderr,
         exited: Promise.resolve(0),
+        kill: () => {},
       } as any;
     });
 
@@ -520,6 +528,7 @@ describe("LLM Routing Strategy - Edge Cases", () => {
         stdout,
         stderr,
         exited: Promise.resolve(0),
+        kill: () => {},
       } as any;
     });
 

@@ -40,6 +40,36 @@ import { saveRunMetrics, type StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
 
 /** Run options */
+
+/**
+ * Try LLM batch routing for ready stories. Logs and swallows errors (falls back to per-story routing).
+ */
+async function tryLlmBatchRoute(config: NaxConfig, stories: UserStory[], label: string = "routing"): Promise<void> {
+  if (config.routing.strategy !== "llm" || !config.routing.llm?.batchMode || stories.length === 0) return;
+  try {
+    console.log(chalk.dim(`   LLM batch routing: ${label} ${stories.length} stories...`));
+    await llmRouteBatch(stories, { config });
+    console.log(chalk.dim(`   LLM batch routing: complete`));
+  } catch (err) {
+    console.warn(chalk.yellow(`   LLM batch routing failed: ${(err as Error).message}`));
+    console.log(chalk.dim(`   Will fall back to individual routing per story`));
+  }
+}
+
+/**
+ * Apply cached routing overrides from story.routing to a fresh routing decision.
+ */
+function applyCachedRouting(routing: ReturnType<typeof routeTask>, story: UserStory, config: NaxConfig): void {
+  if (!story.routing) return;
+  if (story.routing.complexity) {
+    routing.complexity = story.routing.complexity;
+    routing.modelTier = config.autoMode.complexityRouting[routing.complexity] ?? "balanced";
+  }
+  if (story.routing.testStrategy) {
+    routing.testStrategy = story.routing.testStrategy;
+  }
+}
+
 export interface RunOptions {
   /** Path to prd.json */
   prdPath: string;
@@ -139,17 +169,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       const readyStories = getAllReadyStories(prd);
       batchPlan = precomputeBatchPlan(readyStories, 4);
 
-      // LLM batch routing: pre-populate cache for all ready stories
-      if (config.routing.strategy === "llm" && config.routing.llm?.batchMode && readyStories.length > 0) {
-        try {
-          console.log(chalk.dim(`   LLM batch routing: routing ${readyStories.length} stories...`));
-          await llmRouteBatch(readyStories, { config });
-          console.log(chalk.dim(`   LLM batch routing: complete`));
-        } catch (err) {
-          console.warn(chalk.yellow(`   LLM batch routing failed: ${(err as Error).message}`));
-          console.log(chalk.dim(`   Will fall back to individual routing per story`));
-        }
-      }
+      await tryLlmBatchRoute(config, readyStories, "routing");
     }
 
     // Main loop
@@ -175,15 +195,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
           batchPlan = precomputeBatchPlan(readyStories, 4);
           currentBatchIndex = 0;
 
-          // LLM batch routing: re-route newly ready stories
-          if (config.routing.strategy === "llm" && config.routing.llm?.batchMode && readyStories.length > 0) {
-            try {
-              console.log(chalk.dim(`   LLM batch routing: re-routing ${readyStories.length} stories...`));
-              await llmRouteBatch(readyStories, { config });
-            } catch (err) {
-              console.warn(chalk.yellow(`   LLM batch routing failed: ${(err as Error).message}`));
-            }
-          }
+          await tryLlmBatchRoute(config, readyStories, "re-routing");
         }
       }
 
@@ -224,16 +236,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
           story.tags,
           config,
         );
-        // Override with cached complexity if available
-        if (story.routing) {
-          if (story.routing.complexity) {
-            routing.complexity = story.routing.complexity;
-            routing.modelTier = config.autoMode.complexityRouting[routing.complexity] ?? "balanced";
-          }
-          if (story.routing.testStrategy) {
-            routing.testStrategy = story.routing.testStrategy;
-          }
-        }
+        applyCachedRouting(routing, story, config);
       } else {
         // Fallback to single-story mode (when batching disabled or batch plan exhausted)
         const nextStory = getNextStory(prd);
@@ -254,16 +257,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
           story.tags,
           config,
         );
-        // Override with cached complexity if available
-        if (story.routing) {
-          if (story.routing.complexity) {
-            routing.complexity = story.routing.complexity;
-            routing.modelTier = config.autoMode.complexityRouting[routing.complexity] ?? "balanced";
-          }
-          if (story.routing.testStrategy) {
-            routing.testStrategy = story.routing.testStrategy;
-          }
-        }
+        applyCachedRouting(routing, story, config);
       }
 
       // BUG-16 + BUG-17: Pre-iteration tier escalation check

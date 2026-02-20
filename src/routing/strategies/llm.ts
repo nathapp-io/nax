@@ -129,9 +129,14 @@ async function callLlm(modelTier: string, prompt: string, config: NaxConfig): Pr
     },
   );
 
-  // Race between completion and timeout
+  // Race between completion and timeout, ensuring cleanup on either path
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error(`LLM call timeout after ${timeoutMs}ms`)), timeoutMs);
+    timeoutId = setTimeout(() => {
+      proc.kill();
+      reject(new Error(`LLM call timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
   });
 
   const outputPromise = (async () => {
@@ -148,7 +153,69 @@ async function callLlm(modelTier: string, prompt: string, config: NaxConfig): Pr
     return stdout.trim();
   })();
 
-  return await Promise.race([outputPromise, timeoutPromise]);
+  try {
+    const result = await Promise.race([outputPromise, timeoutPromise]);
+    clearTimeout(timeoutId);
+    return result;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    proc.kill();
+    throw err;
+  }
+}
+
+/**
+ * Validate a parsed routing object and return a clean RoutingDecision.
+ *
+ * @param parsed - Parsed JSON object with routing fields
+ * @param config - nax configuration (for modelTier validation)
+ * @returns Validated routing decision
+ * @throws Error if validation fails
+ */
+function validateRoutingDecision(parsed: Record<string, unknown>, config: NaxConfig): RoutingDecision {
+  // Validate required fields
+  if (!parsed.complexity || !parsed.modelTier || !parsed.testStrategy || !parsed.reasoning) {
+    throw new Error(`Missing required fields in LLM response: ${JSON.stringify(parsed)}`);
+  }
+
+  // Validate field values
+  const validComplexities: Complexity[] = ["simple", "medium", "complex", "expert"];
+  const validTestStrategies: TestStrategy[] = ["test-after", "three-session-tdd"];
+
+  if (!validComplexities.includes(parsed.complexity as Complexity)) {
+    throw new Error(`Invalid complexity: ${parsed.complexity}`);
+  }
+
+  if (!validTestStrategies.includes(parsed.testStrategy as TestStrategy)) {
+    throw new Error(`Invalid testStrategy: ${parsed.testStrategy}`);
+  }
+
+  // Validate modelTier exists in config
+  if (!config.models[parsed.modelTier as string]) {
+    throw new Error(`Invalid modelTier: ${parsed.modelTier} (not in config.models)`);
+  }
+
+  return {
+    complexity: parsed.complexity as Complexity,
+    modelTier: parsed.modelTier as ModelTier,
+    testStrategy: parsed.testStrategy as TestStrategy,
+    reasoning: parsed.reasoning as string,
+  };
+}
+
+/**
+ * Strip markdown code fences from LLM output.
+ */
+function stripCodeFences(text: string): string {
+  let result = text.trim();
+  if (result.startsWith("```")) {
+    const lines = result.split("\n");
+    result = lines.slice(1, -1).join("\n").trim();
+  }
+  if (result.startsWith("json")) {
+    result = result.slice(4).trim();
+  }
+  return result;
 }
 
 /**
@@ -161,46 +228,9 @@ async function callLlm(modelTier: string, prompt: string, config: NaxConfig): Pr
  * @throws Error if JSON parsing or validation fails
  */
 export function parseRoutingResponse(output: string, story: UserStory, config: NaxConfig): RoutingDecision {
-  // Strip markdown code blocks if present
-  let jsonText = output.trim();
-  if (jsonText.startsWith("```")) {
-    const lines = jsonText.split("\n");
-    jsonText = lines.slice(1, -1).join("\n").trim();
-  }
-  if (jsonText.startsWith("json")) {
-    jsonText = jsonText.slice(4).trim();
-  }
-
+  const jsonText = stripCodeFences(output);
   const parsed = JSON.parse(jsonText);
-
-  // Validate required fields
-  if (!parsed.complexity || !parsed.modelTier || !parsed.testStrategy || !parsed.reasoning) {
-    throw new Error(`Missing required fields in LLM response: ${jsonText}`);
-  }
-
-  // Validate field values
-  const validComplexities: Complexity[] = ["simple", "medium", "complex", "expert"];
-  const validTestStrategies: TestStrategy[] = ["test-after", "three-session-tdd"];
-
-  if (!validComplexities.includes(parsed.complexity)) {
-    throw new Error(`Invalid complexity: ${parsed.complexity}`);
-  }
-
-  if (!validTestStrategies.includes(parsed.testStrategy)) {
-    throw new Error(`Invalid testStrategy: ${parsed.testStrategy}`);
-  }
-
-  // Validate modelTier exists in config
-  if (!config.models[parsed.modelTier]) {
-    throw new Error(`Invalid modelTier: ${parsed.modelTier} (not in config.models)`);
-  }
-
-  return {
-    complexity: parsed.complexity,
-    modelTier: parsed.modelTier,
-    testStrategy: parsed.testStrategy,
-    reasoning: parsed.reasoning,
-  };
+  return validateRoutingDecision(parsed, config);
 }
 
 /**
@@ -245,8 +275,8 @@ function parseBatchResponse(
       throw new Error(`Batch entry has unknown story ID: ${entry.id}`);
     }
 
-    // Validate using same logic as single-story parsing
-    const decision = parseRoutingResponse(JSON.stringify(entry), story, config);
+    // Validate entry directly (no re-serialization needed)
+    const decision = validateRoutingDecision(entry, config);
     decisions.set(entry.id, decision);
   }
 
