@@ -252,11 +252,20 @@ export function initLogger(options: LoggerOptions): Logger {
  * logger.info("routing", "Task classified");
  * ```
  */
+/**
+ * No-op logger for tests/environments where logger isn't initialized
+ */
+const noopLogger: Logger = {
+  error: () => {},
+  warn: () => {},
+  info: () => {},
+  debug: () => {},
+  withStory: () => noopLogger,
+} as any;
+
 export function getLogger(): Logger {
   if (!instance) {
-    throw new Error(
-      "Logger not initialized. Call initLogger(options) first.",
-    );
+    return noopLogger;
   }
   return instance;
 }
