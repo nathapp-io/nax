@@ -10,6 +10,7 @@ import type { UserStory } from '../prd';
 import type { NaxConfig } from '../config';
 import { countStories } from '../prd';
 import { generateTestCoverageSummary } from './test-scanner';
+import { getLogger } from '../logger';
 
 /**
  * Approximate character-to-token ratio for token estimation.
@@ -139,7 +140,11 @@ function formatStoryAsText(story: UserStory): string {
       parts.push(`- ${ac}`);
     }
   } else {
-    console.warn(`⚠️  Story ${story.id} has invalid acceptanceCriteria (expected array, got ${typeof story.acceptanceCriteria})`);
+    const logger = getLogger();
+    logger.warn("context", "Story has invalid acceptanceCriteria", {
+      storyId: story.id,
+      type: typeof story.acceptanceCriteria
+    });
     parts.push('- (No acceptance criteria defined)');
   }
 
@@ -253,7 +258,11 @@ export async function buildContext(
         elements.push(createDependencyContext(depStory, 50));
       } else {
         // Log warning when dependency story is not found (instead of silently skipping)
-        console.warn(`⚠️  Dependency story ${depId} not found in PRD (referenced by ${currentStory.id})`);
+        const logger = getLogger();
+        logger.warn("context", "Dependency story not found in PRD", {
+          dependencyId: depId,
+          referencedBy: currentStory.id
+        });
       }
     }
   }
@@ -273,7 +282,8 @@ export async function buildContext(
         elements.push(createTestCoverageContext(scanResult.summary, scanResult.tokens, 85));
       }
     } catch (error) {
-      console.warn(`⚠️  Test coverage scan failed: ${(error as Error).message}`);
+      const logger = getLogger();
+      logger.warn("context", "Test coverage scan failed", { error: (error as Error).message });
     }
   }
 
@@ -297,13 +307,20 @@ export async function buildContext(
         const exists = await file.exists();
 
         if (!exists) {
-          console.warn(`⚠️  Relevant file not found: ${relativeFilePath} (story: ${currentStory.id})`);
+          const logger = getLogger();
+          logger.warn("context", "Relevant file not found", { filePath: relativeFilePath, storyId: currentStory.id });
           continue;
         }
 
         const fileSize = file.size;
         if (fileSize > MAX_FILE_SIZE_BYTES) {
-          console.warn(`⚠️  File too large (${Math.round(fileSize / 1024)}KB > 10KB): ${relativeFilePath} (story: ${currentStory.id})`);
+          const logger = getLogger();
+          logger.warn("context", "File too large", {
+            filePath: relativeFilePath,
+            sizeKB: Math.round(fileSize / 1024),
+            maxKB: 10,
+            storyId: currentStory.id
+          });
           continue;
         }
 
@@ -312,7 +329,11 @@ export async function buildContext(
 
         elements.push(createFileContext(relativeFilePath, fileContext, 60));
       } catch (error) {
-        console.warn(`⚠️  Error loading file ${relativeFilePath}: ${error instanceof Error ? error.message : String(error)}`);
+        const logger = getLogger();
+        logger.warn("context", "Error loading file", {
+          filePath: relativeFilePath,
+          error: error instanceof Error ? error.message : String(error)
+        });
       }
     }
   }

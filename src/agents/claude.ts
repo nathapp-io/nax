@@ -4,6 +4,7 @@
 
 import type { AgentAdapter, AgentCapabilities, AgentResult, AgentRunOptions, PlanOptions, PlanResult, DecomposeOptions, DecomposeResult, DecomposedStory, InteractiveRunOptions, PtyHandle } from "./types";
 import { estimateCostFromOutput, estimateCostByDuration } from "./cost";
+import { getLogger } from "../logger";
 
 /**
  * Maximum characters to capture from agent stdout.
@@ -150,7 +151,8 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         // If rate limited, retry with exponential backoff
         if (result.rateLimited && attempt < maxRetries) {
           const backoffMs = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
-          console.warn(`Rate limited, retrying in ${backoffMs / 1000}s (attempt ${attempt}/${maxRetries})`);
+          const logger = getLogger();
+          logger.warn("agent", "Rate limited, retrying", { backoffSeconds: backoffMs / 1000, attempt, maxRetries });
           await Bun.sleep(backoffMs);
           continue;
         }
@@ -158,7 +160,8 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         // If transient error (non-zero exit but not timeout), retry with backoff
         if (!result.success && result.exitCode !== 124 && attempt < maxRetries) {
           const backoffMs = Math.pow(2, attempt) * 1000;
-          console.warn(`Agent failed with exit code ${result.exitCode}, retrying in ${backoffMs / 1000}s (attempt ${attempt}/${maxRetries})`);
+          const logger = getLogger();
+          logger.warn("agent", "Agent failed, retrying", { exitCode: result.exitCode, backoffSeconds: backoffMs / 1000, attempt, maxRetries });
           await Bun.sleep(backoffMs);
           continue;
         }
@@ -168,7 +171,8 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         lastError = error as Error;
         if (attempt < maxRetries) {
           const backoffMs = Math.pow(2, attempt) * 1000;
-          console.warn(`Agent error: ${lastError.message}, retrying in ${backoffMs / 1000}s (attempt ${attempt}/${maxRetries})`);
+          const logger = getLogger();
+          logger.warn("agent", "Agent error, retrying", { error: lastError.message, backoffSeconds: backoffMs / 1000, attempt, maxRetries });
           await Bun.sleep(backoffMs);
         }
       }
@@ -178,7 +182,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     throw lastError || new Error("Agent execution failed after all retries");
   }
 
-  private async runOnce(options: AgentRunOptions, attempt: number): Promise<AgentResult> {
+  private async runOnce(options: AgentRunOptions, _attempt: number): Promise<AgentResult> {
     const cmd = this.buildCommand(options);
     const startTime = Date.now();
 
@@ -220,6 +224,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     // Try to parse token usage from output, fallback to pessimistic duration-based estimate (BUG-3)
     const fullOutput = stdout + stderr;
     let costEstimate = estimateCostFromOutput(options.modelTier, fullOutput);
+    const logger = getLogger();
     if (!costEstimate) {
       // Fallback to conservative duration-based estimate if tokens not found
       // Use 1.5x multiplier to account for parsing uncertainty
@@ -228,9 +233,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         cost: fallbackEstimate.cost * 1.5,
         confidence: 'fallback',
       };
-      console.warn(`[nax] Cost estimation fallback (duration-based) for ${options.modelTier} tier: ${costEstimate.cost.toFixed(4)} USD`);
+      logger.warn("agent", "Cost estimation fallback (duration-based)", { modelTier: options.modelTier, cost: costEstimate.cost });
     } else if (costEstimate.confidence === 'estimated') {
-      console.warn(`[nax] Cost estimation using regex parsing (estimated confidence): ${costEstimate.cost.toFixed(4)} USD`);
+      logger.warn("agent", "Cost estimation using regex parsing (estimated confidence)", { cost: costEstimate.cost });
     }
     const cost = costEstimate.cost;
 

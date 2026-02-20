@@ -9,6 +9,7 @@ import type { RoutingStrategy, RoutingContext, RoutingDecision } from "../strate
 import type { UserStory } from "../../prd/types";
 import type { Complexity, ModelTier, TestStrategy, NaxConfig } from "../../config";
 import { resolveModel } from "../../config";
+import { getLogger } from "../../logger";
 
 /** Module-level cache for routing decisions */
 const cachedDecisions = new Map<string, RoutingDecision>();
@@ -357,9 +358,13 @@ export const llmStrategy: RoutingStrategy = {
     // Check cache first
     if (llmConfig.cacheDecisions && cachedDecisions.has(story.id)) {
       const cached = cachedDecisions.get(story.id)!;
-      console.log(
-        `[routing] LLM cache hit for ${story.id}: ${cached.complexity}/${cached.modelTier}/${cached.testStrategy}`,
-      );
+      const logger = getLogger();
+      logger.debug("routing", "LLM cache hit", {
+        storyId: story.id,
+        complexity: cached.complexity,
+        modelTier: cached.modelTier,
+        testStrategy: cached.testStrategy
+      });
       return cached;
     }
 
@@ -374,18 +379,25 @@ export const llmStrategy: RoutingStrategy = {
         cachedDecisions.set(story.id, decision);
       }
 
-      // Log decision with chalk-style formatting
-      console.log(
-        `[routing] LLM classified ${story.id} as ${decision.complexity}/${decision.modelTier}/${decision.testStrategy}: "${decision.reasoning}"`,
-      );
+      // Log decision
+      const logger = getLogger();
+      logger.info("routing", "LLM classified story", {
+        storyId: story.id,
+        complexity: decision.complexity,
+        modelTier: decision.modelTier,
+        testStrategy: decision.testStrategy,
+        reasoning: decision.reasoning
+      });
 
       return decision;
     } catch (err) {
-      console.warn(`[routing] LLM routing failed for ${story.id}: ${(err as Error).message}`);
+      const logger = getLogger();
+      const errorMsg = (err as Error).message;
+      logger.warn("routing", "LLM routing failed", { storyId: story.id, error: errorMsg });
 
       // Fall back to keyword strategy if configured
       if (llmConfig.fallbackToKeywords) {
-        console.log(`[routing] Falling back to keyword strategy for ${story.id}`);
+        logger.info("routing", "Falling back to keyword strategy", { storyId: story.id });
         return null; // Delegate to next strategy (keyword)
       }
 

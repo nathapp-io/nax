@@ -9,6 +9,7 @@ import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { DEFAULT_CONFIG, NaxConfigSchema, type NaxConfig } from "./schema";
 import { MAX_DIRECTORY_DEPTH } from "./path-security";
+import { getLogger } from "../logger";
 
 /** Global config path */
 export function globalConfigPath(): string {
@@ -40,7 +41,8 @@ async function loadJsonFile<T>(path: string): Promise<T | null> {
   try {
     return await Bun.file(path).json();
   } catch (err) {
-    console.warn(`Warning: Failed to parse ${path}: ${err}`);
+    const logger = getLogger();
+    logger.warn("config", "Failed to parse config file", { path, error: String(err) });
     return null;
   }
 }

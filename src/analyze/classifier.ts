@@ -10,6 +10,7 @@ import type { UserStory } from "../prd";
 import type { NaxConfig } from "../config";
 import type { CodebaseScan, ClassificationResult, StoryClassification } from "./types";
 import { classifyComplexity } from "../routing";
+import { getLogger } from "../logger";
 
 /**
  * Raw LLM classification item (before validation)
@@ -67,7 +68,8 @@ export async function classifyStories(
   } catch (error) {
     // Fall back to keyword matching
     const reason = error instanceof Error ? error.message : String(error);
-    console.warn(`LLM classification failed (${reason}), falling back to keyword matching`);
+    const logger = getLogger();
+    logger.warn("analyze", "LLM classification failed, falling back to keyword matching", { error: reason });
 
     return {
       classifications: stories.map((story) => fallbackClassification(story)),
