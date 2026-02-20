@@ -4,12 +4,13 @@
  * Tests for PipelineEventEmitter and event emission during pipeline execution.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { PipelineEventEmitter } from "../src/pipeline/events";
 import { runPipeline } from "../src/pipeline/runner";
 import type { PipelineStage, PipelineContext, StageResult } from "../src/pipeline/types";
 import type { UserStory } from "../src/prd/types";
 import type { NaxConfig } from "../src/config/schema";
+import { initLogger, resetLogger } from "../src/logger";
 
 // ── Test Fixtures ────────────────────────────────────
 
@@ -124,6 +125,14 @@ const createMockContext = (): PipelineContext => ({
 // ── PipelineEventEmitter Tests ──────────────────────
 
 describe("PipelineEventEmitter", () => {
+  beforeEach(() => {
+    initLogger({ level: "error", useChalk: false });
+  });
+
+  afterEach(() => {
+    resetLogger();
+  });
+
   test("should emit and receive story:start events", () => {
     const emitter = new PipelineEventEmitter();
     const events: Array<{ story: UserStory; routing: unknown }> = [];
@@ -298,6 +307,14 @@ describe("PipelineEventEmitter", () => {
 // ── Pipeline Runner Event Emission Tests ────────────
 
 describe("runPipeline event emission", () => {
+  beforeEach(() => {
+    initLogger({ level: "error", useChalk: false });
+  });
+
+  afterEach(() => {
+    resetLogger();
+  });
+
   test("should emit stage:enter and stage:exit for each stage", async () => {
     const emitter = new PipelineEventEmitter();
     const enterEvents: string[] = [];

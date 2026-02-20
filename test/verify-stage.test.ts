@@ -2,11 +2,12 @@
  * Verify Stage Tests
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { verifyStage } from "../src/pipeline/stages/verify";
 import type { PipelineContext } from "../src/pipeline/types";
 import type { NaxConfig } from "../src/config/schema";
 import type { PRD, UserStory } from "../src/prd/types";
+import { initLogger, resetLogger } from "../src/logger";
 import { mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -115,6 +116,14 @@ function createTestContext(overrides?: Partial<PipelineContext>): PipelineContex
 }
 
 describe("Verify Stage", () => {
+  beforeEach(() => {
+    initLogger({ level: "error", useChalk: false });
+  });
+
+  afterEach(() => {
+    resetLogger();
+  });
+
   test("verifyStage is always enabled", () => {
     const ctx = createTestContext();
     expect(verifyStage.enabled(ctx)).toBe(true);

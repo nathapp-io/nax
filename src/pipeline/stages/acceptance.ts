@@ -24,10 +24,10 @@
  * ```
  */
 
-import chalk from "chalk";
 import type { PipelineStage, PipelineContext, StageResult } from "../types";
 import { countStories } from "../../prd";
 import path from "node:path";
+import { getLogger } from "../../logger";
 
 /**
  * Parse bun test output to extract failed test names.
@@ -103,13 +103,13 @@ export const acceptanceStage: PipelineStage = {
   },
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
-    console.log(chalk.cyan("\n🧪 Running acceptance tests..."));
+    const logger = getLogger();
+
+    logger.info("acceptance", "Running acceptance tests");
 
     // Build path to acceptance test file
     if (!ctx.featureDir) {
-      console.warn(
-        chalk.yellow("⚠ No feature directory — skipping acceptance tests"),
-      );
+      logger.warn("acceptance", "No feature directory — skipping acceptance tests");
       return { action: "continue" };
     }
 
@@ -120,11 +120,9 @@ export const acceptanceStage: PipelineStage = {
     const exists = await testFile.exists();
 
     if (!exists) {
-      console.warn(
-        chalk.yellow(
-          `⚠ Acceptance test file not found: ${testPath} — skipping`,
-        ),
-      );
+      logger.warn("acceptance", "Acceptance test file not found — skipping", {
+        testPath,
+      });
       return { action: "continue" };
     }
 
@@ -151,16 +149,16 @@ export const acceptanceStage: PipelineStage = {
 
     // If all failed ACs are overridden, treat as success
     if (actualFailures.length === 0 && exitCode === 0) {
-      console.log(chalk.green("✓ All acceptance tests passed"));
+      logger.info("acceptance", "All acceptance tests passed");
       return { action: "continue" };
     }
 
     if (actualFailures.length === 0 && exitCode !== 0) {
       // Tests failed but we couldn't parse which ACs
       // This might be a setup/teardown error
-      console.log(chalk.yellow("⚠ Tests failed but no specific AC failures detected"));
-      console.log(chalk.gray("Output:"));
-      console.log(chalk.gray(output));
+      logger.warn("acceptance", "Tests failed but no specific AC failures detected", {
+        output,
+      });
       return { action: "continue" }; // Don't block on unparseable failures
     }
 
@@ -169,21 +167,16 @@ export const acceptanceStage: PipelineStage = {
       // Log overridden failures (if any)
       const overriddenFailures = failedACs.filter((acId) => overrides[acId]);
       if (overriddenFailures.length > 0) {
-        console.log(
-          chalk.yellow(
-            `⚠ Skipped failures (overridden): ${overriddenFailures.join(", ")}`,
-          ),
-        );
-        for (const acId of overriddenFailures) {
-          console.log(chalk.gray(`   ${acId}: ${overrides[acId]}`));
-        }
+        logger.warn("acceptance", "Skipped failures (overridden)", {
+          overriddenFailures,
+          overrides: overriddenFailures.map((acId) => ({ acId, reason: overrides[acId] })),
+        });
       }
 
-      console.log(
-        chalk.red(`✗ Acceptance tests failed: ${actualFailures.join(", ")}`),
-      );
-      console.log(chalk.gray("\nTest output:"));
-      console.log(chalk.gray(output));
+      logger.error("acceptance", "Acceptance tests failed", {
+        failedACs: actualFailures,
+        output,
+      });
 
       // Store failed ACs and test output in context for fix generation
       ctx.acceptanceFailures = {
@@ -198,7 +191,7 @@ export const acceptanceStage: PipelineStage = {
     }
 
     // All tests passed
-    console.log(chalk.green("✓ All acceptance tests passed"));
+    logger.info("acceptance", "All acceptance tests passed");
     return { action: "continue" };
   },
 };

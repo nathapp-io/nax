@@ -5,10 +5,10 @@
  * Processes commands atomically and updates PRD accordingly.
  */
 
-import chalk from "chalk";
 import type { PipelineStage, PipelineContext, StageResult } from "../types";
 import { readQueueFile, clearQueueFile } from "../../execution/queue-handler";
 import { markStorySkipped, savePRD } from "../../prd";
+import { getLogger } from "../../logger";
 
 /**
  * Queue Check Stage
@@ -33,6 +33,7 @@ export const queueCheckStage: PipelineStage = {
   enabled: () => true,
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
+    const logger = getLogger();
     const queueCommands = await readQueueFile(ctx.workdir);
 
     if (queueCommands.length === 0) {
@@ -41,13 +42,13 @@ export const queueCheckStage: PipelineStage = {
 
     for (const cmd of queueCommands) {
       if (cmd.type === "PAUSE") {
-        console.log(chalk.yellow("\n⏸️  Paused by user (PAUSE command in .queue.txt)"));
+        logger.warn("queue", "Paused by user", { command: "PAUSE" });
         await clearQueueFile(ctx.workdir);
         return { action: "pause", reason: "User requested pause via .queue.txt" };
       }
 
       if (cmd.type === "ABORT") {
-        console.log(chalk.yellow("\n🛑 Aborting: marking remaining stories as skipped"));
+        logger.warn("queue", "Aborting: marking remaining stories as skipped");
 
         // Mark all pending stories as skipped
         ctx.prd.userStories.forEach((s) => {
@@ -71,7 +72,9 @@ export const queueCheckStage: PipelineStage = {
         const isTargeted = ctx.stories.some((s) => s.id === cmd.storyId);
 
         if (isTargeted) {
-          console.log(chalk.yellow(`   ⏭️  Skipping story ${cmd.storyId} by user request`));
+          logger.warn("queue", "Skipping story by user request", {
+            storyId: cmd.storyId,
+          });
 
           // Mark as skipped in PRD
           markStorySkipped(ctx.prd, cmd.storyId);

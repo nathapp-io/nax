@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { run } from "../src/execution/runner";
 import type { RunOptions } from "../src/execution/runner";
 import type { PRD, UserStory } from "../src/prd";
 import { DEFAULT_CONFIG } from "../src/config";
+import { initLogger, resetLogger } from "../src/logger";
 
 // Sample PRD for testing
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
@@ -27,6 +28,14 @@ const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
 });
 
 describe("execution runner", () => {
+  beforeEach(() => {
+    initLogger({ level: "error", useChalk: false });
+  });
+
+  afterEach(() => {
+    resetLogger();
+  });
+
   test("chooses test-after strategy for simple complexity", async () => {
     const prd = createTestPRD([
       {

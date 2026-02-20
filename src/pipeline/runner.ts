@@ -5,9 +5,9 @@
  * controlling the flow (continue/skip/fail/escalate/pause).
  */
 
-import chalk from "chalk";
 import type { PipelineContext, PipelineStage, StageResult } from "./types";
 import type { PipelineEventEmitter } from "./events";
+import { getLogger } from "../logger";
 
 /**
  * Pipeline execution result.
@@ -51,11 +51,11 @@ export interface PipelineRunResult {
  * const result = await runPipeline(stages, ctx);
  *
  * if (result.success) {
- *   console.log("Pipeline completed successfully");
+ *   // Pipeline completed successfully
  *   // ctx and result.context are the same object
- *   console.log(ctx.agentResult === result.context.agentResult); // true
+ *   // ctx.agentResult === result.context.agentResult is true
  * } else {
- *   console.log(`Pipeline stopped: ${result.finalAction} - ${result.reason}`);
+ *   // Pipeline stopped: ${result.finalAction} - ${result.reason}
  * }
  * ```
  */
@@ -64,10 +64,12 @@ export async function runPipeline(
   context: PipelineContext,
   eventEmitter?: PipelineEventEmitter,
 ): Promise<PipelineRunResult> {
+  const logger = getLogger();
+
   for (const stage of stages) {
     // Skip disabled stages
     if (!stage.enabled(context)) {
-      console.log(chalk.dim(`   → Stage "${stage.name}" skipped (disabled)`));
+      logger.debug("pipeline", `Stage "${stage.name}" skipped (disabled)`);
       continue;
     }
 

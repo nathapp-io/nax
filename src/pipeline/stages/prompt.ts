@@ -21,15 +21,16 @@
  * ```
  */
 
-import chalk from "chalk";
 import type { PipelineStage, PipelineContext, StageResult } from "../types";
 import { buildSingleSessionPrompt, buildBatchPrompt } from "../../execution/prompts";
+import { getLogger } from "../../logger";
 
 export const promptStage: PipelineStage = {
   name: "prompt",
   enabled: (ctx) => ctx.routing.testStrategy !== "three-session-tdd",
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
+    const logger = getLogger();
     const isBatch = ctx.stories.length > 1;
 
     const prompt = isBatch
@@ -39,9 +40,15 @@ export const promptStage: PipelineStage = {
     ctx.prompt = prompt;
 
     if (isBatch) {
-      console.log(chalk.cyan(`\n   → Batch session (${ctx.stories.length} stories, test-after)`));
+      logger.info("prompt", "Batch session prepared", {
+        storyCount: ctx.stories.length,
+        testStrategy: "test-after",
+      });
     } else {
-      console.log(chalk.cyan(`\n   → Single session (test-after)`));
+      logger.info("prompt", "Single session prepared", {
+        storyId: ctx.story.id,
+        testStrategy: "test-after",
+      });
     }
 
     return { action: "continue" };

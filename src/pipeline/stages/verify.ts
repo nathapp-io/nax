@@ -20,9 +20,9 @@
  * ```
  */
 
-import chalk from "chalk";
 import { spawn } from "bun";
 import type { PipelineStage, PipelineContext, StageResult } from "../types";
+import { getLogger } from "../../logger";
 
 /**
  * Run test command and check exit code
@@ -72,12 +72,14 @@ export const verifyStage: PipelineStage = {
   enabled: () => true,
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
-    console.log(chalk.cyan("\n   → Running verification..."));
+    const logger = getLogger();
+
+    logger.info("verify", "Running verification");
 
     // Wait 2 seconds to let agent child processes fully terminate
     // This prevents OOM on low-RAM systems when TypeScript language servers
     // are still in memory while we spawn `bun test`
-    console.log(chalk.dim("   ⏱️  Waiting for agent processes to terminate..."));
+    logger.debug("verify", "Waiting for agent processes to terminate");
     await Bun.sleep(2000);
 
     // Get test command from config or use default
@@ -88,15 +90,17 @@ export const verifyStage: PipelineStage = {
 
     // HARD FAILURE: Tests must pass for story to be marked complete
     if (!result.success) {
-      console.log(chalk.red(`   ✗ Tests failed (exit code ${result.exitCode})`));
+      logger.error("verify", "Tests failed", {
+        exitCode: result.exitCode,
+        storyId: ctx.story.id,
+      });
 
       // Log first few lines of output for context
       const outputLines = result.output.split("\n").slice(0, 10);
       if (outputLines.length > 0) {
-        console.log(chalk.dim("   Output preview:"));
-        for (const line of outputLines) {
-          console.log(chalk.dim(`     ${line}`));
-        }
+        logger.debug("verify", "Test output preview", {
+          output: outputLines.join("\n"),
+        });
       }
 
       return {
@@ -105,7 +109,7 @@ export const verifyStage: PipelineStage = {
       };
     }
 
-    console.log(chalk.green("   ✓ Tests passed"));
+    logger.info("verify", "Tests passed", { storyId: ctx.story.id });
     return { action: "continue" };
   },
 };

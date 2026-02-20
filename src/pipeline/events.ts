@@ -58,11 +58,11 @@ export interface PipelineEvents {
  * const emitter = new PipelineEventEmitter();
  *
  * emitter.on('story:start', (story, routing) => {
- *   console.log(`Starting ${story.id} with ${routing.modelTier}`);
+ *   // Handle story start: ${story.id} with ${routing.modelTier}
  * });
  *
  * emitter.on('story:complete', (story, result) => {
- *   console.log(`Completed ${story.id}: ${result.action}`);
+ *   // Handle story completion: ${story.id} - ${result.action}
  * });
  *
  * // In pipeline runner:

@@ -19,16 +19,18 @@
  * ```
  */
 
-import chalk from "chalk";
 import { dirname } from "node:path";
 import type { PipelineStage, PipelineContext, StageResult } from "../types";
 import { loadConstitution } from "../../constitution";
+import { getLogger } from "../../logger";
 
 export const constitutionStage: PipelineStage = {
   name: "constitution",
   enabled: (ctx) => ctx.config.constitution.enabled,
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
+    const logger = getLogger();
+
     // Constitution file is in nax/constitution.md
     // featureDir is nax/features/<name>/, so we need to go up two levels
     const ngentDir = ctx.featureDir
@@ -40,23 +42,22 @@ export const constitutionStage: PipelineStage = {
     if (result) {
       ctx.constitution = result;
 
-      console.log(
-        chalk.dim(
-          `   Constitution: loaded (${result.tokens} tokens${result.truncated ? ", truncated" : ""})`,
-        ),
-      );
+      logger.debug("constitution", "Constitution loaded", {
+        tokens: result.tokens,
+        truncated: result.truncated,
+      });
 
       if (result.truncated) {
-        console.log(
-          chalk.yellow(
-            `   ⚠️  Constitution truncated from ${result.originalTokens} to ${result.tokens} tokens (max: ${ctx.config.constitution.maxTokens})`,
-          ),
-        );
+        logger.warn("constitution", "Constitution truncated", {
+          originalTokens: result.originalTokens,
+          tokens: result.tokens,
+          maxTokens: ctx.config.constitution.maxTokens,
+        });
       }
     } else {
       // SOFT FAILURE: Constitution missing or failed to load — continue without it
       // This is acceptable because constitution is optional project governance
-      console.log(chalk.dim("   Constitution: not found or failed to load (continuing without it)"));
+      logger.debug("constitution", "Constitution not found or failed to load");
     }
 
     return { action: "continue" };

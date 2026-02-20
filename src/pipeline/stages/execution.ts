@@ -22,17 +22,19 @@
  * ```
  */
 
-import chalk from "chalk";
 import type { PipelineStage, PipelineContext, StageResult } from "../types";
 import { getAgent, validateAgentForTier } from "../../agents";
 import { resolveModel } from "../../config";
 import { runThreeSessionTdd } from "../../tdd";
+import { getLogger } from "../../logger";
 
 export const executionStage: PipelineStage = {
   name: "execution",
   enabled: () => true,
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
+    const logger = getLogger();
+
     // HARD FAILURE: No agent available — cannot proceed without an agent
     const agent = getAgent(ctx.config.autoMode.defaultAgent);
     if (!agent) {
@@ -44,7 +46,9 @@ export const executionStage: PipelineStage = {
 
     // Three-session TDD path
     if (ctx.routing.testStrategy === "three-session-tdd") {
-      console.log(chalk.cyan(`\n   → Three-session TDD`));
+      logger.info("execution", "Starting three-session TDD", {
+        storyId: ctx.story.id,
+      });
 
       const tddResult = await runThreeSessionTdd(
         agent,
@@ -66,7 +70,10 @@ export const executionStage: PipelineStage = {
       };
 
       if (tddResult.needsHumanReview) {
-        console.log(chalk.yellow(`\n⏸  Human review needed: ${tddResult.reviewReason}`));
+        logger.warn("execution", "Human review needed", {
+          storyId: ctx.story.id,
+          reason: tddResult.reviewReason,
+        });
         return {
           action: "pause",
           reason: tddResult.reviewReason || "Three-session TDD requires review",
@@ -84,13 +91,11 @@ export const executionStage: PipelineStage = {
 
     // Validate agent supports the requested tier
     if (!validateAgentForTier(agent, ctx.routing.modelTier)) {
-      console.log(
-        chalk.yellow(
-          `   ⚠️  Agent ${agent.name} does not declare support for tier "${ctx.routing.modelTier}"\n` +
-            `      Supported tiers: [${agent.capabilities.supportedTiers.join(", ")}]\n` +
-            `      Proceeding anyway — agent may fail or fall back to different model`,
-        ),
-      );
+      logger.warn("execution", "Agent tier mismatch", {
+        agentName: agent.name,
+        requestedTier: ctx.routing.modelTier,
+        supportedTiers: agent.capabilities.supportedTiers,
+      });
     }
 
     const result = await agent.run({
@@ -104,14 +109,20 @@ export const executionStage: PipelineStage = {
     ctx.agentResult = result;
 
     if (!result.success) {
-      console.log(chalk.red(`   ✗ Agent session failed`));
+      logger.error("execution", "Agent session failed", {
+        rateLimited: result.rateLimited,
+        storyId: ctx.story.id,
+      });
       if (result.rateLimited) {
-        console.log(chalk.yellow(`   ⚠️  Rate limited — will retry`));
+        logger.warn("execution", "Rate limited — will retry");
       }
       return { action: "escalate" };
     }
 
-    console.log(chalk.green(`   ✓ Agent session complete`));
+    logger.info("execution", "Agent session complete", {
+      storyId: ctx.story.id,
+      cost: result.estimatedCost,
+    });
     return { action: "continue" };
   },
 };

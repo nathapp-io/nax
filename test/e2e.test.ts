@@ -25,6 +25,7 @@ import { DEFAULT_CONFIG } from "../src/config";
 import type { NaxConfig } from "../src/config";
 import { loadPRD } from "../src/prd";
 import { ALL_AGENTS } from "../src/agents/registry";
+import { initLogger, resetLogger } from "../src/logger";
 
 /**
  * Mock Agent Adapter for testing
@@ -282,6 +283,9 @@ describe("E2E: plan → analyze → run workflow", () => {
   let cleanup: () => void;
 
   beforeEach(() => {
+    // Initialize logger
+    initLogger({ level: "error", useChalk: false });
+
     // Create temp directory
     testDir = `/tmp/nax-e2e-test-${Date.now()}`;
     mkdirSync(testDir, { recursive: true });
@@ -299,6 +303,8 @@ describe("E2E: plan → analyze → run workflow", () => {
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
     }
+    // Reset logger
+    resetLogger();
     cleanup();
   });
 

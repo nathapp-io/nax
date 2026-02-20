@@ -8,6 +8,7 @@ import type { PipelineContext } from "../src/pipeline/types";
 import type { PRD } from "../src/prd/types";
 import type { NaxConfig } from "../src/config/schema";
 import { DEFAULT_CONFIG } from "../src/config/schema";
+import { initLogger, resetLogger } from "../src/logger";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -15,6 +16,8 @@ const testDir = `/tmp/nax-acceptance-test-${Date.now()}`;
 const featureDir = path.join(testDir, "nax/features/test-feature");
 
 beforeEach(async () => {
+  // Initialize logger for tests
+  initLogger({ level: "error", useChalk: false });
   // Create test directory structure
   await fs.mkdir(featureDir, { recursive: true });
 });
@@ -22,6 +25,8 @@ beforeEach(async () => {
 afterEach(async () => {
   // Clean up test directory
   await fs.rm(testDir, { recursive: true, force: true });
+  // Reset logger
+  resetLogger();
 });
 
 function createTestContext(

@@ -17,16 +17,18 @@
  * ```
  */
 
-import chalk from "chalk";
 import type { PipelineStage, PipelineContext, StageResult } from "../types";
 import { routeStory } from "../../routing";
 import { routeBatch, clearCache } from "../../routing/strategies/llm";
+import { getLogger } from "../../logger";
 
 export const routingStage: PipelineStage = {
   name: "routing",
   enabled: () => true,
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
+    const logger = getLogger();
+
     // If story has cached routing, use it but re-derive modelTier from current config
     // Otherwise, perform fresh classification
     let routing;
@@ -45,13 +47,15 @@ export const routingStage: PipelineStage = {
 
     const isBatch = ctx.stories.length > 1;
 
-    console.log(
-      chalk.dim(
-        `   Complexity: ${routing.complexity} | Model: ${routing.modelTier} | TDD: ${routing.testStrategy}`,
-      ),
-    );
+    logger.debug("routing", "Task classified", {
+      complexity: routing.complexity,
+      modelTier: routing.modelTier,
+      testStrategy: routing.testStrategy,
+      storyId: ctx.story.id,
+    });
+
     if (!isBatch) {
-      console.log(chalk.dim(`   Routing: ${routing.reasoning}`));
+      logger.debug("routing", routing.reasoning);
     }
 
     return { action: "continue" };
