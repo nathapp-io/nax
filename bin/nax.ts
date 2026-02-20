@@ -56,6 +56,7 @@ import {
   displayModelEfficiency,
 } from "../src/cli";
 import { renderTui, PipelineEventEmitter, type StoryDisplayState } from "../src/tui";
+import { initLogger, type LogLevel } from "../src/logger";
 
 const pkg = await Bun.file(join(import.meta.dir, "..", "package.json")).json();
 
@@ -201,6 +202,9 @@ program
   .option("--no-context", "Disable context builder (skip file context in prompts)")
   .option("--no-batch", "Disable story batching (execute all stories individually)")
   .option("--headless", "Force headless mode (disable TUI, use pipe mode)", false)
+  .option("--verbose", "Enable verbose logging (debug level)", false)
+  .option("--quiet", "Quiet mode (warnings and errors only)", false)
+  .option("--silent", "Silent mode (errors only)", false)
   .option("-d, --dir <path>", "Working directory", process.cwd())
   .action(async (options) => {
     // Validate directory path
@@ -210,6 +214,19 @@ program
     } catch (err) {
       console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
       process.exit(1);
+    }
+
+    // Determine log level from flags or env var (env var takes precedence)
+    let logLevel: LogLevel = "info"; // default
+    const envLevel = process.env.NAX_LOG_LEVEL?.toLowerCase();
+    if (envLevel && ["error", "warn", "info", "debug"].includes(envLevel)) {
+      logLevel = envLevel as LogLevel;
+    } else if (options.verbose) {
+      logLevel = "debug";
+    } else if (options.quiet) {
+      logLevel = "warn";
+    } else if (options.silent) {
+      logLevel = "error";
     }
 
     const config = await loadConfig();
@@ -227,6 +244,21 @@ program
       console.error(chalk.red(`Feature "${options.feature}" not found or missing prd.json`));
       process.exit(1);
     }
+
+    // Create run directory and JSONL log file path
+    const runsDir = join(featureDir, "runs");
+    mkdirSync(runsDir, { recursive: true });
+
+    // Generate run ID from ISO timestamp
+    const runId = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
+    const logFilePath = join(runsDir, `${runId}.jsonl`);
+
+    // Initialize logger with selected level and file path
+    initLogger({
+      level: logLevel,
+      filePath: logFilePath,
+      useChalk: true,
+    });
 
     // Override config from CLI
     if (options.agent) {
@@ -284,6 +316,21 @@ program
       useBatch: options.batch ?? true,
       eventEmitter,
     });
+
+    // Create/update latest.jsonl symlink
+    const latestSymlink = join(runsDir, "latest.jsonl");
+    try {
+      // Remove existing symlink if present
+      if (existsSync(latestSymlink)) {
+        Bun.spawnSync(["rm", latestSymlink]);
+      }
+      // Create new symlink pointing to current run log
+      Bun.spawnSync(["ln", "-s", `${runId}.jsonl`, latestSymlink], {
+        cwd: runsDir,
+      });
+    } catch (error) {
+      console.error(chalk.yellow(`Warning: Failed to create latest.jsonl symlink: ${error}`));
+    }
 
     // Cleanup TUI if it was rendered
     if (tuiInstance) {
