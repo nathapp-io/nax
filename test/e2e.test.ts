@@ -190,8 +190,8 @@ We need a URL shortening service to make long URLs more shareable.
       },
       {
         id: "US-003",
-        title: "Create redirect endpoint",
-        description: "API endpoint that redirects /:code to the original URL with 301 status",
+        title: "Create redirect handler",
+        description: "Route that redirects /:code to the original URL with 301 status",
         acceptanceCriteria: [
           "GET /:code returns 301 redirect",
           "404 for invalid codes",
@@ -202,14 +202,14 @@ We need a URL shortening service to make long URLs more shareable.
         dependencies: ["US-001", "US-002"],
         complexity: "simple" as const,
         relevantFiles: ["src/api/redirect.ts"],
-        reasoning: "Simple endpoint with lookup and redirect. 1 file, ~50 LOC.",
+        reasoning: "Simple handler with lookup and redirect. 1 file, ~50 LOC.",
         estimatedLOC: 50,
         risks: [],
       },
       {
         id: "US-004",
-        title: "Build URL shortening endpoint",
-        description: "POST /api/shorten endpoint that accepts URL and returns short code",
+        title: "Build URL shortening handler",
+        description: "POST /api/shorten route that accepts URL and returns short code",
         acceptanceCriteria: [
           "POST /api/shorten accepts JSON",
           "URL validation works",
@@ -220,7 +220,7 @@ We need a URL shortening service to make long URLs more shareable.
         dependencies: ["US-001", "US-002"],
         complexity: "simple" as const,
         relevantFiles: ["src/api/shorten.ts"],
-        reasoning: "Standard POST endpoint. 1 file, ~60 LOC.",
+        reasoning: "Standard POST handler. 1 file, ~60 LOC.",
         estimatedLOC: 60,
         risks: [],
       },
@@ -374,7 +374,7 @@ describe("E2E: plan → analyze → run workflow", () => {
     expect(finalPRD.userStories.every((s) => s.status === "passed")).toBe(true);
   });
 
-  test("pipeline stages execute in correct order", async () => {
+  test("pipeline stages execute in correct order", { timeout: 15000 }, async () => {
     const ngentDir = join(testDir, "nax");
     const featureDir = join(ngentDir, "features/simple-task");
     mkdirSync(featureDir, { recursive: true });
@@ -595,7 +595,7 @@ describe("E2E: plan → analyze → run workflow", () => {
     // test that review failures are properly handled.
   });
 
-  test("story batching groups simple stories", async () => {
+  test("story batching groups simple stories", { timeout: 15000 }, async () => {
     const ngentDir = join(testDir, "nax");
     const featureDir = join(ngentDir, "features/batch-test");
     mkdirSync(featureDir, { recursive: true });

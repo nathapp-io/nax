@@ -22,6 +22,8 @@ import {
   verifyImplementerIsolation,
   getChangedFiles,
 } from "./isolation";
+import { executeWithTimeout } from "../execution/verification";
+import { cleanupProcessTree } from "./cleanup";
 
 /** Build prompt for test-writer session */
 function buildTestWriterPrompt(story: UserStory, contextMarkdown?: string): string {
@@ -177,6 +179,11 @@ async function runTddSession(
     timeoutSeconds: config.execution.sessionTimeoutSeconds,
   });
 
+  // BUG-21 Fix: Clean up orphaned child processes if agent failed
+  if (!result.success && result.pid) {
+    await cleanupProcessTree(result.pid);
+  }
+
   // Check isolation based on role
   let isolation;
   if (role === "test-writer") {
@@ -307,13 +314,14 @@ export async function runThreeSessionTdd(
 
   // Session 1: Test Writer
   const session1Ref = initialRef;
+  const testWriterTier = config.tdd.sessionTiers?.testWriter ?? "balanced";
   const session1 = await runTddSession(
     "test-writer",
     agent,
     story,
     config,
     workdir,
-    modelTier,
+    testWriterTier,
     session1Ref,
     contextMarkdown,
   );
@@ -333,17 +341,49 @@ export async function runThreeSessionTdd(
     };
   }
 
+  // BUG-20 Fix: Verify that test-writer session actually created test files
+  // Check if any test files were created (*.test.ts, *.spec.ts, etc.)
+  const testFilePatterns = /\.(test|spec)\.(ts|js|tsx|jsx)$/;
+  const testFilesCreated = session1.filesChanged.filter((f) =>
+    testFilePatterns.test(f),
+  );
+
+  if (testFilesCreated.length === 0) {
+    needsHumanReview = true;
+    reviewReason = "Test writer session created no test files";
+    console.log(chalk.yellow(`\n⚠️  ${reviewReason}`));
+    console.log(
+      chalk.dim(
+        `   Files changed: ${session1.filesChanged.length > 0 ? session1.filesChanged.join(", ") : "(none)"}`,
+      ),
+    );
+
+    // Return early — no point running implementer without tests
+    return {
+      success: false,
+      sessions,
+      needsHumanReview,
+      reviewReason,
+      totalCost: sessions.reduce((sum, s) => sum + s.estimatedCost, 0),
+    };
+  }
+
+  console.log(
+    chalk.green(`   ✓ Created ${testFilesCreated.length} test file(s)`),
+  );
+
   // Capture state after session 1
   const session2Ref = await captureGitRef(workdir);
 
-  // Session 2: Implementer
+  // Session 2: Implementer (uses story's routed tier by default)
+  const implementerTier = config.tdd.sessionTiers?.implementer ?? modelTier;
   const session2 = await runTddSession(
     "implementer",
     agent,
     story,
     config,
     workdir,
-    modelTier,
+    implementerTier,
     session2Ref,
     contextMarkdown,
   );
@@ -367,22 +407,48 @@ export async function runThreeSessionTdd(
   const session3Ref = await captureGitRef(workdir);
 
   // Session 3: Verifier
+  const verifierTier = config.tdd.sessionTiers?.verifier ?? "fast";
   const session3 = await runTddSession(
     "verifier",
     agent,
     story,
     config,
     workdir,
-    modelTier,
+    verifierTier,
     session3Ref,
   );
   sessions.push(session3);
 
-  // Verifier auto-approves if successful
-  const allSuccessful = sessions.every((s) => s.success);
+  // Check if all sessions succeeded based on their individual results
+  let allSuccessful = sessions.every((s) => s.success);
+
+  // BUG-22 Fix: Post-TDD independent test verification
+  // If sessions had failures but we need to verify if tests actually pass,
+  // run an independent test verification to check final state
   if (!allSuccessful) {
-    needsHumanReview = true;
-    reviewReason = "Verifier session identified issues";
+    console.log(chalk.dim("\n   → Running post-TDD test verification..."));
+
+    const testCmd = config.quality?.commands?.test ?? "bun test";
+    const timeoutSeconds = config.quality?.verificationTimeoutSeconds ?? 120;
+
+    const postVerify = await executeWithTimeout(testCmd, timeoutSeconds, undefined, {
+      cwd: workdir,
+    });
+    const testsActuallyPass = postVerify.success && postVerify.exitCode === 0;
+
+    if (testsActuallyPass) {
+      console.log(chalk.dim("   ℹ️  Sessions had non-zero exits but tests pass — treating as success"));
+      allSuccessful = true;
+      needsHumanReview = false;
+      reviewReason = undefined;
+    } else {
+      console.log(chalk.dim("   ⚠️  Post-TDD verification: tests still failing"));
+      needsHumanReview = true;
+      reviewReason = "Verifier session identified issues and tests still fail";
+    }
+  } else {
+    // All sessions succeeded — no need for independent verification
+    needsHumanReview = false;
   }
 
   const totalCost = sessions.reduce((sum, s) => sum + s.estimatedCost, 0);

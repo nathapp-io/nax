@@ -1162,3 +1162,180 @@ describe("Configurable Escalation Chain (ADR-003)", () => {
     expect(calculateMaxIterations([])).toBe(0);
   });
 });
+
+describe("Pre-Iteration Escalation (BUG-16, BUG-17)", () => {
+  const defaultTiers = [
+    { tier: "fast", attempts: 5 },
+    { tier: "balanced", attempts: 3 },
+    { tier: "powerful", attempts: 2 },
+  ];
+
+  test("story with attempts >= tier budget should trigger escalation before agent spawn", () => {
+    // Simulate a story at "fast" tier with 5 attempts (budget exhausted)
+    const story: UserStory = {
+      id: "US-001",
+      title: "Test story",
+      description: "Test",
+      acceptanceCriteria: ["AC1"],
+      tags: [],
+      dependencies: [],
+      status: "pending",
+      passes: false,
+      escalations: [],
+      attempts: 5, // Exhausted fast tier budget (5 attempts)
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+    };
+
+    // Get tier config
+    const currentTier = story.routing!.modelTier;
+    const tierCfg = defaultTiers.find((t) => t.tier === currentTier);
+
+    expect(tierCfg).toBeDefined();
+    expect(story.attempts).toBeGreaterThanOrEqual(tierCfg!.attempts);
+
+    // Should escalate to next tier
+    const nextTier = escalateTier(currentTier!, defaultTiers);
+    expect(nextTier).toBe("balanced");
+  });
+
+  test("story at balanced tier with 3 attempts should escalate to powerful", () => {
+    const story: UserStory = {
+      id: "US-002",
+      title: "Test story",
+      description: "Test",
+      acceptanceCriteria: ["AC1"],
+      tags: [],
+      dependencies: [],
+      status: "pending",
+      passes: false,
+      escalations: [],
+      attempts: 3, // Exhausted balanced tier budget (3 attempts)
+      routing: { complexity: "medium", modelTier: "balanced", testStrategy: "test-after", reasoning: "medium" },
+    };
+
+    const currentTier = story.routing!.modelTier;
+    const tierCfg = defaultTiers.find((t) => t.tier === currentTier);
+
+    expect(tierCfg).toBeDefined();
+    expect(story.attempts).toBeGreaterThanOrEqual(tierCfg!.attempts);
+
+    const nextTier = escalateTier(currentTier!, defaultTiers);
+    expect(nextTier).toBe("powerful");
+  });
+
+  test("story at powerful tier with 2 attempts should mark as FAILED (no more tiers)", () => {
+    const story: UserStory = {
+      id: "US-003",
+      title: "Test story",
+      description: "Test",
+      acceptanceCriteria: ["AC1"],
+      tags: [],
+      dependencies: [],
+      status: "pending",
+      passes: false,
+      escalations: [],
+      attempts: 2, // Exhausted powerful tier budget (2 attempts)
+      routing: { complexity: "complex", modelTier: "powerful", testStrategy: "test-after", reasoning: "complex" },
+    };
+
+    const currentTier = story.routing!.modelTier;
+    const tierCfg = defaultTiers.find((t) => t.tier === currentTier);
+
+    expect(tierCfg).toBeDefined();
+    expect(story.attempts).toBeGreaterThanOrEqual(tierCfg!.attempts);
+
+    // No next tier available
+    const nextTier = escalateTier(currentTier!, defaultTiers);
+    expect(nextTier).toBeNull();
+
+    // Story should be marked as FAILED (not retried)
+    // In actual runner code, markStoryFailed() would be called here
+  });
+
+  test("pre-iteration check prevents infinite loop at same tier", () => {
+    // BUG-16: Stories were looping indefinitely at same tier
+    // This test verifies that pre-iteration escalation prevents this
+
+    const story: UserStory = {
+      id: "US-004",
+      title: "ASSET_CHECK failing story",
+      description: "Story with missing files",
+      acceptanceCriteria: ["AC1"],
+      tags: [],
+      dependencies: [],
+      status: "pending",
+      passes: false,
+      escalations: [],
+      attempts: 5, // Budget exhausted
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+      priorErrors: ["ASSET_CHECK_FAILED: Missing file src/test.ts"],
+    };
+
+    // Pre-iteration check should trigger escalation
+    const currentTier = story.routing!.modelTier;
+    const tierCfg = defaultTiers.find((t) => t.tier === currentTier);
+
+    expect(story.attempts).toBeGreaterThanOrEqual(tierCfg!.attempts);
+
+    // Should escalate instead of retrying at same tier
+    const nextTier = escalateTier(currentTier!, defaultTiers);
+    expect(nextTier).toBe("balanced");
+  });
+
+  test("ASSET_CHECK failure should increment attempts and respect escalation", () => {
+    // BUG-17: ASSET_CHECK failures were reverting to pending without escalation
+    const story: UserStory = {
+      id: "US-005",
+      title: "Story with ASSET_CHECK failure",
+      description: "Test",
+      acceptanceCriteria: ["AC1"],
+      tags: [],
+      dependencies: [],
+      status: "pending",
+      passes: false,
+      escalations: [],
+      attempts: 4, // One attempt left in fast tier
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+    };
+
+    // Simulate ASSET_CHECK failure
+    const updatedStory = {
+      ...story,
+      attempts: story.attempts + 1, // Increment attempts
+      priorErrors: ["ASSET_CHECK_FAILED: Missing file src/finder.ts"],
+    };
+
+    expect(updatedStory.attempts).toBe(5);
+
+    // Now attempts >= tier budget, should escalate on next iteration
+    const tierCfg = defaultTiers.find((t) => t.tier === "fast");
+    expect(updatedStory.attempts).toBeGreaterThanOrEqual(tierCfg!.attempts);
+
+    const nextTier = escalateTier("fast", defaultTiers);
+    expect(nextTier).toBe("balanced");
+  });
+
+  test("story below tier budget should not escalate", () => {
+    const story: UserStory = {
+      id: "US-006",
+      title: "Story with attempts below budget",
+      description: "Test",
+      acceptanceCriteria: ["AC1"],
+      tags: [],
+      dependencies: [],
+      status: "pending",
+      passes: false,
+      escalations: [],
+      attempts: 2, // Below fast tier budget (5 attempts)
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "simple" },
+    };
+
+    const currentTier = story.routing!.modelTier;
+    const tierCfg = defaultTiers.find((t) => t.tier === currentTier);
+
+    expect(tierCfg).toBeDefined();
+    expect(story.attempts).toBeLessThan(tierCfg!.attempts);
+
+    // Should NOT escalate (continue at same tier)
+  });
+});

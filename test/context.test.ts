@@ -905,5 +905,119 @@ describe('Context Builder', () => {
         await fs.rm(tempDir, { recursive: true, force: true });
       }
     });
+
+    test('should format ASSET_CHECK_FAILED errors as mandatory instructions', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Story with asset check failure',
+          description: 'Test description',
+          acceptanceCriteria: ['AC1'],
+          priorErrors: [
+            'ASSET_CHECK_FAILED: Missing files: [src/finder.ts, test/finder.test.ts]\nAction: Create the missing files before tests can run.',
+          ],
+        },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
+      };
+
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
+
+      const built = await buildContext(storyContext, budget);
+      const markdown = formatContextAsMarkdown(built);
+
+      // Verify ASSET_CHECK errors are formatted prominently
+      expect(markdown).toContain('⚠️ MANDATORY: Missing Files from Previous Attempts');
+      expect(markdown).toContain('CRITICAL');
+      expect(markdown).toContain('You MUST create these exact files');
+      expect(markdown).toContain('Do NOT use alternative filenames');
+      expect(markdown).toContain('**Required files:**');
+      expect(markdown).toContain('`src/finder.ts`');
+      expect(markdown).toContain('`test/finder.test.ts`');
+
+      // Verify it's NOT in the generic "Prior Errors" section
+      expect(markdown).not.toContain('## Prior Errors');
+    });
+
+    test('should format mixed ASSET_CHECK and other errors separately', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Story with multiple error types',
+          description: 'Test description',
+          acceptanceCriteria: ['AC1'],
+          priorErrors: [
+            'ASSET_CHECK_FAILED: Missing files: [src/utils.ts]\nAction: Create the missing files before tests can run.',
+            'TypeError: Cannot read property "foo" of undefined',
+            'Test execution failed',
+          ],
+        },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
+      };
+
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
+
+      const built = await buildContext(storyContext, budget);
+      const markdown = formatContextAsMarkdown(built);
+
+      // Verify ASSET_CHECK errors section exists
+      expect(markdown).toContain('⚠️ MANDATORY: Missing Files from Previous Attempts');
+      expect(markdown).toContain('`src/utils.ts`');
+
+      // Verify other errors are in separate section
+      expect(markdown).toContain('## Prior Errors');
+      expect(markdown).toContain('TypeError: Cannot read property "foo" of undefined');
+      expect(markdown).toContain('Test execution failed');
+    });
+
+    test('should handle non-ASSET_CHECK errors normally', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Story with regular errors',
+          description: 'Test description',
+          acceptanceCriteria: ['AC1'],
+          priorErrors: [
+            'TypeError: Cannot read property "foo" of undefined',
+            'Test execution failed',
+          ],
+        },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
+      };
+
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
+
+      const built = await buildContext(storyContext, budget);
+      const markdown = formatContextAsMarkdown(built);
+
+      // Verify only "Prior Errors" section exists (no MANDATORY section)
+      expect(markdown).toContain('## Prior Errors');
+      expect(markdown).toContain('TypeError: Cannot read property "foo" of undefined');
+      expect(markdown).toContain('Test execution failed');
+      expect(markdown).not.toContain('⚠️ MANDATORY');
+    });
   });
 });

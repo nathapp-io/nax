@@ -193,6 +193,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       },
     });
 
+    // Capture PID for cleanup on failure
+    const processPid = proc.pid;
+
     // Set up timeout
     let timedOut = false;
     const timeoutId = setTimeout(() => {
@@ -241,6 +244,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       rateLimited,
       durationMs,
       estimatedCost: cost,
+      pid: processPid,
     };
   }
 

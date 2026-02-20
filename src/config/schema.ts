@@ -33,7 +33,7 @@ export interface TokenPricing {
 export interface ModelDef {
   /** Provider name (e.g., "anthropic", "openai", "ollama") */
   provider: string;
-  /** Model identifier (e.g., "claude-sonnet-4-5", "gpt-5-mini") */
+  /** Model identifier (e.g., "sonnet", "gpt-5-mini") */
   model: string;
   /** Optional token pricing override (defaults to built-in rates) */
   pricing?: TokenPricing;
@@ -130,6 +130,15 @@ export interface TddConfig {
   autoVerifyIsolation: boolean;
   /** Session 3 verifier: auto-approve legitimate fixes */
   autoApproveVerifier: boolean;
+  /** Per-session model tier overrides. Defaults: test-writer=balanced, implementer=story tier, verifier=fast */
+  sessionTiers?: {
+    /** Model tier for test-writer session (default: "balanced") */
+    testWriter?: ModelTier;
+    /** Model tier for implementer session (default: uses story's routed tier) */
+    implementer?: ModelTier;
+    /** Model tier for verifier session (default: "fast") */
+    verifier?: ModelTier;
+  };
 }
 
 /** Constitution config */
@@ -221,6 +230,21 @@ export interface AdaptiveRoutingConfig {
   fallbackStrategy: "keyword" | "llm" | "manual";
 }
 
+/** LLM routing config */
+export interface LlmRoutingConfig {
+  /** Model tier for routing call (default: "fast") */
+  model?: string;
+  /** Fall back to keyword strategy on LLM failure (default: true) */
+  fallbackToKeywords?: boolean;
+  /** Max input tokens for story context (default: 2000) */
+  /** Cache routing decisions per story ID (default: true) */
+  cacheDecisions?: boolean;
+  /** Batch mode: route multiple stories in one LLM call (default: true) */
+  batchMode?: boolean;
+  /** Timeout for LLM call in milliseconds (default: 15000) */
+  timeoutMs?: number;
+}
+
 /** Routing config */
 export interface RoutingConfig {
   /** Strategy to use (default: "keyword") */
@@ -229,6 +253,8 @@ export interface RoutingConfig {
   customStrategyPath?: string;
   /** Adaptive routing settings (used when strategy = "adaptive") */
   adaptive?: AdaptiveRoutingConfig;
+  /** LLM routing settings (used when strategy = "llm") */
+  llm?: LlmRoutingConfig;
 }
 
 /** Full nax configuration */
@@ -360,6 +386,11 @@ const TddConfigSchema = z.object({
   maxRetries: z.number().int().nonnegative(),
   autoVerifyIsolation: z.boolean(),
   autoApproveVerifier: z.boolean(),
+  sessionTiers: z.object({
+    testWriter: z.string().optional(),
+    implementer: z.string().optional(),
+    verifier: z.string().optional(),
+  }).optional(),
 });
 
 const ConstitutionConfigSchema = z.object({
@@ -415,10 +446,19 @@ const AdaptiveRoutingConfigSchema = z.object({
   fallbackStrategy: z.enum(["keyword", "llm", "manual"]),
 });
 
+const LlmRoutingConfigSchema = z.object({
+  model: z.string().optional(),
+  fallbackToKeywords: z.boolean().optional(),
+  cacheDecisions: z.boolean().optional(),
+  batchMode: z.boolean().optional(),
+  timeoutMs: z.number().int().positive({ message: "llm.timeoutMs must be > 0" }).optional(),
+});
+
 const RoutingConfigSchema = z.object({
   strategy: z.enum(["keyword", "llm", "manual", "adaptive", "custom"]),
   customStrategyPath: z.string().optional(),
   adaptive: AdaptiveRoutingConfigSchema.optional(),
+  llm: LlmRoutingConfigSchema.optional(),
 }).refine(
   (data) => {
     // If strategy is "custom", customStrategyPath is required
@@ -458,9 +498,9 @@ export const NaxConfigSchema = z
 export const DEFAULT_CONFIG: NaxConfig = {
   version: 1,
   models: {
-    fast: { provider: "anthropic", model: "claude-haiku-4-5" },
-    balanced: { provider: "anthropic", model: "claude-sonnet-4-5" },
-    powerful: { provider: "anthropic", model: "claude-opus-4" },
+    fast: { provider: "anthropic", model: "haiku" },
+    balanced: { provider: "anthropic", model: "sonnet" },
+    powerful: { provider: "anthropic", model: "opus" },
   },
   autoMode: {
     enabled: true,
@@ -489,6 +529,13 @@ export const DEFAULT_CONFIG: NaxConfig = {
       costThreshold: 0.8,
       fallbackStrategy: "llm",
     },
+    llm: {
+      model: "fast",
+      fallbackToKeywords: true,
+      cacheDecisions: true,
+      batchMode: true,
+      timeoutMs: 15000,
+    },
   },
   execution: {
     maxIterations: 10, // auto-calculated: sum of tier attempts (5+3+2=10)
@@ -516,6 +563,11 @@ export const DEFAULT_CONFIG: NaxConfig = {
     maxRetries: 2,
     autoVerifyIsolation: true,
     autoApproveVerifier: true,
+    sessionTiers: {
+      testWriter: "balanced",
+      // implementer: undefined = uses story's routed tier
+      verifier: "fast",
+    },
   },
   constitution: {
     enabled: true,

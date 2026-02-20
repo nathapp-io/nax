@@ -16,6 +16,7 @@ import { resolveModel } from "../config/schema";
 import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryFailed, isStalled, markStoryAsBlocked, generateHumanHaltSummary } from "../prd";
 import type { UserStory } from "../prd";
 import { routeTask } from "../routing";
+import { routeBatch as llmRouteBatch, clearCache as clearLlmCache } from "../routing/strategies/llm";
 import { fireHook, type HooksConfig } from "../hooks";
 import { precomputeBatchPlan, type StoryBatch } from "./batching";
 import { escalateTier, calculateMaxIterations, getTierConfig } from "./escalation";
@@ -39,6 +40,36 @@ import { saveRunMetrics, type StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
 
 /** Run options */
+
+/**
+ * Try LLM batch routing for ready stories. Logs and swallows errors (falls back to per-story routing).
+ */
+async function tryLlmBatchRoute(config: NaxConfig, stories: UserStory[], label: string = "routing"): Promise<void> {
+  if (config.routing.strategy !== "llm" || !config.routing.llm?.batchMode || stories.length === 0) return;
+  try {
+    console.log(chalk.dim(`   LLM batch routing: ${label} ${stories.length} stories...`));
+    await llmRouteBatch(stories, { config });
+    console.log(chalk.dim(`   LLM batch routing: complete`));
+  } catch (err) {
+    console.warn(chalk.yellow(`   LLM batch routing failed: ${(err as Error).message}`));
+    console.log(chalk.dim(`   Will fall back to individual routing per story`));
+  }
+}
+
+/**
+ * Apply cached routing overrides from story.routing to a fresh routing decision.
+ */
+function applyCachedRouting(routing: ReturnType<typeof routeTask>, story: UserStory, config: NaxConfig): void {
+  if (!story.routing) return;
+  if (story.routing.complexity) {
+    routing.complexity = story.routing.complexity;
+    routing.modelTier = config.autoMode.complexityRouting[routing.complexity] ?? "balanced";
+  }
+  if (story.routing.testStrategy) {
+    routing.testStrategy = story.routing.testStrategy;
+  }
+}
+
 export interface RunOptions {
   /** Path to prd.json */
   prdPath: string;
@@ -128,12 +159,17 @@ export async function run(options: RunOptions): Promise<RunResult> {
       console.log(chalk.dim(`   Batching: enabled (groups consecutive simple stories, max 4/batch)`));
     }
 
+    // Clear LLM routing cache at start of new run
+    clearLlmCache();
+
     // PERF-1: Precompute batch plan once from ready stories
     let batchPlan: StoryBatch[] = [];
     let currentBatchIndex = 0;
     if (useBatch) {
       const readyStories = getAllReadyStories(prd);
       batchPlan = precomputeBatchPlan(readyStories, 4);
+
+      await tryLlmBatchRoute(config, readyStories, "routing");
     }
 
     // Main loop
@@ -158,6 +194,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
           const readyStories = getAllReadyStories(prd);
           batchPlan = precomputeBatchPlan(readyStories, 4);
           currentBatchIndex = 0;
+
+          await tryLlmBatchRoute(config, readyStories, "re-routing");
         }
       }
 
@@ -198,11 +236,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
           story.tags,
           config,
         );
-        // Override with cached complexity if available
-        if (story.routing) {
-          routing.complexity = story.routing.complexity;
-          routing.testStrategy = story.routing.testStrategy;
-        }
+        applyCachedRouting(routing, story, config);
       } else {
         // Fallback to single-story mode (when batching disabled or batch plan exhausted)
         const nextStory = getNextStory(prd);
@@ -223,10 +257,59 @@ export async function run(options: RunOptions): Promise<RunResult> {
           story.tags,
           config,
         );
-        // Override with cached complexity if available
-        if (story.routing) {
-          routing.complexity = story.routing.complexity;
-          routing.testStrategy = story.routing.testStrategy;
+        applyCachedRouting(routing, story, config);
+      }
+
+      // BUG-16 + BUG-17: Pre-iteration tier escalation check
+      // Check if story has exceeded current tier's attempt budget BEFORE spawning agent
+      const currentTier = story.routing?.modelTier ?? routing.modelTier;
+      const tierOrder = config.autoMode.escalation?.tierOrder || [];
+      const tierCfg = tierOrder.length > 0 ? getTierConfig(currentTier, tierOrder) : undefined;
+
+      if (tierCfg && story.attempts >= tierCfg.attempts) {
+        // Exceeded current tier budget — try to escalate
+        const nextTier = escalateTier(currentTier, tierOrder);
+
+        if (nextTier && config.autoMode.escalation.enabled) {
+          console.log(chalk.yellow(`   ⬆️  Story ${story.id} exceeded tier budget (${story.attempts}/${tierCfg.attempts}) — escalating to ${nextTier}`));
+
+          // Update story routing in PRD and reset attempts for new tier
+          prd.userStories = prd.userStories.map(s =>
+            s.id === story.id
+              ? {
+                  ...s,
+                  attempts: 0, // Reset attempts for new tier
+                  routing: s.routing
+                    ? { ...s.routing, modelTier: nextTier }
+                    : { ...routing, modelTier: nextTier },
+                }
+              : s
+          );
+          await savePRD(prd, prdPath);
+          prdDirty = true;
+
+          // Skip to next iteration (will reload PRD and use new tier)
+          continue;
+        } else {
+          // No next tier or escalation disabled — mark story as failed
+          console.log(chalk.red(`   ✗ Story ${story.id} failed (all tiers exhausted: ${story.attempts} attempts)`));
+          markStoryFailed(prd, story.id);
+          await savePRD(prd, prdPath);
+          prdDirty = true;
+
+          if (featureDir) {
+            await appendProgress(featureDir, story.id, "failed", `${story.title} — All tiers exhausted`);
+          }
+
+          await fireHook(hooks, "on-story-fail", hookCtx(feature, {
+            storyId: story.id,
+            status: "failed",
+            reason: `All tiers exhausted (${story.attempts} attempts)`,
+            cost: totalCost,
+          }), workdir);
+
+          // Skip to next iteration (will pick next story)
+          continue;
         }
       }
 

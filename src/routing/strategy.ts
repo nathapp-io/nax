@@ -87,7 +87,7 @@ export interface RoutingStrategy {
    *
    * @param story - The user story to route
    * @param context - Routing context (config, metrics, codebase)
-   * @returns RoutingDecision if strategy can route, null to delegate
+   * @returns RoutingDecision if strategy can route, null to delegate (sync or async)
    */
-  route(story: UserStory, context: RoutingContext): RoutingDecision | null;
+  route(story: UserStory, context: RoutingContext): RoutingDecision | null | Promise<RoutingDecision | null>;
 }

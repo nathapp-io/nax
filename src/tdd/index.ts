@@ -13,3 +13,4 @@ export {
   verifyImplementerIsolation,
 } from "./isolation";
 export { runThreeSessionTdd } from "./orchestrator";
+export { cleanupProcessTree, getPgid } from "./cleanup";

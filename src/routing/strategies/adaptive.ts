@@ -162,13 +162,14 @@ function hasSufficientData(
 export const adaptiveStrategy: RoutingStrategy = {
   name: "adaptive",
 
-  route(story: UserStory, context: RoutingContext): RoutingDecision | null {
+  async route(story: UserStory, context: RoutingContext): Promise<RoutingDecision | null> {
     const { config, metrics } = context;
 
     // Require metrics to be present - use keyword as ultimate fallback
     if (!metrics) {
       const fallbackStrategy = config.routing.adaptive?.fallbackStrategy || "llm";
-      const decision = keywordStrategy.route(story, context)!; // keyword never returns null
+      const decision = await keywordStrategy.route(story, context); // keyword never returns null
+      if (!decision) return null;
 
       return {
         ...decision,
@@ -186,7 +187,8 @@ export const adaptiveStrategy: RoutingStrategy = {
     // First, classify complexity using fallback strategy
     // (We need to know complexity before checking metrics)
     // Always use keyword as the classification source since it never returns null
-    const fallbackDecision = keywordStrategy.route(story, context)!; // keyword never returns null
+    const fallbackDecision = await keywordStrategy.route(story, context);
+    if (!fallbackDecision) return null;
 
     const complexity = fallbackDecision.complexity;
 

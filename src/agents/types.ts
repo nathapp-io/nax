@@ -38,6 +38,8 @@ export interface AgentResult {
   durationMs: number;
   /** Estimated cost for this run (USD) */
   estimatedCost: number;
+  /** Process ID of the spawned agent (for cleanup on failure) */
+  pid?: number;
 }
 
 /**

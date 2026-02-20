@@ -35,9 +35,9 @@ export class StrategyChain {
    * @returns Routing decision from first strategy that handles it
    * @throws Error if no strategy returns a decision
    */
-  route(story: UserStory, context: RoutingContext): RoutingDecision {
+  async route(story: UserStory, context: RoutingContext): Promise<RoutingDecision> {
     for (const strategy of this.strategies) {
-      const decision = strategy.route(story, context);
+      const decision = await strategy.route(story, context);
       if (decision !== null) {
         return decision;
       }

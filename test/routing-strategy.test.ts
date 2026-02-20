@@ -11,7 +11,7 @@ import { buildStrategyChain } from "../src/routing/builder";
 import { DEFAULT_CONFIG } from "../src/config/schema";
 
 describe("StrategyChain", () => {
-  test("uses first strategy that returns non-null", () => {
+  test("uses first strategy that returns non-null", async () => {
     const alwaysNullStrategy: RoutingStrategy = {
       name: "always-null",
       route: () => null,
@@ -42,13 +42,14 @@ describe("StrategyChain", () => {
       attempts: 0,
     };
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
-    const decision = chain.route(story, context);
+    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
+    const context: RoutingContext = { config: configWithoutLlm };
+    const decision = await chain.route(story, context);
 
     expect(decision.reasoning).toBe("Always return strategy");
   });
 
-  test("throws error if all strategies return null", () => {
+  test("throws error if all strategies return null", async () => {
     const alwaysNullStrategy: RoutingStrategy = {
       name: "always-null",
       route: () => null,
@@ -69,9 +70,10 @@ describe("StrategyChain", () => {
       attempts: 0,
     };
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
+    const context: RoutingContext = { config: configWithoutLlm };
 
-    expect(() => chain.route(story, context)).toThrow(
+    await expect(chain.route(story, context)).rejects.toThrow(
       "No routing strategy returned a decision"
     );
   });
@@ -97,7 +99,8 @@ describe("keywordStrategy", () => {
       attempts: 0,
     };
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
+    const context: RoutingContext = { config: configWithoutLlm };
     const decision = keywordStrategy.route(story, context);
 
     expect(decision).not.toBeNull();
@@ -120,7 +123,8 @@ describe("keywordStrategy", () => {
       attempts: 0,
     };
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
+    const context: RoutingContext = { config: configWithoutLlm };
     const decision = keywordStrategy.route(story, context);
 
     expect(decision).not.toBeNull();
@@ -144,7 +148,8 @@ describe("keywordStrategy", () => {
       attempts: 0,
     };
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
+    const context: RoutingContext = { config: configWithoutLlm };
     const decision = keywordStrategy.route(story, context);
 
     expect(decision).not.toBeNull();
@@ -167,7 +172,8 @@ describe("keywordStrategy", () => {
       attempts: 0,
     };
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
+    const context: RoutingContext = { config: configWithoutLlm };
     const decision = keywordStrategy.route(story, context);
 
     expect(decision).not.toBeNull();
@@ -190,7 +196,8 @@ describe("keywordStrategy", () => {
       attempts: 0,
     };
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
+    const context: RoutingContext = { config: configWithoutLlm };
     const decision = keywordStrategy.route(story, context);
 
     expect(decision).not.toBeNull();
@@ -220,7 +227,8 @@ describe("manualStrategy", () => {
       },
     };
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
+    const context: RoutingContext = { config: configWithoutLlm };
     const decision = manualStrategy.route(story, context);
 
     expect(decision).not.toBeNull();
@@ -244,7 +252,8 @@ describe("manualStrategy", () => {
       attempts: 0,
     };
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
+    const context: RoutingContext = { config: configWithoutLlm };
     const decision = manualStrategy.route(story, context);
 
     expect(decision).toBeNull();
@@ -269,7 +278,8 @@ describe("manualStrategy", () => {
       },
     };
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
+    const context: RoutingContext = { config: configWithoutLlm };
     const decision = manualStrategy.route(story, context);
 
     expect(decision).toBeNull();
@@ -277,7 +287,7 @@ describe("manualStrategy", () => {
 });
 
 describe("llmStrategy", () => {
-  test("returns null (not yet implemented)", () => {
+  test("returns null when llm config not present", async () => {
     const story: UserStory = {
       id: "US-009",
       title: "LLM test",
@@ -291,8 +301,9 @@ describe("llmStrategy", () => {
       attempts: 0,
     };
 
-    const context: RoutingContext = { config: DEFAULT_CONFIG };
-    const decision = llmStrategy.route(story, context);
+    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
+    const context: RoutingContext = { config: configWithoutLlm };
+    const decision = await llmStrategy.route(story, context);
 
     expect(decision).toBeNull();
   });
