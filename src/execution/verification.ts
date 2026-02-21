@@ -58,20 +58,20 @@ export interface AssetVerificationResult {
 }
 
 /**
- * Verify all relevant files exist before running tests.
+ * Verify all expected files exist before running tests.
  *
  * Prevents "Tests failed (exit code 1)" with no context by checking
- * files listed in story.relevantFiles before test execution.
+ * files listed in story.expectedFiles before test execution.
  *
  * @param workingDirectory - Base directory for file paths
- * @param relevantFiles - Array of file paths from PRD story
+ * @param expectedFiles - Array of file paths from PRD story
  * @returns Verification result with specific missing file list
  */
 export async function verifyAssets(
   workingDirectory: string,
-  relevantFiles?: string[]
+  expectedFiles?: string[]
 ): Promise<AssetVerificationResult> {
-  if (!relevantFiles || relevantFiles.length === 0) {
+  if (!expectedFiles || expectedFiles.length === 0) {
     return {
       success: true,
       missingFiles: [],
@@ -80,7 +80,7 @@ export async function verifyAssets(
 
   const missingFiles: string[] = [];
 
-  for (const file of relevantFiles) {
+  for (const file of expectedFiles) {
     const fullPath = join(workingDirectory, file);
     if (!existsSync(fullPath)) {
       missingFiles.push(file);
@@ -474,7 +474,7 @@ export interface VerificationResult {
  */
 export async function runVerification(options: {
   workingDirectory: string;
-  relevantFiles?: string[];
+  expectedFiles?: string[];
   command: string;
   timeoutSeconds: number;
   /** Quality config for open handle / force exit behavior */
@@ -491,7 +491,7 @@ export async function runVerification(options: {
   cwd?: string;
 }): Promise<VerificationResult> {
   // Decision 3: Pre-flight asset verification
-  const assetCheck = await verifyAssets(options.workingDirectory, options.relevantFiles);
+  const assetCheck = await verifyAssets(options.workingDirectory, options.expectedFiles);
   if (!assetCheck.success) {
     return {
       status: "ASSET_CHECK_FAILED",
