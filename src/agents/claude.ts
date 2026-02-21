@@ -452,7 +452,7 @@ Decompose this spec into user stories. For each story, provide:
 5. tags: Array of routing tags (e.g., ["security", "api"])
 6. dependencies: Array of story IDs this depends on (e.g., ["US-001"])
 7. complexity: "simple" | "medium" | "complex" | "expert"
-8. relevantFiles: Array of file paths this story will likely touch
+8. contextFiles: Array of file paths to inject into agent prompt before execution
 9. reasoning: Why this complexity level
 10. estimatedLOC: Estimated lines of code to change
 11. risks: Array of implementation risks
@@ -478,7 +478,7 @@ Respond with ONLY a JSON array (no markdown code fences):
   "tags": ["tag1"],
   "dependencies": [],
   "complexity": "medium",
-  "relevantFiles": ["src/path/to/file.ts"],
+  "contextFiles": ["src/path/to/file.ts"],
   "reasoning": "Why this complexity level",
   "estimatedLOC": 150,
   "risks": ["Risk 1"]
@@ -538,7 +538,7 @@ Respond with ONLY a JSON array (no markdown code fences):
         tags: Array.isArray(item.tags) ? item.tags : [],
         dependencies: Array.isArray(item.dependencies) ? item.dependencies : [],
         complexity: this.validateComplexity(item.complexity),
-        relevantFiles: Array.isArray(item.relevantFiles) ? item.relevantFiles : [],
+        contextFiles: Array.isArray(item.contextFiles) ? item.contextFiles : [],
         reasoning: String(item.reasoning || "No reasoning provided"),
         estimatedLOC: Number(item.estimatedLOC) || 0,
         risks: Array.isArray(item.risks) ? item.risks : [],

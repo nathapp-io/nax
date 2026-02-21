@@ -201,8 +201,8 @@ export interface DecomposedStory {
   dependencies: string[];
   /** Classified complexity */
   complexity: "simple" | "medium" | "complex" | "expert";
-  /** Relevant source files */
-  relevantFiles: string[];
+  /** Context files to inject into agent prompt before execution */
+  contextFiles: string[];
   /** Classification reasoning */
   reasoning: string;
   /** Estimated lines of code */

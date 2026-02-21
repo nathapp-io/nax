@@ -136,7 +136,7 @@ async function classifyWithLLM(
     return {
       storyId: String(rawItem.storyId),
       complexity: validateComplexity(rawItem.complexity),
-      relevantFiles: Array.isArray(rawItem.relevantFiles)
+      contextFiles: Array.isArray(rawItem.relevantFiles)
         ? rawItem.relevantFiles.map(String)
         : [],
       reasoning: String(rawItem.reasoning || "No reasoning provided"),
@@ -284,7 +284,7 @@ function fallbackClassification(story: UserStory): StoryClassification {
   return {
     storyId: story.id,
     complexity,
-    relevantFiles: [],
+    contextFiles: [],
     reasoning: `Keyword-based classification: ${complexity}`,
     estimatedLOC: estimateLOCFromComplexity(complexity),
     risks: [],

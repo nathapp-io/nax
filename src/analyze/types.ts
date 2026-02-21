@@ -24,8 +24,8 @@ export interface StoryClassification {
   storyId: string;
   /** Classified complexity */
   complexity: Complexity;
-  /** Relevant source files this story will likely touch */
-  relevantFiles: string[];
+  /** Context files to inject into agent prompt before execution */
+  contextFiles: string[];
   /** Reasoning for the classification */
   reasoning: string;
   /** Estimated lines of code to change */
