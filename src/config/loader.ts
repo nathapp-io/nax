@@ -91,6 +91,21 @@ export async function loadConfig(projectDir?: string): Promise<NaxConfig> {
     }
   }
 
+  // Backward compatibility: map deprecated batchMode to mode
+  const routing = rawConfig.routing as Record<string, unknown> | undefined;
+  const llm = routing?.llm as Record<string, unknown> | undefined;
+  if (llm && "batchMode" in llm && !("mode" in llm)) {
+    const logger = getLogger();
+    const batchMode = llm.batchMode;
+    if (typeof batchMode === "boolean") {
+      llm.mode = batchMode ? "one-shot" : "per-story";
+      logger.warn(
+        "config",
+        `routing.llm.batchMode is deprecated and will be removed in v1.0. Mapped to mode="${llm.mode}". Update your config to use routing.llm.mode instead.`,
+      );
+    }
+  }
+
   // Parse and validate with Zod
   const result = NaxConfigSchema.safeParse(rawConfig);
   if (!result.success) {
