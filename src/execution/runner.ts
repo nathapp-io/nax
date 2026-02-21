@@ -9,7 +9,7 @@
  */
 
 import path from "node:path";
-import type { NaxConfig } from "../config";
+import type { NaxConfig, ModelTier } from "../config";
 import { getAgent } from "../agents";
 import { resolveModel } from "../config/schema";
 import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryFailed, isStalled, markStoryAsBlocked, generateHumanHaltSummary } from "../prd";
@@ -74,15 +74,21 @@ async function tryLlmBatchRoute(config: NaxConfig, stories: UserStory[], label: 
 /**
  * Apply cached routing overrides from story.routing to a fresh routing decision.
  */
-function applyCachedRouting(routing: ReturnType<typeof routeTask>, story: UserStory, config: NaxConfig): void {
-  if (!story.routing) return;
+function applyCachedRouting(
+  routing: ReturnType<typeof routeTask>,
+  story: UserStory,
+  config: NaxConfig,
+): ReturnType<typeof routeTask> {
+  if (!story.routing) return routing;
+  const overrides: Partial<ReturnType<typeof routeTask>> = {};
   if (story.routing.complexity) {
-    routing.complexity = story.routing.complexity;
-    routing.modelTier = config.autoMode.complexityRouting[routing.complexity] ?? "balanced";
+    overrides.complexity = story.routing.complexity;
+    overrides.modelTier = (config.autoMode.complexityRouting[story.routing.complexity] ?? "balanced") as ModelTier;
   }
   if (story.routing.testStrategy) {
-    routing.testStrategy = story.routing.testStrategy;
+    overrides.testStrategy = story.routing.testStrategy;
   }
+  return { ...routing, ...overrides };
 }
 
 export interface RunOptions {
@@ -277,7 +283,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
           story.tags,
           config,
         );
-        applyCachedRouting(routing, story, config);
+        routing = applyCachedRouting(routing, story, config);
       } else {
         // Fallback to single-story mode (when batching disabled or batch plan exhausted)
         const nextStory = getNextStory(prd);
@@ -298,7 +304,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
           story.tags,
           config,
         );
-        applyCachedRouting(routing, story, config);
+        routing = applyCachedRouting(routing, story, config);
       }
 
       // BUG-16 + BUG-17: Pre-iteration tier escalation check
