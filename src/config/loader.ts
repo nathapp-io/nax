@@ -71,6 +71,25 @@ function deepMerge(a: Record<string, unknown>, b: Record<string, unknown>): Reco
   return result;
 }
 
+
+/** @internal Backward compat: map deprecated routing.llm.batchMode to routing.llm.mode */
+function applyBatchModeCompat(conf: Record<string, unknown>): void {
+  const routing = conf.routing as Record<string, unknown> | undefined;
+  const llm = routing?.llm as Record<string, unknown> | undefined;
+  if (llm && "batchMode" in llm && !("mode" in llm)) {
+    const batchMode = llm.batchMode;
+    if (typeof batchMode === "boolean") {
+      llm.mode = batchMode ? "one-shot" : "per-story";
+      try {
+        getLogger().warn(
+          "config",
+          `routing.llm.batchMode is deprecated and will be removed in v1.0. Mapped to mode="${llm.mode}". Update your config to use routing.llm.mode instead.`,
+        );
+      } catch { /* logger may not be init yet */ }
+    }
+  }
+}
+
 /** Load merged configuration (defaults < global < project) */
 export async function loadConfig(projectDir?: string): Promise<NaxConfig> {
   // Start with defaults as a plain object
@@ -87,22 +106,10 @@ export async function loadConfig(projectDir?: string): Promise<NaxConfig> {
   if (projDir) {
     const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"));
     if (projConf) {
+      // Backward compatibility: map deprecated batchMode -> mode on raw user config
+      // MUST run before deepMerge so defaults don't shadow the check.
+      applyBatchModeCompat(projConf);
       rawConfig = deepMerge(rawConfig, projConf);
-    }
-  }
-
-  // Backward compatibility: map deprecated batchMode to mode
-  const routing = rawConfig.routing as Record<string, unknown> | undefined;
-  const llm = routing?.llm as Record<string, unknown> | undefined;
-  if (llm && "batchMode" in llm && !("mode" in llm)) {
-    const logger = getLogger();
-    const batchMode = llm.batchMode;
-    if (typeof batchMode === "boolean") {
-      llm.mode = batchMode ? "one-shot" : "per-story";
-      logger.warn(
-        "config",
-        `routing.llm.batchMode is deprecated and will be removed in v1.0. Mapped to mode="${llm.mode}". Update your config to use routing.llm.mode instead.`,
-      );
     }
   }
 

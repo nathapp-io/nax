@@ -54,14 +54,14 @@ describe("Config Loader - Backward Compatibility", () => {
     }
   });
 
-  test("KNOWN BUG: batchMode is ignored when mode present from DEFAULT_CONFIG", async () => {
+  test("batchMode:true maps to mode:one-shot (backward compat)", async () => {
     const configPath = join(tempDir, "nax", "config.json");
     const testConfig = {
       routing: {
         strategy: "llm",
         llm: {
           batchMode: true,
-          // mode not specified in user config
+          // mode not specified - should map from batchMode before default merge
         },
       },
     };
@@ -69,10 +69,9 @@ describe("Config Loader - Backward Compatibility", () => {
 
     const config = await loadConfig(join(tempDir, "nax"));
 
-    // BUG: Backward compat check never triggers because mode:"hybrid" exists from DEFAULT_CONFIG
-    // Expected: mode="one-shot" (from batchMode:true mapping)
-    // Actual: mode="hybrid" (from DEFAULT_CONFIG)
-    expect(config.routing.llm?.mode).toBe("hybrid");
+    // applyBatchModeCompat runs on raw projConf before deepMerge with defaults,
+    // so batchMode:true correctly maps to mode:"one-shot" overriding DEFAULT_CONFIG's "hybrid"
+    expect(config.routing.llm?.mode).toBe("one-shot");
     expect(config.routing.llm?.batchMode).toBe(true);
   });
 
