@@ -8,7 +8,7 @@ import path from 'node:path';
 import type { ContextElement, ContextBudget, StoryContext, BuiltContext } from './types';
 import type { UserStory } from '../prd';
 import type { NaxConfig } from '../config';
-import { countStories } from '../prd';
+import { countStories, getContextFiles } from '../prd';
 import { generateTestCoverageSummary } from './test-scanner';
 import { getLogger } from '../logger';
 
@@ -288,13 +288,14 @@ export async function buildContext(
   }
 
   // Add relevant source files (lower priority - priority 60)
-  // Load file content from currentStory.relevantFiles if present
+  // Load file content from currentStory.contextFiles (or fallback to relevantFiles) if present
   // Constraints: max 10KB per file, max 5 files, respect token budget
   const MAX_FILE_SIZE_BYTES = 10 * 1024; // 10KB
   const MAX_FILES = 5;
 
-  if (currentStory.relevantFiles && Array.isArray(currentStory.relevantFiles) && currentStory.relevantFiles.length > 0) {
-    const filesToLoad = currentStory.relevantFiles.slice(0, MAX_FILES);
+  const contextFiles = getContextFiles(currentStory);
+  if (contextFiles.length > 0) {
+    const filesToLoad = contextFiles.slice(0, MAX_FILES);
 
     for (const relativeFilePath of filesToLoad) {
       try {
