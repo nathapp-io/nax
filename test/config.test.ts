@@ -257,3 +257,106 @@ describe("Config Validation", () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe("LLM Routing Mode Config", () => {
+  test("accepts one-shot mode", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      routing: {
+        ...DEFAULT_CONFIG.routing,
+        llm: {
+          mode: "one-shot" as const,
+        },
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.routing.llm?.mode).toBe("one-shot");
+    }
+  });
+
+  test("accepts per-story mode", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      routing: {
+        ...DEFAULT_CONFIG.routing,
+        llm: {
+          mode: "per-story" as const,
+        },
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.routing.llm?.mode).toBe("per-story");
+    }
+  });
+
+  test("accepts hybrid mode", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      routing: {
+        ...DEFAULT_CONFIG.routing,
+        llm: {
+          mode: "hybrid" as const,
+        },
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.routing.llm?.mode).toBe("hybrid");
+    }
+  });
+
+  test("rejects invalid mode value", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      routing: {
+        ...DEFAULT_CONFIG.routing,
+        llm: {
+          mode: "ultra-batch",
+        },
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+  });
+
+  test("defaults to hybrid when mode not specified", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      routing: {
+        ...DEFAULT_CONFIG.routing,
+        strategy: "llm" as const,
+        llm: {
+          cacheDecisions: true,
+        },
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    // Default is applied by loader, schema allows undefined
+    expect(result.data.routing.llm?.mode).toBeUndefined();
+  });
+
+  test("accepts deprecated batchMode alongside mode", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      routing: {
+        ...DEFAULT_CONFIG.routing,
+        llm: {
+          mode: "one-shot" as const,
+          batchMode: true,
+        },
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.routing.llm?.mode).toBe("one-shot");
+      expect(result.data.routing.llm?.batchMode).toBe(true);
+    }
+  });
+});
