@@ -10,6 +10,7 @@ import type { UserStory } from "../../prd/types";
 import type { Complexity, ModelTier, TestStrategy, NaxConfig } from "../../config";
 import { resolveModel } from "../../config";
 import { getLogger } from "../../logger";
+import { keywordStrategy } from "./keyword";
 
 /** Module-level cache for routing decisions */
 const cachedDecisions = new Map<string, RoutingDecision>();
@@ -17,6 +18,11 @@ const cachedDecisions = new Map<string, RoutingDecision>();
 /** Clear the routing cache (for testing or new runs) */
 export function clearCache(): void {
   cachedDecisions.clear();
+}
+
+/** Get the current cache size (for testing) */
+export function getCacheSize(): number {
+  return cachedDecisions.size;
 }
 
 /**
@@ -355,6 +361,8 @@ export const llmStrategy: RoutingStrategy = {
       return null; // LLM routing not configured
     }
 
+    const mode = llmConfig.mode ?? "hybrid";
+
     // Check cache first
     if (llmConfig.cacheDecisions && cachedDecisions.has(story.id)) {
       const cached = cachedDecisions.get(story.id)!;
@@ -366,6 +374,15 @@ export const llmStrategy: RoutingStrategy = {
         testStrategy: cached.testStrategy
       });
       return cached;
+    }
+
+    // One-shot mode: cache miss → keyword fallback without new LLM call
+    if (mode === "one-shot") {
+      const logger = getLogger();
+      logger.info("routing", "One-shot mode cache miss, falling back to keyword", {
+        storyId: story.id
+      });
+      return keywordStrategy.route(story, context);
     }
 
     try {
