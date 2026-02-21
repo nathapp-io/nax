@@ -56,10 +56,11 @@ function getSafeLogger() {
  * Try LLM batch routing for ready stories. Logs and swallows errors (falls back to per-story routing).
  */
 async function tryLlmBatchRoute(config: NaxConfig, stories: UserStory[], label: string = "routing"): Promise<void> {
-  if (config.routing.strategy !== "llm" || !config.routing.llm?.batchMode || stories.length === 0) return;
+  const mode = config.routing.llm?.mode ?? "hybrid";
+  if (config.routing.strategy !== "llm" || mode === "per-story" || stories.length === 0) return;
   const logger = getSafeLogger();
   try {
-    logger?.debug("routing", `LLM batch routing: ${label}`, { storyCount: stories.length });
+    logger?.debug("routing", `LLM batch routing: ${label}`, { storyCount: stories.length, mode });
     await llmRouteBatch(stories, { config });
     logger?.debug("routing", "LLM batch routing complete", { label });
   } catch (err) {
@@ -140,12 +141,14 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   try {
     // Log run start
+    const routingMode = config.routing.llm?.mode ?? "hybrid";
     logger?.info("run.start", `Starting feature: ${feature}`, {
       runId,
       feature,
       workdir,
       dryRun,
       useBatch,
+      routingMode,
     });
 
     // Fire on-start hook
@@ -331,6 +334,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
           );
           await savePRD(prd, prdPath);
           prdDirty = true;
+
+          // Hybrid mode: re-route story after escalation
+          if (routingMode === "hybrid") {
+            await tryLlmBatchRoute(config, [story], "hybrid-re-route");
+          }
 
           // Skip to next iteration (will reload PRD and use new tier)
           continue;
@@ -578,6 +586,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
                 });
                 await savePRD(prd, prdPath);
                 prdDirty = true;
+
+                // Hybrid mode: re-route escalated stories
+                if (routingMode === "hybrid") {
+                  await tryLlmBatchRoute(config, storiesToEscalate, "hybrid-re-route-pipeline");
+                }
               } else {
                 // Max attempts reached — mark as failed
                 markStoryFailed(prd, story.id);
