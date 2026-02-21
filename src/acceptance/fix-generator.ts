@@ -358,6 +358,6 @@ export function convertFixStoryToUserStory(fixStory: FixStory): UserStory {
     passes: false,
     escalations: [],
     attempts: 0,
-    relevantFiles: [],
+    contextFiles: [],
   };
 }

@@ -56,12 +56,36 @@ export interface UserStory {
   escalations: EscalationAttempt[];
   /** Number of attempts */
   attempts: number;
-  /** Relevant source files for context injection */
+  /** @deprecated Use contextFiles instead. Relevant source files for context injection */
   relevantFiles?: string[];
+  /** Files loaded into agent prompt before execution */
+  contextFiles?: string[];
+  /** Files that must exist after execution (pre-flight gate) */
+  expectedFiles?: string[];
   /** Prior error messages from failed attempts */
   priorErrors?: string[];
   /** Custom context strings */
   customContext?: string[];
+}
+
+// ============================================================================
+// Resolver Functions
+// ============================================================================
+
+/**
+ * Get files to load into agent prompt before execution.
+ * Falls back to relevantFiles for backward compatibility.
+ */
+export function getContextFiles(story: UserStory): string[] {
+  return story.contextFiles ?? story.relevantFiles ?? [];
+}
+
+/**
+ * Get files that must exist after execution (pre-flight gate).
+ * Does NOT fall back to relevantFiles. Asset check is opt-in only.
+ */
+export function getExpectedFiles(story: UserStory): string[] {
+  return story.expectedFiles ?? [];
 }
 
 // ============================================================================

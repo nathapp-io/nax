@@ -7,7 +7,7 @@
 
 import type { NaxConfig } from "../config";
 import type { PRD, UserStory } from "../prd";
-import { savePRD } from "../prd";
+import { savePRD, getExpectedFiles } from "../prd";
 import { runVerification, parseTestOutput, getEnvironmentalEscalationThreshold } from "./verification";
 import { getTierConfig } from "./escalation";
 import { appendProgress } from "./progress";
@@ -70,7 +70,7 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
   const timeoutRetryCount = timeoutRetryCountMap.get(story.id) || 0;
   const verificationResult = await runVerification({
     workingDirectory: workdir,
-    relevantFiles: story.relevantFiles,
+    expectedFiles: getExpectedFiles(story),
     command: config.quality.commands.test,
     timeoutSeconds: config.execution.verificationTimeoutSeconds,
     forceExit: config.quality.forceExit,

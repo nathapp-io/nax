@@ -519,6 +519,97 @@ describe('Context Builder Integration', () => {
     });
   });
 
+  describe('contextFiles and expectedFiles', () => {
+    test('should use contextFiles when present', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Story with contextFiles',
+          description: 'Test contextFiles usage',
+          acceptanceCriteria: ['AC1'],
+          contextFiles: ['src/foo.ts', 'src/bar.ts'],
+        },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
+      };
+
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
+
+      const built = await buildContext(storyContext, budget);
+      const markdown = formatContextAsMarkdown(built);
+
+      // Context builder should attempt to load contextFiles
+      expect(built.elements.some((e) => e.type === 'story')).toBe(true);
+      expect(markdown).toContain('US-001');
+    });
+
+    test('should fall back to relevantFiles for context when contextFiles not set', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Legacy story with relevantFiles',
+          description: 'Test relevantFiles fallback',
+          acceptanceCriteria: ['AC1'],
+          relevantFiles: ['src/legacy.ts'],
+        },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
+      };
+
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
+
+      const built = await buildContext(storyContext, budget);
+      const markdown = formatContextAsMarkdown(built);
+
+      // Should still build context successfully using relevantFiles fallback
+      expect(built.elements.some((e) => e.type === 'story')).toBe(true);
+      expect(markdown).toContain('US-001');
+    });
+
+    test('should handle story with no files specified', async () => {
+      const prd = createTestPRD([
+        {
+          id: 'US-001',
+          title: 'Story with no files',
+          description: 'Test no files case',
+          acceptanceCriteria: ['AC1'],
+        },
+      ]);
+
+      const storyContext: StoryContext = {
+        prd,
+        currentStoryId: 'US-001',
+      };
+
+      const budget: ContextBudget = {
+        maxTokens: 10000,
+        reservedForInstructions: 1000,
+        availableForContext: 9000,
+      };
+
+      const built = await buildContext(storyContext, budget);
+      const markdown = formatContextAsMarkdown(built);
+
+      // Should build context successfully without file loading
+      expect(built.elements.some((e) => e.type === 'story')).toBe(true);
+      expect(markdown).toContain('US-001');
+    });
+  });
+
   describe('Edge Cases', () => {
     test('should handle single story PRD', async () => {
       const prd = createTestPRD([

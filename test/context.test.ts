@@ -41,6 +41,8 @@ const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
     routing: s.routing,
     priorErrors: s.priorErrors,
     relevantFiles: s.relevantFiles,
+    contextFiles: s.contextFiles,
+    expectedFiles: s.expectedFiles,
   })),
 });
 
@@ -512,7 +514,7 @@ describe('Context Builder', () => {
       );
     });
 
-    test('should load relevant source files', async () => {
+    test('should load files from contextFiles when present', async () => {
       // Create temp directory and files
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nax-test-'));
       const testFile1 = path.join(tempDir, 'helper.ts');
@@ -528,7 +530,7 @@ describe('Context Builder', () => {
             title: 'Story with Files',
             description: 'Test',
             acceptanceCriteria: ['AC1'],
-            relevantFiles: ['helper.ts', 'utils.ts'],
+            contextFiles: ['helper.ts', 'utils.ts'],
           },
         ]);
 
@@ -559,6 +561,93 @@ describe('Context Builder', () => {
       }
     });
 
+    test('should fall back to relevantFiles for file loading when contextFiles not present', async () => {
+      // Create temp directory and files
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nax-test-'));
+      const testFile = path.join(tempDir, 'legacy.ts');
+
+      await fs.writeFile(testFile, 'export function legacy() { return "old"; }');
+
+      try {
+        const prd = createTestPRD([
+          {
+            id: 'US-001',
+            title: 'Legacy Story with relevantFiles',
+            description: 'Test backward compatibility',
+            acceptanceCriteria: ['AC1'],
+            relevantFiles: ['legacy.ts'],
+          },
+        ]);
+
+        const storyContext: StoryContext = {
+          prd,
+          currentStoryId: 'US-001',
+          workdir: tempDir,
+        };
+
+        const budget: ContextBudget = {
+          maxTokens: 10000,
+          reservedForInstructions: 1000,
+          availableForContext: 9000,
+        };
+
+        const built = await buildContext(storyContext, budget);
+
+        const fileElements = built.elements.filter((e) => e.type === 'file');
+        expect(fileElements.length).toBe(1);
+        expect(fileElements[0].filePath).toBe('legacy.ts');
+        expect(fileElements[0].content).toContain('legacy()');
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    test('should prefer contextFiles over relevantFiles for file loading', async () => {
+      // Create temp directory and files
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nax-test-'));
+      const newFile = path.join(tempDir, 'new.ts');
+      const oldFile = path.join(tempDir, 'old.ts');
+
+      await fs.writeFile(newFile, 'export function newFunc() {}');
+      await fs.writeFile(oldFile, 'export function oldFunc() {}');
+
+      try {
+        const prd = createTestPRD([
+          {
+            id: 'US-001',
+            title: 'Story with both contextFiles and relevantFiles',
+            description: 'Test precedence',
+            acceptanceCriteria: ['AC1'],
+            contextFiles: ['new.ts'],
+            relevantFiles: ['old.ts'],
+          },
+        ]);
+
+        const storyContext: StoryContext = {
+          prd,
+          currentStoryId: 'US-001',
+          workdir: tempDir,
+        };
+
+        const budget: ContextBudget = {
+          maxTokens: 10000,
+          reservedForInstructions: 1000,
+          availableForContext: 9000,
+        };
+
+        const built = await buildContext(storyContext, budget);
+
+        const fileElements = built.elements.filter((e) => e.type === 'file');
+        expect(fileElements.length).toBe(1);
+        expect(fileElements[0].filePath).toBe('new.ts');
+        expect(fileElements[0].content).toContain('newFunc()');
+        // Should NOT load old.ts
+        expect(fileElements.find((e) => e.filePath === 'old.ts')).toBeUndefined();
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
     test('should respect max 5 files limit', async () => {
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nax-test-'));
 
@@ -577,7 +666,7 @@ describe('Context Builder', () => {
             title: 'Story with Many Files',
             description: 'Test',
             acceptanceCriteria: ['AC1'],
-            relevantFiles: files,
+            contextFiles: files,
           },
         ]);
 
@@ -618,7 +707,7 @@ describe('Context Builder', () => {
             title: 'Story with Large File',
             description: 'Test',
             acceptanceCriteria: ['AC1'],
-            relevantFiles: ['small.ts', 'large.ts'],
+            contextFiles: ['small.ts', 'large.ts'],
           },
         ]);
 
@@ -662,7 +751,7 @@ describe('Context Builder', () => {
             title: 'Story with Missing File',
             description: 'Test',
             acceptanceCriteria: ['AC1'],
-            relevantFiles: ['nonexistent.ts'],
+            contextFiles: ['nonexistent.ts'],
           },
         ]);
 
@@ -688,14 +777,14 @@ describe('Context Builder', () => {
       }
     });
 
-    test('should handle empty relevantFiles array', async () => {
+    test('should handle empty contextFiles array', async () => {
       const prd = createTestPRD([
         {
           id: 'US-001',
           title: 'Story with Empty Files',
           description: 'Test',
           acceptanceCriteria: ['AC1'],
-          relevantFiles: [],
+          contextFiles: [],
         },
       ]);
 
@@ -730,7 +819,7 @@ describe('Context Builder', () => {
             title: 'Story',
             description: 'x'.repeat(1000),
             acceptanceCriteria: ['AC1'],
-            relevantFiles: ['file1.ts', 'file2.ts'],
+            contextFiles: ['file1.ts', 'file2.ts'],
           },
         ]);
 
@@ -864,7 +953,7 @@ describe('Context Builder', () => {
             title: 'Story with File',
             description: 'Test',
             acceptanceCriteria: ['AC1'],
-            relevantFiles: ['helper.ts'],
+            contextFiles: ['helper.ts'],
           },
         ]);
 

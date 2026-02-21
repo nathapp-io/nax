@@ -95,7 +95,7 @@ describe("classifyStories", () => {
     const classification = result.classifications[0];
     expect(classification.storyId).toBe("US-001");
     expect(classification.complexity).toMatch(/simple|medium|complex|expert/);
-    expect(classification.relevantFiles).toEqual([]);
+    expect(classification.contextFiles).toEqual([]);
     expect(classification.reasoning).toContain("Keyword-based classification");
     expect(typeof classification.estimatedLOC).toBe("number");
     expect(classification.estimatedLOC).toBeGreaterThan(0);

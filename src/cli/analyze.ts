@@ -128,7 +128,7 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
             estimatedLOC: ds.estimatedLOC,
             risks: ds.risks,
           },
-          relevantFiles: ds.relevantFiles,
+          contextFiles: ds.contextFiles,
         };
       });
     } catch (error) {
@@ -488,7 +488,7 @@ ${story.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
               estimatedLOC: ds.estimatedLOC,
               risks: ds.risks,
             },
-            relevantFiles: ds.relevantFiles,
+            contextFiles: ds.contextFiles,
           });
 
           logger.info("cli", `✓ ${story.id} → ${ds.complexity}`, { storyId: story.id, complexity: ds.complexity });
