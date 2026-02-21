@@ -1,14 +1,28 @@
 # nax Roadmap
 
-## v0.8 (Next)
-- [ ] **LLM-enhanced routing** (HIGH) — Replace keyword-based routing with LLM classifier. Batch mode, async strategy chain, keyword fallback. See `docs/v0.8-llm-routing.md`
-- [ ] Structured logging — See `docs/v0.8-structured-logging.md`
+## v0.8 ✅ (Current)
+- [x] **LLM-enhanced routing** — LLM classifier with batch mode, async strategy chain, keyword fallback. See `docs/v0.8-llm-routing.md`
+- [x] **Structured logging** — Logger class, stage events, JSONL run history, `--verbose/--quiet`. See `docs/v0.8-structured-logging.md`
+- [x] `nax runs list/show` CLI commands
 - [ ] BUG-20: TDD orchestrator empty session detection
 
-## v1.0+ (Future)
-- [ ] **Parallel execution with git worktree** — Run independent stories concurrently using git worktrees as isolated workspaces. Scope: parallel independent branches/features first (no intra-feature parallelism due to dependency chains and context injection benefits). Requires: worktree lifecycle management, merge conflict resolution agent, memory budget (300MB per Claude instance). See ADR discussion from 2026-02-19.
-- [ ] Direct API routing calls (Option B) — Skip Claude Code overhead for routing
+## v0.9 (Next)
+- [ ] **Split relevantFiles** (#1) — Decouple context injection (`contextFiles`) from asset verification (`expectedFiles`). Fixes false negatives in dogfood runs.
+- [ ] **Configurable routing mode** (#2) — `one-shot` | `per-story` | `hybrid` LLM routing. Reduces cost and hook noise (9 Claude sessions → 1).
+
+## v1.0 (Major)
+- [ ] **Parallel execution with git worktree** — Run independent stories concurrently. ~300MB per Claude instance. Scope: parallel independent branches first (no intra-feature parallelism due to dependency chains).
+- [ ] Stability & hardening for production use
+
+## v1.1 (Architecture)
+- [ ] **LLM service layer** (#3) — Direct API calls for non-coding LLM tasks (routing, review, acceptance). Decouples from `claude -p`. Enables multi-provider routing (e.g., Gemini Flash for free routing).
+- [ ] Multi-agent support — Codex, OpenCode, Gemini adapters
+- [ ] Direct API routing calls (skip Claude Code overhead)
+
+## Future
 - [ ] Adaptive routing — Learn from historical run data to auto-calibrate tier selection
+- [ ] Acceptance testing via LLM
+- [ ] Code review integration
 
 ---
-*Updated 2026-02-19*
+*Updated 2026-02-21*
