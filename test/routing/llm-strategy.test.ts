@@ -572,6 +572,274 @@ describe("stripCodeFences", () => {
   });
 });
 
+describe("LLM Routing Strategy - Mode Behavior", () => {
+  beforeEach(() => {
+    clearCache();
+  });
+
+  test("one-shot mode: cache miss returns keyword fallback without LLM call", async () => {
+    const mockSpawn = spyOn(Bun, "spawn");
+
+    const oneShotContext: RoutingContext = {
+      config: {
+        ...DEFAULT_CONFIG,
+        routing: {
+          ...DEFAULT_CONFIG.routing,
+          strategy: "llm",
+          llm: {
+            mode: "one-shot",
+            cacheDecisions: true,
+            fallbackToKeywords: true,
+          },
+        },
+      },
+    };
+
+    // Cache is empty, so this should fall back to keyword without calling LLM
+    const decision = await llmStrategy.route(simpleStory, oneShotContext);
+
+    // Should get a keyword-based decision (not null)
+    expect(decision).not.toBeNull();
+    // Should NOT have spawned LLM
+    expect(mockSpawn).not.toHaveBeenCalled();
+
+    mockSpawn.mockRestore();
+  });
+
+  test("one-shot mode: cache hit returns cached decision", async () => {
+    clearCache();
+
+    const mockSpawn = spyOn(Bun, "spawn").mockImplementation(() => {
+      const batchResponse = JSON.stringify([
+        { id: "US-001", complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "Cached decision" },
+      ]);
+      const stdout = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(batchResponse));
+          controller.close();
+        },
+      });
+      const stderr = new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      });
+      return {
+        stdout,
+        stderr,
+        exited: Promise.resolve(0),
+        kill: () => {},
+      } as any;
+    });
+
+    const oneShotContext: RoutingContext = {
+      config: {
+        ...DEFAULT_CONFIG,
+        routing: {
+          ...DEFAULT_CONFIG.routing,
+          strategy: "llm",
+          llm: {
+            mode: "one-shot",
+            cacheDecisions: true,
+          },
+        },
+      },
+    };
+
+    // First, populate cache via batch route
+    await routeBatch([simpleStory], oneShotContext);
+    mockSpawn.mockClear();
+
+    // Now route the same story - should hit cache
+    const decision = await llmStrategy.route(simpleStory, oneShotContext);
+
+    expect(decision).not.toBeNull();
+    expect(decision?.complexity).toBe("simple");
+    expect(decision?.reasoning).toBe("Cached decision");
+    // Should NOT have spawned again
+    expect(mockSpawn).not.toHaveBeenCalled();
+
+    mockSpawn.mockRestore();
+  });
+
+  test("per-story mode: each story triggers individual LLM call", async () => {
+    clearCache();
+
+    const mockSpawn = spyOn(Bun, "spawn").mockImplementation(() => {
+      const stdout = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"complexity":"simple","modelTier":"fast","testStrategy":"test-after","reasoning":"per-story call"}'));
+          controller.close();
+        },
+      });
+      const stderr = new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      });
+      return {
+        stdout,
+        stderr,
+        exited: Promise.resolve(0),
+        kill: () => {},
+      } as any;
+    });
+
+    const perStoryContext: RoutingContext = {
+      config: {
+        ...DEFAULT_CONFIG,
+        routing: {
+          ...DEFAULT_CONFIG.routing,
+          strategy: "llm",
+          llm: {
+            mode: "per-story",
+            cacheDecisions: true,
+          },
+        },
+      },
+    };
+
+    // Route two different stories
+    const decision1 = await llmStrategy.route(simpleStory, perStoryContext);
+    const decision2 = await llmStrategy.route(complexStory, perStoryContext);
+
+    expect(decision1).not.toBeNull();
+    expect(decision2).not.toBeNull();
+    // Should have spawned twice (once per story)
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+
+    mockSpawn.mockRestore();
+  });
+
+  test("hybrid mode: batch route upfront, per-story on cache miss", async () => {
+    clearCache();
+
+    const mockSpawn = spyOn(Bun, "spawn").mockImplementation(() => {
+      const batchResponse = JSON.stringify([
+        { id: "US-001", complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "batched" },
+      ]);
+      const stdout = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(batchResponse));
+          controller.close();
+        },
+      });
+      const stderr = new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      });
+      return {
+        stdout,
+        stderr,
+        exited: Promise.resolve(0),
+        kill: () => {},
+      } as any;
+    });
+
+    const hybridContext: RoutingContext = {
+      config: {
+        ...DEFAULT_CONFIG,
+        routing: {
+          ...DEFAULT_CONFIG.routing,
+          strategy: "llm",
+          llm: {
+            mode: "hybrid",
+            cacheDecisions: true,
+          },
+        },
+      },
+    };
+
+    // Populate cache with batch route
+    await routeBatch([simpleStory], hybridContext);
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+
+    mockSpawn.mockClear();
+
+    // Route cached story - should hit cache
+    const decision1 = await llmStrategy.route(simpleStory, hybridContext);
+    expect(decision1).not.toBeNull();
+    expect(decision1?.reasoning).toBe("batched");
+    expect(mockSpawn).not.toHaveBeenCalled();
+
+    // Route uncached story - should spawn LLM
+    mockSpawn.mockImplementation(() => {
+      const stdout = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"complexity":"complex","modelTier":"powerful","testStrategy":"three-session-tdd","reasoning":"per-story fallback"}'));
+          controller.close();
+        },
+      });
+      const stderr = new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      });
+      return {
+        stdout,
+        stderr,
+        exited: Promise.resolve(0),
+        kill: () => {},
+      } as any;
+    });
+
+    const decision2 = await llmStrategy.route(complexStory, hybridContext);
+    expect(decision2).not.toBeNull();
+    expect(decision2?.reasoning).toBe("per-story fallback");
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+
+    mockSpawn.mockRestore();
+  });
+
+  test("default mode (undefined) behaves as hybrid", async () => {
+    clearCache();
+
+    const mockSpawn = spyOn(Bun, "spawn").mockImplementation(() => {
+      const stdout = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"complexity":"simple","modelTier":"fast","testStrategy":"test-after","reasoning":"default mode"}'));
+          controller.close();
+        },
+      });
+      const stderr = new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      });
+      return {
+        stdout,
+        stderr,
+        exited: Promise.resolve(0),
+        kill: () => {},
+      } as any;
+    });
+
+    const defaultContext: RoutingContext = {
+      config: {
+        ...DEFAULT_CONFIG,
+        routing: {
+          ...DEFAULT_CONFIG.routing,
+          strategy: "llm",
+          llm: {
+            // mode not specified - should default to hybrid
+            cacheDecisions: true,
+          },
+        },
+      },
+    };
+
+    // Cache miss - hybrid mode should make LLM call (not fall back to keyword like one-shot)
+    const decision = await llmStrategy.route(simpleStory, defaultContext);
+
+    expect(decision).not.toBeNull();
+    expect(decision?.reasoning).toBe("default mode");
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+
+    mockSpawn.mockRestore();
+  });
+});
+
 describe("validateRoutingDecision", () => {
   test("returns valid decision for correct input", () => {
     const input = { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "trivial" };

@@ -71,14 +71,44 @@ function deepMerge(a: Record<string, unknown>, b: Record<string, unknown>): Reco
   return result;
 }
 
+
+/** @internal Backward compat: map deprecated routing.llm.batchMode to routing.llm.mode.
+ * Returns a new object (immutable -- does not mutate the input). */
+function applyBatchModeCompat(conf: Record<string, unknown>): Record<string, unknown> {
+  const routing = conf.routing as Record<string, unknown> | undefined;
+  const llm = routing?.llm as Record<string, unknown> | undefined;
+  if (llm && "batchMode" in llm && !("mode" in llm)) {
+    const batchMode = llm.batchMode;
+    if (typeof batchMode === "boolean") {
+      const mappedMode = batchMode ? "one-shot" : "per-story";
+      try {
+        getLogger().warn(
+          "config",
+          `routing.llm.batchMode is deprecated and will be removed in v1.0. Mapped to mode="${mappedMode}". Update your config to use routing.llm.mode instead.`,
+        );
+      } catch { /* logger may not be init yet */ }
+      return {
+        ...conf,
+        routing: {
+          ...routing,
+          llm: { ...llm, mode: mappedMode },
+        },
+      };
+    }
+  }
+  return conf;
+}
+
 /** Load merged configuration (defaults < global < project) */
 export async function loadConfig(projectDir?: string): Promise<NaxConfig> {
   // Start with defaults as a plain object
   let rawConfig: Record<string, unknown> = structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>);
 
   // Layer global config
-  const globalConf = await loadJsonFile<Record<string, unknown>>(globalConfigPath());
-  if (globalConf) {
+  const globalConfRaw = await loadJsonFile<Record<string, unknown>>(globalConfigPath());
+  if (globalConfRaw) {
+    // Backward compatibility: apply batchMode->mode shim before merge so defaults don't shadow it
+    const globalConf = applyBatchModeCompat(globalConfRaw);
     rawConfig = deepMerge(rawConfig, globalConf);
   }
 
@@ -87,7 +117,10 @@ export async function loadConfig(projectDir?: string): Promise<NaxConfig> {
   if (projDir) {
     const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"));
     if (projConf) {
-      rawConfig = deepMerge(rawConfig, projConf);
+      // Backward compatibility: map deprecated batchMode -> mode on raw user config
+      // MUST run before deepMerge so defaults don't shadow the check.
+      const resolvedProjConf = applyBatchModeCompat(projConf);
+      rawConfig = deepMerge(rawConfig, resolvedProjConf);
     }
   }
 

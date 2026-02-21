@@ -230,6 +230,9 @@ export interface AdaptiveRoutingConfig {
   fallbackStrategy: "keyword" | "llm" | "manual";
 }
 
+/** LLM routing mode */
+export type LlmRoutingMode = "one-shot" | "per-story" | "hybrid";
+
 /** LLM routing config */
 export interface LlmRoutingConfig {
   /** Model tier for routing call (default: "fast") */
@@ -239,7 +242,13 @@ export interface LlmRoutingConfig {
   /** Max input tokens for story context (default: 2000) */
   /** Cache routing decisions per story ID (default: true) */
   cacheDecisions?: boolean;
-  /** Batch mode: route multiple stories in one LLM call (default: true) */
+  /** Routing mode (default: "hybrid")
+   * - "one-shot": batch-route ALL pending stories once at run start, use keyword fallback on cache miss
+   * - "per-story": route each story individually just before execution (max LLM calls = N stories)
+   * - "hybrid": batch-route upfront, re-route individually on retry/failure (best quality + cost balance)
+   */
+  mode?: LlmRoutingMode;
+  /** @deprecated Use mode instead. Will be removed in v1.0 */
   batchMode?: boolean;
   /** Timeout for LLM call in milliseconds (default: 15000) */
   timeoutMs?: number;
@@ -450,7 +459,8 @@ const LlmRoutingConfigSchema = z.object({
   model: z.string().optional(),
   fallbackToKeywords: z.boolean().optional(),
   cacheDecisions: z.boolean().optional(),
-  batchMode: z.boolean().optional(),
+  mode: z.enum(["one-shot", "per-story", "hybrid"]).optional(),
+  batchMode: z.boolean().optional(), // deprecated, for backward compat
   timeoutMs: z.number().int().positive({ message: "llm.timeoutMs must be > 0" }).optional(),
 });
 
@@ -533,7 +543,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
       model: "fast",
       fallbackToKeywords: true,
       cacheDecisions: true,
-      batchMode: true,
+      mode: "hybrid",
       timeoutMs: 15000,
     },
   },

@@ -538,7 +538,13 @@ Respond with ONLY a JSON array (no markdown code fences):
         tags: Array.isArray(item.tags) ? item.tags : [],
         dependencies: Array.isArray(item.dependencies) ? item.dependencies : [],
         complexity: this.validateComplexity(item.complexity),
-        contextFiles: Array.isArray(item.contextFiles) ? item.contextFiles : [],
+        // contextFiles: prefer the new field; fall back to legacy relevantFiles from older LLM responses
+        contextFiles: Array.isArray(item.contextFiles)
+          ? item.contextFiles
+          : Array.isArray(item.relevantFiles)
+            ? item.relevantFiles
+            : [],
+        relevantFiles: Array.isArray(item.relevantFiles) ? item.relevantFiles : [],
         reasoning: String(item.reasoning || "No reasoning provided"),
         estimatedLOC: Number(item.estimatedLOC) || 0,
         risks: Array.isArray(item.risks) ? item.risks : [],

@@ -9,7 +9,7 @@
  */
 
 import path from "node:path";
-import type { NaxConfig } from "../config";
+import type { NaxConfig, ModelTier } from "../config";
 import { getAgent } from "../agents";
 import { resolveModel } from "../config/schema";
 import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryFailed, isStalled, markStoryAsBlocked, generateHumanHaltSummary } from "../prd";
@@ -56,10 +56,11 @@ function getSafeLogger() {
  * Try LLM batch routing for ready stories. Logs and swallows errors (falls back to per-story routing).
  */
 async function tryLlmBatchRoute(config: NaxConfig, stories: UserStory[], label: string = "routing"): Promise<void> {
-  if (config.routing.strategy !== "llm" || !config.routing.llm?.batchMode || stories.length === 0) return;
+  const mode = config.routing.llm?.mode ?? "hybrid";
+  if (config.routing.strategy !== "llm" || mode === "per-story" || stories.length === 0) return;
   const logger = getSafeLogger();
   try {
-    logger?.debug("routing", `LLM batch routing: ${label}`, { storyCount: stories.length });
+    logger?.debug("routing", `LLM batch routing: ${label}`, { storyCount: stories.length, mode });
     await llmRouteBatch(stories, { config });
     logger?.debug("routing", "LLM batch routing complete", { label });
   } catch (err) {
@@ -73,15 +74,21 @@ async function tryLlmBatchRoute(config: NaxConfig, stories: UserStory[], label: 
 /**
  * Apply cached routing overrides from story.routing to a fresh routing decision.
  */
-function applyCachedRouting(routing: ReturnType<typeof routeTask>, story: UserStory, config: NaxConfig): void {
-  if (!story.routing) return;
+function applyCachedRouting(
+  routing: ReturnType<typeof routeTask>,
+  story: UserStory,
+  config: NaxConfig,
+): ReturnType<typeof routeTask> {
+  if (!story.routing) return routing;
+  const overrides: Partial<ReturnType<typeof routeTask>> = {};
   if (story.routing.complexity) {
-    routing.complexity = story.routing.complexity;
-    routing.modelTier = config.autoMode.complexityRouting[routing.complexity] ?? "balanced";
+    overrides.complexity = story.routing.complexity;
+    overrides.modelTier = (config.autoMode.complexityRouting[story.routing.complexity] ?? "balanced") as ModelTier;
   }
   if (story.routing.testStrategy) {
-    routing.testStrategy = story.routing.testStrategy;
+    overrides.testStrategy = story.routing.testStrategy;
   }
+  return { ...routing, ...overrides };
 }
 
 export interface RunOptions {
@@ -140,12 +147,14 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   try {
     // Log run start
+    const routingMode = config.routing.llm?.mode ?? "hybrid";
     logger?.info("run.start", `Starting feature: ${feature}`, {
       runId,
       feature,
       workdir,
       dryRun,
       useBatch,
+      routingMode,
     });
 
     // Fire on-start hook
@@ -274,7 +283,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
           story.tags,
           config,
         );
-        applyCachedRouting(routing, story, config);
+        routing = applyCachedRouting(routing, story, config);
       } else {
         // Fallback to single-story mode (when batching disabled or batch plan exhausted)
         const nextStory = getNextStory(prd);
@@ -295,7 +304,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
           story.tags,
           config,
         );
-        applyCachedRouting(routing, story, config);
+        routing = applyCachedRouting(routing, story, config);
       }
 
       // BUG-16 + BUG-17: Pre-iteration tier escalation check
@@ -331,6 +340,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
           );
           await savePRD(prd, prdPath);
           prdDirty = true;
+
+          // Hybrid mode: re-route story after escalation
+          if (routingMode === "hybrid") {
+            await tryLlmBatchRoute(config, [story], "hybrid-re-route");
+          }
 
           // Skip to next iteration (will reload PRD and use new tier)
           continue;
@@ -578,6 +592,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
                 });
                 await savePRD(prd, prdPath);
                 prdDirty = true;
+
+                // Hybrid mode: re-route escalated stories
+                if (routingMode === "hybrid") {
+                  await tryLlmBatchRoute(config, storiesToEscalate, "hybrid-re-route-pipeline");
+                }
               } else {
                 // Max attempts reached — mark as failed
                 markStoryFailed(prd, story.id);
