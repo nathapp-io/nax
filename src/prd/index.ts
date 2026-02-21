@@ -6,7 +6,7 @@ import { existsSync, statSync } from "node:fs";
 import type { PRD, UserStory } from "./types";
 
 export type { PRD, UserStory, StoryRouting, StoryStatus, EscalationAttempt } from "./types";
-export { isStalled, markStoryAsBlocked, generateHumanHaltSummary } from "./types";
+export { isStalled, markStoryAsBlocked, generateHumanHaltSummary, getContextFiles, getExpectedFiles } from "./types";
 
 /** Maximum PRD file size (5MB) - reject larger PRDs to prevent memory issues */
 export const PRD_MAX_FILE_SIZE = 5 * 1024 * 1024;
