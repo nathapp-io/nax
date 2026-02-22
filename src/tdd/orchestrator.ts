@@ -111,7 +111,7 @@ You are in the third session of a three-session TDD workflow. Tests and implemen
 1. Run all tests and verify they pass
 2. Review the implementation for quality and correctness
 3. Check that the implementation meets all acceptance criteria
-4. Verify no test files were modified by the implementer
+4. Check if test files were modified by the implementer. If yes, verify the changes are legitimate fixes (e.g. fixing incorrect expectations) and NOT just loosening assertions to mask bugs.
 5. If any issues exist, fix them minimally
 
 **Acceptance Criteria:**
@@ -119,9 +119,9 @@ ${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
 
 **Auto-approval criteria:**
 - All tests pass
-- No test files modified in session 2
 - Implementation is clean and follows conventions
 - All acceptance criteria met
+- Any test modifications by implementer are legitimate fixes
 
 If everything looks good, you can approve automatically. If legitimate fixes are needed (e.g., minor test adjustments for legitimate reasons), make them and document why.
 
