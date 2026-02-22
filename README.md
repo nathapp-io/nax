@@ -1,4 +1,4 @@
-# ngent
+# nax
 
 **AI Coding Agent Orchestrator** — loops until done.
 
@@ -7,12 +7,12 @@ Smart routing. Three-session TDD. Hooks for everything.
 ## Quick Start
 
 ```bash
-bun install -g ngent
+bun install -g @nathapp/nax
 cd your-project
-ngent init
-ngent features create my-feature
-# Edit ngent/features/my-feature/spec.md and tasks.md
-ngent run --feature my-feature
+nax init
+nax features create my-feature
+# Edit nax/features/my-feature/spec.md and tasks.md
+nax run --feature my-feature
 ```
 
 ## How It Works
@@ -32,7 +32,7 @@ plan → tasks → analyze → execute (loop until complete)
 
 ## Three-Session TDD
 
-For quality-critical work, ngent uses three isolated sessions:
+For quality-critical work, nax uses three isolated sessions:
 
 | Session | Role | Rules |
 |:--------|:-----|:------|
@@ -44,7 +44,7 @@ Isolation is verified automatically between sessions.
 
 ## Hooks
 
-Configure lifecycle hooks in `ngent/hooks.json`:
+Configure lifecycle hooks in `nax/hooks.json`:
 
 ```json
 {
@@ -56,23 +56,23 @@ Configure lifecycle hooks in `ngent/hooks.json`:
 }
 ```
 
-Each hook receives context via `NGENT_*` environment variables and full JSON on stdin.
+Each hook receives context via `NAX_*` environment variables and full JSON on stdin.
 
 ## Configuration
 
-Global: `~/.ngent/config.json`
-Project: `ngent/config.json` (overrides global)
+Global: `~/.nax/config.json`
+Project: `nax/config.json` (overrides global)
 
 ## Commands
 
 ```bash
-ngent init                    # Initialize in project
-ngent features create <name>  # Create a feature
-ngent features list           # List features
-ngent run -f <name>           # Run the loop
-ngent run -f <name> --dry-run # Preview without executing
-ngent status -f <name>        # Show progress
-ngent agents                  # Check installed agents
+nax init                    # Initialize in project
+nax features create <name>  # Create a feature
+nax features list           # List features
+nax run -f <name>           # Run the loop
+nax run -f <name> --dry-run # Preview without executing
+nax status -f <name>        # Show progress
+nax agents                  # Check installed agents
 ```
 
 ## License
