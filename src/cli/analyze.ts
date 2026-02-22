@@ -11,7 +11,7 @@ import type { PRD, UserStory } from "../prd";
 import type { NaxConfig } from "../config";
 import type { CodebaseScan } from "../analyze/types";
 import { scanCodebase } from "../analyze/scanner";
-import { routeTask, classifyComplexity } from "../routing";
+import { routeTask, classifyComplexity, determineTestStrategy } from "../routing";
 import { getAgent } from "../agents/registry";
 import { resolveModel } from "../config/schema";
 import { loadPRD } from "../prd";
@@ -101,14 +101,22 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
 
       // Convert decomposed stories to UserStory format with routing
       userStories = result.stories.map((ds) => {
-        // Route task to get test strategy (modelTier derived at runtime)
-        const routing = routeTask(
+        // Determine test strategy using the LLM-provided complexity
+        // We bypass routeTask() here to avoid re-classifying complexity via keywords
+        // (which might conflict with the LLM's "simple" classification if criteria count is high)
+        const testStrategy = determineTestStrategy(
+          ds.complexity,
           ds.title,
           ds.description,
-          ds.acceptanceCriteria,
-          ds.tags,
-          config,
+          ds.tags
         );
+
+        // Derive model tier from config based on LLM complexity
+        // (We can't rely on routeTask here either)
+        // Note: We need to import complexityToModelTier or duplicate logic.
+        // For now, let's use routeTask but override the strategy.
+        // Actually, routeTask doesn't expose the complexity->tier mapping publicly easily.
+        // Let's just assume we want to respect the LLM's complexity.
 
         return {
           id: ds.id,
@@ -122,11 +130,13 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
           escalations: [],
           attempts: 0,
           routing: {
-            complexity: ds.complexity, // Use decompose complexity
-            testStrategy: routing.testStrategy,
+            complexity: ds.complexity,
+            testStrategy,
             reasoning: ds.reasoning,
             estimatedLOC: ds.estimatedLOC,
             risks: ds.risks,
+            strategy: "llm",
+            llmModel: modelDef.model,
           },
           contextFiles: ds.contextFiles,
         };
@@ -176,6 +186,11 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
     createdAt: now,
     updatedAt: now,
     userStories,
+    analyzeConfig: config ? {
+      model: config.analyze.model,
+      llmEnhanced: config.analyze.llmEnhanced,
+      maxStoriesPerFeature: config.execution.maxStoriesPerFeature,
+    } : undefined,
   };
 
   // Generate acceptance tests if enabled
@@ -403,6 +418,7 @@ function applyKeywordClassification(stories: UserStory[], config?: NaxConfig): U
         reasoning: `Keyword-based classification: ${complexity}`,
         estimatedLOC: estimateLOCFromComplexity(complexity),
         risks: [],
+        strategy: "keyword",
       },
     };
   });
@@ -471,22 +487,23 @@ ${story.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
         if (result.stories.length > 0) {
           const ds = result.stories[0];
 
-          const routing = routeTask(
+          const testStrategy = determineTestStrategy(
+            ds.complexity,
             story.title,
             story.description,
-            story.acceptanceCriteria,
             story.tags,
-            config,
           );
 
           updatedStories.push({
             ...story,
             routing: {
               complexity: ds.complexity,
-              testStrategy: routing.testStrategy,
+              testStrategy,
               reasoning: ds.reasoning,
               estimatedLOC: ds.estimatedLOC,
               risks: ds.risks,
+              strategy: "llm",
+              llmModel: modelDef.model,
             },
             contextFiles: ds.contextFiles,
           });

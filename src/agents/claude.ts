@@ -463,6 +463,12 @@ Complexity classification rules:
 - complex: 6+ files, 300-800 LOC, architectural changes, cross-cutting concerns
 - expert: Security/crypto/real-time/distributed systems, >800 LOC, new infrastructure
 
+Grouping Guidelines:
+- Combine small, related tasks (e.g., multiple utility functions, interfaces) into a single "simple" or "medium" story.
+- Do NOT create separate stories for every single file or function unless complex.
+- Aim for coherent units of value (e.g., "Implement User Authentication" vs "Create User Interface", "Create Login Service").
+- Maximum recommended stories: 10-15 per feature. Group aggressively if list grows too long.
+
 Consider:
 1. Does infrastructure exist? (e.g., "add caching" when no cache layer exists = complex)
 2. How many files will be touched?

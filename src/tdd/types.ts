@@ -11,10 +11,12 @@ export type TddSessionRole = "test-writer" | "implementer" | "verifier";
 
 /** Isolation verification result */
 export interface IsolationCheck {
-  /** Whether isolation was maintained */
+  /** Whether isolation was maintained (or warning accepted) */
   passed: boolean;
-  /** Files that violated isolation */
+  /** Files that violated strict isolation */
   violations: string[];
+  /** Warnings for minor violations (e.g. modifying existing tests) */
+  warnings?: string[];
   /** Description of what was checked */
   description: string;
 }

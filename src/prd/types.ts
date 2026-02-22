@@ -22,6 +22,10 @@ export interface StoryRouting {
   estimatedLOC?: number;
   /** Implementation risks (from LLM classifier) */
   risks?: string[];
+  /** Classification method used */
+  strategy?: "keyword" | "llm";
+  /** Model used for classification (if LLM) */
+  llmModel?: string;
 }
 
 /** Escalation attempt tracking */
@@ -167,6 +171,12 @@ export interface PRD {
   updatedAt: string;
   /** All user stories */
   userStories: UserStory[];
+  /** Analyze configuration used for generation */
+  analyzeConfig?: {
+    model: string;
+    llmEnhanced: boolean;
+    maxStoriesPerFeature: number;
+  };
   /** Acceptance test overrides (AC-N → reason for accepting despite test failure) */
   acceptanceOverrides?: Record<string, string>;
 }

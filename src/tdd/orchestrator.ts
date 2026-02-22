@@ -206,7 +206,15 @@ async function runTddSession(
       violations: isolation.violations,
     });
   } else if (isolation) {
-    logger.info("tdd", "✓ Isolation maintained", { role, storyId: story.id });
+    if (isolation.warnings && isolation.warnings.length > 0) {
+      logger.warn("tdd", "⚠ Isolation maintained with warnings", {
+        role,
+        storyId: story.id,
+        warnings: isolation.warnings,
+      });
+    } else {
+      logger.info("tdd", "✓ Isolation maintained", { role, storyId: story.id });
+    }
   }
 
   return {
