@@ -8,7 +8,7 @@ import type { Complexity, TestStrategy } from "../config";
 import type { ModelTier } from "../config";
 
 /** User story status */
-export type StoryStatus = "pending" | "in-progress" | "passed" | "failed" | "skipped" | "blocked";
+export type StoryStatus = "pending" | "in-progress" | "passed" | "failed" | "skipped" | "blocked" | "paused";
 
 /** Routing metadata per story */
 export interface StoryRouting {
@@ -97,8 +97,8 @@ export function getExpectedFiles(story: UserStory): string[] {
 // ============================================================================
 
 /**
- * Check if a PRD run is stalled — all remaining stories are blocked or
- * depend on blocked stories, making forward progress impossible.
+ * Check if a PRD run is stalled — all remaining stories are blocked, paused, or
+ * depend on blocked/paused stories, making forward progress impossible.
  */
 export function isStalled(prd: PRD): boolean {
   const remaining = prd.userStories.filter(
@@ -107,12 +107,13 @@ export function isStalled(prd: PRD): boolean {
   if (remaining.length === 0) return false;
 
   const blockedIds = new Set(
-    prd.userStories.filter(s => s.status === "blocked" || s.status === "failed").map(s => s.id)
+    prd.userStories.filter(s => s.status === "blocked" || s.status === "failed" || s.status === "paused").map(s => s.id)
   );
 
   return remaining.every(s =>
     s.status === "blocked" ||
     s.status === "failed" ||
+    s.status === "paused" ||
     s.dependencies.some(dep => blockedIds.has(dep))
   );
 }
@@ -134,6 +135,7 @@ export function markStoryAsBlocked(prd: PRD, storyId: string, reason: string): v
 export function generateHumanHaltSummary(prd: PRD): string {
   const blocked = prd.userStories.filter(s => s.status === "blocked");
   const failed = prd.userStories.filter(s => s.status === "failed");
+  const paused = prd.userStories.filter(s => s.status === "paused");
   const pending = prd.userStories.filter(s => s.status === "pending" || s.status === "in-progress");
 
   const lines = [
@@ -144,12 +146,15 @@ export function generateHumanHaltSummary(prd: PRD): string {
     ``,
     `Failed (${failed.length}):`,
     ...failed.map(s => `  ${s.id}: ${s.title} — ${s.priorErrors?.slice(-1)[0] || "unknown"}`),
+    ``,
+    `Paused (${paused.length}):`,
+    ...paused.map(s => `  ${s.id}: ${s.title} — ${s.priorErrors?.slice(-1)[0] || "user paused"}`),
   ];
 
   if (pending.length > 0) {
     lines.push(
       ``,
-      `Waiting on blocked dependencies (${pending.length}):`,
+      `Waiting on blocked/paused dependencies (${pending.length}):`,
       ...pending.map(s => `  ${s.id}: ${s.title} — depends on: ${s.dependencies.join(", ")}`)
     );
   }

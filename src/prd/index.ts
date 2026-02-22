@@ -53,6 +53,7 @@ export function getNextStory(prd: PRD): UserStory | null {
         s.status !== "skipped" &&
         s.status !== "blocked" &&
         s.status !== "failed" &&
+        s.status !== "paused" &&
         s.dependencies.every((dep) => completedIds.has(dep)),
     ) ?? null
   );
@@ -77,16 +78,18 @@ export function countStories(prd: PRD): {
   pending: number;
   skipped: number;
   blocked: number;
+  paused: number;
 } {
   return {
     total: prd.userStories.length,
     passed: prd.userStories.filter((s) => s.passes || s.status === "passed").length,
     failed: prd.userStories.filter((s) => s.status === "failed").length,
     pending: prd.userStories.filter(
-      (s) => !s.passes && s.status !== "passed" && s.status !== "failed" && s.status !== "skipped" && s.status !== "blocked"
+      (s) => !s.passes && s.status !== "passed" && s.status !== "failed" && s.status !== "skipped" && s.status !== "blocked" && s.status !== "paused"
     ).length,
     skipped: prd.userStories.filter((s) => s.status === "skipped").length,
     blocked: prd.userStories.filter((s) => s.status === "blocked").length,
+    paused: prd.userStories.filter((s) => s.status === "paused").length,
   };
 }
 
@@ -113,5 +116,13 @@ export function markStorySkipped(prd: PRD, storyId: string): void {
   const story = prd.userStories.find((s) => s.id === storyId);
   if (story) {
     story.status = "skipped";
+  }
+}
+
+/** Mark a story as paused */
+export function markStoryPaused(prd: PRD, storyId: string): void {
+  const story = prd.userStories.find((s) => s.id === storyId);
+  if (story) {
+    story.status = "paused";
   }
 }

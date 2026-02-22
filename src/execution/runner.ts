@@ -12,7 +12,7 @@ import path from "node:path";
 import type { NaxConfig, ModelTier } from "../config";
 import { getAgent } from "../agents";
 import { resolveModel } from "../config/schema";
-import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryFailed, isStalled, markStoryAsBlocked, generateHumanHaltSummary } from "../prd";
+import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryFailed, markStoryPaused, isStalled, markStoryAsBlocked, generateHumanHaltSummary } from "../prd";
 import type { UserStory } from "../prd";
 import { routeTask } from "../routing";
 import { routeBatch as llmRouteBatch, clearCache as clearLlmCache } from "../routing/strategies/llm";
@@ -509,18 +509,24 @@ export async function run(options: RunOptions): Promise<RunResult> {
         // Pipeline stopped early — handle based on finalAction
         switch (pipelineResult.finalAction) {
           case "pause":
+            // Mark story as paused and continue with non-dependent stories
+            markStoryPaused(prd, story.id);
+            await savePRD(prd, prdPath);
+            prdDirty = true;
+
+            logger?.warn("pipeline", "Story paused", {
+              storyId: story.id,
+              reason: pipelineResult.reason,
+            });
+
             await fireHook(hooks, "on-pause", hookCtx(feature, {
               storyId: story.id,
               reason: pipelineResult.reason || "Pipeline paused",
               cost: totalCost,
             }), workdir);
-            return {
-              success: false,
-              iterations,
-              storiesCompleted,
-              totalCost,
-              durationMs: Date.now() - startTime,
-            };
+
+            // Continue to next story instead of returning
+            break;
 
           case "skip":
             // Story already marked as skipped in queue-check stage
