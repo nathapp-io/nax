@@ -22,9 +22,9 @@ export interface StoryRouting {
   estimatedLOC?: number;
   /** Implementation risks (from LLM classifier) */
   risks?: string[];
-  /** Classification method used */
+  /** Classification strategy used */
   strategy?: "keyword" | "llm";
-  /** Model used for classification (if LLM) */
+  /** Model used for classification (if LLM strategy) */
   llmModel?: string;
 }
 
@@ -176,11 +176,18 @@ export interface PRD {
   updatedAt: string;
   /** All user stories */
   userStories: UserStory[];
-  /** Analyze configuration used for generation */
+  /** Configuration used during analyze phase */
   analyzeConfig?: {
+    /** nax version that generated this PRD */
+    naxVersion: string;
+    /** Model tier used for analysis */
     model: string;
+    /** Whether LLM-enhanced decomposition was used */
     llmEnhanced: boolean;
+    /** Maximum stories per feature (from config) */
     maxStoriesPerFeature: number;
+    /** Routing strategy used */
+    routingStrategy: "keyword" | "llm";
   };
   /** Acceptance test overrides (AC-N → reason for accepting despite test failure) */
   acceptanceOverrides?: Record<string, string>;

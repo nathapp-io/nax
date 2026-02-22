@@ -209,6 +209,8 @@ export interface DecomposedStory {
   estimatedLOC: number;
   /** Implementation risks */
   risks: string[];
+  /** Test strategy recommendation from LLM */
+  testStrategy?: "three-session-tdd" | "test-after";
 }
 
 /**

@@ -456,6 +456,12 @@ Decompose this spec into user stories. For each story, provide:
 9. reasoning: Why this complexity level
 10. estimatedLOC: Estimated lines of code to change
 11. risks: Array of implementation risks
+12. testStrategy: "three-session-tdd" | "test-after"
+
+testStrategy rules:
+- "three-session-tdd": ONLY for complex/expert tasks that are security-critical (auth, encryption, tokens, credentials) or define public API contracts consumers depend on
+- "test-after": for all other tasks including simple/medium complexity
+- A "simple" complexity task should almost never be "three-session-tdd"
 
 Complexity classification rules:
 - simple: 1-3 files, <100 LOC, straightforward implementation, existing patterns
@@ -487,7 +493,8 @@ Respond with ONLY a JSON array (no markdown code fences):
   "contextFiles": ["src/path/to/file.ts"],
   "reasoning": "Why this complexity level",
   "estimatedLOC": 150,
-  "risks": ["Risk 1"]
+  "risks": ["Risk 1"],
+  "testStrategy": "test-after"
 }]`;
   }
 
@@ -554,6 +561,7 @@ Respond with ONLY a JSON array (no markdown code fences):
         reasoning: String(item.reasoning || "No reasoning provided"),
         estimatedLOC: Number(item.estimatedLOC) || 0,
         risks: Array.isArray(item.risks) ? item.risks : [],
+        testStrategy: item.testStrategy === "three-session-tdd" ? "three-session-tdd" : item.testStrategy === "test-after" ? "test-after" : undefined,
       };
     });
 

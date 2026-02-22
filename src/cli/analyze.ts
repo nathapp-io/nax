@@ -11,7 +11,7 @@ import type { PRD, UserStory } from "../prd";
 import type { NaxConfig } from "../config";
 import type { CodebaseScan } from "../analyze/types";
 import { scanCodebase } from "../analyze/scanner";
-import { routeTask, classifyComplexity, determineTestStrategy } from "../routing";
+import { routeTask, classifyComplexity } from "../routing";
 import { getAgent } from "../agents/registry";
 import { resolveModel } from "../config/schema";
 import { loadPRD } from "../prd";
@@ -101,22 +101,26 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
 
       // Convert decomposed stories to UserStory format with routing
       userStories = result.stories.map((ds) => {
-        // Determine test strategy using the LLM-provided complexity
-        // We bypass routeTask() here to avoid re-classifying complexity via keywords
-        // (which might conflict with the LLM's "simple" classification if criteria count is high)
-        const testStrategy = determineTestStrategy(
-          ds.complexity,
-          ds.title,
-          ds.description,
-          ds.tags
-        );
+        // Use LLM's testStrategy if provided, otherwise fall back to keyword-based
+        let testStrategy: import("../config").TestStrategy;
+        let routingStrategy: "llm" | "keyword";
 
-        // Derive model tier from config based on LLM complexity
-        // (We can't rely on routeTask here either)
-        // Note: We need to import complexityToModelTier or duplicate logic.
-        // For now, let's use routeTask but override the strategy.
-        // Actually, routeTask doesn't expose the complexity->tier mapping publicly easily.
-        // Let's just assume we want to respect the LLM's complexity.
+        if (ds.testStrategy) {
+          // LLM provided testStrategy directly — trust it
+          testStrategy = ds.testStrategy;
+          routingStrategy = "llm";
+        } else {
+          // Fallback: use keyword-based determination
+          const routing = routeTask(
+            ds.title,
+            ds.description,
+            ds.acceptanceCriteria,
+            ds.tags,
+            config,
+          );
+          testStrategy = routing.testStrategy;
+          routingStrategy = "keyword";
+        }
 
         return {
           id: ds.id,
@@ -130,13 +134,13 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
           escalations: [],
           attempts: 0,
           routing: {
-            complexity: ds.complexity,
+            complexity: ds.complexity, // Use decompose complexity
             testStrategy,
             reasoning: ds.reasoning,
             estimatedLOC: ds.estimatedLOC,
             risks: ds.risks,
-            strategy: "llm",
-            llmModel: modelDef.model,
+            strategy: routingStrategy,
+            llmModel: routingStrategy === "llm" ? modelDef.model : undefined,
           },
           contextFiles: ds.contextFiles,
         };
@@ -169,12 +173,19 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
     userStories = applyKeywordClassification(userStories, config);
   }
 
-  // Check story count limit (MEM-1: prevent memory exhaustion)
+  // Check story count limit — warn but don't block
   if (config && userStories.length > config.execution.maxStoriesPerFeature) {
-    throw new Error(
-      `Feature has ${userStories.length} stories, exceeding limit of ${config.execution.maxStoriesPerFeature}.\n` +
-      `  Split this feature into smaller features or increase maxStoriesPerFeature in config.`
-    );
+    logger.warn("cli", `⚠ Feature has ${userStories.length} stories, exceeding recommended limit of ${config.execution.maxStoriesPerFeature}. Consider splitting or re-running with stricter grouping.`);
+  }
+
+  // Read nax version from package.json
+  let naxVersion = "unknown";
+  try {
+    const pkgPath = new URL("../../package.json", import.meta.url);
+    const pkg = await Bun.file(pkgPath).json();
+    naxVersion = pkg.version;
+  } catch {
+    // Ignore — version is metadata only
   }
 
   // Build PRD
@@ -187,9 +198,11 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
     updatedAt: now,
     userStories,
     analyzeConfig: config ? {
+      naxVersion,
       model: config.analyze.model,
       llmEnhanced: config.analyze.llmEnhanced,
       maxStoriesPerFeature: config.execution.maxStoriesPerFeature,
+      routingStrategy: config.analyze.llmEnhanced ? "llm" : "keyword",
     } : undefined,
   };
 
@@ -418,7 +431,7 @@ function applyKeywordClassification(stories: UserStory[], config?: NaxConfig): U
         reasoning: `Keyword-based classification: ${complexity}`,
         estimatedLOC: estimateLOCFromComplexity(complexity),
         risks: [],
-        strategy: "keyword",
+        strategy: "keyword" as const,
       },
     };
   });
@@ -487,12 +500,24 @@ ${story.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
         if (result.stories.length > 0) {
           const ds = result.stories[0];
 
-          const testStrategy = determineTestStrategy(
-            ds.complexity,
-            story.title,
-            story.description,
-            story.tags,
-          );
+          // Use LLM's testStrategy if provided, otherwise fallback to keyword
+          let testStrategy: import("../config").TestStrategy;
+          let routingStrategy: "llm" | "keyword";
+
+          if (ds.testStrategy) {
+            testStrategy = ds.testStrategy;
+            routingStrategy = "llm";
+          } else {
+            const routing = routeTask(
+              story.title,
+              story.description,
+              story.acceptanceCriteria,
+              story.tags,
+              config,
+            );
+            testStrategy = routing.testStrategy;
+            routingStrategy = "keyword";
+          }
 
           updatedStories.push({
             ...story,
@@ -502,8 +527,8 @@ ${story.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
               reasoning: ds.reasoning,
               estimatedLOC: ds.estimatedLOC,
               risks: ds.risks,
-              strategy: "llm",
-              llmModel: modelDef.model,
+              strategy: routingStrategy,
+              llmModel: routingStrategy === "llm" ? modelDef.model : undefined,
             },
             contextFiles: ds.contextFiles,
           });
