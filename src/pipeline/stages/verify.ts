@@ -6,7 +6,7 @@
  *
  * @returns
  * - `continue`: Tests passed
- * - `fail`: Tests failed (hard failure)
+ * - `escalate`: Tests failed (retry with escalation)
  *
  * @example
  * ```ts
@@ -16,7 +16,7 @@
  *
  * // Tests fail
  * await verifyStage.execute(ctx);
- * // Returns: { action: "fail", reason: "Tests failed (exit code 1)" }
+ * // Returns: { action: "escalate", reason: "Tests failed (exit code 1)" }
  * ```
  */
 
@@ -104,7 +104,7 @@ export const verifyStage: PipelineStage = {
       }
 
       return {
-        action: "fail",
+        action: "escalate",
         reason: `Tests failed (exit code ${result.exitCode})`,
       };
     }
