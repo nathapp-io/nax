@@ -27,7 +27,7 @@ import {
   formatProgress,
 } from "./helpers";
 import { appendProgress } from "./progress";
-import { runPostAgentVerification } from "./post-verify";
+import { runPostAgentVerification, captureGitRef } from "./post-verify";
 import { runPipeline } from "../pipeline/runner";
 import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext } from "../pipeline/types";
@@ -423,6 +423,9 @@ export async function run(options: RunOptions): Promise<RunResult> {
         continue;
       }
 
+      // Capture git ref for scoped verification
+      const storyGitRef = await captureGitRef(workdir);
+
       // Build pipeline context
       const storyStartTime = new Date().toISOString();
       const pipelineContext: PipelineContext = {
@@ -474,7 +477,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         // ADR-003: Post-agent verification (if quality.commands.test is configured)
         const verifyResult = await runPostAgentVerification({
           config, prd, prdPath, workdir, featureDir,
-          story, storiesToExecute, allStoryMetrics, timeoutRetryCountMap,
+          story, storiesToExecute, allStoryMetrics, timeoutRetryCountMap, storyGitRef,
         });
         const verificationPassed = verifyResult.passed;
         prd = verifyResult.prd;

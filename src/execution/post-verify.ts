@@ -14,6 +14,62 @@ import { appendProgress } from "./progress";
 import type { StoryMetrics } from "../metrics";
 import { getLogger } from "../logger";
 
+import { spawn } from "bun";
+
+/**
+ * Capture current git HEAD ref for scoped verification.
+ */
+export async function captureGitRef(workdir: string): Promise<string | undefined> {
+  try {
+    const proc = spawn({
+      cmd: ["git", "rev-parse", "HEAD"],
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) return undefined;
+    const stdout = await new Response(proc.stdout).text();
+    return stdout.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Get test files changed since a git ref.
+ * Returns empty array if detection fails (falls back to full suite).
+ */
+async function getChangedTestFiles(workdir: string, gitRef?: string): Promise<string[]> {
+  if (!gitRef) return [];
+  try {
+    const proc = spawn({
+      cmd: ["git", "diff", "--name-only", gitRef, "HEAD"],
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) return [];
+    const stdout = await new Response(proc.stdout).text();
+    return stdout.trim().split("\n").filter(
+      f => f && (f.includes("test/") || f.includes("__tests__/") || f.endsWith(".test.ts") || f.endsWith(".spec.ts"))
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Scope a test command to only run specific test files.
+ * Returns original command if no test files provided.
+ */
+function scopeTestCommand(baseCommand: string, testFiles: string[]): string {
+  if (testFiles.length === 0) return baseCommand;
+  return `${baseCommand} ${testFiles.join(" ")}`;
+}
+
+
 /**
  * Safely get logger instance, returns null if not initialized
  */
@@ -35,6 +91,8 @@ export interface PostVerifyOptions {
   storiesToExecute: UserStory[];
   allStoryMetrics: StoryMetrics[];
   timeoutRetryCountMap: Map<string, number>;
+  /** Git ref captured before story execution, for scoped verification */
+  storyGitRef?: string;
 }
 
 export interface PostVerifyResult {
@@ -56,22 +114,28 @@ export interface PostVerifyResult {
  * not user/PRD input. No shell injection risk from untrusted sources.
  */
 export async function runPostAgentVerification(opts: PostVerifyOptions): Promise<PostVerifyResult> {
-  const { config, prd, prdPath, workdir, featureDir, story, storiesToExecute, allStoryMetrics, timeoutRetryCountMap } = opts;
+  const { config, prd, prdPath, workdir, featureDir, story, storiesToExecute, allStoryMetrics, timeoutRetryCountMap, storyGitRef } = opts;
   const logger = getSafeLogger();
 
   if (!config.quality.commands.test) {
     return { passed: true, prd };
   }
 
+  // Scoped verification: only run test files changed by this story
+  const changedTestFiles = await getChangedTestFiles(workdir, storyGitRef);
+  const testCommand = scopeTestCommand(config.quality.commands.test, changedTestFiles);
+
   logger?.debug("verification", "Running verification", {
-    command: config.quality.commands.test,
+    command: testCommand,
+    scoped: changedTestFiles.length > 0,
+    scopedFiles: changedTestFiles.length > 0 ? changedTestFiles : undefined,
   });
 
   const timeoutRetryCount = timeoutRetryCountMap.get(story.id) || 0;
   const verificationResult = await runVerification({
     workingDirectory: workdir,
     expectedFiles: getExpectedFiles(story),
-    command: config.quality.commands.test,
+    command: testCommand,
     timeoutSeconds: config.execution.verificationTimeoutSeconds,
     forceExit: config.quality.forceExit,
     detectOpenHandles: config.quality.detectOpenHandles,
