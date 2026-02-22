@@ -17,6 +17,8 @@ export interface IsolationCheck {
   violations: string[];
   /** Warnings for minor violations (e.g. modifying existing tests) */
   warnings?: string[];
+  /** Files that matched allowed paths (soft violations, logged as warnings) */
+  softViolations?: string[];
   /** Description of what was checked */
   description: string;
 }

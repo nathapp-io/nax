@@ -61,21 +61,52 @@ export async function getStagedFiles(workdir: string): Promise<string[]> {
   return output.trim().split("\n").filter(Boolean);
 }
 
+/** Check if a file path matches any of the allowed patterns (glob-like) */
+function matchesAllowedPath(filePath: string, allowedPaths: string[]): boolean {
+  return allowedPaths.some((pattern) => {
+    // Simple glob matching: ** = any directory, * = any filename segment
+    const regexPattern = pattern
+      .replace(/\*\*/g, ".*")
+      .replace(/\*/g, "[^/]*")
+      .replace(/\//g, "\\/");
+    const regex = new RegExp(`^${regexPattern}$`);
+    return regex.test(filePath);
+  });
+}
+
 /**
  * Verify test writer isolation:
  * Only test files should be created/modified.
  * No source files should be touched.
+ *
+ * @param workdir - Working directory
+ * @param beforeRef - Git ref to diff against
+ * @param allowedPaths - Glob patterns for files that can be modified (soft violations)
  */
 export async function verifyTestWriterIsolation(
   workdir: string,
   beforeRef: string,
+  allowedPaths: string[] = ["src/index.ts", "src/**/index.ts"],
 ): Promise<IsolationCheck> {
   const changed = await getChangedFiles(workdir, beforeRef);
-  const violations = changed.filter((f) => isSourceFile(f) && !isTestFile(f));
+  const sourceFiles = changed.filter((f) => isSourceFile(f) && !isTestFile(f));
+
+  // Separate hard violations from soft violations (allowed paths)
+  const softViolations: string[] = [];
+  const violations: string[] = [];
+
+  for (const file of sourceFiles) {
+    if (matchesAllowedPath(file, allowedPaths)) {
+      softViolations.push(file);
+    } else {
+      violations.push(file);
+    }
+  }
 
   return {
     passed: violations.length === 0,
     violations,
+    softViolations,
     description: "Test writer should only modify test files, not source files",
   };
 }

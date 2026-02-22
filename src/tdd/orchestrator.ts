@@ -188,7 +188,8 @@ async function runTddSession(
   // Check isolation based on role
   let isolation;
   if (role === "test-writer") {
-    isolation = await verifyTestWriterIsolation(workdir, beforeRef);
+    const allowedPaths = config.tdd.testWriterAllowedPaths ?? ["src/index.ts", "src/**/index.ts"];
+    isolation = await verifyTestWriterIsolation(workdir, beforeRef, allowedPaths);
   } else if (role === "implementer") {
     isolation = await verifyImplementerIsolation(workdir, beforeRef);
   }
@@ -206,13 +207,21 @@ async function runTddSession(
       violations: isolation.violations,
     });
   } else if (isolation) {
+    if (isolation.softViolations && isolation.softViolations.length > 0) {
+      logger.warn("tdd", "⚠ Isolation soft violations (allowed files modified)", {
+        role,
+        storyId: story.id,
+        softViolations: isolation.softViolations,
+      });
+    }
     if (isolation.warnings && isolation.warnings.length > 0) {
       logger.warn("tdd", "⚠ Isolation maintained with warnings", {
         role,
         storyId: story.id,
         warnings: isolation.warnings,
       });
-    } else {
+    }
+    if (!isolation.softViolations?.length && !isolation.warnings?.length) {
       logger.info("tdd", "✓ Isolation maintained", { role, storyId: story.id });
     }
   }

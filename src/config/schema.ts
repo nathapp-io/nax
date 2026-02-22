@@ -139,6 +139,8 @@ export interface TddConfig {
     /** Model tier for verifier session (default: "fast") */
     verifier?: ModelTier;
   };
+  /** Glob patterns for files test-writer can modify (soft violations, logged as warnings) */
+  testWriterAllowedPaths?: string[];
 }
 
 /** Constitution config */
@@ -400,6 +402,7 @@ const TddConfigSchema = z.object({
     implementer: z.string().optional(),
     verifier: z.string().optional(),
   }).optional(),
+  testWriterAllowedPaths: z.array(z.string()).optional(),
 });
 
 const ConstitutionConfigSchema = z.object({
@@ -578,6 +581,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
       // implementer: undefined = uses story's routed tier
       verifier: "fast",
     },
+    testWriterAllowedPaths: ["src/index.ts", "src/**/index.ts"],
   },
   constitution: {
     enabled: true,
