@@ -67,7 +67,7 @@ export interface PipelineContext {
   /** Hooks configuration */
   hooks: HooksConfig;
   /** Plugin registry (optional, for plugin-provided extensions) */
-  pluginRegistry?: PluginRegistry;
+  plugins?: PluginRegistry;
   /** Constitution result (set by constitutionStage) */
   constitution?: ConstitutionResult;
   /** Context markdown for the agent (set by contextStage) */

@@ -38,6 +38,9 @@ import {
 import { saveRunMetrics, type StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import { getLogger } from "../logger";
+import { loadPlugins } from "../plugins/loader";
+import type { PluginRegistry } from "../plugins/registry";
+import * as os from "node:os";
 
 /** Run options */
 
@@ -145,7 +148,19 @@ export async function run(options: RunOptions): Promise<RunResult> {
     process.exit(1);
   }
 
+  // Load plugins (before try block so it's accessible in finally)
+  const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
+  const projectPluginsDir = path.join(workdir, "nax", "plugins");
+  const configPlugins = config.plugins || [];
+  const pluginRegistry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins);
+  const reporters = pluginRegistry.getReporters();
+
   try {
+
+    logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {
+      plugins: pluginRegistry.plugins.map(p => ({ name: p.name, version: p.version, provides: p.provides })),
+    });
+
     // Log run start
     const routingMode = config.routing.llm?.mode ?? "hybrid";
     logger?.info("run.start", `Starting feature: ${feature}`, {
@@ -183,6 +198,22 @@ export async function run(options: RunOptions): Promise<RunResult> {
     let prd = await loadPRD(prdPath);
     let prdDirty = false; // Track if PRD needs reloading
     const counts = countStories(prd);
+
+    // Update reporters with correct totalStories count
+    for (const reporter of reporters) {
+      if (reporter.onRunStart) {
+        try {
+          await reporter.onRunStart({
+            runId,
+            feature,
+            totalStories: counts.total,
+            startTime: runStartedAt,
+          });
+        } catch (error) {
+          logger?.warn("plugins", `Reporter '${reporter.name}' onRunStart failed`, { error });
+        }
+      }
+    }
 
     // MEM-1: Validate story count doesn't exceed limit
     if (counts.total > config.execution.maxStoriesPerFeature) {
@@ -437,6 +468,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         workdir,
         featureDir,
         hooks,
+        plugins: pluginRegistry,
         storyStartTime,
       };
 
@@ -485,7 +517,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         if (verificationPassed) {
           storiesCompleted += storiesToExecute.length;
 
-          // Log story completion
+          // Log story completion and emit reporter events
           for (const completedStory of storiesToExecute) {
             logger?.info("story.complete", `Story completed successfully`, {
               storyId: completedStory.id,
@@ -493,6 +525,25 @@ export async function run(options: RunOptions): Promise<RunResult> {
               totalCost,
               durationMs: Date.now() - startTime,
             });
+
+            // Emit onStoryComplete to reporters
+            for (const reporter of reporters) {
+              if (reporter.onStoryComplete) {
+                try {
+                  await reporter.onStoryComplete({
+                    runId,
+                    storyId: completedStory.id,
+                    status: "completed",
+                    durationMs: Date.now() - startTime,
+                    cost: pipelineResult.context.agentResult?.estimatedCost || 0,
+                    tier: routing.modelTier,
+                    testStrategy: routing.testStrategy,
+                  });
+                } catch (error) {
+                  logger?.warn("plugins", `Reporter '${reporter.name}' onStoryComplete failed`, { error });
+                }
+              }
+            }
           }
         }
 
@@ -528,6 +579,25 @@ export async function run(options: RunOptions): Promise<RunResult> {
               cost: totalCost,
             }), workdir);
 
+            // Emit onStoryComplete to reporters
+            for (const reporter of reporters) {
+              if (reporter.onStoryComplete) {
+                try {
+                  await reporter.onStoryComplete({
+                    runId,
+                    storyId: story.id,
+                    status: "paused",
+                    durationMs: Date.now() - startTime,
+                    cost: pipelineResult.context.agentResult?.estimatedCost || 0,
+                    tier: routing.modelTier,
+                    testStrategy: routing.testStrategy,
+                  });
+                } catch (error) {
+                  logger?.warn("plugins", `Reporter '${reporter.name}' onStoryComplete failed`, { error });
+                }
+              }
+            }
+
             // Continue to next story instead of returning
             break;
 
@@ -538,6 +608,25 @@ export async function run(options: RunOptions): Promise<RunResult> {
               reason: pipelineResult.reason,
             });
             prdDirty = true;
+
+            // Emit onStoryComplete to reporters
+            for (const reporter of reporters) {
+              if (reporter.onStoryComplete) {
+                try {
+                  await reporter.onStoryComplete({
+                    runId,
+                    storyId: story.id,
+                    status: "skipped",
+                    durationMs: Date.now() - startTime,
+                    cost: 0,
+                    tier: routing.modelTier,
+                    testStrategy: routing.testStrategy,
+                  });
+                } catch (error) {
+                  logger?.warn("plugins", `Reporter '${reporter.name}' onStoryComplete failed`, { error });
+                }
+              }
+            }
             break;
 
           case "fail":
@@ -561,6 +650,25 @@ export async function run(options: RunOptions): Promise<RunResult> {
               reason: pipelineResult.reason || "Pipeline failed",
               cost: totalCost,
             }), workdir);
+
+            // Emit onStoryComplete to reporters
+            for (const reporter of reporters) {
+              if (reporter.onStoryComplete) {
+                try {
+                  await reporter.onStoryComplete({
+                    runId,
+                    storyId: story.id,
+                    status: "failed",
+                    durationMs: Date.now() - startTime,
+                    cost: pipelineResult.context.agentResult?.estimatedCost || 0,
+                    tier: routing.modelTier,
+                    testStrategy: routing.testStrategy,
+                  });
+                } catch (error) {
+                  logger?.warn("plugins", `Reporter '${reporter.name}' onStoryComplete failed`, { error });
+                }
+              }
+            }
 
             break;
 
@@ -704,6 +812,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
           workdir,
           featureDir,
           hooks,
+          plugins: pluginRegistry,
         };
 
         // Run acceptance stage
@@ -834,6 +943,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
               workdir,
               featureDir,
               hooks,
+              plugins: pluginRegistry,
               storyStartTime: fixStoryStartTime,
             };
 
@@ -917,6 +1027,27 @@ export async function run(options: RunOptions): Promise<RunResult> {
       storyMetrics: storyMetricsSummary,
     });
 
+    // Emit onRunEnd to reporters
+    for (const reporter of reporters) {
+      if (reporter.onRunEnd) {
+        try {
+          await reporter.onRunEnd({
+            runId,
+            totalDurationMs: durationMs,
+            totalCost,
+            storySummary: {
+              completed: storiesCompleted,
+              failed: finalCounts.failed,
+              skipped: finalCounts.skipped,
+              paused: finalCounts.paused,
+            },
+          });
+        } catch (error) {
+          logger?.warn("plugins", `Reporter '${reporter.name}' onRunEnd failed`, { error });
+        }
+      }
+    }
+
     return {
       success: isComplete(prd),
       iterations,
@@ -925,6 +1056,13 @@ export async function run(options: RunOptions): Promise<RunResult> {
       durationMs,
     };
   } finally {
+    // Teardown plugins
+    try {
+      await pluginRegistry.teardownAll();
+    } catch (error) {
+      logger?.warn("plugins", "Plugin teardown failed", { error });
+    }
+
     // Always release lock, even if execution fails
     await releaseLock(workdir);
   }
