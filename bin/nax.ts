@@ -56,6 +56,7 @@ import {
   displayModelEfficiency,
   runsListCommand,
   runsShowCommand,
+  promptsCommand,
 } from "../src/cli";
 import { renderTui, PipelineEventEmitter, type StoryDisplayState } from "../src/tui";
 import { initLogger, type LogLevel } from "../src/logger";
@@ -691,6 +692,46 @@ program
         override: options.override,
         reason: options.reason,
       });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+// ── prompts ──────────────────────────────────────────
+program
+  .command("prompts")
+  .description("Assemble prompts for stories without executing agents")
+  .requiredOption("-f, --feature <name>", "Feature name")
+  .option("--story <id>", "Filter to a single story ID (e.g., US-003)")
+  .option("--out <dir>", "Output directory for prompt files (default: stdout)")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (options) => {
+    // Validate directory path
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    // Load config
+    const config = await loadConfig(workdir);
+
+    try {
+      const processedStories = await promptsCommand({
+        feature: options.feature,
+        workdir,
+        config,
+        storyId: options.story,
+        outputDir: options.out,
+      });
+
+      if (options.out) {
+        console.log(chalk.green(`\n✅ Prompts written to ${options.out}`));
+        console.log(chalk.dim(`   Processed ${processedStories.length} stories`));
+      }
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);

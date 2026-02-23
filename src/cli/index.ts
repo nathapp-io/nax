@@ -16,3 +16,7 @@ export {
   type RunsListOptions,
   type RunsShowOptions,
 } from "./runs";
+export {
+  promptsCommand,
+  type PromptsCommandOptions,
+} from "./prompts";

@@ -14,3 +14,8 @@ export {
 } from "./isolation";
 export { runThreeSessionTdd } from "./orchestrator";
 export { cleanupProcessTree, getPgid } from "./cleanup";
+export {
+  buildTestWriterPrompt,
+  buildImplementerPrompt,
+  buildVerifierPrompt,
+} from "./prompts";
