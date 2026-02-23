@@ -160,45 +160,60 @@ describe("config/merger", () => {
     test("concatenates hooks from both configs", () => {
       const base = {
         hooks: {
-          "on-start": { command: "echo base-start", enabled: true },
-          "on-complete": { command: "echo base-complete", enabled: true },
+          hooks: {
+            "on-start": { command: "echo base-start", enabled: true },
+            "on-complete": { command: "echo base-complete", enabled: true },
+          },
         },
       };
       const override = {
         hooks: {
-          "on-start": { command: "echo override-start", enabled: true },
-          "on-pause": { command: "echo override-pause", enabled: true },
+          hooks: {
+            "on-start": { command: "echo override-start", enabled: true },
+            "on-pause": { command: "echo override-pause", enabled: true },
+          },
         },
       };
       const result = deepMergeConfig(base, override);
 
-      expect(result.hooks).toEqual({
-        "on-start": { command: "echo base-start", enabled: true },
-        "on-complete": { command: "echo base-complete", enabled: true },
-        "on-start": { command: "echo override-start", enabled: true },
-        "on-pause": { command: "echo override-pause", enabled: true },
+      // When both configs have the same hook event, they are concatenated into an array
+      expect(result.hooks.hooks["on-start"]).toEqual([
+        { command: "echo base-start", enabled: true },
+        { command: "echo override-start", enabled: true },
+      ]);
+      expect(result.hooks.hooks["on-complete"]).toEqual({
+        command: "echo base-complete",
+        enabled: true,
+      });
+      expect(result.hooks.hooks["on-pause"]).toEqual({
+        command: "echo override-pause",
+        enabled: true,
       });
     });
 
     test("preserves all hook properties", () => {
       const base = {
         hooks: {
-          "on-start": { command: "echo base", timeout: 5000, enabled: true },
+          hooks: {
+            "on-start": { command: "echo base", timeout: 5000, enabled: true },
+          },
         },
       };
       const override = {
         hooks: {
-          "on-complete": { command: "echo override", timeout: 3000, enabled: false },
+          hooks: {
+            "on-complete": { command: "echo override", timeout: 3000, enabled: false },
+          },
         },
       };
       const result = deepMergeConfig(base, override);
 
-      expect(result.hooks["on-start"]).toEqual({
+      expect(result.hooks.hooks["on-start"]).toEqual({
         command: "echo base",
         timeout: 5000,
         enabled: true,
       });
-      expect(result.hooks["on-complete"]).toEqual({
+      expect(result.hooks.hooks["on-complete"]).toEqual({
         command: "echo override",
         timeout: 3000,
         enabled: false,
@@ -208,15 +223,19 @@ describe("config/merger", () => {
     test("handles empty hooks object", () => {
       const base = {
         hooks: {
-          "on-start": { command: "echo base", enabled: true },
+          hooks: {
+            "on-start": { command: "echo base", enabled: true },
+          },
         },
       };
       const override = {
-        hooks: {},
+        hooks: {
+          hooks: {},
+        },
       };
       const result = deepMergeConfig(base, override);
 
-      expect(result.hooks).toEqual({
+      expect(result.hooks.hooks).toEqual({
         "on-start": { command: "echo base", enabled: true },
       });
     });

@@ -227,7 +227,11 @@ describe("Hook Configuration Loading", () => {
   test("loads empty config when no hooks.json exists", async () => {
     const config = await loadHooksConfig("/tmp/nonexistent-hooks-dir");
 
-    expect(config).toEqual({ hooks: {} });
+    expect(config).toEqual({
+      hooks: {},
+      _global: { hooks: {} },
+      _skipGlobal: false,
+    });
   });
 
   test("merges global and project hooks", async () => {

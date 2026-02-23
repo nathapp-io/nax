@@ -44,9 +44,8 @@ export function resolveOptimizer(
 	if (pluginRegistry) {
 		const pluginOptimizers = pluginRegistry.getOptimizers();
 		if (pluginOptimizers.length > 0) {
-			// Use first plugin optimizer (plugin optimizers take precedence)
-			// Note: Plugin optimizer interface differs from built-in, will need adapter
-			return wrapPluginOptimizer(pluginOptimizers[0]);
+			// Use first plugin optimizer (plugin optimizers use the same interface)
+			return pluginOptimizers[0];
 		}
 	}
 
@@ -67,40 +66,3 @@ export function resolveOptimizer(
 	}
 }
 
-/**
- * Wrap a plugin optimizer to match the built-in interface.
- *
- * Plugin optimizers use a simpler interface with different field names.
- * This adapter bridges the two interfaces.
- */
-function wrapPluginOptimizer(
-	pluginOptimizer: import("../plugins/types.js").IPromptOptimizer,
-): IPromptOptimizer {
-	return {
-		name: `plugin:${pluginOptimizer.name}`,
-		async optimize(input) {
-			// Adapt built-in input to plugin input
-			const pluginInput: import("../plugins/types.js").PromptOptimizerInput =
-				{
-					prompt: input.prompt,
-					estimatedTokens: Math.ceil(input.prompt.length / 4),
-					story: input.stories[0], // Plugin interface only supports single story
-				};
-
-			// Call plugin optimizer
-			const pluginResult = await pluginOptimizer.optimize(pluginInput);
-
-			// Adapt plugin result to built-in result
-			return {
-				prompt: pluginResult.optimizedPrompt,
-				originalTokens: pluginInput.estimatedTokens,
-				optimizedTokens: pluginResult.estimatedTokens,
-				savings:
-					pluginInput.estimatedTokens > 0
-						? pluginResult.tokensSaved / pluginInput.estimatedTokens
-						: 0,
-				appliedRules: pluginResult.appliedStrategies,
-			};
-		},
-	};
-}

@@ -20,10 +20,11 @@ describe("validatePlugin", () => {
 						name: "test",
 						async optimize(input: any) {
 							return {
-								optimizedPrompt: input.prompt,
-								estimatedTokens: input.estimatedTokens,
-								tokensSaved: 0,
-								appliedStrategies: [],
+								prompt: input.prompt,
+								originalTokens: 100,
+								optimizedTokens: 100,
+								savings: 0,
+								appliedRules: [],
 							};
 						},
 					},
@@ -45,10 +46,11 @@ describe("validatePlugin", () => {
 						name: "test",
 						async optimize(input: any) {
 							return {
-								optimizedPrompt: input.prompt,
-								estimatedTokens: input.estimatedTokens,
-								tokensSaved: 0,
-								appliedStrategies: [],
+								prompt: input.prompt,
+								originalTokens: 100,
+								optimizedTokens: 100,
+								savings: 0,
+								appliedRules: [],
 							};
 						},
 					},
@@ -519,10 +521,11 @@ describe("validatePlugin", () => {
 						name: "test",
 						async optimize(input: any) {
 							return {
-								optimizedPrompt: input.prompt,
-								estimatedTokens: input.estimatedTokens,
-								tokensSaved: 0,
-								appliedStrategies: [],
+								prompt: input.prompt,
+								originalTokens: 100,
+								optimizedTokens: 100,
+								savings: 0,
+								appliedRules: [],
 							};
 						},
 					},
@@ -543,10 +546,11 @@ describe("validatePlugin", () => {
 						name: "test",
 						async optimize(input: any) {
 							return {
-								optimizedPrompt: input.prompt,
-								estimatedTokens: input.estimatedTokens,
-								tokensSaved: 0,
-								appliedStrategies: [],
+								prompt: input.prompt,
+								originalTokens: 100,
+								optimizedTokens: 100,
+								savings: 0,
+								appliedRules: [],
 							};
 						},
 					},

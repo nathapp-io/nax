@@ -9,9 +9,6 @@ export type {
 	PluginType,
 	PluginExtensions,
 	PluginConfigEntry,
-	IPromptOptimizer,
-	PromptOptimizerInput,
-	PromptOptimizerResult,
 	IReviewPlugin,
 	ReviewCheckResult,
 	IContextProvider,
@@ -20,6 +17,13 @@ export type {
 	RunStartEvent,
 	StoryCompleteEvent,
 	RunEndEvent,
+} from "./types";
+
+// Re-export optimizer types from optimizer module (via types.ts)
+export type {
+	IPromptOptimizer,
+	PromptOptimizerInput,
+	PromptOptimizerResult,
 } from "./types";
 
 export { validatePlugin } from "./validator";

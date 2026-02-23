@@ -47,7 +47,7 @@ export const optimizerStage: PipelineStage = {
 		}
 
 		// Resolve optimizer (checks plugins first, then config)
-		const optimizer = resolveOptimizer(ctx.config, ctx.pluginRegistry);
+		const optimizer = resolveOptimizer(ctx.config, ctx.plugins);
 
 		// Optimize the prompt
 		const result = await optimizer.optimize({

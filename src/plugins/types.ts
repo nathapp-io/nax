@@ -111,65 +111,14 @@ export interface PluginExtensions {
 // ============================================================================
 
 /**
- * Prompt optimizer input containing the unoptimized prompt and context.
+ * Re-export optimizer types from the optimizer module.
+ * Plugin optimizers use the same interface as built-in optimizers.
  */
-export interface PromptOptimizerInput {
-	/** The unoptimized prompt content */
-	prompt: string;
-	/** Token estimate for the unoptimized prompt */
-	estimatedTokens: number;
-	/** Story context (optional, for optimization decisions) */
-	story?: UserStory;
-}
-
-/**
- * Result from prompt optimization.
- */
-export interface PromptOptimizerResult {
-	/** The optimized prompt content */
-	optimizedPrompt: string;
-	/** Token estimate for the optimized prompt */
-	estimatedTokens: number;
-	/** Tokens saved by optimization */
-	tokensSaved: number;
-	/** Strategy or rule names applied */
-	appliedStrategies: string[];
-}
-
-/**
- * Prompt optimizer interface.
- *
- * Optimizers reduce prompt size while preserving critical information.
- * Used to stay within context limits and reduce costs.
- *
- * @example
- * ```ts
- * const optimizer: IPromptOptimizer = {
- *   name: "llmlingua",
- *   async optimize(input) {
- *     const compressed = await llmlingua.compress(input.prompt);
- *     return {
- *       optimizedPrompt: compressed,
- *       estimatedTokens: estimateTokens(compressed),
- *       tokensSaved: input.estimatedTokens - estimateTokens(compressed),
- *       appliedStrategies: ["llmlingua-v2"]
- *     };
- *   }
- * };
- * ```
- */
-export interface IPromptOptimizer {
-	/** Optimizer name (e.g., "rule-based", "llmlingua") */
-	name: string;
-
-	/**
-	 * Optimize a prompt to reduce token count.
-	 *
-	 * @param input - Unoptimized prompt with metadata
-	 * @returns Optimized prompt with savings metrics
-	 */
-	optimize(input: PromptOptimizerInput): Promise<PromptOptimizerResult>;
-}
+export type {
+	IPromptOptimizer,
+	PromptOptimizerInput,
+	PromptOptimizerResult,
+} from "../optimizer/types";
 
 // ============================================================================
 // Review Extension

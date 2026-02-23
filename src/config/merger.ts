@@ -50,10 +50,52 @@ export function deepMergeConfig<T = NaxConfig>(
 
     // Special case: hooks concatenation
     if (key === "hooks" && isPlainObject(baseValue) && isPlainObject(overrideValue)) {
-      result[key] = {
-        ...(baseValue as Record<string, unknown>),
-        ...(overrideValue as Record<string, unknown>),
-      };
+      const baseHooks = baseValue as Record<string, unknown>;
+      const overrideHooks = overrideValue as Record<string, unknown>;
+      const merged: Record<string, unknown> = { ...baseHooks };
+
+      // Merge the nested hooks object
+      if (isPlainObject(baseHooks.hooks) && isPlainObject(overrideHooks.hooks)) {
+        const baseHookDefs = baseHooks.hooks as Record<string, unknown>;
+        const overrideHookDefs = overrideHooks.hooks as Record<string, unknown>;
+        const mergedHookDefs: Record<string, unknown> = {};
+
+        // Collect all hook event names
+        const allHookNames = new Set([
+          ...Object.keys(baseHookDefs),
+          ...Object.keys(overrideHookDefs),
+        ]);
+
+        // For each hook event, concatenate hooks into an array
+        for (const hookName of allHookNames) {
+          const baseHook = baseHookDefs[hookName];
+          const overrideHook = overrideHookDefs[hookName];
+
+          if (baseHook && overrideHook) {
+            // Both exist - create array with both
+            mergedHookDefs[hookName] = [baseHook, overrideHook];
+          } else if (overrideHook) {
+            // Only override exists
+            mergedHookDefs[hookName] = overrideHook;
+          } else {
+            // Only base exists
+            mergedHookDefs[hookName] = baseHook;
+          }
+        }
+
+        merged.hooks = mergedHookDefs;
+      } else if (overrideHooks.hooks) {
+        merged.hooks = overrideHooks.hooks;
+      }
+
+      // Handle other hook config fields (e.g., skipGlobal)
+      for (const hookKey of Object.keys(overrideHooks)) {
+        if (hookKey !== "hooks") {
+          merged[hookKey] = overrideHooks[hookKey];
+        }
+      }
+
+      result[key] = merged;
       continue;
     }
 
