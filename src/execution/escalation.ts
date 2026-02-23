@@ -22,7 +22,7 @@ import type { TierConfig } from "../config";
  * ```
  */
 export function escalateTier(currentTier: string, tierOrder: TierConfig[]): string | null {
-  const currentIndex = tierOrder.findIndex(t => t.tier === currentTier);
+  const currentIndex = tierOrder.findIndex((t) => t.tier === currentTier);
   if (currentIndex === -1 || currentIndex === tierOrder.length - 1) {
     return null;
   }
@@ -33,7 +33,7 @@ export function escalateTier(currentTier: string, tierOrder: TierConfig[]): stri
  * Get the tier config for a given tier name.
  */
 export function getTierConfig(tierName: string, tierOrder: TierConfig[]): TierConfig | undefined {
-  return tierOrder.find(t => t.tier === tierName);
+  return tierOrder.find((t) => t.tier === tierName);
 }
 
 /**

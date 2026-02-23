@@ -5,8 +5,8 @@
  * Supports constitution injection for project-level governance.
  */
 
-import type { UserStory } from "../prd";
 import type { ConstitutionResult } from "../constitution";
+import type { UserStory } from "../prd";
 
 /**
  * Build prompt for single-session (test-after) execution

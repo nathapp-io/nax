@@ -47,9 +47,7 @@ export function AgentPanel({ focused = false, outputLines = [] }: AgentPanelProp
   const borderColor = focused ? "cyan" : "gray";
 
   // Buffer output lines (last N lines only)
-  const bufferedLines = outputLines.length > MAX_OUTPUT_LINES
-    ? outputLines.slice(-MAX_OUTPUT_LINES)
-    : outputLines;
+  const bufferedLines = outputLines.length > MAX_OUTPUT_LINES ? outputLines.slice(-MAX_OUTPUT_LINES) : outputLines;
 
   const hasOutput = bufferedLines.length > 0;
 
@@ -65,11 +63,11 @@ export function AgentPanel({ focused = false, outputLines = [] }: AgentPanelProp
       {/* Output buffer */}
       <Box flexDirection="column" paddingX={1} paddingY={1}>
         {hasOutput ? (
-          bufferedLines.map((line, i) => (
-            <Text key={i}>{line}</Text>
-          ))
+          bufferedLines.map((line, i) => <Text key={i}>{line}</Text>)
         ) : (
-          <Text dimColor><Spinner type="dots" /> Waiting for agent...</Text>
+          <Text dimColor>
+            <Spinner type="dots" /> Waiting for agent...
+          </Text>
         )}
       </Box>
     </Box>

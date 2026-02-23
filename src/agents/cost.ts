@@ -22,25 +22,25 @@ export interface TokenUsage {
 /** Cost estimate with confidence indicator */
 export interface CostEstimate {
   cost: number;
-  confidence: 'exact' | 'estimated' | 'fallback';
+  confidence: "exact" | "estimated" | "fallback";
 }
 
 /** Model tier cost rates (as of 2025-01) */
 export const COST_RATES: Record<ModelTier, ModelCostRates> = {
   fast: {
     // Haiku 4.5
-    inputPer1M: 0.80,
-    outputPer1M: 4.00,
+    inputPer1M: 0.8,
+    outputPer1M: 4.0,
   },
   balanced: {
     // Sonnet 4.5
-    inputPer1M: 3.00,
-    outputPer1M: 15.00,
+    inputPer1M: 3.0,
+    outputPer1M: 15.0,
   },
   powerful: {
     // Opus 4
-    inputPer1M: 15.00,
-    outputPer1M: 75.00,
+    inputPer1M: 15.0,
+    outputPer1M: 75.0,
   },
 };
 
@@ -50,7 +50,7 @@ export const COST_RATES: Record<ModelTier, ModelCostRates> = {
 export interface TokenUsageWithConfidence {
   inputTokens: number;
   outputTokens: number;
-  confidence: 'exact' | 'estimated';
+  confidence: "exact" | "estimated";
 }
 
 /**
@@ -83,26 +83,28 @@ export interface TokenUsageWithConfidence {
 export function parseTokenUsage(output: string): TokenUsageWithConfidence | null {
   // Try JSON format first (most reliable) - confidence: exact
   try {
-    const jsonMatch = output.match(/\{[^}]*"usage"\s*:\s*\{[^}]*"input_tokens"\s*:\s*(\d+)[^}]*"output_tokens"\s*:\s*(\d+)[^}]*\}[^}]*\}/);
+    const jsonMatch = output.match(
+      /\{[^}]*"usage"\s*:\s*\{[^}]*"input_tokens"\s*:\s*(\d+)[^}]*"output_tokens"\s*:\s*(\d+)[^}]*\}[^}]*\}/,
+    );
     if (jsonMatch) {
       return {
         inputTokens: Number.parseInt(jsonMatch[1], 10),
         outputTokens: Number.parseInt(jsonMatch[2], 10),
-        confidence: 'exact',
+        confidence: "exact",
       };
     }
 
     // Try parsing as full JSON object
-    const lines = output.split('\n');
+    const lines = output.split("\n");
     for (const line of lines) {
-      if (line.trim().startsWith('{')) {
+      if (line.trim().startsWith("{")) {
         try {
           const parsed = JSON.parse(line);
           if (parsed.usage?.input_tokens && parsed.usage?.output_tokens) {
             return {
               inputTokens: parsed.usage.input_tokens,
               outputTokens: parsed.usage.output_tokens,
-              confidence: 'exact',
+              confidence: "exact",
             };
           }
         } catch {
@@ -119,7 +121,9 @@ export function parseTokenUsage(output: string): TokenUsageWithConfidence | null
   // Use word boundary at start, require colon or space after keyword, then digits
   // confidence: estimated (regex-based)
   const inputMatch = output.match(/\b(?:input|input_tokens)\s*:\s*(\d{2,})|(?:input)\s+(?:tokens?)\s*:\s*(\d{2,})/i);
-  const outputMatch = output.match(/\b(?:output|output_tokens)\s*:\s*(\d{2,})|(?:output)\s+(?:tokens?)\s*:\s*(\d{2,})/i);
+  const outputMatch = output.match(
+    /\b(?:output|output_tokens)\s*:\s*(\d{2,})|(?:output)\s+(?:tokens?)\s*:\s*(\d{2,})/i,
+  );
 
   if (inputMatch && outputMatch) {
     // Extract token counts (may be in capture group 1 or 2)
@@ -134,7 +138,7 @@ export function parseTokenUsage(output: string): TokenUsageWithConfidence | null
     return {
       inputTokens,
       outputTokens,
-      confidence: 'estimated',
+      confidence: "estimated",
     };
   }
 
@@ -189,10 +193,7 @@ export function estimateCost(
  * }
  * ```
  */
-export function estimateCostFromOutput(
-  modelTier: ModelTier,
-  output: string,
-): CostEstimate | null {
+export function estimateCostFromOutput(modelTier: ModelTier, output: string): CostEstimate | null {
   const usage = parseTokenUsage(output);
   if (!usage) {
     return null;
@@ -221,10 +222,7 @@ export function estimateCostFromOutput(
  * // Sonnet: 2 min * $0.05/min = $0.10
  * ```
  */
-export function estimateCostByDuration(
-  modelTier: ModelTier,
-  durationMs: number,
-): CostEstimate {
+export function estimateCostByDuration(modelTier: ModelTier, durationMs: number): CostEstimate {
   const costPerMinute: Record<ModelTier, number> = {
     fast: 0.01,
     balanced: 0.05,
@@ -234,7 +232,7 @@ export function estimateCostByDuration(
   const cost = minutes * costPerMinute[modelTier];
   return {
     cost,
-    confidence: 'fallback',
+    confidence: "fallback",
   };
 }
 
@@ -260,11 +258,11 @@ export function formatCostWithConfidence(estimate: CostEstimate): string {
   const formattedCost = `$${estimate.cost.toFixed(2)}`;
 
   switch (estimate.confidence) {
-    case 'exact':
+    case "exact":
       return formattedCost;
-    case 'estimated':
+    case "estimated":
       return `~${formattedCost}`;
-    case 'fallback':
+    case "fallback":
       return `~${formattedCost} (duration-based)`;
   }
 }

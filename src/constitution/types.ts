@@ -14,6 +14,8 @@ export interface ConstitutionConfig {
   path: string;
   /** Maximum tokens allowed for constitution content */
   maxTokens: number;
+  /** Skip loading global constitution (default: false) */
+  skipGlobal?: boolean;
 }
 
 /** Constitution load result */

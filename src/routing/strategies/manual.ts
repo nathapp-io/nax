@@ -5,8 +5,8 @@
  * Users can manually specify complexity, modelTier, and testStrategy per story.
  */
 
-import type { RoutingStrategy, RoutingContext, RoutingDecision } from "../strategy";
 import type { UserStory } from "../../prd/types";
+import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../strategy";
 
 /**
  * Manual routing strategy.
@@ -35,12 +35,7 @@ export const manualStrategy: RoutingStrategy = {
 
   route(story: UserStory, _context: RoutingContext): RoutingDecision | null {
     // If story has routing metadata with all required fields, use it
-    if (
-      story.routing &&
-      story.routing.complexity &&
-      story.routing.modelTier &&
-      story.routing.testStrategy
-    ) {
+    if (story.routing?.complexity && story.routing.modelTier && story.routing.testStrategy) {
       return {
         complexity: story.routing.complexity,
         modelTier: story.routing.modelTier,

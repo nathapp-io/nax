@@ -6,9 +6,9 @@
 
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { getLogger } from "../logger";
 import { globalConfigDir, projectConfigDir } from "../config/paths";
 import { DEFAULT_CONFIG } from "../config/schema";
+import { getLogger } from "../logger";
 
 /** Init command options */
 export interface InitOptions {
@@ -68,7 +68,7 @@ async function initGlobal(): Promise<void> {
   // Create ~/.nax/config.json if it doesn't exist
   const configPath = join(globalDir, "config.json");
   if (!existsSync(configPath)) {
-    await Bun.write(configPath, JSON.stringify(MINIMAL_GLOBAL_CONFIG, null, 2) + "\n");
+    await Bun.write(configPath, `${JSON.stringify(MINIMAL_GLOBAL_CONFIG, null, 2)}\n`);
     logger.info("init", "Created global config", { path: configPath });
   } else {
     logger.info("init", "Global config already exists", { path: configPath });
@@ -111,7 +111,7 @@ async function initProject(projectRoot: string): Promise<void> {
   // Create nax/config.json if it doesn't exist
   const configPath = join(projectDir, "config.json");
   if (!existsSync(configPath)) {
-    await Bun.write(configPath, JSON.stringify(MINIMAL_PROJECT_CONFIG, null, 2) + "\n");
+    await Bun.write(configPath, `${JSON.stringify(MINIMAL_PROJECT_CONFIG, null, 2)}\n`);
     logger.info("init", "Created project config", { path: configPath });
   } else {
     logger.info("init", "Project config already exists", { path: configPath });

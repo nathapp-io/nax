@@ -4,12 +4,12 @@
  * Collects and persists per-story and per-run metrics.
  */
 
-import path from "node:path";
 import { existsSync } from "node:fs";
-import type { StoryMetrics, RunMetrics } from "./types";
-import type { PipelineContext } from "../pipeline/types";
+import path from "node:path";
 import { resolveModel } from "../config/schema";
 import { getLogger } from "../logger";
+import type { PipelineContext } from "../pipeline/types";
+import type { RunMetrics, StoryMetrics } from "./types";
 
 /**
  * Collect metrics for a single story execution.
@@ -38,10 +38,7 @@ import { getLogger } from "../logger";
  * // }
  * ```
  */
-export function collectStoryMetrics(
-  ctx: PipelineContext,
-  storyStartTime: string,
-): StoryMetrics {
+export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string): StoryMetrics {
   const story = ctx.story;
   const routing = ctx.routing;
   const agentResult = ctx.agentResult;
@@ -51,10 +48,7 @@ export function collectStoryMetrics(
   const attempts = Math.max(1, story.attempts || 1);
 
   // Determine final tier (from last escalation or initial routing)
-  const finalTier =
-    escalationCount > 0
-      ? story.escalations[escalationCount - 1].toTier
-      : routing.modelTier;
+  const finalTier = escalationCount > 0 ? story.escalations[escalationCount - 1].toTier : routing.modelTier;
 
   // First pass success = succeeded with no escalations
   const firstPassSuccess = agentResult?.success === true && escalationCount === 0;
@@ -100,10 +94,7 @@ export function collectStoryMetrics(
  * // ]
  * ```
  */
-export function collectBatchMetrics(
-  ctx: PipelineContext,
-  storyStartTime: string,
-): StoryMetrics[] {
+export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string): StoryMetrics[] {
   const stories = ctx.stories;
   const routing = ctx.routing;
   const agentResult = ctx.agentResult;
@@ -153,10 +144,7 @@ export function collectBatchMetrics(
  * });
  * ```
  */
-export async function saveRunMetrics(
-  workdir: string,
-  runMetrics: RunMetrics,
-): Promise<void> {
+export async function saveRunMetrics(workdir: string, runMetrics: RunMetrics): Promise<void> {
   const metricsPath = path.join(workdir, "nax", "metrics.json");
 
   let allMetrics: RunMetrics[] = [];

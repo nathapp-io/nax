@@ -4,10 +4,12 @@
  * Lists loaded plugins with their metadata.
  */
 
+import * as os from "node:os";
+import * as path from "node:path";
 import type { NaxConfig } from "../config/schema";
-import type { PluginRegistry } from "../plugins/registry";
-import { loadPlugins } from "../plugins/loader";
 import { getLogger } from "../logger";
+import { loadPlugins } from "../plugins/loader";
+import { PluginRegistry } from "../plugins/registry";
 
 /**
  * List all loaded plugins with their metadata.
@@ -15,26 +17,33 @@ import { getLogger } from "../logger";
  * @param config - nax configuration
  * @param workdir - Working directory for resolving plugin paths
  */
-export async function pluginsListCommand(
-  config: NaxConfig,
-  workdir: string,
-): Promise<void> {
+export async function pluginsListCommand(config: NaxConfig, workdir: string): Promise<void> {
   const logger = getLogger();
 
   // Load plugins from config
-  const plugins = await loadPlugins(config, workdir);
+  const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
+  const projectPluginsDir = path.join(workdir, "nax", "plugins");
+  const configPlugins = config.plugins || [];
+  const registry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins);
+  const plugins = registry.plugins;
 
   if (plugins.length === 0) {
     console.log("No plugins configured.");
     console.log("\nTo add plugins, edit nax/config.json:");
-    console.log(JSON.stringify({
-      plugins: [
+    console.log(
+      JSON.stringify(
         {
-          module: "./nax/plugins/my-plugin",
-          config: {}
-        }
-      ]
-    }, null, 2));
+          plugins: [
+            {
+              module: "./nax/plugins/my-plugin",
+              config: {},
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
     return;
   }
 
@@ -46,7 +55,7 @@ export async function pluginsListCommand(
     console.log(`   Provides: ${plugin.provides.join(", ")}`);
 
     // Determine source (internal vs external)
-    const pluginEntry = config.plugins?.find(p => {
+    const pluginEntry = config.plugins?.find((p) => {
       // Match by plugin name in module path
       return p.module.includes(plugin.name);
     });
@@ -59,8 +68,6 @@ export async function pluginsListCommand(
   }
 
   // Display extension type summary
-  const registry = new PluginRegistry(plugins);
-
   console.log("Extension Summary:");
   console.log(`  Optimizers: ${registry.getOptimizers().length}`);
   console.log(`  Routers: ${registry.getRouters().length}`);

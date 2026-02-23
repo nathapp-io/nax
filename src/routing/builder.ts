@@ -5,11 +5,11 @@
  */
 
 import type { NaxConfig } from "../config";
-import type { RoutingStrategy } from "./strategy";
 import type { PluginRegistry } from "../plugins/registry";
 import { StrategyChain } from "./chain";
-import { keywordStrategy, llmStrategy, manualStrategy, adaptiveStrategy } from "./strategies";
 import { loadCustomStrategy } from "./loader";
+import { adaptiveStrategy, keywordStrategy, llmStrategy, manualStrategy } from "./strategies";
+import type { RoutingStrategy } from "./strategy";
 
 /**
  * Build the routing strategy chain based on configuration.
@@ -60,18 +60,14 @@ export async function buildStrategyChain(
       strategies.push(adaptiveStrategy);
       break;
 
-    case "custom":
+    case "custom": {
       if (!config.routing.customStrategyPath) {
-        throw new Error(
-          "routing.customStrategyPath is required when strategy is 'custom'"
-        );
+        throw new Error("routing.customStrategyPath is required when strategy is 'custom'");
       }
-      const customStrategy = await loadCustomStrategy(
-        config.routing.customStrategyPath,
-        workdir
-      );
+      const customStrategy = await loadCustomStrategy(config.routing.customStrategyPath, workdir);
       strategies.push(customStrategy);
       break;
+    }
 
     case "keyword":
       // Keyword will be added at the end anyway

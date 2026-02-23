@@ -379,10 +379,7 @@ const ModelDefSchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
 });
 
-const ModelEntrySchema = z.union([
-  z.string().min(1, "Model identifier must be non-empty"),
-  ModelDefSchema,
-]);
+const ModelEntrySchema = z.union([z.string().min(1, "Model identifier must be non-empty"), ModelDefSchema]);
 
 const ModelMapSchema = z.object({
   fast: ModelEntrySchema,
@@ -399,10 +396,7 @@ const TierConfigSchema = z.object({
 
 const AutoModeConfigSchema = z.object({
   enabled: z.boolean(),
-  defaultAgent: z
-    .string()
-    .trim()
-    .min(1, "defaultAgent must be non-empty"),
+  defaultAgent: z.string().trim().min(1, "defaultAgent must be non-empty"),
   fallbackOrder: z.array(z.string()),
   complexityRouting: z.object({
     simple: ModelTierSchema,
@@ -449,11 +443,13 @@ const TddConfigSchema = z.object({
   maxRetries: z.number().int().nonnegative(),
   autoVerifyIsolation: z.boolean(),
   autoApproveVerifier: z.boolean(),
-  sessionTiers: z.object({
-    testWriter: z.string().optional(),
-    implementer: z.string().optional(),
-    verifier: z.string().optional(),
-  }).optional(),
+  sessionTiers: z
+    .object({
+      testWriter: z.string().optional(),
+      implementer: z.string().optional(),
+      verifier: z.string().optional(),
+    })
+    .optional(),
   testWriterAllowedPaths: z.array(z.string()).optional(),
 });
 
@@ -521,24 +517,26 @@ const LlmRoutingConfigSchema = z.object({
   timeoutMs: z.number().int().positive({ message: "llm.timeoutMs must be > 0" }).optional(),
 });
 
-const RoutingConfigSchema = z.object({
-  strategy: z.enum(["keyword", "llm", "manual", "adaptive", "custom"]),
-  customStrategyPath: z.string().optional(),
-  adaptive: AdaptiveRoutingConfigSchema.optional(),
-  llm: LlmRoutingConfigSchema.optional(),
-}).refine(
-  (data) => {
-    // If strategy is "custom", customStrategyPath is required
-    if (data.strategy === "custom" && !data.customStrategyPath) {
-      return false;
-    }
-    return true;
-  },
-  {
-    message: "routing.customStrategyPath is required when strategy is 'custom'",
-    path: ["customStrategyPath"],
-  }
-);
+const RoutingConfigSchema = z
+  .object({
+    strategy: z.enum(["keyword", "llm", "manual", "adaptive", "custom"]),
+    customStrategyPath: z.string().optional(),
+    adaptive: AdaptiveRoutingConfigSchema.optional(),
+    llm: LlmRoutingConfigSchema.optional(),
+  })
+  .refine(
+    (data) => {
+      // If strategy is "custom", customStrategyPath is required
+      if (data.strategy === "custom" && !data.customStrategyPath) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "routing.customStrategyPath is required when strategy is 'custom'",
+      path: ["customStrategyPath"],
+    },
+  );
 
 const OptimizerConfigSchema = z.object({
   enabled: z.boolean(),
@@ -691,4 +689,3 @@ export const DEFAULT_CONFIG: NaxConfig = {
     },
   },
 };
-

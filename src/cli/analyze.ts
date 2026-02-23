@@ -7,16 +7,16 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { PRD, UserStory } from "../prd";
-import type { NaxConfig } from "../config";
-import type { CodebaseScan } from "../analyze/types";
-import { scanCodebase } from "../analyze/scanner";
-import { routeTask, classifyComplexity } from "../routing";
-import { getAgent } from "../agents/registry";
-import { resolveModel } from "../config/schema";
-import { loadPRD } from "../prd";
 import { generateAcceptanceTests } from "../acceptance";
+import { getAgent } from "../agents/registry";
+import { scanCodebase } from "../analyze/scanner";
+import type { CodebaseScan } from "../analyze/types";
+import type { NaxConfig } from "../config";
+import { resolveModel } from "../config/schema";
 import { getLogger } from "../logger";
+import type { PRD, UserStory } from "../prd";
+import { loadPRD } from "../prd";
+import { classifyComplexity, routeTask } from "../routing";
 
 export interface AnalyzeOptions {
   /** Feature directory path */
@@ -35,14 +35,7 @@ export interface AnalyzeOptions {
 
 /** Parse spec.md into PRD via agent decompose */
 export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
-  const {
-    featureDir,
-    featureName,
-    branchName,
-    config,
-    specPath: explicitSpecPath,
-    reclassify = false,
-  } = options;
+  const { featureDir, featureName, branchName, config, specPath: explicitSpecPath, reclassify = false } = options;
 
   const workdir = join(featureDir, "../.."); // Go up from nax/features/<name> to project root
 
@@ -65,7 +58,7 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
 
   // LLM-enhanced decompose+classify (if enabled)
   const logger = getLogger();
-  if (config && config.analyze.llmEnhanced) {
+  if (config?.analyze.llmEnhanced) {
     logger.info("cli", "Running agent decompose (decompose + classify in single LLM call)");
 
     try {
@@ -111,13 +104,7 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
           routingStrategy = "llm";
         } else {
           // Fallback: use keyword-based determination
-          const routing = routeTask(
-            ds.title,
-            ds.description,
-            ds.acceptanceCriteria,
-            ds.tags,
-            config,
-          );
+          const routing = routeTask(ds.title, ds.description, ds.acceptanceCriteria, ds.tags, config);
           testStrategy = routing.testStrategy;
           routingStrategy = "keyword";
         }
@@ -154,7 +141,9 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
       userStories = parseUserStoriesFromSpec(specContent);
 
       if (userStories.length === 0) {
-        throw new Error("No user stories found in spec.md. Expected '## US-xxx' headings or agent decompose to succeed.");
+        throw new Error(
+          "No user stories found in spec.md. Expected '## US-xxx' headings or agent decompose to succeed.",
+        );
       }
 
       // Apply keyword-based classification
@@ -175,7 +164,10 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
 
   // Check story count limit — warn but don't block
   if (config && userStories.length > config.execution.maxStoriesPerFeature) {
-    logger.warn("cli", `⚠ Feature has ${userStories.length} stories, exceeding recommended limit of ${config.execution.maxStoriesPerFeature}. Consider splitting or re-running with stricter grouping.`);
+    logger.warn(
+      "cli",
+      `⚠ Feature has ${userStories.length} stories, exceeding recommended limit of ${config.execution.maxStoriesPerFeature}. Consider splitting or re-running with stricter grouping.`,
+    );
   }
 
   // Read nax version from package.json
@@ -197,17 +189,19 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
     createdAt: now,
     updatedAt: now,
     userStories,
-    analyzeConfig: config ? {
-      naxVersion,
-      model: config.analyze.model,
-      llmEnhanced: config.analyze.llmEnhanced,
-      maxStoriesPerFeature: config.execution.maxStoriesPerFeature,
-      routingStrategy: config.analyze.llmEnhanced ? "llm" : "keyword",
-    } : undefined,
+    analyzeConfig: config
+      ? {
+          naxVersion,
+          model: config.analyze.model,
+          llmEnhanced: config.analyze.llmEnhanced,
+          maxStoriesPerFeature: config.execution.maxStoriesPerFeature,
+          routingStrategy: config.analyze.llmEnhanced ? "llm" : "keyword",
+        }
+      : undefined,
   };
 
   // Generate acceptance tests if enabled
-  if (config && config.acceptance.enabled && config.acceptance.generateTests) {
+  if (config?.acceptance.enabled && config.acceptance.generateTests) {
     logger.info("cli", "Generating acceptance tests from spec.md");
 
     try {
@@ -352,11 +346,7 @@ function parseUserStories(markdown: string): UserStory[] {
 }
 
 /** Finalize a story by combining collected data */
-function finalizeStory(
-  story: Partial<UserStory>,
-  descriptionLines: string[],
-  criteriaLines: string[],
-): UserStory {
+function finalizeStory(story: Partial<UserStory>, descriptionLines: string[], criteriaLines: string[]): UserStory {
   return {
     id: story.id || "US-000",
     title: story.title || "[Untitled]",
@@ -402,21 +392,10 @@ ${scan.testPatterns.map((p) => `- ${p}`).join("\n")}`.trim();
  */
 function applyKeywordClassification(stories: UserStory[], config?: NaxConfig): UserStory[] {
   return stories.map((story) => {
-    const complexity = classifyComplexity(
-      story.title,
-      story.description,
-      story.acceptanceCriteria,
-      story.tags
-    );
+    const complexity = classifyComplexity(story.title, story.description, story.acceptanceCriteria, story.tags);
 
     const routing = config
-      ? routeTask(
-          story.title,
-          story.description,
-          story.acceptanceCriteria,
-          story.tags,
-          config
-        )
+      ? routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, config)
       : {
           complexity,
           testStrategy: "test-after" as const,
@@ -476,7 +455,7 @@ ${story.description}
 ${story.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
 
     try {
-      if (config && config.analyze.llmEnhanced) {
+      if (config?.analyze.llmEnhanced) {
         // Use agent to classify this single story
         const agentName = config.autoMode.defaultAgent;
         const adapter = getAgent(agentName);
@@ -508,13 +487,7 @@ ${story.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
             testStrategy = ds.testStrategy;
             routingStrategy = "llm";
           } else {
-            const routing = routeTask(
-              story.title,
-              story.description,
-              story.acceptanceCriteria,
-              story.tags,
-              config,
-            );
+            const routing = routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, config);
             testStrategy = routing.testStrategy;
             routingStrategy = "keyword";
           }
@@ -541,21 +514,10 @@ ${story.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
         }
       } else {
         // Keyword classification
-        const complexity = classifyComplexity(
-          story.title,
-          story.description,
-          story.acceptanceCriteria,
-          story.tags
-        );
+        const complexity = classifyComplexity(story.title, story.description, story.acceptanceCriteria, story.tags);
 
         const routing = config
-          ? routeTask(
-              story.title,
-              story.description,
-              story.acceptanceCriteria,
-              story.tags,
-              config
-            )
+          ? routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, config)
           : {
               complexity,
               testStrategy: "test-after" as const,

@@ -7,7 +7,7 @@
  * - > 140 cols: 2-column with wider agent panel
  */
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 
 /**
  * Layout mode based on terminal width.

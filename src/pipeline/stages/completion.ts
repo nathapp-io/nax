@@ -21,13 +21,13 @@
  * ```
  */
 
-import type { PipelineStage, PipelineContext, StageResult } from "../types";
-import { markStoryPassed, savePRD, countStories } from "../../prd";
+import { hookCtx } from "../../execution/helpers";
 import { appendProgress } from "../../execution/progress";
 import { fireHook } from "../../hooks";
-import { hookCtx } from "../../execution/helpers";
-import { collectStoryMetrics, collectBatchMetrics } from "../../metrics";
 import { getLogger } from "../../logger";
+import { collectBatchMetrics, collectStoryMetrics } from "../../metrics";
+import { countStories, markStoryPassed, savePRD } from "../../prd";
+import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const completionStage: PipelineStage = {
   name: "completion",
@@ -39,9 +39,7 @@ export const completionStage: PipelineStage = {
     const sessionCost = ctx.agentResult?.estimatedCost || 0;
 
     // Calculate PRD path
-    const prdPath = ctx.featureDir
-      ? `${ctx.featureDir}/prd.json`
-      : `${ctx.workdir}/nax/features/unknown/prd.json`;
+    const prdPath = ctx.featureDir ? `${ctx.featureDir}/prd.json` : `${ctx.workdir}/nax/features/unknown/prd.json`;
 
     // Collect story metrics
     const storyStartTime = ctx.storyStartTime || new Date().toISOString();

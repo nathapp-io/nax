@@ -21,10 +21,10 @@
  * ```
  */
 
-import type { PipelineStage, PipelineContext, StageResult } from "../types";
-import { runReview } from "../../review";
-import { getLogger } from "../../logger";
 import { spawn } from "bun";
+import { getLogger } from "../../logger";
+import { runReview } from "../../review";
+import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**
  * Get list of changed files from git.

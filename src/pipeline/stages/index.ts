@@ -6,17 +6,17 @@
  */
 
 import type { PipelineStage } from "../types";
-import { queueCheckStage } from "./queue-check";
-import { routingStage } from "./routing";
+import { acceptanceStage } from "./acceptance";
+import { completionStage } from "./completion";
 import { constitutionStage } from "./constitution";
 import { contextStage } from "./context";
-import { promptStage } from "./prompt";
-import { optimizerStage } from "./optimizer";
 import { executionStage } from "./execution";
-import { verifyStage } from "./verify";
+import { optimizerStage } from "./optimizer";
+import { promptStage } from "./prompt";
+import { queueCheckStage } from "./queue-check";
 import { reviewStage } from "./review";
-import { completionStage } from "./completion";
-import { acceptanceStage } from "./acceptance";
+import { routingStage } from "./routing";
+import { verifyStage } from "./verify";
 
 /**
  * Default pipeline stages in execution order.

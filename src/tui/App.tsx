@@ -6,18 +6,18 @@
 
 import { Box, Text, useApp, useInput } from "ink";
 import { useState } from "react";
-import { StoriesPanel } from "./components/StoriesPanel";
+import { writeQueueCommand } from "../utils/queue-writer";
 import { AgentPanel } from "./components/AgentPanel";
-import { StatusBar } from "./components/StatusBar";
-import { HelpOverlay } from "./components/HelpOverlay";
 import { CostOverlay } from "./components/CostOverlay";
-import { useLayout, MIN_TERMINAL_WIDTH } from "./hooks/useLayout";
+import { HelpOverlay } from "./components/HelpOverlay";
+import { StatusBar } from "./components/StatusBar";
+import { StoriesPanel } from "./components/StoriesPanel";
+import { type KeyboardAction, useKeyboard } from "./hooks/useKeyboard";
+import { MIN_TERMINAL_WIDTH, useLayout } from "./hooks/useLayout";
 import { usePipelineEvents } from "./hooks/usePipelineEvents";
-import { useKeyboard, type KeyboardAction } from "./hooks/useKeyboard";
 import { usePty } from "./hooks/usePty";
 import { PanelFocus } from "./types";
 import type { TuiProps } from "./types";
-import { writeQueueCommand } from "../utils/queue-writer";
 
 /**
  * Root TUI application component.
@@ -45,7 +45,10 @@ import { writeQueueCommand } from "../utils/queue-writer";
  */
 export function App({ feature, stories: initialStories, events, queueFilePath, ptyOptions }: TuiProps) {
   const layout = useLayout();
-  const state = usePipelineEvents(events, initialStories.map((s) => s.story));
+  const state = usePipelineEvents(
+    events,
+    initialStories.map((s) => s.story),
+  );
   const { exit } = useApp();
 
   // Focus management (Tab toggles between Stories and Agent panels)
@@ -64,9 +67,7 @@ export function App({ feature, stories: initialStories, events, queueFilePath, p
   const handleKeyboardAction = async (action: KeyboardAction) => {
     switch (action.type) {
       case "TOGGLE_FOCUS":
-        setFocus((prev) =>
-          prev === PanelFocus.Stories ? PanelFocus.Agent : PanelFocus.Stories
-        );
+        setFocus((prev) => (prev === PanelFocus.Stories ? PanelFocus.Agent : PanelFocus.Stories));
         break;
 
       case "ESCAPE_AGENT":
@@ -185,7 +186,7 @@ export function App({ feature, stories: initialStories, events, queueFilePath, p
       {isTooSmall && (
         <Box paddingX={1} backgroundColor="yellow">
           <Text color="black">
-            ⚠️  Terminal too narrow ({layout.width} cols). Minimum {MIN_TERMINAL_WIDTH} cols recommended.
+            ⚠️ Terminal too narrow ({layout.width} cols). Minimum {MIN_TERMINAL_WIDTH} cols recommended.
           </Text>
         </Box>
       )}
@@ -203,10 +204,7 @@ export function App({ feature, stories: initialStories, events, queueFilePath, p
         />
 
         {/* Agent panel */}
-        <AgentPanel
-          focused={focus === PanelFocus.Agent}
-          outputLines={agentOutputLines}
-        />
+        <AgentPanel focused={focus === PanelFocus.Agent} outputLines={agentOutputLines} />
       </Box>
 
       {/* Status bar */}
@@ -223,13 +221,7 @@ export function App({ feature, stories: initialStories, events, queueFilePath, p
 
       {/* Quit confirmation */}
       {showQuitConfirm && (
-        <Box
-          position="absolute"
-          width="100%"
-          height="100%"
-          justifyContent="center"
-          alignItems="center"
-        >
+        <Box position="absolute" width="100%" height="100%" justifyContent="center" alignItems="center">
           <Box
             flexDirection="column"
             borderStyle="double"
@@ -238,9 +230,11 @@ export function App({ feature, stories: initialStories, events, queueFilePath, p
             paddingY={1}
             backgroundColor="black"
           >
-            <Text color="yellow">⚠️  Story is running. Quit anyway?</Text>
+            <Text color="yellow">⚠️ Story is running. Quit anyway?</Text>
             <Box paddingTop={1}>
-              <Text dimColor>Press <Text color="yellow">y</Text> to confirm, <Text color="yellow">n</Text> to cancel</Text>
+              <Text dimColor>
+                Press <Text color="yellow">y</Text> to confirm, <Text color="yellow">n</Text> to cancel
+              </Text>
             </Box>
           </Box>
         </Box>
@@ -248,13 +242,7 @@ export function App({ feature, stories: initialStories, events, queueFilePath, p
 
       {/* Abort confirmation */}
       {showAbortConfirm && (
-        <Box
-          position="absolute"
-          width="100%"
-          height="100%"
-          justifyContent="center"
-          alignItems="center"
-        >
+        <Box position="absolute" width="100%" height="100%" justifyContent="center" alignItems="center">
           <Box
             flexDirection="column"
             borderStyle="double"
@@ -263,9 +251,11 @@ export function App({ feature, stories: initialStories, events, queueFilePath, p
             paddingY={1}
             backgroundColor="black"
           >
-            <Text color="red">⚠️  Story is running. Abort anyway?</Text>
+            <Text color="red">⚠️ Story is running. Abort anyway?</Text>
             <Box paddingTop={1}>
-              <Text dimColor>Press <Text color="yellow">y</Text> to confirm, <Text color="yellow">n</Text> to cancel</Text>
+              <Text dimColor>
+                Press <Text color="yellow">y</Text> to confirm, <Text color="yellow">n</Text> to cancel
+              </Text>
             </Box>
           </Box>
         </Box>

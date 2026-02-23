@@ -6,7 +6,7 @@
  */
 
 import type { UserStory } from "../prd/types";
-import type { RoutingStrategy, RoutingContext, RoutingDecision } from "./strategy";
+import type { RoutingContext, RoutingDecision, RoutingStrategy } from "./strategy";
 
 /**
  * Strategy chain that tries strategies in order until one returns a decision.
@@ -45,8 +45,7 @@ export class StrategyChain {
 
     // This should never happen if keyword strategy is last (it never returns null)
     throw new Error(
-      `No routing strategy returned a decision for story ${story.id}. ` +
-      `Ensure at least one fallback strategy (e.g., keyword) is in the chain.`
+      `No routing strategy returned a decision for story ${story.id}. Ensure at least one fallback strategy (e.g., keyword) is in the chain.`,
     );
   }
 

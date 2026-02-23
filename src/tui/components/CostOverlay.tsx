@@ -49,74 +49,69 @@ export function CostOverlay({ visible = false, stories = [], totalCost = 0 }: Co
   }
 
   // Only show stories that have been executed (cost > 0 or status !== pending)
-  const executedStories = stories.filter(
-    (s) => s.cost && s.cost > 0 || s.status !== "pending",
-  );
+  const executedStories = stories.filter((s) => (s.cost && s.cost > 0) || s.status !== "pending");
 
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="double"
-      borderColor="cyan"
-      paddingX={2}
-      paddingY={1}
-      minWidth={60}
-    >
-        <Box paddingBottom={1}>
+    <Box flexDirection="column" borderStyle="double" borderColor="cyan" paddingX={2} paddingY={1} minWidth={60}>
+      <Box paddingBottom={1}>
+        <Text bold color="cyan">
+          Cost Breakdown
+        </Text>
+      </Box>
+
+      {/* Header row */}
+      <Box paddingBottom={1} borderBottom borderColor="gray">
+        <Box width={12}>
+          <Text bold>Story ID</Text>
+        </Box>
+        <Box width={12}>
+          <Text bold>Status</Text>
+        </Box>
+        <Box width={12}>
+          <Text bold>Cost</Text>
+        </Box>
+      </Box>
+
+      {/* Story rows */}
+      <Box flexDirection="column" paddingY={1}>
+        {executedStories.length > 0 ? (
+          executedStories.map((story) => (
+            <Box key={story.story.id}>
+              <Box width={12}>
+                <Text>{story.story.id}</Text>
+              </Box>
+              <Box width={12}>
+                <Text color={story.status === "passed" ? "green" : story.status === "failed" ? "red" : undefined}>
+                  {story.status}
+                </Text>
+              </Box>
+              <Box width={12}>
+                <Text>{formatCost(story.cost || 0)}</Text>
+              </Box>
+            </Box>
+          ))
+        ) : (
+          <Text dimColor>No stories executed yet</Text>
+        )}
+      </Box>
+
+      {/* Total row */}
+      <Box paddingTop={1} borderTop borderColor="gray">
+        <Box width={24}>
+          <Text bold>Total Cost:</Text>
+        </Box>
+        <Box width={12}>
           <Text bold color="cyan">
-            Cost Breakdown
+            {formatCost(totalCost)}
           </Text>
         </Box>
-
-        {/* Header row */}
-        <Box paddingBottom={1} borderBottom borderColor="gray">
-          <Box width={12}>
-            <Text bold>Story ID</Text>
-          </Box>
-          <Box width={12}>
-            <Text bold>Status</Text>
-          </Box>
-          <Box width={12}>
-            <Text bold>Cost</Text>
-          </Box>
-        </Box>
-
-        {/* Story rows */}
-        <Box flexDirection="column" paddingY={1}>
-          {executedStories.length > 0 ? (
-            executedStories.map((story) => (
-              <Box key={story.story.id}>
-                <Box width={12}>
-                  <Text>{story.story.id}</Text>
-                </Box>
-                <Box width={12}>
-                  <Text color={story.status === "passed" ? "green" : story.status === "failed" ? "red" : undefined}>
-                    {story.status}
-                  </Text>
-                </Box>
-                <Box width={12}>
-                  <Text>{formatCost(story.cost || 0)}</Text>
-                </Box>
-              </Box>
-            ))
-          ) : (
-            <Text dimColor>No stories executed yet</Text>
-          )}
-        </Box>
-
-        {/* Total row */}
-        <Box paddingTop={1} borderTop borderColor="gray">
-          <Box width={24}>
-            <Text bold>Total Cost:</Text>
-          </Box>
-          <Box width={12}>
-            <Text bold color="cyan">{formatCost(totalCost)}</Text>
-          </Box>
-        </Box>
+      </Box>
 
       {/* Footer */}
       <Box justifyContent="center" paddingTop={1} borderTop borderColor="gray">
-        <Text dimColor>Press <Text color="yellow">Esc</Text> to close</Text>
+        <Text dimColor>
+          Press <Text color="yellow">Esc</Text> to close
+        </Text>
       </Box>
     </Box>
   );

@@ -4,7 +4,7 @@
  * Types for generating acceptance tests from spec.md acceptance criteria.
  */
 
-import type { ModelTier, ModelDef } from "../config/schema";
+import type { ModelDef, ModelTier } from "../config/schema";
 
 /**
  * A single acceptance criterion extracted from spec.md.

@@ -17,10 +17,10 @@
  * ```
  */
 
-import type { PipelineStage, PipelineContext, StageResult } from "../types";
-import { routeStory } from "../../routing";
-import { routeBatch, clearCache } from "../../routing/strategies/llm";
 import { getLogger } from "../../logger";
+import { routeStory } from "../../routing";
+import { clearCache, routeBatch } from "../../routing/strategies/llm";
+import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
 
 export const routingStage: PipelineStage = {
   name: "routing",
@@ -43,7 +43,7 @@ export const routingStage: PipelineStage = {
       routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
     }
 
-    ctx.routing = routing;
+    ctx.routing = routing as RoutingResult;
 
     const isBatch = ctx.stories.length > 1;
 

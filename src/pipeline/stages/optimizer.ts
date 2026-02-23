@@ -26,49 +26,49 @@
  * ```
  */
 
-import type { PipelineStage, PipelineContext, StageResult } from "../types.js";
-import { resolveOptimizer } from "../../optimizer/index.js";
 import { getLogger } from "../../logger/index.js";
+import { resolveOptimizer } from "../../optimizer/index.js";
+import type { PipelineContext, PipelineStage, StageResult } from "../types.js";
 
 export const optimizerStage: PipelineStage = {
-	name: "optimizer",
-	enabled: (ctx) => {
-		// Always enabled - NoopOptimizer is used when optimization is disabled
-		return true;
-	},
+  name: "optimizer",
+  enabled: (ctx) => {
+    // Always enabled - NoopOptimizer is used when optimization is disabled
+    return true;
+  },
 
-	async execute(ctx: PipelineContext): Promise<StageResult> {
-		const logger = getLogger();
+  async execute(ctx: PipelineContext): Promise<StageResult> {
+    const logger = getLogger();
 
-		// Ensure prompt exists
-		if (!ctx.prompt) {
-			logger.warn("optimizer", "No prompt to optimize, skipping");
-			return { action: "continue" };
-		}
+    // Ensure prompt exists
+    if (!ctx.prompt) {
+      logger.warn("optimizer", "No prompt to optimize, skipping");
+      return { action: "continue" };
+    }
 
-		// Resolve optimizer (checks plugins first, then config)
-		const optimizer = resolveOptimizer(ctx.config, ctx.plugins);
+    // Resolve optimizer (checks plugins first, then config)
+    const optimizer = resolveOptimizer(ctx.config, ctx.plugins);
 
-		// Optimize the prompt
-		const result = await optimizer.optimize({
-			prompt: ctx.prompt,
-			stories: ctx.stories,
-			contextMarkdown: ctx.contextMarkdown,
-			config: ctx.config,
-		});
+    // Optimize the prompt
+    const result = await optimizer.optimize({
+      prompt: ctx.prompt,
+      stories: ctx.stories,
+      contextMarkdown: ctx.contextMarkdown,
+      config: ctx.config,
+    });
 
-		// Update context with optimized prompt
-		ctx.prompt = result.prompt;
+    // Update context with optimized prompt
+    ctx.prompt = result.prompt;
 
-		// Log optimization results
-		const savingsPercent = Math.round(result.savings * 100);
-		logger.info("optimizer", `${optimizer.name}: ${savingsPercent}% savings`, {
-			originalTokens: result.originalTokens,
-			optimizedTokens: result.optimizedTokens,
-			tokensSaved: result.originalTokens - result.optimizedTokens,
-			appliedRules: result.appliedRules,
-		});
+    // Log optimization results
+    const savingsPercent = Math.round(result.savings * 100);
+    logger.info("optimizer", `${optimizer.name}: ${savingsPercent}% savings`, {
+      originalTokens: result.originalTokens,
+      optimizedTokens: result.optimizedTokens,
+      tokensSaved: result.originalTokens - result.optimizedTokens,
+      appliedRules: result.appliedRules,
+    });
 
-		return { action: "continue" };
-	},
+    return { action: "continue" };
+  },
 };

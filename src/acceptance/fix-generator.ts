@@ -6,9 +6,9 @@
  */
 
 import type { AgentAdapter } from "../agents/types";
-import type { UserStory, PRD } from "../prd/types";
 import type { ModelDef } from "../config/schema";
 import { getLogger } from "../logger";
+import type { PRD, UserStory } from "../prd/types";
 
 /**
  * A fix story generated from a failed acceptance criterion.
@@ -110,9 +110,7 @@ export function findRelatedStories(failedAC: string, prd: PRD): string[] {
 
   // Strategy 2: Return all passed stories (fallback)
   // The LLM will figure out which code is relevant
-  const passedStories = prd.userStories
-    .filter((s) => s.status === "passed")
-    .map((s) => s.id);
+  const passedStories = prd.userStories.filter((s) => s.status === "passed").map((s) => s.id);
 
   return passedStories.slice(0, 5); // Limit to 5 most recent
 }
@@ -222,24 +220,11 @@ export async function generateFixStories(
     }
 
     // Build prompt
-    const prompt = buildFixPrompt(
-      failedAC,
-      acText,
-      testOutput,
-      relatedStories,
-      prd,
-    );
+    const prompt = buildFixPrompt(failedAC, acText, testOutput, relatedStories, prd);
 
     try {
       // Call agent to generate fix description
-      const cmd = [
-        adapter.binary,
-        "--model",
-        modelDef.model,
-        "--dangerously-skip-permissions",
-        "-p",
-        prompt,
-      ];
+      const cmd = [adapter.binary, "--model", modelDef.model, "--dangerously-skip-permissions", "-p", prompt];
 
       const proc = Bun.spawn(cmd, {
         cwd: workdir,

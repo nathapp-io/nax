@@ -8,27 +8,15 @@
  */
 
 import type { AgentAdapter } from "../agents";
-import type { UserStory } from "../prd";
-import type { NaxConfig, ModelTier } from "../config";
+import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config";
-import type {
-  TddSessionResult,
-  ThreeSessionTddResult,
-  TddSessionRole,
-} from "./types";
-import {
-  verifyTestWriterIsolation,
-  verifyImplementerIsolation,
-  getChangedFiles,
-} from "./isolation";
 import { executeWithTimeout } from "../execution/verification";
-import { cleanupProcessTree } from "./cleanup";
 import { getLogger } from "../logger";
-import {
-  buildTestWriterPrompt,
-  buildImplementerPrompt,
-  buildVerifierPrompt,
-} from "./prompts";
+import type { UserStory } from "../prd";
+import { cleanupProcessTree } from "./cleanup";
+import { getChangedFiles, verifyImplementerIsolation, verifyTestWriterIsolation } from "./isolation";
+import { buildImplementerPrompt, buildTestWriterPrompt, buildVerifierPrompt } from "./prompts";
+import type { TddSessionResult, TddSessionRole, ThreeSessionTddResult } from "./types";
 
 /** Capture git state for isolation checking */
 async function captureGitRef(workdir: string): Promise<string> {
@@ -270,9 +258,7 @@ export async function runThreeSessionTdd(
   // BUG-20 Fix: Verify that test-writer session actually created test files
   // Check if any test files were created (*.test.ts, *.spec.ts, etc.)
   const testFilePatterns = /\.(test|spec)\.(ts|js|tsx|jsx)$/;
-  const testFilesCreated = session1.filesChanged.filter((f) =>
-    testFilePatterns.test(f),
-  );
+  const testFilesCreated = session1.filesChanged.filter((f) => testFilePatterns.test(f));
 
   if (testFilesCreated.length === 0) {
     needsHumanReview = true;
@@ -335,15 +321,7 @@ export async function runThreeSessionTdd(
 
   // Session 3: Verifier
   const verifierTier = config.tdd.sessionTiers?.verifier ?? "fast";
-  const session3 = await runTddSession(
-    "verifier",
-    agent,
-    story,
-    config,
-    workdir,
-    verifierTier,
-    session3Ref,
-  );
+  const session3 = await runTddSession("verifier", agent, story, config, workdir, verifierTier, session3Ref);
   sessions.push(session3);
 
   // Check if all sessions succeeded based on their individual results

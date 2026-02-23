@@ -25,10 +25,7 @@ import type { NaxConfig } from "./schema";
  * @param override - Override configuration object
  * @returns New merged configuration (immutable - does not mutate inputs)
  */
-export function deepMergeConfig<T = NaxConfig>(
-  base: Record<string, unknown>,
-  override: Record<string, unknown>
-): T {
+export function deepMergeConfig<T = NaxConfig>(base: Record<string, unknown>, override: Record<string, unknown>): T {
   // Start with a clone of base to ensure immutability
   const result: Record<string, unknown> = { ...base };
 
@@ -61,10 +58,7 @@ export function deepMergeConfig<T = NaxConfig>(
         const mergedHookDefs: Record<string, unknown> = {};
 
         // Collect all hook event names
-        const allHookNames = new Set([
-          ...Object.keys(baseHookDefs),
-          ...Object.keys(overrideHookDefs),
-        ]);
+        const allHookNames = new Set([...Object.keys(baseHookDefs), ...Object.keys(overrideHookDefs)]);
 
         // For each hook event, concatenate hooks into an array
         for (const hookName of allHookNames) {
@@ -112,11 +106,11 @@ export function deepMergeConfig<T = NaxConfig>(
 
       // Concatenate content if both exist
       if (baseContent && overrideContent) {
-        (mergedConstitution as Record<string, unknown>).content = `${baseContent}\n\n${overrideContent}`;
+        (mergedConstitution as unknown as Record<string, unknown>).content = `${baseContent}\n\n${overrideContent}`;
       } else if (overrideContent) {
-        (mergedConstitution as Record<string, unknown>).content = overrideContent;
+        (mergedConstitution as unknown as Record<string, unknown>).content = overrideContent;
       } else if (baseContent) {
-        (mergedConstitution as Record<string, unknown>).content = baseContent;
+        (mergedConstitution as unknown as Record<string, unknown>).content = baseContent;
       }
 
       result[key] = mergedConstitution;
@@ -130,14 +124,8 @@ export function deepMergeConfig<T = NaxConfig>(
     }
 
     // Recursive merge for plain objects
-    if (
-      isPlainObject(overrideValue) &&
-      isPlainObject(baseValue)
-    ) {
-      result[key] = deepMergeConfig(
-        baseValue as Record<string, unknown>,
-        overrideValue as Record<string, unknown>
-      );
+    if (isPlainObject(overrideValue) && isPlainObject(baseValue)) {
+      result[key] = deepMergeConfig(baseValue as Record<string, unknown>, overrideValue as Record<string, unknown>);
       continue;
     }
 
@@ -155,10 +143,5 @@ export function deepMergeConfig<T = NaxConfig>(
  * @returns True if value is a plain object
  */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    value.constructor === Object
-  );
+  return typeof value === "object" && value !== null && !Array.isArray(value) && value.constructor === Object;
 }

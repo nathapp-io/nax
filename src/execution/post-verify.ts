@@ -6,13 +6,13 @@
  */
 
 import type { NaxConfig } from "../config";
+import { getLogger } from "../logger";
+import type { StoryMetrics } from "../metrics";
 import type { PRD, UserStory } from "../prd";
-import { savePRD, getExpectedFiles } from "../prd";
-import { runVerification, parseTestOutput, getEnvironmentalEscalationThreshold } from "./verification";
+import { getExpectedFiles, savePRD } from "../prd";
 import { getTierConfig } from "./escalation";
 import { appendProgress } from "./progress";
-import type { StoryMetrics } from "../metrics";
-import { getLogger } from "../logger";
+import { getEnvironmentalEscalationThreshold, parseTestOutput, runVerification } from "./verification";
 
 import { spawn } from "bun";
 
@@ -52,9 +52,13 @@ async function getChangedTestFiles(workdir: string, gitRef?: string): Promise<st
     const exitCode = await proc.exited;
     if (exitCode !== 0) return [];
     const stdout = await new Response(proc.stdout).text();
-    return stdout.trim().split("\n").filter(
-      f => f && (f.includes("test/") || f.includes("__tests__/") || f.endsWith(".test.ts") || f.endsWith(".spec.ts"))
-    );
+    return stdout
+      .trim()
+      .split("\n")
+      .filter(
+        (f) =>
+          f && (f.includes("test/") || f.includes("__tests__/") || f.endsWith(".test.ts") || f.endsWith(".spec.ts")),
+      );
   } catch {
     return [];
   }
@@ -68,7 +72,6 @@ function scopeTestCommand(baseCommand: string, testFiles: string[]): string {
   if (testFiles.length === 0) return baseCommand;
   return `${baseCommand} ${testFiles.join(" ")}`;
 }
-
 
 /**
  * Safely get logger instance, returns null if not initialized
@@ -114,7 +117,18 @@ export interface PostVerifyResult {
  * not user/PRD input. No shell injection risk from untrusted sources.
  */
 export async function runPostAgentVerification(opts: PostVerifyOptions): Promise<PostVerifyResult> {
-  const { config, prd, prdPath, workdir, featureDir, story, storiesToExecute, allStoryMetrics, timeoutRetryCountMap, storyGitRef } = opts;
+  const {
+    config,
+    prd,
+    prdPath,
+    workdir,
+    featureDir,
+    story,
+    storiesToExecute,
+    allStoryMetrics,
+    timeoutRetryCountMap,
+    storyGitRef,
+  } = opts;
   const logger = getSafeLogger();
 
   if (!config.quality.commands.test) {
@@ -164,7 +178,7 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
   // --- Verification failed ---
 
   // Undo story metrics added by completionStage (BUG-1 fix)
-  const storyIds = new Set(storiesToExecute.map(s => s.id));
+  const storyIds = new Set(storiesToExecute.map((s) => s.id));
   for (let i = allStoryMetrics.length - 1; i >= 0; i--) {
     if (storyIds.has(allStoryMetrics[i].storyId)) {
       allStoryMetrics.splice(i, 1);
@@ -178,10 +192,10 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
 
   // Revert ALL stories in this batch back to pending
   const diagnosticContext = verificationResult.error || `Verification failed: ${verificationResult.status}`;
-  prd.userStories = prd.userStories.map(s =>
+  prd.userStories = prd.userStories.map((s) =>
     storyIds.has(s.id)
       ? { ...s, priorErrors: [...(s.priorErrors || []), diagnosticContext], status: "pending" as const, passes: false }
-      : s
+      : s,
   );
 
   logger?.warn("verification", `Verification ${verificationResult.status}`, {
@@ -199,17 +213,18 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
   // Don't count toward escalation for timeouts (environmental issue)
   if (verificationResult.countsTowardEscalation) {
     // Increment attempts — this drives tier escalation
-    prd.userStories = prd.userStories.map(s =>
-      s.id === story.id ? { ...s, attempts: s.attempts + 1 } : s
-    );
+    prd.userStories = prd.userStories.map((s) => (s.id === story.id ? { ...s, attempts: s.attempts + 1 } : s));
 
     // Environmental failures escalate faster (ceil(tierAttempts / divisor))
     if (verificationResult.status === "ENVIRONMENTAL_FAILURE") {
       const currentTier = story.routing?.modelTier || config.autoMode.escalation.tierOrder[0]?.tier;
       const tierCfg = currentTier ? getTierConfig(currentTier, config.autoMode.escalation.tierOrder) : undefined;
       if (tierCfg) {
-        const threshold = getEnvironmentalEscalationThreshold(tierCfg.attempts, config.quality.environmentalEscalationDivisor);
-        const currentAttempts = (prd.userStories.find(s => s.id === story.id)?.attempts ?? 0);
+        const threshold = getEnvironmentalEscalationThreshold(
+          tierCfg.attempts,
+          config.quality.environmentalEscalationDivisor,
+        );
+        const currentAttempts = prd.userStories.find((s) => s.id === story.id)?.attempts ?? 0;
         if (currentAttempts >= threshold) {
           logger?.warn("verification", "Environmental failure hit early escalation threshold", {
             currentAttempts,
@@ -223,8 +238,12 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
   await savePRD(prd, prdPath);
 
   if (featureDir) {
-    await appendProgress(featureDir, story.id, "failed",
-      `${story.title} — ${verificationResult.status}: ${verificationResult.error?.split("\n")[0]}`);
+    await appendProgress(
+      featureDir,
+      story.id,
+      "failed",
+      `${story.title} — ${verificationResult.status}: ${verificationResult.error?.split("\n")[0]}`,
+    );
   }
 
   return { passed: false, prd };

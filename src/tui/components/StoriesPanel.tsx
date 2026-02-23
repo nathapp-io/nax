@@ -5,9 +5,9 @@
  */
 
 import { Box, Text } from "ink";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { COMPACT_MAX_VISIBLE_STORIES, MAX_VISIBLE_STORIES } from "../hooks/useLayout";
 import type { StoryDisplayState } from "../types";
-import { MAX_VISIBLE_STORIES, COMPACT_MAX_VISIBLE_STORIES } from "../hooks/useLayout";
 
 /**
  * Props for StoriesPanel component.
@@ -76,14 +76,7 @@ function formatElapsedTime(ms: number): string {
  * />
  * ```
  */
-export function StoriesPanel({
-  stories,
-  totalCost,
-  elapsedMs,
-  width,
-  compact = false,
-  maxHeight,
-}: StoriesPanelProps) {
+export function StoriesPanel({ stories, totalCost, elapsedMs, width, compact = false, maxHeight }: StoriesPanelProps) {
   // Determine max visible stories based on mode
   const maxVisible = compact ? COMPACT_MAX_VISIBLE_STORIES : MAX_VISIBLE_STORIES;
   const needsScrolling = stories.length > maxVisible;
@@ -105,27 +98,17 @@ export function StoriesPanel({
   }, [stories, scrollOffset, maxVisible, needsScrolling]);
 
   // Get visible stories (either all or a scrolled window)
-  const visibleStories = needsScrolling
-    ? stories.slice(scrollOffset, scrollOffset + maxVisible)
-    : stories;
+  const visibleStories = needsScrolling ? stories.slice(scrollOffset, scrollOffset + maxVisible) : stories;
 
   const canScrollUp = scrollOffset > 0;
   const canScrollDown = scrollOffset + maxVisible < stories.length;
 
   return (
-    <Box
-      flexDirection="column"
-      width={width}
-      height={maxHeight}
-      borderStyle="single"
-      borderColor="gray"
-    >
+    <Box flexDirection="column" width={width} height={maxHeight} borderStyle="single" borderColor="gray">
       {/* Header */}
       <Box paddingX={1} borderStyle="single" borderBottom borderColor="gray">
         <Text bold>Stories</Text>
-        {needsScrolling && (
-          <Text dimColor> ({stories.length} total)</Text>
-        )}
+        {needsScrolling && <Text dimColor> ({stories.length} total)</Text>}
       </Box>
 
       {/* Scroll indicator (top) */}
@@ -152,9 +135,7 @@ export function StoriesPanel({
           }
 
           // Normal mode: icon, ID, and routing info
-          const routing = s.routing
-            ? ` ${s.routing.complexity.slice(0, 3)} ${s.routing.modelTier}`
-            : "";
+          const routing = s.routing ? ` ${s.routing.complexity.slice(0, 3)} ${s.routing.modelTier}` : "";
           return (
             <Box key={s.story.id}>
               <Text>
@@ -174,14 +155,7 @@ export function StoriesPanel({
       )}
 
       {/* Footer — Cost and time */}
-      <Box
-        flexDirection="column"
-        paddingX={1}
-        paddingY={1}
-        borderStyle="single"
-        borderTop
-        borderColor="gray"
-      >
+      <Box flexDirection="column" paddingX={1} paddingY={1} borderStyle="single" borderTop borderColor="gray">
         {!compact && (
           <>
             <Text>

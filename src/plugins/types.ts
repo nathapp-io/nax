@@ -5,20 +5,15 @@
  * Plugins export a NaxPlugin object with extension implementations.
  */
 
-import type { RoutingStrategy } from "../routing/strategy";
 import type { AgentAdapter } from "../agents/types";
+import type { IPromptOptimizer } from "../optimizer/types";
 import type { UserStory } from "../prd/types";
+import type { RoutingStrategy } from "../routing/strategy";
 
 /**
  * Extension point types that plugins can provide.
  */
-export type PluginType =
-	| "optimizer"
-	| "router"
-	| "agent"
-	| "reviewer"
-	| "context-provider"
-	| "reporter";
+export type PluginType = "optimizer" | "router" | "agent" | "reviewer" | "context-provider" | "reporter";
 
 /**
  * A nax plugin module.
@@ -52,34 +47,34 @@ export type PluginType =
  * ```
  */
 export interface NaxPlugin {
-	/** Unique plugin name (e.g., "jira-context", "llmlingua-optimizer") */
-	name: string;
+  /** Unique plugin name (e.g., "jira-context", "llmlingua-optimizer") */
+  name: string;
 
-	/** Plugin version (semver) */
-	version: string;
+  /** Plugin version (semver) */
+  version: string;
 
-	/** Which extension points this plugin provides */
-	provides: PluginType[];
+  /** Which extension points this plugin provides */
+  provides: PluginType[];
 
-	/**
-	 * Called once when plugin is loaded. Use for initialization,
-	 * validating config, establishing connections, etc.
-	 *
-	 * @param config - Plugin-specific config from nax config.json
-	 */
-	setup?(config: Record<string, unknown>): Promise<void>;
+  /**
+   * Called once when plugin is loaded. Use for initialization,
+   * validating config, establishing connections, etc.
+   *
+   * @param config - Plugin-specific config from nax config.json
+   */
+  setup?(config: Record<string, unknown>): Promise<void>;
 
-	/**
-	 * Called when the nax run ends (success or failure).
-	 * Use for cleanup, closing connections, flushing buffers.
-	 */
-	teardown?(): Promise<void>;
+  /**
+   * Called when the nax run ends (success or failure).
+   * Use for cleanup, closing connections, flushing buffers.
+   */
+  teardown?(): Promise<void>;
 
-	/**
-	 * Extension implementations. Only the types listed in `provides`
-	 * are required; others are ignored.
-	 */
-	extensions: PluginExtensions;
+  /**
+   * Extension implementations. Only the types listed in `provides`
+   * are required; others are ignored.
+   */
+  extensions: PluginExtensions;
 }
 
 /**
@@ -87,23 +82,23 @@ export interface NaxPlugin {
  * Only extensions matching the plugin's `provides` array are required.
  */
 export interface PluginExtensions {
-	/** Custom prompt optimizer */
-	optimizer?: IPromptOptimizer;
+  /** Custom prompt optimizer */
+  optimizer?: IPromptOptimizer;
 
-	/** Custom routing strategy (inserted into the strategy chain) */
-	router?: RoutingStrategy;
+  /** Custom routing strategy (inserted into the strategy chain) */
+  router?: RoutingStrategy;
 
-	/** Custom agent adapter (e.g., Codex, Gemini, Aider) */
-	agent?: AgentAdapter;
+  /** Custom agent adapter (e.g., Codex, Gemini, Aider) */
+  agent?: AgentAdapter;
 
-	/** Custom review check (runs alongside built-in typecheck/lint/test) */
-	reviewer?: IReviewPlugin;
+  /** Custom review check (runs alongside built-in typecheck/lint/test) */
+  reviewer?: IReviewPlugin;
 
-	/** Custom context provider (injects external context into prompts) */
-	contextProvider?: IContextProvider;
+  /** Custom context provider (injects external context into prompts) */
+  contextProvider?: IContextProvider;
 
-	/** Custom reporter (receives run events for dashboards, CI, etc.) */
-	reporter?: IReporter;
+  /** Custom reporter (receives run events for dashboards, CI, etc.) */
+  reporter?: IReporter;
 }
 
 // ============================================================================
@@ -115,10 +110,10 @@ export interface PluginExtensions {
  * Plugin optimizers use the same interface as built-in optimizers.
  */
 export type {
-	IPromptOptimizer,
-	PromptOptimizerInput,
-	PromptOptimizerResult,
+  PromptOptimizerInput,
+  PromptOptimizerResult,
 } from "../optimizer/types";
+export type { IPromptOptimizer } from "../optimizer/types";
 
 // ============================================================================
 // Review Extension
@@ -128,12 +123,12 @@ export type {
  * Result from a review check.
  */
 export interface ReviewCheckResult {
-	/** Whether the review check passed */
-	passed: boolean;
-	/** Human-readable output or error messages */
-	output: string;
-	/** Exit code from the check process (if applicable) */
-	exitCode?: number;
+  /** Whether the review check passed */
+  passed: boolean;
+  /** Human-readable output or error messages */
+  output: string;
+  /** Exit code from the check process (if applicable) */
+  exitCode?: number;
 }
 
 /**
@@ -158,20 +153,20 @@ export interface ReviewCheckResult {
  * ```
  */
 export interface IReviewPlugin {
-	/** Check name (e.g., "security-scan", "license-check") */
-	name: string;
+  /** Check name (e.g., "security-scan", "license-check") */
+  name: string;
 
-	/** Human-readable description */
-	description: string;
+  /** Human-readable description */
+  description: string;
 
-	/**
-	 * Run the review check against the working directory.
-	 *
-	 * @param workdir - Project root directory
-	 * @param changedFiles - Files modified by the agent in this story
-	 * @returns Review check result
-	 */
-	check(workdir: string, changedFiles: string[]): Promise<ReviewCheckResult>;
+  /**
+   * Run the review check against the working directory.
+   *
+   * @param workdir - Project root directory
+   * @param changedFiles - Files modified by the agent in this story
+   * @returns Review check result
+   */
+  check(workdir: string, changedFiles: string[]): Promise<ReviewCheckResult>;
 }
 
 // ============================================================================
@@ -182,12 +177,12 @@ export interface IReviewPlugin {
  * Result from a context provider.
  */
 export interface ContextProviderResult {
-	/** Markdown content to inject */
-	content: string;
-	/** Token estimate for budget tracking */
-	estimatedTokens: number;
-	/** Section label in the prompt (e.g., "Jira Context") */
-	label: string;
+  /** Markdown content to inject */
+  content: string;
+  /** Token estimate for budget tracking */
+  estimatedTokens: number;
+  /** Section label in the prompt (e.g., "Jira Context") */
+  label: string;
 }
 
 /**
@@ -212,16 +207,16 @@ export interface ContextProviderResult {
  * ```
  */
 export interface IContextProvider {
-	/** Provider name (e.g., "jira", "linear", "confluence") */
-	name: string;
+  /** Provider name (e.g., "jira", "linear", "confluence") */
+  name: string;
 
-	/**
-	 * Fetch external context relevant to a story.
-	 *
-	 * @param story - The user story being executed
-	 * @returns Markdown content to inject into the agent prompt
-	 */
-	getContext(story: UserStory): Promise<ContextProviderResult>;
+  /**
+   * Fetch external context relevant to a story.
+   *
+   * @param story - The user story being executed
+   * @returns Markdown content to inject into the agent prompt
+   */
+  getContext(story: UserStory): Promise<ContextProviderResult>;
 }
 
 // ============================================================================
@@ -232,38 +227,38 @@ export interface IContextProvider {
  * Event emitted when a run starts.
  */
 export interface RunStartEvent {
-	runId: string;
-	feature: string;
-	totalStories: number;
-	startTime: string;
+  runId: string;
+  feature: string;
+  totalStories: number;
+  startTime: string;
 }
 
 /**
  * Event emitted when a story completes.
  */
 export interface StoryCompleteEvent {
-	runId: string;
-	storyId: string;
-	status: "completed" | "failed" | "skipped" | "paused";
-	durationMs: number;
-	cost: number;
-	tier: string;
-	testStrategy: string;
+  runId: string;
+  storyId: string;
+  status: "completed" | "failed" | "skipped" | "paused";
+  durationMs: number;
+  cost: number;
+  tier: string;
+  testStrategy: string;
 }
 
 /**
  * Event emitted when a run ends.
  */
 export interface RunEndEvent {
-	runId: string;
-	totalDurationMs: number;
-	totalCost: number;
-	storySummary: {
-		completed: number;
-		failed: number;
-		skipped: number;
-		paused: number;
-	};
+  runId: string;
+  totalDurationMs: number;
+  totalCost: number;
+  storySummary: {
+    completed: number;
+    failed: number;
+    skipped: number;
+    paused: number;
+  };
 }
 
 /**
@@ -292,17 +287,17 @@ export interface RunEndEvent {
  * ```
  */
 export interface IReporter {
-	/** Reporter name */
-	name: string;
+  /** Reporter name */
+  name: string;
 
-	/** Called when a run starts */
-	onRunStart?(event: RunStartEvent): Promise<void>;
+  /** Called when a run starts */
+  onRunStart?(event: RunStartEvent): Promise<void>;
 
-	/** Called when a story completes (success or failure) */
-	onStoryComplete?(event: StoryCompleteEvent): Promise<void>;
+  /** Called when a story completes (success or failure) */
+  onStoryComplete?(event: StoryCompleteEvent): Promise<void>;
 
-	/** Called when a run ends */
-	onRunEnd?(event: RunEndEvent): Promise<void>;
+  /** Called when a run ends */
+  onRunEnd?(event: RunEndEvent): Promise<void>;
 }
 
 // ============================================================================
@@ -325,8 +320,8 @@ export interface IReporter {
  * ```
  */
 export interface PluginConfigEntry {
-	/** Module path or npm package name */
-	module: string;
-	/** Plugin-specific configuration */
-	config: Record<string, unknown>;
+  /** Module path or npm package name */
+  module: string;
+  /** Plugin-specific configuration */
+  config?: Record<string, unknown>;
 }

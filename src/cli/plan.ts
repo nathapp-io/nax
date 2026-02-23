@@ -7,11 +7,11 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { NaxConfig } from "../config";
-import { resolveModel } from "../config/schema";
-import { scanCodebase } from "../analyze/scanner";
 import { ClaudeCodeAdapter } from "../agents/claude";
 import type { PlanOptions } from "../agents/types";
+import { scanCodebase } from "../analyze/scanner";
+import type { NaxConfig } from "../config";
+import { resolveModel } from "../config/schema";
 import { getLogger } from "../logger";
 
 /**
@@ -63,9 +63,7 @@ export async function planCommand(
 
   // Ensure nax directory exists
   if (!existsSync(ngentDir)) {
-    throw new Error(
-      `nax directory not found. Run 'nax init' first in ${workdir}`,
-    );
+    throw new Error(`nax directory not found. Run 'nax init' first in ${workdir}`);
   }
 
   // Scan codebase for context
@@ -98,13 +96,10 @@ export async function planCommand(
   // Run agent in plan mode
   const adapter = new ClaudeCodeAdapter();
 
-  logger.info(
-    "cli",
-    interactive
-      ? "Starting interactive planning session..."
-      : `Reading from ${options.from}...`,
-    { interactive, from: options.from }
-  );
+  logger.info("cli", interactive ? "Starting interactive planning session..." : `Reading from ${options.from}...`, {
+    interactive,
+    from: options.from,
+  });
 
   const result = await adapter.plan(planOptions);
 
@@ -117,9 +112,7 @@ export async function planCommand(
     } else {
       // If agent wrote directly, verify it exists
       if (!existsSync(outputPath)) {
-        throw new Error(
-          `Interactive planning completed but spec not found at ${outputPath}`,
-        );
+        throw new Error(`Interactive planning completed but spec not found at ${outputPath}`);
       }
     }
   } else {

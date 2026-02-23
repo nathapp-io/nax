@@ -4,15 +4,15 @@
  * Composable stage-based execution pipeline for refactoring the monolithic runner.
  */
 
-import type { NaxConfig } from "../config/schema";
-import type { PRD, UserStory } from "../prd/types";
 import type { AgentResult } from "../agents/types";
-import type { ReviewResult } from "../review/types";
-import type { HooksConfig } from "../hooks/types";
+import type { NaxConfig } from "../config/schema";
 import type { ConstitutionResult } from "../constitution/types";
-import type { StoryMetrics } from "../metrics/types";
 import type { BuiltContext } from "../context/types";
+import type { HooksConfig } from "../hooks/types";
+import type { StoryMetrics } from "../metrics/types";
 import type { PluginRegistry } from "../plugins/registry";
+import type { PRD, UserStory } from "../prd/types";
+import type { ReviewResult } from "../review/types";
 
 /**
  * Routing result from complexity classification

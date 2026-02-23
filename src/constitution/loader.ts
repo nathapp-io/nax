@@ -6,8 +6,8 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { ConstitutionConfig, ConstitutionResult } from "./types";
 import { globalConfigDir } from "../config/paths";
+import type { ConstitutionConfig, ConstitutionResult } from "./types";
 
 /**
  * Estimate token count for text
@@ -92,7 +92,7 @@ export async function loadConstitution(
     if (projectContent.trim()) {
       // Concatenate with separator if both exist
       if (combinedContent) {
-        combinedContent += "\n\n---\n\n" + projectContent.trim();
+        combinedContent += `\n\n---\n\n${projectContent.trim()}`;
       } else {
         // If no global content, preserve exact project content (including trailing newline)
         combinedContent = projectContent;

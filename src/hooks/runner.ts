@@ -6,8 +6,8 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { HookContext, HookDef, HookEvent, HooksConfig } from "./types";
 import { getLogger } from "../logger";
+import type { HookContext, HookDef, HookEvent, HooksConfig } from "./types";
 
 const DEFAULT_TIMEOUT = 5000;
 
@@ -29,10 +29,7 @@ export interface LoadedHooksConfig extends HooksConfig {
  * @param globalDir - Global nax directory path (optional)
  * @returns Merged hooks config with both global and project hooks
  */
-export async function loadHooksConfig(
-  projectDir: string,
-  globalDir?: string,
-): Promise<LoadedHooksConfig> {
+export async function loadHooksConfig(projectDir: string, globalDir?: string): Promise<LoadedHooksConfig> {
   let globalHooks: HooksConfig = { hooks: {} };
   let projectHooks: HooksConfig = { hooks: {} };
   let skipGlobal = false;
@@ -133,9 +130,7 @@ function validateHookCommand(command: string): void {
 
   for (const pattern of dangerousPatterns) {
     if (pattern.test(command)) {
-      throw new Error(
-        `Hook command contains dangerous pattern: ${pattern.source}`,
-      );
+      throw new Error(`Hook command contains dangerous pattern: ${pattern.source}`);
     }
   }
 }

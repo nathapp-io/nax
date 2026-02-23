@@ -43,10 +43,7 @@ export interface QueueStats {
 }
 
 /** Queue command for mid-run control */
-export type QueueCommand =
-  | { type: "PAUSE" }
-  | { type: "ABORT" }
-  | { type: "SKIP"; storyId: string };
+export type QueueCommand = { type: "PAUSE" } | { type: "ABORT" } | { type: "SKIP"; storyId: string };
 
 /** Result of parsing a queue file */
 export interface QueueFileResult {

@@ -6,9 +6,9 @@
  */
 
 import path from "node:path";
+import { getLogger } from "../logger";
 import { parseQueueFile } from "../queue";
 import type { QueueCommand } from "../queue";
-import { getLogger } from "../logger";
 
 /**
  * Safely get logger instance, returns null if not initialized

@@ -4,12 +4,8 @@
  * Display cost metrics and run statistics.
  */
 
-import {
-  loadRunMetrics,
-  calculateAggregateMetrics,
-  getLastRun,
-} from "../metrics";
 import { getLogger } from "../logger";
+import { calculateAggregateMetrics, getLastRun, loadRunMetrics } from "../metrics";
 
 /**
  * Display aggregate cost metrics across all runs.
@@ -117,9 +113,7 @@ export async function displayModelEfficiency(workdir: string): Promise<void> {
   const aggregate = calculateAggregateMetrics(runs);
 
   // Sort models by total cost (descending)
-  const sortedModels = Object.entries(aggregate.modelEfficiency).sort(
-    ([, a], [, b]) => b.totalCost - a.totalCost,
-  );
+  const sortedModels = Object.entries(aggregate.modelEfficiency).sort(([, a], [, b]) => b.totalCost - a.totalCost);
 
   if (sortedModels.length === 0) {
     logger.info("cli", "No model data available");
@@ -155,4 +149,3 @@ export async function displayModelEfficiency(workdir: string): Promise<void> {
     })),
   });
 }
-

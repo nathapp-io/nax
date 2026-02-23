@@ -2,8 +2,8 @@
  * TUI-specific types for terminal user interface components.
  */
 
-import type { UserStory, StoryRouting } from "../prd/types";
 import type { PipelineEventEmitter } from "../pipeline/events";
+import type { StoryRouting, UserStory } from "../prd/types";
 
 /**
  * Story display state for the TUI.

@@ -23,21 +23,15 @@ import type { Subprocess } from "bun";
  * `await new Response(proc.stdout).text()` hangs forever. This races the read
  * against a timeout so we get whatever output was buffered without blocking.
  */
-async function drainWithDeadline(
-  proc: Subprocess,
-  deadlineMs: number
-): Promise<string> {
+async function drainWithDeadline(proc: Subprocess, deadlineMs: number): Promise<string> {
   const EMPTY = Symbol("timeout");
   const race = <T>(p: Promise<T>) =>
-    Promise.race([
-      p,
-      new Promise<typeof EMPTY>((r) => setTimeout(() => r(EMPTY), deadlineMs)),
-    ]);
+    Promise.race([p, new Promise<typeof EMPTY>((r) => setTimeout(() => r(EMPTY), deadlineMs))]);
 
   let out = "";
   try {
-    const stdout = race(new Response(proc.stdout).text());
-    const stderr = race(new Response(proc.stderr).text());
+    const stdout = race(new Response(proc.stdout as ReadableStream).text());
+    const stderr = race(new Response(proc.stderr as ReadableStream).text());
     const [o, e] = await Promise.all([stdout, stderr]);
     if (o !== EMPTY) out += o;
     if (e !== EMPTY) out += (out ? "\n" : "") + e;
@@ -69,7 +63,7 @@ export interface AssetVerificationResult {
  */
 export async function verifyAssets(
   workingDirectory: string,
-  expectedFiles?: string[]
+  expectedFiles?: string[],
 ): Promise<AssetVerificationResult> {
   if (!expectedFiles || expectedFiles.length === 0) {
     return {
@@ -136,7 +130,7 @@ export async function executeWithTimeout(
     gracePeriodMs?: number;
     drainTimeoutMs?: number;
     cwd?: string;
-  }
+  },
 ): Promise<TimeoutExecutionResult> {
   const shell = options?.shell ?? "/bin/sh";
   const gracePeriodMs = options?.gracePeriodMs ?? 5000;
@@ -173,7 +167,9 @@ export async function executeWithTimeout(
       process.kill(-pid, "SIGTERM");
     } catch {
       // Fallback: kill direct process if process group kill fails
-      try { proc.kill("SIGTERM"); } catch {}
+      try {
+        proc.kill("SIGTERM");
+      } catch {}
     }
 
     // Wait for graceful shutdown (configurable, default 5s)
@@ -184,7 +180,9 @@ export async function executeWithTimeout(
       process.kill(-pid, "SIGKILL");
     } catch {
       // Process group may have already exited from SIGTERM
-      try { proc.kill("SIGKILL"); } catch {}
+      try {
+        proc.kill("SIGKILL");
+      } catch {}
     }
 
     // Bun bug workaround: piped streams don't close after kill.
@@ -210,7 +208,7 @@ export async function executeWithTimeout(
   const exitCode = raceResult as number;
   const stdout = await new Response(proc.stdout).text();
   const stderr = await new Response(proc.stderr).text();
-  const output = stdout + "\n" + stderr;
+  const output = `${stdout}\n${stderr}`;
 
   return {
     success: exitCode === 0,
@@ -247,10 +245,7 @@ export interface TestOutputAnalysis {
  * @param exitCode - Process exit code
  * @returns Analysis with environmental failure detection
  */
-export function parseTestOutput(
-  output: string,
-  exitCode: number
-): TestOutputAnalysis {
+export function parseTestOutput(output: string, exitCode: number): TestOutputAnalysis {
   // Regex patterns for different test frameworks
   const patterns = [
     /(\d+)\s+pass(?:ed)?(?:,\s+|\s+)(\d+)\s+fail/i, // "5 pass, 0 fail" or "5 passed 0 fail"
@@ -266,9 +261,9 @@ export function parseTestOutput(
     const matches = [...output.matchAll(new RegExp(pattern, "gi"))];
     if (matches.length > 0) {
       const lastMatch = matches[matches.length - 1];
-      passCount = parseInt(lastMatch[1], 10);
+      passCount = Number.parseInt(lastMatch[1], 10);
       // Some formats only show pass count
-      failCount = lastMatch[2] ? parseInt(lastMatch[2], 10) : 0;
+      failCount = lastMatch[2] ? Number.parseInt(lastMatch[2], 10) : 0;
       break;
     }
   }
@@ -277,7 +272,7 @@ export function parseTestOutput(
   if (failCount === 0) {
     const failMatches = [...output.matchAll(/(\d+)\s+fail/gi)];
     if (failMatches.length > 0) {
-      failCount = parseInt(failMatches[failMatches.length - 1][1], 10);
+      failCount = Number.parseInt(failMatches[failMatches.length - 1][1], 10);
     }
   }
 
@@ -332,7 +327,7 @@ const DEFAULT_STRIP_ENV_VARS = ["CLAUDECODE", "REPL_ID", "AGENT"];
 
 export function normalizeEnvironment(
   env: Record<string, string | undefined>,
-  stripVars?: string[]
+  stripVars?: string[],
 ): Record<string, string | undefined> {
   const normalized = { ...env };
   const varsToStrip = stripVars ?? DEFAULT_STRIP_ENV_VARS;
@@ -386,9 +381,9 @@ export function appendForceExitFlag(command: string): string {
 function appendFlag(command: string, flag: string): string {
   const pipeIndex = command.search(/[|>]/);
   if (pipeIndex > 0) {
-    return command.slice(0, pipeIndex).trimEnd() + ` ${flag} ` + command.slice(pipeIndex);
+    return `${command.slice(0, pipeIndex).trimEnd()} ${flag} ${command.slice(pipeIndex)}`;
   }
-  return command + ` ${flag}`;
+  return `${command} ${flag}`;
 }
 
 /**
@@ -406,20 +401,14 @@ export function buildTestCommand(
     detectOpenHandles?: boolean;
     detectOpenHandlesRetries?: number;
     timeoutRetryCount?: number;
-  }
+  },
 ): string {
   let command = baseCommand;
 
-  const {
-    forceExit = false,
-    detectOpenHandles = true,
-    detectOpenHandlesRetries = 1,
-    timeoutRetryCount = 0,
-  } = options;
+  const { forceExit = false, detectOpenHandles = true, detectOpenHandlesRetries = 1, timeoutRetryCount = 0 } = options;
 
   // If we've exhausted detectOpenHandles retries, force exit as last resort
-  const exhaustedDiagnosticRetries =
-    timeoutRetryCount > detectOpenHandlesRetries;
+  const exhaustedDiagnosticRetries = timeoutRetryCount > detectOpenHandlesRetries;
 
   // Apply --forceExit if configured or if diagnostic retries exhausted
   if (forceExit || exhaustedDiagnosticRetries) {
@@ -427,11 +416,7 @@ export function buildTestCommand(
   }
 
   // Apply --detectOpenHandles on timeout retries (within cap)
-  if (
-    detectOpenHandles &&
-    timeoutRetryCount > 0 &&
-    timeoutRetryCount <= detectOpenHandlesRetries
-  ) {
+  if (detectOpenHandles && timeoutRetryCount > 0 && timeoutRetryCount <= detectOpenHandlesRetries) {
     command = appendOpenHandlesFlag(command);
   }
 
@@ -511,10 +496,7 @@ export async function runVerification(options: {
   });
 
   // Decision 6: Environment normalization
-  const normalizedEnv = normalizeEnvironment(
-    process.env as Record<string, string | undefined>,
-    options.stripEnvVars
-  );
+  const normalizedEnv = normalizeEnvironment(process.env as Record<string, string | undefined>, options.stripEnvVars);
 
   // Decision 4: Execution guard with timeout
   const execution = await executeWithTimeout(finalCommand, options.timeoutSeconds, normalizedEnv, {

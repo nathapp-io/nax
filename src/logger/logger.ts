@@ -1,11 +1,6 @@
 import { appendFileSync } from "node:fs";
-import type {
-  LogEntry,
-  LogLevel,
-  LoggerOptions,
-  StoryLogger,
-} from "./types.js";
 import { formatConsole, formatJsonl } from "./formatters.js";
+import type { LogEntry, LogLevel, LoggerOptions, StoryLogger } from "./types.js";
 
 /**
  * Severity ordering for log levels (lower number = more severe)
@@ -81,13 +76,7 @@ export class Logger {
   /**
    * Internal log method — writes to console (if level permits) and file (always)
    */
-  private log(
-    level: LogLevel,
-    stage: string,
-    message: string,
-    data?: Record<string, unknown>,
-    storyId?: string,
-  ): void {
+  private log(level: LogLevel, stage: string, message: string, data?: Record<string, unknown>, storyId?: string): void {
     const entry: LogEntry = {
       timestamp: new Date().toISOString(),
       level,
@@ -99,9 +88,7 @@ export class Logger {
 
     // Console output (level-gated)
     if (this.shouldLog(level)) {
-      const consoleOutput = this.useChalk
-        ? formatConsole(entry)
-        : this.formatPlainConsole(entry);
+      const consoleOutput = this.useChalk ? formatConsole(entry) : this.formatPlainConsole(entry);
       console.log(consoleOutput);
     }
 
@@ -148,11 +135,7 @@ export class Logger {
   /**
    * Log an error message
    */
-  error(
-    stage: string,
-    message: string,
-    data?: Record<string, unknown>,
-  ): void {
+  error(stage: string, message: string, data?: Record<string, unknown>): void {
     this.log("error", stage, message, data);
   }
 
@@ -173,11 +156,7 @@ export class Logger {
   /**
    * Log a debug message
    */
-  debug(
-    stage: string,
-    message: string,
-    data?: Record<string, unknown>,
-  ): void {
+  debug(stage: string, message: string, data?: Record<string, unknown>): void {
     this.log("debug", stage, message, data);
   }
 
@@ -232,9 +211,7 @@ export class Logger {
  */
 export function initLogger(options: LoggerOptions): Logger {
   if (instance) {
-    throw new Error(
-      "Logger already initialized. Call getLogger() to access existing instance.",
-    );
+    throw new Error("Logger already initialized. Call getLogger() to access existing instance.");
   }
   instance = new Logger(options);
   return instance;

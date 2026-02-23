@@ -5,13 +5,9 @@
  * via LLM call to the agent adapter.
  */
 
-import type {
-  AcceptanceCriterion,
-  GenerateAcceptanceTestsOptions,
-  AcceptanceTestResult,
-} from "./types";
 import type { AgentAdapter } from "../agents/types";
 import { getLogger } from "../logger";
+import type { AcceptanceCriterion, AcceptanceTestResult, GenerateAcceptanceTestsOptions } from "./types";
 
 /**
  * Parse acceptance criteria from spec.md content.
@@ -88,9 +84,7 @@ export function buildAcceptanceTestPrompt(
   featureName: string,
   codebaseContext: string,
 ): string {
-  const criteriaList = criteria
-    .map((ac) => `${ac.id}: ${ac.text}`)
-    .join("\n");
+  const criteriaList = criteria.map((ac) => `${ac.id}: ${ac.text}`).join("\n");
 
   return `You are a test engineer. Generate acceptance tests for the "${featureName}" feature based on the acceptance criteria below.
 
@@ -180,20 +174,11 @@ export async function generateAcceptanceTests(
   logger.info("acceptance", "Found acceptance criteria", { count: criteria.length });
 
   // Build prompt
-  const prompt = buildAcceptanceTestPrompt(
-    criteria,
-    options.featureName,
-    options.codebaseContext,
-  );
+  const prompt = buildAcceptanceTestPrompt(criteria, options.featureName, options.codebaseContext);
 
   try {
     // Call agent to generate tests (using decompose as pattern)
-    const cmd = [
-      adapter.binary,
-      "--model", options.modelDef.model,
-      "--dangerously-skip-permissions",
-      "-p", prompt,
-    ];
+    const cmd = [adapter.binary, "--model", options.modelDef.model, "--dangerously-skip-permissions", "-p", prompt];
 
     const proc = Bun.spawn(cmd, {
       cwd: options.workdir,
@@ -277,17 +262,16 @@ function extractTestCode(output: string): string {
  * // Generates test with TODO comment
  * ```
  */
-export function generateSkeletonTests(
-  featureName: string,
-  criteria: AcceptanceCriterion[],
-): string {
-  const tests = criteria.map((ac) => {
-    return `  test("${ac.id}: ${ac.text}", async () => {
+export function generateSkeletonTests(featureName: string, criteria: AcceptanceCriterion[]): string {
+  const tests = criteria
+    .map((ac) => {
+      return `  test("${ac.id}: ${ac.text}", async () => {
     // TODO: Implement acceptance test for ${ac.id}
     // ${ac.text}
     expect(true).toBe(false); // Replace with actual test
   });`;
-  }).join("\n\n");
+    })
+    .join("\n\n");
 
   return `import { describe, test, expect } from "bun:test";
 

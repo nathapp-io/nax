@@ -4,8 +4,8 @@
  * Spawns, buffers output, handles resize, and cleanup for PTY processes.
  */
 
-import { useState, useEffect, useCallback } from "react";
 import type * as pty from "node-pty";
+import { useCallback, useEffect, useState } from "react";
 import type { PtyHandle } from "../../agents/types";
 
 /**
@@ -127,17 +127,13 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
       if (lines.length > 0) {
         // Truncate each complete line
         const truncatedLines = lines.map((line) =>
-          line.length > MAX_LINE_LENGTH
-            ? line.slice(0, MAX_LINE_LENGTH) + "…"
-            : line,
+          line.length > MAX_LINE_LENGTH ? `${line.slice(0, MAX_LINE_LENGTH)}…` : line,
         );
 
         setState((prev) => {
           const newLines = [...prev.outputLines, ...truncatedLines];
           // Keep only last N lines
-          const trimmed = newLines.length > MAX_PTY_BUFFER_LINES
-            ? newLines.slice(-MAX_PTY_BUFFER_LINES)
-            : newLines;
+          const trimmed = newLines.length > MAX_PTY_BUFFER_LINES ? newLines.slice(-MAX_PTY_BUFFER_LINES) : newLines;
           return { ...prev, outputLines: trimmed };
         });
       }
@@ -171,11 +167,14 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
   }, [options]);
 
   // Handle terminal resize
-  const handleResize = useCallback((cols: number, rows: number) => {
-    if (ptyProcess) {
-      ptyProcess.resize(cols, rows);
-    }
-  }, [ptyProcess]);
+  const handleResize = useCallback(
+    (cols: number, rows: number) => {
+      if (ptyProcess) {
+        ptyProcess.resize(cols, rows);
+      }
+    },
+    [ptyProcess],
+  );
 
   useEffect(() => {
     const onResize = () => {

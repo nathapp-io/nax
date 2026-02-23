@@ -6,11 +6,11 @@
 
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { DEFAULT_CONFIG, NaxConfigSchema, type NaxConfig } from "./schema";
-import { MAX_DIRECTORY_DEPTH } from "./path-security";
 import { getLogger } from "../logger";
-import { globalConfigDir, projectConfigDir } from "./paths";
 import { deepMergeConfig } from "./merger";
+import { MAX_DIRECTORY_DEPTH } from "./path-security";
+import { globalConfigDir, projectConfigDir } from "./paths";
+import { DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema } from "./schema";
 
 /** Global config path */
 export function globalConfigPath(): string {
@@ -62,7 +62,9 @@ function applyBatchModeCompat(conf: Record<string, unknown>): Record<string, unk
           "config",
           `routing.llm.batchMode is deprecated and will be removed in v1.0. Mapped to mode="${mappedMode}". Update your config to use routing.llm.mode instead.`,
         );
-      } catch { /* logger may not be init yet */ }
+      } catch {
+        /* logger may not be init yet */
+      }
       return {
         ...conf,
         routing: {
@@ -76,10 +78,7 @@ function applyBatchModeCompat(conf: Record<string, unknown>): Record<string, unk
 }
 
 /** Load merged configuration (defaults < global < project < CLI overrides) */
-export async function loadConfig(
-  projectDir?: string,
-  cliOverrides?: Record<string, unknown>
-): Promise<NaxConfig> {
+export async function loadConfig(projectDir?: string, cliOverrides?: Record<string, unknown>): Promise<NaxConfig> {
   // Start with defaults as a plain object
   let rawConfig: Record<string, unknown> = structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>);
 

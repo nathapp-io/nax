@@ -10,11 +10,11 @@
 
 import path from "node:path";
 import type { NaxConfig } from "../config";
-import type { PRD, UserStory } from "../prd";
-import type { HookContext } from "../hooks";
 import { buildContext, formatContextAsMarkdown } from "../context";
-import type { StoryContext, ContextBudget, BuiltContext } from "../context";
+import type { BuiltContext, ContextBudget, StoryContext } from "../context";
+import type { HookContext } from "../hooks";
 import { getLogger } from "../logger";
+import type { PRD, UserStory } from "../prd";
 
 /**
  * Safely get logger instance, returns null if not initialized
@@ -108,10 +108,7 @@ export interface ExecutionResult {
  * });
  * ```
  */
-export function hookCtx(
-  feature: string,
-  opts?: Partial<Omit<HookContext, "event" | "feature">>,
-): HookContext {
+export function hookCtx(feature: string, opts?: Partial<Omit<HookContext, "event" | "feature">>): HookContext {
   return {
     event: "on-start", // overridden by fireHook
     feature,
@@ -171,11 +168,7 @@ export async function maybeGetContext(
  * }
  * ```
  */
-export async function buildStoryContext(
-  prd: PRD,
-  story: UserStory,
-  _config: NaxConfig,
-): Promise<string | undefined> {
+export async function buildStoryContext(prd: PRD, story: UserStory, _config: NaxConfig): Promise<string | undefined> {
   try {
     const storyContext: StoryContext = {
       prd,
@@ -264,17 +257,10 @@ export async function buildStoryContextFull(
  * ```
  */
 export function getAllReadyStories(prd: PRD): UserStory[] {
-  const completedIds = new Set(
-    prd.userStories
-      .filter((s) => s.passes || s.status === "skipped")
-      .map((s) => s.id),
-  );
+  const completedIds = new Set(prd.userStories.filter((s) => s.passes || s.status === "skipped").map((s) => s.id));
 
   return prd.userStories.filter(
-    (s) =>
-      !s.passes &&
-      s.status !== "skipped" &&
-      s.dependencies.every((dep) => completedIds.has(dep)),
+    (s) => !s.passes && s.status !== "skipped" && s.dependencies.every((dep) => completedIds.has(dep)),
   );
 }
 

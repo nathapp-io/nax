@@ -20,10 +20,10 @@
  * ```
  */
 
-import type { PipelineStage, PipelineContext, StageResult } from "../types";
 import type { ContextElement } from "../../context/types";
 import { buildStoryContextFull } from "../../execution/helpers";
 import { getLogger } from "../../logger";
+import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**
  * Token budget for plugin context providers.
@@ -83,7 +83,10 @@ export const contextStage: PipelineStage = {
             });
 
             pluginTokensUsed += providerResult.estimatedTokens;
-            logger.info("context", `Added context from plugin ${provider.name} (${providerResult.estimatedTokens} tokens)`);
+            logger.info(
+              "context",
+              `Added context from plugin ${provider.name} (${providerResult.estimatedTokens} tokens)`,
+            );
           } catch (error) {
             logger.error("context", `Plugin context provider error: ${provider.name}`, {
               error: error instanceof Error ? error.message : String(error),
@@ -95,9 +98,7 @@ export const contextStage: PipelineStage = {
         // Append plugin context to existing markdown
         if (pluginElements.length > 0) {
           const pluginMarkdown = pluginElements.map((el) => el.content).join("\n\n");
-          ctx.contextMarkdown = ctx.contextMarkdown
-            ? `${ctx.contextMarkdown}\n\n${pluginMarkdown}`
-            : pluginMarkdown;
+          ctx.contextMarkdown = ctx.contextMarkdown ? `${ctx.contextMarkdown}\n\n${pluginMarkdown}` : pluginMarkdown;
 
           // Update built context with plugin elements
           if (ctx.builtContext) {
@@ -105,7 +106,10 @@ export const contextStage: PipelineStage = {
             ctx.builtContext.totalTokens += pluginTokensUsed;
           }
 
-          logger.info("context", `Added ${pluginElements.length} plugin context element(s) (${pluginTokensUsed} tokens total)`);
+          logger.info(
+            "context",
+            `Added ${pluginElements.length} plugin context element(s) (${pluginTokensUsed} tokens total)`,
+          );
         }
       }
     }

@@ -34,12 +34,7 @@ export interface StatusBarProps {
  * />
  * ```
  */
-export function StatusBar({
-  currentStory,
-  currentStage,
-  modelTier,
-  testStrategy,
-}: StatusBarProps) {
+export function StatusBar({ currentStory, currentStage, modelTier, testStrategy }: StatusBarProps) {
   if (!currentStory) {
     return (
       <Box paddingX={1} borderStyle="single" borderColor="gray">

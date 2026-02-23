@@ -6,11 +6,11 @@
  */
 
 import { Anthropic } from "@anthropic-ai/sdk";
-import type { UserStory } from "../prd";
 import type { NaxConfig } from "../config";
-import type { CodebaseScan, ClassificationResult, StoryClassification } from "./types";
-import { classifyComplexity } from "../routing";
 import { getLogger } from "../logger";
+import type { UserStory } from "../prd";
+import { classifyComplexity } from "../routing";
+import type { ClassificationResult, CodebaseScan, StoryClassification } from "./types";
 
 /**
  * Raw LLM classification item (before validation)
@@ -136,9 +136,7 @@ async function classifyWithLLM(
     return {
       storyId: String(rawItem.storyId),
       complexity: validateComplexity(rawItem.complexity),
-      contextFiles: Array.isArray(rawItem.relevantFiles)
-        ? rawItem.relevantFiles.map(String)
-        : [],
+      contextFiles: Array.isArray(rawItem.relevantFiles) ? rawItem.relevantFiles.map(String) : [],
       reasoning: String(rawItem.reasoning || "No reasoning provided"),
       estimatedLOC: Number(rawItem.estimatedLOC) || 0,
       risks: Array.isArray(rawItem.risks) ? rawItem.risks.map(String) : [],
@@ -164,11 +162,7 @@ async function classifyWithLLM(
  * @param config - Ngent configuration
  * @returns Formatted prompt string
  */
-function buildClassificationPrompt(
-  stories: UserStory[],
-  scan: CodebaseScan,
-  config: NaxConfig,
-): string {
+function buildClassificationPrompt(stories: UserStory[], scan: CodebaseScan, config: NaxConfig): string {
   // Format codebase summary
   const codebaseSummary = `
 FILE TREE:

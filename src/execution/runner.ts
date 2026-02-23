@@ -8,39 +8,41 @@
  * 4. Loop until complete or blocked
  */
 
+import * as os from "node:os";
 import path from "node:path";
-import type { NaxConfig, ModelTier } from "../config";
+import { convertFixStoryToUserStory, generateFixStories } from "../acceptance";
 import { getAgent } from "../agents";
+import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config/schema";
-import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryFailed, markStoryPaused, isStalled, markStoryAsBlocked, generateHumanHaltSummary } from "../prd";
-import type { UserStory } from "../prd";
-import { routeTask } from "../routing";
-import { routeBatch as llmRouteBatch, clearCache as clearLlmCache } from "../routing/strategies/llm";
-import { fireHook, type LoadedHooksConfig } from "../hooks";
-import { precomputeBatchPlan, type StoryBatch } from "./batching";
-import { escalateTier, calculateMaxIterations, getTierConfig } from "./escalation";
-import {
-  hookCtx,
-  getAllReadyStories,
-  acquireLock,
-  releaseLock,
-  formatProgress,
-} from "./helpers";
-import { appendProgress } from "./progress";
-import { runPostAgentVerification, captureGitRef } from "./post-verify";
+import { type LoadedHooksConfig, fireHook } from "../hooks";
+import { getLogger } from "../logger";
+import { type StoryMetrics, saveRunMetrics } from "../metrics";
+import type { PipelineEventEmitter } from "../pipeline/events";
 import { runPipeline } from "../pipeline/runner";
 import { defaultPipeline } from "../pipeline/stages";
-import type { PipelineContext } from "../pipeline/types";
-import {
-  generateFixStories,
-  convertFixStoryToUserStory,
-} from "../acceptance";
-import { saveRunMetrics, type StoryMetrics } from "../metrics";
-import type { PipelineEventEmitter } from "../pipeline/events";
-import { getLogger } from "../logger";
+import type { PipelineContext, RoutingResult } from "../pipeline/types";
 import { loadPlugins } from "../plugins/loader";
 import type { PluginRegistry } from "../plugins/registry";
-import * as os from "node:os";
+import {
+  countStories,
+  generateHumanHaltSummary,
+  getNextStory,
+  isComplete,
+  isStalled,
+  loadPRD,
+  markStoryAsBlocked,
+  markStoryFailed,
+  markStoryPaused,
+  savePRD,
+} from "../prd";
+import type { UserStory } from "../prd";
+import { routeTask } from "../routing";
+import { clearCache as clearLlmCache, routeBatch as llmRouteBatch } from "../routing/strategies/llm";
+import { type StoryBatch, precomputeBatchPlan } from "./batching";
+import { calculateMaxIterations, escalateTier, getTierConfig } from "./escalation";
+import { acquireLock, formatProgress, getAllReadyStories, hookCtx, releaseLock } from "./helpers";
+import { captureGitRef, runPostAgentVerification } from "./post-verify";
+import { appendProgress } from "./progress";
 
 /** Run options */
 
@@ -58,7 +60,7 @@ function getSafeLogger() {
 /**
  * Try LLM batch routing for ready stories. Logs and swallows errors (falls back to per-story routing).
  */
-async function tryLlmBatchRoute(config: NaxConfig, stories: UserStory[], label: string = "routing"): Promise<void> {
+async function tryLlmBatchRoute(config: NaxConfig, stories: UserStory[], label = "routing"): Promise<void> {
   const mode = config.routing.llm?.mode ?? "hybrid";
   if (config.routing.strategy !== "llm" || mode === "per-story" || stories.length === 0) return;
   const logger = getSafeLogger();
@@ -156,9 +158,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
   const reporters = pluginRegistry.getReporters();
 
   try {
-
     logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {
-      plugins: pluginRegistry.plugins.map(p => ({ name: p.name, version: p.version, provides: p.provides })),
+      plugins: pluginRegistry.plugins.map((p) => ({ name: p.name, version: p.version, provides: p.provides })),
     });
 
     // Log run start
@@ -296,7 +297,9 @@ export async function run(options: RunOptions): Promise<RunResult> {
         currentBatchIndex++;
 
         // Filter out already-completed stories (may have been completed in previous iteration)
-        storiesToExecute = batch.stories.filter(s => !s.passes && s.status !== "skipped" && s.status !== "blocked" && s.status !== "failed");
+        storiesToExecute = batch.stories.filter(
+          (s) => !s.passes && s.status !== "skipped" && s.status !== "blocked" && s.status !== "failed",
+        );
         isBatchExecution = batch.isBatch && storiesToExecute.length > 1;
 
         if (storiesToExecute.length === 0) {
@@ -307,13 +310,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         // Use first story as the primary story for routing/context
         story = storiesToExecute[0];
         // Always derive routing from current config (modelTier not cached)
-        routing = routeTask(
-          story.title,
-          story.description,
-          story.acceptanceCriteria,
-          story.tags,
-          config,
-        );
+        routing = routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, config);
         routing = applyCachedRouting(routing, story, config);
       } else {
         // Fallback to single-story mode (when batching disabled or batch plan exhausted)
@@ -328,13 +325,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         isBatchExecution = false;
 
         // Always derive routing from current config (modelTier not cached)
-        routing = routeTask(
-          story.title,
-          story.description,
-          story.acceptanceCriteria,
-          story.tags,
-          config,
-        );
+        routing = routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, config);
         routing = applyCachedRouting(routing, story, config);
       }
 
@@ -358,16 +349,14 @@ export async function run(options: RunOptions): Promise<RunResult> {
           });
 
           // Update story routing in PRD and reset attempts for new tier
-          prd.userStories = prd.userStories.map(s =>
+          prd.userStories = prd.userStories.map((s) =>
             s.id === story.id
               ? {
                   ...s,
                   attempts: 0, // Reset attempts for new tier
-                  routing: s.routing
-                    ? { ...s.routing, modelTier: nextTier }
-                    : { ...routing, modelTier: nextTier },
+                  routing: s.routing ? { ...s.routing, modelTier: nextTier } : { ...routing, modelTier: nextTier },
                 }
-              : s
+              : s,
           );
           await savePRD(prd, prdPath);
           prdDirty = true;
@@ -379,30 +368,34 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
           // Skip to next iteration (will reload PRD and use new tier)
           continue;
-        } else {
-          // No next tier or escalation disabled — mark story as failed
-          logger?.error("execution", "Story failed - all tiers exhausted", {
-            storyId: story.id,
-            attempts: story.attempts,
-          });
-          markStoryFailed(prd, story.id);
-          await savePRD(prd, prdPath);
-          prdDirty = true;
+        }
+        // No next tier or escalation disabled — mark story as failed
+        logger?.error("execution", "Story failed - all tiers exhausted", {
+          storyId: story.id,
+          attempts: story.attempts,
+        });
+        markStoryFailed(prd, story.id);
+        await savePRD(prd, prdPath);
+        prdDirty = true;
 
-          if (featureDir) {
-            await appendProgress(featureDir, story.id, "failed", `${story.title} — All tiers exhausted`);
-          }
+        if (featureDir) {
+          await appendProgress(featureDir, story.id, "failed", `${story.title} — All tiers exhausted`);
+        }
 
-          await fireHook(hooks, "on-story-fail", hookCtx(feature, {
+        await fireHook(
+          hooks,
+          "on-story-fail",
+          hookCtx(feature, {
             storyId: story.id,
             status: "failed",
             reason: `All tiers exhausted (${story.attempts} attempts)`,
             cost: totalCost,
-          }), workdir);
+          }),
+          workdir,
+        );
 
-          // Skip to next iteration (will pick next story)
-          continue;
-        }
+        // Skip to next iteration (will pick next story)
+        continue;
       }
 
       // Check cost limit
@@ -411,11 +404,16 @@ export async function run(options: RunOptions): Promise<RunResult> {
           totalCost,
           costLimit: config.execution.costLimit,
         });
-        await fireHook(hooks, "on-pause", hookCtx(feature, {
-          storyId: story.id,
-          reason: `Cost limit reached: $${totalCost.toFixed(2)}`,
-          cost: totalCost,
-        }), workdir);
+        await fireHook(
+          hooks,
+          "on-pause",
+          hookCtx(feature, {
+            storyId: story.id,
+            reason: `Cost limit reached: $${totalCost.toFixed(2)}`,
+            cost: totalCost,
+          }),
+          workdir,
+        );
         break;
       }
 
@@ -425,7 +423,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         batchSize: isBatchExecution ? storiesToExecute.length : 1,
         storyId: story.id,
         storyTitle: story.title,
-        ...(isBatchExecution && { batchStoryIds: storiesToExecute.map(s => s.id) }),
+        ...(isBatchExecution && { batchStoryIds: storiesToExecute.map((s) => s.id) }),
       });
 
       // Log iteration start
@@ -440,12 +438,17 @@ export async function run(options: RunOptions): Promise<RunResult> {
       });
 
       // Fire story-start hook
-      await fireHook(hooks, "on-story-start", hookCtx(feature, {
-        storyId: story.id,
-        model: routing.modelTier,
-        agent: config.autoMode.defaultAgent,
-        iteration: iterations,
-      }), workdir);
+      await fireHook(
+        hooks,
+        "on-story-start",
+        hookCtx(feature, {
+          storyId: story.id,
+          model: routing.modelTier,
+          agent: config.autoMode.defaultAgent,
+          iteration: iterations,
+        }),
+        workdir,
+      );
 
       if (dryRun) {
         logger?.info("execution", "[DRY RUN] Would execute agent here", {
@@ -464,7 +467,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         prd,
         story,
         stories: storiesToExecute,
-        routing,
+        routing: routing as RoutingResult,
         workdir,
         featureDir,
         hooks,
@@ -473,7 +476,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       };
 
       // Log agent start
-      logger?.info("agent.start", `Starting agent execution`, {
+      logger?.info("agent.start", "Starting agent execution", {
         storyId: story.id,
         agent: config.autoMode.defaultAgent,
         modelTier: routing.modelTier,
@@ -485,7 +488,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, eventEmitter);
 
       // Log agent complete
-      logger?.info("agent.complete", `Agent execution completed`, {
+      logger?.info("agent.complete", "Agent execution completed", {
         storyId: story.id,
         success: pipelineResult.success,
         finalAction: pipelineResult.finalAction,
@@ -508,8 +511,16 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
         // ADR-003: Post-agent verification (if quality.commands.test is configured)
         const verifyResult = await runPostAgentVerification({
-          config, prd, prdPath, workdir, featureDir,
-          story, storiesToExecute, allStoryMetrics, timeoutRetryCountMap, storyGitRef,
+          config,
+          prd,
+          prdPath,
+          workdir,
+          featureDir,
+          story,
+          storiesToExecute,
+          allStoryMetrics,
+          timeoutRetryCountMap,
+          storyGitRef,
         });
         const verificationPassed = verifyResult.passed;
         prd = verifyResult.prd;
@@ -519,7 +530,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
           // Log story completion and emit reporter events
           for (const completedStory of storiesToExecute) {
-            logger?.info("story.complete", `Story completed successfully`, {
+            logger?.info("story.complete", "Story completed successfully", {
               storyId: completedStory.id,
               storyTitle: completedStory.title,
               totalCost,
@@ -573,11 +584,16 @@ export async function run(options: RunOptions): Promise<RunResult> {
               reason: pipelineResult.reason,
             });
 
-            await fireHook(hooks, "on-pause", hookCtx(feature, {
-              storyId: story.id,
-              reason: pipelineResult.reason || "Pipeline paused",
-              cost: totalCost,
-            }), workdir);
+            await fireHook(
+              hooks,
+              "on-pause",
+              hookCtx(feature, {
+                storyId: story.id,
+                reason: pipelineResult.reason || "Pipeline paused",
+                cost: totalCost,
+              }),
+              workdir,
+            );
 
             // Emit onStoryComplete to reporters
             for (const reporter of reporters) {
@@ -644,12 +660,17 @@ export async function run(options: RunOptions): Promise<RunResult> {
               await appendProgress(featureDir, story.id, "failed", `${story.title} — ${pipelineResult.reason}`);
             }
 
-            await fireHook(hooks, "on-story-fail", hookCtx(feature, {
-              storyId: story.id,
-              status: "failed",
-              reason: pipelineResult.reason || "Pipeline failed",
-              cost: totalCost,
-            }), workdir);
+            await fireHook(
+              hooks,
+              "on-story-fail",
+              hookCtx(feature, {
+                storyId: story.id,
+                status: "failed",
+                reason: pipelineResult.reason || "Pipeline failed",
+                cost: totalCost,
+              }),
+              workdir,
+            );
 
             // Emit onStoryComplete to reporters
             for (const reporter of reporters) {
@@ -672,17 +693,15 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
             break;
 
-          case "escalate":
+          case "escalate": {
             // Escalate to next tier
             const nextTier = escalateTier(routing.modelTier, config.autoMode.escalation.tierOrder);
             const escalateWholeBatch = config.autoMode.escalation.escalateEntireBatch ?? true;
-            const storiesToEscalate = isBatchExecution && escalateWholeBatch
-              ? storiesToExecute
-              : [story];
+            const storiesToEscalate = isBatchExecution && escalateWholeBatch ? storiesToExecute : [story];
 
             if (nextTier && config.autoMode.escalation.enabled) {
               const maxAttempts = calculateMaxIterations(config.autoMode.escalation.tierOrder);
-              const canEscalate = storiesToEscalate.every(s => s.attempts < maxAttempts);
+              const canEscalate = storiesToEscalate.every((s) => s.attempts < maxAttempts);
 
               if (canEscalate) {
                 for (const s of storiesToEscalate) {
@@ -695,14 +714,12 @@ export async function run(options: RunOptions): Promise<RunResult> {
                 const errorMessage = `Attempt ${story.attempts + 1} failed with model tier: ${routing.modelTier}${isBatchExecution ? " (in batch)" : ""}`;
 
                 prd.userStories = prd.userStories.map((s) => {
-                  const shouldEscalate = storiesToEscalate.some(story => story.id === s.id);
+                  const shouldEscalate = storiesToEscalate.some((story) => story.id === s.id);
                   return shouldEscalate
                     ? {
                         ...s,
                         attempts: s.attempts + 1,
-                        routing: s.routing
-                          ? { ...s.routing, modelTier: nextTier }
-                          : undefined,
+                        routing: s.routing ? { ...s.routing, modelTier: nextTier } : undefined,
                         priorErrors: [...(s.priorErrors || []), errorMessage],
                       }
                     : s;
@@ -728,12 +745,17 @@ export async function run(options: RunOptions): Promise<RunResult> {
                   await appendProgress(featureDir, story.id, "failed", `${story.title} — Max attempts reached`);
                 }
 
-                await fireHook(hooks, "on-story-fail", hookCtx(feature, {
-                  storyId: story.id,
-                  status: "failed",
-                  reason: "Max attempts reached",
-                  cost: totalCost,
-                }), workdir);
+                await fireHook(
+                  hooks,
+                  "on-story-fail",
+                  hookCtx(feature, {
+                    storyId: story.id,
+                    status: "failed",
+                    reason: "Max attempts reached",
+                    cost: totalCost,
+                  }),
+                  workdir,
+                );
 
                 break;
               }
@@ -751,16 +773,22 @@ export async function run(options: RunOptions): Promise<RunResult> {
                 await appendProgress(featureDir, story.id, "failed", `${story.title} — Execution failed`);
               }
 
-              await fireHook(hooks, "on-story-fail", hookCtx(feature, {
-                storyId: story.id,
-                status: "failed",
-                reason: "Execution failed",
-                cost: totalCost,
-              }), workdir);
+              await fireHook(
+                hooks,
+                "on-story-fail",
+                hookCtx(feature, {
+                  storyId: story.id,
+                  status: "failed",
+                  reason: "Execution failed",
+                  cost: totalCost,
+                }),
+                workdir,
+              );
 
               break;
             }
             break;
+          }
         }
       }
 
@@ -775,10 +803,15 @@ export async function run(options: RunOptions): Promise<RunResult> {
           reason: "All remaining stories blocked or dependent on blocked stories",
           summary,
         });
-        await fireHook(hooks, "on-pause", hookCtx(feature, {
-          reason: "All remaining stories blocked or dependent on blocked stories",
-          cost: totalCost,
-        }), workdir);
+        await fireHook(
+          hooks,
+          "on-pause",
+          hookCtx(feature, {
+            reason: "All remaining stories blocked or dependent on blocked stories",
+            cost: totalCost,
+          }),
+          workdir,
+        );
         break;
       }
 
@@ -832,10 +865,15 @@ export async function run(options: RunOptions): Promise<RunResult> {
           if (!failures || failures.failedACs.length === 0) {
             logger?.error("acceptance", "Acceptance tests failed but no specific failures detected");
             logger?.warn("acceptance", "Manual intervention required");
-            await fireHook(hooks, "on-pause", hookCtx(feature, {
-              reason: "Acceptance tests failed (no failures detected)",
-              cost: totalCost,
-            }), workdir);
+            await fireHook(
+              hooks,
+              "on-pause",
+              hookCtx(feature, {
+                reason: "Acceptance tests failed (no failures detected)",
+                cost: totalCost,
+              }),
+              workdir,
+            );
             break;
           }
 
@@ -847,11 +885,16 @@ export async function run(options: RunOptions): Promise<RunResult> {
           if (acceptanceRetries >= maxRetries) {
             logger?.error("acceptance", "Max acceptance retries reached");
             logger?.warn("acceptance", "Manual intervention required");
-            logger?.debug("acceptance", "Run: nax accept --override AC-N \"reason\" to skip specific ACs");
-            await fireHook(hooks, "on-pause", hookCtx(feature, {
-              reason: `Acceptance validation failed after ${maxRetries} retries: ${failures.failedACs.join(", ")}`,
-              cost: totalCost,
-            }), workdir);
+            logger?.debug("acceptance", 'Run: nax accept --override AC-N "reason" to skip specific ACs');
+            await fireHook(
+              hooks,
+              "on-pause",
+              hookCtx(feature, {
+                reason: `Acceptance validation failed after ${maxRetries} retries: ${failures.failedACs.join(", ")}`,
+                cost: totalCost,
+              }),
+              workdir,
+            );
             break;
           }
 
@@ -908,7 +951,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
           logger?.info("acceptance", "Running fix stories...");
 
           for (const fixStory of fixStories) {
-            const userStory = prd.userStories.find(s => s.id === fixStory.id);
+            const userStory = prd.userStories.find((s) => s.id === fixStory.id);
             if (!userStory || userStory.status !== "pending") continue;
 
             iterations++;
@@ -926,12 +969,17 @@ export async function run(options: RunOptions): Promise<RunResult> {
               storyTitle: userStory.title,
             });
 
-            await fireHook(hooks, "on-story-start", hookCtx(feature, {
-              storyId: userStory.id,
-              model: routing.modelTier,
-              agent: config.autoMode.defaultAgent,
-              iteration: iterations,
-            }), workdir);
+            await fireHook(
+              hooks,
+              "on-story-start",
+              hookCtx(feature, {
+                storyId: userStory.id,
+                model: routing.modelTier,
+                agent: config.autoMode.defaultAgent,
+                iteration: iterations,
+              }),
+              workdir,
+            );
 
             const fixStoryStartTime = new Date().toISOString();
             const fixContext: PipelineContext = {
@@ -939,7 +987,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
               prd,
               story: userStory,
               stories: [userStory],
-              routing,
+              routing: routing as RoutingResult,
               workdir,
               featureDir,
               hooks,
@@ -1013,7 +1061,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       firstPassSuccess: sm.firstPassSuccess,
     }));
 
-    logger?.info("run.complete", `Feature execution completed`, {
+    logger?.info("run.complete", "Feature execution completed", {
       runId,
       feature,
       success: isComplete(prd),

@@ -49,10 +49,7 @@ export interface StoryBatch {
  * // ]
  * ```
  */
-export function groupStoriesIntoBatches(
-  stories: UserStory[],
-  maxBatchSize = DEFAULT_MAX_BATCH_SIZE,
-): StoryBatch[] {
+export function groupStoriesIntoBatches(stories: UserStory[], maxBatchSize = DEFAULT_MAX_BATCH_SIZE): StoryBatch[] {
   const batches: StoryBatch[] = [];
   let currentBatch: UserStory[] = [];
 
@@ -115,17 +112,12 @@ export function groupStoriesIntoBatches(
  * }
  * ```
  */
-export function precomputeBatchPlan(
-  stories: UserStory[],
-  maxBatchSize = DEFAULT_MAX_BATCH_SIZE,
-): StoryBatch[] {
+export function precomputeBatchPlan(stories: UserStory[], maxBatchSize = DEFAULT_MAX_BATCH_SIZE): StoryBatch[] {
   const batches: StoryBatch[] = [];
   let currentBatch: UserStory[] = [];
 
   for (const story of stories) {
-    const isSimple =
-      story.routing?.complexity === "simple" &&
-      story.routing?.testStrategy === "test-after";
+    const isSimple = story.routing?.complexity === "simple" && story.routing?.testStrategy === "test-after";
 
     if (isSimple && currentBatch.length < maxBatchSize) {
       // Add to current batch

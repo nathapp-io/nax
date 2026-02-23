@@ -4,8 +4,8 @@
  * Provides path resolution for global and project-level config directories.
  */
 
-import { join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 
 /**
  * Returns the global config directory path (~/.nax).

@@ -5,8 +5,8 @@
  * Strategies can return null to delegate to the next strategy in the chain.
  */
 
+import type { Complexity, ModelTier, NaxConfig, TestStrategy } from "../config";
 import type { UserStory } from "../prd/types";
-import type { NaxConfig, Complexity, ModelTier, TestStrategy } from "../config";
 
 /** Aggregate metrics (v0.5 Phase 1 — not yet implemented) */
 export interface AggregateMetrics {
@@ -17,18 +17,24 @@ export interface AggregateMetrics {
   escalationRate: number;
   avgCostPerStory: number;
   avgCostPerFeature: number;
-  modelEfficiency: Record<string, {
-    attempts: number;
-    successes: number;
-    passRate: number;
-    avgCost: number;
-    totalCost: number;
-  }>;
-  complexityAccuracy: Record<string, {
-    predicted: number;
-    actualTierUsed: string;
-    mismatchRate: number;
-  }>;
+  modelEfficiency: Record<
+    string,
+    {
+      attempts: number;
+      successes: number;
+      passRate: number;
+      avgCost: number;
+      totalCost: number;
+    }
+  >;
+  complexityAccuracy: Record<
+    string,
+    {
+      predicted: number;
+      actualTierUsed: string;
+      mismatchRate: number;
+    }
+  >;
 }
 
 /** Context passed to routing strategies */

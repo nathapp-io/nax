@@ -1,8 +1,4 @@
-import type {
-	IPromptOptimizer,
-	PromptOptimizerInput,
-	PromptOptimizerResult,
-} from "./types.js";
+import type { IPromptOptimizer, PromptOptimizerInput, PromptOptimizerResult } from "./types.js";
 import { estimateTokens } from "./types.js";
 
 /**
@@ -12,17 +8,17 @@ import { estimateTokens } from "./types.js";
  * when the configured strategy is unrecognized.
  */
 export class NoopOptimizer implements IPromptOptimizer {
-	public readonly name = "noop";
+  public readonly name = "noop";
 
-	async optimize(input: PromptOptimizerInput): Promise<PromptOptimizerResult> {
-		const tokens = estimateTokens(input.prompt);
+  async optimize(input: PromptOptimizerInput): Promise<PromptOptimizerResult> {
+    const tokens = estimateTokens(input.prompt);
 
-		return {
-			prompt: input.prompt,
-			originalTokens: tokens,
-			optimizedTokens: tokens,
-			savings: 0,
-			appliedRules: [],
-		};
-	}
+    return {
+      prompt: input.prompt,
+      originalTokens: tokens,
+      optimizedTokens: tokens,
+      savings: 0,
+      appliedRules: [],
+    };
+  }
 }

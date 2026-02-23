@@ -9,21 +9,10 @@
 import type { IsolationCheck } from "./types";
 
 /** Common test directory patterns */
-const TEST_PATTERNS = [
-  /^test\//,
-  /^tests\//,
-  /^__tests__\//,
-  /\.spec\.\w+$/,
-  /\.test\.\w+$/,
-  /\.e2e-spec\.\w+$/,
-];
+const TEST_PATTERNS = [/^test\//, /^tests\//, /^__tests__\//, /\.spec\.\w+$/, /\.test\.\w+$/, /\.e2e-spec\.\w+$/];
 
 /** Common source directory patterns */
-const SRC_PATTERNS = [
-  /^src\//,
-  /^lib\//,
-  /^packages\//,
-];
+const SRC_PATTERNS = [/^src\//, /^lib\//, /^packages\//];
 
 /** Check if a file path is a test file */
 export function isTestFile(filePath: string): boolean {
@@ -36,7 +25,7 @@ export function isSourceFile(filePath: string): boolean {
 }
 
 /** Get changed files from git diff */
-export async function getChangedFiles(workdir: string, fromRef: string = "HEAD"): Promise<string[]> {
+export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promise<string[]> {
   const proc = Bun.spawn(["git", "diff", "--name-only", fromRef], {
     cwd: workdir,
     stdout: "pipe",
@@ -65,10 +54,7 @@ export async function getStagedFiles(workdir: string): Promise<string[]> {
 function matchesAllowedPath(filePath: string, allowedPaths: string[]): boolean {
   return allowedPaths.some((pattern) => {
     // Simple glob matching: ** = any directory, * = any filename segment
-    const regexPattern = pattern
-      .replace(/\*\*/g, ".*")
-      .replace(/\*/g, "[^/]*")
-      .replace(/\//g, "\\/");
+    const regexPattern = pattern.replace(/\*\*/g, ".*").replace(/\*/g, "[^/]*").replace(/\//g, "\\/");
     const regex = new RegExp(`^${regexPattern}$`);
     return regex.test(filePath);
   });
@@ -116,10 +102,7 @@ export async function verifyTestWriterIsolation(
  * No test files should be modified.
  * Only source files should be touched.
  */
-export async function verifyImplementerIsolation(
-  workdir: string,
-  beforeRef: string,
-): Promise<IsolationCheck> {
+export async function verifyImplementerIsolation(workdir: string, beforeRef: string): Promise<IsolationCheck> {
   const changed = await getChangedFiles(workdir, beforeRef);
   const testFiles = changed.filter((f) => isTestFile(f));
 

@@ -8,8 +8,8 @@
  */
 
 import { useInput } from "ink";
-import { PanelFocus } from "../types";
 import type { UserStory } from "../../prd/types";
+import { PanelFocus } from "../types";
 
 /**
  * Keyboard action types.
