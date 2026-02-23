@@ -44,8 +44,12 @@ export const executionStage: PipelineStage = {
       };
     }
 
-    // Three-session TDD path
-    if (ctx.routing.testStrategy === "three-session-tdd") {
+    // Three-session TDD path (respect tdd.enabled config)
+    if (ctx.routing.testStrategy === "three-session-tdd" && ctx.config.tdd?.enabled === false) {
+      logger.info("execution", "TDD disabled via config, falling back to single session", {
+        storyId: ctx.story.id,
+      });
+    } else if (ctx.routing.testStrategy === "three-session-tdd") {
       logger.info("execution", "Starting three-session TDD", {
         storyId: ctx.story.id,
       });
