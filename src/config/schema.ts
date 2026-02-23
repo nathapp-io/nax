@@ -151,6 +151,8 @@ export interface ConstitutionConfig {
   path: string;
   /** Maximum tokens allowed for constitution content */
   maxTokens: number;
+  /** Skip loading global constitution (default: false) */
+  skipGlobal?: boolean;
 }
 
 /** Analyze config */
@@ -197,6 +199,30 @@ export interface AcceptanceConfig {
   generateTests: boolean;
   /** Path to acceptance test file (relative to feature directory) */
   testPath: string;
+}
+
+/** Optimizer config (v0.10) */
+export interface OptimizerConfig {
+  /** Enable LLM-powered optimizer */
+  enabled: boolean;
+  /** Optimization strategy: "cost" | "quality" | "balanced" */
+  strategy: "cost" | "quality" | "balanced";
+}
+
+/** Plugin config entry (v0.10) */
+export interface PluginConfigEntry {
+  /** Module path or package name */
+  module: string;
+  /** Plugin-specific configuration */
+  config?: Record<string, unknown>;
+}
+
+/** Hooks config */
+export interface HooksConfig {
+  /** Skip loading global hooks (default: false) */
+  skipGlobal?: boolean;
+  /** Hook definitions */
+  hooks: Record<string, unknown>;
 }
 
 /** Test coverage context config */
@@ -298,6 +324,12 @@ export interface NaxConfig {
   acceptance: AcceptanceConfig;
   /** Context injection settings */
   context: ContextConfig;
+  /** Optimizer settings (v0.10) */
+  optimizer?: OptimizerConfig;
+  /** Plugin configurations (v0.10) */
+  plugins?: PluginConfigEntry[];
+  /** Hooks configuration (v0.10) */
+  hooks?: HooksConfig;
 }
 
 /** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */
@@ -411,6 +443,7 @@ const ConstitutionConfigSchema = z.object({
   enabled: z.boolean(),
   path: z.string().min(1, "constitution.path must be non-empty"),
   maxTokens: z.number().int().positive({ message: "constitution.maxTokens must be > 0" }),
+  skipGlobal: z.boolean().optional(),
 });
 
 const AnalyzeConfigSchema = z.object({
@@ -489,6 +522,21 @@ const RoutingConfigSchema = z.object({
   }
 );
 
+const OptimizerConfigSchema = z.object({
+  enabled: z.boolean(),
+  strategy: z.enum(["cost", "quality", "balanced"]),
+});
+
+const PluginConfigEntrySchema = z.object({
+  module: z.string().min(1, "plugin.module must be non-empty"),
+  config: z.record(z.string(), z.unknown()).optional(),
+});
+
+const HooksConfigSchema = z.object({
+  skipGlobal: z.boolean().optional(),
+  hooks: z.record(z.string(), z.unknown()),
+});
+
 export const NaxConfigSchema = z
   .object({
     version: z.number(),
@@ -504,6 +552,9 @@ export const NaxConfigSchema = z
     plan: PlanConfigSchema,
     acceptance: AcceptanceConfigSchema,
     context: ContextConfigSchema,
+    optimizer: OptimizerConfigSchema.optional(),
+    plugins: z.array(PluginConfigEntrySchema).optional(),
+    hooks: HooksConfigSchema.optional(),
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",

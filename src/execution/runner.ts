@@ -16,7 +16,7 @@ import { loadPRD, savePRD, getNextStory, isComplete, countStories, markStoryFail
 import type { UserStory } from "../prd";
 import { routeTask } from "../routing";
 import { routeBatch as llmRouteBatch, clearCache as clearLlmCache } from "../routing/strategies/llm";
-import { fireHook, type HooksConfig } from "../hooks";
+import { fireHook, type LoadedHooksConfig } from "../hooks";
 import { precomputeBatchPlan, type StoryBatch } from "./batching";
 import { escalateTier, calculateMaxIterations, getTierConfig } from "./escalation";
 import {
@@ -99,7 +99,7 @@ export interface RunOptions {
   /** Ngent config */
   config: NaxConfig;
   /** Hooks config */
-  hooks: HooksConfig;
+  hooks: LoadedHooksConfig;
   /** Feature name */
   feature: string;
   /** Feature directory (for progress logging) */

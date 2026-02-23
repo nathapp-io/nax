@@ -1,12 +1,13 @@
 /**
  * Constitution loader
  *
- * Loads and processes the project constitution file.
+ * Loads and processes global + project constitution files.
  */
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ConstitutionConfig, ConstitutionResult } from "./types";
+import { globalConfigDir } from "../config/paths";
 
 /**
  * Estimate token count for text
@@ -52,48 +53,70 @@ export function truncateToTokens(text: string, maxTokens: number): string {
 }
 
 /**
- * Load constitution from project directory
+ * Load constitution from global and project directories.
  *
- * Reads the constitution file, estimates token count, and truncates if needed.
- * Returns null if constitution is disabled or file doesn't exist.
+ * Prepends global constitution to project constitution with --- separator.
+ * Respects skipGlobal flag in config.
  *
- * @param ngentDir - Path to nax/ directory
+ * @param projectDir - Path to project nax/ directory
  * @param config - Constitution configuration
  * @returns Constitution result or null if disabled/missing
  */
 export async function loadConstitution(
-  ngentDir: string,
+  projectDir: string,
   config: ConstitutionConfig,
 ): Promise<ConstitutionResult | null> {
   if (!config.enabled) {
     return null;
   }
 
-  const constitutionPath = join(ngentDir, config.path);
+  let combinedContent = "";
 
-  if (!existsSync(constitutionPath)) {
+  // Load global constitution (unless skipGlobal is true)
+  if (!config.skipGlobal) {
+    const globalPath = join(globalConfigDir(), config.path);
+    if (existsSync(globalPath)) {
+      const globalFile = Bun.file(globalPath);
+      const globalContent = await globalFile.text();
+      if (globalContent.trim()) {
+        combinedContent = globalContent.trim();
+      }
+    }
+  }
+
+  // Load project constitution
+  const projectPath = join(projectDir, config.path);
+  if (existsSync(projectPath)) {
+    const projectFile = Bun.file(projectPath);
+    const projectContent = await projectFile.text();
+    if (projectContent.trim()) {
+      // Concatenate with separator if both exist
+      if (combinedContent) {
+        combinedContent += "\n\n---\n\n" + projectContent.trim();
+      } else {
+        // If no global content, preserve exact project content (including trailing newline)
+        combinedContent = projectContent;
+      }
+    }
+  }
+
+  // Return null if no content loaded
+  if (!combinedContent) {
     return null;
   }
 
-  const file = Bun.file(constitutionPath);
-  const content = await file.text();
-
-  if (!content.trim()) {
-    return null;
-  }
-
-  const tokens = estimateTokens(content);
+  const tokens = estimateTokens(combinedContent);
 
   if (tokens <= config.maxTokens) {
     return {
-      content,
+      content: combinedContent,
       tokens,
       truncated: false,
     };
   }
 
   // Truncate to fit within maxTokens
-  const truncatedContent = truncateToTokens(content, config.maxTokens);
+  const truncatedContent = truncateToTokens(combinedContent, config.maxTokens);
   const truncatedTokens = estimateTokens(truncatedContent);
 
   return {

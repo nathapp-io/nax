@@ -11,30 +11,66 @@ import { getLogger } from "../logger";
 
 const DEFAULT_TIMEOUT = 5000;
 
-/** Load hooks config from project or global path */
+/** Extended hooks config that tracks global vs project hooks */
+export interface LoadedHooksConfig extends HooksConfig {
+  /** Global hooks (loaded from ~/.nax/hooks.json) */
+  _global?: HooksConfig;
+  /** Whether global hooks were skipped */
+  _skipGlobal?: boolean;
+}
+
+/**
+ * Load hooks config from global and project paths.
+ *
+ * Both global and project hooks are preserved independently (not merged).
+ * The skipGlobal flag in project config disables global hook loading.
+ *
+ * @param projectDir - Project nax directory path
+ * @param globalDir - Global nax directory path (optional)
+ * @returns Merged hooks config with both global and project hooks
+ */
 export async function loadHooksConfig(
   projectDir: string,
   globalDir?: string,
-): Promise<HooksConfig> {
-  const merged: HooksConfig = { hooks: {} };
+): Promise<LoadedHooksConfig> {
+  let globalHooks: HooksConfig = { hooks: {} };
+  let projectHooks: HooksConfig = { hooks: {} };
+  let skipGlobal = false;
 
-  // Load global hooks first
-  if (globalDir) {
-    const globalPath = join(globalDir, "hooks.json");
-    if (existsSync(globalPath)) {
-      const global: HooksConfig = await Bun.file(globalPath).json();
-      Object.assign(merged.hooks, global.hooks);
+  // Load project hooks first to check skipGlobal flag
+  const projectPath = join(projectDir, "hooks.json");
+  if (existsSync(projectPath)) {
+    try {
+      const projectData = await Bun.file(projectPath).json();
+      projectHooks = projectData as HooksConfig;
+      // Check if project config has skipGlobal flag
+      skipGlobal = (projectData as { skipGlobal?: boolean }).skipGlobal ?? false;
+    } catch (err) {
+      const logger = getLogger();
+      logger.warn("hooks", "Failed to parse project hooks.json", { path: projectPath, error: String(err) });
     }
   }
 
-  // Project hooks override global
-  const projectPath = join(projectDir, "hooks.json");
-  if (existsSync(projectPath)) {
-    const project: HooksConfig = await Bun.file(projectPath).json();
-    Object.assign(merged.hooks, project.hooks);
+  // Load global hooks only if not skipped
+  if (!skipGlobal && globalDir) {
+    const globalPath = join(globalDir, "hooks.json");
+    if (existsSync(globalPath)) {
+      try {
+        const globalData = await Bun.file(globalPath).json();
+        globalHooks = globalData as HooksConfig;
+      } catch (err) {
+        const logger = getLogger();
+        logger.warn("hooks", "Failed to parse global hooks.json", { path: globalPath, error: String(err) });
+      }
+    }
   }
 
-  return merged;
+  // Return project hooks as the main config, with global hooks stored separately
+  return {
+    ...projectHooks,
+    _global: skipGlobal ? undefined : globalHooks,
+    _skipGlobal: skipGlobal,
+  };
 }
 
 /**
@@ -204,23 +240,49 @@ async function executeHook(
   };
 }
 
-/** Fire a hook event */
+/**
+ * Fire a hook event for both global and project hooks.
+ *
+ * Both hooks fire independently - global failure doesn't block project hook.
+ *
+ * @param config - Loaded hooks config (contains both global and project hooks)
+ * @param event - Hook event name
+ * @param ctx - Hook context
+ * @param workdir - Working directory
+ */
 export async function fireHook(
-  config: HooksConfig,
+  config: LoadedHooksConfig,
   event: HookEvent,
   ctx: HookContext,
   workdir: string,
 ): Promise<void> {
-  const hookDef = config.hooks[event];
-  if (!hookDef || hookDef.enabled === false) return;
-
   const logger = getLogger();
-  try {
-    const result = await executeHook(hookDef, { ...ctx, event }, workdir);
-    if (!result.success) {
-      logger.warn("hooks", `Hook ${event} failed`, { event, output: result.output });
+
+  // Fire global hook first (if present and not skipped)
+  if (config._global && !config._skipGlobal) {
+    const globalHookDef = config._global.hooks[event];
+    if (globalHookDef && globalHookDef.enabled !== false) {
+      try {
+        const result = await executeHook(globalHookDef, { ...ctx, event }, workdir);
+        if (!result.success) {
+          logger.warn("hooks", `Global hook ${event} failed`, { event, output: result.output });
+        }
+      } catch (err) {
+        logger.warn("hooks", `Global hook ${event} error`, { event, error: String(err) });
+      }
     }
-  } catch (err) {
-    logger.warn("hooks", `Hook ${event} error`, { event, error: String(err) });
+  }
+
+  // Fire project hook (independent of global hook result)
+  const projectHookDef = config.hooks[event];
+  if (projectHookDef && projectHookDef.enabled !== false) {
+    try {
+      const result = await executeHook(projectHookDef, { ...ctx, event }, workdir);
+      if (!result.success) {
+        logger.warn("hooks", `Project hook ${event} failed`, { event, output: result.output });
+      }
+    } catch (err) {
+      logger.warn("hooks", `Project hook ${event} error`, { event, error: String(err) });
+    }
   }
 }
