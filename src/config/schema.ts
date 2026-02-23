@@ -203,10 +203,28 @@ export interface AcceptanceConfig {
 
 /** Optimizer config (v0.10) */
 export interface OptimizerConfig {
-  /** Enable LLM-powered optimizer */
+  /** Enable prompt optimizer */
   enabled: boolean;
-  /** Optimization strategy: "cost" | "quality" | "balanced" */
-  strategy: "cost" | "quality" | "balanced";
+  /** Optimization strategy: "rule-based" | "llm" | "noop" */
+  strategy?: "rule-based" | "llm" | "noop";
+  /** Strategy-specific configurations */
+  strategies?: {
+    "rule-based"?: {
+      stripWhitespace?: boolean;
+      compactCriteria?: boolean;
+      deduplicateContext?: boolean;
+      maxPromptTokens?: number;
+    };
+    llm?: {
+      model?: ModelTier;
+      targetReduction?: number;
+      minPromptTokens?: number;
+    };
+    custom?: {
+      module?: string;
+      options?: Record<string, unknown>;
+    };
+  };
 }
 
 /** Plugin config entry (v0.10) */

@@ -12,6 +12,7 @@ import type { HooksConfig } from "../hooks/types";
 import type { ConstitutionResult } from "../constitution/types";
 import type { StoryMetrics } from "../metrics/types";
 import type { BuiltContext } from "../context/types";
+import type { PluginRegistry } from "../plugins/registry";
 
 /**
  * Routing result from complexity classification
@@ -65,6 +66,8 @@ export interface PipelineContext {
   featureDir?: string;
   /** Hooks configuration */
   hooks: HooksConfig;
+  /** Plugin registry (optional, for plugin-provided extensions) */
+  pluginRegistry?: PluginRegistry;
   /** Constitution result (set by constitutionStage) */
   constitution?: ConstitutionResult;
   /** Context markdown for the agent (set by contextStage) */
