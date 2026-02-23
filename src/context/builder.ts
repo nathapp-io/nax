@@ -271,12 +271,15 @@ export async function buildContext(
   if (storyContext.config?.context?.testCoverage?.enabled !== false && storyContext.workdir) {
     try {
       const tcConfig = storyContext.config?.context?.testCoverage;
+      const contextFiles = getContextFiles(currentStory);
       const scanResult = await generateTestCoverageSummary({
         workdir: storyContext.workdir,
         testDir: tcConfig?.testDir,
         testPattern: tcConfig?.testPattern,
         maxTokens: tcConfig?.maxTokens ?? 500,
         detail: tcConfig?.detail ?? "names-and-counts",
+        contextFiles: contextFiles.length > 0 ? contextFiles : undefined,
+        scopeToStory: tcConfig?.scopeToStory ?? true,
       });
       if (scanResult.summary) {
         elements.push(createTestCoverageContext(scanResult.summary, scanResult.tokens, 85));

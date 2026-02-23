@@ -1096,6 +1096,189 @@ describe('Context Builder', () => {
     });
   });
 
+  describe('test coverage scoping', () => {
+    test('should scope test coverage to story contextFiles', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nax-test-'));
+
+      try {
+        // Create test directory and files
+        const testDir = path.join(tempDir, 'test');
+        await fs.mkdir(testDir);
+
+        // Create multiple test files
+        await fs.writeFile(
+          path.join(testDir, 'health.service.test.ts'),
+          'describe("Health Service", () => { test("checks health", () => {}); });'
+        );
+        await fs.writeFile(
+          path.join(testDir, 'auth.service.test.ts'),
+          'describe("Auth Service", () => { test("authenticates", () => {}); });'
+        );
+        await fs.writeFile(
+          path.join(testDir, 'db.connection.test.ts'),
+          'describe("DB Connection", () => { test("connects", () => {}); });'
+        );
+
+        const prd = createTestPRD([
+          {
+            id: 'US-001',
+            title: 'Implement health service',
+            description: 'Create health check service',
+            acceptanceCriteria: ['Service works'],
+            contextFiles: ['src/health.service.ts'], // Only health service
+          },
+        ]);
+
+        const storyContext: StoryContext = {
+          prd,
+          currentStoryId: 'US-001',
+          workdir: tempDir,
+          config: {
+            context: {
+              testCoverage: {
+                enabled: true,
+                scopeToStory: true, // Enable scoping
+              },
+            },
+          } as any,
+        };
+
+        const budget: ContextBudget = {
+          maxTokens: 10000,
+          reservedForInstructions: 1000,
+          availableForContext: 9000,
+        };
+
+        const built = await buildContext(storyContext, budget);
+        const markdown = formatContextAsMarkdown(built);
+
+        // Should include test coverage element
+        expect(built.elements.some((e) => e.type === 'test-coverage')).toBe(true);
+
+        // Should only mention health.service.test.ts, not auth or db tests
+        expect(markdown).toContain('health.service.test.ts');
+        expect(markdown).not.toContain('auth.service.test.ts');
+        expect(markdown).not.toContain('db.connection.test.ts');
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    test('should scan all tests when scopeToStory=false', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nax-test-'));
+
+      try {
+        const testDir = path.join(tempDir, 'test');
+        await fs.mkdir(testDir);
+
+        await fs.writeFile(
+          path.join(testDir, 'health.test.ts'),
+          'describe("Health", () => { test("works", () => {}); });'
+        );
+        await fs.writeFile(
+          path.join(testDir, 'auth.test.ts'),
+          'describe("Auth", () => { test("works", () => {}); });'
+        );
+
+        const prd = createTestPRD([
+          {
+            id: 'US-001',
+            title: 'Story',
+            description: 'Test',
+            acceptanceCriteria: ['AC1'],
+            contextFiles: ['src/health.ts'],
+          },
+        ]);
+
+        const storyContext: StoryContext = {
+          prd,
+          currentStoryId: 'US-001',
+          workdir: tempDir,
+          config: {
+            context: {
+              testCoverage: {
+                enabled: true,
+                scopeToStory: false, // Disabled - should scan all
+              },
+            },
+          } as any,
+        };
+
+        const budget: ContextBudget = {
+          maxTokens: 10000,
+          reservedForInstructions: 1000,
+          availableForContext: 9000,
+        };
+
+        const built = await buildContext(storyContext, budget);
+        const markdown = formatContextAsMarkdown(built);
+
+        // Should include both test files
+        expect(markdown).toContain('health.test.ts');
+        expect(markdown).toContain('auth.test.ts');
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    test('should fall back to full scan when no contextFiles provided', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nax-test-'));
+
+      try {
+        const testDir = path.join(tempDir, 'test');
+        await fs.mkdir(testDir);
+
+        await fs.writeFile(
+          path.join(testDir, 'test1.test.ts'),
+          'describe("Test1", () => { test("works", () => {}); });'
+        );
+        await fs.writeFile(
+          path.join(testDir, 'test2.test.ts'),
+          'describe("Test2", () => { test("works", () => {}); });'
+        );
+
+        const prd = createTestPRD([
+          {
+            id: 'US-001',
+            title: 'Story without contextFiles',
+            description: 'Test',
+            acceptanceCriteria: ['AC1'],
+            // No contextFiles
+          },
+        ]);
+
+        const storyContext: StoryContext = {
+          prd,
+          currentStoryId: 'US-001',
+          workdir: tempDir,
+          config: {
+            context: {
+              testCoverage: {
+                enabled: true,
+                scopeToStory: true, // true but no contextFiles
+              },
+            },
+          } as any,
+        };
+
+        const budget: ContextBudget = {
+          maxTokens: 10000,
+          reservedForInstructions: 1000,
+          availableForContext: 9000,
+        };
+
+        const built = await buildContext(storyContext, budget);
+        const markdown = formatContextAsMarkdown(built);
+
+        // Should fall back to scanning all files
+        expect(markdown).toContain('test1.test.ts');
+        expect(markdown).toContain('test2.test.ts');
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('context isolation', () => {
     test('should only include current story and declared dependencies — no other stories', async () => {
       const prd = createTestPRD([

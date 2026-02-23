@@ -1,8 +1,14 @@
 import { describe, test, expect } from "bun:test";
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
 import {
   extractTestStructure,
   formatTestSummary,
   truncateToTokenBudget,
+  deriveTestPatterns,
+  scanTestFiles,
+  generateTestCoverageSummary,
   type TestFileInfo,
 } from "../src/context/test-scanner";
 
@@ -161,5 +167,262 @@ describe("truncateToTokenBudget", () => {
     const result = truncateToTokenBudget(files, 10, "describe-blocks");
     expect(result.truncated).toBe(true);
     expect(result.summary).toContain("test files");
+  });
+});
+
+describe("deriveTestPatterns", () => {
+  test("derives test patterns from source file paths", () => {
+    const contextFiles = ["src/health.service.ts", "src/db/connection.ts"];
+    const patterns = deriveTestPatterns(contextFiles);
+
+    // Should generate patterns for health.service.ts
+    expect(patterns).toContain("health.service.test.ts");
+    expect(patterns).toContain("health.service.spec.ts");
+    expect(patterns).toContain("health.test.ts"); // Simple basename without .service
+
+    // Should generate patterns for connection.ts
+    expect(patterns).toContain("connection.test.ts");
+    expect(patterns).toContain("connection.spec.ts");
+  });
+
+  test("handles files without special suffixes", () => {
+    const contextFiles = ["src/utils.ts"];
+    const patterns = deriveTestPatterns(contextFiles);
+
+    expect(patterns).toContain("utils.test.ts");
+    expect(patterns).toContain("utils.spec.ts");
+    expect(patterns).toContain("utils.test.js");
+    expect(patterns).toContain("utils.spec.js");
+  });
+
+  test("handles various file extensions", () => {
+    const contextFiles = ["src/component.tsx", "src/script.jsx"];
+    const patterns = deriveTestPatterns(contextFiles);
+
+    expect(patterns).toContain("component.test.tsx");
+    expect(patterns).toContain("component.spec.tsx");
+    expect(patterns).toContain("script.test.jsx");
+    expect(patterns).toContain("script.spec.jsx");
+  });
+
+  test("strips common suffixes like .service, .controller, .module", () => {
+    const contextFiles = [
+      "src/user.service.ts",
+      "src/api.controller.ts",
+      "src/app.module.ts",
+    ];
+    const patterns = deriveTestPatterns(contextFiles);
+
+    // Should include both full and simplified patterns
+    expect(patterns).toContain("user.service.test.ts");
+    expect(patterns).toContain("user.test.ts"); // Simplified
+    expect(patterns).toContain("api.controller.test.ts");
+    expect(patterns).toContain("api.test.ts"); // Simplified
+  });
+
+  test("returns empty array for empty input", () => {
+    const patterns = deriveTestPatterns([]);
+    expect(patterns).toEqual([]);
+  });
+
+  test("deduplicates patterns", () => {
+    const contextFiles = ["src/foo.ts", "src/foo.service.ts"];
+    const patterns = deriveTestPatterns(contextFiles);
+
+    // Both files generate "foo.test.ts", should only appear once
+    const fooTestCount = patterns.filter((p) => p === "foo.test.ts").length;
+    expect(fooTestCount).toBe(1);
+  });
+});
+
+describe("scanTestFiles with scoping", () => {
+  test("scopes test files to contextFiles when scopeToStory=true", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-scanner-"));
+
+    try {
+      // Create test directory structure
+      const testDir = path.join(tempDir, "test");
+      await fs.mkdir(testDir);
+
+      // Create test files
+      await fs.writeFile(
+        path.join(testDir, "health.service.test.ts"),
+        'describe("Health Service", () => { test("works", () => {}); });'
+      );
+      await fs.writeFile(
+        path.join(testDir, "db.connection.test.ts"),
+        'describe("DB Connection", () => { test("connects", () => {}); });'
+      );
+      await fs.writeFile(
+        path.join(testDir, "auth.service.test.ts"),
+        'describe("Auth Service", () => { test("authenticates", () => {}); });'
+      );
+
+      // Scan with contextFiles (only health.service.ts)
+      const result = await scanTestFiles({
+        workdir: tempDir,
+        testDir: "test",
+        contextFiles: ["src/health.service.ts"],
+        scopeToStory: true,
+      });
+
+      // Should only include health.service.test.ts
+      expect(result.length).toBe(1);
+      expect(result[0].relativePath).toBe("test/health.service.test.ts");
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("scans all test files when scopeToStory=false", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-scanner-"));
+
+    try {
+      const testDir = path.join(tempDir, "test");
+      await fs.mkdir(testDir);
+
+      await fs.writeFile(
+        path.join(testDir, "health.service.test.ts"),
+        'describe("Health", () => { test("works", () => {}); });'
+      );
+      await fs.writeFile(
+        path.join(testDir, "auth.service.test.ts"),
+        'describe("Auth", () => { test("works", () => {}); });'
+      );
+
+      // Scan with scopeToStory=false (should scan all)
+      const result = await scanTestFiles({
+        workdir: tempDir,
+        testDir: "test",
+        contextFiles: ["src/health.service.ts"],
+        scopeToStory: false,
+      });
+
+      expect(result.length).toBe(2);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("falls back to full scan when no contextFiles provided", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-scanner-"));
+
+    try {
+      const testDir = path.join(tempDir, "test");
+      await fs.mkdir(testDir);
+
+      await fs.writeFile(
+        path.join(testDir, "test1.test.ts"),
+        'describe("Test1", () => { test("works", () => {}); });'
+      );
+      await fs.writeFile(
+        path.join(testDir, "test2.test.ts"),
+        'describe("Test2", () => { test("works", () => {}); });'
+      );
+
+      // No contextFiles, should scan all
+      const result = await scanTestFiles({
+        workdir: tempDir,
+        testDir: "test",
+        scopeToStory: true,
+      });
+
+      expect(result.length).toBe(2);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("generateTestCoverageSummary with scoping", () => {
+  test("generates scoped summary when contextFiles provided", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-scanner-"));
+
+    try {
+      const testDir = path.join(tempDir, "test");
+      await fs.mkdir(testDir);
+
+      await fs.writeFile(
+        path.join(testDir, "health.service.test.ts"),
+        'describe("Health", () => { test("check", () => {}); });'
+      );
+      await fs.writeFile(
+        path.join(testDir, "auth.service.test.ts"),
+        'describe("Auth", () => { test("login", () => {}); });'
+      );
+
+      const result = await generateTestCoverageSummary({
+        workdir: tempDir,
+        testDir: "test",
+        contextFiles: ["src/health.service.ts"],
+        scopeToStory: true,
+        maxTokens: 500,
+        detail: "names-and-counts",
+      });
+
+      // Should only include health.service.test.ts
+      expect(result.files.length).toBe(1);
+      expect(result.totalTests).toBe(1);
+      expect(result.summary).toContain("health.service.test.ts");
+      expect(result.summary).not.toContain("auth.service.test.ts");
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("logs warning when scopeToStory=true but no contextFiles", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-scanner-"));
+
+    try {
+      const testDir = path.join(tempDir, "test");
+      await fs.mkdir(testDir);
+
+      await fs.writeFile(
+        path.join(testDir, "test.test.ts"),
+        'describe("Test", () => { test("works", () => {}); });'
+      );
+
+      // Capture console warnings
+      const warnings: string[] = [];
+      const originalWarn = console.warn;
+      console.warn = (...args: any[]) => warnings.push(args.join(" "));
+
+      await generateTestCoverageSummary({
+        workdir: tempDir,
+        testDir: "test",
+        scopeToStory: true, // true but no contextFiles
+        maxTokens: 500,
+      });
+
+      console.warn = originalWarn;
+
+      // Should log warning about fallback to full scan
+      expect(warnings.some((w) => w.includes("scopeToStory=true but no contextFiles"))).toBe(true);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("returns empty result when no test files found", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-scanner-"));
+
+    try {
+      const testDir = path.join(tempDir, "test");
+      await fs.mkdir(testDir);
+
+      const result = await generateTestCoverageSummary({
+        workdir: tempDir,
+        testDir: "test",
+        contextFiles: ["src/health.service.ts"],
+        scopeToStory: true,
+      });
+
+      expect(result.files).toEqual([]);
+      expect(result.totalTests).toBe(0);
+      expect(result.summary).toBe("");
+      expect(result.tokens).toBe(0);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 });

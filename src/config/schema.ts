@@ -211,6 +211,8 @@ export interface TestCoverageConfig {
   testDir?: string;
   /** Glob pattern for test files */
   testPattern: string;
+  /** Scope test coverage to story-relevant files only (default: true) */
+  scopeToStory: boolean;
 }
 
 /** Context config */
@@ -446,6 +448,7 @@ const TestCoverageConfigSchema = z.object({
   maxTokens: z.number().int().min(50).max(5000).default(500),
   testDir: z.string().optional(),
   testPattern: z.string().default("**/*.test.{ts,js,tsx,jsx}"),
+  scopeToStory: z.boolean().default(true),
 });
 
 const ContextConfigSchema = z.object({
@@ -615,6 +618,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
       detail: "names-and-counts",
       maxTokens: 500,
       testPattern: "**/*.test.{ts,js,tsx,jsx}",
+      scopeToStory: true,
     },
   },
 };

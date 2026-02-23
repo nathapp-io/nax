@@ -29,6 +29,10 @@ export interface TestScanOptions {
   maxTokens?: number;
   /** Summary detail level (default: "names-and-counts") */
   detail?: TestSummaryDetail;
+  /** Context files to scope test coverage to (default: undefined = scan all) */
+  contextFiles?: string[];
+  /** Enable scoping to context files (default: true) */
+  scopeToStory?: boolean;
 }
 
 /** A single describe block extracted from a test file */
@@ -112,6 +116,48 @@ export function extractTestStructure(source: string): { describes: DescribeBlock
 const COMMON_TEST_DIRS = ["test", "tests", "__tests__", "src/__tests__", "spec"];
 
 /**
+ * Derive test file patterns from source file paths.
+ *
+ * Maps source files to their likely test file counterparts:
+ * - src/foo.ts → test/foo.test.ts, test/foo.spec.ts
+ * - src/bar/baz.service.ts → test/bar/baz.service.test.ts, test/baz.service.test.ts
+ *
+ * @param contextFiles - Array of source file paths (relative to workdir)
+ * @returns Array of test file path patterns (basename patterns for matching)
+ */
+export function deriveTestPatterns(contextFiles: string[]): string[] {
+  const patterns = new Set<string>();
+
+  for (const filePath of contextFiles) {
+    const basename = path.basename(filePath);
+    const basenameNoExt = basename.replace(/\.(ts|js|tsx|jsx)$/, '');
+
+    // Pattern 1: exact basename match with .test/.spec extension
+    // e.g., foo.ts → foo.test.ts, foo.spec.ts
+    patterns.add(`${basenameNoExt}.test.ts`);
+    patterns.add(`${basenameNoExt}.test.js`);
+    patterns.add(`${basenameNoExt}.test.tsx`);
+    patterns.add(`${basenameNoExt}.test.jsx`);
+    patterns.add(`${basenameNoExt}.spec.ts`);
+    patterns.add(`${basenameNoExt}.spec.js`);
+    patterns.add(`${basenameNoExt}.spec.tsx`);
+    patterns.add(`${basenameNoExt}.spec.jsx`);
+
+    // Pattern 2: if basename contains .service/.controller/etc, also match without it
+    // e.g., foo.service.ts → foo.test.ts
+    const simpleBasename = basenameNoExt.replace(/\.(service|controller|resolver|module|guard|middleware|util|helper)$/, '');
+    if (simpleBasename !== basenameNoExt) {
+      patterns.add(`${simpleBasename}.test.ts`);
+      patterns.add(`${simpleBasename}.test.js`);
+      patterns.add(`${simpleBasename}.spec.ts`);
+      patterns.add(`${simpleBasename}.spec.js`);
+    }
+  }
+
+  return Array.from(patterns);
+}
+
+/**
  * Auto-detect test directory by checking common locations.
  */
 async function detectTestDir(workdir: string): Promise<string | null> {
@@ -138,7 +184,7 @@ async function detectTestDir(workdir: string): Promise<string | null> {
  * @returns Array of parsed test file info
  */
 export async function scanTestFiles(options: TestScanOptions): Promise<TestFileInfo[]> {
-  const { workdir, testPattern = "**/*.test.{ts,js,tsx,jsx}" } = options;
+  const { workdir, testPattern = "**/*.test.{ts,js,tsx,jsx}", contextFiles, scopeToStory = true } = options;
   let testDir = options.testDir;
 
   // Auto-detect test directory if not specified
@@ -154,10 +200,25 @@ export async function scanTestFiles(options: TestScanOptions): Promise<TestFileI
     return [];
   }
 
+  // Derive test patterns from context files if scoping is enabled
+  let allowedBasenames: Set<string> | null = null;
+  if (scopeToStory && contextFiles && contextFiles.length > 0) {
+    const patterns = deriveTestPatterns(contextFiles);
+    allowedBasenames = new Set(patterns);
+  }
+
   const glob = new Glob(testPattern);
   const files: TestFileInfo[] = [];
 
   for await (const filePath of glob.scan({ cwd: scanDir, absolute: false })) {
+    // Filter by derived patterns if scoping is enabled
+    if (allowedBasenames !== null) {
+      const basename = path.basename(filePath);
+      if (!allowedBasenames.has(basename)) {
+        continue; // Skip test files not matching context files
+      }
+    }
+
     const fullPath = path.join(scanDir, filePath);
     try {
       const source = await Bun.file(fullPath).text();
@@ -287,7 +348,14 @@ export async function generateTestCoverageSummary(options: TestScanOptions): Pro
   const {
     maxTokens = 500,
     detail = "names-and-counts",
+    contextFiles,
+    scopeToStory = true,
   } = options;
+
+  // Log warning if scoping is enabled but no context files provided
+  if (scopeToStory && (!contextFiles || contextFiles.length === 0)) {
+    console.warn("[test-scanner] scopeToStory=true but no contextFiles provided — falling back to full scan");
+  }
 
   const files = await scanTestFiles(options);
 
