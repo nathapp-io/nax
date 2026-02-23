@@ -188,11 +188,12 @@ function complexityToModelTier(
  * @param story - User story to route
  * @param context - Routing context (config, codebase, metrics)
  * @param workdir - Working directory for resolving custom strategy paths
+ * @param plugins - Optional plugin registry for plugin-provided routers
  * @returns Routing decision from the strategy chain
  *
  * @example
  * ```ts
- * const decision = await routeStory(story, { config }, "/path/to/project");
+ * const decision = await routeStory(story, { config }, "/path/to/project", plugins);
  * // {
  * //   complexity: "complex",
  * //   modelTier: "balanced",
@@ -205,8 +206,9 @@ export async function routeStory(
   story: UserStory,
   context: RoutingContext,
   workdir: string,
+  plugins?: import("../plugins/registry").PluginRegistry,
 ): Promise<RoutingDecision> {
-  const chain = await buildStrategyChain(context.config, workdir);
+  const chain = await buildStrategyChain(context.config, workdir, plugins);
   return await chain.route(story, context);
 }
 

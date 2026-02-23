@@ -34,13 +34,13 @@ export const routingStage: PipelineStage = {
     let routing;
     if (ctx.story.routing) {
       // Use cached complexity/testStrategy, but re-derive modelTier from current config
-      routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir);
+      routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
       // Override with cached complexity if available
       routing.complexity = ctx.story.routing.complexity;
       routing.testStrategy = ctx.story.routing.testStrategy;
     } else {
       // Fresh classification
-      routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir);
+      routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
     }
 
     ctx.routing = routing;

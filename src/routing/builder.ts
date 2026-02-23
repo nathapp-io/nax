@@ -6,6 +6,7 @@
 
 import type { NaxConfig } from "../config";
 import type { RoutingStrategy } from "./strategy";
+import type { PluginRegistry } from "../plugins/registry";
 import { StrategyChain } from "./chain";
 import { keywordStrategy, llmStrategy, manualStrategy, adaptiveStrategy } from "./strategies";
 import { loadCustomStrategy } from "./loader";
@@ -13,7 +14,8 @@ import { loadCustomStrategy } from "./loader";
 /**
  * Build the routing strategy chain based on configuration.
  *
- * Chain order (custom strategies first, keyword always last as fallback):
+ * Chain order (plugin routers first, then config-based, keyword always last):
+ * - plugin routers (from plugin registry, in load order)
  * - manual (if strategy = "manual")
  * - custom (if strategy = "custom")
  * - llm (if strategy = "llm")
@@ -22,19 +24,27 @@ import { loadCustomStrategy } from "./loader";
  *
  * @param config - nax configuration
  * @param workdir - Working directory for resolving custom strategy paths
+ * @param plugins - Optional plugin registry for plugin-provided routers
  * @returns Strategy chain instance
  *
  * @example
  * ```ts
- * const chain = await buildStrategyChain(config, "/path/to/project");
+ * const chain = await buildStrategyChain(config, "/path/to/project", plugins);
  * const decision = chain.route(story, context);
  * ```
  */
 export async function buildStrategyChain(
   config: NaxConfig,
   workdir: string,
+  plugins?: PluginRegistry,
 ): Promise<StrategyChain> {
   const strategies: RoutingStrategy[] = [];
+
+  // Prepend plugin routers before built-in strategies
+  if (plugins) {
+    const pluginRouters = plugins.getRouters();
+    strategies.push(...pluginRouters);
+  }
 
   // Add strategies based on config
   switch (config.routing.strategy) {
