@@ -596,7 +596,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
     model: "balanced",
     fallbackToKeywords: true,
     maxCodebaseSummaryTokens: 5000,
-    includeScaffold: true,
+    includeScaffold: false,
   },
   review: {
     enabled: true,
