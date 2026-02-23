@@ -194,31 +194,37 @@ describe("runThreeSessionTdd", () => {
     expect(result.needsHumanReview).toBe(true);
   });
 
-  test("failure when implementer violates isolation", async () => {
+  test("implementer touching test files is a warning (soft-pass), not failure", async () => {
     mockGitSpawn({
       diffFiles: [
         // Session 1 isolation: OK
         ["test/user.test.ts"],
         // Session 1 getChangedFiles
         ["test/user.test.ts"],
-        // Session 2 isolation: implementer touched tests!
+        // Session 2 isolation: implementer touched tests (warning, not violation)
         ["test/user.test.ts", "src/user.ts"],
         // Session 2 getChangedFiles
         ["test/user.test.ts", "src/user.ts"],
+        // Session 3 isolation: OK
+        [],
+        // Session 3 getChangedFiles
+        [],
       ],
     });
 
     const agent = createMockAgent([
       { success: true, estimatedCost: 0.01 },
       { success: true, estimatedCost: 0.02 },
+      { success: true, estimatedCost: 0.01 },
     ]);
 
     const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
 
-    expect(result.success).toBe(false);
-    expect(result.sessions).toHaveLength(2);
-    expect(result.sessions[1].success).toBe(false);
-    expect(result.needsHumanReview).toBe(true);
+    // v0.9.2: implementer touching test files is a warning, not a failure
+    expect(result.sessions).toHaveLength(3);
+    expect(result.sessions[1].success).toBe(true);
+    expect(result.sessions[1].isolation?.warnings).toContain("test/user.test.ts");
+    expect(result.success).toBe(true);
   });
 
   test("dry-run mode logs sessions without executing", async () => {

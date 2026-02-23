@@ -86,7 +86,7 @@ Dependencies: US-001
     await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
   });
 
-  test("throws when story count exceeds maxStoriesPerFeature limit (MEM-1)", async () => {
+  test("warns but does not throw when story count exceeds maxStoriesPerFeature limit", async () => {
     const tmpDir = `/tmp/nax-analyze-limit-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
 
@@ -116,15 +116,15 @@ Description for story ${i + 1}
       },
     };
 
-    // Should throw because 6 > 5
-    await expect(
-      analyzeFeature({
-        featureDir: tmpDir,
-        featureName: "test",
-        branchName: "feat/test",
-        config,
-      })
-    ).rejects.toThrow(/Feature has 6 stories, exceeding limit of 5/);
+    // Should warn but still succeed (no longer throws)
+    const prd = await analyzeFeature({
+      featureDir: tmpDir,
+      featureName: "test",
+      branchName: "feat/test",
+      config,
+    });
+
+    expect(prd.userStories.length).toBe(6);
 
     await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
   });

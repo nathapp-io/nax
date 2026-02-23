@@ -219,14 +219,14 @@ Dependencies: none
     }
   });
 
-  test("enforces maxStoriesPerFeature limit", async () => {
+  test("warns but succeeds when story count exceeds maxStoriesPerFeature limit", async () => {
     const manyStoriesDir = "/tmp/nax-many-stories-test";
     const featurePath = join(manyStoriesDir, "nax/features/test");
     mkdirSync(featurePath, { recursive: true });
 
-    // Create spec.md with 600 stories (exceeds default limit of 500)
+    // Create spec.md with 6 stories (exceeds limit of 5)
     let specContent = "# Many Stories\n\n";
-    for (let i = 1; i <= 600; i++) {
+    for (let i = 1; i <= 6; i++) {
       specContent += `## US-${String(i).padStart(3, "0")}: Story ${i}\n\n`;
       specContent += `### Description\nStory ${i}\n\n`;
       specContent += `### Acceptance Criteria\n- [ ] Done\n\n`;
@@ -237,7 +237,7 @@ Dependencies: none
       ...DEFAULT_CONFIG,
       execution: {
         ...DEFAULT_CONFIG.execution,
-        maxStoriesPerFeature: 500,
+        maxStoriesPerFeature: 5,
       },
       analyze: {
         ...DEFAULT_CONFIG.analyze,
@@ -246,14 +246,14 @@ Dependencies: none
     };
 
     try {
-      await expect(
-        analyzeFeature({
-          featureDir: featurePath,
-          featureName: "test",
-          branchName: "feat/test",
-          config,
-        })
-      ).rejects.toThrow("exceeding limit of 500");
+      // Should warn but not throw (changed from hard error to warning)
+      const prd = await analyzeFeature({
+        featureDir: featurePath,
+        featureName: "test",
+        branchName: "feat/test",
+        config,
+      });
+      expect(prd.userStories.length).toBe(6);
     } finally {
       rmSync(manyStoriesDir, { recursive: true });
     }

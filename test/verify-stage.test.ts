@@ -170,8 +170,8 @@ describe("Verify Stage", () => {
 
     const result = await verifyStage.execute(ctx);
 
-    expect(result.action).toBe("fail");
-    if (result.action === "fail") {
+    expect(result.action).toBe("escalate");
+    if (result.action === "escalate") {
       expect(result.reason).toContain("Tests failed");
       // Exit code may vary by shell - just check for non-zero
       expect(result.reason).toMatch(/exit code [^0]/);
@@ -203,7 +203,7 @@ describe("Verify Stage", () => {
 
     // Default "bun test" will fail in empty dir, but that's expected
     // We just want to verify the stage runs with default command
-    expect(result.action).toBe("fail");
+    expect(result.action).toBe("escalate");
   });
 
   test("uses custom test command from config", async () => {
@@ -269,7 +269,7 @@ describe("Verify Stage", () => {
 
     const result = await verifyStage.execute(ctx);
 
-    expect(result.action).toBe("fail");
+    expect(result.action).toBe("escalate");
     if (result.action === "fail") {
       expect(result.reason).toContain("Tests failed");
     }
