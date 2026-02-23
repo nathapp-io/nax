@@ -298,7 +298,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
         // Filter out already-completed stories (may have been completed in previous iteration)
         storiesToExecute = batch.stories.filter(
-          (s) => !s.passes && s.status !== "skipped" && s.status !== "blocked" && s.status !== "failed",
+          (s) => !s.passes && s.status !== "skipped" && s.status !== "blocked" && s.status !== "failed" && s.status !== "paused",
         );
         isBatchExecution = batch.isBatch && storiesToExecute.length > 1;
 

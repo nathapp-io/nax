@@ -137,5 +137,6 @@ export function markStoryPaused(prd: PRD, storyId: string): void {
   const story = prd.userStories.find((s) => s.id === storyId);
   if (story) {
     story.status = "paused";
+    story.attempts = (story.attempts ?? 0) + 1;
   }
 }
