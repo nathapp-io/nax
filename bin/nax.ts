@@ -39,6 +39,7 @@
 
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import chalk from "chalk";
 import { Command } from "commander";
 
@@ -264,7 +265,8 @@ program
     }
     config.execution.maxIterations = Number.parseInt(options.maxIterations, 10);
 
-    const hooks = await loadHooksConfig(naxDir);
+    const globalNaxDir = join(homedir(), ".nax");
+    const hooks = await loadHooksConfig(naxDir, globalNaxDir);
 
     // Determine TUI vs headless mode
     // TUI activates when:
