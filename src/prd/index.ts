@@ -27,7 +27,17 @@ export async function loadPRD(path: string): Promise<PRD> {
     );
   }
 
-  return Bun.file(path).json();
+  const prd: PRD = await Bun.file(path).json();
+
+  // BUG-21: Normalize story fields to prevent null/undefined arithmetic issues
+  for (const story of prd.userStories) {
+    story.attempts = story.attempts ?? 0;
+    story.priorErrors = story.priorErrors ?? [];
+    story.escalations = story.escalations ?? [];
+    story.dependencies = story.dependencies ?? [];
+  }
+
+  return prd;
 }
 
 /** Save PRD to file */

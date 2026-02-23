@@ -335,7 +335,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       const tierOrder = config.autoMode.escalation?.tierOrder || [];
       const tierCfg = tierOrder.length > 0 ? getTierConfig(currentTier, tierOrder) : undefined;
 
-      if (tierCfg && story.attempts >= tierCfg.attempts) {
+      if (tierCfg && (story.attempts ?? 0) >= tierCfg.attempts) {
         // Exceeded current tier budget — try to escalate
         const nextTier = escalateTier(currentTier, tierOrder);
 
@@ -701,7 +701,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
             if (nextTier && config.autoMode.escalation.enabled) {
               const maxAttempts = calculateMaxIterations(config.autoMode.escalation.tierOrder);
-              const canEscalate = storiesToEscalate.every((s) => s.attempts < maxAttempts);
+              const canEscalate = storiesToEscalate.every((s) => (s.attempts ?? 0) < maxAttempts);
 
               if (canEscalate) {
                 for (const s of storiesToEscalate) {
@@ -718,7 +718,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
                   return shouldEscalate
                     ? {
                         ...s,
-                        attempts: s.attempts + 1,
+                        attempts: (s.attempts ?? 0) + 1,
                         routing: s.routing ? { ...s.routing, modelTier: nextTier } : undefined,
                         priorErrors: [...(s.priorErrors || []), errorMessage],
                       }
