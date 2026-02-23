@@ -163,6 +163,8 @@ export interface AnalyzeConfig {
   fallbackToKeywords: boolean;
   /** Max tokens for codebase summary */
   maxCodebaseSummaryTokens: number;
+  /** Include a project scaffold story when codebase is empty/minimal (default: true) */
+  includeScaffold: boolean;
 }
 
 /** Review config */
@@ -416,6 +418,7 @@ const AnalyzeConfigSchema = z.object({
   model: ModelTierSchema,
   fallbackToKeywords: z.boolean(),
   maxCodebaseSummaryTokens: z.number().int().positive(),
+  includeScaffold: z.boolean(),
 });
 
 const ReviewConfigSchema = z.object({
@@ -593,6 +596,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
     model: "balanced",
     fallbackToKeywords: true,
     maxCodebaseSummaryTokens: 5000,
+    includeScaffold: true,
   },
   review: {
     enabled: true,
