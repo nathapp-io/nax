@@ -95,7 +95,6 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
         codebaseContext,
         modelTier,
         modelDef,
-        includeScaffold: config.analyze.includeScaffold,
       });
 
       logger.info("cli", "✓ Agent decompose complete", { storiesCount: result.stories.length });
@@ -496,7 +495,6 @@ ${story.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
           codebaseContext,
           modelTier,
           modelDef,
-          includeScaffold: config.analyze.includeScaffold,
         });
 
         if (result.stories.length > 0) {

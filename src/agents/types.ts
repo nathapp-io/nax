@@ -181,8 +181,6 @@ export interface DecomposeOptions {
   modelTier?: ModelTier;
   /** Resolved model definition */
   modelDef?: ModelDef;
-  /** Include a scaffold story when codebase is empty/minimal (default: true) */
-  includeScaffold?: boolean;
 }
 
 /**

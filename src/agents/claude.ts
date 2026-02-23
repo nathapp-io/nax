@@ -436,20 +436,11 @@ export class ClaudeCodeAdapter implements AgentAdapter {
    * @returns Formatted prompt string
    */
   private buildDecomposePrompt(options: DecomposeOptions): string {
-    const scaffoldHint = options.includeScaffold !== false ? `
-Project Scaffolding:
-- If the codebase context shows an empty or minimal project (no package.json, no src/ directory, no existing source files), include a "Project Setup / Scaffold" story as the FIRST story (US-001).
-- This scaffold story should initialize the project structure (package.json, tsconfig, src/, test setup, etc.).
-- All other stories MUST depend on the scaffold story.
-- The agent will use whatever tools or skills are available in its CLAUDE.md to perform the scaffolding.
-- If the project already has a package.json and source structure, do NOT include a scaffold story.
-` : "";
-
     return `You are a requirements analyst. Break down the following feature specification into user stories and classify each story's complexity.
 
 CODEBASE CONTEXT:
 ${options.codebaseContext}
-${scaffoldHint}
+
 FEATURE SPECIFICATION:
 ${options.specContent}
 
