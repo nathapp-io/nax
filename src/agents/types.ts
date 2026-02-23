@@ -6,7 +6,7 @@
  * collect results from them uniformly.
  */
 
-import type { ModelTier, ModelDef } from "../config/schema";
+import type { ModelDef, ModelTier } from "../config/schema";
 
 /**
  * Agent execution result returned after running a coding agent.

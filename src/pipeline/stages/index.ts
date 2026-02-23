@@ -6,16 +6,17 @@
  */
 
 import type { PipelineStage } from "../types";
-import { queueCheckStage } from "./queue-check";
-import { routingStage } from "./routing";
+import { acceptanceStage } from "./acceptance";
+import { completionStage } from "./completion";
 import { constitutionStage } from "./constitution";
 import { contextStage } from "./context";
-import { promptStage } from "./prompt";
 import { executionStage } from "./execution";
-import { verifyStage } from "./verify";
+import { optimizerStage } from "./optimizer";
+import { promptStage } from "./prompt";
+import { queueCheckStage } from "./queue-check";
 import { reviewStage } from "./review";
-import { completionStage } from "./completion";
-import { acceptanceStage } from "./acceptance";
+import { routingStage } from "./routing";
+import { verifyStage } from "./verify";
 
 /**
  * Default pipeline stages in execution order.
@@ -26,11 +27,12 @@ import { acceptanceStage } from "./acceptance";
  * 3. Load constitution (project coding standards)
  * 4. Build context (gather relevant code/docs)
  * 5. Assemble prompt (story + context + constitution)
- * 6. Execute agent session (TDD or test-after)
- * 7. Verify output (tests pass, build succeeds)
- * 8. Review (quality checks, linting, etc.)
- * 9. Mark complete (save PRD, fire hooks, log progress)
- * 10. Acceptance (run acceptance tests when all stories complete)
+ * 6. Optimize prompt (reduce token usage)
+ * 7. Execute agent session (TDD or test-after)
+ * 8. Verify output (tests pass, build succeeds)
+ * 9. Review (quality checks, linting, etc.)
+ * 10. Mark complete (save PRD, fire hooks, log progress)
+ * 11. Acceptance (run acceptance tests when all stories complete)
  */
 export const defaultPipeline: PipelineStage[] = [
   queueCheckStage,
@@ -38,6 +40,7 @@ export const defaultPipeline: PipelineStage[] = [
   constitutionStage,
   contextStage,
   promptStage,
+  optimizerStage,
   executionStage,
   verifyStage,
   reviewStage,
@@ -51,6 +54,7 @@ export { routingStage } from "./routing";
 export { constitutionStage } from "./constitution";
 export { contextStage } from "./context";
 export { promptStage } from "./prompt";
+export { optimizerStage } from "./optimizer";
 export { executionStage } from "./execution";
 export { verifyStage } from "./verify";
 export { reviewStage } from "./review";

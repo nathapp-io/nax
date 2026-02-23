@@ -5,10 +5,10 @@
  * Falls back to keyword-based classification for backward compatibility.
  */
 
-import type { Complexity, TestStrategy, ModelTier, NaxConfig } from "../config";
+import type { Complexity, ModelTier, NaxConfig, TestStrategy } from "../config";
 import type { UserStory } from "../prd/types";
-import type { RoutingContext } from "./strategy";
 import { buildStrategyChain } from "./builder";
+import type { RoutingContext } from "./strategy";
 
 /** Routing decision for a story */
 export interface RoutingDecision {
@@ -24,25 +24,59 @@ export interface RoutingDecision {
 
 /** Keywords that indicate higher complexity */
 const COMPLEX_KEYWORDS = [
-  "refactor", "redesign", "architecture", "migration",
-  "breaking change", "public api", "security", "auth",
-  "encryption", "permission", "rbac", "casl", "jwt",
-  "grpc", "microservice", "event-driven", "saga",
+  "refactor",
+  "redesign",
+  "architecture",
+  "migration",
+  "breaking change",
+  "public api",
+  "security",
+  "auth",
+  "encryption",
+  "permission",
+  "rbac",
+  "casl",
+  "jwt",
+  "grpc",
+  "microservice",
+  "event-driven",
+  "saga",
 ];
 
 const EXPERT_KEYWORDS = [
-  "cryptograph", "zero-knowledge", "distributed consensus",
-  "real-time", "websocket", "streaming", "performance critical",
+  "cryptograph",
+  "zero-knowledge",
+  "distributed consensus",
+  "real-time",
+  "websocket",
+  "streaming",
+  "performance critical",
 ];
 
 const SECURITY_KEYWORDS = [
-  "auth", "security", "permission", "jwt", "oauth", "token",
-  "encryption", "secret", "credential", "password", "rbac", "casl",
+  "auth",
+  "security",
+  "permission",
+  "jwt",
+  "oauth",
+  "token",
+  "encryption",
+  "secret",
+  "credential",
+  "password",
+  "rbac",
+  "casl",
 ];
 
 const PUBLIC_API_KEYWORDS = [
-  "public api", "breaking change", "external", "consumer",
-  "sdk", "npm publish", "release", "endpoint",
+  "public api",
+  "breaking change",
+  "external",
+  "consumer",
+  "sdk",
+  "npm publish",
+  "release",
+  "endpoint",
 ];
 
 /**
@@ -85,9 +119,7 @@ export function classifyComplexity(
   acceptanceCriteria: string[],
   tags: string[] = [],
 ): Complexity {
-  const text = [title, description, ...acceptanceCriteria, ...tags]
-    .join(" ")
-    .toLowerCase();
+  const text = [title, description, ...acceptanceCriteria, ...tags].join(" ").toLowerCase();
 
   // Expert: matches expert keywords
   if (EXPERT_KEYWORDS.some((kw) => text.includes(kw))) {
@@ -95,10 +127,7 @@ export function classifyComplexity(
   }
 
   // Complex: matches complex keywords or has many criteria
-  if (
-    COMPLEX_KEYWORDS.some((kw) => text.includes(kw)) ||
-    acceptanceCriteria.length > 8
-  ) {
+  if (COMPLEX_KEYWORDS.some((kw) => text.includes(kw)) || acceptanceCriteria.length > 8) {
     return "complex";
   }
 
@@ -169,10 +198,7 @@ export function determineTestStrategy(
 }
 
 /** Map complexity to model tier */
-function complexityToModelTier(
-  complexity: Complexity,
-  config: NaxConfig,
-): ModelTier {
+function complexityToModelTier(complexity: Complexity, config: NaxConfig): ModelTier {
   const mapping = config.autoMode.complexityRouting;
   return (mapping[complexity] ?? "balanced") as ModelTier;
 }
@@ -188,11 +214,12 @@ function complexityToModelTier(
  * @param story - User story to route
  * @param context - Routing context (config, codebase, metrics)
  * @param workdir - Working directory for resolving custom strategy paths
+ * @param plugins - Optional plugin registry for plugin-provided routers
  * @returns Routing decision from the strategy chain
  *
  * @example
  * ```ts
- * const decision = await routeStory(story, { config }, "/path/to/project");
+ * const decision = await routeStory(story, { config }, "/path/to/project", plugins);
  * // {
  * //   complexity: "complex",
  * //   modelTier: "balanced",
@@ -205,8 +232,9 @@ export async function routeStory(
   story: UserStory,
   context: RoutingContext,
   workdir: string,
+  plugins?: import("../plugins/registry").PluginRegistry,
 ): Promise<RoutingDecision> {
-  const chain = await buildStrategyChain(context.config, workdir);
+  const chain = await buildStrategyChain(context.config, workdir, plugins);
   return await chain.route(story, context);
 }
 
@@ -248,8 +276,7 @@ export function routeTask(
     complexity,
     modelTier,
     testStrategy,
-    reasoning: reasons.length > 0
-      ? `three-session-tdd: ${reasons.join(", ")}`
-      : `test-after: simple task (${complexity})`,
+    reasoning:
+      reasons.length > 0 ? `three-session-tdd: ${reasons.join(", ")}` : `test-after: simple task (${complexity})`,
   };
 }

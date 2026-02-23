@@ -5,10 +5,10 @@
  * Processes commands atomically and updates PRD accordingly.
  */
 
-import type { PipelineStage, PipelineContext, StageResult } from "../types";
-import { readQueueFile, clearQueueFile } from "../../execution/queue-handler";
-import { markStorySkipped, savePRD } from "../../prd";
+import { clearQueueFile, readQueueFile } from "../../execution/queue-handler";
 import { getLogger } from "../../logger";
+import { markStorySkipped, savePRD } from "../../prd";
+import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**
  * Queue Check Stage
@@ -58,9 +58,7 @@ export const queueCheckStage: PipelineStage = {
         });
 
         // Save PRD path from featureDir
-        const prdPath = ctx.featureDir
-          ? `${ctx.featureDir}/prd.json`
-          : `${ctx.workdir}/nax/features/unknown/prd.json`;
+        const prdPath = ctx.featureDir ? `${ctx.featureDir}/prd.json` : `${ctx.workdir}/nax/features/unknown/prd.json`;
         await savePRD(ctx.prd, prdPath);
         await clearQueueFile(ctx.workdir);
 

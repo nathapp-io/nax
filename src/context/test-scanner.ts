@@ -6,8 +6,8 @@
  * Prevents test duplication across isolated story sessions.
  */
 
-import { Glob } from "bun";
 import path from "node:path";
+import { Glob } from "bun";
 import { getLogger } from "../logger";
 import { estimateTokens } from "./builder";
 
@@ -131,7 +131,7 @@ export function deriveTestPatterns(contextFiles: string[]): string[] {
 
   for (const filePath of contextFiles) {
     const basename = path.basename(filePath);
-    const basenameNoExt = basename.replace(/\.(ts|js|tsx|jsx)$/, '');
+    const basenameNoExt = basename.replace(/\.(ts|js|tsx|jsx)$/, "");
 
     // Pattern 1: exact basename match with .test/.spec extension
     // e.g., foo.ts → foo.test.ts, foo.spec.ts
@@ -146,7 +146,10 @@ export function deriveTestPatterns(contextFiles: string[]): string[] {
 
     // Pattern 2: if basename contains .service/.controller/etc, also match without it
     // e.g., foo.service.ts → foo.test.ts
-    const simpleBasename = basenameNoExt.replace(/\.(service|controller|resolver|module|guard|middleware|util|helper)$/, '');
+    const simpleBasename = basenameNoExt.replace(
+      /\.(service|controller|resolver|module|guard|middleware|util|helper)$/,
+      "",
+    );
     if (simpleBasename !== basenameNoExt) {
       patterns.add(`${simpleBasename}.test.ts`);
       patterns.add(`${simpleBasename}.test.js`);
@@ -171,9 +174,7 @@ async function detectTestDir(workdir: string): Promise<string | null> {
       const proc = Bun.spawn(["test", "-d", fullPath], { stdout: "pipe", stderr: "pipe" });
       const exitCode = await proc.exited;
       if (exitCode === 0) return dir;
-    } catch {
-      continue;
-    }
+    } catch {}
   }
   return null;
 }
@@ -190,14 +191,14 @@ export async function scanTestFiles(options: TestScanOptions): Promise<TestFileI
 
   // Auto-detect test directory if not specified
   if (!testDir) {
-    testDir = await detectTestDir(workdir) || "test";
+    testDir = (await detectTestDir(workdir)) || "test";
   }
 
   const scanDir = path.join(workdir, testDir);
 
   // Check directory exists
   const dirCheck = Bun.spawn(["test", "-d", scanDir], { stdout: "pipe", stderr: "pipe" });
-  if (await dirCheck.exited !== 0) {
+  if ((await dirCheck.exited) !== 0) {
     return [];
   }
 
@@ -232,10 +233,7 @@ export async function scanTestFiles(options: TestScanOptions): Promise<TestFileI
           describes,
         });
       }
-    } catch {
-      // Skip unreadable files
-      continue;
-    }
+    } catch {}
   }
 
   // Sort by path for stable output
@@ -323,8 +321,7 @@ export function truncateToTokenBudget(
   let truncatedFiles = [...files];
   while (truncatedFiles.length > 1) {
     truncatedFiles = truncatedFiles.slice(0, truncatedFiles.length - 1);
-    const summary = formatTestSummary(truncatedFiles, "names-only") +
-      `\n... and ${files.length - truncatedFiles.length} more test files`;
+    const summary = `${formatTestSummary(truncatedFiles, "names-only")}\n... and ${files.length - truncatedFiles.length} more test files`;
     if (estimateTokens(summary) <= maxTokens) {
       return { summary, detail: "names-only", truncated: true };
     }
@@ -346,12 +343,7 @@ export function truncateToTokenBudget(
  * @returns Scan result with summary, or empty result if no tests found
  */
 export async function generateTestCoverageSummary(options: TestScanOptions): Promise<TestScanResult> {
-  const {
-    maxTokens = 500,
-    detail = "names-and-counts",
-    contextFiles,
-    scopeToStory = true,
-  } = options;
+  const { maxTokens = 500, detail = "names-and-counts", contextFiles, scopeToStory = true } = options;
 
   // Log warning if scoping is enabled but no context files provided
   if (scopeToStory && (!contextFiles || contextFiles.length === 0)) {

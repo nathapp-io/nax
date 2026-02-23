@@ -2,9 +2,21 @@
  * Claude Code Agent Adapter
  */
 
-import type { AgentAdapter, AgentCapabilities, AgentResult, AgentRunOptions, PlanOptions, PlanResult, DecomposeOptions, DecomposeResult, DecomposedStory, InteractiveRunOptions, PtyHandle } from "./types";
-import { estimateCostFromOutput, estimateCostByDuration } from "./cost";
 import { getLogger } from "../logger";
+import { estimateCostByDuration, estimateCostFromOutput } from "./cost";
+import type {
+  AgentAdapter,
+  AgentCapabilities,
+  AgentResult,
+  AgentRunOptions,
+  DecomposeOptions,
+  DecomposeResult,
+  DecomposedStory,
+  InteractiveRunOptions,
+  PlanOptions,
+  PlanResult,
+  PtyHandle,
+} from "./types";
 
 /**
  * Maximum characters to capture from agent stdout.
@@ -105,12 +117,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
    */
   buildCommand(options: AgentRunOptions): string[] {
     const model = options.modelDef.model;
-    return [
-      this.binary,
-      "--model", model,
-      "--dangerously-skip-permissions",
-      "-p", options.prompt,
-    ];
+    return [this.binary, "--model", model, "--dangerously-skip-permissions", "-p", options.prompt];
   }
 
   /**
@@ -150,7 +157,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
         // If rate limited, retry with exponential backoff
         if (result.rateLimited && attempt < maxRetries) {
-          const backoffMs = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
+          const backoffMs = 2 ** attempt * 1000; // 2s, 4s, 8s
           const logger = getLogger();
           logger.warn("agent", "Rate limited, retrying", { backoffSeconds: backoffMs / 1000, attempt, maxRetries });
           await Bun.sleep(backoffMs);
@@ -159,9 +166,14 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
         // If transient error (non-zero exit but not timeout), retry with backoff
         if (!result.success && result.exitCode !== 124 && attempt < maxRetries) {
-          const backoffMs = Math.pow(2, attempt) * 1000;
+          const backoffMs = 2 ** attempt * 1000;
           const logger = getLogger();
-          logger.warn("agent", "Agent failed, retrying", { exitCode: result.exitCode, backoffSeconds: backoffMs / 1000, attempt, maxRetries });
+          logger.warn("agent", "Agent failed, retrying", {
+            exitCode: result.exitCode,
+            backoffSeconds: backoffMs / 1000,
+            attempt,
+            maxRetries,
+          });
           await Bun.sleep(backoffMs);
           continue;
         }
@@ -170,9 +182,14 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       } catch (error) {
         lastError = error as Error;
         if (attempt < maxRetries) {
-          const backoffMs = Math.pow(2, attempt) * 1000;
+          const backoffMs = 2 ** attempt * 1000;
           const logger = getLogger();
-          logger.warn("agent", "Agent error, retrying", { error: lastError.message, backoffSeconds: backoffMs / 1000, attempt, maxRetries });
+          logger.warn("agent", "Agent error, retrying", {
+            error: lastError.message,
+            backoffSeconds: backoffMs / 1000,
+            attempt,
+            maxRetries,
+          });
           await Bun.sleep(backoffMs);
         }
       }
@@ -231,10 +248,13 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       const fallbackEstimate = estimateCostByDuration(options.modelTier, durationMs);
       costEstimate = {
         cost: fallbackEstimate.cost * 1.5,
-        confidence: 'fallback',
+        confidence: "fallback",
       };
-      logger.warn("agent", "Cost estimation fallback (duration-based)", { modelTier: options.modelTier, cost: costEstimate.cost });
-    } else if (costEstimate.confidence === 'estimated') {
+      logger.warn("agent", "Cost estimation fallback (duration-based)", {
+        modelTier: options.modelTier,
+        cost: costEstimate.cost,
+      });
+    } else if (costEstimate.confidence === "estimated") {
       logger.warn("agent", "Cost estimation using regex parsing (estimated confidence)", { cost: costEstimate.cost });
     }
     const cost = costEstimate.cost;
@@ -322,7 +342,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
       return { specContent, conversationLog };
     } finally {
-      try { rmSync(tempDir, { recursive: true }); } catch {}
+      try {
+        rmSync(tempDir, { recursive: true });
+      } catch {}
     }
   }
 
@@ -400,9 +422,11 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     const cmd = [
       this.binary,
-      "--model", options.modelDef?.model || "claude-sonnet-4-5",
+      "--model",
+      options.modelDef?.model || "claude-sonnet-4-5",
       "--dangerously-skip-permissions",
-      "-p", prompt,
+      "-p",
+      prompt,
     ];
 
     const proc = Bun.spawn(cmd, {
@@ -526,7 +550,9 @@ Respond with ONLY a JSON array (no markdown code fences):
     try {
       parsed = JSON.parse(jsonText.trim());
     } catch (error) {
-      throw new Error(`Failed to parse decompose output as JSON: ${(error as Error).message}\n\nOutput:\n${output.slice(0, 500)}`);
+      throw new Error(
+        `Failed to parse decompose output as JSON: ${(error as Error).message}\n\nOutput:\n${output.slice(0, 500)}`,
+      );
     }
 
     // Validate structure
@@ -547,7 +573,9 @@ Respond with ONLY a JSON array (no markdown code fences):
         id: item.id,
         title: item.title,
         description: String(item.description || item.title),
-        acceptanceCriteria: Array.isArray(item.acceptanceCriteria) ? item.acceptanceCriteria : ["Implementation complete"],
+        acceptanceCriteria: Array.isArray(item.acceptanceCriteria)
+          ? item.acceptanceCriteria
+          : ["Implementation complete"],
         tags: Array.isArray(item.tags) ? item.tags : [],
         dependencies: Array.isArray(item.dependencies) ? item.dependencies : [],
         complexity: this.validateComplexity(item.complexity),
@@ -561,7 +589,12 @@ Respond with ONLY a JSON array (no markdown code fences):
         reasoning: String(item.reasoning || "No reasoning provided"),
         estimatedLOC: Number(item.estimatedLOC) || 0,
         risks: Array.isArray(item.risks) ? item.risks : [],
-        testStrategy: item.testStrategy === "three-session-tdd" ? "three-session-tdd" : item.testStrategy === "test-after" ? "test-after" : undefined,
+        testStrategy:
+          item.testStrategy === "three-session-tdd"
+            ? "three-session-tdd"
+            : item.testStrategy === "test-after"
+              ? "test-after"
+              : undefined,
       };
     });
 
@@ -627,11 +660,7 @@ Respond with ONLY a JSON array (no markdown code fences):
 
     // Build command without -p flag (interactive mode)
     const model = options.modelDef.model;
-    const cmd = [
-      this.binary,
-      "--model", model,
-      options.prompt,
-    ];
+    const cmd = [this.binary, "--model", model, options.prompt];
 
     // Spawn in PTY mode
     const ptyProc = nodePty.spawn(cmd[0], cmd.slice(1), {

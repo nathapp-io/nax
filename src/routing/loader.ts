@@ -24,10 +24,7 @@ import type { RoutingStrategy } from "./strategy";
  * const decision = strategy.route(story, context);
  * ```
  */
-export async function loadCustomStrategy(
-  strategyPath: string,
-  workdir: string,
-): Promise<RoutingStrategy> {
+export async function loadCustomStrategy(strategyPath: string, workdir: string): Promise<RoutingStrategy> {
   const absolutePath = resolve(workdir, strategyPath);
 
   try {
@@ -38,22 +35,16 @@ export async function loadCustomStrategy(
     const strategy = module.default;
 
     if (!strategy) {
-      throw new Error(
-        `Custom strategy at ${absolutePath} does not have a default export`
-      );
+      throw new Error(`Custom strategy at ${absolutePath} does not have a default export`);
     }
 
     // Validate strategy interface
     if (typeof strategy.name !== "string") {
-      throw new Error(
-        `Custom strategy at ${absolutePath} is missing 'name' property`
-      );
+      throw new Error(`Custom strategy at ${absolutePath} is missing 'name' property`);
     }
 
     if (typeof strategy.route !== "function") {
-      throw new Error(
-        `Custom strategy at ${absolutePath} is missing 'route' method`
-      );
+      throw new Error(`Custom strategy at ${absolutePath} is missing 'route' method`);
     }
 
     return strategy as RoutingStrategy;
@@ -61,7 +52,7 @@ export async function loadCustomStrategy(
     throw new Error(
       `Failed to load custom routing strategy from ${absolutePath}: ${
         error instanceof Error ? error.message : String(error)
-      }`
+      }`,
     );
   }
 }

@@ -4,8 +4,8 @@
  * Discovers and manages available coding agents.
  */
 
-import type { AgentAdapter } from "./types";
 import { ClaudeCodeAdapter } from "./claude";
+import type { AgentAdapter } from "./types";
 
 /** All known agent adapters */
 export const ALL_AGENTS: AgentAdapter[] = [
@@ -31,20 +31,18 @@ export async function getInstalledAgents(): Promise<AgentAdapter[]> {
     ALL_AGENTS.map(async (agent) => ({
       agent,
       installed: await agent.isInstalled(),
-    }))
+    })),
   );
   return results.filter((r) => r.installed).map((r) => r.agent);
 }
 
 /** Check health of all agents */
-export async function checkAgentHealth(): Promise<
-  Array<{ name: string; displayName: string; installed: boolean }>
-> {
+export async function checkAgentHealth(): Promise<Array<{ name: string; displayName: string; installed: boolean }>> {
   return Promise.all(
     ALL_AGENTS.map(async (agent) => ({
       name: agent.name,
       displayName: agent.displayName,
       installed: await agent.isInstalled(),
-    }))
+    })),
   );
 }

@@ -6,10 +6,10 @@
  * escalation costs.
  */
 
-import type { RoutingStrategy, RoutingContext, RoutingDecision } from "../strategy";
-import type { UserStory } from "../../prd/types";
 import type { Complexity, ModelTier } from "../../config";
 import type { AggregateMetrics } from "../../metrics/types";
+import type { UserStory } from "../../prd/types";
+import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../strategy";
 import { keywordStrategy } from "./keyword";
 
 /**
@@ -18,9 +18,9 @@ import { keywordStrategy } from "./keyword";
  * Actual costs vary based on input/output tokens.
  */
 const ESTIMATED_TIER_COSTS: Record<ModelTier, number> = {
-  fast: 0.005,      // ~$0.005 per simple story
-  balanced: 0.02,   // ~$0.02 per medium story
-  powerful: 0.08,   // ~$0.08 per complex story
+  fast: 0.005, // ~$0.005 per simple story
+  balanced: 0.02, // ~$0.02 per medium story
+  powerful: 0.08, // ~$0.08 per complex story
 };
 
 /**
@@ -120,11 +120,7 @@ function selectOptimalTier(
  * @param minSamples - Minimum samples required
  * @returns True if sufficient data exists
  */
-function hasSufficientData(
-  complexity: Complexity,
-  metrics: AggregateMetrics,
-  minSamples: number,
-): boolean {
+function hasSufficientData(complexity: Complexity, metrics: AggregateMetrics, minSamples: number): boolean {
   const complexityStats = metrics.complexityAccuracy[complexity];
   return Boolean(complexityStats && complexityStats.predicted >= minSamples);
 }
@@ -206,13 +202,8 @@ export const adaptiveStrategy: RoutingStrategy = {
     }
 
     // We have sufficient data — calculate optimal tier
-    const tierOrder = config.autoMode.escalation.tierOrder.map(t => t.tier);
-    const { tier, reasoning } = selectOptimalTier(
-      complexity,
-      metrics,
-      tierOrder,
-      adaptiveConfig.costThreshold,
-    );
+    const tierOrder = config.autoMode.escalation.tierOrder.map((t) => t.tier);
+    const { tier, reasoning } = selectOptimalTier(complexity, metrics, tierOrder, adaptiveConfig.costThreshold);
 
     return {
       complexity,

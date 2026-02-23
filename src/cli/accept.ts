@@ -8,10 +8,10 @@
  *   nax accept --override AC-2 "intentional: using lazy expiry instead of exact timing"
  */
 
-import { loadPRD, savePRD } from "../prd";
-import { findProjectDir, validateDirectory } from "../config";
 import path from "node:path";
+import { findProjectDir, validateDirectory } from "../config";
 import { getLogger } from "../logger";
+import { loadPRD, savePRD } from "../prd";
 
 /**
  * Accept command options.

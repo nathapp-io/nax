@@ -26,10 +26,7 @@ import type { QueueCommand } from "../queue/types";
  * await writeQueueCommand("/tmp/nax/queue.txt", { type: "SKIP", storyId: "US-003" });
  * ```
  */
-export async function writeQueueCommand(
-  queueFilePath: string,
-  command: QueueCommand,
-): Promise<void> {
+export async function writeQueueCommand(queueFilePath: string, command: QueueCommand): Promise<void> {
   let commandLine: string;
 
   switch (command.type) {
@@ -51,9 +48,7 @@ export async function writeQueueCommand(
   // Append command to queue file (create if doesn't exist)
   const file = Bun.file(queueFilePath);
   const existingContent = await file.text().catch(() => "");
-  const newContent = existingContent
-    ? `${existingContent.trimEnd()}\n${commandLine}\n`
-    : `${commandLine}\n`;
+  const newContent = existingContent ? `${existingContent.trimEnd()}\n${commandLine}\n` : `${commandLine}\n`;
 
   await Bun.write(queueFilePath, newContent);
 }

@@ -4,13 +4,13 @@
  * Extracts current story + dependency stories from PRD and builds context within token budget.
  */
 
-import path from 'node:path';
-import type { ContextElement, ContextBudget, StoryContext, BuiltContext } from './types';
-import type { UserStory } from '../prd';
-import type { NaxConfig } from '../config';
-import { countStories, getContextFiles } from '../prd';
-import { generateTestCoverageSummary } from './test-scanner';
-import { getLogger } from '../logger';
+import path from "node:path";
+import type { NaxConfig } from "../config";
+import { getLogger } from "../logger";
+import type { UserStory } from "../prd";
+import { countStories, getContextFiles } from "../prd";
+import { generateTestCoverageSummary } from "./test-scanner";
+import type { BuiltContext, ContextBudget, ContextElement, StoryContext } from "./types";
 
 /**
  * Approximate character-to-token ratio for token estimation.
@@ -47,7 +47,7 @@ export function estimateTokens(text: string): number {
 export function createStoryContext(story: UserStory, priority: number): ContextElement {
   const content = formatStoryAsText(story);
   return {
-    type: 'story',
+    type: "story",
     storyId: story.id,
     content,
     priority,
@@ -61,7 +61,7 @@ export function createStoryContext(story: UserStory, priority: number): ContextE
 export function createDependencyContext(story: UserStory, priority: number): ContextElement {
   const content = formatStoryAsText(story);
   return {
-    type: 'dependency',
+    type: "dependency",
     storyId: story.id,
     content,
     priority,
@@ -74,7 +74,7 @@ export function createDependencyContext(story: UserStory, priority: number): Con
  */
 export function createErrorContext(errorMessage: string, priority: number): ContextElement {
   return {
-    type: 'error',
+    type: "error",
     content: errorMessage,
     priority,
     tokens: estimateTokens(errorMessage),
@@ -86,7 +86,7 @@ export function createErrorContext(errorMessage: string, priority: number): Cont
  */
 export function createProgressContext(progressText: string, priority: number): ContextElement {
   return {
-    type: 'progress',
+    type: "progress",
     content: progressText,
     priority,
     tokens: estimateTokens(progressText),
@@ -96,13 +96,9 @@ export function createProgressContext(progressText: string, priority: number): C
 /**
  * Create context element from file content
  */
-export function createFileContext(
-  filePath: string,
-  content: string,
-  priority: number,
-): ContextElement {
+export function createFileContext(filePath: string, content: string, priority: number): ContextElement {
   return {
-    type: 'file',
+    type: "file",
     filePath,
     content,
     priority,
@@ -115,7 +111,7 @@ export function createFileContext(
  */
 export function createTestCoverageContext(content: string, tokens: number, priority: number): ContextElement {
   return {
-    type: 'test-coverage',
+    type: "test-coverage",
     content,
     priority,
     tokens,
@@ -129,10 +125,10 @@ function formatStoryAsText(story: UserStory): string {
   const parts: string[] = [];
 
   parts.push(`## ${story.id}: ${story.title}`);
-  parts.push('');
+  parts.push("");
   parts.push(`**Description:** ${story.description}`);
-  parts.push('');
-  parts.push('**Acceptance Criteria:**');
+  parts.push("");
+  parts.push("**Acceptance Criteria:**");
 
   // Defensive check: handle undefined/null acceptanceCriteria
   if (story.acceptanceCriteria && Array.isArray(story.acceptanceCriteria)) {
@@ -143,23 +139,23 @@ function formatStoryAsText(story: UserStory): string {
     const logger = getLogger();
     logger.warn("context", "Story has invalid acceptanceCriteria", {
       storyId: story.id,
-      type: typeof story.acceptanceCriteria
+      type: typeof story.acceptanceCriteria,
     });
-    parts.push('- (No acceptance criteria defined)');
+    parts.push("- (No acceptance criteria defined)");
   }
 
   if (story.tags && story.tags.length > 0) {
-    parts.push('');
-    parts.push(`**Tags:** ${story.tags.join(', ')}`);
+    parts.push("");
+    parts.push(`**Tags:** ${story.tags.join(", ")}`);
   }
 
-  return parts.join('\n');
+  return parts.join("\n");
 }
 
 /**
  * Generate progress summary
  */
-function generateProgressSummary(prd: StoryContext['prd']): string {
+function generateProgressSummary(prd: StoryContext["prd"]): string {
   const counts = countStories(prd);
   const total = counts.total;
   const complete = counts.passed + counts.failed;
@@ -222,10 +218,7 @@ export function sortContextElements(elements: ContextElement[]): ContextElement[
  * // Use as agent prompt context
  * ```
  */
-export async function buildContext(
-  storyContext: StoryContext,
-  budget: ContextBudget,
-): Promise<BuiltContext> {
+export async function buildContext(storyContext: StoryContext, budget: ContextBudget): Promise<BuiltContext> {
   const { prd, currentStoryId } = storyContext;
   const elements: ContextElement[] = [];
 
@@ -261,7 +254,7 @@ export async function buildContext(
         const logger = getLogger();
         logger.warn("context", "Dependency story not found in PRD", {
           dependencyId: depId,
-          referencedBy: currentStory.id
+          referencedBy: currentStory.id,
         });
       }
     }
@@ -323,20 +316,20 @@ export async function buildContext(
             filePath: relativeFilePath,
             sizeKB: Math.round(fileSize / 1024),
             maxKB: 10,
-            storyId: currentStory.id
+            storyId: currentStory.id,
           });
           continue;
         }
 
         const content = await file.text();
-        const fileContext = `\`\`\`${path.extname(relativeFilePath).slice(1) || 'txt'}\n// File: ${relativeFilePath}\n${content}\n\`\`\``;
+        const fileContext = `\`\`\`${path.extname(relativeFilePath).slice(1) || "txt"}\n// File: ${relativeFilePath}\n${content}\n\`\`\``;
 
         elements.push(createFileContext(relativeFilePath, fileContext, 60));
       } catch (error) {
         const logger = getLogger();
         logger.warn("context", "Error loading file", {
           filePath: relativeFilePath,
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         });
       }
     }
@@ -373,18 +366,14 @@ export async function buildContext(
 /**
  * Generate human-readable summary of built context
  */
-function generateSummary(
-  elements: ContextElement[],
-  totalTokens: number,
-  truncated: boolean,
-): string {
+function generateSummary(elements: ContextElement[], totalTokens: number, truncated: boolean): string {
   const counts: Record<string, number> = {
     story: 0,
     dependency: 0,
     error: 0,
     progress: 0,
     file: 0,
-    'test-coverage': 0,
+    "test-coverage": 0,
   };
 
   for (const element of elements) {
@@ -398,9 +387,9 @@ function generateSummary(
   if (counts.dependency > 0) parts.push(`${counts.dependency} dependencies`);
   if (counts.error > 0) parts.push(`${counts.error} errors`);
   if (counts.file > 0) parts.push(`${counts.file} files`);
-  if (counts['test-coverage'] > 0) parts.push('test coverage');
+  if (counts["test-coverage"] > 0) parts.push("test coverage");
 
-  const summary = `Context: ${parts.join(', ')} (${totalTokens} tokens)`;
+  const summary = `Context: ${parts.join(", ")} (${totalTokens} tokens)`;
 
   return truncated ? `${summary} [TRUNCATED]` : summary;
 }
@@ -426,7 +415,7 @@ function generateSummary(
 export function formatContextAsMarkdown(built: BuiltContext): string {
   const sections: string[] = [];
 
-  sections.push('# Story Context\n');
+  sections.push("# Story Context\n");
   sections.push(`${built.summary}\n`);
 
   // Group by type
@@ -439,23 +428,23 @@ export function formatContextAsMarkdown(built: BuiltContext): string {
   }
 
   // Progress first
-  if (byType.has('progress')) {
-    sections.push('## Progress\n');
-    for (const element of byType.get('progress')!) {
+  if (byType.has("progress")) {
+    sections.push("## Progress\n");
+    for (const element of byType.get("progress")!) {
       sections.push(element.content);
-      sections.push('\n');
+      sections.push("\n");
     }
   }
 
   // Errors second (split into ASSET_CHECK and others)
-  if (byType.has('error')) {
-    const errorElements = byType.get('error')!;
+  if (byType.has("error")) {
+    const errorElements = byType.get("error")!;
     const assetCheckErrors: ContextElement[] = [];
     const otherErrors: ContextElement[] = [];
 
     // Separate ASSET_CHECK_FAILED errors from others
     for (const element of errorElements) {
-      if (element.content.startsWith('ASSET_CHECK_FAILED:')) {
+      if (element.content.startsWith("ASSET_CHECK_FAILED:")) {
         assetCheckErrors.push(element);
       } else {
         otherErrors.push(element);
@@ -464,75 +453,75 @@ export function formatContextAsMarkdown(built: BuiltContext): string {
 
     // Render ASSET_CHECK errors as MANDATORY instructions (highest visibility)
     if (assetCheckErrors.length > 0) {
-      sections.push('## ⚠️ MANDATORY: Missing Files from Previous Attempts\n');
-      sections.push('**CRITICAL:** Previous attempts failed because these files were not created.\n');
-      sections.push('You MUST create these exact files. Do NOT use alternative filenames.\n\n');
+      sections.push("## ⚠️ MANDATORY: Missing Files from Previous Attempts\n");
+      sections.push("**CRITICAL:** Previous attempts failed because these files were not created.\n");
+      sections.push("You MUST create these exact files. Do NOT use alternative filenames.\n\n");
 
       for (const element of assetCheckErrors) {
         // Parse error message to extract file list
         // Format: "ASSET_CHECK_FAILED: Missing files: [file1, file2, ...]\nAction: ..."
         const match = element.content.match(/Missing files: \[([^\]]+)\]/);
         if (match) {
-          const fileList = match[1].split(',').map(f => f.trim());
-          sections.push('**Required files:**\n');
+          const fileList = match[1].split(",").map((f) => f.trim());
+          sections.push("**Required files:**\n");
           for (const file of fileList) {
             sections.push(`- \`${file}\``);
           }
-          sections.push('\n');
+          sections.push("\n");
         } else {
           // Fallback if parsing fails
-          sections.push('```');
+          sections.push("```");
           sections.push(element.content);
-          sections.push('```\n');
+          sections.push("```\n");
         }
       }
     }
 
     // Render other errors normally
     if (otherErrors.length > 0) {
-      sections.push('## Prior Errors\n');
+      sections.push("## Prior Errors\n");
       for (const element of otherErrors) {
-        sections.push('```');
+        sections.push("```");
         sections.push(element.content);
-        sections.push('```\n');
+        sections.push("```\n");
       }
     }
   }
 
   // Test coverage (before current story)
-  if (byType.has('test-coverage')) {
-    for (const element of byType.get('test-coverage')!) {
+  if (byType.has("test-coverage")) {
+    for (const element of byType.get("test-coverage")!) {
       sections.push(element.content);
-      sections.push('\n');
+      sections.push("\n");
     }
   }
 
   // Current story
-  if (byType.has('story')) {
-    sections.push('## Current Story\n');
-    for (const element of byType.get('story')!) {
+  if (byType.has("story")) {
+    sections.push("## Current Story\n");
+    for (const element of byType.get("story")!) {
       sections.push(element.content);
-      sections.push('\n');
+      sections.push("\n");
     }
   }
 
   // Dependencies
-  if (byType.has('dependency')) {
-    sections.push('## Dependency Stories\n');
-    for (const element of byType.get('dependency')!) {
+  if (byType.has("dependency")) {
+    sections.push("## Dependency Stories\n");
+    for (const element of byType.get("dependency")!) {
       sections.push(element.content);
-      sections.push('\n');
+      sections.push("\n");
     }
   }
 
   // Relevant Files
-  if (byType.has('file')) {
-    sections.push('## Relevant Source Files\n');
-    for (const element of byType.get('file')!) {
+  if (byType.has("file")) {
+    sections.push("## Relevant Source Files\n");
+    for (const element of byType.get("file")!) {
       sections.push(element.content);
-      sections.push('\n');
+      sections.push("\n");
     }
   }
 
-  return sections.join('\n');
+  return sections.join("\n");
 }

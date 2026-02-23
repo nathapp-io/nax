@@ -5,7 +5,7 @@
  */
 
 import { spawn } from "bun";
-import type { ReviewConfig, ReviewResult, ReviewCheckResult, ReviewCheckName } from "./types";
+import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
 
 /** Default commands for each check type */
 const DEFAULT_COMMANDS: Record<ReviewCheckName, string> = {
@@ -17,11 +17,7 @@ const DEFAULT_COMMANDS: Record<ReviewCheckName, string> = {
 /**
  * Run a single review check
  */
-async function runCheck(
-  check: ReviewCheckName,
-  command: string,
-  workdir: string,
-): Promise<ReviewCheckResult> {
+async function runCheck(check: ReviewCheckName, command: string, workdir: string): Promise<ReviewCheckResult> {
   const startTime = Date.now();
 
   try {
@@ -69,10 +65,7 @@ async function runCheck(
 /**
  * Run all configured review checks
  */
-export async function runReview(
-  config: ReviewConfig,
-  workdir: string,
-): Promise<ReviewResult> {
+export async function runReview(config: ReviewConfig, workdir: string): Promise<ReviewResult> {
   const startTime = Date.now();
   const checks: ReviewCheckResult[] = [];
   let firstFailure: string | undefined;

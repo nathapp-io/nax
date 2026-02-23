@@ -5,9 +5,9 @@
  * controlling the flow (continue/skip/fail/escalate/pause).
  */
 
-import type { PipelineContext, PipelineStage, StageResult } from "./types";
-import type { PipelineEventEmitter } from "./events";
 import { getLogger } from "../logger";
+import type { PipelineEventEmitter } from "./events";
+import type { PipelineContext, PipelineStage, StageResult } from "./types";
 
 /**
  * Pipeline execution result.
@@ -144,10 +144,11 @@ export async function runPipeline(
           context,
         };
 
-      default:
+      default: {
         // Exhaustiveness check
         const _exhaustive: never = result;
         throw new Error(`Unknown stage action: ${JSON.stringify(_exhaustive)}`);
+      }
     }
   }
 

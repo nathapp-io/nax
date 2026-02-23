@@ -22,11 +22,11 @@
  * ```
  */
 
-import type { PipelineStage, PipelineContext, StageResult } from "../types";
 import { getAgent, validateAgentForTier } from "../../agents";
 import { resolveModel } from "../../config";
-import { runThreeSessionTdd } from "../../tdd";
 import { getLogger } from "../../logger";
+import { runThreeSessionTdd } from "../../tdd";
+import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const executionStage: PipelineStage = {
   name: "execution",

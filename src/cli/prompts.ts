@@ -10,18 +10,13 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
-import type { UserStory } from "../prd";
-import { loadPRD } from "../prd";
-import { getLogger } from "../logger";
 import type { BuiltContext } from "../context/types";
+import { getLogger } from "../logger";
 import { runPipeline } from "../pipeline";
 import type { PipelineContext } from "../pipeline";
-import {
-  routingStage,
-  constitutionStage,
-  contextStage,
-  promptStage,
-} from "../pipeline/stages";
+import { constitutionStage, contextStage, promptStage, routingStage } from "../pipeline/stages";
+import type { UserStory } from "../prd";
+import { loadPRD } from "../prd";
 
 export interface PromptsCommandOptions {
   /** Feature name */
@@ -57,18 +52,14 @@ export interface PromptsCommandOptions {
  * nax prompts -f core --story US-003
  * ```
  */
-export async function promptsCommand(
-  options: PromptsCommandOptions,
-): Promise<string[]> {
+export async function promptsCommand(options: PromptsCommandOptions): Promise<string[]> {
   const logger = getLogger();
   const { feature, workdir, config, storyId, outputDir } = options;
 
   // Find nax directory
   const naxDir = join(workdir, "nax");
   if (!existsSync(naxDir)) {
-    throw new Error(
-      `nax directory not found. Run 'nax init' first in ${workdir}`,
-    );
+    throw new Error(`nax directory not found. Run 'nax init' first in ${workdir}`);
   }
 
   // Load PRD
@@ -82,15 +73,11 @@ export async function promptsCommand(
   const prd = await loadPRD(prdPath);
 
   // Filter stories
-  const stories = storyId
-    ? prd.userStories.filter((s) => s.id === storyId)
-    : prd.userStories;
+  const stories = storyId ? prd.userStories.filter((s) => s.id === storyId) : prd.userStories;
 
   if (stories.length === 0) {
     throw new Error(
-      storyId
-        ? `Story "${storyId}" not found in feature "${feature}"`
-        : `No stories found in feature "${feature}"`,
+      storyId ? `Story "${storyId}" not found in feature "${feature}"` : `No stories found in feature "${feature}"`,
     );
   }
 
@@ -107,12 +94,7 @@ export async function promptsCommand(
 
   // Process each story through the pipeline (routing → constitution → context → prompt)
   const processedStories: string[] = [];
-  const promptPipeline = [
-    routingStage,
-    constitutionStage,
-    contextStage,
-    promptStage,
-  ];
+  const promptPipeline = [routingStage, constitutionStage, contextStage, promptStage];
 
   for (const story of stories) {
     // Build initial pipeline context
@@ -251,10 +233,10 @@ function buildFrontmatter(story: UserStory, ctx: PipelineContext, role?: string)
   }
 
   if (builtContext?.truncated) {
-    lines.push(`truncated: true`);
+    lines.push("truncated: true");
   }
 
-  return lines.join("\n") + "\n";
+  return `${lines.join("\n")}\n`;
 }
 
 /**

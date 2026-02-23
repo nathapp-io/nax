@@ -7,7 +7,7 @@
 
 import { EventEmitter } from "node:events";
 import type { UserStory } from "../prd/types";
-import type { StageResult, RoutingResult } from "./types";
+import type { RoutingResult, StageResult } from "./types";
 
 /**
  * Summary of a completed run.
@@ -111,10 +111,7 @@ export class PipelineEventEmitter {
    * @param event - Event name
    * @param args - Event arguments
    */
-  emit<E extends keyof PipelineEvents>(
-    event: E,
-    ...args: Parameters<PipelineEvents[E]>
-  ): void {
+  emit<E extends keyof PipelineEvents>(event: E, ...args: Parameters<PipelineEvents[E]>): void {
     this.emitter.emit(event, ...args);
   }
 

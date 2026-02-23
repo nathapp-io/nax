@@ -24,10 +24,10 @@
  * ```
  */
 
-import type { PipelineStage, PipelineContext, StageResult } from "../types";
-import { countStories } from "../../prd";
 import path from "node:path";
 import { getLogger } from "../../logger";
+import { countStories } from "../../prd";
+import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**
  * Parse bun test output to extract failed test names.

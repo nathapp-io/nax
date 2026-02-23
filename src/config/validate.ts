@@ -93,7 +93,6 @@ export function validateConfig(config: NaxConfig): ValidationResult {
     const tier = config.autoMode.complexityRouting[complexity];
     if (!configuredTiers.includes(tier)) {
       errors.push(`complexityRouting.${complexity} must be one of: ${configuredTiers.join(", ")} (got '${tier}')`);
-
     }
   }
 

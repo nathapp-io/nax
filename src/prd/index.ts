@@ -23,8 +23,7 @@ export async function loadPRD(path: string): Promise<PRD> {
     const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
     const limitMB = (PRD_MAX_FILE_SIZE / (1024 * 1024)).toFixed(2);
     throw new Error(
-      `PRD file is too large (${sizeMB} MB exceeds ${limitMB} MB limit). ` +
-      `Split this feature into smaller features or reduce story count.`
+      `PRD file is too large (${sizeMB} MB exceeds ${limitMB} MB limit). Split this feature into smaller features or reduce story count.`,
     );
   }
 
@@ -40,9 +39,7 @@ export async function savePRD(prd: PRD, path: string): Promise<void> {
 /** Get the next story to work on (pending, deps satisfied) */
 export function getNextStory(prd: PRD): UserStory | null {
   const completedIds = new Set(
-    prd.userStories
-      .filter((s) => s.passes || s.status === "passed" || s.status === "skipped")
-      .map((s) => s.id),
+    prd.userStories.filter((s) => s.passes || s.status === "passed" || s.status === "skipped").map((s) => s.id),
   );
 
   return (
@@ -85,7 +82,13 @@ export function countStories(prd: PRD): {
     passed: prd.userStories.filter((s) => s.passes || s.status === "passed").length,
     failed: prd.userStories.filter((s) => s.status === "failed").length,
     pending: prd.userStories.filter(
-      (s) => !s.passes && s.status !== "passed" && s.status !== "failed" && s.status !== "skipped" && s.status !== "blocked" && s.status !== "paused"
+      (s) =>
+        !s.passes &&
+        s.status !== "passed" &&
+        s.status !== "failed" &&
+        s.status !== "skipped" &&
+        s.status !== "blocked" &&
+        s.status !== "paused",
     ).length,
     skipped: prd.userStories.filter((s) => s.status === "skipped").length,
     blocked: prd.userStories.filter((s) => s.status === "blocked").length,

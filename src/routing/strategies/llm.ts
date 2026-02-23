@@ -5,11 +5,11 @@
  * Falls back to keyword strategy on failure. Supports batch mode for efficiency.
  */
 
-import type { RoutingStrategy, RoutingContext, RoutingDecision } from "../strategy";
-import type { UserStory } from "../../prd/types";
-import type { Complexity, ModelTier, TestStrategy, NaxConfig } from "../../config";
+import type { Complexity, ModelTier, NaxConfig, TestStrategy } from "../../config";
 import { resolveModel } from "../../config";
 import { getLogger } from "../../logger";
+import type { UserStory } from "../../prd/types";
+import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../strategy";
 import { keywordStrategy } from "./keyword";
 
 /** Module-level cache for routing decisions */
@@ -72,14 +72,16 @@ Respond with ONLY this JSON (no markdown, no explanation):
  * @returns Formatted batch prompt string
  */
 export function buildBatchPrompt(stories: UserStory[], config: NaxConfig): string {
-  const storyBlocks = stories.map((story, idx) => {
-    const criteria = story.acceptanceCriteria.map((c, i) => `   ${i + 1}. ${c}`).join("\n");
-    return `${idx + 1}. ${story.id}: ${story.title}
+  const storyBlocks = stories
+    .map((story, idx) => {
+      const criteria = story.acceptanceCriteria.map((c, i) => `   ${i + 1}. ${c}`).join("\n");
+      return `${idx + 1}. ${story.id}: ${story.title}
    Description: ${story.description}
    Acceptance Criteria:
 ${criteria}
    Tags: ${story.tags.join(", ")}`;
-  }).join("\n\n");
+    })
+    .join("\n\n");
 
   return `You are a code task router. Given multiple user stories, classify each story's complexity and select the appropriate execution strategy.
 
@@ -128,13 +130,10 @@ async function callLlm(modelTier: string, prompt: string, config: NaxConfig): Pr
   const modelArg = modelDef.model;
 
   // Spawn claude CLI with timeout
-  const proc = Bun.spawn(
-    ["claude", "-p", prompt, "--model", modelArg],
-    {
-      stdout: "pipe",
-      stderr: "pipe",
-    },
-  );
+  const proc = Bun.spawn(["claude", "-p", prompt, "--model", modelArg], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
 
   // Race between completion and timeout, ensuring cleanup on either path
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -146,10 +145,7 @@ async function callLlm(modelTier: string, prompt: string, config: NaxConfig): Pr
   });
 
   const outputPromise = (async () => {
-    const [stdout, stderr] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
+    const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
 
     const exitCode = await proc.exited;
     if (exitCode !== 0) {
@@ -248,11 +244,7 @@ export function parseRoutingResponse(output: string, story: UserStory, config: N
  * @returns Map of story ID to routing decision
  * @throws Error if JSON parsing or validation fails
  */
-function parseBatchResponse(
-  output: string,
-  stories: UserStory[],
-  config: NaxConfig,
-): Map<string, RoutingDecision> {
+function parseBatchResponse(output: string, stories: UserStory[], config: NaxConfig): Map<string, RoutingDecision> {
   // Strip markdown code blocks if present
   let jsonText = output.trim();
   if (jsonText.startsWith("```")) {
@@ -299,10 +291,7 @@ function parseBatchResponse(
  * @param context - Routing context
  * @returns Map of story ID to routing decision
  */
-export async function routeBatch(
-  stories: UserStory[],
-  context: RoutingContext,
-): Promise<Map<string, RoutingDecision>> {
+export async function routeBatch(stories: UserStory[], context: RoutingContext): Promise<Map<string, RoutingDecision>> {
   const config = context.config;
   const llmConfig = config.routing.llm;
 
@@ -371,7 +360,7 @@ export const llmStrategy: RoutingStrategy = {
         storyId: story.id,
         complexity: cached.complexity,
         modelTier: cached.modelTier,
-        testStrategy: cached.testStrategy
+        testStrategy: cached.testStrategy,
       });
       return cached;
     }
@@ -380,7 +369,7 @@ export const llmStrategy: RoutingStrategy = {
     if (mode === "one-shot") {
       const logger = getLogger();
       logger.info("routing", "One-shot mode cache miss, falling back to keyword", {
-        storyId: story.id
+        storyId: story.id,
       });
       return keywordStrategy.route(story, context);
     }
@@ -403,7 +392,7 @@ export const llmStrategy: RoutingStrategy = {
         complexity: decision.complexity,
         modelTier: decision.modelTier,
         testStrategy: decision.testStrategy,
-        reasoning: decision.reasoning
+        reasoning: decision.reasoning,
       });
 
       return decision;

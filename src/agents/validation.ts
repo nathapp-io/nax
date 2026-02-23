@@ -4,8 +4,8 @@
  * Runtime validation for agent capabilities and tier compatibility.
  */
 
-import type { AgentAdapter } from "./types";
 import type { ModelTier } from "../config/schema";
+import type { AgentAdapter } from "./types";
 
 /**
  * Check if an agent supports a given model tier.
@@ -44,10 +44,7 @@ export function validateAgentForTier(agent: AgentAdapter, tier: ModelTier): bool
  * }
  * ```
  */
-export function validateAgentFeature(
-  agent: AgentAdapter,
-  feature: "tdd" | "review" | "refactor" | "batch",
-): boolean {
+export function validateAgentFeature(agent: AgentAdapter, feature: "tdd" | "review" | "refactor" | "batch"): boolean {
   return agent.capabilities.features.has(feature);
 }
 

@@ -5,10 +5,10 @@
  * cost accumulator, and current stage information.
  */
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { PipelineEventEmitter, RunSummary } from "../../pipeline/events";
-import type { StoryDisplayState } from "../types";
 import type { UserStory } from "../../prd/types";
+import type { StoryDisplayState } from "../types";
 
 /**
  * Pipeline state managed by the hook.
@@ -56,10 +56,7 @@ export interface PipelineState {
  * );
  * ```
  */
-export function usePipelineEvents(
-  events: PipelineEventEmitter,
-  initialStories: UserStory[],
-): PipelineState {
+export function usePipelineEvents(events: PipelineEventEmitter, initialStories: UserStory[]): PipelineState {
   const [state, setState] = useState<PipelineState>(() => ({
     stories: initialStories.map((story) => ({
       story,
@@ -101,9 +98,7 @@ export function usePipelineEvents(
       setState((prev) => ({
         ...prev,
         currentStory: story,
-        stories: prev.stories.map((s) =>
-          s.story.id === story.id ? { ...s, status: "running" as const } : s,
-        ),
+        stories: prev.stories.map((s) => (s.story.id === story.id ? { ...s, status: "running" as const } : s)),
       }));
     };
 
@@ -147,9 +142,7 @@ export function usePipelineEvents(
     const onStoryEscalate = (story: UserStory) => {
       setState((prev) => ({
         ...prev,
-        stories: prev.stories.map((s) =>
-          s.story.id === story.id ? { ...s, status: "retrying" as const } : s,
-        ),
+        stories: prev.stories.map((s) => (s.story.id === story.id ? { ...s, status: "retrying" as const } : s)),
       }));
     };
 

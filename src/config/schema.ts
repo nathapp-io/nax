@@ -151,6 +151,8 @@ export interface ConstitutionConfig {
   path: string;
   /** Maximum tokens allowed for constitution content */
   maxTokens: number;
+  /** Skip loading global constitution (default: false) */
+  skipGlobal?: boolean;
 }
 
 /** Analyze config */
@@ -197,6 +199,48 @@ export interface AcceptanceConfig {
   generateTests: boolean;
   /** Path to acceptance test file (relative to feature directory) */
   testPath: string;
+}
+
+/** Optimizer config (v0.10) */
+export interface OptimizerConfig {
+  /** Enable prompt optimizer */
+  enabled: boolean;
+  /** Optimization strategy: "rule-based" | "llm" | "noop" */
+  strategy?: "rule-based" | "llm" | "noop";
+  /** Strategy-specific configurations */
+  strategies?: {
+    "rule-based"?: {
+      stripWhitespace?: boolean;
+      compactCriteria?: boolean;
+      deduplicateContext?: boolean;
+      maxPromptTokens?: number;
+    };
+    llm?: {
+      model?: ModelTier;
+      targetReduction?: number;
+      minPromptTokens?: number;
+    };
+    custom?: {
+      module?: string;
+      options?: Record<string, unknown>;
+    };
+  };
+}
+
+/** Plugin config entry (v0.10) */
+export interface PluginConfigEntry {
+  /** Module path or package name */
+  module: string;
+  /** Plugin-specific configuration */
+  config?: Record<string, unknown>;
+}
+
+/** Hooks config */
+export interface HooksConfig {
+  /** Skip loading global hooks (default: false) */
+  skipGlobal?: boolean;
+  /** Hook definitions */
+  hooks: Record<string, unknown>;
 }
 
 /** Test coverage context config */
@@ -298,6 +342,12 @@ export interface NaxConfig {
   acceptance: AcceptanceConfig;
   /** Context injection settings */
   context: ContextConfig;
+  /** Optimizer settings (v0.10) */
+  optimizer?: OptimizerConfig;
+  /** Plugin configurations (v0.10) */
+  plugins?: PluginConfigEntry[];
+  /** Hooks configuration (v0.10) */
+  hooks?: HooksConfig;
 }
 
 /** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */
@@ -329,10 +379,7 @@ const ModelDefSchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
 });
 
-const ModelEntrySchema = z.union([
-  z.string().min(1, "Model identifier must be non-empty"),
-  ModelDefSchema,
-]);
+const ModelEntrySchema = z.union([z.string().min(1, "Model identifier must be non-empty"), ModelDefSchema]);
 
 const ModelMapSchema = z.object({
   fast: ModelEntrySchema,
@@ -349,10 +396,7 @@ const TierConfigSchema = z.object({
 
 const AutoModeConfigSchema = z.object({
   enabled: z.boolean(),
-  defaultAgent: z
-    .string()
-    .trim()
-    .min(1, "defaultAgent must be non-empty"),
+  defaultAgent: z.string().trim().min(1, "defaultAgent must be non-empty"),
   fallbackOrder: z.array(z.string()),
   complexityRouting: z.object({
     simple: ModelTierSchema,
@@ -399,11 +443,13 @@ const TddConfigSchema = z.object({
   maxRetries: z.number().int().nonnegative(),
   autoVerifyIsolation: z.boolean(),
   autoApproveVerifier: z.boolean(),
-  sessionTiers: z.object({
-    testWriter: z.string().optional(),
-    implementer: z.string().optional(),
-    verifier: z.string().optional(),
-  }).optional(),
+  sessionTiers: z
+    .object({
+      testWriter: z.string().optional(),
+      implementer: z.string().optional(),
+      verifier: z.string().optional(),
+    })
+    .optional(),
   testWriterAllowedPaths: z.array(z.string()).optional(),
 });
 
@@ -411,6 +457,7 @@ const ConstitutionConfigSchema = z.object({
   enabled: z.boolean(),
   path: z.string().min(1, "constitution.path must be non-empty"),
   maxTokens: z.number().int().positive({ message: "constitution.maxTokens must be > 0" }),
+  skipGlobal: z.boolean().optional(),
 });
 
 const AnalyzeConfigSchema = z.object({
@@ -470,24 +517,41 @@ const LlmRoutingConfigSchema = z.object({
   timeoutMs: z.number().int().positive({ message: "llm.timeoutMs must be > 0" }).optional(),
 });
 
-const RoutingConfigSchema = z.object({
-  strategy: z.enum(["keyword", "llm", "manual", "adaptive", "custom"]),
-  customStrategyPath: z.string().optional(),
-  adaptive: AdaptiveRoutingConfigSchema.optional(),
-  llm: LlmRoutingConfigSchema.optional(),
-}).refine(
-  (data) => {
-    // If strategy is "custom", customStrategyPath is required
-    if (data.strategy === "custom" && !data.customStrategyPath) {
-      return false;
-    }
-    return true;
-  },
-  {
-    message: "routing.customStrategyPath is required when strategy is 'custom'",
-    path: ["customStrategyPath"],
-  }
-);
+const RoutingConfigSchema = z
+  .object({
+    strategy: z.enum(["keyword", "llm", "manual", "adaptive", "custom"]),
+    customStrategyPath: z.string().optional(),
+    adaptive: AdaptiveRoutingConfigSchema.optional(),
+    llm: LlmRoutingConfigSchema.optional(),
+  })
+  .refine(
+    (data) => {
+      // If strategy is "custom", customStrategyPath is required
+      if (data.strategy === "custom" && !data.customStrategyPath) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "routing.customStrategyPath is required when strategy is 'custom'",
+      path: ["customStrategyPath"],
+    },
+  );
+
+const OptimizerConfigSchema = z.object({
+  enabled: z.boolean(),
+  strategy: z.enum(["cost", "quality", "balanced"]),
+});
+
+const PluginConfigEntrySchema = z.object({
+  module: z.string().min(1, "plugin.module must be non-empty"),
+  config: z.record(z.string(), z.unknown()).optional(),
+});
+
+const HooksConfigSchema = z.object({
+  skipGlobal: z.boolean().optional(),
+  hooks: z.record(z.string(), z.unknown()),
+});
 
 export const NaxConfigSchema = z
   .object({
@@ -504,6 +568,9 @@ export const NaxConfigSchema = z
     plan: PlanConfigSchema,
     acceptance: AcceptanceConfigSchema,
     context: ContextConfigSchema,
+    optimizer: OptimizerConfigSchema.optional(),
+    plugins: z.array(PluginConfigEntrySchema).optional(),
+    hooks: HooksConfigSchema.optional(),
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",
@@ -622,4 +689,3 @@ export const DEFAULT_CONFIG: NaxConfig = {
     },
   },
 };
-

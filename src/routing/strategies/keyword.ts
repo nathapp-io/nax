@@ -5,31 +5,65 @@
  * This is the default fallback strategy — always returns a decision (never null).
  */
 
-import type { RoutingStrategy, RoutingContext, RoutingDecision } from "../strategy";
+import type { Complexity, ModelTier, TestStrategy } from "../../config";
 import type { UserStory } from "../../prd/types";
-import type { Complexity, TestStrategy, ModelTier } from "../../config";
+import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../strategy";
 
 /** Keywords that indicate higher complexity */
 const COMPLEX_KEYWORDS = [
-  "refactor", "redesign", "architecture", "migration",
-  "breaking change", "public api", "security", "auth",
-  "encryption", "permission", "rbac", "casl", "jwt",
-  "grpc", "microservice", "event-driven", "saga",
+  "refactor",
+  "redesign",
+  "architecture",
+  "migration",
+  "breaking change",
+  "public api",
+  "security",
+  "auth",
+  "encryption",
+  "permission",
+  "rbac",
+  "casl",
+  "jwt",
+  "grpc",
+  "microservice",
+  "event-driven",
+  "saga",
 ];
 
 const EXPERT_KEYWORDS = [
-  "cryptograph", "zero-knowledge", "distributed consensus",
-  "real-time", "websocket", "streaming", "performance critical",
+  "cryptograph",
+  "zero-knowledge",
+  "distributed consensus",
+  "real-time",
+  "websocket",
+  "streaming",
+  "performance critical",
 ];
 
 const SECURITY_KEYWORDS = [
-  "auth", "security", "permission", "jwt", "oauth", "token",
-  "encryption", "secret", "credential", "password", "rbac", "casl",
+  "auth",
+  "security",
+  "permission",
+  "jwt",
+  "oauth",
+  "token",
+  "encryption",
+  "secret",
+  "credential",
+  "password",
+  "rbac",
+  "casl",
 ];
 
 const PUBLIC_API_KEYWORDS = [
-  "public api", "breaking change", "external", "consumer",
-  "sdk", "npm publish", "release", "endpoint",
+  "public api",
+  "breaking change",
+  "external",
+  "consumer",
+  "sdk",
+  "npm publish",
+  "release",
+  "endpoint",
 ];
 
 /**
@@ -41,18 +75,13 @@ function classifyComplexity(
   acceptanceCriteria: string[],
   tags: string[] = [],
 ): Complexity {
-  const text = [title, description, ...acceptanceCriteria, ...tags]
-    .join(" ")
-    .toLowerCase();
+  const text = [title, description, ...acceptanceCriteria, ...tags].join(" ").toLowerCase();
 
   if (EXPERT_KEYWORDS.some((kw) => text.includes(kw))) {
     return "expert";
   }
 
-  if (
-    COMPLEX_KEYWORDS.some((kw) => text.includes(kw)) ||
-    acceptanceCriteria.length > 8
-  ) {
+  if (COMPLEX_KEYWORDS.some((kw) => text.includes(kw)) || acceptanceCriteria.length > 8) {
     return "complex";
   }
 
@@ -89,10 +118,7 @@ function determineTestStrategy(
 }
 
 /** Map complexity to model tier */
-function complexityToModelTier(
-  complexity: Complexity,
-  context: RoutingContext,
-): ModelTier {
+function complexityToModelTier(complexity: Complexity, context: RoutingContext): ModelTier {
   const mapping = context.config.autoMode.complexityRouting;
   return (mapping[complexity] ?? "balanced") as ModelTier;
 }
@@ -130,9 +156,8 @@ export const keywordStrategy: RoutingStrategy = {
       complexity,
       modelTier,
       testStrategy,
-      reasoning: reasons.length > 0
-        ? `three-session-tdd: ${reasons.join(", ")}`
-        : `test-after: simple task (${complexity})`,
+      reasoning:
+        reasons.length > 0 ? `three-session-tdd: ${reasons.join(", ")}` : `test-after: simple task (${complexity})`,
     };
   },
 };

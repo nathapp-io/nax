@@ -5,7 +5,7 @@
  * Supports dependency-based ordering and multi-agent execution.
  */
 
-import type { QueueItem, QueueItemStatus, QueueStats, QueueCommand, QueueFileResult } from "./types";
+import type { QueueCommand, QueueFileResult, QueueItem, QueueItemStatus, QueueStats } from "./types";
 
 export class QueueManager {
   private items: QueueItem[] = [];

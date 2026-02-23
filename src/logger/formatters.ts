@@ -44,10 +44,7 @@ export function formatConsole(entry: LogEntry): string {
   }
 
   // Build base message with timestamp, stage, and optional storyId
-  const parts = [
-    chalk.gray(`[${timestamp}]`),
-    levelColor(`[${entry.stage}]`),
-  ];
+  const parts = [chalk.gray(`[${timestamp}]`), levelColor(`[${entry.stage}]`)];
 
   if (entry.storyId) {
     parts.push(chalk.cyan(`[${entry.storyId}]`));

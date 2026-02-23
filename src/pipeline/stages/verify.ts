@@ -21,8 +21,8 @@
  */
 
 import { spawn } from "bun";
-import type { PipelineStage, PipelineContext, StageResult } from "../types";
 import { getLogger } from "../../logger";
+import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**
  * Run test command and check exit code
@@ -105,7 +105,6 @@ export const verifyStage: PipelineStage = {
 
       return {
         action: "escalate",
-        reason: `Tests failed (exit code ${result.exitCode})`,
       };
     }
 

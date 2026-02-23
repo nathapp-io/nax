@@ -6,14 +6,15 @@
 
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { homedir } from "node:os";
-import { DEFAULT_CONFIG, NaxConfigSchema, type NaxConfig } from "./schema";
-import { MAX_DIRECTORY_DEPTH } from "./path-security";
 import { getLogger } from "../logger";
+import { deepMergeConfig } from "./merger";
+import { MAX_DIRECTORY_DEPTH } from "./path-security";
+import { globalConfigDir, projectConfigDir } from "./paths";
+import { DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema } from "./schema";
 
 /** Global config path */
 export function globalConfigPath(): string {
-  return join(homedir(), ".nax", "config.json");
+  return join(globalConfigDir(), "config.json");
 }
 
 /** Find project nax directory (walks up from cwd) */
@@ -47,31 +48,6 @@ async function loadJsonFile<T>(path: string): Promise<T | null> {
   }
 }
 
-/** Deep merge two objects (b overrides a) */
-function deepMerge(a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> {
-  const result = { ...a };
-  for (const key of Object.keys(b)) {
-    const bVal = b[key];
-    if (bVal === undefined) continue;
-    if (
-      typeof bVal === "object" &&
-      bVal !== null &&
-      !Array.isArray(bVal) &&
-      typeof result[key] === "object" &&
-      result[key] !== null
-    ) {
-      result[key] = deepMerge(
-        result[key] as Record<string, unknown>,
-        bVal as Record<string, unknown>,
-      );
-    } else {
-      result[key] = bVal;
-    }
-  }
-  return result;
-}
-
-
 /** @internal Backward compat: map deprecated routing.llm.batchMode to routing.llm.mode.
  * Returns a new object (immutable -- does not mutate the input). */
 function applyBatchModeCompat(conf: Record<string, unknown>): Record<string, unknown> {
@@ -86,7 +62,9 @@ function applyBatchModeCompat(conf: Record<string, unknown>): Record<string, unk
           "config",
           `routing.llm.batchMode is deprecated and will be removed in v1.0. Mapped to mode="${mappedMode}". Update your config to use routing.llm.mode instead.`,
         );
-      } catch { /* logger may not be init yet */ }
+      } catch {
+        /* logger may not be init yet */
+      }
       return {
         ...conf,
         routing: {
@@ -99,29 +77,34 @@ function applyBatchModeCompat(conf: Record<string, unknown>): Record<string, unk
   return conf;
 }
 
-/** Load merged configuration (defaults < global < project) */
-export async function loadConfig(projectDir?: string): Promise<NaxConfig> {
+/** Load merged configuration (defaults < global < project < CLI overrides) */
+export async function loadConfig(projectDir?: string, cliOverrides?: Record<string, unknown>): Promise<NaxConfig> {
   // Start with defaults as a plain object
   let rawConfig: Record<string, unknown> = structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>);
 
-  // Layer global config
+  // Layer 1: Global config (~/.nax/config.json)
   const globalConfRaw = await loadJsonFile<Record<string, unknown>>(globalConfigPath());
   if (globalConfRaw) {
     // Backward compatibility: apply batchMode->mode shim before merge so defaults don't shadow it
     const globalConf = applyBatchModeCompat(globalConfRaw);
-    rawConfig = deepMerge(rawConfig, globalConf);
+    rawConfig = deepMergeConfig(rawConfig, globalConf);
   }
 
-  // Layer project config
+  // Layer 2: Project config (nax/config.json)
   const projDir = projectDir ?? findProjectDir();
   if (projDir) {
     const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"));
     if (projConf) {
       // Backward compatibility: map deprecated batchMode -> mode on raw user config
-      // MUST run before deepMerge so defaults don't shadow the check.
+      // MUST run before deepMergeConfig so defaults don't shadow the check.
       const resolvedProjConf = applyBatchModeCompat(projConf);
-      rawConfig = deepMerge(rawConfig, resolvedProjConf);
+      rawConfig = deepMergeConfig(rawConfig, resolvedProjConf);
     }
+  }
+
+  // Layer 3: CLI overrides (highest priority)
+  if (cliOverrides) {
+    rawConfig = deepMergeConfig(rawConfig, cliOverrides);
   }
 
   // Parse and validate with Zod

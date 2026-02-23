@@ -21,9 +21,9 @@
  * ```
  */
 
-import type { PipelineStage, PipelineContext, StageResult } from "../types";
-import { buildSingleSessionPrompt, buildBatchPrompt } from "../../execution/prompts";
+import { buildBatchPrompt, buildSingleSessionPrompt } from "../../execution/prompts";
 import { getLogger } from "../../logger";
+import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const promptStage: PipelineStage = {
   name: "prompt",

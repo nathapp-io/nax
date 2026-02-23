@@ -17,10 +17,10 @@
  * ```
  */
 
-import type { PipelineStage, PipelineContext, StageResult } from "../types";
-import { routeStory } from "../../routing";
-import { routeBatch, clearCache } from "../../routing/strategies/llm";
 import { getLogger } from "../../logger";
+import { routeStory } from "../../routing";
+import { clearCache, routeBatch } from "../../routing/strategies/llm";
+import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
 
 export const routingStage: PipelineStage = {
   name: "routing",
@@ -34,16 +34,16 @@ export const routingStage: PipelineStage = {
     let routing;
     if (ctx.story.routing) {
       // Use cached complexity/testStrategy, but re-derive modelTier from current config
-      routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir);
+      routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
       // Override with cached complexity if available
       routing.complexity = ctx.story.routing.complexity;
       routing.testStrategy = ctx.story.routing.testStrategy;
     } else {
       // Fresh classification
-      routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir);
+      routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
     }
 
-    ctx.routing = routing;
+    ctx.routing = routing as RoutingResult;
 
     const isBatch = ctx.stories.length > 1;
 

@@ -20,9 +20,9 @@
  */
 
 import { dirname } from "node:path";
-import type { PipelineStage, PipelineContext, StageResult } from "../types";
 import { loadConstitution } from "../../constitution";
 import { getLogger } from "../../logger";
+import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const constitutionStage: PipelineStage = {
   name: "constitution",
@@ -33,9 +33,7 @@ export const constitutionStage: PipelineStage = {
 
     // Constitution file is in nax/constitution.md
     // featureDir is nax/features/<name>/, so we need to go up two levels
-    const ngentDir = ctx.featureDir
-      ? dirname(dirname(ctx.featureDir))
-      : `${ctx.workdir}/nax`;
+    const ngentDir = ctx.featureDir ? dirname(dirname(ctx.featureDir)) : `${ctx.workdir}/nax`;
 
     const result = await loadConstitution(ngentDir, ctx.config.constitution);
 

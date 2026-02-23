@@ -101,20 +101,21 @@ export function getExpectedFiles(story: UserStory): string[] {
  * depend on blocked/paused stories, making forward progress impossible.
  */
 export function isStalled(prd: PRD): boolean {
-  const remaining = prd.userStories.filter(
-    s => s.status !== "passed" && s.status !== "skipped"
-  );
+  const remaining = prd.userStories.filter((s) => s.status !== "passed" && s.status !== "skipped");
   if (remaining.length === 0) return false;
 
   const blockedIds = new Set(
-    prd.userStories.filter(s => s.status === "blocked" || s.status === "failed" || s.status === "paused").map(s => s.id)
+    prd.userStories
+      .filter((s) => s.status === "blocked" || s.status === "failed" || s.status === "paused")
+      .map((s) => s.id),
   );
 
-  return remaining.every(s =>
-    s.status === "blocked" ||
-    s.status === "failed" ||
-    s.status === "paused" ||
-    s.dependencies.some(dep => blockedIds.has(dep))
+  return remaining.every(
+    (s) =>
+      s.status === "blocked" ||
+      s.status === "failed" ||
+      s.status === "paused" ||
+      s.dependencies.some((dep) => blockedIds.has(dep)),
   );
 }
 
@@ -122,7 +123,7 @@ export function isStalled(prd: PRD): boolean {
  * Mark a story as blocked (e.g., dependency failed, unresolvable issue).
  */
 export function markStoryAsBlocked(prd: PRD, storyId: string, reason: string): void {
-  const story = prd.userStories.find(s => s.id === storyId);
+  const story = prd.userStories.find((s) => s.id === storyId);
   if (story) {
     story.status = "blocked";
     story.priorErrors = [...(story.priorErrors || []), `BLOCKED: ${reason}`];
@@ -133,29 +134,29 @@ export function markStoryAsBlocked(prd: PRD, storyId: string, reason: string): v
  * Generate a human-readable summary when all progress is stalled.
  */
 export function generateHumanHaltSummary(prd: PRD): string {
-  const blocked = prd.userStories.filter(s => s.status === "blocked");
-  const failed = prd.userStories.filter(s => s.status === "failed");
-  const paused = prd.userStories.filter(s => s.status === "paused");
-  const pending = prd.userStories.filter(s => s.status === "pending" || s.status === "in-progress");
+  const blocked = prd.userStories.filter((s) => s.status === "blocked");
+  const failed = prd.userStories.filter((s) => s.status === "failed");
+  const paused = prd.userStories.filter((s) => s.status === "paused");
+  const pending = prd.userStories.filter((s) => s.status === "pending" || s.status === "in-progress");
 
   const lines = [
     `🛑 STALLED: ${prd.feature}`,
-    ``,
+    "",
     `Blocked (${blocked.length}):`,
-    ...blocked.map(s => `  ${s.id}: ${s.title} — ${s.priorErrors?.slice(-1)[0] || "unknown"}`),
-    ``,
+    ...blocked.map((s) => `  ${s.id}: ${s.title} — ${s.priorErrors?.slice(-1)[0] || "unknown"}`),
+    "",
     `Failed (${failed.length}):`,
-    ...failed.map(s => `  ${s.id}: ${s.title} — ${s.priorErrors?.slice(-1)[0] || "unknown"}`),
-    ``,
+    ...failed.map((s) => `  ${s.id}: ${s.title} — ${s.priorErrors?.slice(-1)[0] || "unknown"}`),
+    "",
     `Paused (${paused.length}):`,
-    ...paused.map(s => `  ${s.id}: ${s.title} — ${s.priorErrors?.slice(-1)[0] || "user paused"}`),
+    ...paused.map((s) => `  ${s.id}: ${s.title} — ${s.priorErrors?.slice(-1)[0] || "user paused"}`),
   ];
 
   if (pending.length > 0) {
     lines.push(
-      ``,
+      "",
       `Waiting on blocked/paused dependencies (${pending.length}):`,
-      ...pending.map(s => `  ${s.id}: ${s.title} — depends on: ${s.dependencies.join(", ")}`)
+      ...pending.map((s) => `  ${s.id}: ${s.title} — depends on: ${s.dependencies.join(", ")}`),
     );
   }
 

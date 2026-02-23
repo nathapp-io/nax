@@ -67,12 +67,7 @@ export async function scanCodebase(workdir: string): Promise<CodebaseScan> {
  * @param prefix - Line prefix for formatting (internal)
  * @returns Formatted file tree string
  */
-async function generateFileTree(
-  dir: string,
-  maxDepth: number,
-  currentDepth = 0,
-  prefix = "",
-): Promise<string> {
+async function generateFileTree(dir: string, maxDepth: number, currentDepth = 0, prefix = ""): Promise<string> {
   if (currentDepth >= maxDepth) {
     return "";
   }

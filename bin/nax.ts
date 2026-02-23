@@ -37,38 +37,35 @@
  * ```
  */
 
-import { Command } from "commander";
-import chalk from "chalk";
-import { join } from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import chalk from "chalk";
+import { Command } from "commander";
 
-import { loadConfig, DEFAULT_CONFIG, findProjectDir, validateDirectory } from "../src/config";
 import { checkAgentHealth, getAllAgentNames } from "../src/agents";
-import { loadPRD, countStories } from "../src/prd";
-import { loadHooksConfig } from "../src/hooks";
-import { run } from "../src/execution";
 import {
-  analyzeFeature,
-  planCommand,
   acceptCommand,
+  analyzeFeature,
   displayCostMetrics,
   displayLastRunMetrics,
   displayModelEfficiency,
+  planCommand,
+  promptsCommand,
   runsListCommand,
   runsShowCommand,
-  promptsCommand,
 } from "../src/cli";
-import { renderTui, PipelineEventEmitter, type StoryDisplayState } from "../src/tui";
-import { initLogger, type LogLevel } from "../src/logger";
+import { DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from "../src/config";
+import { run } from "../src/execution";
+import { loadHooksConfig } from "../src/hooks";
+import { type LogLevel, initLogger } from "../src/logger";
+import { countStories, loadPRD } from "../src/prd";
+import { PipelineEventEmitter, type StoryDisplayState, renderTui } from "../src/tui";
 
 const pkg = await Bun.file(join(import.meta.dir, "..", "package.json")).json();
 
 const program = new Command();
 
-program
-  .name("nax")
-  .description("AI Coding Agent Orchestrator — loops until done")
-  .version(pkg.version);
+program.name("nax").description("AI Coding Agent Orchestrator — loops until done").version(pkg.version);
 
 // ── init ─────────────────────────────────────────────
 program
@@ -98,29 +95,27 @@ program
     mkdirSync(join(naxDir, "hooks"), { recursive: true });
 
     // Write default config
-    await Bun.write(
-      join(naxDir, "config.json"),
-      JSON.stringify(DEFAULT_CONFIG, null, 2),
-    );
+    await Bun.write(join(naxDir, "config.json"), JSON.stringify(DEFAULT_CONFIG, null, 2));
 
     // Write default hooks.json
     await Bun.write(
       join(naxDir, "hooks.json"),
-      JSON.stringify({
-        hooks: {
-          "on-start": { command: "echo \"nax started: $NAX_FEATURE\"", enabled: false },
-          "on-complete": { command: "echo \"nax complete: $NAX_FEATURE\"", enabled: false },
-          "on-pause": { command: "echo \"nax paused: $NAX_REASON\"", enabled: false },
-          "on-error": { command: "echo \"nax error: $NAX_REASON\"", enabled: false },
+      JSON.stringify(
+        {
+          hooks: {
+            "on-start": { command: 'echo "nax started: $NAX_FEATURE"', enabled: false },
+            "on-complete": { command: 'echo "nax complete: $NAX_FEATURE"', enabled: false },
+            "on-pause": { command: 'echo "nax paused: $NAX_REASON"', enabled: false },
+            "on-error": { command: 'echo "nax error: $NAX_REASON"', enabled: false },
+          },
         },
-      }, null, 2),
+        null,
+        2,
+      ),
     );
 
     // Write .gitignore
-    await Bun.write(
-      join(naxDir, ".gitignore"),
-      "# nax temp files\n*.tmp\n.paused.json\n",
-    );
+    await Bun.write(join(naxDir, ".gitignore"), "# nax temp files\n*.tmp\n.paused.json\n");
 
     // Write starter constitution.md
     await Bun.write(
@@ -379,10 +374,22 @@ features
     mkdirSync(featureDir, { recursive: true });
 
     // Create empty templates
-    await Bun.write(join(featureDir, "spec.md"), `# Feature: ${name}\n\n## Overview\n\n## Requirements\n\n## Acceptance Criteria\n`);
-    await Bun.write(join(featureDir, "plan.md"), `# Plan: ${name}\n\n## Architecture\n\n## Phases\n\n## Dependencies\n`);
-    await Bun.write(join(featureDir, "tasks.md"), `# Tasks: ${name}\n\n## US-001: [Title]\n\n### Description\n\n### Acceptance Criteria\n- [ ] Criterion 1\n`);
-    await Bun.write(join(featureDir, "progress.txt"), `# Progress: ${name}\n\nCreated: ${new Date().toISOString()}\n\n---\n`);
+    await Bun.write(
+      join(featureDir, "spec.md"),
+      `# Feature: ${name}\n\n## Overview\n\n## Requirements\n\n## Acceptance Criteria\n`,
+    );
+    await Bun.write(
+      join(featureDir, "plan.md"),
+      `# Plan: ${name}\n\n## Architecture\n\n## Phases\n\n## Dependencies\n`,
+    );
+    await Bun.write(
+      join(featureDir, "tasks.md"),
+      `# Tasks: ${name}\n\n## US-001: [Title]\n\n### Description\n\n### Acceptance Criteria\n- [ ] Criterion 1\n`,
+    );
+    await Bun.write(
+      join(featureDir, "progress.txt"),
+      `# Progress: ${name}\n\nCreated: ${new Date().toISOString()}\n\n---\n`,
+    );
 
     console.log(chalk.green(`✅ Created feature: ${name}`));
     console.log(chalk.dim(`   ${featureDir}/`));
@@ -390,7 +397,7 @@ features
     console.log(chalk.dim("   ├── plan.md"));
     console.log(chalk.dim("   ├── tasks.md"));
     console.log(chalk.dim("   └── progress.txt"));
-    console.log(chalk.dim("\nNext: Edit spec.md and tasks.md, then: nax analyze --feature " + name));
+    console.log(chalk.dim(`\nNext: Edit spec.md and tasks.md, then: nax analyze --feature ${name}`));
   });
 
 features
@@ -474,9 +481,9 @@ program
         from: options.from,
       });
 
-      console.log(chalk.green(`\n✅ Planning complete`));
+      console.log(chalk.green("\n✅ Planning complete"));
       console.log(chalk.dim(`   Spec: ${specPath}`));
-      console.log(chalk.dim(`\nNext: nax analyze -f <feature-name>`));
+      console.log(chalk.dim("\nNext: nax analyze -f <feature-name>"));
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);
@@ -557,9 +564,7 @@ program
 
     console.log(chalk.bold("\nCoding Agents:\n"));
     for (const agent of health) {
-      const status = agent.installed
-        ? chalk.green("✅ installed")
-        : chalk.red("❌ not found");
+      const status = agent.installed ? chalk.green("✅ installed") : chalk.red("❌ not found");
       console.log(`  ${agent.displayName.padEnd(15)} ${status}`);
     }
     console.log();
@@ -640,9 +645,7 @@ program
   });
 
 // ── runs ─────────────────────────────────────────────
-const runs = program
-  .command("runs")
-  .description("Manage and view run history");
+const runs = program.command("runs").description("Manage and view run history");
 
 runs
   .command("list")

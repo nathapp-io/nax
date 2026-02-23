@@ -5,7 +5,7 @@
  */
 
 import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { resolve, normalize, isAbsolute } from "node:path";
+import { isAbsolute, normalize, resolve } from "node:path";
 
 /** Maximum directory depth to prevent infinite loops */
 export const MAX_DIRECTORY_DEPTH = 10;

@@ -4,7 +4,7 @@
  * Calculates aggregate metrics across all runs.
  */
 
-import type { RunMetrics, AggregateMetrics, StoryMetrics } from "./types";
+import type { AggregateMetrics, RunMetrics, StoryMetrics } from "./types";
 
 /**
  * Calculate aggregate metrics across all runs.

@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { mkdirSync, writeFileSync, symlinkSync, rmSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, symlinkSync, rmSync, existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { validateDirectory, validateFilePath, isWithinDirectory, MAX_DIRECTORY_DEPTH } from "../src/config";
@@ -7,8 +7,8 @@ import { findProjectDir } from "../src/config/loader";
 
 // Create a temporary test directory
 const testRoot = join(tmpdir(), `nax-path-test-${Date.now()}`);
-const testProject = join(testRoot, "project");
-const testOutside = join(testRoot, "outside");
+let testProject = join(testRoot, "project");
+let testOutside = join(testRoot, "outside");
 
 beforeAll(() => {
   // Create test directory structure
@@ -17,6 +17,10 @@ beforeAll(() => {
   mkdirSync(join(testProject, "nax"), { recursive: true });
   writeFileSync(join(testProject, "nax", "config.json"), "{}");
   mkdirSync(testOutside, { recursive: true });
+
+  // Resolve real paths (handles macOS /private prefix)
+  testProject = realpathSync(testProject);
+  testOutside = realpathSync(testOutside);
 
   // Create a deep directory structure for max depth testing
   let deepPath = join(testProject, "deep");
