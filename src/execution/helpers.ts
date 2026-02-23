@@ -13,7 +13,7 @@ import type { NaxConfig } from "../config";
 import type { PRD, UserStory } from "../prd";
 import type { HookContext } from "../hooks";
 import { buildContext, formatContextAsMarkdown } from "../context";
-import type { StoryContext, ContextBudget } from "../context";
+import type { StoryContext, ContextBudget, BuiltContext } from "../context";
 import { getLogger } from "../logger";
 
 /**
@@ -197,6 +197,51 @@ export async function buildStoryContext(
     }
 
     return formatContextAsMarkdown(built);
+  } catch (error) {
+    const logger = getSafeLogger();
+    logger?.warn("context", "Context builder failed", {
+      error: (error as Error).message,
+    });
+    return undefined;
+  }
+}
+
+/**
+ * Build story context returning both markdown and element-level data.
+ *
+ * Used by `nax prompts` CLI for accurate frontmatter token counts.
+ *
+ * @param prd - PRD containing all stories
+ * @param story - Current story to build context for
+ * @param config - Nax config
+ * @returns Object with markdown and builtContext, or undefined if no context
+ */
+export async function buildStoryContextFull(
+  prd: PRD,
+  story: UserStory,
+  config: NaxConfig,
+): Promise<{ markdown: string; builtContext: BuiltContext } | undefined> {
+  try {
+    const storyContext: StoryContext = {
+      prd,
+      currentStoryId: story.id,
+      workdir: process.cwd(),
+      config,
+    };
+
+    const budget: ContextBudget = {
+      maxTokens: CONTEXT_MAX_TOKENS,
+      reservedForInstructions: CONTEXT_RESERVED_TOKENS,
+      availableForContext: CONTEXT_MAX_TOKENS - CONTEXT_RESERVED_TOKENS,
+    };
+
+    const built = await buildContext(storyContext, budget);
+
+    if (built.elements.length === 0) {
+      return undefined;
+    }
+
+    return { markdown: formatContextAsMarkdown(built), builtContext: built };
   } catch (error) {
     const logger = getSafeLogger();
     logger?.warn("context", "Context builder failed", {

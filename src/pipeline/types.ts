@@ -11,6 +11,7 @@ import type { ReviewResult } from "../review/types";
 import type { HooksConfig } from "../hooks/types";
 import type { ConstitutionResult } from "../constitution/types";
 import type { StoryMetrics } from "../metrics/types";
+import type { BuiltContext } from "../context/types";
 
 /**
  * Routing result from complexity classification
@@ -68,6 +69,8 @@ export interface PipelineContext {
   constitution?: ConstitutionResult;
   /** Context markdown for the agent (set by contextStage) */
   contextMarkdown?: string;
+  /** Built context with element-level token tracking (set by contextStage) */
+  builtContext?: BuiltContext;
   /** Final prompt sent to agent (set by promptStage) */
   prompt?: string;
   /** Agent execution result (set by executionStage) */

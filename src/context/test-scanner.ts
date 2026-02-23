@@ -8,6 +8,7 @@
 
 import { Glob } from "bun";
 import path from "node:path";
+import { getLogger } from "../logger";
 import { estimateTokens } from "./builder";
 
 // ============================================================================
@@ -354,7 +355,12 @@ export async function generateTestCoverageSummary(options: TestScanOptions): Pro
 
   // Log warning if scoping is enabled but no context files provided
   if (scopeToStory && (!contextFiles || contextFiles.length === 0)) {
-    console.warn("[test-scanner] scopeToStory=true but no contextFiles provided — falling back to full scan");
+    try {
+      const logger = getLogger();
+      logger.warn("context", "scopeToStory=true but no contextFiles provided — falling back to full scan");
+    } catch {
+      // Logger not initialized (e.g., in tests) — silently skip
+    }
   }
 
   const files = await scanTestFiles(options);

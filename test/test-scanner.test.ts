@@ -370,7 +370,7 @@ describe("generateTestCoverageSummary with scoping", () => {
     }
   });
 
-  test("logs warning when scopeToStory=true but no contextFiles", async () => {
+  test("falls back to full scan when scopeToStory=true but no contextFiles", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-scanner-"));
 
     try {
@@ -382,22 +382,18 @@ describe("generateTestCoverageSummary with scoping", () => {
         'describe("Test", () => { test("works", () => {}); });'
       );
 
-      // Capture console warnings
-      const warnings: string[] = [];
-      const originalWarn = console.warn;
-      console.warn = (...args: any[]) => warnings.push(args.join(" "));
-
-      await generateTestCoverageSummary({
+      // scopeToStory=true but no contextFiles → should fall back to full scan
+      // (warning logged via structured logger, not console.warn)
+      const result = await generateTestCoverageSummary({
         workdir: tempDir,
         testDir: "test",
         scopeToStory: true, // true but no contextFiles
         maxTokens: 500,
       });
 
-      console.warn = originalWarn;
-
-      // Should log warning about fallback to full scan
-      expect(warnings.some((w) => w.includes("scopeToStory=true but no contextFiles"))).toBe(true);
+      // Should still scan all files (fallback behavior)
+      expect(result.totalTests).toBeGreaterThan(0);
+      expect(result.files.length).toBe(1);
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }

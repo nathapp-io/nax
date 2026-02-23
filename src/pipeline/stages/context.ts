@@ -20,24 +20,22 @@
  */
 
 import type { PipelineStage, PipelineContext, StageResult } from "../types";
-import { maybeGetContext } from "../../execution/helpers";
+import { buildStoryContextFull } from "../../execution/helpers";
 
 export const contextStage: PipelineStage = {
   name: "context",
   enabled: () => true,
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
-    // Build context from PRD (if enabled in config/options)
-    const contextMarkdown = await maybeGetContext(
-      ctx.prd,
-      ctx.story,
-      ctx.config,
-      true, // useContext - can be made configurable later
-    );
+    // Build context from PRD with element-level tracking
+    const result = await buildStoryContextFull(ctx.prd, ctx.story, ctx.config);
 
     // SOFT FAILURE: Empty context is acceptable — agent can work without PRD context
     // This happens when no relevant stories/context is found, which is normal
-    ctx.contextMarkdown = contextMarkdown;
+    if (result) {
+      ctx.contextMarkdown = result.markdown;
+      ctx.builtContext = result.builtContext;
+    }
 
     return { action: "continue" };
   },

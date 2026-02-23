@@ -10,8 +10,10 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
+import type { UserStory } from "../prd";
 import { loadPRD } from "../prd";
 import { getLogger } from "../logger";
+import type { BuiltContext } from "../context/types";
 import { runPipeline } from "../pipeline";
 import type { PipelineContext } from "../pipeline";
 import {
@@ -199,12 +201,15 @@ export async function promptsCommand(
 /**
  * Build YAML frontmatter for a story prompt.
  *
+ * Uses actual token counts from BuiltContext elements (computed by context builder
+ * using CHARS_PER_TOKEN=3) rather than re-estimating independently.
+ *
  * @param story - User story
  * @param ctx - Pipeline context after running prompt assembly
  * @param role - Optional role for three-session TDD (test-writer, implementer, verifier)
  * @returns YAML frontmatter string (without delimiters)
  */
-function buildFrontmatter(story: any, ctx: PipelineContext, role?: string): string {
+function buildFrontmatter(story: UserStory, ctx: PipelineContext, role?: string): string {
   const lines: string[] = [];
 
   lines.push(`storyId: ${story.id}`);
@@ -216,11 +221,10 @@ function buildFrontmatter(story: any, ctx: PipelineContext, role?: string): stri
     lines.push(`role: ${role}`);
   }
 
-  // Estimate token counts (rough approximation: 1 token ≈ 4 chars)
-  const contextTokens = ctx.contextMarkdown
-    ? Math.ceil(ctx.contextMarkdown.length / 4)
-    : 0;
-  const promptTokens = ctx.prompt ? Math.ceil(ctx.prompt.length / 4) : 0;
+  // Use actual token counts from BuiltContext if available
+  const builtContext = ctx.builtContext;
+  const contextTokens = builtContext?.totalTokens ?? 0;
+  const promptTokens = ctx.prompt ? Math.ceil(ctx.prompt.length / 3) : 0;
 
   lines.push(`contextTokens: ${contextTokens}`);
   lines.push(`promptTokens: ${promptTokens}`);
@@ -230,40 +234,24 @@ function buildFrontmatter(story: any, ctx: PipelineContext, role?: string): stri
     lines.push(`dependencies: [${story.dependencies.join(", ")}]`);
   }
 
-  // Context elements breakdown with detailed tracking
+  // Context elements breakdown from actual BuiltContext
   lines.push("contextElements:");
 
-  // Story element (base story description)
-  const storyText = `${story.title}\n${story.description}\n${story.acceptanceCriteria.join("\n")}`;
-  const storyTokens = Math.ceil(storyText.length / 4);
-  lines.push("  - type: story");
-  lines.push(`    storyId: ${story.id}`);
-  lines.push(`    tokens: ${storyTokens}`);
-
-  // Dependency elements
-  if (story.dependencies && story.dependencies.length > 0) {
-    for (const depId of story.dependencies) {
-      const depStory = ctx.prd.userStories.find((s) => s.id === depId);
-      if (depStory) {
-        const depText = `${depStory.title}\n${depStory.description}\n${depStory.acceptanceCriteria.join("\n")}`;
-        const depTokens = Math.ceil(depText.length / 4);
-        lines.push("  - type: dependency");
-        lines.push(`    storyId: ${depId}`);
-        lines.push(`    tokens: ${depTokens}`);
+  if (builtContext) {
+    for (const element of builtContext.elements) {
+      lines.push(`  - type: ${element.type}`);
+      if (element.storyId) {
+        lines.push(`    storyId: ${element.storyId}`);
       }
+      if (element.filePath) {
+        lines.push(`    filePath: ${element.filePath}`);
+      }
+      lines.push(`    tokens: ${element.tokens}`);
     }
   }
 
-  // Progress summary (aggregate counts only, no story details)
-  const progressTokens = Math.ceil("Progress: X/Y stories completed".length / 4);
-  lines.push("  - type: progress");
-  lines.push(`    tokens: ${progressTokens}`);
-
-  // Test coverage (to be scoped in US-003)
-  if (contextTokens > storyTokens + progressTokens) {
-    const coverageTokens = contextTokens - storyTokens - progressTokens;
-    lines.push("  - type: test-coverage");
-    lines.push(`    tokens: ${coverageTokens}`);
+  if (builtContext?.truncated) {
+    lines.push(`truncated: true`);
   }
 
   return lines.join("\n") + "\n";
@@ -278,7 +266,7 @@ function buildFrontmatter(story: any, ctx: PipelineContext, role?: string): stri
  * @param logger - Logger instance
  */
 async function handleThreeSessionTddPrompts(
-  story: any,
+  story: UserStory,
   ctx: PipelineContext,
   outputDir: string | undefined,
   logger: ReturnType<typeof getLogger>,
