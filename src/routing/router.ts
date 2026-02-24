@@ -5,7 +5,7 @@
  * Falls back to keyword-based classification for backward compatibility.
  */
 
-import type { Complexity, ModelTier, NaxConfig, TestStrategy } from "../config";
+import type { Complexity, ModelTier, NaxConfig, TestStrategy, TddStrategy } from "../config";
 import type { UserStory } from "../prd/types";
 import { buildStrategyChain } from "./builder";
 import type { RoutingContext } from "./strategy";
@@ -172,15 +172,26 @@ export function classifyComplexity(
  * // "test-after"
  * ```
  */
+
+/** Tags that indicate a lite-mode story (UI, layout, CLI, integration, polyglot) */
+const LITE_TAGS = ["ui", "layout", "cli", "integration", "polyglot"];
+
 export function determineTestStrategy(
   complexity: Complexity,
   title: string,
   description: string,
   tags: string[] = [],
+  tddStrategy: TddStrategy = "auto",
 ): TestStrategy {
+  // Explicit strategy overrides
+  if (tddStrategy === "strict") return "three-session-tdd";
+  if (tddStrategy === "lite") return "three-session-tdd-lite";
+  if (tddStrategy === "off") return "test-after";
+
+  // strategy === 'auto': use existing heuristics + lite-tag heuristic
   const text = [title, description, ...tags].join(" ").toLowerCase();
 
-  // Public API or security → always three-session-tdd
+  // Public API or security → three-session-tdd (strict)
   const isSecurityCritical = SECURITY_KEYWORDS.some((kw) => text.includes(kw));
   const isPublicApi = PUBLIC_API_KEYWORDS.some((kw) => text.includes(kw));
 
@@ -188,8 +199,10 @@ export function determineTestStrategy(
     return "three-session-tdd";
   }
 
-  // Complex/expert → three-session-tdd
+  // Complex/expert with lite tags → prefer three-session-tdd-lite
   if (complexity === "complex" || complexity === "expert") {
+    const hasLiteTag = LITE_TAGS.some((tag) => tags.map((t) => t.toLowerCase()).includes(tag));
+    if (hasLiteTag) return "three-session-tdd-lite";
     return "three-session-tdd";
   }
 
@@ -262,7 +275,8 @@ export function routeTask(
 ): RoutingDecision {
   const complexity = classifyComplexity(title, description, acceptanceCriteria, tags);
   const modelTier = complexityToModelTier(complexity, config);
-  const testStrategy = determineTestStrategy(complexity, title, description, tags);
+  const tddStrategy: TddStrategy = config.tdd?.strategy ?? "auto";
+  const testStrategy = determineTestStrategy(complexity, title, description, tags, tddStrategy);
 
   const reasons: string[] = [];
   if (testStrategy === "three-session-tdd") {
@@ -270,13 +284,25 @@ export function routeTask(
     if (SECURITY_KEYWORDS.some((kw) => text.includes(kw))) reasons.push("security-critical");
     if (PUBLIC_API_KEYWORDS.some((kw) => text.includes(kw))) reasons.push("public-api");
     if (complexity === "complex" || complexity === "expert") reasons.push(`complexity:${complexity}`);
+    if (tddStrategy === "strict") reasons.push("strategy:strict");
+  } else if (testStrategy === "three-session-tdd-lite") {
+    if (tddStrategy === "lite") reasons.push("strategy:lite");
+    else reasons.push("lite-tags");
+  }
+
+  let reasoning: string;
+  if (testStrategy === "three-session-tdd") {
+    reasoning = reasons.length > 0 ? `three-session-tdd: ${reasons.join(", ")}` : `three-session-tdd: complexity:${complexity}`;
+  } else if (testStrategy === "three-session-tdd-lite") {
+    reasoning = `three-session-tdd-lite: ${reasons.join(", ")}`;
+  } else {
+    reasoning = `test-after: simple task (${complexity})`;
   }
 
   return {
     complexity,
     modelTier,
     testStrategy,
-    reasoning:
-      reasons.length > 0 ? `three-session-tdd: ${reasons.join(", ")}` : `test-after: simple task (${complexity})`,
+    reasoning,
   };
 }
