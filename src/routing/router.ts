@@ -5,7 +5,7 @@
  * Falls back to keyword-based classification for backward compatibility.
  */
 
-import type { Complexity, ModelTier, NaxConfig, TestStrategy, TddStrategy } from "../config";
+import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../config";
 import type { UserStory } from "../prd/types";
 import { buildStrategyChain } from "./builder";
 import type { RoutingContext } from "./strategy";
@@ -139,37 +139,35 @@ export function classifyComplexity(
   return "simple";
 }
 
+/** Tags that indicate UI/polyglot stories which prefer lite TDD mode */
+const LITE_TDD_TAGS = ["ui", "layout", "cli", "integration", "polyglot"];
+
 /**
  * Determine test strategy using decision tree logic.
  *
- * Decision tree:
- * 1. Is it public API or security-critical? → three-session-tdd
- * 2. Is complexity complex/expert? → three-session-tdd
- * 3. Otherwise → test-after
+ * When tddStrategy is provided:
+ * - 'strict' → always three-session-tdd
+ * - 'lite'   → always three-session-tdd-lite
+ * - 'off'    → always test-after
+ * - 'auto'   → existing heuristic logic, plus:
+ *              if tags include ui/layout/cli/integration/polyglot → three-session-tdd-lite
+ *              if security/public-api/complex/expert → three-session-tdd
+ *              otherwise → test-after
  *
  * @param complexity - Pre-classified complexity level
  * @param title - Story title
  * @param description - Story description
  * @param tags - Optional story tags
- * @returns Test strategy (three-session-tdd or test-after)
+ * @param tddStrategy - TDD strategy override from config (default: 'auto')
+ * @returns Test strategy
  *
  * @example
  * ```ts
- * determineTestStrategy(
- *   "complex",
- *   "Add OAuth integration",
- *   "Implement OAuth 2.0 flow",
- *   ["security", "auth"]
- * );
- * // "three-session-tdd" (security-critical + complex)
+ * determineTestStrategy("complex", "Add OAuth", "Implement OAuth 2.0", ["security", "auth"], "strict");
+ * // "three-session-tdd"
  *
- * determineTestStrategy(
- *   "simple",
- *   "Update button color",
- *   "Change primary button to blue",
- *   ["ui"]
- * );
- * // "test-after"
+ * determineTestStrategy("simple", "Update button", "Change primary button", ["ui"], "auto");
+ * // "three-session-tdd-lite"
  * ```
  */
 
@@ -183,12 +181,12 @@ export function determineTestStrategy(
   tags: string[] = [],
   tddStrategy: TddStrategy = "auto",
 ): TestStrategy {
-  // Explicit strategy overrides
+  // Explicit overrides — ignore all heuristics
   if (tddStrategy === "strict") return "three-session-tdd";
   if (tddStrategy === "lite") return "three-session-tdd-lite";
   if (tddStrategy === "off") return "test-after";
 
-  // strategy === 'auto': use existing heuristics + lite-tag heuristic
+  // auto mode: apply heuristics
   const text = [title, description, ...tags].join(" ").toLowerCase();
 
   // Public API or security → three-session-tdd (strict)
@@ -204,6 +202,12 @@ export function determineTestStrategy(
     const hasLiteTag = LITE_TAGS.some((tag) => tags.map((t) => t.toLowerCase()).includes(tag));
     if (hasLiteTag) return "three-session-tdd-lite";
     return "three-session-tdd";
+  }
+
+  // UI/polyglot tags → three-session-tdd-lite
+  const normalizedTags = tags.map((t) => t.toLowerCase());
+  if (LITE_TDD_TAGS.some((tag) => normalizedTags.includes(tag))) {
+    return "three-session-tdd-lite";
   }
 
   // Simple/medium → test-after
@@ -279,30 +283,20 @@ export function routeTask(
   const testStrategy = determineTestStrategy(complexity, title, description, tags, tddStrategy);
 
   const reasons: string[] = [];
-  if (testStrategy === "three-session-tdd") {
-    const text = [title, description, ...tags].join(" ").toLowerCase();
-    if (SECURITY_KEYWORDS.some((kw) => text.includes(kw))) reasons.push("security-critical");
-    if (PUBLIC_API_KEYWORDS.some((kw) => text.includes(kw))) reasons.push("public-api");
-    if (complexity === "complex" || complexity === "expert") reasons.push(`complexity:${complexity}`);
-    if (tddStrategy === "strict") reasons.push("strategy:strict");
-  } else if (testStrategy === "three-session-tdd-lite") {
-    if (tddStrategy === "lite") reasons.push("strategy:lite");
-    else reasons.push("lite-tags");
-  }
+  const text = [title, description, ...tags].join(" ").toLowerCase();
+  if (SECURITY_KEYWORDS.some((kw) => text.includes(kw))) reasons.push("security-critical");
+  if (PUBLIC_API_KEYWORDS.some((kw) => text.includes(kw))) reasons.push("public-api");
+  if (complexity === "complex" || complexity === "expert") reasons.push(`complexity:${complexity}`);
+  if (tddStrategy !== "auto") reasons.push(`strategy:${tddStrategy}`);
+  const normalizedTags = tags.map((t) => t.toLowerCase());
+  if (LITE_TDD_TAGS.some((tag) => normalizedTags.includes(tag))) reasons.push("ui/polyglot-tag");
 
-  let reasoning: string;
-  if (testStrategy === "three-session-tdd") {
-    reasoning = reasons.length > 0 ? `three-session-tdd: ${reasons.join(", ")}` : `three-session-tdd: complexity:${complexity}`;
-  } else if (testStrategy === "three-session-tdd-lite") {
-    reasoning = `three-session-tdd-lite: ${reasons.join(", ")}`;
-  } else {
-    reasoning = `test-after: simple task (${complexity})`;
-  }
-
+  const prefix = testStrategy;
   return {
     complexity,
     modelTier,
     testStrategy,
-    reasoning,
+    reasoning:
+      reasons.length > 0 ? `${prefix}: ${reasons.join(", ")}` : `test-after: simple task (${complexity})`,
   };
 }
