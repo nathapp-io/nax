@@ -293,15 +293,13 @@ export async function runThreeSessionTdd(
         filesChanged: session1.filesChanged,
       });
 
-      // Reset changed files to pre-test-writer state (safer than git checkout .)
-      if (session1.filesChanged.length > 0) {
-        const resetProc = Bun.spawn(["git", "checkout", "HEAD", "--", ...session1.filesChanged], {
-          cwd: workdir,
-          stdout: "pipe",
-          stderr: "pipe",
-        });
-        await resetProc.exited;
-      }
+      // Reset git to pre-test-writer state
+      const resetProc = Bun.spawn(["git", "checkout", "."], {
+        cwd: workdir,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      await resetProc.exited;
 
       // Re-run as lite mode
       return runThreeSessionTdd(agent, story, config, workdir, modelTier, contextMarkdown, false, true);
