@@ -2,6 +2,7 @@ export type {
   NaxConfig,
   Complexity,
   TestStrategy,
+  TddStrategy,
   ModelTier,
   ModelDef,
   ModelEntry,

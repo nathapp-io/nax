@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { classifyComplexity, determineTestStrategy, routeTask } from "../src/routing";
-import { DEFAULT_CONFIG } from "../src/config";
+import { DEFAULT_CONFIG, type NaxConfig } from "../src/config";
 import { escalateTier } from "../src/execution/runner";
 
 describe("classifyComplexity", () => {
@@ -168,5 +168,147 @@ describe("classifyComplexity - BUG-19 regression tests", () => {
     const overriddenModelTier = DEFAULT_CONFIG.autoMode.complexityRouting[cachedComplexity] ?? "balanced";
 
     expect(overriddenModelTier).toBe("fast");
+  });
+});
+
+// --- TDD Strategy Override Tests ---
+
+describe("determineTestStrategy - tddStrategy overrides", () => {
+  test("strict always returns three-session-tdd regardless of complexity", () => {
+    expect(determineTestStrategy("simple", "Fix typo", "Fix a typo", [], "strict")).toBe("three-session-tdd");
+    expect(determineTestStrategy("medium", "Add feature", "Add a feature", [], "strict")).toBe("three-session-tdd");
+    expect(determineTestStrategy("complex", "Refactor module", "Complex refactor", [], "strict")).toBe("three-session-tdd");
+    expect(determineTestStrategy("expert", "Real-time sync", "Distributed consensus", [], "strict")).toBe("three-session-tdd");
+  });
+
+  test("strict overrides security/public-api — still returns three-session-tdd", () => {
+    expect(determineTestStrategy("simple", "Fix auth bypass", "JWT token security fix", ["security"], "strict")).toBe("three-session-tdd");
+  });
+
+  test("lite always returns three-session-tdd-lite regardless of complexity", () => {
+    expect(determineTestStrategy("simple", "Fix typo", "Fix a typo", [], "lite")).toBe("three-session-tdd-lite");
+    expect(determineTestStrategy("complex", "Refactor module", "Complex refactor", [], "lite")).toBe("three-session-tdd-lite");
+    expect(determineTestStrategy("expert", "Real-time sync", "Distributed consensus", [], "lite")).toBe("three-session-tdd-lite");
+  });
+
+  test("lite overrides security/public-api — still returns three-session-tdd-lite", () => {
+    expect(determineTestStrategy("complex", "Fix auth bypass", "JWT token security fix", ["security"], "lite")).toBe("three-session-tdd-lite");
+  });
+
+  test("off always returns test-after regardless of complexity", () => {
+    expect(determineTestStrategy("simple", "Fix typo", "Fix a typo", [], "off")).toBe("test-after");
+    expect(determineTestStrategy("complex", "Refactor module", "Complex refactor", [], "off")).toBe("test-after");
+    expect(determineTestStrategy("expert", "Real-time sync", "Distributed consensus", [], "off")).toBe("test-after");
+  });
+
+  test("off overrides security/public-api — still returns test-after", () => {
+    expect(determineTestStrategy("complex", "Fix auth bypass", "JWT token security fix", ["security"], "off")).toBe("test-after");
+  });
+});
+
+describe("determineTestStrategy - auto mode with UI/polyglot heuristic", () => {
+  test("auto + 'ui' tag → three-session-tdd-lite", () => {
+    expect(determineTestStrategy("simple", "Update button color", "Change primary button to blue", ["ui"], "auto")).toBe("three-session-tdd-lite");
+  });
+
+  test("auto + 'layout' tag → three-session-tdd-lite", () => {
+    expect(determineTestStrategy("simple", "Update layout", "Rearrange page sections", ["layout"], "auto")).toBe("three-session-tdd-lite");
+  });
+
+  test("auto + 'cli' tag → three-session-tdd-lite", () => {
+    expect(determineTestStrategy("simple", "Add CLI command", "New CLI subcommand", ["cli"], "auto")).toBe("three-session-tdd-lite");
+  });
+
+  test("auto + 'integration' tag → three-session-tdd-lite", () => {
+    expect(determineTestStrategy("simple", "Integration test", "Integration wiring", ["integration"], "auto")).toBe("three-session-tdd-lite");
+  });
+
+  test("auto + 'polyglot' tag → three-session-tdd-lite", () => {
+    expect(determineTestStrategy("simple", "Multi-language support", "Polyglot feature", ["polyglot"], "auto")).toBe("three-session-tdd-lite");
+  });
+
+  test("auto + security tag still takes precedence over ui tag → three-session-tdd", () => {
+    // Security/public-api override happens before the lite heuristic
+    expect(determineTestStrategy("simple", "Secure UI form", "Auth UI form with token", ["ui", "security"], "auto")).toBe("three-session-tdd");
+  });
+
+  test("auto + complex complexity still returns three-session-tdd (no ui tag)", () => {
+    expect(determineTestStrategy("complex", "Refactor API", "Complex refactor", [], "auto")).toBe("three-session-tdd");
+  });
+
+  test("auto + complex complexity with ui tag → three-session-tdd (security/complexity takes precedence)", () => {
+    // complex → three-session-tdd is checked BEFORE ui heuristic
+    expect(determineTestStrategy("complex", "Complex UI refactor", "Complex refactor", ["ui"], "auto")).toBe("three-session-tdd");
+  });
+
+  test("auto + simple + no special tags → test-after (existing behavior)", () => {
+    expect(determineTestStrategy("simple", "Fix typo", "Fix a typo", [], "auto")).toBe("test-after");
+  });
+
+  test("auto + medium + no special tags → test-after", () => {
+    expect(determineTestStrategy("medium", "Add validation", "Add DTO validation", [], "auto")).toBe("test-after");
+  });
+
+  test("auto is the default when tddStrategy is omitted", () => {
+    // Omitting tddStrategy defaults to 'auto'
+    expect(determineTestStrategy("simple", "Fix typo", "Fix a typo", [])).toBe("test-after");
+    expect(determineTestStrategy("simple", "Update UI", "Change button color", ["ui"])).toBe("three-session-tdd-lite");
+    expect(determineTestStrategy("complex", "Refactor module", "Complex refactor", [])).toBe("three-session-tdd");
+  });
+});
+
+describe("routeTask - tdd.strategy config field", () => {
+  const makeConfig = (strategy: "auto" | "strict" | "lite" | "off"): NaxConfig => ({
+    ...DEFAULT_CONFIG,
+    tdd: { ...DEFAULT_CONFIG.tdd, strategy },
+  });
+
+  test("strategy='strict' always returns three-session-tdd", () => {
+    const config = makeConfig("strict");
+    const simple = routeTask("Fix typo", "Fix a typo", ["Typo fixed"], [], config);
+    expect(simple.testStrategy).toBe("three-session-tdd");
+
+    const medium = routeTask("Add validation", "Add DTO validation", ["a", "b", "c", "d", "e"], [], config);
+    expect(medium.testStrategy).toBe("three-session-tdd");
+  });
+
+  test("strategy='lite' always returns three-session-tdd-lite", () => {
+    const config = makeConfig("lite");
+    const simple = routeTask("Fix typo", "Fix a typo", ["Typo fixed"], [], config);
+    expect(simple.testStrategy).toBe("three-session-tdd-lite");
+
+    const complex = routeTask("Auth refactor", "Refactor JWT auth", ["Token works"], ["security"], config);
+    expect(complex.testStrategy).toBe("three-session-tdd-lite");
+  });
+
+  test("strategy='off' always returns test-after", () => {
+    const config = makeConfig("off");
+    const complex = routeTask("Auth refactor", "Refactor JWT auth", ["Token works"], ["security"], config);
+    expect(complex.testStrategy).toBe("test-after");
+
+    const expert = routeTask("Real-time sync", "Real-time distributed consensus", ["Sync works"], [], config);
+    expect(expert.testStrategy).toBe("test-after");
+  });
+
+  test("strategy='auto' returns three-session-tdd-lite for UI tagged stories", () => {
+    const config = makeConfig("auto");
+    const result = routeTask("Update button", "Change button color", ["Button is blue"], ["ui"], config);
+    expect(result.testStrategy).toBe("three-session-tdd-lite");
+  });
+
+  test("strategy='auto' returns three-session-tdd for complex API/library stories", () => {
+    const config = makeConfig("auto");
+    const result = routeTask("Auth refactor", "Refactor JWT auth", ["Token works"], ["security"], config);
+    expect(result.testStrategy).toBe("three-session-tdd");
+  });
+
+  test("strategy='auto' (DEFAULT_CONFIG) — existing behavior unchanged", () => {
+    // Simple → test-after
+    const simple = routeTask("Fix typo", "Fix a typo", ["Typo fixed"], [], DEFAULT_CONFIG);
+    expect(simple.testStrategy).toBe("test-after");
+
+    // Security → three-session-tdd
+    const security = routeTask("Auth fix", "Fix JWT auth bypass", ["Auth works"], ["security"], DEFAULT_CONFIG);
+    expect(security.testStrategy).toBe("three-session-tdd");
   });
 });
