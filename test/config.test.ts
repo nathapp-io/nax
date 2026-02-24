@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { DEFAULT_CONFIG, NaxConfigSchema } from "../src/config/schema";
+import type { TestStrategy, TddStrategy } from "../src/config/schema";
 
 describe("Config Validation", () => {
   test("accepts valid default config", () => {
@@ -357,6 +358,87 @@ describe("LLM Routing Mode Config", () => {
     if (result.success) {
       expect(result.data.routing.llm?.mode).toBe("one-shot");
       expect(result.data.routing.llm?.batchMode).toBe(true);
+    }
+  });
+});
+
+describe("TDD Strategy Config", () => {
+  test("TestStrategy type includes three-session-tdd-lite", () => {
+    // Type-level check: ensure 'three-session-tdd-lite' is assignable to TestStrategy
+    const strategy: TestStrategy = "three-session-tdd-lite";
+    expect(strategy).toBe("three-session-tdd-lite");
+  });
+
+  test("TddStrategy type alias covers all four values", () => {
+    const strategies: TddStrategy[] = ["auto", "strict", "lite", "off"];
+    expect(strategies).toHaveLength(4);
+  });
+
+  test("default config has strategy: auto", () => {
+    expect(DEFAULT_CONFIG.tdd.strategy).toBe("auto");
+  });
+
+  test("default config parses successfully", () => {
+    const result = NaxConfigSchema.safeParse(DEFAULT_CONFIG);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.tdd.strategy).toBe("auto");
+    }
+  });
+
+  test("accepts strategy: strict", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "strict" as const },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.tdd.strategy).toBe("strict");
+    }
+  });
+
+  test("accepts strategy: lite", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "lite" as const },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.tdd.strategy).toBe("lite");
+    }
+  });
+
+  test("accepts strategy: off", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "off" as const },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.tdd.strategy).toBe("off");
+    }
+  });
+
+  test("rejects invalid strategy value", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "invalid-strategy" },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+  });
+
+  test("backward compat: config without strategy field defaults to auto", () => {
+    // Simulate a config file that was written before strategy was added (no strategy key)
+    const { strategy: _omitted, ...tddWithoutStrategy } = DEFAULT_CONFIG.tdd;
+    const config = { ...DEFAULT_CONFIG, tdd: tddWithoutStrategy };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.tdd.strategy).toBe("auto");
     }
   });
 });

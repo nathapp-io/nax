@@ -10,7 +10,10 @@ import { z } from "zod";
 export type Complexity = "simple" | "medium" | "complex" | "expert";
 
 /** Test strategy */
-export type TestStrategy = "test-after" | "three-session-tdd";
+export type TestStrategy = "test-after" | "three-session-tdd" | "three-session-tdd-lite";
+
+/** TDD strategy override — controls which test strategy mode is used */
+export type TddStrategy = "auto" | "strict" | "lite" | "off";
 
 /** Escalation path entry */
 export interface EscalationEntry {
@@ -128,6 +131,8 @@ export interface TddConfig {
   maxRetries: number;
   /** Auto-verify isolation between sessions */
   autoVerifyIsolation: boolean;
+  /** TDD strategy override (default: 'auto') */
+  strategy: TddStrategy;
   /** Session 3 verifier: auto-approve legitimate fixes */
   autoApproveVerifier: boolean;
   /** Per-session model tier overrides. Defaults: test-writer=balanced, implementer=story tier, verifier=fast */
@@ -443,6 +448,7 @@ const TddConfigSchema = z.object({
   maxRetries: z.number().int().nonnegative(),
   autoVerifyIsolation: z.boolean(),
   autoApproveVerifier: z.boolean(),
+  strategy: z.enum(["auto", "strict", "lite", "off"]).default("auto"),
   sessionTiers: z
     .object({
       testWriter: z.string().optional(),
@@ -646,6 +652,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
     maxRetries: 2,
     autoVerifyIsolation: true,
     autoApproveVerifier: true,
+    strategy: "auto",
     sessionTiers: {
       testWriter: "balanced",
       // implementer: undefined = uses story's routed tier
