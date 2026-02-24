@@ -139,8 +139,8 @@ export function classifyComplexity(
   return "simple";
 }
 
-/** Tags that indicate UI/polyglot stories which prefer lite TDD mode */
-const LITE_TDD_TAGS = ["ui", "layout", "cli", "integration", "polyglot"];
+/** Tags that indicate a lite-mode story (UI, layout, CLI, integration, polyglot) */
+const LITE_TAGS = ["ui", "layout", "cli", "integration", "polyglot"];
 
 /**
  * Determine test strategy using decision tree logic.
@@ -171,9 +171,6 @@ const LITE_TDD_TAGS = ["ui", "layout", "cli", "integration", "polyglot"];
  * ```
  */
 
-/** Tags that indicate a lite-mode story (UI, layout, CLI, integration, polyglot) */
-const LITE_TAGS = ["ui", "layout", "cli", "integration", "polyglot"];
-
 export function determineTestStrategy(
   complexity: Complexity,
   title: string,
@@ -197,20 +194,14 @@ export function determineTestStrategy(
     return "three-session-tdd";
   }
 
-  // Complex/expert with lite tags → prefer three-session-tdd-lite
+  // Complex/expert heuristic
   if (complexity === "complex" || complexity === "expert") {
-    const hasLiteTag = LITE_TAGS.some((tag) => tags.map((t) => t.toLowerCase()).includes(tag));
-    if (hasLiteTag) return "three-session-tdd-lite";
-    return "three-session-tdd";
+    const normalizedTags = tags.map((t) => t.toLowerCase());
+    const hasLiteTag = LITE_TAGS.some((tag) => normalizedTags.includes(tag));
+    return hasLiteTag ? "three-session-tdd-lite" : "three-session-tdd";
   }
 
-  // UI/polyglot tags → three-session-tdd-lite
-  const normalizedTags = tags.map((t) => t.toLowerCase());
-  if (LITE_TDD_TAGS.some((tag) => normalizedTags.includes(tag))) {
-    return "three-session-tdd-lite";
-  }
-
-  // Simple/medium → test-after
+  // Simple/medium → test-after (default)
   return "test-after";
 }
 
@@ -284,12 +275,23 @@ export function routeTask(
 
   const reasons: string[] = [];
   const text = [title, description, ...tags].join(" ").toLowerCase();
+  const normalizedTags = tags.map((t) => t.toLowerCase());
+  const hasLiteTag = LITE_TAGS.some((tag) => normalizedTags.includes(tag));
+
   if (SECURITY_KEYWORDS.some((kw) => text.includes(kw))) reasons.push("security-critical");
   if (PUBLIC_API_KEYWORDS.some((kw) => text.includes(kw))) reasons.push("public-api");
-  if (complexity === "complex" || complexity === "expert") reasons.push(`complexity:${complexity}`);
+
+  // Only add complexity reason if it's the primary reason for strict/lite TDD
+  if (complexity === "complex" || complexity === "expert") {
+    if (reasons.length === 0) {
+      reasons.push(`complexity:${complexity}`);
+    }
+  }
+
   if (tddStrategy !== "auto") reasons.push(`strategy:${tddStrategy}`);
-  const normalizedTags = tags.map((t) => t.toLowerCase());
-  if (LITE_TDD_TAGS.some((tag) => normalizedTags.includes(tag))) reasons.push("ui/polyglot-tag");
+  if (hasLiteTag && (complexity === "complex" || complexity === "expert")) {
+    reasons.push("lite-tags");
+  }
 
   const prefix = testStrategy;
   return {
