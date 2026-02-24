@@ -65,6 +65,6 @@ export interface ThreeSessionTddResult {
   reviewReason?: string;
   /** Total cost */
   totalCost: number;
-  /** Whether lite mode was used (relaxed isolation rules) */
-  lite?: boolean;
+  /** Whether lite mode was used (skips test-writer/implementer isolation) */
+  lite: boolean;
 }

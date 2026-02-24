@@ -56,6 +56,14 @@ function mockGitSpawn(opts: {
         stderr: new Response("").body,
       };
     }
+    if (cmd[0] === "git" && cmd[1] === "checkout") {
+      // Intercept git checkout (used in zero-file fallback) — silently succeed
+      return {
+        exited: Promise.resolve(0),
+        stdout: new Response("").body,
+        stderr: new Response("").body,
+      };
+    }
     if (cmd[0] === "git" && cmd[1] === "diff") {
       const files = opts.diffFiles[diffCount] || [];
       diffCount++;
@@ -340,10 +348,10 @@ describe("runThreeSessionTdd", () => {
     expect(result.reviewReason).toBeUndefined();
   });
 
-  test("BUG-20: failure when test-writer creates no test files (strategy=strict)", async () => {
+  test("BUG-20: failure when test-writer creates no test files", async () => {
     // Scenario: Test-writer session succeeds and passes isolation but creates no test files
     // (e.g., creates requirements.md instead)
-    // With strategy='strict', no lite fallback — should fail with needsHumanReview
+    // Expected: Should fail with needsHumanReview and specific reason
     mockGitSpawn({
       diffFiles: [
         // Isolation check: only non-test files
@@ -357,8 +365,7 @@ describe("runThreeSessionTdd", () => {
       { success: true, estimatedCost: 0.01 }, // test-writer succeeds but creates wrong files
     ]);
 
-    const strictConfig = { ...DEFAULT_CONFIG, tdd: { ...DEFAULT_CONFIG.tdd, strategy: "strict" as const } };
-    const result = await runThreeSessionTdd(agent, story, strictConfig, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
 
     expect(result.success).toBe(false);
     expect(result.sessions).toHaveLength(1); // Should stop after session 1
@@ -366,9 +373,9 @@ describe("runThreeSessionTdd", () => {
     expect(result.reviewReason).toBe("Test writer session created no test files");
   });
 
-  test("BUG-20: failure when test-writer creates zero files (strategy=strict)", async () => {
+  test("BUG-20: failure when test-writer creates zero files", async () => {
     // Scenario: Test-writer session succeeds but creates no files at all
-    // With strategy='strict', no lite fallback — should fail with needsHumanReview
+    // Expected: Should fail with needsHumanReview
     mockGitSpawn({
       diffFiles: [
         // Isolation check: no files
@@ -382,8 +389,7 @@ describe("runThreeSessionTdd", () => {
       { success: true, estimatedCost: 0.01 }, // test-writer succeeds but creates nothing
     ]);
 
-    const strictConfig = { ...DEFAULT_CONFIG, tdd: { ...DEFAULT_CONFIG.tdd, strategy: "strict" as const } };
-    const result = await runThreeSessionTdd(agent, story, strictConfig, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
 
     expect(result.success).toBe(false);
     expect(result.sessions).toHaveLength(1);
@@ -420,319 +426,6 @@ describe("runThreeSessionTdd", () => {
     expect(result.success).toBe(true);
     expect(result.sessions).toHaveLength(3); // All sessions run
     expect(result.needsHumanReview).toBe(false);
-  });
-
-  test("zero-file fallback: strategy='auto' triggers lite mode re-run when 0 test files created", async () => {
-    // Scenario: strict test-writer creates 0 test files but strategy='auto',
-    // so it falls back to lite mode which successfully creates test files
-    let revParseCount = 0;
-    let diffCount = 0;
-    let gitResetCalled = false;
-    let callCount = 0;
-
-    // First run (strict): session 1 creates no test files → triggers fallback
-    // Second run (lite): session 1 creates test files, sessions 2-3 succeed
-    const strictDiffFiles = [
-      // Strict session 1: isolation check + getChangedFiles — no test files
-      [],
-      [],
-    ];
-    const liteDiffFiles = [
-      // Lite session 1: getChangedFiles only (no isolation check in lite)
-      ["test/user.test.ts"],
-      // Lite session 2: getChangedFiles only (no isolation in lite)
-      ["src/user.ts"],
-      // Lite session 3: getChangedFiles
-      ["src/user.ts"],
-    ];
-
-    // @ts-ignore — mocking global
-    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
-      if (cmd[0] === "git" && cmd[1] === "reset") {
-        gitResetCalled = true;
-        return { exited: Promise.resolve(0), stdout: new Response("").body, stderr: new Response("").body };
-      }
-      if (cmd[0] === "git" && cmd[1] === "rev-parse") {
-        revParseCount++;
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response(`ref-${revParseCount}\n`).body,
-          stderr: new Response("").body,
-        };
-      }
-      if (cmd[0] === "git" && cmd[1] === "diff") {
-        // First 2 diff calls are for strict mode session 1
-        const files = diffCount < 2 ? (strictDiffFiles[diffCount] || []) : (liteDiffFiles[diffCount - 2] || []);
-        diffCount++;
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response(files.join("\n") + "\n").body,
-          stderr: new Response("").body,
-        };
-      }
-      return originalSpawn(cmd, spawnOpts);
-    });
-
-    // Agent: first call (strict session 1) creates no test files,
-    // then lite calls succeed
-    const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 }, // strict session 1 (triggers fallback)
-      { success: true, estimatedCost: 0.01 }, // lite session 1
-      { success: true, estimatedCost: 0.02 }, // lite session 2
-      { success: true, estimatedCost: 0.01 }, // lite session 3
-    ]);
-
-    const autoConfig = { ...DEFAULT_CONFIG, tdd: { ...DEFAULT_CONFIG.tdd, strategy: "auto" as const } };
-    const result = await runThreeSessionTdd(agent, story, autoConfig, "/tmp/test", "balanced");
-
-    expect(gitResetCalled).toBe(true); // Git was reset to undo strict session 1
-    expect(result.lite).toBe(true); // Ran as lite mode
-    expect(result.sessions).toHaveLength(3); // 3 sessions in lite mode
-    expect(result.success).toBe(true);
-  });
-
-  test("zero-file fallback: strategy='strict' does NOT fall back — fails immediately", async () => {
-    // With explicit strategy='strict', no fallback even when 0 test files
-    mockGitSpawn({
-      diffFiles: [
-        // Session 1: isolation check — no test files
-        [],
-        // Session 1: getChangedFiles
-        [],
-      ],
-    });
-
-    const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-    ]);
-
-    const strictConfig = { ...DEFAULT_CONFIG, tdd: { ...DEFAULT_CONFIG.tdd, strategy: "strict" as const } };
-    const result = await runThreeSessionTdd(agent, story, strictConfig, "/tmp/test", "balanced");
-
-    expect(result.success).toBe(false);
-    expect(result.sessions).toHaveLength(1);
-    expect(result.needsHumanReview).toBe(true);
-    expect(result.reviewReason).toBe("Test writer session created no test files");
-    expect(result.lite).toBe(false); // No lite fallback occurred
-  });
-
-  test("lite mode: uses lite prompts (test-writer gets lite prompt)", async () => {
-    // Verify that when lite=true, the agent receives the lite-mode prompt
-    let capturedPrompts: string[] = [];
-
-    let revParseCount = 0;
-    let diffCount = 0;
-    const diffFiles = [
-      // Lite mode: no isolation check for session 1, just getChangedFiles
-      ["test/user.test.ts"],
-      // Session 2: no isolation, just getChangedFiles
-      ["src/user.ts"],
-      // Session 3: getChangedFiles
-      ["src/user.ts"],
-    ];
-
-    // @ts-ignore — mocking global
-    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
-      if (cmd[0] === "git" && cmd[1] === "rev-parse") {
-        revParseCount++;
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response(`ref-${revParseCount}\n`).body,
-          stderr: new Response("").body,
-        };
-      }
-      if (cmd[0] === "git" && cmd[1] === "diff") {
-        const files = diffFiles[diffCount] || [];
-        diffCount++;
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response(files.join("\n") + "\n").body,
-          stderr: new Response("").body,
-        };
-      }
-      return originalSpawn(cmd, spawnOpts);
-    });
-
-    // Custom agent that captures prompts
-    const agent: import("../src/agents").AgentAdapter = {
-      name: "mock",
-      displayName: "Mock Agent",
-      binary: "mock",
-      isInstalled: async () => true,
-      buildCommand: () => ["mock"],
-      run: mock(async (opts: any) => {
-        capturedPrompts.push(opts.prompt);
-        return {
-          success: true,
-          exitCode: 0,
-          output: "",
-          rateLimited: false,
-          durationMs: 100,
-          estimatedCost: 0.01,
-        };
-      }),
-    };
-
-    const result = await runThreeSessionTdd(
-      agent,
-      story,
-      DEFAULT_CONFIG,
-      "/tmp/test",
-      "balanced",
-      undefined, // no context
-      false, // not dryRun
-      true, // lite = true
-    );
-
-    expect(result.lite).toBe(true);
-    expect(capturedPrompts).toHaveLength(3);
-
-    // Session 1 prompt should be lite test-writer prompt
-    expect(capturedPrompts[0]).toContain("Lite Mode");
-    expect(capturedPrompts[0]).toContain("MAY read source files");
-    expect(capturedPrompts[0]).not.toContain("DO NOT create or modify any source files");
-
-    // Session 2 prompt should be lite implementer prompt
-    expect(capturedPrompts[1]).toContain("Lite Mode");
-    expect(capturedPrompts[1]).toContain("may adjust test files");
-    expect(capturedPrompts[1]).not.toContain("DO NOT modify any test files");
-
-    // Session 3 prompt should be standard verifier (unchanged)
-    expect(capturedPrompts[2]).toContain("Session 3: Verify");
-    expect(capturedPrompts[2].toLowerCase()).not.toContain("lite");
-  });
-
-  test("lite mode: skips isolation checks for test-writer and implementer", async () => {
-    // In lite mode, isolation checks are skipped → no git diff for isolation
-    // Only getChangedFiles is called (1 diff per session instead of 2)
-    let diffCallCount = 0;
-
-    let revParseCount = 0;
-    // @ts-ignore — mocking global
-    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
-      if (cmd[0] === "git" && cmd[1] === "rev-parse") {
-        revParseCount++;
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response(`ref-${revParseCount}\n`).body,
-          stderr: new Response("").body,
-        };
-      }
-      if (cmd[0] === "git" && cmd[1] === "diff") {
-        diffCallCount++;
-        // Return test files for session 1, source files for sessions 2+3
-        const files = diffCallCount === 1 ? ["test/user.test.ts"] : ["src/user.ts"];
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response(files.join("\n") + "\n").body,
-          stderr: new Response("").body,
-        };
-      }
-      return originalSpawn(cmd, spawnOpts);
-    });
-
-    const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
-    ]);
-
-    const result = await runThreeSessionTdd(
-      agent,
-      story,
-      DEFAULT_CONFIG,
-      "/tmp/test",
-      "balanced",
-      undefined,
-      false,
-      true, // lite = true
-    );
-
-    expect(result.success).toBe(true);
-    expect(result.lite).toBe(true);
-    // In lite mode: 1 diff per session (only getChangedFiles, no isolation check)
-    // 3 sessions × 1 diff = 3 total diff calls
-    expect(diffCallCount).toBe(3);
-    // Verify no isolation results in sessions 1 and 2
-    expect(result.sessions[0].isolation).toBeUndefined();
-    expect(result.sessions[1].isolation).toBeUndefined();
-  });
-
-  test("strict mode: uses strict prompts (test-writer does NOT get lite prompt)", async () => {
-    // When lite=false (default), strict prompts are used
-    let capturedPrompts: string[] = [];
-
-    mockGitSpawn({
-      diffFiles: [
-        ["test/user.test.ts"],
-        ["test/user.test.ts"],
-        ["src/user.ts"],
-        ["src/user.ts"],
-        ["src/user.ts"],
-      ],
-    });
-
-    // Custom agent that captures prompts
-    const agent: import("../src/agents").AgentAdapter = {
-      name: "mock",
-      displayName: "Mock Agent",
-      binary: "mock",
-      isInstalled: async () => true,
-      buildCommand: () => ["mock"],
-      run: mock(async (opts: any) => {
-        capturedPrompts.push(opts.prompt);
-        return {
-          success: true,
-          exitCode: 0,
-          output: "",
-          rateLimited: false,
-          durationMs: 100,
-          estimatedCost: 0.01,
-        };
-      }),
-    };
-
-    const result = await runThreeSessionTdd(
-      agent,
-      story,
-      DEFAULT_CONFIG,
-      "/tmp/test",
-      "balanced",
-    );
-
-    expect(result.lite).toBe(false);
-    expect(capturedPrompts).toHaveLength(3);
-
-    // Session 1 prompt should be strict test-writer prompt
-    expect(capturedPrompts[0]).toContain("CRITICAL RULES");
-    expect(capturedPrompts[0]).toContain("DO NOT create or modify any source files");
-    expect(capturedPrompts[0]).not.toContain("MAY read source files");
-
-    // Session 2 prompt should be strict implementer prompt
-    expect(capturedPrompts[1]).toContain("CRITICAL RULES");
-    expect(capturedPrompts[1]).toContain("DO NOT modify any test files");
-    expect(capturedPrompts[1]).not.toContain("may adjust test files");
-  });
-
-  test("ThreeSessionTddResult includes lite flag", async () => {
-    mockGitSpawn({
-      diffFiles: [
-        ["test/user.test.ts"],
-        ["test/user.test.ts"],
-        ["src/user.ts"],
-        ["src/user.ts"],
-        ["src/user.ts"],
-      ],
-    });
-
-    const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
-      { success: true, estimatedCost: 0.01 },
-    ]);
-
-    const strictResult = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
-    expect(strictResult.lite).toBe(false);
   });
 
   test("BUG-22: post-TDD verification does not override when tests actually fail", async () => {
@@ -946,5 +639,354 @@ describe("strict vs lite prompt comparison", () => {
     // Lite allows adjusting test files
     expect(lite).toContain("may adjust test files");
     expect(strict).not.toContain("may adjust test files");
+  });
+});
+
+// ─── T4: Lite mode orchestration tests ───────────────────────────────────────
+
+describe("runThreeSessionTdd — lite mode", () => {
+  test("lite mode: result includes lite=true flag", async () => {
+    // In lite mode all 3 sessions succeed
+    // Lite skips isolation for sessions 1 and 2, so only 2 diff calls for those
+    // Session 3 (verifier) always runs isolation: 2 diff calls (isolation + getChangedFiles)
+    // Total: 1 (s1 getChangedFiles) + 1 (s2 getChangedFiles) + 2 (s3) = 4 diff calls
+    mockGitSpawn({
+      diffFiles: [
+        ["test/user.test.ts"],  // s1 getChangedFiles (no isolation in lite)
+        ["src/user.ts"],        // s2 getChangedFiles (no isolation in lite)
+        [],                     // s3 isolation check (verifier always checks)
+        ["src/user.ts"],        // s3 getChangedFiles
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCost: 0.02 },
+      { success: true, estimatedCost: 0.01 },
+    ]);
+
+    const result = await runThreeSessionTdd(
+      agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced",
+      undefined, false, true /* lite=true */,
+    );
+
+    expect(result.lite).toBe(true);
+    expect(result.success).toBe(true);
+  });
+
+  test("strict mode: result includes lite=false flag", async () => {
+    mockGitSpawn({
+      diffFiles: [
+        ["test/user.test.ts"],
+        ["test/user.test.ts"],
+        ["src/user.ts"],
+        ["src/user.ts"],
+        [],                     // s3 isolation
+        ["src/user.ts"],        // s3 getChangedFiles
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCost: 0.02 },
+      { success: true, estimatedCost: 0.01 },
+    ]);
+
+    const result = await runThreeSessionTdd(
+      agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced",
+      undefined, false, false /* lite=false (default) */,
+    );
+
+    expect(result.lite).toBe(false);
+    expect(result.success).toBe(true);
+  });
+
+  test("lite mode: test-writer session has no isolation check (isolation is undefined)", async () => {
+    mockGitSpawn({
+      diffFiles: [
+        ["test/user.test.ts"],  // s1 getChangedFiles only (no isolation in lite)
+        ["src/user.ts"],        // s2 getChangedFiles only (no isolation in lite)
+        [],                     // s3 isolation
+        ["src/user.ts"],        // s3 getChangedFiles
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCost: 0.02 },
+      { success: true, estimatedCost: 0.01 },
+    ]);
+
+    const result = await runThreeSessionTdd(
+      agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced",
+      undefined, false, true /* lite=true */,
+    );
+
+    expect(result.sessions).toHaveLength(3);
+    // In lite mode, test-writer and implementer skip isolation
+    expect(result.sessions[0].isolation).toBeUndefined();
+    expect(result.sessions[1].isolation).toBeUndefined();
+    // Verifier always runs isolation
+    expect(result.sessions[2].isolation).toBeDefined();
+  });
+
+  test("lite mode: implementer modifying test files does NOT appear in isolation warnings (no isolation check)", async () => {
+    // In strict mode, implementer touching test files produces warnings.
+    // In lite mode, isolation is skipped entirely, so there are no warnings.
+    mockGitSpawn({
+      diffFiles: [
+        ["test/user.test.ts"],              // s1 getChangedFiles
+        ["test/user.test.ts", "src/user.ts"], // s2 getChangedFiles
+        [],                                 // s3 isolation
+        [],                                 // s3 getChangedFiles
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCost: 0.02 },
+      { success: true, estimatedCost: 0.01 },
+    ]);
+
+    const result = await runThreeSessionTdd(
+      agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced",
+      undefined, false, true /* lite=true */,
+    );
+
+    expect(result.sessions[1].isolation).toBeUndefined(); // No isolation in lite
+    expect(result.sessions[1].success).toBe(true); // Agent succeeded
+    expect(result.success).toBe(true);
+    expect(result.lite).toBe(true);
+  });
+
+  test("lite mode: verifier always runs isolation check (even in lite mode)", async () => {
+    mockGitSpawn({
+      diffFiles: [
+        ["test/user.test.ts"],  // s1 getChangedFiles
+        ["src/user.ts"],        // s2 getChangedFiles
+        [],                     // s3 isolation (verifier always checks)
+        [],                     // s3 getChangedFiles
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCost: 0.02 },
+      { success: true, estimatedCost: 0.01 },
+    ]);
+
+    const result = await runThreeSessionTdd(
+      agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced",
+      undefined, false, true /* lite=true */,
+    );
+
+    expect(result.sessions[2].isolation).toBeDefined();
+    expect(result.sessions[2].isolation?.passed).toBe(true);
+    expect(result.lite).toBe(true);
+  });
+
+  test("lite mode: dry-run returns lite=true", async () => {
+    const agent = createMockAgent([]);
+    const result = await runThreeSessionTdd(
+      agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced",
+      undefined, true /* dryRun */, true /* lite=true */,
+    );
+    expect(result.lite).toBe(true);
+    expect(result.success).toBe(true);
+    expect(result.sessions).toHaveLength(0);
+  });
+});
+
+// ─── T4: Zero-file fallback tests ────────────────────────────────────────────
+
+describe("runThreeSessionTdd — zero-file fallback", () => {
+  /** Extended git mock that also handles `git checkout .` */
+  function mockGitSpawnWithCheckout(opts: {
+    diffFiles: string[][];
+    onCheckout?: () => void;
+  }) {
+    let revParseCount = 0;
+    let diffCount = 0;
+
+    // @ts-ignore — mocking global
+    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+      if (cmd[0] === "git" && cmd[1] === "rev-parse") {
+        revParseCount++;
+        return {
+          exited: Promise.resolve(0),
+          stdout: new Response(`ref-${revParseCount}\n`).body,
+          stderr: new Response("").body,
+        };
+      }
+      if (cmd[0] === "git" && cmd[1] === "checkout") {
+        opts.onCheckout?.();
+        return {
+          exited: Promise.resolve(0),
+          stdout: new Response("").body,
+          stderr: new Response("").body,
+        };
+      }
+      if (cmd[0] === "git" && cmd[1] === "diff") {
+        const files = opts.diffFiles[diffCount] || [];
+        diffCount++;
+        return {
+          exited: Promise.resolve(0),
+          stdout: new Response(files.join("\n") + "\n").body,
+          stderr: new Response("").body,
+        };
+      }
+      return originalSpawn(cmd, spawnOpts);
+    });
+  }
+
+  test("fallback triggers when strategy='auto' and 0 test files in strict mode", async () => {
+    let checkoutCalled = false;
+
+    // Strict mode:
+    //   s1 isolation: non-test files (passes) → diff[0]
+    //   s1 getChangedFiles: non-test files → diff[1] → 0 test files → FALLBACK
+    //   git checkout .
+    // Lite mode (recursive):
+    //   s1 getChangedFiles: test files → diff[2]
+    //   s2 getChangedFiles: src files → diff[3]
+    //   s3 isolation: → diff[4]
+    //   s3 getChangedFiles: → diff[5]
+    mockGitSpawnWithCheckout({
+      diffFiles: [
+        ["requirements.md"],    // s1 isolation (strict) — no source violations
+        ["requirements.md"],    // s1 getChangedFiles (strict) — 0 test files → fallback
+        ["test/user.test.ts"], // s1 getChangedFiles (lite re-run)
+        ["src/user.ts"],       // s2 getChangedFiles (lite re-run)
+        [],                    // s3 isolation (lite re-run)
+        [],                    // s3 getChangedFiles (lite re-run)
+      ],
+      onCheckout: () => { checkoutCalled = true; },
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 }, // s1 strict test-writer
+      { success: true, estimatedCost: 0.01 }, // s1 lite test-writer
+      { success: true, estimatedCost: 0.02 }, // s2 lite implementer
+      { success: true, estimatedCost: 0.01 }, // s3 lite verifier
+    ]);
+
+    const configWithAutoStrategy = {
+      ...DEFAULT_CONFIG,
+      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "auto" as const },
+    };
+
+    const result = await runThreeSessionTdd(
+      agent, story, configWithAutoStrategy, "/tmp/test", "balanced",
+    );
+
+    expect(checkoutCalled).toBe(true); // git checkout . was called
+    expect(result.lite).toBe(true);    // result is from lite mode
+    expect(result.success).toBe(true);
+  });
+
+  test("fallback result has lite=true (confirms lite mode was used)", async () => {
+    mockGitSpawnWithCheckout({
+      diffFiles: [
+        ["docs/plan.md"],      // s1 isolation (strict)
+        ["docs/plan.md"],      // s1 getChangedFiles (strict) → 0 test files
+        ["test/feature.test.ts"], // s1 getChangedFiles (lite)
+        ["src/feature.ts"],    // s2 getChangedFiles (lite)
+        [],                    // s3 isolation (lite)
+        [],                    // s3 getChangedFiles (lite)
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCost: 0.02 },
+      { success: true, estimatedCost: 0.01 },
+    ]);
+
+    const result = await runThreeSessionTdd(
+      agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced",
+    );
+
+    expect(result.lite).toBe(true);
+  });
+
+  test("fallback does NOT trigger when strategy='strict' (explicit strict mode)", async () => {
+    // In strategy='strict', no fallback — should return failure
+    mockGitSpawn({
+      diffFiles: [
+        ["requirements.md"],  // s1 isolation — no source violations
+        ["requirements.md"],  // s1 getChangedFiles — 0 test files
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },
+    ]);
+
+    const configWithStrictStrategy = {
+      ...DEFAULT_CONFIG,
+      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "strict" as const },
+    };
+
+    const result = await runThreeSessionTdd(
+      agent, story, configWithStrictStrategy, "/tmp/test", "balanced",
+    );
+
+    // Should fail (no fallback in strict mode)
+    expect(result.success).toBe(false);
+    expect(result.needsHumanReview).toBe(true);
+    expect(result.reviewReason).toBe("Test writer session created no test files");
+    expect(result.lite).toBe(false); // Was called in strict mode, no fallback
+  });
+
+  test("fallback does NOT trigger when already in lite mode", async () => {
+    // Calling with lite=true — if 0 test files, should return failure (not recurse again)
+    mockGitSpawn({
+      diffFiles: [
+        ["requirements.md"],  // s1 getChangedFiles (lite, no isolation) — 0 test files
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },
+    ]);
+
+    const result = await runThreeSessionTdd(
+      agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced",
+      undefined, false, true /* lite=true */,
+    );
+
+    // Should fail — no further fallback from lite mode
+    expect(result.success).toBe(false);
+    expect(result.needsHumanReview).toBe(true);
+    expect(result.reviewReason).toBe("Test writer session created no test files");
+    expect(result.lite).toBe(true);
+  });
+
+  test("fallback does NOT trigger when strategy='lite' config", async () => {
+    // When strategy='lite', runThreeSessionTdd is called with lite=true (from execution stage)
+    // So !lite = false → no fallback
+    mockGitSpawn({
+      diffFiles: [
+        [],  // s1 getChangedFiles (lite, no isolation) — 0 test files
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },
+    ]);
+
+    const configWithLiteStrategy = {
+      ...DEFAULT_CONFIG,
+      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "lite" as const },
+    };
+
+    const result = await runThreeSessionTdd(
+      agent, story, configWithLiteStrategy, "/tmp/test", "balanced",
+      undefined, false, true /* lite=true (router sets this for lite strategy) */,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.lite).toBe(true);
   });
 });

@@ -45,18 +45,20 @@ export const executionStage: PipelineStage = {
     }
 
     // Three-session TDD path (respect tdd.enabled config)
-    const isThreeSessionTdd =
-      ctx.routing.testStrategy === "three-session-tdd" || ctx.routing.testStrategy === "three-session-tdd-lite";
-    const isLiteTdd = ctx.routing.testStrategy === "three-session-tdd-lite";
+    const isTddStrategy =
+      ctx.routing.testStrategy === "three-session-tdd" ||
+      ctx.routing.testStrategy === "three-session-tdd-lite";
+    const isLiteMode = ctx.routing.testStrategy === "three-session-tdd-lite";
 
-    if (isThreeSessionTdd && ctx.config.tdd?.enabled === false) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (isTddStrategy && (ctx.config.tdd as any)?.enabled === false) {
       logger.info("execution", "TDD disabled via config, falling back to single session", {
         storyId: ctx.story.id,
       });
-    } else if (isThreeSessionTdd) {
-      logger.info("execution", `Starting three-session TDD${isLiteTdd ? " (lite)" : ""}`, {
+    } else if (isTddStrategy) {
+      logger.info("execution", `Starting three-session TDD${isLiteMode ? " (lite)" : ""}`, {
         storyId: ctx.story.id,
-        lite: isLiteTdd,
+        lite: isLiteMode,
       });
 
       const tddResult = await runThreeSessionTdd(
@@ -67,7 +69,7 @@ export const executionStage: PipelineStage = {
         ctx.routing.modelTier,
         ctx.contextMarkdown,
         false, // dryRun
-        isLiteTdd,
+        isLiteMode, // lite flag based on routed strategy
       );
 
       ctx.agentResult = {
@@ -83,6 +85,7 @@ export const executionStage: PipelineStage = {
         logger.warn("execution", "Human review needed", {
           storyId: ctx.story.id,
           reason: tddResult.reviewReason,
+          lite: tddResult.lite,
         });
         return {
           action: "pause",

@@ -27,7 +27,8 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const promptStage: PipelineStage = {
   name: "prompt",
-  enabled: (ctx) => ctx.routing.testStrategy !== "three-session-tdd",
+  enabled: (ctx) =>
+    ctx.routing.testStrategy !== "three-session-tdd" && ctx.routing.testStrategy !== "three-session-tdd-lite",
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();

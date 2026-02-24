@@ -447,3 +447,169 @@ describe("execution runner", () => {
     await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
   });
 });
+
+// ─── T4: Lite mode and routing tests ─────────────────────────────────────────
+
+describe("execution runner — lite mode routing", () => {
+  beforeEach(() => {
+    initLogger({ level: "error", useChalk: false });
+  });
+
+  afterEach(() => {
+    resetLogger();
+  });
+
+  test("story with three-session-tdd-lite routing runs successfully in dry-run", async () => {
+    // Stories pre-routed to three-session-tdd-lite should be accepted by the pipeline
+    const prd = createTestPRD([
+      {
+        id: "US-001",
+        title: "Build UI component",
+        description: "Create a UI layout component",
+        acceptanceCriteria: ["Component renders correctly", "Responsive layout"],
+        tags: ["ui", "layout"],
+        routing: {
+          complexity: "complex",
+          modelTier: "balanced",
+          testStrategy: "three-session-tdd-lite",
+          reasoning: "three-session-tdd-lite: ui/layout story",
+        },
+      },
+    ]);
+
+    const tmpDir = "/tmp/nax-test-" + Date.now();
+    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    const prdPath = `${tmpDir}/prd.json`;
+    await Bun.write(prdPath, JSON.stringify(prd, null, 2));
+
+    const opts: RunOptions = {
+      prdPath,
+      workdir: tmpDir,
+      config: { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, maxIterations: 2 } },
+      hooks: { hooks: {} },
+      feature: "test-feature",
+      dryRun: true,
+    };
+
+    const result = await run(opts);
+
+    // Dry run should complete successfully (routing is accepted)
+    expect(result.success).toBe(true);
+    expect(result.iterations).toBeGreaterThan(0);
+
+    // Cleanup
+    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+  });
+
+  test("config tdd.strategy='lite' routes complex stories to three-session-tdd-lite", async () => {
+    // Using routeTask directly to verify routing decision
+    const { routeTask } = await import("../src/routing");
+
+    const configWithLiteStrategy = {
+      ...DEFAULT_CONFIG,
+      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "lite" as const },
+    };
+
+    const routing = routeTask(
+      "Implement complex authentication",
+      "Complete JWT authentication with security enhancements, refresh tokens, and audit logging",
+      ["JWT tokens properly validated", "Refresh tokens implemented", "Rate limiting", "Audit logging"],
+      ["security"],
+      configWithLiteStrategy,
+    );
+
+    // strategy='lite' should always route to three-session-tdd-lite regardless of complexity
+    expect(routing.testStrategy).toBe("three-session-tdd-lite");
+  });
+
+  test("config tdd.strategy='strict' routes complex stories to three-session-tdd", async () => {
+    const { routeTask } = await import("../src/routing");
+
+    const configWithStrictStrategy = {
+      ...DEFAULT_CONFIG,
+      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "strict" as const },
+    };
+
+    const routing = routeTask(
+      "Implement complex authentication",
+      "Complete JWT authentication with security enhancements, refresh tokens, and audit logging",
+      ["JWT tokens properly validated", "Refresh tokens implemented", "Rate limiting", "Audit logging"],
+      ["security"],
+      configWithStrictStrategy,
+    );
+
+    // strategy='strict' should always route to three-session-tdd
+    expect(routing.testStrategy).toBe("three-session-tdd");
+  });
+
+  test("config tdd.strategy='auto' routes complex UI-tagged stories to three-session-tdd-lite", async () => {
+    const { routeTask } = await import("../src/routing");
+
+    // With auto strategy + ui tag + complex story → three-session-tdd-lite
+    // (T3: complex/expert with lite tags → three-session-tdd-lite)
+    // Force 'complex' story: large number of ACs + complex description keywords
+    const routing = routeTask(
+      "Build complex UI dashboard system",
+      "Build a comprehensive dashboard with multiple widget types, live data streaming, " +
+        "complex state management, custom chart rendering, drag-and-drop layout, " +
+        "theme engine, and accessibility compliance",
+      [
+        "Dashboard renders all widget types correctly",
+        "Live data updates every 200ms without performance degradation",
+        "Responsive layout works on all screen sizes",
+        "Accessibility compliance (WCAG 2.1 AA)",
+        "Drag-and-drop widget positioning works",
+        "Custom chart rendering is accurate",
+        "Theme switching works without page reload",
+      ],
+      ["ui", "layout"],
+      DEFAULT_CONFIG, // default is strategy='auto'
+    );
+
+    // auto + complex + ui → three-session-tdd-lite
+    expect(routing.testStrategy).toBe("three-session-tdd-lite");
+  });
+
+  test("run with pre-routed three-session-tdd-lite story completes in dry-run", async () => {
+    const prd = createTestPRD([
+      {
+        id: "US-001",
+        title: "CLI integration",
+        description: "Implement CLI integration commands",
+        acceptanceCriteria: ["Commands work", "Output is correct"],
+        tags: ["cli", "integration"],
+        routing: {
+          complexity: "complex",
+          modelTier: "balanced",
+          testStrategy: "three-session-tdd-lite",
+          reasoning: "three-session-tdd-lite: cli/integration story",
+        },
+      },
+    ]);
+
+    const tmpDir = "/tmp/nax-test-" + Date.now();
+    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    const prdPath = `${tmpDir}/prd.json`;
+    await Bun.write(prdPath, JSON.stringify(prd, null, 2));
+
+    const opts: RunOptions = {
+      prdPath,
+      workdir: tmpDir,
+      config: {
+        ...DEFAULT_CONFIG,
+        tdd: { ...DEFAULT_CONFIG.tdd, strategy: "lite" as const },
+        execution: { ...DEFAULT_CONFIG.execution, maxIterations: 2 },
+      },
+      hooks: { hooks: {} },
+      feature: "test-feature",
+      dryRun: true,
+    };
+
+    const result = await run(opts);
+
+    expect(result.success).toBe(true);
+
+    // Cleanup
+    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+  });
+});
