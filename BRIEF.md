@@ -55,6 +55,9 @@ nax run → pipeline per story:
 | Plugin system over ad-hoc extension | Unified registration/loading for all extension points (optimizer, router, agent, reviewer, context, reporter). Reuses existing interfaces. | 2026-03-03 | #8, #14 |
 | Deep merge for global+project config | More intuitive than section replace; users only override what they change. Hooks and constitution concatenate (global first). | 2026-03-03 | #14 |
 | No LLM optimizer built-in | Fast-tier LLM rewrite adds cost/complexity. Rule-based covers deterministic wins. External LLM optimizers (LLMLingua, etc.) can be added via plugins. | 2026-03-03 | #8 |
+| TDD-Lite over removing TDD | TDD is nax's differentiator; instead of dropping it, add a relaxed variant (lite) where only verifier stays isolated. Strict for TS libs, lite for UI/polyglot. | 2026-02-24 | #20 |
+| Fix nax over replacing with dev-orchestrator | dev-orchestrator lacks TDD pipeline, structured logging, PRD workflow. Porting those is more work than fixing nax's weaknesses. | 2026-02-24 | `docs/20260224-nax-roadmap-phases.md` |
+| Dry-run marks stories as passed | Previous dry-run never changed story status, causing infinite loop until maxIterations. Now marks passed + saves PRD for natural completion. | 2026-02-24 | `09996c8` |
 
 ## Config Reference
 
@@ -118,16 +121,45 @@ Full schema with Zod validation: `src/config/schema.ts`
 |:--------|:-------------|:-------|
 | v0.10.0 | Plugin system, Global config layering, Prompt optimizer stage | #8, #14 |
 | v0.9.3 | Prompt Audit CLI (`nax prompts`), context isolation unit tests, scoped test coverage scanner | #15 |
+| v0.10.1 | Fix dry-run infinite loop (mark stories passed), fix BUG-21 (null attempts escalation), fix BUG-22 (paused story loop), global hooks loading | #16, #17 |
 
 ## Roadmap
 
 | Priority | Feature | Status | Ref |
 |:---------|:--------|:-------|:----|
-| **Next** | v1.0: Parallel execution with git worktree | 📋 Planned | — |
-| **Next** | v1.0: LLM service layer (decouple from claude -p) | 📋 Planned | #3 |
-| **Next** | v1.0+: Multi-agent support (Codex, OpenCode, Gemini) | 📋 Planned (plugin system enables this) | — |
+| **In Progress** | Phase 1: TDD-Lite strategy + zero-file fallback | 🔄 In progress | #20, `docs/20260224-nax-roadmap-phases.md` |
+| **Next** | Phase 2: LLM Service Layer — agent interface with pluggable backends | 📋 Planned | #3 |
+| **Next** | Phase 3: Worktree parallelism — N stories concurrent | 📋 Planned | — |
+| **Backlog** | CLI for paused stories (`nax stories`, `nax resume`) | 📋 Planned | #18 |
+| **Backlog** | Quality flags + review.checks unification | 📋 Planned | #19 |
 | **Done** | v0.10.0: Plugin system & Global Config | ✅ Released | #8, #14 |
 | **Dropped** | ~~Greenfield project scaffolding~~ | ❌ Dropped (chicken-and-egg with nax/) | #13 |
+
+### Phase Dependency Chain
+```
+Phase 1: tdd-lite + fallback     ← standalone, no blockers
+    ↓
+Phase 2: LLM Service Layer (#3)  ← abstracts agent spawning (claude-cli, openclaw, api)
+    ↓
+Phase 3: Worktree parallelism    ← needs Phase 2 for multi-agent coordination
+    ↓
+Memory optimization              ← comes free with Phase 3 (phase-by-phase execution)
+```
+
+## Known Weaknesses (2026-02-24 Analysis)
+
+Compared against dev-orchestrator (OpenClaw skill) which handles execution differently:
+
+| Weakness | Detail | Fix Phase |
+|:---------|:-------|:----------|
+| **No real parallelism** | Stories run sequentially; batch mode = same agent session | Phase 3 |
+| **Memory hungry** | Peaks 3-4GB+, OOMs on 4GB VPS | Phase 3 (phase-by-phase agents) |
+| **Single agent backend** | claude CLI only, no OpenClaw sub-agents or API direct | Phase 2 |
+| **TDD too strict for non-TS** | Test-writer isolation breaks for UI/polyglot/integration | Phase 1 |
+| **Over-generates stories** | `nax analyze` creates 23 stories when 3 would do | Backlog |
+| **Setup overhead** | PRD → analyze → config → run vs "here's a task" | By design (structured) |
+
+**nax strengths over dev-orchestrator:** structured JSONL logging, automatic escalation tiers, reproducible runs (same PRD = same result), `nax accept` post-run review, hooks/plugins, constitution injection.
 
 ## Gotchas
 
@@ -141,4 +173,4 @@ Full schema with Zod validation: `src/config/schema.ts`
 - **PTY check on remote nodes** — use `CLAW_NO_PTY_CHECK=1` when running via `nohup` on remote nodes to bypass script-level PTY enforcement.
 
 ---
-*Updated 2026-03-03*
+*Updated 2026-02-24*
