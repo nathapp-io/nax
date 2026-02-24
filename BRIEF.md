@@ -58,6 +58,7 @@ nax run → pipeline per story:
 | TDD-Lite over removing TDD | TDD is nax's differentiator; instead of dropping it, add a relaxed variant (lite) where only verifier stays isolated. Strict for TS libs, lite for UI/polyglot. | 2026-02-24 | #20 |
 | Fix nax over replacing with dev-orchestrator | dev-orchestrator lacks TDD pipeline, structured logging, PRD workflow. Porting those is more work than fixing nax's weaknesses. | 2026-02-24 | `docs/20260224-nax-roadmap-phases.md` |
 | Dry-run marks stories as passed | Previous dry-run never changed story status, causing infinite loop until maxIterations. Now marks passed + saves PRD for natural completion. | 2026-02-24 | `09996c8` |
+| Targeted git reset for TDD fallback | `git checkout .` was too aggressive; now resets only files touched by the failed session, preserving other local changes. | 2026-02-24 | `d1dc4b9` |
 
 ## Config Reference
 
@@ -127,12 +128,13 @@ Full schema with Zod validation: `src/config/schema.ts`
 
 | Priority | Feature | Status | Ref |
 |:---------|:--------|:-------|:----|
-| **In Progress** | Phase 1: TDD-Lite strategy + zero-file fallback | 🔄 In progress | #20, `docs/20260224-nax-roadmap-phases.md` |
+| **Done** | Phase 1: TDD-Lite strategy + zero-file fallback | ✅ Done | #20, `docs/20260224-nax-roadmap-phases.md` |
 | **Next** | Phase 2: LLM Service Layer — agent interface with pluggable backends | 📋 Planned | #3 |
 | **Next** | Phase 3: Worktree parallelism — N stories concurrent | 📋 Planned | — |
 | **Backlog** | CLI for paused stories (`nax stories`, `nax resume`) | 📋 Planned | #18 |
 | **Backlog** | Quality flags + review.checks unification | 📋 Planned | #19 |
 | **Done** | v0.10.0: Plugin system & Global Config | ✅ Released | #8, #14 |
+| **Done** | Dry-run infinite loop fix & targeted fallback reset | ✅ Released | `09996c8`, `d1dc4b9` |
 | **Dropped** | ~~Greenfield project scaffolding~~ | ❌ Dropped (chicken-and-egg with nax/) | #13 |
 
 ### Phase Dependency Chain
