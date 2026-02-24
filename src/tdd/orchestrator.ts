@@ -15,7 +15,13 @@ import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { cleanupProcessTree } from "./cleanup";
 import { getChangedFiles, verifyImplementerIsolation, verifyTestWriterIsolation } from "./isolation";
-import { buildImplementerPrompt, buildTestWriterPrompt, buildVerifierPrompt } from "./prompts";
+import {
+  buildImplementerLitePrompt,
+  buildImplementerPrompt,
+  buildTestWriterLitePrompt,
+  buildTestWriterPrompt,
+  buildVerifierPrompt,
+} from "./prompts";
 import type { TddSessionResult, TddSessionRole, ThreeSessionTddResult } from "./types";
 
 /** Capture git state for isolation checking */
@@ -41,17 +47,22 @@ async function runTddSession(
   modelTier: ModelTier,
   beforeRef: string,
   contextMarkdown?: string,
+  lite = false,
 ): Promise<TddSessionResult> {
   const startTime = Date.now();
 
-  // Build prompt based on role
+  // Build prompt based on role and lite mode
   let prompt: string;
   switch (role) {
     case "test-writer":
-      prompt = buildTestWriterPrompt(story, contextMarkdown);
+      prompt = lite
+        ? buildTestWriterLitePrompt(story, contextMarkdown)
+        : buildTestWriterPrompt(story, contextMarkdown);
       break;
     case "implementer":
-      prompt = buildImplementerPrompt(story, contextMarkdown);
+      prompt = lite
+        ? buildImplementerLitePrompt(story, contextMarkdown)
+        : buildImplementerPrompt(story, contextMarkdown);
       break;
     case "verifier":
       prompt = buildVerifierPrompt(story);
@@ -59,7 +70,7 @@ async function runTddSession(
   }
 
   const logger = getLogger();
-  logger.info("tdd", `→ Session: ${role}`, { role, storyId: story.id });
+  logger.info("tdd", `→ Session: ${role}${lite ? " (lite)" : ""}`, { role, storyId: story.id, lite });
 
   // Run the agent
   const result = await agent.run({
@@ -75,12 +86,12 @@ async function runTddSession(
     await cleanupProcessTree(result.pid);
   }
 
-  // Check isolation based on role
+  // Check isolation based on role — lite mode skips isolation for test-writer and implementer
   let isolation;
-  if (role === "test-writer") {
+  if (!lite && role === "test-writer") {
     const allowedPaths = config.tdd.testWriterAllowedPaths ?? ["src/index.ts", "src/**/index.ts"];
     isolation = await verifyTestWriterIsolation(workdir, beforeRef, allowedPaths);
-  } else if (role === "implementer") {
+  } else if (!lite && role === "implementer") {
     isolation = await verifyImplementerIsolation(workdir, beforeRef);
   }
 
@@ -197,6 +208,7 @@ export async function runThreeSessionTdd(
   modelTier: ModelTier,
   contextMarkdown?: string,
   dryRun = false,
+  lite = false,
 ): Promise<ThreeSessionTddResult> {
   const logger = getLogger();
   logger.info("tdd", "🔄 Three-Session TDD", { storyId: story.id, title: story.title });
@@ -206,6 +218,7 @@ export async function runThreeSessionTdd(
     const modelDef = resolveModel(config.models[modelTier]);
     logger.info("tdd", "[DRY RUN] Would run 3-session TDD", {
       storyId: story.id,
+      lite,
       session1: { role: "test-writer", model: modelDef.model },
       session2: { role: "implementer", model: modelDef.model },
       session3: { role: "verifier", model: modelDef.model },
@@ -216,6 +229,7 @@ export async function runThreeSessionTdd(
       sessions: [],
       needsHumanReview: false,
       totalCost: 0,
+      lite,
     };
   }
 
@@ -238,6 +252,7 @@ export async function runThreeSessionTdd(
     testWriterTier,
     session1Ref,
     contextMarkdown,
+    lite,
   );
   sessions.push(session1);
 
@@ -252,6 +267,7 @@ export async function runThreeSessionTdd(
       needsHumanReview,
       reviewReason,
       totalCost: sessions.reduce((sum, s) => sum + s.estimatedCost, 0),
+      lite,
     };
   }
 
@@ -261,6 +277,27 @@ export async function runThreeSessionTdd(
   const testFilesCreated = session1.filesChanged.filter((f) => testFilePatterns.test(f));
 
   if (testFilesCreated.length === 0) {
+    // Zero-file fallback: if strategy is 'auto' and not already in lite mode,
+    // reset git to pre-test-writer state and re-run as lite mode
+    const tddStrategy = config.tdd.strategy ?? "auto";
+    if (!lite && tddStrategy === "auto") {
+      logger.warn("tdd", "⚠️ Test writer created no test files — falling back to lite mode", {
+        storyId: story.id,
+        filesChanged: session1.filesChanged,
+      });
+
+      // Reset git to pre-test-writer state
+      const resetProc = Bun.spawn(["git", "reset", "--hard", initialRef], {
+        cwd: workdir,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      await resetProc.exited;
+
+      // Re-run as lite mode (recursive call with lite=true)
+      return runThreeSessionTdd(agent, story, config, workdir, modelTier, contextMarkdown, dryRun, true);
+    }
+
     needsHumanReview = true;
     reviewReason = "Test writer session created no test files";
     logger.warn("tdd", "⚠️ Test writer created no test files", {
@@ -276,6 +313,7 @@ export async function runThreeSessionTdd(
       needsHumanReview,
       reviewReason,
       totalCost: sessions.reduce((sum, s) => sum + s.estimatedCost, 0),
+      lite,
     };
   }
 
@@ -299,6 +337,7 @@ export async function runThreeSessionTdd(
     implementerTier,
     session2Ref,
     contextMarkdown,
+    lite,
   );
   sessions.push(session2);
 
@@ -313,6 +352,7 @@ export async function runThreeSessionTdd(
       needsHumanReview,
       reviewReason,
       totalCost: sessions.reduce((sum, s) => sum + s.estimatedCost, 0),
+      lite,
     };
   }
 
@@ -366,6 +406,7 @@ export async function runThreeSessionTdd(
     totalCost,
     needsHumanReview,
     reviewReason,
+    lite,
   });
 
   return {
@@ -374,5 +415,6 @@ export async function runThreeSessionTdd(
     needsHumanReview,
     reviewReason,
     totalCost,
+    lite,
   };
 }
