@@ -65,7 +65,7 @@ describe("execution runner", () => {
     const result = await run(opts);
 
     expect(result.iterations).toBeGreaterThan(0);
-    expect(result.success).toBe(false); // Dry run doesn't actually complete
+    expect(result.success).toBe(true); // Dry run marks stories as passed and completes
 
     // Cleanup
     await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;

@@ -33,6 +33,7 @@ import {
   markStoryAsBlocked,
   markStoryFailed,
   markStoryPaused,
+  markStoryPassed,
   savePRD,
 } from "../prd";
 import type { UserStory } from "../prd";
@@ -451,9 +452,22 @@ export async function run(options: RunOptions): Promise<RunResult> {
       );
 
       if (dryRun) {
-        logger?.info("execution", "[DRY RUN] Would execute agent here", {
-          storyId: story.id,
-        });
+        for (const s of storiesToExecute) {
+          logger?.info("execution", "[DRY RUN] Would execute agent here", {
+            storyId: s.id,
+            storyTitle: s.title,
+            modelTier: routing.modelTier,
+            complexity: routing.complexity,
+            testStrategy: routing.testStrategy,
+          });
+        }
+        // Mark stories as passed so the loop progresses to the next batch/story
+        for (const s of storiesToExecute) {
+          markStoryPassed(prd, s.id);
+        }
+        storiesCompleted += storiesToExecute.length;
+        prdDirty = true;
+        await savePRD(prd, prdPath);
         continue;
       }
 
