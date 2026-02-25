@@ -1,85 +1,226 @@
-# Phase 2: LLM Service Layer — Architecture Design
+# Phase 2: LLM Service Layer — Merged Architecture Design
 
 *Date: 2026-02-25*
 *Status: Proposed (pending decision)*
+*Supersedes: Original issue #3 design + 2026-02-25 architecture analysis*
 
 ---
 
 ## Problem
 
-nax v0.10.0 is tightly coupled to Claude Code CLI (`Bun.spawn("claude -p")`). Every agent session spawns a subprocess consuming ~350MB RAM. This blocks:
-- **Parallelism** (Phase 3) — 3 concurrent stories = 1GB+ RAM, OOMs on VPS
-- **Provider flexibility** — locked to Anthropic via Claude Code
-- **Cost optimization** — can't use cheaper models (Gemini Flash, DeepSeek) for simple stories
-- **Exact cost tracking** — current approach estimates cost from duration, not actual token counts
+nax v0.10.0 has two coupling issues:
 
-## Solution: Multi-Provider Direct API + Agent Loop
+1. **All LLM calls go through Claude Code CLI** — routing, review, acceptance stages spawn `claude -p` just for text reasoning. Wasteful.
+2. **All coding goes through CLI subprocess** — ~350MB RAM each, blocks parallelism.
 
-Build a lightweight agent runtime inside nax that calls LLM provider APIs directly with tool use, replacing Claude Code CLI for non-interactive work.
+## Solution: Unified LLM Service Layer + Lightweight Agent Loop
 
-### Architecture
+Two execution paths, one provider abstraction:
 
 ```
-nax story execution
-  → router picks tier → resolves to backend config
-  → if "claude-cli" → ClaudeCodeAdapter (Bun.spawn, current)
-  → if { provider, model } → DirectApiAdapter
-      → ProviderRegistry.get(provider) → LlmProvider
-      → AgentLoop: prompt → provider.chat() → tool calls → execute tools → loop
-      → return AgentResult
+LlmProvider (interface — normalized across providers)
+  ├── AnthropicProvider        (Messages API)
+  ├── GoogleProvider           (GenerateContent API)
+  └── OpenAiCompatProvider     (Chat Completions — covers OpenAI, Moonshot, DeepSeek, OpenRouter, Groq, etc.)
+
+Used by:
+  ├── LLM Mode (text in → text out) — routing, analyze, review, acceptance
+  │     └── llm/client.ts → callLlm(prompt, tier, config)
+  │
+  └── Agent Mode (text + tools) — coding, TDD
+        ├── DirectApiAdapter — LlmProvider + tool loop (~5MB per session)
+        └── ClaudeCodeAdapter — CLI subprocess (~350MB, for TDD/interactive)
 ```
 
-### Provider Abstraction
+## Architecture
+
+```
+src/
+├── llm/                      # LLM Service Layer (shared by both modes)
+│   ├── types.ts              # LlmProvider interface, Message, ToolCall types
+│   ├── client.ts             # callLlm() with fallback chain logic
+│   ├── registry.ts           # Create provider from config
+│   └── providers/
+│       ├── anthropic.ts      # Anthropic Messages API
+│       ├── openai-compat.ts  # OpenAI-compatible (configurable baseUrl)
+│       └── google.ts         # Google Gemini API
+│
+├── llm/tools/                # Minimal tool set for Direct API coding
+│   ├── types.ts              # ToolDefinition, ToolResult
+│   ├── read-file.ts          # Read file contents
+│   ├── write-file.ts         # Write/create file
+│   ├── list-files.ts         # List directory
+│   ├── search-files.ts       # Grep/ripgrep
+│   └── run-command.ts        # Shell exec (tests, git)
+│
+├── llm/agent-loop.ts         # Tool use cycle: prompt → chat() → execute tools → loop
+│
+├── agents/                   # Agent adapters (implement AgentAdapter interface)
+│   ├── types.ts              # AgentAdapter, AgentResult (unchanged)
+│   ├── claude.ts             # ClaudeCodeAdapter (current — subprocess)
+│   ├── direct-api.ts         # DirectApiAdapter (new — wraps llm/ + tools)
+│   ├── registry.ts           # Resolve backend config → adapter instance
+│   └── cost.ts               # Cost estimation (unchanged for CLI, exact for API)
+│
+├── pipeline/stages/          # Each stage declares its execution mode
+│   ├── routing.ts            # LLM Mode → llm/client.ts
+│   ├── analyze.ts            # LLM Mode → llm/client.ts
+│   ├── coding.ts             # Agent Mode → agents/registry.ts
+│   ├── tdd.ts                # Agent Mode → agents/registry.ts
+│   ├── review.ts             # LLM Mode → llm/client.ts
+│   └── acceptance.ts         # LLM Mode → llm/client.ts
+│
+└── config/schema.ts          # Extended with providers, routing, pipeline overrides
+```
+
+## LlmProvider Interface
 
 ```typescript
 interface LlmProvider {
   readonly name: string;
-  
+
   chat(options: {
     model: string;
     messages: Message[];
-    tools?: ToolDefinition[];
+    tools?: ToolDefinition[];   // Optional — omit for LLM Mode (reasoning only)
     maxTokens?: number;
+    temperature?: number;
+    timeoutMs?: number;
   }): Promise<LlmResponse>;
 }
 
 interface LlmResponse {
   content: string;
-  toolCalls: ToolCall[];  // normalized regardless of provider
+  toolCalls: ToolCall[];         // Normalized regardless of provider format
   stopReason: "end_turn" | "tool_use" | "max_tokens";
   usage: { inputTokens: number; outputTokens: number };
 }
 ```
 
-### Provider Implementations
+Single interface serves both modes:
+- **LLM Mode** (routing, review): `chat()` without `tools` → text response
+- **Agent Mode** (coding): `chat()` with `tools` → tool calls → agent loop iterates
 
-Only 3 implementations needed — most providers are OpenAI-compatible:
+## Provider Implementations
 
-| Implementation | Covers | API Format |
-|:---------------|:-------|:-----------|
-| `AnthropicProvider` | Anthropic (Claude) | Messages API, `tool_use` content blocks |
-| `OpenAiCompatProvider` | OpenAI, Moonshot, DeepSeek, OpenRouter, Groq, Together | Chat Completions, `tool_calls` in message |
-| `GoogleProvider` | Google Gemini | GenerateContent, `functionCall` in parts |
+| Implementation | Covers | API Format | Tool Use Format |
+|:---------------|:-------|:-----------|:---------------|
+| `AnthropicProvider` | Anthropic (Claude) | Messages API | `tool_use` content blocks |
+| `OpenAiCompatProvider` | OpenAI, Moonshot, DeepSeek, OpenRouter, Groq, Together | Chat Completions | `tool_calls` in message |
+| `GoogleProvider` | Google Gemini | GenerateContent | `functionCall` in parts |
 
-`OpenAiCompatProvider` is configured with `baseUrl` + `apiKey`, so any OpenAI-compatible provider works with zero code.
+`OpenAiCompatProvider` takes `baseUrl` + `apiKey` — any OpenAI-compatible provider works with zero code.
 
-### Minimal Tool Set
+## Tier-Based Fallback Chains
 
-The agent loop only needs 5 tools (nax handles all orchestration externally):
+Each tier is an ordered list of providers. On 429/error, try next in chain:
 
-| Tool | What | Complexity |
-|:-----|:-----|:-----------|
-| `read_file` | Read file contents | Trivial |
-| `write_file` | Write/create file | Trivial |
-| `list_files` | List directory | Trivial |
-| `run_command` | Shell exec (tests, git) | Simple (child_process) |
-| `search_files` | Grep/ripgrep | Simple |
+```
+Stage needs "balanced" tier
+  → Try anthropic/sonnet
+  → Rate limited (429)? → Try openai/gpt-5
+  → Also limited? → Try next in list
+  → All exhausted? → Stage fails with clear error
+```
 
-### Backend Routing
+Both LLM Mode and Agent Mode use the same fallback logic via `llm/client.ts`:
 
-Resolution order:
-1. **Overrides** — strategy-specific (TDD, interactive) → forces a backend
-2. **Tier routing** — fast/balanced/powerful → maps to backend config
+```
+config.models["balanced"]  →  [anthropic/sonnet, openai/gpt-5]
+                                    │
+                  ┌─────────────────┴──────────────────┐
+                  │                                     │
+            LLM Mode stages                      Agent Mode stages
+            (routing, review)                    (coding, TDD)
+                  │                                     │
+          llm/client.ts                         DirectApiAdapter
+          tries providers                       tries providers
+          in order                              in order (with tools)
+```
+
+Single `ModelDef` (not array) is treated as array of one — backward compatible, no fallback.
+
+## Backend Routing
+
+Three-level resolution:
+
+### 1. Per-Stage Pipeline Override (most specific)
+
+```json
+{
+  "pipeline": {
+    "routing": {
+      "primary": { "provider": "google", "model": "gemini-flash", "via": "api" },
+      "fallback": [
+        { "provider": "anthropic", "model": "haiku", "via": "api" },
+        { "via": "keyword" }
+      ]
+    },
+    "implementation": {
+      "primary": { "provider": "anthropic", "model": "sonnet", "via": "api" },
+      "fallback": [
+        { "via": "claude-cli" }
+      ]
+    }
+  }
+}
+```
+
+The `via` field determines execution path:
+- `"api"` → Direct API (LLM Mode or DirectApiAdapter depending on stage)
+- `"claude-cli"` → Claude Code CLI subprocess
+- `"keyword"` → built-in keyword strategy (routing only)
+
+### 2. Strategy Override (tdd/interactive → force backend)
+
+```json
+{
+  "agents": {
+    "overrides": {
+      "tdd": "claude-cli",
+      "interactive": "claude-cli"
+    }
+  }
+}
+```
+
+### 3. Tier Routing (default)
+
+```json
+{
+  "agents": {
+    "routing": {
+      "fast": { "provider": "gemini", "model": "gemini-2.5-flash" },
+      "balanced": { "provider": "anthropic", "model": "claude-sonnet-4-5" },
+      "powerful": { "provider": "anthropic", "model": "claude-opus-4" }
+    }
+  }
+}
+```
+
+### Resolution Logic
+
+```typescript
+function resolveBackend(
+  tier: ModelTier,
+  stage: string,
+  context: { tdd: boolean; interactive: boolean }
+): BackendConfig {
+  const config = loadConfig();
+
+  // 1. Per-stage pipeline override
+  if (config.pipeline?.[stage]?.primary) return config.pipeline[stage];
+
+  // 2. Strategy override
+  if (context.tdd && config.agents?.overrides?.tdd) return config.agents.overrides.tdd;
+  if (context.interactive && config.agents?.overrides?.interactive) return config.agents.overrides.interactive;
+
+  // 3. Tier routing
+  return config.agents?.routing?.[tier] ?? "claude-cli";
+}
+```
+
+## Full Config Example
 
 ```json
 {
@@ -111,71 +252,150 @@ Resolution order:
     },
     "routing": {
       "fast": { "provider": "gemini", "model": "gemini-2.5-flash" },
-      "balanced": { "provider": "anthropic", "model": "claude-sonnet-4-5" },
+      "balanced": [
+        { "provider": "anthropic", "model": "claude-sonnet-4-5" },
+        { "provider": "openai", "model": "gpt-5" }
+      ],
       "powerful": { "provider": "anthropic", "model": "claude-opus-4" }
     },
     "overrides": {
       "tdd": "claude-cli",
       "interactive": "claude-cli"
     }
+  },
+  "pipeline": {
+    "routing": {
+      "primary": { "provider": "gemini", "model": "gemini-flash", "via": "api" },
+      "fallback": [{ "via": "keyword" }]
+    }
   }
 }
 ```
 
-Resolution logic (~15 lines):
+## Minimal Tool Set (for DirectApiAdapter)
+
+| Tool | What | Lines |
+|:-----|:-----|:------|
+| `read_file` | Read file contents (with line range) | ~15 |
+| `write_file` | Write/create file (with mkdir -p) | ~15 |
+| `list_files` | List directory (recursive option) | ~15 |
+| `search_files` | Grep/ripgrep pattern search | ~20 |
+| `run_command` | Shell exec with timeout + cwd | ~30 |
+
+~95 lines total. Each tool is sandboxed to the project workdir.
+
+## Agent Loop
+
 ```typescript
-function resolveBackend(tier: ModelTier, context: { tdd: boolean; interactive: boolean }): BackendConfig {
-  const config = loadConfig().agents;
-  if (context.tdd && config.overrides?.tdd) return config.overrides.tdd;
-  if (context.interactive && config.overrides?.interactive) return config.overrides.interactive;
-  return config.routing[tier];
+async function agentLoop(
+  provider: LlmProvider,
+  model: string,
+  prompt: string,
+  workdir: string,
+  maxIterations: number = 50,
+): Promise<AgentResult> {
+  const tools = getToolDefinitions();
+  let messages: Message[] = [{ role: "user", content: prompt }];
+  let totalCost = { input: 0, output: 0 };
+
+  for (let i = 0; i < maxIterations; i++) {
+    const response = await provider.chat({ model, messages, tools });
+    totalCost.input += response.usage.inputTokens;
+    totalCost.output += response.usage.outputTokens;
+
+    if (response.stopReason === "end_turn") {
+      return { success: true, output: response.content, cost: totalCost };
+    }
+
+    // Execute tool calls
+    const toolResults = await Promise.all(
+      response.toolCalls.map(tc => executeTool(tc, workdir))
+    );
+
+    messages.push({ role: "assistant", content: response.content, toolCalls: response.toolCalls });
+    messages.push({ role: "tool", results: toolResults });
+  }
+
+  return { success: false, output: "Max iterations reached", cost: totalCost };
 }
 ```
 
-### Backward Compatibility
+~150 lines with error handling, logging, and token budget checks.
 
-- No `agents` section in config → everything uses `claude-cli` (current behavior)
-- Default routing maps all tiers to `"claude-cli"`
-- Users opt into API adapters by adding `agents.providers` + updating `agents.routing`
-- Zero breaking changes
-
-### Why Not OpenClaw Gateway API?
-
-OpenClaw does not expose a public API for this use case. The gateway HTTP endpoints (chat completions, tools invoke) are internal and disabled by default. Building our own lightweight agent loop is cleaner and has no external dependencies.
-
-### Why Not Just Claude Code CLI?
+## Comparison: CLI vs Direct API
 
 | Factor | Claude Code CLI | Direct API |
 |:-------|:---------------|:-----------|
 | RAM per session | ~350MB | ~5MB |
 | Parallel stories | OOMs at 3 | 10+ concurrent |
-| Cost tracking | Estimated from duration | Exact token counts |
-| Provider flexibility | Anthropic only | Any provider |
-| Tool access | ~50 tools (overkill) | 5 tools (minimal) |
-| Dependencies | `claude` binary installed | Just HTTP |
+| Cost tracking | Estimated from duration | Exact token counts from API |
+| Provider flexibility | Anthropic only | Any provider with tool_use |
+| Tool access | ~50 tools (overkill) | 5 tools (minimal, sandboxed) |
+| CLAUDE.md support | ✅ Auto-loaded | ❌ Must inject into prompt |
+| TDD isolation | ✅ PTY-based session isolation | ⚠️ Possible but needs validation |
+| Interactive/TUI | ✅ PTY handle | ❌ Not supported |
+| Dependencies | `claude` binary installed | Just HTTP (fetch) |
 
-### Component Breakdown
+## Backward Compatibility
+
+- No `agents` section in config → everything uses `claude-cli` (current behavior)
+- No `pipeline` section → stages inherit from tier routing
+- Single ModelDef (not array) → treated as array of one, no fallback
+- Zero breaking changes
+
+## Component Breakdown
 
 | Component | Est. Lines | What |
 |:----------|:-----------|:-----|
-| `LlmProvider` interface + types | ~50 | Normalized request/response types |
-| `AnthropicProvider` | ~80 | Messages API, tool_use blocks |
-| `OpenAiCompatProvider` | ~80 | Chat completions, configurable baseUrl |
-| `GoogleProvider` | ~100 | GenerateContent, functionCall parts |
-| Provider registry + factory | ~40 | Create provider from config |
-| Tool definitions (5 tools) | ~100 | read, write, list, search, exec |
-| Agent loop (tool_use cycle) | ~150 | Prompt → tool calls → iterate |
-| `DirectApiAdapter` | ~80 | Wraps provider + loop into AgentAdapter |
-| Config schema additions | ~80 | providers, routing, overrides |
-| **Total** | **~760** | |
+| `llm/types.ts` | ~60 | LlmProvider, Message, ToolCall, LlmResponse |
+| `llm/providers/anthropic.ts` | ~80 | Messages API + tool_use normalization |
+| `llm/providers/openai-compat.ts` | ~80 | Chat Completions + configurable baseUrl |
+| `llm/providers/google.ts` | ~100 | GenerateContent + functionCall normalization |
+| `llm/registry.ts` | ~40 | Provider factory from config |
+| `llm/client.ts` | ~80 | callLlm() with fallback chain + retry |
+| `llm/tools/*.ts` (5 tools) | ~95 | read, write, list, search, exec |
+| `llm/agent-loop.ts` | ~150 | Tool use cycle with iteration limit |
+| `agents/direct-api.ts` | ~80 | DirectApiAdapter wrapping llm/ layer |
+| `agents/registry.ts` (update) | ~30 | Resolve backend config → adapter |
+| `config/schema.ts` (update) | ~100 | providers, routing, overrides, pipeline |
+| **Total** | **~895** | |
 
-### Enables Phase 3
+## Implementation Phases
 
-With lightweight API adapters (~5MB each), Phase 3 parallelism becomes feasible:
-- Spawn N stories in parallel via concurrent HTTP calls
+| Phase | Scope | Effort | Enables |
+|:------|:------|:-------|:--------|
+| P1 | LlmProvider interface + AnthropicProvider + callLlm() | Small | LLM Mode for routing/review |
+| P2 | OpenAiCompatProvider + GoogleProvider | Small | Multi-provider support |
+| P3 | Fallback chain logic in client.ts | Medium | Rate limit resilience |
+| P4 | Tool definitions + agent loop + DirectApiAdapter | Medium | API-based coding |
+| P5 | Per-stage pipeline config | Medium | Fine-grained stage control |
+| P6 | Wire LLM Mode into routing, review, acceptance stages | Medium | Remove CLI dependency for reasoning |
+
+P1-P2 can ship independently as a quick win (LLM Mode only). P4 is the big unlock for Phase 3 parallelism.
+
+## Auth/Key Management
+
+Provider keys flow from config with env var expansion:
+
+```json
+{
+  "providers": {
+    "anthropic": { "type": "anthropic", "apiKey": "${ANTHROPIC_API_KEY}" }
+  }
+}
+```
+
+Each provider reads `apiKey` from its config entry. Fallback to `process.env` for backward compat.
+Per-model env overrides via `ModelDef.env` still work (existing behavior).
+
+## Enables Phase 3 (Parallelism)
+
+With DirectApiAdapter (~5MB each), Phase 3 becomes feasible:
+- N stories execute concurrently via parallel HTTP calls
 - Each story gets its own git worktree (from dev-orchestrator pattern)
 - No OOM risk — 10 concurrent stories ≈ 50MB total vs 3.5GB with CLI
+- Exact cost tracking per story from API token counts
 
 ---
 
-*Decision pending. This doc captures the architecture analysis for future implementation.*
+*Decision pending. This doc captures the merged architecture for future implementation.*
