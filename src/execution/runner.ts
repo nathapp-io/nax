@@ -751,7 +751,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
           case "fail":
             // Mark first story as failed and stop
-            markStoryFailed(prd, story.id);
+            markStoryFailed(prd, story.id, pipelineResult.context.tddFailureCategory);
             await savePRD(prd, prdPath);
             prdDirty = true;
 
@@ -880,7 +880,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
                     workdir,
                   );
                 } else {
-                  markStoryFailed(prd, story.id);
+                  markStoryFailed(prd, story.id, escalateFailureCategory);
                   await savePRD(prd, prdPath);
                   prdDirty = true;
 
@@ -937,7 +937,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
                   workdir,
                 );
               } else {
-                markStoryFailed(prd, story.id);
+                markStoryFailed(prd, story.id, escalateFailureCategory);
                 await savePRD(prd, prdPath);
                 prdDirty = true;
 

@@ -4,9 +4,11 @@
 
 import { existsSync, statSync } from "node:fs";
 import type { PRD, UserStory } from "./types";
+import type { FailureCategory } from "../tdd/types";
 
 export type { PRD, UserStory, StoryRouting, StoryStatus, EscalationAttempt } from "./types";
 export { isStalled, markStoryAsBlocked, generateHumanHaltSummary, getContextFiles, getExpectedFiles } from "./types";
+export type { FailureCategory } from "../tdd/types";
 
 /** Maximum PRD file size (5MB) - reject larger PRDs to prevent memory issues */
 export const PRD_MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -116,11 +118,14 @@ export function markStoryPassed(prd: PRD, storyId: string): void {
 }
 
 /** Mark a story as failed */
-export function markStoryFailed(prd: PRD, storyId: string): void {
+export function markStoryFailed(prd: PRD, storyId: string, failureCategory?: FailureCategory): void {
   const story = prd.userStories.find((s) => s.id === storyId);
   if (story) {
     story.status = "failed";
     story.attempts += 1;
+    if (failureCategory !== undefined) {
+      story.failureCategory = failureCategory;
+    }
   }
 }
 
