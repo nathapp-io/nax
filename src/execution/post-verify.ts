@@ -6,35 +6,16 @@
  */
 
 import type { NaxConfig } from "../config";
-import { getLogger } from "../logger";
+import { getLogger, getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import type { PRD, UserStory } from "../prd";
 import { getExpectedFiles, savePRD } from "../prd";
+import { captureGitRef } from "../utils/git";
 import { getTierConfig } from "./escalation";
 import { appendProgress } from "./progress";
 import { getEnvironmentalEscalationThreshold, parseTestOutput, runVerification } from "./verification";
 
 import { spawn } from "bun";
-
-/**
- * Capture current git HEAD ref for scoped verification.
- */
-export async function captureGitRef(workdir: string): Promise<string | undefined> {
-  try {
-    const proc = spawn({
-      cmd: ["git", "rev-parse", "HEAD"],
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) return undefined;
-    const stdout = await new Response(proc.stdout).text();
-    return stdout.trim() || undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 /**
  * Get test files changed since a git ref.
@@ -73,16 +54,6 @@ function scopeTestCommand(baseCommand: string, testFiles: string[]): string {
   return `${baseCommand} ${testFiles.join(" ")}`;
 }
 
-/**
- * Safely get logger instance, returns null if not initialized
- */
-function getSafeLogger() {
-  try {
-    return getLogger();
-  } catch {
-    return null;
-  }
-}
 
 export interface PostVerifyOptions {
   config: NaxConfig;

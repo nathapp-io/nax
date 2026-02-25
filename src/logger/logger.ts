@@ -248,6 +248,26 @@ export function getLogger(): Logger {
 }
 
 /**
+ * Safely get logger instance, returns null if not initialized
+ *
+ * @returns Logger instance or null if not initialized
+ *
+ * @example
+ * ```typescript
+ * const logger = getSafeLogger();
+ * logger?.info("routing", "Task classified");
+ * ```
+ */
+export function getSafeLogger(): Logger | null {
+  try {
+    const logger = getLogger();
+    return logger === noopLogger ? null : logger;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Reset logger singleton (for testing only)
  * @internal
  */

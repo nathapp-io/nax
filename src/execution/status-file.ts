@@ -7,7 +7,8 @@
  * Atomic writes: write to <path>.tmp then rename to <path>
  */
 
-import { rename } from "node:fs/promises";
+import { rename, unlink } from "node:fs/promises";
+import { resolve } from "node:path";
 import type { NaxConfig } from "../config";
 import type { PRD, StoryStatus, UserStory } from "../prd";
 
@@ -196,9 +197,26 @@ export function buildStatusSnapshot(state: RunStateSnapshot): NaxStatusFile {
  *
  * @param filePath - Destination path for the status file
  * @param status   - Status file content to write
+ * @throws Error if path traversal is detected
  */
 export async function writeStatusFile(filePath: string, status: NaxStatusFile): Promise<void> {
-  const tmpPath = `${filePath}.tmp`;
+  // SEC-1: Validate path to prevent path traversal attacks
+  const resolvedPath = resolve(filePath);
+
+  // Check for path traversal patterns in the original path
+  if (filePath.includes("../") || filePath.includes("..\\")) {
+    throw new Error("Invalid status file path: path traversal detected");
+  }
+
+  const tmpPath = `${resolvedPath}.tmp`;
+
+  // MEM-1: Clean up stale .tmp file if it exists
+  try {
+    await unlink(tmpPath);
+  } catch {
+    // Ignore error if file doesn't exist
+  }
+
   await Bun.write(tmpPath, JSON.stringify(status, null, 2));
-  await rename(tmpPath, filePath);
+  await rename(tmpPath, resolvedPath);
 }

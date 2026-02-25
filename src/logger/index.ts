@@ -6,7 +6,7 @@
  * @module logger
  */
 
-export { Logger, initLogger, getLogger, resetLogger } from "./logger.js";
+export { Logger, initLogger, getLogger, getSafeLogger, resetLogger } from "./logger.js";
 export { formatConsole, formatJsonl } from "./formatters.js";
 export type {
   LogLevel,

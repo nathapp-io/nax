@@ -15,7 +15,7 @@ import { getAgent } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config/schema";
 import { type LoadedHooksConfig, fireHook } from "../hooks";
-import { getLogger } from "../logger";
+import { getLogger, getSafeLogger } from "../logger";
 import { type StoryMetrics, saveRunMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import { runPipeline } from "../pipeline/runner";
@@ -40,10 +40,11 @@ import type { UserStory } from "../prd";
 import { routeTask } from "../routing";
 import { clearCache as clearLlmCache, routeBatch as llmRouteBatch } from "../routing/strategies/llm";
 import type { FailureCategory } from "../tdd/types";
+import { captureGitRef } from "../utils/git";
 import { type StoryBatch, precomputeBatchPlan } from "./batching";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "./escalation";
 import { acquireLock, formatProgress, getAllReadyStories, hookCtx, releaseLock } from "./helpers";
-import { captureGitRef, runPostAgentVerification } from "./post-verify";
+import { runPostAgentVerification } from "./post-verify";
 import { appendProgress } from "./progress";
 import { type RunStateSnapshot, buildStatusSnapshot, writeStatusFile } from "./status-file";
 
@@ -57,24 +58,25 @@ import { type RunStateSnapshot, buildStatusSnapshot, writeStatusFile } from "./s
  * Exported for unit-testing without running the full runner loop.
  */
 export function resolveMaxAttemptsOutcome(failureCategory?: FailureCategory): "pause" | "fail" {
-  if (failureCategory === "isolation-violation" || failureCategory === "verifier-rejected") {
-    return "pause";
+  if (!failureCategory) {
+    return "fail";
   }
-  return "fail";
+
+  switch (failureCategory) {
+    case "isolation-violation":
+    case "verifier-rejected":
+      return "pause";
+    case "session-failure":
+    case "tests-failing":
+      return "fail";
+    default:
+      // Exhaustive check: if a new FailureCategory is added, this will error
+      failureCategory satisfies never;
+      return "fail";
+  }
 }
 
 /** Run options */
-
-/**
- * Safely get logger instance, returns null if not initialized
- */
-function getSafeLogger() {
-  try {
-    return getLogger();
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Try LLM batch routing for ready stories. Logs and swallows errors (falls back to per-story routing).
@@ -166,6 +168,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
   let _runStatus: RunStateSnapshot["runStatus"] = "running";
   let _prd: RunStateSnapshot["prd"] | null = null;
   let _currentStory: RunStateSnapshot["currentStory"] = null;
+  let _consecutiveWriteFailures = 0; // BUG-2: Track consecutive status file write failures
 
   async function writeStatus(overrides: Partial<RunStateSnapshot> = {}): Promise<void> {
     if (!statusFile || !_prd) return;
@@ -186,10 +189,14 @@ export async function run(options: RunOptions): Promise<RunResult> {
         ...overrides,
       };
       await writeStatusFile(statusFile, buildStatusSnapshot(state));
+      _consecutiveWriteFailures = 0; // Reset counter on success
     } catch (err) {
-      safeLogger?.warn("status-file", "Failed to write status file (non-fatal)", {
+      _consecutiveWriteFailures++;
+      const logLevel = _consecutiveWriteFailures >= 3 ? "error" : "warn";
+      safeLogger?.[logLevel]("status-file", "Failed to write status file (non-fatal)", {
         path: statusFile,
         error: (err as Error).message,
+        consecutiveFailures: _consecutiveWriteFailures,
       });
     }
   }

@@ -13,6 +13,7 @@ import { resolveModel } from "../config";
 import { executeWithTimeout } from "../execution/verification";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
+import { captureGitRef } from "../utils/git";
 import { cleanupProcessTree } from "./cleanup";
 import { getChangedFiles, verifyImplementerIsolation, verifyTestWriterIsolation } from "./isolation";
 import {
@@ -24,19 +25,6 @@ import {
 } from "./prompts";
 import type { FailureCategory, TddSessionResult, TddSessionRole, ThreeSessionTddResult } from "./types";
 import { categorizeVerdict, cleanupVerdict, readVerdict } from "./verdict";
-
-/** Capture git state for isolation checking */
-async function captureGitRef(workdir: string): Promise<string> {
-  const proc = Bun.spawn(["git", "rev-parse", "HEAD"], {
-    cwd: workdir,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  await proc.exited;
-  const output = await new Response(proc.stdout).text();
-  return output.trim();
-}
 
 /** Run a single TDD session */
 async function runTddSession(
@@ -244,8 +232,8 @@ export async function runThreeSessionTdd(
   let needsHumanReview = false;
   let reviewReason: string | undefined;
 
-  // Capture initial git state
-  const initialRef = await captureGitRef(workdir);
+  // Capture initial git state (fallback to "HEAD" if git unavailable)
+  const initialRef = (await captureGitRef(workdir)) ?? "HEAD";
 
   // Session 1: Test Writer
   // In lite mode: use lite prompt and skip isolation check
@@ -324,7 +312,7 @@ export async function runThreeSessionTdd(
       sessions,
       needsHumanReview,
       reviewReason,
-      failureCategory: "isolation-violation" as FailureCategory,
+      failureCategory: "isolation-violation",
       totalCost: sessions.reduce((sum, s) => sum + s.estimatedCost, 0),
       lite,
     };
@@ -336,8 +324,8 @@ export async function runThreeSessionTdd(
     testFiles: testFilesCreated,
   });
 
-  // Capture state after session 1
-  const session2Ref = await captureGitRef(workdir);
+  // Capture state after session 1 (fallback to "HEAD" if git unavailable)
+  const session2Ref = (await captureGitRef(workdir)) ?? "HEAD";
 
   // Session 2: Implementer (uses story's routed tier by default)
   // In lite mode: use lite prompt and skip isolation check
@@ -366,14 +354,14 @@ export async function runThreeSessionTdd(
       sessions,
       needsHumanReview,
       reviewReason,
-      failureCategory: "session-failure" as FailureCategory,
+      failureCategory: "session-failure",
       totalCost: sessions.reduce((sum, s) => sum + s.estimatedCost, 0),
       lite,
     };
   }
 
-  // Capture state after session 2
-  const session3Ref = await captureGitRef(workdir);
+  // Capture state after session 2 (fallback to "HEAD" if git unavailable)
+  const session3Ref = (await captureGitRef(workdir)) ?? "HEAD";
 
   // Session 3: Verifier — ALWAYS runs with isolation regardless of lite flag
   const verifierTier = config.tdd.sessionTiers?.verifier ?? "fast";
