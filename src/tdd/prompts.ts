@@ -1,4 +1,4 @@
-import type { Story, RunConfig } from "../execution/types";
+import type { UserStory } from "../prd";
 import type { TddSessionRole } from "./types";
 
 /**
@@ -6,13 +6,11 @@ import type { TddSessionRole } from "./types";
  */
 export function buildTddRolePrompt(
   role: TddSessionRole,
-  story: Story,
-  config: RunConfig,
-  currentBranch: string,
+  story: UserStory,
+  config?: { projectRoot: string },
+  currentBranch?: string,
 ): string {
-  const common = `You are a TDD agent (role: ${role}) working on the story: "${story.title}".
-Project root: ${config.projectRoot}
-Current branch: ${currentBranch}
+  const common = `You are a TDD agent (role: ${role}) working on the story: "${story.title}".${config ? `\nProject root: ${config.projectRoot}` : ""}${currentBranch ? `\nCurrent branch: ${currentBranch}` : ""}
 
 STORY DESCRIPTION:
 ${story.description}
@@ -56,33 +54,26 @@ YOUR TASK: Verify the implementation and tests.
 }
 
 /**
- * Prompt to build the verifier's verification instructions
+ * Prompt to build the verifier's verification instructions (Session 3)
  */
-export function buildVerifierPrompt(story: Story, config: RunConfig, currentBranch: string): string {
-  return `Verify the implementation of story: "${story.title}" on branch: ${currentBranch}.
-
-Project root: ${config.projectRoot}
+export function buildVerifierPrompt(story: UserStory): string {
+  return `# Session 3: Verify — "${story.title}"
 
 STORY:
 ${story.description}
 
-CRITERIA:
+ACCEPTANCE CRITERIA:
 ${story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
 
-TASKS:
-1. Run all tests and ensure they pass.
-2. Review the implementation in src/ for correctness and quality.
-3. Check for any illegitimate test modifications by the implementer (e.g., deleted tests).
-4. Fix any minor issues or missing edge cases.
-5. If everything looks good, approve the implementation.
+---
 
-Set \`approved: true\` if:
-- All tests pass
-- Implementation is clean and follows conventions
-- All acceptance criteria met
-- Any test modifications by implementer are legitimate fixes
+## TASKS
 
-If everything looks good, you can approve automatically. If legitimate fixes are needed (e.g., minor test adjustments for legitimate reasons), make them and document why.
+1. Run all tests and verify they pass.
+2. Review the implementation for quality and correctness.
+3. Check that the implementation meets all acceptance criteria.
+4. Check if test files were modified by the implementer (make sure they are legitimate fixes, NOT just loosening assertions to mask bugs).
+5. If any issues exist, fix them minimally — do NOT refactor.
 
 ---
 
@@ -145,184 +136,90 @@ Set \`approved: false\` when ANY of these conditions are true:
 When done, commit any fixes with message: "fix: verify and adjust ${story.title}"`;
 }
 
+/**
+ * Prompt for a test-writer session (single-session lite variant)
+ */
 export function buildTestWriterPrompt(story: UserStory, contextMarkdown?: string): string {
-  const basePrompt = `# Test-Driven Development — Session 1: Write Tests
+  const contextSection = contextMarkdown ? `\n\n---\n\n${contextMarkdown}` : "";
+  return `# Test Writer — "${story.title}"
 
-You are in the first session of a three-session TDD workflow. Your ONLY job is to write comprehensive tests.
+Your role: Write failing tests ONLY. Do NOT implement any source code.
 
-**Story:** ${story.title}
-
-**Description:**
+STORY:
 ${story.description}
 
-**Acceptance Criteria:**
-${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
+ACCEPTANCE CRITERIA:
+${story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
 
-**CRITICAL RULES:**
-- ONLY create/modify test files (test/, tests/, __tests__/, *.test.ts, *.spec.ts)
-- DO NOT create or modify any source files (src/, lib/, etc.)
-- Write failing tests that verify all acceptance criteria
-- Use descriptive test names and organize into logical test suites
-- Follow TDD best practices: one assertion per test where reasonable
-- Tests should be clear, comprehensive, and cover edge cases
-
-The implementer in the next session will make these tests pass. Your job is ONLY to write the tests.
-
-When done, commit your changes with message: "test: add tests for ${story.title}"`;
-
-  if (contextMarkdown) {
-    return `${basePrompt}
-
----
-
-${contextMarkdown}`;
-  }
-
-  return basePrompt;
+RULES:
+- Only create or modify files in the test/ directory.
+- Tests must fail (feature not implemented yet).
+- Use Bun test (describe/test/expect).
+- Cover all acceptance criteria.${contextSection}`;
 }
 
 /**
- * Build prompt for implementer session.
- *
- * @param story - User story
- * @param contextMarkdown - Optional context markdown
- * @returns Implementer prompt
+ * Prompt for a test-writer lite session (no isolation enforcement)
  */
-
-export function buildImplementerPrompt(story: UserStory, contextMarkdown?: string): string {
-  const basePrompt = `# Test-Driven Development — Session 2: Implement Code
-
-You are in the second session of a three-session TDD workflow. Tests have already been written in session 1.
-
-**Story:** ${story.title}
-
-**Description:**
-${story.description}
-
-**Acceptance Criteria:**
-${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
-
-**CRITICAL RULES:**
-- DO NOT modify any test files — tests are already written and correct
-- ONLY create/modify source files (src/, lib/, etc.) to make the tests pass
-- Run the tests frequently to verify your implementation
-- Write minimal code to make tests pass (no over-engineering)
-- Follow existing code patterns and conventions in the codebase
-- Ensure all tests pass before finishing
-
-The tests were written in session 1. Your job is to implement the code to make them pass.
-
-When done, commit your changes with message: "feat: implement ${story.title}"`;
-
-  if (contextMarkdown) {
-    return `${basePrompt}
-
----
-
-${contextMarkdown}`;
-  }
-
-  return basePrompt;
-}
-
-/**
- * Build prompt for test-writer session in lite mode.
- *
- * Relaxed isolation: test-writer CAN read source files to understand existing
- * APIs and CAN import from source. Still should only CREATE test files, not
- * modify source files.
- *
- * @param story - User story
- * @param contextMarkdown - Optional context markdown
- * @returns Test-writer lite prompt
- */
-
 export function buildTestWriterLitePrompt(story: UserStory, contextMarkdown?: string): string {
-  const basePrompt = `# Test-Driven Development (Lite Mode) — Session 1: Write Tests
+  const contextSection = contextMarkdown ? `\n\n---\n\n${contextMarkdown}` : "";
+  return `# Test Writer (Lite) — "${story.title}"
 
-You are in the first session of a three-session TDD workflow (lite mode). Your ONLY job is to write comprehensive tests.
+Your role: Write failing tests. You may create minimal stubs in src/ if needed to make imports work, but do NOT implement real logic.
 
-**Story:** ${story.title}
-
-**Description:**
+STORY:
 ${story.description}
 
-**Acceptance Criteria:**
-${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
+ACCEPTANCE CRITERIA:
+${story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
 
-**RULES:**
-- You MAY read source files to understand existing APIs and import paths
-- You MAY import from source files in your tests
-- Only CREATE test files (test/, tests/, __tests__/, *.test.ts, *.spec.ts) — do NOT modify source files
-- Write failing tests that verify all acceptance criteria
-- Use descriptive test names and organize into logical test suites
-- Follow TDD best practices: one assertion per test where reasonable
-- Tests should be clear, comprehensive, and cover edge cases
-
-The implementer in the next session will make these tests pass. Your job is ONLY to write the tests.
-
-When done, commit your changes with message: "test: add tests for ${story.title}"`;
-
-  if (contextMarkdown) {
-    return `${basePrompt}
-
----
-
-${contextMarkdown}`;
-  }
-
-  return basePrompt;
+RULES:
+- Primarily write test/ files.
+- Stub-only src/ files are allowed (empty exports, no logic).
+- Tests must fail for the right reasons (feature not implemented).
+- Use Bun test (describe/test/expect).${contextSection}`;
 }
 
 /**
- * Build prompt for implementer session in lite mode.
- *
- * No file isolation restrictions: implementer can freely modify both source
- * and test files as needed to make tests pass.
- *
- * @param story - User story
- * @param contextMarkdown - Optional context markdown
- * @returns Implementer lite prompt
+ * Prompt for an implementer session
  */
+export function buildImplementerPrompt(story: UserStory, contextMarkdown?: string): string {
+  const contextSection = contextMarkdown ? `\n\n---\n\n${contextMarkdown}` : "";
+  return `# Implementer — "${story.title}"
 
+Your role: Make all failing tests pass.
+
+STORY:
+${story.description}
+
+ACCEPTANCE CRITERIA:
+${story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
+
+RULES:
+- Implement source code in src/ to make tests pass.
+- Do NOT modify test files.
+- Run tests frequently to track progress.
+- Goal: all tests green.${contextSection}`;
+}
+
+/**
+ * Prompt for an implementer lite session (combined test + implement)
+ */
 export function buildImplementerLitePrompt(story: UserStory, contextMarkdown?: string): string {
-  const basePrompt = `# Test-Driven Development (Lite Mode) — Session 2: Implement Code
+  const contextSection = contextMarkdown ? `\n\n---\n\n${contextMarkdown}` : "";
+  return `# Implementer (Lite) — "${story.title}"
 
-You are in the second session of a three-session TDD workflow (lite mode). Tests have already been written in session 1.
+Your role: Write tests AND implement the feature in a single session.
 
-**Story:** ${story.title}
-
-**Description:**
+STORY:
 ${story.description}
 
-**Acceptance Criteria:**
-${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
+ACCEPTANCE CRITERIA:
+${story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
 
-**RULES:**
-- Run the tests frequently to verify your implementation
-- Write code to make all tests pass
-- You may adjust test files if needed (e.g., fixing incorrect expectations or import paths)
-- Write clean, maintainable code following existing patterns and conventions
-- Ensure all tests pass before finishing
-
-The tests were written in session 1. Your job is to implement the code to make them pass.
-
-When done, commit your changes with message: "feat: implement ${story.title}"`;
-
-  if (contextMarkdown) {
-    return `${basePrompt}
-
----
-
-${contextMarkdown}`;
-  }
-
-  return basePrompt;
+RULES:
+- Write tests first (test/ directory), then implement (src/ directory).
+- All tests must pass by the end.
+- Use Bun test (describe/test/expect).
+- Goal: all tests green, all criteria met.${contextSection}`;
 }
-
-/**
- * Build prompt for verifier session.
- *
- * @param story - User story
- * @returns Verifier prompt
- */
