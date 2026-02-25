@@ -1,7 +1,7 @@
 # nax — Brief
 
 ## What
-AI coding agent orchestrator (CLI, Bun + TypeScript). Takes a feature spec, decomposes into user stories via LLM, routes each to the right model tier by complexity, and executes them with auto-escalation and retry. Supports three-session TDD for quality-critical work. Currently v0.10.0 on master. Published as `@nathapp/nax` (not yet on npm — local/global install only).
+AI coding agent orchestrator (CLI, Bun + TypeScript). Takes a feature spec, decomposes into user stories via LLM, routes each to the right model tier by complexity, and executes them with auto-escalation and retry. Supports three-session TDD for quality-critical work. Currently v0.10.1 on master. Published as `@nathapp/nax` (not yet on npm — local/global install only).
 
 ## Architecture
 
@@ -27,6 +27,7 @@ nax run → pipeline per story:
 | `context/` | Builds per-story context from PRD + dependencies within token budget |
 | `tdd/` | Three-session orchestrator: test-writer → implementer → verifier with git-diff isolation |
 | `execution/` | Spawns `claude -p` via ClaudeCodeAdapter, handles timeouts and cost tracking |
+| `status-file/` | *(v0.10.1)* Atomic JSON status writer for external monitoring (dashboards/CI) |
 | `acceptance/` | LLM-generated acceptance tests, validates story output |
 | `agents/` | Adapter pattern — currently only Claude Code, designed for Codex/Gemini/OpenCode |
 | `hooks/` | Lifecycle events (on-start, on-complete, on-pause, on-error) via shell commands |
@@ -59,6 +60,8 @@ nax run → pipeline per story:
 | Fix nax over replacing with dev-orchestrator | dev-orchestrator lacks TDD pipeline, structured logging, PRD workflow. Porting those is more work than fixing nax's weaknesses. | 2026-02-24 | `docs/20260224-nax-roadmap-phases.md` |
 | Dry-run marks stories as passed | Previous dry-run never changed story status, causing infinite loop until maxIterations. Now marks passed + saves PRD for natural completion. | 2026-02-24 | `09996c8` |
 | Targeted git reset for TDD fallback | `git checkout .` was too aggressive; now resets only files touched by the failed session, preserving other local changes. | 2026-02-24 | `d1dc4b9` |
+| Atomic Status File (v0.10.1) | Machine-readable status tracking via JSON. Atomic write (write-then-rename) prevents partial reads during polling. | 2026-02-25 | `status-file-v0.10.1.md` |
+| Category-based TDD routing (v0.10.1) | Isolation violations trigger strategy downgrade (Lite) while mechanical failures trigger tier escalation. Reduces manual pause/resume cycles. | 2026-02-25 | `status-file-v0.10.1.md` |
 
 ## Config Reference
 
@@ -102,27 +105,17 @@ Full schema with Zod validation: `src/config/schema.ts`
 | Plugin System | `docs/v0.10-plugin-system.md` | 9 | Loader, registry, 6 extension point interfaces (optimizer, router, agent, reviewer, context-provider, reporter) |
 | Prompt Optimizer | `docs/v0.10-prompt-optimizer.md` | 5 | NoopOptimizer (default), RuleBasedOptimizer (strip whitespace, compact criteria, dedup context), optimizer pipeline stage |
 | Global Config | `docs/v0.10-global-config.md` | 7 | `~/.nax/` directory, deep merge (project wins), hooks concatenate (global first), constitution concatenate, `nax init --global`, `skipGlobal` opt-out |
+| Status File & Smart Escalation | `docs/specs/status-file-v0.10.1.md` | 9 | Atomic JSON status tracking, failure categorization, retry-as-lite strategy downgrade |
 
-**Total: ~21 user stories** across 3 features.
-
-### Plugin Extension Points
-
-| Type | Behavior | v0.10 Scope |
-|:-----|:---------|:------------|
-| `optimizer` | Last loaded wins | ✅ Full (built-in + plugin wiring) |
-| `router` | Chained before built-in strategies | 🔌 Interface + wiring |
-| `agent` | Selected by config `agent` field | 🔌 Interface + wiring |
-| `reviewer` | Additive — all run after built-in checks | 🔌 Interface + wiring |
-| `context-provider` | Additive — token-budgeted, appended to context | 🔌 Interface + wiring |
-| `reporter` | Additive — fire-and-forget lifecycle events | 🔌 Interface + wiring |
+**Total: ~30 user stories** across 4 features.
 
 ## Version History
 
 | Version | What Changed | Issues |
 |:--------|:-------------|:-------|
+| v0.10.1 | Status file (machine-readable), Smart TDD escalation (retryAsLite), Verifier Verdicts | #16 |
 | v0.10.0 | Plugin system, Global config layering, Prompt optimizer stage | #8, #14 |
 | v0.9.3 | Prompt Audit CLI (`nax prompts`), context isolation unit tests, scoped test coverage scanner | #15 |
-| v0.10.1 | Fix dry-run infinite loop (mark stories passed), fix BUG-21 (null attempts escalation), fix BUG-22 (paused story loop), global hooks loading | #16, #17 |
 
 ## Roadmap
 
@@ -133,9 +126,6 @@ Full schema with Zod validation: `src/config/schema.ts`
 | **Next** | Phase 3: Worktree parallelism — N stories concurrent | 📋 Planned | — |
 | **Backlog** | CLI for paused stories (`nax stories`, `nax resume`) | 📋 Planned | #18 |
 | **Backlog** | Quality flags + review.checks unification | 📋 Planned | #19 |
-| **Done** | v0.10.0: Plugin system & Global Config | ✅ Released | #8, #14 |
-| **Done** | Dry-run infinite loop fix & targeted fallback reset | ✅ Released | `09996c8`, `d1dc4b9` |
-| **Dropped** | ~~Greenfield project scaffolding~~ | ❌ Dropped (chicken-and-egg with nax/) | #13 |
 
 ### Phase Dependency Chain
 ```
@@ -144,35 +134,7 @@ Phase 1: tdd-lite + fallback     ← standalone, no blockers
 Phase 2: LLM Service Layer (#3)  ← abstracts agent spawning (claude-cli, openclaw, api)
     ↓
 Phase 3: Worktree parallelism    ← needs Phase 2 for multi-agent coordination
-    ↓
-Memory optimization              ← comes free with Phase 3 (phase-by-phase execution)
 ```
 
-## Known Weaknesses (2026-02-24 Analysis)
-
-Compared against dev-orchestrator (OpenClaw skill) which handles execution differently:
-
-| Weakness | Detail | Fix Phase |
-|:---------|:-------|:----------|
-| **No real parallelism** | Stories run sequentially; batch mode = same agent session | Phase 3 |
-| **Memory hungry** | Peaks 3-4GB+, OOMs on 4GB VPS | Phase 3 (phase-by-phase agents) |
-| **Single agent backend** | claude CLI only, no OpenClaw sub-agents or API direct | Phase 2 |
-| **TDD too strict for non-TS** | Test-writer isolation breaks for UI/polyglot/integration | Phase 1 |
-| **Over-generates stories** | `nax analyze` creates 23 stories when 3 would do | Backlog |
-| **Setup overhead** | PRD → analyze → config → run vs "here's a task" | By design (structured) |
-
-**nax strengths over dev-orchestrator:** structured JSONL logging, automatic escalation tiers, reproducible runs (same PRD = same result), `nax accept` post-run review, hooks/plugins, constitution injection.
-
-## Gotchas
-
-- **VPS OOMs Claude Code** — always run nax on Mac01 for real dogfood runs
-- **`nax.lock` can go stale** — if process OOM-killed, lock file remains. nax checks PID liveness and auto-removes stale locks.
-- **Keyword routing false positives** — words like "endpoint", "public api" triggered three-session-tdd on simple stories. Fixed in v0.9.1 (LLM-direct strategy).
-- **`nax analyze` overwrites PRD** — re-running analyze regenerates the entire PRD. Back up manual edits first.
-- **`nax analyze` doesn't generate scaffolding stories** — if repo is empty, manually add US-000 for project setup.
-- **Bun stream workaround** — `drainTimeoutMs` exists because Bun doesn't always flush stdout/stderr after process kill.
-- **`timeout` not on macOS** — use `gtimeout` from coreutils on Mac01.
-- **PTY check on remote nodes** — use `CLAW_NO_PTY_CHECK=1` when running via `nohup` on remote nodes to bypass script-level PTY enforcement.
-
 ---
-*Updated 2026-02-24*
+*Updated 2026-02-25*
