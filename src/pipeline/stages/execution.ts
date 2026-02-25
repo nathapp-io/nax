@@ -131,6 +131,9 @@ export const executionStage: PipelineStage = {
       };
 
       if (!tddResult.success) {
+        // Store failure category in context for runner to use at max-attempts decision
+        ctx.tddFailureCategory = tddResult.failureCategory;
+
         // Log needsHumanReview context when present
         if (tddResult.needsHumanReview) {
           logger.warn("execution", "Human review needed", {
