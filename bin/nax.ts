@@ -38,7 +38,7 @@
  */
 
 import { existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import chalk from "chalk";
 import { Command } from "commander";
@@ -205,6 +205,7 @@ program
   .option("--quiet", "Quiet mode (warnings and errors only)", false)
   .option("--silent", "Silent mode (errors only)", false)
   .option("-d, --dir <path>", "Working directory", process.cwd())
+  .option("--status-file <path>", "Write machine-readable JSON status file (updated during run)")
   .action(async (options) => {
     // Validate directory path
     let workdir: string;
@@ -305,6 +306,9 @@ program
       console.log(chalk.dim("   [Headless mode — pipe output]"));
     }
 
+    // Resolve --status-file relative to cwd (absolute paths unchanged)
+    const statusFilePath = options.statusFile ? resolve(process.cwd(), options.statusFile) : undefined;
+
     const result = await run({
       prdPath,
       workdir,
@@ -315,6 +319,7 @@ program
       dryRun: options.dryRun,
       useBatch: options.batch ?? true,
       eventEmitter,
+      statusFile: statusFilePath,
     });
 
     // Create/update latest.jsonl symlink
