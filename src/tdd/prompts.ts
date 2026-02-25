@@ -209,13 +209,50 @@ You are in the third session of a three-session TDD workflow. Tests and implemen
 **Acceptance Criteria:**
 ${story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n")}
 
-**Auto-approval criteria:**
-- All tests pass
+**IMPORTANT — Write Verdict File:**
+After completing your review, write a JSON verdict file to \`.nax-verifier-verdict.json\` in the project root.
+
+\`\`\`json
+{
+  "version": 1,
+  "approved": true,
+  "tests": {
+    "allPassing": true,
+    "passCount": 15,
+    "failCount": 0
+  },
+  "testModifications": {
+    "detected": false,
+    "files": [],
+    "legitimate": true,
+    "reasoning": "No test files were modified by implementer"
+  },
+  "acceptanceCriteria": {
+    "allMet": true,
+    "criteria": [
+      { "criterion": "Criterion text", "met": true }
+    ]
+  },
+  "quality": {
+    "rating": "good",
+    "issues": []
+  },
+  "fixes": [],
+  "reasoning": "All tests pass, implementation is clean, all criteria met."
+}
+\`\`\`
+
+Set \`approved: false\` if:
+- Tests are failing and you cannot fix them
+- Implementer loosened test assertions to mask bugs (testModifications.legitimate = false)
+- Critical acceptance criteria are not met
+- Code quality is poor with security or correctness issues
+
+Set \`approved: true\` if:
+- All tests pass (or pass after your minimal fixes)
 - Implementation is clean and follows conventions
 - All acceptance criteria met
 - Any test modifications by implementer are legitimate fixes
-
-If everything looks good, you can approve automatically. If legitimate fixes are needed (e.g., minor test adjustments for legitimate reasons), make them and document why.
 
 When done, commit any fixes with message: "fix: verify and adjust ${story.title}"`;
 }
