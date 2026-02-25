@@ -20,3 +20,5 @@ export {
   buildImplementerPrompt,
   buildVerifierPrompt,
 } from "./prompts";
+export type { VerifierVerdict, VerdictCategorization } from "./verdict";
+export { VERDICT_FILE, readVerdict, cleanupVerdict, categorizeVerdict } from "./verdict";
