@@ -70,4 +70,10 @@ export interface ThreeSessionTddResult {
   lite: boolean;
   /** Category of failure (if success is false) */
   failureCategory?: FailureCategory;
+  /**
+   * Verifier verdict parsed from .nax-verifier-verdict.json (for logging/debugging).
+   * null      = verdict file was missing or malformed (no verdict available)
+   * undefined = verdict was not attempted (e.g. early-exit before session 3 ran)
+   */
+  verdict?: import("./verdict").VerifierVerdict | null;
 }

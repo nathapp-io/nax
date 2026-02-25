@@ -23,6 +23,7 @@ import {
   buildVerifierPrompt,
 } from "./prompts";
 import type { FailureCategory, TddSessionResult, TddSessionRole, ThreeSessionTddResult } from "./types";
+import { categorizeVerdict, cleanupVerdict, readVerdict } from "./verdict";
 
 /** Capture git state for isolation checking */
 async function captureGitRef(workdir: string): Promise<string> {
@@ -390,40 +391,84 @@ export async function runThreeSessionTdd(
   );
   sessions.push(session3);
 
-  // Check if all sessions succeeded based on their individual results
+  // ── T9: Verdict-based post-TDD verification ──────────────────────────────
+  // Read the verifier verdict file written by session 3, then clean it up.
+  // If the verdict is available, use it to determine success/failure and
+  // skip the independent test run (the verifier already ran the tests).
+  // If no verdict (file missing or malformed), fall back to the original
+  // BUG-22 independent test verification path.
+
+  const verdict = await readVerdict(workdir);
+  await cleanupVerdict(workdir);
+
   let allSuccessful = sessions.every((s) => s.success);
   let finalFailureCategory: FailureCategory | undefined;
 
-  // BUG-22 Fix: Post-TDD independent test verification
-  // If sessions had failures but we need to verify if tests actually pass,
-  // run an independent test verification to check final state
-  if (!allSuccessful) {
-    logger.info("tdd", "→ Running post-TDD test verification", { storyId: story.id });
+  if (verdict !== null) {
+    // ── Verdict path: verifier wrote a structured verdict file ──────────────
+    // Use categorizeVerdict to interpret the verdict.
+    // testsActuallyPass is derived from verdict.tests.allPassing since the
+    // verifier already ran the tests; categorizeVerdict ignores this param
+    // when a non-null verdict is provided, but we pass the verifier's own
+    // test result for semantic clarity.
+    const categorization = categorizeVerdict(verdict, verdict.tests.allPassing);
 
-    const testCmd = config.quality?.commands?.test ?? "bun test";
-    const timeoutSeconds = 120;
-
-    const postVerify = await executeWithTimeout(testCmd, timeoutSeconds, undefined, {
-      cwd: workdir,
-    });
-    const testsActuallyPass = postVerify.success && postVerify.exitCode === 0;
-
-    if (testsActuallyPass) {
-      logger.info("tdd", "ℹ️ Sessions had non-zero exits but tests pass — treating as success", {
+    if (categorization.success) {
+      logger.info("tdd", "✅ Verifier verdict: approved", {
         storyId: story.id,
+        verdictApproved: verdict.approved,
+        testsAllPassing: verdict.tests.allPassing,
+        passCount: verdict.tests.passCount,
+        failCount: verdict.tests.failCount,
       });
       allSuccessful = true;
       needsHumanReview = false;
       reviewReason = undefined;
     } else {
-      logger.warn("tdd", "⚠️ Post-TDD verification: tests still failing", { storyId: story.id });
+      logger.warn("tdd", "⚠️ Verifier verdict: rejected", {
+        storyId: story.id,
+        verdictApproved: verdict.approved,
+        failureCategory: categorization.failureCategory,
+        reviewReason: categorization.reviewReason,
+      });
+      allSuccessful = false;
+      finalFailureCategory = categorization.failureCategory;
       needsHumanReview = true;
-      reviewReason = "Verifier session identified issues and tests still fail";
-      finalFailureCategory = "tests-failing";
+      reviewReason = categorization.reviewReason;
     }
   } else {
-    // All sessions succeeded — no need for independent verification
-    needsHumanReview = false;
+    // ── Fallback path: no verdict file (missing or malformed) ───────────────
+    // BUG-22 Fix: Post-TDD independent test verification
+    // If sessions had failures but we need to verify if tests actually pass,
+    // run an independent test verification to check final state.
+    if (!allSuccessful) {
+      logger.info("tdd", "→ Running post-TDD test verification (no verdict file)", { storyId: story.id });
+
+      const testCmd = config.quality?.commands?.test ?? "bun test";
+      const timeoutSeconds = 120;
+
+      const postVerify = await executeWithTimeout(testCmd, timeoutSeconds, undefined, {
+        cwd: workdir,
+      });
+      const testsActuallyPass = postVerify.success && postVerify.exitCode === 0;
+
+      if (testsActuallyPass) {
+        logger.info("tdd", "ℹ️ Sessions had non-zero exits but tests pass — treating as success", {
+          storyId: story.id,
+        });
+        allSuccessful = true;
+        needsHumanReview = false;
+        reviewReason = undefined;
+      } else {
+        logger.warn("tdd", "⚠️ Post-TDD verification: tests still failing", { storyId: story.id });
+        needsHumanReview = true;
+        reviewReason = "Verifier session identified issues and tests still fail";
+        finalFailureCategory = "tests-failing";
+      }
+    } else {
+      // All sessions succeeded — no need for independent verification
+      needsHumanReview = false;
+    }
   }
 
   const totalCost = sessions.reduce((sum, s) => sum + s.estimatedCost, 0);
@@ -435,6 +480,7 @@ export async function runThreeSessionTdd(
     needsHumanReview,
     reviewReason,
     lite,
+    verdictAvailable: verdict !== null,
   });
 
   return {
@@ -443,6 +489,7 @@ export async function runThreeSessionTdd(
     needsHumanReview,
     reviewReason,
     ...(finalFailureCategory !== undefined ? { failureCategory: finalFailureCategory } : {}),
+    verdict,
     totalCost,
     lite,
   };
