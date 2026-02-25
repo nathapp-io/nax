@@ -11,6 +11,23 @@ import { App } from "../src/tui/App";
 import { PipelineEventEmitter } from "../src/pipeline/events";
 import type { StoryDisplayState } from "../src/tui/types";
 
+// Check if node-pty binary support is available
+let canSpawnPty = false;
+try {
+  const { spawn } = await import("node-pty");
+  const pty = spawn("echo", ["test"], {
+    name: "xterm-color",
+    cols: 80,
+    rows: 30,
+    cwd: process.cwd(),
+  });
+  pty.kill();
+  canSpawnPty = true;
+} catch (err) {
+  // node-pty binary not available (posix_spawnp failed or other error)
+  canSpawnPty = false;
+}
+
 describe("App PTY integration", () => {
   const createMockStory = (id: string, status: StoryDisplayState["status"]): StoryDisplayState => ({
     story: {
@@ -28,7 +45,7 @@ describe("App PTY integration", () => {
     status,
   });
 
-  test("accepts ptyOptions prop", () => {
+  test.skipIf(!canSpawnPty)("accepts ptyOptions prop", () => {
     const emitter = new PipelineEventEmitter();
     const stories = [createMockStory("US-001", "pending")];
 
@@ -115,7 +132,7 @@ describe("App PTY integration", () => {
     expect(frame).toContain("Waiting for agent...");
   });
 
-  test("AgentPanel is present in layout", () => {
+  test.skipIf(!canSpawnPty)("AgentPanel is present in layout", () => {
     const emitter = new PipelineEventEmitter();
     const stories = [createMockStory("US-001", "pending")];
 
