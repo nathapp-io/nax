@@ -37,4 +37,8 @@ yarn-error.log*
 
 # Misc
 .DS_Store
-*.pemorchestrator/
+*.pem
+orchestrator/
+
+# nax — generated files
+.nax-verifier-verdict.json

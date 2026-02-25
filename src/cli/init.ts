@@ -4,7 +4,7 @@
  * Initializes nax configuration directories and files.
  */
 
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { globalConfigDir, projectConfigDir } from "../config/paths";
 import { DEFAULT_CONFIG } from "../config/schema";
@@ -16,6 +16,40 @@ export interface InitOptions {
   global?: boolean;
   /** Project root (default: cwd) */
   projectRoot?: string;
+}
+
+/**
+ * Gitignore entries added by nax init
+ */
+const NAX_GITIGNORE_ENTRIES = [".nax-verifier-verdict.json"];
+
+/**
+ * Add nax-specific entries to .gitignore if not already present.
+ *
+ * Appends a clearly marked nax section to the project .gitignore.
+ */
+async function updateGitignore(projectRoot: string): Promise<void> {
+  const logger = getLogger();
+  const gitignorePath = join(projectRoot, ".gitignore");
+
+  let existing = "";
+  if (existsSync(gitignorePath)) {
+    existing = readFileSync(gitignorePath, "utf-8");
+  }
+
+  const missingEntries = NAX_GITIGNORE_ENTRIES.filter((entry) => !existing.includes(entry));
+
+  if (missingEntries.length === 0) {
+    logger.info("init", ".gitignore already has nax entries", { path: gitignorePath });
+    return;
+  }
+
+  const naxSection = `\n# nax — generated files\n${missingEntries.join("\n")}\n`;
+  await Bun.write(gitignorePath, existing + naxSection);
+  logger.info("init", "Updated .gitignore with nax entries", {
+    path: gitignorePath,
+    added: missingEntries,
+  });
 }
 
 /**
@@ -134,6 +168,9 @@ async function initProject(projectRoot: string): Promise<void> {
   } else {
     logger.info("init", "Project hooks directory already exists", { path: hooksDir });
   }
+
+  // Update .gitignore to include nax-specific entries
+  await updateGitignore(projectRoot);
 
   logger.info("init", "Project config initialized successfully", { path: projectDir });
 }
