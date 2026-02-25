@@ -1,5 +1,6 @@
 export type {
   TddSessionRole,
+  FailureCategory,
   IsolationCheck,
   VerifierDecision,
   TddSessionResult,

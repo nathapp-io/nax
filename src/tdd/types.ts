@@ -9,6 +9,13 @@
 /** TDD session role */
 export type TddSessionRole = "test-writer" | "implementer" | "verifier";
 
+/** Category of failure in a TDD run */
+export type FailureCategory =
+  | "isolation-violation"
+  | "session-failure"
+  | "tests-failing"
+  | "verifier-rejected";
+
 /** Isolation verification result */
 export interface IsolationCheck {
   /** Whether isolation was maintained (or warning accepted) */
@@ -67,4 +74,6 @@ export interface ThreeSessionTddResult {
   totalCost: number;
   /** Whether lite mode was used (skips test-writer/implementer isolation) */
   lite: boolean;
+  /** Category of failure (if success is false) */
+  failureCategory?: FailureCategory;
 }

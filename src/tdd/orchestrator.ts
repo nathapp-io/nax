@@ -22,7 +22,7 @@ import {
   buildTestWriterPrompt,
   buildVerifierPrompt,
 } from "./prompts";
-import type { TddSessionResult, TddSessionRole, ThreeSessionTddResult } from "./types";
+import type { FailureCategory, TddSessionResult, TddSessionRole, ThreeSessionTddResult } from "./types";
 
 /** Capture git state for isolation checking */
 async function captureGitRef(workdir: string): Promise<string> {
@@ -267,13 +267,17 @@ export async function runThreeSessionTdd(
   if (!session1.success) {
     needsHumanReview = true;
     reviewReason = "Test writer session failed or violated isolation";
-    logger.warn("tdd", "⚠️ Test writer session failed", { storyId: story.id, reviewReason });
+    // Distinguish isolation violation from crash/timeout
+    const failureCategory: FailureCategory =
+      session1.isolation && !session1.isolation.passed ? "isolation-violation" : "session-failure";
+    logger.warn("tdd", "⚠️ Test writer session failed", { storyId: story.id, reviewReason, failureCategory });
 
     return {
       success: false,
       sessions,
       needsHumanReview,
       reviewReason,
+      failureCategory,
       totalCost: sessions.reduce((sum, s) => sum + s.estimatedCost, 0),
       lite,
     };
@@ -319,6 +323,7 @@ export async function runThreeSessionTdd(
       sessions,
       needsHumanReview,
       reviewReason,
+      failureCategory: "isolation-violation" as FailureCategory,
       totalCost: sessions.reduce((sum, s) => sum + s.estimatedCost, 0),
       lite,
     };
@@ -360,6 +365,7 @@ export async function runThreeSessionTdd(
       sessions,
       needsHumanReview,
       reviewReason,
+      failureCategory: "session-failure" as FailureCategory,
       totalCost: sessions.reduce((sum, s) => sum + s.estimatedCost, 0),
       lite,
     };
@@ -386,6 +392,7 @@ export async function runThreeSessionTdd(
 
   // Check if all sessions succeeded based on their individual results
   let allSuccessful = sessions.every((s) => s.success);
+  let finalFailureCategory: FailureCategory | undefined;
 
   // BUG-22 Fix: Post-TDD independent test verification
   // If sessions had failures but we need to verify if tests actually pass,
@@ -412,6 +419,7 @@ export async function runThreeSessionTdd(
       logger.warn("tdd", "⚠️ Post-TDD verification: tests still failing", { storyId: story.id });
       needsHumanReview = true;
       reviewReason = "Verifier session identified issues and tests still fail";
+      finalFailureCategory = "tests-failing";
     }
   } else {
     // All sessions succeeded — no need for independent verification
@@ -434,6 +442,7 @@ export async function runThreeSessionTdd(
     sessions,
     needsHumanReview,
     reviewReason,
+    ...(finalFailureCategory !== undefined ? { failureCategory: finalFailureCategory } : {}),
     totalCost,
     lite,
   };

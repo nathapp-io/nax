@@ -990,3 +990,243 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
     expect(result.lite).toBe(true);
   });
 });
+
+// ─── T4: failureCategory tests ────────────────────────────────────────────────
+
+describe("runThreeSessionTdd — failureCategory", () => {
+  test("test-writer isolation failure sets failureCategory='isolation-violation'", async () => {
+    // Test-writer modifies source files → isolation violation
+    mockGitSpawn({
+      diffFiles: [
+        // Isolation check: test-writer touched source files!
+        ["src/user.ts", "test/user.test.ts"],
+        // getChangedFiles
+        ["src/user.ts", "test/user.test.ts"],
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },
+    ]);
+
+    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("isolation-violation");
+  });
+
+  test("test-writer zero files (non-auto strategy) sets failureCategory='isolation-violation'", async () => {
+    // In strict strategy, zero test files → isolation-violation category
+    mockGitSpawn({
+      diffFiles: [
+        ["requirements.md"],  // s1 isolation — no source violations
+        ["requirements.md"],  // s1 getChangedFiles — 0 test files
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },
+    ]);
+
+    const configWithStrictStrategy = {
+      ...DEFAULT_CONFIG,
+      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "strict" as const },
+    };
+
+    const result = await runThreeSessionTdd(
+      agent, story, configWithStrictStrategy, "/tmp/test", "balanced",
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("isolation-violation");
+  });
+
+  test("test-writer crash/timeout (non-isolation failure) sets failureCategory='session-failure'", async () => {
+    // Test-writer agent crashes/times out but isolation is clean
+    mockGitSpawn({
+      diffFiles: [
+        // Isolation check: only test files (passes)
+        ["test/user.test.ts"],
+        // getChangedFiles
+        ["test/user.test.ts"],
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: false, exitCode: 1, estimatedCost: 0.01 }, // Agent crash
+    ]);
+
+    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+
+    expect(result.success).toBe(false);
+    // isolation.passed=true but agent failed → session-failure
+    expect(result.failureCategory).toBe("session-failure");
+  });
+
+  test("implementer failure sets failureCategory='session-failure'", async () => {
+    mockGitSpawn({
+      diffFiles: [
+        // Session 1 isolation: OK
+        ["test/user.test.ts"],
+        // Session 1 getChangedFiles
+        ["test/user.test.ts"],
+        // Session 2 isolation: OK
+        ["src/user.ts"],
+        // Session 2 getChangedFiles
+        ["src/user.ts"],
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },   // test-writer OK
+      { success: false, exitCode: 1, estimatedCost: 0.02 }, // implementer fails
+    ]);
+
+    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("session-failure");
+  });
+
+  test("post-TDD test failure sets failureCategory='tests-failing'", async () => {
+    // Verifier session fails AND independent test run also fails
+    let revParseCount = 0;
+    let diffCount = 0;
+
+    const diffFiles = [
+      ["test/user.test.ts"],
+      ["test/user.test.ts"],
+      ["src/user.ts"],
+      ["src/user.ts"],
+      ["src/user.ts"],
+    ];
+
+    // @ts-ignore — mocking global
+    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+      if (cmd[0] === "/bin/sh" && cmd[2]?.includes("bun test")) {
+        return {
+          pid: 9999,
+          exited: Promise.resolve(1), // Tests FAIL
+          stdout: new Response("3 pass, 2 fail\n").body,
+          stderr: new Response("Test errors...\n").body,
+        };
+      }
+      if (cmd[0] === "git" && cmd[1] === "rev-parse") {
+        revParseCount++;
+        return {
+          exited: Promise.resolve(0),
+          stdout: new Response(`ref-${revParseCount}\n`).body,
+          stderr: new Response("").body,
+        };
+      }
+      if (cmd[0] === "git" && cmd[1] === "diff") {
+        const files = diffFiles[diffCount] || [];
+        diffCount++;
+        return {
+          exited: Promise.resolve(0),
+          stdout: new Response(files.join("\n") + "\n").body,
+          stderr: new Response("").body,
+        };
+      }
+      return originalSpawn(cmd, spawnOpts);
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCost: 0.02 },
+      { success: false, exitCode: 1, estimatedCost: 0.01 }, // verifier fails
+    ]);
+
+    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("tests-failing");
+  });
+
+  test("success path has no failureCategory", async () => {
+    mockGitSpawn({
+      diffFiles: [
+        ["test/user.test.ts"],
+        ["test/user.test.ts"],
+        ["src/user.ts"],
+        ["src/user.ts"],
+        ["src/user.ts"],
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCost: 0.02 },
+      { success: true, estimatedCost: 0.01 },
+    ]);
+
+    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+
+    expect(result.success).toBe(true);
+    expect(result.failureCategory).toBeUndefined();
+  });
+
+  test("zero-file auto-fallback (auto strategy) still works and succeeds without failureCategory", async () => {
+    // In auto strategy, zero test files → downgrade to lite → success
+    let revParseCount = 0;
+    let diffCount = 0;
+
+    const diffFiles = [
+      ["requirements.md"],    // s1 isolation (strict) — no source violations
+      ["requirements.md"],    // s1 getChangedFiles (strict) — 0 test files → fallback
+      ["test/user.test.ts"], // s1 getChangedFiles (lite re-run)
+      ["src/user.ts"],       // s2 getChangedFiles (lite re-run)
+      [],                    // s3 isolation (lite re-run)
+      [],                    // s3 getChangedFiles (lite re-run)
+    ];
+
+    // @ts-ignore — mocking global
+    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+      if (cmd[0] === "git" && cmd[1] === "rev-parse") {
+        revParseCount++;
+        return {
+          exited: Promise.resolve(0),
+          stdout: new Response(`ref-${revParseCount}\n`).body,
+          stderr: new Response("").body,
+        };
+      }
+      if (cmd[0] === "git" && cmd[1] === "checkout") {
+        return {
+          exited: Promise.resolve(0),
+          stdout: new Response("").body,
+          stderr: new Response("").body,
+        };
+      }
+      if (cmd[0] === "git" && cmd[1] === "diff") {
+        const files = diffFiles[diffCount] || [];
+        diffCount++;
+        return {
+          exited: Promise.resolve(0),
+          stdout: new Response(files.join("\n") + "\n").body,
+          stderr: new Response("").body,
+        };
+      }
+      return originalSpawn(cmd, spawnOpts);
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 }, // s1 strict test-writer
+      { success: true, estimatedCost: 0.01 }, // s1 lite test-writer
+      { success: true, estimatedCost: 0.02 }, // s2 lite implementer
+      { success: true, estimatedCost: 0.01 }, // s3 lite verifier
+    ]);
+
+    const configWithAutoStrategy = {
+      ...DEFAULT_CONFIG,
+      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "auto" as const },
+    };
+
+    const result = await runThreeSessionTdd(
+      agent, story, configWithAutoStrategy, "/tmp/test", "balanced",
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.lite).toBe(true);
+    expect(result.failureCategory).toBeUndefined(); // No failure category on success
+  });
+});
