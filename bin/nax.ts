@@ -116,7 +116,7 @@ program
     );
 
     // Write .gitignore
-    await Bun.write(join(naxDir, ".gitignore"), "# nax temp files\n*.tmp\n.paused.json\n");
+    await Bun.write(join(naxDir, ".gitignore"), "# nax temp files\n*.tmp\n.paused.json\n.nax-verifier-verdict.json\n");
 
     // Write starter constitution.md
     await Bun.write(
