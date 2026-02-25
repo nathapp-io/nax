@@ -13,6 +13,7 @@ import type { StoryMetrics } from "../metrics/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd/types";
 import type { ReviewResult } from "../review/types";
+import type { FailureCategory } from "../tdd/types";
 
 /**
  * Routing result from complexity classification
@@ -91,6 +92,8 @@ export interface PipelineContext {
   storyMetrics?: StoryMetrics[];
   /** Whether to retry the story in lite mode after a failure */
   retryAsLite?: boolean;
+  /** Failure category from TDD orchestrator (set by executionStage on TDD failure) */
+  tddFailureCategory?: FailureCategory;
 }
 
 /**

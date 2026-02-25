@@ -39,12 +39,29 @@ import {
 import type { UserStory } from "../prd";
 import { routeTask } from "../routing";
 import { clearCache as clearLlmCache, routeBatch as llmRouteBatch } from "../routing/strategies/llm";
+import type { FailureCategory } from "../tdd/types";
 import { type StoryBatch, precomputeBatchPlan } from "./batching";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "./escalation";
 import { acquireLock, formatProgress, getAllReadyStories, hookCtx, releaseLock } from "./helpers";
 import { captureGitRef, runPostAgentVerification } from "./post-verify";
 import { appendProgress } from "./progress";
 import { type RunStateSnapshot, buildStatusSnapshot, writeStatusFile } from "./status-file";
+
+/**
+ * Determine the outcome when max attempts are reached for an escalation.
+ *
+ * Returns 'pause' if the failure category requires human review
+ * (isolation-violation or verifier-rejected). For all other categories
+ * (session-failure, tests-failing, or no category) returns 'fail'.
+ *
+ * Exported for unit-testing without running the full runner loop.
+ */
+export function resolveMaxAttemptsOutcome(failureCategory?: FailureCategory): "pause" | "fail" {
+  if (failureCategory === "isolation-violation" || failureCategory === "verifier-rejected") {
+    return "pause";
+  }
+  return "fail";
+}
 
 /** Run options */
 
@@ -786,6 +803,10 @@ export async function run(options: RunOptions): Promise<RunResult> {
             const escalateWholeBatch = config.autoMode.escalation.escalateEntireBatch ?? true;
             const storiesToEscalate = isBatchExecution && escalateWholeBatch ? storiesToExecute : [story];
 
+            // Retrieve TDD-specific context flags set by executionStage
+            const escalateRetryAsLite = pipelineResult.context.retryAsLite === true;
+            const escalateFailureCategory = pipelineResult.context.tddFailureCategory;
+
             if (nextTier && config.autoMode.escalation.enabled) {
               const maxAttempts = calculateMaxIterations(config.autoMode.escalation.tierOrder);
               const canEscalate = storiesToEscalate.every((s) => (s.attempts ?? 0) < maxAttempts);
@@ -795,6 +816,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
                   logger?.warn("escalation", "Escalating story to next tier", {
                     storyId: s.id,
                     nextTier,
+                    retryAsLite: escalateRetryAsLite,
                   });
                 }
 
@@ -802,14 +824,25 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
                 prd.userStories = prd.userStories.map((s) => {
                   const shouldEscalate = storiesToEscalate.some((story) => story.id === s.id);
-                  return shouldEscalate
+                  if (!shouldEscalate) return s;
+
+                  const updatedRouting = s.routing
                     ? {
-                        ...s,
-                        attempts: (s.attempts ?? 0) + 1,
-                        routing: s.routing ? { ...s.routing, modelTier: nextTier } : undefined,
-                        priorErrors: [...(s.priorErrors || []), errorMessage],
+                        ...s.routing,
+                        modelTier: nextTier,
+                        // Downgrade TDD strategy to lite when retryAsLite is requested
+                        // (fires once on first isolation-violation; subsequent escalations
+                        // leave the strategy unchanged)
+                        ...(escalateRetryAsLite ? { testStrategy: "three-session-tdd-lite" as const } : {}),
                       }
-                    : s;
+                    : undefined;
+
+                  return {
+                    ...s,
+                    attempts: (s.attempts ?? 0) + 1,
+                    routing: updatedRouting,
+                    priorErrors: [...(s.priorErrors || []), errorMessage],
+                  };
                 });
                 await savePRD(prd, prdPath);
                 prdDirty = true;
@@ -819,17 +852,101 @@ export async function run(options: RunOptions): Promise<RunResult> {
                   await tryLlmBatchRoute(config, storiesToEscalate, "hybrid-re-route-pipeline");
                 }
               } else {
-                // Max attempts reached — mark as failed
+                // Max attempts reached — pause or fail based on failure category
+                const maxAttemptsOutcome = resolveMaxAttemptsOutcome(escalateFailureCategory);
+
+                if (maxAttemptsOutcome === "pause") {
+                  markStoryPaused(prd, story.id);
+                  await savePRD(prd, prdPath);
+                  prdDirty = true;
+
+                  logger?.warn("execution", "Story paused - max attempts reached (needs human review)", {
+                    storyId: story.id,
+                    failureCategory: escalateFailureCategory,
+                  });
+
+                  if (featureDir) {
+                    await appendProgress(featureDir, story.id, "paused", `${story.title} — Max attempts reached (needs human review)`);
+                  }
+
+                  await fireHook(
+                    hooks,
+                    "on-pause",
+                    hookCtx(feature, {
+                      storyId: story.id,
+                      reason: `Max attempts reached (${escalateFailureCategory ?? "unknown"} requires human review)`,
+                      cost: totalCost,
+                    }),
+                    workdir,
+                  );
+                } else {
+                  markStoryFailed(prd, story.id);
+                  await savePRD(prd, prdPath);
+                  prdDirty = true;
+
+                  logger?.error("execution", "Story failed - max attempts reached", {
+                    storyId: story.id,
+                    failureCategory: escalateFailureCategory,
+                  });
+
+                  if (featureDir) {
+                    await appendProgress(featureDir, story.id, "failed", `${story.title} — Max attempts reached`);
+                  }
+
+                  await fireHook(
+                    hooks,
+                    "on-story-fail",
+                    hookCtx(feature, {
+                      storyId: story.id,
+                      status: "failed",
+                      reason: "Max attempts reached",
+                      cost: totalCost,
+                    }),
+                    workdir,
+                  );
+                }
+
+                break;
+              }
+            } else {
+              // No next tier or escalation disabled — pause or fail based on failure category
+              const noTierOutcome = resolveMaxAttemptsOutcome(escalateFailureCategory);
+
+              if (noTierOutcome === "pause") {
+                markStoryPaused(prd, story.id);
+                await savePRD(prd, prdPath);
+                prdDirty = true;
+
+                logger?.warn("execution", "Story paused - no tier available (needs human review)", {
+                  storyId: story.id,
+                  failureCategory: escalateFailureCategory,
+                });
+
+                if (featureDir) {
+                  await appendProgress(featureDir, story.id, "paused", `${story.title} — Execution stopped (needs human review)`);
+                }
+
+                await fireHook(
+                  hooks,
+                  "on-pause",
+                  hookCtx(feature, {
+                    storyId: story.id,
+                    reason: `Execution stopped (${escalateFailureCategory ?? "unknown"} requires human review)`,
+                    cost: totalCost,
+                  }),
+                  workdir,
+                );
+              } else {
                 markStoryFailed(prd, story.id);
                 await savePRD(prd, prdPath);
                 prdDirty = true;
 
-                logger?.error("execution", "Story failed - max attempts reached", {
+                logger?.error("execution", "Story failed - execution failed", {
                   storyId: story.id,
                 });
 
                 if (featureDir) {
-                  await appendProgress(featureDir, story.id, "failed", `${story.title} — Max attempts reached`);
+                  await appendProgress(featureDir, story.id, "failed", `${story.title} — Execution failed`);
                 }
 
                 await fireHook(
@@ -838,39 +955,12 @@ export async function run(options: RunOptions): Promise<RunResult> {
                   hookCtx(feature, {
                     storyId: story.id,
                     status: "failed",
-                    reason: "Max attempts reached",
+                    reason: "Execution failed",
                     cost: totalCost,
                   }),
                   workdir,
                 );
-
-                break;
               }
-            } else {
-              // No next tier or escalation disabled — mark as failed
-              markStoryFailed(prd, story.id);
-              await savePRD(prd, prdPath);
-              prdDirty = true;
-
-              logger?.error("execution", "Story failed - execution failed", {
-                storyId: story.id,
-              });
-
-              if (featureDir) {
-                await appendProgress(featureDir, story.id, "failed", `${story.title} — Execution failed`);
-              }
-
-              await fireHook(
-                hooks,
-                "on-story-fail",
-                hookCtx(feature, {
-                  storyId: story.id,
-                  status: "failed",
-                  reason: "Execution failed",
-                  cost: totalCost,
-                }),
-                workdir,
-              );
 
               break;
             }
