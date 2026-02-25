@@ -540,3 +540,119 @@ describe("Pipeline Runner", () => {
     });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// routeTddFailure — TDD failure routing by failureCategory
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { routeTddFailure } from "../src/pipeline/stages/execution";
+import type { FailureCategory } from "../src/tdd/types";
+
+describe("routeTddFailure", () => {
+  /** Minimal context stub — only retryAsLite is used */
+  function makeCtx(): { retryAsLite?: boolean } {
+    return {};
+  }
+
+  describe("isolation-violation", () => {
+    test("strict mode (not lite) → escalate + sets ctx.retryAsLite=true", () => {
+      const ctx = makeCtx();
+      const result = routeTddFailure("isolation-violation", false, ctx, "isolation error");
+
+      expect(result.action).toBe("escalate");
+      expect(ctx.retryAsLite).toBe(true);
+    });
+
+    test("lite mode → escalate, does NOT set ctx.retryAsLite", () => {
+      const ctx = makeCtx();
+      const result = routeTddFailure("isolation-violation", true, ctx, "isolation error lite");
+
+      expect(result.action).toBe("escalate");
+      expect(ctx.retryAsLite).toBeUndefined();
+    });
+  });
+
+  describe("session-failure", () => {
+    test("returns escalate", () => {
+      const ctx = makeCtx();
+      const result = routeTddFailure("session-failure", false, ctx, "session crashed");
+
+      expect(result.action).toBe("escalate");
+      expect(ctx.retryAsLite).toBeUndefined();
+    });
+
+    test("lite mode also returns escalate", () => {
+      const ctx = makeCtx();
+      const result = routeTddFailure("session-failure", true, ctx);
+
+      expect(result.action).toBe("escalate");
+    });
+  });
+
+  describe("tests-failing", () => {
+    test("returns escalate", () => {
+      const ctx = makeCtx();
+      const result = routeTddFailure("tests-failing", false, ctx, "tests still failing");
+
+      expect(result.action).toBe("escalate");
+      expect(ctx.retryAsLite).toBeUndefined();
+    });
+  });
+
+  describe("verifier-rejected", () => {
+    test("returns escalate", () => {
+      const ctx = makeCtx();
+      const result = routeTddFailure("verifier-rejected", false, ctx, "verifier said no");
+
+      expect(result.action).toBe("escalate");
+      expect(ctx.retryAsLite).toBeUndefined();
+    });
+  });
+
+  describe("no failureCategory (backward compat)", () => {
+    test("undefined category → pause with reviewReason", () => {
+      const ctx = makeCtx();
+      const result = routeTddFailure(undefined, false, ctx, "human review needed");
+
+      expect(result.action).toBe("pause");
+      if (result.action === "pause") {
+        expect(result.reason).toBe("human review needed");
+      }
+      expect(ctx.retryAsLite).toBeUndefined();
+    });
+
+    test("undefined category with no reviewReason → pause with default message", () => {
+      const ctx = makeCtx();
+      const result = routeTddFailure(undefined, false, ctx);
+
+      expect(result.action).toBe("pause");
+      if (result.action === "pause") {
+        expect(result.reason).toBe("Three-session TDD requires review");
+      }
+    });
+
+    test("undefined category in lite mode → pause (not escalate)", () => {
+      const ctx = makeCtx();
+      const result = routeTddFailure(undefined, true, ctx, "lite mode no category");
+
+      expect(result.action).toBe("pause");
+    });
+  });
+
+  describe("retryAsLite is not set for non-isolation failures", () => {
+    const nonIsolationCategories: Array<FailureCategory | undefined> = [
+      "session-failure",
+      "tests-failing",
+      "verifier-rejected",
+      undefined,
+    ];
+
+    for (const category of nonIsolationCategories) {
+      test(`category=${category ?? "undefined"} does not set retryAsLite`, () => {
+        const ctx = makeCtx();
+        routeTddFailure(category, false, ctx);
+        expect(ctx.retryAsLite).toBeUndefined();
+      });
+    }
+  });
+});

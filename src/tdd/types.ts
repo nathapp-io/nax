@@ -9,22 +9,16 @@
 /** TDD session role */
 export type TddSessionRole = "test-writer" | "implementer" | "verifier";
 
-/** Failure categories for TDD sessions */
+/** Failure categories for TDD orchestrator results */
 export type FailureCategory =
-  /** Test writer failed to produce failing tests */
-  | "test-writer-no-failing-tests"
-  /** Implementer failed to make tests pass */
-  | "implementer-failed-tests"
-  /** Implementer modified existing tests (isolation violation) */
-  | "implementer-modified-tests"
-  /** Verifier rejected the implementation */
-  | "verifier-rejected"
-  /** Verifier detected illegitimate test modifications */
-  | "verifier-illegitimate-tests"
-  /** Execution timed out */
-  | "timeout"
-  /** Infrastructure or tool error */
-  | "system-error";
+  /** Test-writer violated file isolation or created no test files */
+  | "isolation-violation"
+  /** A session crashed, timed out, or the agent failed to produce usable output */
+  | "session-failure"
+  /** Tests were written and implemented but still fail after all sessions */
+  | "tests-failing"
+  /** Verifier explicitly rejected the implementation */
+  | "verifier-rejected";
 
 /** Isolation verification result */
 export interface IsolationCheck {

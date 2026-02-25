@@ -8,7 +8,15 @@
  * - `continue`: Agent session succeeded
  * - `fail`: Agent not found or prompt missing
  * - `escalate`: Agent session failed (will retry with higher tier)
- * - `pause`: Three-session TDD needs human review
+ * - `pause`: Three-session TDD fallback (backward compatible, no failureCategory)
+ *
+ * TDD failure routing by failureCategory:
+ * - `isolation-violation` (strict mode) → escalate + ctx.retryAsLite=true
+ * - `isolation-violation` (lite mode)   → escalate
+ * - `session-failure`                   → escalate
+ * - `tests-failing`                     → escalate
+ * - `verifier-rejected`                 → escalate
+ * - no category / unknown               → pause (backward compatible)
  *
  * @example
  * ```ts
@@ -25,8 +33,49 @@
 import { getAgent, validateAgentForTier } from "../../agents";
 import { resolveModel } from "../../config";
 import { getLogger } from "../../logger";
+import type { FailureCategory } from "../../tdd";
 import { runThreeSessionTdd } from "../../tdd";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+
+/**
+ * Determine the pipeline action for a failed TDD result, based on its failureCategory.
+ *
+ * This is a pure routing function — it mutates only `ctx.retryAsLite` when needed.
+ * Exported for unit testing.
+ *
+ * @param failureCategory  - Category set by the TDD orchestrator (or undefined)
+ * @param isLiteMode       - Whether the story was running in tdd-lite mode
+ * @param ctx              - Pipeline context (mutated: ctx.retryAsLite may be set)
+ * @param reviewReason     - Human-readable reason string from the TDD result
+ */
+export function routeTddFailure(
+  failureCategory: FailureCategory | undefined,
+  isLiteMode: boolean,
+  ctx: Pick<PipelineContext, "retryAsLite">,
+  reviewReason?: string,
+): StageResult {
+  if (failureCategory === "isolation-violation") {
+    // Strict mode: request a lite-mode retry on next attempt
+    if (!isLiteMode) {
+      ctx.retryAsLite = true;
+    }
+    return { action: "escalate" };
+  }
+
+  if (
+    failureCategory === "session-failure" ||
+    failureCategory === "tests-failing" ||
+    failureCategory === "verifier-rejected"
+  ) {
+    return { action: "escalate" };
+  }
+
+  // Default: no category or unknown — backward-compatible pause for human review
+  return {
+    action: "pause",
+    reason: reviewReason || "Three-session TDD requires review",
+  };
+}
 
 export const executionStage: PipelineStage = {
   name: "execution",
@@ -73,7 +122,7 @@ export const executionStage: PipelineStage = {
       );
 
       ctx.agentResult = {
-        success: tddResult.success && !tddResult.needsHumanReview,
+        success: tddResult.success,
         estimatedCost: tddResult.totalCost,
         rateLimited: false,
         output: "",
@@ -81,16 +130,18 @@ export const executionStage: PipelineStage = {
         durationMs: 0, // TDD result doesn't track total duration
       };
 
-      if (tddResult.needsHumanReview) {
-        logger.warn("execution", "Human review needed", {
-          storyId: ctx.story.id,
-          reason: tddResult.reviewReason,
-          lite: tddResult.lite,
-        });
-        return {
-          action: "pause",
-          reason: tddResult.reviewReason || "Three-session TDD requires review",
-        };
+      if (!tddResult.success) {
+        // Log needsHumanReview context when present
+        if (tddResult.needsHumanReview) {
+          logger.warn("execution", "Human review needed", {
+            storyId: ctx.story.id,
+            reason: tddResult.reviewReason,
+            lite: tddResult.lite,
+            failureCategory: tddResult.failureCategory,
+          });
+        }
+
+        return routeTddFailure(tddResult.failureCategory, isLiteMode, ctx, tddResult.reviewReason);
       }
 
       return { action: "continue" };
