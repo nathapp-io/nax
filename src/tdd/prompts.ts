@@ -1,4 +1,4 @@
-import type { Story, RunConfig } from "../execution/types";
+import type { UserStory } from "../prd";
 import type { TddSessionRole } from "./types";
 
 /**
@@ -6,13 +6,11 @@ import type { TddSessionRole } from "./types";
  */
 export function buildTddRolePrompt(
   role: TddSessionRole,
-  story: Story,
-  config: RunConfig,
-  currentBranch: string,
+  story: UserStory,
+  config?: { projectRoot: string },
+  currentBranch?: string,
 ): string {
-  const common = `You are a TDD agent (role: ${role}) working on the story: "${story.title}".
-Project root: ${config.projectRoot}
-Current branch: ${currentBranch}
+  const common = `You are a TDD agent (role: ${role}) working on the story: "${story.title}".${config ? `\nProject root: ${config.projectRoot}` : ""}${currentBranch ? `\nCurrent branch: ${currentBranch}` : ""}
 
 STORY DESCRIPTION:
 ${story.description}
@@ -56,33 +54,26 @@ YOUR TASK: Verify the implementation and tests.
 }
 
 /**
- * Prompt to build the verifier's verification instructions
+ * Prompt to build the verifier's verification instructions (Session 3)
  */
-export function buildVerifierPrompt(story: Story, config: RunConfig, currentBranch: string): string {
-  return `Verify the implementation of story: "${story.title}" on branch: ${currentBranch}.
-
-Project root: ${config.projectRoot}
+export function buildVerifierPrompt(story: UserStory): string {
+  return `# Session 3: Verify — "${story.title}"
 
 STORY:
 ${story.description}
 
-CRITERIA:
+ACCEPTANCE CRITERIA:
 ${story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
 
-TASKS:
-1. Run all tests and ensure they pass.
-2. Review the implementation in src/ for correctness and quality.
-3. Check for any illegitimate test modifications by the implementer (e.g., deleted tests).
-4. Fix any minor issues or missing edge cases.
-5. If everything looks good, approve the implementation.
+---
 
-Set \`approved: true\` if:
-- All tests pass
-- Implementation is clean and follows conventions
-- All acceptance criteria met
-- Any test modifications by implementer are legitimate fixes
+## TASKS
 
-If everything looks good, you can approve automatically. If legitimate fixes are needed (e.g., minor test adjustments for legitimate reasons), make them and document why.
+1. Run all tests and verify they pass.
+2. Review the implementation for quality and correctness.
+3. Check that the implementation meets all acceptance criteria.
+4. Check if test files were modified by the implementer (make sure they are legitimate fixes, NOT just loosening assertions to mask bugs).
+5. If any issues exist, fix them minimally — do NOT refactor.
 
 ---
 
@@ -143,4 +134,92 @@ Set \`approved: false\` when ANY of these conditions are true:
 - \`reasoning\` — brief summary of your overall assessment
 
 When done, commit any fixes with message: "fix: verify and adjust ${story.title}"`;
+}
+
+/**
+ * Prompt for a test-writer session (single-session lite variant)
+ */
+export function buildTestWriterPrompt(story: UserStory, contextMarkdown?: string): string {
+  const contextSection = contextMarkdown ? `\n\n---\n\n${contextMarkdown}` : "";
+  return `# Test Writer — "${story.title}"
+
+Your role: Write failing tests ONLY. Do NOT implement any source code.
+
+STORY:
+${story.description}
+
+ACCEPTANCE CRITERIA:
+${story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
+
+RULES:
+- Only create or modify files in the test/ directory.
+- Tests must fail (feature not implemented yet).
+- Use Bun test (describe/test/expect).
+- Cover all acceptance criteria.${contextSection}`;
+}
+
+/**
+ * Prompt for a test-writer lite session (no isolation enforcement)
+ */
+export function buildTestWriterLitePrompt(story: UserStory, contextMarkdown?: string): string {
+  const contextSection = contextMarkdown ? `\n\n---\n\n${contextMarkdown}` : "";
+  return `# Test Writer (Lite) — "${story.title}"
+
+Your role: Write failing tests. You may create minimal stubs in src/ if needed to make imports work, but do NOT implement real logic.
+
+STORY:
+${story.description}
+
+ACCEPTANCE CRITERIA:
+${story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
+
+RULES:
+- Primarily write test/ files.
+- Stub-only src/ files are allowed (empty exports, no logic).
+- Tests must fail for the right reasons (feature not implemented).
+- Use Bun test (describe/test/expect).${contextSection}`;
+}
+
+/**
+ * Prompt for an implementer session
+ */
+export function buildImplementerPrompt(story: UserStory, contextMarkdown?: string): string {
+  const contextSection = contextMarkdown ? `\n\n---\n\n${contextMarkdown}` : "";
+  return `# Implementer — "${story.title}"
+
+Your role: Make all failing tests pass.
+
+STORY:
+${story.description}
+
+ACCEPTANCE CRITERIA:
+${story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
+
+RULES:
+- Implement source code in src/ to make tests pass.
+- Do NOT modify test files.
+- Run tests frequently to track progress.
+- Goal: all tests green.${contextSection}`;
+}
+
+/**
+ * Prompt for an implementer lite session (combined test + implement)
+ */
+export function buildImplementerLitePrompt(story: UserStory, contextMarkdown?: string): string {
+  const contextSection = contextMarkdown ? `\n\n---\n\n${contextMarkdown}` : "";
+  return `# Implementer (Lite) — "${story.title}"
+
+Your role: Write tests AND implement the feature in a single session.
+
+STORY:
+${story.description}
+
+ACCEPTANCE CRITERIA:
+${story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
+
+RULES:
+- Write tests first (test/ directory), then implement (src/ directory).
+- All tests must pass by the end.
+- Use Bun test (describe/test/expect).
+- Goal: all tests green, all criteria met.${contextSection}`;
 }
