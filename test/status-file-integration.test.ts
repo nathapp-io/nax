@@ -10,7 +10,7 @@
  * - --status-file CLI option wiring (type-level)
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, afterEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as nodeFs from "node:fs";
 import * as os from "node:os";
@@ -59,7 +59,7 @@ class MockAgentAdapter implements AgentAdapter {
 }
 
 let cleanupAgent: () => void;
-beforeEach(() => {
+beforeAll(() => {
   const adapter = new MockAgentAdapter();
   ALL_AGENTS.push(adapter);
   cleanupAgent = () => {
@@ -67,7 +67,7 @@ beforeEach(() => {
     if (idx !== -1) ALL_AGENTS.splice(idx, 1);
   };
 });
-afterEach(() => { cleanupAgent?.(); });
+afterAll(() => { cleanupAgent?.(); });
 
 // ============================================================================
 // Helpers
