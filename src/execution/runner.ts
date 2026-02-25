@@ -44,6 +44,7 @@ import { calculateMaxIterations, escalateTier, getTierConfig } from "./escalatio
 import { acquireLock, formatProgress, getAllReadyStories, hookCtx, releaseLock } from "./helpers";
 import { captureGitRef, runPostAgentVerification } from "./post-verify";
 import { appendProgress } from "./progress";
+import { type RunStateSnapshot, buildStatusSnapshot, writeStatusFile } from "./status-file";
 
 /** Run options */
 
@@ -116,6 +117,8 @@ export interface RunOptions {
   useBatch?: boolean;
   /** Optional event emitter for TUI integration */
   eventEmitter?: PipelineEventEmitter;
+  /** Path to write a machine-readable JSON status file. Omit to skip writing. */
+  statusFile?: string;
 }
 
 /** Run result */
@@ -131,7 +134,7 @@ export interface RunResult {
  * Main execution loop
  */
 export async function run(options: RunOptions): Promise<RunResult> {
-  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useBatch = true, eventEmitter } = options;
+  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useBatch = true, eventEmitter, statusFile } = options;
   const startTime = Date.now();
   const runStartedAt = new Date().toISOString();
   const runId = `run-${new Date().toISOString().replace(/[:.]/g, "-")}`;
@@ -141,6 +144,38 @@ export async function run(options: RunOptions): Promise<RunResult> {
   const allStoryMetrics: StoryMetrics[] = [];
   // ADR-003: Track timeout retries per story for --detectOpenHandles escalation
   const timeoutRetryCountMap = new Map<string, number>();
+
+  // ── Status file state (updated at each write point) ─────────────────────
+  let _runStatus: RunStateSnapshot["runStatus"] = "running";
+  let _prd: RunStateSnapshot["prd"] | null = null;
+  let _currentStory: RunStateSnapshot["currentStory"] = null;
+
+  async function writeStatus(overrides: Partial<RunStateSnapshot> = {}): Promise<void> {
+    if (!statusFile || !_prd) return;
+    const safeLogger = getSafeLogger();
+    try {
+      const state: RunStateSnapshot = {
+        runId,
+        feature,
+        startedAt: runStartedAt,
+        runStatus: _runStatus,
+        dryRun,
+        prd: _prd,
+        totalCost,
+        costLimit: config.execution.costLimit === Number.POSITIVE_INFINITY ? null : config.execution.costLimit,
+        iterations,
+        startTimeMs: startTime,
+        currentStory: _currentStory,
+        ...overrides,
+      };
+      await writeStatusFile(statusFile, buildStatusSnapshot(state));
+    } catch (err) {
+      safeLogger?.warn("status-file", "Failed to write status file (non-fatal)", {
+        path: statusFile,
+        error: (err as Error).message,
+      });
+    }
+  }
 
   // Acquire lock to prevent concurrent execution
   const logger = getSafeLogger();
@@ -200,6 +235,12 @@ export async function run(options: RunOptions): Promise<RunResult> {
     let prd = await loadPRD(prdPath);
     let prdDirty = false; // Track if PRD needs reloading
     const counts = countStories(prd);
+
+    // ── Status write point 1: run started ───────────────────────────────────
+    _prd = prd;
+    _runStatus = "running";
+    _currentStory = null;
+    await writeStatus();
 
     // Update reporters with correct totalStories count
     for (const reporter of reporters) {
@@ -452,6 +493,19 @@ export async function run(options: RunOptions): Promise<RunResult> {
       );
 
       if (dryRun) {
+        // ── Status write point 2 (dry-run): current story set ───────────────
+        _prd = prd;
+        _currentStory = {
+          storyId: story.id,
+          title: story.title,
+          complexity: routing.complexity,
+          tddStrategy: routing.testStrategy,
+          model: routing.modelTier,
+          attempt: (story.attempts ?? 0) + 1,
+          phase: "routing",
+        };
+        await writeStatus();
+
         for (const s of storiesToExecute) {
           logger?.info("execution", "[DRY RUN] Would execute agent here", {
             storyId: s.id,
@@ -468,6 +522,12 @@ export async function run(options: RunOptions): Promise<RunResult> {
         storiesCompleted += storiesToExecute.length;
         prdDirty = true;
         await savePRD(prd, prdPath);
+
+        // ── Status write point 3 (dry-run): story done, clear current ────────
+        _prd = prd;
+        _currentStory = null;
+        await writeStatus();
+
         continue;
       }
 
@@ -497,6 +557,19 @@ export async function run(options: RunOptions): Promise<RunResult> {
         testStrategy: routing.testStrategy,
         isBatch: isBatchExecution,
       });
+
+      // ── Status write point 2: before story execution ────────────────────────
+      _prd = prd;
+      _currentStory = {
+        storyId: story.id,
+        title: story.title,
+        complexity: routing.complexity,
+        tddStrategy: routing.testStrategy,
+        model: routing.modelTier,
+        attempt: (story.attempts ?? 0) + 1,
+        phase: "routing",
+      };
+      await writeStatus();
 
       // Run pipeline
       const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, eventEmitter);
@@ -806,11 +879,16 @@ export async function run(options: RunOptions): Promise<RunResult> {
         }
       }
 
-      // ADR-003: Stall detection — all remaining stories blocked or dependent on blocked
+      // ── Status write point 3: after story complete / fail / pause ──────────
       if (prdDirty) {
         prd = await loadPRD(prdPath);
         prdDirty = false;
       }
+      _prd = prd;
+      _currentStory = null;
+      await writeStatus();
+
+      // ADR-003: Stall detection — all remaining stories blocked or dependent on blocked
       if (isStalled(prd)) {
         const summary = generateHumanHaltSummary(prd);
         logger?.error("execution", "Execution stalled", {
@@ -1109,6 +1187,12 @@ export async function run(options: RunOptions): Promise<RunResult> {
         }
       }
     }
+
+    // ── Status write point 4: run end ──────────────────────────────────────
+    _prd = prd;
+    _currentStory = null;
+    _runStatus = isComplete(prd) ? "completed" : isStalled(prd) ? "stalled" : "running";
+    await writeStatus();
 
     return {
       success: isComplete(prd),
