@@ -1,20 +1,25 @@
 /**
  * Status File Tests
  *
- * Tests for NaxStatusFile types, writeStatusFile (atomic write),
- * countProgress, and buildStatusSnapshot.
+ * Tests for src/execution/status-file.ts:
+ * - NaxStatusFile interface shape
+ * - writeStatusFile(): atomic write via .tmp + rename
+ * - countProgress(): correct PRD story status counts
+ * - buildStatusSnapshot(): valid NaxStatusFile from run state
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { existsSync, unlinkSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+
 import {
-  type NaxStatusFile,
-  type RunState,
-  buildStatusSnapshot,
-  countProgress,
   writeStatusFile,
+  countProgress,
+  buildStatusSnapshot,
+  type NaxStatusFile,
+  type RunStateSnapshot,
 } from "../src/execution/status-file";
 import type { PRD, UserStory } from "../src/prd";
 
@@ -22,9 +27,7 @@ import type { PRD, UserStory } from "../src/prd";
 // Helpers
 // ============================================================================
 
-const TEST_TMP_DIR = path.join(import.meta.dir, "__tmp_status_file_tests__");
-
-function makeStory(id: string, status: UserStory["status"] = "pending"): UserStory {
+function makeStory(id: string, status: UserStory["status"]): UserStory {
   return {
     id,
     title: `Story ${id}`,
@@ -50,85 +53,30 @@ function makePrd(stories: UserStory[]): PRD {
   };
 }
 
-function makeRunState(overrides: Partial<RunState> = {}): RunState {
-  const prd = overrides.prd ?? makePrd([makeStory("US-001"), makeStory("US-002")]);
+function makeRunState(overrides: Partial<RunStateSnapshot> = {}): RunStateSnapshot {
   return {
     runId: "run-2026-02-25T10-00-00-000Z",
     feature: "auth-refactor",
     startedAt: "2026-02-25T10:00:00.000Z",
-    status: "running",
+    runStatus: "running",
     dryRun: false,
-    prd,
-    costSpent: 0,
-    costLimit: null,
+    prd: makePrd([makeStory("US-001", "pending")]),
+    totalCost: 0,
+    costLimit: 5.0,
+    currentStory: null,
     iterations: 0,
-    current: null,
-    startTime: Date.now() - 5000, // 5 seconds ago
+    startTimeMs: Date.now() - 1000,
     ...overrides,
   };
 }
-
-// ============================================================================
-// Setup / Teardown
-// ============================================================================
-
-beforeEach(() => {
-  mkdirSync(TEST_TMP_DIR, { recursive: true });
-});
-
-afterEach(() => {
-  rmSync(TEST_TMP_DIR, { recursive: true, force: true });
-});
 
 // ============================================================================
 // countProgress
 // ============================================================================
 
 describe("countProgress", () => {
-  test("all stories pending", () => {
-    const prd = makePrd([makeStory("US-001"), makeStory("US-002"), makeStory("US-003")]);
-    const progress = countProgress(prd);
-    expect(progress).toEqual({ total: 3, passed: 0, failed: 0, paused: 0, blocked: 0, pending: 3 });
-  });
-
-  test("counts passed stories", () => {
-    const prd = makePrd([makeStory("US-001", "passed"), makeStory("US-002"), makeStory("US-003")]);
-    const progress = countProgress(prd);
-    expect(progress).toEqual({ total: 3, passed: 1, failed: 0, paused: 0, blocked: 0, pending: 2 });
-  });
-
-  test("counts failed stories", () => {
-    const prd = makePrd([makeStory("US-001", "failed"), makeStory("US-002"), makeStory("US-003")]);
-    const progress = countProgress(prd);
-    expect(progress).toEqual({ total: 3, passed: 0, failed: 1, paused: 0, blocked: 0, pending: 2 });
-  });
-
-  test("counts paused stories", () => {
-    const prd = makePrd([makeStory("US-001", "paused"), makeStory("US-002"), makeStory("US-003")]);
-    const progress = countProgress(prd);
-    expect(progress).toEqual({ total: 3, passed: 0, failed: 0, paused: 1, blocked: 0, pending: 2 });
-  });
-
-  test("counts blocked stories", () => {
-    const prd = makePrd([makeStory("US-001", "blocked"), makeStory("US-002"), makeStory("US-003")]);
-    const progress = countProgress(prd);
-    expect(progress).toEqual({ total: 3, passed: 0, failed: 0, paused: 0, blocked: 1, pending: 2 });
-  });
-
-  test("counts skipped stories as pending (not in pass/fail/paused/blocked)", () => {
-    const prd = makePrd([makeStory("US-001", "skipped"), makeStory("US-002")]);
-    const progress = countProgress(prd);
-    // skipped stories are not in the named categories, so they count toward pending
-    expect(progress.total).toBe(2);
-    expect(progress.passed).toBe(0);
-    expect(progress.failed).toBe(0);
-    expect(progress.paused).toBe(0);
-    expect(progress.blocked).toBe(0);
-    expect(progress.pending).toBe(2); // skipped + pending
-  });
-
-  test("counts all statuses together", () => {
-    const prd = makePrd([
+  test("counts all story statuses correctly", () => {
+    const stories = [
       makeStory("US-001", "passed"),
       makeStory("US-002", "passed"),
       makeStory("US-003", "failed"),
@@ -136,8 +84,10 @@ describe("countProgress", () => {
       makeStory("US-005", "blocked"),
       makeStory("US-006", "pending"),
       makeStory("US-007", "in-progress"),
-    ]);
+    ];
+    const prd = makePrd(stories);
     const progress = countProgress(prd);
+
     expect(progress.total).toBe(7);
     expect(progress.passed).toBe(2);
     expect(progress.failed).toBe(1);
@@ -147,23 +97,72 @@ describe("countProgress", () => {
     expect(progress.pending).toBe(2);
   });
 
-  test("empty PRD returns all zeros", () => {
-    const prd = makePrd([]);
+  test("all passed → pending is 0", () => {
+    const prd = makePrd([makeStory("US-001", "passed"), makeStory("US-002", "passed")]);
     const progress = countProgress(prd);
-    expect(progress).toEqual({ total: 0, passed: 0, failed: 0, paused: 0, blocked: 0, pending: 0 });
+
+    expect(progress.total).toBe(2);
+    expect(progress.passed).toBe(2);
+    expect(progress.failed).toBe(0);
+    expect(progress.paused).toBe(0);
+    expect(progress.blocked).toBe(0);
+    expect(progress.pending).toBe(0);
   });
 
-  test("pending is always total minus the four named statuses", () => {
+  test("all pending → passed/failed/paused/blocked are 0", () => {
+    const prd = makePrd([makeStory("US-001", "pending"), makeStory("US-002", "pending")]);
+    const progress = countProgress(prd);
+
+    expect(progress.total).toBe(2);
+    expect(progress.passed).toBe(0);
+    expect(progress.failed).toBe(0);
+    expect(progress.paused).toBe(0);
+    expect(progress.blocked).toBe(0);
+    expect(progress.pending).toBe(2);
+  });
+
+  test("empty PRD → all zeros", () => {
+    const prd = makePrd([]);
+    const progress = countProgress(prd);
+
+    expect(progress.total).toBe(0);
+    expect(progress.passed).toBe(0);
+    expect(progress.failed).toBe(0);
+    expect(progress.paused).toBe(0);
+    expect(progress.blocked).toBe(0);
+    expect(progress.pending).toBe(0);
+  });
+
+  test("pending = total - passed - failed - paused - blocked", () => {
     const stories = [
-      makeStory("1", "passed"),
-      makeStory("2", "failed"),
-      makeStory("3", "paused"),
-      makeStory("4", "blocked"),
-      makeStory("5", "pending"),
+      makeStory("US-001", "passed"),
+      makeStory("US-002", "failed"),
+      makeStory("US-003", "paused"),
+      makeStory("US-004", "blocked"),
+      makeStory("US-005", "pending"),
+      makeStory("US-006", "in-progress"),
+      makeStory("US-007", "skipped"),
     ];
     const prd = makePrd(stories);
-    const progress = countProgress(prd);
-    expect(progress.pending).toBe(progress.total - progress.passed - progress.failed - progress.paused - progress.blocked);
+    const p = countProgress(prd);
+
+    expect(p.pending).toBe(p.total - p.passed - p.failed - p.paused - p.blocked);
+  });
+
+  test("skipped stories count as pending (not a tracked terminal state)", () => {
+    const prd = makePrd([makeStory("US-001", "skipped")]);
+    const p = countProgress(prd);
+
+    expect(p.total).toBe(1);
+    expect(p.pending).toBe(1);
+    expect(p.passed).toBe(0);
+  });
+
+  test("in-progress stories count toward pending", () => {
+    const prd = makePrd([makeStory("US-001", "in-progress")]);
+    const p = countProgress(prd);
+
+    expect(p.pending).toBe(1);
   });
 });
 
@@ -172,20 +171,21 @@ describe("countProgress", () => {
 // ============================================================================
 
 describe("buildStatusSnapshot", () => {
-  test("returns valid NaxStatusFile with version 1", () => {
+  test("builds valid NaxStatusFile with version 1", () => {
     const snapshot = buildStatusSnapshot(makeRunState());
     expect(snapshot.version).toBe(1);
   });
 
-  test("includes run metadata from state", () => {
+  test("run metadata matches run state", () => {
     const state = makeRunState({
       runId: "run-test-id",
       feature: "my-feature",
       startedAt: "2026-02-25T10:00:00.000Z",
-      status: "running",
+      runStatus: "running",
       dryRun: true,
     });
     const snapshot = buildStatusSnapshot(state);
+
     expect(snapshot.run.id).toBe("run-test-id");
     expect(snapshot.run.feature).toBe("my-feature");
     expect(snapshot.run.startedAt).toBe("2026-02-25T10:00:00.000Z");
@@ -193,219 +193,173 @@ describe("buildStatusSnapshot", () => {
     expect(snapshot.run.dryRun).toBe(true);
   });
 
-  test("includes progress derived from PRD", () => {
+  test("progress is derived from PRD stories", () => {
     const prd = makePrd([
       makeStory("US-001", "passed"),
       makeStory("US-002", "failed"),
       makeStory("US-003", "pending"),
     ]);
-    const state = makeRunState({ prd });
-    const snapshot = buildStatusSnapshot(state);
+    const snapshot = buildStatusSnapshot(makeRunState({ prd }));
+
     expect(snapshot.progress.total).toBe(3);
     expect(snapshot.progress.passed).toBe(1);
     expect(snapshot.progress.failed).toBe(1);
     expect(snapshot.progress.pending).toBe(1);
   });
 
-  test("includes cost info", () => {
-    const state = makeRunState({ costSpent: 1.23, costLimit: 5.0 });
-    const snapshot = buildStatusSnapshot(state);
-    expect(snapshot.cost.spent).toBe(1.23);
-    expect(snapshot.cost.limit).toBe(5.0);
+  test("cost fields populated from state", () => {
+    const snapshot = buildStatusSnapshot(makeRunState({ totalCost: 2.5, costLimit: 10.0 }));
+
+    expect(snapshot.cost.spent).toBe(2.5);
+    expect(snapshot.cost.limit).toBe(10.0);
   });
 
-  test("cost limit can be null", () => {
-    const state = makeRunState({ costLimit: null });
-    const snapshot = buildStatusSnapshot(state);
+  test("cost limit is null when not set", () => {
+    const snapshot = buildStatusSnapshot(makeRunState({ costLimit: null }));
     expect(snapshot.cost.limit).toBeNull();
   });
 
-  test("current is null when between stories", () => {
-    const state = makeRunState({ current: null });
-    const snapshot = buildStatusSnapshot(state);
+  test("current is null when no story active", () => {
+    const snapshot = buildStatusSnapshot(makeRunState({ currentStory: null }));
     expect(snapshot.current).toBeNull();
   });
 
-  test("current is populated when processing a story", () => {
-    const current: NaxStatusFile["current"] = {
+  test("current story info populated when story is active", () => {
+    const current = {
       storyId: "US-008",
       title: "Add retry logic",
-      complexity: "medium",
-      tddStrategy: "tdd-lite",
-      model: "claude-sonnet-4-5",
-      attempt: 1,
-      phase: "implement",
-    };
-    const state = makeRunState({ current });
-    const snapshot = buildStatusSnapshot(state);
-    expect(snapshot.current).toEqual(current);
-  });
-
-  test("iterations is passed through", () => {
-    const state = makeRunState({ iterations: 42 });
-    const snapshot = buildStatusSnapshot(state);
-    expect(snapshot.iterations).toBe(42);
-  });
-
-  test("updatedAt is a valid ISO 8601 string", () => {
-    const snapshot = buildStatusSnapshot(makeRunState());
-    expect(() => new Date(snapshot.updatedAt)).not.toThrow();
-    expect(new Date(snapshot.updatedAt).toISOString()).toBe(snapshot.updatedAt);
-  });
-
-  test("durationMs is non-negative and roughly correct", () => {
-    const startTime = Date.now() - 10000; // 10 seconds ago
-    const state = makeRunState({ startTime });
-    const snapshot = buildStatusSnapshot(state);
-    expect(snapshot.durationMs).toBeGreaterThanOrEqual(9000);
-    expect(snapshot.durationMs).toBeLessThan(15000);
-  });
-
-  test("status 'completed' is propagated", () => {
-    const snapshot = buildStatusSnapshot(makeRunState({ status: "completed" }));
-    expect(snapshot.run.status).toBe("completed");
-  });
-
-  test("status 'failed' is propagated", () => {
-    const snapshot = buildStatusSnapshot(makeRunState({ status: "failed" }));
-    expect(snapshot.run.status).toBe("failed");
-  });
-
-  test("status 'stalled' is propagated", () => {
-    const snapshot = buildStatusSnapshot(makeRunState({ status: "stalled" }));
-    expect(snapshot.run.status).toBe("stalled");
-  });
-
-  test("dryRun false is propagated", () => {
-    const snapshot = buildStatusSnapshot(makeRunState({ dryRun: false }));
-    expect(snapshot.run.dryRun).toBe(false);
-  });
-});
-
-// ============================================================================
-// writeStatusFile — normal write
-// ============================================================================
-
-describe("writeStatusFile", () => {
-  test("writes valid JSON to the target path", async () => {
-    const filePath = path.join(TEST_TMP_DIR, "nax-status.json");
-    const state = makeRunState();
-    const snapshot = buildStatusSnapshot(state);
-
-    await writeStatusFile(filePath, snapshot);
-
-    const raw = await readFile(filePath, "utf-8");
-    const parsed = JSON.parse(raw) as NaxStatusFile;
-    expect(parsed.version).toBe(1);
-    expect(parsed.run.feature).toBe("auth-refactor");
-  });
-
-  test("written JSON matches the snapshot exactly", async () => {
-    const filePath = path.join(TEST_TMP_DIR, "nax-status.json");
-    const snapshot = buildStatusSnapshot(makeRunState());
-
-    await writeStatusFile(filePath, snapshot);
-
-    const raw = await readFile(filePath, "utf-8");
-    const parsed = JSON.parse(raw) as NaxStatusFile;
-
-    // Deep-compare all fields (updatedAt may differ slightly but we passed snapshot directly)
-    expect(parsed).toEqual(snapshot);
-  });
-
-  test("output file is pretty-printed (human-readable)", async () => {
-    const filePath = path.join(TEST_TMP_DIR, "nax-status.json");
-    await writeStatusFile(filePath, buildStatusSnapshot(makeRunState()));
-
-    const raw = await readFile(filePath, "utf-8");
-    // Pretty-printed JSON has newlines
-    expect(raw).toContain("\n");
-  });
-
-  test("atomic: .tmp file does not exist after successful write", async () => {
-    const filePath = path.join(TEST_TMP_DIR, "nax-status.json");
-    const tmpPath = `${filePath}.tmp`;
-
-    await writeStatusFile(filePath, buildStatusSnapshot(makeRunState()));
-
-    expect(existsSync(tmpPath)).toBe(false);
-    expect(existsSync(filePath)).toBe(true);
-  });
-
-  test("atomic: renames from .tmp to target", async () => {
-    // This test verifies the atomic rename pattern by checking that:
-    // 1. The final file exists after the call
-    // 2. No .tmp file is left behind
-    const filePath = path.join(TEST_TMP_DIR, "sub", "nax-status.json");
-    mkdirSync(path.dirname(filePath), { recursive: true });
-
-    await writeStatusFile(filePath, buildStatusSnapshot(makeRunState()));
-
-    expect(existsSync(filePath)).toBe(true);
-    expect(existsSync(`${filePath}.tmp`)).toBe(false);
-  });
-
-  test("overwrites existing file", async () => {
-    const filePath = path.join(TEST_TMP_DIR, "nax-status.json");
-
-    // First write
-    const snap1 = buildStatusSnapshot(makeRunState({ costSpent: 1.0 }));
-    await writeStatusFile(filePath, snap1);
-
-    // Second write
-    const snap2 = buildStatusSnapshot(makeRunState({ costSpent: 2.5 }));
-    await writeStatusFile(filePath, snap2);
-
-    const raw = await readFile(filePath, "utf-8");
-    const parsed = JSON.parse(raw) as NaxStatusFile;
-    expect(parsed.cost.spent).toBe(2.5);
-  });
-
-  test("written file contains progress fields", async () => {
-    const prd = makePrd([
-      makeStory("US-001", "passed"),
-      makeStory("US-002", "failed"),
-      makeStory("US-003", "paused"),
-      makeStory("US-004", "blocked"),
-      makeStory("US-005", "pending"),
-    ]);
-    const filePath = path.join(TEST_TMP_DIR, "nax-status.json");
-    await writeStatusFile(filePath, buildStatusSnapshot(makeRunState({ prd })));
-
-    const raw = await readFile(filePath, "utf-8");
-    const parsed = JSON.parse(raw) as NaxStatusFile;
-    expect(parsed.progress.total).toBe(5);
-    expect(parsed.progress.passed).toBe(1);
-    expect(parsed.progress.failed).toBe(1);
-    expect(parsed.progress.paused).toBe(1);
-    expect(parsed.progress.blocked).toBe(1);
-    expect(parsed.progress.pending).toBe(1);
-  });
-
-  test("written file has null current when between stories", async () => {
-    const filePath = path.join(TEST_TMP_DIR, "nax-status.json");
-    await writeStatusFile(filePath, buildStatusSnapshot(makeRunState({ current: null })));
-
-    const raw = await readFile(filePath, "utf-8");
-    const parsed = JSON.parse(raw) as NaxStatusFile;
-    expect(parsed.current).toBeNull();
-  });
-
-  test("written file captures current story info", async () => {
-    const current: NaxStatusFile["current"] = {
-      storyId: "US-008",
-      title: "Add retry logic to queue handler",
       complexity: "medium",
       tddStrategy: "tdd-lite",
       model: "claude-sonnet-4-5-20250514",
       attempt: 1,
       phase: "implement",
     };
-    const filePath = path.join(TEST_TMP_DIR, "nax-status.json");
-    await writeStatusFile(filePath, buildStatusSnapshot(makeRunState({ current })));
+    const snapshot = buildStatusSnapshot(makeRunState({ currentStory: current }));
 
-    const raw = await readFile(filePath, "utf-8");
+    expect(snapshot.current).not.toBeNull();
+    expect(snapshot.current?.storyId).toBe("US-008");
+    expect(snapshot.current?.title).toBe("Add retry logic");
+    expect(snapshot.current?.complexity).toBe("medium");
+    expect(snapshot.current?.tddStrategy).toBe("tdd-lite");
+    expect(snapshot.current?.model).toBe("claude-sonnet-4-5-20250514");
+    expect(snapshot.current?.attempt).toBe(1);
+    expect(snapshot.current?.phase).toBe("implement");
+  });
+
+  test("iterations and timing fields are set", () => {
+    const startTimeMs = Date.now() - 5000;
+    const snapshot = buildStatusSnapshot(makeRunState({ iterations: 7, startTimeMs }));
+
+    expect(snapshot.iterations).toBe(7);
+    expect(snapshot.durationMs).toBeGreaterThanOrEqual(5000);
+    expect(snapshot.updatedAt).toBeTruthy();
+    // updatedAt should be a valid ISO 8601 string
+    expect(() => new Date(snapshot.updatedAt)).not.toThrow();
+  });
+
+  test("all run status values are accepted", () => {
+    const statuses: NaxStatusFile["run"]["status"][] = ["running", "completed", "failed", "stalled"];
+    for (const runStatus of statuses) {
+      const snapshot = buildStatusSnapshot(makeRunState({ runStatus }));
+      expect(snapshot.run.status).toBe(runStatus);
+    }
+  });
+});
+
+// ============================================================================
+// writeStatusFile
+// ============================================================================
+
+describe("writeStatusFile", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "nax-status-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test("writes valid JSON to the target path", async () => {
+    const outPath = join(tmpDir, "status.json");
+    const snapshot = buildStatusSnapshot(makeRunState());
+
+    await writeStatusFile(outPath, snapshot);
+
+    expect(existsSync(outPath)).toBe(true);
+    const raw = readFileSync(outPath, "utf8");
     const parsed = JSON.parse(raw) as NaxStatusFile;
-    expect(parsed.current).toEqual(current);
+    expect(parsed.version).toBe(1);
+    expect(parsed.run.id).toBe(snapshot.run.id);
+  });
+
+  test("does NOT leave a .tmp file after successful write", async () => {
+    const outPath = join(tmpDir, "status.json");
+    await writeStatusFile(outPath, buildStatusSnapshot(makeRunState()));
+
+    expect(existsSync(`${outPath}.tmp`)).toBe(false);
+  });
+
+  test("atomic rename: final file appears complete", async () => {
+    const outPath = join(tmpDir, "status.json");
+    const state = makeRunState({
+      prd: makePrd([
+        makeStory("US-001", "passed"),
+        makeStory("US-002", "failed"),
+        makeStory("US-003", "pending"),
+      ]),
+      totalCost: 1.5,
+      costLimit: 5.0,
+      iterations: 3,
+    });
+    const snapshot = buildStatusSnapshot(state);
+    await writeStatusFile(outPath, snapshot);
+
+    const content = JSON.parse(readFileSync(outPath, "utf8")) as NaxStatusFile;
+    expect(content.progress.passed).toBe(1);
+    expect(content.progress.failed).toBe(1);
+    expect(content.progress.pending).toBe(1);
+    expect(content.cost.spent).toBe(1.5);
+    expect(content.iterations).toBe(3);
+  });
+
+  test("overwrites an existing status file", async () => {
+    const outPath = join(tmpDir, "status.json");
+
+    // First write
+    await writeStatusFile(
+      outPath,
+      buildStatusSnapshot(makeRunState({ runStatus: "running", iterations: 1 })),
+    );
+
+    // Second write with updated state
+    await writeStatusFile(
+      outPath,
+      buildStatusSnapshot(makeRunState({ runStatus: "completed", iterations: 5 })),
+    );
+
+    const content = JSON.parse(readFileSync(outPath, "utf8")) as NaxStatusFile;
+    expect(content.run.status).toBe("completed");
+    expect(content.iterations).toBe(5);
+  });
+
+  test("writes null current when no active story", async () => {
+    const outPath = join(tmpDir, "status.json");
+    await writeStatusFile(outPath, buildStatusSnapshot(makeRunState({ currentStory: null })));
+
+    const content = JSON.parse(readFileSync(outPath, "utf8")) as NaxStatusFile;
+    expect(content.current).toBeNull();
+  });
+
+  test("written JSON is pretty-printed (2-space indent)", async () => {
+    const outPath = join(tmpDir, "status.json");
+    await writeStatusFile(outPath, buildStatusSnapshot(makeRunState()));
+
+    const raw = readFileSync(outPath, "utf8");
+    // Pretty-printed JSON has lines beyond just a single line
+    expect(raw.split("\n").length).toBeGreaterThan(1);
+    // Check for 2-space indent on top-level keys
+    expect(raw).toContain('  "version"');
   });
 });

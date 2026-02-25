@@ -1,18 +1,21 @@
 /**
- * Status File — Machine-readable JSON run status
+ * Status File — Machine-readable run state for external tooling
  *
- * Writes an atomic JSON status file for external consumers (CI/CD, orchestrators, dashboards).
- * Updated at key points during a run so consumers can poll without parsing logs.
+ * Writes a JSON status file that external tools (CI/CD, orchestrators,
+ * dashboards) can poll to monitor nax runs without parsing logs.
+ *
+ * Atomic writes: write to <path>.tmp then rename to <path>
  */
 
 import { rename } from "node:fs/promises";
-import type { PRD } from "../prd";
+import type { NaxConfig } from "../config";
+import type { PRD, StoryStatus, UserStory } from "../prd";
 
 // ============================================================================
-// Types
+// NaxStatusFile Interface
 // ============================================================================
 
-/** Machine-readable status file schema v1 */
+/** Machine-readable status file written during nax runs */
 export interface NaxStatusFile {
   /** Schema version for forward compatibility */
   version: 1;
@@ -23,15 +26,15 @@ export interface NaxStatusFile {
     id: string;
     /** Feature name */
     feature: string;
-    /** ISO 8601 start time */
+    /** ISO 8601 start timestamp */
     startedAt: string;
-    /** Run lifecycle status */
+    /** Current run status */
     status: "running" | "completed" | "failed" | "stalled";
     /** Whether this is a dry run */
     dryRun: boolean;
   };
 
-  /** Aggregate progress */
+  /** Aggregate progress counts */
   progress: {
     /** Total stories in PRD */
     total: number;
@@ -39,72 +42,48 @@ export interface NaxStatusFile {
     passed: number;
     /** Stories that failed */
     failed: number;
-    /** Stories that are paused (need human review) */
+    /** Stories that are paused */
     paused: number;
-    /** Stories that are blocked (dependency failed) */
+    /** Stories that are blocked */
     blocked: number;
-    /** Stories not yet processed: total - passed - failed - paused - blocked */
+    /** Stories not yet processed (total - passed - failed - paused - blocked) */
     pending: number;
   };
 
   /** Cost tracking */
   cost: {
-    /** USD accumulated so far */
+    /** Accumulated cost in USD */
     spent: number;
-    /** Cost limit from config (null if unlimited) */
+    /** Cost limit from config (null if not set) */
     limit: number | null;
   };
 
-  /** Current story being processed (null if between stories or run is complete) */
+  /** Current story being processed (null if between stories or at run boundaries) */
   current: {
+    /** Story ID */
     storyId: string;
+    /** Story title */
     title: string;
-    /** simple | medium | complex */
+    /** Complexity level */
     complexity: string;
-    /** test-after | tdd-lite | three-session-tdd */
+    /** TDD strategy */
     tddStrategy: string;
     /** Resolved model name */
     model: string;
     /** Current attempt number (1-based) */
     attempt: number;
-    /** routing | test-write | implement | verify | review */
+    /** Current phase */
     phase: string;
   } | null;
 
-  /** Total iteration count */
+  /** Number of loop iterations completed */
   iterations: number;
 
-  /** ISO 8601 timestamp of last update */
+  /** ISO 8601 last-updated timestamp */
   updatedAt: string;
 
-  /** Duration of run so far in milliseconds */
+  /** Elapsed duration in milliseconds */
   durationMs: number;
-}
-
-/** State snapshot passed to buildStatusSnapshot() */
-export interface RunState {
-  /** Unique run identifier */
-  runId: string;
-  /** Feature name */
-  feature: string;
-  /** ISO 8601 start timestamp */
-  startedAt: string;
-  /** Current run lifecycle status */
-  status: "running" | "completed" | "failed" | "stalled";
-  /** Whether this is a dry run */
-  dryRun: boolean;
-  /** Loaded PRD for progress counting */
-  prd: PRD;
-  /** Total cost spent so far (USD) */
-  costSpent: number;
-  /** Cost limit from config (null if unlimited) */
-  costLimit: number | null;
-  /** Iteration count */
-  iterations: number;
-  /** Currently active story info (null between stories) */
-  current: NaxStatusFile["current"];
-  /** Epoch ms when run started (for durationMs calculation) */
-  startTime: number;
 }
 
 // ============================================================================
@@ -112,8 +91,10 @@ export interface RunState {
 // ============================================================================
 
 /**
- * Count PRD story states into the progress shape.
- * Derives all counts from the PRD's userStories array.
+ * Derive progress counts from PRD story statuses.
+ *
+ * Counts each story by its current status. `pending` is computed as
+ * everything not in the four explicit terminal/waiting states.
  */
 export function countProgress(prd: PRD): NaxStatusFile["progress"] {
   const stories = prd.userStories;
@@ -123,48 +104,98 @@ export function countProgress(prd: PRD): NaxStatusFile["progress"] {
   const blocked = stories.filter((s) => s.status === "blocked").length;
   const total = stories.length;
   const pending = total - passed - failed - paused - blocked;
+
   return { total, passed, failed, paused, blocked, pending };
 }
 
 // ============================================================================
-// Snapshot Builder
+// Run State (for buildStatusSnapshot)
 // ============================================================================
 
 /**
- * Build a complete NaxStatusFile snapshot from current run state.
- * Safe to call at any point during the run; all values are derived from RunState.
+ * Snapshot of current run state used to build NaxStatusFile.
+ *
+ * This is a value-only snapshot — callers pass in what they have at the
+ * current write point. The runner constructs this inline from local variables.
  */
-export function buildStatusSnapshot(state: RunState): NaxStatusFile {
+export interface RunStateSnapshot {
+  /** Unique run identifier */
+  runId: string;
+  /** Feature name */
+  feature: string;
+  /** ISO 8601 start timestamp */
+  startedAt: string;
+  /** Current run status */
+  runStatus: NaxStatusFile["run"]["status"];
+  /** Whether this is a dry run */
+  dryRun: boolean;
+  /** Loaded PRD (for progress counting) */
+  prd: PRD;
+  /** Accumulated cost in USD */
+  totalCost: number;
+  /** Cost limit from config (or null) */
+  costLimit: number | null;
+  /** Currently-executing story info (null between stories) */
+  currentStory: {
+    storyId: string;
+    title: string;
+    complexity: string;
+    tddStrategy: string;
+    model: string;
+    attempt: number;
+    phase: string;
+  } | null;
+  /** Number of loop iterations */
+  iterations: number;
+  /** Run start time as ms epoch (for computing durationMs) */
+  startTimeMs: number;
+}
+
+// ============================================================================
+// buildStatusSnapshot
+// ============================================================================
+
+/**
+ * Build a NaxStatusFile object from current run state.
+ *
+ * Derives progress from PRD story statuses. Sets updatedAt and durationMs
+ * from the current time. Does not write to disk — call writeStatusFile() for that.
+ */
+export function buildStatusSnapshot(state: RunStateSnapshot): NaxStatusFile {
+  const now = Date.now();
   return {
     version: 1,
     run: {
       id: state.runId,
       feature: state.feature,
       startedAt: state.startedAt,
-      status: state.status,
+      status: state.runStatus,
       dryRun: state.dryRun,
     },
     progress: countProgress(state.prd),
     cost: {
-      spent: state.costSpent,
+      spent: state.totalCost,
       limit: state.costLimit,
     },
-    current: state.current,
+    current: state.currentStory,
     iterations: state.iterations,
-    updatedAt: new Date().toISOString(),
-    durationMs: Date.now() - state.startTime,
+    updatedAt: new Date(now).toISOString(),
+    durationMs: now - state.startTimeMs,
   };
 }
 
 // ============================================================================
-// Writer
+// Atomic Writer
 // ============================================================================
 
 /**
  * Atomically write a NaxStatusFile to disk.
  *
- * Writes to `<path>.tmp` first, then renames to `<path>`.
- * This prevents external consumers from reading partial/corrupt JSON.
+ * Writes to `<path>.tmp` first, then renames to `<path>` to prevent
+ * consumers from reading partial JSON during the write.
+ *
+ * @param filePath - Destination path for the status file
+ * @param status   - Status file content to write
  */
 export async function writeStatusFile(filePath: string, status: NaxStatusFile): Promise<void> {
   const tmpPath = `${filePath}.tmp`;
