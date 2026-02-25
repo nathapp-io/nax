@@ -557,19 +557,19 @@ describe("buildTestWriterLitePrompt", () => {
 });
 
 describe("buildImplementerLitePrompt", () => {
-  test("has no file restriction rules (does not say DO NOT modify test files)", () => {
+  test("has no file restriction rules (does not say Only create or modify files in the test/ directory)", () => {
     const prompt = buildImplementerLitePrompt(story);
-    expect(prompt).not.toContain("DO NOT modify any test files");
+    expect(prompt).not.toContain("Only create or modify files in the test/ directory");
   });
 
-  test("has no file restriction rules (does not say ONLY create/modify source files)", () => {
+  test("has no file restriction rules (does not say Implement source code in src/ to make tests pass)", () => {
     const prompt = buildImplementerLitePrompt(story);
-    expect(prompt).not.toContain("ONLY create/modify source files");
+    expect(prompt).not.toContain("Implement source code in src/ to make tests pass");
   });
 
-  test("allows adjusting test files", () => {
+  test("allows writing tests and implementing", () => {
     const prompt = buildImplementerLitePrompt(story);
-    expect(prompt).toContain("may adjust test files");
+    expect(prompt).toContain("Write tests AND implement");
   });
 
   test("includes story title and acceptance criteria", () => {
@@ -593,8 +593,7 @@ describe("buildImplementerLitePrompt", () => {
 
   test("still instructs to make tests pass", () => {
     const prompt = buildImplementerLitePrompt(story);
-    expect(prompt).toContain("make");
-    expect(prompt).toContain("tests pass");
+    expect(prompt.toLowerCase()).toContain("all tests must pass");
   });
 });
 
@@ -624,12 +623,12 @@ describe("strict vs lite prompt comparison", () => {
     const lite = buildTestWriterLitePrompt(story);
 
     // Strict has hard NO rule on source files
-    expect(strict).toContain("DO NOT create or modify any source files");
-    expect(lite).not.toContain("DO NOT create or modify any source files");
+    expect(strict).toContain("Only create or modify files in the test/ directory");
+    expect(lite).not.toContain("Only create or modify files in the test/ directory");
 
     // Lite explicitly allows reading source files
-    expect(lite).toContain("MAY read source files");
-    expect(strict).not.toContain("MAY read source files");
+    expect(lite).toContain("You may create minimal stubs in src/");
+    expect(strict).not.toContain("You may create minimal stubs in src/");
   });
 
   test("strict implementer has harder isolation rules than lite", () => {
@@ -637,12 +636,12 @@ describe("strict vs lite prompt comparison", () => {
     const lite = buildImplementerLitePrompt(story);
 
     // Strict bans test file modifications
-    expect(strict).toContain("DO NOT modify any test files");
-    expect(lite).not.toContain("DO NOT modify any test files");
+    expect(strict).toContain("Do NOT modify test files");
+    expect(lite).not.toContain("Do NOT modify test files");
 
     // Lite allows adjusting test files
-    expect(lite).toContain("may adjust test files");
-    expect(strict).not.toContain("may adjust test files");
+    expect(lite).toContain("Write tests AND implement");
+    expect(strict).not.toContain("Write tests AND implement");
   });
 });
 

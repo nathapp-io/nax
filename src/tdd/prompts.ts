@@ -165,7 +165,7 @@ export function buildTestWriterLitePrompt(story: UserStory, contextMarkdown?: st
   const contextSection = contextMarkdown ? `\n\n---\n\n${contextMarkdown}` : "";
   return `# Test Writer (Lite) — "${story.title}"
 
-Your role: Write failing tests. You may create minimal stubs in src/ if needed to make imports work, but do NOT implement real logic.
+Your role: Write failing tests. You MAY read source files and MAY import from source files to ensure correct types/interfaces. You may create minimal stubs in src/ if needed to make imports work, but do NOT implement real logic.
 
 STORY:
 ${story.description}
@@ -174,7 +174,7 @@ ACCEPTANCE CRITERIA:
 ${story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
 
 RULES:
-- Primarily write test/ files.
+- Primarily CREATE test files in the test/ directory.
 - Stub-only src/ files are allowed (empty exports, no logic).
 - Tests must fail for the right reasons (feature not implemented).
 - Use Bun test (describe/test/expect).${contextSection}`;

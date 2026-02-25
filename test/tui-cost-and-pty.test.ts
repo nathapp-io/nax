@@ -113,7 +113,7 @@ describe("usePty - Line Length Limits (MEM-1)", () => {
 
     // Verify truncation logic for complete lines
     expect(usePtySource).toContain("line.length > MAX_LINE_LENGTH");
-    expect(usePtySource).toContain('line.slice(0, MAX_LINE_LENGTH) + "…"');
+    expect(usePtySource).toContain("`${line.slice(0, MAX_LINE_LENGTH)}…` : line");
 
     // Verify truncation logic for incomplete lines (currentLine)
     expect(usePtySource).toContain("if (currentLine.length > MAX_LINE_LENGTH)");
