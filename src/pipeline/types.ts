@@ -89,6 +89,8 @@ export interface PipelineContext {
   storyStartTime?: string;
   /** Collected story metrics (set by completionStage) */
   storyMetrics?: StoryMetrics[];
+  /** Whether to retry the story in lite mode after a failure */
+  retryAsLite?: boolean;
 }
 
 /**

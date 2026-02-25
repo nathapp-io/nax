@@ -9,6 +9,23 @@
 /** TDD session role */
 export type TddSessionRole = "test-writer" | "implementer" | "verifier";
 
+/** Failure categories for TDD sessions */
+export type FailureCategory =
+  /** Test writer failed to produce failing tests */
+  | "test-writer-no-failing-tests"
+  /** Implementer failed to make tests pass */
+  | "implementer-failed-tests"
+  /** Implementer modified existing tests (isolation violation) */
+  | "implementer-modified-tests"
+  /** Verifier rejected the implementation */
+  | "verifier-rejected"
+  /** Verifier detected illegitimate test modifications */
+  | "verifier-illegitimate-tests"
+  /** Execution timed out */
+  | "timeout"
+  /** Infrastructure or tool error */
+  | "system-error";
+
 /** Isolation verification result */
 export interface IsolationCheck {
   /** Whether isolation was maintained (or warning accepted) */
@@ -57,6 +74,8 @@ export interface TddSessionResult {
 export interface ThreeSessionTddResult {
   /** Overall success */
   success: boolean;
+  /** Category of failure (if success is false) */
+  failureCategory?: FailureCategory;
   /** Individual session results */
   sessions: TddSessionResult[];
   /** Whether human review is needed */
