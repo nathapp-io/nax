@@ -6,6 +6,7 @@
 
 import type { Complexity, TestStrategy } from "../config";
 import type { ModelTier } from "../config";
+import type { FailureCategory } from "../tdd/types";
 
 /** User story status */
 export type StoryStatus = "pending" | "in-progress" | "passed" | "failed" | "skipped" | "blocked" | "paused";
@@ -70,6 +71,8 @@ export interface UserStory {
   priorErrors?: string[];
   /** Custom context strings */
   customContext?: string[];
+  /** Category of the last failure (set when story is marked failed) */
+  failureCategory?: FailureCategory;
 }
 
 // ============================================================================

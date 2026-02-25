@@ -1,5 +1,3 @@
-import type { Story } from "../execution/types";
-
 /** TDD session role */
 export type TddSessionRole = "test-writer" | "implementer" | "verifier";
 
@@ -16,14 +14,16 @@ export type FailureCategory =
 
 /** Isolation verification result */
 export interface IsolationCheck {
-  /** Whether isolation passed (no illegal files modified) */
+  /** Whether isolation passed (no hard violations) */
   passed: boolean;
-  /** Files modified by the agent */
-  filesModified: string[];
-  /** Expected test files (writer only) */
-  testFilesExpected?: string[];
-  /** Illegal files modified (not tests/new) */
-  illegalFilesModified: string[];
+  /** Hard violation files (files that must not be modified) */
+  violations: string[];
+  /** Soft violation files (allowed-path overrides, warning only) */
+  softViolations?: string[];
+  /** Warning files (e.g., implementer touching test files slightly) */
+  warnings?: string[];
+  /** Human-readable description of what was checked */
+  description?: string;
 }
 
 /** Result of a single TDD session */
@@ -32,16 +32,20 @@ export interface TddSessionResult {
   role: TddSessionRole;
   /** Whether session completed successfully */
   success: boolean;
-  /** Git branch created/used */
-  branch: string;
-  /** ISO timestamp */
-  timestamp: string;
-  /** Error message (if success=false) */
-  error?: string;
   /** Isolation check results (if applicable) */
   isolation?: IsolationCheck;
   /** Cost of this session (USD) */
-  cost: number;
+  estimatedCost: number;
+  /** Files changed by this session (from git diff) */
+  filesChanged: string[];
+  /** Duration of this session in milliseconds */
+  durationMs: number;
+  /** Git branch created/used (optional legacy field) */
+  branch?: string;
+  /** ISO timestamp (optional legacy field) */
+  timestamp?: string;
+  /** Error message (if success=false) */
+  error?: string;
   /** Number of tests written/passed/failed */
   tests?: {
     total: number;
