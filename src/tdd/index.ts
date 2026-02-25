@@ -2,7 +2,6 @@ export type {
   TddSessionRole,
   FailureCategory,
   IsolationCheck,
-  VerifierDecision,
   TddSessionResult,
   ThreeSessionTddResult,
 } from "./types";
