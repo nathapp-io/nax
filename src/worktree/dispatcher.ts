@@ -1,5 +1,5 @@
 import { WorktreeManager } from "./manager";
-import type { Story } from "../prd/types";
+import type { UserStory } from "../prd/types";
 
 export interface DispatchResult {
   storyId: string;
@@ -11,16 +11,16 @@ export interface DispatchResult {
 export class ParallelDispatcher {
   constructor(
     private worktreeManager: WorktreeManager,
-    private runPipeline: (args: { workdir: string; story: Story }) => Promise<boolean>
+    private runPipeline: (args: { workdir: string; story: UserStory }) => Promise<boolean>
   ) {}
 
-  async dispatch (
+  async dispatch(
     projectRoot: string,
-    stories: Story[],
+    stories: UserStory[],
     maxConcurrency: number
   ): Promise<DispatchResult[]> {
     const results: DispatchResult[] = [];
-    const independentBatches = this.getBatchesstories(stories);
+    const independentBatches = this.getBatches(stories);
 
     for (const batch of independentBatches) {
       const batchPromises = batch.map(async (story) => {
@@ -30,30 +30,30 @@ export class ParallelDispatcher {
           const success = await this.runPipeline({ workdir: worktreePath, story });
           return { storyId: story.id, success, worktreePath };
         } catch (err) {
-          return { 
-            storyId: story.id, 
-            success: false, 
-            worktreePath, 
-            error: err	instanceof Error ? err.message : String(err)
+          return {
+            storyId: story.id,
+            success: false,
+            worktreePath,
+            error: err instanceof Error ? err.message : String(err)
           };
         }
       });
 
-      const batchResults = await p-limit(maxConcurrency, batchPromises);
+      const batchResults = await pLimit(maxConcurrency, batchPromises);
       results.push(...batchResults);
     }
 
     return results;
   }
 
-  private getBatchesstories(stories: Story[]): Story[][] {
+  private getBatches(stories: UserStory[]): UserStory[][] {
     // TODO: Implement dependency-aware batching
     return [stories];
   }
 }
 
 // Helper for concurrency limiting (Simplified p-limit)
-async function p-limit<T>(concurrency: number, promises: Promise<T>[]): Promise<T[]> {
+async function pLimit<T>(concurrency: number, promises: Promise<T>[]): Promise<T[]> {
   const results: T[] = [];
   const executing: Promise<void>[] = [];
   for (const p of promises) {

@@ -47,6 +47,7 @@ import { acquireLock, formatProgress, getAllReadyStories, hookCtx, releaseLock }
 import { runPostAgentVerification } from "./post-verify";
 import { appendProgress } from "./progress";
 import { StatusWriter } from "./status-writer";
+import { executeParallel } from "./parallel";
 
 /**
  * Determine the outcome when max attempts are reached for an escalation.
@@ -155,7 +156,7 @@ export interface RunResult {
  * Main execution loop
  */
 export async function run(options: RunOptions): Promise<RunResult> {
-  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useBatch = true, eventEmitter, statusFile } = options;
+  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useBatch = true, eventEmitter, statusFile, parallel } = options;
   const startTime = Date.now();
   const runStartedAt = new Date().toISOString();
   const runId = `run-${new Date().toISOString().replace(/[:.]/g, "-")}`;
@@ -165,6 +166,10 @@ export async function run(options: RunOptions): Promise<RunResult> {
   const allStoryMetrics: StoryMetrics[] = [];
   // ADR-003: Track timeout retries per story for --detectOpenHandles escalation
   const timeoutRetryCountMap = new Map<string, number>();
+
+  // Determine parallel execution mode
+  const useParallel = parallel !== undefined;
+  const maxConcurrency = parallel === 0 ? (os.cpus().length || 4) : (parallel ?? 0);
 
   // ── Status writer (encapsulates status file state and write logic) ───────
   const statusWriter = new StatusWriter(statusFile, config, {
@@ -286,6 +291,155 @@ export async function run(options: RunOptions): Promise<RunResult> {
       await tryLlmBatchRoute(config, readyStories, "routing");
     }
 
+    // ── Parallel Execution Path (when --parallel is set) ──────────────────────
+    if (options.parallel !== undefined) {
+      const readyStories = getAllReadyStories(prd);
+      if (readyStories.length === 0) {
+        logger?.info("parallel", "No stories ready for parallel execution");
+      } else {
+        const maxConcurrency = options.parallel === 0 ? os.cpus().length : Math.max(1, options.parallel);
+
+        logger?.info("parallel", "Starting parallel execution mode", {
+          totalStories: readyStories.length,
+          maxConcurrency,
+        });
+
+        // Update status with parallel info
+        statusWriter.setPrd(prd);
+        await statusWriter.update(totalCost, iterations, {
+          parallel: {
+            enabled: true,
+            maxConcurrency,
+            activeStories: readyStories.map((s) => ({
+              storyId: s.id,
+              worktreePath: path.join(workdir, ".nax-wt", s.id),
+            })),
+          },
+        });
+
+        try {
+          const parallelResult = await executeParallel(
+            readyStories,
+            prdPath,
+            workdir,
+            config,
+            hooks,
+            pluginRegistry,
+            prd,
+            featureDir,
+            options.parallel,
+            eventEmitter,
+          );
+
+          prd = parallelResult.updatedPrd;
+          storiesCompleted += parallelResult.storiesCompleted;
+          totalCost += parallelResult.totalCost;
+          prdDirty = true;
+
+          logger?.info("parallel", "Parallel execution complete", {
+            storiesCompleted: parallelResult.storiesCompleted,
+            totalCost: parallelResult.totalCost,
+          });
+
+          // Clear parallel status
+          statusWriter.setPrd(prd);
+          await statusWriter.update(totalCost, iterations, {
+            parallel: {
+              enabled: true,
+              maxConcurrency,
+              activeStories: [],
+            },
+          });
+        } catch (error) {
+          logger?.error("parallel", "Parallel execution failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+
+          // Clear parallel status on error
+          await statusWriter.update(totalCost, iterations, {
+            parallel: undefined,
+          });
+
+          throw error;
+        }
+
+        // Check if all stories are complete after parallel execution
+        if (isComplete(prd)) {
+          logger?.info("execution", "All stories complete!", {
+            feature,
+            totalCost,
+          });
+          await fireHook(hooks, "on-complete", hookCtx(feature, { status: "complete", cost: totalCost }), workdir);
+
+          // Skip to metrics and cleanup
+          const durationMs = Date.now() - startTime;
+          const runCompletedAt = new Date().toISOString();
+          const runMetrics = {
+            runId,
+            feature,
+            startedAt: runStartedAt,
+            completedAt: runCompletedAt,
+            totalCost,
+            totalStories: allStoryMetrics.length,
+            storiesCompleted,
+            storiesFailed: countStories(prd).failed,
+            totalDurationMs: durationMs,
+            stories: allStoryMetrics,
+          };
+
+          await saveRunMetrics(workdir, runMetrics);
+
+          const finalCounts = countStories(prd);
+          logger?.info("run.complete", "Feature execution completed", {
+            runId,
+            feature,
+            success: true,
+            iterations,
+            totalStories: finalCounts.total,
+            storiesCompleted,
+            storiesFailed: finalCounts.failed,
+            storiesPending: finalCounts.pending,
+            totalCost,
+            durationMs,
+          });
+
+          for (const reporter of reporters) {
+            if (reporter.onRunEnd) {
+              try {
+                await reporter.onRunEnd({
+                  runId,
+                  totalDurationMs: durationMs,
+                  totalCost,
+                  storySummary: {
+                    completed: storiesCompleted,
+                    failed: finalCounts.failed,
+                    skipped: finalCounts.skipped,
+                    paused: finalCounts.paused,
+                  },
+                });
+              } catch (error) {
+                logger?.warn("plugins", `Reporter '${reporter.name}' onRunEnd failed`, { error });
+              }
+            }
+          }
+
+          statusWriter.setPrd(prd);
+          statusWriter.setCurrentStory(null);
+          statusWriter.setRunStatus("completed");
+          await statusWriter.update(totalCost, iterations);
+
+          return {
+            success: true,
+            iterations,
+            storiesCompleted,
+            totalCost,
+            durationMs,
+          };
+        }
+      }
+    }
+
+    // ── Sequential Execution Path (default) ────────────────────────────────────
     // Main loop
     while (iterations < config.execution.maxIterations) {
       iterations++;

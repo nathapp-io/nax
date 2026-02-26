@@ -85,6 +85,19 @@ export interface NaxStatusFile {
 
   /** Elapsed duration in milliseconds */
   durationMs: number;
+
+  /** Parallel execution info (present when --parallel is used) */
+  parallel?: {
+    /** Whether parallel mode is enabled */
+    enabled: boolean;
+    /** Max concurrent sessions */
+    maxConcurrency: number;
+    /** Currently executing stories in parallel */
+    activeStories: Array<{
+      storyId: string;
+      worktreePath: string;
+    }>;
+  };
 }
 
 // ============================================================================
@@ -150,6 +163,8 @@ export interface RunStateSnapshot {
   iterations: number;
   /** Run start time as ms epoch (for computing durationMs) */
   startTimeMs: number;
+  /** Parallel execution info (optional) */
+  parallel?: NaxStatusFile["parallel"];
 }
 
 // ============================================================================
@@ -164,7 +179,7 @@ export interface RunStateSnapshot {
  */
 export function buildStatusSnapshot(state: RunStateSnapshot): NaxStatusFile {
   const now = Date.now();
-  return {
+  const snapshot: NaxStatusFile = {
     version: 1,
     run: {
       id: state.runId,
@@ -183,6 +198,12 @@ export function buildStatusSnapshot(state: RunStateSnapshot): NaxStatusFile {
     updatedAt: new Date(now).toISOString(),
     durationMs: now - state.startTimeMs,
   };
+
+  if (state.parallel) {
+    snapshot.parallel = state.parallel;
+  }
+
+  return snapshot;
 }
 
 // ============================================================================
