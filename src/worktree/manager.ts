@@ -1,0 +1,214 @@
+import { join } from "node:path";
+import { existsSync, symlinkSync } from "node:fs";
+import type { WorktreeInfo } from "./types";
+
+export class WorktreeManager {
+	/**
+	 * Creates a git worktree at .nax-wt/<storyId>/ with branch nax/<storyId>
+	 * and symlinks node_modules and .env from project root
+	 */
+	async create(projectRoot: string, storyId: string): Promise<void> {
+		const worktreePath = join(projectRoot, ".nax-wt", storyId);
+		const branchName = `nax/${storyId}`;
+
+		try {
+			// Create worktree with new branch
+			const proc = Bun.spawn(
+				["git", "worktree", "add", worktreePath, "-b", branchName],
+				{
+					cwd: projectRoot,
+					stdout: "pipe",
+					stderr: "pipe",
+				},
+			);
+
+			const exitCode = await proc.exited;
+			if (exitCode !== 0) {
+				const stderr = await new Response(proc.stderr).text();
+				throw new Error(
+					`Failed to create worktree: ${stderr || "unknown error"}`,
+				);
+			}
+		} catch (error) {
+			if (error instanceof Error) {
+				// Enhance error messages for common scenarios
+				if (error.message.includes("not a git repository")) {
+					throw new Error(
+						`Not a git repository: ${projectRoot}`,
+					);
+				}
+				if (error.message.includes("already exists")) {
+					throw new Error(
+						`Worktree for story ${storyId} already exists at ${worktreePath}`,
+					);
+				}
+				throw error;
+			}
+			throw new Error(`Failed to create worktree: ${String(error)}`);
+		}
+
+		// Symlink node_modules if it exists
+		const nodeModulesSource = join(projectRoot, "node_modules");
+		if (existsSync(nodeModulesSource)) {
+			const nodeModulesTarget = join(worktreePath, "node_modules");
+			try {
+				symlinkSync(nodeModulesSource, nodeModulesTarget, "dir");
+			} catch (error) {
+				// Clean up worktree if symlinking fails
+				await this.remove(projectRoot, storyId);
+				throw new Error(
+					`Failed to symlink node_modules: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		}
+
+		// Symlink .env if it exists
+		const envSource = join(projectRoot, ".env");
+		if (existsSync(envSource)) {
+			const envTarget = join(worktreePath, ".env");
+			try {
+				symlinkSync(envSource, envTarget, "file");
+			} catch (error) {
+				// Clean up worktree if symlinking fails
+				await this.remove(projectRoot, storyId);
+				throw new Error(
+					`Failed to symlink .env: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		}
+	}
+
+	/**
+	 * Removes worktree and deletes branch
+	 */
+	async remove(projectRoot: string, storyId: string): Promise<void> {
+		const worktreePath = join(projectRoot, ".nax-wt", storyId);
+		const branchName = `nax/${storyId}`;
+
+		// Remove worktree
+		try {
+			const proc = Bun.spawn(
+				["git", "worktree", "remove", worktreePath, "--force"],
+				{
+					cwd: projectRoot,
+					stdout: "pipe",
+					stderr: "pipe",
+				},
+			);
+
+			const exitCode = await proc.exited;
+			if (exitCode !== 0) {
+				const stderr = await new Response(proc.stderr).text();
+				if (
+					stderr.includes("not found") ||
+					stderr.includes("does not exist") ||
+					stderr.includes("no such worktree") ||
+					stderr.includes("is not a working tree")
+				) {
+					throw new Error(
+						`Worktree not found: ${worktreePath}`,
+					);
+				}
+				throw new Error(
+					`Failed to remove worktree: ${stderr || "unknown error"}`,
+				);
+			}
+		} catch (error) {
+			if (error instanceof Error) {
+				throw error;
+			}
+			throw new Error(`Failed to remove worktree: ${String(error)}`);
+		}
+
+		// Delete branch
+		try {
+			const proc = Bun.spawn(
+				["git", "branch", "-D", branchName],
+				{
+					cwd: projectRoot,
+					stdout: "pipe",
+					stderr: "pipe",
+				},
+			);
+
+			const exitCode = await proc.exited;
+			if (exitCode !== 0) {
+				const stderr = await new Response(proc.stderr).text();
+				// Don't fail if branch doesn't exist
+				if (!stderr.includes("not found")) {
+					console.warn(`Warning: Failed to delete branch ${branchName}: ${stderr}`);
+				}
+			}
+		} catch (error) {
+			// Log warning but don't fail - worktree is already removed
+			console.warn(
+				`Warning: Failed to delete branch ${branchName}: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	}
+
+	/**
+	 * Returns active worktrees
+	 */
+	async list(projectRoot: string): Promise<WorktreeInfo[]> {
+		try {
+			const proc = Bun.spawn(
+				["git", "worktree", "list", "--porcelain"],
+				{
+					cwd: projectRoot,
+					stdout: "pipe",
+					stderr: "pipe",
+				},
+			);
+
+			const exitCode = await proc.exited;
+			if (exitCode !== 0) {
+				const stderr = await new Response(proc.stderr).text();
+				throw new Error(
+					`Failed to list worktrees: ${stderr || "unknown error"}`,
+				);
+			}
+
+			const stdout = await new Response(proc.stdout).text();
+			return this.parseWorktreeList(stdout);
+		} catch (error) {
+			if (error instanceof Error) {
+				throw error;
+			}
+			throw new Error(`Failed to list worktrees: ${String(error)}`);
+		}
+	}
+
+	/**
+	 * Parses git worktree list --porcelain output
+	 */
+	private parseWorktreeList(output: string): WorktreeInfo[] {
+		const worktrees: WorktreeInfo[] = [];
+		const lines = output.trim().split("\n");
+
+		let currentWorktree: Partial<WorktreeInfo> = {};
+
+		for (const line of lines) {
+			if (line.startsWith("worktree ")) {
+				currentWorktree.path = line.substring("worktree ".length);
+			} else if (line.startsWith("branch ")) {
+				currentWorktree.branch = line
+					.substring("branch ".length)
+					.replace("refs/heads/", "");
+			} else if (line === "") {
+				// Empty line indicates end of worktree entry
+				if (currentWorktree.path && currentWorktree.branch) {
+					worktrees.push(currentWorktree as WorktreeInfo);
+				}
+				currentWorktree = {};
+			}
+		}
+
+		// Handle last entry if no trailing newline
+		if (currentWorktree.path && currentWorktree.branch) {
+			worktrees.push(currentWorktree as WorktreeInfo);
+		}
+
+		return worktrees;
+	}
+}
