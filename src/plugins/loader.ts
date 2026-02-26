@@ -14,6 +14,22 @@ import type { NaxPlugin, PluginConfigEntry } from "./types";
 import { validatePlugin } from "./validator";
 
 /**
+ * Plugin source metadata.
+ */
+export interface PluginSource {
+  type: "global" | "project" | "config";
+  path: string;
+}
+
+/**
+ * Plugin with source information.
+ */
+export interface LoadedPlugin {
+  plugin: NaxPlugin;
+  source: PluginSource;
+}
+
+/**
  * Load and validate all plugins from global + project + config sources.
  *
  * Load order:
@@ -26,14 +42,16 @@ import { validatePlugin } from "./validator";
  * @param globalDir - Global plugins directory (e.g., ~/.nax/plugins)
  * @param projectDir - Project plugins directory (e.g., <project>/nax/plugins)
  * @param configPlugins - Explicit plugin entries from config
- * @returns PluginRegistry with all loaded plugins
+ * @param projectRoot - Project root directory for resolving relative paths in config
+ * @returns PluginRegistry with all loaded plugins and their sources
  */
 export async function loadPlugins(
   globalDir: string,
   projectDir: string,
   configPlugins: PluginConfigEntry[],
+  projectRoot?: string,
 ): Promise<PluginRegistry> {
-  const loadedPlugins: NaxPlugin[] = [];
+  const loadedPlugins: LoadedPlugin[] = [];
   const pluginNames = new Set<string>();
 
   // 1. Load plugins from global directory
@@ -44,7 +62,10 @@ export async function loadPlugins(
       if (pluginNames.has(validated.name)) {
         console.warn(`[nax] Plugin name collision: '${validated.name}' (global directory)`);
       }
-      loadedPlugins.push(validated);
+      loadedPlugins.push({
+        plugin: validated,
+        source: { type: "global", path: plugin.path },
+      });
       pluginNames.add(validated.name);
     }
   }
@@ -57,19 +78,27 @@ export async function loadPlugins(
       if (pluginNames.has(validated.name)) {
         console.warn(`[nax] Plugin name collision: '${validated.name}' (project directory overrides global)`);
       }
-      loadedPlugins.push(validated);
+      loadedPlugins.push({
+        plugin: validated,
+        source: { type: "project", path: plugin.path },
+      });
       pluginNames.add(validated.name);
     }
   }
 
   // 3. Load plugins from config entries
   for (const entry of configPlugins) {
-    const validated = await loadAndValidatePlugin(entry.module, entry.config ?? {});
+    // Resolve module path relative to project root for relative paths
+    const resolvedModule = resolveModulePath(entry.module, projectRoot);
+    const validated = await loadAndValidatePlugin(resolvedModule, entry.config ?? {}, entry.module);
     if (validated) {
       if (pluginNames.has(validated.name)) {
         console.warn(`[nax] Plugin name collision: '${validated.name}' (config entry overrides previous)`);
       }
-      loadedPlugins.push(validated);
+      loadedPlugins.push({
+        plugin: validated,
+        source: { type: "config", path: entry.module },
+      });
       pluginNames.add(validated.name);
     }
   }
@@ -135,13 +164,40 @@ function isPluginFile(filename: string): boolean {
 }
 
 /**
+ * Resolve a module path, handling relative paths, absolute paths, and npm packages.
+ *
+ * @param modulePath - Module path from config (can be relative, absolute, or npm package)
+ * @param projectRoot - Project root directory for resolving relative paths
+ * @returns Resolved absolute path or npm package name
+ */
+function resolveModulePath(modulePath: string, projectRoot?: string): string {
+  // Absolute paths and npm packages (no leading ./ or ../) work as-is
+  if (path.isAbsolute(modulePath) || (!modulePath.startsWith("./") && !modulePath.startsWith("../"))) {
+    return modulePath;
+  }
+
+  // Relative paths need to be resolved relative to project root
+  if (projectRoot) {
+    return path.resolve(projectRoot, modulePath);
+  }
+
+  // Fallback: resolve relative to cwd (shouldn't happen in normal usage)
+  return path.resolve(modulePath);
+}
+
+/**
  * Load and validate a plugin from a module path.
  *
- * @param modulePath - Path to plugin module
+ * @param modulePath - Path to plugin module (should be resolved)
  * @param config - Plugin-specific config
+ * @param originalPath - Original path from config (for error messages)
  * @returns Validated plugin or null if invalid
  */
-async function loadAndValidatePlugin(modulePath: string, config: Record<string, unknown>): Promise<NaxPlugin | null> {
+async function loadAndValidatePlugin(
+  modulePath: string,
+  config: Record<string, unknown>,
+  originalPath?: string,
+): Promise<NaxPlugin | null> {
   try {
     // Import the module
     const imported = await import(modulePath);
@@ -167,7 +223,19 @@ async function loadAndValidatePlugin(modulePath: string, config: Record<string, 
 
     return validated;
   } catch (error) {
-    console.warn(`[nax] Failed to load plugin from '${modulePath}':`, error);
+    const displayPath = originalPath || modulePath;
+    const errorMsg = error instanceof Error ? error.message : String(error);
+
+    // Provide helpful error message with attempted paths
+    if (errorMsg.includes("Cannot find module") || errorMsg.includes("ENOENT")) {
+      console.error(`[nax] Failed to load plugin module '${displayPath}'`);
+      console.error(`[nax] Attempted path: ${modulePath}`);
+      console.error(
+        "[nax] Ensure the module exists and the path is correct (relative paths are resolved from project root)",
+      );
+    } else {
+      console.warn(`[nax] Failed to load plugin from '${displayPath}':`, errorMsg);
+    }
     return null;
   }
 }

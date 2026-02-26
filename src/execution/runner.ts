@@ -199,7 +199,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
   const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
   const projectPluginsDir = path.join(workdir, "nax", "plugins");
   const configPlugins = config.plugins || [];
-  const pluginRegistry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins);
+  const pluginRegistry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, workdir);
   const reporters = pluginRegistry.getReporters();
 
   try {

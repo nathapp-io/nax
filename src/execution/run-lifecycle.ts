@@ -86,7 +86,7 @@ export class RunLifecycle {
     const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
     const projectPluginsDir = path.join(this.workdir, "nax", "plugins");
     const configPlugins = this.config.plugins || [];
-    const pluginRegistry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins);
+    const pluginRegistry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, this.workdir);
     const reporters = pluginRegistry.getReporters();
 
     logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {
