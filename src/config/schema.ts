@@ -77,6 +77,20 @@ export interface AutoModeConfig {
   };
 }
 
+/** Rectification config (v0.11) */
+export interface RectificationConfig {
+  /** Enable rectification loop (retry failed tests with failure context) */
+  enabled: boolean;
+  /** Max retry attempts per story (default: 2) */
+  maxRetries: number;
+  /** Timeout for full test suite run in seconds (default: 120) */
+  fullSuiteTimeoutSeconds: number;
+  /** Max characters in failure summary sent to agent (default: 2000) */
+  maxFailureSummaryChars: number;
+  /** Abort rectification if failure count increases (default: true) */
+  abortOnIncreasingFailures: boolean;
+}
+
 /** Execution limits */
 export interface ExecutionConfig {
   /** Max iterations per feature run (auto-calculated from tierOrder sum if not set) */
@@ -91,6 +105,8 @@ export interface ExecutionConfig {
   verificationTimeoutSeconds: number;
   /** Max stories per feature (prevents memory exhaustion) */
   maxStoriesPerFeature: number;
+  /** Rectification loop settings (v0.11) */
+  rectification: RectificationConfig;
 }
 
 /** Quality gate config */
@@ -416,6 +432,14 @@ const AutoModeConfigSchema = z.object({
   }),
 });
 
+const RectificationConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  maxRetries: z.number().int().min(0).max(10).default(2),
+  fullSuiteTimeoutSeconds: z.number().int().min(10).max(600).default(120),
+  maxFailureSummaryChars: z.number().int().min(500).max(10000).default(2000),
+  abortOnIncreasingFailures: z.boolean().default(true),
+});
+
 const ExecutionConfigSchema = z.object({
   maxIterations: z.number().int().positive({ message: "maxIterations must be > 0" }),
   iterationDelayMs: z.number().int().nonnegative(),
@@ -423,6 +447,7 @@ const ExecutionConfigSchema = z.object({
   sessionTimeoutSeconds: z.number().int().positive({ message: "sessionTimeoutSeconds must be > 0" }),
   verificationTimeoutSeconds: z.number().int().min(1).max(3600).default(300),
   maxStoriesPerFeature: z.number().int().positive(),
+  rectification: RectificationConfigSchema,
 });
 
 const QualityConfigSchema = z.object({
@@ -633,6 +658,13 @@ export const DEFAULT_CONFIG: NaxConfig = {
     sessionTimeoutSeconds: 600, // 10 minutes
     verificationTimeoutSeconds: 300, // 5 minutes
     maxStoriesPerFeature: 500,
+    rectification: {
+      enabled: true,
+      maxRetries: 2,
+      fullSuiteTimeoutSeconds: 120,
+      maxFailureSummaryChars: 2000,
+      abortOnIncreasingFailures: true,
+    },
   },
   quality: {
     requireTypecheck: true,
