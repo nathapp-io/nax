@@ -1,5 +1,8 @@
 import type { UserStory } from "../prd";
 import type { TddSessionRole } from "./types";
+import type { TestFailure } from "../execution/test-output-parser";
+import type { RectificationConfig } from "../config";
+import { createRectificationPrompt } from "../execution/rectification";
 
 /**
  * Prompt to build the TDD agent's role definition
@@ -228,4 +231,23 @@ RULES:
 - Use Bun test (describe/test/expect).
 - When running tests, run ONLY test files related to your changes (e.g. \`bun test ./test/specific.test.ts\`). NEVER run \`bun test\` without a file filter — full suite output will flood your context window and cause failures.
 - Goal: all tests green, all criteria met.${contextSection}`;
+}
+
+/**
+ * Build rectification prompt for retry after test failures
+ *
+ * Wrapper around createRectificationPrompt from the rectification core module.
+ * Used when tests fail after implementation to provide failure context for retry.
+ *
+ * @param story - User story being implemented
+ * @param failures - Array of test failures from test output parser
+ * @param config - Optional rectification config (for maxFailureSummaryChars)
+ * @returns Formatted rectification prompt with failure details
+ */
+export function buildRectificationPrompt(
+  story: UserStory,
+  failures: TestFailure[],
+  config?: RectificationConfig,
+): string {
+  return createRectificationPrompt(failures, story, config);
 }

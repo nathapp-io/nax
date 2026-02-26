@@ -12,6 +12,7 @@ export type {
   QualityConfig,
   TddConfig,
   TierConfig,
+  RectificationConfig,
 } from "./schema";
 export { DEFAULT_CONFIG, resolveModel, NaxConfigSchema } from "./schema";
 export { loadConfig, findProjectDir, globalConfigPath } from "./loader";
