@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "models": {
+    "fast": { "provider": "anthropic", "model": "haiku" },
+    "balanced": { "provider": "anthropic", "model": "sonnet" },
+    "powerful": { "provider": "anthropic", "model": "sonnet" }
+  },
+  "autoMode": {
+    "enabled": true,
+    "defaultAgent": "claude",
+    "fallbackOrder": ["claude"],
+    "complexityRouting": {
+      "simple": "fast",
+      "medium": "balanced",
+      "complex": "balanced",
+      "expert": "powerful"
+    },
+    "escalation": {
+      "enabled": true,
+      "tierOrder": [
+        { "tier": "fast", "attempts": 3 },
+        { "tier": "balanced", "attempts": 2 },
+        { "tier": "powerful", "attempts": 1 }
+      ],
+      "escalateEntireBatch": false
+    }
+  },
+  "routing": {
+    "strategy": "keyword",
+    "llm": {
+      "model": "fast",
+      "fallbackToKeywords": true,
+      "cacheDecisions": true,
+      "mode": "hybrid",
+      "timeoutMs": 15000
+    }
+  },
+  "execution": {
+    "maxIterations": 6,
+    "iterationDelayMs": 2000,
+    "costLimit": 8.0,
+    "sessionTimeoutSeconds": 600,
+    "verificationTimeoutSeconds": 300,
+    "maxStoriesPerFeature": 15,
+    "rectification": {
+      "enabled": true,
+      "maxRetries": 2,
+      "fullSuiteTimeoutSeconds": 120,
+      "maxFailureSummaryChars": 2000,
+      "abortOnIncreasingFailures": true
+    }
+  },
+  "quality": {
+    "requireTypecheck": false,
+    "requireLint": false,
+    "requireTests": true,
+    "commands": {
+      "test": "bun test --no-coverage"
+    },
+    "forceExit": false,
+    "detectOpenHandles": true,
+    "detectOpenHandlesRetries": 1,
+    "gracePeriodMs": 5000,
+    "drainTimeoutMs": 2000,
+    "shell": "/bin/sh",
+    "stripEnvVars": ["CLAUDECODE", "REPL_ID", "AGENT"],
+    "environmentalEscalationDivisor": 2
+  },
+  "tdd": {
+    "maxRetries": 2,
+    "autoVerifyIsolation": true,
+    "autoApproveVerifier": true,
+    "strategy": "lite",
+    "sessionTiers": {
+      "testWriter": "balanced",
+      "verifier": "fast"
+    }
+  },
+  "constitution": {
+    "enabled": true,
+    "path": "constitution.md",
+    "maxTokens": 2000
+  },
+  "analyze": {
+    "llmEnhanced": false,
+    "model": "balanced",
+    "fallbackToKeywords": true,
+    "maxCodebaseSummaryTokens": 5000
+  },
+  "review": {
+    "enabled": true,
+    "checks": ["test"],
+    "commands": {
+      "test": "bun test --no-coverage"
+    }
+  },
+  "plan": {
+    "model": "balanced",
+    "outputPath": "spec.md"
+  },
+  "acceptance": {
+    "enabled": false,
+    "maxRetries": 2,
+    "generateTests": false,
+    "testPath": "acceptance.test.ts"
+  },
+  "context": {
+    "testCoverage": {
+      "enabled": true,
+      "detail": "names-and-counts",
+      "maxTokens": 500,
+      "testPattern": "**/*.test.{ts,js}",
+      "scopeToStory": true
+    }
+  }
+}

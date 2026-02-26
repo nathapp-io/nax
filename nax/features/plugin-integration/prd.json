@@ -1,0 +1,161 @@
+{
+  "project": "nax",
+  "feature": "plugin-integration",
+  "branchName": "feat/plugin-integration",
+  "createdAt": "2026-02-26T22:00:00Z",
+  "updatedAt": "2026-02-26T22:00:00Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Wire plugin loading into the runner startup",
+      "description": "The runner (src/execution/runner.ts) should call loadPlugins() at startup and store the resulting PluginRegistry in the pipeline context. Currently loadPlugins() exists in src/plugins/loader.ts but is never called. The runner should: 1) resolve global dir (~/.nax/plugins), project dir (<workdir>/nax/plugins), and config.plugins[] entries, 2) call loadPlugins(), 3) store the registry on the RunContext or pass it through the pipeline. On teardown (run end), call registry.teardownAll().",
+      "acceptanceCriteria": [
+        "Runner calls loadPlugins() during initialization before story loop starts",
+        "PluginRegistry is accessible from pipeline context (RunContext or similar)",
+        "registry.teardownAll() is called on both success and failure paths",
+        "If no plugins are found, an empty registry is used (no error)",
+        "Plugin loading errors are logged but do not abort the run"
+      ],
+      "dependencies": [],
+      "tags": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": []
+    },
+    {
+      "id": "US-002",
+      "title": "Context providers inject into agent prompts",
+      "description": "Before agent execution in the pipeline, call all registered context providers (registry.getContextProviders()) for the current story. Each provider returns {content, estimatedTokens, label}. Append provider content to the agent prompt under labeled sections, respecting a configurable token budget (default 2000 tokens total for all providers). If a provider throws, log warning and skip it. Add contextProviderTokenBudget to ExecutionConfig.",
+      "acceptanceCriteria": [
+        "All registered context providers are called before agent execution",
+        "Provider content is appended to the prompt under a markdown section with the provider's label",
+        "Total injected tokens respect the token budget (providers are added in order until budget exhausted)",
+        "Provider errors are caught, logged, and skipped without failing the story",
+        "Token budget is configurable via execution.contextProviderTokenBudget in config"
+      ],
+      "dependencies": ["US-001"],
+      "tags": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": []
+    },
+    {
+      "id": "US-003",
+      "title": "Review plugins run after built-in verification",
+      "description": "After the built-in review checks (typecheck/lint/test) pass in the pipeline's review stage (src/pipeline/stages/), call all registered reviewer plugins (registry.getReviewers()). Each reviewer's check(workdir, changedFiles) returns {passed, output, exitCode?}. If any reviewer fails, treat it the same as a built-in check failure (triggers retry/escalation). Include reviewer output in the story result for debugging.",
+      "acceptanceCriteria": [
+        "Plugin reviewers run after built-in checks pass",
+        "Each reviewer receives the workdir and list of changed files",
+        "Reviewer failure triggers the same retry/escalation as built-in check failures",
+        "Reviewer output is included in the story execution result",
+        "If a reviewer throws an exception, it counts as a failure with the exception message as output",
+        "Multiple reviewers run sequentially; first failure short-circuits remaining reviewers"
+      ],
+      "dependencies": ["US-001"],
+      "tags": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": []
+    },
+    {
+      "id": "US-004",
+      "title": "Reporter plugins receive lifecycle events",
+      "description": "Fire reporter events at the appropriate points in the runner loop: onRunStart when the run begins, onStoryComplete after each story finishes (success or failure), onRunEnd when the run completes. All reporter calls are fire-and-forget (errors logged, never block pipeline). Build event objects from existing run state (RunStartEvent, StoryCompleteEvent, RunEndEvent as defined in src/plugins/types.ts).",
+      "acceptanceCriteria": [
+        "onRunStart fires once at run start with runId, feature, totalStories, startTime",
+        "onStoryComplete fires after each story with storyId, status, durationMs, cost, tier, testStrategy",
+        "onRunEnd fires once at run end with runId, totalDurationMs, totalCost, storySummary counts",
+        "Reporter errors are caught and logged but never block execution",
+        "Multiple reporters all receive events (not short-circuited on error)",
+        "Events fire even when the run fails or is aborted (onRunEnd still fires)"
+      ],
+      "dependencies": ["US-001"],
+      "tags": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": []
+    },
+    {
+      "id": "US-005",
+      "title": "Plugin routing strategies integrate into router chain",
+      "description": "Insert plugin routing strategies (registry.getRouters()) before the built-in router in the routing chain (src/routing/). When routing a story, iterate plugin routers first; if any returns a routing decision, use it. If all plugin routers return null/undefined, fall back to the built-in strategy. This allows plugins to override routing for specific stories (e.g., always route security-tagged stories to premium).",
+      "acceptanceCriteria": [
+        "Plugin routers are tried before the built-in routing strategy",
+        "First plugin router that returns a non-null result wins",
+        "If all plugin routers return null, built-in strategy is used as fallback",
+        "Plugin routers receive the same story context as built-in routers",
+        "Router errors are caught and logged; fallback to next router in chain"
+      ],
+      "dependencies": ["US-001"],
+      "tags": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": []
+    },
+    {
+      "id": "US-006",
+      "title": "CLI 'nax plugins list' command",
+      "description": "Add a 'plugins' subcommand to the CLI (src/cli/) with a 'list' action. It should: 1) load plugins from global + project + config sources (reuse loadPlugins), 2) display a table with name, version, provides[], and source (global/project/config), 3) exit cleanly. If no plugins found, print a helpful message pointing to docs.",
+      "acceptanceCriteria": [
+        "Running 'nax plugins list' prints a formatted table of installed plugins",
+        "Each row shows: plugin name, version, extension types provided, source location",
+        "If no plugins found, prints 'No plugins installed' with help text",
+        "Works in both project directory and outside (global-only scan outside project)",
+        "Exit code 0 on success"
+      ],
+      "dependencies": [],
+      "tags": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": []
+    },
+    {
+      "id": "US-007",
+      "title": "Read plugin config entries from nax config.json",
+      "description": "The config loader (src/config/loader.ts) already supports a plugins[] array in the schema. Ensure that when config is loaded, the plugins[] entries are passed to loadPlugins() as the configPlugins parameter. Each entry has {module, config?}. Validate that module paths resolve correctly (relative to project root). Add a helpful error message if a configured plugin module cannot be found.",
+      "acceptanceCriteria": [
+        "plugins[] from config.json are passed to loadPlugins() as configPlugins parameter",
+        "Relative module paths in plugins[].module are resolved relative to project root",
+        "Absolute module paths and npm package names work as-is",
+        "If a plugin module cannot be found, a clear error message is logged with the path tried",
+        "Plugin-specific config (plugins[].config) is passed to the plugin's setup() function"
+      ],
+      "dependencies": [],
+      "tags": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": []
+    },
+    {
+      "id": "US-008",
+      "title": "Sample console reporter plugin with tests",
+      "description": "Create a sample reporter plugin at examples/plugins/console-reporter/ that demonstrates the plugin API. It should: 1) implement IReporter with onRunStart (print banner), onStoryComplete (print status line), onRunEnd (print summary table), 2) have a setup() that reads config.verbose for detail level, 3) include unit tests in the same directory. This serves as both documentation and a smoke test for the plugin system.",
+      "acceptanceCriteria": [
+        "Plugin exports a valid NaxPlugin with provides: ['reporter']",
+        "onRunStart prints a run banner with feature name and story count",
+        "onStoryComplete prints a status line (✓/✗) with story ID, tier, duration, cost",
+        "onRunEnd prints a summary table with total stories, pass/fail counts, total cost, total duration",
+        "setup() reads config.verbose (boolean, default false) for extra detail",
+        "Plugin passes validatePlugin() from src/plugins/validator.ts",
+        "Unit tests verify all three event handlers produce expected output"
+      ],
+      "dependencies": ["US-004", "US-007"],
+      "tags": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": []
+    }
+  ],
+  "analyzeConfig": {
+    "maxStories": 15,
+    "granularity": "medium"
+  }
+}
