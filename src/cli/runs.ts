@@ -6,6 +6,7 @@
 
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import type { LogEntry } from "../logger/types";
 
@@ -129,7 +130,7 @@ export async function runsShowCommand(options: RunsShowOptions): Promise<void> {
 
   if (!existsSync(logPath)) {
     logger.error("cli", "Run not found", { runId, feature, logPath });
-    process.exit(1);
+    throw new NaxError("Run not found", "RUN_NOT_FOUND", { runId, feature, logPath });
   }
 
   const entries = await parseRunLog(logPath);
@@ -141,7 +142,7 @@ export async function runsShowCommand(options: RunsShowOptions): Promise<void> {
 
   if (!startEvent) {
     logger.error("cli", "Run log missing run.start event", { runId });
-    process.exit(1);
+    throw new NaxError("Run log missing run.start event", "INVALID_RUN_LOG", { runId });
   }
 
   // Display run summary

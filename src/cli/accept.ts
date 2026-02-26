@@ -10,6 +10,7 @@
 
 import path from "node:path";
 import { findProjectDir, validateDirectory } from "../config";
+import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { loadPRD, savePRD } from "../prd";
 
@@ -44,7 +45,7 @@ export async function acceptCommand(options: AcceptOptions): Promise<void> {
   // Validate AC ID format
   if (!override.match(/^AC-\d+$/i)) {
     logger.error("cli", "Invalid AC ID format", { override, expected: "AC-1, AC-2, etc." });
-    process.exit(1);
+    throw new NaxError("Invalid AC ID format", "INVALID_AC_ID", { override, expected: "AC-1, AC-2, etc." });
   }
 
   // Normalize AC ID to uppercase
@@ -54,7 +55,7 @@ export async function acceptCommand(options: AcceptOptions): Promise<void> {
   const projectDirResult = findProjectDir(process.cwd());
   if (!projectDirResult) {
     logger.error("cli", "Not in a nax project directory", { hint: "Run 'nax init' first" });
-    process.exit(1);
+    throw new NaxError("Not in a nax project directory", "PROJECT_NOT_FOUND", { hint: "Run 'nax init' first" });
   }
   const projectDir = projectDirResult;
 
@@ -63,7 +64,7 @@ export async function acceptCommand(options: AcceptOptions): Promise<void> {
     validateDirectory(projectDir);
   } catch (err) {
     logger.error("cli", "Invalid project directory", { error: (err as Error).message });
-    process.exit(1);
+    throw new NaxError("Invalid project directory", "INVALID_DIRECTORY", { error: (err as Error).message });
   }
 
   // Build path to feature PRD
@@ -74,7 +75,7 @@ export async function acceptCommand(options: AcceptOptions): Promise<void> {
   const prdFile = Bun.file(prdPath);
   if (!(await prdFile.exists())) {
     logger.error("cli", "Feature not found", { feature, prdPath });
-    process.exit(1);
+    throw new NaxError("Feature not found", "FEATURE_NOT_FOUND", { feature, prdPath });
   }
 
   // Load PRD
