@@ -6,6 +6,8 @@
  */
 
 import type { NaxConfig } from "../config";
+import { getAgent } from "../agents";
+import { resolveModel } from "../config";
 import { getLogger, getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import type { PRD, UserStory } from "../prd";
@@ -14,6 +16,8 @@ import { captureGitRef } from "../utils/git";
 import { getTierConfig } from "./escalation";
 import { appendProgress } from "./progress";
 import { getEnvironmentalEscalationThreshold, parseTestOutput, runVerification } from "./verification";
+import { parseBunTestOutput } from "./test-output-parser";
+import { shouldRetryRectification, createRectificationPrompt, type RectificationState } from "./rectification";
 
 import { spawn } from "bun";
 
@@ -147,6 +151,141 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
   }
 
   // --- Verification failed ---
+
+  // ── Rectification Loop (v0.11) ─────────────────────────────────────────────
+  // If rectification is enabled and tests failed (not timeout/env), attempt to
+  // fix the failures by providing failure context to the agent and re-running.
+
+  const rectificationEnabled = config.execution.rectification?.enabled ?? false;
+  const isTestFailure = verificationResult.status === "TEST_FAILURE" && verificationResult.output;
+
+  if (rectificationEnabled && isTestFailure) {
+    const rectificationConfig = config.execution.rectification;
+    const testSummary = parseBunTestOutput(verificationResult.output!);
+
+    // Initialize rectification state
+    const rectificationState: RectificationState = {
+      attempt: 0,
+      initialFailures: testSummary.failed,
+      currentFailures: testSummary.failed,
+    };
+
+    logger?.info("rectification", "Starting rectification loop", {
+      storyId: story.id,
+      initialFailures: rectificationState.initialFailures,
+      maxRetries: rectificationConfig.maxRetries,
+    });
+
+    // Rectification retry loop
+    while (shouldRetryRectification(rectificationState, rectificationConfig)) {
+      rectificationState.attempt++;
+
+      logger?.info("rectification", `Rectification attempt ${rectificationState.attempt}/${rectificationConfig.maxRetries}`, {
+        storyId: story.id,
+        currentFailures: rectificationState.currentFailures,
+      });
+
+      // Build rectification prompt with failure context
+      const rectificationPrompt = createRectificationPrompt(
+        testSummary.failures,
+        story,
+        rectificationConfig,
+      );
+
+      // Get agent and run with rectification prompt
+      const agent = getAgent(config.autoMode.defaultAgent);
+      if (!agent) {
+        logger?.error("rectification", "Agent not found, cannot retry");
+        break;
+      }
+
+      const modelTier = story.routing?.modelTier || config.autoMode.escalation.tierOrder[0]?.tier || "balanced";
+      const modelDef = resolveModel(config.models[modelTier]);
+
+      logger?.debug("rectification", "Running agent with rectification prompt", {
+        storyId: story.id,
+        modelTier,
+        attempt: rectificationState.attempt,
+      });
+
+      const agentResult = await agent.run({
+        prompt: rectificationPrompt,
+        workdir,
+        modelTier,
+        modelDef,
+        timeoutSeconds: config.execution.sessionTimeoutSeconds,
+      });
+
+      if (!agentResult.success) {
+        logger?.warn("rectification", "Agent rectification session failed", {
+          storyId: story.id,
+          attempt: rectificationState.attempt,
+        });
+        // Don't break — still run verification to check if partial fix worked
+      }
+
+      // Re-run verification after rectification attempt
+      const retryVerification = await runVerification({
+        workingDirectory: workdir,
+        expectedFiles: getExpectedFiles(story),
+        command: testCommand,
+        timeoutSeconds: config.execution.verificationTimeoutSeconds,
+        forceExit: config.quality.forceExit,
+        detectOpenHandles: config.quality.detectOpenHandles,
+        detectOpenHandlesRetries: config.quality.detectOpenHandlesRetries,
+        timeoutRetryCount: 0,
+        gracePeriodMs: config.quality.gracePeriodMs,
+        drainTimeoutMs: config.quality.drainTimeoutMs,
+        shell: config.quality.shell,
+        stripEnvVars: config.quality.stripEnvVars,
+      });
+
+      if (retryVerification.success) {
+        logger?.info("rectification", "✓ Rectification succeeded!", {
+          storyId: story.id,
+          attempt: rectificationState.attempt,
+          initialFailures: rectificationState.initialFailures,
+        });
+        return { passed: true, prd };
+      }
+
+      // Parse new failure count
+      if (retryVerification.output) {
+        const newTestSummary = parseBunTestOutput(retryVerification.output);
+        rectificationState.currentFailures = newTestSummary.failed;
+
+        logger?.debug("rectification", "Rectification attempt result", {
+          storyId: story.id,
+          attempt: rectificationState.attempt,
+          previousFailures: testSummary.failed,
+          currentFailures: rectificationState.currentFailures,
+          progress: testSummary.failed > rectificationState.currentFailures ? "improved" : testSummary.failed < rectificationState.currentFailures ? "regressed" : "unchanged",
+        });
+
+        // Update test summary for next iteration
+        testSummary.failures = newTestSummary.failures;
+        testSummary.failed = newTestSummary.failed;
+        testSummary.passed = newTestSummary.passed;
+      }
+    }
+
+    // Rectification exhausted or aborted
+    if (rectificationState.attempt >= rectificationConfig.maxRetries) {
+      logger?.warn("rectification", "Rectification exhausted max retries", {
+        storyId: story.id,
+        attempts: rectificationState.attempt,
+        remainingFailures: rectificationState.currentFailures,
+      });
+    } else if (rectificationState.currentFailures > rectificationState.initialFailures) {
+      logger?.warn("rectification", "Rectification aborted due to regression", {
+        storyId: story.id,
+        initialFailures: rectificationState.initialFailures,
+        currentFailures: rectificationState.currentFailures,
+      });
+    }
+  }
+
+  // ── End Rectification Loop ─────────────────────────────────────────────────
 
   // Undo story metrics added by completionStage (BUG-1 fix)
   const storyIds = new Set(storiesToExecute.map((s) => s.id));

@@ -211,6 +211,23 @@ RULES:
 }
 
 /**
+ * Build implementer rectification prompt (v0.11)
+ *
+ * Used during the full-suite gate in three-session TDD when the implementer
+ * introduced regressions. Provides failure context to guide fixes.
+ */
+export function buildImplementerRectificationPrompt(
+  failures: TestFailure[],
+  story: UserStory,
+  contextMarkdown?: string,
+  config?: RectificationConfig,
+): string {
+  // Reuse the existing rectification prompt builder from R2
+  // It already includes story context, failure details, and instructions
+  return createRectificationPrompt(failures, story, config);
+}
+
+/**
  * Prompt for an implementer lite session (combined test + implement)
  */
 export function buildImplementerLitePrompt(story: UserStory, contextMarkdown?: string): string {

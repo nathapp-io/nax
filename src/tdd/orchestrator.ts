@@ -11,6 +11,8 @@ import type { AgentAdapter } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config";
 import { executeWithTimeout } from "../execution/verification";
+import { parseBunTestOutput } from "../execution/test-output-parser";
+import { shouldRetryRectification, createRectificationPrompt, type RectificationState } from "../execution/rectification";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { captureGitRef } from "../utils/git";
@@ -22,6 +24,7 @@ import {
   buildTestWriterLitePrompt,
   buildTestWriterPrompt,
   buildVerifierPrompt,
+  buildImplementerRectificationPrompt,
 } from "./prompts";
 import type { FailureCategory, TddSessionResult, TddSessionRole, ThreeSessionTddResult } from "./types";
 import { categorizeVerdict, cleanupVerdict, readVerdict } from "./verdict";
@@ -378,6 +381,160 @@ export async function runThreeSessionTdd(
       lite,
     };
   }
+
+  // ── Full-Suite Gate (v0.11 Rectification) ──────────────────────────────────
+  // Before proceeding to Session 3 (Verifier), run the full test suite to catch
+  // regressions introduced by the implementer. If regressions are found, trigger
+  // the rectification loop on the implementer (max 2 retries).
+
+  const rectificationEnabled = config.execution.rectification?.enabled ?? false;
+
+  if (rectificationEnabled) {
+    const rectificationConfig = config.execution.rectification;
+    const testCmd = config.quality?.commands?.test ?? "bun test";
+    const fullSuiteTimeout = rectificationConfig.fullSuiteTimeoutSeconds;
+
+    logger.info("tdd", "→ Running full test suite gate (before Verifier)", {
+      storyId: story.id,
+      timeout: fullSuiteTimeout,
+    });
+
+    const fullSuiteResult = await executeWithTimeout(testCmd, fullSuiteTimeout, undefined, {
+      cwd: workdir,
+    });
+
+    const fullSuitePassed = fullSuiteResult.success && fullSuiteResult.exitCode === 0;
+
+    if (!fullSuitePassed && fullSuiteResult.stdout) {
+      // Full suite failed — parse failures and start rectification
+      const testSummary = parseBunTestOutput(fullSuiteResult.stdout);
+
+      if (testSummary.failed > 0) {
+        const rectificationState: RectificationState = {
+          attempt: 0,
+          initialFailures: testSummary.failed,
+          currentFailures: testSummary.failed,
+        };
+
+        logger.warn("tdd", "Full suite gate detected regressions", {
+          storyId: story.id,
+          failedTests: testSummary.failed,
+          passedTests: testSummary.passed,
+        });
+
+        // Rectification retry loop for Implementer
+        while (shouldRetryRectification(rectificationState, rectificationConfig)) {
+          rectificationState.attempt++;
+
+          logger.info("tdd", `→ Implementer rectification attempt ${rectificationState.attempt}/${rectificationConfig.maxRetries}`, {
+            storyId: story.id,
+            currentFailures: rectificationState.currentFailures,
+          });
+
+          // Build rectification prompt for implementer
+          const rectificationPrompt = buildImplementerRectificationPrompt(
+            testSummary.failures,
+            story,
+            contextMarkdown,
+            rectificationConfig,
+          );
+
+          // Capture git ref before rectification
+          const rectifyBeforeRef = (await captureGitRef(workdir)) ?? "HEAD";
+
+          // Run implementer session with rectification prompt
+          const rectifyResult = await agent.run({
+            prompt: rectificationPrompt,
+            workdir,
+            modelTier: implementerTier,
+            modelDef: resolveModel(config.models[implementerTier]),
+            timeoutSeconds: config.execution.sessionTimeoutSeconds,
+          });
+
+          // BUG-21 Fix: Clean up orphaned child processes if agent failed
+          if (!rectifyResult.success && rectifyResult.pid) {
+            await cleanupProcessTree(rectifyResult.pid);
+          }
+
+          // Check isolation for rectification session (same as implementer)
+          const rectifyIsolation = lite ? undefined : await verifyImplementerIsolation(workdir, rectifyBeforeRef);
+
+          if (rectifyIsolation && !rectifyIsolation.passed) {
+            logger.error("tdd", "✗ Rectification violated isolation", {
+              storyId: story.id,
+              attempt: rectificationState.attempt,
+              violations: rectifyIsolation.violations,
+            });
+            // Isolation violation — abort rectification
+            break;
+          }
+
+          // Re-run full suite after rectification
+          const retryFullSuite = await executeWithTimeout(testCmd, fullSuiteTimeout, undefined, {
+            cwd: workdir,
+          });
+
+          const retrySuitePassed = retryFullSuite.success && retryFullSuite.exitCode === 0;
+
+          if (retrySuitePassed) {
+            logger.info("tdd", "✓ Full suite gate passed after rectification!", {
+              storyId: story.id,
+              attempt: rectificationState.attempt,
+              initialFailures: rectificationState.initialFailures,
+            });
+            break;
+          }
+
+          // Parse new failure count
+          if (retryFullSuite.stdout) {
+            const newTestSummary = parseBunTestOutput(retryFullSuite.stdout);
+            rectificationState.currentFailures = newTestSummary.failed;
+
+            logger.debug("tdd", "Rectification attempt result", {
+              storyId: story.id,
+              attempt: rectificationState.attempt,
+              previousFailures: testSummary.failed,
+              currentFailures: rectificationState.currentFailures,
+            });
+
+            // Update test summary for next iteration
+            testSummary.failures = newTestSummary.failures;
+            testSummary.failed = newTestSummary.failed;
+            testSummary.passed = newTestSummary.passed;
+          }
+        }
+
+        // Check final state after rectification loop
+        const finalFullSuite = await executeWithTimeout(testCmd, fullSuiteTimeout, undefined, {
+          cwd: workdir,
+        });
+
+        const finalSuitePassed = finalFullSuite.success && finalFullSuite.exitCode === 0;
+
+        if (!finalSuitePassed) {
+          logger.warn("tdd", "⚠️ Full suite gate failed after rectification exhausted", {
+            storyId: story.id,
+            attempts: rectificationState.attempt,
+            remainingFailures: rectificationState.currentFailures,
+          });
+
+          // Don't fail the whole TDD workflow — let Verifier see the state
+          // This allows the verifier to provide human-readable diagnostic
+        } else {
+          logger.info("tdd", "✓ Full suite gate passed", { storyId: story.id });
+        }
+      }
+    } else if (fullSuitePassed) {
+      logger.info("tdd", "✓ Full suite gate passed", { storyId: story.id });
+    } else {
+      logger.warn("tdd", "Full suite gate execution failed (no output)", {
+        storyId: story.id,
+        exitCode: fullSuiteResult.exitCode,
+      });
+    }
+  }
+
+  // ── End Full-Suite Gate ────────────────────────────────────────────────────
 
   // Capture state after session 2 (fallback to "HEAD" if git unavailable)
   const session3Ref = (await captureGitRef(workdir)) ?? "HEAD";
