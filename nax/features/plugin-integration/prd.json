@@ -18,8 +18,8 @@
       ],
       "dependencies": [],
       "tags": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": []
     },
@@ -34,7 +34,9 @@
         "Provider errors are caught, logged, and skipped without failing the story",
         "Token budget is configurable via execution.contextProviderTokenBudget in config"
       ],
-      "dependencies": ["US-001"],
+      "dependencies": [
+        "US-001"
+      ],
       "tags": [],
       "status": "pending",
       "passes": false,
@@ -53,7 +55,9 @@
         "If a reviewer throws an exception, it counts as a failure with the exception message as output",
         "Multiple reviewers run sequentially; first failure short-circuits remaining reviewers"
       ],
-      "dependencies": ["US-001"],
+      "dependencies": [
+        "US-001"
+      ],
       "tags": [],
       "status": "pending",
       "passes": false,
@@ -72,7 +76,9 @@
         "Multiple reporters all receive events (not short-circuited on error)",
         "Events fire even when the run fails or is aborted (onRunEnd still fires)"
       ],
-      "dependencies": ["US-001"],
+      "dependencies": [
+        "US-001"
+      ],
       "tags": [],
       "status": "pending",
       "passes": false,
@@ -90,7 +96,9 @@
         "Plugin routers receive the same story context as built-in routers",
         "Router errors are caught and logged; fallback to next router in chain"
       ],
-      "dependencies": ["US-001"],
+      "dependencies": [
+        "US-001"
+      ],
       "tags": [],
       "status": "pending",
       "passes": false,
@@ -110,8 +118,8 @@
       ],
       "dependencies": [],
       "tags": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": []
     },
@@ -128,8 +136,8 @@
       ],
       "dependencies": [],
       "tags": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": []
     },
@@ -140,13 +148,16 @@
       "acceptanceCriteria": [
         "Plugin exports a valid NaxPlugin with provides: ['reporter']",
         "onRunStart prints a run banner with feature name and story count",
-        "onStoryComplete prints a status line (✓/✗) with story ID, tier, duration, cost",
+        "onStoryComplete prints a status line (\u2713/\u2717) with story ID, tier, duration, cost",
         "onRunEnd prints a summary table with total stories, pass/fail counts, total cost, total duration",
         "setup() reads config.verbose (boolean, default false) for extra detail",
         "Plugin passes validatePlugin() from src/plugins/validator.ts",
         "Unit tests verify all three event handlers produce expected output"
       ],
-      "dependencies": ["US-004", "US-007"],
+      "dependencies": [
+        "US-004",
+        "US-007"
+      ],
       "tags": [],
       "status": "pending",
       "passes": false,
