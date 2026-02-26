@@ -134,6 +134,8 @@ export interface RunOptions {
   dryRun: boolean;
   /** Enable story batching (default: true) */
   useBatch?: boolean;
+  /** Max parallel sessions: undefined=sequential, 0=auto-detect, N>0=cap at N */
+  parallel?: number;
   /** Optional event emitter for TUI integration */
   eventEmitter?: PipelineEventEmitter;
   /** Path to write a machine-readable JSON status file. Omit to skip writing. */

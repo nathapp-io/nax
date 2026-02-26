@@ -200,6 +200,7 @@ program
   .option("--dry-run", "Show plan without executing", false)
   .option("--no-context", "Disable context builder (skip file context in prompts)")
   .option("--no-batch", "Disable story batching (execute all stories individually)")
+  .option("--parallel <n>", "Max parallel sessions (0=auto, omit=sequential)")
   .option("--headless", "Force headless mode (disable TUI, use pipe mode)", false)
   .option("--verbose", "Enable verbose logging (debug level)", false)
   .option("--quiet", "Quiet mode (warnings and errors only)", false)
@@ -309,6 +310,16 @@ program
     // Resolve --status-file relative to cwd (absolute paths unchanged)
     const statusFilePath = options.statusFile ? resolve(process.cwd(), options.statusFile) : undefined;
 
+    // Parse --parallel option
+    let parallel: number | undefined;
+    if (options.parallel !== undefined) {
+      parallel = Number.parseInt(options.parallel, 10);
+      if (Number.isNaN(parallel) || parallel < 0) {
+        console.error(chalk.red("--parallel must be a non-negative integer"));
+        process.exit(1);
+      }
+    }
+
     const result = await run({
       prdPath,
       workdir,
@@ -318,6 +329,7 @@ program
       featureDir,
       dryRun: options.dryRun,
       useBatch: options.batch ?? true,
+      parallel,
       eventEmitter,
       statusFile: statusFilePath,
     });
