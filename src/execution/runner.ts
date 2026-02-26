@@ -14,6 +14,12 @@ import { convertFixStoryToUserStory, generateFixStories } from "../acceptance";
 import { getAgent } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config/schema";
+import {
+  AgentNotFoundError,
+  AgentNotInstalledError,
+  LockAcquisitionError,
+  StoryLimitExceededError,
+} from "../errors";
 import { type LoadedHooksConfig, fireHook } from "../hooks";
 import { getLogger, getSafeLogger } from "../logger";
 import { type StoryMetrics, saveRunMetrics } from "../metrics";
@@ -186,7 +192,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
   if (!lockAcquired) {
     logger?.error("execution", "Another nax process is already running in this directory");
     logger?.error("execution", "If you believe this is an error, remove nax.lock manually");
-    process.exit(1);
+    throw new LockAcquisitionError(workdir);
   }
 
   // Load plugins (before try block so it's accessible in finally)
@@ -221,7 +227,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       logger?.error("execution", "Agent not found", {
         agent: config.autoMode.defaultAgent,
       });
-      process.exit(1);
+      throw new AgentNotFoundError(config.autoMode.defaultAgent);
     }
 
     const installed = await agent.isInstalled();
@@ -231,7 +237,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         binary: agent.binary,
       });
       logger?.error("execution", "Please install the agent and try again");
-      process.exit(1);
+      throw new AgentNotInstalledError(config.autoMode.defaultAgent, agent.binary);
     }
 
     // Load PRD
@@ -268,7 +274,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         limit: config.execution.maxStoriesPerFeature,
       });
       logger?.error("execution", "Split this feature into smaller features or increase maxStoriesPerFeature in config");
-      process.exit(1);
+      throw new StoryLimitExceededError(counts.total, config.execution.maxStoriesPerFeature);
     }
 
     logger?.info("execution", `Starting ${feature}`, {

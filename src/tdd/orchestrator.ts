@@ -170,6 +170,8 @@ export interface ThreeSessionTddOptions {
   dryRun?: boolean;
   /** Lite mode: use relaxed prompts and skip test-writer/implementer isolation */
   lite?: boolean;
+  /** Internal recursion depth (for preventing infinite loops) */
+  _recursionDepth?: number;
 }
 
 /**
@@ -183,20 +185,14 @@ export interface ThreeSessionTddOptions {
  * Each session enforces file isolation via git diff checking. If any session fails
  * isolation or exits with error, the workflow stops and flags for human review.
  *
- * @param agent - Agent adapter to use for all three sessions
- * @param story - User story with title, description, acceptance criteria
- * @param config - nax configuration for timeouts and model settings
- * @param workdir - Working directory (git repository root)
- * @param modelTier - Model tier for all sessions (fast/balanced/powerful)
- * @param contextMarkdown - Optional context from PRD (dependencies, progress)
- * @param dryRun - If true, log what would happen without executing sessions
+ * @param options - Three-session TDD options
  * @returns Three-session TDD result with success status, session details, and cost
  *
  * @example
  * ```ts
- * const result = await runThreeSessionTdd(
- *   claudeAdapter,
- *   {
+ * const result = await runThreeSessionTdd({
+ *   agent: claudeAdapter,
+ *   story: {
  *     id: "US-001",
  *     title: "Add user authentication",
  *     description: "Implement JWT-based authentication",
@@ -204,11 +200,12 @@ export interface ThreeSessionTddOptions {
  *     // ...
  *   },
  *   config,
- *   "/project",
- *   "balanced",
- *   "## Dependencies\n- US-000: Database setup\n",
- *   false // not a dry run
- * );
+ *   workdir: "/project",
+ *   modelTier: "balanced",
+ *   contextMarkdown: "## Dependencies\n- US-000: Database setup\n",
+ *   dryRun: false,
+ *   lite: false,
+ * });
  *
  * if (result.success) {
  *   console.log(`✅ TDD complete, cost: $${result.totalCost.toFixed(4)}`);
@@ -217,18 +214,40 @@ export interface ThreeSessionTddOptions {
  * }
  * ```
  */
-export async function runThreeSessionTdd(
-  agent: AgentAdapter,
-  story: UserStory,
-  config: NaxConfig,
-  workdir: string,
-  modelTier: ModelTier,
-  contextMarkdown?: string,
-  dryRun = false,
-  lite = false,
-): Promise<ThreeSessionTddResult> {
+export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promise<ThreeSessionTddResult> {
+  const {
+    agent,
+    story,
+    config,
+    workdir,
+    modelTier,
+    contextMarkdown,
+    dryRun = false,
+    lite = false,
+    _recursionDepth = 0,
+  } = options;
   const logger = getLogger();
-  logger.info("tdd", "🔄 Three-Session TDD", { storyId: story.id, title: story.title, lite });
+
+  // MED-7: Recursion guard to prevent infinite loops
+  const MAX_RECURSION_DEPTH = 2;
+  if (_recursionDepth >= MAX_RECURSION_DEPTH) {
+    logger.error("tdd", "Recursion depth limit reached", {
+      storyId: story.id,
+      depth: _recursionDepth,
+      maxDepth: MAX_RECURSION_DEPTH,
+    });
+    return {
+      success: false,
+      sessions: [],
+      needsHumanReview: true,
+      reviewReason: "Recursion depth limit exceeded (max 2 fallbacks)",
+      failureCategory: "session-failure",
+      totalCost: 0,
+      lite,
+    };
+  }
+
+  logger.info("tdd", "🔄 Three-Session TDD", { storyId: story.id, title: story.title, lite, recursionDepth: _recursionDepth });
 
   // Dry-run mode: log what would happen without executing
   if (dryRun) {
@@ -316,8 +335,18 @@ export async function runThreeSessionTdd(
       });
       await resetProc.exited;
 
-      // Re-run as lite mode
-      return runThreeSessionTdd(agent, story, config, workdir, modelTier, contextMarkdown, false, true);
+      // Re-run as lite mode with incremented recursion depth
+      return runThreeSessionTdd({
+        agent,
+        story,
+        config,
+        workdir,
+        modelTier,
+        contextMarkdown,
+        dryRun: false,
+        lite: true,
+        _recursionDepth: _recursionDepth + 1,
+      });
     }
 
     needsHumanReview = true;
@@ -405,9 +434,9 @@ export async function runThreeSessionTdd(
 
     const fullSuitePassed = fullSuiteResult.success && fullSuiteResult.exitCode === 0;
 
-    if (!fullSuitePassed && fullSuiteResult.stdout) {
+    if (!fullSuitePassed && fullSuiteResult.output) {
       // Full suite failed — parse failures and start rectification
-      const testSummary = parseBunTestOutput(fullSuiteResult.stdout);
+      const testSummary = parseBunTestOutput(fullSuiteResult.output);
 
       if (testSummary.failed > 0) {
         const rectificationState: RectificationState = {
@@ -486,8 +515,8 @@ export async function runThreeSessionTdd(
           }
 
           // Parse new failure count
-          if (retryFullSuite.stdout) {
-            const newTestSummary = parseBunTestOutput(retryFullSuite.stdout);
+          if (retryFullSuite.output) {
+            const newTestSummary = parseBunTestOutput(retryFullSuite.output);
             rectificationState.currentFailures = newTestSummary.failed;
 
             logger.debug("tdd", "Rectification attempt result", {
@@ -617,8 +646,8 @@ export async function runThreeSessionTdd(
       const testsActuallyPass = postVerify.success && postVerify.exitCode === 0;
 
       // Truncate test output before logging to prevent context flooding
-      const truncatedStdout = postVerify.stdout ? truncateTestOutput(postVerify.stdout) : "";
-      const truncatedStderr = postVerify.stderr ? truncateTestOutput(postVerify.stderr) : "";
+      const truncatedStdout = postVerify.output ? truncateTestOutput(postVerify.output) : "";
+      const truncatedStderr = postVerify.error ? truncateTestOutput(postVerify.error) : "";
 
       if (testsActuallyPass) {
         logger.info("tdd", "ℹ️ Sessions had non-zero exits but tests pass — treating as success", {

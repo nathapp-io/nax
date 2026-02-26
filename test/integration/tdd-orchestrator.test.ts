@@ -128,7 +128,13 @@ describe("runThreeSessionTdd", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(true);
     expect(result.sessions).toHaveLength(3);
@@ -151,7 +157,13 @@ describe("runThreeSessionTdd", () => {
       { success: false, exitCode: 1, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(false);
     expect(result.sessions).toHaveLength(1);
@@ -172,7 +184,13 @@ describe("runThreeSessionTdd", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(false);
     expect(result.sessions).toHaveLength(1);
@@ -199,7 +217,13 @@ describe("runThreeSessionTdd", () => {
       { success: false, exitCode: 1, estimatedCost: 0.02 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(false);
     expect(result.sessions).toHaveLength(2);
@@ -230,7 +254,13 @@ describe("runThreeSessionTdd", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     // v0.9.2: implementer touching test files is a warning, not a failure
     expect(result.sessions).toHaveLength(3);
@@ -341,7 +371,13 @@ describe("runThreeSessionTdd", () => {
       { success: false, exitCode: 1, estimatedCost: 0.01 }, // verifier fails (e.g., fixed issues)
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     // Assertions
     expect(testCommandCalled).toBe(true); // Post-TDD test was executed
@@ -369,7 +405,13 @@ describe("runThreeSessionTdd", () => {
       { success: true, estimatedCost: 0.01 }, // test-writer succeeds but creates wrong files
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(false);
     expect(result.sessions).toHaveLength(1); // Should stop after session 1
@@ -393,7 +435,13 @@ describe("runThreeSessionTdd", () => {
       { success: true, estimatedCost: 0.01 }, // test-writer succeeds but creates nothing
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(false);
     expect(result.sessions).toHaveLength(1);
@@ -425,7 +473,13 @@ describe("runThreeSessionTdd", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(true);
     expect(result.sessions).toHaveLength(3); // All sessions run
@@ -485,7 +539,13 @@ describe("runThreeSessionTdd", () => {
       { success: false, exitCode: 1, estimatedCost: 0.01 }, // verifier fails
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(testCommandCalled).toBe(true);
     expect(result.success).toBe(false); // Should remain failed
@@ -1012,7 +1072,13 @@ describe("runThreeSessionTdd — failureCategory", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(false);
     expect(result.failureCategory).toBe("isolation-violation");
@@ -1059,7 +1125,13 @@ describe("runThreeSessionTdd — failureCategory", () => {
       { success: false, exitCode: 1, estimatedCost: 0.01 }, // Agent crash
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(false);
     // isolation.passed=true but agent failed → session-failure
@@ -1085,7 +1157,13 @@ describe("runThreeSessionTdd — failureCategory", () => {
       { success: false, exitCode: 1, estimatedCost: 0.02 }, // implementer fails
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(false);
     expect(result.failureCategory).toBe("session-failure");
@@ -1140,7 +1218,13 @@ describe("runThreeSessionTdd — failureCategory", () => {
       { success: false, exitCode: 1, estimatedCost: 0.01 }, // verifier fails
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(false);
     expect(result.failureCategory).toBe("tests-failing");
@@ -1163,7 +1247,13 @@ describe("runThreeSessionTdd — failureCategory", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(true);
     expect(result.failureCategory).toBeUndefined();
@@ -1347,7 +1437,13 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
       { success: false, exitCode: 1, estimatedCost: 0.01 }, // verifier exits non-zero
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, tmpDir, "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: tmpDir,
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(true);
     expect(result.needsHumanReview).toBe(false);
@@ -1371,7 +1467,13 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
       { success: false, exitCode: 1, estimatedCost: 0.01 }, // verifier fails
     ]);
 
-    await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, tmpDir, "balanced");
+    await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: tmpDir,
+      modelTier: "balanced",
+    });
     expect(testCommandCalled).toBe(false); // Test was NOT run when verdict present
   });
 
@@ -1385,7 +1487,13 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
       { success: true, estimatedCost: 0.01 }, // sessions succeed but verdict says rejected
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, tmpDir, "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: tmpDir,
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(false);
     expect(result.needsHumanReview).toBe(true);
@@ -1403,7 +1511,13 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, tmpDir, "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: tmpDir,
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(false);
     expect(result.failureCategory).toBe("verifier-rejected");
@@ -1420,7 +1534,13 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, tmpDir, "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: tmpDir,
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(false);
     expect(result.failureCategory).toBe("verifier-rejected");
@@ -1443,7 +1563,13 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
       { success: false, exitCode: 1, estimatedCost: 0.01 }, // verifier fails
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, tmpDir, "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: tmpDir,
+      modelTier: "balanced",
+    });
 
     expect(testCommandCalled).toBe(true); // Fallback test run was executed
     expect(result.success).toBe(true); // Tests pass in fallback → success
@@ -1467,7 +1593,13 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
       { success: false, exitCode: 1, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, tmpDir, "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: tmpDir,
+      modelTier: "balanced",
+    });
 
     expect(testCommandCalled).toBe(true); // Fallback used when verdict is malformed
     expect(result.verdict).toBeNull(); // Malformed = null
@@ -1483,7 +1615,13 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, tmpDir, "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: tmpDir,
+      modelTier: "balanced",
+    });
 
     expect(result.verdict).toBeDefined();
     expect(result.verdict).not.toBeNull();
@@ -1504,7 +1642,13 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, tmpDir, "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: tmpDir,
+      modelTier: "balanced",
+    });
 
     expect(result.verdict).not.toBeNull();
     expect(result.verdict!.approved).toBe(false);
@@ -1523,7 +1667,13 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
       { success: true, estimatedCost: 0.02 },
       { success: true, estimatedCost: 0.01 },
     ]);
-    await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, tmpDir, "balanced");
+    await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: tmpDir,
+      modelTier: "balanced",
+    });
 
     expect(existsSync(verdictPath)).toBe(false); // File cleaned up after run
   });
@@ -1544,7 +1694,13 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, tmpDir, "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: tmpDir,
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(true);
     expect(testCommandCalled).toBe(false); // Not needed when sessions all succeed
@@ -1565,7 +1721,13 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
       { success: false, exitCode: 1, estimatedCost: 0.01 }, // session 1 fails
     ]);
 
-    const result = await runThreeSessionTdd(agent, story, DEFAULT_CONFIG, tmpDir, "balanced");
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: tmpDir,
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(false);
     expect(result.sessions).toHaveLength(1);

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { existsSync, symlinkSync } from "node:fs";
+import { getSafeLogger } from "../logger";
 import type { WorktreeInfo } from "./types";
 
 export class WorktreeManager {
@@ -136,14 +137,16 @@ export class WorktreeManager {
 				const stderr = await new Response(proc.stderr).text();
 				// Don't fail if branch doesn't exist
 				if (!stderr.includes("not found")) {
-					console.warn(`Warning: Failed to delete branch ${branchName}: ${stderr}`);
+					const logger = getSafeLogger();
+					logger?.warn("worktree", `Failed to delete branch ${branchName}`, { stderr });
 				}
 			}
 		} catch (error) {
 			// Log warning but don't fail - worktree is already removed
-			console.warn(
-				`Warning: Failed to delete branch ${branchName}: ${error instanceof Error ? error.message : String(error)}`,
-			);
+			const logger = getSafeLogger();
+			logger?.warn("worktree", `Failed to delete branch ${branchName}`, {
+				error: error instanceof Error ? error.message : String(error),
+			});
 		}
 	}
 

@@ -164,12 +164,19 @@ export class ClaudeCodeAdapter implements AgentAdapter {
           continue;
         }
 
-        // If transient error (non-zero exit but not timeout), retry with backoff
-        if (!result.success && result.exitCode !== 124 && attempt < maxRetries) {
+        // Return result immediately if successful or not retryable
+        // Don't retry non-zero exits (they're likely legitimate agent failures)
+        return result;
+      } catch (error) {
+        // Only retry on spawn errors (process couldn't be spawned)
+        lastError = error as Error;
+        const isSpawnError = lastError.message.includes("spawn") || lastError.message.includes("ENOENT");
+
+        if (isSpawnError && attempt < maxRetries) {
           const backoffMs = 2 ** attempt * 1000;
           const logger = getLogger();
-          logger.warn("agent", "Agent failed, retrying", {
-            exitCode: result.exitCode,
+          logger.warn("agent", "Agent spawn error, retrying", {
+            error: lastError.message,
             backoffSeconds: backoffMs / 1000,
             attempt,
             maxRetries,
@@ -178,24 +185,12 @@ export class ClaudeCodeAdapter implements AgentAdapter {
           continue;
         }
 
-        return result;
-      } catch (error) {
-        lastError = error as Error;
-        if (attempt < maxRetries) {
-          const backoffMs = 2 ** attempt * 1000;
-          const logger = getLogger();
-          logger.warn("agent", "Agent error, retrying", {
-            error: lastError.message,
-            backoffSeconds: backoffMs / 1000,
-            attempt,
-            maxRetries,
-          });
-          await Bun.sleep(backoffMs);
-        }
+        // Don't retry non-spawn errors
+        throw lastError;
       }
     }
 
-    // All retries failed
+    // All retries failed (only reachable for spawn errors)
     throw lastError || new Error("Agent execution failed after all retries");
   }
 

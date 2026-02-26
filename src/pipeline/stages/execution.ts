@@ -110,16 +110,16 @@ export const executionStage: PipelineStage = {
         lite: isLiteMode,
       });
 
-      const tddResult = await runThreeSessionTdd(
+      const tddResult = await runThreeSessionTdd({
         agent,
-        ctx.story,
-        ctx.config,
-        ctx.workdir,
-        ctx.routing.modelTier,
-        ctx.contextMarkdown,
-        false, // dryRun
-        isLiteMode, // lite flag based on routed strategy
-      );
+        story: ctx.story,
+        config: ctx.config,
+        workdir: ctx.workdir,
+        modelTier: ctx.routing.modelTier,
+        contextMarkdown: ctx.contextMarkdown,
+        dryRun: false,
+        lite: isLiteMode,
+      });
 
       ctx.agentResult = {
         success: tddResult.success,

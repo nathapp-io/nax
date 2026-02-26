@@ -5,6 +5,7 @@
  */
 
 import type { AgentAdapter } from "../agents/types";
+import { getSafeLogger } from "../logger";
 import type { RoutingStrategy } from "../routing/strategy";
 import type { IContextProvider, IPromptOptimizer, IReporter, IReviewPlugin, NaxPlugin } from "./types";
 
@@ -128,12 +129,13 @@ export class PluginRegistry {
    * Called when the nax run ends (success or failure).
    */
   async teardownAll(): Promise<void> {
+    const logger = getSafeLogger();
     for (const plugin of this.plugins) {
       if (plugin.teardown) {
         try {
           await plugin.teardown();
         } catch (error) {
-          console.error(`[nax] Plugin '${plugin.name}' teardown failed:`, error);
+          logger?.error("plugins", `Plugin '${plugin.name}' teardown failed`, { error });
         }
       }
     }
