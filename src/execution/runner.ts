@@ -202,6 +202,9 @@ export async function run(options: RunOptions): Promise<RunResult> {
   const pluginRegistry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, workdir);
   const reporters = pluginRegistry.getReporters();
 
+  // Load PRD (before try block so it's accessible in finally for onRunEnd)
+  let prd = await loadPRD(prdPath);
+
   try {
     logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {
       plugins: pluginRegistry.plugins.map((p) => ({ name: p.name, version: p.version, provides: p.provides })),
@@ -240,8 +243,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       throw new AgentNotInstalledError(config.autoMode.defaultAgent, agent.binary);
     }
 
-    // Load PRD
-    let prd = await loadPRD(prdPath);
+    // PRD already loaded before try block
     let prdDirty = false; // Track if PRD needs reloading
     const counts = countStories(prd);
 
@@ -408,26 +410,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
             totalCost,
             durationMs,
           });
-
-          for (const reporter of reporters) {
-            if (reporter.onRunEnd) {
-              try {
-                await reporter.onRunEnd({
-                  runId,
-                  totalDurationMs: durationMs,
-                  totalCost,
-                  storySummary: {
-                    completed: storiesCompleted,
-                    failed: finalCounts.failed,
-                    skipped: finalCounts.skipped,
-                    paused: finalCounts.paused,
-                  },
-                });
-              } catch (error) {
-                logger?.warn("plugins", `Reporter '${reporter.name}' onRunEnd failed`, { error });
-              }
-            }
-          }
 
           statusWriter.setPrd(prd);
           statusWriter.setCurrentStory(null);
@@ -680,6 +662,27 @@ export async function run(options: RunOptions): Promise<RunResult> {
         storiesCompleted += storiesToExecute.length;
         prdDirty = true;
         await savePRD(prd, prdPath);
+
+        // Emit onStoryComplete events for dry-run
+        for (const s of storiesToExecute) {
+          for (const reporter of reporters) {
+            if (reporter.onStoryComplete) {
+              try {
+                await reporter.onStoryComplete({
+                  runId,
+                  storyId: s.id,
+                  status: "completed",
+                  durationMs: 0, // No actual execution in dry-run
+                  cost: 0, // No cost in dry-run
+                  tier: routing.modelTier,
+                  testStrategy: routing.testStrategy,
+                });
+              } catch (error) {
+                logger?.warn("plugins", `Reporter '${reporter.name}' onStoryComplete failed`, { error });
+              }
+            }
+          }
+        }
 
         // ── Status write point 3 (dry-run): story done, clear current ────────
         statusWriter.setPrd(prd);
@@ -1398,7 +1401,23 @@ export async function run(options: RunOptions): Promise<RunResult> {
       storyMetrics: storyMetricsSummary,
     });
 
-    // Emit onRunEnd to reporters
+    // ── Status write point 4: run end ──────────────────────────────────────
+    statusWriter.setPrd(prd);
+    statusWriter.setCurrentStory(null);
+    statusWriter.setRunStatus(isComplete(prd) ? "completed" : isStalled(prd) ? "stalled" : "running");
+    await statusWriter.update(totalCost, iterations);
+
+    return {
+      success: isComplete(prd),
+      iterations,
+      storiesCompleted,
+      totalCost,
+      durationMs,
+    };
+  } finally {
+    // Fire onRunEnd for reporters (even on failure/abort)
+    const durationMs = Date.now() - startTime;
+    const finalCounts = countStories(prd);
     for (const reporter of reporters) {
       if (reporter.onRunEnd) {
         try {
@@ -1419,20 +1438,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
       }
     }
 
-    // ── Status write point 4: run end ──────────────────────────────────────
-    statusWriter.setPrd(prd);
-    statusWriter.setCurrentStory(null);
-    statusWriter.setRunStatus(isComplete(prd) ? "completed" : isStalled(prd) ? "stalled" : "running");
-    await statusWriter.update(totalCost, iterations);
-
-    return {
-      success: isComplete(prd),
-      iterations,
-      storiesCompleted,
-      totalCost,
-      durationMs,
-    };
-  } finally {
     // Teardown plugins
     try {
       await pluginRegistry.teardownAll();
