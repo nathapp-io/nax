@@ -73,6 +73,8 @@ export interface UserStory {
   customContext?: string[];
   /** Category of the last failure (set when story is marked failed) */
   failureCategory?: FailureCategory;
+  /** Worktree path for parallel execution (set when --parallel is used) */
+  worktreePath?: string;
 }
 
 // ============================================================================
