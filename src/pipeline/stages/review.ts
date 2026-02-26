@@ -81,17 +81,38 @@ export const reviewStage: PipelineStage = {
         logger.info("review", `Running ${pluginReviewers.length} plugin reviewer(s)`);
 
         const changedFiles = await getChangedFiles(ctx.workdir);
+        const pluginReviewerResults: Array<{
+          name: string;
+          passed: boolean;
+          output: string;
+          exitCode?: number;
+          error?: string;
+        }> = [];
 
         for (const reviewer of pluginReviewers) {
           logger.info("review", `Running plugin reviewer: ${reviewer.name}`);
           try {
             const result = await reviewer.check(ctx.workdir, changedFiles);
 
+            // Capture result for debugging
+            pluginReviewerResults.push({
+              name: reviewer.name,
+              passed: result.passed,
+              output: result.output,
+              exitCode: result.exitCode,
+            });
+
             if (!result.passed) {
               logger.error("review", `Plugin reviewer failed: ${reviewer.name}`, {
                 output: result.output,
                 storyId: ctx.story.id,
               });
+
+              // Store results in review result before failing
+              if (ctx.reviewResult) {
+                ctx.reviewResult.pluginReviewers = pluginReviewerResults;
+              }
+
               return {
                 action: "fail",
                 reason: `Review failed: plugin reviewer '${reviewer.name}' failed`,
@@ -100,15 +121,35 @@ export const reviewStage: PipelineStage = {
 
             logger.info("review", `Plugin reviewer passed: ${reviewer.name}`);
           } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
             logger.error("review", `Plugin reviewer error: ${reviewer.name}`, {
-              error: error instanceof Error ? error.message : String(error),
+              error: errorMsg,
               storyId: ctx.story.id,
             });
+
+            // Capture error for debugging
+            pluginReviewerResults.push({
+              name: reviewer.name,
+              passed: false,
+              output: "",
+              error: errorMsg,
+            });
+
+            // Store results in review result before failing
+            if (ctx.reviewResult) {
+              ctx.reviewResult.pluginReviewers = pluginReviewerResults;
+            }
+
             return {
               action: "fail",
               reason: `Review failed: plugin reviewer '${reviewer.name}' threw error`,
             };
           }
+        }
+
+        // Store successful plugin reviewer results
+        if (ctx.reviewResult) {
+          ctx.reviewResult.pluginReviewers = pluginReviewerResults;
         }
       }
     }

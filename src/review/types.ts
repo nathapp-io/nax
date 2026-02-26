@@ -23,6 +23,20 @@ export interface ReviewCheckResult {
   durationMs: number;
 }
 
+/** Plugin reviewer result */
+export interface PluginReviewerResult {
+  /** Plugin reviewer name */
+  name: string;
+  /** Pass or fail */
+  passed: boolean;
+  /** Output from the reviewer */
+  output: string;
+  /** Exit code (if applicable) */
+  exitCode?: number;
+  /** Error message if reviewer threw an exception */
+  error?: string;
+}
+
 /** Review phase result */
 export interface ReviewResult {
   /** All checks passed */
@@ -33,6 +47,8 @@ export interface ReviewResult {
   totalDurationMs: number;
   /** First failure reason (if any) */
   failureReason?: string;
+  /** Plugin reviewer results (if any) */
+  pluginReviewers?: PluginReviewerResult[];
 }
 
 /** Review configuration */
