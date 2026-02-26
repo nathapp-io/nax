@@ -503,7 +503,7 @@ describe("execution runner — lite mode routing", () => {
 
   test("config tdd.strategy='lite' routes complex stories to three-session-tdd-lite", async () => {
     // Using routeTask directly to verify routing decision
-    const { routeTask } = await import("../src/routing");
+    const { routeTask } = await import("../../src/routing");
 
     const configWithLiteStrategy = {
       ...DEFAULT_CONFIG,
@@ -523,7 +523,7 @@ describe("execution runner — lite mode routing", () => {
   });
 
   test("config tdd.strategy='strict' routes complex stories to three-session-tdd", async () => {
-    const { routeTask } = await import("../src/routing");
+    const { routeTask } = await import("../../src/routing");
 
     const configWithStrictStrategy = {
       ...DEFAULT_CONFIG,
@@ -543,7 +543,7 @@ describe("execution runner — lite mode routing", () => {
   });
 
   test("config tdd.strategy='auto' routes complex UI-tagged stories to three-session-tdd-lite", async () => {
-    const { routeTask } = await import("../src/routing");
+    const { routeTask } = await import("../../src/routing");
 
     // With auto strategy + ui tag + complex story → three-session-tdd-lite
     // (T3: complex/expert with lite tags → three-session-tdd-lite)
