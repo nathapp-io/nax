@@ -26,6 +26,25 @@ import {
 import type { FailureCategory, TddSessionResult, TddSessionRole, ThreeSessionTddResult } from "./types";
 import { categorizeVerdict, cleanupVerdict, readVerdict } from "./verdict";
 
+/**
+ * Truncate test output to prevent context flooding.
+ * Keeps first 10 lines and last 40 lines with a separator.
+ */
+function truncateTestOutput(output: string, maxLines = 50): string {
+  const lines = output.split("\n");
+  if (lines.length <= maxLines) {
+    return output;
+  }
+
+  const headLines = 10;
+  const tailLines = 40;
+  const head = lines.slice(0, headLines).join("\n");
+  const tail = lines.slice(-tailLines).join("\n");
+  const truncatedCount = lines.length - headLines - tailLines;
+
+  return `${head}\n\n... (${truncatedCount} lines truncated) ...\n\n${tail}`;
+}
+
 /** Run a single TDD session */
 async function runTddSession(
   role: TddSessionRole,
@@ -440,15 +459,24 @@ export async function runThreeSessionTdd(
       });
       const testsActuallyPass = postVerify.success && postVerify.exitCode === 0;
 
+      // Truncate test output before logging to prevent context flooding
+      const truncatedStdout = postVerify.stdout ? truncateTestOutput(postVerify.stdout) : "";
+      const truncatedStderr = postVerify.stderr ? truncateTestOutput(postVerify.stderr) : "";
+
       if (testsActuallyPass) {
         logger.info("tdd", "ℹ️ Sessions had non-zero exits but tests pass — treating as success", {
           storyId: story.id,
+          stdout: truncatedStdout,
         });
         allSuccessful = true;
         needsHumanReview = false;
         reviewReason = undefined;
       } else {
-        logger.warn("tdd", "⚠️ Post-TDD verification: tests still failing", { storyId: story.id });
+        logger.warn("tdd", "⚠️ Post-TDD verification: tests still failing", {
+          storyId: story.id,
+          stdout: truncatedStdout,
+          stderr: truncatedStderr,
+        });
         needsHumanReview = true;
         reviewReason = "Verifier session identified issues and tests still fail";
         finalFailureCategory = "tests-failing";

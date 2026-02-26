@@ -50,6 +50,7 @@ YOUR TASK: Verify the implementation and tests.
 - Check that the implementation meets all acceptance criteria.
 - Fix any minor bugs or missing edge cases.
 - Do NOT change the behavior unless it violates the criteria.
+- When running tests, run ONLY test files related to your changes (e.g. \`bun test ./test/specific.test.ts\`). NEVER run \`bun test\` without a file filter — full suite output will flood your context window and cause failures.
 - Goal: High-quality implementation and passing tests.`;
 }
 
@@ -70,6 +71,7 @@ ${story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
 ## TASKS
 
 1. Run all tests and verify they pass.
+   - When running tests, run ONLY test files related to your changes (e.g. \`bun test ./test/specific.test.ts\`). NEVER run \`bun test\` without a file filter — full suite output will flood your context window and cause failures.
 2. Review the implementation for quality and correctness.
 3. Check that the implementation meets all acceptance criteria.
 4. Check if test files were modified by the implementer (make sure they are legitimate fixes, NOT just loosening assertions to mask bugs).
@@ -155,7 +157,8 @@ RULES:
 - Only create or modify files in the test/ directory.
 - Tests must fail (feature not implemented yet).
 - Use Bun test (describe/test/expect).
-- Cover all acceptance criteria.${contextSection}`;
+- Cover all acceptance criteria.
+- When running tests, run ONLY test files related to your changes (e.g. \`bun test ./test/specific.test.ts\`). NEVER run \`bun test\` without a file filter — full suite output will flood your context window and cause failures.${contextSection}`;
 }
 
 /**
@@ -177,7 +180,8 @@ RULES:
 - Primarily CREATE test files in the test/ directory.
 - Stub-only src/ files are allowed (empty exports, no logic).
 - Tests must fail for the right reasons (feature not implemented).
-- Use Bun test (describe/test/expect).${contextSection}`;
+- Use Bun test (describe/test/expect).
+- When running tests, run ONLY test files related to your changes (e.g. \`bun test ./test/specific.test.ts\`). NEVER run \`bun test\` without a file filter — full suite output will flood your context window and cause failures.${contextSection}`;
 }
 
 /**
@@ -199,6 +203,7 @@ RULES:
 - Implement source code in src/ to make tests pass.
 - Do NOT modify test files.
 - Run tests frequently to track progress.
+- When running tests, run ONLY test files related to your changes (e.g. \`bun test ./test/specific.test.ts\`). NEVER run \`bun test\` without a file filter — full suite output will flood your context window and cause failures.
 - Goal: all tests green.${contextSection}`;
 }
 
@@ -221,5 +226,6 @@ RULES:
 - Write tests first (test/ directory), then implement (src/ directory).
 - All tests must pass by the end.
 - Use Bun test (describe/test/expect).
+- When running tests, run ONLY test files related to your changes (e.g. \`bun test ./test/specific.test.ts\`). NEVER run \`bun test\` without a file filter — full suite output will flood your context window and cause failures.
 - Goal: all tests green, all criteria met.${contextSection}`;
 }
