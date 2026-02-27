@@ -58,6 +58,7 @@ import {
   runsShowCommand,
 } from "../src/cli";
 import { logsCommand } from "../src/commands/logs";
+import { precheckCommand } from "../src/commands/precheck";
 import { DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from "../src/config";
 import { run } from "../src/execution";
 import { loadHooksConfig } from "../src/hooks";
@@ -680,6 +681,26 @@ program
         level: options.level,
         list: options.list,
         run: options.run,
+        json: options.json,
+      });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+// ── precheck ─────────────────────────────────────────
+program
+  .command("precheck")
+  .description("Validate feature readiness before execution")
+  .option("-f, --feature <name>", "Feature name")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("--json", "Output machine-readable JSON", false)
+  .action(async (options) => {
+    try {
+      await precheckCommand({
+        feature: options.feature,
+        dir: options.dir,
         json: options.json,
       });
     } catch (err) {
