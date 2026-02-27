@@ -7,6 +7,22 @@
 
 ## Shipped
 
+### v0.12.0 — Structured Logging (2026-02-27)
+
+Human-friendly output, `nax status`, `nax logs`, crash recovery.
+
+| Story | Title | Pts | Status |
+|:---|:---|:---|:---|
+| US-001 | Project resolver (CWD + -d) | 2 | ✅ passed |
+| US-002 | Logging formatter | 5 | ✅ passed |
+| US-003 | status.json writer | 3 | ✅ passed |
+| US-004 | `nax status` command | 3 | ✅ passed |
+| US-005 | `nax logs` command | 5 | ✅ passed |
+| US-006 | Integrate formatter into runner | 3 | ✅ passed |
+| US-007 | Crash recovery (signals, heartbeat) | 3 | ✅ passed |
+
+**Next:** Run full test suite, then publish `v0.12.0-canary.0`.
+
 ### v0.11.0 — Plugin Integration (2026-02-27)
 
 8 plugin stories + TDD state-sync fix + test regressions fixed.
@@ -21,27 +37,9 @@
 
 ---
 
-## Current: v0.12.0-canary — Structured Logging
+## Current: v0.13.0-canary — Precheck
 
 **Status:** Spec approved, not started
-**Spec:** memory/20260227-spec-logging.md
-
-Human-friendly output, `nax status`, `nax logs`, crash recovery.
-
-| Story | Title | Pts | Status |
-|:---|:---|:---|:---|
-| US-001 | Project resolver (CWD + -d) | 2 | pending |
-| US-002 | Logging formatter | 5 | pending |
-| US-003 | status.json writer | 3 | pending |
-| US-004 | `nax status` command | 3 | pending |
-| US-005 | `nax logs` command | 5 | pending |
-| US-006 | Integrate formatter into runner | 3 | pending |
-| US-007 | Crash recovery (signals, heartbeat) | 3 | pending |
-
----
-
-## Next: v0.13.0-canary — Precheck
-
 **Spec:** memory/20260227-spec-precheck.md
 
 Fail-fast validation before story execution. `nax precheck` CLI command.
@@ -57,7 +55,7 @@ Fail-fast validation before story execution. `nax precheck` CLI command.
 
 ---
 
-## Future: v0.14.0 — Parallel Execution
+## Next: v0.14.0 — Parallel Execution
 
 - Git worktree isolation per story
 - Claude Code --worktree flag
