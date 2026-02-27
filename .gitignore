@@ -42,3 +42,10 @@ orchestrator/
 
 # nax — generated files
 .nax-verifier-verdict.json
+
+# nax runtime
+nax.lock
+nax/features/*/runs/
+nax/features/*/status.json
+test/tmp/
+TEST_SUMMARY_*.md
