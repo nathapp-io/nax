@@ -57,6 +57,7 @@ import {
   runsListCommand,
   runsShowCommand,
 } from "../src/cli";
+import { logsCommand } from "../src/commands/logs";
 import { DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from "../src/config";
 import { run } from "../src/execution";
 import { loadHooksConfig } from "../src/hooks";
@@ -649,6 +650,42 @@ program
       feature: options.feature,
       dir: options.dir,
     });
+  });
+
+// ── logs ─────────────────────────────────────────────
+program
+  .command("logs")
+  .description("Display run logs with filtering and follow mode")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("-f, --follow", "Follow mode - stream new entries real-time", false)
+  .option("-s, --story <id>", "Filter to specific story")
+  .option("--level <level>", "Filter by log level (debug|info|warn|error)")
+  .option("-l, --list", "List all runs in table format", false)
+  .option("-r, --run <timestamp>", "Select specific run by timestamp")
+  .option("-j, --json", "Output raw JSONL", false)
+  .action(async (options) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    try {
+      await logsCommand({
+        dir: workdir,
+        follow: options.follow,
+        story: options.story,
+        level: options.level,
+        list: options.list,
+        run: options.run,
+        json: options.json,
+      });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
   });
 
 // ── runs ─────────────────────────────────────────────
