@@ -21,27 +21,9 @@
 
 ---
 
-## Current: v0.12.0-canary — Precheck + Structured Logging
+## Current: v0.12.0-canary — Structured Logging
 
 **Status:** Spec approved, not started
-
-### Precheck Stage (14 points)
-
-**Spec:** memory/20260227-spec-precheck.md
-
-Fail-fast validation before story execution. `nax precheck` CLI command.
-
-| Story | Title | Pts | Status |
-|:---|:---|:---|:---|
-| US-001 | Precheck types and check implementations | 3 | pending |
-| US-002 | Precheck orchestrator | 3 | pending |
-| US-003 | CLI `nax precheck` with `--json` | 2 | pending |
-| US-004 | Integrate precheck into `nax run` | 2 | pending |
-| US-005 | Config-driven review commands | 3 | pending |
-| US-006 | PRD auto-default + router tags fix | 1 | pending |
-
-### Structured Logging (24 points)
-
 **Spec:** memory/20260227-spec-logging.md
 
 Human-friendly output, `nax status`, `nax logs`, crash recovery.
@@ -58,7 +40,24 @@ Human-friendly output, `nax status`, `nax logs`, crash recovery.
 
 ---
 
-## Next: v0.13.0 — Parallel Execution
+## Next: v0.13.0-canary — Precheck
+
+**Spec:** memory/20260227-spec-precheck.md
+
+Fail-fast validation before story execution. `nax precheck` CLI command.
+
+| Story | Title | Pts | Status |
+|:---|:---|:---|:---|
+| US-001 | Precheck types and check implementations | 3 | pending |
+| US-002 | Precheck orchestrator | 3 | pending |
+| US-003 | CLI `nax precheck` with `--json` | 2 | pending |
+| US-004 | Integrate precheck into `nax run` | 2 | pending |
+| US-005 | Config-driven review commands | 3 | pending |
+| US-006 | PRD auto-default + router tags fix | 1 | pending |
+
+---
+
+## Future: v0.14.0 — Parallel Execution
 
 - Git worktree isolation per story
 - Claude Code --worktree flag
