@@ -3,7 +3,7 @@
   "feature": "structured-logging",
   "branchName": "feat/structured-logging",
   "createdAt": "2026-02-27T05:50:00Z",
-  "updatedAt": "2026-02-27T05:50:00Z",
+  "updatedAt": "2026-02-27T06:07:40.281Z",
   "userStories": [
     {
       "id": "US-001",
@@ -23,7 +23,12 @@
         "cli",
         "resolver"
       ],
-      "status": "pending"
+      "status": "done",
+      "attempts": 1,
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced"
+      ],
+      "escalations": []
     },
     {
       "id": "US-002",
@@ -43,7 +48,10 @@
         "logging",
         "formatter"
       ],
-      "status": "pending"
+      "status": "done",
+      "attempts": 0,
+      "priorErrors": [],
+      "escalations": []
     },
     {
       "id": "US-003",
@@ -63,7 +71,10 @@
         "logging",
         "state"
       ],
-      "status": "pending"
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "escalations": []
     },
     {
       "id": "US-004",
@@ -86,7 +97,10 @@
         "cli",
         "status"
       ],
-      "status": "pending"
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "escalations": []
     },
     {
       "id": "US-005",
@@ -111,7 +125,10 @@
         "cli",
         "logs"
       ],
-      "status": "pending"
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "escalations": []
     },
     {
       "id": "US-006",
@@ -134,7 +151,10 @@
         "runner",
         "integration"
       ],
-      "status": "pending"
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "escalations": []
     },
     {
       "id": "US-007",
@@ -156,7 +176,10 @@
         "crash-recovery",
         "signals"
       ],
-      "status": "pending"
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "escalations": []
     }
   ],
   "analyzeConfig": {
