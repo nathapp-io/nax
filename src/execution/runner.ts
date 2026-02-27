@@ -161,6 +161,8 @@ export interface RunOptions {
   formatterMode?: "quiet" | "normal" | "verbose" | "json";
   /** Whether running in headless mode (vs TUI mode) */
   headless?: boolean;
+  /** Skip precheck validations (for advanced users) */
+  skipPrecheck?: boolean;
 }
 
 /** Run result */
@@ -176,7 +178,7 @@ export interface RunResult {
  * Main execution loop
  */
 export async function run(options: RunOptions): Promise<RunResult> {
-  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useBatch = true, eventEmitter, statusFile, parallel, logFilePath, formatterMode = "normal", headless = false } = options;
+  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useBatch = true, eventEmitter, statusFile, parallel, logFilePath, formatterMode = "normal", headless = false, skipPrecheck = false } = options;
   const startTime = Date.now();
   const runStartedAt = new Date().toISOString();
   const runId = `run-${new Date().toISOString().replace(/[:.]/g, "-")}`;
@@ -227,6 +229,78 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   // Load PRD (before try block so it's accessible in finally for onRunEnd)
   let prd = await loadPRD(prdPath);
+
+  // ── Run precheck validations (unless --skip-precheck) ──────────────────────
+  if (!skipPrecheck && !dryRun) {
+    logger?.info("precheck", "Running precheck validations...");
+
+    const { runPrecheck } = await import("../precheck");
+    const precheckResult = await runPrecheck(config, prd, {
+      workdir,
+      format: "human"
+    });
+
+    // Log precheck results to JSONL (US-004 AC5)
+    if (logFilePath) {
+      const precheckLog = {
+        type: "precheck",
+        timestamp: new Date().toISOString(),
+        passed: precheckResult.output.passed,
+        blockers: precheckResult.output.blockers.map(b => ({ name: b.name, message: b.message })),
+        warnings: precheckResult.output.warnings.map(w => ({ name: w.name, message: w.message })),
+        summary: precheckResult.output.summary,
+      };
+      const logFile = Bun.file(logFilePath);
+      await Bun.write(logFile, JSON.stringify(precheckLog) + "\n");
+    }
+
+    // If there are blockers (Tier 1 failures), abort the run
+    if (!precheckResult.output.passed) {
+      logger?.error("precheck", "Precheck failed - execution blocked", {
+        blockers: precheckResult.output.blockers.length,
+        failedChecks: precheckResult.output.blockers.map(b => b.name),
+      });
+
+      // Update status file with precheck-failed status (US-004 AC6)
+      statusWriter.setPrd(prd);
+      statusWriter.setRunStatus("precheck-failed");
+      statusWriter.setCurrentStory(null);
+      await statusWriter.update(0, 0);
+
+      // Log detailed error message
+      console.error("");
+      console.error(chalk.red("❌ PRECHECK FAILED"));
+      console.error(chalk.red("─".repeat(60)));
+      for (const blocker of precheckResult.output.blockers) {
+        console.error(chalk.red(`✗ ${blocker.name}: ${blocker.message}`));
+      }
+      console.error(chalk.red("─".repeat(60)));
+      console.error(chalk.yellow("\nRun 'nax precheck' for detailed information"));
+      console.error(chalk.dim("Use --skip-precheck to bypass (not recommended)\n"));
+
+      throw new Error(`Precheck failed: ${precheckResult.output.blockers.map(b => b.name).join(", ")}`);
+    }
+
+    // Log warnings (Tier 2) but continue execution
+    if (precheckResult.output.warnings.length > 0) {
+      logger?.warn("precheck", "Precheck passed with warnings", {
+        warnings: precheckResult.output.warnings.length,
+        issues: precheckResult.output.warnings.map(w => w.name),
+      });
+
+      if (headless && formatterMode !== "json") {
+        console.log(chalk.yellow("\n⚠️  Precheck warnings:"));
+        for (const warning of precheckResult.output.warnings) {
+          console.log(chalk.yellow(`  ⚠ ${warning.name}: ${warning.message}`));
+        }
+        console.log("");
+      }
+    } else {
+      logger?.info("precheck", "All precheck validations passed");
+    }
+  } else if (skipPrecheck) {
+    logger?.warn("precheck", "Precheck validations skipped (--skip-precheck)");
+  }
 
   try {
     logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {

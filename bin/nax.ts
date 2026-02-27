@@ -212,6 +212,7 @@ program
   .option("--json", "JSON mode (raw JSONL output to stdout)", false)
   .option("-d, --dir <path>", "Working directory", process.cwd())
   .option("--status-file <path>", "Write machine-readable JSON status file (updated during run)")
+  .option("--skip-precheck", "Skip precheck validations (advanced users only)", false)
   .action(async (options) => {
     // Validate directory path
     let workdir: string;
@@ -352,6 +353,7 @@ program
       logFilePath,
       formatterMode: useHeadless ? formatterMode : undefined,
       headless: useHeadless,
+      skipPrecheck: options.skipPrecheck ?? false,
     });
 
     // Create/update latest.jsonl symlink

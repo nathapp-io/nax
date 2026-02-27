@@ -12,3 +12,4 @@ Implementation summary:
 - Returns proper exit codes: 0=pass, 1=blocker, 2=invalid PRD
 - 7 integration tests in test/integration/cli-precheck.test.ts
 - All acceptance criteria verified
+[2026-02-27T14:00:33.162Z] US-003 — FAILED — CLI nax precheck command with --json flag — All tiers exhausted

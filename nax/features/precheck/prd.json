@@ -88,13 +88,20 @@
         "cli",
         "precheck"
       ],
-      "status": "passed",
+      "status": "failed",
       "attempts": 2,
       "priorErrors": [
+        "Attempt 1 failed with model tier: balanced",
+        "Attempt 2 failed with model tier: balanced",
         "Attempt 1 failed with model tier: balanced"
       ],
       "escalations": [],
-      "passes": true
+      "routing": {
+        "complexity": "medium",
+        "modelTier": "powerful",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "three-session-tdd-lite: strategy:lite"
+      }
     },
     {
       "id": "US-004",
@@ -190,5 +197,5 @@
     "maxStories": 15,
     "granularity": "medium"
   },
-  "updatedAt": "2026-02-27T13:47:34.005Z"
+  "updatedAt": "2026-02-27T14:00:33.162Z"
 }
