@@ -107,6 +107,8 @@ export interface ExecutionConfig {
   maxStoriesPerFeature: number;
   /** Rectification loop settings (v0.11) */
   rectification: RectificationConfig;
+  /** Token budget for plugin context providers (default: 2000) */
+  contextProviderTokenBudget: number;
 }
 
 /** Quality gate config */
@@ -448,6 +450,7 @@ const ExecutionConfigSchema = z.object({
   verificationTimeoutSeconds: z.number().int().min(1).max(3600).default(300),
   maxStoriesPerFeature: z.number().int().positive(),
   rectification: RectificationConfigSchema,
+  contextProviderTokenBudget: z.number().int().positive({ message: "contextProviderTokenBudget must be > 0" }).default(2000),
 });
 
 const QualityConfigSchema = z.object({
@@ -665,6 +668,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
       maxFailureSummaryChars: 2000,
       abortOnIncreasingFailures: true,
     },
+    contextProviderTokenBudget: 2000,
   },
   quality: {
     requireTypecheck: true,

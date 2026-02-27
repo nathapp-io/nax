@@ -25,12 +25,6 @@ import { buildStoryContextFull } from "../../execution/helpers";
 import { getLogger } from "../../logger";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
-/**
- * Token budget for plugin context providers.
- * We reserve 20k tokens for plugin context out of the 100k total context budget.
- */
-const PLUGIN_CONTEXT_MAX_TOKENS = 20_000;
-
 export const contextStage: PipelineStage = {
   name: "context",
   enabled: () => true,
@@ -46,6 +40,9 @@ export const contextStage: PipelineStage = {
     if (result) {
       ctx.contextMarkdown = result.markdown;
       ctx.builtContext = result.builtContext;
+    } else {
+      // Initialize contextMarkdown to empty string if no PRD context was built
+      ctx.contextMarkdown = ctx.contextMarkdown || "";
     }
 
     // Add plugin context if any providers are registered
@@ -56,10 +53,11 @@ export const contextStage: PipelineStage = {
 
         const pluginElements: ContextElement[] = [];
         let pluginTokensUsed = 0;
+        const tokenBudget = ctx.config.execution.contextProviderTokenBudget;
 
         for (const provider of providers) {
           // Check if we have budget remaining
-          if (pluginTokensUsed >= PLUGIN_CONTEXT_MAX_TOKENS) {
+          if (pluginTokensUsed >= tokenBudget) {
             logger.info("context", "Plugin context budget exhausted, skipping remaining providers");
             break;
           }
@@ -69,9 +67,9 @@ export const contextStage: PipelineStage = {
             const providerResult = await provider.getContext(ctx.story);
 
             // Check if adding this provider's content would exceed budget
-            if (pluginTokensUsed + providerResult.estimatedTokens > PLUGIN_CONTEXT_MAX_TOKENS) {
+            if (pluginTokensUsed + providerResult.estimatedTokens > tokenBudget) {
               logger.info("context", `Skipping plugin ${provider.name}: would exceed budget`);
-              continue;
+              break;
             }
 
             // Add plugin context as a new element
