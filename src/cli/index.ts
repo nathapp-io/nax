@@ -9,6 +9,8 @@ export {
   displayCostMetrics,
   displayLastRunMetrics,
   displayModelEfficiency,
+  displayFeatureStatus,
+  type FeatureStatusOptions,
 } from "./status";
 export {
   runsListCommand,

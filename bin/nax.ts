@@ -50,6 +50,7 @@ import {
   displayCostMetrics,
   displayLastRunMetrics,
   displayModelEfficiency,
+  displayFeatureStatus,
   planCommand,
   pluginsListCommand,
   promptsCommand,
@@ -627,41 +628,11 @@ program
       return;
     }
 
-    // Default status: show feature progress
-    if (!options.feature) {
-      console.error(chalk.red("Feature name required (use -f, --feature <name>)"));
-      console.error(chalk.dim("Or use --cost to show cost metrics"));
-      process.exit(1);
-    }
-
-    const prdPath = join(naxDir, "features", options.feature, "prd.json");
-    if (!existsSync(prdPath)) {
-      console.error(chalk.red(`Feature "${options.feature}" not found.`));
-      process.exit(1);
-    }
-
-    const prd = await loadPRD(prdPath);
-    const c = countStories(prd);
-
-    console.log(chalk.bold(`\n📊 ${prd.feature}`));
-    console.log(chalk.dim(`   Branch: ${prd.branchName}`));
-    console.log(chalk.dim(`   Updated: ${prd.updatedAt}`));
-    console.log();
-    console.log(`   Total:   ${c.total}`);
-    console.log(chalk.green(`   Passed:  ${c.passed}`));
-    console.log(chalk.red(`   Failed:  ${c.failed}`));
-    console.log(chalk.dim(`   Pending: ${c.pending}`));
-    console.log(chalk.yellow(`   Skipped: ${c.skipped}`));
-    console.log();
-
-    for (const story of prd.userStories) {
-      const icon = story.passes ? "✅" : story.status === "failed" ? "❌" : "⬜";
-      const routing = story.routing
-        ? chalk.dim(` [${story.routing.complexity}/${story.routing.modelTier}/${story.routing.testStrategy}]`)
-        : "";
-      console.log(`   ${icon} ${story.id}: ${story.title}${routing}`);
-    }
-    console.log();
+    // Default status: show feature progress (new implementation with active run detection)
+    await displayFeatureStatus({
+      feature: options.feature,
+      dir: options.dir,
+    });
   });
 
 // ── runs ─────────────────────────────────────────────
