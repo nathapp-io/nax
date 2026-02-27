@@ -369,6 +369,7 @@ describe("E2E: plan → analyze → run workflow", () => {
       featureDir,
       dryRun: false,
       useBatch: true, // Enable batching
+      skipPrecheck: true, // Skip precheck for E2E test (no git repo in temp dir)
     });
 
     expect(runResult.success).toBe(true);
@@ -445,6 +446,7 @@ describe("E2E: plan → analyze → run workflow", () => {
       feature: "simple-task",
       featureDir,
       dryRun: false,
+      skipPrecheck: true, // Skip precheck for E2E test (no git repo in temp dir)
     });
 
     // Verify agent was called (execution stage ran)
@@ -525,6 +527,7 @@ describe("E2E: plan → analyze → run workflow", () => {
       feature: "fail-task",
       featureDir,
       dryRun: false,
+      skipPrecheck: true, // Skip precheck for E2E test (no git repo in temp dir)
     });
 
     // Verify story completed (escalation auto-handled by system)
@@ -587,6 +590,7 @@ describe("E2E: plan → analyze → run workflow", () => {
       feature: "rate-limit-task",
       featureDir,
       dryRun: false,
+      skipPrecheck: true, // Skip precheck for E2E test (no git repo in temp dir)
     });
 
     expect(runResult.success).toBe(true);
@@ -692,6 +696,7 @@ describe("E2E: plan → analyze → run workflow", () => {
       featureDir,
       dryRun: false,
       useBatch: true,
+      skipPrecheck: true, // Skip precheck for E2E test (no git repo in temp dir)
     });
 
     expect(runResult.success).toBe(true);

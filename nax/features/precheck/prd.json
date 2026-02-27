@@ -88,7 +88,7 @@
         "cli",
         "precheck"
       ],
-      "status": "failed",
+      "status": "passed",
       "attempts": 2,
       "priorErrors": [
         "Attempt 1 failed with model tier: balanced",
@@ -101,7 +101,8 @@
         "modelTier": "powerful",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "three-session-tdd-lite: strategy:lite"
-      }
+      },
+      "passes": true
     },
     {
       "id": "US-004",
@@ -122,10 +123,13 @@
         "runner",
         "integration"
       ],
-      "status": "pending",
-      "attempts": 0,
-      "priorErrors": [],
-      "escalations": []
+      "status": "passed",
+      "attempts": 1,
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced"
+      ],
+      "escalations": [],
+      "passes": true
     },
     {
       "id": "US-005",
@@ -197,5 +201,5 @@
     "maxStories": 15,
     "granularity": "medium"
   },
-  "updatedAt": "2026-02-27T14:00:33.162Z"
+  "updatedAt": "2026-02-27T14:10:37.423Z"
 }

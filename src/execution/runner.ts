@@ -231,7 +231,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
   let prd = await loadPRD(prdPath);
 
   // ── Run precheck validations (unless --skip-precheck) ──────────────────────
-  if (!skipPrecheck && !dryRun) {
+  if (!skipPrecheck) {
     logger?.info("precheck", "Running precheck validations...");
 
     const { runPrecheck } = await import("../precheck");
