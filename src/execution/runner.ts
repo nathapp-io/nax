@@ -46,7 +46,7 @@ import type { UserStory } from "../prd";
 import { routeTask } from "../routing";
 import { clearCache as clearLlmCache, routeBatch as llmRouteBatch } from "../routing/strategies/llm";
 import type { FailureCategory } from "../tdd/types";
-import { captureGitRef } from "../utils/git";
+import { captureGitRef, hasCommitsForStory } from "../utils/git";
 import { type StoryBatch, precomputeBatchPlan } from "./batching";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "./escalation";
 import { acquireLock, formatProgress, getAllReadyStories, hookCtx, releaseLock } from "./helpers";
@@ -245,6 +245,31 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
     // PRD already loaded before try block
     let prdDirty = false; // Track if PRD needs reloading
+
+    // State reconciliation: check if failed stories have commits in git history
+    // This handles the case where TDD failed but agent already committed code
+    let reconciledCount = 0;
+    for (const story of prd.userStories) {
+      if (story.status === "failed") {
+        const hasCommits = await hasCommitsForStory(workdir, story.id);
+        if (hasCommits) {
+          logger?.warn("reconciliation", "Failed story has commits in git history, marking as passed", {
+            storyId: story.id,
+            title: story.title,
+          });
+          markStoryPassed(prd, story.id);
+          reconciledCount++;
+          prdDirty = true;
+        }
+      }
+    }
+
+    if (reconciledCount > 0) {
+      logger?.info("reconciliation", `Reconciled ${reconciledCount} failed stories from git history`);
+      await savePRD(prd, prdPath);
+      prdDirty = false; // Just saved, no need to reload
+    }
+
     const counts = countStories(prd);
 
     // ── Status write point 1: run started ───────────────────────────────────
