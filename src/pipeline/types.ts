@@ -107,7 +107,7 @@ export type StageAction =
   /** Mark story as failed (don't run further stages) */
   | { action: "fail"; reason: string; cost?: number }
   /** Escalate to a higher tier and retry the pipeline */
-  | { action: "escalate"; cost?: number }
+  | { action: "escalate"; reason?: string; cost?: number }
   /** Pause execution (user intervention required via queue command) */
   | { action: "pause"; reason: string; cost?: number };
 
