@@ -77,19 +77,21 @@ describe("Review Phase", () => {
     expect(result.failureReason).toContain("lint failed");
   });
 
-  test("runReview - uses default commands when not specified", async () => {
+  test("runReview - uses review config commands when specified", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "nax-review-test-"));
 
     const config: ReviewConfig = {
       enabled: true,
       checks: ["test"],
-      commands: {}, // No custom command, should use default
+      commands: {
+        test: "echo 'custom test command'",
+      },
     };
 
     const result = await runReview(config, tempDir);
 
-    // Default command will be used but may fail (no tests in temp dir)
-    expect(result.checks[0].command).toBe("bun test");
+    // Custom command from config.review.commands
+    expect(result.checks[0].command).toBe("echo 'custom test command'");
   });
 
   test("runReview - empty checks array", async () => {

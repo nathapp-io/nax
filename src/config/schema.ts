@@ -109,6 +109,10 @@ export interface ExecutionConfig {
   rectification: RectificationConfig;
   /** Token budget for plugin context providers (default: 2000) */
   contextProviderTokenBudget: number;
+  /** Lint command override (null = disabled, undefined = auto-detect from package.json) */
+  lintCommand?: string | null;
+  /** Typecheck command override (null = disabled, undefined = auto-detect from package.json) */
+  typecheckCommand?: string | null;
 }
 
 /** Quality gate config */
@@ -453,6 +457,8 @@ const ExecutionConfigSchema = z.object({
   maxStoriesPerFeature: z.number().int().positive(),
   rectification: RectificationConfigSchema,
   contextProviderTokenBudget: z.number().int().positive({ message: "contextProviderTokenBudget must be > 0" }).default(2000),
+  lintCommand: z.string().nullable().optional(),
+  typecheckCommand: z.string().nullable().optional(),
 });
 
 const QualityConfigSchema = z.object({

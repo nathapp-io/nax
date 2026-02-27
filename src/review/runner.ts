@@ -6,6 +6,7 @@
 
 import { spawn } from "bun";
 import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
+import type { ExecutionConfig } from "../config/schema";
 
 /** Default commands for each check type */
 const DEFAULT_COMMANDS: Record<ReviewCheckName, string> = {
@@ -13,6 +14,67 @@ const DEFAULT_COMMANDS: Record<ReviewCheckName, string> = {
   lint: "bun run lint",
   test: "bun test",
 };
+
+/**
+ * Load package.json from workdir
+ */
+async function loadPackageJson(workdir: string): Promise<Record<string, unknown> | null> {
+  try {
+    const file = Bun.file(`${workdir}/package.json`);
+    const content = await file.text();
+    return JSON.parse(content);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Check if package.json has a script
+ */
+function hasScript(packageJson: Record<string, unknown> | null, scriptName: string): boolean {
+  if (!packageJson) return false;
+  const scripts = packageJson.scripts;
+  if (typeof scripts !== "object" || scripts === null) return false;
+  return scriptName in scripts;
+}
+
+/**
+ * Resolve command for a check
+ * Resolution order:
+ * 1. Explicit executionConfig field (lintCommand/typecheckCommand) - null = disabled
+ * 2. package.json has script -> use 'bun run <script>'
+ * 3. Not found -> return null (skip)
+ */
+async function resolveCommand(
+  check: ReviewCheckName,
+  config: ReviewConfig,
+  executionConfig: ExecutionConfig | undefined,
+  workdir: string,
+): Promise<string | null> {
+  // 1. Check explicit config.execution commands (v0.13 story)
+  if (executionConfig) {
+    if (check === "lint" && executionConfig.lintCommand !== undefined) {
+      return executionConfig.lintCommand; // null = disabled
+    }
+    if (check === "typecheck" && executionConfig.typecheckCommand !== undefined) {
+      return executionConfig.typecheckCommand; // null = disabled
+    }
+  }
+
+  // 2. Check config.review.commands (legacy, backwards compat)
+  if (config.commands[check]) {
+    return config.commands[check] ?? null;
+  }
+
+  // 3. Check package.json
+  const packageJson = await loadPackageJson(workdir);
+  if (hasScript(packageJson, check)) {
+    return `bun run ${check}`;
+  }
+
+  // 4. Not found - return null to skip
+  return null;
+}
 
 /**
  * Run a single review check
@@ -65,14 +127,24 @@ async function runCheck(check: ReviewCheckName, command: string, workdir: string
 /**
  * Run all configured review checks
  */
-export async function runReview(config: ReviewConfig, workdir: string): Promise<ReviewResult> {
+export async function runReview(
+  config: ReviewConfig,
+  workdir: string,
+  executionConfig?: ExecutionConfig,
+): Promise<ReviewResult> {
   const startTime = Date.now();
   const checks: ReviewCheckResult[] = [];
   let firstFailure: string | undefined;
 
   for (const checkName of config.checks) {
-    // Get command from config or use default
-    const command = config.commands[checkName] ?? DEFAULT_COMMANDS[checkName];
+    // Resolve command using resolution strategy
+    const command = await resolveCommand(checkName, config, executionConfig, workdir);
+
+    // Skip if explicitly disabled or not found
+    if (command === null) {
+      console.warn(`[nax] Skipping ${checkName} check (command not configured or disabled)`);
+      continue;
+    }
 
     // Run the check
     const result = await runCheck(checkName, command, workdir);

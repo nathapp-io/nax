@@ -80,7 +80,7 @@ export const reviewStage: PipelineStage = {
     logger.info("review", "Running review phase");
 
     // Run built-in checks (typecheck, lint, test)
-    const reviewResult = await runReview(ctx.config.review, ctx.workdir);
+    const reviewResult = await runReview(ctx.config.review, ctx.workdir, ctx.config.execution);
     ctx.reviewResult = reviewResult;
 
     // HARD FAILURE: Review failure means code quality gate not met
