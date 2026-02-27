@@ -5,6 +5,7 @@
  * First strategy to return a non-null decision wins.
  */
 
+import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd/types";
 import type { RoutingContext, RoutingDecision, RoutingStrategy } from "./strategy";
 
@@ -28,6 +29,7 @@ export class StrategyChain {
    * Tries each strategy in order:
    * - If strategy returns a decision → use it
    * - If strategy returns null → try next strategy
+   * - If strategy throws an error → log it and try next strategy
    * - If all strategies return null → throw error
    *
    * @param story - User story to route
@@ -36,10 +38,22 @@ export class StrategyChain {
    * @throws Error if no strategy returns a decision
    */
   async route(story: UserStory, context: RoutingContext): Promise<RoutingDecision> {
+    const logger = getSafeLogger();
+
     for (const strategy of this.strategies) {
-      const decision = await strategy.route(story, context);
-      if (decision !== null) {
-        return decision;
+      try {
+        const decision = await strategy.route(story, context);
+        if (decision !== null) {
+          return decision;
+        }
+      } catch (error) {
+        // Log the error and continue to next strategy
+        logger?.error("routing", `Plugin router "${strategy.name}" failed`, {
+          strategyName: strategy.name,
+          storyId: story.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Continue to next strategy
       }
     }
 
