@@ -21,7 +21,6 @@ import type { PRD, UserStory } from "../../src/prd/types";
  * Create a valid git environment to allow checks to progress
  */
 async function setupValidGitEnv(testDir: string): Promise<void> {
-	mkdirSync(join(testDir, ".git"));
 	await Bun.spawn(["git", "init"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 	await Bun.spawn(["git", "config", "user.name", "Test"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 	await Bun.spawn(["git", "config", "user.email", "test@test.com"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
@@ -183,6 +182,9 @@ describe("runPrecheck integration", () => {
 		await setupValidGitEnv(testDir);
 		const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
 		writeFileSync(join(testDir, "nax.lock"), JSON.stringify({ pid: 12345, startedAt: threeHoursAgo.toISOString() }));
+		// Commit the lock file to keep working tree clean
+		await Bun.spawn(["git", "add", "."], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
+		await Bun.spawn(["git", "commit", "-m", "Add stale lock"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
@@ -221,6 +223,9 @@ describe("runPrecheck integration", () => {
 		mkdirSync(join(testDir, "node_modules"));
 		// Add gitignore to avoid one warning
 		writeFileSync(join(testDir, ".gitignore"), "nax.lock\nruns/\ntest/tmp/");
+		// Commit the new file to keep working tree clean
+		await Bun.spawn(["git", "add", "."], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
+		await Bun.spawn(["git", "commit", "-m", "Add gitignore"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
@@ -240,8 +245,11 @@ describe("runPrecheck integration", () => {
 	});
 
 	test("auto-defaults missing PRD fields in-memory during validation", async () => {
-		mkdirSync(join(testDir, ".git"));
+		await setupValidGitEnv(testDir);
 		mkdirSync(join(testDir, "node_modules"));
+		// Commit node_modules to keep working tree clean
+		await Bun.spawn(["git", "add", "."], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
+		await Bun.spawn(["git", "commit", "-m", "Add node_modules"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 
 		const storyWithMissingFields = {
 			id: "US-001",
@@ -254,11 +262,11 @@ describe("runPrecheck integration", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD([storyWithMissingFields]);
 
-		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result, output } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
-		// PRD validation should pass after auto-defaulting
-		const prdValidCheck = result.blockers.find((c) => c.name === "prd-valid");
-		expect(prdValidCheck?.passed).toBe(true);
+		// PRD validation should pass after auto-defaulting (all Tier 1 passed means no blockers)
+		expect(result.blockers.length).toBe(0);
+		expect(output.passed).toBe(true);
 
 		// The story should now have defaults
 		expect(prd.userStories[0].tags).toEqual([]);
@@ -268,30 +276,39 @@ describe("runPrecheck integration", () => {
 
 	test("all blocker checks must pass for a clean environment", async () => {
 		// Create a fully valid environment
-		mkdirSync(join(testDir, ".git"));
+		await setupValidGitEnv(testDir);
 		mkdirSync(join(testDir, "node_modules"));
 		writeFileSync(join(testDir, ".gitignore"), "node_modules/\nnax.lock\nnax/features/*/runs/\ntest/tmp/");
+		// Commit these files to keep working tree clean
+		await Bun.spawn(["git", "add", "."], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
+		await Bun.spawn(["git", "commit", "-m", "Add files"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD([
 			createMockStory({ id: "US-001", title: "Story 1", description: "Desc 1" }),
 		]);
 
-		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result, output } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
-		// Check that we got results
-		expect(result.blockers.length).toBeGreaterThan(0);
+		// All Tier 1 checks should pass (no blockers)
+		expect(result.blockers.length).toBe(0);
+		// Tier 2 warnings should run
 		expect(result.warnings.length).toBeGreaterThan(0);
+		// Overall should pass
+		expect(output.passed).toBe(true);
 
-		// Each blocker should have passed/failed status
-		for (const blocker of result.blockers) {
-			expect(typeof blocker.passed).toBe("boolean");
+		// Each check should have passed/failed status
+		for (const warning of result.warnings) {
+			expect(typeof warning.passed).toBe("boolean");
 		}
 	});
 
 	test("handles PRD with multiple stories", async () => {
-		mkdirSync(join(testDir, ".git"));
+		await setupValidGitEnv(testDir);
 		mkdirSync(join(testDir, "node_modules"));
+		// Commit node_modules to keep working tree clean
+		await Bun.spawn(["git", "add", "."], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
+		await Bun.spawn(["git", "commit", "-m", "Add node_modules"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD([
@@ -300,15 +317,19 @@ describe("runPrecheck integration", () => {
 			createMockStory({ id: "US-003", title: "Story 3", description: "Desc 3" }),
 		]);
 
-		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result, output } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
-		const prdValidCheck = result.blockers.find((c) => c.name === "prd-valid");
-		expect(prdValidCheck).toBeDefined();
+		// PRD validation should pass (all Tier 1 passed means no blockers)
+		expect(result.blockers.length).toBe(0);
+		expect(output.passed).toBe(true);
 	});
 
 	test("detects invalid PRD with missing required fields", async () => {
-		mkdirSync(join(testDir, ".git"));
+		await setupValidGitEnv(testDir);
 		mkdirSync(join(testDir, "node_modules"));
+		// Commit node_modules to keep working tree clean
+		await Bun.spawn(["git", "add", "."], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
+		await Bun.spawn(["git", "commit", "-m", "Add node_modules"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD([
@@ -322,8 +343,11 @@ describe("runPrecheck integration", () => {
 	});
 
 	test("skips command checks when commands are set to null", async () => {
-		mkdirSync(join(testDir, ".git"));
+		await setupValidGitEnv(testDir);
 		mkdirSync(join(testDir, "node_modules"));
+		// Commit node_modules to keep working tree clean
+		await Bun.spawn(["git", "add", "."], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
+		await Bun.spawn(["git", "commit", "-m", "Add node_modules"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 
 		const config = createMockConfig(testDir, {
 			testCommand: null,
@@ -332,19 +356,13 @@ describe("runPrecheck integration", () => {
 		});
 		const prd = createMockPRD();
 
-		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result, output } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
-		const testCheck = result.blockers.find((c) => c.name === "test-command-works");
-		const lintCheck = result.blockers.find((c) => c.name === "lint-command-works");
-		const typecheckCheck = result.blockers.find((c) => c.name === "typecheck-command-works");
-
-		// These should pass with a "skipped" message
-		expect(testCheck?.passed).toBe(true);
-		expect(testCheck?.message).toContain("skip");
-		expect(lintCheck?.passed).toBe(true);
-		expect(lintCheck?.message).toContain("skip");
-		expect(typecheckCheck?.passed).toBe(true);
-		expect(typecheckCheck?.message).toContain("skip");
+		// All Tier 1 checks should pass (commands are skipped, which counts as passing)
+		expect(result.blockers.length).toBe(0);
+		expect(output.passed).toBe(true);
+		// Verify that the summary shows all checks passed
+		expect(output.summary.failed).toBe(0);
 	});
 
 	test("fail-fast stops on first blocker, no warnings collected", async () => {
@@ -391,9 +409,13 @@ describe("precheck with stale lock detection", () => {
 	});
 
 	test("detects stale lock file older than 2 hours", async () => {
+		await setupValidGitEnv(testDir);
 		const lockPath = join(testDir, "nax.lock");
 		const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
 		writeFileSync(lockPath, JSON.stringify({ pid: 12345, startedAt: threeHoursAgo.toISOString() }));
+		// Commit the lock file to keep working tree clean
+		await Bun.spawn(["git", "add", "."], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
+		await Bun.spawn(["git", "commit", "-m", "Add stale lock"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
@@ -406,16 +428,22 @@ describe("precheck with stale lock detection", () => {
 	});
 
 	test("passes with fresh lock file", async () => {
+		await setupValidGitEnv(testDir);
+		// node_modules already created in beforeEach
 		const lockPath = join(testDir, "nax.lock");
 		writeFileSync(lockPath, JSON.stringify({ pid: 12345, startedAt: new Date().toISOString() }));
+		// Commit the lock file to keep working tree clean
+		await Bun.spawn(["git", "add", "."], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
+		await Bun.spawn(["git", "commit", "-m", "Add fresh lock"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result, output } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
-		const staleLockCheck = result.blockers.find((c) => c.name === "no-stale-lock");
-		expect(staleLockCheck?.passed).toBe(true);
+		// Fresh lock should pass, no blockers
+		expect(result.blockers.length).toBe(0);
+		expect(output.passed).toBe(true);
 	});
 });
 
@@ -433,6 +461,8 @@ describe("precheck with .gitignore validation", () => {
 	});
 
 	test("passes when .gitignore covers all nax runtime files", async () => {
+		await setupValidGitEnv(testDir);
+		// node_modules already created in beforeEach
 		writeFileSync(
 			join(testDir, ".gitignore"),
 			`
@@ -442,17 +472,26 @@ nax/features/*/runs/
 test/tmp/
 `.trim(),
 		);
+		// Commit the gitignore to keep working tree clean
+		await Bun.spawn(["git", "add", "."], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
+		await Bun.spawn(["git", "commit", "-m", "Add gitignore"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result, output } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
+		// All Tier 1 should pass
+		expect(result.blockers.length).toBe(0);
+		// gitignore check should pass, so NOT in warnings array
 		const gitignoreCheck = result.warnings.find((c) => c.name === "gitignore-covers-nax");
-		expect(gitignoreCheck?.passed).toBe(true);
+		expect(gitignoreCheck).toBeUndefined();
+		// Overall should pass
+		expect(output.passed).toBe(true);
 	});
 
 	test("warns when .gitignore is missing", async () => {
+		await setupValidGitEnv(testDir);
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
@@ -464,7 +503,11 @@ test/tmp/
 	});
 
 	test("warns when .gitignore does not cover nax.lock", async () => {
+		await setupValidGitEnv(testDir);
 		writeFileSync(join(testDir, ".gitignore"), "node_modules/");
+		// Commit the gitignore to keep working tree clean
+		await Bun.spawn(["git", "add", "."], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
+		await Bun.spawn(["git", "commit", "-m", "Add incomplete gitignore"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
@@ -477,6 +520,7 @@ test/tmp/
 	});
 
 	test("warns when .gitignore does not cover runs directories", async () => {
+		await setupValidGitEnv(testDir);
 		writeFileSync(
 			join(testDir, ".gitignore"),
 			`
@@ -484,6 +528,9 @@ nax.lock
 test/tmp/
 `.trim(),
 		);
+		// Commit the gitignore to keep working tree clean
+		await Bun.spawn(["git", "add", "."], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
+		await Bun.spawn(["git", "commit", "-m", "Add incomplete gitignore"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
@@ -527,6 +574,9 @@ describe("precheck orchestrator behavior (US-002)", () => {
 		// Create a valid Tier 1 environment so Tier 2 checks run
 		await setupValidGitEnv(testDir);
 		mkdirSync(join(testDir, "node_modules"));
+		// Commit node_modules directory to keep working tree clean
+		await Bun.spawn(["git", "add", "."], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
+		await Bun.spawn(["git", "commit", "-m", "Add node_modules"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
@@ -690,6 +740,9 @@ describe("precheck orchestrator behavior (US-002)", () => {
 		// Create environment without CLAUDE.md and .gitignore
 		await setupValidGitEnv(testDir);
 		mkdirSync(join(testDir, "node_modules"));
+		// Commit node_modules to keep working tree clean
+		await Bun.spawn(["git", "add", "."], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
+		await Bun.spawn(["git", "commit", "-m", "Add node_modules"], { cwd: testDir, stdout: "ignore", stderr: "ignore" }).exited;
 
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
