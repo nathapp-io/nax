@@ -101,10 +101,11 @@
         "cli",
         "status"
       ],
-      "status": "pending",
+      "status": "passed",
       "attempts": 0,
       "priorErrors": [],
-      "escalations": []
+      "escalations": [],
+      "passes": true
     },
     {
       "id": "US-005",
@@ -180,12 +181,13 @@
         "crash-recovery",
         "signals"
       ],
-      "status": "pending",
+      "status": "passed",
       "attempts": 1,
       "priorErrors": [
         "Attempt 1 failed with model tier: balanced"
       ],
-      "escalations": []
+      "escalations": [],
+      "passes": true
     }
   ],
   "analyzeConfig": {
