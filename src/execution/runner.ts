@@ -242,6 +242,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
     // Log precheck results to JSONL (US-004 AC5)
     if (logFilePath) {
+      const { appendFileSync, mkdirSync } = await import("node:fs");
+
+      // Ensure directory exists
+      mkdirSync(path.dirname(logFilePath), { recursive: true });
+
       const precheckLog = {
         type: "precheck",
         timestamp: new Date().toISOString(),
@@ -250,8 +255,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         warnings: precheckResult.output.warnings.map(w => ({ name: w.name, message: w.message })),
         summary: precheckResult.output.summary,
       };
-      const logFile = Bun.file(logFilePath);
-      await Bun.write(logFile, JSON.stringify(precheckLog) + "\n");
+      appendFileSync(logFilePath, JSON.stringify(precheckLog) + "\n", "utf8");
     }
 
     // If there are blockers (Tier 1 failures), abort the run
