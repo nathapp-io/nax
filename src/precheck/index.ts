@@ -29,8 +29,8 @@ import {
 
 /** Formatted output with summary */
 export interface PrecheckOutput {
-	/** All checks that passed */
-	passed: Check[];
+	/** Whether all checks passed (no blockers) */
+	passed: boolean;
 	/** Tier 1 blockers (if any) */
 	blockers: Check[];
 	/** Tier 2 warnings (if any) */
@@ -46,6 +46,16 @@ export interface PrecheckOutput {
 	feature: string;
 }
 
+/** Exit codes for precheck command */
+export const EXIT_CODES = {
+	/** All checks passed (or only warnings) */
+	SUCCESS: 0,
+	/** Tier 1 blocker detected */
+	BLOCKER: 1,
+	/** Invalid PRD structure */
+	INVALID_PRD: 2,
+} as const;
+
 /** Options for precheck execution */
 export interface PrecheckOptions {
 	/** Output format: "human" (default) or "json" */
@@ -54,11 +64,25 @@ export interface PrecheckOptions {
 	workdir: string;
 }
 
+/** Extended result with exit code for CLI usage */
+export interface PrecheckResultWithCode {
+	/** Precheck result */
+	result: PrecheckResult;
+	/** Exit code (0=success, 1=blocker, 2=invalid PRD) */
+	exitCode: number;
+	/** Output for display */
+	output: PrecheckOutput;
+}
+
 /**
  * Run all precheck validations.
- * Returns blockers and warnings arrays.
+ * Returns result, exit code, and formatted output.
  */
-export async function runPrecheck(config: NaxConfig, prd: PRD, options?: PrecheckOptions): Promise<PrecheckResult> {
+export async function runPrecheck(
+	config: NaxConfig,
+	prd: PRD,
+	options?: PrecheckOptions,
+): Promise<PrecheckResultWithCode> {
 	const workdir = options?.workdir || process.cwd();
 	const format = options?.format || "human";
 
@@ -80,7 +104,7 @@ export async function runPrecheck(config: NaxConfig, prd: PRD, options?: Prechec
 		() => checkTestCommand(config),
 		() => checkLintCommand(config),
 		() => checkTypecheckCommand(config),
-		() => checkGitUserConfigured(),
+		() => checkGitUserConfigured(workdir),
 	];
 
 	for (const checkFn of tier1Checks) {
@@ -133,7 +157,7 @@ export async function runPrecheck(config: NaxConfig, prd: PRD, options?: Prechec
 	// ─────────────────────────────────────────────────────────────────────────────
 
 	const output: PrecheckOutput = {
-		passed,
+		passed: blockers.length === 0,
 		blockers,
 		warnings,
 		summary: {
@@ -145,13 +169,25 @@ export async function runPrecheck(config: NaxConfig, prd: PRD, options?: Prechec
 		feature: prd.feature,
 	};
 
+	// Determine exit code
+	let exitCode: number = EXIT_CODES.SUCCESS;
+	if (blockers.length > 0) {
+		// Check if PRD validation failed specifically
+		const hasPRDError = blockers.some((b) => b.name === "prd-valid");
+		exitCode = hasPRDError ? EXIT_CODES.INVALID_PRD : EXIT_CODES.BLOCKER;
+	}
+
 	if (format === "json") {
 		console.log(JSON.stringify(output, null, 2));
 	} else {
 		printSummary(output);
 	}
 
-	return { blockers, warnings };
+	return {
+		result: { blockers, warnings },
+		exitCode,
+		output,
+	};
 }
 
 /**
@@ -181,12 +217,9 @@ function printSummary(output: PrecheckOutput): void {
 
 	if (output.blockers.length > 0) {
 		console.log("\n❌ BLOCKED: Cannot proceed due to failed prechecks");
-		process.exitCode = 1;
 	} else if (output.warnings.length > 0) {
 		console.log("\n⚠️  WARNINGS: Prechecks passed with warnings");
-		process.exitCode = 0;
 	} else {
 		console.log("\n✅ PASSED: All prechecks passed");
-		process.exitCode = 0;
 	}
 }

@@ -121,13 +121,15 @@ describe("runPrecheck integration", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result, exitCode, output } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		expect(result).toBeDefined();
 		expect(result.blockers).toBeDefined();
 		expect(Array.isArray(result.blockers)).toBe(true);
 		expect(result.warnings).toBeDefined();
 		expect(Array.isArray(result.warnings)).toBe(true);
+		expect(exitCode).toBeDefined();
+		expect(output).toBeDefined();
 	});
 
 	test("separates blocker checks from warning checks", async () => {
@@ -138,7 +140,7 @@ describe("runPrecheck integration", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		// All items in blockers should have tier: "blocker"
 		for (const check of result.blockers) {
@@ -155,7 +157,7 @@ describe("runPrecheck integration", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		// Fail-fast: only first blocker is collected (git-repo-exists fails first)
 		expect(result.blockers.length).toBe(1);
@@ -168,7 +170,7 @@ describe("runPrecheck integration", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		// With fail-fast, if git repo passes, working-tree-clean is checked next
 		// In test environment, working tree is often dirty
@@ -185,7 +187,7 @@ describe("runPrecheck integration", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		// Stale lock check should fail and be in blockers
 		const staleLockCheck = result.blockers.find((c) => c.name === "no-stale-lock");
@@ -202,7 +204,7 @@ describe("runPrecheck integration", () => {
 		// Invalid PRD - will fail at PRD check
 		const prd = createMockPRD([createMockStory({ id: "", title: "", description: "" })]);
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		// Should have prd-valid check in blockers (failed)
 		const prdValidCheck = result.blockers.find((c) => c.name === "prd-valid");
@@ -223,7 +225,7 @@ describe("runPrecheck integration", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		// All Tier 1 should pass (no blockers)
 		expect(result.blockers.length).toBe(0);
@@ -252,7 +254,7 @@ describe("runPrecheck integration", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD([storyWithMissingFields]);
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		// PRD validation should pass after auto-defaulting
 		const prdValidCheck = result.blockers.find((c) => c.name === "prd-valid");
@@ -275,7 +277,7 @@ describe("runPrecheck integration", () => {
 			createMockStory({ id: "US-001", title: "Story 1", description: "Desc 1" }),
 		]);
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		// Check that we got results
 		expect(result.blockers.length).toBeGreaterThan(0);
@@ -298,7 +300,7 @@ describe("runPrecheck integration", () => {
 			createMockStory({ id: "US-003", title: "Story 3", description: "Desc 3" }),
 		]);
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		const prdValidCheck = result.blockers.find((c) => c.name === "prd-valid");
 		expect(prdValidCheck).toBeDefined();
@@ -313,7 +315,7 @@ describe("runPrecheck integration", () => {
 			createMockStory({ id: "", title: "No ID", description: "Desc" }),
 		]);
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		const prdValidCheck = result.blockers.find((c) => c.name === "prd-valid");
 		expect(prdValidCheck?.passed).toBe(false);
@@ -330,7 +332,7 @@ describe("runPrecheck integration", () => {
 		});
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		const testCheck = result.blockers.find((c) => c.name === "test-command-works");
 		const lintCheck = result.blockers.find((c) => c.name === "lint-command-works");
@@ -350,7 +352,7 @@ describe("runPrecheck integration", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		// Fail-fast: only first blocker collected, no warnings run
 		expect(result.blockers.length).toBe(1);
@@ -365,7 +367,7 @@ describe("runPrecheck integration", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		// Every check should have a message
 		for (const check of [...result.blockers, ...result.warnings]) {
@@ -396,7 +398,7 @@ describe("precheck with stale lock detection", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		const staleLockCheck = result.blockers.find((c) => c.name === "no-stale-lock");
 		expect(staleLockCheck?.passed).toBe(false);
@@ -410,7 +412,7 @@ describe("precheck with stale lock detection", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		const staleLockCheck = result.blockers.find((c) => c.name === "no-stale-lock");
 		expect(staleLockCheck?.passed).toBe(true);
@@ -444,7 +446,7 @@ test/tmp/
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		const gitignoreCheck = result.warnings.find((c) => c.name === "gitignore-covers-nax");
 		expect(gitignoreCheck?.passed).toBe(true);
@@ -454,7 +456,7 @@ test/tmp/
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		const gitignoreCheck = result.warnings.find((c) => c.name === "gitignore-covers-nax");
 		expect(gitignoreCheck?.passed).toBe(false);
@@ -467,7 +469,7 @@ test/tmp/
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		const gitignoreCheck = result.warnings.find((c) => c.name === "gitignore-covers-nax");
 		expect(gitignoreCheck?.passed).toBe(false);
@@ -486,7 +488,7 @@ test/tmp/
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		const gitignoreCheck = result.warnings.find((c) => c.name === "gitignore-covers-nax");
 		expect(gitignoreCheck?.passed).toBe(false);
@@ -510,7 +512,7 @@ describe("precheck orchestrator behavior (US-002)", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		// Should have exactly 1 blocker (git-repo-exists)
 		expect(result.blockers.length).toBe(1);
@@ -529,7 +531,7 @@ describe("precheck orchestrator behavior (US-002)", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		// No blockers (all Tier 1 passed)
 		expect(result.blockers.length).toBe(0);
@@ -563,9 +565,9 @@ describe("precheck orchestrator behavior (US-002)", () => {
 
 			const output = JSON.parse(jsonOutput);
 
-			// Verify schema
+			// Verify schema: passed (boolean), blockers, warnings, summary, feature
 			expect(output.passed).toBeDefined();
-			expect(Array.isArray(output.passed)).toBe(true);
+			expect(typeof output.passed).toBe("boolean");
 			expect(output.blockers).toBeDefined();
 			expect(Array.isArray(output.blockers)).toBe(true);
 			expect(output.warnings).toBeDefined();
@@ -653,12 +655,9 @@ describe("precheck orchestrator behavior (US-002)", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		// Reset exit code
-		process.exitCode = undefined;
+		const { exitCode } = await runPrecheck(config, prd, { workdir: testDir, format: "human" });
 
-		await runPrecheck(config, prd, { workdir: testDir, format: "human" });
-
-		expect(process.exitCode).toBe(0);
+		expect(exitCode).toBe(0);
 	});
 
 	test("exit code 1 for blocker", async () => {
@@ -666,15 +665,12 @@ describe("precheck orchestrator behavior (US-002)", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		// Reset exit code
-		process.exitCode = undefined;
+		const { exitCode } = await runPrecheck(config, prd, { workdir: testDir, format: "human" });
 
-		await runPrecheck(config, prd, { workdir: testDir, format: "human" });
-
-		expect(process.exitCode).toBe(1);
+		expect(exitCode).toBe(1);
 	});
 
-	test("exit code 1 for invalid PRD (treated as blocker)", async () => {
+	test("exit code 2 for invalid PRD", async () => {
 		// Create valid git environment to reach PRD check
 		await setupValidGitEnv(testDir);
 		mkdirSync(join(testDir, "node_modules"));
@@ -684,13 +680,10 @@ describe("precheck orchestrator behavior (US-002)", () => {
 			createMockStory({ id: "", title: "", description: "" }), // Invalid story
 		]);
 
-		// Reset exit code
-		process.exitCode = undefined;
+		const { exitCode } = await runPrecheck(config, prd, { workdir: testDir, format: "human" });
 
-		await runPrecheck(config, prd, { workdir: testDir, format: "human" });
-
-		// Invalid PRD is a blocker, so exit code should be 1
-		expect(process.exitCode).toBe(1);
+		// Invalid PRD should return exit code 2 (per US-002 acceptance criteria)
+		expect(exitCode).toBe(2);
 	});
 
 	test("collects all Tier 2 warnings even if some fail", async () => {
@@ -701,7 +694,7 @@ describe("precheck orchestrator behavior (US-002)", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		// No blockers (Tier 1 passed)
 		expect(result.blockers.length).toBe(0);
@@ -722,7 +715,7 @@ describe("precheck orchestrator behavior (US-002)", () => {
 		const config = createMockConfig(testDir);
 		const prd = createMockPRD();
 
-		const result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+		const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
 		// Should have 1 blocker
 		expect(result.blockers.length).toBe(1);

@@ -376,15 +376,15 @@ export async function checkTypecheckCommand(config: NaxConfig): Promise<Check> {
 /**
  * Check if git user is configured.
  */
-export async function checkGitUserConfigured(): Promise<Check> {
-	const nameProc = Bun.spawn(["git", "config", "user.name"], {
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-	const emailProc = Bun.spawn(["git", "config", "user.email"], {
-		stdout: "pipe",
-		stderr: "pipe",
-	});
+export async function checkGitUserConfigured(workdir?: string): Promise<Check> {
+	const spawnOptions = {
+		stdout: "pipe" as const,
+		stderr: "pipe" as const,
+		...(workdir && { cwd: workdir }),
+	};
+
+	const nameProc = Bun.spawn(["git", "config", "user.name"], spawnOptions);
+	const emailProc = Bun.spawn(["git", "config", "user.email"], spawnOptions);
 
 	const nameOutput = await new Response(nameProc.stdout).text();
 	const emailOutput = await new Response(emailProc.stdout).text();
