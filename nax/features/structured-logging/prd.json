@@ -1,0 +1,166 @@
+{
+  "project": "nax",
+  "feature": "structured-logging",
+  "branchName": "feat/structured-logging",
+  "createdAt": "2026-02-27T05:50:00Z",
+  "updatedAt": "2026-02-27T05:50:00Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Project resolver with CWD and -d flag support",
+      "description": "Create src/commands/common.ts with resolveProject(options) function. Resolution order: 1) -d flag path, 2) CWD if it contains nax/ directory, 3) Error with helpful message. Validate: nax/ exists, nax/config.json exists. If -f flag given, validate nax/features/<name>/ exists. Return resolved {projectDir, configPath, featureDir?}. This is shared by status, logs, and future CLI commands.",
+      "acceptanceCriteria": [
+        "resolveProject() returns projectDir when CWD has nax/ directory",
+        "resolveProject({dir:\"/path\"}) uses explicit directory",
+        "Throws descriptive error when no nax/ directory found",
+        "Validates nax/config.json exists in resolved directory",
+        "When feature specified, validates nax/features/<name>/ exists",
+        "Error message lists available features when feature not found",
+        "Works with both relative and absolute -d paths"
+      ],
+      "dependencies": [],
+      "tags": [
+        "cli",
+        "resolver"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "US-002",
+      "title": "Human-friendly logging formatter with verbosity levels",
+      "description": "Create src/logging/formatter.ts and src/logging/types.ts. Transform JSONL entries into human-readable output with emoji indicators. Support 4 modes: quiet, normal, verbose, json. Include run header, story progress with tree-style output, stage results with emoji, retry indicators, run summary footer.",
+      "acceptanceCriteria": [
+        "formatLogEntry renders story start with title, complexity, tier",
+        "formatLogEntry renders stage results with appropriate emoji",
+        "formatRunSummary renders pass/fail/duration/cost stats",
+        "quiet mode only shows pass/fail + summary",
+        "verbose mode includes routing, tokens, context files",
+        "json mode passes through raw JSONL",
+        "Timestamps formatted in local timezone HH:MM:SS"
+      ],
+      "dependencies": [],
+      "tags": [
+        "logging",
+        "formatter"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "US-003",
+      "title": "status.json writer for live run state",
+      "description": "Create src/logging/status-writer.ts. Maintain status.json at nax/features/<feature>/status.json during runs. Write on: run start (runId, feature, totalStories, pid), story start (currentStory), story complete (status/duration/cost/commit), run end (completed/failed + totals). Atomic writes via tmp+rename.",
+      "acceptanceCriteria": [
+        "status.json created at run start with runId, feature, startedAt, pid, status=running",
+        "Updates currentStory on story begin",
+        "Updates story entry on completion",
+        "Updates totals after each story",
+        "Status changes to completed/failed at run end",
+        "Atomic writes prevent corruption",
+        "PID included for crash detection"
+      ],
+      "dependencies": [],
+      "tags": [
+        "logging",
+        "state"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "US-004",
+      "title": "nax status command with active run detection",
+      "description": "Create src/commands/status.ts, register in CLI. Uses resolveProject(). Show feature table (done/failed/pending, last run, cost). Detect active run via status.json+PID. Detect crash via status.json+dead PID. Support -f for single feature.",
+      "acceptanceCriteria": [
+        "Shows table of all features with counts and last run",
+        "Detailed single-feature view with story table",
+        "Active run detected via PID alive check",
+        "Crashed run shows warning with recovery hints",
+        "No status.json shows No runs yet",
+        "Uses resolveProject() for resolution",
+        "Registered as CLI subcommand"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-003"
+      ],
+      "tags": [
+        "cli",
+        "status"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "US-005",
+      "title": "nax logs command with filtering and follow mode",
+      "description": "Create src/commands/logs.ts, register in CLI. Uses resolveProject(). Supports: default (latest run formatted), --follow (tail -f), --story (filter), --level (filter), --list (run table), --run (specific run), --json (raw). Uses formatter from US-002.",
+      "acceptanceCriteria": [
+        "Shows latest run logs formatted",
+        "--follow streams new entries real-time",
+        "--story filters to one story",
+        "--level filters by severity",
+        "--list shows runs table",
+        "--run selects specific run",
+        "--json outputs raw JSONL",
+        "Filters combinable",
+        "Uses resolveProject()"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "tags": [
+        "cli",
+        "logs"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "US-006",
+      "title": "Integrate formatter into headless runner",
+      "description": "Modify src/execution/runner.ts to use formatter for headless stdout instead of raw JSONL. Default=normal. Add --quiet/--verbose/--json flags to nax run. Wire status-writer into run loop. JSONL still written to disk. Integrate status.json updates at lifecycle points.",
+      "acceptanceCriteria": [
+        "Headless stdout shows formatted output by default",
+        "JSONL still written to disk (unchanged)",
+        "--json flag restores raw JSONL stdout",
+        "--quiet and --verbose flags work",
+        "status.json written throughout lifecycle",
+        "Run header with version, feature, count, path",
+        "Run footer with summary stats"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-003"
+      ],
+      "tags": [
+        "runner",
+        "integration"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "US-007",
+      "title": "Crash recovery with signal handlers heartbeat and exit summary",
+      "description": "Add SIGTERM/SIGINT/SIGHUP handlers and uncaught exception handlers. On signal: write fatal JSONL + update status.json to crashed + exit. During agent execution: heartbeat every 60s. On normal exit: write exit summary entry.",
+      "acceptanceCriteria": [
+        "Signal handlers write fatal log with signal name",
+        "Signal handlers update status.json to crashed",
+        "Uncaught exceptions write fatal log with stack",
+        "Heartbeat every 60s during agent execution",
+        "Normal exit writes summary entry",
+        "Signal handlers exit cleanly",
+        "Heartbeat timer cleaned up on story completion"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "tags": [
+        "crash-recovery",
+        "signals"
+      ],
+      "status": "pending"
+    }
+  ],
+  "analyzeConfig": {
+    "maxStories": 15,
+    "granularity": "medium"
+  }
+}
