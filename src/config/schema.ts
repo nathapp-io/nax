@@ -164,6 +164,8 @@ export interface TddConfig {
   };
   /** Glob patterns for files test-writer can modify (soft violations, logged as warnings) */
   testWriterAllowedPaths?: string[];
+  /** Rollback git changes when TDD fails (default: true). Prevents partial commits when TDD fails. */
+  rollbackOnFailure?: boolean;
 }
 
 /** Constitution config */
@@ -695,6 +697,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
       verifier: "fast",
     },
     testWriterAllowedPaths: ["src/index.ts", "src/**/index.ts"],
+    rollbackOnFailure: true,
   },
   constitution: {
     enabled: true,

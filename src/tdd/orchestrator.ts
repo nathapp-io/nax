@@ -48,6 +48,48 @@ function truncateTestOutput(output: string, maxLines = 50): string {
   return `${head}\n\n... (${truncatedCount} lines truncated) ...\n\n${tail}`;
 }
 
+/**
+ * Rollback git changes to a specific ref.
+ * Used when TDD fails to revert uncommitted/committed changes.
+ *
+ * @param workdir - Working directory
+ * @param ref - Git ref to reset to (e.g., SHA from captureGitRef)
+ * @returns Promise that resolves when rollback completes
+ */
+async function rollbackToRef(workdir: string, ref: string): Promise<void> {
+  const logger = getLogger();
+  logger.warn("tdd", "Rolling back git changes", { ref });
+
+  // Hard reset to the initial ref
+  const resetProc = Bun.spawn(["git", "reset", "--hard", ref], {
+    cwd: workdir,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const exitCode = await resetProc.exited;
+  if (exitCode !== 0) {
+    const stderr = await new Response(resetProc.stderr).text();
+    logger.error("tdd", "Failed to rollback git changes", { ref, stderr });
+    throw new Error(`Git rollback failed: ${stderr}`);
+  }
+
+  // Clean up untracked files
+  const cleanProc = Bun.spawn(["git", "clean", "-fd"], {
+    cwd: workdir,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const cleanExitCode = await cleanProc.exited;
+  if (cleanExitCode !== 0) {
+    const stderr = await new Response(cleanProc.stderr).text();
+    logger.warn("tdd", "Failed to clean untracked files", { stderr });
+  }
+
+  logger.info("tdd", "Successfully rolled back git changes", { ref });
+}
+
 /** Run a single TDD session */
 async function runTddSession(
   role: TddSessionRole,
@@ -247,7 +289,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     };
   }
 
-  logger.info("tdd", "🔄 Three-Session TDD", { storyId: story.id, title: story.title, lite, recursionDepth: _recursionDepth });
+  logger.info("tdd", "🔄 Three-Session TDD", { storyId: story?.id, title: story?.title, lite, recursionDepth: _recursionDepth });
 
   // Dry-run mode: log what would happen without executing
   if (dryRun) {
@@ -274,7 +316,9 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   let reviewReason: string | undefined;
 
   // Capture initial git state (fallback to "HEAD" if git unavailable)
+  // This will be used to rollback if TDD fails
   const initialRef = (await captureGitRef(workdir)) ?? "HEAD";
+  const shouldRollbackOnFailure = config.tdd.rollbackOnFailure ?? true;
 
   // Session 1: Test Writer
   // In lite mode: use lite prompt and skip isolation check
@@ -684,6 +728,22 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     lite,
     verdictAvailable: verdict !== null,
   });
+
+  // Rollback git changes if TDD failed and rollback is enabled
+  if (!allSuccessful && shouldRollbackOnFailure) {
+    try {
+      await rollbackToRef(workdir, initialRef);
+      logger.info("tdd", "Rolled back git changes due to TDD failure", {
+        storyId: story.id,
+        failureCategory: finalFailureCategory,
+      });
+    } catch (error) {
+      logger.error("tdd", "Failed to rollback git changes after TDD failure", {
+        storyId: story.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   return {
     success: allSuccessful,
