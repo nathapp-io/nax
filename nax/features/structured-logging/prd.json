@@ -72,12 +72,13 @@
         "logging",
         "state"
       ],
-      "status": "pending",
+      "status": "passed",
       "attempts": 1,
       "priorErrors": [
         "Attempt 1 failed with model tier: balanced"
       ],
-      "escalations": []
+      "escalations": [],
+      "passes": true
     },
     {
       "id": "US-004",
