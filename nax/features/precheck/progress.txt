@@ -2,3 +2,13 @@
 [2026-02-27T11:22:41.995Z] US-005 — FAILED — Config-driven review commands replacing hardcoded lint — All tiers exhausted
 [2026-02-27T11:24:08.156Z] US-006 — FAILED — PRD auto-default and router tags fix — All tiers exhausted
 [2026-02-27T12:12:00.514Z] US-001 — FAILED — Precheck types and check implementations — All tiers exhausted
+[2026-02-27T15:30:00.000Z] US-003 — PASSED — CLI nax precheck command with --json flag — Implementation complete
+
+Implementation summary:
+- Created src/commands/precheck.ts with precheckCommand()
+- Registered command in bin/nax.ts with -f, -d, and --json flags
+- Uses resolveProject() for directory resolution (same as status/logs)
+- Calls runPrecheck() orchestrator from US-002
+- Returns proper exit codes: 0=pass, 1=blocker, 2=invalid PRD
+- 7 integration tests in test/integration/cli-precheck.test.ts
+- All acceptance criteria verified
