@@ -265,7 +265,7 @@ export function routeTask(
   title: string,
   description: string,
   acceptanceCriteria: string[],
-  tags: string[],
+  tags: string[] = [],
   config: NaxConfig,
 ): RoutingDecision {
   const complexity = classifyComplexity(title, description, acceptanceCriteria, tags);
