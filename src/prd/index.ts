@@ -32,7 +32,7 @@ export async function loadPRD(path: string): Promise<PRD> {
   const prd: PRD = await Bun.file(path).json();
 
   // BUG-21: Normalize story fields to prevent null/undefined arithmetic issues
-  // BUG-004: Auto-default optional PRD fields in-memory (tags, status, acceptanceCriteria)
+  // BUG-004: Auto-default optional PRD fields in-memory (tags, status, acceptanceCriteria, storyPoints)
   for (const story of prd.userStories) {
     story.attempts = story.attempts ?? 0;
     story.priorErrors = story.priorErrors ?? [];
@@ -41,7 +41,7 @@ export async function loadPRD(path: string): Promise<PRD> {
     story.tags = story.tags ?? [];
     story.status = story.status ?? "pending";
     story.acceptanceCriteria = story.acceptanceCriteria ?? [];
-    // Note: storyPoints is not part of UserStory interface (mentioned in US-006 AC but not implemented)
+    story.storyPoints = story.storyPoints ?? 1;
   }
 
   return prd;

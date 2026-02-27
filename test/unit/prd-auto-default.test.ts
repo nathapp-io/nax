@@ -113,6 +113,36 @@ describe("PRD Auto-Default (BUG-004)", () => {
     expect(loaded.userStories[0].acceptanceCriteria).toEqual([]);
   });
 
+  test("loadPRD auto-defaults missing storyPoints to 1", async () => {
+    const prd: PRD = {
+      project: "test-project",
+      feature: "test-feature",
+      branchName: "test-branch",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userStories: [
+        {
+          id: "US-001",
+          title: "Test story",
+          description: "Test description",
+          acceptanceCriteria: ["AC1"],
+          tags: [],
+          dependencies: [],
+          status: "pending",
+          passes: false,
+          escalations: [],
+          attempts: 0,
+          // storyPoints intentionally omitted
+        } as any,
+      ],
+    };
+
+    await savePRD(prd, prdPath);
+    const loaded = await loadPRD(prdPath);
+
+    expect(loaded.userStories[0].storyPoints).toBe(1);
+  });
+
   test("loadPRD preserves existing values", async () => {
     const prd: PRD = {
       project: "test-project",
@@ -132,6 +162,7 @@ describe("PRD Auto-Default (BUG-004)", () => {
           passes: false,
           escalations: [],
           attempts: 2,
+          storyPoints: 5,
         },
       ],
     };
@@ -144,6 +175,7 @@ describe("PRD Auto-Default (BUG-004)", () => {
     expect(loaded.userStories[0].dependencies).toEqual(["US-000"]);
     expect(loaded.userStories[0].status).toBe("in-progress");
     expect(loaded.userStories[0].attempts).toBe(2);
+    expect(loaded.userStories[0].storyPoints).toBe(5);
   });
 
   test("loadPRD does not modify PRD file on disk", async () => {
@@ -208,6 +240,7 @@ describe("PRD Auto-Default (BUG-004)", () => {
     expect(loaded.userStories[0].attempts).toBe(0);
     expect(loaded.userStories[0].priorErrors).toEqual([]);
     expect(loaded.userStories[0].escalations).toEqual([]);
+    expect(loaded.userStories[0].storyPoints).toBe(1);
   });
 });
 

@@ -61,6 +61,8 @@ export interface UserStory {
   escalations: EscalationAttempt[];
   /** Number of attempts */
   attempts: number;
+  /** Story points estimate (optional, defaults to 1) */
+  storyPoints?: number;
   /** @deprecated Use contextFiles instead. Relevant source files for context injection */
   relevantFiles?: string[];
   /** Files loaded into agent prompt before execution */
