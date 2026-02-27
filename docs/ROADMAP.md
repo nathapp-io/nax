@@ -68,7 +68,16 @@ Fail-fast validation before story execution. `nax precheck` CLI command.
 
 ## Backlog
 
-- [ ] E2E test fix (infinite retry loop)
+### Bugs
+- [x] ~~BUG-003: PRD status "done" not skipped (fixed 080d890)~~
+- [x] ~~BUG-004: router.ts crashes on missing tags (fixed 080d890)~~
+- [ ] BUG-002: Orphan Claude processes after nax crash (needs PID tracking + process groups)
+- [ ] BUG-005: Hardcoded `bun run lint` in review (v0.13.0 precheck)
+- [ ] BUG-006: scopeToStory falls back to full scan (needs context auto-detection)
+- [ ] BUG-008: E2E tests hang with infinite retry (needs timeout/isolation)
+- [ ] BUG-009: No cross-story regression check in test-after strategy
+
+### Features
 - [ ] `nax unlock` command
 - [ ] Constitution file support
 - [ ] Context file auto-detection
