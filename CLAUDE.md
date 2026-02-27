@@ -22,8 +22,10 @@ Bun + TypeScript CLI that orchestrates AI coding agents with model routing, thre
 ## Testing
 
 - Framework: `bun:test` (describe/test/expect)
-- Unit tests: `test/<module>.test.ts`
+- Unit tests: `test/unit/<module>.test.ts`
 - Integration tests: `test/integration/<feature>.test.ts`
+- Routing tests: `test/routing/<router>.test.ts`
+- UI tests: `test/ui/` (TUI testing, rarely needed)
 - All routing, classification, and isolation logic must have unit tests
 
 ## Architecture
