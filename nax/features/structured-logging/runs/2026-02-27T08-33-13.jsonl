@@ -1,0 +1,50 @@
+{"timestamp":"2026-02-27T08:33:13.434Z","level":"debug","stage":"crash-recovery","message":"Crash handlers installed"}
+{"timestamp":"2026-02-27T08:33:13.437Z","level":"info","stage":"plugins","message":"Loaded 0 plugins","data":{"plugins":[]}}
+{"timestamp":"2026-02-27T08:33:13.450Z","level":"info","stage":"run.start","message":"Starting feature: structured-logging","data":{"runId":"run-2026-02-27T08-33-13-434Z","feature":"structured-logging","workdir":"/Users/subrinaai/Desktop/workspace/subrina-coder/projects/nax/repos/nax","dryRun":false,"useBatch":true,"routingMode":"hybrid"}}
+{"timestamp":"2026-02-27T08:33:17.634Z","level":"info","stage":"execution","message":"Starting structured-logging","data":{"totalStories":7,"doneStories":5,"pendingStories":2,"batchingEnabled":true}}
+{"timestamp":"2026-02-27T08:33:17.635Z","level":"debug","stage":"crash-recovery","message":"Heartbeat started (60s interval)"}
+{"timestamp":"2026-02-27T08:33:17.636Z","level":"info","stage":"execution","message":"Starting iteration 3","data":{"iteration":3,"isBatch":false,"batchSize":1,"storyId":"US-005","storyTitle":"nax logs command with filtering and follow mode"}}
+{"timestamp":"2026-02-27T08:33:17.636Z","level":"info","stage":"iteration.start","message":"Starting iteration 3","data":{"iteration":3,"storyId":"US-005","storyTitle":"nax logs command with filtering and follow mode","isBatch":false,"batchSize":1,"modelTier":"powerful","complexity":"expert"}}
+{"timestamp":"2026-02-27T08:33:17.719Z","level":"info","stage":"agent.start","message":"Starting agent execution","data":{"storyId":"US-005","agent":"claude","modelTier":"powerful","testStrategy":"three-session-tdd-lite","isBatch":false}}
+{"timestamp":"2026-02-27T08:33:17.721Z","level":"debug","stage":"routing","message":"Task classified","data":{"complexity":"expert","modelTier":"powerful","testStrategy":"three-session-tdd","storyId":"US-005"}}
+{"timestamp":"2026-02-27T08:33:17.721Z","level":"debug","stage":"routing","message":"three-session-tdd: complexity:expert"}
+{"timestamp":"2026-02-27T08:33:17.722Z","level":"debug","stage":"constitution","message":"Constitution not found or failed to load"}
+{"timestamp":"2026-02-27T08:33:17.724Z","level":"warn","stage":"context","message":"scopeToStory=true but no contextFiles provided — falling back to full scan"}
+{"timestamp":"2026-02-27T08:33:17.734Z","level":"debug","stage":"pipeline","message":"Stage \"prompt\" skipped (disabled)"}
+{"timestamp":"2026-02-27T08:33:17.734Z","level":"warn","stage":"optimizer","message":"No prompt to optimize, skipping"}
+{"timestamp":"2026-02-27T08:33:17.735Z","level":"info","stage":"execution","message":"Starting three-session TDD","data":{"storyId":"US-005","lite":false}}
+{"timestamp":"2026-02-27T08:33:17.736Z","level":"info","stage":"tdd","message":"🔄 Three-Session TDD","data":{"storyId":"US-005","title":"nax logs command with filtering and follow mode","lite":false,"recursionDepth":0}}
+{"timestamp":"2026-02-27T08:33:17.751Z","level":"info","stage":"tdd","message":"→ Session: test-writer","data":{"role":"test-writer","storyId":"US-005","lite":false}}
+{"timestamp":"2026-02-27T08:34:17.636Z","level":"debug","stage":"crash-recovery","message":"Heartbeat"}
+{"timestamp":"2026-02-27T08:35:17.639Z","level":"debug","stage":"crash-recovery","message":"Heartbeat"}
+{"timestamp":"2026-02-27T08:36:17.641Z","level":"debug","stage":"crash-recovery","message":"Heartbeat"}
+{"timestamp":"2026-02-27T08:37:10.047Z","level":"warn","stage":"agent","message":"Cost estimation fallback (duration-based)","data":{"modelTier":"balanced","cost":0.29036875}}
+{"timestamp":"2026-02-27T08:37:10.083Z","level":"info","stage":"tdd","message":"✓ Isolation maintained","data":{"role":"test-writer","storyId":"US-005"}}
+{"timestamp":"2026-02-27T08:37:10.083Z","level":"warn","stage":"tdd","message":"Zero test files in strict mode; falling back to tdd-lite for story US-005","data":{"storyId":"US-005","filesChanged":[]}}
+{"timestamp":"2026-02-27T08:37:10.101Z","level":"info","stage":"tdd","message":"🔄 Three-Session TDD","data":{"storyId":"US-005","title":"nax logs command with filtering and follow mode","lite":true,"recursionDepth":1}}
+{"timestamp":"2026-02-27T08:37:10.115Z","level":"info","stage":"tdd","message":"→ Session: test-writer","data":{"role":"test-writer","storyId":"US-005","lite":true}}
+{"timestamp":"2026-02-27T08:37:17.642Z","level":"debug","stage":"crash-recovery","message":"Heartbeat"}
+{"timestamp":"2026-02-27T08:38:17.646Z","level":"debug","stage":"crash-recovery","message":"Heartbeat"}
+{"timestamp":"2026-02-27T08:39:17.651Z","level":"debug","stage":"crash-recovery","message":"Heartbeat"}
+{"timestamp":"2026-02-27T08:40:17.655Z","level":"debug","stage":"crash-recovery","message":"Heartbeat"}
+{"timestamp":"2026-02-27T08:41:17.655Z","level":"debug","stage":"crash-recovery","message":"Heartbeat"}
+{"timestamp":"2026-02-27T08:42:17.657Z","level":"debug","stage":"crash-recovery","message":"Heartbeat"}
+{"timestamp":"2026-02-27T08:42:37.812Z","level":"warn","stage":"agent","message":"Cost estimation fallback (duration-based)","data":{"modelTier":"balanced","cost":0.40962}}
+{"timestamp":"2026-02-27T08:42:37.831Z","level":"warn","stage":"tdd","message":"⚠️ Test writer created no test files","data":{"storyId":"US-005","reviewReason":"Test writer session created no test files","filesChanged":["src/commands/index.ts"]}}
+{"timestamp":"2026-02-27T08:42:37.831Z","level":"warn","stage":"execution","message":"Human review needed","data":{"storyId":"US-005","reason":"Test writer session created no test files","lite":true,"failureCategory":"isolation-violation"}}
+{"timestamp":"2026-02-27T08:42:37.831Z","level":"info","stage":"agent.complete","message":"Agent execution completed","data":{"storyId":"US-005","success":false,"finalAction":"escalate","estimatedCost":0.40962}}
+{"timestamp":"2026-02-27T08:42:37.832Z","level":"warn","stage":"execution","message":"Story paused - no tier available (needs human review)","data":{"storyId":"US-005","failureCategory":"isolation-violation"}}
+{"timestamp":"2026-02-27T08:42:43.977Z","level":"info","stage":"execution","message":"Starting iteration 4","data":{"iteration":4,"isBatch":false,"batchSize":1,"storyId":"US-006","storyTitle":"Integrate formatter into headless runner"}}
+{"timestamp":"2026-02-27T08:42:43.977Z","level":"info","stage":"iteration.start","message":"Starting iteration 4","data":{"iteration":4,"storyId":"US-006","storyTitle":"Integrate formatter into headless runner","isBatch":false,"batchSize":1,"modelTier":"balanced","complexity":"medium"}}
+{"timestamp":"2026-02-27T08:42:44.065Z","level":"info","stage":"agent.start","message":"Starting agent execution","data":{"storyId":"US-006","agent":"claude","modelTier":"balanced","testStrategy":"test-after","isBatch":false}}
+{"timestamp":"2026-02-27T08:42:44.065Z","level":"debug","stage":"routing","message":"Task classified","data":{"complexity":"medium","modelTier":"balanced","testStrategy":"test-after","storyId":"US-006"}}
+{"timestamp":"2026-02-27T08:42:44.065Z","level":"debug","stage":"routing","message":"test-after: simple task (medium)"}
+{"timestamp":"2026-02-27T08:42:44.066Z","level":"debug","stage":"constitution","message":"Constitution not found or failed to load"}
+{"timestamp":"2026-02-27T08:42:44.066Z","level":"warn","stage":"context","message":"scopeToStory=true but no contextFiles provided — falling back to full scan"}
+{"timestamp":"2026-02-27T08:42:44.076Z","level":"info","stage":"prompt","message":"Single session prepared","data":{"storyId":"US-006","testStrategy":"test-after"}}
+{"timestamp":"2026-02-27T08:42:44.076Z","level":"info","stage":"optimizer","message":"noop: 0% savings","data":{"originalTokens":871,"optimizedTokens":871,"tokensSaved":0,"appliedRules":[]}}
+{"timestamp":"2026-02-27T08:43:17.659Z","level":"debug","stage":"crash-recovery","message":"Heartbeat"}
+{"timestamp":"2026-02-27T08:44:17.662Z","level":"debug","stage":"crash-recovery","message":"Heartbeat"}
+{"timestamp":"2026-02-27T08:45:17.665Z","level":"debug","stage":"crash-recovery","message":"Heartbeat"}
+{"timestamp":"2026-02-27T08:46:17.666Z","level":"debug","stage":"crash-recovery","message":"Heartbeat"}
+{"timestamp":"2026-02-27T08:47:17.668Z","level":"debug","stage":"crash-recovery","message":"Heartbeat"}
