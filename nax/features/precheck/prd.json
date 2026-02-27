@@ -27,7 +27,7 @@
         "precheck",
         "types"
       ],
-      "status": "failed",
+      "status": "passed",
       "attempts": 2,
       "priorErrors": [
         "Attempt 1 failed with model tier: balanced",
