@@ -31,6 +31,10 @@ export interface LoggerOptions {
   filePath?: string;
   /** Whether to use chalk for console formatting (default: true) */
   useChalk?: boolean;
+  /** Formatter verbosity mode for console output (default: uses formatConsole) */
+  formatterMode?: "quiet" | "normal" | "verbose" | "json";
+  /** Whether running in headless mode (enables formatter) */
+  headless?: boolean;
 }
 
 /**

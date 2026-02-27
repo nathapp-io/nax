@@ -10,6 +10,7 @@
 
 import * as os from "node:os";
 import path from "node:path";
+import chalk from "chalk";
 import { convertFixStoryToUserStory, generateFixStories } from "../acceptance";
 import { getAgent } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
@@ -22,6 +23,7 @@ import {
 } from "../errors";
 import { type LoadedHooksConfig, fireHook } from "../hooks";
 import { getLogger, getSafeLogger } from "../logger";
+import { formatRunSummary, type RunSummary } from "../logging";
 import { type StoryMetrics, saveRunMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import { runPipeline } from "../pipeline/runner";
@@ -155,6 +157,10 @@ export interface RunOptions {
   statusFile?: string;
   /** Path to JSONL log file (for crash recovery) */
   logFilePath?: string;
+  /** Formatter verbosity mode for headless stdout (default: "normal") */
+  formatterMode?: "quiet" | "normal" | "verbose" | "json";
+  /** Whether running in headless mode (vs TUI mode) */
+  headless?: boolean;
 }
 
 /** Run result */
@@ -170,7 +176,7 @@ export interface RunResult {
  * Main execution loop
  */
 export async function run(options: RunOptions): Promise<RunResult> {
-  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useBatch = true, eventEmitter, statusFile, parallel, logFilePath } = options;
+  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useBatch = true, eventEmitter, statusFile, parallel, logFilePath, formatterMode = "normal", headless = false } = options;
   const startTime = Date.now();
   const runStartedAt = new Date().toISOString();
   const runId = `run-${new Date().toISOString().replace(/[:.]/g, "-")}`;
@@ -290,6 +296,20 @@ export async function run(options: RunOptions): Promise<RunResult> {
     }
 
     const counts = countStories(prd);
+
+    // ── Output run header in headless mode ─────────────────────────────────
+    if (headless && formatterMode !== "json") {
+      const pkg = await Bun.file(path.join(import.meta.dir, "..", "..", "package.json")).json();
+      console.log("");
+      console.log(chalk.bold(chalk.blue("═".repeat(60))));
+      console.log(chalk.bold(chalk.blue(`  ▶ NAX v${pkg.version} — RUN STARTED`)));
+      console.log(chalk.blue("═".repeat(60)));
+      console.log(`  ${chalk.gray("Feature:")}  ${chalk.cyan(feature)}`);
+      console.log(`  ${chalk.gray("Stories:")}  ${chalk.cyan(`${counts.total} total, ${counts.pending} pending`)}`);
+      console.log(`  ${chalk.gray("Path:")}     ${chalk.dim(workdir)}`);
+      console.log(chalk.blue("═".repeat(60)));
+      console.log("");
+    }
 
     // ── Status write point 1: run started ───────────────────────────────────
     statusWriter.setPrd(prd);
@@ -459,6 +479,25 @@ export async function run(options: RunOptions): Promise<RunResult> {
           statusWriter.setCurrentStory(null);
           statusWriter.setRunStatus("completed");
           await statusWriter.update(totalCost, iterations);
+
+          // ── Output run footer in headless mode (parallel path) ──────────────
+          if (headless && formatterMode !== "json") {
+            const runSummary: RunSummary = {
+              total: finalCounts.total,
+              passed: finalCounts.passed,
+              failed: finalCounts.failed,
+              skipped: finalCounts.skipped,
+              durationMs,
+              totalCost,
+              startedAt: runStartedAt,
+              completedAt: runCompletedAt,
+            };
+            const summaryOutput = formatRunSummary(runSummary, {
+              mode: formatterMode,
+              useColor: true,
+            });
+            console.log(summaryOutput);
+          }
 
           return {
             success: true,
@@ -1458,6 +1497,25 @@ export async function run(options: RunOptions): Promise<RunResult> {
     statusWriter.setCurrentStory(null);
     statusWriter.setRunStatus(isComplete(prd) ? "completed" : isStalled(prd) ? "stalled" : "running");
     await statusWriter.update(totalCost, iterations);
+
+    // ── Output run footer in headless mode ─────────────────────────────────
+    if (headless && formatterMode !== "json") {
+      const runSummary: RunSummary = {
+        total: finalCounts.total,
+        passed: finalCounts.passed,
+        failed: finalCounts.failed,
+        skipped: finalCounts.skipped,
+        durationMs,
+        totalCost,
+        startedAt: runStartedAt,
+        completedAt: runCompletedAt,
+      };
+      const summaryOutput = formatRunSummary(runSummary, {
+        mode: formatterMode,
+        useColor: true,
+      });
+      console.log(summaryOutput);
+    }
 
     // Stop heartbeat and write exit summary (US-007)
     stopHeartbeat();

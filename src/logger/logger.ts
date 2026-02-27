@@ -1,6 +1,7 @@
 import { appendFileSync } from "node:fs";
 import { formatConsole, formatJsonl } from "./formatters.js";
 import type { LogEntry, LogLevel, LoggerOptions, StoryLogger } from "./types.js";
+import { formatLogEntry, type VerbosityMode, type FormatterOptions } from "../logging/index.js";
 
 /**
  * Severity ordering for log levels (lower number = more severe)
@@ -38,11 +39,15 @@ export class Logger {
   private readonly level: LogLevel;
   private readonly filePath?: string;
   private readonly useChalk: boolean;
+  private readonly formatterMode?: VerbosityMode;
+  private readonly headless: boolean;
 
   constructor(options: LoggerOptions) {
     this.level = options.level;
     this.filePath = options.filePath;
     this.useChalk = options.useChalk ?? true;
+    this.formatterMode = options.formatterMode;
+    this.headless = options.headless ?? false;
 
     // Ensure parent directory exists if file path provided
     if (this.filePath) {
@@ -88,8 +93,28 @@ export class Logger {
 
     // Console output (level-gated)
     if (this.shouldLog(level)) {
-      const consoleOutput = this.useChalk ? formatConsole(entry) : this.formatPlainConsole(entry);
-      console.log(consoleOutput);
+      let consoleOutput: string | null = null;
+
+      // Use formatter in headless mode if mode is specified
+      if (this.headless && this.formatterMode) {
+        const formatterOptions: FormatterOptions = {
+          mode: this.formatterMode,
+          useColor: this.useChalk,
+        };
+        const formatted = formatLogEntry(entry, formatterOptions);
+        if (formatted.shouldDisplay) {
+          consoleOutput = formatted.output;
+        }
+        // If formatter says not to display, consoleOutput stays null
+      } else {
+        // Default console formatting (existing behavior)
+        consoleOutput = this.useChalk ? formatConsole(entry) : this.formatPlainConsole(entry);
+      }
+
+      // Only log if we have output to display
+      if (consoleOutput !== null) {
+        console.log(consoleOutput);
+      }
     }
 
     // File output (always write all levels)

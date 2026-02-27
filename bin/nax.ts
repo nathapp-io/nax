@@ -207,6 +207,7 @@ program
   .option("--verbose", "Enable verbose logging (debug level)", false)
   .option("--quiet", "Quiet mode (warnings and errors only)", false)
   .option("--silent", "Silent mode (errors only)", false)
+  .option("--json", "JSON mode (raw JSONL output to stdout)", false)
   .option("-d, --dir <path>", "Working directory", process.cwd())
   .option("--status-file <path>", "Write machine-readable JSON status file (updated during run)")
   .action(async (options) => {
@@ -230,6 +231,16 @@ program
       logLevel = "warn";
     } else if (options.silent) {
       logLevel = "error";
+    }
+
+    // Determine formatter mode from flags
+    let formatterMode: "quiet" | "normal" | "verbose" | "json" = "normal"; // default
+    if (options.json) {
+      formatterMode = "json";
+    } else if (options.verbose) {
+      formatterMode = "verbose";
+    } else if (options.quiet || options.silent) {
+      formatterMode = "quiet";
     }
 
     const config = await loadConfig();
@@ -256,11 +267,23 @@ program
     const runId = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
     const logFilePath = join(runsDir, `${runId}.jsonl`);
 
-    // Initialize logger with selected level and file path
+    // Determine TUI vs headless mode
+    // TUI activates when:
+    // 1. stdout is a TTY, AND
+    // 2. --headless flag is NOT passed, AND
+    // 3. NAX_HEADLESS env var is NOT set
+    const isTTY = process.stdout.isTTY ?? false;
+    const headlessFlag = options.headless ?? false;
+    const headlessEnv = process.env.NAX_HEADLESS === "1";
+    const useHeadless = !isTTY || headlessFlag || headlessEnv;
+
+    // Initialize logger with selected level, file path, and formatter mode
     initLogger({
       level: logLevel,
       filePath: logFilePath,
       useChalk: true,
+      formatterMode: useHeadless ? formatterMode : undefined,
+      headless: useHeadless,
     });
 
     // Override config from CLI
@@ -271,16 +294,6 @@ program
 
     const globalNaxDir = join(homedir(), ".nax");
     const hooks = await loadHooksConfig(naxDir, globalNaxDir);
-
-    // Determine TUI vs headless mode
-    // TUI activates when:
-    // 1. stdout is a TTY, AND
-    // 2. --headless flag is NOT passed, AND
-    // 3. NAX_HEADLESS env var is NOT set
-    const isTTY = process.stdout.isTTY ?? false;
-    const headlessFlag = options.headless ?? false;
-    const headlessEnv = process.env.NAX_HEADLESS === "1";
-    const useHeadless = !isTTY || headlessFlag || headlessEnv;
 
     // Create event emitter for TUI integration
     const eventEmitter = new PipelineEventEmitter();
@@ -334,6 +347,9 @@ program
       parallel,
       eventEmitter,
       statusFile: statusFilePath,
+      logFilePath,
+      formatterMode: useHeadless ? formatterMode : undefined,
+      headless: useHeadless,
     });
 
     // Create/update latest.jsonl symlink

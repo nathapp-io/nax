@@ -243,10 +243,6 @@ function formatTDDSession(entry: LogEntry, c: ChalkLike, timestamp: string, mode
  * Format default log entry
  */
 function formatDefault(entry: LogEntry, c: ChalkLike, timestamp: string, mode: string): FormattedEntry {
-  if (mode === "quiet") {
-    return { output: "", shouldDisplay: false };
-  }
-
   const levelEmoji = entry.level === "error" ? EMOJI.failure : entry.level === "warn" ? EMOJI.warning : EMOJI.info;
   const levelColor = entry.level === "error" ? c.red : entry.level === "warn" ? c.yellow : c.gray;
   const stageEmoji = getStageEmoji(entry.stage);
