@@ -34,3 +34,11 @@ export {
   type ExecutionResult,
   type StoryCounts,
 } from "./helpers";
+export {
+  installCrashHandlers,
+  startHeartbeat,
+  stopHeartbeat,
+  writeExitSummary,
+  resetCrashHandlers,
+  type CrashRecoveryContext,
+} from "./crash-recovery";

@@ -67,9 +67,9 @@ export class StatusWriter {
     this.ctx = ctx;
   }
 
-  /** Update the current run status (running / completed / failed / stalled) */
-  setRunStatus(status: RunStateSnapshot["runStatus"]): void {
-    this._runStatus = status;
+  /** Update the current run status (running / completed / failed / stalled / crashed) */
+  setRunStatus(status: RunStateSnapshot["runStatus"] | "crashed"): void {
+    this._runStatus = status as RunStateSnapshot["runStatus"];
   }
 
   /** Update the loaded PRD used for progress counting */

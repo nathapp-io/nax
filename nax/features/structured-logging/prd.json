@@ -3,7 +3,7 @@
   "feature": "structured-logging",
   "branchName": "feat/structured-logging",
   "createdAt": "2026-02-27T05:50:00Z",
-  "updatedAt": "2026-02-27T07:28:48.448Z",
+  "updatedAt": "2026-02-27T07:51:58.307Z",
   "userStories": [
     {
       "id": "US-001",
@@ -181,8 +181,10 @@
         "signals"
       ],
       "status": "pending",
-      "attempts": 0,
-      "priorErrors": [],
+      "attempts": 1,
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced"
+      ],
       "escalations": []
     }
   ],

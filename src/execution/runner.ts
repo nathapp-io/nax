@@ -54,6 +54,12 @@ import { runPostAgentVerification } from "./post-verify";
 import { appendProgress } from "./progress";
 import { StatusWriter } from "./status-writer";
 import { executeParallel } from "./parallel";
+import {
+  installCrashHandlers,
+  startHeartbeat,
+  stopHeartbeat,
+  writeExitSummary,
+} from "./crash-recovery";
 
 /**
  * Determine the outcome when max attempts are reached for an escalation.
@@ -147,6 +153,8 @@ export interface RunOptions {
   eventEmitter?: PipelineEventEmitter;
   /** Path to write a machine-readable JSON status file. Omit to skip writing. */
   statusFile?: string;
+  /** Path to JSONL log file (for crash recovery) */
+  logFilePath?: string;
 }
 
 /** Run result */
@@ -162,7 +170,7 @@ export interface RunResult {
  * Main execution loop
  */
 export async function run(options: RunOptions): Promise<RunResult> {
-  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useBatch = true, eventEmitter, statusFile, parallel } = options;
+  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useBatch = true, eventEmitter, statusFile, parallel, logFilePath } = options;
   const startTime = Date.now();
   const runStartedAt = new Date().toISOString();
   const runId = `run-${new Date().toISOString().replace(/[:.]/g, "-")}`;
@@ -185,6 +193,14 @@ export async function run(options: RunOptions): Promise<RunResult> {
     dryRun,
     startTimeMs: startTime,
     pid: process.pid,
+  });
+
+  // Install crash handlers for signal recovery (US-007)
+  installCrashHandlers({
+    statusWriter,
+    totalCost,
+    iterations,
+    jsonlFilePath: logFilePath,
   });
 
   // Acquire lock to prevent concurrent execution
@@ -456,6 +472,14 @@ export async function run(options: RunOptions): Promise<RunResult> {
     }
 
     // ── Sequential Execution Path (default) ────────────────────────────────────
+    // Start heartbeat (US-007: 60s heartbeat during execution)
+    startHeartbeat(
+      statusWriter,
+      () => totalCost,
+      () => iterations,
+      logFilePath,
+    );
+
     // Main loop
     while (iterations < config.execution.maxIterations) {
       iterations++;
@@ -1435,6 +1459,10 @@ export async function run(options: RunOptions): Promise<RunResult> {
     statusWriter.setRunStatus(isComplete(prd) ? "completed" : isStalled(prd) ? "stalled" : "running");
     await statusWriter.update(totalCost, iterations);
 
+    // Stop heartbeat and write exit summary (US-007)
+    stopHeartbeat();
+    await writeExitSummary(logFilePath, totalCost, iterations, storiesCompleted, durationMs);
+
     return {
       success: isComplete(prd),
       iterations,
@@ -1443,6 +1471,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
       durationMs,
     };
   } finally {
+    // Stop heartbeat on any exit (US-007)
+    stopHeartbeat();
     // Fire onRunEnd for reporters (even on failure/abort)
     const durationMs = Date.now() - startTime;
     const finalCounts = countStories(prd);

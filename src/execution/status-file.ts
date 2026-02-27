@@ -30,11 +30,15 @@ export interface NaxStatusFile {
     /** ISO 8601 start timestamp */
     startedAt: string;
     /** Current run status */
-    status: "running" | "completed" | "failed" | "stalled";
+    status: "running" | "completed" | "failed" | "stalled" | "crashed";
     /** Whether this is a dry run */
     dryRun: boolean;
     /** Process ID for crash detection */
     pid: number;
+    /** ISO 8601 crash timestamp (present when status is "crashed") */
+    crashedAt?: string;
+    /** Signal or exception that caused crash (present when status is "crashed") */
+    crashSignal?: string;
   };
 
   /** Aggregate progress counts */
@@ -87,6 +91,9 @@ export interface NaxStatusFile {
 
   /** Elapsed duration in milliseconds */
   durationMs: number;
+
+  /** ISO 8601 last heartbeat timestamp (updated every 60s during execution) */
+  lastHeartbeat?: string;
 
   /** Parallel execution info (present when --parallel is used) */
   parallel?: {
@@ -181,7 +188,7 @@ export interface RunStateSnapshot {
  * Derives progress from PRD story statuses. Sets updatedAt and durationMs
  * from the current time. Does not write to disk — call writeStatusFile() for that.
  */
-export function buildStatusSnapshot(state: RunStateSnapshot): NaxStatusFile {
+export function buildStatusSnapshot(state: RunStateSnapshot & { crashedAt?: string; crashSignal?: string; lastHeartbeat?: string }): NaxStatusFile {
   const now = Date.now();
   const snapshot: NaxStatusFile = {
     version: 1,
@@ -192,6 +199,8 @@ export function buildStatusSnapshot(state: RunStateSnapshot): NaxStatusFile {
       status: state.runStatus,
       dryRun: state.dryRun,
       pid: state.pid,
+      ...(state.crashedAt && { crashedAt: state.crashedAt }),
+      ...(state.crashSignal && { crashSignal: state.crashSignal }),
     },
     progress: countProgress(state.prd),
     cost: {
@@ -202,6 +211,7 @@ export function buildStatusSnapshot(state: RunStateSnapshot): NaxStatusFile {
     iterations: state.iterations,
     updatedAt: new Date(now).toISOString(),
     durationMs: now - state.startTimeMs,
+    ...(state.lastHeartbeat && { lastHeartbeat: state.lastHeartbeat }),
   };
 
   if (state.parallel) {
