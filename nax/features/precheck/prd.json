@@ -88,10 +88,13 @@
         "cli",
         "precheck"
       ],
-      "status": "pending",
-      "attempts": 0,
-      "priorErrors": [],
-      "escalations": []
+      "status": "passed",
+      "attempts": 2,
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced"
+      ],
+      "escalations": [],
+      "passes": true
     },
     {
       "id": "US-004",
@@ -187,5 +190,5 @@
     "maxStories": 15,
     "granularity": "medium"
   },
-  "updatedAt": "2026-02-27T12:59:06.598Z"
+  "updatedAt": "2026-02-27T13:47:34.005Z"
 }
