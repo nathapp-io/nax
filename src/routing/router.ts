@@ -119,7 +119,7 @@ export function classifyComplexity(
   acceptanceCriteria: string[],
   tags: string[] = [],
 ): Complexity {
-  const text = [title, description, ...acceptanceCriteria, ...tags].join(" ").toLowerCase();
+  const text = [title, description, ...(acceptanceCriteria ?? []), ...(tags ?? [])].join(" ").toLowerCase();
 
   // Expert: matches expert keywords
   if (EXPERT_KEYWORDS.some((kw) => text.includes(kw))) {
@@ -184,7 +184,7 @@ export function determineTestStrategy(
   if (tddStrategy === "off") return "test-after";
 
   // auto mode: apply heuristics
-  const text = [title, description, ...tags].join(" ").toLowerCase();
+  const text = [title, description, ...(tags ?? [])].join(" ").toLowerCase();
 
   // Public API or security → three-session-tdd (strict)
   const isSecurityCritical = SECURITY_KEYWORDS.some((kw) => text.includes(kw));
@@ -196,7 +196,7 @@ export function determineTestStrategy(
 
   // Complex/expert heuristic
   if (complexity === "complex" || complexity === "expert") {
-    const normalizedTags = tags.map((t) => t.toLowerCase());
+    const normalizedTags = (tags ?? []).map((t) => t.toLowerCase());
     const hasLiteTag = LITE_TAGS.some((tag) => normalizedTags.includes(tag));
     return hasLiteTag ? "three-session-tdd-lite" : "three-session-tdd";
   }
@@ -274,8 +274,8 @@ export function routeTask(
   const testStrategy = determineTestStrategy(complexity, title, description, tags, tddStrategy);
 
   const reasons: string[] = [];
-  const text = [title, description, ...tags].join(" ").toLowerCase();
-  const normalizedTags = tags.map((t) => t.toLowerCase());
+  const text = [title, description, ...(tags ?? [])].join(" ").toLowerCase();
+  const normalizedTags = (tags ?? []).map((t) => t.toLowerCase());
   const hasLiteTag = LITE_TAGS.some((tag) => normalizedTags.includes(tag));
 
   if (SECURITY_KEYWORDS.some((kw) => text.includes(kw))) reasons.push("security-critical");
