@@ -66,6 +66,7 @@ function makeCtx(overrides: Partial<StatusWriterContext> = {}): StatusWriterCont
     startedAt: "2026-02-25T10:00:00.000Z",
     dryRun: false,
     startTimeMs: Date.now() - 1000,
+    pid: process.pid,
     ...overrides,
   };
 }
@@ -180,13 +181,22 @@ describe("StatusWriter.getSnapshot", () => {
   });
 
   test("includes fixed context values from constructor", () => {
-    const ctx = makeCtx({ runId: "run-abc", feature: "my-feature", dryRun: true });
+    const ctx = makeCtx({ runId: "run-abc", feature: "my-feature", dryRun: true, pid: 12345 });
     const sw = new StatusWriter("/tmp/x.json", makeConfig(), ctx);
     sw.setPrd(makePrd());
     const snap = sw.getSnapshot(0, 0);
     expect(snap?.runId).toBe("run-abc");
     expect(snap?.feature).toBe("my-feature");
     expect(snap?.dryRun).toBe(true);
+    expect(snap?.pid).toBe(12345);
+  });
+
+  test("includes PID for crash detection", () => {
+    const testPid = 99999;
+    const sw = new StatusWriter("/tmp/x.json", makeConfig(), makeCtx({ pid: testPid }));
+    sw.setPrd(makePrd());
+    const snap = sw.getSnapshot(0, 0);
+    expect(snap?.pid).toBe(testPid);
   });
 });
 
@@ -273,6 +283,17 @@ describe("StatusWriter.update success path", () => {
     sw.setPrd(makePrd());
     await sw.update(0, 0);
     expect(existsSync(`${path}.tmp`)).toBe(false);
+  });
+
+  test("PID is written to status file for crash detection", async () => {
+    const path = join(tmpDir, "status.json");
+    const testPid = 88888;
+    const sw = new StatusWriter(path, makeConfig(), makeCtx({ pid: testPid }));
+    sw.setPrd(makePrd());
+    await sw.update(0, 0);
+
+    const content = JSON.parse(readFileSync(path, "utf8")) as NaxStatusFile;
+    expect(content.run.pid).toBe(testPid);
   });
 });
 

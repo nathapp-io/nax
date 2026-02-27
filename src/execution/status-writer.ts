@@ -26,6 +26,8 @@ export interface StatusWriterContext {
   dryRun: boolean;
   /** Run start time as ms epoch (for computing durationMs) */
   startTimeMs: number;
+  /** Process ID for crash detection */
+  pid: number;
 }
 
 // ============================================================================
@@ -93,6 +95,7 @@ export class StatusWriter {
       startedAt: this.ctx.startedAt,
       runStatus: this._runStatus,
       dryRun: this.ctx.dryRun,
+      pid: this.ctx.pid,
       prd: this._prd,
       totalCost,
       costLimit: this.costLimit,

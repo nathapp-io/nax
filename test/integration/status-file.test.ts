@@ -60,6 +60,7 @@ function makeRunState(overrides: Partial<RunStateSnapshot> = {}): RunStateSnapsh
     startedAt: "2026-02-25T10:00:00.000Z",
     runStatus: "running",
     dryRun: false,
+    pid: process.pid,
     prd: makePrd([makeStory("US-001", "pending")]),
     totalCost: 0,
     costLimit: 5.0,
@@ -183,6 +184,7 @@ describe("buildStatusSnapshot", () => {
       startedAt: "2026-02-25T10:00:00.000Z",
       runStatus: "running",
       dryRun: true,
+      pid: 12345,
     });
     const snapshot = buildStatusSnapshot(state);
 
@@ -191,6 +193,21 @@ describe("buildStatusSnapshot", () => {
     expect(snapshot.run.startedAt).toBe("2026-02-25T10:00:00.000Z");
     expect(snapshot.run.status).toBe("running");
     expect(snapshot.run.dryRun).toBe(true);
+    expect(snapshot.run.pid).toBe(12345);
+  });
+
+  test("PID is included for crash detection", () => {
+    const testPid = 99999;
+    const snapshot = buildStatusSnapshot(makeRunState({ pid: testPid }));
+
+    expect(snapshot.run.pid).toBe(testPid);
+    expect(typeof snapshot.run.pid).toBe("number");
+  });
+
+  test("PID defaults to process.pid when not overridden", () => {
+    const snapshot = buildStatusSnapshot(makeRunState());
+
+    expect(snapshot.run.pid).toBe(process.pid);
   });
 
   test("progress is derived from PRD stories", () => {
@@ -361,5 +378,16 @@ describe("writeStatusFile", () => {
     expect(raw.split("\n").length).toBeGreaterThan(1);
     // Check for 2-space indent on top-level keys
     expect(raw).toContain('  "version"');
+  });
+
+  test("PID is persisted to status file for crash detection", async () => {
+    const outPath = join(tmpDir, "status.json");
+    const testPid = 54321;
+    const snapshot = buildStatusSnapshot(makeRunState({ pid: testPid }));
+
+    await writeStatusFile(outPath, snapshot);
+
+    const content = JSON.parse(readFileSync(outPath, "utf8")) as NaxStatusFile;
+    expect(content.run.pid).toBe(testPid);
   });
 });

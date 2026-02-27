@@ -1,0 +1,18 @@
+{"timestamp":"2026-02-27T06:41:42.526Z","level":"info","stage":"plugins","message":"Loaded 0 plugins","data":{"plugins":[]}}
+{"timestamp":"2026-02-27T06:41:42.539Z","level":"info","stage":"run.start","message":"Starting feature: structured-logging","data":{"runId":"run-2026-02-27T06-41-42-523Z","feature":"structured-logging","workdir":"/Users/subrinaai/Desktop/workspace/subrina-coder/projects/nax/repos/nax","dryRun":false,"useBatch":true,"routingMode":"hybrid"}}
+{"timestamp":"2026-02-27T06:41:46.414Z","level":"info","stage":"execution","message":"Starting structured-logging","data":{"totalStories":7,"doneStories":2,"pendingStories":5,"batchingEnabled":true}}
+{"timestamp":"2026-02-27T06:41:46.415Z","level":"info","stage":"execution","message":"Starting iteration 1","data":{"iteration":1,"isBatch":false,"batchSize":1,"storyId":"US-001","storyTitle":"Project resolver with CWD and -d flag support"}}
+{"timestamp":"2026-02-27T06:41:46.415Z","level":"info","stage":"iteration.start","message":"Starting iteration 1","data":{"iteration":1,"storyId":"US-001","storyTitle":"Project resolver with CWD and -d flag support","isBatch":false,"batchSize":1,"modelTier":"balanced","complexity":"medium"}}
+{"timestamp":"2026-02-27T06:41:46.476Z","level":"info","stage":"agent.start","message":"Starting agent execution","data":{"storyId":"US-001","agent":"claude","modelTier":"balanced","testStrategy":"test-after","isBatch":false}}
+{"timestamp":"2026-02-27T06:41:46.478Z","level":"debug","stage":"routing","message":"Task classified","data":{"complexity":"medium","modelTier":"balanced","testStrategy":"test-after","storyId":"US-001"}}
+{"timestamp":"2026-02-27T06:41:46.478Z","level":"debug","stage":"routing","message":"test-after: simple task (medium)"}
+{"timestamp":"2026-02-27T06:41:46.479Z","level":"debug","stage":"constitution","message":"Constitution not found or failed to load"}
+{"timestamp":"2026-02-27T06:41:46.480Z","level":"warn","stage":"context","message":"scopeToStory=true but no contextFiles provided — falling back to full scan"}
+{"timestamp":"2026-02-27T06:41:46.490Z","level":"info","stage":"prompt","message":"Single session prepared","data":{"storyId":"US-001","testStrategy":"test-after"}}
+{"timestamp":"2026-02-27T06:41:46.490Z","level":"info","stage":"optimizer","message":"noop: 0% savings","data":{"originalTokens":626,"optimizedTokens":626,"tokensSaved":0,"appliedRules":[]}}
+{"timestamp":"2026-02-27T06:49:14.785Z","level":"warn","stage":"agent","message":"Cost estimation fallback (duration-based)","data":{"modelTier":"balanced","cost":0.5603675}}
+{"timestamp":"2026-02-27T06:49:14.785Z","level":"warn","stage":"agent","message":"Rate limited, retrying","data":{"backoffSeconds":2,"attempt":1,"maxRetries":3}}
+{"timestamp":"2026-02-27T06:54:48.205Z","level":"warn","stage":"agent","message":"Cost estimation fallback (duration-based)","data":{"modelTier":"balanced","cost":0.414265}}
+{"timestamp":"2026-02-27T06:54:48.206Z","level":"info","stage":"execution","message":"Agent session complete","data":{"storyId":"US-001","cost":0.414265}}
+{"timestamp":"2026-02-27T06:54:48.212Z","level":"info","stage":"verify","message":"Running verification"}
+{"timestamp":"2026-02-27T06:54:48.212Z","level":"debug","stage":"verify","message":"Waiting for agent processes to terminate"}

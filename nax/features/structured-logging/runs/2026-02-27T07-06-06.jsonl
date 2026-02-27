@@ -1,0 +1,12 @@
+{"timestamp":"2026-02-27T07:06:06.287Z","level":"info","stage":"plugins","message":"Loaded 0 plugins","data":{"plugins":[]}}
+{"timestamp":"2026-02-27T07:06:06.301Z","level":"info","stage":"run.start","message":"Starting feature: structured-logging","data":{"runId":"run-2026-02-27T07-06-06-285Z","feature":"structured-logging","workdir":"/Users/subrinaai/Desktop/workspace/subrina-coder/projects/nax/repos/nax","dryRun":false,"useBatch":true,"routingMode":"hybrid"}}
+{"timestamp":"2026-02-27T07:06:10.707Z","level":"info","stage":"execution","message":"Starting structured-logging","data":{"totalStories":7,"doneStories":2,"pendingStories":5,"batchingEnabled":true}}
+{"timestamp":"2026-02-27T07:06:10.709Z","level":"info","stage":"execution","message":"Starting iteration 3","data":{"iteration":3,"isBatch":false,"batchSize":1,"storyId":"US-003","storyTitle":"status.json writer for live run state"}}
+{"timestamp":"2026-02-27T07:06:10.709Z","level":"info","stage":"iteration.start","message":"Starting iteration 3","data":{"iteration":3,"storyId":"US-003","storyTitle":"status.json writer for live run state","isBatch":false,"batchSize":1,"modelTier":"balanced","complexity":"medium"}}
+{"timestamp":"2026-02-27T07:06:10.772Z","level":"info","stage":"agent.start","message":"Starting agent execution","data":{"storyId":"US-003","agent":"claude","modelTier":"balanced","testStrategy":"test-after","isBatch":false}}
+{"timestamp":"2026-02-27T07:06:10.773Z","level":"debug","stage":"routing","message":"Task classified","data":{"complexity":"medium","modelTier":"balanced","testStrategy":"test-after","storyId":"US-003"}}
+{"timestamp":"2026-02-27T07:06:10.774Z","level":"debug","stage":"routing","message":"test-after: simple task (medium)"}
+{"timestamp":"2026-02-27T07:06:10.774Z","level":"debug","stage":"constitution","message":"Constitution not found or failed to load"}
+{"timestamp":"2026-02-27T07:06:10.776Z","level":"warn","stage":"context","message":"scopeToStory=true but no contextFiles provided — falling back to full scan"}
+{"timestamp":"2026-02-27T07:06:10.786Z","level":"info","stage":"prompt","message":"Single session prepared","data":{"storyId":"US-003","testStrategy":"test-after"}}
+{"timestamp":"2026-02-27T07:06:10.786Z","level":"info","stage":"optimizer","message":"noop: 0% savings","data":{"originalTokens":519,"optimizedTokens":519,"tokensSaved":0,"appliedRules":[]}}

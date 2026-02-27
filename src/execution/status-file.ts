@@ -33,6 +33,8 @@ export interface NaxStatusFile {
     status: "running" | "completed" | "failed" | "stalled";
     /** Whether this is a dry run */
     dryRun: boolean;
+    /** Process ID for crash detection */
+    pid: number;
   };
 
   /** Aggregate progress counts */
@@ -143,6 +145,8 @@ export interface RunStateSnapshot {
   runStatus: NaxStatusFile["run"]["status"];
   /** Whether this is a dry run */
   dryRun: boolean;
+  /** Process ID for crash detection */
+  pid: number;
   /** Loaded PRD (for progress counting) */
   prd: PRD;
   /** Accumulated cost in USD */
@@ -187,6 +191,7 @@ export function buildStatusSnapshot(state: RunStateSnapshot): NaxStatusFile {
       startedAt: state.startedAt,
       status: state.runStatus,
       dryRun: state.dryRun,
+      pid: state.pid,
     },
     progress: countProgress(state.prd),
     cost: {

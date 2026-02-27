@@ -184,6 +184,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     startedAt: runStartedAt,
     dryRun,
     startTimeMs: startTime,
+    pid: process.pid,
   });
 
   // Acquire lock to prevent concurrent execution
