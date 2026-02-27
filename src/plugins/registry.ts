@@ -8,6 +8,7 @@ import type { AgentAdapter } from "../agents/types";
 import { getSafeLogger } from "../logger";
 import type { RoutingStrategy } from "../routing/strategy";
 import type { IContextProvider, IPromptOptimizer, IReporter, IReviewPlugin, NaxPlugin } from "./types";
+import type { LoadedPlugin, PluginSource } from "./loader";
 
 /**
  * Plugin registry with typed getters for each extension type.
@@ -19,8 +20,32 @@ export class PluginRegistry {
   /** All loaded plugins (readonly) */
   readonly plugins: ReadonlyArray<NaxPlugin>;
 
-  constructor(plugins: NaxPlugin[]) {
-    this.plugins = plugins;
+  /** Plugin source information (maps plugin name to source) */
+  private readonly sources: Map<string, PluginSource>;
+
+  constructor(loadedPlugins: LoadedPlugin[] | NaxPlugin[]) {
+    // Support both LoadedPlugin[] and NaxPlugin[] for backward compatibility
+    if (loadedPlugins.length > 0 && "plugin" in loadedPlugins[0]) {
+      // New format: LoadedPlugin[]
+      const typed = loadedPlugins as LoadedPlugin[];
+      this.plugins = typed.map((lp) => lp.plugin);
+      this.sources = new Map(typed.map((lp) => [lp.plugin.name, lp.source]));
+    } else {
+      // Legacy format: NaxPlugin[]
+      const typed = loadedPlugins as NaxPlugin[];
+      this.plugins = typed;
+      this.sources = new Map();
+    }
+  }
+
+  /**
+   * Get the source information for a plugin.
+   *
+   * @param pluginName - Name of the plugin
+   * @returns Plugin source or undefined if not found
+   */
+  getSource(pluginName: string): PluginSource | undefined {
+    return this.sources.get(pluginName);
   }
 
   /**

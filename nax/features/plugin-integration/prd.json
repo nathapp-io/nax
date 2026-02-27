@@ -3,7 +3,7 @@
   "feature": "plugin-integration",
   "branchName": "feat/plugin-integration",
   "createdAt": "2026-02-26T22:00:00Z",
-  "updatedAt": "2026-02-26T22:00:00Z",
+  "updatedAt": "2026-02-26T17:27:52.898Z",
   "userStories": [
     {
       "id": "US-001",
@@ -21,7 +21,8 @@
       "status": "passed",
       "passes": true,
       "attempts": 0,
-      "escalations": []
+      "escalations": [],
+      "priorErrors": []
     },
     {
       "id": "US-002",
@@ -38,10 +39,21 @@
         "US-001"
       ],
       "tags": [],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
-      "attempts": 0,
-      "escalations": []
+      "attempts": 2,
+      "escalations": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced",
+        "Attempt 2 failed with model tier: balanced",
+        "Attempt 1 failed with model tier: balanced"
+      ],
+      "routing": {
+        "complexity": "medium",
+        "modelTier": "powerful",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "three-session-tdd-lite: security-critical, strategy:lite"
+      }
     },
     {
       "id": "US-003",
@@ -59,10 +71,21 @@
         "US-001"
       ],
       "tags": [],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
-      "attempts": 0,
-      "escalations": []
+      "attempts": 2,
+      "escalations": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced",
+        "Attempt 2 failed with model tier: balanced",
+        "Attempt 1 failed with model tier: balanced"
+      ],
+      "routing": {
+        "complexity": "medium",
+        "modelTier": "powerful",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "three-session-tdd-lite: strategy:lite"
+      }
     },
     {
       "id": "US-004",
@@ -83,7 +106,17 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": []
+      "escalations": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced",
+        "Attempt 2 failed with model tier: balanced"
+      ],
+      "routing": {
+        "complexity": "medium",
+        "modelTier": "powerful",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "three-session-tdd-lite: strategy:lite"
+      }
     },
     {
       "id": "US-005",
@@ -102,8 +135,12 @@
       "tags": [],
       "status": "pending",
       "passes": false,
-      "attempts": 0,
-      "escalations": []
+      "attempts": 2,
+      "escalations": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced",
+        "Attempt 2 failed with model tier: balanced"
+      ]
     },
     {
       "id": "US-006",
@@ -121,7 +158,8 @@
       "status": "passed",
       "passes": true,
       "attempts": 0,
-      "escalations": []
+      "escalations": [],
+      "priorErrors": []
     },
     {
       "id": "US-007",
@@ -139,7 +177,8 @@
       "status": "passed",
       "passes": true,
       "attempts": 0,
-      "escalations": []
+      "escalations": [],
+      "priorErrors": []
     },
     {
       "id": "US-008",
@@ -148,7 +187,7 @@
       "acceptanceCriteria": [
         "Plugin exports a valid NaxPlugin with provides: ['reporter']",
         "onRunStart prints a run banner with feature name and story count",
-        "onStoryComplete prints a status line (\u2713/\u2717) with story ID, tier, duration, cost",
+        "onStoryComplete prints a status line (✓/✗) with story ID, tier, duration, cost",
         "onRunEnd prints a summary table with total stories, pass/fail counts, total cost, total duration",
         "setup() reads config.verbose (boolean, default false) for extra detail",
         "Plugin passes validatePlugin() from src/plugins/validator.ts",
@@ -162,7 +201,8 @@
       "status": "pending",
       "passes": false,
       "attempts": 0,
-      "escalations": []
+      "escalations": [],
+      "priorErrors": []
     }
   ],
   "analyzeConfig": {

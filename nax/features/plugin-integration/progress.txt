@@ -1,0 +1,5 @@
+[2026-02-26T16:06:18.213Z] US-001 — FAILED — Wire plugin loading into the runner startup — All tiers exhausted
+[2026-02-26T16:18:45.006Z] US-006 — FAILED — CLI 'nax plugins list' command — All tiers exhausted
+[2026-02-26T16:27:59.795Z] US-007 — FAILED — Read plugin config entries from nax config.json — All tiers exhausted
+[2026-02-26T17:26:43.751Z] US-002 — FAILED — Context providers inject into agent prompts — All tiers exhausted
+[2026-02-26T17:27:52.898Z] US-003 — FAILED — Review plugins run after built-in verification — All tiers exhausted

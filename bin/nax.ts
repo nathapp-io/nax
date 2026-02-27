@@ -51,6 +51,7 @@ import {
   displayLastRunMetrics,
   displayModelEfficiency,
   planCommand,
+  pluginsListCommand,
   promptsCommand,
   runsListCommand,
   runsShowCommand,
@@ -754,6 +755,39 @@ program
         console.log(chalk.green(`\n✅ Prompts written to ${options.out}`));
         console.log(chalk.dim(`   Processed ${processedStories.length} stories`));
       }
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+// ── plugins ──────────────────────────────────────────
+const plugins = program.command("plugins").description("Manage plugins");
+
+plugins
+  .command("list")
+  .description("List all installed plugins")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (options) => {
+    // Validate directory path
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    // Load config (or use default if outside project)
+    let config = DEFAULT_CONFIG;
+    try {
+      config = await loadConfig(workdir);
+    } catch {
+      // Outside project directory, use default config (global plugins only)
+    }
+
+    try {
+      await pluginsListCommand(config, workdir);
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);
