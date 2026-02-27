@@ -48,7 +48,7 @@ describe("scanCodebase", () => {
   });
 
   test("extracts dependencies from package.json", async () => {
-    const workdir = join(import.meta.dir, "..");
+    const workdir = join(import.meta.dir, "../..");
 
     const scan = await scanCodebase(workdir);
 
@@ -58,7 +58,7 @@ describe("scanCodebase", () => {
   });
 
   test("detects test framework", async () => {
-    const workdir = join(import.meta.dir, "..");
+    const workdir = join(import.meta.dir, "../..");
 
     const scan = await scanCodebase(workdir);
 
@@ -70,7 +70,7 @@ describe("scanCodebase", () => {
   });
 
   test("detects test directory", async () => {
-    const workdir = join(import.meta.dir, "..");
+    const workdir = join(import.meta.dir, "../..");
 
     const scan = await scanCodebase(workdir);
 
@@ -82,7 +82,7 @@ describe("scanCodebase", () => {
   });
 
   test("file tree respects max depth", async () => {
-    const workdir = join(import.meta.dir, "..");
+    const workdir = join(import.meta.dir, "../..");
 
     const scan = await scanCodebase(workdir);
 
@@ -100,7 +100,7 @@ describe("scanCodebase", () => {
   });
 
   test("file tree includes directories and files", async () => {
-    const workdir = join(import.meta.dir, "..");
+    const workdir = join(import.meta.dir, "../..");
 
     const scan = await scanCodebase(workdir);
 

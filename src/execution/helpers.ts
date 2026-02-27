@@ -366,7 +366,10 @@ export async function releaseLock(workdir: string): Promise<void> {
     const file = Bun.file(lockPath);
     const exists = await file.exists();
     if (exists) {
-      await Bun.spawn(["rm", lockPath], { stdout: "pipe" }).exited;
+      const proc = Bun.spawn(["rm", lockPath], { stdout: "pipe" });
+      await proc.exited;
+      // Wait a bit for filesystem to sync (prevents race in tests)
+      await Bun.sleep(10);
     }
   } catch (error) {
     const logger = getSafeLogger();

@@ -224,23 +224,25 @@ export async function run(options: RunOptions): Promise<RunResult> {
     // Fire on-start hook
     await fireHook(hooks, "on-start", hookCtx(feature), workdir);
 
-    // Check agent installation before starting
-    const agent = getAgent(config.autoMode.defaultAgent);
-    if (!agent) {
-      logger?.error("execution", "Agent not found", {
-        agent: config.autoMode.defaultAgent,
-      });
-      throw new AgentNotFoundError(config.autoMode.defaultAgent);
-    }
+    // Check agent installation before starting (skip in dry-run mode)
+    if (!dryRun) {
+      const agent = getAgent(config.autoMode.defaultAgent);
+      if (!agent) {
+        logger?.error("execution", "Agent not found", {
+          agent: config.autoMode.defaultAgent,
+        });
+        throw new AgentNotFoundError(config.autoMode.defaultAgent);
+      }
 
-    const installed = await agent.isInstalled();
-    if (!installed) {
-      logger?.error("execution", "Agent is not installed or not in PATH", {
-        agent: config.autoMode.defaultAgent,
-        binary: agent.binary,
-      });
-      logger?.error("execution", "Please install the agent and try again");
-      throw new AgentNotInstalledError(config.autoMode.defaultAgent, agent.binary);
+      const installed = await agent.isInstalled();
+      if (!installed) {
+        logger?.error("execution", "Agent is not installed or not in PATH", {
+          agent: config.autoMode.defaultAgent,
+          binary: agent.binary,
+        });
+        logger?.error("execution", "Please install the agent and try again");
+        throw new AgentNotInstalledError(config.autoMode.defaultAgent, agent.binary);
+      }
     }
 
     // PRD already loaded before try block

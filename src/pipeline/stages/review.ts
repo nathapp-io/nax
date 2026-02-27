@@ -28,25 +28,43 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**
  * Get list of changed files from git.
+ * Includes both staged and unstaged changes.
  *
  * @param workdir - Working directory
  * @returns Array of changed file paths
  */
 async function getChangedFiles(workdir: string): Promise<string[]> {
   try {
-    const proc = spawn({
-      cmd: ["git", "diff", "--name-only", "HEAD"],
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    // Get both staged and unstaged changes
+    const [stagedProc, unstagedProc] = [
+      spawn({
+        cmd: ["git", "diff", "--name-only", "--cached"],
+        cwd: workdir,
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+      spawn({
+        cmd: ["git", "diff", "--name-only"],
+        cwd: workdir,
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+    ];
 
-    await proc.exited;
-    const stdout = await new Response(proc.stdout).text();
-    return stdout
+    await Promise.all([stagedProc.exited, unstagedProc.exited]);
+
+    const stagedFiles = (await new Response(stagedProc.stdout).text())
       .trim()
       .split("\n")
       .filter((line) => line.length > 0);
+
+    const unstagedFiles = (await new Response(unstagedProc.stdout).text())
+      .trim()
+      .split("\n")
+      .filter((line) => line.length > 0);
+
+    // Combine and deduplicate
+    return Array.from(new Set([...stagedFiles, ...unstagedFiles]));
   } catch {
     return [];
   }

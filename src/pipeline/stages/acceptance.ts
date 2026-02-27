@@ -53,15 +53,15 @@ function parseTestFailures(output: string): string[] {
   const lines = output.split("\n");
 
   for (const line of lines) {
-    // Look for failed test markers (✗, ✕, FAIL, or error indicators)
-    // followed by AC-N pattern
-    const failMatch = line.match(/[✗✕❌]|FAIL|error/i);
-    const acMatch = line.match(/(AC-\d+):/i);
-
-    if (failMatch && acMatch) {
-      const acId = acMatch[1].toUpperCase();
-      if (!failedACs.includes(acId)) {
-        failedACs.push(acId);
+    // Look for Bun's (fail) marker followed by AC-N pattern
+    // Pattern: (fail) ... > AC-N: description
+    if (line.includes("(fail)")) {
+      const acMatch = line.match(/(AC-\d+):/i);
+      if (acMatch) {
+        const acId = acMatch[1].toUpperCase();
+        if (!failedACs.includes(acId)) {
+          failedACs.push(acId);
+        }
       }
     }
   }

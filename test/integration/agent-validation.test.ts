@@ -141,19 +141,20 @@ describe("Agent Validation and Retry Logic", () => {
       Bun.spawn = originalSpawn;
     }, { timeout: 15000 });
 
-    test("fails after max retries on persistent errors", async () => {
+    test("fails immediately on agent execution errors (no retry)", async () => {
       const adapter = new ClaudeCodeAdapter();
       const originalSpawn = Bun.spawn;
       let attemptCount = 0;
 
-      // Mock persistent failure
+      // Mock agent execution failure (exit code 1)
+      // These are not retried because they're likely legitimate agent failures
       (Bun as any).spawn = mock(() => {
         attemptCount++;
         return {
           exited: Promise.resolve(1),
           kill: () => {},
           stdout: new Response("").body,
-          stderr: new Response("persistent error").body,
+          stderr: new Response("agent error").body,
         };
       });
 
@@ -167,9 +168,9 @@ describe("Agent Validation and Retry Logic", () => {
 
       const result = await adapter.run(options);
 
-      // Should fail after 3 attempts
+      // Should fail after 1 attempt (no retry for agent errors)
       expect(result.success).toBe(false);
-      expect(attemptCount).toBe(3);
+      expect(attemptCount).toBe(1);
 
       Bun.spawn = originalSpawn;
     }, { timeout: 15000 });
