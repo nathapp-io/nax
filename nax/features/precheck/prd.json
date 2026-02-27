@@ -61,9 +61,11 @@
         "precheck",
         "orchestrator"
       ],
-      "status": "pending",
-      "attempts": 0,
-      "priorErrors": [],
+      "status": "passed",
+      "attempts": 1,
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced"
+      ],
       "escalations": []
     },
     {
@@ -185,5 +187,5 @@
     "maxStories": 15,
     "granularity": "medium"
   },
-  "updatedAt": "2026-02-27T12:12:00.514Z"
+  "updatedAt": "2026-02-27T12:59:06.598Z"
 }
