@@ -46,12 +46,24 @@ function createMockAgent(results: Partial<AgentResult>[]): AgentAdapter {
 function mockGitSpawn(opts: {
   /** Files returned by git diff for each session (indexed by git-diff call number) */
   diffFiles: string[][];
+  /** Optional: mock test command success (default: true) */
+  testCommandSuccess?: boolean;
 }) {
   let revParseCount = 0;
   let diffCount = 0;
+  const testSuccess = opts.testCommandSuccess ?? true;
 
   // @ts-ignore — mocking global
   Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    // Intercept test commands (bun test, npm test, etc.)
+    if ((cmd[0] === "/bin/sh" || cmd[0] === "/bin/bash" || cmd[0] === "/bin/zsh") && cmd[1] === "-c") {
+      return {
+        pid: 9999,
+        exited: Promise.resolve(testSuccess ? 0 : 1),
+        stdout: new Response(testSuccess ? "tests pass\n" : "tests fail\n").body,
+        stderr: new Response("").body,
+      };
+    }
     if (cmd[0] === "git" && cmd[1] === "rev-parse") {
       revParseCount++;
       return {
@@ -272,15 +284,14 @@ describe("runThreeSessionTdd", () => {
   test("dry-run mode logs sessions without executing", async () => {
     const agent = createMockAgent([]);
 
-    const result = await runThreeSessionTdd(
+    const result = await runThreeSessionTdd({
       agent,
       story,
-      DEFAULT_CONFIG,
-      "/tmp/test",
-      "balanced",
-      undefined,
-      true, // dryRun = true
-    );
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+      dryRun: true,
+    });
 
     expect(result.success).toBe(true);
     expect(result.sessions).toHaveLength(0);
@@ -294,15 +305,15 @@ describe("runThreeSessionTdd", () => {
     const agent = createMockAgent([]);
     const contextMarkdown = "## Dependencies\n- US-000: Setup database\n";
 
-    const result = await runThreeSessionTdd(
+    const result = await runThreeSessionTdd({
       agent,
       story,
-      DEFAULT_CONFIG,
-      "/tmp/test",
-      "powerful",
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "powerful",
       contextMarkdown,
-      true, // dryRun = true
-    );
+      dryRun: true,
+    });
 
     expect(result.success).toBe(true);
     expect(result.sessions).toHaveLength(0);
@@ -728,10 +739,14 @@ describe("runThreeSessionTdd — lite mode", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(
-      agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced",
-      undefined, false, true /* lite=true */,
-    );
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+      lite: true,
+    });
 
     expect(result.lite).toBe(true);
     expect(result.success).toBe(true);
@@ -755,10 +770,14 @@ describe("runThreeSessionTdd — lite mode", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(
-      agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced",
-      undefined, false, false /* lite=false (default) */,
-    );
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+      lite: false,
+    });
 
     expect(result.lite).toBe(false);
     expect(result.success).toBe(true);
@@ -780,10 +799,14 @@ describe("runThreeSessionTdd — lite mode", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(
-      agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced",
-      undefined, false, true /* lite=true */,
-    );
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+      lite: true,
+    });
 
     expect(result.sessions).toHaveLength(3);
     // In lite mode, test-writer and implementer skip isolation
@@ -811,10 +834,14 @@ describe("runThreeSessionTdd — lite mode", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(
-      agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced",
-      undefined, false, true /* lite=true */,
-    );
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+      lite: true,
+    });
 
     expect(result.sessions[1].isolation).toBeUndefined(); // No isolation in lite
     expect(result.sessions[1].success).toBe(true); // Agent succeeded
@@ -838,10 +865,14 @@ describe("runThreeSessionTdd — lite mode", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(
-      agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced",
-      undefined, false, true /* lite=true */,
-    );
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+      lite: true,
+    });
 
     expect(result.sessions[2].isolation).toBeDefined();
     expect(result.sessions[2].isolation?.passed).toBe(true);
@@ -850,10 +881,15 @@ describe("runThreeSessionTdd — lite mode", () => {
 
   test("lite mode: dry-run returns lite=true", async () => {
     const agent = createMockAgent([]);
-    const result = await runThreeSessionTdd(
-      agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced",
-      undefined, true /* dryRun */, true /* lite=true */,
-    );
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+      dryRun: true,
+      lite: true,
+    });
     expect(result.lite).toBe(true);
     expect(result.success).toBe(true);
     expect(result.sessions).toHaveLength(0);
@@ -867,12 +903,23 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
   function mockGitSpawnWithCheckout(opts: {
     diffFiles: string[][];
     onCheckout?: () => void;
+    testCommandSuccess?: boolean;
   }) {
     let revParseCount = 0;
     let diffCount = 0;
+    const testSuccess = opts.testCommandSuccess ?? true;
 
     // @ts-ignore — mocking global
     Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+      // Intercept test commands
+      if ((cmd[0] === "/bin/sh" || cmd[0] === "/bin/bash" || cmd[0] === "/bin/zsh") && cmd[1] === "-c") {
+        return {
+          pid: 9999,
+          exited: Promise.resolve(testSuccess ? 0 : 1),
+          stdout: new Response(testSuccess ? "tests pass\n" : "tests fail\n").body,
+          stderr: new Response("").body,
+        };
+      }
       if (cmd[0] === "git" && cmd[1] === "rev-parse") {
         revParseCount++;
         return {
@@ -938,9 +985,13 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
       tdd: { ...DEFAULT_CONFIG.tdd, strategy: "auto" as const },
     };
 
-    const result = await runThreeSessionTdd(
-      agent, story, configWithAutoStrategy, "/tmp/test", "balanced",
-    );
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: configWithAutoStrategy,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(checkoutCalled).toBe(true); // git checkout . was called
     expect(result.lite).toBe(true);    // result is from lite mode
@@ -966,9 +1017,13 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(
-      agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced",
-    );
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(result.lite).toBe(true);
   });
@@ -991,9 +1046,13 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
       tdd: { ...DEFAULT_CONFIG.tdd, strategy: "strict" as const },
     };
 
-    const result = await runThreeSessionTdd(
-      agent, story, configWithStrictStrategy, "/tmp/test", "balanced",
-    );
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: configWithStrictStrategy,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     // Should fail (no fallback in strict mode)
     expect(result.success).toBe(false);
@@ -1014,10 +1073,14 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
-    const result = await runThreeSessionTdd(
-      agent, story, DEFAULT_CONFIG, "/tmp/test", "balanced",
-      undefined, false, true /* lite=true */,
-    );
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+      lite: true,
+    });
 
     // Should fail — no further fallback from lite mode
     expect(result.success).toBe(false);
@@ -1044,10 +1107,14 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
       tdd: { ...DEFAULT_CONFIG.tdd, strategy: "lite" as const },
     };
 
-    const result = await runThreeSessionTdd(
-      agent, story, configWithLiteStrategy, "/tmp/test", "balanced",
-      undefined, false, true /* lite=true (router sets this for lite strategy) */,
-    );
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: configWithLiteStrategy,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+      lite: true, // router sets this for lite strategy
+    });
 
     expect(result.success).toBe(false);
     expect(result.lite).toBe(true);
@@ -1102,9 +1169,13 @@ describe("runThreeSessionTdd — failureCategory", () => {
       tdd: { ...DEFAULT_CONFIG.tdd, strategy: "strict" as const },
     };
 
-    const result = await runThreeSessionTdd(
-      agent, story, configWithStrictStrategy, "/tmp/test", "balanced",
-    );
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: configWithStrictStrategy,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(false);
     expect(result.failureCategory).toBe("isolation-violation");
@@ -1275,6 +1346,15 @@ describe("runThreeSessionTdd — failureCategory", () => {
 
     // @ts-ignore — mocking global
     Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+      // Intercept test commands
+      if ((cmd[0] === "/bin/sh" || cmd[0] === "/bin/bash" || cmd[0] === "/bin/zsh") && cmd[1] === "-c") {
+        return {
+          pid: 9999,
+          exited: Promise.resolve(0),
+          stdout: new Response("tests pass\n").body,
+          stderr: new Response("").body,
+        };
+      }
       if (cmd[0] === "git" && cmd[1] === "rev-parse") {
         revParseCount++;
         return {
@@ -1314,9 +1394,13 @@ describe("runThreeSessionTdd — failureCategory", () => {
       tdd: { ...DEFAULT_CONFIG.tdd, strategy: "auto" as const },
     };
 
-    const result = await runThreeSessionTdd(
-      agent, story, configWithAutoStrategy, "/tmp/test", "balanced",
-    );
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: configWithAutoStrategy,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
 
     expect(result.success).toBe(true);
     expect(result.lite).toBe(true);
@@ -1467,10 +1551,19 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
       { success: false, exitCode: 1, estimatedCost: 0.01 }, // verifier fails
     ]);
 
+    // Disable rectification to avoid test command being called for full-suite gate
+    const configNoRectification = {
+      ...DEFAULT_CONFIG,
+      execution: {
+        ...DEFAULT_CONFIG.execution,
+        rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: false },
+      },
+    };
+
     await runThreeSessionTdd({
       agent,
       story,
-      config: DEFAULT_CONFIG,
+      config: configNoRectification,
       workdir: tmpDir,
       modelTier: "balanced",
     });
@@ -1694,10 +1787,19 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
       { success: true, estimatedCost: 0.01 },
     ]);
 
+    // Disable rectification to avoid test command being called for full-suite gate
+    const configNoRectification = {
+      ...DEFAULT_CONFIG,
+      execution: {
+        ...DEFAULT_CONFIG.execution,
+        rectification: { ...DEFAULT_CONFIG.execution.rectification, enabled: false },
+      },
+    };
+
     const result = await runThreeSessionTdd({
       agent,
       story,
-      config: DEFAULT_CONFIG,
+      config: configNoRectification,
       workdir: tmpDir,
       modelTier: "balanced",
     });
