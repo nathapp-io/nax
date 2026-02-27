@@ -3,7 +3,7 @@
   "feature": "structured-logging",
   "branchName": "feat/structured-logging",
   "createdAt": "2026-02-27T05:50:00Z",
-  "updatedAt": "2026-02-27T07:51:58.307Z",
+  "updatedAt": "2026-02-27T08:42:37.832Z",
   "userStories": [
     {
       "id": "US-001",
@@ -130,10 +130,11 @@
         "cli",
         "logs"
       ],
-      "status": "pending",
-      "attempts": 0,
+      "status": "passed",
+      "attempts": 1,
       "priorErrors": [],
-      "escalations": []
+      "escalations": [],
+      "passes": true
     },
     {
       "id": "US-006",
@@ -156,10 +157,11 @@
         "runner",
         "integration"
       ],
-      "status": "pending",
+      "status": "passed",
       "attempts": 0,
       "priorErrors": [],
-      "escalations": []
+      "escalations": [],
+      "passes": true
     },
     {
       "id": "US-007",
