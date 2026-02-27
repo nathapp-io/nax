@@ -27,10 +27,20 @@
         "precheck",
         "types"
       ],
-      "status": "pending",
-      "attempts": 0,
-      "priorErrors": [],
-      "escalations": []
+      "status": "failed",
+      "attempts": 2,
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced",
+        "Attempt 2 failed with model tier: balanced",
+        "Attempt 1 failed with model tier: balanced"
+      ],
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "modelTier": "powerful",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "three-session-tdd-lite: complexity:complex, strategy:lite"
+      }
     },
     {
       "id": "US-002",
@@ -175,5 +185,5 @@
     "maxStories": 15,
     "granularity": "medium"
   },
-  "updatedAt": "2026-02-27T11:24:08.156Z"
+  "updatedAt": "2026-02-27T12:12:00.514Z"
 }

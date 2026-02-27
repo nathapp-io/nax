@@ -39,19 +39,19 @@ Human-friendly output, `nax status`, `nax logs`, crash recovery.
 
 ## Current: v0.13.0-canary — Precheck
 
-**Status:** Spec approved, not started
+**Status:** In progress — US-005/006 passed, US-001 failed (BUG-010), US-002/003/004 blocked
 **Spec:** memory/20260227-spec-precheck.md
 
 Fail-fast validation before story execution. `nax precheck` CLI command.
 
 | Story | Title | Pts | Status |
 |:---|:---|:---|:---|
-| US-001 | Precheck types and check implementations | 3 | pending |
+| US-001 | Precheck types and check implementations | 3 | ❌ failed (BUG-010) |
 | US-002 | Precheck orchestrator | 3 | pending |
 | US-003 | CLI `nax precheck` with `--json` | 2 | pending |
 | US-004 | Integrate precheck into `nax run` | 2 | pending |
-| US-005 | Config-driven review commands | 3 | pending |
-| US-006 | PRD auto-default + router tags fix | 1 | pending |
+| US-005 | Config-driven review commands | 3 | ✅ passed |
+| US-006 | PRD auto-default + router tags fix | 1 | ✅ passed |
 
 ---
 
@@ -74,6 +74,7 @@ Fail-fast validation before story execution. `nax precheck` CLI command.
 - [ ] BUG-006: scopeToStory falls back to full scan (needs context auto-detection)
 - [ ] BUG-008: E2E tests hang with infinite retry (needs timeout/isolation)
 - [ ] BUG-009: No cross-story regression check in test-after strategy
+- [ ] BUG-010: TDD-lite test writer produces no test files on complex stories (reproduce: v0.13.0 US-001 precheck)
 
 ### Features
 - [ ] `nax unlock` command

@@ -34,5 +34,17 @@
     "storiesFailed": 3,
     "totalDurationMs": 3838111,
     "stories": []
+  },
+  {
+    "runId": "run-2026-02-27T12-09-11-964Z",
+    "feature": "precheck",
+    "startedAt": "2026-02-27T12:09:11.964Z",
+    "completedAt": "2026-02-27T12:12:04.625Z",
+    "totalCost": 0,
+    "totalStories": 0,
+    "storiesCompleted": 0,
+    "storiesFailed": 1,
+    "totalDurationMs": 172661,
+    "stories": []
   }
 ]
