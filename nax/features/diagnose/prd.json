@@ -23,13 +23,11 @@
         "cli",
         "medium"
       ],
-      "status": "pending",
-      "passes": false,
-      "attempts": 0,
+      "status": "passed",
+      "passes": true,
+      "attempts": 1,
       "escalations": [],
-      "priorErrors": [
-        "Attempt 1 failed with model tier: balanced"
-      ],
+      "priorErrors": [],
       "storyPoints": 1
     }
   ],
@@ -37,5 +35,5 @@
     "maxStories": 5,
     "granularity": "medium"
   },
-  "updatedAt": "2026-02-28T04:41:29.006Z"
+  "updatedAt": "2026-02-28T04:54:44.915Z"
 }
