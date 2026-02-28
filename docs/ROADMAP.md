@@ -6,6 +6,44 @@
 
 ---
 
+## Next: v0.14.3 -- Code Audit Fixes (BLOCKING)
+
+**Theme:** Fix all CRITICAL + HIGH findings from 2026-02-28 deep code review
+**Status:** Planned -- blocks v0.15.0
+**Source:** `docs/code-review-20260228.md` + `docs/architecture-analysis.md`
+**Grade before:** C- (3 CRITICAL, 11 HIGH) -- **Target:** A
+
+### CRITICAL
+- [ ] **SEC-1:** Make `--dangerously-skip-permissions` configurable via NaxConfig (`agents/claude.ts:140`)
+- [ ] **BUG-1:** Fix crash handler stale values -- pass closures not values to installCrashHandlers() (`execution/runner.ts:216`)
+- [ ] **STYLE-1:** Split `execution/runner.ts` (1,685 lines) into focused modules
+
+### HIGH
+- [ ] **BUG-4:** Fix broken parallel concurrency limiter (`execution/parallel.ts:218`)
+- [ ] **BUG-3:** Delete `story-dispatcher.ts` (765-line diverging duplicate of runner.ts)
+- [ ] **BUG-2:** Atomic lock file acquisition -- replace TOCTOU with O_CREAT|O_EXCL (`execution/helpers.ts:311`)
+- [ ] **MEM-1:** Unregister crash signal handlers in finally block (`execution/crash-recovery.ts:124`)
+- [ ] **SEC-2:** Sandbox plugin import boundary (`plugins/loader.ts:203`)
+- [ ] **SEC-3:** Replace hook command injection blocklist with allowlist (`hooks/runner.ts:120`)
+- [ ] **PERF-1:** Add LRU size limit to LLM routing cache (`routing/strategies/llm.ts:16`)
+- [ ] **ERR-1:** Only catch ENOENT in plugin discovery (`plugins/loader.ts:148`)
+- [ ] **TYPE-1:** Replace `as any` with `as ModelTier` (`execution/story-dispatcher.ts:104`)
+- [ ] **TYPE-2:** Fix `(ctx.config.tdd as any)?.enabled` dead code (`pipeline/stages/execution.ts:103`)
+- [ ] **STYLE-2:** Extract notifyReporters() helper -- duplicated 5x in runner.ts
+
+### MEDIUM (bundle in same release)
+- [ ] **SEC-4:** Explicit env var allowlist for spawned agents
+- [ ] **SEC-5:** Use validateFilePath() for constitution paths
+- [ ] **BUG-5:** Filter failed/paused/blocked from getAllReadyStories()
+- [ ] **BUG-7:** Fix PRD array mutation in acceptance loop
+- [ ] **TYPE-3:** ModelTier = string -- use union type
+- [ ] **TYPE-5:** Fix OptimizerConfigSchema enum mismatch
+- [ ] **ERR-2:** Replace console.warn with structured logger in plugins
+- [ ] **ERR-3:** Add debug logs to empty catch blocks
+- [ ] **STYLE-4:** Remove emojis from log messages (violates CLAUDE.md)
+
+---
+
 ## Next: v0.15.0 — Interactive Pipeline
 
 **Theme:** Human/AI/External interactions as hook extensions
@@ -77,4 +115,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-02-28*
+*Last updated: 2026-02-28 (v0.14.3 audit fixes planned)*
