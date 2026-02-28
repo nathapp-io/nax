@@ -29,3 +29,5 @@ export {
   type DescribeBlock,
   type TestSummaryDetail,
 } from "./test-scanner";
+
+export { autoDetectContextFiles, extractKeywords, type AutoDetectOptions } from "./auto-detect";

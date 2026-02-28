@@ -11,6 +11,7 @@ import type { UserStory } from "../prd";
 import { countStories, getContextFiles } from "../prd";
 import { generateTestCoverageSummary } from "./test-scanner";
 import type { BuiltContext, ContextBudget, ContextElement, StoryContext } from "./types";
+import { autoDetectContextFiles } from "./auto-detect";
 
 /**
  * Approximate character-to-token ratio for token estimation.
@@ -285,11 +286,44 @@ export async function buildContext(storyContext: StoryContext, budget: ContextBu
 
   // Add relevant source files (lower priority - priority 60)
   // Load file content from currentStory.contextFiles (or fallback to relevantFiles) if present
+  // If empty, auto-detect via git grep (BUG-006)
   // Constraints: max 10KB per file, max 5 files, respect token budget
   const MAX_FILE_SIZE_BYTES = 10 * 1024; // 10KB
   const MAX_FILES = 5;
 
-  const contextFiles = getContextFiles(currentStory);
+  let contextFiles = getContextFiles(currentStory);
+
+  // Auto-detect contextFiles if empty and enabled (BUG-006)
+  if (
+    contextFiles.length === 0 &&
+    storyContext.config?.context?.autoDetect?.enabled !== false &&
+    storyContext.workdir
+  ) {
+    const autoDetectConfig = storyContext.config?.context?.autoDetect;
+    try {
+      const detected = await autoDetectContextFiles({
+        workdir: storyContext.workdir,
+        storyTitle: currentStory.title,
+        maxFiles: autoDetectConfig?.maxFiles ?? 5,
+        traceImports: autoDetectConfig?.traceImports ?? false,
+      });
+      if (detected.length > 0) {
+        contextFiles = detected;
+        const logger = getLogger();
+        logger.info("context", "Auto-detected context files", {
+          storyId: currentStory.id,
+          files: detected,
+        });
+      }
+    } catch (error) {
+      const logger = getLogger();
+      logger.warn("context", "Context auto-detection failed", {
+        storyId: currentStory.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   if (contextFiles.length > 0) {
     const filesToLoad = contextFiles.slice(0, MAX_FILES);
 

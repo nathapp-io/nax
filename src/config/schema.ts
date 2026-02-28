@@ -300,10 +300,22 @@ export interface TestCoverageConfig {
   scopeToStory: boolean;
 }
 
+/** Context auto-detection config (BUG-006) */
+export interface ContextAutoDetectConfig {
+  /** Enable auto-detection when contextFiles is empty (default: true) */
+  enabled: boolean;
+  /** Maximum files to auto-detect (default: 5) */
+  maxFiles: number;
+  /** Enable import tracing (default: false, reserved for future use) */
+  traceImports: boolean;
+}
+
 /** Context config */
 export interface ContextConfig {
   /** Test coverage summary injection */
   testCoverage: TestCoverageConfig;
+  /** Auto-detect contextFiles when PRD omits them (BUG-006) */
+  autoDetect: ContextAutoDetectConfig;
 }
 
 /** Routing strategy name */
@@ -560,8 +572,15 @@ const TestCoverageConfigSchema = z.object({
   scopeToStory: z.boolean().default(true),
 });
 
+const ContextAutoDetectConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  maxFiles: z.number().int().min(1).max(20).default(5),
+  traceImports: z.boolean().default(false),
+});
+
 const ContextConfigSchema = z.object({
   testCoverage: TestCoverageConfigSchema,
+  autoDetect: ContextAutoDetectConfigSchema,
 });
 
 const AdaptiveRoutingConfigSchema = z.object({
@@ -763,6 +782,11 @@ export const DEFAULT_CONFIG: NaxConfig = {
       maxTokens: 500,
       testPattern: "**/*.test.{ts,js,tsx,jsx}",
       scopeToStory: true,
+    },
+    autoDetect: {
+      enabled: true,
+      maxFiles: 5,
+      traceImports: false,
     },
   },
 };
