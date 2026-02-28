@@ -7,17 +7,17 @@
  * - Max attempts outcome resolution (pause vs fail)
  */
 
-import type { TierConfig } from "../../config";
 import type { NaxConfig } from "../../config";
 import { type LoadedHooksConfig, fireHook } from "../../hooks";
 import { getSafeLogger } from "../../logger";
 import type { PRD, UserStory } from "../../prd";
-import { markStoryFailed, markStoryPaused, savePRD } from "../../prd";
+import { markStoryFailed, savePRD } from "../../prd";
 import { routeBatch as llmRouteBatch } from "../../routing/strategies/llm";
 import type { FailureCategory } from "../../tdd/types";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";
 import { hookCtx } from "../helpers";
 import { appendProgress } from "../progress";
+import { handleMaxAttemptsReached, handleNoTierAvailable } from "./tier-outcome";
 
 /**
  * Determine the outcome when max attempts are reached for an escalation.
@@ -295,145 +295,3 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   };
 }
 
-/**
- * Handle case when no tier is available for escalation
- */
-async function handleNoTierAvailable(
-  ctx: EscalationHandlerContext,
-  failureCategory?: FailureCategory,
-): Promise<EscalationHandlerResult> {
-  const logger = getSafeLogger();
-  const outcome = resolveMaxAttemptsOutcome(failureCategory);
-
-  if (outcome === "pause") {
-    const pausedPrd = { ...ctx.prd };
-    markStoryPaused(pausedPrd, ctx.story.id);
-    await savePRD(pausedPrd, ctx.prdPath);
-
-    logger?.warn("execution", "Story paused - no tier available (needs human review)", {
-      storyId: ctx.story.id,
-      failureCategory,
-    });
-
-    if (ctx.featureDir) {
-      await appendProgress(
-        ctx.featureDir,
-        ctx.story.id,
-        "paused",
-        `${ctx.story.title} — Execution stopped (needs human review)`,
-      );
-    }
-
-    await fireHook(
-      ctx.hooks,
-      "on-pause",
-      hookCtx(ctx.feature, {
-        storyId: ctx.story.id,
-        reason: `Execution stopped (${failureCategory ?? "unknown"} requires human review)`,
-        cost: ctx.totalCost,
-      }),
-      ctx.workdir,
-    );
-
-    return { outcome: "paused", prdDirty: true, prd: pausedPrd };
-  }
-
-  // Outcome is "fail"
-  const failedPrd = { ...ctx.prd };
-  markStoryFailed(failedPrd, ctx.story.id, failureCategory);
-  await savePRD(failedPrd, ctx.prdPath);
-
-  logger?.error("execution", "Story failed - execution failed", {
-    storyId: ctx.story.id,
-  });
-
-  if (ctx.featureDir) {
-    await appendProgress(ctx.featureDir, ctx.story.id, "failed", `${ctx.story.title} — Execution failed`);
-  }
-
-  await fireHook(
-    ctx.hooks,
-    "on-story-fail",
-    hookCtx(ctx.feature, {
-      storyId: ctx.story.id,
-      status: "failed",
-      reason: "Execution failed",
-      cost: ctx.totalCost,
-    }),
-    ctx.workdir,
-  );
-
-  return { outcome: "failed", prdDirty: true, prd: failedPrd };
-}
-
-/**
- * Handle case when max attempts are reached
- */
-async function handleMaxAttemptsReached(
-  ctx: EscalationHandlerContext,
-  failureCategory?: FailureCategory,
-): Promise<EscalationHandlerResult> {
-  const logger = getSafeLogger();
-  const outcome = resolveMaxAttemptsOutcome(failureCategory);
-
-  if (outcome === "pause") {
-    const pausedPrd = { ...ctx.prd };
-    markStoryPaused(pausedPrd, ctx.story.id);
-    await savePRD(pausedPrd, ctx.prdPath);
-
-    logger?.warn("execution", "Story paused - max attempts reached (needs human review)", {
-      storyId: ctx.story.id,
-      failureCategory,
-    });
-
-    if (ctx.featureDir) {
-      await appendProgress(
-        ctx.featureDir,
-        ctx.story.id,
-        "paused",
-        `${ctx.story.title} — Max attempts reached (needs human review)`,
-      );
-    }
-
-    await fireHook(
-      ctx.hooks,
-      "on-pause",
-      hookCtx(ctx.feature, {
-        storyId: ctx.story.id,
-        reason: `Max attempts reached (${failureCategory ?? "unknown"} requires human review)`,
-        cost: ctx.totalCost,
-      }),
-      ctx.workdir,
-    );
-
-    return { outcome: "paused", prdDirty: true, prd: pausedPrd };
-  }
-
-  // Outcome is "fail"
-  const failedPrd = { ...ctx.prd };
-  markStoryFailed(failedPrd, ctx.story.id, failureCategory);
-  await savePRD(failedPrd, ctx.prdPath);
-
-  logger?.error("execution", "Story failed - max attempts reached", {
-    storyId: ctx.story.id,
-    failureCategory,
-  });
-
-  if (ctx.featureDir) {
-    await appendProgress(ctx.featureDir, ctx.story.id, "failed", `${ctx.story.title} — Max attempts reached`);
-  }
-
-  await fireHook(
-    ctx.hooks,
-    "on-story-fail",
-    hookCtx(ctx.feature, {
-      storyId: ctx.story.id,
-      status: "failed",
-      reason: "Max attempts reached",
-      cost: ctx.totalCost,
-    }),
-    ctx.workdir,
-  );
-
-  return { outcome: "failed", prdDirty: true, prd: failedPrd };
-}
