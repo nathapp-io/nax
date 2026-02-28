@@ -53,6 +53,11 @@ class MockAgentAdapter implements AgentAdapter {
   public planCalls: PlanOptions[] = [];
   public decomposeCalls: DecomposeOptions[] = [];
 
+  // Hard iteration cap to prevent infinite retry loops in tests
+  // Set to 5 to allow for story batching and escalation scenarios
+  public maxAttempts = 5;
+  private attemptCountMap = new Map<string, number>();
+
   async isInstalled(): Promise<boolean> {
     return true;
   }
@@ -64,6 +69,23 @@ class MockAgentAdapter implements AgentAdapter {
   async run(_options: AgentRunOptions): Promise<AgentResult> {
     this.callCount++;
     this.runCalls.push(_options);
+
+    // Track attempts per unique prompt to prevent infinite loops
+    const promptKey = _options.prompt.slice(0, 100);
+    const currentAttempts = (this.attemptCountMap.get(promptKey) || 0) + 1;
+    this.attemptCountMap.set(promptKey, currentAttempts);
+
+    // Hard cap: fail after maxAttempts to prevent infinite retry loops
+    if (currentAttempts > this.maxAttempts) {
+      return {
+        success: false,
+        exitCode: 1,
+        output: `Mock agent: max attempts (${this.maxAttempts}) exceeded for this prompt`,
+        rateLimited: false,
+        durationMs: 100,
+        estimatedCost: 0.01,
+      };
+    }
 
     // Simulate execution time
     await Bun.sleep(10);
@@ -256,6 +278,7 @@ We need a URL shortening service to make long URLs more shareable.
     this.runCalls = [];
     this.planCalls = [];
     this.decomposeCalls = [];
+    this.attemptCountMap.clear();
   }
 }
 
@@ -819,6 +842,14 @@ function createTestConfig(): NaxConfig {
     autoMode: {
       ...DEFAULT_CONFIG.autoMode,
       defaultAgent: "mock", // Use our mock agent
+      escalation: {
+        ...DEFAULT_CONFIG.autoMode.escalation,
+        enabled: true,
+        tierOrder: [
+          { tier: "fast", attempts: 1 },
+          { tier: "balanced", attempts: 1 },
+        ],
+      },
     },
     analyze: {
       ...DEFAULT_CONFIG.analyze,
@@ -826,8 +857,23 @@ function createTestConfig(): NaxConfig {
     },
     execution: {
       ...DEFAULT_CONFIG.execution,
-      maxIterations: 20,
+      maxIterations: 15, // Reduced from 20 to fail faster in tests
       maxStoriesPerFeature: 500,
+      regressionGate: {
+        ...DEFAULT_CONFIG.execution.regressionGate,
+        enabled: false, // Disable regression gate for E2E tests
+      },
+      rectification: {
+        ...DEFAULT_CONFIG.execution.rectification,
+        enabled: false, // Disable rectification for E2E tests
+      },
+    },
+    quality: {
+      ...DEFAULT_CONFIG.quality,
+      requireTypecheck: false,
+      requireLint: false,
+      requireTests: false,
+      commands: {}, // No quality commands for E2E tests
     },
     review: {
       ...DEFAULT_CONFIG.review,

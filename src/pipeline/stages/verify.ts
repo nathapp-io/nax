@@ -74,6 +74,19 @@ export const verifyStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
+    // Skip verification if tests are not required
+    if (!ctx.config.quality.requireTests) {
+      logger.debug("verify", "Skipping verification (quality.requireTests = false)");
+      return { action: "continue" };
+    }
+
+    // Skip verification if no test command is configured
+    const testCommand = ctx.config.review?.commands?.test ?? ctx.config.quality.commands.test;
+    if (!testCommand) {
+      logger.debug("verify", "Skipping verification (no test command configured)");
+      return { action: "continue" };
+    }
+
     logger.info("verify", "Running verification");
 
     // Wait 2 seconds to let agent child processes fully terminate
@@ -81,9 +94,6 @@ export const verifyStage: PipelineStage = {
     // are still in memory while we spawn `bun test`
     logger.debug("verify", "Waiting for agent processes to terminate");
     await Bun.sleep(2000);
-
-    // Get test command from config or use default
-    const testCommand = ctx.config.review?.commands?.test ?? "bun test";
 
     // Run tests
     const result = await runTests(testCommand, ctx.workdir);

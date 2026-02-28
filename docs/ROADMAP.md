@@ -39,6 +39,7 @@
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.14.2 | E2E Test Hang Fix | 2026-02-28 | [releases/v0.14.2.md](releases/v0.14.2.md) |
 | v0.14.1 | nax diagnose CLI | 2026-02-28 | [releases/v0.14.1.md](releases/v0.14.1.md) |
 | v0.14.0 | Failure Resilience | 2026-02-28 | [releases/v0.14.0.md](releases/v0.14.0.md) |
 | v0.13.0 | Precheck | 2026-02-27 | [releases/v0.13.0.md](releases/v0.13.0.md) |
@@ -55,10 +56,10 @@
 - [x] ~~BUG-004: router.ts crashes on missing tags (fixed 080d890)~~
 - [x] ~~BUG-005: Hardcoded `bun run lint` in review (fixed v0.13.0 US-005)~~
 - [x] ~~BUG-006: Context auto-detection (fixed v0.14.0 US-003)~~
+- [x] ~~BUG-008: E2E tests hang with infinite retry (fixed v0.14.2)~~
 - [x] ~~BUG-009: No cross-story regression check (fixed v0.14.0 US-002)~~
 - [x] ~~BUG-010: Greenfield TDD no test files (fixed v0.14.0 US-001 + US-005)~~
 - [x] ~~BUG-011: Escalation tier budget not enforced (fixed v0.14.0)~~
-- [ ] BUG-008: E2E tests hang with infinite retry (needs timeout/isolation)
 
 ### Features
 - [ ] `nax unlock` command
