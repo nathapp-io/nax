@@ -8,22 +8,19 @@
 
 import type { ModelDef, ModelTier } from "../config/schema";
 
+// Re-export extended types for backward compatibility
+export type {
+  PlanOptions,
+  PlanResult,
+  DecomposeOptions,
+  DecomposeResult,
+  DecomposedStory,
+  PtyHandle,
+  InteractiveRunOptions,
+} from "./types-extended";
+
 /**
  * Agent execution result returned after running a coding agent.
- *
- * Contains success status, output, timing, and cost tracking.
- *
- * @example
- * ```ts
- * const result: AgentResult = {
- *   success: true,
- *   exitCode: 0,
- *   output: "Tests added to src/utils.test.ts",
- *   rateLimited: false,
- *   durationMs: 45000,
- *   estimatedCost: 0.0234,
- * };
- * ```
  */
 export interface AgentResult {
   /** Whether the agent completed successfully */
@@ -44,23 +41,6 @@ export interface AgentResult {
 
 /**
  * Configuration options for running a coding agent session.
- *
- * Includes prompt, working directory, model selection, timeout, and environment.
- *
- * @example
- * ```ts
- * const options: AgentRunOptions = {
- *   prompt: "Add unit tests for authentication module",
- *   workdir: "/home/user/project",
- *   modelTier: "balanced",
- *   modelDef: {
- *     model: "claude-sonnet-4.5",
- *     env: { ANTHROPIC_API_KEY: "sk-..." },
- *   },
- *   timeoutSeconds: 600,
- *   env: { DEBUG: "true" },
- * };
- * ```
  */
 export interface AgentRunOptions {
   /** The prompt to send to the agent */
@@ -81,18 +61,6 @@ export interface AgentRunOptions {
 
 /**
  * Agent capability metadata describing what features and tiers the agent supports.
- *
- * Used for runtime validation and optimization — ensures the orchestrator only
- * routes tasks to agents that can actually handle them.
- *
- * @example
- * ```ts
- * const capabilities: AgentCapabilities = {
- *   supportedTiers: ["fast", "balanced", "powerful"],
- *   maxContextTokens: 200_000,
- *   features: new Set(["tdd", "review", "refactor", "batch"]),
- * };
- * ```
  */
 export interface AgentCapabilities {
   /** Model tiers this agent supports (e.g., fast/balanced/powerful) */
@@ -104,327 +72,40 @@ export interface AgentCapabilities {
 }
 
 /**
- * Configuration options for running an agent in plan mode.
- *
- * Plan mode spawns the agent interactively (or non-interactively with input file)
- * to gather requirements, ask clarifying questions, and produce a structured spec.
- *
- * @example
- * ```ts
- * const options: PlanOptions = {
- *   prompt: "Add URL shortener with analytics",
- *   workdir: "/home/user/project",
- *   interactive: true,
- *   codebaseContext: "File tree:\nsrc/\n  index.ts\n  utils.ts\n",
- * };
- * ```
- */
-export interface PlanOptions {
-  /** The initial planning prompt or task description */
-  prompt: string;
-  /** Working directory */
-  workdir: string;
-  /** Whether to run in interactive mode (agent takes over terminal) */
-  interactive: boolean;
-  /** Optional codebase context (file tree, dependencies, test patterns) */
-  codebaseContext?: string;
-  /** Optional input file path for non-interactive mode */
-  inputFile?: string;
-  /** Model tier to use for planning (default: "balanced") */
-  modelTier?: ModelTier;
-  /** Resolved model definition */
-  modelDef?: ModelDef;
-}
-
-/**
- * Result from running an agent in plan mode.
- *
- * Contains the generated specification content and optional conversation log.
- *
- * @example
- * ```ts
- * const result: PlanResult = {
- *   specContent: "# Feature: URL Shortener\n\n## Problem\n...",
- *   conversationLog: "Agent: What storage backend should we use?\nUser: PostgreSQL\n...",
- * };
- * ```
- */
-export interface PlanResult {
-  /** The generated specification markdown content */
-  specContent: string;
-  /** Optional conversation log (for debugging/review) */
-  conversationLog?: string;
-}
-
-/**
- * Configuration options for running an agent in decompose mode.
- *
- * Decompose mode reads a spec document and breaks it down into classified user stories
- * in a single LLM call (decompose + classify combined).
- *
- * @example
- * ```ts
- * const options: DecomposeOptions = {
- *   specContent: "# Feature: URL Shortener\n\n## Requirements...",
- *   workdir: "/home/user/project",
- *   codebaseContext: "File tree:\nsrc/\n  index.ts\n",
- *   modelTier: "balanced",
- * };
- * ```
- */
-export interface DecomposeOptions {
-  /** The spec document content to decompose */
-  specContent: string;
-  /** Working directory */
-  workdir: string;
-  /** Codebase context (file tree, dependencies, test patterns) */
-  codebaseContext: string;
-  /** Model tier to use for decomposition (default: "balanced") */
-  modelTier?: ModelTier;
-  /** Resolved model definition */
-  modelDef?: ModelDef;
-}
-
-/**
- * A single classified user story from decompose result.
- */
-export interface DecomposedStory {
-  /** Story ID (e.g., "US-001") */
-  id: string;
-  /** Story title */
-  title: string;
-  /** Story description */
-  description: string;
-  /** Acceptance criteria */
-  acceptanceCriteria: string[];
-  /** Tags for routing */
-  tags: string[];
-  /** Dependencies (story IDs) */
-  dependencies: string[];
-  /** Classified complexity */
-  complexity: "simple" | "medium" | "complex" | "expert";
-  /** Context files to inject into agent prompt before execution */
-  contextFiles: string[];
-  /** Classification reasoning */
-  reasoning: string;
-  /** Estimated lines of code */
-  estimatedLOC: number;
-  /** Implementation risks */
-  risks: string[];
-  /** Test strategy recommendation from LLM */
-  testStrategy?: "three-session-tdd" | "test-after";
-}
-
-/**
- * Result from running an agent in decompose mode.
- *
- * Contains the decomposed and classified user stories.
- *
- * @example
- * ```ts
- * const result: DecomposeResult = {
- *   stories: [
- *     {
- *       id: "US-001",
- *       title: "Add URL shortening endpoint",
- *       complexity: "medium",
- *       ...
- *     },
- *   ],
- * };
- * ```
- */
-export interface DecomposeResult {
-  /** The decomposed and classified user stories */
-  stories: DecomposedStory[];
-}
-
-/**
- * PTY handle interface for managing spawned PTY process.
- *
- * Provides methods to write input, resize terminal, and kill process.
- * Returned by runInteractive() for TUI integration.
- *
- * @example
- * ```ts
- * const handle = adapter.runInteractive({
- *   prompt: "Add tests",
- *   workdir: "/project",
- *   modelTier: "balanced",
- *   onOutput: (data) => console.log(data),
- *   onExit: (code) => console.log("exit:", code),
- * });
- *
- * handle.write("y\n"); // Send input to agent
- * handle.resize(120, 40); // Resize terminal
- * handle.kill(); // Terminate agent
- * ```
- */
-export interface PtyHandle {
-  /** Write input to PTY stdin */
-  write(data: string): void;
-  /** Resize PTY terminal */
-  resize(cols: number, rows: number): void;
-  /** Kill PTY process */
-  kill(): void;
-  /** Process ID */
-  pid: number;
-}
-
-/**
- * Configuration options for running an agent in interactive PTY mode.
- *
- * Extends AgentRunOptions with PTY-specific callbacks for output streaming
- * and exit handling. Used by TUI to embed agent sessions.
- *
- * @example
- * ```ts
- * const options: InteractiveRunOptions = {
- *   prompt: "Add unit tests",
- *   workdir: "/project",
- *   modelTier: "balanced",
- *   modelDef: { model: "claude-sonnet-4.5", env: {} },
- *   timeoutSeconds: 600,
- *   onOutput: (data) => appendToBuffer(data),
- *   onExit: (code) => markComplete(code),
- * };
- * ```
- */
-export interface InteractiveRunOptions extends AgentRunOptions {
-  /** Callback fired when PTY outputs data */
-  onOutput: (data: Buffer) => void;
-  /** Callback fired when PTY process exits */
-  onExit: (code: number) => void;
-}
-
-/**
  * Agent adapter interface — one implementation per supported coding agent.
  *
  * Provides uniform interface for checking installation, running agents,
  * and building CLI commands across different coding agent tools.
- *
- * @example
- * ```ts
- * class MyAgentAdapter implements AgentAdapter {
- *   readonly name = "myagent";
- *   readonly displayName = "My Coding Agent";
- *   readonly binary = "myagent";
- *   readonly capabilities = {
- *     supportedTiers: ["fast", "balanced"],
- *     maxContextTokens: 100_000,
- *     features: new Set(["tdd", "review"]),
- *   };
- *
- *   async isInstalled(): Promise<boolean> {
- *     // check if binary exists
- *   }
- *
- *   async run(options: AgentRunOptions): Promise<AgentResult> {
- *     // spawn process, capture output, calculate cost
- *   }
- *
- *   buildCommand(options: AgentRunOptions): string[] {
- *     return [this.binary, "--prompt", options.prompt];
- *   }
- *
- *   async plan(options: PlanOptions): Promise<PlanResult> {
- *     // spawn agent in plan mode
- *   }
- *
- *   runInteractive?(options: InteractiveRunOptions): PtyHandle {
- *     // spawn agent in PTY mode for TUI
- *   }
- * }
- * ```
  */
 export interface AgentAdapter {
   /** Unique agent name (e.g., "claude", "codex", "opencode") */
   readonly name: string;
-
   /** Human-readable display name */
   readonly displayName: string;
-
   /** Binary command to check if agent is installed */
   readonly binary: string;
-
   /** Capability metadata describing supported tiers and features */
   readonly capabilities: AgentCapabilities;
 
-  /**
-   * Check if the agent binary is available on this machine.
-   *
-   * @returns true if the agent is installed and available in PATH
-   */
+  /** Check if the agent binary is available on this machine. */
   isInstalled(): Promise<boolean>;
 
-  /**
-   * Run the agent with a prompt and return the result.
-   *
-   * @param options - Agent run configuration
-   * @returns Execution result with success status, output, and cost
-   */
+  /** Run the agent with a prompt and return the result. */
   run(options: AgentRunOptions): Promise<AgentResult>;
 
-  /**
-   * Build the CLI command for a given run (for dry-run display).
-   *
-   * @param options - Agent run configuration
-   * @returns Command array suitable for process spawning
-   */
+  /** Build the CLI command for a given run (for dry-run display). */
   buildCommand(options: AgentRunOptions): string[];
 
-  /**
-   * Run the agent in plan mode to generate a feature specification.
-   *
-   * Spawns the agent interactively or with an input file to gather requirements,
-   * ask clarifying questions, and produce a structured spec document.
-   *
-   * @param options - Plan mode configuration
-   * @returns Generated specification and optional conversation log
-   */
-  plan(options: PlanOptions): Promise<PlanResult>;
+  /** Run the agent in plan mode to generate a feature specification. */
+  plan(options: import("./types-extended").PlanOptions): Promise<import("./types-extended").PlanResult>;
 
-  /**
-   * Run the agent in decompose mode to break spec into classified stories.
-   *
-   * Spawns the agent with spec content and codebase context to decompose
-   * the specification into user stories and classify each story's complexity,
-   * relevant files, risks, and estimated LOC in a single LLM call.
-   *
-   * @param options - Decompose mode configuration
-   * @returns Decomposed and classified user stories
-   */
-  decompose(options: DecomposeOptions): Promise<DecomposeResult>;
+  /** Run the agent in decompose mode to break spec into classified stories. */
+  decompose(options: import("./types-extended").DecomposeOptions): Promise<import("./types-extended").DecomposeResult>;
 
   /**
    * Run the agent in interactive PTY mode for TUI embedding.
-   *
-   * Spawns the agent in a PTY (without -p flag) and provides a handle
-   * for writing input, resizing, and killing the process. Agent output
-   * is streamed via onOutput callback, and exit is signaled via onExit.
-   *
    * This method is optional — only implemented by agents that support
    * interactive terminal sessions (e.g., Claude Code).
-   *
-   * @param options - Interactive run options with PTY callbacks
-   * @returns PTY handle for input/resize/kill
-   *
-   * @example
-   * ```ts
-   * const handle = adapter.runInteractive({
-   *   prompt: "Add tests for auth.ts",
-   *   workdir: "/project",
-   *   modelTier: "balanced",
-   *   onOutput: (data) => appendToTuiBuffer(data),
-   *   onExit: (code) => markStoryComplete(code),
-   * });
-   *
-   * // Send user input to agent
-   * handle.write("y\n");
-   *
-   * // Cleanup on TUI exit
-   * handle.kill();
-   * ```
    */
-  runInteractive?(options: InteractiveRunOptions): PtyHandle;
+  runInteractive?(options: import("./types-extended").InteractiveRunOptions): import("./types-extended").PtyHandle;
 }
