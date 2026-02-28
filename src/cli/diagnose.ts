@@ -527,7 +527,11 @@ export async function diagnoseCommand(options: DiagnoseOptions = {}): Promise<vo
 
 	// Resolve working directory
 	const workdir = options.workdir ?? process.cwd();
-	let projectDir = findProjectDir(workdir);
+
+	// findProjectDir returns the nax/ subdirectory (e.g. <root>/nax/).
+	// We need the project ROOT (parent of nax/), not the nax/ dir itself.
+	const naxSubdir = findProjectDir(workdir);
+	let projectDir: string | null = naxSubdir ? join(naxSubdir, "..") : null;
 
 	// Fallback for test environments: if nax/ exists directly in workdir, use it
 	if (!projectDir && existsSync(join(workdir, "nax"))) {
