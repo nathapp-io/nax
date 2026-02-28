@@ -65,24 +65,34 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     const text = this.formatMessage(request);
     const keyboard = this.buildKeyboard(request);
 
-    const response = await fetch(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: this.chatId,
-        text,
-        reply_markup: keyboard ? { inline_keyboard: keyboard } : undefined,
-        parse_mode: "Markdown",
-      }),
-    });
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: this.chatId,
+          text,
+          reply_markup: keyboard ? { inline_keyboard: keyboard } : undefined,
+          parse_mode: "Markdown",
+        }),
+      });
 
-    const data = (await response.json()) as { ok: boolean; result: TelegramMessage };
-    if (!data.ok) {
-      throw new Error("Failed to send Telegram message");
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => "");
+        throw new Error(`Telegram API error (${response.status}): ${errorBody || response.statusText}`);
+      }
+
+      const data = (await response.json()) as { ok: boolean; result: TelegramMessage };
+      if (!data.ok) {
+        throw new Error(`Telegram API returned ok=false: ${JSON.stringify(data)}`);
+      }
+
+      // Store message ID for later updates
+      this.pendingMessages.set(request.id, data.result.message_id);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to send Telegram message: ${msg}`);
     }
-
-    // Store message ID for later updates
-    this.pendingMessages.set(request.id, data.result.message_id);
   }
 
   async receive(requestId: string, timeout = 60000): Promise<InteractionResponse> {
@@ -232,24 +242,35 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   private async getUpdates(): Promise<TelegramUpdate[]> {
     if (!this.botToken) return [];
 
-    const response = await fetch(`https://api.telegram.org/bot${this.botToken}/getUpdates`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        offset: this.lastUpdateId + 1,
-        timeout: 1, // Short polling
-      }),
-    });
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${this.botToken}/getUpdates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          offset: this.lastUpdateId + 1,
+          timeout: 1, // Short polling
+        }),
+      });
 
-    const data = (await response.json()) as { ok: boolean; result: TelegramUpdate[] };
-    if (!data.ok || !data.result) return [];
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => "");
+        throw new Error(`Telegram getUpdates error (${response.status}): ${errorBody || response.statusText}`);
+      }
 
-    const updates = data.result;
-    if (updates.length > 0) {
-      this.lastUpdateId = Math.max(...updates.map((u) => u.update_id));
+      const data = (await response.json()) as { ok: boolean; result: TelegramUpdate[] };
+      if (!data.ok || !data.result) return [];
+
+      const updates = data.result;
+      if (updates.length > 0) {
+        this.lastUpdateId = Math.max(...updates.map((u: TelegramUpdate) => u.update_id));
+      }
+
+      return updates;
+    } catch (err) {
+      // Log error but don't crash - return empty updates and retry
+      console.error("Telegram getUpdates failed:", err instanceof Error ? err.message : String(err));
+      return [];
     }
-
-    return updates;
   }
 
   /**
@@ -301,13 +322,18 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   private async answerCallbackQuery(callbackQueryId: string): Promise<void> {
     if (!this.botToken) return;
 
-    await fetch(`https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        callback_query_id: callbackQueryId,
-      }),
-    });
+    try {
+      await fetch(`https://api.telegram.org/bot${this.botToken}/answerCallbackQuery`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          callback_query_id: callbackQueryId,
+        }),
+      });
+    } catch (err) {
+      // Non-critical - just log and continue
+      console.error("Failed to answer callback query:", err instanceof Error ? err.message : String(err));
+    }
   }
 
   /**
@@ -315,19 +341,28 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
    */
   private async sendTimeoutMessage(requestId: string): Promise<void> {
     const messageId = this.pendingMessages.get(requestId);
-    if (!messageId || !this.botToken || !this.chatId) return;
+    if (!messageId || !this.botToken || !this.chatId) {
+      // Still cleanup even if we can't send timeout message
+      this.pendingMessages.delete(requestId);
+      return;
+    }
 
-    await fetch(`https://api.telegram.org/bot${this.botToken}/editMessageText`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: this.chatId,
-        message_id: messageId,
-        text: "⏱ *EXPIRED* — Interaction timed out",
-        parse_mode: "Markdown",
-      }),
-    });
-
-    this.pendingMessages.delete(requestId);
+    try {
+      await fetch(`https://api.telegram.org/bot${this.botToken}/editMessageText`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: this.chatId,
+          message_id: messageId,
+          text: "⏱ *EXPIRED* — Interaction timed out",
+          parse_mode: "Markdown",
+        }),
+      });
+    } catch (err) {
+      // Non-critical - just log and continue with cleanup
+      console.error("Failed to edit timeout message:", err instanceof Error ? err.message : String(err));
+    } finally {
+      this.pendingMessages.delete(requestId);
+    }
   }
 }

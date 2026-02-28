@@ -7,6 +7,7 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Server } from "node:http";
+import { z } from "zod";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 
 /** Webhook plugin configuration */
@@ -18,6 +19,15 @@ interface WebhookConfig {
   /** HMAC secret for signature verification */
   secret?: string;
 }
+
+/** Zod schema for validating webhook callback payloads */
+const InteractionResponseSchema = z.object({
+  requestId: z.string(),
+  action: z.enum(["approve", "reject", "choose", "input", "skip", "abort"]),
+  value: z.string().optional(),
+  respondedBy: z.string().optional(),
+  respondedAt: z.number(),
+});
 
 /**
  * Webhook plugin for HTTP-based interaction
@@ -63,14 +73,20 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       headers["X-Nax-Signature"] = signature;
     }
 
-    const response = await fetch(this.config.url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-    });
+    try {
+      const response = await fetch(this.config.url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
 
-    if (!response.ok) {
-      throw new Error(`Webhook POST failed: ${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => "");
+        throw new Error(`Webhook POST failed (${response.status}): ${errorBody || response.statusText}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to send webhook request: ${msg}`);
     }
   }
 
@@ -154,13 +170,25 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
         return new Response("Unauthorized", { status: 401 });
       }
 
-      // Parse verified body
-      const response = JSON.parse(body) as InteractionResponse;
-      this.pendingResponses.set(requestId, response);
+      // Parse and validate verified body
+      try {
+        const parsed = JSON.parse(body);
+        const response = InteractionResponseSchema.parse(parsed);
+        this.pendingResponses.set(requestId, response);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return new Response(`Bad Request: Invalid response format (${msg})`, { status: 400 });
+      }
     } else {
-      // No signature verification
-      const response = (await req.json()) as InteractionResponse;
-      this.pendingResponses.set(requestId, response);
+      // No signature verification - still validate structure
+      try {
+        const parsed = await req.json();
+        const response = InteractionResponseSchema.parse(parsed);
+        this.pendingResponses.set(requestId, response);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return new Response(`Bad Request: Invalid response format (${msg})`, { status: 400 });
+      }
     }
 
     return new Response("OK", { status: 200 });

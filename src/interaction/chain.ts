@@ -58,28 +58,31 @@ export class InteractionChain {
   }
 
   /**
-   * Receive interaction response with timeout and fallback
+   * Receive interaction response with timeout and fallback cascade
    */
   async receive(requestId: string, timeout?: number): Promise<InteractionResponse> {
-    const plugin = this.getPrimary();
-    if (!plugin) {
+    if (this.plugins.length === 0) {
       throw new Error("No interaction plugin registered");
     }
 
     const timeoutMs = timeout ?? this.config.defaultTimeout;
+    const errors: Error[] = [];
 
-    try {
-      const response = await plugin.receive(requestId, timeoutMs);
-      return response;
-    } catch (err) {
-      // On timeout or error, return a timeout response
-      return {
-        requestId,
-        action: "skip",
-        respondedBy: "timeout",
-        respondedAt: Date.now(),
-      };
+    // Try each plugin in priority order (fallback cascade)
+    for (const entry of this.plugins) {
+      try {
+        const response = await entry.plugin.receive(requestId, timeoutMs);
+        return response;
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        errors.push(error);
+        // Continue to next plugin
+      }
     }
+
+    // All plugins failed - throw with all error messages
+    const errorMessages = errors.map((e) => e.message).join("; ");
+    throw new Error(`All interaction plugins failed: ${errorMessages}`);
   }
 
   /**
