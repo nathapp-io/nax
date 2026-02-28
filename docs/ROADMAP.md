@@ -17,6 +17,24 @@
 
 ---
 
+## v0.15.3 — Constitution Generator + Runner Interaction Wiring (IN PROGRESS)
+
+**Theme:** Complete v0.15.x with constitution generator and live interaction wiring
+**Status:** 🔄 In Progress (2026-02-28)
+
+**Changes:**
+- [ ] US-010: Constitution-to-agent-config generator (`nax constitution generate`)
+  - Generates CLAUDE.md, AGENTS.md, .cursorrules, .windsurfrules, .aider.conf.yml
+  - 5 agent adapters from single `nax/constitution.md` source
+- [ ] US-008 (runner wiring): Wire interaction triggers into runner execution loop
+  - security-review gate before each story
+  - cost-warning gate after each story
+  - pre-merge gate before merge
+  - max-retries gate on story exhaustion
+  - headless mode skips all (applies fallback immediately)
+
+---
+
 ## v0.15.1 — Architectural Compliance + Security Hardening (SHIPPED)
 
 **Theme:** Resolve all critical findings from v0.15.0 code review
@@ -35,7 +53,8 @@
 ## v0.15.0 — Interactive Pipeline (SHIPPED)
 
 **Theme:** Human/AI/External interactions as hook extensions
-**Status:** Spec drafted
+**Status:** ✅ Shipped 2026-02-28
+**Release Notes:** [releases/v0.15.0.md](releases/v0.15.0.md)
 **Spec:** `memory/specs/nax-v0.15.0-interactions.md` (VPS)
 
 **Architecture:** Interactions extend the existing hook system (not a separate config surface). Hooks gain an optional `interaction` field for two-way request/response. Plugins (telegram, webhook, cli, auto) handle transport only.
@@ -54,7 +73,7 @@
 - [x] US-007: Webhook plugin (HTTP POST + callback server + HMAC) (v0.15.0 Phase 2)
 - [x] US-008: Auto plugin (AI responder with confidence escalation) (v0.15.0 Phase 2)
 - [x] US-009: `nax status` enhancement (paused state + safety category) (v0.15.0 Phase 2)
-- [ ] US-010: Constitution-to-agent-config generator (CLAUDE.md, AGENTS.md, .cursorrules, etc.)
+- [x] US-010: Constitution-to-agent-config generator (CLAUDE.md, AGENTS.md, .cursorrules, etc.) (v0.15.3 — in progress)
 
 **Phases:** Core (US-001/3/4/2) → Telegram (US-005/6/9) → Advanced (US-007/8)
 
@@ -94,7 +113,7 @@
 
 ### Features
 - [ ] `nax unlock` command
-- [ ] Constitution file support
+- [x] ~~Constitution file support (US-010 in v0.15.3)~~
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
 - [ ] `nax diagnose --ai` flag (LLM-assisted, future version TBD)
@@ -108,4 +127,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-02-28 (v0.15.1 shipped)*
+*Last updated: 2026-02-28 (v0.15.3 in progress)*
