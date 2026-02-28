@@ -133,6 +133,7 @@ async function runTddSession(
     modelTier,
     modelDef: resolveModel(config.models[modelTier]),
     timeoutSeconds: config.execution.sessionTimeoutSeconds,
+    dangerouslySkipPermissions: config.execution.dangerouslySkipPermissions,
   });
 
   // BUG-21 Fix: Clean up orphaned child processes if agent failed
@@ -494,6 +495,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
             modelTier: implementerTier,
             modelDef: resolveModel(config.models[implementerTier]),
             timeoutSeconds: config.execution.sessionTimeoutSeconds,
+            dangerouslySkipPermissions: config.execution.dangerouslySkipPermissions,
           });
 
           // BUG-21 Fix: Clean up orphaned child processes if agent failed

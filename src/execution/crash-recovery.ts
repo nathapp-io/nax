@@ -15,11 +15,12 @@ import type { StatusWriter } from "./status-writer";
 
 /**
  * Crash recovery context — dependencies injected at setup
+ * (BUG-1 fix: use getters to avoid capturing stale closure values)
  */
 export interface CrashRecoveryContext {
   statusWriter: StatusWriter;
-  totalCost: number;
-  iterations: number;
+  getTotalCost: () => number;
+  getIterations: () => number;
   jsonlFilePath?: string;
   pidRegistry?: PidRegistry;
 }
@@ -90,10 +91,11 @@ async function updateStatusToCrashed(
 
 /**
  * Install signal handlers for crash recovery
+ * (MEM-1 fix: return cleanup function to unregister handlers)
  */
-export function installCrashHandlers(ctx: CrashRecoveryContext): void {
+export function installCrashHandlers(ctx: CrashRecoveryContext): () => void {
   if (handlersInstalled) {
-    return; // Prevent duplicate installations
+    return () => {}; // Prevent duplicate installations
   }
 
   const logger = getSafeLogger();
@@ -111,7 +113,7 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): void {
     await writeFatalLog(ctx.jsonlFilePath, signal);
 
     // Update status.json to crashed
-    await updateStatusToCrashed(ctx.statusWriter, ctx.totalCost, ctx.iterations, signal);
+    await updateStatusToCrashed(ctx.statusWriter, ctx.getTotalCost(), ctx.getIterations(), signal);
 
     // Stop heartbeat
     stopHeartbeat();
@@ -120,13 +122,17 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): void {
     process.exit(128 + getSignalNumber(signal));
   };
 
+  const sigtermHandler = () => handleSignal("SIGTERM");
+  const sigintHandler = () => handleSignal("SIGINT");
+  const sighupHandler = () => handleSignal("SIGHUP");
+
   // Install signal handlers
-  process.on("SIGTERM", () => handleSignal("SIGTERM"));
-  process.on("SIGINT", () => handleSignal("SIGINT"));
-  process.on("SIGHUP", () => handleSignal("SIGHUP"));
+  process.on("SIGTERM", sigtermHandler);
+  process.on("SIGINT", sigintHandler);
+  process.on("SIGHUP", sighupHandler);
 
   // Uncaught exception handler
-  process.on("uncaughtException", async (error: Error) => {
+  const uncaughtExceptionHandler = async (error: Error) => {
     logger?.error("crash-recovery", "Uncaught exception", {
       error: error.message,
       stack: error.stack,
@@ -141,17 +147,18 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): void {
     await writeFatalLog(ctx.jsonlFilePath, "uncaughtException", error);
 
     // Update status.json to crashed
-    await updateStatusToCrashed(ctx.statusWriter, ctx.totalCost, ctx.iterations, "uncaughtException");
+    await updateStatusToCrashed(ctx.statusWriter, ctx.getTotalCost(), ctx.getIterations(), "uncaughtException");
 
     // Stop heartbeat
     stopHeartbeat();
 
     // Exit with error code
     process.exit(1);
-  });
+  };
+  process.on("uncaughtException", uncaughtExceptionHandler);
 
   // Unhandled promise rejection handler
-  process.on("unhandledRejection", async (reason: unknown, promise: Promise<unknown>) => {
+  const unhandledRejectionHandler = async (reason: unknown, promise: Promise<unknown>) => {
     const error = reason instanceof Error ? reason : new Error(String(reason));
     logger?.error("crash-recovery", "Unhandled promise rejection", {
       error: error.message,
@@ -167,17 +174,29 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): void {
     await writeFatalLog(ctx.jsonlFilePath, "unhandledRejection", error);
 
     // Update status.json to crashed
-    await updateStatusToCrashed(ctx.statusWriter, ctx.totalCost, ctx.iterations, "unhandledRejection");
+    await updateStatusToCrashed(ctx.statusWriter, ctx.getTotalCost(), ctx.getIterations(), "unhandledRejection");
 
     // Stop heartbeat
     stopHeartbeat();
 
     // Exit with error code
     process.exit(1);
-  });
+  };
+  process.on("unhandledRejection", unhandledRejectionHandler);
 
   handlersInstalled = true;
   logger?.debug("crash-recovery", "Crash handlers installed");
+
+  // Return cleanup function
+  return () => {
+    process.removeListener("SIGTERM", sigtermHandler);
+    process.removeListener("SIGINT", sigintHandler);
+    process.removeListener("SIGHUP", sighupHandler);
+    process.removeListener("uncaughtException", uncaughtExceptionHandler);
+    process.removeListener("unhandledRejection", unhandledRejectionHandler);
+    handlersInstalled = false;
+    logger?.debug("crash-recovery", "Crash handlers unregistered");
+  };
 }
 
 /**

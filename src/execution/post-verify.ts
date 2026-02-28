@@ -245,6 +245,7 @@ ${basePrompt}`;
               modelTier,
               modelDef,
               timeoutSeconds: config.execution.sessionTimeoutSeconds,
+              dangerouslySkipPermissions: config.execution.dangerouslySkipPermissions,
             });
 
             if (!agentResult.success) {
@@ -422,6 +423,7 @@ ${basePrompt}`;
         modelTier,
         modelDef,
         timeoutSeconds: config.execution.sessionTimeoutSeconds,
+        dangerouslySkipPermissions: config.execution.dangerouslySkipPermissions,
       });
 
       if (!agentResult.success) {

@@ -137,7 +137,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
    */
   buildCommand(options: AgentRunOptions): string[] {
     const model = options.modelDef.model;
-    return [this.binary, "--model", model, "--dangerously-skip-permissions", "-p", options.prompt];
+    const skipPermissions = options.dangerouslySkipPermissions ?? true;
+    const permArgs = skipPermissions ? ["--dangerously-skip-permissions"] : [];
+    return [this.binary, "--model", model, ...permArgs, "-p", options.prompt];
   }
 
   /**

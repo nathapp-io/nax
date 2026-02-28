@@ -21,8 +21,8 @@ export interface EscalationEntry {
   to: string;
 }
 
-/** Model tier names — extensible (supports custom tiers like "ultra", "free") */
-export type ModelTier = string;
+/** Model tier names — extensible (supports custom tiers like "ultra", "free") (TYPE-3 fix: preserve autocomplete for known tiers) */
+export type ModelTier = "fast" | "balanced" | "powerful" | (string & {});
 
 /** Per-tier token pricing (USD per 1M tokens) */
 export interface TokenPricing {
@@ -123,6 +123,8 @@ export interface ExecutionConfig {
   lintCommand?: string | null;
   /** Typecheck command override (null = disabled, undefined = auto-detect from package.json) */
   typecheckCommand?: string | null;
+  /** Use --dangerously-skip-permissions flag for agent (default: true for backward compat, SEC-1 fix) */
+  dangerouslySkipPermissions?: boolean;
 }
 
 /** Quality gate config */
@@ -489,6 +491,7 @@ const ExecutionConfigSchema = z.object({
   contextProviderTokenBudget: z.number().int().positive({ message: "contextProviderTokenBudget must be > 0" }).default(2000),
   lintCommand: z.string().nullable().optional(),
   typecheckCommand: z.string().nullable().optional(),
+  dangerouslySkipPermissions: z.boolean().default(true),
 });
 
 const QualityConfigSchema = z.object({
@@ -621,7 +624,7 @@ const RoutingConfigSchema = z
 
 const OptimizerConfigSchema = z.object({
   enabled: z.boolean(),
-  strategy: z.enum(["cost", "quality", "balanced"]),
+  strategy: z.enum(["rule-based", "llm", "noop"]).optional(),
 });
 
 const PluginConfigEntrySchema = z.object({

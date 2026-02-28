@@ -210,6 +210,11 @@ async function executeParallelBatch(
       })
       .finally(() => {
         activeCount--;
+        // BUG-4 fix: Remove completed promise from executing array
+        const index = executing.indexOf(executePromise);
+        if (index > -1) {
+          executing.splice(index, 1);
+        }
       });
 
     executing.push(executePromise);

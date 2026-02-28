@@ -12,8 +12,9 @@ import type { UserStory } from "../../prd/types";
 import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../strategy";
 import { keywordStrategy } from "./keyword";
 
-/** Module-level cache for routing decisions */
+/** Module-level cache for routing decisions (PERF-1 fix: max 100 entries LRU) */
 const cachedDecisions = new Map<string, RoutingDecision>();
+const MAX_CACHE_SIZE = 100;
 
 /** Clear the routing cache (for testing or new runs) */
 export function clearCache(): void {
@@ -23,6 +24,14 @@ export function clearCache(): void {
 /** Get the current cache size (for testing) */
 export function getCacheSize(): number {
   return cachedDecisions.size;
+}
+
+/** Evict oldest entry when cache is full (LRU) */
+function evictOldest(): void {
+  const firstKey = cachedDecisions.keys().next().value;
+  if (firstKey !== undefined) {
+    cachedDecisions.delete(firstKey);
+  }
 }
 
 /**
@@ -306,9 +315,12 @@ export async function routeBatch(stories: UserStory[], context: RoutingContext):
     const output = await callLlm(modelTier, prompt, config);
     const decisions = parseBatchResponse(output, stories, config);
 
-    // Populate cache
+    // Populate cache (PERF-1 fix: evict oldest if full)
     if (llmConfig.cacheDecisions) {
       for (const [storyId, decision] of decisions.entries()) {
+        if (cachedDecisions.size >= MAX_CACHE_SIZE) {
+          evictOldest();
+        }
         cachedDecisions.set(storyId, decision);
       }
     }
@@ -380,8 +392,11 @@ export const llmStrategy: RoutingStrategy = {
       const output = await callLlm(modelTier, prompt, config);
       const decision = parseRoutingResponse(output, story, config);
 
-      // Cache decision
+      // Cache decision (PERF-1 fix: evict oldest if full)
       if (llmConfig.cacheDecisions) {
+        if (cachedDecisions.size >= MAX_CACHE_SIZE) {
+          evictOldest();
+        }
         cachedDecisions.set(story.id, decision);
       }
 

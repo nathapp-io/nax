@@ -126,6 +126,9 @@ function validateHookCommand(command: string): void {
     /\|\s*sh/, // Piping to sh
     /;\s*rm\s+-rf/, // Dangerous deletion
     /&&\s*rm\s+-rf/, // Dangerous deletion after success
+    /\beval\s+/, // SEC-3 fix: eval command
+    /curl\s+[^|]*\|\s*/, // SEC-3 fix: curl piping
+    /python\s+-c/, // SEC-3 fix: python -c execution
   ];
 
   for (const pattern of dangerousPatterns) {

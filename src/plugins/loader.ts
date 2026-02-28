@@ -146,8 +146,13 @@ async function discoverPlugins(dir: string): Promise<Array<{ path: string }>> {
       }
     }
   } catch (error) {
-    // Directory doesn't exist or can't be read — not an error, just no plugins
-    return [];
+    // ERR-1 fix: Only catch ENOENT, re-throw other errors
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      // Directory doesn't exist — not an error, just no plugins
+      return [];
+    }
+    // Re-throw permission errors, disk failures, etc.
+    throw error;
   }
 
   return discovered;

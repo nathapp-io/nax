@@ -99,12 +99,8 @@ export const executionStage: PipelineStage = {
       ctx.routing.testStrategy === "three-session-tdd-lite";
     const isLiteMode = ctx.routing.testStrategy === "three-session-tdd-lite";
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (isTddStrategy && (ctx.config.tdd as any)?.enabled === false) {
-      logger.info("execution", "TDD disabled via config, falling back to single session", {
-        storyId: ctx.story.id,
-      });
-    } else if (isTddStrategy) {
+    // TYPE-2 fix: TddConfig has no enabled field, removed dead code
+    if (isTddStrategy) {
       logger.info("execution", `Starting three-session TDD${isLiteMode ? " (lite)" : ""}`, {
         storyId: ctx.story.id,
         lite: isLiteMode,
@@ -171,6 +167,7 @@ export const executionStage: PipelineStage = {
       modelTier: ctx.routing.modelTier,
       modelDef: resolveModel(ctx.config.models[ctx.routing.modelTier]),
       timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
+      dangerouslySkipPermissions: ctx.config.execution.dangerouslySkipPermissions,
     });
 
     ctx.agentResult = result;

@@ -260,7 +260,13 @@ export function getAllReadyStories(prd: PRD): UserStory[] {
   const completedIds = new Set(prd.userStories.filter((s) => s.passes || s.status === "skipped").map((s) => s.id));
 
   return prd.userStories.filter(
-    (s) => !s.passes && s.status !== "skipped" && s.dependencies.every((dep) => completedIds.has(dep)),
+    (s) =>
+      !s.passes &&
+      s.status !== "skipped" &&
+      s.status !== "failed" &&
+      s.status !== "paused" &&
+      s.status !== "blocked" &&
+      s.dependencies.every((dep) => completedIds.has(dep)),
   );
 }
 
@@ -309,6 +315,7 @@ export async function acquireLock(workdir: string): Promise<boolean> {
   const lockFile = Bun.file(lockPath);
 
   try {
+    // BUG-2 fix: First check for stale lock before attempting atomic create
     const exists = await lockFile.exists();
     if (exists) {
       // Read lock data
@@ -327,17 +334,25 @@ export async function acquireLock(workdir: string): Promise<boolean> {
       logger?.warn("execution", "Removing stale lock", {
         pid: lockPid,
       });
-      await Bun.spawn(["rm", lockPath], { stdout: "pipe" }).exited;
+      const fs = await import("node:fs/promises");
+      await fs.unlink(lockPath).catch(() => {});
     }
 
-    // Create lock file
+    // Create lock file atomically using exclusive create (O_CREAT | O_EXCL)
     const lockData = {
       pid: process.pid,
       timestamp: Date.now(),
     };
-    await Bun.write(lockPath, JSON.stringify(lockData));
+    const fs = await import("node:fs");
+    const fd = fs.openSync(lockPath, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o644);
+    fs.writeSync(fd, JSON.stringify(lockData));
+    fs.closeSync(fd);
     return true;
   } catch (error) {
+    // EEXIST means another process won the race
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      return false;
+    }
     const logger = getSafeLogger();
     logger?.warn("execution", "Failed to acquire lock", {
       error: (error as Error).message,

@@ -75,6 +75,8 @@ export interface AgentRunOptions {
   timeoutSeconds: number;
   /** Environment variables to pass */
   env?: Record<string, string>;
+  /** Use --dangerously-skip-permissions flag (default: true) */
+  dangerouslySkipPermissions?: boolean;
 }
 
 /**

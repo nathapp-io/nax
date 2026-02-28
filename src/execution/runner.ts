@@ -212,11 +212,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
   const logger = getSafeLogger();
   await pidRegistry.cleanupStale();
 
-  // Install crash handlers for signal recovery (US-007)
-  installCrashHandlers({
+  // Install crash handlers for signal recovery (US-007, BUG-1+MEM-1 fix: pass getters, cleanup in finally)
+  const cleanupCrashHandlers = installCrashHandlers({
     statusWriter,
-    totalCost,
-    iterations,
+    getTotalCost: () => totalCost,
+    getIterations: () => iterations,
     jsonlFilePath: logFilePath,
     pidRegistry,
   });
@@ -1467,12 +1467,16 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
           logger?.info("acceptance", `Generated ${fixStories.length} fix stories`);
 
-          // Append fix stories to PRD
-          for (const fixStory of fixStories) {
+          // Append fix stories to PRD (BUG-7 fix: immutable pattern)
+          const newUserStories = fixStories.map((fixStory) => {
             const userStory = convertFixStoryToUserStory(fixStory);
-            prd.userStories.push(userStory);
             logger?.debug("acceptance", `Fix story added: ${userStory.id}: ${userStory.title}`);
-          }
+            return userStory;
+          });
+          prd = {
+            ...prd,
+            userStories: [...prd.userStories, ...newUserStories],
+          };
 
           await savePRD(prd, prdPath);
           prdDirty = true;
@@ -1644,6 +1648,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
   } finally {
     // Stop heartbeat on any exit (US-007)
     stopHeartbeat();
+    // Cleanup crash handlers (MEM-1 fix)
+    cleanupCrashHandlers();
     // Fire onRunEnd for reporters (even on failure/abort)
     const durationMs = Date.now() - startTime;
     const finalCounts = countStories(prd);
