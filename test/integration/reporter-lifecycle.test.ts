@@ -268,6 +268,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
       feature: "test-feature",
       dryRun: true,
       useBatch: false,
+      skipPrecheck: true,
     });
 
     // Verify onRunStart was called
@@ -316,6 +317,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
       feature: "test-feature",
       dryRun: true,
       useBatch: false,
+      skipPrecheck: true,
     });
 
     // Verify onStoryComplete was called
@@ -375,6 +377,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
       feature: "test-feature",
       dryRun: true,
       useBatch: false,
+      skipPrecheck: true,
     });
 
     // Verify onRunEnd was called
@@ -461,6 +464,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
       feature: "test-feature",
       dryRun: true,
       useBatch: false,
+      skipPrecheck: true,
     });
 
     // Verify run completed successfully despite reporter errors
@@ -577,6 +581,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
       feature: "test-feature",
       dryRun: true,
       useBatch: false,
+      skipPrecheck: true,
     });
 
     // Verify both reporters received events
@@ -695,6 +700,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
       feature: "test-feature",
       dryRun: true,
       useBatch: false,
+      skipPrecheck: true,
     });
 
     // Verify working reporter still received events despite first reporter failing
@@ -736,6 +742,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
       feature: "test-feature",
       dryRun: false,
       useBatch: false,
+      skipPrecheck: true,
     });
 
     // Verify onRunStart and onRunEnd were still called
@@ -778,6 +785,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
       feature: "test-feature",
       dryRun: false,
       useBatch: false,
+      skipPrecheck: true,
     });
 
     // Note: paused stories are not picked up by getNextStory, so no onStoryComplete event fires
@@ -823,6 +831,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
       feature: "test-feature",
       dryRun: true,
       useBatch: false,
+      skipPrecheck: true,
     });
 
     // Verify both stories received onStoryComplete events

@@ -126,6 +126,7 @@ async function runWithStatus(feature: string, storyCount = 1, extraOpts: Partial
     featureDir: setup.featureDir,
     dryRun: true,
     statusFile: statusFilePath,
+    skipPrecheck: true,
     ...extraOpts,
   });
   return { setup, statusFilePath };
@@ -172,6 +173,7 @@ describe("status file not written when omitted", () => {
       config: createTestConfig(), hooks: { hooks: {} },
       feature: "no-sf", featureDir: setup.featureDir,
       dryRun: true, // no statusFile
+      skipPrecheck: true,
     });
 
     const after = await fs.readdir(setup.tmpDir);
@@ -265,6 +267,7 @@ describe("status file written during dry-run", () => {
       config, hooks: { hooks: {} },
       feature: "sf-cost-null", featureDir: setup.featureDir,
       dryRun: true, statusFile: statusFilePath,
+      skipPrecheck: true,
     });
     const p = JSON.parse(nodeFs.readFileSync(statusFilePath, "utf-8")) as NaxStatusFile;
     expect(p.cost.limit).toBeNull();

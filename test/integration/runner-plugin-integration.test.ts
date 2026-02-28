@@ -208,6 +208,7 @@ describe("Runner Plugin Integration (US-001)", () => {
 				hooks: { hooks: [] },
 				feature: "test-feature",
 				dryRun: true,
+				skipPrecheck: true,
 			});
 
 			// If we get here, plugins were loaded successfully
@@ -251,6 +252,7 @@ describe("Runner Plugin Integration (US-001)", () => {
 			hooks: { hooks: [] },
 			feature: "test-feature",
 			dryRun: true,
+			skipPrecheck: true,
 		});
 
 		expect(result.success).toBe(true);
@@ -297,6 +299,7 @@ export default {
 			hooks: { hooks: [] },
 			feature: "test-feature",
 			dryRun: true,
+			skipPrecheck: true,
 		});
 
 		// Check that teardown was called
@@ -350,6 +353,7 @@ export default {
 				hooks: { hooks: [] },
 				feature: "test-feature",
 				dryRun: true,
+				skipPrecheck: true,
 			});
 		} catch (error) {
 			// May throw or return early
@@ -382,6 +386,7 @@ export default {
 				hooks: { hooks: [] },
 				feature: "test-feature",
 				dryRun: true,
+				skipPrecheck: true,
 			});
 
 			// Should succeed with empty registry
@@ -430,6 +435,7 @@ export default {
 			hooks: { hooks: [] },
 			feature: "test-feature",
 			dryRun: true,
+			skipPrecheck: true,
 		});
 
 		// Should succeed - malformed plugin is skipped, valid plugin is loaded
@@ -485,6 +491,7 @@ export default {
 				hooks: { hooks: [] },
 				feature: "test-feature",
 				dryRun: true,
+				skipPrecheck: true,
 			});
 
 			// Should load both plugins successfully
@@ -532,6 +539,7 @@ export default {
 			hooks: { hooks: [] },
 			feature: "test-feature",
 			dryRun: true,
+			skipPrecheck: true,
 		});
 
 		expect(result.success).toBe(true);
