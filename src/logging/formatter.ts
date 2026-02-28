@@ -7,7 +7,17 @@
 
 import chalk from "chalk";
 import type { LogEntry } from "../logger/types.js";
-import { EMOJI, type FormatterOptions, type FormattedEntry, type RunSummary } from "./types.js";
+import { EMOJI, type FormatterOptions, type RunSummary } from "./types.js";
+
+/**
+ * Formatted output entry
+ */
+export interface FormattedEntry {
+  /** Formatted string ready for console output */
+  output: string;
+  /** Whether this entry should be shown in the current verbosity mode */
+  shouldDisplay: boolean;
+}
 
 /**
  * Format a timestamp to local timezone HH:MM:SS

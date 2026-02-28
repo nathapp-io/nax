@@ -92,12 +92,3 @@ export interface FormatterOptions {
   timezone?: string;
 }
 
-/**
- * Formatted output entry
- */
-export interface FormattedEntry {
-  /** Formatted string ready for console output */
-  output: string;
-  /** Whether this entry should be shown in the current verbosity mode */
-  shouldDisplay: boolean;
-}

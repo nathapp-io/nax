@@ -427,7 +427,7 @@ describe("runThreeSessionTdd", () => {
     expect(result.success).toBe(false);
     expect(result.sessions).toHaveLength(1); // Should stop after session 1
     expect(result.needsHumanReview).toBe(true);
-    expect(result.reviewReason).toBe("Test writer session created no test files");
+    expect(result.reviewReason).toBe("Test writer session created no test files (greenfield project)");
   });
 
   test("BUG-20: failure when test-writer creates zero files", async () => {
@@ -457,7 +457,7 @@ describe("runThreeSessionTdd", () => {
     expect(result.success).toBe(false);
     expect(result.sessions).toHaveLength(1);
     expect(result.needsHumanReview).toBe(true);
-    expect(result.reviewReason).toBe("Test writer session created no test files");
+    expect(result.reviewReason).toBe("Test writer session created no test files (greenfield project)");
   });
 
   test("BUG-20: success when test-writer creates test files with various extensions", async () => {
@@ -949,35 +949,21 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
     });
   }
 
-  test("fallback triggers when strategy='auto' and 0 test files in strict mode", async () => {
+  test("fallback NO LONGER triggers when strategy='auto' and 0 test files (BUG-010 removed auto-fallback)", async () => {
     let checkoutCalled = false;
 
-    // Strict mode:
-    //   s1 isolation: non-test files (passes) → diff[0]
-    //   s1 getChangedFiles: non-test files → diff[1] → 0 test files → FALLBACK
-    //   git checkout .
-    // Lite mode (recursive):
-    //   s1 getChangedFiles: test files → diff[2]
-    //   s2 getChangedFiles: src files → diff[3]
-    //   s3 isolation: → diff[4]
-    //   s3 getChangedFiles: → diff[5]
+    // BUG-010: Zero-file scenarios now return greenfield-no-tests immediately
+    // No fallback to lite mode occurs
     mockGitSpawnWithCheckout({
       diffFiles: [
         ["requirements.md"],    // s1 isolation (strict) — no source violations
-        ["requirements.md"],    // s1 getChangedFiles (strict) — 0 test files → fallback
-        ["test/user.test.ts"], // s1 getChangedFiles (lite re-run)
-        ["src/user.ts"],       // s2 getChangedFiles (lite re-run)
-        [],                    // s3 isolation (lite re-run)
-        [],                    // s3 getChangedFiles (lite re-run)
+        ["requirements.md"],    // s1 getChangedFiles (strict) — 0 test files → return greenfield-no-tests
       ],
       onCheckout: () => { checkoutCalled = true; },
     });
 
     const agent = createMockAgent([
       { success: true, estimatedCost: 0.01 }, // s1 strict test-writer
-      { success: true, estimatedCost: 0.01 }, // s1 lite test-writer
-      { success: true, estimatedCost: 0.02 }, // s2 lite implementer
-      { success: true, estimatedCost: 0.01 }, // s3 lite verifier
     ]);
 
     const configWithAutoStrategy = {
@@ -993,27 +979,22 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
       modelTier: "balanced",
     });
 
-    expect(checkoutCalled).toBe(true); // git checkout . was called
-    expect(result.lite).toBe(true);    // result is from lite mode
-    expect(result.success).toBe(true);
+    expect(checkoutCalled).toBe(false); // git checkout NOT called (no fallback)
+    expect(result.lite).toBe(false);    // not in lite mode
+    expect(result.success).toBe(false);  // fails with greenfield-no-tests
+    expect(result.failureCategory).toBe("greenfield-no-tests");
   });
 
-  test("fallback result has lite=true (confirms lite mode was used)", async () => {
-    mockGitSpawnWithCheckout({
+  test("zero-file scenario returns greenfield-no-tests (BUG-010 removed lite fallback)", async () => {
+    // BUG-010: No more auto-fallback to lite mode
+    mockGitSpawn({
       diffFiles: [
         ["docs/plan.md"],      // s1 isolation (strict)
         ["docs/plan.md"],      // s1 getChangedFiles (strict) → 0 test files
-        ["test/feature.test.ts"], // s1 getChangedFiles (lite)
-        ["src/feature.ts"],    // s2 getChangedFiles (lite)
-        [],                    // s3 isolation (lite)
-        [],                    // s3 getChangedFiles (lite)
       ],
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.01 },
-      { success: true, estimatedCost: 0.02 },
       { success: true, estimatedCost: 0.01 },
     ]);
 
@@ -1025,7 +1006,9 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
       modelTier: "balanced",
     });
 
-    expect(result.lite).toBe(true);
+    expect(result.lite).toBe(false);
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("greenfield-no-tests");
   });
 
   test("fallback does NOT trigger when strategy='strict' (explicit strict mode)", async () => {
@@ -1057,7 +1040,7 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
     // Should fail (no fallback in strict mode)
     expect(result.success).toBe(false);
     expect(result.needsHumanReview).toBe(true);
-    expect(result.reviewReason).toBe("Test writer session created no test files");
+    expect(result.reviewReason).toBe("Test writer session created no test files (greenfield project)");
     expect(result.lite).toBe(false); // Was called in strict mode, no fallback
   });
 
@@ -1085,7 +1068,7 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
     // Should fail — no further fallback from lite mode
     expect(result.success).toBe(false);
     expect(result.needsHumanReview).toBe(true);
-    expect(result.reviewReason).toBe("Test writer session created no test files");
+    expect(result.reviewReason).toBe("Test writer session created no test files (greenfield project)");
     expect(result.lite).toBe(true);
   });
 
@@ -1152,7 +1135,7 @@ describe("runThreeSessionTdd — failureCategory", () => {
   });
 
   test("test-writer zero files (non-auto strategy) sets failureCategory='isolation-violation'", async () => {
-    // In strict strategy, zero test files → isolation-violation category
+    // In strict strategy, zero test files → greenfield-no-tests category (BUG-010 behavior)
     mockGitSpawn({
       diffFiles: [
         ["requirements.md"],  // s1 isolation — no source violations
@@ -1178,7 +1161,7 @@ describe("runThreeSessionTdd — failureCategory", () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.failureCategory).toBe("isolation-violation");
+    expect(result.failureCategory).toBe("greenfield-no-tests");
   });
 
   test("test-writer crash/timeout (non-isolation failure) sets failureCategory='session-failure'", async () => {
@@ -1330,43 +1313,21 @@ describe("runThreeSessionTdd — failureCategory", () => {
     expect(result.failureCategory).toBeUndefined();
   });
 
-  test("zero-file auto-fallback (auto strategy) still works and succeeds without failureCategory", async () => {
-    // In auto strategy, zero test files → downgrade to lite → success
-    let revParseCount = 0;
+  test("zero-file scenario (auto strategy) returns greenfield-no-tests (BUG-010 removed auto-fallback)", async () => {
+    // BUG-010: In auto strategy, zero test files → return greenfield-no-tests (no more fallback)
     let diffCount = 0;
 
     const diffFiles = [
       ["requirements.md"],    // s1 isolation (strict) — no source violations
-      ["requirements.md"],    // s1 getChangedFiles (strict) — 0 test files → fallback
-      ["test/user.test.ts"], // s1 getChangedFiles (lite re-run)
-      ["src/user.ts"],       // s2 getChangedFiles (lite re-run)
-      [],                    // s3 isolation (lite re-run)
-      [],                    // s3 getChangedFiles (lite re-run)
+      ["requirements.md"],    // s1 getChangedFiles (strict) — 0 test files → return greenfield-no-tests
     ];
 
     // @ts-ignore — mocking global
     Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
-      // Intercept test commands
-      if ((cmd[0] === "/bin/sh" || cmd[0] === "/bin/bash" || cmd[0] === "/bin/zsh") && cmd[1] === "-c") {
-        return {
-          pid: 9999,
-          exited: Promise.resolve(0),
-          stdout: new Response("tests pass\n").body,
-          stderr: new Response("").body,
-        };
-      }
       if (cmd[0] === "git" && cmd[1] === "rev-parse") {
-        revParseCount++;
         return {
           exited: Promise.resolve(0),
-          stdout: new Response(`ref-${revParseCount}\n`).body,
-          stderr: new Response("").body,
-        };
-      }
-      if (cmd[0] === "git" && cmd[1] === "checkout") {
-        return {
-          exited: Promise.resolve(0),
-          stdout: new Response("").body,
+          stdout: new Response("ref-1\n").body,
           stderr: new Response("").body,
         };
       }
@@ -1384,9 +1345,6 @@ describe("runThreeSessionTdd — failureCategory", () => {
 
     const agent = createMockAgent([
       { success: true, estimatedCost: 0.01 }, // s1 strict test-writer
-      { success: true, estimatedCost: 0.01 }, // s1 lite test-writer
-      { success: true, estimatedCost: 0.02 }, // s2 lite implementer
-      { success: true, estimatedCost: 0.01 }, // s3 lite verifier
     ]);
 
     const configWithAutoStrategy = {
@@ -1402,9 +1360,9 @@ describe("runThreeSessionTdd — failureCategory", () => {
       modelTier: "balanced",
     });
 
-    expect(result.success).toBe(true);
-    expect(result.lite).toBe(true);
-    expect(result.failureCategory).toBeUndefined(); // No failure category on success
+    expect(result.success).toBe(false);
+    expect(result.lite).toBe(false);
+    expect(result.failureCategory).toBe("greenfield-no-tests");
   });
 });
 

@@ -176,6 +176,12 @@ export interface RunStateSnapshot {
   startTimeMs: number;
   /** Parallel execution info (optional) */
   parallel?: NaxStatusFile["parallel"];
+  /** ISO 8601 crash timestamp (present when status is "crashed") */
+  crashedAt?: string;
+  /** Signal or exception that caused crash (present when status is "crashed") */
+  crashSignal?: string;
+  /** ISO 8601 last heartbeat timestamp (updated every 60s during execution) */
+  lastHeartbeat?: string;
 }
 
 // ============================================================================
@@ -188,7 +194,7 @@ export interface RunStateSnapshot {
  * Derives progress from PRD story statuses. Sets updatedAt and durationMs
  * from the current time. Does not write to disk — call writeStatusFile() for that.
  */
-export function buildStatusSnapshot(state: RunStateSnapshot & { crashedAt?: string; crashSignal?: string; lastHeartbeat?: string }): NaxStatusFile {
+export function buildStatusSnapshot(state: RunStateSnapshot): NaxStatusFile {
   const now = Date.now();
   const snapshot: NaxStatusFile = {
     version: 1,

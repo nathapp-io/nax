@@ -211,7 +211,8 @@ export function startHeartbeat(
           },
         };
         const line = `${JSON.stringify(heartbeatEntry)}\n`;
-        await Bun.write(jsonlFilePath, line, { mode: "a" });
+        const { appendFileSync } = await import("node:fs");
+        appendFileSync(jsonlFilePath, line, "utf8");
       } catch (err) {
         logger?.warn("crash-recovery", "Failed to write heartbeat", { error: (err as Error).message });
       }
