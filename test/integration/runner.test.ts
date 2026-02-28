@@ -1358,6 +1358,11 @@ describe("resolveMaxAttemptsOutcome", () => {
       const result = resolveMaxAttemptsOutcome("verifier-rejected");
       expect(result).toBe("pause");
     });
+
+    test("greenfield-no-tests → pause", () => {
+      const result = resolveMaxAttemptsOutcome("greenfield-no-tests");
+      expect(result).toBe("pause");
+    });
   });
 
   describe("categories that can be failed automatically → fail", () => {
@@ -1378,7 +1383,7 @@ describe("resolveMaxAttemptsOutcome", () => {
   });
 
   describe("exhaustive coverage of all FailureCategory values", () => {
-    const pauseCategories: FailureCategory[] = ["isolation-violation", "verifier-rejected"];
+    const pauseCategories: FailureCategory[] = ["isolation-violation", "verifier-rejected", "greenfield-no-tests"];
     const failCategories: FailureCategory[] = ["session-failure", "tests-failing"];
 
     for (const cat of pauseCategories) {

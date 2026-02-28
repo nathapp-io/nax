@@ -1128,6 +1128,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
             // Retrieve TDD-specific context flags set by executionStage
             const escalateRetryAsLite = pipelineResult.context.retryAsLite === true;
             const escalateFailureCategory = pipelineResult.context.tddFailureCategory;
+            // S5: Auto-switch to test-after on greenfield-no-tests (one-time; mirrors retryAsLite pattern)
+            const escalateRetryAsTestAfter = escalateFailureCategory === "greenfield-no-tests";
 
             if (nextTier && config.autoMode.escalation.enabled) {
               const maxAttempts = calculateMaxIterations(config.autoMode.escalation.tierOrder);
@@ -1135,11 +1137,22 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
               if (canEscalate) {
                 for (const s of storiesToEscalate) {
-                  logger?.warn("escalation", "Escalating story to next tier", {
-                    storyId: s.id,
-                    nextTier,
-                    retryAsLite: escalateRetryAsLite,
-                  });
+                  const currentTestStrategy = s.routing?.testStrategy ?? routing.testStrategy;
+                  const shouldSwitchToTestAfter = escalateRetryAsTestAfter && currentTestStrategy !== "test-after";
+
+                  if (shouldSwitchToTestAfter) {
+                    logger?.warn("escalation", "Switching strategy to test-after (greenfield-no-tests fallback)", {
+                      storyId: s.id,
+                      fromStrategy: currentTestStrategy,
+                      toStrategy: "test-after",
+                    });
+                  } else {
+                    logger?.warn("escalation", "Escalating story to next tier", {
+                      storyId: s.id,
+                      nextTier,
+                      retryAsLite: escalateRetryAsLite,
+                    });
+                  }
                 }
 
                 const errorMessage = `Attempt ${story.attempts + 1} failed with model tier: ${routing.modelTier}${isBatchExecution ? " (in batch)" : ""}`;
@@ -1148,14 +1161,20 @@ export async function run(options: RunOptions): Promise<RunResult> {
                   const shouldEscalate = storiesToEscalate.some((story) => story.id === s.id);
                   if (!shouldEscalate) return s;
 
+                  // S5: Check if this is a one-time test-after switch (greenfield-no-tests fallback)
+                  const currentTestStrategy = s.routing?.testStrategy ?? routing.testStrategy;
+                  const shouldSwitchToTestAfter = escalateRetryAsTestAfter && currentTestStrategy !== "test-after";
+
                   const updatedRouting = s.routing
                     ? {
                         ...s.routing,
-                        modelTier: nextTier,
+                        modelTier: shouldSwitchToTestAfter ? s.routing.modelTier : nextTier,
                         // Downgrade TDD strategy to lite when retryAsLite is requested
                         // (fires once on first isolation-violation; subsequent escalations
                         // leave the strategy unchanged)
                         ...(escalateRetryAsLite ? { testStrategy: "three-session-tdd-lite" as const } : {}),
+                        // S5: Switch to test-after when greenfield-no-tests fires (one-time only)
+                        ...(shouldSwitchToTestAfter ? { testStrategy: "test-after" as const } : {}),
                       }
                     : undefined;
 
@@ -1163,9 +1182,12 @@ export async function run(options: RunOptions): Promise<RunResult> {
                   const currentStoryTier = s.routing?.modelTier ?? routing.modelTier;
                   const isChangingTier = currentStoryTier !== nextTier;
 
+                  // S5: Reset attempts when switching to test-after (one-time strategy switch)
+                  const shouldResetAttempts = isChangingTier || shouldSwitchToTestAfter;
+
                   return {
                     ...s,
-                    attempts: isChangingTier ? 0 : (s.attempts ?? 0) + 1,
+                    attempts: shouldResetAttempts ? 0 : (s.attempts ?? 0) + 1,
                     routing: updatedRouting,
                     priorErrors: [...(s.priorErrors || []), errorMessage],
                   };
