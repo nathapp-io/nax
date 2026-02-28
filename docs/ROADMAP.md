@@ -6,14 +6,14 @@
 
 ---
 
-## Next: v0.15.0 — Interactive Pipeline (or v0.14.5 cleanup)
+## Next: v0.15.1 — Interactive Pipeline (or v0.14.5 cleanup)
 
 **Options:**
-1. **v0.15.0 Interactive Pipeline** — See spec below
+1. **v0.15.1 Interactive Pipeline** — See spec below
 2. **v0.14.5 Remaining Cleanup** — Complete deferred MEDIUM/STYLE items:
    - [ ] **SEC-2:** Sandbox plugin import boundary
-   - [ ] **STYLE-1:** Split runner.ts into focused modules
-   - [ ] **STYLE-2:** Extract notifyReporters() helper
+   - [x] **STYLE-1:** Split runner.ts into focused modules (v0.15.0 Phase 1 complete)
+   - [x] **STYLE-2:** Extract notifyReporters() helper (v0.15.0 Phase 1 complete)
 
 ---
 
@@ -50,6 +50,7 @@
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.15.0 | Execution Re-architecture (Phase 1) | 2026-02-28 | [releases/v0.15.0.md](releases/v0.15.0.md) |
 | v0.14.4 | Code Audit Cleanup (MEDIUM findings) | 2026-02-28 | [releases/v0.14.4.md](releases/v0.14.4.md) |
 | v0.14.3 | Code Audit Fixes (CRITICAL+HIGH+MEDIUM) | 2026-02-28 | [releases/v0.14.3.md](releases/v0.14.3.md) |
 | v0.14.2 | E2E Test Hang Fix | 2026-02-28 | [releases/v0.14.2.md](releases/v0.14.2.md) |
@@ -90,4 +91,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-02-28 (v0.14.3 audit fixes planned)*
+*Last updated: 2026-02-28 (v0.15.0 Phase 1 shipped)*
