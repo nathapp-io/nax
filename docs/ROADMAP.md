@@ -64,7 +64,21 @@ Worktree-based parallel execution: WorktreeManager, MergeEngine, ParallelDispatc
 
 ---
 
-## Next: v0.15.0
+## Next: v0.14.1 — nax diagnose CLI
+
+**Status:** Spec ready → `memory/20260228-v0141-diagnose-spec.md`
+
+Pure CLI command — no LLM calls. Reads events.jsonl, PRD, git log, status.json and outputs structured diagnosis with pattern classification.
+
+| Story | Title | Pts | Status |
+|:---|:---|:---|:---|
+| US-001 | `nax diagnose` CLI — pure pattern-matching diagnosis | 3 | 🔲 pending |
+
+**Note:** LLM-assisted `--ai` flag deferred to a future version (TBD). Will use direct LLM API call when decided.
+
+---
+
+## Planned: v0.15.0
 
 **Status:** TBD
 
@@ -89,7 +103,7 @@ Worktree-based parallel execution: WorktreeManager, MergeEngine, ParallelDispatc
 - [ ] Context file auto-detection
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
-- [ ] nax diagnose command (deferred from v0.14.0)
+- [ ] nax diagnose `--ai` flag (LLM-assisted, future version TBD)
 
 ---
 
