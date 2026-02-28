@@ -47,6 +47,7 @@ import { checkAgentHealth, getAllAgentNames } from "../src/agents";
 import {
   acceptCommand,
   analyzeFeature,
+  constitutionGenerateCommand,
   displayCostMetrics,
   displayFeatureStatus,
   displayLastRunMetrics,
@@ -825,6 +826,30 @@ program
         console.log(chalk.green(`\n✅ Prompts written to ${options.out}`));
         console.log(chalk.dim(`   Processed ${processedStories.length} stories`));
       }
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+// ── constitution ─────────────────────────────────────
+const constitution = program.command("constitution").description("Generate agent config files from constitution");
+
+constitution
+  .command("generate")
+  .description("Generate agent-specific config files from nax/constitution.md")
+  .option("-c, --constitution <path>", "Constitution file path (default: nax/constitution.md)")
+  .option("-o, --output <dir>", "Output directory (default: project root)")
+  .option("-a, --agent <name>", "Specific agent to generate for (claude|opencode|cursor|windsurf|aider)")
+  .option("--dry-run", "Show what would be generated without writing files", false)
+  .action(async (options) => {
+    try {
+      await constitutionGenerateCommand({
+        constitution: options.constitution,
+        output: options.output,
+        agent: options.agent,
+        dryRun: options.dryRun,
+      });
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);

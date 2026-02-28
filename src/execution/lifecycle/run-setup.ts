@@ -18,6 +18,8 @@ import type { NaxConfig } from "../../config";
 import { LockAcquisitionError } from "../../errors";
 import type { LoadedHooksConfig } from "../../hooks";
 import { fireHook } from "../../hooks";
+import type { InteractionChain } from "../../interaction";
+import { initInteractionChain } from "../../interaction";
 import { getSafeLogger } from "../../logger";
 import { loadPlugins } from "../../plugins/loader";
 import type { PluginRegistry } from "../../plugins/registry";
@@ -59,6 +61,7 @@ export interface RunSetupResult {
     pending: number;
     failed: number;
   };
+  interactionChain: InteractionChain | null;
 }
 
 /**
@@ -172,6 +175,9 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   prd = initResult.prd;
   const counts = initResult.storyCounts;
 
+  // Initialize interaction chain (US-008)
+  const interactionChain = await initInteractionChain(config, headless);
+
   return {
     statusWriter,
     pidRegistry,
@@ -179,5 +185,6 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     pluginRegistry,
     prd,
     storyCounts: counts,
+    interactionChain,
   };
 }

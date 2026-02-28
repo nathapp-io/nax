@@ -138,7 +138,14 @@ export async function run(options: RunOptions): Promise<RunResult> {
     getIterations: () => iterations,
   });
 
-  const { statusWriter, pidRegistry, cleanupCrashHandlers, pluginRegistry, storyCounts: counts } = setupResult;
+  const {
+    statusWriter,
+    pidRegistry,
+    cleanupCrashHandlers,
+    pluginRegistry,
+    storyCounts: counts,
+    interactionChain,
+  } = setupResult;
   let prd = setupResult.prd;
 
   try {
@@ -355,6 +362,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       prd,
       pluginRegistry,
       workdir,
+      interactionChain,
     });
   }
 }

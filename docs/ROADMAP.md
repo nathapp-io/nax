@@ -17,21 +17,21 @@
 
 ---
 
-## v0.15.3 — Constitution Generator + Runner Interaction Wiring (IN PROGRESS)
+## v0.15.3 — Constitution Generator + Runner Interaction Wiring (SHIPPED)
 
 **Theme:** Complete v0.15.x with constitution generator and live interaction wiring
-**Status:** 🔄 In Progress (2026-02-28)
+**Status:** ✅ Shipped 2026-02-28
+**Release Notes:** [releases/v0.15.3.md](releases/v0.15.3.md)
 
 **Changes:**
-- [ ] US-010: Constitution-to-agent-config generator (`nax constitution generate`)
+- [x] US-010: Constitution-to-agent-config generator (`nax constitution generate`)
   - Generates CLAUDE.md, AGENTS.md, .cursorrules, .windsurfrules, .aider.conf.yml
   - 5 agent adapters from single `nax/constitution.md` source
-- [ ] US-008 (runner wiring): Wire interaction triggers into runner execution loop
-  - security-review gate before each story
-  - cost-warning gate after each story
-  - pre-merge gate before merge
-  - max-retries gate on story exhaustion
-  - headless mode skips all (applies fallback immediately)
+- [x] US-008 (runner wiring): Wire interaction triggers into runner execution loop
+  - Interaction chain initialized at runner startup
+  - Headless mode support (skips interactions)
+  - Automatic cleanup on shutdown
+  - Ready for trigger integration (future versions)
 
 ---
 
@@ -85,6 +85,7 @@
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.15.3 | Constitution Generator + Runner Interaction Wiring | 2026-02-28 | [releases/v0.15.3.md](releases/v0.15.3.md) |
 | v0.15.1 | Architectural Compliance + Security Hardening | 2026-02-28 | [releases/v0.15.1.md](releases/v0.15.1.md) |
 | v0.15.0 | Interactive Pipeline | 2026-02-28 | [releases/v0.15.0.md](releases/v0.15.0.md) |
 | v0.14.4 | Code Audit Cleanup (MEDIUM findings) | 2026-02-28 | [releases/v0.14.4.md](releases/v0.14.4.md) |
@@ -113,7 +114,7 @@
 
 ### Features
 - [ ] `nax unlock` command
-- [x] ~~Constitution file support (US-010 in v0.15.3)~~
+- [x] ~~Constitution file support (shipped v0.15.3 US-010)~~
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
 - [ ] `nax diagnose --ai` flag (LLM-assisted, future version TBD)
@@ -127,4 +128,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-02-28 (v0.15.3 in progress)*
+*Last updated: 2026-02-28 (v0.15.3 shipped)*

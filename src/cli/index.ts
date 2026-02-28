@@ -33,3 +33,7 @@ export {
   type InteractRespondOptions,
   type InteractCancelOptions,
 } from "./interact";
+export {
+  constitutionGenerateCommand,
+  type ConstitutionGenerateOptions,
+} from "./constitution";

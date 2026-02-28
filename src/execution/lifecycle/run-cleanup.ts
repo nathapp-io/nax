@@ -9,6 +9,7 @@
  * - Release lock
  */
 
+import type { InteractionChain } from "../../interaction";
 import { getSafeLogger } from "../../logger";
 import type { PluginRegistry } from "../../plugins/registry";
 import { countStories } from "../../prd";
@@ -23,6 +24,7 @@ export interface RunCleanupOptions {
   prd: PRD;
   pluginRegistry: PluginRegistry;
   workdir: string;
+  interactionChain: InteractionChain | null;
 }
 
 /**
@@ -30,7 +32,7 @@ export interface RunCleanupOptions {
  */
 export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
   const logger = getSafeLogger();
-  const { runId, startTime, totalCost, storiesCompleted, prd, pluginRegistry, workdir } = options;
+  const { runId, startTime, totalCost, storiesCompleted, prd, pluginRegistry, workdir, interactionChain } = options;
 
   // Fire onRunEnd for reporters (even on failure/abort)
   const durationMs = Date.now() - startTime;
@@ -62,6 +64,16 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
     await pluginRegistry.teardownAll();
   } catch (error) {
     logger?.warn("plugins", "Plugin teardown failed", { error });
+  }
+
+  // Destroy interaction chain (US-008)
+  if (interactionChain) {
+    try {
+      await interactionChain.destroy();
+      logger?.debug("interaction", "Interaction chain destroyed");
+    } catch (error) {
+      logger?.warn("interaction", "Interaction chain cleanup failed", { error });
+    }
   }
 
   // Always release lock, even if execution fails
