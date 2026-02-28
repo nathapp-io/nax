@@ -488,7 +488,11 @@ const ExecutionConfigSchema = z.object({
   maxStoriesPerFeature: z.number().int().positive(),
   rectification: RectificationConfigSchema,
   regressionGate: RegressionGateConfigSchema,
-  contextProviderTokenBudget: z.number().int().positive({ message: "contextProviderTokenBudget must be > 0" }).default(2000),
+  contextProviderTokenBudget: z
+    .number()
+    .int()
+    .positive({ message: "contextProviderTokenBudget must be > 0" })
+    .default(2000),
   lintCommand: z.string().nullable().optional(),
   typecheckCommand: z.string().nullable().optional(),
   dangerouslySkipPermissions: z.boolean().default(true),

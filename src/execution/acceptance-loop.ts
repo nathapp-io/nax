@@ -21,8 +21,8 @@ import { runPipeline } from "../pipeline/runner";
 import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext, RoutingResult } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
-import type { PRD, UserStory } from "../prd/types";
 import { loadPRD, savePRD } from "../prd";
+import type { PRD, UserStory } from "../prd/types";
 import { routeTask } from "../routing";
 import { hookCtx } from "./helpers";
 import type { StatusWriter } from "./status-writer";
@@ -62,12 +62,23 @@ async function loadSpecContent(featureDir?: string): Promise<string> {
 }
 
 /** Build result object for loop exit */
-function buildResult(success: boolean, prd: PRD, totalCost: number, iterations: number, storiesCompleted: number, prdDirty: boolean): AcceptanceLoopResult {
+function buildResult(
+  success: boolean,
+  prd: PRD,
+  totalCost: number,
+  iterations: number,
+  storiesCompleted: number,
+  prdDirty: boolean,
+): AcceptanceLoopResult {
   return { success, prd, totalCost, iterations, storiesCompleted, prdDirty };
 }
 
 /** Generate and add fix stories to PRD */
-async function generateAndAddFixStories(ctx: AcceptanceLoopContext, failures: { failedACs: string[]; testOutput: string }, prd: PRD): Promise<FixStory[] | null> {
+async function generateAndAddFixStories(
+  ctx: AcceptanceLoopContext,
+  failures: { failedACs: string[]; testOutput: string },
+  prd: PRD,
+): Promise<FixStory[] | null> {
   const logger = getSafeLogger();
   const agent = getAgent(ctx.config.autoMode.defaultAgent);
   if (!agent) {
@@ -97,11 +108,26 @@ async function generateAndAddFixStories(ctx: AcceptanceLoopContext, failures: { 
 }
 
 /** Execute a single fix story through the pipeline */
-async function executeFixStory(ctx: AcceptanceLoopContext, story: UserStory, prd: PRD, iterations: number): Promise<{ success: boolean; cost: number; metrics?: StoryMetrics[] }> {
+async function executeFixStory(
+  ctx: AcceptanceLoopContext,
+  story: UserStory,
+  prd: PRD,
+  iterations: number,
+): Promise<{ success: boolean; cost: number; metrics?: StoryMetrics[] }> {
   const logger = getSafeLogger();
   const routing = routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, ctx.config);
   logger?.info("acceptance", `Starting fix story: ${story.id}`, { storyId: story.id, storyTitle: story.title });
-  await fireHook(ctx.hooks, "on-story-start", hookCtx(ctx.feature, { storyId: story.id, model: routing.modelTier, agent: ctx.config.autoMode.defaultAgent, iteration: iterations }), ctx.workdir);
+  await fireHook(
+    ctx.hooks,
+    "on-story-start",
+    hookCtx(ctx.feature, {
+      storyId: story.id,
+      model: routing.modelTier,
+      agent: ctx.config.autoMode.defaultAgent,
+      iteration: iterations,
+    }),
+    ctx.workdir,
+  );
   const fixContext: PipelineContext = {
     config: ctx.config,
     prd,
@@ -116,7 +142,11 @@ async function executeFixStory(ctx: AcceptanceLoopContext, story: UserStory, prd
   };
   const result = await runPipeline(defaultPipeline, fixContext, ctx.eventEmitter);
   logger?.info("acceptance", `Fix story ${story.id} ${result.success ? "passed" : "failed"}`);
-  return { success: result.success, cost: result.context.agentResult?.estimatedCost || 0, metrics: result.context.storyMetrics };
+  return {
+    success: result.success,
+    cost: result.context.agentResult?.estimatedCost || 0,
+    metrics: result.context.storyMetrics,
+  };
 }
 
 /**
@@ -145,7 +175,12 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       prd,
       story: firstStory,
       stories: [firstStory],
-      routing: { complexity: "simple", modelTier: "balanced", testStrategy: "test-after", reasoning: "Acceptance validation" },
+      routing: {
+        complexity: "simple",
+        modelTier: "balanced",
+        testStrategy: "test-after",
+        reasoning: "Acceptance validation",
+      },
       workdir: ctx.workdir,
       featureDir: ctx.featureDir,
       hooks: ctx.hooks,
@@ -170,18 +205,33 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     if (!failures || failures.failedACs.length === 0) {
       logger?.error("acceptance", "Acceptance tests failed but no specific failures detected");
       logger?.warn("acceptance", "Manual intervention required");
-      await fireHook(ctx.hooks, "on-pause", hookCtx(ctx.feature, { reason: "Acceptance tests failed (no failures detected)", cost: totalCost }), ctx.workdir);
+      await fireHook(
+        ctx.hooks,
+        "on-pause",
+        hookCtx(ctx.feature, { reason: "Acceptance tests failed (no failures detected)", cost: totalCost }),
+        ctx.workdir,
+      );
       return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
     }
 
     acceptanceRetries++;
-    logger?.warn("acceptance", `Acceptance retry ${acceptanceRetries}/${maxRetries}`, { failedACs: failures.failedACs });
+    logger?.warn("acceptance", `Acceptance retry ${acceptanceRetries}/${maxRetries}`, {
+      failedACs: failures.failedACs,
+    });
 
     if (acceptanceRetries >= maxRetries) {
       logger?.error("acceptance", "Max acceptance retries reached");
       logger?.warn("acceptance", "Manual intervention required");
       logger?.debug("acceptance", 'Run: nax accept --override AC-N "reason" to skip specific ACs');
-      await fireHook(ctx.hooks, "on-pause", hookCtx(ctx.feature, { reason: `Acceptance validation failed after ${maxRetries} retries: ${failures.failedACs.join(", ")}`, cost: totalCost }), ctx.workdir);
+      await fireHook(
+        ctx.hooks,
+        "on-pause",
+        hookCtx(ctx.feature, {
+          reason: `Acceptance validation failed after ${maxRetries} retries: ${failures.failedACs.join(", ")}`,
+          cost: totalCost,
+        }),
+        ctx.workdir,
+      );
       return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
     }
 

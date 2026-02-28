@@ -91,4 +91,3 @@ export interface FormatterOptions {
   /** Timezone for timestamp formatting (default: system timezone) */
   timezone?: string;
 }
-

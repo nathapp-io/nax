@@ -6,8 +6,8 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { globalConfigDir } from "../config/paths";
 import { validateFilePath } from "../config/path-security";
+import { globalConfigDir } from "../config/paths";
 import type { ConstitutionConfig, ConstitutionResult } from "./types";
 
 /**

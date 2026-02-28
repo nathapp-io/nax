@@ -3,8 +3,8 @@
  */
 
 import { existsSync, statSync } from "node:fs";
-import type { PRD, UserStory } from "./types";
 import type { FailureCategory } from "../tdd/types";
+import type { PRD, UserStory } from "./types";
 
 export type { PRD, UserStory, StoryRouting, StoryStatus, EscalationAttempt } from "./types";
 export { isStalled, markStoryAsBlocked, generateHumanHaltSummary, getContextFiles, getExpectedFiles } from "./types";

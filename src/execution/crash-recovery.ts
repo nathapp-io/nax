@@ -38,11 +38,7 @@ let handlersInstalled = false;
 /**
  * Write fatal log entry to JSONL file
  */
-async function writeFatalLog(
-  jsonlFilePath: string | undefined,
-  signal: string,
-  error?: Error,
-): Promise<void> {
+async function writeFatalLog(jsonlFilePath: string | undefined, signal: string, error?: Error): Promise<void> {
   if (!jsonlFilePath) return;
 
   try {

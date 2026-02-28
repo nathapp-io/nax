@@ -10,9 +10,13 @@
 import type { AgentAdapter } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config";
-import { executeWithTimeout } from "../execution/verification";
+import {
+  type RectificationState,
+  createRectificationPrompt,
+  shouldRetryRectification,
+} from "../execution/rectification";
 import { parseBunTestOutput } from "../execution/test-output-parser";
-import { shouldRetryRectification, createRectificationPrompt, type RectificationState } from "../execution/rectification";
+import { executeWithTimeout } from "../execution/verification";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { captureGitRef } from "../utils/git";
@@ -21,10 +25,10 @@ import { getChangedFiles, verifyImplementerIsolation, verifyTestWriterIsolation 
 import {
   buildImplementerLitePrompt,
   buildImplementerPrompt,
+  buildImplementerRectificationPrompt,
   buildTestWriterLitePrompt,
   buildTestWriterPrompt,
   buildVerifierPrompt,
-  buildImplementerRectificationPrompt,
 } from "./prompts";
 import type { FailureCategory, TddSessionResult, TddSessionRole, ThreeSessionTddResult } from "./types";
 import { categorizeVerdict, cleanupVerdict, readVerdict } from "./verdict";
@@ -109,9 +113,7 @@ async function runTddSession(
   let prompt: string;
   switch (role) {
     case "test-writer":
-      prompt = lite
-        ? buildTestWriterLitePrompt(story, contextMarkdown)
-        : buildTestWriterPrompt(story, contextMarkdown);
+      prompt = lite ? buildTestWriterLitePrompt(story, contextMarkdown) : buildTestWriterPrompt(story, contextMarkdown);
       break;
     case "implementer":
       prompt = lite
@@ -290,7 +292,12 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     };
   }
 
-  logger.info("tdd", "🔄 Three-Session TDD", { storyId: story?.id, title: story?.title, lite, recursionDepth: _recursionDepth });
+  logger.info("tdd", "🔄 Three-Session TDD", {
+    storyId: story?.id,
+    title: story?.title,
+    lite,
+    recursionDepth: _recursionDepth,
+  });
 
   // Dry-run mode: log what would happen without executing
   if (dryRun) {
@@ -472,10 +479,14 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
         while (shouldRetryRectification(rectificationState, rectificationConfig)) {
           rectificationState.attempt++;
 
-          logger.info("tdd", `→ Implementer rectification attempt ${rectificationState.attempt}/${rectificationConfig.maxRetries}`, {
-            storyId: story.id,
-            currentFailures: rectificationState.currentFailures,
-          });
+          logger.info(
+            "tdd",
+            `→ Implementer rectification attempt ${rectificationState.attempt}/${rectificationConfig.maxRetries}`,
+            {
+              storyId: story.id,
+              currentFailures: rectificationState.currentFailures,
+            },
+          );
 
           // Build rectification prompt for implementer
           const rectificationPrompt = buildImplementerRectificationPrompt(

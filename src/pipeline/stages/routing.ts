@@ -17,10 +17,10 @@
  * ```
  */
 
+import { isGreenfieldStory } from "../../context/greenfield";
 import { getLogger } from "../../logger";
 import { routeStory } from "../../routing";
 import { clearCache, routeBatch } from "../../routing/strategies/llm";
-import { isGreenfieldStory } from "../../context/greenfield";
 import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
 
 export const routingStage: PipelineStage = {

@@ -6,8 +6,8 @@
  * write failure counter. Provides atomic status file writes via writeStatusFile.
  */
 
-import { getSafeLogger } from "../logger";
 import type { NaxConfig } from "../config";
+import { getSafeLogger } from "../logger";
 import type { PRD } from "../prd";
 import { type RunStateSnapshot, buildStatusSnapshot, writeStatusFile } from "./status-file";
 
@@ -62,8 +62,7 @@ export class StatusWriter {
 
   constructor(statusFile: string | undefined, config: NaxConfig, ctx: StatusWriterContext) {
     this.statusFile = statusFile;
-    this.costLimit =
-      config.execution.costLimit === Number.POSITIVE_INFINITY ? null : config.execution.costLimit;
+    this.costLimit = config.execution.costLimit === Number.POSITIVE_INFINITY ? null : config.execution.costLimit;
     this.ctx = ctx;
   }
 
@@ -116,11 +115,7 @@ export class StatusWriter {
    * @param iterations - Loop iteration count at this write point
    * @param overrides  - Optional partial snapshot overrides (spread last)
    */
-  async update(
-    totalCost: number,
-    iterations: number,
-    overrides: Partial<RunStateSnapshot> = {},
-  ): Promise<void> {
+  async update(totalCost: number, iterations: number, overrides: Partial<RunStateSnapshot> = {}): Promise<void> {
     if (!this.statusFile || !this._prd) return;
     const safeLogger = getSafeLogger();
     try {

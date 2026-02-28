@@ -60,11 +60,7 @@ export async function captureGitRef(workdir: string): Promise<string | undefined
  * }
  * ```
  */
-export async function hasCommitsForStory(
-  workdir: string,
-  storyId: string,
-  maxCommits = 20,
-): Promise<boolean> {
+export async function hasCommitsForStory(workdir: string, storyId: string, maxCommits = 20): Promise<boolean> {
   try {
     const proc = spawn({
       cmd: ["git", "log", `-${maxCommits}`, "--oneline", "--grep", storyId],

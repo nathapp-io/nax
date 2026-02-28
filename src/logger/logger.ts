@@ -1,7 +1,7 @@
 import { appendFileSync } from "node:fs";
+import { type FormatterOptions, type VerbosityMode, formatLogEntry } from "../logging/index.js";
 import { formatConsole, formatJsonl } from "./formatters.js";
 import type { LogEntry, LogLevel, LoggerOptions, StoryLogger } from "./types.js";
-import { formatLogEntry, type VerbosityMode, type FormatterOptions } from "../logging/index.js";
 
 /**
  * Severity ordering for log levels (lower number = more severe)

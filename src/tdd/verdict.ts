@@ -80,39 +80,39 @@ function isValidVerdict(obj: unknown): obj is VerifierVerdict {
   const v = obj as Record<string, unknown>;
 
   // Required top-level fields
-  if (v["version"] !== 1) return false;
-  if (typeof v["approved"] !== "boolean") return false;
+  if (v.version !== 1) return false;
+  if (typeof v.approved !== "boolean") return false;
 
   // tests sub-object
-  if (!v["tests"] || typeof v["tests"] !== "object") return false;
-  const tests = v["tests"] as Record<string, unknown>;
-  if (typeof tests["allPassing"] !== "boolean") return false;
-  if (typeof tests["passCount"] !== "number") return false;
-  if (typeof tests["failCount"] !== "number") return false;
+  if (!v.tests || typeof v.tests !== "object") return false;
+  const tests = v.tests as Record<string, unknown>;
+  if (typeof tests.allPassing !== "boolean") return false;
+  if (typeof tests.passCount !== "number") return false;
+  if (typeof tests.failCount !== "number") return false;
 
   // testModifications sub-object
-  if (!v["testModifications"] || typeof v["testModifications"] !== "object") return false;
-  const mods = v["testModifications"] as Record<string, unknown>;
-  if (typeof mods["detected"] !== "boolean") return false;
-  if (!Array.isArray(mods["files"])) return false;
-  if (typeof mods["legitimate"] !== "boolean") return false;
-  if (typeof mods["reasoning"] !== "string") return false;
+  if (!v.testModifications || typeof v.testModifications !== "object") return false;
+  const mods = v.testModifications as Record<string, unknown>;
+  if (typeof mods.detected !== "boolean") return false;
+  if (!Array.isArray(mods.files)) return false;
+  if (typeof mods.legitimate !== "boolean") return false;
+  if (typeof mods.reasoning !== "string") return false;
 
   // acceptanceCriteria sub-object
-  if (!v["acceptanceCriteria"] || typeof v["acceptanceCriteria"] !== "object") return false;
-  const ac = v["acceptanceCriteria"] as Record<string, unknown>;
-  if (typeof ac["allMet"] !== "boolean") return false;
-  if (!Array.isArray(ac["criteria"])) return false;
+  if (!v.acceptanceCriteria || typeof v.acceptanceCriteria !== "object") return false;
+  const ac = v.acceptanceCriteria as Record<string, unknown>;
+  if (typeof ac.allMet !== "boolean") return false;
+  if (!Array.isArray(ac.criteria)) return false;
 
   // quality sub-object
-  if (!v["quality"] || typeof v["quality"] !== "object") return false;
-  const quality = v["quality"] as Record<string, unknown>;
-  if (!["good", "acceptable", "poor"].includes(quality["rating"] as string)) return false;
-  if (!Array.isArray(quality["issues"])) return false;
+  if (!v.quality || typeof v.quality !== "object") return false;
+  const quality = v.quality as Record<string, unknown>;
+  if (!["good", "acceptable", "poor"].includes(quality.rating as string)) return false;
+  if (!Array.isArray(quality.issues)) return false;
 
   // fixes and reasoning
-  if (!Array.isArray(v["fixes"])) return false;
-  if (typeof v["reasoning"] !== "string") return false;
+  if (!Array.isArray(v.fixes)) return false;
+  if (typeof v.reasoning !== "string") return false;
 
   return true;
 }
@@ -204,10 +204,7 @@ export interface VerdictCategorization {
  * - null verdict, testsPass=true → success
  * - null verdict, testsPass=false → tests-failing
  */
-export function categorizeVerdict(
-  verdict: VerifierVerdict | null,
-  testsPass: boolean,
-): VerdictCategorization {
+export function categorizeVerdict(verdict: VerifierVerdict | null, testsPass: boolean): VerdictCategorization {
   // No verdict — fall back to test-only check
   if (!verdict) {
     if (testsPass) {
@@ -248,9 +245,7 @@ export function categorizeVerdict(
 
   // 3. Acceptance criteria not met
   if (!verdict.acceptanceCriteria.allMet) {
-    const unmet = verdict.acceptanceCriteria.criteria
-      .filter((c) => !c.met)
-      .map((c) => c.criterion);
+    const unmet = verdict.acceptanceCriteria.criteria.filter((c) => !c.met).map((c) => c.criterion);
     return {
       success: false,
       failureCategory: "verifier-rejected",

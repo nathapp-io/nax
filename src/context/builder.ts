@@ -9,9 +9,9 @@ import type { NaxConfig } from "../config";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { countStories, getContextFiles } from "../prd";
+import { autoDetectContextFiles } from "./auto-detect";
 import { generateTestCoverageSummary } from "./test-scanner";
 import type { BuiltContext, ContextBudget, ContextElement, StoryContext } from "./types";
-import { autoDetectContextFiles } from "./auto-detect";
 
 /**
  * Approximate character-to-token ratio for token estimation.

@@ -53,7 +53,10 @@ export function validatePlugin(module: unknown): NaxPlugin | null {
 
   // Validate version
   if (typeof plugin.version !== "string") {
-    getSafeLogger()?.warn("plugins", `Plugin '${plugin.name}' validation failed: missing or invalid 'version' (must be string)`);
+    getSafeLogger()?.warn(
+      "plugins",
+      `Plugin '${plugin.name}' validation failed: missing or invalid 'version' (must be string)`,
+    );
     return null;
   }
 
@@ -70,7 +73,10 @@ export function validatePlugin(module: unknown): NaxPlugin | null {
 
   for (const type of plugin.provides) {
     if (!VALID_PLUGIN_TYPES.includes(type as PluginType)) {
-      getSafeLogger()?.warn("plugins", `Plugin '${plugin.name}' validation failed: invalid plugin type '${type}' in 'provides'`);
+      getSafeLogger()?.warn(
+        "plugins",
+        `Plugin '${plugin.name}' validation failed: invalid plugin type '${type}' in 'provides'`,
+      );
       return null;
     }
   }
@@ -208,11 +214,17 @@ function validateAgent(pluginName: string, agent: unknown): boolean {
   for (const field of requiredFields) {
     if (field.type === "object") {
       if (typeof agt[field.name] !== "object" || agt[field.name] === null) {
-        getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: agent.${field.name} must be an object`);
+        getSafeLogger()?.warn(
+          "plugins",
+          `Plugin '${pluginName}' validation failed: agent.${field.name} must be an object`,
+        );
         return false;
       }
     } else if (typeof agt[field.name] !== field.type) {
-      getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: agent.${field.name} must be a ${field.type}`);
+      getSafeLogger()?.warn(
+        "plugins",
+        `Plugin '${pluginName}' validation failed: agent.${field.name} must be a ${field.type}`,
+      );
       return false;
     }
   }
@@ -254,7 +266,10 @@ function validateReviewer(pluginName: string, reviewer: unknown): boolean {
  */
 function validateContextProvider(pluginName: string, provider: unknown): boolean {
   if (typeof provider !== "object" || provider === null) {
-    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: contextProvider extension must be an object`);
+    getSafeLogger()?.warn(
+      "plugins",
+      `Plugin '${pluginName}' validation failed: contextProvider extension must be an object`,
+    );
     return false;
   }
 
@@ -266,7 +281,10 @@ function validateContextProvider(pluginName: string, provider: unknown): boolean
   }
 
   if (typeof prov.getContext !== "function") {
-    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: contextProvider.getContext must be a function`);
+    getSafeLogger()?.warn(
+      "plugins",
+      `Plugin '${pluginName}' validation failed: contextProvider.getContext must be a function`,
+    );
     return false;
   }
 
@@ -293,7 +311,10 @@ function validateReporter(pluginName: string, reporter: unknown): boolean {
   const eventHandlers = ["onRunStart", "onStoryComplete", "onRunEnd"];
   for (const handler of eventHandlers) {
     if (handler in rep && typeof rep[handler] !== "function") {
-      getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: reporter.${handler} must be a function`);
+      getSafeLogger()?.warn(
+        "plugins",
+        `Plugin '${pluginName}' validation failed: reporter.${handler} must be a function`,
+      );
       return false;
     }
   }

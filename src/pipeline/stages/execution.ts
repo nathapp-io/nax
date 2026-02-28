@@ -95,8 +95,7 @@ export const executionStage: PipelineStage = {
 
     // Three-session TDD path (respect tdd.enabled config)
     const isTddStrategy =
-      ctx.routing.testStrategy === "three-session-tdd" ||
-      ctx.routing.testStrategy === "three-session-tdd-lite";
+      ctx.routing.testStrategy === "three-session-tdd" || ctx.routing.testStrategy === "three-session-tdd-lite";
     const isLiteMode = ctx.routing.testStrategy === "three-session-tdd-lite";
 
     // TYPE-2 fix: TddConfig has no enabled field, removed dead code

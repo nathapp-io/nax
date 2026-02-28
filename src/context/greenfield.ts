@@ -15,11 +15,7 @@ import type { UserStory } from "../prd/types";
  * Ignores node_modules, dist, build, .next directories.
  * Throws error if root directory is unreadable.
  */
-async function scanForTestFiles(
-  dir: string,
-  testPattern: RegExp,
-  isRootCall = true,
-): Promise<string[]> {
+async function scanForTestFiles(dir: string, testPattern: RegExp, isRootCall = true): Promise<string[]> {
   const results: string[] = [];
   const ignoreDirs = new Set(["node_modules", "dist", "build", ".next", ".git"]);
 
@@ -67,7 +63,7 @@ function globToRegex(pattern: string): RegExp {
   const filePattern = parts[parts.length - 1];
 
   // Convert glob syntax to regex
-  let regexStr = filePattern
+  const regexStr = filePattern
     .replace(/\./g, "\\.") // Escape dots
     .replace(/\*/g, "[^/]*") // * = any chars except /
     .replace(/\{([^}]+)\}/g, (_, group) => `(${group.replace(/,/g, "|")})`) // {a,b} = (a|b)

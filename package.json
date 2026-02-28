@@ -11,11 +11,11 @@
     "build": "bun build bin/nax.ts --outdir dist --target bun",
     "typecheck": "bun x tsc --noEmit",
     "lint": "bun x biome check src/ bin/",
-    "test": "bun test --timeout=120000",
+    "test": "bun test --timeout=60000",
     "test:watch": "bun test --watch",
-    "test:unit": "bun test ./test/unit/ --timeout=120000",
-    "test:integration": "bun test ./test/integration/ --timeout=120000",
-    "test:ui": "bun test ./test/ui/ --timeout=120000"
+    "test:unit": "bun test ./test/unit/ --timeout=60000",
+    "test:integration": "bun test ./test/integration/ --timeout=60000",
+    "test:ui": "bun test ./test/ui/ --timeout=60000"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",

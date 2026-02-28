@@ -7,8 +7,8 @@
 import type { AgentAdapter } from "../agents/types";
 import { getSafeLogger } from "../logger";
 import type { RoutingStrategy } from "../routing/strategy";
-import type { IContextProvider, IPromptOptimizer, IReporter, IReviewPlugin, NaxPlugin } from "./types";
 import type { LoadedPlugin, PluginSource } from "./loader";
+import type { IContextProvider, IPromptOptimizer, IReporter, IReviewPlugin, NaxPlugin } from "./types";
 
 /**
  * Plugin registry with typed getters for each extension type.

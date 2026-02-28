@@ -1,5 +1,5 @@
-import { WorktreeManager } from "./manager";
 import type { UserStory } from "../prd/types";
+import type { WorktreeManager } from "./manager";
 
 export interface DispatchResult {
   storyId: string;
@@ -11,14 +11,10 @@ export interface DispatchResult {
 export class ParallelDispatcher {
   constructor(
     private worktreeManager: WorktreeManager,
-    private runPipeline: (args: { workdir: string; story: UserStory }) => Promise<boolean>
+    private runPipeline: (args: { workdir: string; story: UserStory }) => Promise<boolean>,
   ) {}
 
-  async dispatch(
-    projectRoot: string,
-    stories: UserStory[],
-    maxConcurrency: number
-  ): Promise<DispatchResult[]> {
+  async dispatch(projectRoot: string, stories: UserStory[], maxConcurrency: number): Promise<DispatchResult[]> {
     const results: DispatchResult[] = [];
     const independentBatches = this.getBatches(stories);
 
@@ -34,7 +30,7 @@ export class ParallelDispatcher {
             storyId: story.id,
             success: false,
             worktreePath,
-            error: err instanceof Error ? err.message : String(err)
+            error: err instanceof Error ? err.message : String(err),
           };
         }
       });
@@ -57,7 +53,10 @@ async function pLimit<T>(concurrency: number, promises: Promise<T>[]): Promise<T
   const results: T[] = [];
   const executing: Promise<void>[] = [];
   for (const p of promises) {
-    const e = p.then((r) => { results.push(r); executing.splice(executing.indexOf(e), 1); });
+    const e = p.then((r) => {
+      results.push(r);
+      executing.splice(executing.indexOf(e), 1);
+    });
     executing.push(e);
     if (executing.length >= concurrency) await Promise.race(executing);
   }

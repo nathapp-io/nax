@@ -5,8 +5,8 @@
  * Runs verification after the agent completes, reverts story state on failure.
  */
 
-import type { NaxConfig } from "../config";
 import { getAgent } from "../agents";
+import type { NaxConfig } from "../config";
 import { resolveModel } from "../config";
 import { getLogger, getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
@@ -15,9 +15,9 @@ import { getExpectedFiles, savePRD } from "../prd";
 import { captureGitRef } from "../utils/git";
 import { getTierConfig } from "./escalation";
 import { appendProgress } from "./progress";
-import { getEnvironmentalEscalationThreshold, parseTestOutput, runVerification } from "./verification";
+import { type RectificationState, createRectificationPrompt, shouldRetryRectification } from "./rectification";
 import { parseBunTestOutput } from "./test-output-parser";
-import { shouldRetryRectification, createRectificationPrompt, type RectificationState } from "./rectification";
+import { getEnvironmentalEscalationThreshold, parseTestOutput, runVerification } from "./verification";
 
 import { spawn } from "bun";
 
@@ -57,7 +57,6 @@ function scopeTestCommand(baseCommand: string, testFiles: string[]): string {
   if (testFiles.length === 0) return baseCommand;
   return `${baseCommand} ${testFiles.join(" ")}`;
 }
-
 
 export interface PostVerifyOptions {
   config: NaxConfig;
@@ -206,17 +205,17 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
           while (shouldRetryRectification(rectificationState, rectificationConfig)) {
             rectificationState.attempt++;
 
-            logger?.info("rectification", `Regression rectification attempt ${rectificationState.attempt}/${rectificationConfig.maxRetries}`, {
-              storyId: story.id,
-              currentFailures: rectificationState.currentFailures,
-            });
+            logger?.info(
+              "rectification",
+              `Regression rectification attempt ${rectificationState.attempt}/${rectificationConfig.maxRetries}`,
+              {
+                storyId: story.id,
+                currentFailures: rectificationState.currentFailures,
+              },
+            );
 
             // Build rectification prompt with REGRESSION: prefix
-            const basePrompt = createRectificationPrompt(
-              testSummary.failures,
-              story,
-              rectificationConfig,
-            );
+            const basePrompt = createRectificationPrompt(testSummary.failures, story, rectificationConfig);
             const regressionPrompt = `# REGRESSION: Cross-Story Test Failures
 
 Your changes passed scoped tests but broke unrelated tests. Fix these regressions.
@@ -291,7 +290,12 @@ ${basePrompt}`;
                 attempt: rectificationState.attempt,
                 previousFailures: testSummary.failed,
                 currentFailures: rectificationState.currentFailures,
-                progress: testSummary.failed > rectificationState.currentFailures ? "improved" : testSummary.failed < rectificationState.currentFailures ? "regressed" : "unchanged",
+                progress:
+                  testSummary.failed > rectificationState.currentFailures
+                    ? "improved"
+                    : testSummary.failed < rectificationState.currentFailures
+                      ? "regressed"
+                      : "unchanged",
               });
 
               // Update test summary for next iteration
@@ -328,7 +332,12 @@ ${basePrompt}`;
         const diagnosticContext = `REGRESSION: ${regressionResult.status}`;
         prd.userStories = prd.userStories.map((s) =>
           storyIds.has(s.id)
-            ? { ...s, priorErrors: [...(s.priorErrors || []), diagnosticContext], status: "pending" as const, passes: false }
+            ? {
+                ...s,
+                priorErrors: [...(s.priorErrors || []), diagnosticContext],
+                status: "pending" as const,
+                passes: false,
+              }
             : s,
         );
 
@@ -389,17 +398,17 @@ ${basePrompt}`;
     while (shouldRetryRectification(rectificationState, rectificationConfig)) {
       rectificationState.attempt++;
 
-      logger?.info("rectification", `Rectification attempt ${rectificationState.attempt}/${rectificationConfig.maxRetries}`, {
-        storyId: story.id,
-        currentFailures: rectificationState.currentFailures,
-      });
+      logger?.info(
+        "rectification",
+        `Rectification attempt ${rectificationState.attempt}/${rectificationConfig.maxRetries}`,
+        {
+          storyId: story.id,
+          currentFailures: rectificationState.currentFailures,
+        },
+      );
 
       // Build rectification prompt with failure context
-      const rectificationPrompt = createRectificationPrompt(
-        testSummary.failures,
-        story,
-        rectificationConfig,
-      );
+      const rectificationPrompt = createRectificationPrompt(testSummary.failures, story, rectificationConfig);
 
       // Get agent and run with rectification prompt
       const agent = getAgent(config.autoMode.defaultAgent);
@@ -469,7 +478,12 @@ ${basePrompt}`;
           attempt: rectificationState.attempt,
           previousFailures: testSummary.failed,
           currentFailures: rectificationState.currentFailures,
-          progress: testSummary.failed > rectificationState.currentFailures ? "improved" : testSummary.failed < rectificationState.currentFailures ? "regressed" : "unchanged",
+          progress:
+            testSummary.failed > rectificationState.currentFailures
+              ? "improved"
+              : testSummary.failed < rectificationState.currentFailures
+                ? "regressed"
+                : "unchanged",
         });
 
         // Update test summary for next iteration

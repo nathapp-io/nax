@@ -161,9 +161,7 @@ export function formatFailureSummary(failures: TestFailure[], maxChars = 2000): 
     const errorLine = `   Error: ${failure.error}`;
 
     // Add first stack trace line if available
-    const stackLine = failure.stackTrace.length > 0
-      ? `   ${failure.stackTrace[0]}`
-      : "";
+    const stackLine = failure.stackTrace.length > 0 ? `   ${failure.stackTrace[0]}` : "";
 
     const blockLines = [header, errorLine];
     if (stackLine) {

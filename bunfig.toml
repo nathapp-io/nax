@@ -1,0 +1,8 @@
+# Bun Test Configuration
+
+[test]
+# Global test timeout: 30 seconds per test (unit/integration)
+# This prevents individual tests from hanging indefinitely
+timeout = 30000
+
+# Note: E2E tests may override this with longer timeouts using test options

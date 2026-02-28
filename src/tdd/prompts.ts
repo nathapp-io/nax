@@ -1,8 +1,8 @@
-import type { UserStory } from "../prd";
-import type { TddSessionRole } from "./types";
-import type { TestFailure } from "../execution/test-output-parser";
 import type { RectificationConfig } from "../config";
 import { createRectificationPrompt } from "../execution/rectification";
+import type { TestFailure } from "../execution/test-output-parser";
+import type { UserStory } from "../prd";
+import type { TddSessionRole } from "./types";
 
 /**
  * Prompt to build the TDD agent's role definition

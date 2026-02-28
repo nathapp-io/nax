@@ -38,8 +38,8 @@
  */
 
 import { existsSync, mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import chalk from "chalk";
 import { Command } from "commander";
 
@@ -48,18 +48,18 @@ import {
   acceptCommand,
   analyzeFeature,
   displayCostMetrics,
+  displayFeatureStatus,
   displayLastRunMetrics,
   displayModelEfficiency,
-  displayFeatureStatus,
   planCommand,
   pluginsListCommand,
   promptsCommand,
   runsListCommand,
   runsShowCommand,
 } from "../src/cli";
+import { diagnose } from "../src/commands/diagnose";
 import { logsCommand } from "../src/commands/logs";
 import { precheckCommand } from "../src/commands/precheck";
-import { diagnose } from "../src/commands/diagnose";
 import { DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from "../src/config";
 import { run } from "../src/execution";
 import { loadHooksConfig } from "../src/hooks";

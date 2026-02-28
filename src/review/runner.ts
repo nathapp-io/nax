@@ -5,8 +5,8 @@
  */
 
 import { spawn } from "bun";
-import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
 import type { ExecutionConfig } from "../config/schema";
+import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
 
 /** Default commands for each check type */
 const DEFAULT_COMMANDS: Record<ReviewCheckName, string> = {

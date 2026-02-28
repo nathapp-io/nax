@@ -246,7 +246,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     // Prefixed vars (CLAUDE_*, NAX_*, CLAW_*, TURBO_*)
     const allowedPrefixes = ["CLAUDE_", "NAX_", "CLAW_", "TURBO_"];
     for (const [key, value] of Object.entries(process.env)) {
-      if (allowedPrefixes.some(prefix => key.startsWith(prefix))) {
+      if (allowedPrefixes.some((prefix) => key.startsWith(prefix))) {
         allowed[key] = value;
       }
     }

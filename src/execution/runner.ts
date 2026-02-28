@@ -15,15 +15,10 @@ import { convertFixStoryToUserStory, generateFixStories } from "../acceptance";
 import { getAgent } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config/schema";
-import {
-  AgentNotFoundError,
-  AgentNotInstalledError,
-  LockAcquisitionError,
-  StoryLimitExceededError,
-} from "../errors";
+import { AgentNotFoundError, AgentNotInstalledError, LockAcquisitionError, StoryLimitExceededError } from "../errors";
 import { type LoadedHooksConfig, fireHook } from "../hooks";
 import { getLogger, getSafeLogger } from "../logger";
-import { formatRunSummary, type RunSummary } from "../logging";
+import { type RunSummary, formatRunSummary } from "../logging";
 import { type StoryMetrics, saveRunMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import { runPipeline } from "../pipeline/runner";
@@ -40,8 +35,8 @@ import {
   loadPRD,
   markStoryAsBlocked,
   markStoryFailed,
-  markStoryPaused,
   markStoryPassed,
+  markStoryPaused,
   savePRD,
 } from "../prd";
 import type { UserStory } from "../prd";
@@ -50,19 +45,14 @@ import { clearCache as clearLlmCache, routeBatch as llmRouteBatch } from "../rou
 import type { FailureCategory } from "../tdd/types";
 import { captureGitRef, hasCommitsForStory } from "../utils/git";
 import { type StoryBatch, precomputeBatchPlan } from "./batching";
+import { installCrashHandlers, startHeartbeat, stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "./escalation";
 import { acquireLock, formatProgress, getAllReadyStories, hookCtx, releaseLock } from "./helpers";
+import { executeParallel } from "./parallel";
+import { PidRegistry } from "./pid-registry";
 import { runPostAgentVerification } from "./post-verify";
 import { appendProgress } from "./progress";
 import { StatusWriter } from "./status-writer";
-import { executeParallel } from "./parallel";
-import {
-  installCrashHandlers,
-  startHeartbeat,
-  stopHeartbeat,
-  writeExitSummary,
-} from "./crash-recovery";
-import { PidRegistry } from "./pid-registry";
 
 /**
  * Determine the outcome when max attempts are reached for an escalation.
@@ -180,7 +170,23 @@ export interface RunResult {
  * Main execution loop
  */
 export async function run(options: RunOptions): Promise<RunResult> {
-  const { prdPath, workdir, config, hooks, feature, featureDir, dryRun, useBatch = true, eventEmitter, statusFile, parallel, logFilePath, formatterMode = "normal", headless = false, skipPrecheck = false } = options;
+  const {
+    prdPath,
+    workdir,
+    config,
+    hooks,
+    feature,
+    featureDir,
+    dryRun,
+    useBatch = true,
+    eventEmitter,
+    statusFile,
+    parallel,
+    logFilePath,
+    formatterMode = "normal",
+    headless = false,
+    skipPrecheck = false,
+  } = options;
   const startTime = Date.now();
   const runStartedAt = new Date().toISOString();
   const runId = `run-${new Date().toISOString().replace(/[:.]/g, "-")}`;
@@ -193,7 +199,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   // Determine parallel execution mode
   const useParallel = parallel !== undefined;
-  const maxConcurrency = parallel === 0 ? (os.cpus().length || 4) : (parallel ?? 0);
+  const maxConcurrency = parallel === 0 ? os.cpus().length || 4 : (parallel ?? 0);
 
   // ── Status writer (encapsulates status file state and write logic) ───────
   const statusWriter = new StatusWriter(statusFile, config, {
@@ -246,7 +252,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     const { runPrecheck } = await import("../precheck");
     const precheckResult = await runPrecheck(config, prd, {
       workdir,
-      format: "human"
+      format: "human",
     });
 
     // Log precheck results to JSONL (US-004 AC5)
@@ -260,18 +266,18 @@ export async function run(options: RunOptions): Promise<RunResult> {
         type: "precheck",
         timestamp: new Date().toISOString(),
         passed: precheckResult.output.passed,
-        blockers: precheckResult.output.blockers.map(b => ({ name: b.name, message: b.message })),
-        warnings: precheckResult.output.warnings.map(w => ({ name: w.name, message: w.message })),
+        blockers: precheckResult.output.blockers.map((b) => ({ name: b.name, message: b.message })),
+        warnings: precheckResult.output.warnings.map((w) => ({ name: w.name, message: w.message })),
         summary: precheckResult.output.summary,
       };
-      appendFileSync(logFilePath, JSON.stringify(precheckLog) + "\n", "utf8");
+      appendFileSync(logFilePath, `${JSON.stringify(precheckLog)}\n`, "utf8");
     }
 
     // If there are blockers (Tier 1 failures), abort the run
     if (!precheckResult.output.passed) {
       logger?.error("precheck", "Precheck failed - execution blocked", {
         blockers: precheckResult.output.blockers.length,
-        failedChecks: precheckResult.output.blockers.map(b => b.name),
+        failedChecks: precheckResult.output.blockers.map((b) => b.name),
       });
 
       // Update status file with precheck-failed status (US-004 AC6)
@@ -291,14 +297,14 @@ export async function run(options: RunOptions): Promise<RunResult> {
       console.error(chalk.yellow("\nRun 'nax precheck' for detailed information"));
       console.error(chalk.dim("Use --skip-precheck to bypass (not recommended)\n"));
 
-      throw new Error(`Precheck failed: ${precheckResult.output.blockers.map(b => b.name).join(", ")}`);
+      throw new Error(`Precheck failed: ${precheckResult.output.blockers.map((b) => b.name).join(", ")}`);
     }
 
     // Log warnings (Tier 2) but continue execution
     if (precheckResult.output.warnings.length > 0) {
       logger?.warn("precheck", "Precheck passed with warnings", {
         warnings: precheckResult.output.warnings.length,
-        issues: precheckResult.output.warnings.map(w => w.name),
+        issues: precheckResult.output.warnings.map((w) => w.name),
       });
 
       if (headless && formatterMode !== "json") {
@@ -658,7 +664,13 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
         // Filter out already-completed stories (may have been completed in previous iteration)
         storiesToExecute = batch.stories.filter(
-          (s) => !s.passes && s.status !== "passed" && s.status !== "skipped" && s.status !== "blocked" && s.status !== "failed" && s.status !== "paused",
+          (s) =>
+            !s.passes &&
+            s.status !== "passed" &&
+            s.status !== "skipped" &&
+            s.status !== "blocked" &&
+            s.status !== "failed" &&
+            s.status !== "paused",
         );
         isBatchExecution = batch.isBatch && storiesToExecute.length > 1;
 
@@ -1214,7 +1226,12 @@ export async function run(options: RunOptions): Promise<RunResult> {
                   });
 
                   if (featureDir) {
-                    await appendProgress(featureDir, story.id, "paused", `${story.title} — Max attempts reached (needs human review)`);
+                    await appendProgress(
+                      featureDir,
+                      story.id,
+                      "paused",
+                      `${story.title} — Max attempts reached (needs human review)`,
+                    );
                   }
 
                   await fireHook(
@@ -1271,7 +1288,12 @@ export async function run(options: RunOptions): Promise<RunResult> {
                 });
 
                 if (featureDir) {
-                  await appendProgress(featureDir, story.id, "paused", `${story.title} — Execution stopped (needs human review)`);
+                  await appendProgress(
+                    featureDir,
+                    story.id,
+                    "paused",
+                    `${story.title} — Execution stopped (needs human review)`,
+                  );
                 }
 
                 await fireHook(

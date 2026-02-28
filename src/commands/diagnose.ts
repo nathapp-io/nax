@@ -13,5 +13,5 @@ import type { DiagnoseOptions } from "../cli/diagnose";
  * @param options - Command options from commander
  */
 export async function diagnose(options: DiagnoseOptions): Promise<void> {
-	await diagnoseCommand(options);
+  await diagnoseCommand(options);
 }

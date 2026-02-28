@@ -265,7 +265,7 @@ export function routeTask(
   title: string,
   description: string,
   acceptanceCriteria: string[],
-  tags: string[] = [],
+  tags: string[],
   config: NaxConfig,
 ): RoutingDecision {
   const complexity = classifyComplexity(title, description, acceptanceCriteria, tags);
@@ -298,7 +298,6 @@ export function routeTask(
     complexity,
     modelTier,
     testStrategy,
-    reasoning:
-      reasons.length > 0 ? `${prefix}: ${reasons.join(", ")}` : `test-after: simple task (${complexity})`,
+    reasoning: reasons.length > 0 ? `${prefix}: ${reasons.join(", ")}` : `test-after: simple task (${complexity})`,
   };
 }

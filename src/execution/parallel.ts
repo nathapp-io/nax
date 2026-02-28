@@ -9,21 +9,21 @@
  * 5. Cleans up worktrees on success, preserves on failure
  */
 
-import { join } from "node:path";
 import os from "node:os";
-import { WorktreeManager } from "../worktree/manager";
-import { MergeEngine, type StoryDependencies } from "../worktree/merge";
-import { getSafeLogger } from "../logger";
-import type { PRD, UserStory } from "../prd";
-import { markStoryPassed, markStoryFailed, savePRD } from "../prd";
-import type { PipelineContext, RoutingResult } from "../pipeline/types";
-import { runPipeline } from "../pipeline/runner";
-import { defaultPipeline } from "../pipeline/stages";
+import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
-import type { PluginRegistry } from "../plugins/registry";
+import { getSafeLogger } from "../logger";
 import type { PipelineEventEmitter } from "../pipeline/events";
+import { runPipeline } from "../pipeline/runner";
+import { defaultPipeline } from "../pipeline/stages";
+import type { PipelineContext, RoutingResult } from "../pipeline/types";
+import type { PluginRegistry } from "../plugins/registry";
+import type { PRD, UserStory } from "../prd";
+import { markStoryFailed, markStoryPassed, savePRD } from "../prd";
 import { routeTask } from "../routing";
+import { WorktreeManager } from "../worktree/manager";
+import { MergeEngine, type StoryDependencies } from "../worktree/merge";
 
 /**
  * Result from parallel execution of a batch of stories
@@ -288,7 +288,7 @@ export async function executeParallel(
 
   let storiesCompleted = 0;
   let totalCost = 0;
-  let currentPrd = prd;
+  const currentPrd = prd;
 
   // Execute each batch sequentially (stories within each batch run in parallel)
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {

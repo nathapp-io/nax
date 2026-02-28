@@ -1,4 +1,4 @@
 export interface WorktreeInfo {
-	path: string;
-	branch: string;
+  path: string;
+  branch: string;
 }

@@ -5,9 +5,9 @@
  */
 
 import { existsSync, statSync } from "node:fs";
-import type { Check } from "./types";
 import type { NaxConfig } from "../config";
 import type { PRD } from "../prd/types";
+import type { Check } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tier 1 Blockers
@@ -18,32 +18,32 @@ import type { PRD } from "../prd/types";
  * Uses: git rev-parse --git-dir
  */
 export async function checkGitRepoExists(workdir: string): Promise<Check> {
-	// First try git rev-parse command
-	const proc = Bun.spawn(["git", "rev-parse", "--git-dir"], {
-		cwd: workdir,
-		stdout: "pipe",
-		stderr: "pipe",
-	});
+  // First try git rev-parse command
+  const proc = Bun.spawn(["git", "rev-parse", "--git-dir"], {
+    cwd: workdir,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
 
-	const exitCode = await proc.exited;
-	let passed = exitCode === 0;
+  const exitCode = await proc.exited;
+  let passed = exitCode === 0;
 
-	// Fallback: if git command fails, check if .git directory exists
-	// This handles test scenarios where .git exists but isn't fully initialized
-	if (!passed) {
-		const gitDir = `${workdir}/.git`;
-		if (existsSync(gitDir)) {
-			const stats = statSync(gitDir);
-			passed = stats.isDirectory();
-		}
-	}
+  // Fallback: if git command fails, check if .git directory exists
+  // This handles test scenarios where .git exists but isn't fully initialized
+  if (!passed) {
+    const gitDir = `${workdir}/.git`;
+    if (existsSync(gitDir)) {
+      const stats = statSync(gitDir);
+      passed = stats.isDirectory();
+    }
+  }
 
-	return {
-		name: "git-repo-exists",
-		tier: "blocker",
-		passed,
-		message: passed ? "git repository detected" : "not a git repository",
-	};
+  return {
+    name: "git-repo-exists",
+    tier: "blocker",
+    passed,
+    message: passed ? "git repository detected" : "not a git repository",
+  };
 }
 
 /**
@@ -51,78 +51,78 @@ export async function checkGitRepoExists(workdir: string): Promise<Check> {
  * Uses: git status --porcelain
  */
 export async function checkWorkingTreeClean(workdir: string): Promise<Check> {
-	const proc = Bun.spawn(["git", "status", "--porcelain"], {
-		cwd: workdir,
-		stdout: "pipe",
-		stderr: "pipe",
-	});
+  const proc = Bun.spawn(["git", "status", "--porcelain"], {
+    cwd: workdir,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
 
-	const output = await new Response(proc.stdout).text();
-	const exitCode = await proc.exited;
-	const passed = exitCode === 0 && output.trim() === "";
+  const output = await new Response(proc.stdout).text();
+  const exitCode = await proc.exited;
+  const passed = exitCode === 0 && output.trim() === "";
 
-	return {
-		name: "working-tree-clean",
-		tier: "blocker",
-		passed,
-		message: passed ? "Working tree is clean" : "Uncommitted changes detected",
-	};
+  return {
+    name: "working-tree-clean",
+    tier: "blocker",
+    passed,
+    message: passed ? "Working tree is clean" : "Uncommitted changes detected",
+  };
 }
 
 /**
  * Check if nax.lock is older than 2 hours.
  */
 export async function checkStaleLock(workdir: string): Promise<Check> {
-	const lockPath = `${workdir}/nax.lock`;
-	const exists = existsSync(lockPath);
+  const lockPath = `${workdir}/nax.lock`;
+  const exists = existsSync(lockPath);
 
-	if (!exists) {
-		return {
-			name: "no-stale-lock",
-			tier: "blocker",
-			passed: true,
-			message: "No lock file present",
-		};
-	}
+  if (!exists) {
+    return {
+      name: "no-stale-lock",
+      tier: "blocker",
+      passed: true,
+      message: "No lock file present",
+    };
+  }
 
-	try {
-		const file = Bun.file(lockPath);
-		const content = await file.text();
-		const lockData = JSON.parse(content);
+  try {
+    const file = Bun.file(lockPath);
+    const content = await file.text();
+    const lockData = JSON.parse(content);
 
-		// Support both timestamp (ms) and startedAt (ISO string) formats
-		let lockTimeMs: number;
-		if (lockData.timestamp) {
-			lockTimeMs = lockData.timestamp;
-		} else if (lockData.startedAt) {
-			lockTimeMs = new Date(lockData.startedAt).getTime();
-		} else {
-			// Fallback to file mtime if no timestamp in JSON
-			const stat = statSync(lockPath);
-			lockTimeMs = stat.mtimeMs;
-		}
+    // Support both timestamp (ms) and startedAt (ISO string) formats
+    let lockTimeMs: number;
+    if (lockData.timestamp) {
+      lockTimeMs = lockData.timestamp;
+    } else if (lockData.startedAt) {
+      lockTimeMs = new Date(lockData.startedAt).getTime();
+    } else {
+      // Fallback to file mtime if no timestamp in JSON
+      const stat = statSync(lockPath);
+      lockTimeMs = stat.mtimeMs;
+    }
 
-		const ageMs = Date.now() - lockTimeMs;
-		const twoHoursMs = 2 * 60 * 60 * 1000;
-		const passed = ageMs < twoHoursMs;
+    const ageMs = Date.now() - lockTimeMs;
+    const twoHoursMs = 2 * 60 * 60 * 1000;
+    const passed = ageMs < twoHoursMs;
 
-		const ageMinutes = Math.floor(ageMs / 60000);
-		const ageHours = Math.floor(ageMinutes / 60);
+    const ageMinutes = Math.floor(ageMs / 60000);
+    const ageHours = Math.floor(ageMinutes / 60);
 
-		return {
-			name: "no-stale-lock",
-			tier: "blocker",
-			passed,
-			message: passed ? "Lock file is fresh" : `stale lock detected (over 2 hours old)`,
-		};
-	} catch (error) {
-		return {
-			name: "no-stale-lock",
-			tier: "blocker",
-			passed: false,
-			message: "Failed to read lock file",
-		};
-	}
+    return {
+      name: "no-stale-lock",
+      tier: "blocker",
+      passed,
+      message: passed ? "Lock file is fresh" : "stale lock detected (over 2 hours old)",
+    };
+  } catch (error) {
+    return {
+      name: "no-stale-lock",
+      tier: "blocker",
+      passed: false,
+      message: "Failed to read lock file",
+    };
+  }
 }
 
 /**
@@ -130,52 +130,52 @@ export async function checkStaleLock(workdir: string): Promise<Check> {
  * Auto-defaults: tags=[], status=pending, storyPoints=1
  */
 export async function checkPRDValid(prd: PRD): Promise<Check> {
-	const errors: string[] = [];
+  const errors: string[] = [];
 
-	// Validate required PRD fields
-	if (!prd.project || prd.project.trim() === "") {
-		errors.push("Missing project field");
-	}
-	if (!prd.feature || prd.feature.trim() === "") {
-		errors.push("Missing feature field");
-	}
-	if (!prd.branchName || prd.branchName.trim() === "") {
-		errors.push("Missing branchName field");
-	}
-	if (!Array.isArray(prd.userStories)) {
-		errors.push("userStories must be an array");
-	}
+  // Validate required PRD fields
+  if (!prd.project || prd.project.trim() === "") {
+    errors.push("Missing project field");
+  }
+  if (!prd.feature || prd.feature.trim() === "") {
+    errors.push("Missing feature field");
+  }
+  if (!prd.branchName || prd.branchName.trim() === "") {
+    errors.push("Missing branchName field");
+  }
+  if (!Array.isArray(prd.userStories)) {
+    errors.push("userStories must be an array");
+  }
 
-	// Validate each story
-	if (Array.isArray(prd.userStories)) {
-		for (const story of prd.userStories) {
-			// Auto-default optional fields in-memory (don't modify the PRD)
-			story.tags = story.tags ?? [];
-			story.status = story.status ?? "pending";
-			story.storyPoints = story.storyPoints ?? 1;
-			story.acceptanceCriteria = story.acceptanceCriteria ?? [];
+  // Validate each story
+  if (Array.isArray(prd.userStories)) {
+    for (const story of prd.userStories) {
+      // Auto-default optional fields in-memory (don't modify the PRD)
+      story.tags = story.tags ?? [];
+      story.status = story.status ?? "pending";
+      story.storyPoints = story.storyPoints ?? 1;
+      story.acceptanceCriteria = story.acceptanceCriteria ?? [];
 
-			// Validate required fields
-			if (!story.id || story.id.trim() === "") {
-				errors.push(`Story missing id: ${JSON.stringify(story).slice(0, 50)}`);
-			}
-			if (!story.title || story.title.trim() === "") {
-				errors.push(`Story ${story.id} missing title`);
-			}
-			if (!story.description || story.description.trim() === "") {
-				errors.push(`Story ${story.id} missing description`);
-			}
-		}
-	}
+      // Validate required fields
+      if (!story.id || story.id.trim() === "") {
+        errors.push(`Story missing id: ${JSON.stringify(story).slice(0, 50)}`);
+      }
+      if (!story.title || story.title.trim() === "") {
+        errors.push(`Story ${story.id} missing title`);
+      }
+      if (!story.description || story.description.trim() === "") {
+        errors.push(`Story ${story.id} missing description`);
+      }
+    }
+  }
 
-	const passed = errors.length === 0;
+  const passed = errors.length === 0;
 
-	return {
-		name: "prd-valid",
-		tier: "blocker",
-		passed,
-		message: passed ? "PRD structure is valid" : errors.join("; "),
-	};
+  return {
+    name: "prd-valid",
+    tier: "blocker",
+    passed,
+    message: passed ? "PRD structure is valid" : errors.join("; "),
+  };
 }
 
 /**
@@ -183,20 +183,20 @@ export async function checkPRDValid(prd: PRD): Promise<Check> {
  * Uses: claude --version
  */
 export async function checkClaudeCLI(): Promise<Check> {
-	const proc = Bun.spawn(["claude", "--version"], {
-		stdout: "pipe",
-		stderr: "pipe",
-	});
+  const proc = Bun.spawn(["claude", "--version"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
 
-	const exitCode = await proc.exited;
-	const passed = exitCode === 0;
+  const exitCode = await proc.exited;
+  const passed = exitCode === 0;
 
-	return {
-		name: "claude-cli-available",
-		tier: "blocker",
-		passed,
-		message: passed ? "Claude CLI is available" : "Claude CLI not found",
-	};
+  return {
+    name: "claude-cli-available",
+    tier: "blocker",
+    passed,
+    message: passed ? "Claude CLI is available" : "Claude CLI not found",
+  };
 }
 
 /**
@@ -204,34 +204,34 @@ export async function checkClaudeCLI(): Promise<Check> {
  * Detects: node_modules, target, venv, vendor
  */
 export async function checkDependenciesInstalled(workdir: string): Promise<Check> {
-	const depPaths = [
-		{ path: "node_modules" },
-		{ path: "target" },
-		{ path: "venv" },
-		{ path: ".venv" },
-		{ path: "vendor" },
-	];
+  const depPaths = [
+    { path: "node_modules" },
+    { path: "target" },
+    { path: "venv" },
+    { path: ".venv" },
+    { path: "vendor" },
+  ];
 
-	const found: string[] = [];
-	for (const { path } of depPaths) {
-		const fullPath = `${workdir}/${path}`;
-		// Check if it exists and is a directory
-		if (existsSync(fullPath)) {
-			const stats = statSync(fullPath);
-			if (stats.isDirectory()) {
-				found.push(path);
-			}
-		}
-	}
+  const found: string[] = [];
+  for (const { path } of depPaths) {
+    const fullPath = `${workdir}/${path}`;
+    // Check if it exists and is a directory
+    if (existsSync(fullPath)) {
+      const stats = statSync(fullPath);
+      if (stats.isDirectory()) {
+        found.push(path);
+      }
+    }
+  }
 
-	const passed = found.length > 0;
+  const passed = found.length > 0;
 
-	return {
-		name: "dependencies-installed",
-		tier: "blocker",
-		passed,
-		message: passed ? `Dependencies found: ${found.join(", ")}` : "No dependency directories detected",
-	};
+  return {
+    name: "dependencies-installed",
+    tier: "blocker",
+    passed,
+    message: passed ? `Dependencies found: ${found.join(", ")}` : "No dependency directories detected",
+  };
 }
 
 /**
@@ -239,46 +239,46 @@ export async function checkDependenciesInstalled(workdir: string): Promise<Check
  * Skips silently if command is null/false.
  */
 export async function checkTestCommand(config: NaxConfig): Promise<Check> {
-	// Try multiple possible locations for testCommand
-	const testCommand = (config.execution as any).testCommand || config.quality?.commands?.test;
+  // Try multiple possible locations for testCommand
+  const testCommand = (config.execution as any).testCommand || config.quality?.commands?.test;
 
-	// Skip if explicitly disabled or not configured
-	if (!testCommand || testCommand === null || testCommand === false) {
-		return {
-			name: "test-command-works",
-			tier: "blocker",
-			passed: true,
-			message: "Test command not configured (skipped)",
-		};
-	}
+  // Skip if explicitly disabled or not configured
+  if (!testCommand || testCommand === null || testCommand === false) {
+    return {
+      name: "test-command-works",
+      tier: "blocker",
+      passed: true,
+      message: "Test command not configured (skipped)",
+    };
+  }
 
-	// Parse command and args
-	const parts = testCommand.split(" ");
-	const [cmd, ...args] = parts;
+  // Parse command and args
+  const parts = testCommand.split(" ");
+  const [cmd, ...args] = parts;
 
-	try {
-		const proc = Bun.spawn([cmd, ...args, "--help"], {
-			stdout: "pipe",
-			stderr: "pipe",
-		});
+  try {
+    const proc = Bun.spawn([cmd, ...args, "--help"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
 
-		const exitCode = await proc.exited;
-		const passed = exitCode === 0;
+    const exitCode = await proc.exited;
+    const passed = exitCode === 0;
 
-		return {
-			name: "test-command-works",
-			tier: "blocker",
-			passed,
-			message: passed ? "Test command is available" : `Test command failed: ${testCommand}`,
-		};
-	} catch (error) {
-		return {
-			name: "test-command-works",
-			tier: "blocker",
-			passed: false,
-			message: `Test command failed: ${testCommand}`,
-		};
-	}
+    return {
+      name: "test-command-works",
+      tier: "blocker",
+      passed,
+      message: passed ? "Test command is available" : `Test command failed: ${testCommand}`,
+    };
+  } catch (error) {
+    return {
+      name: "test-command-works",
+      tier: "blocker",
+      passed: false,
+      message: `Test command failed: ${testCommand}`,
+    };
+  }
 }
 
 /**
@@ -286,45 +286,45 @@ export async function checkTestCommand(config: NaxConfig): Promise<Check> {
  * Skips silently if command is null/false.
  */
 export async function checkLintCommand(config: NaxConfig): Promise<Check> {
-	const lintCommand = config.execution.lintCommand || (config.execution as any).lintCommand;
+  const lintCommand = config.execution.lintCommand || (config.execution as any).lintCommand;
 
-	// Skip if explicitly disabled or not configured
-	if (!lintCommand || lintCommand === null || lintCommand === false) {
-		return {
-			name: "lint-command-works",
-			tier: "blocker",
-			passed: true,
-			message: "Lint command not configured (skipped)",
-		};
-	}
+  // Skip if explicitly disabled or not configured
+  if (!lintCommand || lintCommand === null || lintCommand === false) {
+    return {
+      name: "lint-command-works",
+      tier: "blocker",
+      passed: true,
+      message: "Lint command not configured (skipped)",
+    };
+  }
 
-	// Parse command and args
-	const parts = lintCommand.split(" ");
-	const [cmd, ...args] = parts;
+  // Parse command and args
+  const parts = lintCommand.split(" ");
+  const [cmd, ...args] = parts;
 
-	try {
-		const proc = Bun.spawn([cmd, ...args, "--help"], {
-			stdout: "pipe",
-			stderr: "pipe",
-		});
+  try {
+    const proc = Bun.spawn([cmd, ...args, "--help"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
 
-		const exitCode = await proc.exited;
-		const passed = exitCode === 0;
+    const exitCode = await proc.exited;
+    const passed = exitCode === 0;
 
-		return {
-			name: "lint-command-works",
-			tier: "blocker",
-			passed,
-			message: passed ? "Lint command is available" : `Lint command failed: ${lintCommand}`,
-		};
-	} catch (error) {
-		return {
-			name: "lint-command-works",
-			tier: "blocker",
-			passed: false,
-			message: `Lint command failed: ${lintCommand}`,
-		};
-	}
+    return {
+      name: "lint-command-works",
+      tier: "blocker",
+      passed,
+      message: passed ? "Lint command is available" : `Lint command failed: ${lintCommand}`,
+    };
+  } catch (error) {
+    return {
+      name: "lint-command-works",
+      tier: "blocker",
+      passed: false,
+      message: `Lint command failed: ${lintCommand}`,
+    };
+  }
 }
 
 /**
@@ -332,81 +332,81 @@ export async function checkLintCommand(config: NaxConfig): Promise<Check> {
  * Skips silently if command is null/false.
  */
 export async function checkTypecheckCommand(config: NaxConfig): Promise<Check> {
-	const typecheckCommand = config.execution.typecheckCommand || (config.execution as any).typecheckCommand;
+  const typecheckCommand = config.execution.typecheckCommand || (config.execution as any).typecheckCommand;
 
-	// Skip if explicitly disabled or not configured
-	if (!typecheckCommand || typecheckCommand === null || typecheckCommand === false) {
-		return {
-			name: "typecheck-command-works",
-			tier: "blocker",
-			passed: true,
-			message: "Typecheck command not configured (skipped)",
-		};
-	}
+  // Skip if explicitly disabled or not configured
+  if (!typecheckCommand || typecheckCommand === null || typecheckCommand === false) {
+    return {
+      name: "typecheck-command-works",
+      tier: "blocker",
+      passed: true,
+      message: "Typecheck command not configured (skipped)",
+    };
+  }
 
-	// Parse command and args
-	const parts = typecheckCommand.split(" ");
-	const [cmd, ...args] = parts;
+  // Parse command and args
+  const parts = typecheckCommand.split(" ");
+  const [cmd, ...args] = parts;
 
-	try {
-		const proc = Bun.spawn([cmd, ...args, "--help"], {
-			stdout: "pipe",
-			stderr: "pipe",
-		});
+  try {
+    const proc = Bun.spawn([cmd, ...args, "--help"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
 
-		const exitCode = await proc.exited;
-		const passed = exitCode === 0;
+    const exitCode = await proc.exited;
+    const passed = exitCode === 0;
 
-		return {
-			name: "typecheck-command-works",
-			tier: "blocker",
-			passed,
-			message: passed ? "Typecheck command is available" : `Typecheck command failed: ${typecheckCommand}`,
-		};
-	} catch (error) {
-		return {
-			name: "typecheck-command-works",
-			tier: "blocker",
-			passed: false,
-			message: `Typecheck command failed: ${typecheckCommand}`,
-		};
-	}
+    return {
+      name: "typecheck-command-works",
+      tier: "blocker",
+      passed,
+      message: passed ? "Typecheck command is available" : `Typecheck command failed: ${typecheckCommand}`,
+    };
+  } catch (error) {
+    return {
+      name: "typecheck-command-works",
+      tier: "blocker",
+      passed: false,
+      message: `Typecheck command failed: ${typecheckCommand}`,
+    };
+  }
 }
 
 /**
  * Check if git user is configured.
  */
 export async function checkGitUserConfigured(workdir?: string): Promise<Check> {
-	const spawnOptions = {
-		stdout: "pipe" as const,
-		stderr: "pipe" as const,
-		...(workdir && { cwd: workdir }),
-	};
+  const spawnOptions = {
+    stdout: "pipe" as const,
+    stderr: "pipe" as const,
+    ...(workdir && { cwd: workdir }),
+  };
 
-	const nameProc = Bun.spawn(["git", "config", "user.name"], spawnOptions);
-	const emailProc = Bun.spawn(["git", "config", "user.email"], spawnOptions);
+  const nameProc = Bun.spawn(["git", "config", "user.name"], spawnOptions);
+  const emailProc = Bun.spawn(["git", "config", "user.email"], spawnOptions);
 
-	const nameOutput = await new Response(nameProc.stdout).text();
-	const emailOutput = await new Response(emailProc.stdout).text();
-	const nameExitCode = await nameProc.exited;
-	const emailExitCode = await emailProc.exited;
+  const nameOutput = await new Response(nameProc.stdout).text();
+  const emailOutput = await new Response(emailProc.stdout).text();
+  const nameExitCode = await nameProc.exited;
+  const emailExitCode = await emailProc.exited;
 
-	const hasName = nameExitCode === 0 && nameOutput.trim() !== "";
-	const hasEmail = emailExitCode === 0 && emailOutput.trim() !== "";
-	const passed = hasName && hasEmail;
+  const hasName = nameExitCode === 0 && nameOutput.trim() !== "";
+  const hasEmail = emailExitCode === 0 && emailOutput.trim() !== "";
+  const passed = hasName && hasEmail;
 
-	return {
-		name: "git-user-configured",
-		tier: "blocker",
-		passed,
-		message: passed
-			? "Git user is configured"
-			: !hasName && !hasEmail
-				? "Git user.name and user.email not configured"
-				: !hasName
-					? "Git user.name not configured"
-					: "Git user.email not configured",
-	};
+  return {
+    name: "git-user-configured",
+    tier: "blocker",
+    passed,
+    message: passed
+      ? "Git user is configured"
+      : !hasName && !hasEmail
+        ? "Git user.name and user.email not configured"
+        : !hasName
+          ? "Git user.name not configured"
+          : "Git user.email not configured",
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -417,98 +417,100 @@ export async function checkGitUserConfigured(workdir?: string): Promise<Check> {
  * Check if CLAUDE.md exists.
  */
 export async function checkClaudeMdExists(workdir: string): Promise<Check> {
-	const claudeMdPath = `${workdir}/CLAUDE.md`;
-	const passed = existsSync(claudeMdPath);
+  const claudeMdPath = `${workdir}/CLAUDE.md`;
+  const passed = existsSync(claudeMdPath);
 
-	return {
-		name: "claude-md-exists",
-		tier: "warning",
-		passed,
-		message: passed ? "CLAUDE.md found" : "CLAUDE.md not found (recommended for project context)",
-	};
+  return {
+    name: "claude-md-exists",
+    tier: "warning",
+    passed,
+    message: passed ? "CLAUDE.md found" : "CLAUDE.md not found (recommended for project context)",
+  };
 }
 
 /**
  * Check if disk space is above 1GB.
  */
 export async function checkDiskSpace(): Promise<Check> {
-	const proc = Bun.spawn(["df", "-k", "."], {
-		stdout: "pipe",
-		stderr: "pipe",
-	});
+  const proc = Bun.spawn(["df", "-k", "."], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
 
-	const output = await new Response(proc.stdout).text();
-	const exitCode = await proc.exited;
+  const output = await new Response(proc.stdout).text();
+  const exitCode = await proc.exited;
 
-	if (exitCode !== 0) {
-		return {
-			name: "disk-space-sufficient",
-			tier: "warning",
-			passed: false,
-			message: "Unable to check disk space",
-		};
-	}
+  if (exitCode !== 0) {
+    return {
+      name: "disk-space-sufficient",
+      tier: "warning",
+      passed: false,
+      message: "Unable to check disk space",
+    };
+  }
 
-	// Parse df output (second line, fourth column is available space in KB)
-	const lines = output.trim().split("\n");
-	if (lines.length < 2) {
-		return {
-			name: "disk-space-sufficient",
-			tier: "warning",
-			passed: false,
-			message: "Unable to parse disk space output",
-		};
-	}
+  // Parse df output (second line, fourth column is available space in KB)
+  const lines = output.trim().split("\n");
+  if (lines.length < 2) {
+    return {
+      name: "disk-space-sufficient",
+      tier: "warning",
+      passed: false,
+      message: "Unable to parse disk space output",
+    };
+  }
 
-	const parts = lines[1].split(/\s+/);
-	const availableKB = Number.parseInt(parts[3], 10);
-	const availableGB = availableKB / 1024 / 1024;
-	const passed = availableGB >= 1;
+  const parts = lines[1].split(/\s+/);
+  const availableKB = Number.parseInt(parts[3], 10);
+  const availableGB = availableKB / 1024 / 1024;
+  const passed = availableGB >= 1;
 
-	return {
-		name: "disk-space-sufficient",
-		tier: "warning",
-		passed,
-		message: passed ? `Disk space: ${availableGB.toFixed(2)}GB available` : `Low disk space: ${availableGB.toFixed(2)}GB available`,
-	};
+  return {
+    name: "disk-space-sufficient",
+    tier: "warning",
+    passed,
+    message: passed
+      ? `Disk space: ${availableGB.toFixed(2)}GB available`
+      : `Low disk space: ${availableGB.toFixed(2)}GB available`,
+  };
 }
 
 /**
  * Check if PRD has pending stories.
  */
 export async function checkPendingStories(prd: PRD): Promise<Check> {
-	const pendingStories = prd.userStories.filter((s) => s.status === "pending");
-	const passed = pendingStories.length > 0;
+  const pendingStories = prd.userStories.filter((s) => s.status === "pending");
+  const passed = pendingStories.length > 0;
 
-	return {
-		name: "has-pending-stories",
-		tier: "warning",
-		passed,
-		message: passed ? `${pendingStories.length} pending stories found` : "no pending stories to execute",
-	};
+  return {
+    name: "has-pending-stories",
+    tier: "warning",
+    passed,
+    message: passed ? `${pendingStories.length} pending stories found` : "no pending stories to execute",
+  };
 }
 
 /**
  * Check if optional commands are configured.
  */
 export async function checkOptionalCommands(config: NaxConfig): Promise<Check> {
-	const missing: string[] = [];
+  const missing: string[] = [];
 
-	if (!config.execution.lintCommand) {
-		missing.push("lint");
-	}
-	if (!config.execution.typecheckCommand) {
-		missing.push("typecheck");
-	}
+  if (!config.execution.lintCommand) {
+    missing.push("lint");
+  }
+  if (!config.execution.typecheckCommand) {
+    missing.push("typecheck");
+  }
 
-	const passed = missing.length === 0;
+  const passed = missing.length === 0;
 
-	return {
-		name: "optional-commands-configured",
-		tier: "warning",
-		passed,
-		message: passed ? "All optional commands configured" : `Optional commands not configured: ${missing.join(", ")}`,
-	};
+  return {
+    name: "optional-commands-configured",
+    tier: "warning",
+    passed,
+    message: passed ? "All optional commands configured" : `Optional commands not configured: ${missing.join(", ")}`,
+  };
 }
 
 /**
@@ -516,28 +518,28 @@ export async function checkOptionalCommands(config: NaxConfig): Promise<Check> {
  * Patterns: nax.lock, runs/, test/tmp/
  */
 export async function checkGitignoreCoversNax(workdir: string): Promise<Check> {
-	const gitignorePath = `${workdir}/.gitignore`;
-	const exists = existsSync(gitignorePath);
+  const gitignorePath = `${workdir}/.gitignore`;
+  const exists = existsSync(gitignorePath);
 
-	if (!exists) {
-		return {
-			name: "gitignore-covers-nax",
-			tier: "warning",
-			passed: false,
-			message: ".gitignore not found",
-		};
-	}
+  if (!exists) {
+    return {
+      name: "gitignore-covers-nax",
+      tier: "warning",
+      passed: false,
+      message: ".gitignore not found",
+    };
+  }
 
-	const file = Bun.file(gitignorePath);
-	const content = await file.text();
-	const patterns = ["nax.lock", "runs/", "test/tmp/"];
-	const missing = patterns.filter((pattern) => !content.includes(pattern));
-	const passed = missing.length === 0;
+  const file = Bun.file(gitignorePath);
+  const content = await file.text();
+  const patterns = ["nax.lock", "runs/", "test/tmp/"];
+  const missing = patterns.filter((pattern) => !content.includes(pattern));
+  const passed = missing.length === 0;
 
-	return {
-		name: "gitignore-covers-nax",
-		tier: "warning",
-		passed,
-		message: passed ? ".gitignore covers nax runtime files" : `.gitignore missing patterns: ${missing.join(", ")}`,
-	};
+  return {
+    name: "gitignore-covers-nax",
+    tier: "warning",
+    passed,
+    message: passed ? ".gitignore covers nax runtime files" : `.gitignore missing patterns: ${missing.join(", ")}`,
+  };
 }
