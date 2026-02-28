@@ -45,6 +45,7 @@
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
 - [ ] `nax diagnose --ai` flag (LLM-assisted, future version TBD)
+- [ ] VitePress documentation site — full CLI reference, hosted as standalone docs (pre-publish requirement)
 
 ---
 
