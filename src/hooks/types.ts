@@ -24,6 +24,19 @@ export interface HookDef {
   timeout?: number;
   /** Whether this hook is enabled (default: true) */
   enabled?: boolean;
+  /** Interaction prompt (v0.15.0) */
+  interaction?: {
+    /** Interaction type */
+    type: "confirm" | "choose" | "input" | "review" | "notify";
+    /** Summary template (supports {{variable}} syntax) */
+    summary: string;
+    /** Detail template (optional) */
+    detail?: string;
+    /** Fallback behavior on timeout */
+    fallback: "continue" | "skip" | "escalate" | "abort";
+    /** Timeout in milliseconds (optional) */
+    timeout?: number;
+  };
 }
 
 /** hooks.json schema */

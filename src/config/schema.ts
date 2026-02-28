@@ -286,6 +286,23 @@ export interface HooksConfig {
   hooks: Record<string, unknown>;
 }
 
+/** Interaction config (v0.15.0) */
+export interface InteractionConfig {
+  /** Plugin to use for interactions (default: "cli") */
+  plugin: string;
+  /** Plugin-specific configuration */
+  config?: Record<string, unknown>;
+  /** Default settings */
+  defaults: {
+    /** Default timeout in milliseconds (default: 600000 = 10 minutes) */
+    timeout: number;
+    /** Default fallback behavior (default: "escalate") */
+    fallback: "continue" | "skip" | "escalate" | "abort";
+  };
+  /** Enable/disable built-in triggers */
+  triggers: Partial<Record<string, boolean | { enabled: boolean; fallback?: string; timeout?: number }>>;
+}
+
 /** Test coverage context config */
 export interface TestCoverageConfig {
   /** Enable test coverage context injection (default: true) */
@@ -403,6 +420,8 @@ export interface NaxConfig {
   plugins?: PluginConfigEntry[];
   /** Hooks configuration (v0.10) */
   hooks?: HooksConfig;
+  /** Interaction settings (v0.15.0) */
+  interaction?: InteractionConfig;
 }
 
 /** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */
@@ -641,6 +660,28 @@ const HooksConfigSchema = z.object({
   hooks: z.record(z.string(), z.unknown()),
 });
 
+const InteractionConfigSchema = z.object({
+  plugin: z.string().default("cli"),
+  config: z.record(z.string(), z.unknown()).optional(),
+  defaults: z.object({
+    timeout: z.number().int().min(1000).max(3600000).default(600000),
+    fallback: z.enum(["continue", "skip", "escalate", "abort"]).default("escalate"),
+  }),
+  triggers: z
+    .record(
+      z.string(),
+      z.union([
+        z.boolean(),
+        z.object({
+          enabled: z.boolean(),
+          fallback: z.string().optional(),
+          timeout: z.number().optional(),
+        }),
+      ]),
+    )
+    .default({}),
+});
+
 export const NaxConfigSchema = z
   .object({
     version: z.number(),
@@ -659,6 +700,7 @@ export const NaxConfigSchema = z
     optimizer: OptimizerConfigSchema.optional(),
     plugins: z.array(PluginConfigEntrySchema).optional(),
     hooks: HooksConfigSchema.optional(),
+    interaction: InteractionConfigSchema.optional(),
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",
@@ -794,6 +836,18 @@ export const DEFAULT_CONFIG: NaxConfig = {
       enabled: true,
       maxFiles: 5,
       traceImports: false,
+    },
+  },
+  interaction: {
+    plugin: "cli",
+    config: {},
+    defaults: {
+      timeout: 600000, // 10 minutes
+      fallback: "escalate",
+    },
+    triggers: {
+      "security-review": true,
+      "cost-warning": true,
     },
   },
 };
