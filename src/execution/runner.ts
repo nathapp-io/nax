@@ -1159,9 +1159,13 @@ export async function run(options: RunOptions): Promise<RunResult> {
                       }
                     : undefined;
 
+                  // BUG-011: Reset attempt counter on tier escalation (mirrors pre-iteration check)
+                  const currentStoryTier = s.routing?.modelTier ?? routing.modelTier;
+                  const isChangingTier = currentStoryTier !== nextTier;
+
                   return {
                     ...s,
-                    attempts: (s.attempts ?? 0) + 1,
+                    attempts: isChangingTier ? 0 : (s.attempts ?? 0) + 1,
                     routing: updatedRouting,
                     priorErrors: [...(s.priorErrors || []), errorMessage],
                   };
