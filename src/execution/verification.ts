@@ -35,8 +35,9 @@ async function drainWithDeadline(proc: Subprocess, deadlineMs: number): Promise<
     const [o, e] = await Promise.all([stdout, stderr]);
     if (o !== EMPTY) out += o;
     if (e !== EMPTY) out += (out ? "\n" : "") + e;
-  } catch {
-    // Streams may already be destroyed
+  } catch (error) {
+    // Streams may already be destroyed - this is expected after kill
+    // No logger available in this utility function context
   }
   return out;
 }
@@ -165,11 +166,14 @@ export async function executeWithTimeout(
     // Send SIGTERM to process group (negative PID) to kill children too
     try {
       process.kill(-pid, "SIGTERM");
-    } catch {
+    } catch (error) {
       // Fallback: kill direct process if process group kill fails
+      // No logger available in this context - error is expected on some systems
       try {
         proc.kill("SIGTERM");
-      } catch {}
+      } catch (fallbackError) {
+        // Process may have already exited
+      }
     }
 
     // Wait for graceful shutdown (configurable, default 5s)
@@ -178,11 +182,14 @@ export async function executeWithTimeout(
     // Force SIGKILL entire process group if still running
     try {
       process.kill(-pid, "SIGKILL");
-    } catch {
+    } catch (error) {
       // Process group may have already exited from SIGTERM
+      // No logger available in this context - error is expected
       try {
         proc.kill("SIGKILL");
-      } catch {}
+      } catch (fallbackError) {
+        // Process may have already exited
+      }
     }
 
     // Bun bug workaround: piped streams don't close after kill.

@@ -6,23 +6,14 @@
 
 ---
 
-## Next: v0.14.4 -- Code Audit Cleanup
+## Next: v0.15.0 — Interactive Pipeline (or v0.14.5 cleanup)
 
-**Theme:** Complete remaining MEDIUM-priority findings from code review
-**Status:** Planned
-**Source:** `docs/code-review-20260228.md` deferred items
-
-### MEDIUM
-- [ ] **SEC-2:** Sandbox plugin import boundary (`plugins/loader.ts:203`)
-- [ ] **SEC-4:** Explicit env var allowlist for spawned agents
-- [ ] **SEC-5:** Use validateFilePath() for constitution paths
-- [ ] **ERR-2:** Replace console.warn with structured logger in plugins
-- [ ] **ERR-3:** Add debug logs to empty catch blocks
-- [ ] **STYLE-4:** Remove emojis from log messages (violates CLAUDE.md)
-
-### STYLE
-- [ ] **STYLE-1:** Split `execution/runner.ts` (1,685 lines) into focused modules (deferred from v0.14.3)
-- [ ] **STYLE-2:** Extract notifyReporters() helper -- duplicated 5x in runner.ts
+**Options:**
+1. **v0.15.0 Interactive Pipeline** — See spec below
+2. **v0.14.5 Remaining Cleanup** — Complete deferred MEDIUM/STYLE items:
+   - [ ] **SEC-2:** Sandbox plugin import boundary
+   - [ ] **STYLE-1:** Split runner.ts into focused modules
+   - [ ] **STYLE-2:** Extract notifyReporters() helper
 
 ---
 
@@ -59,6 +50,7 @@
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.14.4 | Code Audit Cleanup (MEDIUM findings) | 2026-02-28 | [releases/v0.14.4.md](releases/v0.14.4.md) |
 | v0.14.3 | Code Audit Fixes (CRITICAL+HIGH+MEDIUM) | 2026-02-28 | [releases/v0.14.3.md](releases/v0.14.3.md) |
 | v0.14.2 | E2E Test Hang Fix | 2026-02-28 | [releases/v0.14.2.md](releases/v0.14.2.md) |
 | v0.14.1 | nax diagnose CLI | 2026-02-28 | [releases/v0.14.1.md](releases/v0.14.1.md) |

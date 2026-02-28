@@ -108,7 +108,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       const proc = Bun.spawn(["which", this.binary], { stdout: "pipe", stderr: "pipe" });
       const code = await proc.exited;
       return code === 0;
-    } catch {
+    } catch (error) {
+      const logger = getLogger();
+      logger?.debug("agent", "Failed to check if agent is installed", { error });
       return false;
     }
   }
@@ -216,6 +218,52 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     throw lastError || new Error("Agent execution failed after all retries");
   }
 
+  /**
+   * Build allowed environment variables for spawned agents.
+   *
+   * SEC-4: Only pass essential env vars to prevent leaking sensitive data.
+   * Allowlist includes: PATH, HOME, TMPDIR, NODE_ENV, API keys, and prefixed vars (NAX_, CLAW_, TURBO_, CLAUDE_).
+   */
+  private buildAllowedEnv(options: AgentRunOptions): Record<string, string | undefined> {
+    const allowed: Record<string, string | undefined> = {};
+
+    // Essential system vars
+    const essentialVars = ["PATH", "HOME", "TMPDIR", "NODE_ENV"];
+    for (const varName of essentialVars) {
+      if (process.env[varName]) {
+        allowed[varName] = process.env[varName];
+      }
+    }
+
+    // API keys
+    const apiKeyVars = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"];
+    for (const varName of apiKeyVars) {
+      if (process.env[varName]) {
+        allowed[varName] = process.env[varName];
+      }
+    }
+
+    // Prefixed vars (CLAUDE_*, NAX_*, CLAW_*, TURBO_*)
+    const allowedPrefixes = ["CLAUDE_", "NAX_", "CLAW_", "TURBO_"];
+    for (const [key, value] of Object.entries(process.env)) {
+      if (allowedPrefixes.some(prefix => key.startsWith(prefix))) {
+        allowed[key] = value;
+      }
+    }
+
+    // Add model-specific env from config
+    if (options.modelDef.env) {
+      Object.assign(allowed, options.modelDef.env);
+    }
+
+    // Add runtime env from options
+    if (options.env) {
+      Object.assign(allowed, options.env);
+    }
+
+    return allowed;
+  }
+
   private async runOnce(options: AgentRunOptions, _attempt: number): Promise<AgentResult> {
     const cmd = this.buildCommand(options);
     const startTime = Date.now();
@@ -224,11 +272,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       cwd: options.workdir,
       stdout: "pipe",
       stderr: "pipe",
-      env: {
-        ...process.env,
-        ...options.modelDef.env,
-        ...options.env,
-      },
+      env: this.buildAllowedEnv(options),
     });
 
     // Register PID for orphan cleanup
@@ -329,7 +373,13 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         stdin: "inherit",
         stdout: "inherit",
         stderr: "inherit",
-        env: { ...process.env, ...(options.modelDef?.env || {}) },
+        env: this.buildAllowedEnv({
+          workdir: options.workdir,
+          modelDef: options.modelDef || { model: "claude-sonnet-4-5", env: {} },
+          prompt: "",
+          modelTier: "balanced",
+          timeoutSeconds: 600,
+        }),
       });
 
       // Register PID
@@ -360,7 +410,13 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         stdin: "ignore",
         stdout: Bun.file(outFile),
         stderr: Bun.file(errFile),
-        env: { ...process.env, ...(options.modelDef?.env || {}) },
+        env: this.buildAllowedEnv({
+          workdir: options.workdir,
+          modelDef: options.modelDef || { model: "claude-sonnet-4-5", env: {} },
+          prompt: "",
+          modelTier: "balanced",
+          timeoutSeconds: 600,
+        }),
       });
 
       // Register PID
@@ -382,7 +438,10 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     } finally {
       try {
         rmSync(tempDir, { recursive: true });
-      } catch {}
+      } catch (error) {
+        const logger = getLogger();
+        logger?.debug("agent", "Failed to clean up temp directory", { error, tempDir });
+      }
     }
   }
 
@@ -473,10 +532,13 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       cwd: options.workdir,
       stdout: "pipe",
       stderr: "pipe",
-      env: {
-        ...process.env,
-        ...(options.modelDef?.env || {}),
-      },
+      env: this.buildAllowedEnv({
+        workdir: options.workdir,
+        modelDef: options.modelDef || { model: "claude-sonnet-4-5", env: {} },
+        prompt: "",
+        modelTier: "balanced",
+        timeoutSeconds: 600,
+      }),
     });
 
     // Register PID
@@ -715,11 +777,7 @@ Respond with ONLY a JSON array (no markdown code fences):
       cols: 80,
       rows: 24,
       cwd: options.workdir,
-      env: {
-        ...process.env,
-        ...options.modelDef.env,
-        ...options.env,
-      },
+      env: this.buildAllowedEnv(options),
     });
 
     // Register PID (async but don't await - fire and forget for interactive mode)

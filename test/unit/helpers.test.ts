@@ -263,8 +263,8 @@ describe("formatProgress", () => {
 
 		const progress = formatProgress(counts, 0, 5.0, 0, 12);
 		expect(progress).toContain("0/12 stories");
-		expect(progress).toContain("✅ 0 passed");
-		expect(progress).toContain("❌ 0 failed");
+		expect(progress).toContain("0 passed");
+		expect(progress).toContain("0 failed");
 		expect(progress).toContain("$0.00/$5.00");
 		expect(progress).toContain("calculating...");
 	});
@@ -279,8 +279,8 @@ describe("formatProgress", () => {
 
 		const progress = formatProgress(counts, 0.45, 5.0, 600000, 12);
 		expect(progress).toContain("6/12 stories");
-		expect(progress).toContain("✅ 5 passed");
-		expect(progress).toContain("❌ 1 failed");
+		expect(progress).toContain("5 passed");
+		expect(progress).toContain("1 failed");
 		expect(progress).toContain("$0.45/$5.00");
 		expect(progress).toContain("min remaining");
 	});
@@ -295,8 +295,8 @@ describe("formatProgress", () => {
 
 		const progress = formatProgress(counts, 4.5, 5.0, 3600000, 12);
 		expect(progress).toContain("12/12 stories");
-		expect(progress).toContain("✅ 10 passed");
-		expect(progress).toContain("❌ 2 failed");
+		expect(progress).toContain("10 passed");
+		expect(progress).toContain("2 failed");
 		expect(progress).toContain("$4.50/$5.00");
 		expect(progress).toContain("complete");
 	});

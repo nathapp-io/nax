@@ -17,8 +17,8 @@ describe("formatProgress", () => {
     const progress = formatProgress(counts, 0, 5.0, 0, 12);
 
     expect(progress).toContain("0/12 stories");
-    expect(progress).toContain("✅ 0 passed");
-    expect(progress).toContain("❌ 0 failed");
+    expect(progress).toContain("0 passed");
+    expect(progress).toContain("0 failed");
     expect(progress).toContain("$0.00/$5.00");
     expect(progress).toContain("calculating...");
   });
@@ -37,8 +37,8 @@ describe("formatProgress", () => {
     const progress = formatProgress(counts, 0.45, 5.0, 600000, 12);
 
     expect(progress).toContain("6/12 stories");
-    expect(progress).toContain("✅ 5 passed");
-    expect(progress).toContain("❌ 1 failed");
+    expect(progress).toContain("5 passed");
+    expect(progress).toContain("1 failed");
     expect(progress).toContain("$0.45/$5.00");
     expect(progress).toContain("~10 min remaining");
   });
@@ -54,8 +54,8 @@ describe("formatProgress", () => {
     const progress = formatProgress(counts, 1.23, 5.0, 1200000, 12);
 
     expect(progress).toContain("12/12 stories");
-    expect(progress).toContain("✅ 10 passed");
-    expect(progress).toContain("❌ 2 failed");
+    expect(progress).toContain("10 passed");
+    expect(progress).toContain("2 failed");
     expect(progress).toContain("$1.23/$5.00");
     expect(progress).toContain("complete");
   });
@@ -121,7 +121,7 @@ describe("formatProgress", () => {
     expect(progress).not.toContain("Infinity");
   });
 
-  test("includes all required emoji indicators", () => {
+  test("includes all required progress indicators", () => {
     const counts: StoryCounts = {
       total: 10,
       passed: 3,
@@ -131,11 +131,11 @@ describe("formatProgress", () => {
 
     const progress = formatProgress(counts, 0.5, 5.0, 300000, 10);
 
-    expect(progress).toContain("📊"); // Progress emoji
-    expect(progress).toContain("✅"); // Passed emoji
-    expect(progress).toContain("❌"); // Failed emoji
-    expect(progress).toContain("💰"); // Cost emoji
-    expect(progress).toContain("⏱️"); // Time emoji
+    expect(progress).toContain("Progress:");
+    expect(progress).toContain("passed");
+    expect(progress).toContain("failed");
+    expect(progress).toContain("$");
+    expect(progress).toContain("min remaining");
   });
 });
 

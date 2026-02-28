@@ -167,14 +167,14 @@ async function runTddSession(
     });
   } else if (isolation) {
     if (isolation.softViolations && isolation.softViolations.length > 0) {
-      logger.warn("tdd", "⚠ Isolation soft violations (allowed files modified)", {
+      logger.warn("tdd", "[WARN] Isolation soft violations (allowed files modified)", {
         role,
         storyId: story.id,
         softViolations: isolation.softViolations,
       });
     }
     if (isolation.warnings && isolation.warnings.length > 0) {
-      logger.warn("tdd", "⚠ Isolation maintained with warnings", {
+      logger.warn("tdd", "[WARN] Isolation maintained with warnings", {
         role,
         storyId: story.id,
         warnings: isolation.warnings,
@@ -345,7 +345,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     // Distinguish isolation violation from crash/timeout
     const failureCategory: FailureCategory =
       session1.isolation && !session1.isolation.passed ? "isolation-violation" : "session-failure";
-    logger.warn("tdd", "⚠️ Test writer session failed", { storyId: story.id, reviewReason, failureCategory });
+    logger.warn("tdd", "[WARN] Test writer session failed", { storyId: story.id, reviewReason, failureCategory });
 
     return {
       success: false,
@@ -368,7 +368,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     // This should be caught by routing stage greenfield detection, but we handle it here as a safety net
     needsHumanReview = true;
     reviewReason = "Test writer session created no test files (greenfield project)";
-    logger.warn("tdd", "⚠️ Test writer created no test files — greenfield detected", {
+    logger.warn("tdd", "[WARN] Test writer created no test files - greenfield detected", {
       storyId: story.id,
       reviewReason,
       filesChanged: session1.filesChanged,
@@ -415,7 +415,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   if (!session2.success) {
     needsHumanReview = true;
     reviewReason = "Implementer session failed or violated isolation";
-    logger.warn("tdd", "⚠️ Implementer session failed", { storyId: story.id, reviewReason });
+    logger.warn("tdd", "[WARN] Implementer session failed", { storyId: story.id, reviewReason });
 
     return {
       success: false,
@@ -559,7 +559,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
         const finalSuitePassed = finalFullSuite.success && finalFullSuite.exitCode === 0;
 
         if (!finalSuitePassed) {
-          logger.warn("tdd", "⚠️ Full suite gate failed after rectification exhausted", {
+          logger.warn("tdd", "[WARN] Full suite gate failed after rectification exhausted", {
             storyId: story.id,
             attempts: rectificationState.attempt,
             remainingFailures: rectificationState.currentFailures,
@@ -625,7 +625,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     const categorization = categorizeVerdict(verdict, verdict.tests.allPassing);
 
     if (categorization.success) {
-      logger.info("tdd", "✅ Verifier verdict: approved", {
+      logger.info("tdd", "[OK] Verifier verdict: approved", {
         storyId: story.id,
         verdictApproved: verdict.approved,
         testsAllPassing: verdict.tests.allPassing,
@@ -636,7 +636,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
       needsHumanReview = false;
       reviewReason = undefined;
     } else {
-      logger.warn("tdd", "⚠️ Verifier verdict: rejected", {
+      logger.warn("tdd", "[WARN] Verifier verdict: rejected", {
         storyId: story.id,
         verdictApproved: verdict.approved,
         failureCategory: categorization.failureCategory,
@@ -668,7 +668,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
       const truncatedStderr = postVerify.error ? truncateTestOutput(postVerify.error) : "";
 
       if (testsActuallyPass) {
-        logger.info("tdd", "ℹ️ Sessions had non-zero exits but tests pass — treating as success", {
+        logger.info("tdd", "Sessions had non-zero exits but tests pass - treating as success", {
           storyId: story.id,
           stdout: truncatedStdout,
         });
@@ -676,7 +676,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
         needsHumanReview = false;
         reviewReason = undefined;
       } else {
-        logger.warn("tdd", "⚠️ Post-TDD verification: tests still failing", {
+        logger.warn("tdd", "[WARN] Post-TDD verification: tests still failing", {
           storyId: story.id,
           stdout: truncatedStdout,
           stderr: truncatedStderr,
@@ -693,7 +693,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
 
   const totalCost = sessions.reduce((sum, s) => sum + s.estimatedCost, 0);
 
-  logger.info("tdd", allSuccessful ? "✅ Three-session TDD complete" : "⚠️ Three-session TDD needs review", {
+  logger.info("tdd", allSuccessful ? "[OK] Three-session TDD complete" : "[WARN] Three-session TDD needs review", {
     storyId: story.id,
     success: allSuccessful,
     totalCost,

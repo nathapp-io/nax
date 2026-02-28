@@ -5,7 +5,19 @@
  * Validates plugin shape and ensures all required extensions are present.
  */
 
+import { getLogger } from "../logger";
 import type { NaxPlugin, PluginType } from "./types";
+
+/**
+ * Safely get logger instance, returns null if not initialized
+ */
+function getSafeLogger() {
+  try {
+    return getLogger();
+  } catch {
+    return null;
+  }
+}
 
 const VALID_PLUGIN_TYPES: readonly PluginType[] = [
   "optimizer",
@@ -27,7 +39,7 @@ const VALID_PLUGIN_TYPES: readonly PluginType[] = [
 export function validatePlugin(module: unknown): NaxPlugin | null {
   // Must be an object
   if (typeof module !== "object" || module === null) {
-    console.warn("[nax] Plugin validation failed: module is not an object");
+    getSafeLogger()?.warn("plugins", "Plugin validation failed: module is not an object");
     return null;
   }
 
@@ -35,49 +47,49 @@ export function validatePlugin(module: unknown): NaxPlugin | null {
 
   // Validate name
   if (typeof plugin.name !== "string") {
-    console.warn("[nax] Plugin validation failed: missing or invalid 'name' (must be string)");
+    getSafeLogger()?.warn("plugins", "Plugin validation failed: missing or invalid 'name' (must be string)");
     return null;
   }
 
   // Validate version
   if (typeof plugin.version !== "string") {
-    console.warn(`[nax] Plugin '${plugin.name}' validation failed: missing or invalid 'version' (must be string)`);
+    getSafeLogger()?.warn("plugins", `Plugin '${plugin.name}' validation failed: missing or invalid 'version' (must be string)`);
     return null;
   }
 
   // Validate provides
   if (!Array.isArray(plugin.provides)) {
-    console.warn(`[nax] Plugin '${plugin.name}' validation failed: 'provides' must be an array`);
+    getSafeLogger()?.warn("plugins", `Plugin '${plugin.name}' validation failed: 'provides' must be an array`);
     return null;
   }
 
   if (plugin.provides.length === 0) {
-    console.warn(`[nax] Plugin '${plugin.name}' validation failed: 'provides' must not be empty`);
+    getSafeLogger()?.warn("plugins", `Plugin '${plugin.name}' validation failed: 'provides' must not be empty`);
     return null;
   }
 
   for (const type of plugin.provides) {
     if (!VALID_PLUGIN_TYPES.includes(type as PluginType)) {
-      console.warn(`[nax] Plugin '${plugin.name}' validation failed: invalid plugin type '${type}' in 'provides'`);
+      getSafeLogger()?.warn("plugins", `Plugin '${plugin.name}' validation failed: invalid plugin type '${type}' in 'provides'`);
       return null;
     }
   }
 
   // Validate setup (optional)
   if ("setup" in plugin && typeof plugin.setup !== "function") {
-    console.warn(`[nax] Plugin '${plugin.name}' validation failed: 'setup' must be a function`);
+    getSafeLogger()?.warn("plugins", `Plugin '${plugin.name}' validation failed: 'setup' must be a function`);
     return null;
   }
 
   // Validate teardown (optional)
   if ("teardown" in plugin && typeof plugin.teardown !== "function") {
-    console.warn(`[nax] Plugin '${plugin.name}' validation failed: 'teardown' must be a function`);
+    getSafeLogger()?.warn("plugins", `Plugin '${plugin.name}' validation failed: 'teardown' must be a function`);
     return null;
   }
 
   // Validate extensions
   if (typeof plugin.extensions !== "object" || plugin.extensions === null) {
-    console.warn(`[nax] Plugin '${plugin.name}' validation failed: 'extensions' must be an object`);
+    getSafeLogger()?.warn("plugins", `Plugin '${plugin.name}' validation failed: 'extensions' must be an object`);
     return null;
   }
 
@@ -117,7 +129,7 @@ function validateExtension(pluginName: string, type: PluginType, extensions: Rec
     case "reporter":
       return validateReporter(pluginName, extensions.reporter);
     default:
-      console.warn(`[nax] Plugin '${pluginName}' validation failed: unknown extension type '${type}'`);
+      getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: unknown extension type '${type}'`);
       return false;
   }
 }
@@ -127,19 +139,19 @@ function validateExtension(pluginName: string, type: PluginType, extensions: Rec
  */
 function validateOptimizer(pluginName: string, optimizer: unknown): boolean {
   if (typeof optimizer !== "object" || optimizer === null) {
-    console.warn(`[nax] Plugin '${pluginName}' validation failed: optimizer extension must be an object`);
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: optimizer extension must be an object`);
     return false;
   }
 
   const opt = optimizer as Record<string, unknown>;
 
   if (typeof opt.name !== "string") {
-    console.warn(`[nax] Plugin '${pluginName}' validation failed: optimizer.name must be a string`);
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: optimizer.name must be a string`);
     return false;
   }
 
   if (typeof opt.optimize !== "function") {
-    console.warn(`[nax] Plugin '${pluginName}' validation failed: optimizer.optimize must be a function`);
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: optimizer.optimize must be a function`);
     return false;
   }
 
@@ -151,19 +163,19 @@ function validateOptimizer(pluginName: string, optimizer: unknown): boolean {
  */
 function validateRouter(pluginName: string, router: unknown): boolean {
   if (typeof router !== "object" || router === null) {
-    console.warn(`[nax] Plugin '${pluginName}' validation failed: router extension must be an object`);
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: router extension must be an object`);
     return false;
   }
 
   const rtr = router as Record<string, unknown>;
 
   if (typeof rtr.name !== "string") {
-    console.warn(`[nax] Plugin '${pluginName}' validation failed: router.name must be a string`);
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: router.name must be a string`);
     return false;
   }
 
   if (typeof rtr.route !== "function") {
-    console.warn(`[nax] Plugin '${pluginName}' validation failed: router.route must be a function`);
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: router.route must be a function`);
     return false;
   }
 
@@ -175,7 +187,7 @@ function validateRouter(pluginName: string, router: unknown): boolean {
  */
 function validateAgent(pluginName: string, agent: unknown): boolean {
   if (typeof agent !== "object" || agent === null) {
-    console.warn(`[nax] Plugin '${pluginName}' validation failed: agent extension must be an object`);
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: agent extension must be an object`);
     return false;
   }
 
@@ -196,11 +208,11 @@ function validateAgent(pluginName: string, agent: unknown): boolean {
   for (const field of requiredFields) {
     if (field.type === "object") {
       if (typeof agt[field.name] !== "object" || agt[field.name] === null) {
-        console.warn(`[nax] Plugin '${pluginName}' validation failed: agent.${field.name} must be an object`);
+        getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: agent.${field.name} must be an object`);
         return false;
       }
     } else if (typeof agt[field.name] !== field.type) {
-      console.warn(`[nax] Plugin '${pluginName}' validation failed: agent.${field.name} must be a ${field.type}`);
+      getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: agent.${field.name} must be a ${field.type}`);
       return false;
     }
   }
@@ -213,24 +225,24 @@ function validateAgent(pluginName: string, agent: unknown): boolean {
  */
 function validateReviewer(pluginName: string, reviewer: unknown): boolean {
   if (typeof reviewer !== "object" || reviewer === null) {
-    console.warn(`[nax] Plugin '${pluginName}' validation failed: reviewer extension must be an object`);
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: reviewer extension must be an object`);
     return false;
   }
 
   const rev = reviewer as Record<string, unknown>;
 
   if (typeof rev.name !== "string") {
-    console.warn(`[nax] Plugin '${pluginName}' validation failed: reviewer.name must be a string`);
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: reviewer.name must be a string`);
     return false;
   }
 
   if (typeof rev.description !== "string") {
-    console.warn(`[nax] Plugin '${pluginName}' validation failed: reviewer.description must be a string`);
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: reviewer.description must be a string`);
     return false;
   }
 
   if (typeof rev.check !== "function") {
-    console.warn(`[nax] Plugin '${pluginName}' validation failed: reviewer.check must be a function`);
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: reviewer.check must be a function`);
     return false;
   }
 
@@ -242,19 +254,19 @@ function validateReviewer(pluginName: string, reviewer: unknown): boolean {
  */
 function validateContextProvider(pluginName: string, provider: unknown): boolean {
   if (typeof provider !== "object" || provider === null) {
-    console.warn(`[nax] Plugin '${pluginName}' validation failed: contextProvider extension must be an object`);
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: contextProvider extension must be an object`);
     return false;
   }
 
   const prov = provider as Record<string, unknown>;
 
   if (typeof prov.name !== "string") {
-    console.warn(`[nax] Plugin '${pluginName}' validation failed: contextProvider.name must be a string`);
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: contextProvider.name must be a string`);
     return false;
   }
 
   if (typeof prov.getContext !== "function") {
-    console.warn(`[nax] Plugin '${pluginName}' validation failed: contextProvider.getContext must be a function`);
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: contextProvider.getContext must be a function`);
     return false;
   }
 
@@ -266,14 +278,14 @@ function validateContextProvider(pluginName: string, provider: unknown): boolean
  */
 function validateReporter(pluginName: string, reporter: unknown): boolean {
   if (typeof reporter !== "object" || reporter === null) {
-    console.warn(`[nax] Plugin '${pluginName}' validation failed: reporter extension must be an object`);
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: reporter extension must be an object`);
     return false;
   }
 
   const rep = reporter as Record<string, unknown>;
 
   if (typeof rep.name !== "string") {
-    console.warn(`[nax] Plugin '${pluginName}' validation failed: reporter.name must be a string`);
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: reporter.name must be a string`);
     return false;
   }
 
@@ -281,7 +293,7 @@ function validateReporter(pluginName: string, reporter: unknown): boolean {
   const eventHandlers = ["onRunStart", "onStoryComplete", "onRunEnd"];
   for (const handler of eventHandlers) {
     if (handler in rep && typeof rep[handler] !== "function") {
-      console.warn(`[nax] Plugin '${pluginName}' validation failed: reporter.${handler} must be a function`);
+      getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: reporter.${handler} must be a function`);
       return false;
     }
   }

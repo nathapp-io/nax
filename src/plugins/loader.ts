@@ -9,9 +9,21 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { getLogger } from "../logger";
 import { PluginRegistry } from "./registry";
 import type { NaxPlugin, PluginConfigEntry } from "./types";
 import { validatePlugin } from "./validator";
+
+/**
+ * Safely get logger instance, returns null if not initialized
+ */
+function getSafeLogger() {
+  try {
+    return getLogger();
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Plugin source metadata.
@@ -60,7 +72,8 @@ export async function loadPlugins(
     const validated = await loadAndValidatePlugin(plugin.path, {});
     if (validated) {
       if (pluginNames.has(validated.name)) {
-        console.warn(`[nax] Plugin name collision: '${validated.name}' (global directory)`);
+        const logger = getSafeLogger();
+        logger?.warn("plugins", `Plugin name collision: '${validated.name}' (global directory)`);
       }
       loadedPlugins.push({
         plugin: validated,
@@ -76,7 +89,8 @@ export async function loadPlugins(
     const validated = await loadAndValidatePlugin(plugin.path, {});
     if (validated) {
       if (pluginNames.has(validated.name)) {
-        console.warn(`[nax] Plugin name collision: '${validated.name}' (project directory overrides global)`);
+        const logger = getSafeLogger();
+        logger?.warn("plugins", `Plugin name collision: '${validated.name}' (project directory overrides global)`);
       }
       loadedPlugins.push({
         plugin: validated,
@@ -93,7 +107,8 @@ export async function loadPlugins(
     const validated = await loadAndValidatePlugin(resolvedModule, entry.config ?? {}, entry.module);
     if (validated) {
       if (pluginNames.has(validated.name)) {
-        console.warn(`[nax] Plugin name collision: '${validated.name}' (config entry overrides previous)`);
+        const logger = getSafeLogger();
+        logger?.warn("plugins", `Plugin name collision: '${validated.name}' (config entry overrides previous)`);
       }
       loadedPlugins.push({
         plugin: validated,
@@ -221,7 +236,8 @@ async function loadAndValidatePlugin(
       try {
         await validated.setup(config);
       } catch (error) {
-        console.error(`[nax] Plugin '${validated.name}' setup failed:`, error);
+        const logger = getSafeLogger();
+        logger?.error("plugins", `Plugin '${validated.name}' setup failed`, { error });
         return null;
       }
     }
@@ -230,16 +246,18 @@ async function loadAndValidatePlugin(
   } catch (error) {
     const displayPath = originalPath || modulePath;
     const errorMsg = error instanceof Error ? error.message : String(error);
+    const logger = getSafeLogger();
 
     // Provide helpful error message with attempted paths
     if (errorMsg.includes("Cannot find module") || errorMsg.includes("ENOENT")) {
-      console.error(`[nax] Failed to load plugin module '${displayPath}'`);
-      console.error(`[nax] Attempted path: ${modulePath}`);
-      console.error(
-        "[nax] Ensure the module exists and the path is correct (relative paths are resolved from project root)",
+      logger?.error("plugins", `Failed to load plugin module '${displayPath}'`);
+      logger?.error("plugins", `Attempted path: ${modulePath}`);
+      logger?.error(
+        "plugins",
+        "Ensure the module exists and the path is correct (relative paths are resolved from project root)",
       );
     } else {
-      console.warn(`[nax] Failed to load plugin from '${displayPath}':`, errorMsg);
+      logger?.warn("plugins", `Failed to load plugin from '${displayPath}'`, { error: errorMsg });
     }
     return null;
   }

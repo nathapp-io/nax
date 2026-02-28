@@ -446,5 +446,5 @@ export function formatProgress(
     etaText = "complete";
   }
 
-  return `📊 Progress: ${completedStories}/${totalStories} stories | ✅ ${counts.passed} passed | ❌ ${counts.failed} failed | 💰 $${totalCost.toFixed(2)}/$${costLimit.toFixed(2)} | ⏱️ ${etaText}`;
+  return `Progress: ${completedStories}/${totalStories} stories | ${counts.passed} passed | ${counts.failed} failed | $${totalCost.toFixed(2)}/$${costLimit.toFixed(2)} | ${etaText}`;
 }

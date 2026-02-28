@@ -7,6 +7,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { globalConfigDir } from "../config/paths";
+import { validateFilePath } from "../config/path-security";
 import type { ConstitutionConfig, ConstitutionResult } from "./types";
 
 /**
@@ -76,7 +77,9 @@ export async function loadConstitution(
   if (!config.skipGlobal) {
     const globalPath = join(globalConfigDir(), config.path);
     if (existsSync(globalPath)) {
-      const globalFile = Bun.file(globalPath);
+      // SEC-5: Validate path before reading
+      const validatedPath = validateFilePath(globalPath, globalConfigDir());
+      const globalFile = Bun.file(validatedPath);
       const globalContent = await globalFile.text();
       if (globalContent.trim()) {
         combinedContent = globalContent.trim();
@@ -87,7 +90,9 @@ export async function loadConstitution(
   // Load project constitution
   const projectPath = join(projectDir, config.path);
   if (existsSync(projectPath)) {
-    const projectFile = Bun.file(projectPath);
+    // SEC-5: Validate path before reading
+    const validatedPath = validateFilePath(projectPath, projectDir);
+    const projectFile = Bun.file(validatedPath);
     const projectContent = await projectFile.text();
     if (projectContent.trim()) {
       // Concatenate with separator if both exist
