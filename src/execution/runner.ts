@@ -62,6 +62,7 @@ import {
   stopHeartbeat,
   writeExitSummary,
 } from "./crash-recovery";
+import { PidRegistry } from "./pid-registry";
 
 /**
  * Determine the outcome when max attempts are reached for an escalation.
@@ -204,16 +205,23 @@ export async function run(options: RunOptions): Promise<RunResult> {
     pid: process.pid,
   });
 
+  // ── PID registry for orphan process cleanup (BUG-002) ───────
+  const pidRegistry = new PidRegistry(workdir);
+
+  // Cleanup stale PIDs from previous crashed runs
+  const logger = getSafeLogger();
+  await pidRegistry.cleanupStale();
+
   // Install crash handlers for signal recovery (US-007)
   installCrashHandlers({
     statusWriter,
     totalCost,
     iterations,
     jsonlFilePath: logFilePath,
+    pidRegistry,
   });
 
   // Acquire lock to prevent concurrent execution
-  const logger = getSafeLogger();
   const lockAcquired = await acquireLock(workdir);
   if (!lockAcquired) {
     logger?.error("execution", "Another nax process is already running in this directory");

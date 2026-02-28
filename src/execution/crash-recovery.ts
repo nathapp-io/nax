@@ -10,6 +10,7 @@
  */
 
 import { getSafeLogger } from "../logger";
+import type { PidRegistry } from "./pid-registry";
 import type { StatusWriter } from "./status-writer";
 
 /**
@@ -20,6 +21,7 @@ export interface CrashRecoveryContext {
   totalCost: number;
   iterations: number;
   jsonlFilePath?: string;
+  pidRegistry?: PidRegistry;
 }
 
 /**
@@ -100,6 +102,11 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): void {
   const handleSignal = async (signal: NodeJS.Signals) => {
     logger?.error("crash-recovery", `Received ${signal}, shutting down...`, { signal });
 
+    // Kill all spawned agent processes
+    if (ctx.pidRegistry) {
+      await ctx.pidRegistry.killAll();
+    }
+
     // Write fatal log
     await writeFatalLog(ctx.jsonlFilePath, signal);
 
@@ -125,6 +132,11 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): void {
       stack: error.stack,
     });
 
+    // Kill all spawned agent processes
+    if (ctx.pidRegistry) {
+      await ctx.pidRegistry.killAll();
+    }
+
     // Write fatal log with stack trace
     await writeFatalLog(ctx.jsonlFilePath, "uncaughtException", error);
 
@@ -145,6 +157,11 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): void {
       error: error.message,
       stack: error.stack,
     });
+
+    // Kill all spawned agent processes
+    if (ctx.pidRegistry) {
+      await ctx.pidRegistry.killAll();
+    }
 
     // Write fatal log
     await writeFatalLog(ctx.jsonlFilePath, "unhandledRejection", error);
