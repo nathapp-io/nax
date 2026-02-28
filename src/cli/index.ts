@@ -25,3 +25,11 @@ export {
 export { initCommand, type InitOptions } from "./init";
 export { pluginsListCommand } from "./plugins";
 export { diagnoseCommand, type DiagnoseOptions } from "./diagnose";
+export {
+	interactListCommand,
+	interactRespondCommand,
+	interactCancelCommand,
+	type InteractListOptions,
+	type InteractRespondOptions,
+	type InteractCancelOptions,
+} from "./interact";

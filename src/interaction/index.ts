@@ -34,8 +34,11 @@ export {
 } from "./state";
 export type { RunState } from "./state";
 
-// CLI plugin
+// Plugins
 export { CLIInteractionPlugin } from "./plugins/cli";
+export { TelegramInteractionPlugin } from "./plugins/telegram";
+export { WebhookInteractionPlugin } from "./plugins/webhook";
+export { AutoInteractionPlugin } from "./plugins/auto";
 
 // Triggers
 export {

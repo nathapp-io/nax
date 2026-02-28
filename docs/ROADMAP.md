@@ -30,15 +30,15 @@
 **Timeout strategy:** Plugin chain cascade with `escalate` fallback. Plugins tried in priority order; when all exhausted → abort.
 
 **User Stories:**
-- [ ] US-001: Interaction plugin interface + types + plugin chain
-- [ ] US-002: CLI plugin (stdin, default for non-headless)
-- [ ] US-003: State persistence (pause/resume with run-state.json)
-- [ ] US-004: Built-in triggers + hook `interaction` field extension
-- [ ] US-005: Telegram plugin (inline buttons + polling)
-- [ ] US-006: `nax interact` CLI (list, respond, cancel)
-- [ ] US-007: Webhook plugin (HTTP POST + callback server + HMAC)
-- [ ] US-008: Auto plugin (AI responder with confidence escalation)
-- [ ] US-009: `nax status` enhancement (paused state + safety category)
+- [x] US-001: Interaction plugin interface + types + plugin chain (v0.15.0 Phase 1)
+- [x] US-002: CLI plugin (stdin, default for non-headless) (v0.15.0 Phase 1)
+- [x] US-003: State persistence (pause/resume with run-state.json) (v0.15.0 Phase 1)
+- [x] US-004: Built-in triggers + hook `interaction` field extension (v0.15.0 Phase 1)
+- [x] US-005: Telegram plugin (inline buttons + polling) (v0.15.0 Phase 2)
+- [x] US-006: `nax interact` CLI (list, respond, cancel) (v0.15.0 Phase 2)
+- [x] US-007: Webhook plugin (HTTP POST + callback server + HMAC) (v0.15.0 Phase 2)
+- [x] US-008: Auto plugin (AI responder with confidence escalation) (v0.15.0 Phase 2)
+- [x] US-009: `nax status` enhancement (paused state + safety category) (v0.15.0 Phase 2)
 - [ ] US-010: Constitution-to-agent-config generator (CLAUDE.md, AGENTS.md, .cursorrules, etc.)
 
 **Phases:** Core (US-001/3/4/2) → Telegram (US-005/6/9) → Advanced (US-007/8)

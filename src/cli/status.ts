@@ -10,6 +10,7 @@ import { join } from "node:path";
 import chalk from "chalk";
 import { resolveProject } from "../commands/common";
 import type { NaxStatusFile } from "../execution/status-file";
+import { listPendingInteractions, loadPendingInteraction } from "../interaction";
 import { getLogger } from "../logger";
 import { calculateAggregateMetrics, getLastRun, loadRunMetrics } from "../metrics";
 import { countStories, loadPRD } from "../prd";
@@ -379,6 +380,38 @@ async function displayFeatureDetails(featureName: string, featureDir: string): P
   const status = await loadStatusFile(featureDir);
 
   console.log(chalk.bold(`\n📊 ${prd.feature}\n`));
+
+  // Check for pending interactions
+  const pendingIds = await listPendingInteractions(featureDir);
+  if (pendingIds.length > 0) {
+    console.log(chalk.cyan(`⏸️  Paused — Waiting for Interaction (${pendingIds.length} pending)\n`));
+
+    for (const id of pendingIds) {
+      const req = await loadPendingInteraction(id, featureDir);
+      if (req) {
+        const safety = req.metadata?.safety ?? "unknown";
+        const safetyIcon = safety === "red" ? "🔴" : safety === "yellow" ? "🟡" : "🟢";
+        const timeRemaining = req.timeout ? Math.max(0, req.createdAt + req.timeout - Date.now()) : null;
+        const timeoutSec = timeRemaining !== null ? Math.floor(timeRemaining / 1000) : null;
+
+        console.log(`   ${safetyIcon} ${chalk.bold(req.id)}`);
+        console.log(chalk.dim(`      Type:     ${req.type}`));
+        console.log(chalk.dim(`      Summary:  ${req.summary}`));
+        console.log(chalk.dim(`      Fallback: ${req.fallback}`));
+        if (timeoutSec !== null) {
+          if (timeoutSec > 0) {
+            console.log(chalk.dim(`      Timeout:  ${timeoutSec}s remaining`));
+          } else {
+            console.log(chalk.red("      Timeout:  EXPIRED"));
+          }
+        }
+        console.log();
+      }
+    }
+
+    console.log(chalk.dim("   💡 Respond with: nax interact respond <id> --action approve|reject|skip|abort"));
+    console.log();
+  }
 
   // Display run status if active or crashed
   if (status) {
