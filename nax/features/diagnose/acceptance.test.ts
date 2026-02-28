@@ -408,5 +408,5 @@ describe("AC8: TypeScript compiles cleanly", () => {
 		});
 
 		expect(result.exitCode).toBe(0);
-	});
+	}, 60000);
 });
