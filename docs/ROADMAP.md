@@ -7,6 +7,21 @@
 
 ## Shipped
 
+### v0.14.0 — Failure Resilience (2026-02-28)
+
+Improve nax success rate before adding more features. Greenfield detection, auto-switch to test-after, escalation counter fixes.
+
+| Story | Title | Pts | Status |
+|:---|:---|:---|:---|
+| US-001 | BUG-010: Greenfield detection → force test-after | 3 | ✅ passed |
+| US-002 | BUG-009: Cross-story regression gate (test-after) | 5 | ✅ passed |
+| US-003 | BUG-006: Context auto-detection (contextFiles) | 5 | ✅ passed |
+| US-004 | BUG-002: Orphan process cleanup (PID registry) | 3 | ✅ passed |
+| US-005 | Strategy fallback: TDD → test-after on empty tests | 3 | ✅ passed |
+| BUG-011 | Escalation attempt counter reset on tier change | 2 | ✅ passed |
+
+**Note:** BUG-011 re-fixed in fd8cc0f — post-pipeline escalation path was still incrementing instead of resetting.
+
 ### v0.13.0 — Precheck (2026-02-27)
 
 Fail-fast validation before story execution. `nax precheck` CLI command. Config-driven review commands. PRD auto-default + router tags fix.
@@ -49,23 +64,9 @@ Worktree-based parallel execution: WorktreeManager, MergeEngine, ParallelDispatc
 
 ---
 
-## Current: v0.14.0 — Failure Resilience
+## Next: v0.15.0
 
-**Status:** Planning — fix plan ready, pending PRD generation
-**Spec:** memory/20260227-v014-fix-plan.md
-
-Improve nax success rate before adding more features. 6 stories, ~19 pts.
-
-| Story | Title | Pts | Status |
-|:---|:---|:---|:---|
-| US-001 | BUG-010: Greenfield detection → force test-after | 3 | 🔲 pending |
-| US-002 | BUG-009: Cross-story regression gate (test-after) | 5 | 🔲 pending |
-| US-003 | BUG-006: Context auto-detection (contextFiles) | 5 | 🔲 pending |
-| US-004 | BUG-002: Orphan process cleanup (PID registry) | 3 | 🔲 pending |
-| US-005 | Strategy fallback: TDD → test-after on empty tests | 3 | 🔲 pending |
-| US-006 | `nax diagnose` CLI | 3 | 🔲 pending |
-
-**Note:** BUG-011 removed — already fixed by BUG-16/BUG-17 pre-iteration tier check.
+**Status:** TBD
 
 ---
 
@@ -88,6 +89,7 @@ Improve nax success rate before adding more features. 6 stories, ~19 pts.
 - [ ] Context file auto-detection
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
+- [ ] nax diagnose command (deferred from v0.14.0)
 
 ---
 
@@ -97,4 +99,4 @@ Sequential canary -> stable: v0.12.0-canary.0 -> canary.N -> v0.12.0
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-02-27*
+*Last updated: 2026-02-28*
