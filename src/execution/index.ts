@@ -42,3 +42,4 @@ export {
   resetCrashHandlers,
   type CrashRecoveryContext,
 } from "./crash-recovery";
+export { PidRegistry } from "./pid-registry";

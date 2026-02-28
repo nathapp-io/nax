@@ -2,6 +2,7 @@
  * Claude Code Agent Adapter
  */
 
+import { PidRegistry } from "../execution/pid-registry";
 import { getLogger } from "../logger";
 import { estimateCostByDuration, estimateCostFromOutput } from "./cost";
 import type {
@@ -69,6 +70,25 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     maxContextTokens: 200_000,
     features: new Set(["tdd", "review", "refactor", "batch"]),
   };
+
+  /**
+   * PID registry for tracking spawned processes (per workdir).
+   * Lazy-initialized on first spawn.
+   */
+  private pidRegistries: Map<string, PidRegistry> = new Map();
+
+  /**
+   * Get or create PID registry for a given workdir.
+   *
+   * @param workdir - Working directory
+   * @returns PID registry instance for this workdir
+   */
+  private getPidRegistry(workdir: string): PidRegistry {
+    if (!this.pidRegistries.has(workdir)) {
+      this.pidRegistries.set(workdir, new PidRegistry(workdir));
+    }
+    return this.pidRegistries.get(workdir)!;
+  }
 
   /**
    * Check if Claude Code CLI is installed on this machine.
@@ -209,8 +229,10 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       },
     });
 
-    // Capture PID for cleanup on failure
+    // Register PID for orphan cleanup
     const processPid = proc.pid;
+    const pidRegistry = this.getPidRegistry(options.workdir);
+    await pidRegistry.register(processPid);
 
     // Set up timeout
     let timedOut = false;
@@ -221,6 +243,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     const exitCode = await proc.exited;
     clearTimeout(timeoutId);
+
+    // Unregister PID after clean exit
+    await pidRegistry.unregister(processPid);
 
     const stdout = await new Response(proc.stdout).text();
     const stderr = await new Response(proc.stderr).text();
@@ -293,6 +318,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
    */
   async plan(options: PlanOptions): Promise<PlanResult> {
     const cmd = this.buildPlanCommand(options);
+    const pidRegistry = this.getPidRegistry(options.workdir);
 
     if (options.interactive) {
       // Interactive mode: inherit stdio
@@ -303,7 +329,15 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         stderr: "inherit",
         env: { ...process.env, ...(options.modelDef?.env || {}) },
       });
+
+      // Register PID
+      await pidRegistry.register(proc.pid);
+
       const exitCode = await proc.exited;
+
+      // Unregister PID after exit
+      await pidRegistry.unregister(proc.pid);
+
       if (exitCode !== 0) {
         throw new Error(`Plan mode failed with exit code ${exitCode}`);
       }
@@ -326,7 +360,14 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         stderr: Bun.file(errFile),
         env: { ...process.env, ...(options.modelDef?.env || {}) },
       });
+
+      // Register PID
+      await pidRegistry.register(proc.pid);
+
       const exitCode = await proc.exited;
+
+      // Unregister PID after exit
+      await pidRegistry.unregister(proc.pid);
 
       const specContent = readFileSync(outFile, "utf-8");
       const conversationLog = readFileSync(errFile, "utf-8");
@@ -424,6 +465,8 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       prompt,
     ];
 
+    const pidRegistry = this.getPidRegistry(options.workdir);
+
     const proc = Bun.spawn(cmd, {
       cwd: options.workdir,
       stdout: "pipe",
@@ -434,7 +477,14 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       },
     });
 
+    // Register PID
+    await pidRegistry.register(proc.pid);
+
     const exitCode = await proc.exited;
+
+    // Unregister PID after exit
+    await pidRegistry.unregister(proc.pid);
+
     const stdout = await new Response(proc.stdout).text();
     const stderr = await new Response(proc.stderr).text();
 
@@ -670,6 +720,12 @@ Respond with ONLY a JSON array (no markdown code fences):
       },
     });
 
+    // Register PID (async but don't await - fire and forget for interactive mode)
+    const pidRegistry = this.getPidRegistry(options.workdir);
+    pidRegistry.register(ptyProc.pid).catch(() => {
+      // Ignore registration errors in interactive mode
+    });
+
     // Stream output to callback
     ptyProc.onData((data) => {
       options.onOutput(Buffer.from(data));
@@ -677,6 +733,10 @@ Respond with ONLY a JSON array (no markdown code fences):
 
     // Handle exit
     ptyProc.onExit((event) => {
+      // Unregister PID after exit (async but don't await)
+      pidRegistry.unregister(ptyProc.pid).catch(() => {
+        // Ignore unregistration errors
+      });
       options.onExit(event.exitCode);
     });
 
