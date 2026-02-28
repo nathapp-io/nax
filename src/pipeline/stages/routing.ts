@@ -20,6 +20,7 @@
 import { getLogger } from "../../logger";
 import { routeStory } from "../../routing";
 import { clearCache, routeBatch } from "../../routing/strategies/llm";
+import { isGreenfieldStory } from "../../context/greenfield";
 import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
 
 export const routingStage: PipelineStage = {
@@ -44,6 +45,20 @@ export const routingStage: PipelineStage = {
     }
 
     ctx.routing = routing as RoutingResult;
+
+    // BUG-010: Greenfield detection — force test-after if no test files exist
+    const greenfieldDetectionEnabled = ctx.config.tdd.greenfieldDetection ?? true;
+    if (greenfieldDetectionEnabled && routing.testStrategy.startsWith("three-session-tdd")) {
+      const isGreenfield = await isGreenfieldStory(ctx.story, ctx.workdir);
+      if (isGreenfield) {
+        logger.info("routing", "Greenfield detected — forcing test-after strategy", {
+          storyId: ctx.story.id,
+          originalStrategy: routing.testStrategy,
+        });
+        routing.testStrategy = "test-after";
+        routing.reasoning = `${routing.reasoning} [GREENFIELD OVERRIDE: No test files exist, using test-after instead of TDD]`;
+      }
+    }
 
     const isBatch = ctx.stories.length > 1;
 

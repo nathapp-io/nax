@@ -10,7 +10,9 @@ export type FailureCategory =
   /** Tests were written and implemented but still fail after all sessions */
   | "tests-failing"
   /** Verifier explicitly rejected the implementation */
-  | "verifier-rejected";
+  | "verifier-rejected"
+  /** Greenfield project with no test files — TDD not applicable (BUG-010) */
+  | "greenfield-no-tests";
 
 /** Isolation verification result */
 export interface IsolationCheck {

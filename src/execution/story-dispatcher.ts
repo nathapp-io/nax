@@ -138,7 +138,12 @@ async function tryLlmBatchRoute(config: NaxConfig, stories: UserStory[], label =
  * Exported for unit-testing without running the full runner loop.
  */
 export function resolveMaxAttemptsOutcome(
-	failureCategory?: "isolation-violation" | "verifier-rejected" | "session-failure" | "tests-failing",
+	failureCategory?:
+		| "isolation-violation"
+		| "verifier-rejected"
+		| "session-failure"
+		| "tests-failing"
+		| "greenfield-no-tests",
 ): "pause" | "fail" {
 	if (!failureCategory) {
 		return "fail";
@@ -147,6 +152,7 @@ export function resolveMaxAttemptsOutcome(
 	switch (failureCategory) {
 		case "isolation-violation":
 		case "verifier-rejected":
+		case "greenfield-no-tests":
 			return "pause";
 		case "session-failure":
 		case "tests-failing":

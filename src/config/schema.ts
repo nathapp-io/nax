@@ -170,6 +170,8 @@ export interface TddConfig {
   testWriterAllowedPaths?: string[];
   /** Rollback git changes when TDD fails (default: true). Prevents partial commits when TDD fails. */
   rollbackOnFailure?: boolean;
+  /** Enable greenfield detection to force test-after on projects with no test files (default: true, BUG-010) */
+  greenfieldDetection?: boolean;
 }
 
 /** Constitution config */
@@ -493,6 +495,8 @@ const TddConfigSchema = z.object({
     })
     .optional(),
   testWriterAllowedPaths: z.array(z.string()).optional(),
+  rollbackOnFailure: z.boolean().optional(),
+  greenfieldDetection: z.boolean().optional(),
 });
 
 const ConstitutionConfigSchema = z.object({
@@ -704,6 +708,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
     },
     testWriterAllowedPaths: ["src/index.ts", "src/**/index.ts"],
     rollbackOnFailure: true,
+    greenfieldDetection: true,
   },
   constitution: {
     enabled: true,

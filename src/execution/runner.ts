@@ -80,6 +80,7 @@ export function resolveMaxAttemptsOutcome(failureCategory?: FailureCategory): "p
   switch (failureCategory) {
     case "isolation-violation":
     case "verifier-rejected":
+    case "greenfield-no-tests":
       return "pause";
     case "session-failure":
     case "tests-failing":

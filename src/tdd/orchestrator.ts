@@ -363,39 +363,11 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   const testFilesCreated = session1.filesChanged.filter((f) => testFilePatterns.test(f));
 
   if (testFilesCreated.length === 0) {
-    // Zero-file fallback: in strict mode with strategy='auto', downgrade to lite
-    const tddStrategy = config.tdd.strategy ?? "auto";
-    if (!lite && tddStrategy === "auto") {
-      logger.warn("tdd", `Zero test files in strict mode; falling back to tdd-lite for story ${story.id}`, {
-        storyId: story.id,
-        filesChanged: session1.filesChanged,
-      });
-
-      // Reset git to pre-test-writer state
-      const resetProc = Bun.spawn(["git", "checkout", "."], {
-        cwd: workdir,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      await resetProc.exited;
-
-      // Re-run as lite mode with incremented recursion depth
-      return runThreeSessionTdd({
-        agent,
-        story,
-        config,
-        workdir,
-        modelTier,
-        contextMarkdown,
-        dryRun: false,
-        lite: true,
-        _recursionDepth: _recursionDepth + 1,
-      });
-    }
-
+    // BUG-010: Zero-file fallback — return greenfield-no-tests instead of recursing to lite
+    // This should be caught by routing stage greenfield detection, but we handle it here as a safety net
     needsHumanReview = true;
-    reviewReason = "Test writer session created no test files";
-    logger.warn("tdd", "⚠️ Test writer created no test files", {
+    reviewReason = "Test writer session created no test files (greenfield project)";
+    logger.warn("tdd", "⚠️ Test writer created no test files — greenfield detected", {
       storyId: story.id,
       reviewReason,
       filesChanged: session1.filesChanged,
@@ -407,7 +379,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
       sessions,
       needsHumanReview,
       reviewReason,
-      failureCategory: "isolation-violation",
+      failureCategory: "greenfield-no-tests",
       totalCost: sessions.reduce((sum, s) => sum + s.estimatedCost, 0),
       lite,
     };
