@@ -6,14 +6,14 @@
   "userStories": [
     {
       "id": "US-001",
-      "title": "nax diagnose CLI — pure pattern-matching diagnosis",
-      "description": "Implement the `nax diagnose` command that reads existing run artifacts (events.jsonl from ~/.nax/events/<project>/, status.json from <workdir>/.nax-status.json, PRD from nax/features/<feature>/prd.json, nax.lock from <workdir>/nax.lock, git log) and produces a structured human-readable diagnosis report. No LLM calls. No agent. Purely deterministic pattern matching.\n\nCOMMAND SIGNATURE:\n  nax diagnose [-f <feature>] [-d <workdir>] [--json] [--verbose]\n\nOUTPUT SECTIONS:\n1. Run Summary — feature, last run time, status (complete/stalled/failed), stories passed/failed/pending, cost, commits produced\n2. Story Breakdown — per-story: status, attempts, tier, strategy, pattern detected\n3. Failure Analysis — for each failed story: pattern name, symptom description, fix suggestion\n4. Lock Check — is nax.lock present? Is PID alive (process.kill(pid, 0))? Show fix command if stale.\n5. Recommendations — ordered list of next actions\n\nFAILURE PATTERNS TO DETECT (match in order):\n- GREENFIELD_TDD: failureCategory === greenfield-no-tests in priorErrors or events\n- TEST_MISMATCH: 2+ consecutive tests-failing escalation events for same story\n- ENVIRONMENTAL: precheck-failed event OR blocker in status.json\n- RATE_LIMITED: rateLimited: true in agent session failure events\n- ISOLATION_VIOLATION: failureCategory === isolation-violation\n- MAX_TIERS_EXHAUSTED: story has priorErrors for all configured tiers AND status is failed/paused\n- SESSION_CRASH: session-failure category + no commits for that story in git log\n- STALLED: isStalled flag in status.json OR all pending stories blocked by dependencies\n- LOCK_STALE: nax.lock present + PID not alive\n- AUTO_RECOVERED: story had greenfield-no-tests but status is passed (S5 worked)\n- UNKNOWN: no pattern matched\n\nGRACEFUL DEGRADATION: If events.jsonl is missing, fall back to PRD priorErrors + git log only. Never crash — always produce partial output with a note about missing data.\n\nFILES TO CREATE:\n- src/cli/diagnose.ts — main implementation (read artifacts, pattern match, format output)\n- src/commands/diagnose.ts — thin commander wrapper registering the command\n- Register in bin/nax.ts — add diagnose command import\n- test/integration/cli-diagnose.test.ts — integration tests covering all ACs",
+      "title": "nax diagnose CLI \u2014 pure pattern-matching diagnosis",
+      "description": "Implement the `nax diagnose` command that reads existing run artifacts (events.jsonl from ~/.nax/events/<project>/, status.json from <workdir>/.nax-status.json, PRD from nax/features/<feature>/prd.json, nax.lock from <workdir>/nax.lock, git log) and produces a structured human-readable diagnosis report. No LLM calls. No agent. Purely deterministic pattern matching.\n\nCOMMAND SIGNATURE:\n  nax diagnose [-f <feature>] [-d <workdir>] [--json] [--verbose]\n\nOUTPUT SECTIONS:\n1. Run Summary \u2014 feature, last run time, status (complete/stalled/failed), stories passed/failed/pending, cost, commits produced\n2. Story Breakdown \u2014 per-story: status, attempts, tier, strategy, pattern detected\n3. Failure Analysis \u2014 for each failed story: pattern name, symptom description, fix suggestion\n4. Lock Check \u2014 is nax.lock present? Is PID alive (process.kill(pid, 0))? Show fix command if stale.\n5. Recommendations \u2014 ordered list of next actions\n\nFAILURE PATTERNS TO DETECT (match in order):\n- GREENFIELD_TDD: failureCategory === greenfield-no-tests in priorErrors or events\n- TEST_MISMATCH: 2+ consecutive tests-failing escalation events for same story\n- ENVIRONMENTAL: precheck-failed event OR blocker in status.json\n- RATE_LIMITED: rateLimited: true in agent session failure events\n- ISOLATION_VIOLATION: failureCategory === isolation-violation\n- MAX_TIERS_EXHAUSTED: story has priorErrors for all configured tiers AND status is failed/paused\n- SESSION_CRASH: session-failure category + no commits for that story in git log\n- STALLED: isStalled flag in status.json OR all pending stories blocked by dependencies\n- LOCK_STALE: nax.lock present + PID not alive\n- AUTO_RECOVERED: story had greenfield-no-tests but status is passed (S5 worked)\n- UNKNOWN: no pattern matched\n\nGRACEFUL DEGRADATION: If events.jsonl is missing, fall back to PRD priorErrors + git log only. Never crash \u2014 always produce partial output with a note about missing data.\n\nFILES TO CREATE:\n- src/cli/diagnose.ts \u2014 main implementation (read artifacts, pattern match, format output)\n- src/commands/diagnose.ts \u2014 thin commander wrapper registering the command\n- Register in bin/nax.ts \u2014 add diagnose command import\n- test/integration/cli-diagnose.test.ts \u2014 integration tests covering all ACs",
       "acceptanceCriteria": [
         "AC1: `nax diagnose` reads the last run for the current directory feature and prints human-readable output with all 5 sections (Run Summary, Story Breakdown, Failure Analysis, Lock Check, Recommendations)",
         "AC2: Each failed story shows a pattern classification from the known patterns list, or UNKNOWN if no match",
         "AC3: Stale nax.lock (lock present + PID dead) is detected and a fix command shown: rm nax.lock",
         "AC4: `--json` flag outputs machine-readable JSON containing the same data as human output",
-        "AC5: Works gracefully when events.jsonl is missing — uses PRD + git log only, prints a note about missing events",
+        "AC5: Works gracefully when events.jsonl is missing \u2014 uses PRD + git log only, prints a note about missing events",
         "AC6: `-f <feature>` targets a specific feature; `-d <workdir>` sets working directory",
         "AC7: AUTO_RECOVERED stories (S5 switched strategy, story passed) are shown as INFO not ERROR",
         "AC8: TypeScript compiles cleanly (bun x tsc --noEmit)"
@@ -27,7 +27,9 @@
       "passes": true,
       "attempts": 1,
       "escalations": [],
-      "priorErrors": [],
+      "priorErrors": [
+        "Manual accept: verified 8/8 AC tests pass on VPS. Mac01 Bun env issue with git detection in temp dirs during verification."
+      ],
       "storyPoints": 1
     }
   ],
@@ -35,5 +37,5 @@
     "maxStories": 5,
     "granularity": "medium"
   },
-  "updatedAt": "2026-02-28T04:54:44.915Z"
+  "updatedAt": "2026-02-28T06:18:08Z"
 }
