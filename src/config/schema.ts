@@ -91,6 +91,14 @@ export interface RectificationConfig {
   abortOnIncreasingFailures: boolean;
 }
 
+/** Regression gate config (BUG-009) */
+export interface RegressionGateConfig {
+  /** Enable full-suite regression gate after scoped verification (default: true) */
+  enabled: boolean;
+  /** Timeout for full-suite regression run in seconds (default: 120) */
+  timeoutSeconds: number;
+}
+
 /** Execution limits */
 export interface ExecutionConfig {
   /** Max iterations per feature run (auto-calculated from tierOrder sum if not set) */
@@ -107,6 +115,8 @@ export interface ExecutionConfig {
   maxStoriesPerFeature: number;
   /** Rectification loop settings (v0.11) */
   rectification: RectificationConfig;
+  /** Regression gate settings (BUG-009) */
+  regressionGate: RegressionGateConfig;
   /** Token budget for plugin context providers (default: 2000) */
   contextProviderTokenBudget: number;
   /** Lint command override (null = disabled, undefined = auto-detect from package.json) */
@@ -448,6 +458,11 @@ const RectificationConfigSchema = z.object({
   abortOnIncreasingFailures: z.boolean().default(true),
 });
 
+const RegressionGateConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  timeoutSeconds: z.number().int().min(10).max(600).default(120),
+});
+
 const ExecutionConfigSchema = z.object({
   maxIterations: z.number().int().positive({ message: "maxIterations must be > 0" }),
   iterationDelayMs: z.number().int().nonnegative(),
@@ -456,6 +471,7 @@ const ExecutionConfigSchema = z.object({
   verificationTimeoutSeconds: z.number().int().min(1).max(3600).default(300),
   maxStoriesPerFeature: z.number().int().positive(),
   rectification: RectificationConfigSchema,
+  regressionGate: RegressionGateConfigSchema,
   contextProviderTokenBudget: z.number().int().positive({ message: "contextProviderTokenBudget must be > 0" }).default(2000),
   lintCommand: z.string().nullable().optional(),
   typecheckCommand: z.string().nullable().optional(),
@@ -675,6 +691,10 @@ export const DEFAULT_CONFIG: NaxConfig = {
       fullSuiteTimeoutSeconds: 120,
       maxFailureSummaryChars: 2000,
       abortOnIncreasingFailures: true,
+    },
+    regressionGate: {
+      enabled: true,
+      timeoutSeconds: 120,
     },
     contextProviderTokenBudget: 2000,
   },
