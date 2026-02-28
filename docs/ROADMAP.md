@@ -6,23 +6,11 @@
 
 ---
 
-## Next: v0.14.1 — nax diagnose CLI
-
-**Status:** Spec ready → `memory/20260228-v0141-diagnose-spec.md`
-
-Pure CLI diagnosis — reads events.jsonl, PRD, git log, status.json. Pattern-matching, no LLM.
-
-| Story | Title | Pts | Status |
-|:---|:---|:---|:---|
-| US-001 | `nax diagnose` CLI — pure pattern-matching diagnosis | 3 | 🔲 pending |
-
-**Note:** LLM-assisted `--ai` flag deferred to a future version (TBD).
-
----
-
-## Planned: v0.15.0
+## Next: v0.15.0
 
 **Status:** TBD
+
+---
 
 ---
 
@@ -30,6 +18,7 @@ Pure CLI diagnosis — reads events.jsonl, PRD, git log, status.json. Pattern-ma
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.14.1 | nax diagnose CLI | 2026-02-28 | [releases/v0.14.1.md](releases/v0.14.1.md) |
 | v0.14.0 | Failure Resilience | 2026-02-28 | [releases/v0.14.0.md](releases/v0.14.0.md) |
 | v0.13.0 | Precheck | 2026-02-27 | [releases/v0.13.0.md](releases/v0.13.0.md) |
 | v0.12.0 | Structured Logging | 2026-02-27 | [releases/v0.12.0.md](releases/v0.12.0.md) |
