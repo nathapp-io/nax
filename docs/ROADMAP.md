@@ -39,6 +39,7 @@
 - [ ] US-007: Webhook plugin (HTTP POST + callback server + HMAC)
 - [ ] US-008: Auto plugin (AI responder with confidence escalation)
 - [ ] US-009: `nax status` enhancement (paused state + safety category)
+- [ ] US-010: Constitution-to-agent-config generator (CLAUDE.md, AGENTS.md, .cursorrules, etc.)
 
 **Phases:** Core (US-001/3/4/2) → Telegram (US-005/6/9) → Advanced (US-007/8)
 
