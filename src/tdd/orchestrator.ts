@@ -10,16 +10,16 @@
 import type { AgentAdapter } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config";
-import {
-  type RectificationState,
-  createRectificationPrompt,
-  shouldRetryRectification,
-} from "../execution/rectification";
-import { parseBunTestOutput } from "../execution/test-output-parser";
-import { executeWithTimeout } from "../execution/verification";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { captureGitRef } from "../utils/git";
+import {
+  type RectificationState,
+  createRectificationPrompt,
+  executeWithTimeout,
+  parseBunTestOutput,
+  shouldRetryRectification,
+} from "../verification";
 import { cleanupProcessTree } from "./cleanup";
 import { getChangedFiles, verifyImplementerIsolation, verifyTestWriterIsolation } from "./isolation";
 import {
