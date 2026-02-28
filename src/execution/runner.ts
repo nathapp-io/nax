@@ -8,26 +8,17 @@
  * 4. Loop until complete or blocked
  */
 
-import * as os from "node:os";
-import path from "node:path";
-import chalk from "chalk";
 import type { NaxConfig } from "../config";
-import { LockAcquisitionError } from "../errors";
-import { type LoadedHooksConfig, fireHook } from "../hooks";
+import type { LoadedHooksConfig } from "../hooks";
 import { getSafeLogger } from "../logger";
-import { type RunSummary, formatRunSummary } from "../logging";
-import { type StoryMetrics, saveRunMetrics } from "../metrics";
+import type { StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
-import { loadPlugins } from "../plugins/loader";
-import { countStories, isComplete, loadPRD } from "../prd";
+import { countStories } from "../prd";
 import type { UserStory } from "../prd";
 import { clearCache as clearLlmCache, routeBatch as llmRouteBatch } from "../routing/strategies/llm";
 import { precomputeBatchPlan } from "./batching";
-import { installCrashHandlers } from "./crash-recovery";
-import { acquireLock, getAllReadyStories, hookCtx, releaseLock } from "./helpers";
-import { executeParallel } from "./parallel";
-import { PidRegistry } from "./pid-registry";
-import { StatusWriter } from "./status-writer";
+import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
+import { getAllReadyStories } from "./helpers";
 
 // Re-export for backward compatibility
 export { resolveMaxAttemptsOutcome } from "./escalation";
@@ -124,108 +115,43 @@ export async function run(options: RunOptions): Promise<RunResult> {
   let totalCost = 0;
   const allStoryMetrics: StoryMetrics[] = [];
 
-  // ── Status writer (encapsulates status file state and write logic) ───────
-  const statusWriter = new StatusWriter(statusFile, config, {
-    runId,
-    feature,
-    startedAt: runStartedAt,
-    dryRun,
-    startTimeMs: startTime,
-    pid: process.pid,
-  });
-
-  // ── PID registry for orphan process cleanup (BUG-002) ───────
-  const pidRegistry = new PidRegistry(workdir);
-
-  // Cleanup stale PIDs from previous crashed runs
   const logger = getSafeLogger();
-  await pidRegistry.cleanupStale();
 
-  // Install crash handlers for signal recovery (US-007, BUG-1+MEM-1 fix: pass getters, cleanup in finally)
-  const cleanupCrashHandlers = installCrashHandlers({
-    statusWriter,
+  // ── Execute initial setup phase ──────────────────────────────────────────────
+  const { setupRun } = await import("./lifecycle/run-setup");
+  const setupResult = await setupRun({
+    prdPath,
+    workdir,
+    config,
+    hooks,
+    feature,
+    dryRun,
+    statusFile,
+    logFilePath,
+    runId,
+    startedAt: runStartedAt,
+    startTime,
+    skipPrecheck,
+    headless,
+    formatterMode,
     getTotalCost: () => totalCost,
     getIterations: () => iterations,
-    jsonlFilePath: logFilePath,
-    pidRegistry,
   });
 
-  // Acquire lock to prevent concurrent execution
-  const lockAcquired = await acquireLock(workdir);
-  if (!lockAcquired) {
-    logger?.error("execution", "Another nax process is already running in this directory");
-    logger?.error("execution", "If you believe this is an error, remove nax.lock manually");
-    throw new LockAcquisitionError(workdir);
-  }
-
-  // Load plugins (before try block so it's accessible in finally)
-  const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
-  const projectPluginsDir = path.join(workdir, "nax", "plugins");
-  const configPlugins = config.plugins || [];
-  const pluginRegistry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, workdir);
-  const reporters = pluginRegistry.getReporters();
-
-  // Load PRD (before try block so it's accessible in finally for onRunEnd)
-  let prd = await loadPRD(prdPath);
-
-  // ── Run precheck validations (unless --skip-precheck) ──────────────────────
-  if (!skipPrecheck) {
-    const { runPrecheckValidation } = await import("./lifecycle/precheck-runner");
-    await runPrecheckValidation({
-      config,
-      prd,
-      workdir,
-      logFilePath,
-      statusWriter,
-      headless,
-      formatterMode,
-    });
-  } else {
-    logger?.warn("precheck", "Precheck validations skipped (--skip-precheck)");
-  }
+  const { statusWriter, pidRegistry, cleanupCrashHandlers, pluginRegistry, storyCounts: counts } = setupResult;
+  let prd = setupResult.prd;
 
   try {
-    logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {
-      plugins: pluginRegistry.plugins.map((p) => ({ name: p.name, version: p.version, provides: p.provides })),
-    });
-
-    // Log run start
-    const routingMode = config.routing.llm?.mode ?? "hybrid";
-    logger?.info("run.start", `Starting feature: ${feature}`, {
-      runId,
-      feature,
-      workdir,
-      dryRun,
-      useBatch,
-      routingMode,
-    });
-
-    // Fire on-start hook
-    await fireHook(hooks, "on-start", hookCtx(feature), workdir);
-
-    // Initialize run: check agent, reconcile state, validate limits
-    const { initializeRun } = await import("./lifecycle/run-initialization");
-    const initResult = await initializeRun({
-      config,
-      prdPath,
-      workdir,
-      dryRun,
-    });
-    prd = initResult.prd;
-    const counts = initResult.storyCounts;
-
     // ── Output run header in headless mode ─────────────────────────────────
     if (headless && formatterMode !== "json") {
-      const pkg = await Bun.file(path.join(import.meta.dir, "..", "..", "package.json")).json();
-      console.log("");
-      console.log(chalk.bold(chalk.blue("═".repeat(60))));
-      console.log(chalk.bold(chalk.blue(`  ▶ NAX v${pkg.version} — RUN STARTED`)));
-      console.log(chalk.blue("═".repeat(60)));
-      console.log(`  ${chalk.gray("Feature:")}  ${chalk.cyan(feature)}`);
-      console.log(`  ${chalk.gray("Stories:")}  ${chalk.cyan(`${counts.total} total, ${counts.pending} pending`)}`);
-      console.log(`  ${chalk.gray("Path:")}     ${chalk.dim(workdir)}`);
-      console.log(chalk.blue("═".repeat(60)));
-      console.log("");
+      const { outputRunHeader } = await import("./lifecycle/headless-formatter");
+      await outputRunHeader({
+        feature,
+        totalStories: counts.total,
+        pendingStories: counts.pending,
+        workdir,
+        formatterMode,
+      });
     }
 
     // ── Status write point 1: run started ───────────────────────────────────
@@ -269,148 +195,45 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
     // ── Parallel Execution Path (when --parallel is set) ──────────────────────
     if (options.parallel !== undefined) {
-      const readyStories = getAllReadyStories(prd);
-      if (readyStories.length === 0) {
-        logger?.info("parallel", "No stories ready for parallel execution");
-      } else {
-        const maxConcurrency = options.parallel === 0 ? os.cpus().length : Math.max(1, options.parallel);
+      const { runParallelExecution } = await import("./parallel-executor");
+      const parallelResult = await runParallelExecution(
+        {
+          prdPath,
+          workdir,
+          config,
+          hooks,
+          feature,
+          featureDir,
+          parallelCount: options.parallel,
+          eventEmitter,
+          statusWriter,
+          runId,
+          startedAt: runStartedAt,
+          startTime,
+          totalCost,
+          iterations,
+          storiesCompleted,
+          allStoryMetrics,
+          pluginRegistry,
+          formatterMode,
+          headless,
+        },
+        prd,
+      );
 
-        logger?.info("parallel", "Starting parallel execution mode", {
-          totalStories: readyStories.length,
-          maxConcurrency,
-        });
+      prd = parallelResult.prd;
+      totalCost = parallelResult.totalCost;
+      storiesCompleted = parallelResult.storiesCompleted;
 
-        // Update status with parallel info
-        statusWriter.setPrd(prd);
-        await statusWriter.update(totalCost, iterations, {
-          parallel: {
-            enabled: true,
-            maxConcurrency,
-            activeStories: readyStories.map((s) => ({
-              storyId: s.id,
-              worktreePath: path.join(workdir, ".nax-wt", s.id),
-            })),
-          },
-        });
-
-        try {
-          const parallelResult = await executeParallel(
-            readyStories,
-            prdPath,
-            workdir,
-            config,
-            hooks,
-            pluginRegistry,
-            prd,
-            featureDir,
-            options.parallel,
-            eventEmitter,
-          );
-
-          prd = parallelResult.updatedPrd;
-          storiesCompleted += parallelResult.storiesCompleted;
-          totalCost += parallelResult.totalCost;
-          prdDirty = true;
-
-          logger?.info("parallel", "Parallel execution complete", {
-            storiesCompleted: parallelResult.storiesCompleted,
-            totalCost: parallelResult.totalCost,
-          });
-
-          // Clear parallel status
-          statusWriter.setPrd(prd);
-          await statusWriter.update(totalCost, iterations, {
-            parallel: {
-              enabled: true,
-              maxConcurrency,
-              activeStories: [],
-            },
-          });
-        } catch (error) {
-          logger?.error("parallel", "Parallel execution failed", {
-            error: error instanceof Error ? error.message : String(error),
-          });
-
-          // Clear parallel status on error
-          await statusWriter.update(totalCost, iterations, {
-            parallel: undefined,
-          });
-
-          throw error;
-        }
-
-        // Check if all stories are complete after parallel execution
-        if (isComplete(prd)) {
-          logger?.info("execution", "All stories complete!", {
-            feature,
-            totalCost,
-          });
-          await fireHook(hooks, "on-complete", hookCtx(feature, { status: "complete", cost: totalCost }), workdir);
-
-          // Skip to metrics and cleanup
-          const durationMs = Date.now() - startTime;
-          const runCompletedAt = new Date().toISOString();
-          const runMetrics = {
-            runId,
-            feature,
-            startedAt: runStartedAt,
-            completedAt: runCompletedAt,
-            totalCost,
-            totalStories: allStoryMetrics.length,
-            storiesCompleted,
-            storiesFailed: countStories(prd).failed,
-            totalDurationMs: durationMs,
-            stories: allStoryMetrics,
-          };
-
-          await saveRunMetrics(workdir, runMetrics);
-
-          const finalCounts = countStories(prd);
-          logger?.info("run.complete", "Feature execution completed", {
-            runId,
-            feature,
-            success: true,
-            iterations,
-            totalStories: finalCounts.total,
-            storiesCompleted,
-            storiesFailed: finalCounts.failed,
-            storiesPending: finalCounts.pending,
-            totalCost,
-            durationMs,
-          });
-
-          statusWriter.setPrd(prd);
-          statusWriter.setCurrentStory(null);
-          statusWriter.setRunStatus("completed");
-          await statusWriter.update(totalCost, iterations);
-
-          // ── Output run footer in headless mode (parallel path) ──────────────
-          if (headless && formatterMode !== "json") {
-            const runSummary: RunSummary = {
-              total: finalCounts.total,
-              passed: finalCounts.passed,
-              failed: finalCounts.failed,
-              skipped: finalCounts.skipped,
-              durationMs,
-              totalCost,
-              startedAt: runStartedAt,
-              completedAt: runCompletedAt,
-            };
-            const summaryOutput = formatRunSummary(runSummary, {
-              mode: formatterMode,
-              useColor: true,
-            });
-            console.log(summaryOutput);
-          }
-
-          return {
-            success: true,
-            iterations,
-            storiesCompleted,
-            totalCost,
-            durationMs,
-          };
-        }
+      // If parallel execution completed everything, return early
+      if (parallelResult.completed && parallelResult.durationMs !== undefined) {
+        return {
+          success: true,
+          iterations,
+          storiesCompleted,
+          totalCost,
+          durationMs: parallelResult.durationMs,
+        };
       }
     }
 
@@ -469,79 +292,40 @@ export async function run(options: RunOptions): Promise<RunResult> {
       storiesCompleted = acceptanceResult.storiesCompleted;
     }
 
-    const durationMs = Date.now() - startTime;
-
-    // Save run metrics
-    const runCompletedAt = new Date().toISOString();
-    const runMetrics = {
+    // Handle run completion: save metrics, log summary, update status
+    const { handleRunCompletion } = await import("./lifecycle/run-completion");
+    const completionResult = await handleRunCompletion({
       runId,
       feature,
       startedAt: runStartedAt,
-      completedAt: runCompletedAt,
+      prd,
+      allStoryMetrics,
       totalCost,
-      totalStories: allStoryMetrics.length,
       storiesCompleted,
-      storiesFailed: countStories(prd).failed,
-      totalDurationMs: durationMs,
-      stories: allStoryMetrics,
-    };
-
-    await saveRunMetrics(workdir, runMetrics);
-
-    // Log run completion
-    const finalCounts = countStories(prd);
-
-    // Prepare per-story metrics summary
-    const storyMetricsSummary = allStoryMetrics.map((sm) => ({
-      storyId: sm.storyId,
-      complexity: sm.complexity,
-      modelTier: sm.modelTier,
-      modelUsed: sm.modelUsed,
-      attempts: sm.attempts,
-      finalTier: sm.finalTier,
-      success: sm.success,
-      cost: sm.cost,
-      durationMs: sm.durationMs,
-      firstPassSuccess: sm.firstPassSuccess,
-    }));
-
-    logger?.info("run.complete", "Feature execution completed", {
-      runId,
-      feature,
-      success: isComplete(prd),
       iterations,
-      totalStories: finalCounts.total,
-      storiesCompleted,
-      storiesFailed: finalCounts.failed,
-      storiesPending: finalCounts.pending,
-      totalCost,
-      durationMs,
-      storyMetrics: storyMetricsSummary,
+      startTime,
+      workdir,
+      statusWriter,
     });
 
-    // ── Status write point 4: run end ──────────────────────────────────────
-    statusWriter.setPrd(prd);
-    statusWriter.setCurrentStory(null);
-    statusWriter.setRunStatus(isComplete(prd) ? "completed" : isStalled(prd) ? "stalled" : "running");
-    await statusWriter.update(totalCost, iterations);
+    const { durationMs, runCompletedAt, finalCounts } = completionResult;
 
     // ── Output run footer in headless mode ─────────────────────────────────
     if (headless && formatterMode !== "json") {
-      const runSummary: RunSummary = {
-        total: finalCounts.total,
-        passed: finalCounts.passed,
-        failed: finalCounts.failed,
-        skipped: finalCounts.skipped,
+      const { outputRunFooter } = await import("./lifecycle/headless-formatter");
+      outputRunFooter({
+        finalCounts: {
+          total: finalCounts.total,
+          passed: finalCounts.passed,
+          failed: finalCounts.failed,
+          skipped: finalCounts.skipped,
+        },
         durationMs,
         totalCost,
         startedAt: runStartedAt,
         completedAt: runCompletedAt,
-      };
-      const summaryOutput = formatRunSummary(runSummary, {
-        mode: formatterMode,
-        useColor: true,
+        formatterMode,
       });
-      console.log(summaryOutput);
     }
 
     // Stop heartbeat and write exit summary (US-007)
@@ -560,38 +344,18 @@ export async function run(options: RunOptions): Promise<RunResult> {
     stopHeartbeat();
     // Cleanup crash handlers (MEM-1 fix)
     cleanupCrashHandlers();
-    // Fire onRunEnd for reporters (even on failure/abort)
-    const durationMs = Date.now() - startTime;
-    const finalCounts = countStories(prd);
-    for (const reporter of reporters) {
-      if (reporter.onRunEnd) {
-        try {
-          await reporter.onRunEnd({
-            runId,
-            totalDurationMs: durationMs,
-            totalCost,
-            storySummary: {
-              completed: storiesCompleted,
-              failed: finalCounts.failed,
-              skipped: finalCounts.skipped,
-              paused: finalCounts.paused,
-            },
-          });
-        } catch (error) {
-          logger?.warn("plugins", `Reporter '${reporter.name}' onRunEnd failed`, { error });
-        }
-      }
-    }
 
-    // Teardown plugins
-    try {
-      await pluginRegistry.teardownAll();
-    } catch (error) {
-      logger?.warn("plugins", "Plugin teardown failed", { error });
-    }
-
-    // Always release lock, even if execution fails
-    await releaseLock(workdir);
+    // Execute cleanup operations
+    const { cleanupRun } = await import("./lifecycle/run-cleanup");
+    await cleanupRun({
+      runId,
+      startTime,
+      totalCost,
+      storiesCompleted,
+      prd,
+      pluginRegistry,
+      workdir,
+    });
   }
 }
 

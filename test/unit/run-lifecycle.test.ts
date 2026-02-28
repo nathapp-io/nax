@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it, mock } from "bun:test";
-import { RunLifecycle } from "../../src/execution/run-lifecycle";
+import { RunLifecycle } from "../../src/execution/lifecycle";
 import type { NaxConfig } from "../../src/config";
 import type { LoadedHooksConfig } from "../../src/hooks";
 

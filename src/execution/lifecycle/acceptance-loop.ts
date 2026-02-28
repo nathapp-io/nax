@@ -9,23 +9,23 @@
  */
 
 import path from "node:path";
-import { type FixStory, convertFixStoryToUserStory, generateFixStories } from "../acceptance";
-import { getAgent } from "../agents";
-import type { NaxConfig } from "../config";
-import { resolveModel } from "../config/schema";
-import { type LoadedHooksConfig, fireHook } from "../hooks";
-import { getSafeLogger } from "../logger";
-import type { StoryMetrics } from "../metrics";
-import type { PipelineEventEmitter } from "../pipeline/events";
-import { runPipeline } from "../pipeline/runner";
-import { defaultPipeline } from "../pipeline/stages";
-import type { PipelineContext, RoutingResult } from "../pipeline/types";
-import type { PluginRegistry } from "../plugins";
-import { loadPRD, savePRD } from "../prd";
-import type { PRD, UserStory } from "../prd/types";
-import { routeTask } from "../routing";
-import { hookCtx } from "./helpers";
-import type { StatusWriter } from "./status-writer";
+import { type FixStory, convertFixStoryToUserStory, generateFixStories } from "../../acceptance";
+import { getAgent } from "../../agents";
+import type { NaxConfig } from "../../config";
+import { resolveModel } from "../../config/schema";
+import { type LoadedHooksConfig, fireHook } from "../../hooks";
+import { getSafeLogger } from "../../logger";
+import type { StoryMetrics } from "../../metrics";
+import type { PipelineEventEmitter } from "../../pipeline/events";
+import { runPipeline } from "../../pipeline/runner";
+import { defaultPipeline } from "../../pipeline/stages";
+import type { PipelineContext, RoutingResult } from "../../pipeline/types";
+import type { PluginRegistry } from "../../plugins";
+import { loadPRD, savePRD } from "../../prd";
+import type { PRD, UserStory } from "../../prd/types";
+import { routeTask } from "../../routing";
+import { hookCtx } from "../helpers";
+import type { StatusWriter } from "../status-writer";
 
 export interface AcceptanceLoopContext {
   config: NaxConfig;

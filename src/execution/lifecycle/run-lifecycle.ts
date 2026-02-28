@@ -8,20 +8,25 @@
 
 import * as os from "node:os";
 import path from "node:path";
-import { getAgent } from "../agents";
-import type { NaxConfig } from "../config";
-import { AgentNotFoundError, AgentNotInstalledError, LockAcquisitionError, StoryLimitExceededError } from "../errors";
-import { type LoadedHooksConfig, fireHook } from "../hooks";
-import { getSafeLogger } from "../logger";
-import { type StoryMetrics, saveRunMetrics } from "../metrics";
-import { loadPlugins } from "../plugins/loader";
-import type { PluginRegistry } from "../plugins/registry";
-import type { PRD } from "../prd";
-import { countStories, isComplete, isStalled, loadPRD } from "../prd";
-import { clearCache as clearLlmCache, routeBatch as llmRouteBatch } from "../routing/strategies/llm";
-import { type StoryBatch, precomputeBatchPlan } from "./batching";
-import { acquireLock, getAllReadyStories, hookCtx, releaseLock } from "./helpers";
-import type { StatusWriter } from "./status-writer";
+import { getAgent } from "../../agents";
+import type { NaxConfig } from "../../config";
+import {
+  AgentNotFoundError,
+  AgentNotInstalledError,
+  LockAcquisitionError,
+  StoryLimitExceededError,
+} from "../../errors";
+import { type LoadedHooksConfig, fireHook } from "../../hooks";
+import { getSafeLogger } from "../../logger";
+import { type StoryMetrics, saveRunMetrics } from "../../metrics";
+import { loadPlugins } from "../../plugins/loader";
+import type { PluginRegistry } from "../../plugins/registry";
+import type { PRD } from "../../prd";
+import { countStories, isComplete, isStalled, loadPRD } from "../../prd";
+import { clearCache as clearLlmCache, routeBatch as llmRouteBatch } from "../../routing/strategies/llm";
+import { type StoryBatch, precomputeBatchPlan } from "../batching";
+import { acquireLock, getAllReadyStories, hookCtx, releaseLock } from "../helpers";
+import type { StatusWriter } from "../status-writer";
 
 /** Setup result containing initialized state */
 export interface SetupResult {
