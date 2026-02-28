@@ -8,20 +8,26 @@
 
 ## Next: v0.15.0 — Interactive Pipeline
 
-**Theme:** Human/AI/External interactions via plugins (pause, notify, respond, resume)
+**Theme:** Human/AI/External interactions as hook extensions
 **Status:** Spec drafted
 **Spec:** `memory/specs/nax-v0.15.0-interactions.md` (VPS)
 
+**Architecture:** Interactions extend the existing hook system (not a separate config surface). Hooks gain an optional `interaction` field for two-way request/response. Plugins (telegram, webhook, cli, auto) handle transport only.
+
+**Safety defaults:** ð´ abort (security-review, cost-exceeded, merge-conflict) | ð¡ escalate/skip (cost-warning, max-retries, pre-merge) | ð¢ continue (story-ambiguity, review-gate)
+
+**Timeout strategy:** Plugin chain cascade with `escalate` fallback. Plugins tried in priority order; when all exhausted → abort.
+
 **User Stories:**
-- [ ] US-001: Interaction plugin interface + types
+- [ ] US-001: Interaction plugin interface + types + plugin chain
 - [ ] US-002: CLI plugin (stdin, default for non-headless)
 - [ ] US-003: State persistence (pause/resume with run-state.json)
-- [ ] US-004: Built-in triggers (cost-warning, security-review, pre-merge, etc.)
+- [ ] US-004: Built-in triggers + hook `interaction` field extension
 - [ ] US-005: Telegram plugin (inline buttons + polling)
 - [ ] US-006: `nax interact` CLI (list, respond, cancel)
-- [ ] US-007: Webhook plugin (HTTP POST + callback server)
+- [ ] US-007: Webhook plugin (HTTP POST + callback server + HMAC)
 - [ ] US-008: Auto plugin (AI responder with confidence escalation)
-- [ ] US-009: `nax status` enhancement (paused state display)
+- [ ] US-009: `nax status` enhancement (paused state + safety category)
 
 **Phases:** Core (US-001/3/4/2) → Telegram (US-005/6/9) → Advanced (US-007/8)
 

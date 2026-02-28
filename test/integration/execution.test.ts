@@ -60,6 +60,7 @@ describe("execution runner", () => {
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
+      skipPrecheck: true,
     };
 
     const result = await run(opts);
@@ -100,6 +101,7 @@ describe("execution runner", () => {
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
+      skipPrecheck: true,
     };
 
     const result = await run(opts);
@@ -151,6 +153,7 @@ describe("execution runner", () => {
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true, // Use dry run to avoid actual agent execution
+      skipPrecheck: true,
     };
 
     const result = await run(opts);
@@ -188,7 +191,7 @@ describe("execution runner", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
-      config: { 
+      config: {
         ...DEFAULT_CONFIG,
         execution: {
           ...DEFAULT_CONFIG.execution,
@@ -198,6 +201,7 @@ describe("execution runner", () => {
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
+      skipPrecheck: true,
     };
 
     const result = await run(opts);
@@ -232,6 +236,7 @@ describe("execution runner", () => {
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
+      skipPrecheck: true,
     };
 
     await run(opts);
@@ -277,6 +282,7 @@ describe("execution runner", () => {
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: false, // Not dry run since all stories already complete
+      skipPrecheck: true,
     };
 
     const result = await run(opts);
@@ -356,6 +362,7 @@ describe("execution runner", () => {
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
+      skipPrecheck: true,
     };
 
     await run(opts);
@@ -435,6 +442,7 @@ describe("execution runner", () => {
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
+      skipPrecheck: true,
     };
 
     await run(opts);
@@ -489,6 +497,7 @@ describe("execution runner — lite mode routing", () => {
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
+      skipPrecheck: true,
     };
 
     const result = await run(opts);
@@ -603,6 +612,7 @@ describe("execution runner — lite mode routing", () => {
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
+      skipPrecheck: true,
     };
 
     const result = await run(opts);

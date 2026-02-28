@@ -78,6 +78,7 @@ describe('Context Builder Integration', () => {
         feature: 'test-feature',
         dryRun: true,
         useContext: true, // Default behavior
+        skipPrecheck: true,
       };
 
       const result = await run(opts);
@@ -112,6 +113,7 @@ describe('Context Builder Integration', () => {
         feature: 'test-feature',
         dryRun: true,
         useContext: false, // Disable context builder
+        skipPrecheck: true,
       };
 
       const result = await run(opts);
@@ -146,6 +148,7 @@ describe('Context Builder Integration', () => {
         feature: 'test-feature',
         dryRun: true,
         useContext: true,
+        skipPrecheck: true,
       };
 
       // Should not throw even if context builder encounters errors
