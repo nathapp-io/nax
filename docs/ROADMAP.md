@@ -6,9 +6,24 @@
 
 ---
 
-## Next: v0.15.0
+## Next: v0.15.0 — Interactive Pipeline
 
-**Status:** TBD
+**Theme:** Human/AI/External interactions via plugins (pause, notify, respond, resume)
+**Status:** Spec drafted
+**Spec:** `memory/specs/nax-v0.15.0-interactions.md` (VPS)
+
+**User Stories:**
+- [ ] US-001: Interaction plugin interface + types
+- [ ] US-002: CLI plugin (stdin, default for non-headless)
+- [ ] US-003: State persistence (pause/resume with run-state.json)
+- [ ] US-004: Built-in triggers (cost-warning, security-review, pre-merge, etc.)
+- [ ] US-005: Telegram plugin (inline buttons + polling)
+- [ ] US-006: `nax interact` CLI (list, respond, cancel)
+- [ ] US-007: Webhook plugin (HTTP POST + callback server)
+- [ ] US-008: Auto plugin (AI responder with confidence escalation)
+- [ ] US-009: `nax status` enhancement (paused state display)
+
+**Phases:** Core (US-001/3/4/2) → Telegram (US-005/6/9) → Advanced (US-007/8)
 
 ---
 
