@@ -1,12 +1,9 @@
 /**
  * Parallel Execution — Worktree-based concurrent story execution
  *
- * Orchestrates parallel story execution using git worktrees:
- * 1. Groups stories by dependencies (topological batches)
- * 2. Creates worktrees for independent stories
- * 3. Dispatches concurrent pipeline executions
- * 4. Merges completed branches in dependency order
- * 5. Cleans up worktrees on success, preserves on failure
+ * Orchestrates parallel story execution using git worktrees: groups stories
+ * by dependencies, creates worktrees, dispatches concurrent pipelines,
+ * merges in dependency order, and cleans up worktrees.
  */
 
 import os from "node:os";
@@ -40,8 +37,7 @@ export interface ParallelBatchResult {
 }
 
 /**
- * Group stories into batches based on dependencies.
- * Returns array of batches where stories in each batch can run in parallel.
+ * Group stories into dependency batches; stories in each batch can run in parallel.
  */
 function groupStoriesByDependencies(stories: UserStory[]): UserStory[][] {
   const batches: UserStory[][] = [];
