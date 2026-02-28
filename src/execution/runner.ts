@@ -11,55 +11,22 @@
 import * as os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
-import { convertFixStoryToUserStory, generateFixStories } from "../acceptance";
-import { getAgent } from "../agents";
-import type { ModelTier, NaxConfig } from "../config";
-import { resolveModel } from "../config/schema";
-import { AgentNotFoundError, AgentNotInstalledError, LockAcquisitionError, StoryLimitExceededError } from "../errors";
+import type { NaxConfig } from "../config";
+import { LockAcquisitionError } from "../errors";
 import { type LoadedHooksConfig, fireHook } from "../hooks";
-import { getLogger, getSafeLogger } from "../logger";
+import { getSafeLogger } from "../logger";
 import { type RunSummary, formatRunSummary } from "../logging";
 import { type StoryMetrics, saveRunMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
-import { runPipeline } from "../pipeline/runner";
-import { defaultPipeline } from "../pipeline/stages";
-import type { PipelineContext, RoutingResult } from "../pipeline/types";
 import { loadPlugins } from "../plugins/loader";
-import type { PluginRegistry } from "../plugins/registry";
-import {
-  countStories,
-  generateHumanHaltSummary,
-  getNextStory,
-  isComplete,
-  isStalled,
-  loadPRD,
-  markStoryAsBlocked,
-  markStoryFailed,
-  markStoryPassed,
-  markStoryPaused,
-  savePRD,
-} from "../prd";
+import { countStories, isComplete, loadPRD } from "../prd";
 import type { UserStory } from "../prd";
-import { routeTask } from "../routing";
 import { clearCache as clearLlmCache, routeBatch as llmRouteBatch } from "../routing/strategies/llm";
-import type { FailureCategory } from "../tdd/types";
-import { captureGitRef, hasCommitsForStory } from "../utils/git";
-import { type StoryBatch, precomputeBatchPlan } from "./batching";
-import { installCrashHandlers, startHeartbeat, stopHeartbeat, writeExitSummary } from "./crash-recovery";
-import {
-  calculateMaxIterations,
-  escalateTier,
-  getTierConfig,
-  handleTierEscalation,
-  preIterationTierCheck,
-  resolveMaxAttemptsOutcome,
-} from "./escalation";
-import { acquireLock, formatProgress, getAllReadyStories, hookCtx, releaseLock } from "./helpers";
-import { emitStoryComplete } from "./lifecycle/story-hooks";
+import { precomputeBatchPlan } from "./batching";
+import { installCrashHandlers } from "./crash-recovery";
+import { acquireLock, getAllReadyStories, hookCtx, releaseLock } from "./helpers";
 import { executeParallel } from "./parallel";
 import { PidRegistry } from "./pid-registry";
-import { runPostAgentVerification } from "./post-verify";
-import { appendProgress } from "./progress";
 import { StatusWriter } from "./status-writer";
 
 // Re-export for backward compatibility
@@ -84,26 +51,6 @@ async function tryLlmBatchRoute(config: NaxConfig, stories: UserStory[], label =
       label,
     });
   }
-}
-
-/**
- * Apply cached routing overrides from story.routing to a fresh routing decision.
- */
-function applyCachedRouting(
-  routing: ReturnType<typeof routeTask>,
-  story: UserStory,
-  config: NaxConfig,
-): ReturnType<typeof routeTask> {
-  if (!story.routing) return routing;
-  const overrides: Partial<ReturnType<typeof routeTask>> = {};
-  if (story.routing.complexity) {
-    overrides.complexity = story.routing.complexity;
-    overrides.modelTier = (config.autoMode.complexityRouting[story.routing.complexity] ?? "balanced") as ModelTier;
-  }
-  if (story.routing.testStrategy) {
-    overrides.testStrategy = story.routing.testStrategy;
-  }
-  return { ...routing, ...overrides };
 }
 
 export interface RunOptions {
@@ -176,12 +123,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
   let storiesCompleted = 0;
   let totalCost = 0;
   const allStoryMetrics: StoryMetrics[] = [];
-  // ADR-003: Track timeout retries per story for --detectOpenHandles escalation
-  const timeoutRetryCountMap = new Map<string, number>();
-
-  // Determine parallel execution mode
-  const useParallel = parallel !== undefined;
-  const maxConcurrency = parallel === 0 ? os.cpus().length || 4 : (parallel ?? 0);
 
   // ── Status writer (encapsulates status file state and write logic) ───────
   const statusWriter = new StatusWriter(statusFile, config, {
@@ -229,77 +170,17 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   // ── Run precheck validations (unless --skip-precheck) ──────────────────────
   if (!skipPrecheck) {
-    logger?.info("precheck", "Running precheck validations...");
-
-    const { runPrecheck } = await import("../precheck");
-    const precheckResult = await runPrecheck(config, prd, {
+    const { runPrecheckValidation } = await import("./lifecycle/precheck-runner");
+    await runPrecheckValidation({
+      config,
+      prd,
       workdir,
-      format: "human",
+      logFilePath,
+      statusWriter,
+      headless,
+      formatterMode,
     });
-
-    // Log precheck results to JSONL (US-004 AC5)
-    if (logFilePath) {
-      const { appendFileSync, mkdirSync } = await import("node:fs");
-
-      // Ensure directory exists
-      mkdirSync(path.dirname(logFilePath), { recursive: true });
-
-      const precheckLog = {
-        type: "precheck",
-        timestamp: new Date().toISOString(),
-        passed: precheckResult.output.passed,
-        blockers: precheckResult.output.blockers.map((b) => ({ name: b.name, message: b.message })),
-        warnings: precheckResult.output.warnings.map((w) => ({ name: w.name, message: w.message })),
-        summary: precheckResult.output.summary,
-      };
-      appendFileSync(logFilePath, `${JSON.stringify(precheckLog)}\n`, "utf8");
-    }
-
-    // If there are blockers (Tier 1 failures), abort the run
-    if (!precheckResult.output.passed) {
-      logger?.error("precheck", "Precheck failed - execution blocked", {
-        blockers: precheckResult.output.blockers.length,
-        failedChecks: precheckResult.output.blockers.map((b) => b.name),
-      });
-
-      // Update status file with precheck-failed status (US-004 AC6)
-      statusWriter.setPrd(prd);
-      statusWriter.setRunStatus("precheck-failed");
-      statusWriter.setCurrentStory(null);
-      await statusWriter.update(0, 0);
-
-      // Log detailed error message
-      console.error("");
-      console.error(chalk.red("❌ PRECHECK FAILED"));
-      console.error(chalk.red("─".repeat(60)));
-      for (const blocker of precheckResult.output.blockers) {
-        console.error(chalk.red(`✗ ${blocker.name}: ${blocker.message}`));
-      }
-      console.error(chalk.red("─".repeat(60)));
-      console.error(chalk.yellow("\nRun 'nax precheck' for detailed information"));
-      console.error(chalk.dim("Use --skip-precheck to bypass (not recommended)\n"));
-
-      throw new Error(`Precheck failed: ${precheckResult.output.blockers.map((b) => b.name).join(", ")}`);
-    }
-
-    // Log warnings (Tier 2) but continue execution
-    if (precheckResult.output.warnings.length > 0) {
-      logger?.warn("precheck", "Precheck passed with warnings", {
-        warnings: precheckResult.output.warnings.length,
-        issues: precheckResult.output.warnings.map((w) => w.name),
-      });
-
-      if (headless && formatterMode !== "json") {
-        console.log(chalk.yellow("\n⚠️  Precheck warnings:"));
-        for (const warning of precheckResult.output.warnings) {
-          console.log(chalk.yellow(`  ⚠ ${warning.name}: ${warning.message}`));
-        }
-        console.log("");
-      }
-    } else {
-      logger?.info("precheck", "All precheck validations passed");
-    }
-  } else if (skipPrecheck) {
+  } else {
     logger?.warn("precheck", "Precheck validations skipped (--skip-precheck)");
   }
 
@@ -322,55 +203,16 @@ export async function run(options: RunOptions): Promise<RunResult> {
     // Fire on-start hook
     await fireHook(hooks, "on-start", hookCtx(feature), workdir);
 
-    // Check agent installation before starting (skip in dry-run mode)
-    if (!dryRun) {
-      const agent = getAgent(config.autoMode.defaultAgent);
-      if (!agent) {
-        logger?.error("execution", "Agent not found", {
-          agent: config.autoMode.defaultAgent,
-        });
-        throw new AgentNotFoundError(config.autoMode.defaultAgent);
-      }
-
-      const installed = await agent.isInstalled();
-      if (!installed) {
-        logger?.error("execution", "Agent is not installed or not in PATH", {
-          agent: config.autoMode.defaultAgent,
-          binary: agent.binary,
-        });
-        logger?.error("execution", "Please install the agent and try again");
-        throw new AgentNotInstalledError(config.autoMode.defaultAgent, agent.binary);
-      }
-    }
-
-    // PRD already loaded before try block
-    let prdDirty = false; // Track if PRD needs reloading
-
-    // State reconciliation: check if failed stories have commits in git history
-    // This handles the case where TDD failed but agent already committed code
-    let reconciledCount = 0;
-    for (const story of prd.userStories) {
-      if (story.status === "failed") {
-        const hasCommits = await hasCommitsForStory(workdir, story.id);
-        if (hasCommits) {
-          logger?.warn("reconciliation", "Failed story has commits in git history, marking as passed", {
-            storyId: story.id,
-            title: story.title,
-          });
-          markStoryPassed(prd, story.id);
-          reconciledCount++;
-          prdDirty = true;
-        }
-      }
-    }
-
-    if (reconciledCount > 0) {
-      logger?.info("reconciliation", `Reconciled ${reconciledCount} failed stories from git history`);
-      await savePRD(prd, prdPath);
-      prdDirty = false; // Just saved, no need to reload
-    }
-
-    const counts = countStories(prd);
+    // Initialize run: check agent, reconcile state, validate limits
+    const { initializeRun } = await import("./lifecycle/run-initialization");
+    const initResult = await initializeRun({
+      config,
+      prdPath,
+      workdir,
+      dryRun,
+    });
+    prd = initResult.prd;
+    const counts = initResult.storyCounts;
 
     // ── Output run header in headless mode ─────────────────────────────────
     if (headless && formatterMode !== "json") {
@@ -408,16 +250,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
       }
     }
 
-    // MEM-1: Validate story count doesn't exceed limit
-    if (counts.total > config.execution.maxStoriesPerFeature) {
-      logger?.error("execution", "Feature exceeds story limit", {
-        totalStories: counts.total,
-        limit: config.execution.maxStoriesPerFeature,
-      });
-      logger?.error("execution", "Split this feature into smaller features or increase maxStoriesPerFeature in config");
-      throw new StoryLimitExceededError(counts.total, config.execution.maxStoriesPerFeature);
-    }
-
     logger?.info("execution", `Starting ${feature}`, {
       totalStories: counts.total,
       doneStories: counts.passed,
@@ -429,13 +261,10 @@ export async function run(options: RunOptions): Promise<RunResult> {
     clearLlmCache();
 
     // PERF-1: Precompute batch plan once from ready stories
-    let batchPlan: StoryBatch[] = [];
-    let currentBatchIndex = 0;
-    if (useBatch) {
-      const readyStories = getAllReadyStories(prd);
-      batchPlan = precomputeBatchPlan(readyStories, 4);
+    const batchPlan = useBatch ? precomputeBatchPlan(getAllReadyStories(prd), 4) : [];
 
-      await tryLlmBatchRoute(config, readyStories, "routing");
+    if (useBatch) {
+      await tryLlmBatchRoute(config, getAllReadyStories(prd), "routing");
     }
 
     // ── Parallel Execution Path (when --parallel is set) ──────────────────────
@@ -586,714 +415,58 @@ export async function run(options: RunOptions): Promise<RunResult> {
     }
 
     // ── Sequential Execution Path (default) ────────────────────────────────────
-    // Start heartbeat (US-007: 60s heartbeat during execution)
-    startHeartbeat(
-      statusWriter,
-      () => totalCost,
-      () => iterations,
-      logFilePath,
+    const { executeSequential } = await import("./sequential-executor");
+    const sequentialResult = await executeSequential(
+      {
+        prdPath,
+        workdir,
+        config,
+        hooks,
+        feature,
+        featureDir,
+        dryRun,
+        useBatch,
+        pluginRegistry,
+        eventEmitter,
+        statusWriter,
+        logFilePath,
+        runId,
+        startTime,
+        batchPlan,
+      },
+      prd,
     );
 
-    // Main loop
-    while (iterations < config.execution.maxIterations) {
-      iterations++;
+    prd = sequentialResult.prd;
+    iterations = sequentialResult.iterations;
+    storiesCompleted = sequentialResult.storiesCompleted;
+    totalCost = sequentialResult.totalCost;
+    allStoryMetrics.push(...sequentialResult.allStoryMetrics);
 
-      // MEM-1: Check memory usage (warn if > 1GB heap)
-      const memUsage = process.memoryUsage();
-      const heapUsedMB = Math.round(memUsage.heapUsed / 1024 / 1024);
-      if (heapUsedMB > 1024) {
-        logger?.warn("execution", "High memory usage detected", {
-          heapUsedMB,
-          suggestion: "Consider pausing (echo PAUSE > .queue.txt) if this continues to grow",
-        });
-      }
-
-      // Reload PRD only if dirty (modified since last load)
-      if (prdDirty) {
-        prd = await loadPRD(prdPath);
-        prdDirty = false;
-
-        // PERF-1: Recompute batch plan after PRD reload
-        if (useBatch) {
-          const readyStories = getAllReadyStories(prd);
-          batchPlan = precomputeBatchPlan(readyStories, 4);
-          currentBatchIndex = 0;
-
-          await tryLlmBatchRoute(config, readyStories, "re-routing");
-        }
-      }
-
-      // Check completion
-      if (isComplete(prd)) {
-        logger?.info("execution", "All stories complete!", {
-          feature,
-          totalCost,
-        });
-        await fireHook(hooks, "on-complete", hookCtx(feature, { status: "complete", cost: totalCost }), workdir);
-        break;
-      }
-
-      // PERF-1: Use precomputed batch plan instead of recomputing batches each iteration
-      let storiesToExecute: UserStory[];
-      let isBatchExecution: boolean;
-      let story: UserStory;
-      let routing: ReturnType<typeof routeTask>;
-
-      if (useBatch && currentBatchIndex < batchPlan.length) {
-        // Get next batch from precomputed plan
-        const batch = batchPlan[currentBatchIndex];
-        currentBatchIndex++;
-
-        // Filter out already-completed stories (may have been completed in previous iteration)
-        storiesToExecute = batch.stories.filter(
-          (s) =>
-            !s.passes &&
-            s.status !== "passed" &&
-            s.status !== "skipped" &&
-            s.status !== "blocked" &&
-            s.status !== "failed" &&
-            s.status !== "paused",
-        );
-        isBatchExecution = batch.isBatch && storiesToExecute.length > 1;
-
-        if (storiesToExecute.length === 0) {
-          // All stories in this batch already completed, move to next batch
-          continue;
-        }
-
-        // Use first story as the primary story for routing/context
-        story = storiesToExecute[0];
-        // Always derive routing from current config (modelTier not cached)
-        routing = routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, config);
-        routing = applyCachedRouting(routing, story, config);
-      } else {
-        // Fallback to single-story mode (when batching disabled or batch plan exhausted)
-        const nextStory = getNextStory(prd);
-        if (!nextStory) {
-          logger?.warn("execution", "No actionable stories (check dependencies)");
-          break;
-        }
-
-        story = nextStory;
-        storiesToExecute = [story];
-        isBatchExecution = false;
-
-        // Always derive routing from current config (modelTier not cached)
-        routing = routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, config);
-        routing = applyCachedRouting(routing, story, config);
-      }
-
-      // BUG-16 + BUG-17: Pre-iteration tier escalation check
-      const tierCheckResult = await preIterationTierCheck(
-        story,
-        routing,
+    // After main loop: Check if we need acceptance retry loop
+    if (config.acceptance.enabled && isComplete(prd)) {
+      const { runAcceptanceLoop } = await import("./lifecycle/acceptance-loop");
+      const acceptanceResult = await runAcceptanceLoop({
         config,
         prd,
         prdPath,
+        workdir,
         featureDir,
         hooks,
         feature,
         totalCost,
-        workdir,
-      );
-
-      if (tierCheckResult.shouldSkipIteration) {
-        prd = tierCheckResult.prd;
-        prdDirty = tierCheckResult.prdDirty;
-        continue;
-      }
-
-      // Check cost limit
-      if (totalCost >= config.execution.costLimit) {
-        logger?.warn("execution", "Cost limit reached, pausing", {
-          totalCost,
-          costLimit: config.execution.costLimit,
-        });
-        await fireHook(
-          hooks,
-          "on-pause",
-          hookCtx(feature, {
-            storyId: story.id,
-            reason: `Cost limit reached: $${totalCost.toFixed(2)}`,
-            cost: totalCost,
-          }),
-          workdir,
-        );
-        break;
-      }
-
-      logger?.info("execution", `Starting iteration ${iterations}`, {
-        iteration: iterations,
-        isBatch: isBatchExecution,
-        batchSize: isBatchExecution ? storiesToExecute.length : 1,
-        storyId: story.id,
-        storyTitle: story.title,
-        ...(isBatchExecution && { batchStoryIds: storiesToExecute.map((s) => s.id) }),
+        iterations,
+        storiesCompleted,
+        allStoryMetrics,
+        pluginRegistry,
+        eventEmitter,
+        statusWriter,
       });
 
-      // Log iteration start
-      logger?.info("iteration.start", `Starting iteration ${iterations}`, {
-        iteration: iterations,
-        storyId: story.id,
-        storyTitle: story.title,
-        isBatch: isBatchExecution,
-        batchSize: isBatchExecution ? storiesToExecute.length : 1,
-        modelTier: routing.modelTier,
-        complexity: routing.complexity,
-      });
-
-      // Fire story-start hook
-      await fireHook(
-        hooks,
-        "on-story-start",
-        hookCtx(feature, {
-          storyId: story.id,
-          model: routing.modelTier,
-          agent: config.autoMode.defaultAgent,
-          iteration: iterations,
-        }),
-        workdir,
-      );
-
-      if (dryRun) {
-        // ── Status write point 2 (dry-run): current story set ───────────────
-        statusWriter.setPrd(prd);
-        statusWriter.setCurrentStory({
-          storyId: story.id,
-          title: story.title,
-          complexity: routing.complexity,
-          tddStrategy: routing.testStrategy,
-          model: routing.modelTier,
-          attempt: (story.attempts ?? 0) + 1,
-          phase: "routing",
-        });
-        await statusWriter.update(totalCost, iterations);
-
-        for (const s of storiesToExecute) {
-          logger?.info("execution", "[DRY RUN] Would execute agent here", {
-            storyId: s.id,
-            storyTitle: s.title,
-            modelTier: routing.modelTier,
-            complexity: routing.complexity,
-            testStrategy: routing.testStrategy,
-          });
-        }
-        // Mark stories as passed so the loop progresses to the next batch/story
-        for (const s of storiesToExecute) {
-          markStoryPassed(prd, s.id);
-        }
-        storiesCompleted += storiesToExecute.length;
-        prdDirty = true;
-        await savePRD(prd, prdPath);
-
-        // Emit onStoryComplete events for dry-run
-        for (const s of storiesToExecute) {
-          await emitStoryComplete(reporters, {
-            runId,
-            storyId: s.id,
-            status: "completed",
-            durationMs: 0, // No actual execution in dry-run
-            cost: 0, // No cost in dry-run
-            tier: routing.modelTier,
-            testStrategy: routing.testStrategy,
-          });
-        }
-
-        // ── Status write point 3 (dry-run): story done, clear current ────────
-        statusWriter.setPrd(prd);
-        statusWriter.setCurrentStory(null);
-        await statusWriter.update(totalCost, iterations);
-
-        continue;
-      }
-
-      // Capture git ref for scoped verification
-      const storyGitRef = await captureGitRef(workdir);
-
-      // Build pipeline context
-      const storyStartTime = new Date().toISOString();
-      const pipelineContext: PipelineContext = {
-        config,
-        prd,
-        story,
-        stories: storiesToExecute,
-        routing: routing as RoutingResult,
-        workdir,
-        featureDir,
-        hooks,
-        plugins: pluginRegistry,
-        storyStartTime,
-      };
-
-      // Log agent start
-      logger?.info("agent.start", "Starting agent execution", {
-        storyId: story.id,
-        agent: config.autoMode.defaultAgent,
-        modelTier: routing.modelTier,
-        testStrategy: routing.testStrategy,
-        isBatch: isBatchExecution,
-      });
-
-      // ── Status write point 2: before story execution ────────────────────────
-      statusWriter.setPrd(prd);
-      statusWriter.setCurrentStory({
-        storyId: story.id,
-        title: story.title,
-        complexity: routing.complexity,
-        tddStrategy: routing.testStrategy,
-        model: routing.modelTier,
-        attempt: (story.attempts ?? 0) + 1,
-        phase: "routing",
-      });
-      await statusWriter.update(totalCost, iterations);
-
-      // Run pipeline
-      const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, eventEmitter);
-
-      // Log agent complete
-      logger?.info("agent.complete", "Agent execution completed", {
-        storyId: story.id,
-        success: pipelineResult.success,
-        finalAction: pipelineResult.finalAction,
-        estimatedCost: pipelineResult.context.agentResult?.estimatedCost,
-      });
-
-      // Update PRD reference (pipeline may have modified it)
-      prd = pipelineResult.context.prd;
-
-      // Handle pipeline result
-      if (pipelineResult.success) {
-        // Pipeline completed successfully — stories marked as passed in completion stage
-        totalCost += pipelineResult.context.agentResult?.estimatedCost || 0;
-        prdDirty = true;
-
-        // Collect story metrics (set by completionStage)
-        if (pipelineResult.context.storyMetrics) {
-          allStoryMetrics.push(...pipelineResult.context.storyMetrics);
-        }
-
-        // ADR-003: Post-agent verification (if quality.commands.test is configured)
-        const verifyResult = await runPostAgentVerification({
-          config,
-          prd,
-          prdPath,
-          workdir,
-          featureDir,
-          story,
-          storiesToExecute,
-          allStoryMetrics,
-          timeoutRetryCountMap,
-          storyGitRef,
-        });
-        const verificationPassed = verifyResult.passed;
-        prd = verifyResult.prd;
-
-        if (verificationPassed) {
-          storiesCompleted += storiesToExecute.length;
-
-          // Log story completion and emit reporter events
-          for (const completedStory of storiesToExecute) {
-            logger?.info("story.complete", "Story completed successfully", {
-              storyId: completedStory.id,
-              storyTitle: completedStory.title,
-              totalCost,
-              durationMs: Date.now() - startTime,
-            });
-
-            // Emit onStoryComplete to reporters
-            await emitStoryComplete(reporters, {
-              runId,
-              storyId: completedStory.id,
-              status: "completed",
-              durationMs: Date.now() - startTime,
-              cost: pipelineResult.context.agentResult?.estimatedCost || 0,
-              tier: routing.modelTier,
-              testStrategy: routing.testStrategy,
-            });
-          }
-        }
-
-        // Display progress
-        const updatedCounts = countStories(prd);
-        const elapsedMs = Date.now() - startTime;
-        logger?.info("progress", "Progress update", {
-          totalStories: updatedCounts.total,
-          passedStories: updatedCounts.passed,
-          failedStories: updatedCounts.failed,
-          pendingStories: updatedCounts.pending,
-          totalCost,
-          costLimit: config.execution.costLimit,
-          elapsedMs,
-        });
-      } else {
-        // Pipeline stopped early — handle based on finalAction
-        switch (pipelineResult.finalAction) {
-          case "pause":
-            // Mark story as paused and continue with non-dependent stories
-            markStoryPaused(prd, story.id);
-            await savePRD(prd, prdPath);
-            prdDirty = true;
-
-            logger?.warn("pipeline", "Story paused", {
-              storyId: story.id,
-              reason: pipelineResult.reason,
-            });
-
-            await fireHook(
-              hooks,
-              "on-pause",
-              hookCtx(feature, {
-                storyId: story.id,
-                reason: pipelineResult.reason || "Pipeline paused",
-                cost: totalCost,
-              }),
-              workdir,
-            );
-
-            // Emit onStoryComplete to reporters
-            await emitStoryComplete(reporters, {
-              runId,
-              storyId: story.id,
-              status: "paused",
-              durationMs: Date.now() - startTime,
-              cost: pipelineResult.context.agentResult?.estimatedCost || 0,
-              tier: routing.modelTier,
-              testStrategy: routing.testStrategy,
-            });
-
-            // Continue to next story instead of returning
-            break;
-
-          case "skip":
-            // Story already marked as skipped in queue-check stage
-            logger?.warn("pipeline", "Story skipped", {
-              storyId: story.id,
-              reason: pipelineResult.reason,
-            });
-            prdDirty = true;
-
-            // Emit onStoryComplete to reporters
-            await emitStoryComplete(reporters, {
-              runId,
-              storyId: story.id,
-              status: "skipped",
-              durationMs: Date.now() - startTime,
-              cost: 0,
-              tier: routing.modelTier,
-              testStrategy: routing.testStrategy,
-            });
-            break;
-
-          case "fail":
-            // Mark first story as failed and stop
-            markStoryFailed(prd, story.id, pipelineResult.context.tddFailureCategory);
-            await savePRD(prd, prdPath);
-            prdDirty = true;
-
-            logger?.error("pipeline", "Story failed", {
-              storyId: story.id,
-              reason: pipelineResult.reason,
-            });
-
-            if (featureDir) {
-              await appendProgress(featureDir, story.id, "failed", `${story.title} — ${pipelineResult.reason}`);
-            }
-
-            await fireHook(
-              hooks,
-              "on-story-fail",
-              hookCtx(feature, {
-                storyId: story.id,
-                status: "failed",
-                reason: pipelineResult.reason || "Pipeline failed",
-                cost: totalCost,
-              }),
-              workdir,
-            );
-
-            // Emit onStoryComplete to reporters
-            await emitStoryComplete(reporters, {
-              runId,
-              storyId: story.id,
-              status: "failed",
-              durationMs: Date.now() - startTime,
-              cost: pipelineResult.context.agentResult?.estimatedCost || 0,
-              tier: routing.modelTier,
-              testStrategy: routing.testStrategy,
-            });
-
-            break;
-
-          case "escalate": {
-            // Handle tier escalation
-            const escalationResult = await handleTierEscalation({
-              story,
-              storiesToExecute,
-              isBatchExecution,
-              routing,
-              pipelineResult,
-              config,
-              prd,
-              prdPath,
-              featureDir,
-              hooks,
-              feature,
-              totalCost,
-              workdir,
-            });
-
-            prd = escalationResult.prd;
-            prdDirty = escalationResult.prdDirty;
-
-            // Break out of switch statement (escalation handled)
-            if (escalationResult.outcome !== "escalated") {
-              break;
-            }
-            break;
-          }
-        }
-      }
-
-      // ── Status write point 3: after story complete / fail / pause ──────────
-      if (prdDirty) {
-        prd = await loadPRD(prdPath);
-        prdDirty = false;
-      }
-      statusWriter.setPrd(prd);
-      statusWriter.setCurrentStory(null);
-      await statusWriter.update(totalCost, iterations);
-
-      // ADR-003: Stall detection — all remaining stories blocked or dependent on blocked
-      if (isStalled(prd)) {
-        const summary = generateHumanHaltSummary(prd);
-        logger?.error("execution", "Execution stalled", {
-          reason: "All remaining stories blocked or dependent on blocked stories",
-          summary,
-        });
-        await fireHook(
-          hooks,
-          "on-pause",
-          hookCtx(feature, {
-            reason: "All remaining stories blocked or dependent on blocked stories",
-            cost: totalCost,
-          }),
-          workdir,
-        );
-        break;
-      }
-
-      // Delay between iterations
-      if (config.execution.iterationDelayMs > 0) {
-        await Bun.sleep(config.execution.iterationDelayMs);
-      }
-    }
-
-    // After main loop: Check if we need acceptance retry loop
-    if (config.acceptance.enabled && isComplete(prd)) {
-      logger?.info("acceptance", "All stories complete, running acceptance validation");
-
-      let acceptanceRetries = 0;
-      const maxRetries = config.acceptance.maxRetries;
-
-      while (acceptanceRetries < maxRetries) {
-        // Build context for acceptance stage only
-        const firstStory = prd.userStories[0]; // Use first story as placeholder
-        const acceptanceContext: PipelineContext = {
-          config,
-          prd,
-          story: firstStory,
-          stories: [firstStory],
-          routing: {
-            complexity: "simple",
-            modelTier: "balanced",
-            testStrategy: "test-after",
-            reasoning: "Acceptance validation",
-          },
-          workdir,
-          featureDir,
-          hooks,
-          plugins: pluginRegistry,
-        };
-
-        // Run acceptance stage
-        const { acceptanceStage } = await import("../pipeline/stages/acceptance");
-        const acceptanceResult = await acceptanceStage.execute(acceptanceContext);
-
-        if (acceptanceResult.action === "continue") {
-          // All acceptance tests passed
-          logger?.info("acceptance", "Acceptance validation passed!");
-          break;
-        }
-
-        // Acceptance tests failed
-        if (acceptanceResult.action === "fail") {
-          const failures = acceptanceContext.acceptanceFailures;
-
-          if (!failures || failures.failedACs.length === 0) {
-            logger?.error("acceptance", "Acceptance tests failed but no specific failures detected");
-            logger?.warn("acceptance", "Manual intervention required");
-            await fireHook(
-              hooks,
-              "on-pause",
-              hookCtx(feature, {
-                reason: "Acceptance tests failed (no failures detected)",
-                cost: totalCost,
-              }),
-              workdir,
-            );
-            break;
-          }
-
-          acceptanceRetries++;
-          logger?.warn("acceptance", `Acceptance retry ${acceptanceRetries}/${maxRetries}`, {
-            failedACs: failures.failedACs,
-          });
-
-          if (acceptanceRetries >= maxRetries) {
-            logger?.error("acceptance", "Max acceptance retries reached");
-            logger?.warn("acceptance", "Manual intervention required");
-            logger?.debug("acceptance", 'Run: nax accept --override AC-N "reason" to skip specific ACs');
-            await fireHook(
-              hooks,
-              "on-pause",
-              hookCtx(feature, {
-                reason: `Acceptance validation failed after ${maxRetries} retries: ${failures.failedACs.join(", ")}`,
-                cost: totalCost,
-              }),
-              workdir,
-            );
-            break;
-          }
-
-          // Generate fix stories
-          logger?.info("acceptance", "Generating fix stories...");
-
-          // Load spec.md for AC text
-          let specContent = "";
-          if (featureDir) {
-            const specPath = path.join(featureDir, "spec.md");
-            const specFile = Bun.file(specPath);
-            if (await specFile.exists()) {
-              specContent = await specFile.text();
-            }
-          }
-
-          const agent = getAgent(config.autoMode.defaultAgent);
-          if (!agent) {
-            logger?.error("acceptance", "Agent not found, cannot generate fix stories");
-            break;
-          }
-
-          const modelTier = config.analyze.model;
-          const modelEntry = config.models[modelTier];
-          const modelDef = resolveModel(modelEntry);
-
-          const fixStories = await generateFixStories(agent, {
-            failedACs: failures.failedACs,
-            testOutput: failures.testOutput,
-            prd,
-            specContent,
-            workdir,
-            modelDef,
-          });
-
-          if (fixStories.length === 0) {
-            logger?.error("acceptance", "Failed to generate fix stories");
-            break;
-          }
-
-          logger?.info("acceptance", `Generated ${fixStories.length} fix stories`);
-
-          // Append fix stories to PRD (BUG-7 fix: immutable pattern)
-          const newUserStories = fixStories.map((fixStory) => {
-            const userStory = convertFixStoryToUserStory(fixStory);
-            logger?.debug("acceptance", `Fix story added: ${userStory.id}: ${userStory.title}`);
-            return userStory;
-          });
-          prd = {
-            ...prd,
-            userStories: [...prd.userStories, ...newUserStories],
-          };
-
-          await savePRD(prd, prdPath);
-          prdDirty = true;
-
-          // Re-run pipeline for fix stories only
-          logger?.info("acceptance", "Running fix stories...");
-
-          for (const fixStory of fixStories) {
-            const userStory = prd.userStories.find((s) => s.id === fixStory.id);
-            if (!userStory || userStory.status !== "pending") continue;
-
-            iterations++;
-
-            const routing = routeTask(
-              userStory.title,
-              userStory.description,
-              userStory.acceptanceCriteria,
-              userStory.tags,
-              config,
-            );
-
-            logger?.info("acceptance", `Starting fix story: ${userStory.id}`, {
-              storyId: userStory.id,
-              storyTitle: userStory.title,
-            });
-
-            await fireHook(
-              hooks,
-              "on-story-start",
-              hookCtx(feature, {
-                storyId: userStory.id,
-                model: routing.modelTier,
-                agent: config.autoMode.defaultAgent,
-                iteration: iterations,
-              }),
-              workdir,
-            );
-
-            const fixStoryStartTime = new Date().toISOString();
-            const fixContext: PipelineContext = {
-              config,
-              prd,
-              story: userStory,
-              stories: [userStory],
-              routing: routing as RoutingResult,
-              workdir,
-              featureDir,
-              hooks,
-              plugins: pluginRegistry,
-              storyStartTime: fixStoryStartTime,
-            };
-
-            const fixResult = await runPipeline(defaultPipeline, fixContext, eventEmitter);
-            prd = fixResult.context.prd;
-
-            if (fixResult.success) {
-              storiesCompleted++;
-              totalCost += fixResult.context.agentResult?.estimatedCost || 0;
-              logger?.info("acceptance", `Fix story ${userStory.id} passed`);
-
-              // Collect fix story metrics
-              if (fixResult.context.storyMetrics) {
-                allStoryMetrics.push(...fixResult.context.storyMetrics);
-              }
-            } else {
-              logger?.error("acceptance", `Fix story ${userStory.id} failed`);
-            }
-
-            await savePRD(prd, prdPath);
-            prdDirty = true;
-          }
-
-          logger?.info("acceptance", "Re-running acceptance tests...");
-          // Loop will re-run acceptance tests
-        } else {
-          // Unexpected result from acceptance stage
-          logger?.warn("acceptance", `Unexpected acceptance result: ${acceptanceResult.action}`);
-          break;
-        }
-      }
+      prd = acceptanceResult.prd;
+      totalCost = acceptanceResult.totalCost;
+      iterations = acceptanceResult.iterations;
+      storiesCompleted = acceptanceResult.storiesCompleted;
     }
 
     const durationMs = Date.now() - startTime;
