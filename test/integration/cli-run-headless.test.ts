@@ -5,8 +5,8 @@
  * instead of raw JSONL, while still writing JSONL to disk.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdirSync, existsSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { initLogger, resetLogger } from "../../src/logger";
 

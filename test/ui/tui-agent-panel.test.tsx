@@ -2,11 +2,11 @@
  * Tests for TUI Agent Panel and PTY integration (Phase 3).
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { AgentPanel } from "../../src/tui/components/AgentPanel";
-import type { PtyHandle } from "../../src/agents/types";
 import { ClaudeCodeAdapter } from "../../src/agents/claude";
+import type { PtyHandle } from "../../src/agents/types";
+import { AgentPanel } from "../../src/tui/components/AgentPanel";
 
 describe("AgentPanel", () => {
   test("renders placeholder when no output", () => {

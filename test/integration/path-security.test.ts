@@ -1,8 +1,8 @@
-import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { mkdirSync, writeFileSync, symlinkSync, rmSync, existsSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { validateDirectory, validateFilePath, isWithinDirectory, MAX_DIRECTORY_DEPTH } from "../../src/config";
+import { join } from "node:path";
+import { MAX_DIRECTORY_DEPTH, isWithinDirectory, validateDirectory, validateFilePath } from "../../src/config";
 import { findProjectDir } from "../../src/config/loader";
 
 // Create a temporary test directory

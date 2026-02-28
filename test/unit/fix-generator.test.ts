@@ -2,12 +2,12 @@
  * Fix Generator Tests
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
-  findRelatedStories,
-  parseACTextFromSpec,
   buildFixPrompt,
   convertFixStoryToUserStory,
+  findRelatedStories,
+  parseACTextFromSpec,
 } from "../../src/acceptance/fix-generator";
 import type { PRD, UserStory } from "../../src/prd/types";
 
@@ -261,7 +261,9 @@ describe("convertFixStoryToUserStory", () => {
 
     expect(userStory.id).toBe("US-FIX-001");
     expect(userStory.title).toBe("Fix: AC-2 TTL expiry timing");
-    expect(userStory.description).toBe("Update TTL implementation to properly expire entries after the specified duration.");
+    expect(userStory.description).toBe(
+      "Update TTL implementation to properly expire entries after the specified duration.",
+    );
     expect(userStory.acceptanceCriteria).toEqual(["Fix AC-2"]);
     expect(userStory.tags).toEqual(["fix", "acceptance-failure"]);
     expect(userStory.dependencies).toEqual(["US-002", "US-005"]);

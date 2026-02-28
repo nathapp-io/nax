@@ -10,8 +10,8 @@ import { resolveModel } from "../../config";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd/types";
 import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../strategy";
-import { buildBatchPrompt, buildRoutingPrompt, parseBatchResponse, parseRoutingResponse } from "./llm-prompts";
 import { keywordStrategy } from "./keyword";
+import { buildBatchPrompt, buildRoutingPrompt, parseBatchResponse, parseRoutingResponse } from "./llm-prompts";
 
 // Re-export for backward compatibility
 export {

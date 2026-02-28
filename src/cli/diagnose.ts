@@ -99,11 +99,16 @@ async function countCommitsSince(workdir: string, since?: string): Promise<numbe
   if (!since) return 0;
   try {
     const result = Bun.spawnSync(["git", "log", "--oneline", `--since=${since}`, "--all"], {
-      cwd: workdir, stdout: "pipe", stderr: "ignore",
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "ignore",
     });
     if (result.exitCode !== 0) return 0;
     const output = new TextDecoder().decode(result.stdout);
-    return output.trim().split("\n").filter((line) => line.length > 0).length;
+    return output
+      .trim()
+      .split("\n")
+      .filter((line) => line.length > 0).length;
   } catch {
     return 0;
   }

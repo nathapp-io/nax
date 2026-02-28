@@ -4,8 +4,8 @@
  * Run with: bun run test/manual/logging-formatter-demo.ts
  */
 
-import { formatLogEntry, formatRunSummary } from "../../src/logging/formatter.js";
 import type { LogEntry } from "../../src/logger/types.js";
+import { formatLogEntry, formatRunSummary } from "../../src/logging/formatter.js";
 import type { RunSummary } from "../../src/logging/types.js";
 
 console.log("\n=== LOGGING FORMATTER DEMO ===\n");

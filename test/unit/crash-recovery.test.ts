@@ -2,19 +2,19 @@
  * Unit tests for crash recovery module (US-007)
  */
 
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { mkdirSync, rmSync, existsSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { StatusWriter } from "../../src/execution/status-writer";
+import { DEFAULT_CONFIG } from "../../src/config";
 import {
+  type CrashRecoveryContext,
   installCrashHandlers,
   resetCrashHandlers,
   startHeartbeat,
   stopHeartbeat,
   writeExitSummary,
-  type CrashRecoveryContext,
 } from "../../src/execution/crash-recovery";
-import { DEFAULT_CONFIG } from "../../src/config";
+import { StatusWriter } from "../../src/execution/status-writer";
 
 const TEST_DIR = join(import.meta.dir, "..", ".tmp-crash-recovery");
 const TEST_JSONL = join(TEST_DIR, "test.jsonl");
@@ -96,8 +96,8 @@ describe("crash-recovery", () => {
         pid: process.pid,
       });
 
-      let totalCost = 0;
-      let iterations = 0;
+      const totalCost = 0;
+      const iterations = 0;
 
       expect(() =>
         startHeartbeat(
@@ -127,8 +127,8 @@ describe("crash-recovery", () => {
         userStories: [],
       });
 
-      let totalCost = 0;
-      let iterations = 0;
+      const totalCost = 0;
+      const iterations = 0;
 
       startHeartbeat(
         statusWriter,

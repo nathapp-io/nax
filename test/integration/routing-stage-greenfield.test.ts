@@ -4,16 +4,16 @@
  * Tests BUG-010 fix: greenfield detection forces test-after strategy
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { NaxConfig } from "../../src/config/schema";
+import { initLogger, resetLogger } from "../../src/logger";
 import { routingStage } from "../../src/pipeline/stages/routing";
 import type { PipelineContext } from "../../src/pipeline/types";
-import type { NaxConfig } from "../../src/config/schema";
-import type { PRD, UserStory } from "../../src/prd/types";
-import { initLogger, resetLogger } from "../../src/logger";
 import { PluginRegistry } from "../../src/plugins/registry";
+import type { PRD, UserStory } from "../../src/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Helpers
@@ -34,12 +34,7 @@ function createTestContext(
     id: "US-001",
     title: "Add user authentication",
     description: "Implement JWT-based authentication",
-    acceptanceCriteria: [
-      "Secure token storage",
-      "Token refresh",
-      "Password hashing",
-      "Session management",
-    ],
+    acceptanceCriteria: ["Secure token storage", "Token refresh", "Password hashing", "Session management"],
     tags: ["security", "auth"],
     dependencies: [],
     status: "pending",

@@ -3,11 +3,11 @@
  * Tests for PERF-2 (PRD dirty-flag reload optimization) and MEM-1 (file size limit)
  */
 
-import { describe, expect, test, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import path from "node:path";
 import { groupStoriesIntoBatches } from "../../src/execution/runner";
-import type { UserStory, PRD } from "../../src/prd";
-import { loadPRD, PRD_MAX_FILE_SIZE } from "../../src/prd";
+import type { PRD, UserStory } from "../../src/prd";
+import { PRD_MAX_FILE_SIZE, loadPRD } from "../../src/prd";
 
 // Helper to create test stories
 function createStory(
@@ -374,10 +374,7 @@ describe("PERF-2 & MEM-1: PRD file size limit and dirty-flag optimization", () =
       branchName: "test-branch",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      userStories: [
-        createStory("US-001", "simple", "test-after"),
-        createStory("US-002", "simple", "test-after"),
-      ],
+      userStories: [createStory("US-001", "simple", "test-after"), createStory("US-002", "simple", "test-after")],
     };
 
     // Write PRD

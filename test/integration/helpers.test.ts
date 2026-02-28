@@ -1,9 +1,9 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { formatProgress, acquireLock, releaseLock } from "../../src/execution/helpers";
-import type { StoryCounts } from "../../src/execution/helpers";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "bun";
+import { acquireLock, formatProgress, releaseLock } from "../../src/execution/helpers";
+import type { StoryCounts } from "../../src/execution/helpers";
 
 describe("formatProgress", () => {
   test("formats progress with all stories pending", () => {

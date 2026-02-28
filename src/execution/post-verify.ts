@@ -4,12 +4,12 @@
  * Runs verification after the agent completes, reverts story state on failure.
  */
 
+import { spawn } from "bun";
 import type { NaxConfig } from "../config";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import type { PRD, UserStory } from "../prd";
 import { getExpectedFiles, savePRD } from "../prd";
-import { spawn } from "bun";
 import { getTierConfig } from "./escalation";
 import { revertStoriesOnFailure, runRectificationLoop } from "./post-verify-rectification";
 import { appendProgress } from "./progress";
@@ -21,14 +21,20 @@ async function getChangedTestFiles(workdir: string, gitRef?: string): Promise<st
   try {
     const proc = spawn({
       cmd: ["git", "diff", "--name-only", gitRef, "HEAD"],
-      cwd: workdir, stdout: "pipe", stderr: "pipe",
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
     });
     const exitCode = await proc.exited;
     if (exitCode !== 0) return [];
     const stdout = await new Response(proc.stdout).text();
-    return stdout.trim().split("\n").filter(
-      (f) => f && (f.includes("test/") || f.includes("__tests__/") || f.endsWith(".test.ts") || f.endsWith(".spec.ts")),
-    );
+    return stdout
+      .trim()
+      .split("\n")
+      .filter(
+        (f) =>
+          f && (f.includes("test/") || f.includes("__tests__/") || f.endsWith(".test.ts") || f.endsWith(".spec.ts")),
+      );
   } catch {
     return [];
   }
@@ -65,7 +71,18 @@ export interface PostVerifyResult {
  * not user/PRD input. No shell injection risk from untrusted sources.
  */
 export async function runPostAgentVerification(opts: PostVerifyOptions): Promise<PostVerifyResult> {
-  const { config, prd, prdPath, workdir, featureDir, story, storiesToExecute, allStoryMetrics, timeoutRetryCountMap, storyGitRef } = opts;
+  const {
+    config,
+    prd,
+    prdPath,
+    workdir,
+    featureDir,
+    story,
+    storiesToExecute,
+    allStoryMetrics,
+    timeoutRetryCountMap,
+    storyGitRef,
+  } = opts;
   const logger = getSafeLogger();
 
   if (!config.quality.commands.test) return { passed: true, prd };
@@ -97,7 +114,10 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
     if (verificationResult.output) {
       const analysis = parseTestOutput(verificationResult.output, 0);
       if (analysis.passCount > 0) {
-        logger?.debug("verification", "Scoped test results", { passCount: analysis.passCount, failCount: analysis.failCount });
+        logger?.debug("verification", "Scoped test results", {
+          passCount: analysis.passCount,
+          failCount: analysis.failCount,
+        });
       }
     }
 
@@ -109,7 +129,12 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
 
     // Regression failed -- revert stories
     const updatedPrd = await revertStoriesOnFailure({
-      prd, prdPath, story, storiesToExecute, allStoryMetrics, featureDir,
+      prd,
+      prdPath,
+      story,
+      storiesToExecute,
+      allStoryMetrics,
+      featureDir,
       diagnosticContext: "REGRESSION: full-suite regression detected",
       countsTowardEscalation: true,
     });
@@ -121,7 +146,10 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
   const isTestFailure = verificationResult.status === "TEST_FAILURE" && verificationResult.output;
   if (rectificationEnabled && isTestFailure && verificationResult.output) {
     const fixed = await runRectificationLoop({
-      config, workdir, story, testCommand,
+      config,
+      workdir,
+      story,
+      testCommand,
       timeoutSeconds: config.execution.verificationTimeoutSeconds,
       testOutput: verificationResult.output,
     });
@@ -146,7 +174,12 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
   // Revert stories and save
   const diagnosticContext = verificationResult.error || `Verification failed: ${verificationResult.status}`;
   const updatedPrd = await revertStoriesOnFailure({
-    prd, prdPath, story, storiesToExecute, allStoryMetrics, featureDir,
+    prd,
+    prdPath,
+    story,
+    storiesToExecute,
+    allStoryMetrics,
+    featureDir,
     diagnosticContext,
     countsTowardEscalation: verificationResult.countsTowardEscalation ?? false,
   });
@@ -201,11 +234,14 @@ async function runRegressionGate(
   const isTestFailure = regressionResult.status === "TEST_FAILURE" && regressionResult.output;
   if (rectificationEnabled && isTestFailure && regressionResult.output) {
     const fixed = await runRectificationLoop({
-      config, workdir, story,
+      config,
+      workdir,
+      story,
       testCommand: fullSuiteCommand,
       timeoutSeconds: config.execution.regressionGate.timeoutSeconds,
       testOutput: regressionResult.output,
-      promptPrefix: "# REGRESSION: Cross-Story Test Failures\n\nYour changes passed scoped tests but broke unrelated tests. Fix these regressions.",
+      promptPrefix:
+        "# REGRESSION: Cross-Story Test Failures\n\nYour changes passed scoped tests but broke unrelated tests. Fix these regressions.",
     });
     if (fixed) return "passed";
   }
@@ -224,11 +260,15 @@ function checkEnvironmentalEscalation(
   const tierCfg = currentTier ? getTierConfig(currentTier, config.autoMode.escalation.tierOrder) : undefined;
   if (!tierCfg) return;
 
-  const threshold = getEnvironmentalEscalationThreshold(tierCfg.attempts, config.quality.environmentalEscalationDivisor);
+  const threshold = getEnvironmentalEscalationThreshold(
+    tierCfg.attempts,
+    config.quality.environmentalEscalationDivisor,
+  );
   const currentAttempts = prd.userStories.find((s) => s.id === story.id)?.attempts ?? 0;
   if (currentAttempts >= threshold) {
     logger?.warn("verification", "Environmental failure hit early escalation threshold", {
-      currentAttempts, threshold,
+      currentAttempts,
+      threshold,
     });
   }
 }

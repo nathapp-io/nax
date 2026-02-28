@@ -12,13 +12,13 @@
  * These tests document the ACTUAL behavior, not the intended behavior.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { homedir } from "node:os";
-import { loadConfig, globalConfigPath } from "../../src/config/loader";
-import { existsSync, renameSync } from "node:fs";
+import { join } from "node:path";
+import { globalConfigPath, loadConfig } from "../../src/config/loader";
 
 describe("Config Loader - Backward Compatibility", () => {
   let tempDir: string;

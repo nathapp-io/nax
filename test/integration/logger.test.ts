@@ -1,12 +1,7 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import {
-  Logger,
-  initLogger,
-  getLogger,
-  resetLogger,
-} from "../../src/logger/logger.js";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
+import { Logger, getLogger, initLogger, resetLogger } from "../../src/logger/logger.js";
 
 const TEST_LOG_DIR = path.join(process.cwd(), "test-logs");
 const TEST_LOG_FILE = path.join(TEST_LOG_DIR, "test.jsonl");
@@ -37,9 +32,7 @@ describe("Logger", () => {
 
     test("throws when initializing twice", () => {
       initLogger({ level: "info" });
-      expect(() => initLogger({ level: "info" })).toThrow(
-        "Logger already initialized",
-      );
+      expect(() => initLogger({ level: "info" })).toThrow("Logger already initialized");
     });
 
     test("returns no-op logger when getting logger before init", () => {
@@ -449,9 +442,7 @@ describe("Logger", () => {
       console.error = originalError;
 
       // Should log error to console but not crash
-      expect(errors.some((e) => e.includes("Failed to write to log file"))).toBe(
-        true,
-      );
+      expect(errors.some((e) => e.includes("Failed to write to log file"))).toBe(true);
     });
   });
 

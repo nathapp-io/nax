@@ -8,13 +8,13 @@
  * 4. null = explicitly disabled
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { ExecutionConfig } from "../../src/config/schema";
 import { runReview } from "../../src/review";
 import type { ReviewConfig } from "../../src/review";
-import type { ExecutionConfig } from "../../src/config/schema";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 
 describe("Review Config-Driven Commands (US-005)", () => {
   test("uses explicit executionConfig.lintCommand when provided", async () => {

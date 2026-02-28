@@ -8,18 +8,18 @@
  * - buildStatusSnapshot(): valid NaxStatusFile from run state
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { existsSync, unlinkSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
-  writeStatusFile,
-  countProgress,
-  buildStatusSnapshot,
   type NaxStatusFile,
   type RunStateSnapshot,
+  buildStatusSnapshot,
+  countProgress,
+  writeStatusFile,
 } from "../../src/execution/status-file";
 import type { PRD, UserStory } from "../../src/prd";
 
@@ -211,11 +211,7 @@ describe("buildStatusSnapshot", () => {
   });
 
   test("progress is derived from PRD stories", () => {
-    const prd = makePrd([
-      makeStory("US-001", "passed"),
-      makeStory("US-002", "failed"),
-      makeStory("US-003", "pending"),
-    ]);
+    const prd = makePrd([makeStory("US-001", "passed"), makeStory("US-002", "failed"), makeStory("US-003", "pending")]);
     const snapshot = buildStatusSnapshot(makeRunState({ prd }));
 
     expect(snapshot.progress.total).toBe(3);
@@ -321,11 +317,7 @@ describe("writeStatusFile", () => {
   test("atomic rename: final file appears complete", async () => {
     const outPath = join(tmpDir, "status.json");
     const state = makeRunState({
-      prd: makePrd([
-        makeStory("US-001", "passed"),
-        makeStory("US-002", "failed"),
-        makeStory("US-003", "pending"),
-      ]),
+      prd: makePrd([makeStory("US-001", "passed"), makeStory("US-002", "failed"), makeStory("US-003", "pending")]),
       totalCost: 1.5,
       costLimit: 5.0,
       iterations: 3,
@@ -345,16 +337,10 @@ describe("writeStatusFile", () => {
     const outPath = join(tmpDir, "status.json");
 
     // First write
-    await writeStatusFile(
-      outPath,
-      buildStatusSnapshot(makeRunState({ runStatus: "running", iterations: 1 })),
-    );
+    await writeStatusFile(outPath, buildStatusSnapshot(makeRunState({ runStatus: "running", iterations: 1 })));
 
     // Second write with updated state
-    await writeStatusFile(
-      outPath,
-      buildStatusSnapshot(makeRunState({ runStatus: "completed", iterations: 5 })),
-    );
+    await writeStatusFile(outPath, buildStatusSnapshot(makeRunState({ runStatus: "completed", iterations: 5 })));
 
     const content = JSON.parse(readFileSync(outPath, "utf8")) as NaxStatusFile;
     expect(content.run.status).toBe("completed");

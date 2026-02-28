@@ -2,15 +2,15 @@
  * Unit tests for rectification core logic (v0.11)
  */
 
-import { describe, test, expect } from "bun:test";
-import {
-  shouldRetryRectification,
-  createRectificationPrompt,
-  type RectificationState,
-} from "../../src/execution/rectification";
+import { describe, expect, test } from "bun:test";
 import type { RectificationConfig } from "../../src/config";
-import type { UserStory } from "../../src/prd";
+import {
+  type RectificationState,
+  createRectificationPrompt,
+  shouldRetryRectification,
+} from "../../src/execution/rectification";
 import type { TestFailure } from "../../src/execution/test-output-parser";
+import type { UserStory } from "../../src/prd";
 
 describe("shouldRetryRectification", () => {
   const baseConfig: RectificationConfig = {

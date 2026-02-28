@@ -5,14 +5,14 @@
  * - Scoped tests pass -> Full suite fails -> Rectification prompt sent -> Fix applied -> Full suite passes
  */
 
-import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { ALL_AGENTS } from "../../src/agents/registry";
+import { DEFAULT_CONFIG } from "../../src/config";
 import { runPostAgentVerification } from "../../src/execution/post-verify";
 import type { PostVerifyOptions } from "../../src/execution/post-verify";
-import type { PRD, UserStory } from "../../src/prd";
-import { DEFAULT_CONFIG } from "../../src/config";
 import { initLogger, resetLogger } from "../../src/logger";
 import type { StoryMetrics } from "../../src/metrics";
-import { ALL_AGENTS } from "../../src/agents/registry";
+import type { PRD, UserStory } from "../../src/prd";
 
 // Mock agent adapter for testing
 const createMockAgent = () => ({
@@ -178,7 +178,7 @@ Error: Expected 1 to equal 2
 `;
 
     // Create a script that returns failed output first, then success
-    let callCount = 0;
+    const callCount = 0;
     const testScript = `${tmpDir}/test.sh`;
     await Bun.write(
       testScript,
@@ -318,7 +318,7 @@ Error: Failed
 3 tests failed
 `;
 
-    let callCount = 0;
+    const callCount = 0;
     const testScript = `${tmpDir}/test.sh`;
     await Bun.write(
       testScript,

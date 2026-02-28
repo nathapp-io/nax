@@ -2,10 +2,10 @@
  * Tests for Codebase Scanner
  */
 
-import { describe, test, expect } from "bun:test";
-import { scanCodebase } from "../../src/analyze/scanner";
+import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { scanCodebase } from "../../src/analyze/scanner";
 
 describe("scanCodebase", () => {
   test("scans project codebase successfully", async () => {
@@ -63,9 +63,7 @@ describe("scanCodebase", () => {
     const scan = await scanCodebase(workdir);
 
     // Should detect bun:test (no framework in package.json)
-    const hasBunTest = scan.testPatterns.some((p) =>
-      p.includes("bun:test")
-    );
+    const hasBunTest = scan.testPatterns.some((p) => p.includes("bun:test"));
     expect(hasBunTest).toBe(true);
   });
 
@@ -75,9 +73,7 @@ describe("scanCodebase", () => {
     const scan = await scanCodebase(workdir);
 
     // Should detect test/ directory
-    const hasTestDir = scan.testPatterns.some((p) =>
-      p.includes("test/")
-    );
+    const hasTestDir = scan.testPatterns.some((p) => p.includes("test/"));
     expect(hasTestDir).toBe(true);
   });
 
@@ -90,9 +86,9 @@ describe("scanCodebase", () => {
     const lines = scan.fileTree.split("\n");
     const maxIndent = Math.max(
       ...lines.map((line) => {
-        const match = line.match(/^(│   |    )*/);
+        const match = line.match(/^(│ {3}| {4})*/);
         return match ? match[0].length / 4 : 0;
-      })
+      }),
     );
 
     // Max depth 3 means max indent of 2 (0-indexed)

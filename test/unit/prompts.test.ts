@@ -2,11 +2,11 @@
  * Prompt builder tests
  */
 
-import { describe, test, expect } from "bun:test";
-import { buildSingleSessionPrompt, buildBatchPrompt } from "../../src/execution/prompts";
-import { buildVerifierPrompt } from "../../src/tdd/prompts";
-import type { UserStory } from "../../src/prd";
+import { describe, expect, test } from "bun:test";
 import type { ConstitutionResult } from "../../src/constitution";
+import { buildBatchPrompt, buildSingleSessionPrompt } from "../../src/execution/prompts";
+import type { UserStory } from "../../src/prd";
+import { buildVerifierPrompt } from "../../src/tdd/prompts";
 
 const mockStory: UserStory = {
   id: "US-001",

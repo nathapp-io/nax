@@ -5,10 +5,10 @@
  * keyboard input to the PTY when the agent panel is focused.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
-import { App } from "../../src/tui/App";
 import { PipelineEventEmitter } from "../../src/pipeline/events";
+import { App } from "../../src/tui/App";
 import type { StoryDisplayState } from "../../src/tui/types";
 
 // Check if node-pty binary support is available
@@ -64,7 +64,7 @@ describe("App PTY integration", () => {
         elapsedMs={0}
         events={emitter}
         ptyOptions={ptyOptions}
-      />
+      />,
     );
 
     // Verify App renders
@@ -77,14 +77,7 @@ describe("App PTY integration", () => {
 
     // Should render without errors when ptyOptions is null
     const { lastFrame } = render(
-      <App
-        feature="test-feature"
-        stories={stories}
-        totalCost={0}
-        elapsedMs={0}
-        events={emitter}
-        ptyOptions={null}
-      />
+      <App feature="test-feature" stories={stories} totalCost={0} elapsedMs={0} events={emitter} ptyOptions={null} />,
     );
 
     // Verify App renders
@@ -97,13 +90,7 @@ describe("App PTY integration", () => {
 
     // Should render without errors when ptyOptions is undefined
     const { lastFrame } = render(
-      <App
-        feature="test-feature"
-        stories={stories}
-        totalCost={0}
-        elapsedMs={0}
-        events={emitter}
-      />
+      <App feature="test-feature" stories={stories} totalCost={0} elapsedMs={0} events={emitter} />,
     );
 
     // Verify App renders
@@ -115,14 +102,7 @@ describe("App PTY integration", () => {
     const stories = [createMockStory("US-001", "pending")];
 
     const { lastFrame } = render(
-      <App
-        feature="test-feature"
-        stories={stories}
-        totalCost={0}
-        elapsedMs={0}
-        events={emitter}
-        ptyOptions={null}
-      />
+      <App feature="test-feature" stories={stories} totalCost={0} elapsedMs={0} events={emitter} ptyOptions={null} />,
     );
 
     const frame = lastFrame();
@@ -147,7 +127,7 @@ describe("App PTY integration", () => {
           command: "echo",
           args: ["test"],
         }}
-      />
+      />,
     );
 
     const frame = lastFrame();
@@ -161,18 +141,11 @@ describe("App PTY integration", () => {
     const stories = [createMockStory("US-001", "pending")];
 
     const { lastFrame, stdin } = render(
-      <App
-        feature="test-feature"
-        stories={stories}
-        totalCost={0}
-        elapsedMs={0}
-        events={emitter}
-        ptyOptions={null}
-      />
+      <App feature="test-feature" stories={stories} totalCost={0} elapsedMs={0} events={emitter} ptyOptions={null} />,
     );
 
     // Initial state: stories panel focused (agent not focused)
-    let frame = lastFrame();
+    const frame = lastFrame();
     expect(frame).not.toContain("(focused)");
 
     // Press Tab to switch focus to agent panel

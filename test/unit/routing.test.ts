@@ -8,19 +8,28 @@
  * - Async support and chain delegation
  */
 
-import { describe, expect, test, beforeEach, mock, spyOn } from "bun:test";
-import { classifyComplexity, determineTestStrategy, routeTask } from "../../src/routing";
+import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../src/config";
 import type { NaxConfig } from "../../src/config";
 import { escalateTier } from "../../src/execution/runner";
+import type { AggregateMetrics } from "../../src/metrics/types";
 import type { UserStory } from "../../src/prd/types";
-import type { RoutingStrategy, RoutingContext, RoutingDecision } from "../../src/routing/strategy";
+import { classifyComplexity, determineTestStrategy, routeTask } from "../../src/routing";
+import { buildStrategyChain } from "../../src/routing/builder";
 import { StrategyChain } from "../../src/routing/chain";
 import { keywordStrategy, llmStrategy, manualStrategy } from "../../src/routing/strategies";
-import { buildStrategyChain } from "../../src/routing/builder";
-import { llmStrategy as llmStrategyFull, buildRoutingPrompt, buildBatchPrompt, parseRoutingResponse, clearCache, routeBatch, validateRoutingDecision, stripCodeFences } from "../../src/routing/strategies/llm";
 import { adaptiveStrategy } from "../../src/routing/strategies/adaptive";
-import type { AggregateMetrics } from "../../src/metrics/types";
+import {
+  buildBatchPrompt,
+  buildRoutingPrompt,
+  clearCache,
+  llmStrategy as llmStrategyFull,
+  parseRoutingResponse,
+  routeBatch,
+  stripCodeFences,
+  validateRoutingDecision,
+} from "../../src/routing/strategies/llm";
+import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../../src/routing/strategy";
 
 // ============================================================================
 // Core Routing Logic Tests
@@ -36,7 +45,9 @@ describe("classifyComplexity", () => {
   });
 
   test("complex: security keyword", () => {
-    expect(classifyComplexity("Auth refactor", "Refactor JWT authentication", ["Token works"], ["security"])).toBe("complex");
+    expect(classifyComplexity("Auth refactor", "Refactor JWT authentication", ["Token works"], ["security"])).toBe(
+      "complex",
+    );
   });
 
   test("expert: distributed keyword", () => {
@@ -48,7 +59,7 @@ describe("classifyComplexity", () => {
       "Add validation",
       "Add basic input validation",
       ["AC1", "AC2", "AC3", "AC4"],
-      []
+      [],
     );
     expect(complexity).toBe("simple");
   });
@@ -58,7 +69,7 @@ describe("classifyComplexity", () => {
       "Add validation",
       "Add comprehensive input validation",
       ["AC1", "AC2", "AC3", "AC4", "AC5"],
-      []
+      [],
     );
     expect(complexity).toBe("medium");
   });
@@ -68,7 +79,7 @@ describe("classifyComplexity", () => {
       "Add validation",
       "Add extensive input validation",
       ["AC1", "AC2", "AC3", "AC4", "AC5", "AC6", "AC7", "AC8", "AC9"],
-      []
+      [],
     );
     expect(complexity).toBe("complex");
   });
@@ -84,24 +95,36 @@ describe("determineTestStrategy", () => {
   });
 
   test("security keyword → three-session-tdd even if simple", () => {
-    expect(determineTestStrategy("simple", "Fix auth bypass", "Security fix for JWT token", ["security"])).toBe("three-session-tdd");
+    expect(determineTestStrategy("simple", "Fix auth bypass", "Security fix for JWT token", ["security"])).toBe(
+      "three-session-tdd",
+    );
   });
 
   test("public api keyword → three-session-tdd even if simple", () => {
-    expect(determineTestStrategy("simple", "Add endpoint", "New public api endpoint for users", [])).toBe("three-session-tdd");
+    expect(determineTestStrategy("simple", "Add endpoint", "New public api endpoint for users", [])).toBe(
+      "three-session-tdd",
+    );
   });
 
   describe("tddStrategy overrides", () => {
     test("strategy='strict' always returns three-session-tdd", () => {
       expect(determineTestStrategy("simple", "Update button", "Change color", [], "strict")).toBe("three-session-tdd");
       expect(determineTestStrategy("medium", "Update button", "Change color", [], "strict")).toBe("three-session-tdd");
-      expect(determineTestStrategy("complex", "Refactor module", "Big refactor", [], "strict")).toBe("three-session-tdd");
+      expect(determineTestStrategy("complex", "Refactor module", "Big refactor", [], "strict")).toBe(
+        "three-session-tdd",
+      );
     });
 
     test("strategy='lite' always returns three-session-tdd-lite", () => {
-      expect(determineTestStrategy("simple", "Update button", "Change color", [], "lite")).toBe("three-session-tdd-lite");
-      expect(determineTestStrategy("medium", "Update form", "Add validation", [], "lite")).toBe("three-session-tdd-lite");
-      expect(determineTestStrategy("complex", "Refactor module", "Big refactor", [], "lite")).toBe("three-session-tdd-lite");
+      expect(determineTestStrategy("simple", "Update button", "Change color", [], "lite")).toBe(
+        "three-session-tdd-lite",
+      );
+      expect(determineTestStrategy("medium", "Update form", "Add validation", [], "lite")).toBe(
+        "three-session-tdd-lite",
+      );
+      expect(determineTestStrategy("complex", "Refactor module", "Big refactor", [], "lite")).toBe(
+        "three-session-tdd-lite",
+      );
     });
 
     test("strategy='off' always returns test-after", () => {
@@ -111,20 +134,28 @@ describe("determineTestStrategy", () => {
     });
 
     test("strategy='auto' returns three-session-tdd-lite for UI-tagged complex stories", () => {
-      expect(determineTestStrategy("complex", "Redesign dashboard", "UI overhaul", ["ui"], "auto")).toBe("three-session-tdd-lite");
+      expect(determineTestStrategy("complex", "Redesign dashboard", "UI overhaul", ["ui"], "auto")).toBe(
+        "three-session-tdd-lite",
+      );
     });
 
     test("strategy='auto' returns three-session-tdd-lite for layout-tagged stories", () => {
-      expect(determineTestStrategy("complex", "Fix layout", "Responsive layout fix", ["layout"], "auto")).toBe("three-session-tdd-lite");
+      expect(determineTestStrategy("complex", "Fix layout", "Responsive layout fix", ["layout"], "auto")).toBe(
+        "three-session-tdd-lite",
+      );
     });
 
     test("strategy='auto' security-critical stories always return three-session-tdd even with ui tag", () => {
-      expect(determineTestStrategy("complex", "Auth UI", "JWT token security screen", ["ui", "security"], "auto")).toBe("three-session-tdd");
+      expect(determineTestStrategy("complex", "Auth UI", "JWT token security screen", ["ui", "security"], "auto")).toBe(
+        "three-session-tdd",
+      );
     });
 
     test("strategy='auto' lite tags are case-insensitive", () => {
       expect(determineTestStrategy("complex", "Build UI", "Create UI", ["UI"], "auto")).toBe("three-session-tdd-lite");
-      expect(determineTestStrategy("complex", "Build CLI", "Create CLI", ["CLI"], "auto")).toBe("three-session-tdd-lite");
+      expect(determineTestStrategy("complex", "Build CLI", "Create CLI", ["CLI"], "auto")).toBe(
+        "three-session-tdd-lite",
+      );
     });
   });
 });
@@ -149,15 +180,33 @@ describe("routeTask", () => {
     expect(simpleResult.complexity).toBe("simple");
     expect(simpleResult.modelTier).toBe("fast");
 
-    const mediumResult = routeTask("Add validation", "Add DTO validation", ["a", "b", "c", "d", "e"], [], DEFAULT_CONFIG);
+    const mediumResult = routeTask(
+      "Add validation",
+      "Add DTO validation",
+      ["a", "b", "c", "d", "e"],
+      [],
+      DEFAULT_CONFIG,
+    );
     expect(mediumResult.complexity).toBe("medium");
     expect(mediumResult.modelTier).toBe("balanced");
 
-    const complexResult = routeTask("Auth refactor", "Refactor JWT authentication", ["Token works"], ["security"], DEFAULT_CONFIG);
+    const complexResult = routeTask(
+      "Auth refactor",
+      "Refactor JWT authentication",
+      ["Token works"],
+      ["security"],
+      DEFAULT_CONFIG,
+    );
     expect(complexResult.complexity).toBe("complex");
     expect(complexResult.modelTier).toBe("powerful");
 
-    const expertResult = routeTask("Real-time sync", "Real-time distributed consensus", ["Sync works"], [], DEFAULT_CONFIG);
+    const expertResult = routeTask(
+      "Real-time sync",
+      "Real-time distributed consensus",
+      ["Sync works"],
+      [],
+      DEFAULT_CONFIG,
+    );
     expect(expertResult.complexity).toBe("expert");
     expect(expertResult.modelTier).toBe("powerful");
   });
@@ -167,11 +216,23 @@ describe("routeTask", () => {
     expect(simpleResult.complexity).toBe("simple");
     expect(simpleResult.modelTier).toBe("fast");
 
-    const mediumResult = routeTask("Medium task", "Medium description", ["AC1", "AC2", "AC3", "AC4", "AC5"], [], DEFAULT_CONFIG);
+    const mediumResult = routeTask(
+      "Medium task",
+      "Medium description",
+      ["AC1", "AC2", "AC3", "AC4", "AC5"],
+      [],
+      DEFAULT_CONFIG,
+    );
     expect(mediumResult.complexity).toBe("medium");
     expect(mediumResult.modelTier).toBe("balanced");
 
-    const complexResult = routeTask("Complex task", "Complex description", ["AC1", "AC2", "AC3", "AC4", "AC5", "AC6", "AC7", "AC8", "AC9"], [], DEFAULT_CONFIG);
+    const complexResult = routeTask(
+      "Complex task",
+      "Complex description",
+      ["AC1", "AC2", "AC3", "AC4", "AC5", "AC6", "AC7", "AC8", "AC9"],
+      [],
+      DEFAULT_CONFIG,
+    );
     expect(complexResult.complexity).toBe("complex");
     expect(complexResult.modelTier).toBe("powerful");
   });
@@ -203,7 +264,13 @@ describe("routeTask", () => {
       const simpleResult = routeTask("Fix typo", "Fix a typo", ["Typo fixed"], [], DEFAULT_CONFIG);
       expect(simpleResult.testStrategy).toBe("test-after");
 
-      const complexResult = routeTask("Auth refactor", "Refactor JWT authentication", ["Token works"], ["security"], DEFAULT_CONFIG);
+      const complexResult = routeTask(
+        "Auth refactor",
+        "Refactor JWT authentication",
+        ["Token works"],
+        ["security"],
+        DEFAULT_CONFIG,
+      );
       expect(complexResult.testStrategy).toBe("three-session-tdd");
     });
   });
@@ -307,9 +374,7 @@ describe("StrategyChain", () => {
     const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
     const context: RoutingContext = { config: configWithoutLlm };
 
-    await expect(chain.route(story, context)).rejects.toThrow(
-      "No routing strategy returned a decision"
-    );
+    await expect(chain.route(story, context)).rejects.toThrow("No routing strategy returned a decision");
   });
 
   test("getStrategyNames returns strategy names", () => {
@@ -322,7 +387,7 @@ describe("StrategyChain", () => {
       const asyncStrategy: RoutingStrategy = {
         name: "async-test",
         route: async () => {
-          await new Promise(resolve => setTimeout(resolve, 10));
+          await new Promise((resolve) => setTimeout(resolve, 10));
           return {
             complexity: "medium",
             modelTier: "balanced",
@@ -364,7 +429,7 @@ describe("StrategyChain", () => {
       const asyncStrategy: RoutingStrategy = {
         name: "async-second",
         route: async () => {
-          await new Promise(resolve => setTimeout(resolve, 10));
+          await new Promise((resolve) => setTimeout(resolve, 10));
           return {
             complexity: "complex",
             modelTier: "powerful",
@@ -555,9 +620,7 @@ describe("buildStrategyChain", () => {
       ...DEFAULT_CONFIG,
       routing: { strategy: "custom" as const },
     };
-    await expect(buildStrategyChain(config, "/tmp")).rejects.toThrow(
-      "routing.customStrategyPath is required"
-    );
+    await expect(buildStrategyChain(config, "/tmp")).rejects.toThrow("routing.customStrategyPath is required");
   });
 });
 
@@ -581,12 +644,7 @@ const complexStory: UserStory = {
   id: "US-002",
   title: "Add JWT authentication",
   description: "Implement JWT authentication with refresh tokens",
-  acceptanceCriteria: [
-    "Secure token storage",
-    "Token refresh endpoint",
-    "Expiry handling",
-    "Logout functionality",
-  ],
+  acceptanceCriteria: ["Secure token storage", "Token refresh endpoint", "Expiry handling", "Logout functionality"],
   tags: ["security", "auth"],
   dependencies: [],
   status: "pending",
@@ -626,7 +684,8 @@ describe("LLM Routing Strategy - Prompt Building", () => {
 
 describe("LLM Routing Strategy - Response Parsing", () => {
   test("parseRoutingResponse handles valid JSON", () => {
-    const output = '{"complexity":"simple","modelTier":"fast","testStrategy":"test-after","reasoning":"Simple documentation fix"}';
+    const output =
+      '{"complexity":"simple","modelTier":"fast","testStrategy":"test-after","reasoning":"Simple documentation fix"}';
     const decision = parseRoutingResponse(output, simpleStory, DEFAULT_CONFIG);
 
     expect(decision.complexity).toBe("simple");
@@ -636,7 +695,8 @@ describe("LLM Routing Strategy - Response Parsing", () => {
   });
 
   test("parseRoutingResponse strips markdown code blocks", () => {
-    const output = '```json\n{"complexity":"complex","modelTier":"powerful","testStrategy":"three-session-tdd","reasoning":"Security-critical"}\n```';
+    const output =
+      '```json\n{"complexity":"complex","modelTier":"powerful","testStrategy":"three-session-tdd","reasoning":"Security-critical"}\n```';
     const decision = parseRoutingResponse(output, complexStory, DEFAULT_CONFIG);
 
     expect(decision.complexity).toBe("complex");
@@ -645,7 +705,7 @@ describe("LLM Routing Strategy - Response Parsing", () => {
   });
 
   test("parseRoutingResponse throws on invalid JSON", () => {
-    const output = 'This is not JSON';
+    const output = "This is not JSON";
     expect(() => parseRoutingResponse(output, simpleStory, DEFAULT_CONFIG)).toThrow();
   });
 
@@ -720,10 +780,7 @@ function createStory(
   };
 }
 
-function createContext(
-  metrics?: AggregateMetrics,
-  config: NaxConfig = DEFAULT_CONFIG,
-): RoutingContext {
+function createContext(metrics?: AggregateMetrics, config: NaxConfig = DEFAULT_CONFIG): RoutingContext {
   return {
     config,
     metrics,
@@ -731,10 +788,7 @@ function createContext(
 }
 
 function createMockMetrics(
-  complexityData: Record<
-    string,
-    { predicted: number; actualTierUsed: string; mismatchRate: number }
-  >,
+  complexityData: Record<string, { predicted: number; actualTierUsed: string; mismatchRate: number }>,
 ): AggregateMetrics {
   return {
     totalRuns: 10,
@@ -774,12 +828,9 @@ function createMockMetrics(
 describe("Adaptive Routing Strategy", () => {
   describe("No metrics available", () => {
     test("should fallback to configured strategy when no metrics", async () => {
-      const story = createStory(
-        "US-001",
-        "Add user login",
-        "Implement user authentication",
-        ["User can log in with email and password"],
-      );
+      const story = createStory("US-001", "Add user login", "Implement user authentication", [
+        "User can log in with email and password",
+      ]);
 
       const context = createContext(undefined);
       const decision = await adaptiveStrategy.route(story, context);
@@ -800,12 +851,7 @@ describe("Adaptive Routing Strategy", () => {
         },
       });
 
-      const story = createStory(
-        "US-002",
-        "Fix typo",
-        "Fix typo in README",
-        ["Typo is fixed"],
-      );
+      const story = createStory("US-002", "Fix typo", "Fix typo in README", ["Typo is fixed"]);
 
       const context = createContext(metrics);
       const decision = await adaptiveStrategy.route(story, context);
@@ -827,12 +873,10 @@ describe("Adaptive Routing Strategy", () => {
         },
       });
 
-      const story = createStory(
-        "US-004",
-        "Add button",
-        "Add a submit button to the form",
-        ["Button is visible", "Button triggers submit"],
-      );
+      const story = createStory("US-004", "Add button", "Add a submit button to the form", [
+        "Button is visible",
+        "Button triggers submit",
+      ]);
 
       const context = createContext(metrics);
       const decision = await adaptiveStrategy.route(story, context);

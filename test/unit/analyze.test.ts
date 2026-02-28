@@ -1,14 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { analyzeFeature } from "../../src/cli/analyze";
-import { DEFAULT_CONFIG } from "../../src/config/schema";
 import type { NaxConfig } from "../../src/config";
+import { DEFAULT_CONFIG } from "../../src/config/schema";
 
 describe("analyzeFeature", () => {
   test("parses spec.md into user stories (LLM disabled, keyword fallback)", async () => {
     const tmpDir = `/tmp/nax-analyze-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
 
-    await Bun.write(`${tmpDir}/spec.md`, `# Feature: Auth System
+    await Bun.write(
+      `${tmpDir}/spec.md`,
+      `# Feature: Auth System
 
 ## US-001: Add login endpoint
 
@@ -33,7 +35,8 @@ Create a POST /auth/logout endpoint.
 - [ ] Returns 200 on success
 
 Dependencies: US-001
-`);
+`,
+    );
 
     // Disable LLM for keyword-based classification
     const config: NaxConfig = {
@@ -80,7 +83,7 @@ Dependencies: US-001
         featureDir: tmpDir,
         featureName: "test",
         branchName: "feat/test",
-      })
+      }),
     ).rejects.toThrow("spec.md not found");
 
     await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
@@ -91,7 +94,9 @@ Dependencies: US-001
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
 
     // Generate spec.md with 6 stories
-    const stories = Array.from({ length: 6 }, (_, i) => `
+    const stories = Array.from(
+      { length: 6 },
+      (_, i) => `
 ## US-${String(i + 1).padStart(3, "0")}: Story ${i + 1}
 
 ### Description
@@ -99,7 +104,8 @@ Description for story ${i + 1}
 
 ### Acceptance Criteria
 - [ ] Criterion 1
-`).join("\n");
+`,
+    ).join("\n");
 
     await Bun.write(`${tmpDir}/spec.md`, `# Feature\n${stories}`);
 
@@ -134,7 +140,9 @@ Description for story ${i + 1}
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
 
     // Generate spec.md with exactly 5 stories
-    const stories = Array.from({ length: 5 }, (_, i) => `
+    const stories = Array.from(
+      { length: 5 },
+      (_, i) => `
 ## US-${String(i + 1).padStart(3, "0")}: Story ${i + 1}
 
 ### Description
@@ -142,7 +150,8 @@ Description for story ${i + 1}
 
 ### Acceptance Criteria
 - [ ] Criterion 1
-`).join("\n");
+`,
+    ).join("\n");
 
     await Bun.write(`${tmpDir}/spec.md`, `# Feature\n${stories}`);
 
@@ -176,7 +185,9 @@ Description for story ${i + 1}
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
 
     const customSpecPath = `${tmpDir}/custom-spec.md`;
-    await Bun.write(customSpecPath, `# Custom Spec
+    await Bun.write(
+      customSpecPath,
+      `# Custom Spec
 
 ## US-001: Custom story
 
@@ -185,7 +196,8 @@ A custom story from explicit path
 
 ### Acceptance Criteria
 - [ ] Works with --from flag
-`);
+`,
+    );
 
     const config: NaxConfig = {
       ...DEFAULT_CONFIG,

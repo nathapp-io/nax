@@ -9,7 +9,7 @@
 import type { AgentAdapter } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config";
-import { getLogger } from "../logger";
+import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { captureGitRef } from "../utils/git";
 import {
@@ -55,9 +55,18 @@ export async function runFullSuiteGate(
 
     if (testSummary.failed > 0) {
       await runRectificationLoop(
-        story, config, workdir, agent, implementerTier,
-        contextMarkdown, lite, logger, testSummary,
-        rectificationConfig, testCmd, fullSuiteTimeout,
+        story,
+        config,
+        workdir,
+        agent,
+        implementerTier,
+        contextMarkdown,
+        lite,
+        logger,
+        testSummary,
+        rectificationConfig,
+        testCmd,
+        fullSuiteTimeout,
       );
     }
   } else if (fullSuitePassed) {

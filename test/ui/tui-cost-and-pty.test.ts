@@ -4,10 +4,10 @@
  * Tests for BUG-1 (story cost accumulation) and MEM-1 (PTY line length limits).
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { PipelineEventEmitter } from "../../src/pipeline/events";
-import type { UserStory } from "../../src/prd/types";
 import type { StageResult } from "../../src/pipeline/types";
+import type { UserStory } from "../../src/prd/types";
 
 // ── Test Fixtures ────────────────────────────────────
 
@@ -133,8 +133,7 @@ describe("usePty - Line Length Limits (MEM-1)", () => {
 
     // Simulate the truncation logic
     const longLine = "x".repeat(15_000);
-    const truncatedLine =
-      longLine.length > MAX_LINE_LENGTH ? longLine.slice(0, MAX_LINE_LENGTH) + "…" : longLine;
+    const truncatedLine = longLine.length > MAX_LINE_LENGTH ? longLine.slice(0, MAX_LINE_LENGTH) + "…" : longLine;
 
     expect(truncatedLine.length).toBe(MAX_LINE_LENGTH + 1); // +1 for ellipsis
     expect(truncatedLine.endsWith("…")).toBe(true);
@@ -162,11 +161,7 @@ describe("usePty - Line Length Limits (MEM-1)", () => {
 describe("Integration - Cost in multiple story:complete events", () => {
   test("should emit multiple story:complete events with different costs", () => {
     const emitter = new PipelineEventEmitter();
-    const stories = [
-      createMockStory("US-001"),
-      createMockStory("US-002"),
-      createMockStory("US-003"),
-    ];
+    const stories = [createMockStory("US-001"), createMockStory("US-002"), createMockStory("US-003")];
 
     const events: Array<{ story: UserStory; result: StageResult }> = [];
     emitter.on("story:complete", (story, result) => {

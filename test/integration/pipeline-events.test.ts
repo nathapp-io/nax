@@ -4,13 +4,13 @@
  * Tests for PipelineEventEmitter and event emission during pipeline execution.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { PipelineEventEmitter } from "../../src/pipeline/events";
-import { runPipeline } from "../../src/pipeline/runner";
-import type { PipelineStage, PipelineContext, StageResult } from "../../src/pipeline/types";
-import type { UserStory } from "../../src/prd/types";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { NaxConfig } from "../../src/config/schema";
 import { initLogger, resetLogger } from "../../src/logger";
+import { PipelineEventEmitter } from "../../src/pipeline/events";
+import { runPipeline } from "../../src/pipeline/runner";
+import type { PipelineContext, PipelineStage, StageResult } from "../../src/pipeline/types";
+import type { UserStory } from "../../src/prd/types";
 
 // ── Test Fixtures ────────────────────────────────────
 
@@ -412,12 +412,7 @@ describe("runPipeline event emission", () => {
     const ctx = createMockContext();
     await runPipeline([stage1, stage2], ctx, emitter);
 
-    expect(events).toEqual([
-      "enter:stage-1",
-      "exit:stage-1",
-      "enter:stage-2",
-      "exit:stage-2",
-    ]);
+    expect(events).toEqual(["enter:stage-1", "exit:stage-1", "enter:stage-2", "exit:stage-2"]);
   });
 });
 

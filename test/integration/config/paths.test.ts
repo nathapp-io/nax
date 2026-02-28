@@ -4,9 +4,9 @@
  * Tests for path resolution utilities.
  */
 
-import { describe, test, expect } from "bun:test";
-import { join } from "node:path";
+import { describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import { globalConfigDir, projectConfigDir } from "../../../src/config/paths";
 
 describe("config/paths", () => {

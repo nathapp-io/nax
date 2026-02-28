@@ -8,7 +8,7 @@
  * - Constitution: concatenate
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { deepMergeConfig } from "../../../src/config/merger";
 import type { NaxConfig } from "../../../src/config/schema";
 
@@ -258,9 +258,7 @@ describe("config/merger", () => {
       };
       const result = deepMergeConfig(base, override);
 
-      expect(result.constitution.content).toBe(
-        "Base constitution rules\n\nOverride constitution rules"
-      );
+      expect(result.constitution.content).toBe("Base constitution rules\n\nOverride constitution rules");
       expect(result.constitution.enabled).toBe(true);
       expect(result.constitution.maxTokens).toBe(2000);
     });
@@ -357,9 +355,7 @@ describe("config/merger", () => {
           defaultAgent: "gpt",
           fallbackOrder: ["gpt", "claude"],
           escalation: {
-            tierOrder: [
-              { tier: "fast", attempts: 3 },
-            ],
+            tierOrder: [{ tier: "fast", attempts: 3 }],
           },
         },
       };
@@ -370,9 +366,7 @@ describe("config/merger", () => {
       expect(result.models?.balanced).toBe("sonnet");
       expect(result.autoMode?.defaultAgent).toBe("gpt");
       expect(result.autoMode?.fallbackOrder).toEqual(["gpt", "claude"]);
-      expect(result.autoMode?.escalation?.tierOrder).toEqual([
-        { tier: "fast", attempts: 3 },
-      ]);
+      expect(result.autoMode?.escalation?.tierOrder).toEqual([{ tier: "fast", attempts: 3 }]);
     });
 
     test("handles removal of nested config keys", () => {

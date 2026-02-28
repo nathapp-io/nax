@@ -4,7 +4,7 @@
  * Validates that the --parallel flag is correctly parsed and passed to RunOptions.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { RunOptions } from "../../src/execution/runner";
 
 describe("CLI --parallel flag parsing", () => {

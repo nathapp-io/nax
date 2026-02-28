@@ -4,15 +4,15 @@
  * Tests plugin reviewer integration in the review pipeline stage.
  */
 
-import { describe, test, expect, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawn } from "bun";
 import { reviewStage } from "../../src/pipeline/stages/review";
 import type { PipelineContext } from "../../src/pipeline/types";
 import { PluginRegistry } from "../../src/plugins/registry";
 import type { IReviewPlugin, NaxPlugin } from "../../src/plugins/types";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { spawn } from "bun";
 
 /**
  * Create a mock pipeline context with minimal required fields

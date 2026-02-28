@@ -2,10 +2,16 @@
  * Tests for human-friendly logging formatter
  */
 
-import { describe, test, expect } from "bun:test";
-import { formatLogEntry, formatRunSummary, formatTimestamp, formatDuration, formatCost } from "../../../src/logging/formatter.js";
-import { EMOJI, type FormatterOptions, type RunSummary } from "../../../src/logging/types.js";
+import { describe, expect, test } from "bun:test";
 import type { LogEntry } from "../../../src/logger/types.js";
+import {
+  formatCost,
+  formatDuration,
+  formatLogEntry,
+  formatRunSummary,
+  formatTimestamp,
+} from "../../../src/logging/formatter.js";
+import { EMOJI, type FormatterOptions, type RunSummary } from "../../../src/logging/types.js";
 
 describe("formatTimestamp", () => {
   test("formats ISO timestamp to HH:MM:SS", () => {

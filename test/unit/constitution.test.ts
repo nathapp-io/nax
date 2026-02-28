@@ -2,10 +2,10 @@
  * Constitution system tests
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdirSync, rmSync, existsSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { estimateTokens, truncateToTokens, loadConstitution } from "../../src/constitution";
+import { estimateTokens, loadConstitution, truncateToTokens } from "../../src/constitution";
 import type { ConstitutionConfig } from "../../src/constitution";
 
 const TEST_DIR = join(import.meta.dir, ".tmp-constitution-test");

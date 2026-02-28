@@ -1,9 +1,9 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { isTestFile, isSourceFile, verifyTestWriterIsolation } from "../../src/tdd";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { execSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execSync } from "node:child_process";
+import { isSourceFile, isTestFile, verifyTestWriterIsolation } from "../../src/tdd";
 
 describe("isTestFile", () => {
   test("matches test/ directory", () => {

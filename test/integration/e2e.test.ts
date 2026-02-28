@@ -5,27 +5,27 @@
  * Uses a MockAgentAdapter to avoid requiring real Claude Code installation
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { ALL_AGENTS } from "../../src/agents/registry";
 import type {
   AgentAdapter,
   AgentCapabilities,
   AgentResult,
   AgentRunOptions,
-  PlanOptions,
-  PlanResult,
   DecomposeOptions,
   DecomposeResult,
+  PlanOptions,
+  PlanResult,
 } from "../../src/agents/types";
-import { planCommand } from "../../src/cli/plan";
 import { analyzeFeature } from "../../src/cli/analyze";
-import { run } from "../../src/execution/runner";
+import { planCommand } from "../../src/cli/plan";
 import { DEFAULT_CONFIG } from "../../src/config";
 import type { NaxConfig } from "../../src/config";
-import { loadPRD } from "../../src/prd";
-import { ALL_AGENTS } from "../../src/agents/registry";
+import { run } from "../../src/execution/runner";
 import { initLogger, resetLogger } from "../../src/logger";
+import { loadPRD } from "../../src/prd";
 
 /**
  * Mock Agent Adapter for testing
@@ -746,7 +746,7 @@ function setupTestProject(dir: string) {
   mkdirSync(join(dir, "test"), { recursive: true });
   Bun.write(
     join(dir, "test/index.test.ts"),
-    "import { expect, test } from 'bun:test';\nimport { greet } from '../../src/index';\n\ntest('greet', () => {\n  expect(greet()).toBe('Hello');\n});\n"
+    "import { expect, test } from 'bun:test';\nimport { greet } from '../../src/index';\n\ntest('greet', () => {\n  expect(greet()).toBe('Hello');\n});\n",
   );
 
   // Create package.json
@@ -765,8 +765,8 @@ function setupTestProject(dir: string) {
         },
       },
       null,
-      2
-    )
+      2,
+    ),
   );
 
   // Create tsconfig.json
@@ -788,8 +788,8 @@ function setupTestProject(dir: string) {
         exclude: ["node_modules", "dist"],
       },
       null,
-      2
-    )
+      2,
+    ),
   );
 }
 
@@ -812,8 +812,8 @@ async function initializeNgent(ngentDir: string) {
         },
       },
       null,
-      2
-    )
+      2,
+    ),
   );
 
   // Write constitution.md
@@ -832,7 +832,7 @@ async function initializeNgent(ngentDir: string) {
 ## Architecture Rules
 - Keep functions small and focused
 - Avoid tight coupling
-`
+`,
   );
 }
 

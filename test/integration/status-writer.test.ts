@@ -8,15 +8,15 @@
  * - update() writes via writeStatusFile (no-op guard, success path, failure counter BUG-2)
  */
 
-import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
-import { join } from "node:path";
-import { mkdtemp, rm } from "node:fs/promises";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { NaxConfig } from "../../src/config";
-import type { PRD, UserStory } from "../../src/prd";
-import { StatusWriter, type StatusWriterContext } from "../../src/execution/status-writer";
 import type { NaxStatusFile } from "../../src/execution/status-file";
+import { StatusWriter, type StatusWriterContext } from "../../src/execution/status-writer";
+import type { PRD, UserStory } from "../../src/prd";
 
 // ============================================================================
 // Helpers
@@ -153,7 +153,15 @@ describe("StatusWriter setters", () => {
     const path = join(dir, "status.json");
     const sw = new StatusWriter(path, makeConfig(), makeCtx());
     sw.setPrd(makePrd());
-    sw.setCurrentStory({ storyId: "US-001", title: "T", complexity: "simple", tddStrategy: "test-after", model: "balanced", attempt: 1, phase: "routing" });
+    sw.setCurrentStory({
+      storyId: "US-001",
+      title: "T",
+      complexity: "simple",
+      tddStrategy: "test-after",
+      model: "balanced",
+      attempt: 1,
+      phase: "routing",
+    });
     sw.setCurrentStory(null);
     await sw.update(0, 0);
     const content = JSON.parse(readFileSync(path, "utf8")) as NaxStatusFile;

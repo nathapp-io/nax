@@ -1,15 +1,15 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
-import path from "node:path";
 import os from "node:os";
+import path from "node:path";
 import {
+  type TestFileInfo,
+  deriveTestPatterns,
   extractTestStructure,
   formatTestSummary,
-  truncateToTokenBudget,
-  deriveTestPatterns,
-  scanTestFiles,
   generateTestCoverageSummary,
-  type TestFileInfo,
+  scanTestFiles,
+  truncateToTokenBudget,
 } from "../../src/context/test-scanner";
 
 describe("extractTestStructure", () => {
@@ -82,16 +82,12 @@ describe("formatTestSummary", () => {
     {
       relativePath: "test/store.test.ts",
       testCount: 5,
-      describes: [
-        { name: "CRUD", tests: ["create", "read", "update", "delete", "upsert"] },
-      ],
+      describes: [{ name: "CRUD", tests: ["create", "read", "update", "delete", "upsert"] }],
     },
     {
       relativePath: "test/validation.test.ts",
       testCount: 3,
-      describes: [
-        { name: "Input validation", tests: ["required name", "max length", "type check"] },
-      ],
+      describes: [{ name: "Input validation", tests: ["required name", "max length", "type check"] }],
     },
   ];
 
@@ -138,16 +134,12 @@ describe("truncateToTokenBudget", () => {
     {
       relativePath: "test/store.test.ts",
       testCount: 10,
-      describes: [
-        { name: "CRUD", tests: Array.from({ length: 10 }, (_, i) => `test ${i}`) },
-      ],
+      describes: [{ name: "CRUD", tests: Array.from({ length: 10 }, (_, i) => `test ${i}`) }],
     },
     {
       relativePath: "test/auth.test.ts",
       testCount: 8,
-      describes: [
-        { name: "Auth", tests: Array.from({ length: 8 }, (_, i) => `auth test ${i}`) },
-      ],
+      describes: [{ name: "Auth", tests: Array.from({ length: 8 }, (_, i) => `auth test ${i}`) }],
     },
   ];
 
@@ -206,11 +198,7 @@ describe("deriveTestPatterns", () => {
   });
 
   test("strips common suffixes like .service, .controller, .module", () => {
-    const contextFiles = [
-      "src/user.service.ts",
-      "src/api.controller.ts",
-      "src/app.module.ts",
-    ];
+    const contextFiles = ["src/user.service.ts", "src/api.controller.ts", "src/app.module.ts"];
     const patterns = deriveTestPatterns(contextFiles);
 
     // Should include both full and simplified patterns
@@ -247,15 +235,15 @@ describe("scanTestFiles with scoping", () => {
       // Create test files
       await fs.writeFile(
         path.join(testDir, "health.service.test.ts"),
-        'describe("Health Service", () => { test("works", () => {}); });'
+        'describe("Health Service", () => { test("works", () => {}); });',
       );
       await fs.writeFile(
         path.join(testDir, "db.connection.test.ts"),
-        'describe("DB Connection", () => { test("connects", () => {}); });'
+        'describe("DB Connection", () => { test("connects", () => {}); });',
       );
       await fs.writeFile(
         path.join(testDir, "auth.service.test.ts"),
-        'describe("Auth Service", () => { test("authenticates", () => {}); });'
+        'describe("Auth Service", () => { test("authenticates", () => {}); });',
       );
 
       // Scan with contextFiles (only health.service.ts)
@@ -283,11 +271,11 @@ describe("scanTestFiles with scoping", () => {
 
       await fs.writeFile(
         path.join(testDir, "health.service.test.ts"),
-        'describe("Health", () => { test("works", () => {}); });'
+        'describe("Health", () => { test("works", () => {}); });',
       );
       await fs.writeFile(
         path.join(testDir, "auth.service.test.ts"),
-        'describe("Auth", () => { test("works", () => {}); });'
+        'describe("Auth", () => { test("works", () => {}); });',
       );
 
       // Scan with scopeToStory=false (should scan all)
@@ -311,14 +299,8 @@ describe("scanTestFiles with scoping", () => {
       const testDir = path.join(tempDir, "test");
       await fs.mkdir(testDir);
 
-      await fs.writeFile(
-        path.join(testDir, "test1.test.ts"),
-        'describe("Test1", () => { test("works", () => {}); });'
-      );
-      await fs.writeFile(
-        path.join(testDir, "test2.test.ts"),
-        'describe("Test2", () => { test("works", () => {}); });'
-      );
+      await fs.writeFile(path.join(testDir, "test1.test.ts"), 'describe("Test1", () => { test("works", () => {}); });');
+      await fs.writeFile(path.join(testDir, "test2.test.ts"), 'describe("Test2", () => { test("works", () => {}); });');
 
       // No contextFiles, should scan all
       const result = await scanTestFiles({
@@ -344,11 +326,11 @@ describe("generateTestCoverageSummary with scoping", () => {
 
       await fs.writeFile(
         path.join(testDir, "health.service.test.ts"),
-        'describe("Health", () => { test("check", () => {}); });'
+        'describe("Health", () => { test("check", () => {}); });',
       );
       await fs.writeFile(
         path.join(testDir, "auth.service.test.ts"),
-        'describe("Auth", () => { test("login", () => {}); });'
+        'describe("Auth", () => { test("login", () => {}); });',
       );
 
       const result = await generateTestCoverageSummary({
@@ -377,10 +359,7 @@ describe("generateTestCoverageSummary with scoping", () => {
       const testDir = path.join(tempDir, "test");
       await fs.mkdir(testDir);
 
-      await fs.writeFile(
-        path.join(testDir, "test.test.ts"),
-        'describe("Test", () => { test("works", () => {}); });'
-      );
+      await fs.writeFile(path.join(testDir, "test.test.ts"), 'describe("Test", () => { test("works", () => {}); });');
 
       // scopeToStory=true but no contextFiles → should fall back to full scan
       // (warning logged via structured logger, not console.warn)

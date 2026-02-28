@@ -7,8 +7,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { tmpdir } from "node:os";
+import path from "node:path";
 import { categorizeVerdict, cleanupVerdict, readVerdict } from "../../src/tdd/verdict";
 import type { VerifierVerdict } from "../../src/tdd/verdict";
 
@@ -56,11 +56,7 @@ afterEach(async () => {
 describe("readVerdict", () => {
   it("returns parsed verdict when file exists and is valid", async () => {
     const verdict = makeVerdict();
-    await writeFile(
-      path.join(workdir, ".nax-verifier-verdict.json"),
-      JSON.stringify(verdict),
-      "utf-8",
-    );
+    await writeFile(path.join(workdir, ".nax-verifier-verdict.json"), JSON.stringify(verdict), "utf-8");
 
     const result = await readVerdict(workdir);
     expect(result).not.toBeNull();
@@ -77,11 +73,7 @@ describe("readVerdict", () => {
   });
 
   it("returns null when JSON is malformed (no throw, logs warning)", async () => {
-    await writeFile(
-      path.join(workdir, ".nax-verifier-verdict.json"),
-      "{ this is not valid json !!!",
-      "utf-8",
-    );
+    await writeFile(path.join(workdir, ".nax-verifier-verdict.json"), "{ this is not valid json !!!", "utf-8");
 
     const result = await readVerdict(workdir);
     expect(result).toBeNull();
@@ -89,11 +81,7 @@ describe("readVerdict", () => {
 
   it("returns null when required field 'version' is missing", async () => {
     const bad = { approved: true, tests: { allPassing: true, passCount: 5, failCount: 0 } };
-    await writeFile(
-      path.join(workdir, ".nax-verifier-verdict.json"),
-      JSON.stringify(bad),
-      "utf-8",
-    );
+    await writeFile(path.join(workdir, ".nax-verifier-verdict.json"), JSON.stringify(bad), "utf-8");
 
     const result = await readVerdict(workdir);
     expect(result).toBeNull();
@@ -101,11 +89,7 @@ describe("readVerdict", () => {
 
   it("returns null when required field 'approved' is missing", async () => {
     const bad = { version: 1, tests: { allPassing: true, passCount: 5, failCount: 0 } };
-    await writeFile(
-      path.join(workdir, ".nax-verifier-verdict.json"),
-      JSON.stringify(bad),
-      "utf-8",
-    );
+    await writeFile(path.join(workdir, ".nax-verifier-verdict.json"), JSON.stringify(bad), "utf-8");
 
     const result = await readVerdict(workdir);
     expect(result).toBeNull();
@@ -113,11 +97,7 @@ describe("readVerdict", () => {
 
   it("returns null when required field 'tests' is missing", async () => {
     const bad = { version: 1, approved: true };
-    await writeFile(
-      path.join(workdir, ".nax-verifier-verdict.json"),
-      JSON.stringify(bad),
-      "utf-8",
-    );
+    await writeFile(path.join(workdir, ".nax-verifier-verdict.json"), JSON.stringify(bad), "utf-8");
 
     const result = await readVerdict(workdir);
     expect(result).toBeNull();
@@ -125,11 +105,7 @@ describe("readVerdict", () => {
 
   it("returns null when tests sub-fields are missing", async () => {
     const bad = { version: 1, approved: true, tests: { allPassing: true } };
-    await writeFile(
-      path.join(workdir, ".nax-verifier-verdict.json"),
-      JSON.stringify(bad),
-      "utf-8",
-    );
+    await writeFile(path.join(workdir, ".nax-verifier-verdict.json"), JSON.stringify(bad), "utf-8");
 
     const result = await readVerdict(workdir);
     expect(result).toBeNull();
@@ -137,33 +113,21 @@ describe("readVerdict", () => {
 
   it("returns null when version is not 1", async () => {
     const bad = { version: 2, approved: true, tests: { allPassing: true, passCount: 5, failCount: 0 } };
-    await writeFile(
-      path.join(workdir, ".nax-verifier-verdict.json"),
-      JSON.stringify(bad),
-      "utf-8",
-    );
+    await writeFile(path.join(workdir, ".nax-verifier-verdict.json"), JSON.stringify(bad), "utf-8");
 
     const result = await readVerdict(workdir);
     expect(result).toBeNull();
   });
 
   it("returns null for empty JSON object", async () => {
-    await writeFile(
-      path.join(workdir, ".nax-verifier-verdict.json"),
-      JSON.stringify({}),
-      "utf-8",
-    );
+    await writeFile(path.join(workdir, ".nax-verifier-verdict.json"), JSON.stringify({}), "utf-8");
 
     const result = await readVerdict(workdir);
     expect(result).toBeNull();
   });
 
   it("returns null for JSON array (not an object)", async () => {
-    await writeFile(
-      path.join(workdir, ".nax-verifier-verdict.json"),
-      JSON.stringify([1, 2, 3]),
-      "utf-8",
-    );
+    await writeFile(path.join(workdir, ".nax-verifier-verdict.json"), JSON.stringify([1, 2, 3]), "utf-8");
 
     const result = await readVerdict(workdir);
     expect(result).toBeNull();

@@ -1,5 +1,5 @@
-import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test";
-import { getPgid, cleanupProcessTree } from "../../src/tdd/cleanup";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { cleanupProcessTree, getPgid } from "../../src/tdd/cleanup";
 
 let originalSpawn: typeof Bun.spawn;
 let originalProcessKill: typeof process.kill;

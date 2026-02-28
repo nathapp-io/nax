@@ -14,18 +14,11 @@
  * @returns The promise result if it completes in time
  * @throws TimeoutError if the timeout is exceeded
  */
-export async function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  operation: string = "Operation"
-): Promise<T> {
+export async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation = "Operation"): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`${operation} timed out after ${timeoutMs}ms`)),
-        timeoutMs
-      )
+      setTimeout(() => reject(new Error(`${operation} timed out after ${timeoutMs}ms`)), timeoutMs),
     ),
   ]);
 }
@@ -43,7 +36,7 @@ export async function withTimeout<T>(
 export async function executeWithTimeout<T>(
   fn: () => Promise<T> | T,
   timeoutMs: number,
-  operation: string = "Operation"
+  operation = "Operation",
 ): Promise<T> {
   return withTimeout(Promise.resolve(fn()), timeoutMs, operation);
 }

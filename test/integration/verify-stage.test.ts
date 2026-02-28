@@ -2,15 +2,15 @@
  * Verify Stage Tests
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { NaxConfig } from "../../src/config/schema";
+import { initLogger, resetLogger } from "../../src/logger";
 import { verifyStage } from "../../src/pipeline/stages/verify";
 import type { PipelineContext } from "../../src/pipeline/types";
-import type { NaxConfig } from "../../src/config/schema";
 import type { PRD, UserStory } from "../../src/prd/types";
-import { initLogger, resetLogger } from "../../src/logger";
-import { mkdtempSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 
 /** Helper: Create minimal test context */
 function createTestContext(overrides?: Partial<PipelineContext>): PipelineContext {
@@ -182,10 +182,7 @@ describe("Verify Stage", () => {
     const tempDir = mkdtempSync(join(tmpdir(), "nax-verify-test-"));
 
     // Create a simple package.json to make bun test work
-    await Bun.write(
-      join(tempDir, "package.json"),
-      JSON.stringify({ name: "test" }),
-    );
+    await Bun.write(join(tempDir, "package.json"), JSON.stringify({ name: "test" }));
 
     const ctx = createTestContext({
       workdir: tempDir,

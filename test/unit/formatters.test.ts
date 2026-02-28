@@ -317,12 +317,7 @@ describe("formatJsonl", () => {
   });
 
   test("handles all log levels", () => {
-    const levels: Array<"error" | "warn" | "info" | "debug"> = [
-      "error",
-      "warn",
-      "info",
-      "debug",
-    ];
+    const levels: Array<"error" | "warn" | "info" | "debug"> = ["error", "warn", "info", "debug"];
 
     for (const level of levels) {
       const entry: LogEntry = {

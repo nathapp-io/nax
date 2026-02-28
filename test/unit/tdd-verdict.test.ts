@@ -1,14 +1,14 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import path from "node:path";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
+import path from "node:path";
 import {
-  readVerdict,
-  cleanupVerdict,
-  categorizeVerdict,
   VERDICT_FILE,
   type VerifierVerdict,
+  categorizeVerdict,
+  cleanupVerdict,
+  readVerdict,
 } from "../../src/tdd/verdict";
 
 // ---------------------------------------------------------------------------
@@ -56,9 +56,9 @@ async function writeVerdictFile(workdir: string, content: unknown): Promise<void
 let tmpDir: string;
 
 beforeEach(async () => {
-  tmpDir = await Bun.file(os.tmpdir()).exists().then(
-    () => `${os.tmpdir()}/nax-verdict-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  );
+  tmpDir = await Bun.file(os.tmpdir())
+    .exists()
+    .then(() => `${os.tmpdir()}/nax-verdict-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   await mkdir(tmpDir, { recursive: true });
 });
 

@@ -1,9 +1,9 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { DEFAULT_CONFIG } from "../../src/config";
 import { run } from "../../src/execution/runner";
 import type { RunOptions } from "../../src/execution/runner";
-import type { PRD, UserStory } from "../../src/prd";
-import { DEFAULT_CONFIG } from "../../src/config";
 import { initLogger, resetLogger } from "../../src/logger";
+import type { PRD, UserStory } from "../../src/prd";
 
 // Sample PRD for testing
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({

@@ -1,5 +1,5 @@
-import { describe, test, expect } from "bun:test";
-import { parseBunTestOutput, formatFailureSummary, type TestFailure } from "../../src/execution/test-output-parser";
+import { describe, expect, test } from "bun:test";
+import { type TestFailure, formatFailureSummary, parseBunTestOutput } from "../../src/execution/test-output-parser";
 
 describe("parseBunTestOutput", () => {
   test("parses passing output (0 failures)", () => {
@@ -326,11 +326,7 @@ describe("formatFailureSummary", () => {
         file: "test/multi.test.ts",
         testName: "multi stack",
         error: "Error with multiple stack lines",
-        stackTrace: [
-          "at /path/file.ts:10:5",
-          "at /path/file.ts:20:10",
-          "at /path/file.ts:30:15",
-        ],
+        stackTrace: ["at /path/file.ts:10:5", "at /path/file.ts:20:10", "at /path/file.ts:30:15"],
       },
     ];
 

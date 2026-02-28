@@ -9,13 +9,7 @@ import { runPipeline } from "../pipeline/runner";
 import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext, RoutingResult } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
-import {
-  generateHumanHaltSummary,
-  getNextStory,
-  isComplete,
-  isStalled,
-  loadPRD,
-} from "../prd";
+import { generateHumanHaltSummary, getNextStory, isComplete, isStalled, loadPRD } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
 import { routeTask } from "../routing";
 import { captureGitRef } from "../utils/git";
@@ -23,7 +17,12 @@ import type { StoryBatch } from "./batching";
 import { startHeartbeat, stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import { preIterationTierCheck } from "./escalation";
 import { hookCtx } from "./helpers";
-import { applyCachedRouting, handleDryRun, handlePipelineFailure, handlePipelineSuccess } from "./pipeline-result-handler";
+import {
+  applyCachedRouting,
+  handleDryRun,
+  handlePipelineFailure,
+  handlePipelineSuccess,
+} from "./pipeline-result-handler";
 import type { StatusWriter } from "./status-writer";
 
 export interface SequentialExecutionContext {
@@ -72,10 +71,21 @@ export async function executeSequential(
   let currentBatchIndex = 0;
 
   const buildResult = (exitReason: SequentialExecutionResult["exitReason"]): SequentialExecutionResult => ({
-    prd, iterations, storiesCompleted, totalCost, allStoryMetrics, timeoutRetryCountMap, exitReason,
+    prd,
+    iterations,
+    storiesCompleted,
+    totalCost,
+    allStoryMetrics,
+    timeoutRetryCountMap,
+    exitReason,
   });
 
-  startHeartbeat(ctx.statusWriter, () => totalCost, () => iterations, ctx.logFilePath);
+  startHeartbeat(
+    ctx.statusWriter,
+    () => totalCost,
+    () => iterations,
+    ctx.logFilePath,
+  );
 
   try {
     // Main execution loop
@@ -226,9 +236,15 @@ export async function executeSequential(
 
       if (ctx.dryRun) {
         const dryRunResult = await handleDryRun({
-          prd, prdPath: ctx.prdPath, storiesToExecute, routing,
-          statusWriter: ctx.statusWriter, pluginRegistry: ctx.pluginRegistry,
-          runId: ctx.runId, totalCost, iterations,
+          prd,
+          prdPath: ctx.prdPath,
+          storiesToExecute,
+          routing,
+          statusWriter: ctx.statusWriter,
+          pluginRegistry: ctx.pluginRegistry,
+          runId: ctx.runId,
+          totalCost,
+          iterations,
         });
         storiesCompleted += dryRunResult.storiesCompletedDelta;
         prdDirty = dryRunResult.prdDirty;

@@ -5,24 +5,20 @@
  * and queue command writing.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { unlink } from "node:fs/promises";
 import { render } from "ink-testing-library";
 import { createElement } from "react";
-import { HelpOverlay } from "../../src/tui/components/HelpOverlay";
+import type { UserStory } from "../../src/prd/types";
 import { CostOverlay } from "../../src/tui/components/CostOverlay";
+import { HelpOverlay } from "../../src/tui/components/HelpOverlay";
+import type { KeyboardAction } from "../../src/tui/hooks/useKeyboard";
 import { PanelFocus } from "../../src/tui/types";
 import type { StoryDisplayState } from "../../src/tui/types";
-import type { UserStory } from "../../src/prd/types";
 import { writeQueueCommand } from "../../src/utils/queue-writer";
-import type { KeyboardAction } from "../../src/tui/hooks/useKeyboard";
-import { unlink } from "node:fs/promises";
 
 // Helper to create mock stories
-function createMockStory(
-  id: string,
-  status: StoryDisplayState["status"],
-  cost = 0.01,
-): StoryDisplayState {
+function createMockStory(id: string, status: StoryDisplayState["status"], cost = 0.01): StoryDisplayState {
   const story: UserStory = {
     id,
     title: `Test story ${id}`,
@@ -121,10 +117,7 @@ describe("CostOverlay", () => {
   });
 
   test("displays executed stories with costs", () => {
-    const stories = [
-      createMockStory("US-001", "passed", 0.023),
-      createMockStory("US-002", "failed", 0.015),
-    ];
+    const stories = [createMockStory("US-001", "passed", 0.023), createMockStory("US-002", "failed", 0.015)];
 
     const { lastFrame } = render(
       createElement(CostOverlay, {

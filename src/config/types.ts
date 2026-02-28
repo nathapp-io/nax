@@ -9,12 +9,18 @@ export type Complexity = "simple" | "medium" | "complex" | "expert";
 export type TestStrategy = "test-after" | "three-session-tdd" | "three-session-tdd-lite";
 export type TddStrategy = "auto" | "strict" | "lite" | "off";
 
-export interface EscalationEntry { from: string; to: string; }
+export interface EscalationEntry {
+  from: string;
+  to: string;
+}
 
 /** Model tier names — extensible (TYPE-3 fix: preserve autocomplete for known tiers) */
 export type ModelTier = "fast" | "balanced" | "powerful" | (string & {});
 
-export interface TokenPricing { inputPer1M: number; outputPer1M: number; }
+export interface TokenPricing {
+  inputPer1M: number;
+  outputPer1M: number;
+}
 
 export interface ModelDef {
   provider: string;

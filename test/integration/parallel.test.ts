@@ -8,7 +8,7 @@
  * - Cleanup logic
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { UserStory } from "../../src/prd/types";
 
 describe("Parallel Execution", () => {

@@ -11,14 +11,9 @@ import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import type { PipelineRunResult } from "../pipeline/runner";
 import type { PluginRegistry } from "../plugins";
-import {
-  countStories,
-  markStoryFailed,
-  markStoryPaused,
-  savePRD,
-} from "../prd";
+import { countStories, markStoryFailed, markStoryPaused, savePRD } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
-import { routeTask } from "../routing";
+import type { routeTask } from "../routing";
 import { handleTierEscalation } from "./escalation";
 import { hookCtx } from "./helpers";
 import { emitStoryComplete } from "./lifecycle/story-hooks";

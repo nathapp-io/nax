@@ -1,8 +1,8 @@
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { planCommand } from "../../src/cli/plan";
-import { DEFAULT_CONFIG } from "../../src/config/schema";
 import type { NaxConfig } from "../../src/config";
+import { DEFAULT_CONFIG } from "../../src/config/schema";
 
 describe("planCommand", () => {
   let tmpDir: string;
@@ -36,9 +36,7 @@ describe("planCommand", () => {
     const emptyDir = `/tmp/nax-plan-empty-${Date.now()}`;
     await Bun.spawn(["mkdir", "-p", emptyDir], { stdout: "pipe" }).exited;
 
-    expect(
-      planCommand("Add feature X", emptyDir, DEFAULT_CONFIG),
-    ).rejects.toThrow("nax directory not found");
+    expect(planCommand("Add feature X", emptyDir, DEFAULT_CONFIG)).rejects.toThrow("nax directory not found");
 
     await Bun.spawn(["rm", "-rf", emptyDir], { stdout: "pipe" }).exited;
   });
@@ -101,11 +99,7 @@ describe("planCommand", () => {
   });
 
   test("validates model tier options", () => {
-    const validTiers: Array<"fast" | "balanced" | "powerful"> = [
-      "fast",
-      "balanced",
-      "powerful",
-    ];
+    const validTiers: Array<"fast" | "balanced" | "powerful"> = ["fast", "balanced", "powerful"];
 
     for (const tier of validTiers) {
       const config: NaxConfig = {

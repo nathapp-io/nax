@@ -5,26 +5,26 @@
  * points in the runner loop (US-004).
  */
 
-import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } from "bun:test";
-import * as path from "node:path";
-import * as os from "node:os";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
-import type { IReporter, NaxPlugin, RunStartEvent, StoryCompleteEvent, RunEndEvent } from "../../src/plugins/types";
-import type { NaxConfig } from "../../src/config";
-import { run } from "../../src/execution/runner";
-import { loadPRD, savePRD } from "../../src/prd";
-import { loadHooksConfig } from "../../src/hooks";
+import * as os from "node:os";
+import * as path from "node:path";
+import { ALL_AGENTS } from "../../src/agents/registry";
 import type {
   AgentAdapter,
   AgentCapabilities,
   AgentResult,
   AgentRunOptions,
-  PlanOptions,
-  PlanResult,
   DecomposeOptions,
   DecomposeResult,
+  PlanOptions,
+  PlanResult,
 } from "../../src/agents/types";
-import { ALL_AGENTS } from "../../src/agents/registry";
+import type { NaxConfig } from "../../src/config";
+import { run } from "../../src/execution/runner";
+import { loadHooksConfig } from "../../src/hooks";
+import type { IReporter, NaxPlugin, RunEndEvent, RunStartEvent, StoryCompleteEvent } from "../../src/plugins/types";
+import { loadPRD, savePRD } from "../../src/prd";
 
 // ============================================================================
 // Mock agent (satisfies agent installation check in runner)
@@ -38,8 +38,12 @@ class MockAgentAdapter implements AgentAdapter {
     maxContextTokens: 200_000,
     features: new Set(["tdd", "review", "refactor", "batch"]),
   };
-  async isInstalled(): Promise<boolean> { return true; }
-  buildCommand(_o: AgentRunOptions): string[] { return [this.binary]; }
+  async isInstalled(): Promise<boolean> {
+    return true;
+  }
+  buildCommand(_o: AgentRunOptions): string[] {
+    return [this.binary];
+  }
   async run(_o: AgentRunOptions): Promise<AgentResult> {
     return { success: true, exitCode: 0, output: "", durationMs: 10, estimatedCost: 0 };
   }
@@ -70,7 +74,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
 
   afterAll(() => {
     // Cleanup mock agent
-    const mockIndex = ALL_AGENTS.findIndex(a => a.name === "mock");
+    const mockIndex = ALL_AGENTS.findIndex((a) => a.name === "mock");
     if (mockIndex !== -1) {
       ALL_AGENTS.splice(mockIndex, 1);
     }

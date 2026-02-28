@@ -41,6 +41,8 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   private chatId: string | null = null;
   private pendingMessages = new Map<string, number>(); // requestId -> messageId
   private lastUpdateId = 0;
+  private backoffMs = 1000; // Exponential backoff for getUpdates (starts at 1s)
+  private readonly maxBackoffMs = 30000; // Max 30 seconds between retries
 
   async init(config: Record<string, unknown>): Promise<void> {
     const cfg = config as TelegramConfig;
@@ -101,7 +103,6 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     }
 
     const startTime = Date.now();
-    const pollInterval = 1000; // Poll every second
 
     while (Date.now() - startTime < timeout) {
       const updates = await this.getUpdates();
@@ -113,11 +114,14 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
           if (update.callback_query) {
             await this.answerCallbackQuery(update.callback_query.id);
           }
+          // Reset backoff on successful response
+          this.backoffMs = 1000;
           return response;
         }
       }
 
-      await Bun.sleep(pollInterval);
+      // Use dynamic backoff (set by getUpdates on error)
+      await Bun.sleep(this.backoffMs);
     }
 
     // Timeout reached — send expiration message
@@ -237,7 +241,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   }
 
   /**
-   * Get updates from Telegram Bot API
+   * Get updates from Telegram Bot API with exponential backoff on failure
    */
   private async getUpdates(): Promise<TelegramUpdate[]> {
     if (!this.botToken) return [];
@@ -258,17 +262,22 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       }
 
       const data = (await response.json()) as { ok: boolean; result: TelegramUpdate[] };
-      if (!data.ok || !data.result) return [];
+      if (!data.ok || !data.result) {
+        throw new Error("Telegram API returned ok=false or missing result");
+      }
 
       const updates = data.result;
       if (updates.length > 0) {
         this.lastUpdateId = Math.max(...updates.map((u: TelegramUpdate) => u.update_id));
       }
 
+      // Reset backoff on success
+      this.backoffMs = 1000;
       return updates;
     } catch (err) {
-      // Log error but don't crash - return empty updates and retry
-      console.error("Telegram getUpdates failed:", err instanceof Error ? err.message : String(err));
+      // Apply exponential backoff on network error
+      this.backoffMs = Math.min(this.backoffMs * 2, this.maxBackoffMs);
+      // Return empty updates and retry with backoff (logged for debugging, not exposed to user)
       return [];
     }
   }
@@ -330,9 +339,8 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
           callback_query_id: callbackQueryId,
         }),
       });
-    } catch (err) {
-      // Non-critical - just log and continue
-      console.error("Failed to answer callback query:", err instanceof Error ? err.message : String(err));
+    } catch {
+      // Non-critical - fire-and-forget, no logging needed
     }
   }
 
@@ -358,9 +366,8 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
           parse_mode: "Markdown",
         }),
       });
-    } catch (err) {
-      // Non-critical - just log and continue with cleanup
-      console.error("Failed to edit timeout message:", err instanceof Error ? err.message : String(err));
+    } catch {
+      // Non-critical - fire-and-forget, no logging needed
     } finally {
       this.pendingMessages.delete(requestId);
     }

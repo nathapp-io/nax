@@ -5,13 +5,13 @@
  * and TDD escalation handling (retryAsLite, failure category outcomes).
  */
 
-import { describe, test, expect } from "bun:test";
-import { buildBatchPrompt } from "../../src/execution/prompts";
+import { describe, expect, test } from "bun:test";
 import { groupStoriesIntoBatches, precomputeBatchPlan } from "../../src/execution/batching";
+import type { StoryBatch } from "../../src/execution/batching";
 import { escalateTier } from "../../src/execution/escalation";
+import { buildBatchPrompt } from "../../src/execution/prompts";
 import { resolveMaxAttemptsOutcome } from "../../src/execution/runner";
 import type { UserStory } from "../../src/prd";
-import type { StoryBatch } from "../../src/execution/batching";
 import type { FailureCategory } from "../../src/tdd/types";
 
 describe("buildBatchPrompt", () => {
@@ -189,7 +189,12 @@ describe("groupStoriesIntoBatches", () => {
       passes: false,
       escalations: [],
       attempts: 0,
-      routing: { complexity: "simple" as const, modelTier: "fast" as const, testStrategy: "test-after" as const, reasoning: "simple" },
+      routing: {
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "simple",
+      },
     }));
 
     const batches = groupStoriesIntoBatches(stories);
@@ -240,7 +245,12 @@ describe("groupStoriesIntoBatches", () => {
         passes: false,
         escalations: [],
         attempts: 0,
-        routing: { complexity: "complex", modelTier: "balanced", testStrategy: "three-session-tdd", reasoning: "complex" },
+        routing: {
+          complexity: "complex",
+          modelTier: "balanced",
+          testStrategy: "three-session-tdd",
+          reasoning: "complex",
+        },
       },
       {
         id: "US-004",
@@ -311,7 +321,12 @@ describe("groupStoriesIntoBatches", () => {
         passes: false,
         escalations: [],
         attempts: 0,
-        routing: { complexity: "complex", modelTier: "balanced", testStrategy: "three-session-tdd", reasoning: "complex" },
+        routing: {
+          complexity: "complex",
+          modelTier: "balanced",
+          testStrategy: "three-session-tdd",
+          reasoning: "complex",
+        },
       },
       {
         id: "US-002",
@@ -356,7 +371,12 @@ describe("groupStoriesIntoBatches", () => {
       passes: false,
       escalations: [],
       attempts: 0,
-      routing: { complexity: "simple" as const, modelTier: "fast" as const, testStrategy: "test-after" as const, reasoning: "simple" },
+      routing: {
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "simple",
+      },
     }));
 
     const batches = groupStoriesIntoBatches(stories, 2);
@@ -393,7 +413,12 @@ describe("groupStoriesIntoBatches", () => {
         passes: false,
         escalations: [],
         attempts: 0,
-        routing: { complexity: "complex", modelTier: "balanced", testStrategy: "three-session-tdd", reasoning: "complex" },
+        routing: {
+          complexity: "complex",
+          modelTier: "balanced",
+          testStrategy: "three-session-tdd",
+          reasoning: "complex",
+        },
       },
       {
         id: "US-003",
@@ -478,7 +503,12 @@ describe("precomputeBatchPlan", () => {
         passes: false,
         escalations: [],
         attempts: 0,
-        routing: { complexity: "complex", modelTier: "balanced", testStrategy: "three-session-tdd", reasoning: "complex" },
+        routing: {
+          complexity: "complex",
+          modelTier: "balanced",
+          testStrategy: "three-session-tdd",
+          reasoning: "complex",
+        },
       },
     ];
 
@@ -488,7 +518,7 @@ describe("precomputeBatchPlan", () => {
     // First batch: 2 simple stories
     expect(plan[0].stories).toHaveLength(2);
     expect(plan[0].isBatch).toBe(true);
-    expect(plan[0].stories.map(s => s.id)).toEqual(["US-001", "US-002"]);
+    expect(plan[0].stories.map((s) => s.id)).toEqual(["US-001", "US-002"]);
     // Second batch: 1 complex story
     expect(plan[1].stories).toHaveLength(1);
     expect(plan[1].isBatch).toBe(false);
@@ -605,7 +635,12 @@ describe("precomputeBatchPlan", () => {
       passes: false,
       escalations: [],
       attempts: 0,
-      routing: { complexity: "simple" as const, modelTier: "fast" as const, testStrategy: "test-after" as const, reasoning: "simple" },
+      routing: {
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "simple",
+      },
     }));
 
     const plan = precomputeBatchPlan(stories, 3);
@@ -1116,7 +1151,10 @@ describe("Configurable Escalation Chain (ADR-003)", () => {
   });
 
   test("escalateTier with custom tierOrder (skip balanced)", () => {
-    const customOrder = [{ tier: "fast", attempts: 5 }, { tier: "powerful", attempts: 2 }];
+    const customOrder = [
+      { tier: "fast", attempts: 5 },
+      { tier: "powerful", attempts: 2 },
+    ];
     expect(escalateTier("fast", customOrder)).toBe("powerful");
     expect(escalateTier("powerful", customOrder)).toBeNull();
     expect(escalateTier("balanced", customOrder)).toBeNull();

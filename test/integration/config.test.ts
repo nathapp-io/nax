@@ -1,6 +1,6 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG, NaxConfigSchema } from "../../src/config/schema";
-import type { TestStrategy, TddStrategy } from "../../src/config/schema";
+import type { TddStrategy, TestStrategy } from "../../src/config/schema";
 
 describe("Config Validation", () => {
   test("accepts valid default config", () => {

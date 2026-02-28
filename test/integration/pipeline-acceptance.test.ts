@@ -2,15 +2,15 @@
  * Tests for acceptance pipeline stage
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { acceptanceStage } from "../../src/pipeline/stages/acceptance";
-import type { PipelineContext } from "../../src/pipeline/types";
-import type { PRD } from "../../src/prd/types";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { NaxConfig } from "../../src/config/schema";
 import { DEFAULT_CONFIG } from "../../src/config/schema";
 import { initLogger, resetLogger } from "../../src/logger";
-import fs from "node:fs/promises";
-import path from "node:path";
+import { acceptanceStage } from "../../src/pipeline/stages/acceptance";
+import type { PipelineContext } from "../../src/pipeline/types";
+import type { PRD } from "../../src/prd/types";
 
 const testDir = `/tmp/nax-acceptance-test-${Date.now()}`;
 const featureDir = path.join(testDir, "nax/features/test-feature");
@@ -29,10 +29,7 @@ afterEach(async () => {
   resetLogger();
 });
 
-function createTestContext(
-  prd: PRD,
-  config: Partial<NaxConfig> = {},
-): PipelineContext {
+function createTestContext(prd: PRD, config: Partial<NaxConfig> = {}): PipelineContext {
   return {
     config: {
       ...DEFAULT_CONFIG,

@@ -1,7 +1,7 @@
-import { describe, test, expect, mock } from "bun:test";
-import { ClaudeCodeAdapter } from "../../src/agents/claude";
-import { validateAgentForTier, validateAgentFeature, describeAgentCapabilities } from "../../src/agents/validation";
+import { describe, expect, mock, test } from "bun:test";
 import type { AgentAdapter, AgentRunOptions } from "../../src/agents";
+import { ClaudeCodeAdapter } from "../../src/agents/claude";
+import { describeAgentCapabilities, validateAgentFeature, validateAgentForTier } from "../../src/agents/validation";
 
 describe("Agent Validation and Retry Logic", () => {
   describe("ClaudeCodeAdapter.isInstalled", () => {
@@ -100,80 +100,88 @@ describe("Agent Validation and Retry Logic", () => {
   });
 
   describe("ClaudeCodeAdapter retry logic", () => {
-    test("retries on rate limit with exponential backoff", async () => {
-      const adapter = new ClaudeCodeAdapter();
-      const originalSpawn = Bun.spawn;
-      let attemptCount = 0;
+    test(
+      "retries on rate limit with exponential backoff",
+      async () => {
+        const adapter = new ClaudeCodeAdapter();
+        const originalSpawn = Bun.spawn;
+        let attemptCount = 0;
 
-      // Mock rate-limited response that succeeds on 3rd try
-      (Bun as any).spawn = mock(() => {
-        attemptCount++;
-        const isRateLimited = attemptCount < 3;
+        // Mock rate-limited response that succeeds on 3rd try
+        (Bun as any).spawn = mock(() => {
+          attemptCount++;
+          const isRateLimited = attemptCount < 3;
 
-        return {
-          exited: Promise.resolve(isRateLimited ? 1 : 0),
-          kill: () => {},
-          stdout: new Response(isRateLimited ? "" : "success").body,
-          stderr: new Response(isRateLimited ? "rate limit exceeded" : "").body,
+          return {
+            exited: Promise.resolve(isRateLimited ? 1 : 0),
+            kill: () => {},
+            stdout: new Response(isRateLimited ? "" : "success").body,
+            stderr: new Response(isRateLimited ? "rate limit exceeded" : "").body,
+          };
+        });
+
+        const options: AgentRunOptions = {
+          prompt: "test",
+          workdir: "/tmp",
+          modelTier: "balanced",
+          modelDef: { provider: "anthropic", model: "claude-sonnet-4.5", env: {} },
+          timeoutSeconds: 60,
         };
-      });
 
-      const options: AgentRunOptions = {
-        prompt: "test",
-        workdir: "/tmp",
-        modelTier: "balanced",
-        modelDef: { provider: "anthropic", model: "claude-sonnet-4.5", env: {} },
-        timeoutSeconds: 60,
-      };
+        const startTime = Date.now();
+        const result = await adapter.run(options);
+        const duration = Date.now() - startTime;
 
-      const startTime = Date.now();
-      const result = await adapter.run(options);
-      const duration = Date.now() - startTime;
+        // Should succeed after retries
+        expect(result.success).toBe(true);
+        expect(attemptCount).toBe(3);
 
-      // Should succeed after retries
-      expect(result.success).toBe(true);
-      expect(attemptCount).toBe(3);
+        // Should have backoff delays (2s + 4s = 6s, but we'll check for at least 3s)
+        // Note: In real implementation, backoff is 2^attempt * 1000 = 2s, 4s
+        expect(duration).toBeGreaterThanOrEqual(3000);
 
-      // Should have backoff delays (2s + 4s = 6s, but we'll check for at least 3s)
-      // Note: In real implementation, backoff is 2^attempt * 1000 = 2s, 4s
-      expect(duration).toBeGreaterThanOrEqual(3000);
+        Bun.spawn = originalSpawn;
+      },
+      { timeout: 15000 },
+    );
 
-      Bun.spawn = originalSpawn;
-    }, { timeout: 15000 });
+    test(
+      "fails immediately on agent execution errors (no retry)",
+      async () => {
+        const adapter = new ClaudeCodeAdapter();
+        const originalSpawn = Bun.spawn;
+        let attemptCount = 0;
 
-    test("fails immediately on agent execution errors (no retry)", async () => {
-      const adapter = new ClaudeCodeAdapter();
-      const originalSpawn = Bun.spawn;
-      let attemptCount = 0;
+        // Mock agent execution failure (exit code 1)
+        // These are not retried because they're likely legitimate agent failures
+        (Bun as any).spawn = mock(() => {
+          attemptCount++;
+          return {
+            exited: Promise.resolve(1),
+            kill: () => {},
+            stdout: new Response("").body,
+            stderr: new Response("agent error").body,
+          };
+        });
 
-      // Mock agent execution failure (exit code 1)
-      // These are not retried because they're likely legitimate agent failures
-      (Bun as any).spawn = mock(() => {
-        attemptCount++;
-        return {
-          exited: Promise.resolve(1),
-          kill: () => {},
-          stdout: new Response("").body,
-          stderr: new Response("agent error").body,
+        const options: AgentRunOptions = {
+          prompt: "test",
+          workdir: "/tmp",
+          modelTier: "balanced",
+          modelDef: { provider: "anthropic", model: "claude-sonnet-4.5", env: {} },
+          timeoutSeconds: 60,
         };
-      });
 
-      const options: AgentRunOptions = {
-        prompt: "test",
-        workdir: "/tmp",
-        modelTier: "balanced",
-        modelDef: { provider: "anthropic", model: "claude-sonnet-4.5", env: {} },
-        timeoutSeconds: 60,
-      };
+        const result = await adapter.run(options);
 
-      const result = await adapter.run(options);
+        // Should fail after 1 attempt (no retry for agent errors)
+        expect(result.success).toBe(false);
+        expect(attemptCount).toBe(1);
 
-      // Should fail after 1 attempt (no retry for agent errors)
-      expect(result.success).toBe(false);
-      expect(attemptCount).toBe(1);
-
-      Bun.spawn = originalSpawn;
-    }, { timeout: 15000 });
+        Bun.spawn = originalSpawn;
+      },
+      { timeout: 15000 },
+    );
 
     test("succeeds immediately on first attempt if no error", async () => {
       const adapter = new ClaudeCodeAdapter();
@@ -315,7 +323,9 @@ describe("Agent Validation and Retry Logic", () => {
             maxContextTokens: 50_000,
             features: new Set(["review"]),
           },
-          async isInstalled() { return true; },
+          async isInstalled() {
+            return true;
+          },
           async run() {
             return {
               success: true,
@@ -323,10 +333,12 @@ describe("Agent Validation and Retry Logic", () => {
               output: "",
               rateLimited: false,
               durationMs: 1000,
-              estimatedCost: 0.01
+              estimatedCost: 0.01,
             };
           },
-          buildCommand() { return ["limited"]; },
+          buildCommand() {
+            return ["limited"];
+          },
         };
 
         expect(validateAgentForTier(limitedAgent, "fast")).toBe(true);
@@ -353,7 +365,9 @@ describe("Agent Validation and Retry Logic", () => {
             maxContextTokens: 100_000,
             features: new Set(["review"]),
           },
-          async isInstalled() { return true; },
+          async isInstalled() {
+            return true;
+          },
           async run() {
             return {
               success: true,
@@ -361,10 +375,12 @@ describe("Agent Validation and Retry Logic", () => {
               output: "",
               rateLimited: false,
               durationMs: 1000,
-              estimatedCost: 0.01
+              estimatedCost: 0.01,
             };
           },
-          buildCommand() { return ["reviewer"]; },
+          buildCommand() {
+            return ["reviewer"];
+          },
         };
 
         expect(validateAgentFeature(reviewOnlyAgent, "review")).toBe(true);
@@ -397,7 +413,9 @@ describe("Agent Validation and Retry Logic", () => {
             maxContextTokens: 10_000,
             features: new Set(["review"]),
           },
-          async isInstalled() { return true; },
+          async isInstalled() {
+            return true;
+          },
           async run() {
             return {
               success: true,
@@ -405,10 +423,12 @@ describe("Agent Validation and Retry Logic", () => {
               output: "",
               rateLimited: false,
               durationMs: 1000,
-              estimatedCost: 0.01
+              estimatedCost: 0.01,
             };
           },
-          buildCommand() { return ["tiny"]; },
+          buildCommand() {
+            return ["tiny"];
+          },
         };
 
         const description = describeAgentCapabilities(limitedAgent);

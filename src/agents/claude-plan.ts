@@ -4,7 +4,7 @@
  * Extracted from claude.ts: plan(), buildPlanCommand()
  */
 
-import { PidRegistry } from "../execution/pid-registry";
+import type { PidRegistry } from "../execution/pid-registry";
 import { getLogger } from "../logger";
 import type { AgentRunOptions } from "./types";
 import type { PlanOptions, PlanResult } from "./types-extended";

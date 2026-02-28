@@ -4,12 +4,12 @@
  * Tests for the composable pipeline framework.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { NaxConfig } from "../../src/config/schema";
+import { initLogger, resetLogger } from "../../src/logger";
 import { runPipeline } from "../../src/pipeline/runner";
 import type { PipelineContext, PipelineStage } from "../../src/pipeline/types";
-import type { NaxConfig } from "../../src/config/schema";
 import type { PRD, UserStory } from "../../src/prd/types";
-import { initLogger, resetLogger } from "../../src/logger";
 
 /** Helper: Create minimal test context */
 function createTestContext(overrides?: Partial<PipelineContext>): PipelineContext {

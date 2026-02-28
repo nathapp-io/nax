@@ -57,14 +57,19 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
   }
 
   if (config && userStories.length > config.execution.maxStoriesPerFeature) {
-    logger.warn("cli", `Feature has ${userStories.length} stories, exceeding recommended limit of ${config.execution.maxStoriesPerFeature}. Consider splitting.`);
+    logger.warn(
+      "cli",
+      `Feature has ${userStories.length} stories, exceeding recommended limit of ${config.execution.maxStoriesPerFeature}. Consider splitting.`,
+    );
   }
 
   let naxVersion = "unknown";
   try {
     const pkgPath = new URL("../../package.json", import.meta.url);
     naxVersion = (await Bun.file(pkgPath).json()).version;
-  } catch { /* version is metadata only */ }
+  } catch {
+    /* version is metadata only */
+  }
 
   const now = new Date().toISOString();
   const prd: PRD = {
@@ -74,13 +79,15 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
     createdAt: now,
     updatedAt: now,
     userStories,
-    analyzeConfig: config ? {
-      naxVersion,
-      model: config.analyze.model,
-      llmEnhanced: config.analyze.llmEnhanced,
-      maxStoriesPerFeature: config.execution.maxStoriesPerFeature,
-      routingStrategy: config.analyze.llmEnhanced ? "llm" : "keyword",
-    } : undefined,
+    analyzeConfig: config
+      ? {
+          naxVersion,
+          model: config.analyze.model,
+          llmEnhanced: config.analyze.llmEnhanced,
+          maxStoriesPerFeature: config.execution.maxStoriesPerFeature,
+          routingStrategy: config.analyze.llmEnhanced ? "llm" : "keyword",
+        }
+      : undefined,
   };
 
   // Generate acceptance tests if enabled
@@ -180,13 +187,19 @@ async function generateAcceptanceTestsForFeature(
     const modelTier = config.analyze.model;
     const modelDef = resolveModel(config.models[modelTier]);
     const result = await generateAcceptanceTests(adapter, {
-      specContent, featureName, workdir, codebaseContext, modelTier, modelDef,
+      specContent,
+      featureName,
+      workdir,
+      codebaseContext,
+      modelTier,
+      modelDef,
     });
 
     const acceptanceTestPath = join(featureDir, config.acceptance.testPath);
     await Bun.write(acceptanceTestPath, result.testCode);
     logger.info("cli", "[OK] Acceptance tests generated", {
-      criteriaCount: result.criteria.length, testPath: acceptanceTestPath,
+      criteriaCount: result.criteria.length,
+      testPath: acceptanceTestPath,
     });
   } catch (error) {
     logger.warn("cli", "Failed to generate acceptance tests", { error: (error as Error).message });

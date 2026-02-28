@@ -10,28 +10,28 @@
  * - --status-file CLI option wiring (type-level)
  */
 
-import { afterAll, beforeAll, afterEach, describe, expect, it } from "bun:test";
-import * as fs from "node:fs/promises";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
 import * as nodeFs from "node:fs";
+import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { ALL_AGENTS } from "../../src/agents/registry";
+import type {
+  AgentAdapter,
+  AgentCapabilities,
+  AgentResult,
+  AgentRunOptions,
+  DecomposeOptions,
+  DecomposeResult,
+  PlanOptions,
+  PlanResult,
+} from "../../src/agents/types";
 import { DEFAULT_CONFIG } from "../../src/config";
 import type { NaxConfig } from "../../src/config";
 import { run } from "../../src/execution/runner";
 import type { RunOptions } from "../../src/execution/runner";
 import type { NaxStatusFile } from "../../src/execution/status-file";
 import type { PRD } from "../../src/prd/types";
-import type {
-  AgentAdapter,
-  AgentCapabilities,
-  AgentResult,
-  AgentRunOptions,
-  PlanOptions,
-  PlanResult,
-  DecomposeOptions,
-  DecomposeResult,
-} from "../../src/agents/types";
-import { ALL_AGENTS } from "../../src/agents/registry";
 
 // ============================================================================
 // Mock agent (satisfies agent installation check in runner)
@@ -45,8 +45,12 @@ class MockAgentAdapter implements AgentAdapter {
     maxContextTokens: 200_000,
     features: new Set(["tdd", "review", "refactor", "batch"]),
   };
-  async isInstalled(): Promise<boolean> { return true; }
-  buildCommand(_o: AgentRunOptions): string[] { return [this.binary]; }
+  async isInstalled(): Promise<boolean> {
+    return true;
+  }
+  buildCommand(_o: AgentRunOptions): string[] {
+    return [this.binary];
+  }
   async run(_o: AgentRunOptions): Promise<AgentResult> {
     return { success: true, exitCode: 0, output: "", durationMs: 10, estimatedCost: 0 };
   }
@@ -67,7 +71,9 @@ beforeAll(() => {
     if (idx !== -1) ALL_AGENTS.splice(idx, 1);
   };
 });
-afterAll(() => { cleanupAgent?.(); });
+afterAll(() => {
+  cleanupAgent?.();
+});
 
 // ============================================================================
 // Helpers
@@ -138,18 +144,24 @@ async function runWithStatus(feature: string, storyCount = 1, extraOpts: Partial
 describe("RunOptions.statusFile", () => {
   it("is optional (can be omitted)", () => {
     const opts: RunOptions = {
-      prdPath: "/tmp/prd.json", workdir: "/tmp",
-      config: createTestConfig(), hooks: { hooks: {} },
-      feature: "test", dryRun: true,
+      prdPath: "/tmp/prd.json",
+      workdir: "/tmp",
+      config: createTestConfig(),
+      hooks: { hooks: {} },
+      feature: "test",
+      dryRun: true,
     };
     expect(opts.statusFile).toBeUndefined();
   });
 
   it("accepts a string value", () => {
     const opts: RunOptions = {
-      prdPath: "/tmp/prd.json", workdir: "/tmp",
-      config: createTestConfig(), hooks: { hooks: {} },
-      feature: "test", dryRun: true,
+      prdPath: "/tmp/prd.json",
+      workdir: "/tmp",
+      config: createTestConfig(),
+      hooks: { hooks: {} },
+      feature: "test",
+      dryRun: true,
       statusFile: "/tmp/nax-status.json",
     };
     expect(opts.statusFile).toBe("/tmp/nax-status.json");
@@ -161,7 +173,9 @@ describe("RunOptions.statusFile", () => {
 // ============================================================================
 describe("status file not written when omitted", () => {
   let tmpDir: string;
-  afterEach(async () => { if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true }); });
+  afterEach(async () => {
+    if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
+  });
 
   it("does not create any .json file in tmpDir", async () => {
     const setup = await setupDir("no-sf", 1);
@@ -169,9 +183,12 @@ describe("status file not written when omitted", () => {
     const before = await fs.readdir(setup.tmpDir);
 
     await run({
-      prdPath: setup.prdPath, workdir: setup.tmpDir,
-      config: createTestConfig(), hooks: { hooks: {} },
-      feature: "no-sf", featureDir: setup.featureDir,
+      prdPath: setup.prdPath,
+      workdir: setup.tmpDir,
+      config: createTestConfig(),
+      hooks: { hooks: {} },
+      feature: "no-sf",
+      featureDir: setup.featureDir,
       dryRun: true, // no statusFile
       skipPrecheck: true,
     });
@@ -187,7 +204,9 @@ describe("status file not written when omitted", () => {
 // ============================================================================
 describe("status file written during dry-run", () => {
   let tmpDir: string;
-  afterEach(async () => { if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true }); });
+  afterEach(async () => {
+    if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
+  });
 
   it("creates the file", async () => {
     const { setup, statusFilePath } = await runWithStatus("sf-creates");
@@ -263,10 +282,14 @@ describe("status file written during dry-run", () => {
     const config = createTestConfig();
     config.execution.costLimit = Number.POSITIVE_INFINITY;
     await run({
-      prdPath: setup.prdPath, workdir: setup.tmpDir,
-      config, hooks: { hooks: {} },
-      feature: "sf-cost-null", featureDir: setup.featureDir,
-      dryRun: true, statusFile: statusFilePath,
+      prdPath: setup.prdPath,
+      workdir: setup.tmpDir,
+      config,
+      hooks: { hooks: {} },
+      feature: "sf-cost-null",
+      featureDir: setup.featureDir,
+      dryRun: true,
+      statusFile: statusFilePath,
       skipPrecheck: true,
     });
     const p = JSON.parse(nodeFs.readFileSync(statusFilePath, "utf-8")) as NaxStatusFile;
@@ -280,15 +303,21 @@ describe("status file written during dry-run", () => {
 describe("CLI --status-file wiring", () => {
   it("RunOptions.statusFile is passed through correctly", () => {
     const withFile: RunOptions = {
-      prdPath: "/tmp/prd.json", workdir: "/tmp",
-      config: createTestConfig(), hooks: { hooks: {} },
-      feature: "test", dryRun: false,
+      prdPath: "/tmp/prd.json",
+      workdir: "/tmp",
+      config: createTestConfig(),
+      hooks: { hooks: {} },
+      feature: "test",
+      dryRun: false,
       statusFile: "/tmp/status.json",
     };
     const withoutFile: RunOptions = {
-      prdPath: "/tmp/prd.json", workdir: "/tmp",
-      config: createTestConfig(), hooks: { hooks: {} },
-      feature: "test", dryRun: false,
+      prdPath: "/tmp/prd.json",
+      workdir: "/tmp",
+      config: createTestConfig(),
+      hooks: { hooks: {} },
+      feature: "test",
+      dryRun: false,
     };
     expect(withFile.statusFile).toBe("/tmp/status.json");
     expect(withoutFile.statusFile).toBeUndefined();

@@ -55,7 +55,14 @@ function generateProgressSummary(prd: StoryContext["prd"]): string {
 
 /** Generate human-readable summary of built context */
 function generateSummary(elements: ContextElement[], totalTokens: number, truncated: boolean): string {
-  const counts: Record<string, number> = { story: 0, dependency: 0, error: 0, progress: 0, file: 0, "test-coverage": 0 };
+  const counts: Record<string, number> = {
+    story: 0,
+    dependency: 0,
+    error: 0,
+    progress: 0,
+    file: 0,
+    "test-coverage": 0,
+  };
   for (const element of elements) {
     counts[element.type]++;
   }
@@ -173,7 +180,11 @@ async function addFileElements(
   let contextFiles = getContextFiles(story);
 
   // Auto-detect contextFiles if empty and enabled (BUG-006)
-  if (contextFiles.length === 0 && storyContext.config?.context?.autoDetect?.enabled !== false && storyContext.workdir) {
+  if (
+    contextFiles.length === 0 &&
+    storyContext.config?.context?.autoDetect?.enabled !== false &&
+    storyContext.workdir
+  ) {
     const autoDetectConfig = storyContext.config?.context?.autoDetect;
     try {
       const detected = await autoDetectContextFiles({
@@ -212,17 +223,23 @@ async function addFileElements(
       if (file.size > MAX_FILE_SIZE_BYTES) {
         const logger = getLogger();
         logger.warn("context", "File too large", {
-          filePath: relativeFilePath, sizeKB: Math.round(file.size / 1024), maxKB: 10, storyId: story.id,
+          filePath: relativeFilePath,
+          sizeKB: Math.round(file.size / 1024),
+          maxKB: 10,
+          storyId: story.id,
         });
         continue;
       }
       const content = await file.text();
       const ext = path.extname(relativeFilePath).slice(1) || "txt";
-      elements.push(createFileContext(relativeFilePath, `\`\`\`${ext}\n// File: ${relativeFilePath}\n${content}\n\`\`\``, 60));
+      elements.push(
+        createFileContext(relativeFilePath, `\`\`\`${ext}\n// File: ${relativeFilePath}\n${content}\n\`\`\``, 60),
+      );
     } catch (error) {
       const logger = getLogger();
       logger.warn("context", "Error loading file", {
-        filePath: relativeFilePath, error: error instanceof Error ? error.message : String(error),
+        filePath: relativeFilePath,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }

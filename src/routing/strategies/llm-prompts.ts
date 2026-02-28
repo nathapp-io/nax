@@ -167,7 +167,11 @@ export function parseRoutingResponse(output: string, story: UserStory, config: N
  * @returns Map of story ID to routing decision
  * @throws Error if JSON parsing or validation fails
  */
-export function parseBatchResponse(output: string, stories: UserStory[], config: NaxConfig): Map<string, RoutingDecision> {
+export function parseBatchResponse(
+  output: string,
+  stories: UserStory[],
+  config: NaxConfig,
+): Map<string, RoutingDecision> {
   // Strip markdown code blocks if present
   let jsonText = output.trim();
   if (jsonText.startsWith("```")) {

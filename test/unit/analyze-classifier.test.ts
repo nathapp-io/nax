@@ -2,17 +2,17 @@
  * Tests for LLM Classifier
  */
 
-import { describe, test, expect } from "bun:test";
-import { classifyStories } from "../../src/analyze/classifier";
-import type { UserStory } from "../../src/prd";
+import { describe, expect, test } from "bun:test";
 import type { CodebaseScan } from "../../src/analyze";
+import { classifyStories } from "../../src/analyze/classifier";
 import { DEFAULT_CONFIG } from "../../src/config";
+import type { UserStory } from "../../src/prd";
 
 describe("classifyStories", () => {
   const mockScan: CodebaseScan = {
     fileTree: "src/\n├── index.ts\n└── utils/\n    └── helper.ts",
-    dependencies: { "zod": "^4.0.0" },
-    devDependencies: { "typescript": "^5.0.0" },
+    dependencies: { zod: "^4.0.0" },
+    devDependencies: { typescript: "^5.0.0" },
     testPatterns: ["Test framework: bun:test", "Test directory: test/"],
   };
 

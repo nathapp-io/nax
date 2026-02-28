@@ -11,15 +11,15 @@
  * 5. Router errors are caught and logged; fallback to next router in chain
  */
 
-import { describe, expect, test, beforeEach, afterEach, mock, spyOn } from "bun:test";
-import { buildStrategyChain } from "../../src/routing/builder";
-import { routeStory } from "../../src/routing/router";
-import { PluginRegistry } from "../../src/plugins/registry";
-import type { RoutingStrategy, RoutingContext, RoutingDecision } from "../../src/routing/strategy";
-import type { UserStory } from "../../src/prd/types";
-import type { NaxPlugin } from "../../src/plugins/types";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../src/config";
 import * as loggerModule from "../../src/logger";
+import { PluginRegistry } from "../../src/plugins/registry";
+import type { NaxPlugin } from "../../src/plugins/types";
+import type { UserStory } from "../../src/prd/types";
+import { buildStrategyChain } from "../../src/routing/builder";
+import { routeStory } from "../../src/routing/router";
+import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../../src/routing/strategy";
 
 // ============================================================================
 // Test Helpers
@@ -48,20 +48,14 @@ function createTestContext(overrides?: Partial<RoutingContext>): RoutingContext 
   };
 }
 
-function createPluginRouter(
-  name: string,
-  routeFn: RoutingStrategy["route"],
-): RoutingStrategy {
+function createPluginRouter(name: string, routeFn: RoutingStrategy["route"]): RoutingStrategy {
   return {
     name,
     route: routeFn,
   };
 }
 
-function createMockPlugin(
-  pluginName: string,
-  router?: RoutingStrategy,
-): NaxPlugin {
+function createMockPlugin(pluginName: string, router?: RoutingStrategy): NaxPlugin {
   const plugin: NaxPlugin = {
     name: pluginName,
     version: "1.0.0",
@@ -310,10 +304,7 @@ describe("Plugin router fallback to built-in strategy", () => {
     const router1 = createPluginRouter("plugin-router-1", () => null);
     const router2 = createPluginRouter("plugin-router-2", () => null);
 
-    const registry = new PluginRegistry([
-      createMockPlugin("plugin-1", router1),
-      createMockPlugin("plugin-2", router2),
-    ]);
+    const registry = new PluginRegistry([createMockPlugin("plugin-1", router1), createMockPlugin("plugin-2", router2)]);
 
     // Simple story that keyword strategy would classify as "simple"
     const story = createTestStory({
@@ -521,10 +512,7 @@ describe("Plugin router context", () => {
       return null;
     });
 
-    const registry = new PluginRegistry([
-      createMockPlugin("plugin-1", router1),
-      createMockPlugin("plugin-2", router2),
-    ]);
+    const registry = new PluginRegistry([createMockPlugin("plugin-1", router1), createMockPlugin("plugin-2", router2)]);
 
     const story = createTestStory();
     const context = createTestContext({
@@ -609,8 +597,8 @@ describe("Plugin router error handling", () => {
 
     // Verify error was logged
     expect(loggedErrors.length).toBeGreaterThan(0);
-    const errorLog = loggedErrors.find((log) =>
-      log.message.includes("error-router") || log.message.includes("Plugin router failed")
+    const errorLog = loggedErrors.find(
+      (log) => log.message.includes("error-router") || log.message.includes("Plugin router failed"),
     );
     expect(errorLog).toBeDefined();
   });
@@ -731,8 +719,8 @@ describe("Plugin router error handling", () => {
     await routeStory(story, context, "/tmp", registry);
 
     // Verify error log includes plugin router name
-    const errorLog = loggedErrors.find((log) =>
-      log.message.includes("my-custom-router") || log.data?.toString().includes("my-custom-router")
+    const errorLog = loggedErrors.find(
+      (log) => log.message.includes("my-custom-router") || log.data?.toString().includes("my-custom-router"),
     );
     expect(errorLog).toBeDefined();
   });
@@ -744,20 +732,17 @@ describe("Plugin router error handling", () => {
 
 describe("Plugin routing integration scenarios", () => {
   test("premium plugin forces security stories to expert tier", async () => {
-    const premiumRouter = createPluginRouter(
-      "premium-security-router",
-      (story, context) => {
-        if (story.tags.includes("security") || story.tags.includes("auth")) {
-          return {
-            complexity: "expert",
-            modelTier: "powerful",
-            testStrategy: "three-session-tdd",
-            reasoning: "Premium plugin: security/auth always use expert tier",
-          };
-        }
-        return null;
+    const premiumRouter = createPluginRouter("premium-security-router", (story, context) => {
+      if (story.tags.includes("security") || story.tags.includes("auth")) {
+        return {
+          complexity: "expert",
+          modelTier: "powerful",
+          testStrategy: "three-session-tdd",
+          reasoning: "Premium plugin: security/auth always use expert tier",
+        };
       }
-    );
+      return null;
+    });
 
     const plugin = createMockPlugin("premium-plugin", premiumRouter);
     const registry = new PluginRegistry([plugin]);
@@ -780,20 +765,17 @@ describe("Plugin routing integration scenarios", () => {
   });
 
   test("cost-optimization plugin downgrades simple docs to fast tier", async () => {
-    const costOptimizationRouter = createPluginRouter(
-      "cost-optimization-router",
-      (story, context) => {
-        if (story.tags.includes("docs") && story.acceptanceCriteria.length <= 2) {
-          return {
-            complexity: "simple",
-            modelTier: "fast",
-            testStrategy: "test-after",
-            reasoning: "Cost optimization: simple docs use fast tier",
-          };
-        }
-        return null;
+    const costOptimizationRouter = createPluginRouter("cost-optimization-router", (story, context) => {
+      if (story.tags.includes("docs") && story.acceptanceCriteria.length <= 2) {
+        return {
+          complexity: "simple",
+          modelTier: "fast",
+          testStrategy: "test-after",
+          reasoning: "Cost optimization: simple docs use fast tier",
+        };
       }
-    );
+      return null;
+    });
 
     const plugin = createMockPlugin("cost-optimization-plugin", costOptimizationRouter);
     const registry = new PluginRegistry([plugin]);
@@ -813,21 +795,18 @@ describe("Plugin routing integration scenarios", () => {
   });
 
   test("domain-specific plugin routes database migrations to expert tier", async () => {
-    const domainRouter = createPluginRouter(
-      "domain-router",
-      (story, context) => {
-        const text = [story.title, story.description, ...story.tags].join(" ").toLowerCase();
-        if (text.includes("migration") || text.includes("database") || text.includes("schema")) {
-          return {
-            complexity: "expert",
-            modelTier: "powerful",
-            testStrategy: "three-session-tdd",
-            reasoning: "Domain-specific: database changes require expert review",
-          };
-        }
-        return null;
+    const domainRouter = createPluginRouter("domain-router", (story, context) => {
+      const text = [story.title, story.description, ...story.tags].join(" ").toLowerCase();
+      if (text.includes("migration") || text.includes("database") || text.includes("schema")) {
+        return {
+          complexity: "expert",
+          modelTier: "powerful",
+          testStrategy: "three-session-tdd",
+          reasoning: "Domain-specific: database changes require expert review",
+        };
       }
-    );
+      return null;
+    });
 
     const plugin = createMockPlugin("domain-plugin", domainRouter);
     const registry = new PluginRegistry([plugin]);
@@ -893,22 +872,19 @@ describe("Plugin routing integration scenarios", () => {
   });
 
   test("plugin router can delegate based on conditional logic", async () => {
-    const conditionalRouter = createPluginRouter(
-      "conditional-router",
-      (story, context) => {
-        // Only handle stories with "critical" tag
-        if (story.tags.includes("critical")) {
-          return {
-            complexity: "expert",
-            modelTier: "powerful",
-            testStrategy: "three-session-tdd",
-            reasoning: "Critical tag forces expert tier",
-          };
-        }
-        // Delegate all other stories to built-in strategy
-        return null;
+    const conditionalRouter = createPluginRouter("conditional-router", (story, context) => {
+      // Only handle stories with "critical" tag
+      if (story.tags.includes("critical")) {
+        return {
+          complexity: "expert",
+          modelTier: "powerful",
+          testStrategy: "three-session-tdd",
+          reasoning: "Critical tag forces expert tier",
+        };
       }
-    );
+      // Delegate all other stories to built-in strategy
+      return null;
+    });
 
     const plugin = createMockPlugin("conditional-plugin", conditionalRouter);
     const registry = new PluginRegistry([plugin]);

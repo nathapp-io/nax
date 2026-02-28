@@ -57,8 +57,14 @@ export function parseUserStoriesFromSpec(markdown: string): UserStory[] {
 
     if (!currentStory) continue;
 
-    if (line.match(/^###\s+Description/i)) { currentSection = "description"; continue; }
-    if (line.match(/^###\s+Acceptance\s+Criteria/i)) { currentSection = "criteria"; continue; }
+    if (line.match(/^###\s+Description/i)) {
+      currentSection = "description";
+      continue;
+    }
+    if (line.match(/^###\s+Acceptance\s+Criteria/i)) {
+      currentSection = "criteria";
+      continue;
+    }
 
     if (currentSection === "description" && line.trim()) {
       descriptionLines.push(line.trim());
@@ -70,12 +76,18 @@ export function parseUserStoriesFromSpec(markdown: string): UserStory[] {
 
     const tagsMatch = line.match(/^Tags:\s*(.+)/i);
     if (tagsMatch && currentStory) {
-      currentStory.tags = tagsMatch[1].split(",").map((t) => t.trim()).filter(Boolean);
+      currentStory.tags = tagsMatch[1]
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
     }
 
     const depsMatch = line.match(/^Dependencies:\s*(.+)/i);
     if (depsMatch && currentStory) {
-      currentStory.dependencies = depsMatch[1].split(",").map((d) => d.trim()).filter(Boolean);
+      currentStory.dependencies = depsMatch[1]
+        .split(",")
+        .map((d) => d.trim())
+        .filter(Boolean);
     }
   }
 
@@ -108,10 +120,14 @@ export function buildCodebaseContext(scan: CodebaseScan): string {
 ${scan.fileTree}
 
 DEPENDENCIES:
-${Object.entries(scan.dependencies).map(([name, version]) => `- ${name}: ${version}`).join("\n")}
+${Object.entries(scan.dependencies)
+  .map(([name, version]) => `- ${name}: ${version}`)
+  .join("\n")}
 
 DEV DEPENDENCIES:
-${Object.entries(scan.devDependencies).map(([name, version]) => `- ${name}: ${version}`).join("\n")}
+${Object.entries(scan.devDependencies)
+  .map(([name, version]) => `- ${name}: ${version}`)
+  .join("\n")}
 
 TEST PATTERNS:
 ${scan.testPatterns.map((p) => `- ${p}`).join("\n")}`.trim();
@@ -142,10 +158,14 @@ export function applyKeywordClassification(stories: UserStory[], config?: NaxCon
 /** Estimate LOC from complexity level (rough heuristic). */
 export function estimateLOCFromComplexity(complexity: "simple" | "medium" | "complex" | "expert"): number {
   switch (complexity) {
-    case "simple": return 50;
-    case "medium": return 150;
-    case "complex": return 400;
-    case "expert": return 800;
+    case "simple":
+      return 50;
+    case "medium":
+      return 150;
+    case "complex":
+      return 400;
+    case "expert":
+      return 800;
   }
 }
 
@@ -177,11 +197,17 @@ export async function reclassifyExistingPRD(
       if (config?.analyze.llmEnhanced) {
         const classified = await reclassifyWithLLM(story, storySpec, workdir, codebaseContext, config);
         updatedStories.push(classified);
-        logger.info("cli", `[OK] ${story.id} reclassified`, { storyId: story.id, complexity: classified.routing?.complexity });
+        logger.info("cli", `[OK] ${story.id} reclassified`, {
+          storyId: story.id,
+          complexity: classified.routing?.complexity,
+        });
       } else {
         const classified = reclassifyWithKeywords(story, config);
         updatedStories.push(classified);
-        logger.info("cli", `[OK] ${story.id} reclassified`, { storyId: story.id, complexity: classified.routing?.complexity });
+        logger.info("cli", `[OK] ${story.id} reclassified`, {
+          storyId: story.id,
+          complexity: classified.routing?.complexity,
+        });
       }
     } catch (error) {
       logger.warn("cli", `[WARN] ${story.id} kept original`, { storyId: story.id, error: (error as Error).message });

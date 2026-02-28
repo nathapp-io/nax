@@ -4,8 +4,8 @@
  * Extracted from builder.ts: token estimation and context element creation.
  */
 
-import type { UserStory } from "../prd";
 import { getLogger } from "../logger";
+import type { UserStory } from "../prd";
 import type { ContextElement } from "./types";
 
 /**

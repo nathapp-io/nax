@@ -1,12 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { countStories, generateHumanHaltSummary, getNextStory, isStalled, markStoryPaused } from "../../src/prd";
 import type { PRD } from "../../src/prd/types";
-import {
-  getNextStory,
-  countStories,
-  markStoryPaused,
-  isStalled,
-  generateHumanHaltSummary,
-} from "../../src/prd";
 
 describe("PRD pause functionality", () => {
   const createTestPRD = (): PRD => ({

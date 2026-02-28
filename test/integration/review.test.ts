@@ -2,12 +2,12 @@
  * Review Phase Tests
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runReview } from "../../src/review";
 import type { ReviewConfig } from "../../src/review";
-import { mkdtempSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 
 describe("Review Phase", () => {
   test("runReview - all checks pass", async () => {

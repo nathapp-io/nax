@@ -18,6 +18,8 @@ interface WebhookConfig {
   callbackPort?: number;
   /** HMAC secret for signature verification */
   secret?: string;
+  /** Maximum payload size in bytes (default: 1MB) */
+  maxPayloadBytes?: number;
 }
 
 /** Zod schema for validating webhook callback payloads */
@@ -45,6 +47,9 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
     }
     if (!this.config.callbackPort) {
       this.config.callbackPort = 8765;
+    }
+    if (!this.config.maxPayloadBytes) {
+      this.config.maxPayloadBytes = 1024 * 1024; // 1MB default
     }
   }
 
@@ -95,15 +100,19 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
     await this.startServer();
 
     const startTime = Date.now();
+    let backoffMs = 100; // Initial poll interval
+    const maxBackoffMs = 2000; // Max 2 seconds between polls
 
-    // Poll for response
+    // Poll for response with exponential backoff
     while (Date.now() - startTime < timeout) {
       const response = this.pendingResponses.get(requestId);
       if (response) {
         this.pendingResponses.delete(requestId);
         return response;
       }
-      await Bun.sleep(100);
+      await Bun.sleep(backoffMs);
+      // Exponential backoff: double interval up to max
+      backoffMs = Math.min(backoffMs * 2, maxBackoffMs);
     }
 
     // Timeout
@@ -161,10 +170,22 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       return new Response("Bad Request", { status: 400 });
     }
 
+    // Check content length before reading body
+    const contentLength = req.headers.get("Content-Length");
+    const maxBytes = this.config.maxPayloadBytes ?? 1024 * 1024;
+    if (contentLength && Number.parseInt(contentLength, 10) > maxBytes) {
+      return new Response("Payload Too Large", { status: 413 });
+    }
+
     // Verify signature if secret is configured
     if (this.config.secret) {
       const signature = req.headers.get("X-Nax-Signature");
       const body = await req.text();
+
+      // Check actual body size (in case Content-Length was missing)
+      if (body.length > maxBytes) {
+        return new Response("Payload Too Large", { status: 413 });
+      }
 
       if (!signature || !this.verify(body, signature)) {
         return new Response("Unauthorized", { status: 401 });
@@ -175,9 +196,9 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
         const parsed = JSON.parse(body);
         const response = InteractionResponseSchema.parse(parsed);
         this.pendingResponses.set(requestId, response);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return new Response(`Bad Request: Invalid response format (${msg})`, { status: 400 });
+      } catch {
+        // Sanitize error - do not leak parse/validation details
+        return new Response("Bad Request: Invalid response format", { status: 400 });
       }
     } else {
       // No signature verification - still validate structure
@@ -185,9 +206,9 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
         const parsed = await req.json();
         const response = InteractionResponseSchema.parse(parsed);
         this.pendingResponses.set(requestId, response);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return new Response(`Bad Request: Invalid response format (${msg})`, { status: 400 });
+      } catch {
+        // Sanitize error - do not leak parse/validation details
+        return new Response("Bad Request: Invalid response format", { status: 400 });
       }
     }
 

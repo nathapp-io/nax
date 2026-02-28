@@ -53,11 +53,10 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
   while (shouldRetryRectification(rectificationState, rectificationConfig)) {
     rectificationState.attempt++;
 
-    logger?.info(
-      "rectification",
-      `${label} attempt ${rectificationState.attempt}/${rectificationConfig.maxRetries}`,
-      { storyId: story.id, currentFailures: rectificationState.currentFailures },
-    );
+    logger?.info("rectification", `${label} attempt ${rectificationState.attempt}/${rectificationConfig.maxRetries}`, {
+      storyId: story.id,
+      currentFailures: rectificationState.currentFailures,
+    });
 
     let rectificationPrompt = createRectificationPrompt(testSummary.failures, story, rectificationConfig);
     if (promptPrefix) {
@@ -164,7 +163,12 @@ export async function revertStoriesOnFailure(opts: RevertStoriesOptions): Promis
   // Revert stories to pending with diagnostic context
   opts.prd.userStories = opts.prd.userStories.map((s) =>
     storyIds.has(s.id)
-      ? { ...s, priorErrors: [...(s.priorErrors || []), opts.diagnosticContext], status: "pending" as const, passes: false }
+      ? {
+          ...s,
+          priorErrors: [...(s.priorErrors || []), opts.diagnosticContext],
+          status: "pending" as const,
+          passes: false,
+        }
       : s,
   );
 

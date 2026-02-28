@@ -7,7 +7,7 @@
  * - Feeding regression failures into rectification loop
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { RegressionGateConfig } from "../../src/config/schema";
 
 describe("RegressionGateConfig", () => {
@@ -120,7 +120,8 @@ ${basePrompt}`;
   });
 
   test("regression prompt should emphasize cross-story nature", () => {
-    const regressionPrompt = "# REGRESSION: Cross-Story Test Failures\n\nYour changes passed scoped tests but broke unrelated tests.";
+    const regressionPrompt =
+      "# REGRESSION: Cross-Story Test Failures\n\nYour changes passed scoped tests but broke unrelated tests.";
 
     expect(regressionPrompt).toContain("Cross-Story");
     expect(regressionPrompt).toContain("unrelated tests");

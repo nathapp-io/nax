@@ -4,14 +4,14 @@
  * Tests for PRD loader auto-defaulting and router defensive fallbacks.
  */
 
-import { describe, expect, test, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DEFAULT_CONFIG } from "../../src/config";
 import { loadPRD, savePRD } from "../../src/prd";
 import type { PRD } from "../../src/prd/types";
 import { routeTask } from "../../src/routing";
-import { DEFAULT_CONFIG } from "../../src/config";
-import { mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 
 describe("PRD Auto-Default (BUG-004)", () => {
   let testDir: string;
@@ -251,7 +251,7 @@ describe("Router Tags Defensive Fallback (BUG-004)", () => {
       "Fix a typo in README",
       ["Typo fixed"],
       undefined as any, // Simulate missing tags
-      DEFAULT_CONFIG
+      DEFAULT_CONFIG,
     );
 
     expect(result.complexity).toBe("simple");
@@ -265,7 +265,7 @@ describe("Router Tags Defensive Fallback (BUG-004)", () => {
       "Fix a typo in README",
       ["Typo fixed"],
       null as any, // Simulate null tags
-      DEFAULT_CONFIG
+      DEFAULT_CONFIG,
     );
 
     expect(result.complexity).toBe("simple");
@@ -276,24 +276,12 @@ describe("Router Tags Defensive Fallback (BUG-004)", () => {
   test("routeTask with undefined tags does not crash on spread operation", () => {
     // This test specifically verifies line ~277 in router.ts doesn't crash
     expect(() => {
-      routeTask(
-        "Add feature",
-        "Add new feature",
-        ["AC1", "AC2", "AC3"],
-        undefined as any,
-        DEFAULT_CONFIG
-      );
+      routeTask("Add feature", "Add new feature", ["AC1", "AC2", "AC3"], undefined as any, DEFAULT_CONFIG);
     }).not.toThrow();
   });
 
   test("routeTask preserves existing tags behavior", () => {
-    const result = routeTask(
-      "Auth fix",
-      "Fix JWT auth bypass",
-      ["Auth works"],
-      ["security", "auth"],
-      DEFAULT_CONFIG
-    );
+    const result = routeTask("Auth fix", "Fix JWT auth bypass", ["Auth works"], ["security", "auth"], DEFAULT_CONFIG);
 
     expect(result.complexity).toBe("complex");
     expect(result.testStrategy).toBe("three-session-tdd");

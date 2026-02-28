@@ -2,11 +2,11 @@
  * Tests for acceptance test generation module
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
-  parseAcceptanceCriteria,
   buildAcceptanceTestPrompt,
   generateSkeletonTests,
+  parseAcceptanceCriteria,
 } from "../../src/acceptance/generator";
 
 describe("parseAcceptanceCriteria", () => {
@@ -97,11 +97,7 @@ describe("buildAcceptanceTestPrompt", () => {
       { id: "AC-2", text: "validates email format", lineNumber: 6 },
     ];
 
-    const prompt = buildAcceptanceTestPrompt(
-      criteria,
-      "auth",
-      "File tree:\nsrc/\n  auth.ts\n"
-    );
+    const prompt = buildAcceptanceTestPrompt(criteria, "auth", "File tree:\nsrc/\n  auth.ts\n");
 
     expect(prompt).toContain("AC-1: handles empty input");
     expect(prompt).toContain("AC-2: validates email format");
@@ -110,15 +106,9 @@ describe("buildAcceptanceTestPrompt", () => {
   });
 
   test("formats prompt with correct structure", () => {
-    const criteria = [
-      { id: "AC-1", text: "test criterion", lineNumber: 1 },
-    ];
+    const criteria = [{ id: "AC-1", text: "test criterion", lineNumber: 1 }];
 
-    const prompt = buildAcceptanceTestPrompt(
-      criteria,
-      "feature",
-      "context"
-    );
+    const prompt = buildAcceptanceTestPrompt(criteria, "feature", "context");
 
     expect(prompt).toContain("CODEBASE CONTEXT:");
     expect(prompt).toContain("ACCEPTANCE CRITERIA:");
@@ -145,9 +135,7 @@ describe("generateSkeletonTests", () => {
   });
 
   test("generates valid TypeScript structure", () => {
-    const criteria = [
-      { id: "AC-1", text: "test", lineNumber: 1 },
-    ];
+    const criteria = [{ id: "AC-1", text: "test", lineNumber: 1 }];
 
     const skeleton = generateSkeletonTests("feature", criteria);
 
@@ -165,9 +153,7 @@ describe("generateSkeletonTests", () => {
   });
 
   test("escapes special characters in criteria text", () => {
-    const criteria = [
-      { id: "AC-1", text: 'handles "quotes" correctly', lineNumber: 1 },
-    ];
+    const criteria = [{ id: "AC-1", text: 'handles "quotes" correctly', lineNumber: 1 }];
 
     const skeleton = generateSkeletonTests("feature", criteria);
 

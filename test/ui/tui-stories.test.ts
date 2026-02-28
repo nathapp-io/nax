@@ -5,13 +5,13 @@
  * cost display, elapsed time formatting, and layout breakpoint logic.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
 import { createElement } from "react";
-import { StoriesPanel } from "../../src/tui/components/StoriesPanel";
-import { StatusBar } from "../../src/tui/components/StatusBar";
-import type { StoryDisplayState } from "../../src/tui/types";
 import type { UserStory } from "../../src/prd/types";
+import { StatusBar } from "../../src/tui/components/StatusBar";
+import { StoriesPanel } from "../../src/tui/components/StoriesPanel";
+import type { StoryDisplayState } from "../../src/tui/types";
 
 // Helper to create mock stories
 function createMockStory(id: string, status: StoryDisplayState["status"]): StoryDisplayState {

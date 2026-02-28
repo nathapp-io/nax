@@ -2,11 +2,11 @@
  * Integration Tests for Analyze Command
  */
 
-import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { analyzeFeature } from "../../src/cli/analyze";
 import { DEFAULT_CONFIG } from "../../src/config";
-import { join } from "node:path";
-import { mkdirSync, rmSync, existsSync } from "node:fs";
 
 describe("analyzeFeature integration", () => {
   const testDir = "/tmp/nax-analyze-test";
@@ -62,7 +62,7 @@ Dependencies: none
         name: "test-project",
         dependencies: { zod: "^4.0.0" },
         devDependencies: { typescript: "^5.0.0" },
-      })
+      }),
     );
   });
 
@@ -191,7 +191,7 @@ Dependencies: none
           featureDir: emptyDir,
           featureName: "empty",
           branchName: "feat/empty",
-        })
+        }),
       ).rejects.toThrow("spec.md not found");
     } finally {
       rmSync(emptyDir, { recursive: true });
@@ -212,7 +212,7 @@ Dependencies: none
           featureDir: featurePath,
           featureName: "test",
           branchName: "feat/test",
-        })
+        }),
       ).rejects.toThrow("No user stories found");
     } finally {
       rmSync(noStoriesDir, { recursive: true });

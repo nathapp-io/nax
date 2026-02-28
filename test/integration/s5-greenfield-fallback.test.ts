@@ -7,7 +7,7 @@
  * it should switch to test-after strategy (once) instead of escalating tier.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { resolveMaxAttemptsOutcome } from "../../src/execution/runner";
 import type { UserStory } from "../../src/prd";
 import type { FailureCategory } from "../../src/tdd/types";
@@ -34,7 +34,7 @@ describe("S5: greenfield-no-tests fallback", () => {
         }
       : undefined;
 
-    const shouldResetAttempts = shouldSwitchToTestAfter || (story.routing?.modelTier !== nextTier);
+    const shouldResetAttempts = shouldSwitchToTestAfter || story.routing?.modelTier !== nextTier;
 
     return {
       routing: updatedRouting,

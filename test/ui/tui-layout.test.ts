@@ -5,17 +5,13 @@
  * story scrolling, and minimum terminal size handling.
  */
 
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { render } from "ink-testing-library";
 import { createElement } from "react";
-import { StoriesPanel } from "../../src/tui/components/StoriesPanel";
-import type { StoryDisplayState } from "../../src/tui/types";
 import type { UserStory } from "../../src/prd/types";
-import {
-  MIN_TERMINAL_WIDTH,
-  COMPACT_MAX_VISIBLE_STORIES,
-  MAX_VISIBLE_STORIES,
-} from "../../src/tui/hooks/useLayout";
+import { StoriesPanel } from "../../src/tui/components/StoriesPanel";
+import { COMPACT_MAX_VISIBLE_STORIES, MAX_VISIBLE_STORIES, MIN_TERMINAL_WIDTH } from "../../src/tui/hooks/useLayout";
+import type { StoryDisplayState } from "../../src/tui/types";
 
 // Helper to create mock stories
 function createMockStory(id: string, status: StoryDisplayState["status"]): StoryDisplayState {
@@ -313,9 +309,7 @@ describe("Edge cases", () => {
   });
 
   test("handles very long story ID in compact mode", () => {
-    const stories = [
-      createMockStory("US-VERY-LONG-STORY-ID-THAT-MIGHT-WRAP", "pending"),
-    ];
+    const stories = [createMockStory("US-VERY-LONG-STORY-ID-THAT-MIGHT-WRAP", "pending")];
 
     const { lastFrame } = render(
       createElement(StoriesPanel, {

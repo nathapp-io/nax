@@ -1,11 +1,11 @@
-import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync } from "node:fs";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { runThreeSessionTdd } from "../../src/tdd/orchestrator";
 import type { AgentAdapter, AgentResult } from "../../src/agents";
-import type { UserStory } from "../../src/prd";
 import { DEFAULT_CONFIG } from "../../src/config";
+import type { UserStory } from "../../src/prd";
+import { runThreeSessionTdd } from "../../src/tdd/orchestrator";
 import { VERDICT_FILE } from "../../src/tdd/verdict";
 
 let originalSpawn: typeof Bun.spawn;
@@ -159,15 +159,10 @@ describe("runThreeSessionTdd", () => {
 
   test("failure when test-writer session fails", async () => {
     mockGitSpawn({
-      diffFiles: [
-        ["test/user.test.ts"],
-        ["test/user.test.ts"],
-      ],
+      diffFiles: [["test/user.test.ts"], ["test/user.test.ts"]],
     });
 
-    const agent = createMockAgent([
-      { success: false, exitCode: 1, estimatedCost: 0.01 },
-    ]);
+    const agent = createMockAgent([{ success: false, exitCode: 1, estimatedCost: 0.01 }]);
 
     const result = await runThreeSessionTdd({
       agent,
@@ -192,9 +187,7 @@ describe("runThreeSessionTdd", () => {
       ],
     });
 
-    const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-    ]);
+    const agent = createMockAgent([{ success: true, estimatedCost: 0.01 }]);
 
     const result = await runThreeSessionTdd({
       agent,
@@ -377,8 +370,8 @@ describe("runThreeSessionTdd", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },   // test-writer succeeds
-      { success: true, estimatedCost: 0.02 },   // implementer succeeds
+      { success: true, estimatedCost: 0.01 }, // test-writer succeeds
+      { success: true, estimatedCost: 0.02 }, // implementer succeeds
       { success: false, exitCode: 1, estimatedCost: 0.01 }, // verifier fails (e.g., fixed issues)
     ]);
 
@@ -505,13 +498,7 @@ describe("runThreeSessionTdd", () => {
     let revParseCount = 0;
     let diffCount = 0;
 
-    const diffFiles = [
-      ["test/user.test.ts"],
-      ["test/user.test.ts"],
-      ["src/user.ts"],
-      ["src/user.ts"],
-      ["src/user.ts"],
-    ];
+    const diffFiles = [["test/user.test.ts"], ["test/user.test.ts"], ["src/user.ts"], ["src/user.ts"], ["src/user.ts"]];
 
     // @ts-ignore — mocking global
     Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
@@ -568,11 +555,11 @@ describe("runThreeSessionTdd", () => {
 // ─── Lite-mode prompt tests ───────────────────────────────────────────────────
 
 import {
-  buildTestWriterLitePrompt,
   buildImplementerLitePrompt,
-  buildVerifierPrompt,
-  buildTestWriterPrompt,
   buildImplementerPrompt,
+  buildTestWriterLitePrompt,
+  buildTestWriterPrompt,
+  buildVerifierPrompt,
 } from "../../src/tdd/prompts";
 
 describe("buildTestWriterLitePrompt", () => {
@@ -726,10 +713,10 @@ describe("runThreeSessionTdd — lite mode", () => {
     // Total: 1 (s1 getChangedFiles) + 1 (s2 getChangedFiles) + 2 (s3) = 4 diff calls
     mockGitSpawn({
       diffFiles: [
-        ["test/user.test.ts"],  // s1 getChangedFiles (no isolation in lite)
-        ["src/user.ts"],        // s2 getChangedFiles (no isolation in lite)
-        [],                     // s3 isolation check (verifier always checks)
-        ["src/user.ts"],        // s3 getChangedFiles
+        ["test/user.test.ts"], // s1 getChangedFiles (no isolation in lite)
+        ["src/user.ts"], // s2 getChangedFiles (no isolation in lite)
+        [], // s3 isolation check (verifier always checks)
+        ["src/user.ts"], // s3 getChangedFiles
       ],
     });
 
@@ -759,8 +746,8 @@ describe("runThreeSessionTdd — lite mode", () => {
         ["test/user.test.ts"],
         ["src/user.ts"],
         ["src/user.ts"],
-        [],                     // s3 isolation
-        ["src/user.ts"],        // s3 getChangedFiles
+        [], // s3 isolation
+        ["src/user.ts"], // s3 getChangedFiles
       ],
     });
 
@@ -786,10 +773,10 @@ describe("runThreeSessionTdd — lite mode", () => {
   test("lite mode: test-writer session has no isolation check (isolation is undefined)", async () => {
     mockGitSpawn({
       diffFiles: [
-        ["test/user.test.ts"],  // s1 getChangedFiles only (no isolation in lite)
-        ["src/user.ts"],        // s2 getChangedFiles only (no isolation in lite)
-        [],                     // s3 isolation
-        ["src/user.ts"],        // s3 getChangedFiles
+        ["test/user.test.ts"], // s1 getChangedFiles only (no isolation in lite)
+        ["src/user.ts"], // s2 getChangedFiles only (no isolation in lite)
+        [], // s3 isolation
+        ["src/user.ts"], // s3 getChangedFiles
       ],
     });
 
@@ -821,10 +808,10 @@ describe("runThreeSessionTdd — lite mode", () => {
     // In lite mode, isolation is skipped entirely, so there are no warnings.
     mockGitSpawn({
       diffFiles: [
-        ["test/user.test.ts"],              // s1 getChangedFiles
+        ["test/user.test.ts"], // s1 getChangedFiles
         ["test/user.test.ts", "src/user.ts"], // s2 getChangedFiles
-        [],                                 // s3 isolation
-        [],                                 // s3 getChangedFiles
+        [], // s3 isolation
+        [], // s3 getChangedFiles
       ],
     });
 
@@ -852,10 +839,10 @@ describe("runThreeSessionTdd — lite mode", () => {
   test("lite mode: verifier always runs isolation check (even in lite mode)", async () => {
     mockGitSpawn({
       diffFiles: [
-        ["test/user.test.ts"],  // s1 getChangedFiles
-        ["src/user.ts"],        // s2 getChangedFiles
-        [],                     // s3 isolation (verifier always checks)
-        [],                     // s3 getChangedFiles
+        ["test/user.test.ts"], // s1 getChangedFiles
+        ["src/user.ts"], // s2 getChangedFiles
+        [], // s3 isolation (verifier always checks)
+        [], // s3 getChangedFiles
       ],
     });
 
@@ -956,10 +943,12 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
     // No fallback to lite mode occurs
     mockGitSpawnWithCheckout({
       diffFiles: [
-        ["requirements.md"],    // s1 isolation (strict) — no source violations
-        ["requirements.md"],    // s1 getChangedFiles (strict) — 0 test files → return greenfield-no-tests
+        ["requirements.md"], // s1 isolation (strict) — no source violations
+        ["requirements.md"], // s1 getChangedFiles (strict) — 0 test files → return greenfield-no-tests
       ],
-      onCheckout: () => { checkoutCalled = true; },
+      onCheckout: () => {
+        checkoutCalled = true;
+      },
     });
 
     const agent = createMockAgent([
@@ -980,8 +969,8 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
     });
 
     expect(checkoutCalled).toBe(false); // git checkout NOT called (no fallback)
-    expect(result.lite).toBe(false);    // not in lite mode
-    expect(result.success).toBe(false);  // fails with greenfield-no-tests
+    expect(result.lite).toBe(false); // not in lite mode
+    expect(result.success).toBe(false); // fails with greenfield-no-tests
     expect(result.failureCategory).toBe("greenfield-no-tests");
   });
 
@@ -989,14 +978,12 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
     // BUG-010: No more auto-fallback to lite mode
     mockGitSpawn({
       diffFiles: [
-        ["docs/plan.md"],      // s1 isolation (strict)
-        ["docs/plan.md"],      // s1 getChangedFiles (strict) → 0 test files
+        ["docs/plan.md"], // s1 isolation (strict)
+        ["docs/plan.md"], // s1 getChangedFiles (strict) → 0 test files
       ],
     });
 
-    const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-    ]);
+    const agent = createMockAgent([{ success: true, estimatedCost: 0.01 }]);
 
     const result = await runThreeSessionTdd({
       agent,
@@ -1015,14 +1002,12 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
     // In strategy='strict', no fallback — should return failure
     mockGitSpawn({
       diffFiles: [
-        ["requirements.md"],  // s1 isolation — no source violations
-        ["requirements.md"],  // s1 getChangedFiles — 0 test files
+        ["requirements.md"], // s1 isolation — no source violations
+        ["requirements.md"], // s1 getChangedFiles — 0 test files
       ],
     });
 
-    const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-    ]);
+    const agent = createMockAgent([{ success: true, estimatedCost: 0.01 }]);
 
     const configWithStrictStrategy = {
       ...DEFAULT_CONFIG,
@@ -1048,13 +1033,11 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
     // Calling with lite=true — if 0 test files, should return failure (not recurse again)
     mockGitSpawn({
       diffFiles: [
-        ["requirements.md"],  // s1 getChangedFiles (lite, no isolation) — 0 test files
+        ["requirements.md"], // s1 getChangedFiles (lite, no isolation) — 0 test files
       ],
     });
 
-    const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-    ]);
+    const agent = createMockAgent([{ success: true, estimatedCost: 0.01 }]);
 
     const result = await runThreeSessionTdd({
       agent,
@@ -1077,13 +1060,11 @@ describe("runThreeSessionTdd — zero-file fallback", () => {
     // So !lite = false → no fallback
     mockGitSpawn({
       diffFiles: [
-        [],  // s1 getChangedFiles (lite, no isolation) — 0 test files
+        [], // s1 getChangedFiles (lite, no isolation) — 0 test files
       ],
     });
 
-    const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-    ]);
+    const agent = createMockAgent([{ success: true, estimatedCost: 0.01 }]);
 
     const configWithLiteStrategy = {
       ...DEFAULT_CONFIG,
@@ -1118,9 +1099,7 @@ describe("runThreeSessionTdd — failureCategory", () => {
       ],
     });
 
-    const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-    ]);
+    const agent = createMockAgent([{ success: true, estimatedCost: 0.01 }]);
 
     const result = await runThreeSessionTdd({
       agent,
@@ -1138,14 +1117,12 @@ describe("runThreeSessionTdd — failureCategory", () => {
     // In strict strategy, zero test files → greenfield-no-tests category (BUG-010 behavior)
     mockGitSpawn({
       diffFiles: [
-        ["requirements.md"],  // s1 isolation — no source violations
-        ["requirements.md"],  // s1 getChangedFiles — 0 test files
+        ["requirements.md"], // s1 isolation — no source violations
+        ["requirements.md"], // s1 getChangedFiles — 0 test files
       ],
     });
 
-    const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },
-    ]);
+    const agent = createMockAgent([{ success: true, estimatedCost: 0.01 }]);
 
     const configWithStrictStrategy = {
       ...DEFAULT_CONFIG,
@@ -1207,7 +1184,7 @@ describe("runThreeSessionTdd — failureCategory", () => {
     });
 
     const agent = createMockAgent([
-      { success: true, estimatedCost: 0.01 },   // test-writer OK
+      { success: true, estimatedCost: 0.01 }, // test-writer OK
       { success: false, exitCode: 1, estimatedCost: 0.02 }, // implementer fails
     ]);
 
@@ -1228,13 +1205,7 @@ describe("runThreeSessionTdd — failureCategory", () => {
     let revParseCount = 0;
     let diffCount = 0;
 
-    const diffFiles = [
-      ["test/user.test.ts"],
-      ["test/user.test.ts"],
-      ["src/user.ts"],
-      ["src/user.ts"],
-      ["src/user.ts"],
-    ];
+    const diffFiles = [["test/user.test.ts"], ["test/user.test.ts"], ["src/user.ts"], ["src/user.ts"], ["src/user.ts"]];
 
     // @ts-ignore — mocking global
     Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
@@ -1286,13 +1257,7 @@ describe("runThreeSessionTdd — failureCategory", () => {
 
   test("success path has no failureCategory", async () => {
     mockGitSpawn({
-      diffFiles: [
-        ["test/user.test.ts"],
-        ["test/user.test.ts"],
-        ["src/user.ts"],
-        ["src/user.ts"],
-        ["src/user.ts"],
-      ],
+      diffFiles: [["test/user.test.ts"], ["test/user.test.ts"], ["src/user.ts"], ["src/user.ts"], ["src/user.ts"]],
     });
 
     const agent = createMockAgent([
@@ -1318,8 +1283,8 @@ describe("runThreeSessionTdd — failureCategory", () => {
     let diffCount = 0;
 
     const diffFiles = [
-      ["requirements.md"],    // s1 isolation (strict) — no source violations
-      ["requirements.md"],    // s1 getChangedFiles (strict) — 0 test files → return greenfield-no-tests
+      ["requirements.md"], // s1 isolation (strict) — no source violations
+      ["requirements.md"], // s1 getChangedFiles (strict) — 0 test files → return greenfield-no-tests
     ];
 
     // @ts-ignore — mocking global
@@ -1429,10 +1394,10 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
     const files = opts.diffFiles ?? [
       ["test/user.test.ts"], // s1 isolation
       ["test/user.test.ts"], // s1 getChangedFiles
-      ["src/user.ts"],       // s2 isolation
-      ["src/user.ts"],       // s2 getChangedFiles
-      [],                    // s3 isolation
-      ["src/user.ts"],       // s3 getChangedFiles
+      ["src/user.ts"], // s2 isolation
+      ["src/user.ts"], // s2 getChangedFiles
+      [], // s3 isolation
+      ["src/user.ts"], // s3 getChangedFiles
     ];
     let revParseCount = 0;
     let diffCount = 0;
