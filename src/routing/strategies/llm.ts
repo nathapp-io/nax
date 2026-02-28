@@ -366,7 +366,10 @@ export const llmStrategy: RoutingStrategy = {
 
     // Check cache first
     if (llmConfig.cacheDecisions && cachedDecisions.has(story.id)) {
-      const cached = cachedDecisions.get(story.id)!;
+      const cached = cachedDecisions.get(story.id);
+      if (!cached) {
+        throw new Error(`Cached decision not found for story: ${story.id}`);
+      }
       const logger = getLogger();
       logger.debug("routing", "LLM cache hit", {
         storyId: story.id,

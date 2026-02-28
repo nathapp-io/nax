@@ -240,7 +240,8 @@ export async function checkDependenciesInstalled(workdir: string): Promise<Check
  */
 export async function checkTestCommand(config: NaxConfig): Promise<Check> {
   // Try multiple possible locations for testCommand
-  const testCommand = (config.execution as any).testCommand || config.quality?.commands?.test;
+  const executionConfig = config.execution as Record<string, unknown>;
+  const testCommand = executionConfig.testCommand || config.quality?.commands?.test;
 
   // Skip if explicitly disabled or not configured
   if (!testCommand || testCommand === null || testCommand === false) {
@@ -286,7 +287,8 @@ export async function checkTestCommand(config: NaxConfig): Promise<Check> {
  * Skips silently if command is null/false.
  */
 export async function checkLintCommand(config: NaxConfig): Promise<Check> {
-  const lintCommand = config.execution.lintCommand || (config.execution as any).lintCommand;
+  const executionConfig = config.execution as Record<string, unknown>;
+  const lintCommand = config.execution.lintCommand || executionConfig.lintCommand;
 
   // Skip if explicitly disabled or not configured
   if (!lintCommand || lintCommand === null || lintCommand === false) {
@@ -332,7 +334,8 @@ export async function checkLintCommand(config: NaxConfig): Promise<Check> {
  * Skips silently if command is null/false.
  */
 export async function checkTypecheckCommand(config: NaxConfig): Promise<Check> {
-  const typecheckCommand = config.execution.typecheckCommand || (config.execution as any).typecheckCommand;
+  const executionConfig = config.execution as Record<string, unknown>;
+  const typecheckCommand = config.execution.typecheckCommand || executionConfig.typecheckCommand;
 
   // Skip if explicitly disabled or not configured
   if (!typecheckCommand || typecheckCommand === null || typecheckCommand === false) {

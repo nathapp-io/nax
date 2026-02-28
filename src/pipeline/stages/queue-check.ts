@@ -51,11 +51,11 @@ export const queueCheckStage: PipelineStage = {
         logger.warn("queue", "Aborting: marking remaining stories as skipped");
 
         // Mark all pending stories as skipped
-        ctx.prd.userStories.forEach((s) => {
+        for (const s of ctx.prd.userStories) {
           if (s.status === "pending") {
             markStorySkipped(ctx.prd, s.id);
           }
-        });
+        }
 
         // Save PRD path from featureDir
         const prdPath = ctx.featureDir ? `${ctx.featureDir}/prd.json` : `${ctx.workdir}/nax/features/unknown/prd.json`;

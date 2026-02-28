@@ -185,8 +185,8 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
         // Feed regression failures into rectification loop
         const isTestFailure = regressionResult.status === "TEST_FAILURE" && regressionResult.output;
 
-        if (rectificationEnabled && isTestFailure) {
-          const testSummary = parseBunTestOutput(regressionResult.output!);
+        if (rectificationEnabled && isTestFailure && regressionResult.output) {
+          const testSummary = parseBunTestOutput(regressionResult.output);
 
           // Initialize rectification state
           const rectificationState: RectificationState = {
@@ -377,9 +377,9 @@ ${basePrompt}`;
 
   const isTestFailure = verificationResult.status === "TEST_FAILURE" && verificationResult.output;
 
-  if (rectificationEnabled && isTestFailure) {
+  if (rectificationEnabled && isTestFailure && verificationResult.output) {
     const rectificationConfig = config.execution.rectification;
-    const testSummary = parseBunTestOutput(verificationResult.output!);
+    const testSummary = parseBunTestOutput(verificationResult.output);
 
     // Initialize rectification state
     const rectificationState: RectificationState = {

@@ -263,7 +263,7 @@ const noopLogger: Logger = {
   info: () => {},
   debug: () => {},
   withStory: () => noopLogger,
-} as any;
+} satisfies Logger;
 
 export function getLogger(): Logger {
   if (!instance) {

@@ -220,12 +220,41 @@ function validateAgent(pluginName: string, agent: unknown): boolean {
         );
         return false;
       }
-    } else if (typeof agt[field.name] !== field.type) {
-      getSafeLogger()?.warn(
-        "plugins",
-        `Plugin '${pluginName}' validation failed: agent.${field.name} must be a ${field.type}`,
-      );
-      return false;
+    } else {
+      // Validate field.type is a valid typeof result before comparison
+      const expectedType = field.type as string;
+
+      // Use explicit type checks instead of dynamic typeof comparison
+      let isValid = false;
+      if (expectedType === "string") {
+        isValid = typeof agt[field.name] === "string";
+      } else if (expectedType === "number") {
+        isValid = typeof agt[field.name] === "number";
+      } else if (expectedType === "boolean") {
+        isValid = typeof agt[field.name] === "boolean";
+      } else if (expectedType === "symbol") {
+        isValid = typeof agt[field.name] === "symbol";
+      } else if (expectedType === "undefined") {
+        isValid = typeof agt[field.name] === "undefined";
+      } else if (expectedType === "function") {
+        isValid = typeof agt[field.name] === "function";
+      } else if (expectedType === "bigint") {
+        isValid = typeof agt[field.name] === "bigint";
+      } else {
+        getSafeLogger()?.warn(
+          "plugins",
+          `Plugin '${pluginName}' validation failed: invalid type constraint '${expectedType}'`,
+        );
+        return false;
+      }
+
+      if (!isValid) {
+        getSafeLogger()?.warn(
+          "plugins",
+          `Plugin '${pluginName}' validation failed: agent.${field.name} must be a ${expectedType}`,
+        );
+        return false;
+      }
     }
   }
 

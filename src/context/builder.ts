@@ -464,15 +464,18 @@ export function formatContextAsMarkdown(built: BuiltContext): string {
   // Progress first
   if (byType.has("progress")) {
     sections.push("## Progress\n");
-    for (const element of byType.get("progress")!) {
-      sections.push(element.content);
-      sections.push("\n");
+    const progressElements = byType.get("progress");
+    if (progressElements) {
+      for (const element of progressElements) {
+        sections.push(element.content);
+        sections.push("\n");
+      }
     }
   }
 
   // Errors second (split into ASSET_CHECK and others)
   if (byType.has("error")) {
-    const errorElements = byType.get("error")!;
+    const errorElements = byType.get("error") || [];
     const assetCheckErrors: ContextElement[] = [];
     const otherErrors: ContextElement[] = [];
 
@@ -524,36 +527,48 @@ export function formatContextAsMarkdown(built: BuiltContext): string {
 
   // Test coverage (before current story)
   if (byType.has("test-coverage")) {
-    for (const element of byType.get("test-coverage")!) {
-      sections.push(element.content);
-      sections.push("\n");
+    const testCoverageElements = byType.get("test-coverage");
+    if (testCoverageElements) {
+      for (const element of testCoverageElements) {
+        sections.push(element.content);
+        sections.push("\n");
+      }
     }
   }
 
   // Current story
   if (byType.has("story")) {
     sections.push("## Current Story\n");
-    for (const element of byType.get("story")!) {
-      sections.push(element.content);
-      sections.push("\n");
+    const storyElements = byType.get("story");
+    if (storyElements) {
+      for (const element of storyElements) {
+        sections.push(element.content);
+        sections.push("\n");
+      }
     }
   }
 
   // Dependencies
   if (byType.has("dependency")) {
     sections.push("## Dependency Stories\n");
-    for (const element of byType.get("dependency")!) {
-      sections.push(element.content);
-      sections.push("\n");
+    const dependencyElements = byType.get("dependency");
+    if (dependencyElements) {
+      for (const element of dependencyElements) {
+        sections.push(element.content);
+        sections.push("\n");
+      }
     }
   }
 
   // Relevant Files
   if (byType.has("file")) {
     sections.push("## Relevant Source Files\n");
-    for (const element of byType.get("file")!) {
-      sections.push(element.content);
-      sections.push("\n");
+    const fileElements = byType.get("file");
+    if (fileElements) {
+      for (const element of fileElements) {
+        sections.push(element.content);
+        sections.push("\n");
+      }
     }
   }
 

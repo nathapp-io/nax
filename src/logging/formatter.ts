@@ -137,7 +137,7 @@ export function formatLogEntry(entry: LogEntry, options: FormatterOptions): Form
  * Format run start event
  */
 function formatRunStart(entry: LogEntry, c: ChalkLike, timestamp: string, mode: string): FormattedEntry {
-  const data = entry.data as any;
+  const data = entry.data as Record<string, unknown>;
   const lines: string[] = [];
 
   lines.push("");
@@ -161,7 +161,7 @@ function formatRunStart(entry: LogEntry, c: ChalkLike, timestamp: string, mode: 
  * Format story start event
  */
 function formatStoryStart(entry: LogEntry, c: ChalkLike, timestamp: string, mode: string): FormattedEntry {
-  const data = entry.data as any;
+  const data = entry.data as Record<string, unknown>;
   const storyId = data.storyId || entry.storyId || "unknown";
   const title = data.storyTitle || data.title || "Untitled story";
   const complexity = data.complexity || "unknown";
@@ -196,7 +196,7 @@ function formatStoryStart(entry: LogEntry, c: ChalkLike, timestamp: string, mode
  * Format story completion event
  */
 function formatStoryComplete(entry: LogEntry, c: ChalkLike, timestamp: string, mode: string): FormattedEntry {
-  const data = entry.data as any;
+  const data = entry.data as Record<string, unknown>;
   const storyId = data.storyId || entry.storyId || "unknown";
   const success = data.success ?? true;
   const cost = data.cost || data.estimatedCost || 0;
@@ -239,7 +239,7 @@ function formatTDDSession(entry: LogEntry, c: ChalkLike, timestamp: string, mode
     return { output: "", shouldDisplay: false };
   }
 
-  const data = entry.data as any;
+  const data = entry.data as Record<string, unknown>;
   const role = data.role || "unknown";
   const roleLabel = role.replace(/-/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase());
 

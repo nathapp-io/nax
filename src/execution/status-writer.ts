@@ -119,7 +119,10 @@ export class StatusWriter {
     if (!this.statusFile || !this._prd) return;
     const safeLogger = getSafeLogger();
     try {
-      const base = this.getSnapshot(totalCost, iterations)!;
+      const base = this.getSnapshot(totalCost, iterations);
+      if (!base) {
+        throw new Error("Failed to get snapshot");
+      }
       const state: RunStateSnapshot = { ...base, ...overrides };
       await writeStatusFile(this.statusFile, buildStatusSnapshot(state));
       this._consecutiveWriteFailures = 0; // Reset counter on success

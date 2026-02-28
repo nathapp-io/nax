@@ -32,7 +32,7 @@ export const routingStage: PipelineStage = {
 
     // If story has cached routing, use it but re-derive modelTier from current config
     // Otherwise, perform fresh classification
-    let routing;
+    let routing: { complexity: string; testStrategy: string; modelTier: string };
     if (ctx.story.routing) {
       // Use cached complexity/testStrategy, but re-derive modelTier from current config
       routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);

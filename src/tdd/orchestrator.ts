@@ -145,7 +145,7 @@ async function runTddSession(
 
   // Check isolation based on role and skipIsolation flag.
   // Verifier always runs isolation check regardless of lite mode.
-  let isolation;
+  let isolation: { passed: boolean; violations: string[] } | undefined;
   if (!skipIsolation) {
     if (role === "test-writer") {
       const allowedPaths = config.tdd.testWriterAllowedPaths ?? ["src/index.ts", "src/**/index.ts"];

@@ -87,7 +87,11 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     if (!this.pidRegistries.has(workdir)) {
       this.pidRegistries.set(workdir, new PidRegistry(workdir));
     }
-    return this.pidRegistries.get(workdir)!;
+    const registry = this.pidRegistries.get(workdir);
+    if (!registry) {
+      throw new Error(`PidRegistry not found for workdir: ${workdir}`);
+    }
+    return registry;
   }
 
   /**
@@ -655,7 +659,7 @@ Respond with ONLY a JSON array (no markdown code fences):
     }
 
     // Parse JSON
-    let parsed: any;
+    let parsed: unknown;
     try {
       parsed = JSON.parse(jsonText.trim());
     } catch (error) {
@@ -670,31 +674,36 @@ Respond with ONLY a JSON array (no markdown code fences):
     }
 
     // Map to DecomposedStory[] with validation
-    const stories: DecomposedStory[] = parsed.map((item: any, index: number) => {
-      if (!item.id || typeof item.id !== "string") {
+    const stories: DecomposedStory[] = parsed.map((item: unknown, index: number) => {
+      // Type guard: ensure item is an object
+      if (typeof item !== "object" || item === null) {
+        throw new Error(`Story at index ${index} is not an object`);
+      }
+      const record = item as Record<string, unknown>;
+      if (!record.id || typeof record.id !== "string") {
         throw new Error(`Story at index ${index} missing valid 'id' field`);
       }
-      if (!item.title || typeof item.title !== "string") {
-        throw new Error(`Story ${item.id} missing valid 'title' field`);
+      if (!record.title || typeof record.title !== "string") {
+        throw new Error(`Story ${record.id} missing valid 'title' field`);
       }
 
       return {
-        id: item.id,
-        title: item.title,
-        description: String(item.description || item.title),
-        acceptanceCriteria: Array.isArray(item.acceptanceCriteria)
-          ? item.acceptanceCriteria
+        id: record.id,
+        title: record.title,
+        description: String(record.description || record.title),
+        acceptanceCriteria: Array.isArray(record.acceptanceCriteria)
+          ? record.acceptanceCriteria
           : ["Implementation complete"],
-        tags: Array.isArray(item.tags) ? item.tags : [],
-        dependencies: Array.isArray(item.dependencies) ? item.dependencies : [],
-        complexity: this.validateComplexity(item.complexity),
+        tags: Array.isArray(record.tags) ? record.tags : [],
+        dependencies: Array.isArray(record.dependencies) ? record.dependencies : [],
+        complexity: this.validateComplexity(record.complexity),
         // contextFiles: prefer the new field; fall back to legacy relevantFiles from older LLM responses
-        contextFiles: Array.isArray(item.contextFiles)
-          ? item.contextFiles
-          : Array.isArray(item.relevantFiles)
-            ? item.relevantFiles
+        contextFiles: Array.isArray(record.contextFiles)
+          ? record.contextFiles
+          : Array.isArray(record.relevantFiles)
+            ? record.relevantFiles
             : [],
-        relevantFiles: Array.isArray(item.relevantFiles) ? item.relevantFiles : [],
+        relevantFiles: Array.isArray(record.relevantFiles) ? record.relevantFiles : [],
         reasoning: String(item.reasoning || "No reasoning provided"),
         estimatedLOC: Number(item.estimatedLOC) || 0,
         risks: Array.isArray(item.risks) ? item.risks : [],
@@ -720,7 +729,7 @@ Respond with ONLY a JSON array (no markdown code fences):
    * @param value - Complexity value from agent
    * @returns Valid Complexity type
    */
-  private validateComplexity(value: any): "simple" | "medium" | "complex" | "expert" {
+  private validateComplexity(value: unknown): "simple" | "medium" | "complex" | "expert" {
     if (value === "simple" || value === "medium" || value === "complex" || value === "expert") {
       return value;
     }

@@ -83,8 +83,8 @@ export function extractTestStructure(source: string): { describes: DescribeBlock
   // Match describe/test/it calls anywhere (not just line-start) to handle single-line files
   const linePattern = /(?:^|\s|;|\{)(describe|test|it)\s*\(\s*(['"`])(.*?)\2/gm;
 
-  let match: RegExpExecArray | null;
-  while ((match = linePattern.exec(source)) !== null) {
+  let match: RegExpExecArray | null = linePattern.exec(source);
+  while (match !== null) {
     const keyword = match[1];
     const name = match[3];
 
@@ -104,6 +104,7 @@ export function extractTestStructure(source: string): { describes: DescribeBlock
         describes[describes.length - 1].tests.push(name);
       }
     }
+    match = linePattern.exec(source);
   }
 
   return { describes, testCount };

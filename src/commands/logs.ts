@@ -187,11 +187,12 @@ async function extractRunSummary(filePath: string): Promise<RunSummary | null> {
 
       if (entry.stage === "run.start") {
         startedAt = entry.timestamp;
-        total = (entry.data as any)?.totalStories || 0;
+        const runData = entry.data as Record<string, unknown>;
+        total = typeof runData?.totalStories === "number" ? runData.totalStories : 0;
       }
 
       if (entry.stage === "story.complete" || entry.stage === "agent.complete") {
-        const data = entry.data as any;
+        const data = entry.data as Record<string, unknown>;
         const success = data?.success ?? true;
         const action = data?.finalAction || data?.action;
 

@@ -63,7 +63,7 @@ export function AgentPanel({ focused = false, outputLines = [] }: AgentPanelProp
       {/* Output buffer */}
       <Box flexDirection="column" paddingX={1} paddingY={1}>
         {hasOutput ? (
-          bufferedLines.map((line, i) => <Text key={i}>{line}</Text>)
+          bufferedLines.map((line, i) => <Text key={`line-${i}-${line.slice(0, 20)}`}>{line}</Text>)
         ) : (
           <Text dimColor>
             <Spinner type="dots" /> Waiting for agent...
