@@ -22,6 +22,14 @@ interface WebhookConfig {
   maxPayloadBytes?: number;
 }
 
+/** Zod schema for validating webhook plugin config */
+const WebhookConfigSchema = z.object({
+  url: z.string().url().optional(),
+  callbackPort: z.number().int().min(1024).max(65535).optional(),
+  secret: z.string().optional(),
+  maxPayloadBytes: z.number().int().positive().optional(),
+});
+
 /** Zod schema for validating webhook callback payloads */
 const InteractionResponseSchema = z.object({
   requestId: z.string(),
@@ -38,18 +46,19 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
   name = "webhook";
   private config: WebhookConfig = {};
   private server: Server | null = null;
+  private serverStartPromise: Promise<void> | null = null;
   private pendingResponses = new Map<string, InteractionResponse>();
 
   async init(config: Record<string, unknown>): Promise<void> {
-    this.config = config as WebhookConfig;
+    const cfg = WebhookConfigSchema.parse(config);
+    this.config = {
+      url: cfg.url,
+      callbackPort: cfg.callbackPort ?? 8765,
+      secret: cfg.secret,
+      maxPayloadBytes: cfg.maxPayloadBytes ?? 1024 * 1024, // 1MB default
+    };
     if (!this.config.url) {
       throw new Error("Webhook plugin requires 'url' config");
-    }
-    if (!this.config.callbackPort) {
-      this.config.callbackPort = 8765;
-    }
-    if (!this.config.maxPayloadBytes) {
-      this.config.maxPayloadBytes = 1024 * 1024; // 1MB default
     }
   }
 
@@ -129,17 +138,23 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
   }
 
   /**
-   * Start HTTP server for callbacks
+   * Start HTTP server for callbacks (with mutex to prevent race conditions)
    */
   private async startServer(): Promise<void> {
     if (this.server) return; // Already running
-
-    const port = this.config.callbackPort ?? 8765;
-
-    this.server = Bun.serve({
-      port,
-      fetch: (req) => this.handleRequest(req),
-    }) as unknown as Server;
+    if (this.serverStartPromise) {
+      await this.serverStartPromise;
+      return;
+    }
+    this.serverStartPromise = (async () => {
+      const port = this.config.callbackPort ?? 8765;
+      this.server = Bun.serve({
+        port,
+        fetch: (req) => this.handleRequest(req),
+      }) as unknown as Server;
+    })();
+    await this.serverStartPromise;
+    this.serverStartPromise = null;
   }
 
   /**
@@ -152,6 +167,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
     const bunServer = this.server as unknown as { stop: () => void };
     bunServer.stop();
     this.server = null;
+    this.serverStartPromise = null;
   }
 
   /**

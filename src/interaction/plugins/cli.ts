@@ -5,7 +5,11 @@
  */
 
 import * as readline from "node:readline";
+import { z } from "zod";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
+
+/** Zod schema for validating CLI plugin config */
+const CLIConfigSchema = z.object({}).passthrough();
 
 /**
  * CLI plugin for interactive prompts via stdin/stdout
@@ -15,7 +19,8 @@ export class CLIInteractionPlugin implements InteractionPlugin {
   private pendingRequests = new Map<string, InteractionRequest>();
   private rl: readline.Interface | null = null;
 
-  async init(): Promise<void> {
+  async init(config: Record<string, unknown> = {}): Promise<void> {
+    CLIConfigSchema.parse(config);
     // Initialize readline interface
     this.rl = readline.createInterface({
       input: process.stdin,

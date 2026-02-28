@@ -5,6 +5,7 @@
  * Never auto-approves security-review triggers.
  */
 
+import { z } from "zod";
 import type { NaxConfig } from "../../config";
 import { resolveModel } from "../../config";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
@@ -20,6 +21,14 @@ interface AutoConfig {
   /** Global nax config (injected by chain) */
   naxConfig?: NaxConfig;
 }
+
+/** Zod schema for validating auto plugin config */
+const AutoConfigSchema = z.object({
+  model: z.string().optional(),
+  confidenceThreshold: z.number().min(0).max(1).optional(),
+  maxCostPerDecision: z.number().positive().optional(),
+  naxConfig: z.any().optional(), // NaxConfig is complex, skip deep validation
+});
 
 /** LLM decision response */
 interface DecisionResponse {
@@ -37,16 +46,13 @@ export class AutoInteractionPlugin implements InteractionPlugin {
   private config: AutoConfig = {};
 
   async init(config: Record<string, unknown>): Promise<void> {
-    this.config = config as AutoConfig;
-    if (!this.config.model) {
-      this.config.model = "fast";
-    }
-    if (!this.config.confidenceThreshold) {
-      this.config.confidenceThreshold = 0.7;
-    }
-    if (!this.config.maxCostPerDecision) {
-      this.config.maxCostPerDecision = 0.01;
-    }
+    const cfg = AutoConfigSchema.parse(config);
+    this.config = {
+      model: cfg.model ?? "fast",
+      confidenceThreshold: cfg.confidenceThreshold ?? 0.7,
+      maxCostPerDecision: cfg.maxCostPerDecision ?? 0.01,
+      naxConfig: cfg.naxConfig,
+    };
   }
 
   async destroy(): Promise<void> {

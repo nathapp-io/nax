@@ -207,7 +207,7 @@ async function runRegressionGate(
   }
 
   logger?.info("regression-gate", "Running full-suite regression gate");
-  const fullSuiteCommand = config.quality.commands.test!;
+  const fullSuiteCommand = config.quality.commands.test ?? "bun test";
   const regressionResult = await runVerification({
     workingDirectory: workdir,
     expectedFiles: getExpectedFiles(story),

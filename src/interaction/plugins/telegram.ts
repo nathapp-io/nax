@@ -5,6 +5,7 @@
  * Poll for callback query or reply message responses.
  */
 
+import { z } from "zod";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 
 /** Telegram plugin configuration */
@@ -14,6 +15,12 @@ interface TelegramConfig {
   /** Chat ID (or env var NAX_TELEGRAM_CHAT_ID) */
   chatId?: string;
 }
+
+/** Zod schema for validating telegram plugin config */
+const TelegramConfigSchema = z.object({
+  botToken: z.string().optional(),
+  chatId: z.string().optional(),
+});
 
 /** Telegram API response types */
 interface TelegramMessage {
@@ -45,7 +52,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   private readonly maxBackoffMs = 30000; // Max 30 seconds between retries
 
   async init(config: Record<string, unknown>): Promise<void> {
-    const cfg = config as TelegramConfig;
+    const cfg = TelegramConfigSchema.parse(config);
     this.botToken = cfg.botToken ?? process.env.NAX_TELEGRAM_TOKEN ?? null;
     this.chatId = cfg.chatId ?? process.env.NAX_TELEGRAM_CHAT_ID ?? null;
 
