@@ -258,14 +258,13 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
       const currentTestStrategy = s.routing?.testStrategy ?? ctx.routing.testStrategy;
       const shouldSwitchToTestAfter = escalateRetryAsTestAfter && currentTestStrategy !== "test-after";
 
-      const updatedRouting = s.routing
-        ? {
-            ...s.routing,
-            modelTier: shouldSwitchToTestAfter ? s.routing.modelTier : nextTier,
+      const baseRouting = s.routing ?? { ...ctx.routing };
+      const updatedRouting = {
+            ...baseRouting,
+            modelTier: shouldSwitchToTestAfter ? baseRouting.modelTier : nextTier,
             ...(escalateRetryAsLite ? { testStrategy: "three-session-tdd-lite" as const } : {}),
             ...(shouldSwitchToTestAfter ? { testStrategy: "test-after" as const } : {}),
-          }
-        : undefined;
+          };
 
       // BUG-011: Reset attempt counter on tier escalation
       const currentStoryTier = s.routing?.modelTier ?? ctx.routing.modelTier;
