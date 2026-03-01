@@ -333,7 +333,7 @@ export async function checkTypecheckCommand(config: NaxConfig): Promise<Check> {
       name: "typecheck-command-works",
       tier: "blocker",
       passed,
-      message: passed ? "Typecheck command is available" : `Typecheck command failed: ${typecheckCommand}`,
+      message: passed ? `Typecheck command is available: ${typecheckCommand}` : `Typecheck command failed: ${typecheckCommand}`,
     };
   } catch (error) {
     return {
