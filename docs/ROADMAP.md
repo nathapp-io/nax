@@ -149,13 +149,16 @@
 - [x] ~~BUG-011: Escalation tier budget not enforced (fixed v0.14.0)~~
 
 ### Features
-- [ ] `nax unlock` command
+- [x] ~~`nax unlock` command (shipped v0.16.1 dogfood run 2026-03-01)~~
 - [x] ~~Constitution file support (shipped v0.15.3 US-010)~~
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
 - [ ] `nax diagnose --ai` flag (LLM-assisted, future version TBD)
 - [ ] **Auto-decompose oversized stories** — When story size gate triggers, offer via interaction chain to auto-decompose using `nax analyse`. User confirms → LLM breaks story into smaller sub-stories → updates PRD. Builds on v0.16.0 gate.
 - [ ] VitePress documentation site — full CLI reference, hosted as standalone docs (pre-publish requirement)
+
+### Bugs (Found via Dogfooding)
+- [ ] **BUG-012: Greenfield detection ignores pre-existing test files** — Greenfield check counts files created *during* the test-writer session only. If tests already exist in git (e.g. pre-written or committed separately), the test-writer session produces 0 new files → triggers false "greenfield" pause. Fix: before running test-writer, scan git for existing test files matching the story's scope. If found and passing → skip test-writer, proceed directly to implementer. Found: 2026-03-01 dogfood run (nax unlock feature).
 
 ---
 
@@ -165,4 +168,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-01 (v0.16.1 planned)*
+*Last updated: 2026-03-01 (v0.16.1 shipped; BUG-012 found via dogfooding)*
