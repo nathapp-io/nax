@@ -6,6 +6,32 @@
 
 ---
 
+## Next: v0.16.1 — Project Context Generator
+
+**Theme:** Replace constitution generator with a proper project context system
+**Status:** 🔲 Planned
+
+**User Stories:**
+- [ ] US-001: Introduce `nax/context.md` as the source for agent config generation
+  - Separate from `nax/constitution.md` (which remains nax runtime behavior only)
+  - `context.md` holds: coding standards, architecture decisions, forbidden patterns, project-specific rules
+  - `nax init` creates a starter template with placeholder sections
+- [ ] US-002: Auto-injection of project metadata at generate time
+  - Tech stack detection from `package.json` dependencies
+  - Directory structure scan (key dirs)
+  - Test framework + build tooling detection
+  - Lint/format config detection (biome, eslint)
+  - Configurable in `nax/config.json` under `generate.autoInject` (default: enabled)
+  - Individual injectors can be disabled
+- [ ] US-003: `nax generate` CLI command
+  - Reads `nax/context.md` + auto-injects metadata → writes agent configs
+  - `nax generate` (all agents), `nax generate --agent claude`, `--dry-run`
+  - Removes old `nax constitution generate` command entirely
+- [ ] US-004: Update generators to merge manual context + auto-injected metadata
+  - Each generator (claude, cursor, windsurf, aider, opencode) formats the combined output
+
+---
+
 ## v0.16.0 — Story Size Gate (SHIPPED)
 
 **Theme:** Prevent oversized stories from burning tokens and producing low-quality output
@@ -143,4 +169,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-01 (v0.16.0 shipped)*
+*Last updated: 2026-03-01 (v0.16.1 planned)*
