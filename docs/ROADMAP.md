@@ -13,22 +13,18 @@
 
 **User Stories:**
 - [ ] US-001: Introduce `nax/context.md` as the source for agent config generation
-  - Separate from `nax/constitution.md` (which remains nax runtime behavior only)
-  - `context.md` holds: coding standards, architecture decisions, forbidden patterns, project-specific rules
-  - `nax init` creates a starter template with placeholder sections
-- [ ] US-002: Auto-injection of project metadata at generate time
-  - Tech stack detection from `package.json` dependencies
-  - Directory structure scan (key dirs)
-  - Test framework + build tooling detection
-  - Lint/format config detection (biome, eslint)
-  - Configurable in `nax/config.json` under `generate.autoInject` (default: enabled)
-  - Individual injectors can be disabled
-- [ ] US-003: `nax generate` CLI command
-  - Reads `nax/context.md` + auto-injects metadata → writes agent configs
-  - `nax generate` (all agents), `nax generate --agent claude`, `--dry-run`
-  - Removes old `nax constitution generate` command entirely
-- [ ] US-004: Update generators to merge manual context + auto-injected metadata
-  - Each generator (claude, cursor, windsurf, aider, opencode) formats the combined output
+  - Separate from `nax/constitution.md` (nax runtime behavior only — unchanged)
+  - `context.md` holds: coding standards, architecture decisions, forbidden patterns
+  - `nax init` scaffolds `nax/context.md` starter template (placeholder sections)
+- [ ] US-002: Auto-inject project metadata at generate time
+  - Read `package.json`: project name + key dependencies (auto-detect stack)
+  - Read test/lint commands from `nax/config.json` (already loaded)
+  - Configurable: `generate.autoInject: true` (default) in `nax/config.json`; set `false` to skip
+- [ ] US-003: `nax generate` top-level CLI command
+  - `nax generate` → all agents | `--agent <name>` → specific | `--dry-run` → preview
+  - Remove `nax constitution generate` entirely (no deprecation alias)
+- [ ] US-004: Update all generators to accept merged `ContextContent` (manual + auto-injected)
+  - `ContextContent` replaces `ConstitutionContent` in generator types
 
 ---
 
