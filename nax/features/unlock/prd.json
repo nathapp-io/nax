@@ -18,12 +18,19 @@
         "AC6: Unit tests in test/unit/commands/unlock.test.ts cover all four scenarios (no lock, alive, dead, force)"
       ],
       "complexity": "simple",
-      "status": "pending",
+      "status": "paused",
       "contextFiles": [
         "src/commands/precheck.ts",
         "src/execution/lock.ts",
         "bin/nax.ts"
-      ]
+      ],
+      "attempts": 1,
+      "priorErrors": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "storyPoints": 1
     }
-  ]
+  ],
+  "updatedAt": "2026-03-01T09:04:03.679Z"
 }

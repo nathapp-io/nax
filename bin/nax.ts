@@ -61,6 +61,7 @@ import { generateCommand } from "../src/cli/generate";
 import { diagnose } from "../src/commands/diagnose";
 import { logsCommand } from "../src/commands/logs";
 import { precheckCommand } from "../src/commands/precheck";
+import { unlockCommand } from "../src/commands/unlock";
 import { DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from "../src/config";
 import { run } from "../src/execution";
 import { loadHooksConfig } from "../src/hooks";
@@ -730,6 +731,24 @@ program
         feature: options.feature,
         dir: options.dir,
         json: options.json,
+      });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+// ── unlock ───────────────────────────────────────────
+program
+  .command("unlock")
+  .description("Release stale lock from crashed nax process")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("--force", "Skip liveness check and remove unconditionally", false)
+  .action(async (options) => {
+    try {
+      await unlockCommand({
+        dir: options.dir,
+        force: options.force,
       });
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
