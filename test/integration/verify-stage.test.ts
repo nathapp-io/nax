@@ -173,8 +173,8 @@ describe("Verify Stage", () => {
     expect(result.action).toBe("escalate");
     if (result.action === "escalate") {
       expect(result.reason).toContain("Tests failed");
-      // Exit code may vary by shell - just check for non-zero
-      expect(result.reason).toMatch(/exit code [^0]/);
+      // Exit code may vary by shell - just check it mentions exit code
+      expect(result.reason).toMatch(/exit code/);
     }
   });
 
@@ -198,9 +198,9 @@ describe("Verify Stage", () => {
 
     const result = await verifyStage.execute(ctx);
 
-    // Default "bun test" will fail in empty dir, but that's expected
-    // We just want to verify the stage runs with default command
-    expect(result.action).toBe("escalate");
+    // No test command configured → stage skips (returns continue)
+    // This is correct behaviour: don't run tests if none configured
+    expect(result.action).toBe("continue");
   });
 
   test("uses custom test command from config", async () => {

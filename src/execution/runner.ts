@@ -13,7 +13,7 @@ import type { LoadedHooksConfig } from "../hooks";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
-import { countStories } from "../prd";
+import { countStories, isComplete } from "../prd";
 import type { UserStory } from "../prd";
 import { clearCache as clearLlmCache, routeBatch as llmRouteBatch } from "../routing/strategies/llm";
 import { precomputeBatchPlan } from "./batching";

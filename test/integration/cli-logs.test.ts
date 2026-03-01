@@ -243,8 +243,8 @@ describe("nax logs CLI integration", () => {
 
   describe("--follow mode", () => {
     test("nax logs --follow streams in real-time", async () => {
-      // Follow mode is long-running, so we just verify it starts
-      // and doesn't exit immediately
+      // Follow mode prints existing log entries then watches for new ones.
+      // We verify the process starts and produces stdout output.
       const proc = spawn("bun", ["run", NAX_BIN, "logs", "--follow", "-d", projectDir], {
         cwd: process.cwd(),
       });
@@ -254,8 +254,8 @@ describe("nax logs CLI integration", () => {
         started = true;
       });
 
-      // Wait for it to start streaming
-      await Bun.sleep(200);
+      // Allow up to 1s for Bun process startup + log output (slow VMs need more time)
+      await Bun.sleep(1000);
 
       // Kill the process
       proc.kill();
@@ -273,7 +273,7 @@ describe("nax logs CLI integration", () => {
         started = true;
       });
 
-      await Bun.sleep(200);
+      await Bun.sleep(1000);
       proc.kill();
 
       expect(started).toBe(true);

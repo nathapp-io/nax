@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { loadPlugins } from "../../../src/plugins/loader";
+import { loadPlugins, _setPluginErrorSink, _resetPluginErrorSink } from "../../../src/plugins/loader";
 import type { PluginConfigEntry } from "../../../src/plugins/types";
 import type { NaxPlugin } from "../../../src/plugins/types";
 
@@ -346,10 +346,9 @@ describe("Plugin config path resolution (US-007)", () => {
   describe("AC4: Clear error message when plugin module not found", () => {
     test("logs helpful error for missing relative path", async () => {
       const errorLogs: string[] = [];
-      const originalError = console.error;
-      console.error = (...args: unknown[]) => {
+      _setPluginErrorSink((...args: unknown[]) => {
         errorLogs.push(args.map((arg) => String(arg)).join(" "));
-      };
+      });
 
       try {
         const configPlugins: PluginConfigEntry[] = [
@@ -373,16 +372,15 @@ describe("Plugin config path resolution (US-007)", () => {
         expect(errorOutput).toContain("Attempted path:");
         expect(errorOutput).toContain(path.join(tempDir, "nonexistent/plugin.ts"));
       } finally {
-        console.error = originalError;
+        _resetPluginErrorSink();
       }
     });
 
     test("logs helpful error for missing absolute path", async () => {
       const errorLogs: string[] = [];
-      const originalError = console.error;
-      console.error = (...args: unknown[]) => {
+      _setPluginErrorSink((...args: unknown[]) => {
         errorLogs.push(args.map((arg) => String(arg)).join(" "));
-      };
+      });
 
       try {
         const absolutePath = path.join(tempDir, "missing-plugin.ts");
@@ -404,7 +402,7 @@ describe("Plugin config path resolution (US-007)", () => {
         expect(errorOutput).toContain("Failed to load plugin module");
         expect(errorOutput).toContain(absolutePath);
       } finally {
-        console.error = originalError;
+        _resetPluginErrorSink();
       }
     });
   });

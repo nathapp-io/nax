@@ -133,6 +133,9 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   // Initialize interaction chain (US-008) — do this BEFORE precheck so story size prompts can use it
   const interactionChain = await initInteractionChain(config, headless);
 
+  // ── Prime StatusWriter with PRD so precheck-failed can be recorded ─────────
+  statusWriter.setPrd(prd);
+
   // ── Run precheck validations (unless --skip-precheck) ──────────────────────
   if (!skipPrecheck) {
     const { runPrecheckValidation } = await import("./precheck-runner");

@@ -246,9 +246,12 @@ describe("Precheck Integration with nax run", () => {
       const prdPath = join(featureDir, "prd.json");
       await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
-      // Commit the PRD file so the only uncommitted change is test.txt
+      // Commit the PRD file
       spawnSync(["git", "add", "."], { cwd: dirtyDir });
       spawnSync(["git", "commit", "-m", "Add PRD"], { cwd: dirtyDir });
+
+      // Create a new dirty file AFTER the commit so working tree is actually dirty
+      await Bun.write(join(dirtyDir, "dirty.txt"), "uncommitted change");
 
       const logFilePath = join(featureDir, "runs", "test.jsonl");
       const statusFilePath = join(featureDir, "status.json");

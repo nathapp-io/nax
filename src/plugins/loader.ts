@@ -9,20 +9,34 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { getLogger } from "../logger";
+import { getSafeLogger as _getSafeLoggerFromModule } from "../logger";
 import { PluginRegistry } from "./registry";
 import type { NaxPlugin, PluginConfigEntry } from "./types";
 import { validatePlugin } from "./validator";
 
 /**
- * Safely get logger instance, returns null if not initialized
+ * Swappable error sink — defaults to console.error.
+ * Tests can replace this to capture plugin error output.
+ * @internal
+ */
+export let _pluginErrorSink: (...args: unknown[]) => void = (...args) => console.error(...args);
+
+/** @internal — for testing only */
+export function _setPluginErrorSink(fn: (...args: unknown[]) => void): void {
+  _pluginErrorSink = fn;
+}
+
+/** @internal — reset to default */
+export function _resetPluginErrorSink(): void {
+  _pluginErrorSink = (...args) => console.error(...args);
+}
+
+/**
+ * Safely get logger instance, returns null if not initialized.
+ * Delegates to the module's getSafeLogger which correctly returns null for noopLogger.
  */
 function getSafeLogger() {
-  try {
-    return getLogger();
-  } catch {
-    return null;
-  }
+  return _getSafeLoggerFromModule();
 }
 
 /**
@@ -250,14 +264,21 @@ async function loadAndValidatePlugin(
 
     // Provide helpful error message with attempted paths
     if (errorMsg.includes("Cannot find module") || errorMsg.includes("ENOENT")) {
-      logger?.error("plugins", `Failed to load plugin module '${displayPath}'`);
+      const msg = `Failed to load plugin module '${displayPath}'`;
+      logger?.error("plugins", msg);
       logger?.error("plugins", `Attempted path: ${modulePath}`);
       logger?.error(
         "plugins",
         "Ensure the module exists and the path is correct (relative paths are resolved from project root)",
       );
+      // Always emit to sink so tests (and headless mode without logger) can capture output
+      _pluginErrorSink(`[plugins] ${msg}`);
+      _pluginErrorSink(`[plugins] Attempted path: ${modulePath}`);
+      _pluginErrorSink("[plugins] Ensure the module exists and the path is correct (relative paths are resolved from project root)");
     } else {
       logger?.warn("plugins", `Failed to load plugin from '${displayPath}'`, { error: errorMsg });
+      // Always emit to sink
+      _pluginErrorSink(`[plugins] Failed to load plugin from '${displayPath}': ${errorMsg}`);
     }
     return null;
   }

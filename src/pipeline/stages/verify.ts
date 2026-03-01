@@ -72,7 +72,7 @@ export const verifyStage: PipelineStage = {
 
       return {
         action: "escalate",
-        reason: `Tests failed (${result.status})`,
+        reason: `Tests failed (exit code ${result.status ?? "non-zero"})`,
       };
     }
 

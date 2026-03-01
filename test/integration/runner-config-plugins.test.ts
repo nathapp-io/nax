@@ -13,7 +13,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { loadConfig } from "../../src/config/loader";
-import { loadPlugins } from "../../src/plugins/loader";
+import { loadPlugins, _setPluginErrorSink, _resetPluginErrorSink } from "../../src/plugins/loader";
 
 async function createTempDir(): Promise<string> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-runner-config-plugins-"));
@@ -252,12 +252,11 @@ export default {
   });
 
   test("missing plugin module from config.plugins[] logs clear error (does not crash runner)", async () => {
-    // Capture console.error output
+    // Capture plugin error output via the swappable sink (Bun ESM caches console at import time)
     const errorLogs: string[] = [];
-    const originalError = console.error;
-    console.error = (...args: unknown[]) => {
+    _setPluginErrorSink((...args: unknown[]) => {
       errorLogs.push(args.map((arg) => String(arg)).join(" "));
-    };
+    });
 
     try {
       // Create config with non-existent plugin
@@ -293,7 +292,7 @@ export default {
       expect(errorOutput).toContain("Attempted path:");
       expect(errorOutput).toContain(path.join(projectRoot, "nonexistent/missing-plugin.ts"));
     } finally {
-      console.error = originalError;
+      _resetPluginErrorSink();
     }
   });
 
