@@ -7,8 +7,10 @@
 
 /** Auto-injected project metadata */
 export interface ProjectMetadata {
-  /** Project name from package.json */
+  /** Project name from manifest file */
   name?: string;
+  /** Detected language/runtime (e.g. "TypeScript", "Go", "Rust", "Python") */
+  language?: string;
   /** Key dependencies (framework, ORM, test runner, etc.) */
   dependencies: string[];
   /** Test command from nax config */
