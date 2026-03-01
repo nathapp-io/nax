@@ -1,6 +1,8 @@
 {
   "feature": "unlock",
   "version": "1.0.0",
+  "project": "nax",
+  "branchName": "feat/unlock-command",
   "description": "Implement `nax unlock` CLI command to safely release a stale execution lock (nax.lock) without requiring manual filesystem access.",
   "userStories": [
     {
