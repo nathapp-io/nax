@@ -6,14 +6,27 @@
 
 ---
 
-## Next: v0.16.0 — TBD
+## v0.16.0 — Story Size Gate (SHIPPED)
 
-**Options:**
-1. **Plugin Fallback Cascade** (REL-001 from v0.15.0 review) — Implement plugin chain fallback when primary plugin fails
-2. **v0.14.5 Remaining Cleanup** — Complete deferred MEDIUM/STYLE items:
-   - [ ] **SEC-2:** Sandbox plugin import boundary
-   - [x] **STYLE-1:** Split runner.ts into focused modules (v0.15.0 Phase 1 complete)
-   - [x] **STYLE-2:** Extract notifyReporters() helper (v0.15.0 Phase 1 complete)
+**Theme:** Prevent oversized stories from burning tokens and producing low-quality output
+**Status:** ✅ Shipped 2026-03-01
+**Release Notes:** [releases/v0.16.0.md](releases/v0.16.0.md)
+
+**User Stories:**
+- [ ] US-001: Story size precheck gate
+  - Runs during precheck phase (before any agent work)
+  - Evaluates story complexity using heuristic signals:
+    - Acceptance criteria count
+    - Description/story text length (token estimate)
+    - Number of sub-tasks or bullet points
+  - Configurable thresholds in `nax/config.json` (sensible defaults TBD via experimentation)
+  - Gate behavior: **Yellow (warn)** — flags via interaction chain, allows user override
+  - If user skips warning → story proceeds as normal
+  - If user agrees story is too large → run aborts for that story with "needs decomposition" status
+
+**Deferred to v0.16.0:**
+- [ ] **SEC-2:** Sandbox plugin import boundary
+- [ ] Plugin Fallback Cascade (REL-001 from v0.15.0 review)
 
 ---
 
@@ -85,6 +98,7 @@
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.16.0 | Story Size Gate | 2026-03-01 | [releases/v0.16.0.md](releases/v0.16.0.md) |
 | v0.15.3 | Constitution Generator + Runner Interaction Wiring | 2026-02-28 | [releases/v0.15.3.md](releases/v0.15.3.md) |
 | v0.15.1 | Architectural Compliance + Security Hardening | 2026-02-28 | [releases/v0.15.1.md](releases/v0.15.1.md) |
 | v0.15.0 | Interactive Pipeline | 2026-02-28 | [releases/v0.15.0.md](releases/v0.15.0.md) |
@@ -118,6 +132,7 @@
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
 - [ ] `nax diagnose --ai` flag (LLM-assisted, future version TBD)
+- [ ] **Auto-decompose oversized stories** — When story size gate triggers, offer via interaction chain to auto-decompose using `nax analyse`. User confirms → LLM breaks story into smaller sub-stories → updates PRD. Builds on v0.16.0 gate.
 - [ ] VitePress documentation site — full CLI reference, hosted as standalone docs (pre-publish requirement)
 
 ---
@@ -128,4 +143,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-02-28 (v0.15.3 shipped)*
+*Last updated: 2026-03-01 (v0.16.0 shipped)*
