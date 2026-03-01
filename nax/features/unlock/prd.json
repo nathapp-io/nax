@@ -8,17 +8,22 @@
     {
       "id": "US-001",
       "title": "nax unlock command releases stale lock safely",
-      "description": "As a developer whose nax run crashed or was killed, I need a `nax unlock` command so I can release the stale nax.lock without manually deleting files.\n\nThe command must:\n- Read nax.lock and verify the holding process is actually dead before removing\n- Refuse to unlock if the lock-holding process is still alive (active run)\n- Print the lock state (PID, age, alive/dead) before acting\n- Accept `--force` flag to skip the liveness check and remove unconditionally\n- Accept `-d <dir>` / `--dir <dir>` flag (same as other nax commands) to target a specific project directory (defaults to cwd)\n- Exit 0 on success, non-zero on failure\n- Integrate into the existing Commander CLI in `bin/nax.ts`",
+      "description": "Add a `nax unlock` CLI command to bin/nax.ts and implement its logic in src/commands/unlock.ts.\n\nExisting patterns to follow:\n- Look at src/commands/precheck.ts for a complete command example (imports, structure, Commander wiring)\n- Look at src/execution/lock.ts for acquireLock/releaseLock/isProcessAlive logic\n- Look at test/unit/commands/ for existing unit test examples (e.g. test/unit/commands/precheck.test.ts)\n- Tests go in: test/unit/commands/unlock.test.ts\n- Test runner: `bun test --no-coverage test/unit/commands/unlock.test.ts`\n\nThe command must:\n- Read nax.lock and verify the holding process is actually dead before removing\n- Refuse to unlock if the lock-holding process is still alive (active run)\n- Print the lock state (PID, age, alive/dead) before acting\n- Accept `--force` flag to skip the liveness check and remove unconditionally\n- Accept `-d <dir>` / `--dir <dir>` flag to target a specific project directory (defaults to cwd)\n- Exit 0 on success, non-zero on failure\n- Export an `unlockCommand` function and wire into bin/nax.ts program",
       "acceptanceCriteria": [
         "AC1: `nax unlock` with no lock file prints 'No lock file found' and exits 0",
         "AC2: `nax unlock` when lock PID is alive prints error 'nax is still running (PID <n>). Use --force to override.' and exits 1 without deleting lock",
         "AC3: `nax unlock` when lock PID is dead prints lock info (PID, age in minutes) then removes nax.lock and exits 0",
         "AC4: `nax unlock --force` removes nax.lock unconditionally regardless of process state and exits 0",
         "AC5: `nax unlock -d <path>` targets the specified directory (not cwd)",
-        "AC6: Unit tests cover all four scenarios (no lock, alive, dead, force)"
+        "AC6: Unit tests in test/unit/commands/unlock.test.ts cover all four scenarios (no lock, alive, dead, force)"
       ],
       "complexity": "simple",
-      "status": "pending"
+      "status": "pending",
+      "contextFiles": [
+        "src/commands/precheck.ts",
+        "src/execution/lock.ts",
+        "bin/nax.ts"
+      ]
     }
   ]
 }
