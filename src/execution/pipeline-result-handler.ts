@@ -270,6 +270,12 @@ export function applyCachedRouting(
   const overrides: Partial<ReturnType<typeof routeTask>> = {};
   if (story.routing.complexity) {
     overrides.complexity = story.routing.complexity;
+  }
+  // BUG-013 fix: Use story.routing.modelTier directly if present (set by escalation).
+  // Only derive from complexity if modelTier is not explicitly set.
+  if (story.routing.modelTier) {
+    overrides.modelTier = story.routing.modelTier as ReturnType<typeof routeTask>["modelTier"];
+  } else if (story.routing.complexity) {
     const tierFromComplexity = config.autoMode.complexityRouting[story.routing.complexity] ?? "balanced";
     overrides.modelTier = tierFromComplexity as ReturnType<typeof routeTask>["modelTier"];
   }
