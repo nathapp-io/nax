@@ -50,3 +50,4 @@ nax/features/*/status.json
 test/tmp/
 TEST_SUMMARY_*.md
 .nax-pids
+nax/metrics.json
