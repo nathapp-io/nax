@@ -47,7 +47,6 @@ import { checkAgentHealth, getAllAgentNames } from "../src/agents";
 import {
   acceptCommand,
   analyzeFeature,
-  constitutionGenerateCommand,
   displayCostMetrics,
   displayFeatureStatus,
   displayLastRunMetrics,
@@ -58,6 +57,7 @@ import {
   runsListCommand,
   runsShowCommand,
 } from "../src/cli";
+import { generateCommand } from "../src/cli/generate";
 import { diagnose } from "../src/commands/diagnose";
 import { logsCommand } from "../src/commands/logs";
 import { precheckCommand } from "../src/commands/precheck";
@@ -124,12 +124,15 @@ program
     // Write .gitignore
     await Bun.write(join(naxDir, ".gitignore"), "# nax temp files\n*.tmp\n.paused.json\n.nax-verifier-verdict.json\n");
 
-    // Write starter constitution.md
+    // Write starter context.md
     await Bun.write(
-      join(naxDir, "constitution.md"),
-      `# Project Constitution
+      join(naxDir, "context.md"),
+      `# Project Context
 
-This document defines the coding standards, architectural rules, testing requirements, and forbidden patterns for this project. All AI agents must follow these rules strictly.
+This document defines coding standards, architectural decisions, and forbidden patterns for this project.
+Run \`nax generate\` to regenerate agent config files (CLAUDE.md, AGENTS.md, .cursorrules, etc.) from this file.
+
+> Project metadata (dependencies, commands) is auto-injected by \`nax generate\`.
 
 ## Coding Standards
 
@@ -145,10 +148,9 @@ This document defines the coding standards, architectural rules, testing require
 - Tests should cover happy paths, edge cases, and error conditions
 - Aim for high test coverage (80%+ recommended)
 - Tests must pass before marking a story as complete
-- **Before writing tests, read existing test files** to understand what is already covered
+- Before writing tests, read existing test files to understand what is already covered
 - Do not duplicate test coverage that prior stories already wrote
 - Focus on testing NEW behavior introduced by this story
-- 2-3 tests per validation rule is sufficient (e.g., missing, empty, wrong type) — do not exhaustively test every falsy value
 
 ## Architecture Rules
 
@@ -182,14 +184,14 @@ This document defines the coding standards, architectural rules, testing require
 
 ---
 
-**Note:** Customize this constitution to match your project's specific needs. The AI agents will reference this document when implementing stories.
+**Note:** Customize this file to match your project's specific needs.
 `,
     );
 
     console.log(chalk.green("✅ Initialized nax"));
     console.log(chalk.dim(`   ${naxDir}/`));
     console.log(chalk.dim("   ├── config.json"));
-    console.log(chalk.dim("   ├── constitution.md"));
+    console.log(chalk.dim("   ├── context.md"));
     console.log(chalk.dim("   ├── hooks.json"));
     console.log(chalk.dim("   ├── features/"));
     console.log(chalk.dim("   └── hooks/"));
@@ -832,23 +834,23 @@ program
     }
   });
 
-// ── constitution ─────────────────────────────────────
-const constitution = program.command("constitution").description("Generate agent config files from constitution");
-
-constitution
+// ── generate ──────────────────────────────────────────
+program
   .command("generate")
-  .description("Generate agent-specific config files from nax/constitution.md")
-  .option("-c, --constitution <path>", "Constitution file path (default: nax/constitution.md)")
+  .description("Generate agent config files (CLAUDE.md, AGENTS.md, etc.) from nax/context.md")
+  .option("-c, --context <path>", "Context file path (default: nax/context.md)")
   .option("-o, --output <dir>", "Output directory (default: project root)")
-  .option("-a, --agent <name>", "Specific agent to generate for (claude|opencode|cursor|windsurf|aider)")
-  .option("--dry-run", "Show what would be generated without writing files", false)
+  .option("-a, --agent <name>", "Specific agent (claude|opencode|cursor|windsurf|aider)")
+  .option("--dry-run", "Preview without writing files", false)
+  .option("--no-auto-inject", "Disable auto-injection of project metadata")
   .action(async (options) => {
     try {
-      await constitutionGenerateCommand({
-        constitution: options.constitution,
+      await generateCommand({
+        context: options.context,
         output: options.output,
         agent: options.agent,
         dryRun: options.dryRun,
+        noAutoInject: !options.autoInject,
       });
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));

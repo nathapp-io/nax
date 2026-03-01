@@ -1,46 +1,44 @@
 /**
- * Context builder types for story-scoped prompt optimization
+ * Context Generator Types (v0.16.1)
+ *
+ * Types for generating agent config files from nax/context.md.
+ * Replaces ConstitutionContent from the old constitution generator.
  */
 
-import type { PRD } from "../prd";
-
-/**
- * Context element that can be included in agent prompts
- */
-export interface ContextElement {
-  type: "story" | "dependency" | "error" | "progress" | "file" | "test-coverage";
-  storyId?: string;
-  filePath?: string; // For file context elements
-  content: string;
-  priority: number; // Higher = more important
-  tokens: number; // Estimated token count
+/** Auto-injected project metadata */
+export interface ProjectMetadata {
+  /** Project name from package.json */
+  name?: string;
+  /** Key dependencies (framework, ORM, test runner, etc.) */
+  dependencies: string[];
+  /** Test command from nax config */
+  testCommand?: string;
+  /** Lint command from nax config */
+  lintCommand?: string;
+  /** Typecheck command from nax config */
+  typecheckCommand?: string;
 }
 
-/**
- * Context budget configuration
- */
-export interface ContextBudget {
-  maxTokens: number;
-  reservedForInstructions: number;
-  availableForContext: number;
+/** Context content passed to generators */
+export interface ContextContent {
+  /** Raw markdown from nax/context.md */
+  markdown: string;
+  /** Auto-injected project metadata (if enabled) */
+  metadata?: ProjectMetadata;
 }
 
-/**
- * Story context metadata (PRD + current story)
- */
-export interface StoryContext {
-  prd: PRD;
-  currentStoryId: string;
-  workdir?: string; // Optional working directory for resolving relative file paths
-  config?: import("../config").NaxConfig; // Optional config for context features (test coverage, etc.)
+/** Agent config generator interface */
+export interface AgentContextGenerator {
+  /** Generator name (e.g., 'claude', 'opencode', 'cursor') */
+  name: string;
+  /** Output filename (e.g., 'CLAUDE.md', '.cursorrules') */
+  outputFile: string;
+  /** Generate agent-specific config file content from context */
+  generate(context: ContextContent): string;
 }
 
-/**
- * Built context ready for agent consumption
- */
-export interface BuiltContext {
-  elements: ContextElement[];
-  totalTokens: number;
-  truncated: boolean;
-  summary: string;
-}
+/** All available generator types */
+export type AgentType = "claude" | "opencode" | "cursor" | "windsurf" | "aider";
+
+/** Generator registry map */
+export type GeneratorMap = Record<AgentType, AgentContextGenerator>;
