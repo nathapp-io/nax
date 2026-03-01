@@ -168,6 +168,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     await statusWriter.update(totalCost, iterations);
 
     // Update reporters with correct totalStories count
+    const reporters = pluginRegistry.getReporters();
     for (const reporter of reporters) {
       if (reporter.onRunStart) {
         try {

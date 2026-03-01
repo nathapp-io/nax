@@ -187,7 +187,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       plugins: ctx.pluginRegistry,
     };
 
-    const { acceptanceStage } = await import("../pipeline/stages/acceptance");
+    const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
     const acceptanceResult = await acceptanceStage.execute(acceptanceContext);
 
     if (acceptanceResult.action === "continue") {
