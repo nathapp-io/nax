@@ -130,6 +130,9 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   // Load PRD (before try block so it's accessible in finally for onRunEnd)
   let prd = await loadPRD(prdPath);
 
+  // Initialize interaction chain (US-008) — do this BEFORE precheck so story size prompts can use it
+  const interactionChain = await initInteractionChain(config, headless);
+
   // ── Run precheck validations (unless --skip-precheck) ──────────────────────
   if (!skipPrecheck) {
     const { runPrecheckValidation } = await import("./precheck-runner");
@@ -141,6 +144,8 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       statusWriter,
       headless,
       formatterMode,
+      interactionChain,
+      featureName: feature,
     });
   } else {
     logger?.warn("precheck", "Precheck validations skipped (--skip-precheck)");
@@ -174,9 +179,6 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   });
   prd = initResult.prd;
   const counts = initResult.storyCounts;
-
-  // Initialize interaction chain (US-008)
-  const interactionChain = await initInteractionChain(config, headless);
 
   return {
     statusWriter,

@@ -72,6 +72,8 @@ export interface PrecheckResultWithCode {
   exitCode: number;
   /** Output for display */
   output: PrecheckOutput;
+  /** Flagged stories from story size gate (v0.16.0) */
+  flaggedStories?: import("./story-size-gate").FlaggedStory[];
 }
 
 /**
@@ -127,6 +129,8 @@ export async function runPrecheck(
   // Tier 2 Warnings - run all regardless of failures
   // ─────────────────────────────────────────────────────────────────────────────
 
+  let flaggedStories: import("./story-size-gate").FlaggedStory[] = [];
+
   // Only run Tier 2 if no blockers
   if (blockers.length === 0) {
     const tier2Checks = [
@@ -149,6 +153,21 @@ export async function runPrecheck(
       } else {
         warnings.push(result);
       }
+    }
+
+    // Story size gate (v0.16.0) — separate from standard checks, returns metadata
+    const { checkStorySizeGate } = await import("./story-size-gate");
+    const sizeGateResult = await checkStorySizeGate(config, prd);
+
+    if (format === "human") {
+      printCheckResult(sizeGateResult.check);
+    }
+
+    if (sizeGateResult.check.passed) {
+      passed.push(sizeGateResult.check);
+    } else {
+      warnings.push(sizeGateResult.check);
+      flaggedStories = sizeGateResult.flaggedStories;
     }
   }
 
@@ -187,6 +206,7 @@ export async function runPrecheck(
     result: { blockers, warnings },
     exitCode,
     output,
+    flaggedStories,
   };
 }
 

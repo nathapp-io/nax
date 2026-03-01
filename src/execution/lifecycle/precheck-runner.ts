@@ -10,6 +10,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import chalk from "chalk";
 import type { NaxConfig } from "../../config";
+import type { InteractionChain } from "../../interaction/chain";
 import { getSafeLogger } from "../../logger";
 import type { PRD } from "../../prd/types";
 import type { StatusWriter } from "../status-writer";
@@ -22,6 +23,8 @@ export interface PrecheckContext {
   statusWriter: StatusWriter;
   headless: boolean;
   formatterMode: "quiet" | "normal" | "verbose" | "json";
+  interactionChain?: InteractionChain | null;
+  featureName?: string;
 }
 
 /**
@@ -97,5 +100,34 @@ export async function runPrecheckValidation(ctx: PrecheckContext): Promise<void>
     }
   } else {
     logger?.info("precheck", "All precheck validations passed");
+  }
+
+  // Story size gate interaction (v0.16.0) - prompt for flagged stories if interaction chain exists
+  if (precheckResult.flaggedStories && precheckResult.flaggedStories.length > 0) {
+    if (ctx.interactionChain && ctx.featureName) {
+      logger?.info("precheck", "Story size gate: prompting user for flagged stories", {
+        count: precheckResult.flaggedStories.length,
+      });
+
+      const { promptForFlaggedStories } = await import("./story-size-prompts");
+      const summary = await promptForFlaggedStories(
+        precheckResult.flaggedStories,
+        ctx.prd,
+        ctx.interactionChain,
+        ctx.featureName,
+      );
+
+      logger?.info("precheck", "Story size gate prompts complete", {
+        approved: summary.approved.length,
+        skipped: summary.skipped.length,
+        aborted: summary.aborted,
+      });
+
+      // PRD has been mutated with skipped stories - no need to return anything
+    } else {
+      logger?.warn("precheck", "Story size gate: interaction chain not available, skipping prompts", {
+        flaggedCount: precheckResult.flaggedStories.length,
+      });
+    }
   }
 }

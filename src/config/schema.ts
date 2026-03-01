@@ -42,6 +42,8 @@ export type {
   LlmRoutingMode,
   LlmRoutingConfig,
   RoutingConfig,
+  StorySizeGateConfig,
+  PrecheckConfig,
   NaxConfig,
 } from "./types";
 

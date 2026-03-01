@@ -149,4 +149,12 @@ export const DEFAULT_CONFIG: NaxConfig = {
       "cost-warning": true,
     },
   },
+  precheck: {
+    storySizeGate: {
+      enabled: true,
+      maxAcCount: 6,
+      maxDescriptionLength: 2000,
+      maxBulletPoints: 8,
+    },
+  },
 };

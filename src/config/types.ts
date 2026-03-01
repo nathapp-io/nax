@@ -303,6 +303,24 @@ export interface ContextConfig {
   autoDetect: ContextAutoDetectConfig;
 }
 
+/** Story size gate thresholds (v0.16.0) */
+export interface StorySizeGateConfig {
+  /** Enable story size gate (default: true) */
+  enabled: boolean;
+  /** Max acceptance criteria count before flagging (default: 6) */
+  maxAcCount: number;
+  /** Max description character length before flagging (default: 2000) */
+  maxDescriptionLength: number;
+  /** Max bullet point count before flagging (default: 8) */
+  maxBulletPoints: number;
+}
+
+/** Precheck configuration (v0.16.0) */
+export interface PrecheckConfig {
+  /** Story size gate settings */
+  storySizeGate: StorySizeGateConfig;
+}
+
 export type RoutingStrategyName = "keyword" | "llm" | "manual" | "adaptive" | "custom";
 
 export interface AdaptiveRoutingConfig {
@@ -382,6 +400,8 @@ export interface NaxConfig {
   hooks?: HooksConfig;
   /** Interaction settings (v0.15.0) */
   interaction?: InteractionConfig;
+  /** Precheck settings (v0.16.0) */
+  precheck?: PrecheckConfig;
 }
 
 /** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */

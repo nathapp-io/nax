@@ -248,6 +248,17 @@ const InteractionConfigSchema = z.object({
     .default({}),
 });
 
+const StorySizeGateConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  maxAcCount: z.number().int().min(1).max(50).default(6),
+  maxDescriptionLength: z.number().int().min(100).max(10000).default(2000),
+  maxBulletPoints: z.number().int().min(1).max(100).default(8),
+});
+
+const PrecheckConfigSchema = z.object({
+  storySizeGate: StorySizeGateConfigSchema,
+});
+
 export const NaxConfigSchema = z
   .object({
     version: z.number(),
@@ -267,6 +278,7 @@ export const NaxConfigSchema = z
     plugins: z.array(PluginConfigEntrySchema).optional(),
     hooks: HooksConfigSchema.optional(),
     interaction: InteractionConfigSchema.optional(),
+    precheck: PrecheckConfigSchema.optional(),
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",
