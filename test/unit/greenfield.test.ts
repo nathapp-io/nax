@@ -140,3 +140,40 @@ describe("isGreenfieldStory", () => {
     expect(result).toBe(false);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-012 Regression: pre-existing tests should not be treated as greenfield
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BUG-012: pre-existing test files prevent false greenfield detection", () => {
+  let workdir: string;
+
+  beforeEach(async () => {
+    workdir = await mkdtemp(join(tmpdir(), "nax-greenfield-bug012-"));
+  });
+
+  afterEach(async () => {
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  it("returns false (not greenfield) when test file was committed before test-writer ran", async () => {
+    // Simulate: developer pre-wrote tests and committed them (dogfood scenario)
+    await createTestFile(workdir, "test/unit/commands/unlock.test.ts", "import { describe, it, expect } from 'bun:test'; describe('unlock', () => { it('works', () => { expect(true).toBe(true); }); });");
+
+    const story = createMockStory("US-001");
+    const result = await isGreenfieldStory(story, workdir);
+
+    // Should NOT be greenfield — pre-existing tests exist
+    expect(result).toBe(false);
+  });
+
+  it("returns true (greenfield) only when absolutely no test files exist", async () => {
+    // Only source files, no tests
+    await createTestFile(workdir, "src/commands/unlock.ts", "export function unlockCommand() {}");
+
+    const story = createMockStory("US-001");
+    const result = await isGreenfieldStory(story, workdir);
+
+    expect(result).toBe(true);
+  });
+});

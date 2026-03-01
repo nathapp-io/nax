@@ -10,6 +10,7 @@
 import type { AgentAdapter } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config";
+import { isGreenfieldStory } from "../context/greenfield";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { captureGitRef } from "../utils/git";
@@ -142,23 +143,55 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   const testFilesCreated = session1.filesChanged.filter((f) => testFilePatterns.test(f));
 
   if (testFilesCreated.length === 0) {
-    needsHumanReview = true;
-    reviewReason = "Test writer session created no test files (greenfield project)";
-    logger.warn("tdd", "[WARN] Test writer created no test files - greenfield detected", {
-      storyId: story.id,
-      reviewReason,
-      filesChanged: session1.filesChanged,
-    });
+    // BUG-012 Fix: Before declaring greenfield, check if test files already exist in the repo.
+    // The test-writer may have produced 0 new files because tests were pre-written and committed
+    // separately (e.g. during dogfooding or manual setup). If tests already exist, skip
+    // test-writer phase and proceed directly to the implementer.
+    const testPatternGlob = config.context?.testCoverage?.testPattern ?? "**/*.{test,spec}.{ts,js,tsx,jsx}";
 
-    return {
-      success: false,
-      sessions,
-      needsHumanReview,
-      reviewReason,
-      failureCategory: "greenfield-no-tests",
-      totalCost: sessions.reduce((sum, s) => sum + s.estimatedCost, 0),
-      lite,
-    };
+    // Scan directly for existing test files — don't use isGreenfieldStory() here because its
+    // "safe fallback" returns false (not greenfield) on scan errors, which would incorrectly
+    // allow proceeding to the implementer when the workdir is unreadable.
+    let hasPreExistingTests = false;
+    try {
+      // isGreenfieldStory returns true when NO tests exist; we want the inverse
+      hasPreExistingTests = !(await isGreenfieldStory(story, workdir, testPatternGlob));
+      // Sanity check: if workdir doesn't exist, isGreenfieldStory returns false (safe fallback),
+      // meaning hasPreExistingTests = true — wrong. Validate by checking if workdir is readable.
+      const { existsSync } = await import("node:fs");
+      if (!existsSync(workdir)) {
+        hasPreExistingTests = false;
+      }
+    } catch {
+      hasPreExistingTests = false;
+    }
+
+    if (hasPreExistingTests) {
+      // Tests exist in repo — test-writer correctly produced no new files.
+      // Skip the pause, proceed to implementer.
+      logger.info("tdd", "Test writer created no new files but tests already exist in repo — skipping test-writer, proceeding to implementer (BUG-012 fix)", {
+        storyId: story.id,
+      });
+    } else {
+      // Genuinely greenfield — no tests anywhere. Pause for human review.
+      needsHumanReview = true;
+      reviewReason = "Test writer session created no test files (greenfield project)";
+      logger.warn("tdd", "[WARN] Test writer created no test files - greenfield detected", {
+        storyId: story.id,
+        reviewReason,
+        filesChanged: session1.filesChanged,
+      });
+
+      return {
+        success: false,
+        sessions,
+        needsHumanReview,
+        reviewReason,
+        failureCategory: "greenfield-no-tests",
+        totalCost: sessions.reduce((sum, s) => sum + s.estimatedCost, 0),
+        lite,
+      };
+    }
   }
 
   logger.info("tdd", "Created test files", {
