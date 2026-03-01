@@ -53,11 +53,11 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
 
   async init(config: Record<string, unknown>): Promise<void> {
     const cfg = TelegramConfigSchema.parse(config);
-    this.botToken = cfg.botToken ?? process.env.NAX_TELEGRAM_TOKEN ?? null;
+    this.botToken = cfg.botToken ?? process.env.NAX_TELEGRAM_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN ?? null;
     this.chatId = cfg.chatId ?? process.env.NAX_TELEGRAM_CHAT_ID ?? null;
 
     if (!this.botToken || !this.chatId) {
-      throw new Error("Telegram plugin requires botToken and chatId (env: NAX_TELEGRAM_TOKEN, NAX_TELEGRAM_CHAT_ID)");
+      throw new Error("Telegram plugin requires botToken and chatId (env: NAX_TELEGRAM_TOKEN or TELEGRAM_BOT_TOKEN, NAX_TELEGRAM_CHAT_ID)");
     }
   }
 
