@@ -19,7 +19,7 @@
 
 import { isGreenfieldStory } from "../../context/greenfield";
 import { getLogger } from "../../logger";
-import { routeStory } from "../../routing";
+import { routeStory, complexityToModelTier } from "../../routing";
 import { clearCache, routeBatch } from "../../routing/strategies/llm";
 import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
 
@@ -39,12 +39,12 @@ export const routingStage: PipelineStage = {
       // Override with cached complexity if available
       routing.complexity = ctx.story.routing.complexity;
       routing.testStrategy = ctx.story.routing.testStrategy;
+      // Re-derive modelTier from cached complexity and current config
+      routing.modelTier = complexityToModelTier(routing.complexity as any, ctx.config);
     } else {
       // Fresh classification
       routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
     }
-
-    ctx.routing = routing as RoutingResult;
 
     // BUG-010: Greenfield detection — force test-after if no test files exist
     const greenfieldDetectionEnabled = ctx.config.tdd.greenfieldDetection ?? true;
@@ -60,17 +60,20 @@ export const routingStage: PipelineStage = {
       }
     }
 
+    // Set ctx.routing after all overrides are applied
+    ctx.routing = routing as RoutingResult;
+
     const isBatch = ctx.stories.length > 1;
 
     logger.debug("routing", "Task classified", {
-      complexity: routing.complexity,
-      modelTier: routing.modelTier,
-      testStrategy: routing.testStrategy,
+      complexity: ctx.routing.complexity,
+      modelTier: ctx.routing.modelTier,
+      testStrategy: ctx.routing.testStrategy,
       storyId: ctx.story.id,
     });
 
     if (!isBatch) {
-      logger.debug("routing", routing.reasoning);
+      logger.debug("routing", ctx.routing.reasoning);
     }
 
     return { action: "continue" };

@@ -206,7 +206,7 @@ export function determineTestStrategy(
 }
 
 /** Map complexity to model tier */
-function complexityToModelTier(complexity: Complexity, config: NaxConfig): ModelTier {
+export function complexityToModelTier(complexity: Complexity, config: NaxConfig): ModelTier {
   const mapping = config.autoMode.complexityRouting;
   return (mapping[complexity] ?? "balanced") as ModelTier;
 }

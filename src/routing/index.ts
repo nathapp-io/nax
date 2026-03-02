@@ -3,7 +3,7 @@ export type { RoutingDecision } from "./router";
 export type { RoutingStrategy, RoutingContext, AggregateMetrics } from "./strategy";
 
 // Main routing functions
-export { routeStory, routeTask, classifyComplexity, determineTestStrategy } from "./router";
+export { routeStory, routeTask, classifyComplexity, determineTestStrategy, complexityToModelTier } from "./router";
 
 // Strategy chain
 export { StrategyChain } from "./chain";
