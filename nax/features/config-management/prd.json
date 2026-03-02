@@ -12,7 +12,11 @@
       "attempts": 0,
       "escalations": [],
       "dependencies": [],
-      "tags": ["cli", "config", "dx"],
+      "tags": [
+        "cli",
+        "config",
+        "dx"
+      ],
       "acceptanceCriteria": [
         "Running `nax config --explain` outputs all config fields with descriptions",
         "Each field shows its source: (default), (global), or (project override)",
@@ -20,8 +24,16 @@
         "Works from any directory (uses existing config loader)"
       ],
       "storyPoints": 1,
-      "priorErrors": [],
-      "passes": false
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast"
+      ],
+      "passes": false,
+      "routing": {
+        "complexity": "simple",
+        "modelTier": "balanced",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "three-session-tdd-lite: strategy:lite"
+      }
     },
     {
       "id": "CM-002",
@@ -31,8 +43,14 @@
       "status": "pending",
       "attempts": 0,
       "escalations": [],
-      "dependencies": ["CM-001"],
-      "tags": ["cli", "config", "dx"],
+      "dependencies": [
+        "CM-001"
+      ],
+      "tags": [
+        "cli",
+        "config",
+        "dx"
+      ],
       "acceptanceCriteria": [
         "Running `nax config --diff` shows only fields where project differs from global",
         "Each differing field shows: field path, project value, global value",
@@ -52,15 +70,28 @@
       "attempts": 0,
       "escalations": [],
       "dependencies": [],
-      "tags": ["cli", "config", "dx"],
+      "tags": [
+        "cli",
+        "config",
+        "dx"
+      ],
       "acceptanceCriteria": [
         "Running `nax config` prints the effective merged config as formatted JSON",
         "Header shows paths of config files found (global, project)",
         "Missing config files noted in header"
       ],
       "storyPoints": 1,
-      "priorErrors": [],
-      "passes": false
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast"
+      ],
+      "passes": false,
+      "routing": {
+        "complexity": "simple",
+        "modelTier": "balanced",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "three-session-tdd-lite: strategy:lite"
+      }
     }
-  ]
+  ],
+  "updatedAt": "2026-03-02T05:38:11.984Z"
 }

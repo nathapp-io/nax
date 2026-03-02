@@ -4,25 +4,23 @@
  * Displays effective merged configuration with inline explanations.
  */
 
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { join } from "bun:path";
+import { findProjectDir, globalConfigPath } from "../config/loader";
 import type { NaxConfig } from "../config/schema";
-import { globalConfigPath, findProjectDir } from "../config/loader";
 
 /** Field descriptions for human-readable output */
 const FIELD_DESCRIPTIONS: Record<string, string> = {
   // Top-level
-  "version": "Configuration schema version",
+  version: "Configuration schema version",
 
   // Models
-  "models": "Model tier definitions (fast/balanced/powerful)",
+  models: "Model tier definitions (fast/balanced/powerful)",
   "models.fast": "Fast model for lightweight tasks (e.g., haiku)",
   "models.balanced": "Balanced model for general coding (e.g., sonnet)",
   "models.powerful": "Powerful model for complex tasks (e.g., opus)",
 
   // Auto mode
-  "autoMode": "Auto mode configuration for agent orchestration",
+  autoMode: "Auto mode configuration for agent orchestration",
   "autoMode.enabled": "Enable automatic agent selection and escalation",
   "autoMode.defaultAgent": "Default agent to use (e.g., claude, codex)",
   "autoMode.fallbackOrder": "Fallback order when agent is rate-limited",
@@ -37,7 +35,7 @@ const FIELD_DESCRIPTIONS: Record<string, string> = {
   "autoMode.escalation.escalateEntireBatch": "Escalate all stories in batch when one fails",
 
   // Routing
-  "routing": "Model routing strategy configuration",
+  routing: "Model routing strategy configuration",
   "routing.strategy": "Routing strategy: keyword | llm | manual | adaptive | custom",
   "routing.customStrategyPath": "Path to custom routing strategy (if strategy=custom)",
   "routing.adaptive": "Adaptive routing settings",
@@ -52,7 +50,7 @@ const FIELD_DESCRIPTIONS: Record<string, string> = {
   "routing.llm.timeoutMs": "Timeout for LLM routing call in milliseconds",
 
   // Execution
-  "execution": "Execution limits and timeouts",
+  execution: "Execution limits and timeouts",
   "execution.maxIterations": "Max iterations per feature run (auto-calculated if not set)",
   "execution.iterationDelayMs": "Delay between iterations in milliseconds",
   "execution.costLimit": "Max cost in USD before pausing execution",
@@ -74,7 +72,7 @@ const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.regressionGate.timeoutSeconds": "Timeout for regression run in seconds",
 
   // Quality
-  "quality": "Quality gate configuration",
+  quality: "Quality gate configuration",
   "quality.requireTypecheck": "Require typecheck to pass",
   "quality.requireLint": "Require lint to pass",
   "quality.requireTests": "Require tests to pass",
@@ -92,7 +90,7 @@ const FIELD_DESCRIPTIONS: Record<string, string> = {
   "quality.environmentalEscalationDivisor": "Divisor for environmental failure early escalation",
 
   // TDD
-  "tdd": "Test-driven development configuration",
+  tdd: "Test-driven development configuration",
   "tdd.maxRetries": "Max retries per TDD session before escalating",
   "tdd.autoVerifyIsolation": "Auto-verify test isolation between sessions",
   "tdd.strategy": "TDD strategy: auto | strict | lite | off",
@@ -106,21 +104,21 @@ const FIELD_DESCRIPTIONS: Record<string, string> = {
   "tdd.greenfieldDetection": "Force test-after on projects with no test files",
 
   // Constitution
-  "constitution": "Constitution settings (core rules and constraints)",
+  constitution: "Constitution settings (core rules and constraints)",
   "constitution.enabled": "Enable constitution loading and injection",
   "constitution.path": "Path to constitution file (relative to nax/ directory)",
   "constitution.maxTokens": "Maximum tokens allowed for constitution content",
   "constitution.skipGlobal": "Skip loading global constitution",
 
   // Analyze
-  "analyze": "Feature analysis settings",
+  analyze: "Feature analysis settings",
   "analyze.llmEnhanced": "Enable LLM-enhanced analysis",
   "analyze.model": "Model tier for decompose and classify",
   "analyze.fallbackToKeywords": "Fall back to keyword matching on LLM failure",
   "analyze.maxCodebaseSummaryTokens": "Max tokens for codebase summary",
 
   // Review
-  "review": "Review phase configuration",
+  review: "Review phase configuration",
   "review.enabled": "Enable review phase",
   "review.checks": "List of checks to run (typecheck, lint, test)",
   "review.commands": "Custom commands per check",
@@ -129,19 +127,19 @@ const FIELD_DESCRIPTIONS: Record<string, string> = {
   "review.commands.test": "Custom test command for review",
 
   // Plan
-  "plan": "Planning phase configuration",
+  plan: "Planning phase configuration",
   "plan.model": "Model tier for planning",
   "plan.outputPath": "Output path for generated spec (relative to nax/)",
 
   // Acceptance
-  "acceptance": "Acceptance test configuration",
+  acceptance: "Acceptance test configuration",
   "acceptance.enabled": "Enable acceptance test generation and validation",
   "acceptance.maxRetries": "Max retry loops for fix stories",
   "acceptance.generateTests": "Generate acceptance tests during analyze",
   "acceptance.testPath": "Path to acceptance test file (relative to feature dir)",
 
   // Context
-  "context": "Context injection configuration",
+  context: "Context injection configuration",
   "context.testCoverage": "Test coverage context settings",
   "context.testCoverage.enabled": "Enable test coverage context injection",
   "context.testCoverage.detail": "Detail level: names-only | names-and-counts | describe-blocks",
@@ -155,19 +153,19 @@ const FIELD_DESCRIPTIONS: Record<string, string> = {
   "context.autoDetect.traceImports": "Trace imports to find related files",
 
   // Optimizer
-  "optimizer": "Prompt optimizer configuration",
+  optimizer: "Prompt optimizer configuration",
   "optimizer.enabled": "Enable prompt optimizer",
   "optimizer.strategy": "Optimization strategy: rule-based | llm | noop",
 
   // Plugins
-  "plugins": "Plugin configurations",
+  plugins: "Plugin configurations",
 
   // Hooks
-  "hooks": "Hooks configuration",
+  hooks: "Hooks configuration",
   "hooks.skipGlobal": "Skip loading global hooks",
 
   // Interaction
-  "interaction": "Interaction plugin configuration",
+  interaction: "Interaction plugin configuration",
   "interaction.plugin": "Plugin to use for interactions (default: cli)",
   "interaction.config": "Plugin-specific configuration",
   "interaction.defaults": "Default interaction settings",
@@ -176,7 +174,7 @@ const FIELD_DESCRIPTIONS: Record<string, string> = {
   "interaction.triggers": "Enable/disable built-in triggers",
 
   // Precheck
-  "precheck": "Precheck configuration (run before analysis)",
+  precheck: "Precheck configuration (run before analysis)",
   "precheck.storySizeGate": "Story size gate settings",
   "precheck.storySizeGate.enabled": "Enable story size gate",
   "precheck.storySizeGate.maxAcCount": "Max acceptance criteria count before flagging",
@@ -200,7 +198,7 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
   const { explain = false } = options;
 
   // Determine sources
-  const sources = await determineConfigSources();
+  const sources = determineConfigSources();
 
   if (explain) {
     console.log("# nax Configuration");
@@ -228,15 +226,29 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
  *
  * @returns Paths to global and project config files (null if not found)
  */
-async function determineConfigSources(): Promise<{ global: string | null; project: string | null }> {
+function determineConfigSources(): { global: string | null; project: string | null } {
   const globalPath = globalConfigPath();
   const projectDir = findProjectDir();
   const projectPath = projectDir ? join(projectDir, "config.json") : null;
 
   return {
-    global: existsSync(globalPath) ? globalPath : null,
-    project: projectPath && existsSync(projectPath) ? projectPath : null,
+    global: fileExists(globalPath) ? globalPath : null,
+    project: projectPath && fileExists(projectPath) ? projectPath : null,
   };
+}
+
+/**
+ * Check if a file exists using Bun API.
+ *
+ * @param path - File path to check
+ * @returns True if file exists, false otherwise
+ */
+function fileExists(path: string): boolean {
+  try {
+    return Bun.file(path).exists();
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -319,7 +331,10 @@ function formatValue(value: unknown): string {
     if (value.length <= 3) {
       return `[${value.map((v) => formatValue(v)).join(", ")}]`;
     }
-    return `[${value.slice(0, 3).map((v) => formatValue(v)).join(", ")}, ... (${value.length} items)]`;
+    return `[${value
+      .slice(0, 3)
+      .map((v) => formatValue(v))
+      .join(", ")}, ... (${value.length} items)]`;
   }
   if (typeof value === "object") {
     return JSON.stringify(value);
