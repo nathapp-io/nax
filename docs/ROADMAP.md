@@ -6,7 +6,7 @@
 
 ---
 
-## Next: v0.17.0 — Config Management
+## Next: v0.18.0 — TBD
 
 **Theme:** Make nax config understandable and manageable as it grows
 **Status:** 🔲 Planned
@@ -136,6 +136,7 @@
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.17.0 | Config Management | 2026-03-02 | CM-001 --explain, CM-002 --diff, CM-003 default view |
 | v0.16.4 | Bugfixes: Routing + Env Allowlist | 2026-03-02 | BUG-012/013/014 |
 | v0.16.1 | Project Context Generator | 2026-03-01 | `nax generate`, auto-inject, multi-language |
 | v0.16.0 | Story Size Gate | 2026-03-01 | [releases/v0.16.0.md](releases/v0.16.0.md) |
