@@ -171,7 +171,7 @@
 - [x] ~~BUG-014: buildAllowedEnv() strips USER/LOGNAME, breaks macOS Keychain auth (fixed v0.16.4)~~
 - [ ] **BUG-015:** `loadConstitution()` leaks global `~/.nax/constitution.md` into unit tests — `constitution.test.ts` tests expecting null get content instead because `skipGlobal` defaults to false. Hotfix: add `skipGlobal: true` to test configs (applied in worktree `feat/v0.17.0-config-management`, **verify passes after merge**)
 - [ ] **BUG-016:** Pipeline verify stage (`src/pipeline/stages/verify.ts:55`) hardcodes `timeoutSeconds: 120` instead of reading `ctx.config.execution.verificationTimeoutSeconds` (default 300). Causes TIMEOUT on large test suites (500+ tests) even when config allows 300s. Root cause of all outer verify failures in v0.17.0 dogfood run. **Fix: one-line change** — replace `120` with `ctx.config.execution.verificationTimeoutSeconds`.
-- [ ] **BUG-017:** Cost tracking reports $0.00 for some runs — Run 1 of config-management dogfood (05:19 UTC) shows total cost $0 despite 4 full agent sessions. Run 3 correctly reports ~$4.30. Likely silent failure in cost estimation fallback path.
+- [ ] **BUG-017:** `run.complete` event not emitted on SIGTERM — crash handler shuts down cleanly but skips writing the final run summary event. Per-session costs ARE correctly recorded in `agent.complete` events ($1.39 for Run 1). No aggregate cost summary in JSONL when nax is killed. Fix: emit `run.complete` in SIGTERM handler before exit.
 - [ ] **BUG-018:** Test-writer session spawned on every retry even when tests already exist — BUG-012 detection fires ("tests already exist, skipping") but still costs ~3 min per spawn. Cache `testsExist` flag per-story to skip test-writer entirely on subsequent iterations. Wasted ~24 min across dogfood runs.
 - [ ] **BUG-019:** Misleading verify output on TIMEOUT — when `exitCode === TIMEOUT`, nax logs truncated stdout (e.g., precheck JSON mid-run) as "Test output preview", making it look like the failure cause. Should log clear diagnostic: "Test suite exceeded timeout (Ns). Consider increasing `fullSuiteTimeoutSeconds`."
 - [ ] **BUG-020:** Missing `storyId` in JSONL events — many events (agent.start, agent.complete, verify) have empty storyId, making automated per-story analysis difficult.
@@ -192,7 +192,7 @@
 - [x] ~~BUG-013: Escalation routing not applied in iterations (fixed v0.16.4)~~
 - [x] ~~BUG-014: buildAllowedEnv() strips USER/LOGNAME (fixed v0.16.4)~~
 - [ ] **BUG-016:** Hardcoded 120s timeout in pipeline verify stage (see Bugs section above)
-- [ ] **BUG-017:** Cost tracking $0 on some runs
+- [ ] **BUG-017:** run.complete not emitted on SIGTERM
 - [ ] **BUG-018:** Test-writer wastes ~3min/retry when tests already exist
 - [ ] **BUG-019:** Misleading TIMEOUT output preview
 - [ ] **BUG-020:** Missing storyId in JSONL events
