@@ -135,6 +135,13 @@ const handler = () => cleanup(currentStory)
 const handler = () => cleanup(() => getCurrentStory())
 ```
 
+## Testing Constraints (CRITICAL)
+
+- **Never spawn full `nax` processes in tests.** nax has prechecks (git-repo-exists, dependencies-installed) that fail in temp directories. Write unit tests with mocks instead.
+- **Integration tests that need git:** Always `git init` + `git add` + `git commit` in the test fixture before running any code that triggers nax precheck validation.
+- **Test files for crash/signal handling:** Use process-level mocks (e.g., mock `process.on('SIGTERM', ...)`) — do not send real signals in tests.
+- **Context files:** If a test needs specific context files, create them in the test fixture directory — don't rely on auto-detection from the real workspace.
+
 ## IMPORTANT
 
 - Never hardcode API keys — agents use their own auth from env
