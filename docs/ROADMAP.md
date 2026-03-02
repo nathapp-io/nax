@@ -168,10 +168,12 @@
 - [x] ~~BUG-012: Greenfield detection ignores pre-existing test files (fixed v0.16.4)~~
 - [x] ~~BUG-013: Escalation routing not applied in iterations (fixed v0.16.4)~~
 - [x] ~~BUG-014: buildAllowedEnv() strips USER/LOGNAME, breaks macOS Keychain auth (fixed v0.16.4)~~
+- [ ] **BUG-015:** `loadConstitution()` leaks global `~/.nax/constitution.md` into unit tests — `constitution.test.ts` tests expecting null get content instead because `skipGlobal` defaults to false. Hotfix: add `skipGlobal: true` to test configs (applied in worktree `feat/v0.17.0-config-management`, **verify passes after merge**)
 
 ### Features
 - [x] ~~`nax unlock` command (shipped v0.16.1 dogfood run 2026-03-01)~~
 - [x] ~~Constitution file support (shipped v0.15.3 US-010)~~
+- [ ] **Central Run Registry** — nax writes run state to `~/.nax/runs/<project>-<feature>-<runId>/` (status.json + events.jsonl symlink) on every run start, regardless of worktree vs main repo. Dashboard reads from `~/.nax/runs/` — solves two problems: (1) worktree runs invisible to dashboard, (2) no stable pointer to active JSONL. Target: v0.18.0
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
 - [ ] `nax diagnose --ai` flag (LLM-assisted, future version TBD)
