@@ -69,6 +69,7 @@ export async function executeSequential(
   const allStoryMetrics: StoryMetrics[] = [];
   const timeoutRetryCountMap = new Map<string, number>();
   let currentBatchIndex = 0;
+  let lastStoryId: string | null = null;
 
   const buildResult = (exitReason: SequentialExecutionResult["exitReason"]): SequentialExecutionResult => ({
     prd,
@@ -157,13 +158,14 @@ export async function executeSequential(
         routing = applyCachedRouting(routing, story, ctx.config);
       } else {
         // Fallback to single-story mode (when batching disabled or batch plan exhausted)
-        const nextStory = getNextStory(prd);
+        const nextStory = getNextStory(prd, lastStoryId, ctx.config.execution.rectification.maxRetries);
         if (!nextStory) {
           logger?.warn("execution", "No actionable stories (check dependencies)");
           return buildResult("no-stories");
         }
 
         story = nextStory;
+        lastStoryId = story.id;
         storiesToExecute = [story];
         isBatchExecution = false;
 

@@ -53,8 +53,28 @@ export async function savePRD(prd: PRD, path: string): Promise<void> {
   await Bun.write(path, JSON.stringify(prd, null, 2));
 }
 
-/** Get the next story to work on (pending, deps satisfied) */
-export function getNextStory(prd: PRD): UserStory | null {
+/**
+ * Get the next story to work on.
+ *
+ * Priority 1 (retry): If `currentStoryId` is provided and that story has
+ * `status === "failed"` with `attempts <= maxRetries`, return it immediately
+ * so the executor retries the same story before moving on.
+ *
+ * Priority 2 (normal): First pending story whose dependencies are satisfied.
+ *
+ * @param prd - PRD containing all stories
+ * @param currentStoryId - ID of the story just executed (optional)
+ * @param maxRetries - Max retry attempts per story before giving up (optional)
+ */
+export function getNextStory(prd: PRD, currentStoryId?: string | null, maxRetries?: number): UserStory | null {
+  // Priority 1: Retry current story if failed but has attempts remaining
+  if (currentStoryId != null && maxRetries != null && maxRetries > 0) {
+    const currentStory = prd.userStories.find((s) => s.id === currentStoryId);
+    if (currentStory && currentStory.status === "failed" && (currentStory.attempts ?? 0) <= maxRetries) {
+      return currentStory;
+    }
+  }
+
   const completedIds = new Set(
     prd.userStories.filter((s) => s.passes || s.status === "passed" || s.status === "skipped").map((s) => s.id),
   );
