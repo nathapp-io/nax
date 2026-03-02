@@ -29,7 +29,7 @@
       "id": "BF-002",
       "title": "Add storyId to all JSONL events (BUG-020)",
       "description": "Many JSONL events have empty or missing storyId. Audit and fix these event emitters to include storyId when a story is active:\n- src/pipeline/stages/verify.ts (verify info/debug events)\n- src/pipeline/stages/execution.ts (execution events)\n- src/tdd/orchestrator.ts (tdd session events)\n- src/execution/pipeline-result-handler.ts (escalation events)\n\nAcceptance criteria:\n1. Events at stages agent.start, agent.complete, verify, tdd, execution, escalation include storyId in data when a story is active\n2. Existing tests pass\n3. Add tests verifying storyId presence on key events",
-      "complexity": "medium",
+      "complexity": "simple",
       "status": "pending",
       "attempts": 0,
       "priorErrors": [
