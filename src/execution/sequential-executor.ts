@@ -2,6 +2,7 @@
 
 import type { NaxConfig } from "../config";
 import { type LoadedHooksConfig, fireHook } from "../hooks";
+import type { InteractionChain } from "../interaction/chain";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
@@ -41,6 +42,7 @@ export interface SequentialExecutionContext {
   runId: string;
   startTime: number;
   batchPlan: StoryBatch[];
+  interactionChain?: InteractionChain | null;
 }
 
 export interface SequentialExecutionResult {
@@ -269,6 +271,7 @@ export async function executeSequential(
         hooks: ctx.hooks,
         plugins: ctx.pluginRegistry,
         storyStartTime,
+        interaction: ctx.interactionChain ?? undefined,
       };
 
       // Log agent start
@@ -327,6 +330,7 @@ export async function executeSequential(
         allStoryMetrics,
         timeoutRetryCountMap,
         storyGitRef,
+        interactionChain: ctx.interactionChain,
       };
 
       if (pipelineResult.success) {

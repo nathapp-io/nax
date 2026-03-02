@@ -66,15 +66,24 @@
       "title": "Integrate Interaction Chain into Runner Loop",
       "description": "The Interaction system is initialized but never called from the core orchestrator. This is a major integration task.\n\nFix:\n1. Add 'human-review' to TriggerName in src/interaction/types.ts and metadata in TRIGGER_METADATA\n2. Pass interactionChain from runner.ts -> executeSequential -> Pipeline\n3. Inject 'interaction' into PipelineContext\n4. Call executeTrigger('human-review', ...) when a story reaches max retries or a critical failure occurs\n5. Verify other triggers (security-review, story-ambiguity) are called at relevant pipeline stages\n\nAcceptance criteria:\n1. interactionChain is accessible in PipelineContext\n2. Story reaching max retries triggers a 'human-review' interaction request\n3. Test with CLI interaction plugin (non-headless)",
       "complexity": "medium",
-      "status": "pending",
-      "attempts": 0,
-      "priorErrors": [],
+      "status": "failed",
+      "attempts": 1,
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced"
+      ],
       "escalations": [],
       "dependencies": [],
       "tags": [],
       "acceptanceCriteria": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "complex",
+        "modelTier": "powerful",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "three-session-tdd-lite: security-critical, strategy:lite"
+      },
+      "failureCategory": "session-failure"
     }
   ],
-  "updatedAt": "2026-03-02T15:28:01.716Z"
+  "updatedAt": "2026-03-02T16:29:51.415Z"
 }

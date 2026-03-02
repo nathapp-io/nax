@@ -7,6 +7,8 @@
 
 import type { NaxConfig } from "../config";
 import { type LoadedHooksConfig, fireHook } from "../hooks";
+import type { InteractionChain } from "../interaction/chain";
+import { executeTrigger, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import type { PipelineRunResult } from "../pipeline/runner";
@@ -41,6 +43,7 @@ export interface PipelineHandlerContext {
   allStoryMetrics: StoryMetrics[];
   timeoutRetryCountMap: Map<string, number>;
   storyGitRef: string | null | undefined;
+  interactionChain?: InteractionChain | null;
 }
 
 export interface PipelineSuccessResult {
@@ -207,6 +210,33 @@ export async function handlePipelineFailure(
 
       if (ctx.featureDir) {
         await appendProgress(ctx.featureDir, ctx.story.id, "failed", `${ctx.story.title} — ${pipelineResult.reason}`);
+      }
+
+      // Fire human-review trigger when story has exceeded max retries and interaction chain is available
+      if (
+        ctx.interactionChain &&
+        ctx.story.attempts !== undefined &&
+        ctx.story.attempts >= ctx.config.execution.rectification.maxRetries &&
+        isTriggerEnabled("human-review", ctx.config)
+      ) {
+        try {
+          await executeTrigger(
+            "human-review",
+            {
+              featureName: ctx.feature,
+              storyId: ctx.story.id,
+              iteration: ctx.story.attempts,
+              reason: pipelineResult.reason || "Max retries exceeded",
+            },
+            ctx.config,
+            ctx.interactionChain,
+          );
+        } catch (err) {
+          logger?.warn("pipeline", "human-review trigger failed", {
+            storyId: ctx.story.id,
+            error: String(err),
+          });
+        }
       }
 
       await fireHook(

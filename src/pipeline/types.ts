@@ -9,6 +9,7 @@ import type { NaxConfig } from "../config/schema";
 import type { ConstitutionResult } from "../constitution/types";
 import type { BuiltContext } from "../context/types";
 import type { HooksConfig } from "../hooks/types";
+import type { InteractionChain } from "../interaction/chain";
 import type { StoryMetrics } from "../metrics/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd/types";
@@ -69,6 +70,8 @@ export interface PipelineContext {
   hooks: HooksConfig;
   /** Plugin registry (optional, for plugin-provided extensions) */
   plugins?: PluginRegistry;
+  /** Interaction chain (optional, for human-in-the-loop triggers) */
+  interaction?: InteractionChain;
   /** Constitution result (set by constitutionStage) */
   constitution?: ConstitutionResult;
   /** Context markdown for the agent (set by contextStage) */

@@ -82,6 +82,7 @@ export type TriggerName =
   | "cost-warning" // escalate (yellow) — approaching cost limit
   | "max-retries" // skip (yellow) — max retries reached
   | "pre-merge" // escalate (yellow) — before merging to main
+  | "human-review" // skip (yellow) — human review required on max retries / critical failure
   | "story-ambiguity" // continue (green) — story requirements unclear
   | "review-gate"; // continue (green) — code review checkpoint
 
@@ -143,6 +144,11 @@ export const TRIGGER_METADATA: Record<TriggerName, TriggerMetadata> = {
     defaultFallback: "escalate",
     safety: "yellow",
     defaultSummary: "Pre-merge checkpoint for {{storyId}} — proceed with merge?",
+  },
+  "human-review": {
+    defaultFallback: "skip",
+    safety: "yellow",
+    defaultSummary: "Human review required for story {{storyId}} — skip and continue?",
   },
   "story-ambiguity": {
     defaultFallback: "continue",
