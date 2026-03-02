@@ -4,7 +4,8 @@
  * Displays effective merged configuration with inline explanations.
  */
 
-import { join } from "bun:path";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { findProjectDir, globalConfigPath } from "../config/loader";
 import type { NaxConfig } from "../config/schema";
 
@@ -238,17 +239,13 @@ function determineConfigSources(): { global: string | null; project: string | nu
 }
 
 /**
- * Check if a file exists using Bun API.
+ * Check if a file exists.
  *
  * @param path - File path to check
  * @returns True if file exists, false otherwise
  */
 function fileExists(path: string): boolean {
-  try {
-    return Bun.file(path).exists();
-  } catch {
-    return false;
-  }
+  return existsSync(path);
 }
 
 /**
