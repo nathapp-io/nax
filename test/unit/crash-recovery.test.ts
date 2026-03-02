@@ -228,107 +228,81 @@ describe("crash-recovery", () => {
   });
 
   describe("SIGTERM run.complete event (BUG-017)", () => {
-    test("should emit run.complete event when SIGTERM is received", async () => {
+    test("should emit run.complete event when SIGTERM handler is invoked directly", async () => {
+      // Mock process.exit to prevent the test process from actually exiting
+      const originalExit = process.exit;
+      let exitCalled = false;
+      let exitCode: number | undefined;
+      process.exit = ((code?: number) => {
+        exitCalled = true;
+        exitCode = code;
+      }) as typeof process.exit;
+
       const statusWriter = new StatusWriter(TEST_STATUS_FILE, DEFAULT_CONFIG, {
-        runId: "test-run-123",
-        feature: "test-feature",
+        runId: "run-sigterm-mock",
+        feature: "mock-feature",
         startedAt: new Date().toISOString(),
         dryRun: false,
         startTimeMs: Date.now(),
         pid: process.pid,
       });
 
-      const startTime = Date.now();
-      const ctx: CrashRecoveryContext = {
-        statusWriter,
-        getTotalCost: () => 1.5,
-        getIterations: () => 3,
-        jsonlFilePath: TEST_JSONL,
-        runId: "test-run-123",
-        feature: "test-feature",
-        getStartTime: () => startTime,
-        getTotalStories: () => 5,
-        getStoriesCompleted: () => 2,
-      };
-
-      // Install handlers
-      const cleanup = installCrashHandlers(ctx);
-
-      // Simulate SIGTERM by spawning a child process that sends SIGTERM to itself
-      // We'll test this by directly testing the signal emission logic via a subprocess
-      const testScript = `
-        import { installCrashHandlers } from "./src/execution/crash-recovery.ts";
-        import { StatusWriter } from "./src/execution/status-writer.ts";
-        import { DEFAULT_CONFIG } from "./src/config/index.ts";
-
-        const statusWriter = new StatusWriter("${TEST_STATUS_FILE}", DEFAULT_CONFIG, {
-          runId: "test-run-123",
-          feature: "test-feature",
-          startedAt: new Date().toISOString(),
-          dryRun: false,
-          startTimeMs: Date.now(),
-          pid: process.pid,
-        });
-
-        const startTime = Date.now();
-        const ctx = {
-          statusWriter,
-          getTotalCost: () => 1.5,
-          getIterations: () => 3,
-          jsonlFilePath: "${TEST_JSONL}",
-          runId: "test-run-123",
-          feature: "test-feature",
-          getStartTime: () => startTime,
-          getTotalStories: () => 5,
-          getStoriesCompleted: () => 2,
-        };
-
-        installCrashHandlers(ctx);
-
-        // Send SIGTERM to self after 100ms
-        setTimeout(() => process.kill(process.pid, "SIGTERM"), 100);
-      `;
-
-      const tmpScript = join(TEST_DIR, "sigterm-test.ts");
-      await Bun.write(tmpScript, testScript);
-
-      // Run the script in a subprocess
-      const proc = Bun.spawn(["bun", "run", tmpScript], {
-        cwd: join(import.meta.dir, "..", ".."),
-        stdout: "pipe",
-        stderr: "pipe",
+      statusWriter.setPrd({
+        version: 1,
+        feature: "mock-feature",
+        userStories: [],
       });
 
-      await proc.exited;
+      const startTime = Date.now() - 5000;
+      const ctx: CrashRecoveryContext = {
+        statusWriter,
+        getTotalCost: () => 2.5,
+        getIterations: () => 4,
+        jsonlFilePath: TEST_JSONL,
+        runId: "run-sigterm-mock",
+        feature: "mock-feature",
+        getStartTime: () => startTime,
+        getTotalStories: () => 10,
+        getStoriesCompleted: () => 3,
+      };
 
-      // Give filesystem time to flush
-      await Bun.sleep(200);
+      const cleanup = installCrashHandlers(ctx);
 
-      // Verify run.complete event was written
-      if (existsSync(TEST_JSONL)) {
-        const file = Bun.file(TEST_JSONL);
-        const content = await file.text();
-        const lines = content.trim().split("\n").filter(Boolean);
+      // Capture the SIGTERM listener registered by installCrashHandlers
+      const sigtermListeners = process.listeners("SIGTERM");
+      const sigtermHandler = sigtermListeners[sigtermListeners.length - 1] as () => Promise<void>;
 
-        // Find run.complete event
-        const runCompleteEvent = lines
-          .map((line) => JSON.parse(line))
-          .find((entry) => entry.stage === "run.complete");
+      // Invoke the handler directly — no real signal, no subprocess
+      await sigtermHandler();
 
-        expect(runCompleteEvent).toBeDefined();
-        expect(runCompleteEvent.message).toBe("Feature execution terminated");
-        expect(runCompleteEvent.data.runId).toBe("test-run-123");
-        expect(runCompleteEvent.data.feature).toBe("test-feature");
-        expect(runCompleteEvent.data.exitReason).toBe("sigterm");
-        expect(runCompleteEvent.data.totalCost).toBe(1.5);
-        expect(runCompleteEvent.data.iterations).toBe(3);
-        expect(runCompleteEvent.data.totalStories).toBe(5);
-        expect(runCompleteEvent.data.storiesCompleted).toBe(2);
-        expect(runCompleteEvent.data.durationMs).toBeGreaterThanOrEqual(0);
-      }
-
-      // Cleanup
+      // Restore process.exit before assertions
+      process.exit = originalExit;
       cleanup();
+
+      // Assert process.exit was called with the correct SIGTERM exit code
+      expect(exitCalled).toBe(true);
+      expect(exitCode).toBe(128 + 15); // SIGTERM = signal 15
+
+      // Assert run.complete event was written to JSONL
+      const file = Bun.file(TEST_JSONL);
+      expect(await file.exists()).toBe(true);
+      const content = await file.text();
+      const lines = content.trim().split("\n").filter(Boolean);
+      const entries = lines.map((line: string) => JSON.parse(line));
+      const runCompleteEvent = entries.find((e: { stage: string }) => e.stage === "run.complete");
+
+      expect(runCompleteEvent).toBeDefined();
+      expect(runCompleteEvent.level).toBe("info");
+      expect(runCompleteEvent.message).toBe("Feature execution terminated");
+      expect(runCompleteEvent.data.runId).toBe("run-sigterm-mock");
+      expect(runCompleteEvent.data.feature).toBe("mock-feature");
+      expect(runCompleteEvent.data.success).toBe(false);
+      expect(runCompleteEvent.data.exitReason).toBe("sigterm");
+      expect(runCompleteEvent.data.totalCost).toBe(2.5);
+      expect(runCompleteEvent.data.iterations).toBe(4);
+      expect(runCompleteEvent.data.totalStories).toBe(10);
+      expect(runCompleteEvent.data.storiesCompleted).toBe(3);
+      expect(runCompleteEvent.data.durationMs).toBeGreaterThanOrEqual(0);
     });
   });
 });

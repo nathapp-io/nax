@@ -96,6 +96,7 @@ async function writeRunComplete(ctx: CrashRecoveryContext, exitReason: string): 
       data: {
         runId: ctx.runId,
         feature: ctx.feature,
+        success: false,
         exitReason,
         totalCost,
         iterations,
