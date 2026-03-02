@@ -29,6 +29,8 @@ export interface AgentResult {
   exitCode: number;
   /** stdout output (last N lines) */
   output: string;
+  /** stderr output tail (last N lines) — useful for diagnosing failures */
+  stderr?: string;
   /** Whether the agent hit a rate limit */
   rateLimited: boolean;
   /** Duration in milliseconds */

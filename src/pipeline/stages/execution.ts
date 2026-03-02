@@ -174,6 +174,8 @@ export const executionStage: PipelineStage = {
 
     if (!result.success) {
       logger.error("execution", "Agent session failed", {
+        exitCode: result.exitCode,
+        stderr: result.stderr || "",
         rateLimited: result.rateLimited,
         storyId: ctx.story.id,
       });

@@ -29,6 +29,14 @@ import type {
 const MAX_AGENT_OUTPUT_CHARS = 5000;
 
 /**
+ * Maximum characters to capture from agent stderr.
+ *
+ * Last 1000 chars typically contain the actual error message (e.g., 401, 500, crash).
+ * Smaller than stdout since stderr is more focused on errors.
+ */
+const MAX_AGENT_STDERR_CHARS = 1000;
+
+/**
  * Claude Code agent adapter implementation.
  *
  * Implements the AgentAdapter interface for Claude Code CLI,
@@ -217,6 +225,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       success: exitCode === 0 && !timedOut,
       exitCode: actualExitCode,
       output: stdout.slice(-MAX_AGENT_OUTPUT_CHARS),
+      stderr: stderr.slice(-MAX_AGENT_STDERR_CHARS),
       rateLimited,
       durationMs,
       estimatedCost: cost,
