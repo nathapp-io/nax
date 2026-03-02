@@ -173,6 +173,7 @@
 ### Features
 - [x] ~~`nax unlock` command (shipped v0.16.1 dogfood run 2026-03-01)~~
 - [x] ~~Constitution file support (shipped v0.15.3 US-010)~~
+- [ ] **Smart Test Runner** — nax detects which test files are related to changed source files (like `jest --findRelatedTests`) and scopes `verify` to only those tests. Eliminates full-suite timeout issues and speeds up verify significantly. Target: v0.18.x
 - [ ] **Central Run Registry** — nax writes run state to `~/.nax/runs/<project>-<feature>-<runId>/` (status.json + events.jsonl symlink) on every run start, regardless of worktree vs main repo. Dashboard reads from `~/.nax/runs/` — solves two problems: (1) worktree runs invisible to dashboard, (2) no stable pointer to active JSONL. Target: v0.18.0
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
