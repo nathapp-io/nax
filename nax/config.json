@@ -71,11 +71,13 @@
     }
   },
   "quality": {
-    "requireTypecheck": false,
-    "requireLint": false,
+    "requireTypecheck": true,
+    "requireLint": true,
     "requireTests": true,
     "commands": {
-      "test": "bun test --no-coverage"
+      "test": "bun test --no-coverage",
+      "typecheck": "bun x tsc --noEmit",
+      "lint": "bun x biome check src/ bin/"
     },
     "forceExit": false,
     "detectOpenHandles": true,
@@ -114,10 +116,14 @@
   "review": {
     "enabled": true,
     "checks": [
-      "test"
+      "test",
+      "typecheck",
+      "lint"
     ],
     "commands": {
-      "test": "bun test --no-coverage"
+      "test": "bun test --no-coverage",
+      "typecheck": "bun x tsc --noEmit",
+      "lint": "bun x biome check src/ bin/"
     }
   },
   "plan": {
