@@ -125,7 +125,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   buildAllowedEnv(options: AgentRunOptions): Record<string, string | undefined> {
     const allowed: Record<string, string | undefined> = {};
 
-    const essentialVars = ["PATH", "HOME", "TMPDIR", "NODE_ENV"];
+    const essentialVars = ["PATH", "HOME", "TMPDIR", "NODE_ENV", "USER", "LOGNAME"];
     for (const varName of essentialVars) {
       if (process.env[varName]) {
         allowed[varName] = process.env[varName];
