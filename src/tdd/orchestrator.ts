@@ -104,23 +104,38 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   const shouldRollbackOnFailure = config.tdd.rollbackOnFailure ?? true;
 
   // Session 1: Test Writer
+  // BUG-018 Fix: Skip test-writer on retry iterations — tests already exist from first attempt.
+  // Saves ~3min per escalation by avoiding a no-op Claude Code session.
+  const isRetry = (story.attempts ?? 0) > 0;
   const session1Ref = initialRef;
-  const testWriterTier = config.tdd.sessionTiers?.testWriter ?? "balanced";
-  const session1 = await runTddSession(
-    "test-writer",
-    agent,
-    story,
-    config,
-    workdir,
-    testWriterTier,
-    session1Ref,
-    contextMarkdown,
-    lite,
-    lite,
-  );
-  sessions.push(session1);
 
-  if (!session1.success) {
+  if (isRetry) {
+    logger.info("tdd", "Skipping test-writer on retry (attempt > 0, tests already exist)", {
+      storyId: story.id,
+      attempt: story.attempts,
+    });
+  }
+
+  let session1: TddSessionResult | undefined;
+
+  if (!isRetry) {
+    const testWriterTier = config.tdd.sessionTiers?.testWriter ?? "balanced";
+    session1 = await runTddSession(
+      "test-writer",
+      agent,
+      story,
+      config,
+      workdir,
+      testWriterTier,
+      session1Ref,
+      contextMarkdown,
+      lite,
+      lite,
+    );
+    sessions.push(session1);
+  }
+
+  if (session1 && !session1.success) {
     needsHumanReview = true;
     reviewReason = "Test writer session failed or violated isolation";
     const failureCategory: FailureCategory =
@@ -139,10 +154,11 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   }
 
   // BUG-20 Fix: Verify that test-writer session actually created test files
+  // On retry (BUG-018 fix), session1 is undefined — skip this check entirely
   const testFilePatterns = /\.(test|spec)\.(ts|js|tsx|jsx)$/;
-  const testFilesCreated = session1.filesChanged.filter((f) => testFilePatterns.test(f));
+  const testFilesCreated = session1 ? session1.filesChanged.filter((f) => testFilePatterns.test(f)) : [];
 
-  if (testFilesCreated.length === 0) {
+  if (!isRetry && testFilesCreated.length === 0) {
     // BUG-012 Fix: Before declaring greenfield, check if test files already exist in the repo.
     // The test-writer may have produced 0 new files because tests were pre-written and committed
     // separately (e.g. during dogfooding or manual setup). If tests already exist, skip

@@ -55,13 +55,23 @@ export const verifyStage: PipelineStage = {
 
     // HARD FAILURE: Tests must pass for story to be marked complete
     if (!result.success) {
-      logger.error("verify", "Tests failed", {
-        exitCode: result.status,
-        storyId: ctx.story.id,
-      });
+      // BUG-019: Distinguish timeout from actual test failures
+      if (result.status === "TIMEOUT") {
+        const timeout = ctx.config.execution.verificationTimeoutSeconds;
+        logger.error("verify", `Test suite exceeded timeout (${timeout}s). This is NOT a test failure — consider increasing execution.verificationTimeoutSeconds or scoping tests.`, {
+          exitCode: result.status,
+          storyId: ctx.story.id,
+          timeoutSeconds: timeout,
+        });
+      } else {
+        logger.error("verify", "Tests failed", {
+          exitCode: result.status,
+          storyId: ctx.story.id,
+        });
+      }
 
-      // Log first few lines of output for context
-      if (result.output) {
+      // Log first few lines of output for context (skip for TIMEOUT — output is misleading)
+      if (result.output && result.status !== "TIMEOUT") {
         const outputLines = result.output.split("\n").slice(0, 10);
         if (outputLines.length > 0) {
           logger.debug("verify", "Test output preview", {
@@ -72,7 +82,9 @@ export const verifyStage: PipelineStage = {
 
       return {
         action: "escalate",
-        reason: `Tests failed (exit code ${result.status ?? "non-zero"})`,
+        reason: result.status === "TIMEOUT"
+          ? `Test suite TIMEOUT after ${ctx.config.execution.verificationTimeoutSeconds}s (not a code failure)`
+          : `Tests failed (exit code ${result.status ?? "non-zero"})`,
       };
     }
 
