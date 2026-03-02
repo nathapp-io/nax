@@ -50,7 +50,7 @@ export const verifyStage: PipelineStage = {
     const result = await regression({
       workdir: ctx.workdir,
       command: testCommand,
-      timeoutSeconds: 120,
+      timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
     });
 
     // HARD FAILURE: Tests must pass for story to be marked complete
