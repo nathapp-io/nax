@@ -23,6 +23,12 @@ export interface CrashRecoveryContext {
   getIterations: () => number;
   jsonlFilePath?: string;
   pidRegistry?: PidRegistry;
+  // BUG-017: Additional context for run.complete event on SIGTERM
+  runId?: string;
+  feature?: string;
+  getStartTime?: () => number;
+  getTotalStories?: () => number;
+  getStoriesCompleted?: () => number;
 }
 
 /**
@@ -62,6 +68,49 @@ async function writeFatalLog(jsonlFilePath: string | undefined, signal: string, 
     appendFileSync(jsonlFilePath, line, "utf8");
   } catch (err) {
     console.error("[crash-recovery] Failed to write fatal log:", err);
+  }
+}
+
+/**
+ * Write run.complete event to JSONL file (BUG-017)
+ * Called on SIGTERM to emit final run summary before exit
+ */
+async function writeRunComplete(ctx: CrashRecoveryContext, exitReason: string): Promise<void> {
+  if (!ctx.jsonlFilePath || !ctx.runId || !ctx.feature) return;
+
+  const logger = getSafeLogger();
+
+  try {
+    const totalCost = ctx.getTotalCost();
+    const iterations = ctx.getIterations();
+    const startTime = ctx.getStartTime?.() ?? Date.now();
+    const durationMs = Date.now() - startTime;
+    const totalStories = ctx.getTotalStories?.() ?? 0;
+    const storiesCompleted = ctx.getStoriesCompleted?.() ?? 0;
+
+    const runCompleteEntry = {
+      timestamp: new Date().toISOString(),
+      level: "info",
+      stage: "run.complete",
+      message: "Feature execution terminated",
+      data: {
+        runId: ctx.runId,
+        feature: ctx.feature,
+        exitReason,
+        totalCost,
+        iterations,
+        totalStories,
+        storiesCompleted,
+        durationMs,
+      },
+    };
+
+    const line = `${JSON.stringify(runCompleteEntry)}\n`;
+    const { appendFileSync } = await import("node:fs");
+    appendFileSync(ctx.jsonlFilePath, line, "utf8");
+    logger?.debug("crash-recovery", "run.complete event written", { exitReason });
+  } catch (err) {
+    console.error("[crash-recovery] Failed to write run.complete event:", err);
   }
 }
 
@@ -107,6 +156,9 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): () => void {
 
     // Write fatal log
     await writeFatalLog(ctx.jsonlFilePath, signal);
+
+    // Write run.complete event (BUG-017)
+    await writeRunComplete(ctx, signal.toLowerCase());
 
     // Update status.json to crashed
     await updateStatusToCrashed(ctx.statusWriter, ctx.getTotalCost(), ctx.getIterations(), signal);

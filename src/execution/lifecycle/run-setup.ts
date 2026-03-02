@@ -47,6 +47,9 @@ export interface RunSetupOptions {
   formatterMode: "quiet" | "normal" | "verbose" | "json";
   getTotalCost: () => number;
   getIterations: () => number;
+  // BUG-017: Additional getters for run.complete event on SIGTERM
+  getStoriesCompleted: () => number;
+  getTotalStories: () => number;
 }
 
 export interface RunSetupResult {
@@ -111,6 +114,12 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     getIterations,
     jsonlFilePath: logFilePath,
     pidRegistry,
+    // BUG-017: Pass context for run.complete event on SIGTERM
+    runId: options.runId,
+    feature: options.feature,
+    getStartTime: () => options.startTime,
+    getTotalStories: options.getTotalStories,
+    getStoriesCompleted: options.getStoriesCompleted,
   });
 
   // Acquire lock to prevent concurrent execution
