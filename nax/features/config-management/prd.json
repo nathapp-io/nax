@@ -6,10 +6,10 @@
     {
       "id": "CM-001",
       "title": "nax config --explain",
-      "description": "Add `nax config` CLI command with `--explain` flag that dumps the effective merged config with inline comments. Resolution order: defaults → global (~/.nax/config.json) → project (nax/config.json) → CLI overrides. Each field gets a one-line human-readable description of what it does. Fields overridden by project config are annotated with '(project override)' vs '(global)' vs '(default)'. Output format: YAML-like with # comments. Must cover all sections: models, routing, execution, tdd, quality, review, context, constitution, analyze, plan, acceptance, interaction, autoMode. Implementation: add `src/cli/config.ts` with `configCommand()`. Read merged config from loader, annotate each field using a static descriptions map (Record<string, string>). Register in `src/cli/index.ts`.",
+      "description": "Add `nax config` CLI command with `--explain` flag that dumps the effective merged config with inline comments. Resolution order: defaults \u2192 global (~/.nax/config.json) \u2192 project (nax/config.json) \u2192 CLI overrides. Each field gets a one-line human-readable description of what it does. Fields overridden by project config are annotated with '(project override)' vs '(global)' vs '(default)'. Output format: YAML-like with # comments. Must cover all sections: models, routing, execution, tdd, quality, review, context, constitution, analyze, plan, acceptance, interaction, autoMode. Implementation: add `src/cli/config.ts` with `configCommand()`. Read merged config from loader, annotate each field using a static descriptions map (Record<string, string>). Register in `src/cli/index.ts`.",
       "complexity": "medium",
-      "status": "pending",
-      "attempts": 0,
+      "status": "passed",
+      "attempts": 1,
       "escalations": [],
       "dependencies": [],
       "tags": [
@@ -25,12 +25,13 @@
       ],
       "storyPoints": 1,
       "priorErrors": [
-        "Attempt 1 failed with model tier: fast"
+        "Attempt 1 failed with model tier: fast",
+        "Attempt 1 failed with model tier: balanced"
       ],
-      "passes": false,
+      "passes": true,
       "routing": {
         "complexity": "simple",
-        "modelTier": "balanced",
+        "modelTier": "powerful",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "three-session-tdd-lite: strategy:lite"
       }
@@ -38,7 +39,7 @@
     {
       "id": "CM-002",
       "title": "nax config --diff",
-      "description": "Add `--diff` flag to `nax config` that shows only fields where project config overrides the global config. Output format: table or structured list showing field path, project value, and global value. Skip fields that are identical or only set at one layer. If no project config exists, print 'No project config found — using global defaults'. Implementation: in `src/cli/config.ts`, load global and project configs separately (extend loader to expose both), deep-diff them, format as table. Use the same descriptions map from CM-001 to add context.",
+      "description": "Add `--diff` flag to `nax config` that shows only fields where project config overrides the global config. Output format: table or structured list showing field path, project value, and global value. Skip fields that are identical or only set at one layer. If no project config exists, print 'No project config found \u2014 using global defaults'. Implementation: in `src/cli/config.ts`, load global and project configs separately (extend loader to expose both), deep-diff them, format as table. Use the same descriptions map from CM-001 to add context.",
       "complexity": "medium",
       "status": "pending",
       "attempts": 0,
@@ -93,5 +94,5 @@
       }
     }
   ],
-  "updatedAt": "2026-03-02T05:38:11.984Z"
+  "updatedAt": "2026-03-02T06:07:47.433Z"
 }
