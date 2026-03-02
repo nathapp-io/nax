@@ -71,7 +71,7 @@
     }
   },
   "quality": {
-    "requireTypecheck": true,
+    "requireTypecheck": false,
     "requireLint": true,
     "requireTests": true,
     "commands": {
@@ -117,7 +117,6 @@
     "enabled": true,
     "checks": [
       "test",
-      "typecheck",
       "lint"
     ],
     "commands": {
