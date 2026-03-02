@@ -75,7 +75,7 @@
     "requireLint": true,
     "requireTests": true,
     "commands": {
-      "test": "bun test --no-coverage",
+      "test": "bun test test/unit/ test/integration/cli-config.test.ts test/integration/cli-config-diff.test.ts test/integration/cli-config-default-view.test.ts test/integration/cli-config-default-edge-cases.test.ts test/integration/config/ test/integration/config-loader.test.ts test/integration/config.test.ts --no-coverage",
       "typecheck": "bun x tsc --noEmit",
       "lint": "bun x biome check src/ bin/"
     },
@@ -121,7 +121,7 @@
       "lint"
     ],
     "commands": {
-      "test": "bun test --no-coverage",
+      "test": "bun test test/unit/ test/integration/cli-config.test.ts test/integration/cli-config-diff.test.ts test/integration/cli-config-default-view.test.ts test/integration/cli-config-default-edge-cases.test.ts test/integration/config/ test/integration/config-loader.test.ts test/integration/config.test.ts --no-coverage",
       "typecheck": "bun x tsc --noEmit",
       "lint": "bun x biome check src/ bin/"
     }
