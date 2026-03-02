@@ -6,7 +6,9 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { deepMergeConfig } from "../config/merger";
 import { findProjectDir, globalConfigPath } from "../config/loader";
+import { DEFAULT_CONFIG } from "../config/defaults";
 import type { NaxConfig } from "../config/schema";
 
 /** Field descriptions for human-readable output */
@@ -187,6 +189,153 @@ const FIELD_DESCRIPTIONS: Record<string, string> = {
 export interface ConfigCommandOptions {
   /** Show field explanations */
   explain?: boolean;
+  /** Show only fields where project overrides global */
+  diff?: boolean;
+}
+
+/**
+ * Load and parse a JSON config file.
+ *
+ * @param path - Path to config file
+ * @returns Parsed config object or null if file doesn't exist
+ */
+async function loadConfigFile(path: string): Promise<Record<string, unknown> | null> {
+  if (!existsSync(path)) return null;
+  try {
+    return await Bun.file(path).json();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Load global config merged with defaults.
+ *
+ * @returns Global config object (defaults + global overrides)
+ */
+async function loadGlobalConfig(): Promise<Record<string, unknown>> {
+  const globalPath = globalConfigPath();
+  const globalConf = await loadConfigFile(globalPath);
+
+  if (!globalConf) {
+    return structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>);
+  }
+
+  return deepMergeConfig(
+    structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>),
+    globalConf,
+  );
+}
+
+/**
+ * Load project config (raw, without defaults or global).
+ *
+ * @returns Project config object or null if not found
+ */
+async function loadProjectConfig(): Promise<Record<string, unknown> | null> {
+  const projectDir = findProjectDir();
+  if (!projectDir) return null;
+
+  const projectPath = join(projectDir, "config.json");
+  return await loadConfigFile(projectPath);
+}
+
+/**
+ * Represents a single config field difference.
+ */
+interface ConfigDiff {
+  /** Dot-separated field path (e.g., "execution.maxIterations") */
+  path: string;
+  /** Value from global config */
+  globalValue: unknown;
+  /** Value from project config */
+  projectValue: unknown;
+}
+
+/**
+ * Deep diff two config objects, returning only fields that differ.
+ *
+ * @param global - Global config (defaults + global overrides)
+ * @param project - Project config (raw overrides only)
+ * @param currentPath - Current path in object tree (for recursion)
+ * @returns Array of differences
+ */
+function deepDiffConfigs(
+  global: Record<string, unknown>,
+  project: Record<string, unknown>,
+  currentPath: string[] = [],
+): ConfigDiff[] {
+  const diffs: ConfigDiff[] = [];
+
+  // Iterate over project config keys (we only care about what project overrides)
+  for (const key of Object.keys(project)) {
+    const projectValue = project[key];
+    const globalValue = global[key];
+    const path = [...currentPath, key];
+    const pathStr = path.join(".");
+
+    // Handle nested objects
+    if (
+      projectValue !== null &&
+      typeof projectValue === "object" &&
+      !Array.isArray(projectValue) &&
+      globalValue !== null &&
+      typeof globalValue === "object" &&
+      !Array.isArray(globalValue)
+    ) {
+      // Recurse into nested object
+      const nestedDiffs = deepDiffConfigs(
+        globalValue as Record<string, unknown>,
+        projectValue as Record<string, unknown>,
+        path,
+      );
+      diffs.push(...nestedDiffs);
+    } else {
+      // Compare primitive values or arrays
+      if (!deepEqual(projectValue, globalValue)) {
+        diffs.push({
+          path: pathStr,
+          globalValue,
+          projectValue,
+        });
+      }
+    }
+  }
+
+  return diffs;
+}
+
+/**
+ * Deep equality check for two values.
+ *
+ * @param a - First value
+ * @param b - Second value
+ * @returns True if values are deeply equal
+ */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a === null || b === null) return false;
+  if (a === undefined || b === undefined) return false;
+
+  // Handle arrays
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    return a.every((val, idx) => deepEqual(val, b[idx]));
+  }
+
+  // Handle objects
+  if (typeof a === "object" && typeof b === "object") {
+    const aObj = a as Record<string, unknown>;
+    const bObj = b as Record<string, unknown>;
+    const aKeys = Object.keys(aObj);
+    const bKeys = Object.keys(bObj);
+
+    if (aKeys.length !== bKeys.length) return false;
+
+    return aKeys.every((key) => deepEqual(aObj[key], bObj[key]));
+  }
+
+  return false;
 }
 
 /**
@@ -196,12 +345,56 @@ export interface ConfigCommandOptions {
  * @param options - Command options
  */
 export async function configCommand(config: NaxConfig, options: ConfigCommandOptions = {}): Promise<void> {
-  const { explain = false } = options;
+  const { explain = false, diff = false } = options;
+
+  // Validate mutually exclusive flags
+  if (explain && diff) {
+    console.error("Error: --explain and --diff are mutually exclusive");
+    process.exit(1);
+  }
 
   // Determine sources
   const sources = determineConfigSources();
 
-  if (explain) {
+  if (diff) {
+    // Diff mode: show only fields where project overrides global
+    const projectConf = await loadProjectConfig();
+
+    if (!projectConf) {
+      console.log("No project config found — using global defaults");
+      return;
+    }
+
+    const globalConf = await loadGlobalConfig();
+    const diffs = deepDiffConfigs(globalConf, projectConf);
+
+    if (diffs.length === 0) {
+      console.log("No differences between project and global config");
+      return;
+    }
+
+    console.log("# Config Differences (Project overrides Global)");
+    console.log();
+    console.log("─".repeat(80));
+    console.log("Field".padEnd(40) + "Project Value".padEnd(20) + "Global Value");
+    console.log("─".repeat(80));
+
+    for (const diff of diffs) {
+      const path = diff.path.padEnd(40);
+      const projectVal = formatValueForTable(diff.projectValue);
+      const globalVal = formatValueForTable(diff.globalValue);
+
+      console.log(`${path}${projectVal.padEnd(20)}${globalVal}`);
+
+      // Show description if available
+      const description = FIELD_DESCRIPTIONS[diff.path];
+      if (description) {
+        console.log(`${"".padEnd(40)}↳ ${description}`);
+      }
+    }
+
+    console.log("─".repeat(80));
+  } else if (explain) {
     console.log("# nax Configuration");
     console.log("#");
     console.log("# Resolution order: defaults → global → project → CLI overrides");
@@ -335,6 +528,37 @@ function formatValue(value: unknown): string {
   }
   if (typeof value === "object") {
     return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+/**
+ * Format a config value for table display (shorter format).
+ *
+ * @param value - Value to format
+ * @returns Formatted string (max ~18 chars)
+ */
+function formatValueForTable(value: unknown): string {
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  if (typeof value === "string") {
+    if (value.length > 15) {
+      return `"${value.slice(0, 12)}..."`;
+    }
+    return `"${value}"`;
+  }
+  if (typeof value === "boolean") return String(value);
+  if (typeof value === "number") return String(value);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "[]";
+    return `[...${value.length}]`;
+  }
+  if (typeof value === "object") {
+    const str = JSON.stringify(value);
+    if (str.length > 15) {
+      return "{...}";
+    }
+    return str;
   }
   return String(value);
 }

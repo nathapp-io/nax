@@ -622,10 +622,11 @@ program
   .command("config")
   .description("Display effective merged configuration")
   .option("--explain", "Show detailed field descriptions", false)
+  .option("--diff", "Show only fields where project overrides global", false)
   .action(async (options) => {
     try {
       const config = await loadConfig();
-      await configCommand(config, { explain: options.explain });
+      await configCommand(config, { explain: options.explain, diff: options.diff });
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);

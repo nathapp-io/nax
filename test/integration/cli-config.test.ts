@@ -536,4 +536,201 @@ describe("Config Command", () => {
       expect(output).toContain("# Project config: (not found)");
     });
   });
+
+  describe("Diff mode (--diff)", () => {
+    test("shows message when no project config exists", async () => {
+      process.chdir(tempDir);
+
+      const config = await loadConfig();
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      expect(output).toContain("No project config found — using global defaults");
+    });
+
+    test("shows message when project config has no differences", async () => {
+      // Create empty project config
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      writeFileSync(join(naxDir, "config.json"), JSON.stringify({}));
+
+      process.chdir(tempDir);
+
+      const config = await loadConfig();
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      expect(output).toContain("No differences between project and global config");
+    });
+
+    test("shows differences in table format", async () => {
+      // Create project config with overrides
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      writeFileSync(
+        join(naxDir, "config.json"),
+        JSON.stringify({
+          execution: {
+            maxIterations: 25,
+            costLimit: 10.0,
+          },
+        }),
+      );
+
+      process.chdir(tempDir);
+
+      const config = await loadConfig();
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      // Should show header
+      expect(output).toContain("# Config Differences (Project overrides Global)");
+
+      // Should show table with field, project value, global value
+      expect(output).toContain("Field");
+      expect(output).toContain("Project Value");
+      expect(output).toContain("Global Value");
+
+      // Should show the specific differences
+      expect(output).toContain("execution.maxIterations");
+      expect(output).toContain("25");
+      expect(output).toContain("execution.costLimit");
+      expect(output).toContain("10");
+    });
+
+    test("shows field descriptions for differences", async () => {
+      // Create project config with overrides
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      writeFileSync(
+        join(naxDir, "config.json"),
+        JSON.stringify({
+          execution: {
+            maxIterations: 25,
+          },
+        }),
+      );
+
+      process.chdir(tempDir);
+
+      const config = await loadConfig();
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      // Should show description for the field
+      expect(output).toContain("↳ Max iterations per feature run");
+    });
+
+    test("only shows fields that differ", async () => {
+      // Create project config with overrides
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      writeFileSync(
+        join(naxDir, "config.json"),
+        JSON.stringify({
+          execution: {
+            maxIterations: 25,
+          },
+        }),
+      );
+
+      process.chdir(tempDir);
+
+      const config = await loadConfig();
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      // Should show maxIterations
+      expect(output).toContain("execution.maxIterations");
+
+      // Should NOT show fields that aren't overridden
+      expect(output).not.toContain("execution.iterationDelayMs");
+      expect(output).not.toContain("quality.requireTypecheck");
+      expect(output).not.toContain("models.fast");
+    });
+
+    test("handles nested object differences", async () => {
+      // Create project config with nested overrides
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      writeFileSync(
+        join(naxDir, "config.json"),
+        JSON.stringify({
+          routing: {
+            llm: {
+              timeoutMs: 30000,
+            },
+          },
+        }),
+      );
+
+      process.chdir(tempDir);
+
+      const config = await loadConfig();
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      // Should show nested field path
+      expect(output).toContain("routing.llm.timeoutMs");
+      expect(output).toContain("30000");
+    });
+
+    test("handles array differences", async () => {
+      // Create project config with array overrides
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      writeFileSync(
+        join(naxDir, "config.json"),
+        JSON.stringify({
+          autoMode: {
+            fallbackOrder: ["codex", "claude"],
+          },
+        }),
+      );
+
+      process.chdir(tempDir);
+
+      const config = await loadConfig();
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      // Should show array field
+      expect(output).toContain("autoMode.fallbackOrder");
+      expect(output).toContain("[...2]"); // Compact array format
+    });
+
+    test("mutually exclusive with --explain", async () => {
+      // Capture console.error
+      const consoleErrors: string[] = [];
+      const originalConsoleError = console.error;
+      console.error = (...args: unknown[]) => {
+        consoleErrors.push(args.map((a) => String(a)).join(" "));
+      };
+
+      // Mock process.exit to prevent test exit
+      const originalExit = process.exit;
+      let exitCode: number | undefined;
+      process.exit = ((code?: number) => {
+        exitCode = code;
+      }) as typeof process.exit;
+
+      try {
+        const config = await loadConfig();
+        await configCommand(config, { explain: true, diff: true });
+
+        expect(exitCode).toBe(1);
+        expect(consoleErrors.join("\n")).toContain("--explain and --diff are mutually exclusive");
+      } finally {
+        console.error = originalConsoleError;
+        process.exit = originalExit;
+      }
+    });
+  });
 });
