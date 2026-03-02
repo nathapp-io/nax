@@ -76,7 +76,7 @@
       "title": "nax config (default view)",
       "description": "When `nax config` is run without flags, print the effective merged config as formatted JSON with a header showing the config sources found (global path, project path if exists). This is the quick 'what am I actually running with?' view. Implementation: default action in `src/cli/config.ts`. Load merged config, pretty-print with JSON.stringify(config, null, 2). Add header lines showing which config files were found and loaded.",
       "complexity": "simple",
-      "status": "passed",
+      "status": "failed",
       "attempts": 1,
       "escalations": [],
       "dependencies": [],
@@ -95,7 +95,7 @@
         "Attempt 1 failed with model tier: fast",
         "Attempt 1 failed with model tier: balanced"
       ],
-      "passes": true,
+      "passes": false,
       "routing": {
         "complexity": "simple",
         "modelTier": "powerful",
@@ -104,5 +104,5 @@
       }
     }
   ],
-  "updatedAt": "2026-03-02T07:12:34.594Z"
+  "updatedAt": "2026-03-02T07:20:20.866Z"
 }
