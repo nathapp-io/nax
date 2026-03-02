@@ -30,26 +30,6 @@
 
 ---
 
-## v0.16.5 — Project Context Generator
-
-**Theme:** Replace constitution generator with a proper project context system
-**Status:** 🔲 Planned
-
-**User Stories:**
-- [ ] US-001: Introduce `nax/context.md` as the source for agent config generation
-  - Separate from `nax/constitution.md` (nax runtime behavior only — unchanged)
-  - `context.md` holds: coding standards, architecture decisions, forbidden patterns
-  - `nax init` scaffolds `nax/context.md` starter template (placeholder sections)
-- [ ] US-002: Auto-inject project metadata at generate time
-  - Read `package.json`: project name + key dependencies (auto-detect stack)
-  - Read test/lint commands from `nax/config.json` (already loaded)
-  - Configurable: `generate.autoInject: true` (default) in `nax/config.json`; set `false` to skip
-- [ ] US-003: `nax generate` top-level CLI command
-  - `nax generate` → all agents | `--agent <name>` → specific | `--dry-run` → preview
-  - Remove `nax constitution generate` entirely (no deprecation alias)
-- [ ] US-004: Update all generators to accept merged `ContextContent` (manual + auto-injected)
-  - `ContextContent` replaces `ConstitutionContent` in generator types
-
 ---
 
 ## v0.16.4 — Bugfixes: Routing + Env Allowlist (SHIPPED)
@@ -157,6 +137,7 @@
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
 | v0.16.4 | Bugfixes: Routing + Env Allowlist | 2026-03-02 | BUG-012/013/014 |
+| v0.16.1 | Project Context Generator | 2026-03-01 | `nax generate`, auto-inject, multi-language |
 | v0.16.0 | Story Size Gate | 2026-03-01 | [releases/v0.16.0.md](releases/v0.16.0.md) |
 | v0.15.3 | Constitution Generator + Runner Interaction Wiring | 2026-02-28 | [releases/v0.15.3.md](releases/v0.15.3.md) |
 | v0.15.1 | Architectural Compliance + Security Hardening | 2026-02-28 | [releases/v0.15.1.md](releases/v0.15.1.md) |
