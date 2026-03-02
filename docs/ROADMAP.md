@@ -6,7 +6,31 @@
 
 ---
 
-## Next: v0.16.1 — Project Context Generator
+## Next: v0.17.0 — Config Management
+
+**Theme:** Make nax config understandable and manageable as it grows
+**Status:** 🔲 Planned
+
+**User Stories:**
+- [ ] US-001: `nax config --explain` — dump effective merged config with inline comments explaining each field
+  - Shows merged result (defaults → global → project → CLI overrides)
+  - Each field gets a one-line description of what it does and when it matters
+  - Highlight project overrides vs inherited defaults
+- [ ] US-002: `nax config --diff` — show only what project overrides vs global
+  - Side-by-side: field, project value, global value
+  - Useful for auditing why a run behaved differently than expected
+- [ ] US-003: `nax help config` — full config reference
+  - One-liner per field, always accessible
+  - Grouped by section (routing, tdd, quality, review, execution, etc.)
+  - Include which phase each config affects (precheck / routing / execution / post-implementation)
+- [ ] US-004: Config simplification — merge `quality` and `review` into unified quality gates
+  - `quality.precheck.*` — what must exist before nax starts (currently `quality.require*`)
+  - `quality.postCheck.*` — what runs after implementation (currently `review.*`)
+  - Deprecate old `review` section with backward compat shim
+
+---
+
+## v0.16.5 — Project Context Generator
 
 **Theme:** Replace constitution generator with a proper project context system
 **Status:** 🔲 Planned
@@ -25,6 +49,18 @@
   - Remove `nax constitution generate` entirely (no deprecation alias)
 - [ ] US-004: Update all generators to accept merged `ContextContent` (manual + auto-injected)
   - `ContextContent` replaces `ConstitutionContent` in generator types
+
+---
+
+## v0.16.4 — Bugfixes: Routing + Env Allowlist (SHIPPED)
+
+**Theme:** Fix routing bugs and macOS auth failure
+**Status:** ✅ Shipped 2026-03-02
+
+**Changes:**
+- [x] **BUG-012:** Greenfield detection ignores pre-existing test files (fixed: skip test-writer when tests exist)
+- [x] **BUG-013:** Escalation routing not applied across iterations (fixed: create routing object when missing)
+- [x] **BUG-014:** `buildAllowedEnv()` strips `USER`/`LOGNAME` — breaks macOS Keychain OAuth lookup for Claude Code (fixed: added to essentialVars)
 
 ---
 
@@ -120,6 +156,7 @@
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.16.4 | Bugfixes: Routing + Env Allowlist | 2026-03-02 | BUG-012/013/014 |
 | v0.16.0 | Story Size Gate | 2026-03-01 | [releases/v0.16.0.md](releases/v0.16.0.md) |
 | v0.15.3 | Constitution Generator + Runner Interaction Wiring | 2026-02-28 | [releases/v0.15.3.md](releases/v0.15.3.md) |
 | v0.15.1 | Architectural Compliance + Security Hardening | 2026-02-28 | [releases/v0.15.1.md](releases/v0.15.1.md) |
@@ -147,6 +184,9 @@
 - [x] ~~BUG-009: No cross-story regression check (fixed v0.14.0 US-002)~~
 - [x] ~~BUG-010: Greenfield TDD no test files (fixed v0.14.0 US-001 + US-005)~~
 - [x] ~~BUG-011: Escalation tier budget not enforced (fixed v0.14.0)~~
+- [x] ~~BUG-012: Greenfield detection ignores pre-existing test files (fixed v0.16.4)~~
+- [x] ~~BUG-013: Escalation routing not applied in iterations (fixed v0.16.4)~~
+- [x] ~~BUG-014: buildAllowedEnv() strips USER/LOGNAME, breaks macOS Keychain auth (fixed v0.16.4)~~
 
 ### Features
 - [x] ~~`nax unlock` command (shipped v0.16.1 dogfood run 2026-03-01)~~
@@ -158,7 +198,9 @@
 - [ ] VitePress documentation site — full CLI reference, hosted as standalone docs (pre-publish requirement)
 
 ### Bugs (Found via Dogfooding)
-- [ ] **BUG-012: Greenfield detection ignores pre-existing test files** — Greenfield check counts files created *during* the test-writer session only. If tests already exist in git (e.g. pre-written or committed separately), the test-writer session produces 0 new files → triggers false "greenfield" pause. Fix: before running test-writer, scan git for existing test files matching the story's scope. If found and passing → skip test-writer, proceed directly to implementer. Found: 2026-03-01 dogfood run (nax unlock feature).
+- [x] ~~BUG-012: Greenfield detection ignores pre-existing test files (fixed v0.16.4)~~
+- [x] ~~BUG-013: Escalation routing not applied in iterations (fixed v0.16.4)~~
+- [x] ~~BUG-014: buildAllowedEnv() strips USER/LOGNAME (fixed v0.16.4)~~
 
 ---
 
@@ -168,4 +210,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-01 (v0.16.1 shipped; BUG-012 found via dogfooding)*
+*Last updated: 2026-03-02 (v0.16.4 shipped; v0.17.0 Config Management planned)*
