@@ -1,0 +1,5 @@
+[2026-03-02T06:07:47.434Z] CM-001 — FAILED — nax config --explain — Execution failed
+[2026-03-02T08:15:00.000Z] CM-002 — PASSED — nax config --diff — All acceptance criteria met
+[2026-03-02T07:12:34.595Z] CM-002 — FAILED — nax config --diff — Execution failed
+[2026-03-02T09:30:00.000Z] CM-003 — PASSED — nax config (default view) — All acceptance criteria met
+[2026-03-02T07:20:20.866Z] CM-003 — FAILED — nax config (default view) — Execution failed

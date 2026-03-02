@@ -75,6 +75,7 @@ describe("loadConstitution", () => {
       enabled: false,
       path: "constitution.md",
       maxTokens: 2000,
+      skipGlobal: true,
     };
 
     const result = await loadConstitution(TEST_DIR, config);
@@ -86,6 +87,7 @@ describe("loadConstitution", () => {
       enabled: true,
       path: "constitution.md",
       maxTokens: 2000,
+      skipGlobal: true,
     };
 
     const result = await loadConstitution(TEST_DIR, config);
@@ -100,6 +102,7 @@ describe("loadConstitution", () => {
       enabled: true,
       path: "constitution.md",
       maxTokens: 2000,
+      skipGlobal: true,
     };
 
     const result = await loadConstitution(TEST_DIR, config);
@@ -115,6 +118,7 @@ describe("loadConstitution", () => {
       enabled: true,
       path: "constitution.md",
       maxTokens: 2000,
+      skipGlobal: true,
     };
 
     const result = await loadConstitution(TEST_DIR, config);
@@ -134,6 +138,7 @@ describe("loadConstitution", () => {
       enabled: true,
       path: "constitution.md",
       maxTokens: 50, // Only allow 50 tokens
+      skipGlobal: true,
     };
 
     const result = await loadConstitution(TEST_DIR, config);
@@ -153,6 +158,7 @@ describe("loadConstitution", () => {
       enabled: true,
       path: "custom-rules.md",
       maxTokens: 2000,
+      skipGlobal: true,
     };
 
     const result = await loadConstitution(TEST_DIR, config);
@@ -191,6 +197,7 @@ describe("loadConstitution", () => {
       enabled: true,
       path: "constitution.md",
       maxTokens: 2000,
+      skipGlobal: true,
     };
 
     const result = await loadConstitution(TEST_DIR, config);

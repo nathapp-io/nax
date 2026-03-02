@@ -57,6 +57,7 @@ import {
   runsListCommand,
   runsShowCommand,
 } from "../src/cli";
+import { configCommand } from "../src/cli/config";
 import { generateCommand } from "../src/cli/generate";
 import { diagnose } from "../src/commands/diagnose";
 import { logsCommand } from "../src/commands/logs";
@@ -614,6 +615,22 @@ program
       console.log(`  ${agent.displayName.padEnd(15)} ${status}`);
     }
     console.log();
+  });
+
+// ── config ───────────────────────────────────────────
+program
+  .command("config")
+  .description("Display effective merged configuration")
+  .option("--explain", "Show detailed field descriptions", false)
+  .option("--diff", "Show only fields where project overrides global", false)
+  .action(async (options) => {
+    try {
+      const config = await loadConfig();
+      await configCommand(config, { explain: options.explain, diff: options.diff });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
   });
 
 // ── status ───────────────────────────────────────────

@@ -34,3 +34,4 @@ export {
   type InteractCancelOptions,
 } from "./interact";
 export { generateCommand, type GenerateCommandOptions } from "./generate";
+export { configCommand, type ConfigCommandOptions } from "./config";
