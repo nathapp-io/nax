@@ -22,9 +22,39 @@
 - [ ] **BUG-023:** Agent failure doesn't log exitCode/stderr → add to `execution.Agent session failed` event
 - [ ] **BUG-025:** `needsHumanReview` doesn't trigger interactive plugin in headless mode → wire to interaction chain or suppress the log
 
-### Features
-- [ ] **Per-story testStrategy override in PRD** — add optional `testStrategy` field to userStory schema (`"test-after" | "three-session-tdd" | "three-session-tdd-lite"`). When set, overrides config + task classification for that story. Enables fine-grained control without changing global config.
-- [ ] **Smart Test Runner** — detect changed files → scope verify to related tests only (like `jest --findRelatedTests`). Eliminates full-suite timeout issues.
+---
+
+## v0.18.1 — Per-Story testStrategy
+
+**Theme:** Fine-grained test strategy control per story
+**Status:** 🔲 Planned
+
+- [ ] Add optional `testStrategy` field to userStory PRD schema (`"test-after" | "three-session-tdd" | "three-session-tdd-lite"`)
+- [ ] When set, overrides global config + task classification for that story
+- [ ] Update routing stage to check `story.testStrategy` before config/LLM
+- [ ] Docs + tests
+
+---
+
+## v0.18.2 — Smart Test Runner
+
+**Theme:** Scope verify to changed files only — eliminate suite timeout issues
+**Status:** 🔲 Planned
+
+- [ ] After agent implementation, run `git diff --name-only` to get changed source files
+- [ ] Map source → test files by naming convention (`src/foo/bar.ts` → `test/unit/foo/bar.test.ts`)
+- [ ] Run only related tests for verify (instead of full suite)
+- [ ] Fallback to full suite when mapping yields no test files
+- [ ] Config flag `execution.smartTestRunner: true` (default: true) to opt out
+- [ ] Result: verify drops from ~125s to ~10-20s for typical single-file fixes
+
+---
+
+## v0.19.0 — Central Run Registry
+
+**Theme:** Unified run tracking across worktrees + dashboard integration
+**Status:** 🔲 Planned
+
 - [ ] **Central Run Registry** — `~/.nax/runs/<project>-<feature>-<runId>/` with status.json + events.jsonl symlink. Dashboard reads from registry.
 
 ---
@@ -80,11 +110,14 @@
 ### Features
 - [x] ~~`nax unlock` command~~
 - [x] ~~Constitution file support~~
+- [x] ~~Per-story testStrategy override — v0.18.1~~
+- [x] ~~Smart Test Runner — v0.18.2~~
+- [x] ~~Central Run Registry — v0.19.0~~
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
-- [ ] `nax diagnose --ai` flag (LLM-assisted, future version TBD)
+- [ ] `nax diagnose --ai` flag (LLM-assisted, future TBD)
 - [ ] **Auto-decompose oversized stories** — When story size gate triggers, offer via interaction chain to auto-decompose using `nax analyse`.
-- [ ] **AST-based context file detection** — replace keyword-matching auto-detect with import/symbol graph analysis. Target: v0.19+
+- [ ] **AST-based context file detection** — replace keyword-matching with import/symbol graph analysis. Target: v0.19+
 - [ ] VitePress documentation site — full CLI reference, hosted as standalone docs (pre-publish requirement)
 
 ---
