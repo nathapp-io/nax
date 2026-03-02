@@ -213,7 +213,12 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
     // Recursively display config with descriptions
     displayConfigWithDescriptions(config, [], sources);
   } else {
-    // Simple JSON output
+    // Default view: JSON with header showing config sources
+    console.log("// nax Configuration");
+    console.log("// Resolution order: defaults → global → project → CLI overrides");
+    console.log(`// Global config: ${sources.global ? sources.global : "(not found)"}`);
+    console.log(`// Project config: ${sources.project ? sources.project : "(not found)"}`);
+    console.log();
     console.log(JSON.stringify(config, null, 2));
   }
 }

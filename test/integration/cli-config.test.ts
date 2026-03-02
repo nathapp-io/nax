@@ -47,11 +47,18 @@ describe("Config Command", () => {
       // Run command without explain
       await configCommand(config, { explain: false });
 
-      // Should output valid JSON
+      // Should output valid JSON (after the header lines)
       const output = consoleOutput.join("\n");
-      expect(() => JSON.parse(output)).not.toThrow();
 
-      const parsed = JSON.parse(output);
+      // Find where JSON starts (after header comments and blank line)
+      const lines = output.split("\n");
+      const jsonStartIndex = lines.findIndex((line) => line.startsWith("{"));
+      expect(jsonStartIndex).toBeGreaterThan(0);
+
+      const jsonOutput = lines.slice(jsonStartIndex).join("\n");
+      expect(() => JSON.parse(jsonOutput)).not.toThrow();
+
+      const parsed = JSON.parse(jsonOutput);
       expect(parsed.version).toBe(1);
       expect(parsed.models).toBeDefined();
     });
@@ -73,6 +80,89 @@ describe("Config Command", () => {
       expect(output).toContain("# Configuration schema version");
       expect(output).toContain("# Model tier definitions");
       expect(output).toContain("# Auto mode configuration");
+    });
+  });
+
+  describe("Default view (without --explain)", () => {
+    test("shows header with config sources", async () => {
+      const config = await loadConfig(tempDir);
+      await configCommand(config, { explain: false });
+
+      const output = consoleOutput.join("\n");
+
+      // Should have header comments
+      expect(output).toContain("// nax Configuration");
+      expect(output).toContain("// Resolution order: defaults → global → project → CLI overrides");
+      expect(output).toContain("// Global config:");
+      expect(output).toContain("// Project config:");
+    });
+
+    test("shows global config path when found", async () => {
+      const config = await loadConfig(tempDir);
+      await configCommand(config, { explain: false });
+
+      const output = consoleOutput.join("\n");
+
+      // Global config path is in the output
+      expect(output).toContain("// Global config:");
+    });
+
+    test("shows (not found) for missing project config", async () => {
+      // Use an isolated directory without nax/config.json
+      const isolatedDir = join(tempDir, "isolated");
+      mkdirSync(isolatedDir, { recursive: true });
+      process.chdir(isolatedDir);
+
+      const config = await loadConfig(isolatedDir);
+      await configCommand(config, { explain: false });
+
+      const output = consoleOutput.join("\n");
+
+      // Project config should show as not found in the isolated directory
+      expect(output).toContain("// Project config: (not found)");
+    });
+
+    test("shows project config path when present", async () => {
+      // Create project config
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      writeFileSync(
+        join(naxDir, "config.json"),
+        JSON.stringify({
+          execution: {
+            maxIterations: 20,
+          },
+        }),
+      );
+
+      process.chdir(tempDir);
+
+      const config = await loadConfig(tempDir);
+      await configCommand(config, { explain: false });
+
+      const output = consoleOutput.join("\n");
+
+      // Should show project config path
+      expect(output).toContain("// Project config:");
+      expect(output).toContain("config.json");
+    });
+
+    test("header precedes JSON output", async () => {
+      const config = await loadConfig(tempDir);
+      await configCommand(config, { explain: false });
+
+      const output = consoleOutput.join("\n");
+      const lines = output.split("\n");
+
+      // Find header and JSON start
+      const headerLineIndex = lines.findIndex((line) => line.includes("// nax Configuration"));
+      const jsonLineIndex = lines.findIndex((line) => line.startsWith("{"));
+
+      expect(headerLineIndex).toBeGreaterThanOrEqual(0);
+      expect(jsonLineIndex).toBeGreaterThan(headerLineIndex);
+
+      // Should have blank line between header and JSON
+      expect(lines[jsonLineIndex - 1]).toBe("");
     });
   });
 
