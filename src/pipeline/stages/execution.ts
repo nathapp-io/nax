@@ -154,6 +154,7 @@ export const executionStage: PipelineStage = {
     // Validate agent supports the requested tier
     if (!validateAgentForTier(agent, ctx.routing.modelTier)) {
       logger.warn("execution", "Agent tier mismatch", {
+        storyId: ctx.story.id,
         agentName: agent.name,
         requestedTier: ctx.routing.modelTier,
         supportedTiers: agent.capabilities.supportedTiers,
@@ -177,7 +178,7 @@ export const executionStage: PipelineStage = {
         storyId: ctx.story.id,
       });
       if (result.rateLimited) {
-        logger.warn("execution", "Rate limited — will retry");
+        logger.warn("execution", "Rate limited — will retry", { storyId: ctx.story.id });
       }
       return { action: "escalate" };
     }

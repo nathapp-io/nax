@@ -33,18 +33,18 @@ export const verifyStage: PipelineStage = {
 
     // Skip verification if tests are not required
     if (!ctx.config.quality.requireTests) {
-      logger.debug("verify", "Skipping verification (quality.requireTests = false)");
+      logger.debug("verify", "Skipping verification (quality.requireTests = false)", { storyId: ctx.story.id });
       return { action: "continue" };
     }
 
     // Skip verification if no test command is configured
     const testCommand = ctx.config.review?.commands?.test ?? ctx.config.quality.commands.test;
     if (!testCommand) {
-      logger.debug("verify", "Skipping verification (no test command configured)");
+      logger.debug("verify", "Skipping verification (no test command configured)", { storyId: ctx.story.id });
       return { action: "continue" };
     }
 
-    logger.info("verify", "Running verification");
+    logger.info("verify", "Running verification", { storyId: ctx.story.id });
 
     // Use unified regression gate (includes 2s wait for agent process cleanup)
     const result = await regression({
@@ -75,6 +75,7 @@ export const verifyStage: PipelineStage = {
         const outputLines = result.output.split("\n").slice(0, 10);
         if (outputLines.length > 0) {
           logger.debug("verify", "Test output preview", {
+            storyId: ctx.story.id,
             output: outputLines.join("\n"),
           });
         }
