@@ -8,8 +8,10 @@
       "title": "Fix partial routing override in routing stage",
       "description": "In `src/pipeline/stages/routing.ts`, the code unconditionally overwrites complexity and testStrategy from story.routing, even if undefined. Fix: only override when the field is actually set. Change line 41 `routing.complexity = ctx.story.routing.complexity` to `if (ctx.story.routing?.complexity) routing.complexity = ctx.story.routing.complexity`. Same for testStrategy on the next line. This allows PRD authors to set just `\"routing\": { \"testStrategy\": \"test-after\" }` without needing complexity/modelTier. Add test in `test/unit/pipeline/routing-partial-override.test.ts` verifying: (1) partial override with only testStrategy works, (2) LLM-classified complexity is preserved when not overridden, (3) full override still works.",
       "complexity": "simple",
-      "status": "pending",
-      "tags": ["bugfix"],
+      "status": "passed",
+      "tags": [
+        "bugfix"
+      ],
       "acceptanceCriteria": [
         "routing.complexity is only overridden when ctx.story.routing.complexity is defined",
         "routing.testStrategy is only overridden when ctx.story.routing.testStrategy is defined",
@@ -18,9 +20,13 @@
       ],
       "dependencies": [],
       "escalations": [],
-      "attempts": 0,
-      "passes": false,
-      "routing": { "testStrategy": "test-after" }
+      "attempts": 1,
+      "passes": true,
+      "routing": {
+        "testStrategy": "test-after"
+      },
+      "priorErrors": [],
+      "storyPoints": 1
     },
     {
       "id": "STR-001",
@@ -28,54 +34,78 @@
       "description": "Create module `src/verification/smart-runner.ts` with exported function `getChangedSourceFiles(workdir: string): Promise<string[]>`. Runs `git diff --name-only HEAD~1` in the workdir to get changed files. Filter to only `.ts` files that start with `src/`. Use Bun.spawn for the git command. Handle git errors gracefully (return empty array on failure).",
       "complexity": "simple",
       "status": "pending",
-      "tags": ["core"],
+      "tags": [
+        "core"
+      ],
       "acceptanceCriteria": [
         "getChangedSourceFiles returns only .ts files under src/",
         "Returns empty array when git command fails",
         "Uses Bun.spawn (not child_process)"
       ],
-      "dependencies": ["FIX-001"],
+      "dependencies": [
+        "FIX-001"
+      ],
       "escalations": [],
       "attempts": 0,
       "passes": false,
-      "routing": { "testStrategy": "test-after" }
+      "routing": {
+        "testStrategy": "test-after"
+      },
+      "priorErrors": [],
+      "storyPoints": 1
     },
     {
       "id": "STR-002",
       "title": "Source-to-test file mapping",
-      "description": "Add `mapSourceToTests(sourceFiles: string[], workdir: string): Promise<string[]>` to `src/verification/smart-runner.ts`. Convention: `src/foo/bar.ts` → `test/unit/foo/bar.test.ts`. Also check `test/integration/foo/bar.test.ts`. Only return paths where the file actually exists on disk (use Bun.file(path).exists()). Return empty array if no test files map.",
+      "description": "Add `mapSourceToTests(sourceFiles: string[], workdir: string): Promise<string[]>` to `src/verification/smart-runner.ts`. Convention: `src/foo/bar.ts` \u2192 `test/unit/foo/bar.test.ts`. Also check `test/integration/foo/bar.test.ts`. Only return paths where the file actually exists on disk (use Bun.file(path).exists()). Return empty array if no test files map.",
       "complexity": "simple",
       "status": "pending",
-      "tags": ["core"],
+      "tags": [
+        "core"
+      ],
       "acceptanceCriteria": [
         "Maps src/foo/bar.ts to test/unit/foo/bar.test.ts correctly",
         "Also checks test/integration/ path",
         "Only returns files that exist on disk",
         "Returns empty array when no test files match"
       ],
-      "dependencies": ["STR-001"],
+      "dependencies": [
+        "STR-001"
+      ],
       "escalations": [],
       "attempts": 0,
       "passes": false,
-      "routing": { "testStrategy": "test-after" }
+      "routing": {
+        "testStrategy": "test-after"
+      },
+      "priorErrors": [],
+      "storyPoints": 1
     },
     {
       "id": "STR-003",
       "title": "Smart test command builder",
-      "description": "Add `buildSmartTestCommand(testFiles: string[], baseCommand: string): string` to `src/verification/smart-runner.ts`. When testFiles is non-empty: replace the last path argument in baseCommand with the specific test file paths joined by spaces. E.g., `bun test test/` with files `[test/unit/foo.test.ts]` → `bun test test/unit/foo.test.ts`. When testFiles is empty: return the original baseCommand unchanged (full suite fallback).",
+      "description": "Add `buildSmartTestCommand(testFiles: string[], baseCommand: string): string` to `src/verification/smart-runner.ts`. When testFiles is non-empty: replace the last path argument in baseCommand with the specific test file paths joined by spaces. E.g., `bun test test/` with files `[test/unit/foo.test.ts]` \u2192 `bun test test/unit/foo.test.ts`. When testFiles is empty: return the original baseCommand unchanged (full suite fallback).",
       "complexity": "simple",
       "status": "pending",
-      "tags": ["core"],
+      "tags": [
+        "core"
+      ],
       "acceptanceCriteria": [
         "Builds scoped command with specific test files",
         "Returns original command when testFiles is empty",
         "Works with bun test test/ base command"
       ],
-      "dependencies": ["STR-002"],
+      "dependencies": [
+        "STR-002"
+      ],
       "escalations": [],
       "attempts": 0,
       "passes": false,
-      "routing": { "testStrategy": "test-after" }
+      "routing": {
+        "testStrategy": "test-after"
+      },
+      "priorErrors": [],
+      "storyPoints": 1
     },
     {
       "id": "STR-004",
@@ -83,36 +113,52 @@
       "description": "Add `execution.smartTestRunner: boolean` (default: true) to the config in `src/config/types.ts` (ExecutionConfig interface) and the Zod schema in `src/config/loader.ts`. When false, the verify stage skips smart runner entirely and uses the full test suite command.",
       "complexity": "simple",
       "status": "pending",
-      "tags": ["config"],
+      "tags": [
+        "config"
+      ],
       "acceptanceCriteria": [
         "execution.smartTestRunner field exists in ExecutionConfig interface",
         "Zod schema accepts and defaults to true",
         "Config loads correctly with and without the field"
       ],
-      "dependencies": ["STR-003"],
+      "dependencies": [
+        "STR-003"
+      ],
       "escalations": [],
       "attempts": 0,
       "passes": false,
-      "routing": { "testStrategy": "test-after" }
+      "routing": {
+        "testStrategy": "test-after"
+      },
+      "priorErrors": [],
+      "storyPoints": 1
     },
     {
       "id": "STR-005",
       "title": "Integrate smart runner into verify stage",
-      "description": "Modify `src/pipeline/stages/verify.ts` to use smart runner when `ctx.config.execution.smartTestRunner` is true (default). Before calling regression(): call getChangedSourceFiles(ctx.workdir) → mapSourceToTests(files, ctx.workdir) → buildSmartTestCommand(testFiles, testCommand). Use the result as the command for regression(). Log which mode was selected: `[smart-runner] Running N targeted test files` or `[smart-runner] No mapped tests — falling back to full suite`.",
+      "description": "Modify `src/pipeline/stages/verify.ts` to use smart runner when `ctx.config.execution.smartTestRunner` is true (default). Before calling regression(): call getChangedSourceFiles(ctx.workdir) \u2192 mapSourceToTests(files, ctx.workdir) \u2192 buildSmartTestCommand(testFiles, testCommand). Use the result as the command for regression(). Log which mode was selected: `[smart-runner] Running N targeted test files` or `[smart-runner] No mapped tests \u2014 falling back to full suite`.",
       "complexity": "medium",
       "status": "pending",
-      "tags": ["integration"],
+      "tags": [
+        "integration"
+      ],
       "acceptanceCriteria": [
         "Verify stage uses scoped test command when smart runner finds test files",
         "Falls back to full suite when no test files map",
         "Skips smart runner entirely when config.execution.smartTestRunner is false",
         "Logs the mode used"
       ],
-      "dependencies": ["STR-004"],
+      "dependencies": [
+        "STR-004"
+      ],
       "escalations": [],
       "attempts": 0,
       "passes": false,
-      "routing": { "testStrategy": "test-after" }
+      "routing": {
+        "testStrategy": "test-after"
+      },
+      "priorErrors": [],
+      "storyPoints": 1
     },
     {
       "id": "STR-006",
@@ -120,17 +166,26 @@
       "description": "Write `test/unit/verification/smart-runner.test.ts` with tests: (1) getChangedSourceFiles filters to .ts src/ files only, (2) mapSourceToTests maps paths correctly and checks file existence, (3) mapSourceToTests returns empty when files don't exist, (4) buildSmartTestCommand builds scoped command with test files, (5) buildSmartTestCommand returns original command when testFiles is empty. Use temp dirs with Bun.write for file existence tests.",
       "complexity": "medium",
       "status": "pending",
-      "tags": ["test"],
+      "tags": [
+        "test"
+      ],
       "acceptanceCriteria": [
         "5 test cases all pass",
         "Uses temp dirs for file existence tests",
         "No external process spawning in unit tests (mock Bun.spawn)"
       ],
-      "dependencies": ["STR-005"],
+      "dependencies": [
+        "STR-005"
+      ],
       "escalations": [],
       "attempts": 0,
       "passes": false,
-      "routing": { "testStrategy": "test-after" }
+      "routing": {
+        "testStrategy": "test-after"
+      },
+      "priorErrors": [],
+      "storyPoints": 1
     }
-  ]
+  ],
+  "updatedAt": "2026-03-03T12:12:58.390Z"
 }

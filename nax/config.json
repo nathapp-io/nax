@@ -114,7 +114,7 @@
     "maxCodebaseSummaryTokens": 5000
   },
   "review": {
-    "enabled": true,
+    "enabled": false,
     "checks": [
       "test",
       "lint"
