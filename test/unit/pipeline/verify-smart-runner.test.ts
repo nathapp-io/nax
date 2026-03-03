@@ -8,7 +8,7 @@
  * 4. Logs the mode used
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { initLogger, resetLogger } from "../../../src/logger";
 import type { NaxConfig } from "../../../src/config";
 import type { PipelineContext } from "../../../src/pipeline/types";
@@ -38,6 +38,11 @@ mock.module("../../../src/verification/smart-runner", () => ({
 // ── Dynamic import after mocks ────────────────────────────────────────────────
 
 const { verifyStage } = await import("../../../src/pipeline/stages/verify");
+
+// Restore all mocks after this file to prevent leakage into other test files
+afterAll(() => {
+  mock.restore();
+});
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
