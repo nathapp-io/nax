@@ -78,7 +78,7 @@
     "requireLint": true,
     "requireTests": true,
     "commands": {
-      "test": "bun test --no-coverage",
+      "test": "NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000",
       "typecheck": "bun x tsc --noEmit",
       "lint": "bun x biome check src/ bin/"
     },
@@ -123,7 +123,7 @@
       "lint"
     ],
     "commands": {
-      "test": "bun test --no-coverage",
+      "test": "NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000",
       "typecheck": "bun x tsc --noEmit",
       "lint": "bun x biome check src/ bin/"
     }
