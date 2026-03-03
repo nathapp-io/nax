@@ -1,5 +1,42 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { getChangedSourceFiles, mapSourceToTests } from "../../../src/verification/smart-runner";
+import { buildSmartTestCommand, getChangedSourceFiles, mapSourceToTests } from "../../../src/verification/smart-runner";
+
+// ---------------------------------------------------------------------------
+// buildSmartTestCommand
+// ---------------------------------------------------------------------------
+
+describe("buildSmartTestCommand", () => {
+  test("returns original command when testFiles is empty", () => {
+    const result = buildSmartTestCommand([], "bun test test/");
+    expect(result).toBe("bun test test/");
+  });
+
+  test("replaces last path argument with specific test file", () => {
+    const result = buildSmartTestCommand(["test/unit/foo.test.ts"], "bun test test/");
+    expect(result).toBe("bun test test/unit/foo.test.ts");
+  });
+
+  test("joins multiple test files with spaces", () => {
+    const result = buildSmartTestCommand(
+      ["test/unit/foo.test.ts", "test/unit/bar.test.ts"],
+      "bun test test/",
+    );
+    expect(result).toBe("bun test test/unit/foo.test.ts test/unit/bar.test.ts");
+  });
+
+  test("appends test files when command has no path argument", () => {
+    const result = buildSmartTestCommand(["test/unit/foo.test.ts"], "bun test");
+    expect(result).toBe("bun test test/unit/foo.test.ts");
+  });
+
+  test("replaces last path-like token even when flags precede it", () => {
+    const result = buildSmartTestCommand(
+      ["test/unit/foo.test.ts"],
+      "bun test --coverage test/",
+    );
+    expect(result).toBe("bun test --coverage test/unit/foo.test.ts");
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Helpers to mock Bun.spawn (used internally via the "bun" import alias)

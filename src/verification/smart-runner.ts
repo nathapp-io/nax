@@ -65,6 +65,55 @@ export async function mapSourceToTests(sourceFiles: string[], workdir: string): 
   return result;
 }
 
+/**
+ * Build a scoped test command targeting specific test files.
+ *
+ * When `testFiles` is non-empty, replaces the last path-like argument in
+ * `baseCommand` (a token containing `/`) with the specific test file paths
+ * joined by spaces. If no path argument is found, appends the test files.
+ *
+ * When `testFiles` is empty, returns `baseCommand` unchanged (full-suite
+ * fallback).
+ *
+ * @param testFiles   - Test file paths to scope the run to
+ * @param baseCommand - Full test command (e.g. `"bun test test/"`)
+ * @returns Scoped command string
+ *
+ * @example
+ * ```typescript
+ * buildSmartTestCommand(["test/unit/foo.test.ts"], "bun test test/")
+ * // => "bun test test/unit/foo.test.ts"
+ *
+ * buildSmartTestCommand([], "bun test test/")
+ * // => "bun test test/"
+ * ```
+ */
+export function buildSmartTestCommand(testFiles: string[], baseCommand: string): string {
+  if (testFiles.length === 0) {
+    return baseCommand;
+  }
+
+  const parts = baseCommand.trim().split(/\s+/);
+
+  // Find the last token that looks like a path (contains '/')
+  let lastPathIndex = -1;
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (parts[i].includes("/")) {
+      lastPathIndex = i;
+      break;
+    }
+  }
+
+  if (lastPathIndex === -1) {
+    // No path argument — append test files
+    return `${baseCommand} ${testFiles.join(" ")}`;
+  }
+
+  // Replace the last path argument with the specific test files
+  const newParts = [...parts.slice(0, lastPathIndex), ...testFiles];
+  return newParts.join(" ");
+}
+
 export async function getChangedSourceFiles(workdir: string): Promise<string[]> {
   try {
     const proc = Bun.spawn({
