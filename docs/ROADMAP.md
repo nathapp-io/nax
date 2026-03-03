@@ -53,17 +53,26 @@
 
 ---
 
-## v0.18.2 — Smart Test Runner
+## v0.18.2 — Smart Test Runner + Bun PTY Migration
 
-**Theme:** Scope verify to changed files only — eliminate suite timeout issues
+**Theme:** Scope verify to changed files only + remove node-pty native addon
 **Status:** 🔲 Planned
 
+### Smart Test Runner
 - [ ] After agent implementation, run `git diff --name-only` to get changed source files
 - [ ] Map source → test files by naming convention (`src/foo/bar.ts` → `test/unit/foo/bar.test.ts`)
 - [ ] Run only related tests for verify (instead of full suite)
 - [ ] Fallback to full suite when mapping yields no test files
 - [ ] Config flag `execution.smartTestRunner: true` (default: true) to opt out
 - [ ] Result: verify drops from ~125s to ~10-20s for typical single-file fixes
+
+### Bun PTY Migration (BUN-001)
+- [ ] Replace `node-pty` (native addon, requires python/make/g++ to build) with `Bun.Terminal` API (v1.3.5+)
+- [ ] Update `src/agents/claude.ts` `runInteractive()` — replace `nodePty.spawn()` with `Bun.Terminal`
+- [ ] Update `src/tui/hooks/usePty.ts` — replace `IPty` interface with Bun equivalent
+- [ ] Remove `node-pty` from `dependencies` in `package.json`
+- [ ] Remove `--ignore-scripts` workaround from `.gitlab-ci.yml`
+- [ ] Benefit: no native build, no gyp/python/gcc in CI, cleaner alpine support
 
 ---
 
