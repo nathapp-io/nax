@@ -106,6 +106,8 @@ export interface ExecutionConfig {
   typecheckCommand?: string | null;
   /** Use --dangerously-skip-permissions flag for agent (default: true for backward compat, SEC-1 fix) */
   dangerouslySkipPermissions?: boolean;
+  /** Enable smart test runner to scope test runs to changed files (default: true) */
+  smartTestRunner?: boolean;
 }
 
 /** Quality gate config */

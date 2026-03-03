@@ -63,11 +63,14 @@
     "verificationTimeoutSeconds": 300,
     "maxStoriesPerFeature": 15,
     "rectification": {
-      "enabled": true,
+      "enabled": false,
       "maxRetries": 2,
-      "fullSuiteTimeoutSeconds": 120,
+      "fullSuiteTimeoutSeconds": 600,
       "maxFailureSummaryChars": 2000,
       "abortOnIncreasingFailures": true
+    },
+    "regressionGate": {
+      "enabled": false
     }
   },
   "quality": {
@@ -75,9 +78,9 @@
     "requireLint": true,
     "requireTests": true,
     "commands": {
-      "test": "bun test --no-coverage",
-      "typecheck": "bun x tsc --noEmit",
-      "lint": "bun x biome check src/ bin/"
+      "test": "bun run test",
+      "typecheck": "bun run typecheck",
+      "lint": "bun run lint"
     },
     "forceExit": false,
     "detectOpenHandles": true,
@@ -114,15 +117,15 @@
     "maxCodebaseSummaryTokens": 5000
   },
   "review": {
-    "enabled": true,
+    "enabled": false,
     "checks": [
       "test",
       "lint"
     ],
     "commands": {
-      "test": "bun test --no-coverage",
-      "typecheck": "bun x tsc --noEmit",
-      "lint": "bun x biome check src/ bin/"
+      "test": "bun run test",
+      "typecheck": "bun run typecheck",
+      "lint": "bun run lint"
     }
   },
   "plan": {

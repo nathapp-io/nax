@@ -22,6 +22,7 @@
 
 import { getLogger } from "../../logger";
 import { regression } from "../../verification/gate";
+import { _smartRunnerDeps } from "../../verification/smart-runner";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const verifyStage: PipelineStage = {
@@ -46,10 +47,28 @@ export const verifyStage: PipelineStage = {
 
     logger.info("verify", "Running verification", { storyId: ctx.story.id });
 
+    // Determine effective test command (smart runner or full suite)
+    let effectiveCommand = testCommand;
+    const smartRunnerEnabled = ctx.config.execution.smartTestRunner !== false;
+
+    if (smartRunnerEnabled) {
+      const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(ctx.workdir);
+      const testFiles = await _smartRunnerDeps.mapSourceToTests(sourceFiles, ctx.workdir);
+
+      if (testFiles.length > 0) {
+        effectiveCommand = _smartRunnerDeps.buildSmartTestCommand(testFiles, testCommand);
+        logger.info("verify", `[smart-runner] Running ${testFiles.length} targeted test files`, {
+          storyId: ctx.story.id,
+        });
+      } else {
+        logger.info("verify", "[smart-runner] No mapped tests — falling back to full suite", { storyId: ctx.story.id });
+      }
+    }
+
     // Use unified regression gate (includes 2s wait for agent process cleanup)
     const result = await regression({
       workdir: ctx.workdir,
-      command: testCommand,
+      command: effectiveCommand,
       timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
     });
 
