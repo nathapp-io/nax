@@ -74,6 +74,13 @@
 - [ ] Remove `--ignore-scripts` workaround from `.gitlab-ci.yml`
 - [ ] Benefit: no native build, no gyp/python/gcc in CI, cleaner alpine support
 
+### CI Memory Optimization (CI-001)
+- [ ] Investigate splitting test suite into parallel jobs (unit / integration / ui) to reduce per-job peak memory
+- [ ] Evaluate `bun test --shard` when stable (currently experimental)
+- [ ] Target: make test suite pass on 1GB runners (currently requires 8GB shared runner)
+- [ ] Known constraints: 2008 tests across 125 files, ~75s on local VPS (3.8GB), OOMs even with `--smol --concurrency 1`
+- [ ] Current workaround: use `saas-linux-small-amd64` (8GB) shared runner
+
 ---
 
 ## v0.19.0 — Central Run Registry
