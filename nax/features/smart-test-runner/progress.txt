@@ -6,3 +6,4 @@ Created: 2026-03-03T11:45:10.257Z
 [2026-03-03T12:12:58.473Z] FIX-001 — FAILED — Fix partial routing override in routing stage — Review failed: test failed (exit code 132)
 [2026-03-03T12:27:31.803Z] STR-001 — PASSED — Git diff file detection — Cost: $0.0994
 [2026-03-03T12:29:37.971Z] STR-001 — FAILED — Git diff file detection -- REGRESSION: full-suite regression detected
+[2026-03-03T12:52:43.615Z] STR-002 — PASSED — Source-to-test file mapping — Cost: $0.0889

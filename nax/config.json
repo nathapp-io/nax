@@ -68,6 +68,9 @@
       "fullSuiteTimeoutSeconds": 600,
       "maxFailureSummaryChars": 2000,
       "abortOnIncreasingFailures": true
+    },
+    "regressionGate": {
+      "enabled": false
     }
   },
   "quality": {

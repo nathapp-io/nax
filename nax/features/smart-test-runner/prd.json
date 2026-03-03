@@ -64,7 +64,7 @@
       "title": "Source-to-test file mapping",
       "description": "Add `mapSourceToTests(sourceFiles: string[], workdir: string): Promise<string[]>` to `src/verification/smart-runner.ts`. Convention: `src/foo/bar.ts` \u2192 `test/unit/foo/bar.test.ts`. Also check `test/integration/foo/bar.test.ts`. Only return paths where the file actually exists on disk (use Bun.file(path).exists()). Return empty array if no test files map.",
       "complexity": "simple",
-      "status": "pending",
+      "status": "passed",
       "tags": [
         "core"
       ],
@@ -79,7 +79,7 @@
       ],
       "escalations": [],
       "attempts": 0,
-      "passes": false,
+      "passes": true,
       "routing": {
         "testStrategy": "test-after"
       },
@@ -192,5 +192,5 @@
       "storyPoints": 1
     }
   ],
-  "updatedAt": "2026-03-03T12:33:54.928Z"
+  "updatedAt": "2026-03-03T12:52:44.370Z"
 }
