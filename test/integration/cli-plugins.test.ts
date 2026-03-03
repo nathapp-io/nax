@@ -113,13 +113,16 @@ function captureConsoleLog(): { output: string[]; restore: () => void } {
 
 describe("pluginsListCommand", () => {
   let tempDir: string;
+  let tempGlobalPluginsDir: string;
 
   beforeEach(async () => {
     tempDir = await createTempDir();
+    tempGlobalPluginsDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-global-plugins-"));
   });
 
   afterEach(async () => {
     await cleanupTempDir(tempDir);
+    await cleanupTempDir(tempGlobalPluginsDir);
   });
 
   describe("no plugins installed", () => {
@@ -144,7 +147,7 @@ describe("pluginsListCommand", () => {
       const capture = captureConsoleLog();
 
       try {
-        await pluginsListCommand(config, tempDir);
+        await pluginsListCommand(config, tempDir, tempGlobalPluginsDir);
 
         expect(capture.output.join("\n")).toContain("No plugins installed");
         expect(capture.output.join("\n")).toContain("~/.nax/plugins/");
@@ -158,18 +161,9 @@ describe("pluginsListCommand", () => {
 
   describe("plugins from global directory", () => {
     test("displays global plugins when in user home directory", async () => {
-      // Create a mock global plugins directory
-      const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
-
-      // Check if we can write to the actual global directory (skip test if we can't)
-      let canWriteGlobal = false;
-      try {
-        await fs.mkdir(globalPluginsDir, { recursive: true });
-        canWriteGlobal = true;
-      } catch {
-        console.log("Skipping global plugin test - cannot write to ~/.nax/plugins");
-        return;
-      }
+      // Use the temp global plugins dir (avoids depending on real ~/.nax/plugins/)
+      const globalPluginsDir = tempGlobalPluginsDir;
+      const canWriteGlobal = true;
 
       const plugin: NaxPlugin = {
         name: "test-global-optimizer",
@@ -212,7 +206,7 @@ describe("pluginsListCommand", () => {
       const capture = captureConsoleLog();
 
       try {
-        await pluginsListCommand(config, tempDir);
+        await pluginsListCommand(config, tempDir, globalPluginsDir);
 
         const output = capture.output.join("\n");
         expect(output).toContain("Installed Plugins:");
@@ -222,14 +216,8 @@ describe("pluginsListCommand", () => {
         expect(output).toContain("global");
       } finally {
         capture.restore();
-        // Clean up the test plugin file
-        if (canWriteGlobal) {
-          try {
-            await fs.unlink(path.join(globalPluginsDir, "test-global-plugin.ts"));
-          } catch {
-            // Ignore cleanup errors
-          }
-        }
+        // No explicit cleanup needed - tempGlobalPluginsDir is cleaned in afterEach
+        void canWriteGlobal; // suppress unused variable warning
       }
     });
   });
@@ -276,7 +264,7 @@ describe("pluginsListCommand", () => {
       const capture = captureConsoleLog();
 
       try {
-        await pluginsListCommand(config, tempDir);
+        await pluginsListCommand(config, tempDir, tempGlobalPluginsDir);
 
         const output = capture.output.join("\n");
         expect(output).toContain("Installed Plugins:");
@@ -337,7 +325,7 @@ describe("pluginsListCommand", () => {
       const capture = captureConsoleLog();
 
       try {
-        await pluginsListCommand(config, tempDir);
+        await pluginsListCommand(config, tempDir, tempGlobalPluginsDir);
 
         const output = capture.output.join("\n");
         expect(output).toContain("Installed Plugins:");
@@ -423,7 +411,7 @@ describe("pluginsListCommand", () => {
       const capture = captureConsoleLog();
 
       try {
-        await pluginsListCommand(config, tempDir);
+        await pluginsListCommand(config, tempDir, tempGlobalPluginsDir);
 
         const output = capture.output.join("\n");
 
@@ -504,7 +492,7 @@ describe("pluginsListCommand", () => {
       const capture = captureConsoleLog();
 
       try {
-        await pluginsListCommand(config, tempDir);
+        await pluginsListCommand(config, tempDir, tempGlobalPluginsDir);
 
         const output = capture.output.join("\n");
         expect(output).toContain("multi-extension");
@@ -582,7 +570,7 @@ describe("pluginsListCommand", () => {
       const capture = captureConsoleLog();
 
       try {
-        await pluginsListCommand(config, tempDir);
+        await pluginsListCommand(config, tempDir, tempGlobalPluginsDir);
 
         const output = capture.output.join("\n");
 
@@ -653,7 +641,7 @@ describe("pluginsListCommand", () => {
 
       try {
         // Should complete without throwing
-        await expect(pluginsListCommand(config, tempDir)).resolves.toBeUndefined();
+        await expect(pluginsListCommand(config, tempDir, tempGlobalPluginsDir)).resolves.toBeUndefined();
       } finally {
         capture.restore();
       }
@@ -681,7 +669,7 @@ describe("pluginsListCommand", () => {
 
       try {
         // Should complete without throwing
-        await expect(pluginsListCommand(config, tempDir)).resolves.toBeUndefined();
+        await expect(pluginsListCommand(config, tempDir, tempGlobalPluginsDir)).resolves.toBeUndefined();
       } finally {
         capture.restore();
       }

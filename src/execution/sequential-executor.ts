@@ -160,7 +160,7 @@ export async function executeSequential(
         routing = applyCachedRouting(routing, story, ctx.config);
       } else {
         // Fallback to single-story mode (when batching disabled or batch plan exhausted)
-        const nextStory = getNextStory(prd, lastStoryId, ctx.config.execution.rectification.maxRetries);
+        const nextStory = getNextStory(prd, lastStoryId, ctx.config.execution.rectification?.maxRetries ?? 2);
         if (!nextStory) {
           logger?.warn("execution", "No actionable stories (check dependencies)");
           return buildResult("no-stories");

@@ -21,8 +21,13 @@ import { loadPRD } from "../../src/prd";
 
 describe("Precheck Integration with nax run", () => {
   let testDir: string;
+  let savedSkipPrecheck: string | undefined;
 
   beforeEach(async () => {
+    // Temporarily remove NAX_SKIP_PRECHECK so precheck actually runs in these tests
+    savedSkipPrecheck = process.env.NAX_SKIP_PRECHECK;
+    delete process.env.NAX_SKIP_PRECHECK;
+
     testDir = join(import.meta.dir, "..", "..", ".tmp", `precheck-integration-${Date.now()}`);
     mkdirSync(testDir, { recursive: true });
 
@@ -34,6 +39,13 @@ describe("Precheck Integration with nax run", () => {
   });
 
   afterEach(() => {
+    // Restore NAX_SKIP_PRECHECK to its original value
+    if (savedSkipPrecheck !== undefined) {
+      process.env.NAX_SKIP_PRECHECK = savedSkipPrecheck;
+    } else {
+      delete process.env.NAX_SKIP_PRECHECK;
+    }
+
     try {
       rmSync(testDir, { recursive: true, force: true });
     } catch (error) {

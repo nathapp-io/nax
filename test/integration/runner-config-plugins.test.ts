@@ -31,15 +31,18 @@ async function cleanupTempDir(dir: string): Promise<void> {
 describe("Runner config plugins integration (US-007)", () => {
   let projectRoot: string;
   let naxDir: string;
+  let tempGlobalPluginsDir: string;
 
   beforeEach(async () => {
     projectRoot = await createTempDir();
     naxDir = path.join(projectRoot, "nax");
     await fs.mkdir(naxDir, { recursive: true });
+    tempGlobalPluginsDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-global-plugins-"));
   });
 
   afterEach(async () => {
     await cleanupTempDir(projectRoot);
+    await cleanupTempDir(tempGlobalPluginsDir);
   });
 
   test("config.plugins[] entries are passed to loadPlugins() when runner initializes", async () => {
@@ -103,7 +106,7 @@ export default {
     expect(config.plugins?.[0].module).toBe("./custom-plugins/test-plugin.ts");
 
     // Step 3: Simulate what runner does - pass config.plugins to loadPlugins()
-    const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
+    const globalPluginsDir = tempGlobalPluginsDir;
     const projectPluginsDir = path.join(naxDir, "plugins");
     const configPlugins = config.plugins || [];
 
@@ -171,7 +174,7 @@ export default {
     expect(config.plugins?.[0].module).toBe("./lib/plugins/plugin.ts");
 
     // Pass to loadPlugins with projectRoot (as runner does)
-    const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
+    const globalPluginsDir = tempGlobalPluginsDir;
     const projectPluginsDir = path.join(naxDir, "plugins");
     const configPlugins = config.plugins || [];
 
@@ -236,7 +239,7 @@ export default {
     expect(config.plugins?.[0].module).toBe(absolutePluginPath);
 
     // Pass to loadPlugins
-    const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
+    const globalPluginsDir = tempGlobalPluginsDir;
     const projectPluginsDir = path.join(naxDir, "plugins");
     const configPlugins = config.plugins || [];
 
@@ -276,7 +279,7 @@ export default {
       expect(config.plugins).toHaveLength(1);
 
       // Pass to loadPlugins (should not throw)
-      const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
+      const globalPluginsDir = tempGlobalPluginsDir;
       const projectPluginsDir = path.join(naxDir, "plugins");
       const configPlugins = config.plugins || [];
 
@@ -309,7 +312,7 @@ export default {
     expect(config.plugins).toHaveLength(0);
 
     // Pass to loadPlugins
-    const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
+    const globalPluginsDir = tempGlobalPluginsDir;
     const projectPluginsDir = path.join(naxDir, "plugins");
     const configPlugins = config.plugins || [];
 
@@ -338,7 +341,7 @@ export default {
     expect(Array.isArray(configPlugins)).toBe(true);
 
     // Pass to loadPlugins
-    const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
+    const globalPluginsDir = tempGlobalPluginsDir;
     const projectPluginsDir = path.join(naxDir, "plugins");
 
     // Should not throw
@@ -438,7 +441,7 @@ export default {
     const config = await loadConfig(naxDir);
 
     // Pass to loadPlugins
-    const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
+    const globalPluginsDir = tempGlobalPluginsDir;
     const configPlugins = config.plugins || [];
 
     const registry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, projectRoot);

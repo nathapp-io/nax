@@ -63,6 +63,7 @@ function createTestContext(overrides?: Partial<PipelineContext>): PipelineContex
       iterationDelayMs: 1000,
       costLimit: 50,
       sessionTimeoutSeconds: 600,
+      verificationTimeoutSeconds: 30,
       maxStoriesPerFeature: 50,
     },
     quality: {

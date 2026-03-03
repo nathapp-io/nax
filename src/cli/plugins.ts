@@ -14,10 +14,15 @@ import { loadPlugins } from "../plugins/loader";
  *
  * @param config - nax configuration
  * @param workdir - Working directory for resolving plugin paths
+ * @param overrideGlobalPluginsDir - Override global plugins directory (used in tests)
  */
-export async function pluginsListCommand(config: NaxConfig, workdir: string): Promise<void> {
+export async function pluginsListCommand(
+  config: NaxConfig,
+  workdir: string,
+  overrideGlobalPluginsDir?: string,
+): Promise<void> {
   // Load plugins from all sources
-  const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
+  const globalPluginsDir = overrideGlobalPluginsDir ?? path.join(os.homedir(), ".nax", "plugins");
   const projectPluginsDir = path.join(workdir, "nax", "plugins");
   const configPlugins = config.plugins || [];
   const registry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, workdir);

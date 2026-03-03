@@ -5,7 +5,7 @@
  * Uses a MockAgentAdapter to avoid requiring real Claude Code installation
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { ALL_AGENTS } from "../../src/agents/registry";
@@ -305,30 +305,39 @@ describe("E2E: plan → analyze → run workflow", () => {
   let mockAgent: MockAgentAdapter;
   let cleanup: () => void;
 
+  beforeAll(() => {
+    // Create mock agent and register once for the whole suite
+    mockAgent = new MockAgentAdapter();
+    cleanup = registerMockAgent(mockAgent);
+  });
+
+  afterAll(() => {
+    // Unregister mock agent once after all tests complete
+    cleanup();
+  });
+
   beforeEach(() => {
     // Initialize logger
     initLogger({ level: "error", useChalk: false });
 
+    // Reset mock agent state between tests
+    mockAgent.reset();
+
     // Create temp directory
     testDir = `/tmp/nax-e2e-test-${Date.now()}`;
     mkdirSync(testDir, { recursive: true });
-
-    // Create mock agent and register
-    mockAgent = new MockAgentAdapter();
-    cleanup = registerMockAgent(mockAgent);
 
     // Set up minimal project structure
     setupTestProject(testDir);
   });
 
   afterEach(() => {
-    // Clean up
+    // Clean up temp directory
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
     }
     // Reset logger
     resetLogger();
-    cleanup();
   });
 
   test("full workflow: init → plan → analyze → run", { timeout: 120000 }, async () => {
