@@ -101,7 +101,7 @@ describe("US-002: Precheck orchestrator acceptance criteria", () => {
     const config = createConfig(testDir);
     const prd = createPRD();
 
-    const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+    const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json", silent: true });
 
     // Should have exactly 1 blocker (fail-fast)
     expect(result.blockers.length).toBe(1);
@@ -116,7 +116,7 @@ describe("US-002: Precheck orchestrator acceptance criteria", () => {
     const config = createConfig(testDir);
     const prd = createPRD();
 
-    const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+    const { result } = await runPrecheck(config, prd, { workdir: testDir, format: "json", silent: true });
 
     // No blockers
     expect(result.blockers.length).toBe(0);
@@ -139,7 +139,7 @@ describe("US-002: Precheck orchestrator acceptance criteria", () => {
     console.log = (msg: string) => logs.push(msg);
 
     try {
-      await runPrecheck(config, prd, { workdir: testDir, format: "human" });
+      await runPrecheck(config, prd, { workdir: testDir, format: "human", silent: true });
 
       // Should have emoji indicators
       const hasCheckmark = logs.some((l) => l.includes("✓"));
@@ -165,7 +165,7 @@ describe("US-002: Precheck orchestrator acceptance criteria", () => {
     };
 
     try {
-      await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+      await runPrecheck(config, prd, { workdir: testDir, format: "json", silent: true });
 
       const output = JSON.parse(jsonOutput);
 
@@ -195,13 +195,13 @@ describe("US-002: Precheck orchestrator acceptance criteria", () => {
 
     let config = createConfig(testDir);
     const prd = createPRD();
-    let result = await runPrecheck(config, prd, { workdir: testDir, format: "json" });
+    let result = await runPrecheck(config, prd, { workdir: testDir, format: "json", silent: true });
     expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
     // Test exit code 1 (blocker)
     const testDir2 = mkdtempSync(join(tmpdir(), "nax-test-blocker-"));
     config = createConfig(testDir2);
-    result = await runPrecheck(config, prd, { workdir: testDir2, format: "json" });
+    result = await runPrecheck(config, prd, { workdir: testDir2, format: "json", silent: true });
     expect(result.exitCode).toBe(EXIT_CODES.BLOCKER);
     rmSync(testDir2, { recursive: true, force: true });
 
@@ -214,7 +214,7 @@ describe("US-002: Precheck orchestrator acceptance criteria", () => {
       ...prd,
       userStories: [{ ...prd.userStories[0], id: "", title: "", description: "" }],
     };
-    result = await runPrecheck(config, invalidPRD, { workdir: testDir3, format: "json" });
+    result = await runPrecheck(config, invalidPRD, { workdir: testDir3, format: "json", silent: true });
     expect(result.exitCode).toBe(EXIT_CODES.INVALID_PRD);
     rmSync(testDir3, { recursive: true, force: true });
   });
@@ -231,7 +231,7 @@ describe("US-002: Precheck orchestrator acceptance criteria", () => {
     console.log = (msg: string) => logs.push(msg);
 
     try {
-      await runPrecheck(config, prd, { workdir: testDir, format: "human" });
+      await runPrecheck(config, prd, { workdir: testDir, format: "human", silent: true });
 
       // Should have summary with counts
       const hasSummary = logs.some(

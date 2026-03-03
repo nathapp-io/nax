@@ -62,6 +62,8 @@ export interface PrecheckOptions {
   format?: "human" | "json";
   /** Working directory */
   workdir: string;
+  /** Suppress console output (for programmatic use) */
+  silent?: boolean;
 }
 
 /** Extended result with exit code for CLI usage */
@@ -87,6 +89,7 @@ export async function runPrecheck(
 ): Promise<PrecheckResultWithCode> {
   const workdir = options?.workdir || process.cwd();
   const format = options?.format || "human";
+  const silent = options?.silent ?? false;
 
   const passed: Check[] = [];
   const blockers: Check[] = [];
@@ -196,10 +199,12 @@ export async function runPrecheck(
     exitCode = hasPRDError ? EXIT_CODES.INVALID_PRD : EXIT_CODES.BLOCKER;
   }
 
-  if (format === "json") {
-    console.log(JSON.stringify(output, null, 2));
-  } else {
-    printSummary(output);
+  if (!silent) {
+    if (format === "json") {
+      console.log(JSON.stringify(output, null, 2));
+    } else {
+      printSummary(output);
+    }
   }
 
   return {
