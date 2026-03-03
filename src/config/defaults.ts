@@ -68,6 +68,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
       timeoutSeconds: 120,
     },
     contextProviderTokenBudget: 2000,
+    smartTestRunner: true,
   },
   quality: {
     requireTypecheck: true,

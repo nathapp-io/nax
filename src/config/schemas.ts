@@ -81,6 +81,7 @@ const ExecutionConfigSchema = z.object({
   lintCommand: z.string().nullable().optional(),
   typecheckCommand: z.string().nullable().optional(),
   dangerouslySkipPermissions: z.boolean().default(true),
+  smartTestRunner: z.boolean().default(true),
 });
 
 const QualityConfigSchema = z.object({
