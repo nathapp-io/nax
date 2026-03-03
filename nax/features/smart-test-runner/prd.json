@@ -33,7 +33,7 @@
       "title": "Git diff file detection",
       "description": "Create module `src/verification/smart-runner.ts` with exported function `getChangedSourceFiles(workdir: string): Promise<string[]>`. Runs `git diff --name-only HEAD~1` in the workdir to get changed files. Filter to only `.ts` files that start with `src/`. Use Bun.spawn for the git command. Handle git errors gracefully (return empty array on failure).",
       "complexity": "simple",
-      "status": "pending",
+      "status": "passed",
       "tags": [
         "core"
       ],
@@ -47,11 +47,16 @@
       ],
       "escalations": [],
       "attempts": 0,
-      "passes": false,
+      "passes": true,
       "routing": {
-        "testStrategy": "test-after"
+        "testStrategy": "test-after",
+        "modelTier": "powerful"
       },
-      "priorErrors": [],
+      "priorErrors": [
+        "REGRESSION: full-suite regression detected",
+        "Attempt 2 failed with model tier: fast",
+        "Attempt 1 failed with model tier: balanced"
+      ],
       "storyPoints": 1
     },
     {
@@ -187,5 +192,5 @@
       "storyPoints": 1
     }
   ],
-  "updatedAt": "2026-03-03T12:12:58.390Z"
+  "updatedAt": "2026-03-03T12:33:54.928Z"
 }
