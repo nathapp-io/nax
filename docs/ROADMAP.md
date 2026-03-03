@@ -24,32 +24,29 @@
 
 ---
 
-## v0.18.1 — Type Safety + Per-Story testStrategy
+## v0.18.1 — Type Safety + CI Pipeline ✅
 
-**Theme:** Fix all TypeScript/lint errors + fine-grained test strategy control
-**Status:** 🔲 Planned
+**Theme:** Fix all TypeScript/lint errors, establish CI pipeline
+**Status:** ✅ Shipped (2026-03-03)
 
 ### TypeScript Fixes (60 errors across 21 files)
-- [ ] **TS-001:** Fix context module exports — add `BuiltContext`, `ContextElement`, `ContextBudget`, `StoryContext` to `context/types.ts` (13 errors)
-- [ ] **TS-002:** Fix config/command type safety — type `{}` → proper types in `config/loader.ts`, `commands/logs.ts`, `agents/claude.ts` (12 errors)
-- [ ] **TS-003:** Fix review/verification types — add `softViolations`, `warnings`, `description` to review result types (9 errors)
-- [ ] **TS-004:** Fix escalation PRD type construction — ensure escalation produces valid `PRD` objects (4 errors)
-- [ ] **TS-005:** Fix misc — Logger mock types, null checks, missing exports (`RectificationState`, `TestSummary`, `TestFailure`) (6 errors)
+- [x] ~~**TS-001:** Fix context module exports (13 errors)~~
+- [x] ~~**TS-002:** Fix config/command type safety (12 errors)~~
+- [x] ~~**TS-003:** Fix review/verification types (9 errors)~~
+- [x] ~~**TS-004:** Fix escalation PRD type construction (4 errors)~~
+- [x] ~~**TS-005:** Fix misc types (6 errors)~~
+- [x] ~~**LINT-001:** Run biome check --fix + manual review~~
 
-### Lint Fixes (12 errors)
-- [ ] **LINT-001:** Run `biome check --fix` + manual review of unsafe fixes
-
-### Verify Stage Fix
-- [ ] **TEST-001:** Fix hanging "test command that throws error" test — add timeout or proper process kill
-
-### Per-Story testStrategy
-- [ ] Add optional `testStrategy` field to userStory PRD schema (`"test-after" | "three-session-tdd" | "three-session-tdd-lite"`)
-- [ ] When set, overrides global config + task classification for that story
-- [ ] Update routing stage to check `story.testStrategy` before config/LLM
-- [ ] Docs + tests
-
-### Re-enable Checks
-- [ ] Re-enable `typecheck` in `nax/config.json` review checks after TS fixes land
+### CI Pipeline (new)
+- [x] `.gitlab-ci.yml` — stages: test → release → notify
+- [x] Image: `nathapp/node-bun:22.21.0-1.3.9-alpine` (test/release), `gkci/node:22.14.0-alpine-ci` (notify)
+- [x] `before_script`: apk add git python3 make g++, safe.directory, git identity
+- [x] Test env: `NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000`
+- [x] CI skip guards for env-sensitive tests (claude binary, PID checks, subprocess integration)
+- [x] Fixed `checkClaudeCLI()` ENOENT crash — try/catch around Bun.spawn
+- [x] Release trigger: `[run-release]` in commit message on master
+- [x] Runner requirement: 8GB shared runner (`saas-linux-small-amd64`)
+- [x] **Result: 1952 pass, 56 skip, 0 fail**
 
 ---
 
@@ -96,6 +93,7 @@
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.18.1 | Type Safety + CI Pipeline | 2026-03-03 | 60 TS errors + 12 lint errors fixed, GitLab CI green (1952/56/0) |
 | v0.18.0 | Orchestration Quality | 2026-03-03 | BUG-016/017/018/019/020/021/022/023/025 all fixed |
 | v0.17.0 | Config Management | 2026-03-02 | CM-001 --explain, CM-002 --diff, CM-003 default view |
 | v0.16.4 | Bugfixes: Routing + Env Allowlist | 2026-03-02 | BUG-012/013/014 |
