@@ -1,5 +1,5 @@
 /**
- * Verify Stage — Smart Runner Integration Tests (STR-005)
+ * Verify Stage --- Smart Runner Integration Tests (STR-005)
  *
  * Covers the four acceptance criteria:
  * 1. Uses scoped test command when smart runner finds test files
@@ -8,19 +8,32 @@
  * 4. Logs the mode used
  */
 
-import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _smartRunnerDeps } from "../../../src/verification/smart-runner";
 import { initLogger, resetLogger } from "../../../src/logger";
 import type { NaxConfig } from "../../../src/config";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd/types";
 
-// ── Module mocks (must be declared before dynamic imports) ────────────────────
+// ---- Module mocks ------------------------------------------------------------
+// We avoid mock.module() for smart-runner entirely --- it leaks across test files
+// in Bun 1.x. Instead we mutate the _smartRunnerDeps object exported by the module.
+// verify.ts accesses all smart-runner functions via _smartRunnerDeps.fn(), so
+// mutations here take effect immediately with no module registry involvement.
 
 const mockRegression = mock(async () => ({ success: true, status: "SUCCESS" as const }));
 
 mock.module("../../../src/verification/gate", () => ({
   regression: mockRegression,
 }));
+
+// ---- Capture originals for afterEach restoration ----------------------------
+const _origDeps = { ..._smartRunnerDeps };
+
+// ---- Dynamic import after gate mock -----------------------------------------
+const { verifyStage } = await import("../../../src/pipeline/stages/verify");
+
+// ---- Mock functions ---------------------------------------------------------
 
 const mockGetChangedSourceFiles = mock(async (_workdir: string) => [] as string[]);
 const mockMapSourceToTests = mock(async (_files: string[], _workdir: string) => [] as string[]);
@@ -29,22 +42,7 @@ const mockBuildSmartTestCommand = mock((testFiles: string[], baseCommand: string
   return `${baseCommand.split(" ").slice(0, -1).join(" ")} ${testFiles.join(" ")}`;
 });
 
-mock.module("../../../src/verification/smart-runner", () => ({
-  getChangedSourceFiles: mockGetChangedSourceFiles,
-  mapSourceToTests: mockMapSourceToTests,
-  buildSmartTestCommand: mockBuildSmartTestCommand,
-}));
-
-// ── Dynamic import after mocks ────────────────────────────────────────────────
-
-const { verifyStage } = await import("../../../src/pipeline/stages/verify");
-
-// Restore all mocks after this file to prevent leakage into other test files
-afterAll(() => {
-  mock.restore();
-});
-
-// ── Fixtures ──────────────────────────────────────────────────────────────────
+// ---- Fixtures ----------------------------------------------------------------
 
 function makeConfig(overrides: Partial<NaxConfig["execution"]> = {}): NaxConfig {
   return {
@@ -152,11 +150,14 @@ function makeContext(configOverrides: Partial<NaxConfig["execution"]> = {}): Pip
   };
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────────────
+// ---- Tests -------------------------------------------------------------------
 
-describe("Verify Stage — Smart Runner Integration", () => {
+describe("Verify Stage --- Smart Runner Integration", () => {
   beforeEach(() => {
     initLogger({ level: "error", useChalk: false });
+    _smartRunnerDeps.getChangedSourceFiles = mockGetChangedSourceFiles;
+    _smartRunnerDeps.mapSourceToTests = mockMapSourceToTests;
+    _smartRunnerDeps.buildSmartTestCommand = mockBuildSmartTestCommand;
     mockRegression.mockClear();
     mockGetChangedSourceFiles.mockClear();
     mockMapSourceToTests.mockClear();
@@ -165,6 +166,7 @@ describe("Verify Stage — Smart Runner Integration", () => {
 
   afterEach(() => {
     resetLogger();
+    Object.assign(_smartRunnerDeps, _origDeps);
   });
 
   describe("AC1: uses scoped test command when smart runner finds test files", () => {

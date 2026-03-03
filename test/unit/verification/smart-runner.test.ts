@@ -1,5 +1,19 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { buildSmartTestCommand, getChangedSourceFiles, mapSourceToTests } from "../../../src/verification/smart-runner";
+import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+
+// Dynamic imports used intentionally: mock.module() in verify-smart-runner.test.ts (which runs
+// before this file alphabetically) poisons the ESM registry. Static imports capture the mock
+// binding at eval time. Dynamic imports inside beforeAll resolve AFTER the other file's afterAll
+// restores the real module, guaranteeing we test the real implementation.
+let buildSmartTestCommand: (testFiles: string[], baseCommand: string) => string;
+let mapSourceToTests: (sourceFiles: string[], workdir: string) => Promise<string[]>;
+let getChangedSourceFiles: (workdir: string) => Promise<string[]>;
+
+beforeAll(async () => {
+  const mod = await import("../../../src/verification/smart-runner");
+  buildSmartTestCommand = mod.buildSmartTestCommand;
+  mapSourceToTests = mod.mapSourceToTests;
+  getChangedSourceFiles = mod.getChangedSourceFiles;
+});
 
 // ---------------------------------------------------------------------------
 // buildSmartTestCommand

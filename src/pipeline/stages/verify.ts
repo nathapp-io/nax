@@ -21,7 +21,7 @@
  */
 
 import { getLogger } from "../../logger";
-import { buildSmartTestCommand, getChangedSourceFiles, mapSourceToTests } from "../../verification/smart-runner";
+import { _smartRunnerDeps } from "../../verification/smart-runner";
 import { regression } from "../../verification/gate";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -52,11 +52,11 @@ export const verifyStage: PipelineStage = {
     const smartRunnerEnabled = ctx.config.execution.smartTestRunner !== false;
 
     if (smartRunnerEnabled) {
-      const sourceFiles = await getChangedSourceFiles(ctx.workdir);
-      const testFiles = await mapSourceToTests(sourceFiles, ctx.workdir);
+      const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(ctx.workdir);
+      const testFiles = await _smartRunnerDeps.mapSourceToTests(sourceFiles, ctx.workdir);
 
       if (testFiles.length > 0) {
-        effectiveCommand = buildSmartTestCommand(testFiles, testCommand);
+        effectiveCommand = _smartRunnerDeps.buildSmartTestCommand(testFiles, testCommand);
         logger.info("verify", `[smart-runner] Running ${testFiles.length} targeted test files`, { storyId: ctx.story.id });
       } else {
         logger.info("verify", "[smart-runner] No mapped tests — falling back to full suite", { storyId: ctx.story.id });

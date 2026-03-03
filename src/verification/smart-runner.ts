@@ -134,3 +134,16 @@ export async function getChangedSourceFiles(workdir: string): Promise<string[]> 
     return [];
   }
 }
+
+/**
+ * Injectable dependencies for testing.
+ * Allows tests to swap implementations without using mock.module(),
+ * which leaks across files in Bun 1.x due to shared module registry.
+ *
+ * @internal - test use only. Do not use in production code.
+ */
+export const _smartRunnerDeps = {
+  getChangedSourceFiles,
+  mapSourceToTests,
+  buildSmartTestCommand,
+};
