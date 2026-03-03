@@ -62,7 +62,7 @@
     {
       "id": "STR-002",
       "title": "Source-to-test file mapping",
-      "description": "Add `mapSourceToTests(sourceFiles: string[], workdir: string): Promise<string[]>` to `src/verification/smart-runner.ts`. Convention: `src/foo/bar.ts` \u2192 `test/unit/foo/bar.test.ts`. Also check `test/integration/foo/bar.test.ts`. Only return paths where the file actually exists on disk (use Bun.file(path).exists()). Return empty array if no test files map.",
+      "description": "Add `mapSourceToTests(sourceFiles: string[], workdir: string): Promise<string[]>` to `src/verification/smart-runner.ts`. Convention: `src/foo/bar.ts` → `test/unit/foo/bar.test.ts`. Also check `test/integration/foo/bar.test.ts`. Only return paths where the file actually exists on disk (use Bun.file(path).exists()). Return empty array if no test files map.",
       "complexity": "simple",
       "status": "passed",
       "tags": [
@@ -89,9 +89,9 @@
     {
       "id": "STR-003",
       "title": "Smart test command builder",
-      "description": "Add `buildSmartTestCommand(testFiles: string[], baseCommand: string): string` to `src/verification/smart-runner.ts`. When testFiles is non-empty: replace the last path argument in baseCommand with the specific test file paths joined by spaces. E.g., `bun test test/` with files `[test/unit/foo.test.ts]` \u2192 `bun test test/unit/foo.test.ts`. When testFiles is empty: return the original baseCommand unchanged (full suite fallback).",
+      "description": "Add `buildSmartTestCommand(testFiles: string[], baseCommand: string): string` to `src/verification/smart-runner.ts`. When testFiles is non-empty: replace the last path argument in baseCommand with the specific test file paths joined by spaces. E.g., `bun test test/` with files `[test/unit/foo.test.ts]` → `bun test test/unit/foo.test.ts`. When testFiles is empty: return the original baseCommand unchanged (full suite fallback).",
       "complexity": "simple",
-      "status": "pending",
+      "status": "passed",
       "tags": [
         "core"
       ],
@@ -105,7 +105,7 @@
       ],
       "escalations": [],
       "attempts": 0,
-      "passes": false,
+      "passes": true,
       "routing": {
         "testStrategy": "test-after"
       },
@@ -117,7 +117,7 @@
       "title": "Smart runner config flag",
       "description": "Add `execution.smartTestRunner: boolean` (default: true) to the config in `src/config/types.ts` (ExecutionConfig interface) and the Zod schema in `src/config/loader.ts`. When false, the verify stage skips smart runner entirely and uses the full test suite command.",
       "complexity": "simple",
-      "status": "pending",
+      "status": "passed",
       "tags": [
         "config"
       ],
@@ -131,7 +131,7 @@
       ],
       "escalations": [],
       "attempts": 0,
-      "passes": false,
+      "passes": true,
       "routing": {
         "testStrategy": "test-after"
       },
@@ -141,7 +141,7 @@
     {
       "id": "STR-005",
       "title": "Integrate smart runner into verify stage",
-      "description": "Modify `src/pipeline/stages/verify.ts` to use smart runner when `ctx.config.execution.smartTestRunner` is true (default). Before calling regression(): call getChangedSourceFiles(ctx.workdir) \u2192 mapSourceToTests(files, ctx.workdir) \u2192 buildSmartTestCommand(testFiles, testCommand). Use the result as the command for regression(). Log which mode was selected: `[smart-runner] Running N targeted test files` or `[smart-runner] No mapped tests \u2014 falling back to full suite`.",
+      "description": "Modify `src/pipeline/stages/verify.ts` to use smart runner when `ctx.config.execution.smartTestRunner` is true (default). Before calling regression(): call getChangedSourceFiles(ctx.workdir) → mapSourceToTests(files, ctx.workdir) → buildSmartTestCommand(testFiles, testCommand). Use the result as the command for regression(). Log which mode was selected: `[smart-runner] Running N targeted test files` or `[smart-runner] No mapped tests — falling back to full suite`.",
       "complexity": "medium",
       "status": "pending",
       "tags": [
@@ -160,9 +160,12 @@
       "attempts": 0,
       "passes": false,
       "routing": {
-        "testStrategy": "test-after"
+        "testStrategy": "test-after",
+        "modelTier": "balanced"
       },
-      "priorErrors": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast"
+      ],
       "storyPoints": 1
     },
     {
@@ -192,5 +195,5 @@
       "storyPoints": 1
     }
   ],
-  "updatedAt": "2026-03-03T12:52:44.370Z"
+  "updatedAt": "2026-03-03T13:12:51.970Z"
 }
