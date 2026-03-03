@@ -50,7 +50,8 @@
 
 ---
 
-## v0.18.2 — Smart Test Runner + Bun PTY Migration
+## v0.18.2 — Smart Test Runner + Routing Fix ✅
+**Status:** ✅ Shipped (2026-03-03)
 
 **Theme:** Scope verify to changed files only + remove node-pty native addon
 **Status:** 🔲 Planned
@@ -94,6 +95,7 @@
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
 | v0.18.1 | Type Safety + CI Pipeline | 2026-03-03 | 60 TS errors + 12 lint errors fixed, GitLab CI green (1952/56/0) |
+| v0.18.2 | Smart Test Runner + Routing Fix | 2026-03-03 | FIX-001 + STR-001–006, 2038 pass/11 skip/0 fail |
 | v0.18.0 | Orchestration Quality | 2026-03-03 | BUG-016/017/018/019/020/021/022/023/025 all fixed |
 | v0.17.0 | Config Management | 2026-03-02 | CM-001 --explain, CM-002 --diff, CM-003 default view |
 | v0.16.4 | Bugfixes: Routing + Env Allowlist | 2026-03-02 | BUG-012/013/014 |
