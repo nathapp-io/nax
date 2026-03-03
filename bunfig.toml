@@ -5,4 +5,7 @@
 # This prevents individual tests from hanging indefinitely
 timeout = 30000
 
+# Exclude nax dogfood feature directories (contain acceptance tests from nax runs, not source tests)
+exclude = ["nax/**"]
+
 # Note: E2E tests may override this with longer timeouts using test options
