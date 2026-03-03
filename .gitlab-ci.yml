@@ -19,6 +19,8 @@ test:
   before_script:
     - apk add --no-cache git python3 make g++
     - git config --global safe.directory '*'
+    - git config --global user.name "CI Runner"
+    - git config --global user.email "ci@nathapp.io"
   cache:
     key:
       files:
