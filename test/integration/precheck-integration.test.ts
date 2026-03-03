@@ -11,6 +11,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+
+// Skip in CI: these tests call run() which invokes the full nax execution pipeline
+// including spawning real agent subprocesses. CI runners lack the claude binary and
+// have restricted process/file system environments. These are end-to-end smoke tests
+// that must run in a properly configured dev environment (local, Mac01, or VPS).
+const skipInCI = process.env.CI ? test.skip : test;
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { NaxConfig } from "../../src/config";
@@ -188,7 +194,7 @@ describe("Precheck Integration with nax run", () => {
   // AC1: Precheck runs automatically before first story
   // ────────────────────────────────────────────────────────────────────────────
 
-  test("AC1: precheck runs automatically before first story", async () => {
+  skipInCI("AC1: precheck runs automatically before first story", async () => {
     const prdPath = await setupFeature("auto-test");
     const logFilePath = join(testDir, "nax", "features", "auto-test", "runs", "test.jsonl");
     const runsDir = join(testDir, "nax", "features", "auto-test", "runs");
@@ -314,7 +320,7 @@ describe("Precheck Integration with nax run", () => {
   // AC3: Tier 2 warnings logged but don't block execution
   // ────────────────────────────────────────────────────────────────────────────
 
-  test("AC3: Tier 2 warnings don't block execution", async () => {
+  skipInCI("AC3: Tier 2 warnings don't block execution", async () => {
     // Setup feature (clean git repo should pass all Tier 1 but may have Tier 2 warnings)
     const prdPath = await setupFeature("warning-test");
     const logFilePath = join(testDir, "nax", "features", "warning-test", "runs", "test.jsonl");
@@ -360,7 +366,7 @@ describe("Precheck Integration with nax run", () => {
   // AC5: Precheck results included in run JSONL log
   // ────────────────────────────────────────────────────────────────────────────
 
-  test("AC5: precheck results logged to JSONL", async () => {
+  skipInCI("AC5: precheck results logged to JSONL", async () => {
     const prdPath = await setupFeature("log-test");
     const logFilePath = join(testDir, "nax", "features", "log-test", "runs", "test.jsonl");
     const runsDir = join(testDir, "nax", "features", "log-test", "runs");

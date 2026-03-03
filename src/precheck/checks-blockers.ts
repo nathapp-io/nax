@@ -164,20 +164,32 @@ export async function checkPRDValid(prd: PRD): Promise<Check> {
 
 /** Check if Claude CLI is available. Uses: claude --version */
 export async function checkClaudeCLI(): Promise<Check> {
-  const proc = Bun.spawn(["claude", "--version"], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  try {
+    const proc = Bun.spawn(["claude", "--version"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
 
-  const exitCode = await proc.exited;
-  const passed = exitCode === 0;
+    const exitCode = await proc.exited;
+    const passed = exitCode === 0;
 
-  return {
-    name: "claude-cli-available",
-    tier: "blocker",
-    passed,
-    message: passed ? "Claude CLI is available" : "Claude CLI not found",
-  };
+    return {
+      name: "claude-cli-available",
+      tier: "blocker",
+      passed,
+      message: passed ? "Claude CLI is available" : "Claude CLI not found. Install from https://claude.ai/download",
+    };
+  } catch {
+    // Bun.spawn throws ENOENT when the binary is not found in PATH.
+    // Treat this as a failed check rather than an unhandled exception so the
+    // rest of the precheck pipeline can continue and report all issues at once.
+    return {
+      name: "claude-cli-available",
+      tier: "blocker",
+      passed: false,
+      message: "Claude CLI not found in PATH. Install from https://claude.ai/download",
+    };
+  }
 }
 
 /** Check if dependencies are installed (language-aware). Detects: node_modules, target, venv, vendor */
