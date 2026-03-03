@@ -1,4 +1,4 @@
-# .gitlab-ci.yml — nax CI/CD
+# .gitlab-ci.yml - nax CI/CD
 # Bun-native, single package (no turbo/monorepo)
 #
 # Triggers:
@@ -13,7 +13,7 @@ stages:
   - release
   - notify
 
-# ─── Stage: Install ─────────────────────────────────────────────
+# --- Stage: Install ---
 install:
   stage: install
   image: oven/bun:1.3
@@ -36,7 +36,7 @@ install:
     - if: '$CI_COMMIT_MESSAGE =~ /run-prerelease/ && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
     - if: '$CI_COMMIT_MESSAGE =~ /run-release/ && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
-# ─── Stage: Test ─────────────────────────────────────────────────
+# --- Stage: Test ---
 test:
   stage: test
   image: oven/bun:1.3
@@ -52,7 +52,7 @@ test:
     - if: '$CI_COMMIT_MESSAGE =~ /run-prerelease/ && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
     - if: '$CI_COMMIT_MESSAGE =~ /run-release/ && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
-# ─── Stage: Release ──────────────────────────────────────────────
+# --- Stage: Release ---
 release:
   stage: release
   image: oven/bun:1.3
@@ -81,7 +81,7 @@ release:
         NPM_RELEASE_TOKEN: $NPM_PRIVATE_TOKEN
     - if: '$CI_COMMIT_MESSAGE =~ /run-release/ && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
-# ─── Stage: Notify ───────────────────────────────────────────────
+# --- Stage: Notify ---
 notify:
   stage: notify
   image: oven/bun:1.3
