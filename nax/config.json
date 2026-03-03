@@ -63,9 +63,9 @@
     "verificationTimeoutSeconds": 300,
     "maxStoriesPerFeature": 15,
     "rectification": {
-      "enabled": true,
+      "enabled": false,
       "maxRetries": 2,
-      "fullSuiteTimeoutSeconds": 120,
+      "fullSuiteTimeoutSeconds": 600,
       "maxFailureSummaryChars": 2000,
       "abortOnIncreasingFailures": true
     }
