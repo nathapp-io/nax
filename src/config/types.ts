@@ -98,6 +98,8 @@ export interface ExecutionConfig {
   regressionGate: RegressionGateConfig;
   /** Token budget for plugin context providers (default: 2000) */
   contextProviderTokenBudget: number;
+  /** Test command override (null = disabled, undefined = auto-detect from package.json) */
+  testCommand?: string | null;
   /** Lint command override (null = disabled, undefined = auto-detect from package.json) */
   lintCommand?: string | null;
   /** Typecheck command override (null = disabled, undefined = auto-detect from package.json) */

@@ -58,11 +58,15 @@ export const verifyStage: PipelineStage = {
       // BUG-019: Distinguish timeout from actual test failures
       if (result.status === "TIMEOUT") {
         const timeout = ctx.config.execution.verificationTimeoutSeconds;
-        logger.error("verify", `Test suite exceeded timeout (${timeout}s). This is NOT a test failure — consider increasing execution.verificationTimeoutSeconds or scoping tests.`, {
-          exitCode: result.status,
-          storyId: ctx.story.id,
-          timeoutSeconds: timeout,
-        });
+        logger.error(
+          "verify",
+          `Test suite exceeded timeout (${timeout}s). This is NOT a test failure — consider increasing execution.verificationTimeoutSeconds or scoping tests.`,
+          {
+            exitCode: result.status,
+            storyId: ctx.story.id,
+            timeoutSeconds: timeout,
+          },
+        );
       } else {
         logger.error("verify", "Tests failed", {
           exitCode: result.status,
@@ -83,9 +87,10 @@ export const verifyStage: PipelineStage = {
 
       return {
         action: "escalate",
-        reason: result.status === "TIMEOUT"
-          ? `Test suite TIMEOUT after ${ctx.config.execution.verificationTimeoutSeconds}s (not a code failure)`
-          : `Tests failed (exit code ${result.status ?? "non-zero"})`,
+        reason:
+          result.status === "TIMEOUT"
+            ? `Test suite TIMEOUT after ${ctx.config.execution.verificationTimeoutSeconds}s (not a code failure)`
+            : `Tests failed (exit code ${result.status ?? "non-zero"})`,
       };
     }
 

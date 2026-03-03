@@ -44,3 +44,55 @@ export type AgentType = "claude" | "opencode" | "cursor" | "windsurf" | "aider";
 
 /** Generator registry map */
 export type GeneratorMap = Record<AgentType, AgentContextGenerator>;
+
+/** A single context element (file content, error, story summary, etc.) */
+export interface ContextElement {
+  /** Element type identifier */
+  type: string;
+  /** Content text */
+  content: string;
+  /** Estimated token count */
+  tokens: number;
+  /** Priority (higher = selected first when budgeting) */
+  priority: number;
+  /** Story ID (for story/dependency elements) */
+  storyId?: string;
+  /** File path (for file elements) */
+  filePath?: string;
+  /** Human-readable label (optional) */
+  label?: string;
+}
+
+/** Token budget for context building */
+export interface ContextBudget {
+  /** Total token limit */
+  maxTokens: number;
+  /** Tokens reserved for instructions/system prompt */
+  reservedForInstructions: number;
+  /** Tokens available for context elements */
+  availableForContext: number;
+}
+
+/** Input to the context builder */
+export interface StoryContext {
+  /** PRD containing all stories */
+  prd: import("../prd/types").PRD;
+  /** ID of the current story being worked on */
+  currentStoryId: string;
+  /** Working directory for file scanning */
+  workdir?: string;
+  /** nax config (for context settings) */
+  config?: import("../config").NaxConfig;
+}
+
+/** Output of the context builder */
+export interface BuiltContext {
+  /** Selected context elements (within budget) */
+  elements: ContextElement[];
+  /** Total tokens used */
+  totalTokens: number;
+  /** Whether some elements were truncated due to budget */
+  truncated: boolean;
+  /** Human-readable summary */
+  summary: string;
+}

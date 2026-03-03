@@ -6,9 +6,9 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { deepMergeConfig } from "../config/merger";
-import { findProjectDir, globalConfigPath } from "../config/loader";
 import { DEFAULT_CONFIG } from "../config/defaults";
+import { findProjectDir, globalConfigPath } from "../config/loader";
+import { deepMergeConfig } from "../config/merger";
 import type { NaxConfig } from "../config/schema";
 
 /** Field descriptions for human-readable output */
@@ -221,10 +221,7 @@ async function loadGlobalConfig(): Promise<Record<string, unknown>> {
     return structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>);
   }
 
-  return deepMergeConfig(
-    structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>),
-    globalConf,
-  );
+  return deepMergeConfig(structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>), globalConf);
 }
 
 /**
@@ -376,7 +373,7 @@ export async function configCommand(config: NaxConfig, options: ConfigCommandOpt
     console.log("# Config Differences (Project overrides Global)");
     console.log();
     console.log("─".repeat(80));
-    console.log("Field".padEnd(40) + "Project Value".padEnd(20) + "Global Value");
+    console.log(`${"Field".padEnd(40)}${"Project Value".padEnd(20)}Global Value`);
     console.log("─".repeat(80));
 
     for (const diff of diffs) {

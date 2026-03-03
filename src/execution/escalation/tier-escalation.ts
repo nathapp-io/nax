@@ -106,8 +106,8 @@ export async function preIterationTierCheck(
               routing: s.routing ? { ...s.routing, modelTier: nextTier } : { ...routing, modelTier: nextTier },
             }
           : s,
-      ),
-    };
+      ) as PRD["userStories"],
+    } as PRD;
     await savePRD(updatedPrd, prdPath);
 
     // Hybrid mode: re-route story after escalation
@@ -260,11 +260,11 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
 
       const baseRouting = s.routing ?? { ...ctx.routing };
       const updatedRouting = {
-            ...baseRouting,
-            modelTier: shouldSwitchToTestAfter ? baseRouting.modelTier : nextTier,
-            ...(escalateRetryAsLite ? { testStrategy: "three-session-tdd-lite" as const } : {}),
-            ...(shouldSwitchToTestAfter ? { testStrategy: "test-after" as const } : {}),
-          };
+        ...baseRouting,
+        modelTier: shouldSwitchToTestAfter ? baseRouting.modelTier : nextTier,
+        ...(escalateRetryAsLite ? { testStrategy: "three-session-tdd-lite" as const } : {}),
+        ...(shouldSwitchToTestAfter ? { testStrategy: "test-after" as const } : {}),
+      };
 
       // BUG-011: Reset attempt counter on tier escalation
       const currentStoryTier = s.routing?.modelTier ?? ctx.routing.modelTier;
@@ -276,9 +276,9 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
         attempts: shouldResetAttempts ? 0 : (s.attempts ?? 0) + 1,
         routing: updatedRouting,
         priorErrors: [...(s.priorErrors || []), errorMessage],
-      };
-    }),
-  };
+      } as UserStory;
+    }) as PRD["userStories"],
+  } as PRD;
 
   await savePRD(updatedPrd, ctx.prdPath);
 

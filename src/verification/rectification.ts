@@ -103,3 +103,6 @@ ${testCommands}
 - When running tests, run ONLY the failing test files shown above — NEVER run \`bun test\` without a file filter.
 `;
 }
+
+// Re-export types for consumers that import from this module
+export type { RectificationState } from "./types";

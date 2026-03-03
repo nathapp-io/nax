@@ -257,13 +257,7 @@ export function initLogger(options: LoggerOptions): Logger {
 /**
  * No-op logger for tests/environments where logger isn't initialized
  */
-const noopLogger: Logger = {
-  error: () => {},
-  warn: () => {},
-  info: () => {},
-  debug: () => {},
-  withStory: () => noopLogger,
-} satisfies Logger;
+const noopLogger: Logger = new Logger({ level: "error", useChalk: false, headless: false });
 
 export function getLogger(): Logger {
   if (!instance) {

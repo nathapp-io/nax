@@ -19,7 +19,7 @@
 
 import { isGreenfieldStory } from "../../context/greenfield";
 import { getLogger } from "../../logger";
-import { routeStory, complexityToModelTier } from "../../routing";
+import { complexityToModelTier, routeStory } from "../../routing";
 import { clearCache, routeBatch } from "../../routing/strategies/llm";
 import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
 
@@ -32,7 +32,7 @@ export const routingStage: PipelineStage = {
 
     // If story has cached routing, use it but re-derive modelTier from current config
     // Otherwise, perform fresh classification
-    let routing: { complexity: string; testStrategy: string; modelTier: string };
+    let routing: { complexity: string; testStrategy: string; modelTier: string; reasoning?: string };
     if (ctx.story.routing) {
       // Use cached complexity/testStrategy, but re-derive modelTier from current config
       routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
@@ -40,7 +40,7 @@ export const routingStage: PipelineStage = {
       routing.complexity = ctx.story.routing.complexity;
       routing.testStrategy = ctx.story.routing.testStrategy;
       // Re-derive modelTier from cached complexity and current config
-      routing.modelTier = complexityToModelTier(routing.complexity as any, ctx.config);
+      routing.modelTier = complexityToModelTier(routing.complexity as import("../../config").Complexity, ctx.config);
     } else {
       // Fresh classification
       routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);

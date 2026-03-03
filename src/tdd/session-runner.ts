@@ -18,6 +18,7 @@ import {
   buildTestWriterPrompt,
   buildVerifierPrompt,
 } from "./prompts";
+import type { IsolationCheck } from "./types";
 import type { TddSessionResult, TddSessionRole } from "./types";
 
 /**
@@ -125,7 +126,7 @@ export async function runTddSession(
   }
 
   // Check isolation based on role and skipIsolation flag.
-  let isolation: { passed: boolean; violations: string[] } | undefined;
+  let isolation: IsolationCheck | undefined;
   if (!skipIsolation) {
     if (role === "test-writer") {
       const allowedPaths = config.tdd.testWriterAllowedPaths ?? ["src/index.ts", "src/**/index.ts"];

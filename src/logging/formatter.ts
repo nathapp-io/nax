@@ -145,9 +145,9 @@ function formatRunStart(entry: LogEntry, c: ChalkLike, timestamp: string, mode: 
   lines.push(c.bold(c.blue(`  ${EMOJI.storyStart} NAX RUN STARTED`)));
   lines.push(c.blue("═".repeat(60)));
   lines.push(`  ${c.gray("Time:")}     ${timestamp}`);
-  lines.push(`  ${c.gray("Feature:")}  ${c.cyan(data.feature || "unknown")}`);
-  lines.push(`  ${c.gray("Run ID:")}   ${c.dim(data.runId || "unknown")}`);
-  lines.push(`  ${c.gray("Workdir:")}  ${c.dim(data.workdir || ".")}`);
+  lines.push(`  ${c.gray("Feature:")}  ${c.cyan(String(data.feature || "unknown"))}`);
+  lines.push(`  ${c.gray("Run ID:")}   ${c.dim(String(data.runId || "unknown"))}`);
+  lines.push(`  ${c.gray("Workdir:")}  ${c.dim(String(data.workdir || "."))}`);
   lines.push(c.blue("═".repeat(60)));
   lines.push("");
 
@@ -162,11 +162,11 @@ function formatRunStart(entry: LogEntry, c: ChalkLike, timestamp: string, mode: 
  */
 function formatStoryStart(entry: LogEntry, c: ChalkLike, timestamp: string, mode: string): FormattedEntry {
   const data = entry.data as Record<string, unknown>;
-  const storyId = data.storyId || entry.storyId || "unknown";
-  const title = data.storyTitle || data.title || "Untitled story";
-  const complexity = data.complexity || "unknown";
-  const tier = data.modelTier || "unknown";
-  const attempt = data.attempt || 1;
+  const storyId = String(data.storyId || entry.storyId || "unknown");
+  const title = String(data.storyTitle || data.title || "Untitled story");
+  const complexity = typeof data.complexity === "string" ? data.complexity : "unknown";
+  const tier = typeof data.modelTier === "string" ? data.modelTier : "unknown";
+  const attempt = typeof data.attempt === "number" ? data.attempt : 1;
 
   const lines: string[] = [];
   lines.push("");
@@ -197,10 +197,11 @@ function formatStoryStart(entry: LogEntry, c: ChalkLike, timestamp: string, mode
  */
 function formatStoryComplete(entry: LogEntry, c: ChalkLike, timestamp: string, mode: string): FormattedEntry {
   const data = entry.data as Record<string, unknown>;
-  const storyId = data.storyId || entry.storyId || "unknown";
+  const storyId = String(data.storyId || entry.storyId || "unknown");
   const success = data.success ?? true;
-  const cost = data.cost || data.estimatedCost || 0;
-  const duration = data.durationMs || 0;
+  const cost =
+    typeof data.cost === "number" ? data.cost : typeof data.estimatedCost === "number" ? data.estimatedCost : 0;
+  const duration = typeof data.durationMs === "number" ? data.durationMs : 0;
   const action = data.finalAction || data.action;
 
   const emoji = success ? EMOJI.success : action === "escalate" ? EMOJI.retry : EMOJI.failure;
@@ -240,7 +241,7 @@ function formatTDDSession(entry: LogEntry, c: ChalkLike, timestamp: string, mode
   }
 
   const data = entry.data as Record<string, unknown>;
-  const role = data.role || "unknown";
+  const role = typeof data.role === "string" ? data.role : "unknown";
   const roleLabel = role.replace(/-/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase());
 
   return {

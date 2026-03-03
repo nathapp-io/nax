@@ -258,7 +258,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       stderr: "pipe",
       env: this.buildAllowedEnv({
         workdir: options.workdir,
-        modelDef: options.modelDef || { model: "claude-sonnet-4-5", env: {} },
+        modelDef: options.modelDef || { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
         prompt: "",
         modelTier: "balanced",
         timeoutSeconds: 600,

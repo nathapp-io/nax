@@ -215,11 +215,10 @@ export async function checkDependenciesInstalled(workdir: string): Promise<Check
 /** Check if test command works. Skips silently if command is null/false. */
 export async function checkTestCommand(config: NaxConfig): Promise<Check> {
   // Try multiple possible locations for testCommand
-  const executionConfig = config.execution as Record<string, unknown>;
-  const testCommand = executionConfig.testCommand || config.quality?.commands?.test;
+  const testCommand = config.execution.testCommand || (config.quality?.commands?.test as string | undefined);
 
   // Skip if explicitly disabled or not configured
-  if (!testCommand || testCommand === null || testCommand === false) {
+  if (!testCommand || testCommand === null || testCommand === null) {
     return {
       name: "test-command-works",
       tier: "blocker",
@@ -259,11 +258,10 @@ export async function checkTestCommand(config: NaxConfig): Promise<Check> {
 
 /** Check if lint command works. Skips silently if command is null/false. */
 export async function checkLintCommand(config: NaxConfig): Promise<Check> {
-  const executionConfig = config.execution as Record<string, unknown>;
-  const lintCommand = config.execution.lintCommand || executionConfig.lintCommand;
+  const lintCommand = config.execution.lintCommand;
 
   // Skip if explicitly disabled or not configured
-  if (!lintCommand || lintCommand === null || lintCommand === false) {
+  if (!lintCommand || lintCommand === null || lintCommand === null) {
     return {
       name: "lint-command-works",
       tier: "blocker",
@@ -303,11 +301,10 @@ export async function checkLintCommand(config: NaxConfig): Promise<Check> {
 
 /** Check if typecheck command works. Skips silently if command is null/false. */
 export async function checkTypecheckCommand(config: NaxConfig): Promise<Check> {
-  const executionConfig = config.execution as Record<string, unknown>;
-  const typecheckCommand = config.execution.typecheckCommand || executionConfig.typecheckCommand;
+  const typecheckCommand = config.execution.typecheckCommand;
 
   // Skip if explicitly disabled or not configured
-  if (!typecheckCommand || typecheckCommand === null || typecheckCommand === false) {
+  if (!typecheckCommand || typecheckCommand === null || typecheckCommand === null) {
     return {
       name: "typecheck-command-works",
       tier: "blocker",
@@ -333,7 +330,9 @@ export async function checkTypecheckCommand(config: NaxConfig): Promise<Check> {
       name: "typecheck-command-works",
       tier: "blocker",
       passed,
-      message: passed ? `Typecheck command is available: ${typecheckCommand}` : `Typecheck command failed: ${typecheckCommand}`,
+      message: passed
+        ? `Typecheck command is available: ${typecheckCommand}`
+        : `Typecheck command failed: ${typecheckCommand}`,
     };
   } catch (error) {
     return {

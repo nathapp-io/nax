@@ -14,10 +14,32 @@ import type { ProjectMetadata } from "./types";
 
 /** Notable Node.js dependency keywords */
 const NOTABLE_NODE_DEPS = [
-  "@nestjs", "express", "fastify", "koa", "hono", "next", "nuxt",
-  "react", "vue", "svelte", "solid", "prisma", "typeorm", "mongoose",
-  "drizzle", "sequelize", "jest", "vitest", "mocha", "bun", "zod",
-  "typescript", "graphql", "trpc", "bull", "ioredis",
+  "@nestjs",
+  "express",
+  "fastify",
+  "koa",
+  "hono",
+  "next",
+  "nuxt",
+  "react",
+  "vue",
+  "svelte",
+  "solid",
+  "prisma",
+  "typeorm",
+  "mongoose",
+  "drizzle",
+  "sequelize",
+  "jest",
+  "vitest",
+  "mocha",
+  "bun",
+  "zod",
+  "typescript",
+  "graphql",
+  "trpc",
+  "bull",
+  "ioredis",
 ];
 
 // ─── Language detectors ──────────────────────────────────────────────────────
@@ -31,11 +53,13 @@ async function detectNode(workdir: string): Promise<{ name?: string; lang: strin
     const file = Bun.file(pkgPath);
     const pkg = await file.json();
     const allDeps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
-    const notable = [...new Set(
-      Object.keys(allDeps).filter((dep) =>
-        NOTABLE_NODE_DEPS.some((kw) => dep === kw || dep.startsWith(`${kw}/`) || dep.includes(kw)),
+    const notable = [
+      ...new Set(
+        Object.keys(allDeps).filter((dep) =>
+          NOTABLE_NODE_DEPS.some((kw) => dep === kw || dep.startsWith(`${kw}/`) || dep.includes(kw)),
+        ),
       ),
-    )].slice(0, 10);
+    ].slice(0, 10);
     const lang = pkg.devDependencies?.typescript || pkg.dependencies?.typescript ? "TypeScript" : "JavaScript";
     return { name: pkg.name, lang, dependencies: notable };
   } catch {
@@ -151,9 +175,7 @@ function detectRuby(workdir: string): { name?: string; lang: string; dependencie
 
   try {
     const content = readFileSync(gemfile, "utf8");
-    const gems = [...content.matchAll(/^\s*gem\s+['"]([^'"]+)['"]/gm)]
-      .map((m) => m[1])
-      .slice(0, 10);
+    const gems = [...content.matchAll(/^\s*gem\s+['"]([^'"]+)['"]/gm)].map((m) => m[1]).slice(0, 10);
     return { lang: "Ruby", dependencies: gems };
   } catch {
     return null;
@@ -213,9 +235,9 @@ export async function buildProjectMetadata(workdir: string, config: NaxConfig): 
     name: detected?.name,
     language: detected?.lang,
     dependencies: detected?.dependencies ?? [],
-    testCommand: config.execution?.testCommand,
-    lintCommand: config.execution?.lintCommand,
-    typecheckCommand: config.execution?.typecheckCommand,
+    testCommand: config.execution?.testCommand ?? undefined,
+    lintCommand: config.execution?.lintCommand ?? undefined,
+    typecheckCommand: config.execution?.typecheckCommand ?? undefined,
   };
 }
 
