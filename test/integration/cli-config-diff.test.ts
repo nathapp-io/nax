@@ -253,7 +253,7 @@ describe("Config Command --diff", () => {
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         quality: {
-          requireTypecheck: false, // Different from default (true)
+          requireTests: false, // Different from default/global (true)
         },
       };
       writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
@@ -265,7 +265,7 @@ describe("Config Command --diff", () => {
 
       const output = consoleOutput.join("\n");
 
-      expect(output).toContain("quality.requireTypecheck");
+      expect(output).toContain("quality.requireTests");
       expect(output).toContain("false");
       expect(output).toContain("true");
     });
