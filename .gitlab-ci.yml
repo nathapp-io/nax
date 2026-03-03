@@ -29,8 +29,7 @@ test:
     - bun install --frozen-lockfile --ignore-scripts
     - bun run typecheck
     - bun run lint
-    - export NODE_OPTIONS="--max-old-space-size=768"
-    - NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000 --concurrency 1 --smol
+    - NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000
   rules:
     - if: '$CI_COMMIT_MESSAGE =~ /release-by-bot/ || $CI_COMMIT_TAG'
       when: never
