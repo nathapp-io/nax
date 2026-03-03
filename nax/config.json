@@ -78,9 +78,9 @@
     "requireLint": true,
     "requireTests": true,
     "commands": {
-      "test": "NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000",
-      "typecheck": "bun x tsc --noEmit",
-      "lint": "bun x biome check src/ bin/"
+      "test": "bun run test",
+      "typecheck": "bun run typecheck",
+      "lint": "bun run lint"
     },
     "forceExit": false,
     "detectOpenHandles": true,
@@ -123,9 +123,9 @@
       "lint"
     ],
     "commands": {
-      "test": "NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000",
-      "typecheck": "bun x tsc --noEmit",
-      "lint": "bun x biome check src/ bin/"
+      "test": "bun run test",
+      "typecheck": "bun run typecheck",
+      "lint": "bun run lint"
     }
   },
   "plan": {
