@@ -4,17 +4,14 @@
 # Triggers:
 #   - MR: install + test only (gate for merge)
 #   - [run-release] on master: install + test + release + notify
-#   - [run-prerelease] on non-master: install + test + release (canary) + notify
-#   - release-by-bot / tags: skip entirely
+#   - [run-prerelease] on non-master: install + test + release (canary to private registry) + notify
+#   - release-by-bot commits and tags: skipped entirely
 
 stages:
   - install
   - test
   - release
   - notify
-
-variables:
-  BUN_INSTALL_CACHE_DIR: .bun-cache
 
 # ─── Stage: Install ─────────────────────────────────────────────
 install:
@@ -26,7 +23,6 @@ install:
         - bun.lock
     paths:
       - node_modules/
-      - .bun-cache/
     policy: pull-push
   script:
     - bun install --frozen-lockfile
@@ -34,7 +30,7 @@ install:
     paths:
       - node_modules/
   rules:
-    - if: '$CI_COMMIT_MESSAGE =~ /release-by-bot/ || $CI_COMMIT_TAG != null'
+    - if: '$CI_COMMIT_MESSAGE =~ /release-by-bot/ || $CI_COMMIT_TAG'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_MESSAGE =~ /run-prerelease/ && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
@@ -50,7 +46,7 @@ test:
     - bun run lint
     - bun run test
   rules:
-    - if: '$CI_COMMIT_MESSAGE =~ /release-by-bot/ || $CI_COMMIT_TAG != null'
+    - if: '$CI_COMMIT_MESSAGE =~ /release-by-bot/ || $CI_COMMIT_TAG'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_MESSAGE =~ /run-prerelease/ && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
@@ -68,14 +64,14 @@ release:
     - git config --global user.name "$GITLAB_USER_NAME"
     - git config --global user.email "$GITLAB_USER_EMAIL"
   script:
-    - 'VERSION=$(bun -e "console.log(require(\"./package.json\").version)")'
+    - VERSION=$(bun -e "console.log(require('./package.json').version)")
     - bun run build
     - echo "${NPM_REGISTRY}:_authToken=${NPM_RELEASE_TOKEN}" > .npmrc
-    - 'npm publish --access public'
-    - 'git tag -a "v${VERSION}" -m "v${VERSION}"'
-    - 'git push "https://${GITLAB_USER_NAME}:${CI_GIT_TOKEN}@${CI_REPOSITORY_URL#*@}" --tags'
+    - npm publish --access public
+    - git tag -a "v${VERSION}" -m "v${VERSION}"
+    - git push "https://${GITLAB_USER_NAME}:${CI_GIT_TOKEN}@${CI_REPOSITORY_URL#*@}" --tags
   rules:
-    - if: '$CI_COMMIT_MESSAGE =~ /release-by-bot/ || $CI_COMMIT_TAG != null'
+    - if: '$CI_COMMIT_MESSAGE =~ /release-by-bot/ || $CI_COMMIT_TAG'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: never
@@ -91,14 +87,14 @@ notify:
   image: oven/bun:1.3
   needs: [release]
   script:
-    - 'VERSION=$(bun -e "console.log(require(\"./package.json\").version)")'
-    - 'curl -s -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$TELEGRAM_CHAT_ID\", \"text\": \"🚀 nax v${VERSION} released\"}" https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage'
+    - VERSION=$(bun -e "console.log(require('./package.json').version)")
+    - 'curl -s -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$TELEGRAM_CHAT_ID\", \"text\": \"nax v${VERSION} released\"}" https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage'
   rules:
-    - if: '$CI_COMMIT_MESSAGE =~ /release-by-bot/ || $CI_COMMIT_TAG != null'
+    - if: '$CI_COMMIT_MESSAGE =~ /release-by-bot/ || $CI_COMMIT_TAG'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: never
-    - if: '$TELEGRAM_BOT_TOKEN == null || $TELEGRAM_CHAT_ID == ""'
+    - if: '$TELEGRAM_BOT_TOKEN == null || $TELEGRAM_BOT_TOKEN == ""'
       when: never
     - if: '$CI_COMMIT_MESSAGE =~ /run-prerelease/ && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
     - if: '$CI_COMMIT_MESSAGE =~ /run-release/ && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

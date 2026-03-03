@@ -12,15 +12,15 @@
 **Status:** 🔲 Planned
 
 ### Bugfixes (Priority)
-- [ ] **BUG-016:** Hardcoded 120s timeout in verify stage → read from config
-- [ ] **BUG-017:** `run.complete` not emitted on SIGTERM → emit in crash handler
-- [ ] **BUG-018:** Test-writer spawns on every retry → skip when tests exist (`story.attempts > 0`)
-- [ ] **BUG-019:** Misleading TIMEOUT output preview → separate TIMEOUT vs TEST_FAILURE messaging
-- [ ] **BUG-020:** Missing storyId in JSONL events → audit all emitters
-- [ ] **BUG-021:** `Task classified` log shows raw LLM result, not final routing after cache/config override → log final routing only
-- [ ] **BUG-022:** Story interleaving wastes iterations — after failure, `getNextStory()` picks next pending story instead of retrying the failed one → prioritize current story retries before moving on
-- [ ] **BUG-023:** Agent failure doesn't log exitCode/stderr → add to `execution.Agent session failed` event
-- [ ] **BUG-025:** `needsHumanReview` doesn't trigger interactive plugin in headless mode → wire to interaction chain or suppress the log
+- [x] ~~**BUG-016:** Hardcoded 120s timeout in verify stage → read from config~~
+- [x] ~~**BUG-017:** `run.complete` not emitted on SIGTERM → emit in crash handler~~
+- [x] ~~**BUG-018:** Test-writer spawns on every retry → skip when tests exist (`story.attempts > 0`)~~
+- [x] ~~**BUG-019:** Misleading TIMEOUT output preview → separate TIMEOUT vs TEST_FAILURE messaging~~
+- [x] ~~**BUG-020:** Missing storyId in JSONL events → audit all emitters~~
+- [x] ~~**BUG-021:** `Task classified` log shows raw LLM result, not final routing after cache/config override → log final routing only~~
+- [x] ~~**BUG-022:** Story interleaving wastes iterations — after failure, `getNextStory()` picks next pending story instead of retrying the failed one → prioritize current story retries before moving on~~
+- [x] ~~**BUG-023:** Agent failure doesn't log exitCode/stderr → add to `execution.Agent session failed` event~~
+- [x] ~~**BUG-025:** `needsHumanReview` doesn't trigger interactive plugin in headless mode → wire to interaction chain or suppress the log~~
 
 ---
 
@@ -80,6 +80,7 @@
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.18.0 | Orchestration Quality | 2026-03-03 | BUG-016/017/018/019/020/021/022/023/025 all fixed |
 | v0.17.0 | Config Management | 2026-03-02 | CM-001 --explain, CM-002 --diff, CM-003 default view |
 | v0.16.4 | Bugfixes: Routing + Env Allowlist | 2026-03-02 | BUG-012/013/014 |
 | v0.16.1 | Project Context Generator | 2026-03-01 | `nax generate`, auto-inject, multi-language |
@@ -114,15 +115,15 @@
 - [x] ~~BUG-013: Escalation routing not applied in iterations~~
 - [x] ~~BUG-014: buildAllowedEnv() strips USER/LOGNAME~~
 - [ ] **BUG-015:** `loadConstitution()` leaks global `~/.nax/constitution.md` into unit tests
-- [ ] **BUG-016:** Hardcoded 120s timeout in pipeline verify stage → target v0.18.0
-- [ ] **BUG-017:** run.complete not emitted on SIGTERM → target v0.18.0
-- [ ] **BUG-018:** Test-writer wastes ~3min/retry when tests already exist → target v0.18.0
-- [ ] **BUG-019:** Misleading TIMEOUT output preview → target v0.18.0
-- [ ] **BUG-020:** Missing storyId in JSONL events → target v0.18.0
-- [ ] **BUG-021:** `Task classified` log shows raw LLM result, not final routing → target v0.18.0
-- [ ] **BUG-022:** Story interleaving — `getNextStory()` round-robins instead of exhausting retries on current story → target v0.18.0
-- [ ] **BUG-023:** Agent failure silent — no exitCode/stderr in JSONL → target v0.18.0
-- [ ] **BUG-025:** `needsHumanReview` not triggering interactive plugin → target v0.18.0
+- [x] ~~**BUG-016:** Hardcoded 120s timeout in pipeline verify stage → fixed in v0.18.0~~
+- [x] ~~**BUG-017:** run.complete not emitted on SIGTERM → fixed in v0.18.0~~
+- [x] ~~**BUG-018:** Test-writer wastes ~3min/retry when tests already exist → fixed in v0.18.0~~
+- [x] ~~**BUG-019:** Misleading TIMEOUT output preview → fixed in v0.18.0~~
+- [x] ~~**BUG-020:** Missing storyId in JSONL events → fixed in v0.18.0~~
+- [x] ~~**BUG-021:** `Task classified` log shows raw LLM result, not final routing → fixed in v0.18.0~~
+- [x] ~~**BUG-022:** Story interleaving — `getNextStory()` round-robins instead of exhausting retries on current story → fixed in v0.18.0~~
+- [x] ~~**BUG-023:** Agent failure silent — no exitCode/stderr in JSONL → fixed in v0.18.0~~
+- [x] ~~**BUG-025:** `needsHumanReview` not triggering interactive plugin → fixed in v0.18.0~~
 
 ### Features
 - [x] ~~`nax unlock` command~~
@@ -145,4 +146,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-02 (v0.18.0 planned)*
+*Last updated: 2026-03-03 (v0.18.0 shipped — all 9 bugs fixed)*
