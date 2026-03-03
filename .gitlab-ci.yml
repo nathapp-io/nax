@@ -1,0 +1,113 @@
+# .gitlab-ci.yml — nax CI/CD
+# Bun-native, single package (no turbo/monorepo)
+#
+# Triggers:
+#   - MR: install + test only (gate for merge)
+#   - [run-release] on master: install + test + release + notify
+#   - [run-prerelease] on non-master: install + test + release (canary) + notify
+#   - release-by-bot / tags: skip entirely
+
+stages:
+  - install
+  - test
+  - release
+  - notify
+
+variables:
+  BUN_INSTALL_CACHE_DIR: .bun-cache
+
+# ─── Stage: Install ─────────────────────────────────────────────
+install:
+  stage: install
+  image: oven/bun:1.3
+  cache:
+    key:
+      files:
+        - bun.lock
+    paths:
+      - node_modules/
+      - .bun-cache/
+    policy: pull-push
+  script:
+    - bun install --frozen-lockfile
+  artifacts:
+    paths:
+      - node_modules/
+  rules:
+    - if: '$CI_COMMIT_MESSAGE =~ /release-by-bot/ || $CI_COMMIT_TAG != null'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_MESSAGE =~ /run-prerelease/ && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_MESSAGE =~ /run-release/ && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# ─── Stage: Test ─────────────────────────────────────────────────
+test:
+  stage: test
+  image: oven/bun:1.3
+  needs: [install]
+  script:
+    - bun run typecheck
+    - bun run lint
+    - bun run test
+  rules:
+    - if: '$CI_COMMIT_MESSAGE =~ /release-by-bot/ || $CI_COMMIT_TAG != null'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_MESSAGE =~ /run-prerelease/ && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_MESSAGE =~ /run-release/ && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# ─── Stage: Release ──────────────────────────────────────────────
+release:
+  stage: release
+  image: oven/bun:1.3
+  needs: [test]
+  variables:
+    NPM_REGISTRY: "//registry.npmjs.org/"
+    NPM_RELEASE_TOKEN: $NPM_TOKEN
+  before_script:
+    # For prerelease, publish to private registry
+    - if [[ "$CI_COMMIT_MESSAGE" =~ "run-prerelease" && "$CI_COMMIT_BRANCH" != "$CI_DEFAULT_BRANCH" ]]; then
+        export NPM_REGISTRY="//npm.nathapp.io/";
+        export NPM_RELEASE_TOKEN="$NPM_PRIVATE_TOKEN";
+      fi
+    - echo "${NPM_REGISTRY}:_authToken=${NPM_RELEASE_TOKEN}" > .npmrc
+    - git config --global user.name "$GITLAB_USER_NAME"
+    - git config --global user.email "$GITLAB_USER_EMAIL"
+  script:
+    - bunx changeset version
+    - bun run build
+    - bunx changeset publish
+    - git add -A
+    - 'VERSION=$(bun -e "console.log(require(\"./package.json\").version)")'
+    - 'git commit -m "v${VERSION}" -m "== release-by-bot ($CI_COMMIT_SHA) =="'
+    - 'git tag -a "v${VERSION}" -m "v${VERSION}"'
+    - 'git push "https://${GITLAB_USER_NAME}:${CI_GIT_TOKEN}@${CI_REPOSITORY_URL#*@}" "HEAD:${CI_COMMIT_BRANCH}"'
+    - 'git push "https://${GITLAB_USER_NAME}:${CI_GIT_TOKEN}@${CI_REPOSITORY_URL#*@}" --tags'
+  rules:
+    - if: '$CI_COMMIT_MESSAGE =~ /release-by-bot/ || $CI_COMMIT_TAG != null'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - if: '$CI_COMMIT_MESSAGE =~ /run-prerelease/ && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      variables:
+        NPM_REGISTRY: "//npm.nathapp.io/"
+        NPM_RELEASE_TOKEN: $NPM_PRIVATE_TOKEN
+    - if: '$CI_COMMIT_MESSAGE =~ /run-release/ && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# ─── Stage: Notify ───────────────────────────────────────────────
+notify:
+  stage: notify
+  image: oven/bun:1.3
+  needs: [release]
+  script:
+    - 'VERSION=$(bun -e "console.log(require(\"./package.json\").version)")'
+    - 'curl -s -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$TELEGRAM_CHAT_ID\", \"text\": \"🚀 nax v${VERSION} released\"}" https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage'
+  rules:
+    - if: '$CI_COMMIT_MESSAGE =~ /release-by-bot/ || $CI_COMMIT_TAG != null'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - if: '$TELEGRAM_BOT_TOKEN == null || $TELEGRAM_CHAT_ID == ""'
+      when: never
+    - if: '$CI_COMMIT_MESSAGE =~ /run-prerelease/ && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_MESSAGE =~ /run-release/ && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
