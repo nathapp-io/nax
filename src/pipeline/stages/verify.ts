@@ -21,8 +21,8 @@
  */
 
 import { getLogger } from "../../logger";
-import { _smartRunnerDeps } from "../../verification/smart-runner";
 import { regression } from "../../verification/gate";
+import { _smartRunnerDeps } from "../../verification/smart-runner";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const verifyStage: PipelineStage = {
@@ -57,7 +57,9 @@ export const verifyStage: PipelineStage = {
 
       if (testFiles.length > 0) {
         effectiveCommand = _smartRunnerDeps.buildSmartTestCommand(testFiles, testCommand);
-        logger.info("verify", `[smart-runner] Running ${testFiles.length} targeted test files`, { storyId: ctx.story.id });
+        logger.info("verify", `[smart-runner] Running ${testFiles.length} targeted test files`, {
+          storyId: ctx.story.id,
+        });
       } else {
         logger.info("verify", "[smart-runner] No mapped tests — falling back to full suite", { storyId: ctx.story.id });
       }

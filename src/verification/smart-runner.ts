@@ -50,10 +50,7 @@ export async function mapSourceToTests(sourceFiles: string[], workdir: string): 
     // Strip leading "src/" and replace ".ts" with ".test.ts"
     const relative = sourceFile.replace(/^src\//, "").replace(/\.ts$/, ".test.ts");
 
-    const candidates = [
-      `${workdir}/test/unit/${relative}`,
-      `${workdir}/test/integration/${relative}`,
-    ];
+    const candidates = [`${workdir}/test/unit/${relative}`, `${workdir}/test/integration/${relative}`];
 
     for (const candidate of candidates) {
       if (await Bun.file(candidate).exists()) {
