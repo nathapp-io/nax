@@ -139,7 +139,7 @@ describe("US-002: Precheck orchestrator acceptance criteria", () => {
     console.log = (msg: string) => logs.push(msg);
 
     try {
-      await runPrecheck(config, prd, { workdir: testDir, format: "human", silent: true });
+      await runPrecheck(config, prd, { workdir: testDir, format: "human" });
 
       // Should have emoji indicators
       const hasCheckmark = logs.some((l) => l.includes("✓"));
@@ -165,7 +165,7 @@ describe("US-002: Precheck orchestrator acceptance criteria", () => {
     };
 
     try {
-      await runPrecheck(config, prd, { workdir: testDir, format: "json", silent: true });
+      await runPrecheck(config, prd, { workdir: testDir, format: "json" });
 
       const output = JSON.parse(jsonOutput);
 
@@ -231,7 +231,7 @@ describe("US-002: Precheck orchestrator acceptance criteria", () => {
     console.log = (msg: string) => logs.push(msg);
 
     try {
-      await runPrecheck(config, prd, { workdir: testDir, format: "human", silent: true });
+      await runPrecheck(config, prd, { workdir: testDir, format: "human" });
 
       // Should have summary with counts
       const hasSummary = logs.some(
