@@ -15,16 +15,16 @@ stages:
 # --- Stage: Test ---
 test:
   stage: test
-  image: oven/bun:1.3
+  image: nathapp/node-bun:22.21.0-1.3.9-alpine
   cache:
     key:
       files:
-        - package-lock.json
+        - bun.lock
     paths:
       - node_modules/
     policy: pull-push
   script:
-    - npm ci --prefer-offline
+    - bun install --frozen-lockfile
     - bun run typecheck
     - bun run lint
     - bun run test
@@ -38,11 +38,11 @@ test:
 # --- Stage: Release ---
 release:
   stage: release
-  image: oven/bun:1.3
+  image: nathapp/node-bun:22.21.0-1.3.9-alpine
   cache:
     key:
       files:
-        - package-lock.json
+        - bun.lock
     paths:
       - node_modules/
     policy: pull
@@ -53,7 +53,7 @@ release:
     - git config --global user.name "$GITLAB_USER_NAME"
     - git config --global user.email "$GITLAB_USER_EMAIL"
   script:
-    - npm ci --prefer-offline
+    - bun install --frozen-lockfile
     - VERSION=$(bun -e "console.log(require('./package.json').version)")
     - bun run build
     - echo "${NPM_REGISTRY}:_authToken=${NPM_RELEASE_TOKEN}" > .npmrc
@@ -74,7 +74,7 @@ release:
 # --- Stage: Notify ---
 notify:
   stage: notify
-  image: oven/bun:1.3
+  image: nathapp/node-bun:22.21.0-1.3.9-alpine
   needs: [release]
   script:
     - VERSION=$(bun -e "console.log(require('./package.json').version)")
