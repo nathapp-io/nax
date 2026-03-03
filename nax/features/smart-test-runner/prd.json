@@ -174,7 +174,7 @@
       "title": "Unit tests for smart runner module",
       "description": "Write `test/unit/verification/smart-runner.test.ts` with tests: (1) getChangedSourceFiles filters to .ts src/ files only, (2) mapSourceToTests maps paths correctly and checks file existence, (3) mapSourceToTests returns empty when files don't exist, (4) buildSmartTestCommand builds scoped command with test files, (5) buildSmartTestCommand returns original command when testFiles is empty. Use temp dirs with Bun.write for file existence tests.",
       "complexity": "medium",
-      "status": "passed",
+      "status": "pending",
       "tags": [
         "test"
       ],
@@ -188,14 +188,12 @@
       ],
       "escalations": [],
       "attempts": 0,
-      "passes": true,
+      "passes": false,
       "routing": {
         "testStrategy": "test-after",
         "modelTier": "balanced"
       },
-      "priorErrors": [
-        "Attempt 1 failed with model tier: fast"
-      ],
+      "priorErrors": [],
       "storyPoints": 1
     }
   ],
