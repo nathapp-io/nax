@@ -65,23 +65,14 @@ release:
     NPM_REGISTRY: "//registry.npmjs.org/"
     NPM_RELEASE_TOKEN: $NPM_TOKEN
   before_script:
-    # For prerelease, publish to private registry
-    - if [[ "$CI_COMMIT_MESSAGE" =~ "run-prerelease" && "$CI_COMMIT_BRANCH" != "$CI_DEFAULT_BRANCH" ]]; then
-        export NPM_REGISTRY="//npm.nathapp.io/";
-        export NPM_RELEASE_TOKEN="$NPM_PRIVATE_TOKEN";
-      fi
-    - echo "${NPM_REGISTRY}:_authToken=${NPM_RELEASE_TOKEN}" > .npmrc
     - git config --global user.name "$GITLAB_USER_NAME"
     - git config --global user.email "$GITLAB_USER_EMAIL"
   script:
-    - bunx changeset version
-    - bun run build
-    - bunx changeset publish
-    - git add -A
     - 'VERSION=$(bun -e "console.log(require(\"./package.json\").version)")'
-    - 'git commit -m "v${VERSION}" -m "== release-by-bot ($CI_COMMIT_SHA) =="'
+    - bun run build
+    - echo "${NPM_REGISTRY}:_authToken=${NPM_RELEASE_TOKEN}" > .npmrc
+    - 'npm publish --access public'
     - 'git tag -a "v${VERSION}" -m "v${VERSION}"'
-    - 'git push "https://${GITLAB_USER_NAME}:${CI_GIT_TOKEN}@${CI_REPOSITORY_URL#*@}" "HEAD:${CI_COMMIT_BRANCH}"'
     - 'git push "https://${GITLAB_USER_NAME}:${CI_GIT_TOKEN}@${CI_REPOSITORY_URL#*@}" --tags'
   rules:
     - if: '$CI_COMMIT_MESSAGE =~ /release-by-bot/ || $CI_COMMIT_TAG != null'
