@@ -2,6 +2,14 @@
 
 Bun + TypeScript CLI that orchestrates AI coding agents with model routing, three-session TDD, and lifecycle hooks.
 
+## Git Identity
+
+Always set before committing:
+```bash
+git config user.name "subrina.tai"
+git config user.email "subrina8080@outlook.com"
+```
+
 ## Commands
 
 - Test: `bun test`
