@@ -10,6 +10,12 @@ import type { NaxConfig } from "../../src/config";
 import { getLogger, initLogger, resetLogger } from "../../src/logger";
 import type { PipelineContext } from "../../src/pipeline/types";
 import type { UserStory } from "../../src/prd/types";
+import { ALL_AGENTS } from "../../src/agents/registry";
+import {
+  validateAgentForTier as realValidateAgentForTier,
+  validateAgentFeature,
+  describeAgentCapabilities,
+} from "../../src/agents/validation";
 
 // ── Module mocks (must be set up before dynamic imports) ──────────────────────
 
@@ -24,17 +30,24 @@ const mockAgentRun = mock(async () => ({
 
 mock.module("../../src/agents", () => ({
   getAgent: (name: string) => {
-    // Only serve the mock agent for the name used in this test suite.
-    // Unknown names return null so that other test files (e.g. integration
-    // tests that deliberately use "nonexistent-agent") still see a null agent.
-    if (name !== "claude") return null;
-    return {
-      name: "mock-agent",
-      capabilities: { supportedTiers: ["fast"] },
-      run: mockAgentRun,
-    };
+    if (name === "claude") {
+      return {
+        name: "claude",
+        // Only supports "balanced"/"powerful" — triggers tier mismatch when ctx.routing.modelTier="fast"
+        capabilities: { supportedTiers: ["balanced", "powerful"] },
+        run: mockAgentRun,
+        isInstalled: async () => true,
+        buildCommand: () => ["claude"],
+      };
+    }
+    // Delegate all other names to the real registry so integration tests that
+    // push their own mock agents to ALL_AGENTS (via beforeAll/afterAll) can
+    // still find them even when this module mock is active.
+    return ALL_AGENTS.find((a) => a.name === name);
   },
-  validateAgentForTier: () => false, // triggers tier mismatch log for our tests
+  validateAgentForTier: realValidateAgentForTier,
+  validateAgentFeature,
+  describeAgentCapabilities,
 }));
 
 // ── Dynamic imports after mock setup ─────────────────────────────────────────
@@ -165,7 +178,7 @@ describe("BUG-020: storyId in JSONL event payloads", () => {
       expect(call![2]).toEqual(
         expect.objectContaining({
           storyId: STORY_ID,
-          agentName: "mock-agent",
+          agentName: "claude",
           requestedTier: "fast",
         }),
       );
