@@ -274,7 +274,9 @@ async function loadAndValidatePlugin(
       // Always emit to sink so tests (and headless mode without logger) can capture output
       _pluginErrorSink(`[plugins] ${msg}`);
       _pluginErrorSink(`[plugins] Attempted path: ${modulePath}`);
-      _pluginErrorSink("[plugins] Ensure the module exists and the path is correct (relative paths are resolved from project root)");
+      _pluginErrorSink(
+        "[plugins] Ensure the module exists and the path is correct (relative paths are resolved from project root)",
+      );
     } else {
       logger?.warn("plugins", `Failed to load plugin from '${displayPath}'`, { error: errorMsg });
       // Always emit to sink

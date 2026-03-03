@@ -225,3 +225,6 @@ export function parseTestOutput(output: string, exitCode: number): TestOutputAna
 export function getEnvironmentalEscalationThreshold(tierAttempts: number, divisor = 2): number {
   return Math.ceil(tierAttempts / divisor);
 }
+
+// Re-export types for consumers that import from this module
+export type { TestFailure, TestSummary } from "./types";

@@ -104,7 +104,9 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
           errorCount++;
         } else {
           const suffix = dryRun ? " (dry run)" : "";
-          console.log(chalk.green(`✓ ${result.agent} → ${result.outputFile} (${result.content.length} bytes${suffix})`));
+          console.log(
+            chalk.green(`✓ ${result.agent} → ${result.outputFile} (${result.content.length} bytes${suffix})`),
+          );
         }
       }
 

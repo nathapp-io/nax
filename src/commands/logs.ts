@@ -204,7 +204,7 @@ async function extractRunSummary(filePath: string): Promise<RunSummary | null> {
           failed++;
         }
 
-        if (data?.cost) {
+        if (data?.cost && typeof data.cost === "number") {
           totalCost += data.cost;
         }
       }

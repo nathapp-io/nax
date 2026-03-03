@@ -185,9 +185,13 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     if (hasPreExistingTests) {
       // Tests exist in repo — test-writer correctly produced no new files.
       // Skip the pause, proceed to implementer.
-      logger.info("tdd", "Test writer created no new files but tests already exist in repo — skipping test-writer, proceeding to implementer (BUG-012 fix)", {
-        storyId: story.id,
-      });
+      logger.info(
+        "tdd",
+        "Test writer created no new files but tests already exist in repo — skipping test-writer, proceeding to implementer (BUG-012 fix)",
+        {
+          storyId: story.id,
+        },
+      );
     } else {
       // Genuinely greenfield — no tests anywhere. Pause for human review.
       needsHumanReview = true;
@@ -195,7 +199,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
       logger.warn("tdd", "[WARN] Test writer created no test files - greenfield detected", {
         storyId: story.id,
         reviewReason,
-        filesChanged: session1.filesChanged,
+        filesChanged: session1?.filesChanged,
       });
 
       return {

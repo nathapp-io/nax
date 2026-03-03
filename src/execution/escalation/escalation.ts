@@ -5,7 +5,7 @@
  * with per-tier attempt budgets.
  */
 
-import type { TierConfig } from "../config";
+import type { TierConfig } from "../../config";
 
 /**
  * Escalate to the next tier in the configured order.

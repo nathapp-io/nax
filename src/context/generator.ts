@@ -71,11 +71,7 @@ async function loadContextContent(options: GenerateOptions, config: NaxConfig): 
 /**
  * Generate config for a specific agent.
  */
-async function generateFor(
-  agent: AgentType,
-  options: GenerateOptions,
-  config: NaxConfig,
-): Promise<GenerationResult> {
+async function generateFor(agent: AgentType, options: GenerateOptions, config: NaxConfig): Promise<GenerationResult> {
   const generator = GENERATORS[agent];
   if (!generator) {
     return { agent, outputFile: "", content: "", written: false, error: `Unknown agent: ${agent}` };
