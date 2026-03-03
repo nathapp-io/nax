@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { getChangedSourceFiles } from "../../../src/verification/smart-runner";
+import { getChangedSourceFiles, mapSourceToTests } from "../../../src/verification/smart-runner";
 
 // ---------------------------------------------------------------------------
 // Helpers to mock Bun.spawn (used internally via the "bun" import alias)
@@ -21,6 +21,103 @@ function makeProc(stdout: string, exitCode: number) {
     }),
   };
 }
+
+// ---------------------------------------------------------------------------
+// mapSourceToTests
+// ---------------------------------------------------------------------------
+
+describe("mapSourceToTests", () => {
+  let originalFile: typeof Bun.file;
+
+  beforeEach(() => {
+    originalFile = Bun.file;
+  });
+
+  afterEach(() => {
+    // biome-ignore lint/suspicious/noExplicitAny: restoring original
+    (Bun as any).file = originalFile;
+  });
+
+  function mockFileExists(existingPaths: string[]) {
+    // biome-ignore lint/suspicious/noExplicitAny: mocking
+    (Bun as any).file = (path: string) => ({
+      exists: () => Promise.resolve(existingPaths.includes(path)),
+    });
+  }
+
+  test("maps src/foo/bar.ts to test/unit/foo/bar.test.ts", async () => {
+    mockFileExists(["/repo/test/unit/foo/bar.test.ts"]);
+
+    const result = await mapSourceToTests(["src/foo/bar.ts"], "/repo");
+
+    expect(result).toEqual(["/repo/test/unit/foo/bar.test.ts"]);
+  });
+
+  test("also checks test/integration/ path", async () => {
+    mockFileExists(["/repo/test/integration/foo/bar.test.ts"]);
+
+    const result = await mapSourceToTests(["src/foo/bar.ts"], "/repo");
+
+    expect(result).toEqual(["/repo/test/integration/foo/bar.test.ts"]);
+  });
+
+  test("returns both unit and integration when both exist", async () => {
+    mockFileExists([
+      "/repo/test/unit/foo/bar.test.ts",
+      "/repo/test/integration/foo/bar.test.ts",
+    ]);
+
+    const result = await mapSourceToTests(["src/foo/bar.ts"], "/repo");
+
+    expect(result).toEqual([
+      "/repo/test/unit/foo/bar.test.ts",
+      "/repo/test/integration/foo/bar.test.ts",
+    ]);
+  });
+
+  test("only returns files that exist on disk", async () => {
+    // Only unit test exists, integration does not
+    mockFileExists(["/repo/test/unit/utils/helper.test.ts"]);
+
+    const result = await mapSourceToTests(["src/utils/helper.ts"], "/repo");
+
+    expect(result).toEqual(["/repo/test/unit/utils/helper.test.ts"]);
+    expect(result).not.toContain("/repo/test/integration/utils/helper.test.ts");
+  });
+
+  test("returns empty array when no test files match", async () => {
+    mockFileExists([]); // nothing exists
+
+    const result = await mapSourceToTests(["src/foo/bar.ts"], "/repo");
+
+    expect(result).toEqual([]);
+  });
+
+  test("returns empty array for empty sourceFiles input", async () => {
+    mockFileExists(["/repo/test/unit/foo/bar.test.ts"]);
+
+    const result = await mapSourceToTests([], "/repo");
+
+    expect(result).toEqual([]);
+  });
+
+  test("handles multiple source files and aggregates results", async () => {
+    mockFileExists([
+      "/repo/test/unit/foo/bar.test.ts",
+      "/repo/test/unit/baz/qux.test.ts",
+    ]);
+
+    const result = await mapSourceToTests(
+      ["src/foo/bar.ts", "src/baz/qux.ts"],
+      "/repo",
+    );
+
+    expect(result).toEqual([
+      "/repo/test/unit/foo/bar.test.ts",
+      "/repo/test/unit/baz/qux.test.ts",
+    ]);
+  });
+});
 
 describe("getChangedSourceFiles", () => {
   let originalSpawn: typeof Bun.spawn;
