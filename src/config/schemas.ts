@@ -62,6 +62,7 @@ const RectificationConfigSchema = z.object({
 const RegressionGateConfigSchema = z.object({
   enabled: z.boolean().default(true),
   timeoutSeconds: z.number().int().min(10).max(600).default(120),
+  acceptOnTimeout: z.boolean().default(true),
 });
 
 const SmartTestRunnerConfigSchema = z.object({
