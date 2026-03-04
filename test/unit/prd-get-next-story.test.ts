@@ -183,4 +183,32 @@ describe("getNextStory() — run order S1-I1 -> S1-I2 (retry) -> S2-I1", () => {
     const pick2 = getNextStory(prd, lastId, maxRetries);
     expect(pick2?.id).toBe("US-002");
   });
+
+  test("BUG-029: prioritizes escalated story (pending + attempts > 0) over other pending stories", () => {
+    const prd = makePrd([makeStory("US-001"), makeStory("US-002"), makeStory("US-003")]);
+    const maxRetries = 2;
+
+    // Simulate: US-001 was escalated — status reset to "pending" but has prior attempts
+    prd.userStories[0].status = "pending";
+    prd.userStories[0].attempts = 1;
+    prd.userStories[0].routing = { complexity: "simple", modelTier: "balanced", testStrategy: "test-after" };
+
+    // getNextStory should prioritize US-001 (escalated, pending with attempts)
+    const pick = getNextStory(prd, "US-001", maxRetries);
+    expect(pick?.id).toBe("US-001");
+  });
+
+  test("BUG-029: does not reprioritize story with 0 attempts (fresh pending)", () => {
+    const prd = makePrd([makeStory("US-001"), makeStory("US-002")]);
+    const maxRetries = 2;
+
+    // US-001 is fresh pending (no prior attempts) — normal ordering applies
+    prd.userStories[0].status = "pending";
+    prd.userStories[0].attempts = 0;
+
+    // Should still pick US-001 (first pending), but via normal path not escalation path
+    const pick = getNextStory(prd, "US-002", maxRetries);
+    expect(pick?.id).toBe("US-001");
+  });
+
 });

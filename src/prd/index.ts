@@ -83,6 +83,11 @@ export function getNextStory(prd: PRD, currentStoryId?: string | null, maxRetrie
     if (currentStory && currentStory.status === "failed" && (currentStory.attempts ?? 0) <= maxRetries) {
       return currentStory;
     }
+    // BUG-029: After tier escalation, story is set to "pending" (not "failed").
+    // Prioritize current story if it was escalated (pending + has prior attempts).
+    if (currentStory && currentStory.status === "pending" && (currentStory.attempts ?? 0) > 0) {
+      return currentStory;
+    }
   }
 
   const completedIds = new Set(

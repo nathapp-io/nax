@@ -188,6 +188,7 @@ export interface EscalationHandlerContext {
   isBatchExecution: boolean;
   routing: { modelTier: string; testStrategy: string };
   pipelineResult: {
+    reason?: string;
     context: {
       retryAsLite?: boolean;
       tddFailureCategory?: FailureCategory;
@@ -260,7 +261,8 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
     }
   }
 
-  const errorMessage = `Attempt ${ctx.story.attempts + 1} failed with model tier: ${ctx.routing.modelTier}${ctx.isBatchExecution ? " (in batch)" : ""}`;
+  const pipelineReason = ctx.pipelineResult.reason ? `: ${ctx.pipelineResult.reason}` : "";
+  const errorMessage = `Attempt ${ctx.story.attempts + 1} failed with model tier: ${ctx.routing.modelTier}${ctx.isBatchExecution ? " (in batch)" : ""}${pipelineReason}`;
 
   const updatedPrd = {
     ...ctx.prd,
