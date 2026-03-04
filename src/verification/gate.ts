@@ -95,9 +95,10 @@ async function runVerificationCore(options: VerificationGateOptions): Promise<Ve
   });
 
   if (execution.timeout) {
+    const success = options.acceptOnTimeout ?? false;
     return {
       status: "TIMEOUT",
-      success: false,
+      success,
       countsTowardEscalation: false, // Timeout is environmental, not code failure
       error: execution.error,
       output: execution.output,

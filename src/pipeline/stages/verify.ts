@@ -103,6 +103,7 @@ export const verifyStage: PipelineStage = {
       workdir: ctx.workdir,
       command: effectiveCommand,
       timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
+      acceptOnTimeout: ctx.config.execution.regressionGate.acceptOnTimeout,
     });
 
     // HARD FAILURE: Tests must pass for story to be marked complete

@@ -108,6 +108,8 @@ export interface VerificationGateOptions {
   drainTimeoutMs?: number;
   shell?: string;
   stripEnvVars?: string[];
+  /** Whether to accept story as passed on timeout (BUG-026) */
+  acceptOnTimeout?: boolean;
   /** Scoped test paths (for scoped verification) */
   scopedTestPaths?: string[];
 }
