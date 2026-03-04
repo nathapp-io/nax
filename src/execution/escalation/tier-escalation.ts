@@ -12,7 +12,7 @@ import { type LoadedHooksConfig, fireHook } from "../../hooks";
 import { getSafeLogger } from "../../logger";
 import type { PRD, UserStory } from "../../prd";
 import { markStoryFailed, savePRD } from "../../prd";
-import { routeBatch as llmRouteBatch } from "../../routing/strategies/llm";
+import { clearCacheForStory, routeBatch as llmRouteBatch } from "../../routing/strategies/llm";
 import type { FailureCategory } from "../../tdd/types";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";
 import { hookCtx } from "../helpers";
@@ -109,6 +109,9 @@ export async function preIterationTierCheck(
       ) as PRD["userStories"],
     } as PRD;
     await savePRD(updatedPrd, prdPath);
+
+    // Clear routing cache for story to avoid returning old cached decision
+    clearCacheForStory(story.id);
 
     // Hybrid mode: re-route story after escalation
     if (routingMode === "hybrid") {
@@ -281,6 +284,11 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   } as PRD;
 
   await savePRD(updatedPrd, ctx.prdPath);
+
+  // Clear routing cache for all escalated stories to avoid returning old cached decisions
+  for (const story of storiesToEscalate) {
+    clearCacheForStory(story.id);
+  }
 
   // Hybrid mode: re-route escalated stories
   if (routingMode === "hybrid") {

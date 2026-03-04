@@ -9,7 +9,22 @@
       "description": "In src/execution/post-verify.ts, the runRegressionGate() function returns 'failed' when the full suite times out. This causes revertStoriesOnFailure() to bump story.attempts and trigger tier escalation, even though scoped verification already passed. Fix: when regressionResult.status === 'TIMEOUT', return 'passed' with a warning log instead of 'failed'. The scoped Smart Test Runner already verified the story's changes. A timeout is not evidence of regression — only TEST_FAILURE is. Keep existing behavior for TEST_FAILURE (attempt rectification). Add config flag execution.regressionGate.acceptOnTimeout (default true).",
       "complexity": 2,
       "status": "pending",
-      "testStrategy": "test-after"
+      "testStrategy": "test-after",
+      "attempts": 0,
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast"
+      ],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "acceptanceCriteria": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "modelTier": "balanced",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "three-session-tdd-lite: strategy:lite"
+      }
     },
     {
       "id": "BUG-028",
@@ -17,7 +32,14 @@
       "description": "In src/routing/strategies/llm.ts, the routing cache is keyed by story.id only. When tier escalation updates story.routing.modelTier (e.g. balanced → powerful), the next iteration hits the cache and returns the old routing decision, overriding the escalation. Fix: add a clearCacheForStory(storyId: string) export to llm.ts that calls cachedDecisions.delete(storyId). Call clearCacheForStory() in src/execution/escalation/tier-escalation.ts in both escalation paths: (1) preIterationTierCheck() after updating story routing, (2) handleTierEscalation() after updating story routing. Write unit tests verifying: cache hit returns old decision, clearCacheForStory removes it, next route() call re-evaluates.",
       "complexity": 2,
       "status": "pending",
-      "testStrategy": "test-after"
+      "testStrategy": "test-after",
+      "attempts": 0,
+      "priorErrors": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "acceptanceCriteria": [],
+      "storyPoints": 1
     },
     {
       "id": "SFC-001",
@@ -25,7 +47,14 @@
       "description": "Add structured failure context so escalated tiers know exactly what failed. Changes: (1) In src/prd/types.ts, add StructuredFailure interface with fields: attempt (number), modelTier (string), stage ('verify'|'review'|'regression'|'rectification'|'agent-session'), summary (string), testFailures (optional TestFailureContext[]), timestamp (string). Add TestFailureContext interface with fields: file (string), testName (string), error (string), stackTrace (string[]). Add priorFailures?: StructuredFailure[] to UserStory type. (2) In src/execution/post-verify.ts, when verification fails (both scoped and regression), build a StructuredFailure from the VerificationResult and parseBunTestOutput(), and push to story.priorFailures. (3) In src/execution/post-verify-rectification.ts revertStoriesOnFailure(), also populate priorFailures alongside existing priorErrors. (4) In src/execution/escalation/tier-escalation.ts, populate priorFailures with stage='escalation' when escalating. (5) Ensure priorFailures is initialized to [] in prd/index.ts loadPRD() like priorErrors.",
       "complexity": 3,
       "status": "pending",
-      "testStrategy": "test-after"
+      "testStrategy": "test-after",
+      "attempts": 0,
+      "priorErrors": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "acceptanceCriteria": [],
+      "storyPoints": 1
     },
     {
       "id": "SFC-002",
@@ -33,7 +62,15 @@
       "description": "In src/context/builder.ts, the existing code injects priorErrors as high-priority context elements (priority 90). Add similar handling for priorFailures: format each StructuredFailure into actionable markdown showing the attempt number, model tier, stage, summary, and detailed test failures (file, testName, error, first stack trace line). Inject as priority 95 (higher than priorErrors) so the agent sees structured failures first. Keep priorErrors injection for backward compat. Write unit tests verifying: (1) priorFailures formatted correctly, (2) test failure details included, (3) empty priorFailures produces no context element, (4) priority ordering is correct.",
       "complexity": 2,
       "status": "pending",
-      "testStrategy": "test-after"
+      "testStrategy": "test-after",
+      "attempts": 0,
+      "priorErrors": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "acceptanceCriteria": [],
+      "storyPoints": 1
     }
-  ]
+  ],
+  "updatedAt": "2026-03-04T04:26:45.605Z"
 }

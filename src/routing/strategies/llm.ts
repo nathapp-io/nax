@@ -36,6 +36,11 @@ export function getCacheSize(): number {
   return cachedDecisions.size;
 }
 
+/** Clear routing cache entry for a specific story (used on tier escalation) */
+export function clearCacheForStory(storyId: string): void {
+  cachedDecisions.delete(storyId);
+}
+
 /** Evict oldest entry when cache is full (LRU) */
 function evictOldest(): void {
   const firstKey = cachedDecisions.keys().next().value;
