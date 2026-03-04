@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { NaxConfig } from "../../src/config/schema";
 import { initLogger, resetLogger } from "../../src/logger";
-import { getLogger } from "../../src/logger/logger";
+import { getLogger } from "../../src/logger";
 import type { LogEntry } from "../../src/logger/types";
 import { executionStage } from "../../src/pipeline/stages/execution";
 import { verifyStage } from "../../src/pipeline/stages/verify";
