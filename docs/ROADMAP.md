@@ -82,19 +82,39 @@
 
 ## Next: v0.18.3 — Execution Reliability
 
-**Theme:** Fix regression gate false escalation, routing cache bug, and add structured failure context
-**Status:** 🔲 Planned
+**Theme:** Fix execution pipeline bugs (escalation, routing, review), structured failure context, and Smart Runner enhancement
+**Status:** 🔧 In Progress (branch: `feat/v0.18.3-execution-reliability`)
 **Spec:** [docs/specs/verification-architecture-v2.md](specs/verification-architecture-v2.md) (Phase 1)
 
-### Bugfixes
-- [ ] **BUG-026:** Regression gate timeout → accept scoped pass + warn (not escalate). Currently timeout bumps `story.attempts` → triggers tier escalation even though scoped tests passed.
-- [ ] **BUG-028:** Routing cache ignores escalation tier — add `clearCacheForStory(storyId)` in `llm.ts`, call on tier escalation in `tier-escalation.ts`.
+### Bugfixes — Completed
+- [x] **BUG-026:** Regression gate timeout → accept scoped pass + warn (not escalate). Config: `regressionGate.acceptOnTimeout: true`.
+- [x] **BUG-028:** Routing cache ignores escalation tier — `clearCacheForStory(storyId)` in `llm.ts`, called on tier escalation in both `preIterationTierCheck()` and `handleTierEscalation()`.
 
-### Structured Failure Context (new)
-- [ ] Add `StructuredFailure` type with `TestFailureContext[]` (file, testName, error, stackTrace)
-- [ ] Add `priorFailures?: StructuredFailure[]` to `UserStory` in `prd/types.ts` (backward compat with `priorErrors`)
-- [ ] Populate `priorFailures` on verify failure, regression failure, and rectification failure
-- [ ] Format `priorFailures` into actionable markdown in `context/builder.ts` for escalated agent prompts
+### Structured Failure Context — Completed
+- [x] **SFC-001:** `StructuredFailure` type with `TestFailureContext[]` + `priorFailures?: StructuredFailure[]` on `UserStory`. Populated on verify, regression, rectification, and escalation failures.
+- [x] **SFC-002:** Format `priorFailures` into agent prompt at priority 95 via `createPriorFailuresContext()` in `context/builder.ts`.
+
+### Bugfixes — Remaining
+- [ ] **BUG-029:** Escalation resets story to `pending` → bypasses BUG-022 retry priority. After escalation, `getNextStory()` picks the next pending story instead of retrying the escalated one. **Location:** `src/prd/index.ts:getNextStory()`. **Fix:** Recognize escalated-pending stories in Priority 1 (e.g. check `story.routing.modelTier` changed, or use `"retry-pending"` status).
+- [ ] **BUG-030:** Review lint/typecheck failure → hard `"fail"`, no rectification or retry. `review.ts:92` returns `{ action: "fail" }` → `markStoryFailed()` permanently. Lint errors are auto-fixable but story is killed with zero retry. **Fix:** Return `"escalate"` for lint/typecheck failures (or add review-rectification loop). Reserve `"fail"` for plugin reviewer rejection only.
+- [ ] **BUG-032:** Routing stage overrides escalated `modelTier` with complexity-derived tier. `routing.ts:43` always runs `complexityToModelTier()` even when `story.routing.modelTier` was set by escalation → escalated tier silently ignored. BUG-013 fix (`applyCachedRouting`) runs too late. **Fix:** Skip `complexityToModelTier()` when `story.routing.modelTier` is explicitly set.
+
+### STR-007: Smart Test Runner Enhancement
+- [ ] Configurable `testFilePatterns` in config (default: `test/**/*.test.ts`)
+- [ ] `testFileFallback` config option: `"import-grep"` | `"full-suite"` (default: `"import-grep"`)
+- [ ] 3-pass test discovery: path-convention → import-grep (grep test files for changed module name) → full-suite
+- [ ] Config schema update: `execution.smartTestRunner` becomes object `{ enabled, testFilePatterns, fallback }`
+
+---
+
+## v0.18.4 — Routing Stability
+
+**Theme:** Fix routing classifier consistency and LLM routing reliability
+**Status:** 🔲 Planned
+
+### Bugfixes
+- [ ] **BUG-031:** Keyword fallback classifier gives inconsistent strategy across retries for same story. `priorErrors` text shifts keyword classification. **Fix:** Keyword classifier should only use original story fields; or lock `story.routing.testStrategy` once set.
+- [ ] **BUG-033:** LLM routing has no retry on timeout — single 15s attempt, then keyword fallback. **Fix:** Add `routing.llm.retries` config (default: 1) with backoff. Raise default timeout to 30s for batch routing.
 
 ---
 
@@ -205,4 +225,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-04 (v0.18.3 Phase 1 planned; v0.18.4 STR-007; v0.19.0 Phase 2; BUG-029–033 filed from v0.18.3 run analysis)*
+*Last updated: 2026-03-04 (v0.18.3: BUG-026/028 done + BUG-029/030/032 + STR-007 remaining; v0.18.4: BUG-031/033; v0.19.0: Verification Architecture v2)*
