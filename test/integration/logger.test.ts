@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
-import { Logger, getLogger, initLogger, resetLogger } from "../../src/logger/logger.js";
+import { Logger, getLogger, initLogger, resetLogger } from "../../src/logger";
 
 const TEST_LOG_DIR = path.join(process.cwd(), "test-logs");
 const TEST_LOG_FILE = path.join(TEST_LOG_DIR, "test.jsonl");
