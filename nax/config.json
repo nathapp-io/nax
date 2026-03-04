@@ -63,18 +63,19 @@
     "verificationTimeoutSeconds": 300,
     "maxStoriesPerFeature": 15,
     "rectification": {
-      "enabled": false,
+      "enabled": true,
       "maxRetries": 2,
       "fullSuiteTimeoutSeconds": 600,
       "maxFailureSummaryChars": 2000,
       "abortOnIncreasingFailures": true
     },
     "regressionGate": {
-      "enabled": false
+      "enabled": false,
+      "timeoutSeconds": 300
     }
   },
   "quality": {
-    "requireTypecheck": false,
+    "requireTypecheck": true,
     "requireLint": true,
     "requireTests": true,
     "commands": {
@@ -117,13 +118,12 @@
     "maxCodebaseSummaryTokens": 5000
   },
   "review": {
-    "enabled": false,
+    "enabled": true,
     "checks": [
-      "test",
+      "typecheck",
       "lint"
     ],
     "commands": {
-      "test": "bun run test",
       "typecheck": "bun run typecheck",
       "lint": "bun run lint"
     }

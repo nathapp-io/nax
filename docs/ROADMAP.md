@@ -51,18 +51,17 @@
 ---
 
 ## v0.18.2 — Smart Test Runner + Routing Fix ✅
+
+**Theme:** Scope verify to changed files only + fix routing override
 **Status:** ✅ Shipped (2026-03-03)
 
-**Theme:** Scope verify to changed files only + remove node-pty native addon
-**Status:** 🔲 Planned
-
 ### Smart Test Runner
-- [ ] After agent implementation, run `git diff --name-only` to get changed source files
-- [ ] Map source → test files by naming convention (`src/foo/bar.ts` → `test/unit/foo/bar.test.ts`)
-- [ ] Run only related tests for verify (instead of full suite)
-- [ ] Fallback to full suite when mapping yields no test files
-- [ ] Config flag `execution.smartTestRunner: true` (default: true) to opt out
-- [ ] Result: verify drops from ~125s to ~10-20s for typical single-file fixes
+- [x] ~~After agent implementation, run `git diff --name-only` to get changed source files~~
+- [x] ~~Map source → test files by naming convention (`src/foo/bar.ts` → `test/unit/foo/bar.test.ts`)~~
+- [x] ~~Run only related tests for verify (instead of full suite)~~
+- [x] ~~Fallback to full suite when mapping yields no test files~~
+- [x] ~~Config flag `execution.smartTestRunner: true` (default: true) to opt out~~
+- [x] ~~Result: verify drops from ~125s to ~10-20s for typical single-file fixes~~
 
 ### Bun PTY Migration (BUN-001)
 - [ ] Replace `node-pty` (native addon, requires python/make/g++ to build) with `Bun.Terminal` API (v1.3.5+)
@@ -81,12 +80,48 @@
 
 ---
 
-## v0.19.0 — Central Run Registry
+## Next: v0.18.3 — Execution Reliability
 
-**Theme:** Unified run tracking across worktrees + dashboard integration
+**Theme:** Fix regression gate false escalation, routing cache bug, and add structured failure context
 **Status:** 🔲 Planned
+**Spec:** [docs/specs/verification-architecture-v2.md](specs/verification-architecture-v2.md) (Phase 1)
 
-- [ ] **Central Run Registry** — `~/.nax/runs/<project>-<feature>-<runId>/` with status.json + events.jsonl symlink. Dashboard reads from registry.
+### Bugfixes
+- [ ] **BUG-026:** Regression gate timeout → accept scoped pass + warn (not escalate). Currently timeout bumps `story.attempts` → triggers tier escalation even though scoped tests passed.
+- [ ] **BUG-028:** Routing cache ignores escalation tier — add `clearCacheForStory(storyId)` in `llm.ts`, call on tier escalation in `tier-escalation.ts`.
+
+### Structured Failure Context (new)
+- [ ] Add `StructuredFailure` type with `TestFailureContext[]` (file, testName, error, stackTrace)
+- [ ] Add `priorFailures?: StructuredFailure[]` to `UserStory` in `prd/types.ts` (backward compat with `priorErrors`)
+- [ ] Populate `priorFailures` on verify failure, regression failure, and rectification failure
+- [ ] Format `priorFailures` into actionable markdown in `context/builder.ts` for escalated agent prompts
+
+---
+
+## v0.19.0 — Verification Architecture v2
+
+**Theme:** Eliminate duplicate test runs, deferred regression gate, structured escalation context
+**Status:** 🔲 Planned
+**Spec:** [docs/specs/verification-architecture-v2.md](specs/verification-architecture-v2.md) (Phase 2)
+
+### Remove Duplicate Test Execution
+- [ ] Pipeline verify stage is the single test execution point (Smart Test Runner)
+- [ ] Remove scoped re-test in `post-verify.ts` (duplicate of pipeline verify)
+- [ ] Review stage runs typecheck + lint only — remove `review.commands.test` execution
+
+### Deferred Regression Gate
+- [ ] New `src/execution/lifecycle/run-regression.ts` — run full suite once at run-end (not per-story)
+- [ ] Reverse Smart Test Runner mapping: failing test → source file → responsible story
+- [ ] Targeted rectification per responsible story with full failure context
+- [ ] Config: `execution.regressionGate.mode: "deferred" | "per-story" | "disabled"` (default `"deferred"`)
+- [ ] Call deferred regression in `run-completion.ts` before final metrics
+
+### Full Structured Failure Context
+- [ ] `priorFailures` injected into escalated agent prompts via `context/builder.ts`
+- [ ] Reverse file mapping for regression attribution
+
+### Central Run Registry (carried forward)
+- [ ] `~/.nax/runs/<project>-<feature>-<runId>/` with status.json + events.jsonl symlink
 
 ---
 
@@ -130,7 +165,7 @@
 - [x] ~~BUG-012: Greenfield detection ignores pre-existing test files~~
 - [x] ~~BUG-013: Escalation routing not applied in iterations~~
 - [x] ~~BUG-014: buildAllowedEnv() strips USER/LOGNAME~~
-- [ ] **BUG-015:** `loadConstitution()` leaks global `~/.nax/constitution.md` into unit tests
+- [x] ~~**BUG-015:** `loadConstitution()` leaks global `~/.nax/constitution.md` into unit tests — fixed via `skipGlobal: true` in all unit tests~~
 - [x] ~~**BUG-016:** Hardcoded 120s timeout in pipeline verify stage → fixed in v0.18.0~~
 - [x] ~~**BUG-017:** run.complete not emitted on SIGTERM → fixed in v0.18.0~~
 - [x] ~~**BUG-018:** Test-writer wastes ~3min/retry when tests already exist → fixed in v0.18.0~~
@@ -147,6 +182,8 @@
 - [x] ~~Per-story testStrategy override — v0.18.1~~
 - [x] ~~Smart Test Runner — v0.18.2~~
 - [x] ~~Central Run Registry — v0.19.0~~
+- [ ] **BUN-001:** Bun PTY Migration — replace `node-pty` with `Bun.Terminal` API
+- [ ] **CI-001:** CI Memory Optimization — parallel test sharding for 1GB runners
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
 - [ ] `nax diagnose --ai` flag (LLM-assisted, future TBD)
@@ -162,4 +199,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-03 (v0.18.0 shipped — all 9 bugs fixed)*
+*Last updated: 2026-03-04 (v0.18.3 Phase 1 + v0.19.0 Phase 2 planned — see docs/specs/verification-architecture-v2.md)*
