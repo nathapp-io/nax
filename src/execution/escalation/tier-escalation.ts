@@ -10,7 +10,7 @@
 import type { NaxConfig } from "../../config";
 import { type LoadedHooksConfig, fireHook } from "../../hooks";
 import { getSafeLogger } from "../../logger";
-import type { PRD, UserStory } from "../../prd";
+import type { PRD, StructuredFailure, UserStory } from "../../prd";
 import { markStoryFailed, savePRD } from "../../prd";
 import { clearCacheForStory, routeBatch as llmRouteBatch } from "../../routing/strategies/llm";
 import type { FailureCategory } from "../../tdd/types";
@@ -18,6 +18,20 @@ import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalati
 import { hookCtx } from "../helpers";
 import { appendProgress } from "../progress";
 import { handleMaxAttemptsReached, handleNoTierAvailable } from "./tier-outcome";
+
+/** Build a StructuredFailure for tier escalation. */
+function buildEscalationFailure(
+  story: UserStory,
+  currentTier: string,
+): StructuredFailure {
+  return {
+    attempt: (story.attempts ?? 0) + 1,
+    modelTier: currentTier,
+    stage: "escalation" as const,
+    summary: `Failed with tier ${currentTier}, escalating to next tier`,
+    timestamp: new Date().toISOString(),
+  };
+}
 
 /**
  * Determine the outcome when max attempts are reached for an escalation.
@@ -274,11 +288,15 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
       const isChangingTier = currentStoryTier !== nextTier;
       const shouldResetAttempts = isChangingTier || shouldSwitchToTestAfter;
 
+      // Build escalation failure
+      const escalationFailure = buildEscalationFailure(s, currentStoryTier);
+
       return {
         ...s,
         attempts: shouldResetAttempts ? 0 : (s.attempts ?? 0) + 1,
         routing: updatedRouting,
         priorErrors: [...(s.priorErrors || []), errorMessage],
+        priorFailures: [...(s.priorFailures || []), escalationFailure],
       } as UserStory;
     }) as PRD["userStories"],
   } as PRD;
