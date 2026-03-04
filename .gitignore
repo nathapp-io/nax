@@ -53,3 +53,5 @@ TEST_SUMMARY_*.md
 nax/metrics.json
 
 nax/**/runs/
+
+.tmp/

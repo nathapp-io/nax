@@ -8,14 +8,14 @@ import { spawn } from "bun";
 import type { NaxConfig } from "../config";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
-import type { PRD, UserStory, StructuredFailure, VerificationStage } from "../prd";
+import type { PRD, StructuredFailure, UserStory, VerificationStage } from "../prd";
 import { getExpectedFiles, savePRD } from "../prd";
-import type { VerificationResult, TestFailure } from "../verification";
+import type { TestFailure, VerificationResult } from "../verification";
+import { parseBunTestOutput } from "../verification/parser";
 import { getTierConfig } from "./escalation";
 import { revertStoriesOnFailure, runRectificationLoop } from "./post-verify-rectification";
 import { appendProgress } from "./progress";
 import { getEnvironmentalEscalationThreshold, parseTestOutput, runVerification } from "./verification";
-import { parseBunTestOutput } from "../verification/parser";
 
 /** Build a StructuredFailure from verification result and test output. */
 function buildStructuredFailure(
@@ -151,16 +151,28 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
     }
 
     // Regression Gate (BUG-009): run full suite after scoped tests pass
-    const regressionGateResult = await runRegressionGate(config, workdir, story, changedTestFiles, rectificationEnabled);
+    const regressionGateResult = await runRegressionGate(
+      config,
+      workdir,
+      story,
+      changedTestFiles,
+      rectificationEnabled,
+    );
     if (regressionGateResult.status === "passed" || regressionGateResult.status === "skipped") {
       return { passed: true, prd };
     }
 
     // Regression failed -- build StructuredFailure and revert stories
+    // verificationResult is always set when status === "failed" (see RegressionGateResult)
+    const regressionVerificationResult = regressionGateResult.verificationResult ?? {
+      status: "TEST_FAILURE" as const,
+      success: false,
+      countsTowardEscalation: true,
+    };
     const regressionFailure = buildStructuredFailure(
       story,
       "regression",
-      regressionGateResult.verificationResult!,
+      regressionVerificationResult,
       "Full-suite regression detected",
     );
     const updatedPrd = await revertStoriesOnFailure({
@@ -209,12 +221,7 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
 
   // Revert stories and save
   const diagnosticContext = verificationResult.error || `Verification failed: ${verificationResult.status}`;
-  const verifyFailure = buildStructuredFailure(
-    story,
-    "verify",
-    verificationResult,
-    diagnosticContext,
-  );
+  const verifyFailure = buildStructuredFailure(story, "verify", verificationResult, diagnosticContext);
   const updatedPrd = await revertStoriesOnFailure({
     prd,
     prdPath,

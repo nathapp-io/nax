@@ -20,10 +20,7 @@ import { appendProgress } from "../progress";
 import { handleMaxAttemptsReached, handleNoTierAvailable } from "./tier-outcome";
 
 /** Build a StructuredFailure for tier escalation. */
-function buildEscalationFailure(
-  story: UserStory,
-  currentTier: string,
-): StructuredFailure {
+function buildEscalationFailure(story: UserStory, currentTier: string): StructuredFailure {
   return {
     attempt: (story.attempts ?? 0) + 1,
     modelTier: currentTier,

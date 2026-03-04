@@ -92,7 +92,11 @@ export async function buildContext(storyContext: StoryContext, budget: ContextBu
   elements.push(createProgressContext(generateProgressSummary(prd), 100));
 
   // Add prior failures (highest priority after progress, priority 95)
-  if (currentStory.priorFailures && Array.isArray(currentStory.priorFailures) && currentStory.priorFailures.length > 0) {
+  if (
+    currentStory.priorFailures &&
+    Array.isArray(currentStory.priorFailures) &&
+    currentStory.priorFailures.length > 0
+  ) {
     elements.push(createPriorFailuresContext(currentStory.priorFailures, 95));
   }
 
