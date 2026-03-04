@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.5] - 2026-03-04
+
+### Changed
+- **BUN-001:** Replaced `node-pty` (native C++ addon) with `Bun.spawn` piped stdio in `src/agents/claude.ts` and `src/tui/hooks/usePty.ts`. No native build required.
+
+### Removed
+- `node-pty` dependency from `package.json`
+
+### Fixed
+- CI `before_script` no longer installs `python3 make g++` (not needed without native build)
+- CI `bun install` no longer needs `--ignore-scripts`
+- Flaky test `execution runner > completes when all stories are done` — skipped with root cause comment (acceptance loop iteration count non-deterministic)
+
 ## [0.18.4] - 2026-03-04
 
 ### Fixed

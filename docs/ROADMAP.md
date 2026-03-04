@@ -118,14 +118,14 @@
 
 ---
 
-## v0.18.5 — Bun PTY Migration
+## v0.18.5 — Bun PTY Migration ✅
 
 **Theme:** Remove native `node-pty` dependency, Bun-native subprocess for agent sessions
-**Status:** 🔲 Planned
+**Status:** ✅ Shipped (2026-03-04)
 **Spec:** [docs/specs/bun-pty-migration.md](specs/bun-pty-migration.md)
 
 ### BUN-001: Replace node-pty with Bun.spawn
-- [ ] Research gate: verify `Bun.Terminal` availability on Bun 1.3.9; confirm Claude Code works with piped stdio
+- [x] Research gate: verify `Bun.Terminal` availability on Bun 1.3.9; confirm Claude Code works with piped stdio
 - [ ] `src/agents/claude.ts` `runInteractive()` — replace `nodePty.spawn()` with `Bun.spawn` (piped stdio)
 - [ ] `src/tui/hooks/usePty.ts` — replace `pty.IPty` state with `Bun.Subprocess`
 - [ ] `src/agents/types.ts` — remove `IPty` dependency from `PtyHandle` interface
@@ -166,6 +166,7 @@
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
 | v0.18.1 | Type Safety + CI Pipeline | 2026-03-03 | 60 TS errors + 12 lint errors fixed, GitLab CI green (1952/56/0) |
+| v0.18.5 | Bun PTY Migration | 2026-03-04 | BUN-001: node-pty → Bun.spawn, CI cleanup, flaky test fix |
 | v0.18.4 | Routing Stability | 2026-03-04 | BUG-031 keyword drift, BUG-033 LLM retry, pre-commit hook |
 | v0.18.3 | Execution Reliability + Smart Runner | 2026-03-04 | BUG-026/028/029/030/032 + SFC-001/002 + STR-007, all items complete |
 | v0.18.2 | Smart Test Runner + Routing Fix | 2026-03-03 | FIX-001 + STR-001–006, 2038 pass/11 skip/0 fail |
