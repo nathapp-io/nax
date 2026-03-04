@@ -44,7 +44,7 @@ describe("execution.smartTestRunner config flag", () => {
     expect(DEFAULT_CONFIG.execution.smartTestRunner).toBe(true);
   });
 
-  test("Zod schema defaults smartTestRunner to true when field is absent", () => {
+  test("Zod schema defaults smartTestRunner to enabled object when field is absent", () => {
     const minimal = {
       version: 1,
       models: {
@@ -106,41 +106,57 @@ describe("execution.smartTestRunner config flag", () => {
     const result = NaxConfigSchema.safeParse(minimal);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.execution.smartTestRunner).toBe(true);
+      expect(result.data.execution.smartTestRunner).toEqual({
+        enabled: true,
+        testFilePatterns: ["test/**/*.test.ts"],
+        fallback: "import-grep",
+      });
     }
   });
 
-  test("Zod schema accepts smartTestRunner: false", () => {
+  test("Zod schema coerces smartTestRunner: false to disabled config object", () => {
     const result = NaxConfigSchema.safeParse({
       ...buildMinimalConfig(),
       execution: { ...buildMinimalConfig().execution, smartTestRunner: false },
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.execution.smartTestRunner).toBe(false);
+      expect(result.data.execution.smartTestRunner).toEqual({
+        enabled: false,
+        testFilePatterns: ["test/**/*.test.ts"],
+        fallback: "import-grep",
+      });
     }
   });
 
-  test("Zod schema accepts smartTestRunner: true explicitly", () => {
+  test("Zod schema coerces smartTestRunner: true to enabled config object", () => {
     const result = NaxConfigSchema.safeParse({
       ...buildMinimalConfig(),
       execution: { ...buildMinimalConfig().execution, smartTestRunner: true },
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.execution.smartTestRunner).toBe(true);
+      expect(result.data.execution.smartTestRunner).toEqual({
+        enabled: true,
+        testFilePatterns: ["test/**/*.test.ts"],
+        fallback: "import-grep",
+      });
     }
   });
 
-  test("loadConfig defaults smartTestRunner to true when not in project config", async () => {
+  test("loadConfig defaults smartTestRunner to enabled object when not in project config", async () => {
     const configPath = join(tempDir, "nax", "config.json");
     writeFileSync(configPath, JSON.stringify({ routing: { strategy: "keyword" } }, null, 2));
 
     const config = await loadConfig(join(tempDir, "nax"));
-    expect(config.execution.smartTestRunner).toBe(true);
+    expect(config.execution.smartTestRunner).toEqual({
+      enabled: true,
+      testFilePatterns: ["test/**/*.test.ts"],
+      fallback: "import-grep",
+    });
   });
 
-  test("loadConfig respects smartTestRunner: false from project config", async () => {
+  test("loadConfig coerces smartTestRunner: false to disabled config object", async () => {
     const configPath = join(tempDir, "nax", "config.json");
     writeFileSync(
       configPath,
@@ -148,16 +164,24 @@ describe("execution.smartTestRunner config flag", () => {
     );
 
     const config = await loadConfig(join(tempDir, "nax"));
-    expect(config.execution.smartTestRunner).toBe(false);
+    expect(config.execution.smartTestRunner).toEqual({
+      enabled: false,
+      testFilePatterns: ["test/**/*.test.ts"],
+      fallback: "import-grep",
+    });
   });
 
-  test("loadConfig loads correctly without the field (backward compat)", async () => {
+  test("loadConfig normalizes to enabled object when field is absent (backward compat)", async () => {
     const configPath = join(tempDir, "nax", "config.json");
     // Config without smartTestRunner field at all
     writeFileSync(configPath, JSON.stringify({}, null, 2));
 
     const config = await loadConfig(join(tempDir, "nax"));
-    expect(config.execution.smartTestRunner).toBe(true);
+    expect(config.execution.smartTestRunner).toEqual({
+      enabled: true,
+      testFilePatterns: ["test/**/*.test.ts"],
+      fallback: "import-grep",
+    });
   });
 });
 

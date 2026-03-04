@@ -44,6 +44,7 @@ export type {
   RoutingConfig,
   StorySizeGateConfig,
   PrecheckConfig,
+  SmartTestRunnerConfig,
   NaxConfig,
 } from "./types";
 

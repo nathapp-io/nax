@@ -64,6 +64,28 @@ const RegressionGateConfigSchema = z.object({
   timeoutSeconds: z.number().int().min(10).max(600).default(120),
 });
 
+const SmartTestRunnerConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  testFilePatterns: z.array(z.string()).default(["test/**/*.test.ts"]),
+  fallback: z.enum(["import-grep", "full-suite"]).default("import-grep"),
+});
+
+const SMART_TEST_RUNNER_DEFAULT = {
+  enabled: true,
+  testFilePatterns: ["test/**/*.test.ts"],
+  fallback: "import-grep" as const,
+};
+
+/** Coerces boolean → SmartTestRunnerConfig for backward compat */
+const smartTestRunnerFieldSchema = z
+  .preprocess((val) => {
+    if (typeof val === "boolean") {
+      return { enabled: val, testFilePatterns: ["test/**/*.test.ts"], fallback: "import-grep" };
+    }
+    return val;
+  }, SmartTestRunnerConfigSchema)
+  .default(SMART_TEST_RUNNER_DEFAULT);
+
 const ExecutionConfigSchema = z.object({
   maxIterations: z.number().int().positive({ message: "maxIterations must be > 0" }),
   iterationDelayMs: z.number().int().nonnegative(),
@@ -81,7 +103,7 @@ const ExecutionConfigSchema = z.object({
   lintCommand: z.string().nullable().optional(),
   typecheckCommand: z.string().nullable().optional(),
   dangerouslySkipPermissions: z.boolean().default(true),
-  smartTestRunner: z.boolean().default(true),
+  smartTestRunner: smartTestRunnerFieldSchema,
 });
 
 const QualityConfigSchema = z.object({

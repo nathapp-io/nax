@@ -80,6 +80,16 @@ export interface RegressionGateConfig {
   acceptOnTimeout?: boolean;
 }
 
+/** Smart test runner configuration (STR-007) */
+export interface SmartTestRunnerConfig {
+  /** Enable smart test runner (default: true) */
+  enabled: boolean;
+  /** Glob patterns to scan for test files during import-grep fallback */
+  testFilePatterns: string[];
+  /** Fallback strategy when path-convention mapping yields no results */
+  fallback: "import-grep" | "full-suite";
+}
+
 /** Execution limits */
 export interface ExecutionConfig {
   /** Max iterations per feature run (auto-calculated from tierOrder sum if not set) */
@@ -108,8 +118,9 @@ export interface ExecutionConfig {
   typecheckCommand?: string | null;
   /** Use --dangerously-skip-permissions flag for agent (default: true for backward compat, SEC-1 fix) */
   dangerouslySkipPermissions?: boolean;
-  /** Enable smart test runner to scope test runs to changed files (default: true) */
-  smartTestRunner?: boolean;
+  /** Enable smart test runner to scope test runs to changed files (default: true).
+   * Accepts boolean for backward compat or a SmartTestRunnerConfig object. */
+  smartTestRunner?: boolean | SmartTestRunnerConfig;
 }
 
 /** Quality gate config */

@@ -43,6 +43,73 @@
  * // Returns: ["/repo/test/unit/foo/bar.test.ts"] (if it exists)
  * ```
  */
+/**
+ * Extract searchable identifiers from a source file path.
+ *
+ * For `src/routing/strategies/llm.ts`, returns:
+ *   ["/llm", "routing/strategies/llm"]
+ *
+ * @internal
+ */
+function extractSearchTerms(sourceFile: string): string[] {
+  const withoutSrc = sourceFile.replace(/^src\//, "");
+  const withoutExt = withoutSrc.replace(/\.ts$/, "");
+  const parts = withoutExt.split("/");
+  const basename = parts[parts.length - 1];
+  // Use "/basename" to avoid matching short names as plain words
+  return [`/${basename}`, withoutExt];
+}
+
+/**
+ * Pass 2 — import-grep fallback.
+ *
+ * Scans test files matching `testFilePatterns` and returns those that
+ * contain an import reference to any of the given `sourceFiles`.
+ *
+ * @param sourceFiles    - Changed source file paths (e.g. `["src/routing/strategies/llm.ts"]`)
+ * @param workdir        - Absolute path to the repository root
+ * @param testFilePatterns - Glob patterns to scan for test files
+ * @returns Matching test file paths (absolute)
+ */
+export async function importGrepFallback(
+  sourceFiles: string[],
+  workdir: string,
+  testFilePatterns: string[],
+): Promise<string[]> {
+  if (sourceFiles.length === 0 || testFilePatterns.length === 0) return [];
+
+  // Collect search terms from all changed source files
+  const searchTerms = sourceFiles.flatMap(extractSearchTerms);
+
+  // Scan all test files matching the configured patterns
+  const testFilePaths: string[] = [];
+  for (const pattern of testFilePatterns) {
+    const glob = new Bun.Glob(pattern);
+    for await (const file of glob.scan(workdir)) {
+      testFilePaths.push(`${workdir}/${file}`);
+    }
+  }
+
+  // Return test files that contain any of the search terms
+  const matched: string[] = [];
+  for (const testFile of testFilePaths) {
+    let content: string;
+    try {
+      content = await Bun.file(testFile).text();
+    } catch {
+      continue;
+    }
+    for (const term of searchTerms) {
+      if (content.includes(term)) {
+        matched.push(testFile);
+        break;
+      }
+    }
+  }
+
+  return matched;
+}
+
 export async function mapSourceToTests(sourceFiles: string[], workdir: string): Promise<string[]> {
   const result: string[] = [];
 
@@ -142,5 +209,6 @@ export async function getChangedSourceFiles(workdir: string): Promise<string[]> 
 export const _smartRunnerDeps = {
   getChangedSourceFiles,
   mapSourceToTests,
+  importGrepFallback,
   buildSmartTestCommand,
 };
