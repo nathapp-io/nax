@@ -71,11 +71,13 @@ const PUBLIC_API_KEYWORDS = [
  */
 function classifyComplexity(
   title: string,
-  description: string,
+  _description: string,
   acceptanceCriteria: string[],
   tags: string[] = [],
 ): Complexity {
-  const text = [title, description, ...acceptanceCriteria, ...tags].join(" ").toLowerCase();
+  // BUG-031: Exclude description — it accumulates priorErrors across retries and
+  // causes classification drift. Only use stable, immutable story fields.
+  const text = [title, ...acceptanceCriteria, ...tags].join(" ").toLowerCase();
 
   if (EXPERT_KEYWORDS.some((kw) => text.includes(kw))) {
     return "expert";
@@ -98,10 +100,11 @@ function classifyComplexity(
 function determineTestStrategy(
   complexity: Complexity,
   title: string,
-  description: string,
+  _description: string,
   tags: string[] = [],
 ): TestStrategy {
-  const text = [title, description, ...tags].join(" ").toLowerCase();
+  // BUG-031: Exclude description — only use stable, immutable story fields.
+  const text = [title, ...tags].join(" ").toLowerCase();
 
   const isSecurityCritical = SECURITY_KEYWORDS.some((kw) => text.includes(kw));
   const isPublicApi = PUBLIC_API_KEYWORDS.some((kw) => text.includes(kw));

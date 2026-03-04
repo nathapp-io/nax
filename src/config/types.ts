@@ -365,8 +365,12 @@ export interface LlmRoutingConfig {
   mode?: LlmRoutingMode;
   /** @deprecated Use mode instead. Will be removed in v1.0 */
   batchMode?: boolean;
-  /** Timeout for LLM call in milliseconds (default: 15000) */
+  /** Timeout for LLM call in milliseconds (default: 30000) */
   timeoutMs?: number;
+  /** Number of retries on LLM timeout or transient failure (default: 1) */
+  retries?: number;
+  /** Delay between retries in milliseconds (default: 1000) */
+  retryDelayMs?: number;
 }
 
 /** Routing config */

@@ -58,10 +58,7 @@ function evictOldest(): void {
  * @returns LLM response text
  * @throws Error on timeout or spawn failure
  */
-async function callLlm(modelTier: string, prompt: string, config: NaxConfig): Promise<string> {
-  const llmConfig = config.routing.llm;
-  const timeoutMs = llmConfig?.timeoutMs ?? 15000;
-
+async function callLlmOnce(modelTier: string, prompt: string, config: NaxConfig, timeoutMs: number): Promise<string> {
   // Resolve model tier to actual model identifier
   const modelEntry = config.models[modelTier];
   if (!modelEntry) {
@@ -106,6 +103,41 @@ async function callLlm(modelTier: string, prompt: string, config: NaxConfig): Pr
     proc.kill();
     throw err;
   }
+}
+
+/**
+ * Call LLM via claude CLI with timeout and retry (BUG-033).
+ *
+ * @param modelTier - Model tier to use for routing call
+ * @param prompt - Prompt to send to LLM
+ * @param config - nax configuration
+ * @returns LLM response text
+ * @throws Error after all retries exhausted
+ */
+async function callLlm(modelTier: string, prompt: string, config: NaxConfig): Promise<string> {
+  const llmConfig = config.routing.llm;
+  const timeoutMs = llmConfig?.timeoutMs ?? 30000;
+  const maxRetries = llmConfig?.retries ?? 1;
+  const retryDelayMs = llmConfig?.retryDelayMs ?? 1000;
+
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await callLlmOnce(modelTier, prompt, config, timeoutMs);
+    } catch (err) {
+      lastError = err as Error;
+      if (attempt < maxRetries) {
+        const logger = getLogger();
+        logger.warn("routing", `LLM call failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${retryDelayMs}ms`, {
+          error: lastError.message,
+        });
+        await Bun.sleep(retryDelayMs);
+      }
+    }
+  }
+
+  throw lastError ?? new Error("LLM call failed with unknown error");
 }
 
 /**

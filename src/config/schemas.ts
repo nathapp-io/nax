@@ -212,6 +212,8 @@ const LlmRoutingConfigSchema = z.object({
   mode: z.enum(["one-shot", "per-story", "hybrid"]).optional(),
   batchMode: z.boolean().optional(), // deprecated, for backward compat
   timeoutMs: z.number().int().positive({ message: "llm.timeoutMs must be > 0" }).optional(),
+  retries: z.number().int().min(0, { message: "llm.retries must be >= 0" }).optional(),
+  retryDelayMs: z.number().int().min(0, { message: "llm.retryDelayMs must be >= 0" }).optional(),
 });
 
 const RoutingConfigSchema = z
