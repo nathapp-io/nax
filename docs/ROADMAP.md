@@ -80,10 +80,10 @@
 
 ---
 
-## Next: v0.18.3 — Execution Reliability
+## v0.18.3 — Execution Reliability ✅
 
 **Theme:** Fix execution pipeline bugs (escalation, routing, review), structured failure context, and Smart Runner enhancement
-**Status:** 🔧 In Progress (branch: `feat/v0.18.3-execution-reliability`)
+**Status:** ✅ Shipped (2026-03-04)
 **Spec:** [docs/specs/verification-architecture-v2.md](specs/verification-architecture-v2.md) (Phase 1)
 
 ### Bugfixes — Completed
@@ -150,6 +150,7 @@
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
 | v0.18.1 | Type Safety + CI Pipeline | 2026-03-03 | 60 TS errors + 12 lint errors fixed, GitLab CI green (1952/56/0) |
+| v0.18.3 | Execution Reliability + Smart Runner | 2026-03-04 | BUG-026/028/029/030/032 + SFC-001/002 + STR-007, all items complete |
 | v0.18.2 | Smart Test Runner + Routing Fix | 2026-03-03 | FIX-001 + STR-001–006, 2038 pass/11 skip/0 fail |
 | v0.18.0 | Orchestration Quality | 2026-03-03 | BUG-016/017/018/019/020/021/022/023/025 all fixed |
 | v0.17.0 | Config Management | 2026-03-02 | CM-001 --explain, CM-002 --diff, CM-003 default view |
@@ -225,4 +226,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-04 (v0.18.3: all items complete — BUG-026/028/029/030/032 + SFC-001/002 + STR-007; v0.18.4: BUG-031/033; v0.19.0: Verification Architecture v2)*
+*Last updated: 2026-03-04 (v0.18.3 shipped; v0.18.4: BUG-031/033; v0.19.0: Verification Architecture v2)*
