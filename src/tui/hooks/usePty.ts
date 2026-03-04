@@ -96,7 +96,7 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
       env: { ...process.env, ...options.env, TERM: "xterm-256color", FORCE_COLOR: "1" },
       stdin: "pipe",
       stdout: "pipe",
-      stderr: "pipe",
+      stderr: "inherit", // MEM-1: Inherit stderr to avoid blocking on unread pipe
     });
 
     setPtyProcess(proc);
@@ -128,9 +128,14 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
     })();
 
     // Handle exit
-    proc.exited.then((code) => {
-      setState((prev) => ({ ...prev, isRunning: false, exitCode: code ?? undefined }));
-    });
+    proc.exited
+      .then((code) => {
+        setState((prev) => ({ ...prev, isRunning: false, exitCode: code ?? undefined }));
+      })
+      .catch(() => {
+        // BUG-22: Guard against setState throws (e.g. on unmount)
+        setState((prev) => ({ ...prev, isRunning: false }));
+      });
 
     // Create handle
     const ptyHandle: PtyHandle = {

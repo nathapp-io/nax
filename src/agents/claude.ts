@@ -172,7 +172,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     const proc = Bun.spawn(cmd, {
       cwd: options.workdir,
       stdout: "pipe",
-      stderr: "pipe",
+      stderr: "inherit", // MEM-3: Inherit stderr to avoid blocking on unread pipe
       env: this.buildAllowedEnv(options),
     });
 
@@ -255,7 +255,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     const proc = Bun.spawn(cmd, {
       cwd: options.workdir,
       stdout: "pipe",
-      stderr: "pipe",
+      stderr: "inherit", // MEM-3: Inherit stderr to avoid blocking on unread pipe
       env: this.buildAllowedEnv({
         workdir: options.workdir,
         modelDef: options.modelDef || { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
@@ -295,7 +295,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       env: { ...this.buildAllowedEnv(options), TERM: "xterm-256color", FORCE_COLOR: "1" },
       stdin: "pipe",
       stdout: "pipe",
-      stderr: "pipe",
+      stderr: "inherit", // MEM-3: Inherit stderr to avoid blocking on unread pipe
     });
 
     const pidRegistry = this.getPidRegistry(options.workdir);
@@ -303,16 +303,26 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     // Stream stdout to onOutput callback
     (async () => {
-      for await (const chunk of proc.stdout) {
-        options.onOutput(Buffer.from(chunk));
+      try {
+        for await (const chunk of proc.stdout) {
+          options.onOutput(Buffer.from(chunk));
+        }
+      } catch (err) {
+        // BUG-21: Handle stream errors to avoid unhandled rejections
+        getLogger()?.error("agent", "runInteractive stdout error", { err });
       }
     })();
 
     // Fire onExit when process completes
-    proc.exited.then((code) => {
-      pidRegistry.unregister(proc.pid).catch(() => {});
-      options.onExit(code ?? 1);
-    });
+    proc.exited
+      .then((code) => {
+        pidRegistry.unregister(proc.pid).catch(() => {});
+        options.onExit(code ?? 1);
+      })
+      .catch((err) => {
+        // BUG-22: Guard against onExit or unregister throws
+        getLogger()?.error("agent", "runInteractive exit error", { err });
+      });
 
     return {
       write: (data: string) => {
