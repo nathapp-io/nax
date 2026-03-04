@@ -129,9 +129,13 @@ async function callLlm(modelTier: string, prompt: string, config: NaxConfig): Pr
       lastError = err as Error;
       if (attempt < maxRetries) {
         const logger = getLogger();
-        logger.warn("routing", `LLM call failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${retryDelayMs}ms`, {
-          error: lastError.message,
-        });
+        logger.warn(
+          "routing",
+          `LLM call failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${retryDelayMs}ms`,
+          {
+            error: lastError.message,
+          },
+        );
         await Bun.sleep(retryDelayMs);
       }
     }

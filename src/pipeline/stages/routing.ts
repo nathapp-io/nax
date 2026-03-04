@@ -44,7 +44,10 @@ export const routingStage: PipelineStage = {
       if (ctx.story.routing?.modelTier) {
         routing.modelTier = ctx.story.routing.modelTier;
       } else {
-        routing.modelTier = _routingDeps.complexityToModelTier(routing.complexity as import("../../config").Complexity, ctx.config);
+        routing.modelTier = _routingDeps.complexityToModelTier(
+          routing.complexity as import("../../config").Complexity,
+          ctx.config,
+        );
       }
     } else {
       // Fresh classification

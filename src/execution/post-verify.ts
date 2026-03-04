@@ -321,7 +321,9 @@ function checkEnvironmentalEscalation(
   logger: ReturnType<typeof getSafeLogger>,
 ): void {
   const currentTier = story.routing?.modelTier || config.autoMode.escalation.tierOrder[0]?.tier;
-  const tierCfg = currentTier ? _postVerifyDeps.getTierConfig(currentTier, config.autoMode.escalation.tierOrder) : undefined;
+  const tierCfg = currentTier
+    ? _postVerifyDeps.getTierConfig(currentTier, config.autoMode.escalation.tierOrder)
+    : undefined;
   if (!tierCfg) return;
 
   const threshold = _postVerifyDeps.getEnvironmentalEscalationThreshold(
