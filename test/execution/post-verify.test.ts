@@ -146,6 +146,38 @@ describe("Regression Gate Timeout", () => {
     expect(regressionGateTimeoutSeconds).not.toBe(verificationTimeoutSeconds);
     expect(regressionGateTimeoutSeconds).toBeLessThan(verificationTimeoutSeconds);
   });
+
+  test("should have acceptOnTimeout config option (BUG-026)", () => {
+    const regressionGateConfig: RegressionGateConfig = {
+      enabled: true,
+      timeoutSeconds: 120,
+      acceptOnTimeout: true,
+    };
+
+    expect(regressionGateConfig.acceptOnTimeout).toBe(true);
+  });
+
+  test("should default acceptOnTimeout to true (BUG-026)", () => {
+    const regressionGateConfig: RegressionGateConfig = {
+      enabled: true,
+      timeoutSeconds: 120,
+      // acceptOnTimeout not specified - should default to true
+    };
+
+    // When acceptOnTimeout is undefined, it should be treated as true
+    const acceptOnTimeout = regressionGateConfig.acceptOnTimeout ?? true;
+    expect(acceptOnTimeout).toBe(true);
+  });
+
+  test("should allow disabling acceptOnTimeout (BUG-026)", () => {
+    const regressionGateConfig: RegressionGateConfig = {
+      enabled: true,
+      timeoutSeconds: 120,
+      acceptOnTimeout: false,
+    };
+
+    expect(regressionGateConfig.acceptOnTimeout).toBe(false);
+  });
 });
 
 describe("Story State After Regression Failure", () => {

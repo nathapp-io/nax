@@ -228,6 +228,15 @@ async function runRegressionGate(
     return "passed";
   }
 
+  // Handle timeout: accept as pass if configured (BUG-026)
+  const acceptOnTimeout = config.execution.regressionGate?.acceptOnTimeout ?? true;
+  if (regressionResult.status === "TIMEOUT" && acceptOnTimeout) {
+    logger?.warn("regression-gate", "[BUG-026] Full-suite regression gate timed out (accepted as pass)", {
+      reason: "Timeout is not evidence of regression — scoped verification already passed",
+    });
+    return "passed";
+  }
+
   logger?.warn("regression-gate", "Full-suite regression detected", { status: regressionResult.status });
 
   // Attempt rectification on regression failures

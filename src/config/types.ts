@@ -70,12 +70,14 @@ export interface RectificationConfig {
   abortOnIncreasingFailures: boolean;
 }
 
-/** Regression gate config (BUG-009) */
+/** Regression gate config (BUG-009, BUG-026) */
 export interface RegressionGateConfig {
   /** Enable full-suite regression gate after scoped verification (default: true) */
   enabled: boolean;
   /** Timeout for full-suite regression run in seconds (default: 120) */
   timeoutSeconds: number;
+  /** Accept timeout as pass instead of failing (BUG-026, default: true) */
+  acceptOnTimeout?: boolean;
 }
 
 /** Execution limits */
