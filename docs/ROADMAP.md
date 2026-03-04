@@ -98,6 +98,23 @@
 
 ---
 
+## v0.18.4 — Smart Test Runner Enhancement
+
+**Theme:** Configurable test file patterns + import-based fallback mapping
+**Status:** 🔲 Planned
+**Spec:** [docs/specs/verification-architecture-v2.md](specs/verification-architecture-v2.md)
+
+### STR-007: Configurable Test File Patterns + Import-Grep Fallback
+- [ ] Add `execution.smartTestRunner.testFilePatterns` config (default: `["test/**/*.test.ts"]`) — supports `__tests__/`, `spec/`, monorepos, any language layout
+- [ ] Add `execution.smartTestRunner.testFileFallback: "import-grep" | "full-suite"` (default: `"import-grep"`)
+- [ ] **Pass 1:** existing path-convention mapping (`src/foo/bar.ts` → `test/unit/foo/bar.test.ts`)
+- [ ] **Pass 2 (import-grep):** when Pass 1 yields nothing, grep files matching `testFilePatterns` for import statements referencing the changed module stem (e.g. `routing/strategies/llm`)
+- [ ] **Pass 3:** full-suite fallback when both passes yield nothing
+- [ ] Handles consolidated flat test files (e.g. nax's own `test/unit/routing.test.ts`), Jest `__tests__/`, pytest `tests/`, etc.
+- [ ] Update config schema + defaults + types
+
+---
+
 ## v0.19.0 — Verification Architecture v2
 
 **Theme:** Eliminate duplicate test runs, deferred regression gate, structured escalation context
@@ -199,4 +216,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-04 (v0.18.3 Phase 1 + v0.19.0 Phase 2 planned — see docs/specs/verification-architecture-v2.md)*
+*Last updated: 2026-03-04 (v0.18.3 Phase 1 planned; v0.18.4 STR-007 Smart Runner enhancement; v0.19.0 Architecture v2)*
