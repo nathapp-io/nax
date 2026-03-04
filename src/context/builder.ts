@@ -14,6 +14,7 @@ import {
   createDependencyContext,
   createErrorContext,
   createFileContext,
+  createPriorFailuresContext,
   createProgressContext,
   createStoryContext,
   createTestCoverageContext,
@@ -31,6 +32,7 @@ export {
   createProgressContext,
   createFileContext,
   createTestCoverageContext,
+  createPriorFailuresContext,
 } from "./elements";
 export { formatContextAsMarkdown } from "./formatter";
 
@@ -88,6 +90,11 @@ export async function buildContext(storyContext: StoryContext, budget: ContextBu
 
   // Add progress summary (highest priority)
   elements.push(createProgressContext(generateProgressSummary(prd), 100));
+
+  // Add prior failures (highest priority after progress, priority 95)
+  if (currentStory.priorFailures && Array.isArray(currentStory.priorFailures) && currentStory.priorFailures.length > 0) {
+    elements.push(createPriorFailuresContext(currentStory.priorFailures, 95));
+  }
 
   // Add prior errors (high priority)
   if (currentStory.priorErrors && Array.isArray(currentStory.priorErrors) && currentStory.priorErrors.length > 0) {
