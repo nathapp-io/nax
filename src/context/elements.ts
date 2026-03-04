@@ -5,7 +5,7 @@
  */
 
 import { getLogger } from "../logger";
-import type { UserStory } from "../prd";
+import type { StructuredFailure, UserStory } from "../prd";
 import type { ContextElement } from "./types";
 
 /**
@@ -50,6 +50,43 @@ export function createFileContext(filePath: string, content: string, priority: n
 /** Create context element from test coverage summary */
 export function createTestCoverageContext(content: string, tokens: number, priority: number): ContextElement {
   return { type: "test-coverage", content, priority, tokens };
+}
+
+/** Create context element from prior failures */
+export function createPriorFailuresContext(failures: StructuredFailure[], priority: number): ContextElement {
+  const content = formatPriorFailures(failures);
+  return { type: "prior-failures", content, priority, tokens: estimateTokens(content) };
+}
+
+/** Format prior failures as markdown for agent context */
+export function formatPriorFailures(failures: StructuredFailure[]): string {
+  if (!failures || failures.length === 0) {
+    return "";
+  }
+
+  const parts: string[] = [];
+  parts.push("## Prior Failures (Structured Context)\n");
+
+  for (const failure of failures) {
+    parts.push(`### Attempt ${failure.attempt} — ${failure.modelTier}`);
+    parts.push(`**Stage:** ${failure.stage}`);
+    parts.push(`**Summary:** ${failure.summary}`);
+
+    if (failure.testFailures && failure.testFailures.length > 0) {
+      parts.push("\n**Test Failures:**");
+      for (const testFailure of failure.testFailures) {
+        parts.push(`\n- **File:** \`${testFailure.file}\``);
+        parts.push(`  **Test:** ${testFailure.testName}`);
+        parts.push(`  **Error:** ${testFailure.error}`);
+        if (testFailure.stackTrace && testFailure.stackTrace.length > 0) {
+          parts.push(`  **Stack:** ${testFailure.stackTrace[0]}`);
+        }
+      }
+    }
+    parts.push("");
+  }
+
+  return parts.join("\n");
 }
 
 /** Format story as text for context (defensive checks for malformed PRD data) */

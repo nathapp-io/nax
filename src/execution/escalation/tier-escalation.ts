@@ -10,14 +10,25 @@
 import type { NaxConfig } from "../../config";
 import { type LoadedHooksConfig, fireHook } from "../../hooks";
 import { getSafeLogger } from "../../logger";
-import type { PRD, UserStory } from "../../prd";
+import type { PRD, StructuredFailure, UserStory } from "../../prd";
 import { markStoryFailed, savePRD } from "../../prd";
-import { routeBatch as llmRouteBatch } from "../../routing/strategies/llm";
+import { clearCacheForStory, routeBatch as llmRouteBatch } from "../../routing/strategies/llm";
 import type { FailureCategory } from "../../tdd/types";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";
 import { hookCtx } from "../helpers";
 import { appendProgress } from "../progress";
 import { handleMaxAttemptsReached, handleNoTierAvailable } from "./tier-outcome";
+
+/** Build a StructuredFailure for tier escalation. */
+function buildEscalationFailure(story: UserStory, currentTier: string): StructuredFailure {
+  return {
+    attempt: (story.attempts ?? 0) + 1,
+    modelTier: currentTier,
+    stage: "escalation" as const,
+    summary: `Failed with tier ${currentTier}, escalating to next tier`,
+    timestamp: new Date().toISOString(),
+  };
+}
 
 /**
  * Determine the outcome when max attempts are reached for an escalation.
@@ -110,6 +121,9 @@ export async function preIterationTierCheck(
     } as PRD;
     await savePRD(updatedPrd, prdPath);
 
+    // Clear routing cache for story to avoid returning old cached decision
+    clearCacheForStory(story.id);
+
     // Hybrid mode: re-route story after escalation
     if (routingMode === "hybrid") {
       await tryLlmBatchRoute(config, [story], "hybrid-re-route");
@@ -174,6 +188,7 @@ export interface EscalationHandlerContext {
   isBatchExecution: boolean;
   routing: { modelTier: string; testStrategy: string };
   pipelineResult: {
+    reason?: string;
     context: {
       retryAsLite?: boolean;
       tddFailureCategory?: FailureCategory;
@@ -246,7 +261,8 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
     }
   }
 
-  const errorMessage = `Attempt ${ctx.story.attempts + 1} failed with model tier: ${ctx.routing.modelTier}${ctx.isBatchExecution ? " (in batch)" : ""}`;
+  const pipelineReason = ctx.pipelineResult.reason ? `: ${ctx.pipelineResult.reason}` : "";
+  const errorMessage = `Attempt ${ctx.story.attempts + 1} failed with model tier: ${ctx.routing.modelTier}${ctx.isBatchExecution ? " (in batch)" : ""}${pipelineReason}`;
 
   const updatedPrd = {
     ...ctx.prd,
@@ -271,16 +287,25 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
       const isChangingTier = currentStoryTier !== nextTier;
       const shouldResetAttempts = isChangingTier || shouldSwitchToTestAfter;
 
+      // Build escalation failure
+      const escalationFailure = buildEscalationFailure(s, currentStoryTier);
+
       return {
         ...s,
         attempts: shouldResetAttempts ? 0 : (s.attempts ?? 0) + 1,
         routing: updatedRouting,
         priorErrors: [...(s.priorErrors || []), errorMessage],
+        priorFailures: [...(s.priorFailures || []), escalationFailure],
       } as UserStory;
     }) as PRD["userStories"],
   } as PRD;
 
   await savePRD(updatedPrd, ctx.prdPath);
+
+  // Clear routing cache for all escalated stories to avoid returning old cached decisions
+  for (const story of storiesToEscalate) {
+    clearCacheForStory(story.id);
+  }
 
   // Hybrid mode: re-route escalated stories
   if (routingMode === "hybrid") {

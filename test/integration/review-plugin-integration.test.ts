@@ -124,7 +124,8 @@ describe("Review Stage - Plugin Integration", () => {
       const result = await reviewStage.execute(ctx);
 
       expect(pluginCalled).toBe(false);
-      expect(result.action).toBe("fail");
+      // BUG-030: Review lint/typecheck failures now escalate instead of hard-failing
+      expect(result.action).toBe("escalate");
       expect(result.reason).toContain("Review failed");
     });
 

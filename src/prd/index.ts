@@ -6,7 +6,16 @@ import { existsSync, statSync } from "node:fs";
 import type { FailureCategory } from "../tdd/types";
 import type { PRD, UserStory } from "./types";
 
-export type { PRD, UserStory, StoryRouting, StoryStatus, EscalationAttempt } from "./types";
+export type {
+  PRD,
+  UserStory,
+  StoryRouting,
+  StoryStatus,
+  EscalationAttempt,
+  StructuredFailure,
+  TestFailureContext,
+  VerificationStage,
+} from "./types";
 export { isStalled, markStoryAsBlocked, generateHumanHaltSummary, getContextFiles, getExpectedFiles } from "./types";
 export type { FailureCategory } from "../tdd/types";
 
@@ -36,6 +45,7 @@ export async function loadPRD(path: string): Promise<PRD> {
   for (const story of prd.userStories) {
     story.attempts = story.attempts ?? 0;
     story.priorErrors = story.priorErrors ?? [];
+    story.priorFailures = story.priorFailures ?? [];
     story.escalations = story.escalations ?? [];
     story.dependencies = story.dependencies ?? [];
     story.tags = story.tags ?? [];
@@ -71,6 +81,11 @@ export function getNextStory(prd: PRD, currentStoryId?: string | null, maxRetrie
   if (currentStoryId != null && maxRetries != null && maxRetries > 0) {
     const currentStory = prd.userStories.find((s) => s.id === currentStoryId);
     if (currentStory && currentStory.status === "failed" && (currentStory.attempts ?? 0) <= maxRetries) {
+      return currentStory;
+    }
+    // BUG-029: After tier escalation, story is set to "pending" (not "failed").
+    // Prioritize current story if it was escalated (pending + has prior attempts).
+    if (currentStory && currentStory.status === "pending" && (currentStory.attempts ?? 0) > 0) {
       return currentStory;
     }
   }

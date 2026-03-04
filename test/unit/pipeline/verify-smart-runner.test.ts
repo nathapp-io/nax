@@ -37,6 +37,7 @@ const { verifyStage } = await import("../../../src/pipeline/stages/verify");
 
 const mockGetChangedSourceFiles = mock(async (_workdir: string) => [] as string[]);
 const mockMapSourceToTests = mock(async (_files: string[], _workdir: string) => [] as string[]);
+const mockImportGrepFallback = mock(async (_files: string[], _workdir: string, _patterns: string[]) => [] as string[]);
 const mockBuildSmartTestCommand = mock((testFiles: string[], baseCommand: string) => {
   if (testFiles.length === 0) return baseCommand;
   return `${baseCommand.split(" ").slice(0, -1).join(" ")} ${testFiles.join(" ")}`;
@@ -157,10 +158,12 @@ describe("Verify Stage --- Smart Runner Integration", () => {
     initLogger({ level: "error", useChalk: false });
     _smartRunnerDeps.getChangedSourceFiles = mockGetChangedSourceFiles;
     _smartRunnerDeps.mapSourceToTests = mockMapSourceToTests;
+    _smartRunnerDeps.importGrepFallback = mockImportGrepFallback;
     _smartRunnerDeps.buildSmartTestCommand = mockBuildSmartTestCommand;
     mockRegression.mockClear();
     mockGetChangedSourceFiles.mockClear();
     mockMapSourceToTests.mockClear();
+    mockImportGrepFallback.mockClear();
     mockBuildSmartTestCommand.mockClear();
   });
 

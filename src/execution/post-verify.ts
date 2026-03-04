@@ -8,12 +8,41 @@ import { spawn } from "bun";
 import type { NaxConfig } from "../config";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
-import type { PRD, UserStory } from "../prd";
+import type { PRD, StructuredFailure, UserStory, VerificationStage } from "../prd";
 import { getExpectedFiles, savePRD } from "../prd";
+import type { TestFailure, VerificationResult } from "../verification";
+import { parseBunTestOutput } from "../verification/parser";
 import { getTierConfig } from "./escalation";
 import { revertStoriesOnFailure, runRectificationLoop } from "./post-verify-rectification";
 import { appendProgress } from "./progress";
 import { getEnvironmentalEscalationThreshold, parseTestOutput, runVerification } from "./verification";
+
+/** Build a StructuredFailure from verification result and test output. */
+function buildStructuredFailure(
+  story: UserStory,
+  stage: VerificationStage,
+  verificationResult: VerificationResult,
+  summary: string,
+): StructuredFailure {
+  const testFailures =
+    verificationResult.status === "TEST_FAILURE" && verificationResult.output
+      ? parseBunTestOutput(verificationResult.output).failures.map((f) => ({
+          file: f.file,
+          testName: f.testName,
+          error: f.error,
+          stackTrace: f.stackTrace,
+        }))
+      : undefined;
+
+  return {
+    attempt: (story.attempts ?? 0) + 1,
+    modelTier: story.routing?.modelTier ?? "unknown",
+    stage,
+    summary,
+    testFailures: testFailures && testFailures.length > 0 ? testFailures : undefined,
+    timestamp: new Date().toISOString(),
+  };
+}
 
 /** Get test files changed since a git ref. Returns empty array if detection fails. */
 async function getChangedTestFiles(workdir: string, gitRef?: string): Promise<string[]> {
@@ -122,12 +151,30 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
     }
 
     // Regression Gate (BUG-009): run full suite after scoped tests pass
-    const regressionResult = await runRegressionGate(config, workdir, story, changedTestFiles, rectificationEnabled);
-    if (regressionResult === "passed" || regressionResult === "skipped") {
+    const regressionGateResult = await runRegressionGate(
+      config,
+      workdir,
+      story,
+      changedTestFiles,
+      rectificationEnabled,
+    );
+    if (regressionGateResult.status === "passed" || regressionGateResult.status === "skipped") {
       return { passed: true, prd };
     }
 
-    // Regression failed -- revert stories
+    // Regression failed -- build StructuredFailure and revert stories
+    // verificationResult is always set when status === "failed" (see RegressionGateResult)
+    const regressionVerificationResult = regressionGateResult.verificationResult ?? {
+      status: "TEST_FAILURE" as const,
+      success: false,
+      countsTowardEscalation: true,
+    };
+    const regressionFailure = buildStructuredFailure(
+      story,
+      "regression",
+      regressionVerificationResult,
+      "Full-suite regression detected",
+    );
     const updatedPrd = await revertStoriesOnFailure({
       prd,
       prdPath,
@@ -137,6 +184,7 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
       featureDir,
       diagnosticContext: "REGRESSION: full-suite regression detected",
       countsTowardEscalation: true,
+      priorFailure: regressionFailure,
     });
     return { passed: false, prd: updatedPrd };
   }
@@ -173,6 +221,7 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
 
   // Revert stories and save
   const diagnosticContext = verificationResult.error || `Verification failed: ${verificationResult.status}`;
+  const verifyFailure = buildStructuredFailure(story, "verify", verificationResult, diagnosticContext);
   const updatedPrd = await revertStoriesOnFailure({
     prd,
     prdPath,
@@ -182,9 +231,15 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
     featureDir,
     diagnosticContext,
     countsTowardEscalation: verificationResult.countsTowardEscalation ?? false,
+    priorFailure: verifyFailure,
   });
 
   return { passed: false, prd: updatedPrd };
+}
+
+interface RegressionGateResult {
+  status: "passed" | "skipped" | "failed";
+  verificationResult?: VerificationResult;
 }
 
 /** Run regression gate (full suite) after scoped tests pass. */
@@ -194,7 +249,7 @@ async function runRegressionGate(
   story: UserStory,
   changedTestFiles: string[],
   rectificationEnabled: boolean,
-): Promise<"passed" | "skipped" | "failed"> {
+): Promise<RegressionGateResult> {
   const logger = getSafeLogger();
   const regressionGateEnabled = config.execution.regressionGate?.enabled ?? true;
   const scopedTestsWereRun = changedTestFiles.length > 0;
@@ -203,7 +258,7 @@ async function runRegressionGate(
     if (regressionGateEnabled && !scopedTestsWereRun) {
       logger?.debug("regression-gate", "Skipping regression gate (full suite already run in scoped verification)");
     }
-    return "skipped";
+    return { status: "skipped" };
   }
 
   logger?.info("regression-gate", "Running full-suite regression gate");
@@ -225,7 +280,16 @@ async function runRegressionGate(
 
   if (regressionResult.success) {
     logger?.info("regression-gate", "Full-suite regression gate passed");
-    return "passed";
+    return { status: "passed" };
+  }
+
+  // Handle timeout: accept as pass if configured (BUG-026)
+  const acceptOnTimeout = config.execution.regressionGate?.acceptOnTimeout ?? true;
+  if (regressionResult.status === "TIMEOUT" && acceptOnTimeout) {
+    logger?.warn("regression-gate", "[BUG-026] Full-suite regression gate timed out (accepted as pass)", {
+      reason: "Timeout is not evidence of regression — scoped verification already passed",
+    });
+    return { status: "passed" };
   }
 
   logger?.warn("regression-gate", "Full-suite regression detected", { status: regressionResult.status });
@@ -243,10 +307,10 @@ async function runRegressionGate(
       promptPrefix:
         "# REGRESSION: Cross-Story Test Failures\n\nYour changes passed scoped tests but broke unrelated tests. Fix these regressions.",
     });
-    if (fixed) return "passed";
+    if (fixed) return { status: "passed" };
   }
 
-  return "failed";
+  return { status: "failed", verificationResult: regressionResult };
 }
 
 /** Check if environmental failure should trigger early escalation. */

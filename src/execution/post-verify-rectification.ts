@@ -10,7 +10,7 @@ import type { NaxConfig } from "../config";
 import { resolveModel } from "../config";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
-import type { PRD, UserStory } from "../prd";
+import type { PRD, StructuredFailure, UserStory } from "../prd";
 import { getExpectedFiles, savePRD } from "../prd";
 import { appendProgress } from "./progress";
 import { type RectificationState, createRectificationPrompt, shouldRetryRectification } from "./rectification";
@@ -147,6 +147,7 @@ export interface RevertStoriesOptions {
   featureDir?: string;
   diagnosticContext: string;
   countsTowardEscalation: boolean;
+  priorFailure?: StructuredFailure;
 }
 
 /** Revert stories to pending on verification failure and save PRD. */
@@ -160,12 +161,13 @@ export async function revertStoriesOnFailure(opts: RevertStoriesOptions): Promis
     }
   }
 
-  // Revert stories to pending with diagnostic context
+  // Revert stories to pending with diagnostic context and priorFailures
   opts.prd.userStories = opts.prd.userStories.map((s) =>
     storyIds.has(s.id)
       ? {
           ...s,
           priorErrors: [...(s.priorErrors || []), opts.diagnosticContext],
+          priorFailures: opts.priorFailure ? [...(s.priorFailures || []), opts.priorFailure] : s.priorFailures,
           status: "pending" as const,
           passes: false,
         }

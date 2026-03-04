@@ -66,6 +66,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
     regressionGate: {
       enabled: true,
       timeoutSeconds: 120,
+      acceptOnTimeout: true,
     },
     contextProviderTokenBudget: 2000,
     smartTestRunner: true,

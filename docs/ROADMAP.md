@@ -82,36 +82,39 @@
 
 ## Next: v0.18.3 — Execution Reliability
 
-**Theme:** Fix regression gate false escalation, routing cache bug, and add structured failure context
-**Status:** 🔲 Planned
+**Theme:** Fix execution pipeline bugs (escalation, routing, review), structured failure context, and Smart Runner enhancement
+**Status:** 🔧 In Progress (branch: `feat/v0.18.3-execution-reliability`)
 **Spec:** [docs/specs/verification-architecture-v2.md](specs/verification-architecture-v2.md) (Phase 1)
 
-### Bugfixes
-- [ ] **BUG-026:** Regression gate timeout → accept scoped pass + warn (not escalate). Currently timeout bumps `story.attempts` → triggers tier escalation even though scoped tests passed.
-- [ ] **BUG-028:** Routing cache ignores escalation tier — add `clearCacheForStory(storyId)` in `llm.ts`, call on tier escalation in `tier-escalation.ts`.
+### Bugfixes — Completed
+- [x] **BUG-026:** Regression gate timeout → accept scoped pass + warn (not escalate). Config: `regressionGate.acceptOnTimeout: true`.
+- [x] **BUG-028:** Routing cache ignores escalation tier — `clearCacheForStory(storyId)` in `llm.ts`, called on tier escalation in both `preIterationTierCheck()` and `handleTierEscalation()`.
 
-### Structured Failure Context (new)
-- [ ] Add `StructuredFailure` type with `TestFailureContext[]` (file, testName, error, stackTrace)
-- [ ] Add `priorFailures?: StructuredFailure[]` to `UserStory` in `prd/types.ts` (backward compat with `priorErrors`)
-- [ ] Populate `priorFailures` on verify failure, regression failure, and rectification failure
-- [ ] Format `priorFailures` into actionable markdown in `context/builder.ts` for escalated agent prompts
+### Structured Failure Context — Completed
+- [x] **SFC-001:** `StructuredFailure` type with `TestFailureContext[]` + `priorFailures?: StructuredFailure[]` on `UserStory`. Populated on verify, regression, rectification, and escalation failures.
+- [x] **SFC-002:** Format `priorFailures` into agent prompt at priority 95 via `createPriorFailuresContext()` in `context/builder.ts`.
+
+### Bugfixes — Completed (Round 2)
+- [x] **BUG-029:** Escalation resets story to `pending` → bypasses BUG-022 retry priority. After escalation, `getNextStory()` picks the next pending story instead of retrying the escalated one. **Location:** `src/prd/index.ts:getNextStory()`. **Fix:** Recognize escalated-pending stories in Priority 1 (e.g. check `story.routing.modelTier` changed, or use `"retry-pending"` status).
+- [x] **BUG-030:** Review lint/typecheck failure → hard `"fail"`, no rectification or retry. `review.ts:92` returns `{ action: "fail" }` → `markStoryFailed()` permanently. Lint errors are auto-fixable but story is killed with zero retry. **Fix:** Return `"escalate"` for lint/typecheck failures (or add review-rectification loop). Reserve `"fail"` for plugin reviewer rejection only.
+- [x] **BUG-032:** Routing stage overrides escalated `modelTier` with complexity-derived tier. `routing.ts:43` always runs `complexityToModelTier()` even when `story.routing.modelTier` was set by escalation → escalated tier silently ignored. BUG-013 fix (`applyCachedRouting`) runs too late. **Fix:** Skip `complexityToModelTier()` when `story.routing.modelTier` is explicitly set.
+
+### STR-007: Smart Test Runner Enhancement — Completed
+- [x] Configurable `testFilePatterns` in config (default: `test/**/*.test.ts`)
+- [x] `testFileFallback` config option: `"import-grep"` | `"full-suite"` (default: `"import-grep"`)
+- [x] 3-pass test discovery: path-convention → import-grep (grep test files for changed module name) → full-suite
+- [x] Config schema update: `execution.smartTestRunner` becomes object `{ enabled, testFilePatterns, fallback }` (backward compat: boolean coerced)
 
 ---
 
-## v0.18.4 — Smart Test Runner Enhancement
+## v0.18.4 — Routing Stability
 
-**Theme:** Configurable test file patterns + import-based fallback mapping
+**Theme:** Fix routing classifier consistency and LLM routing reliability
 **Status:** 🔲 Planned
-**Spec:** [docs/specs/verification-architecture-v2.md](specs/verification-architecture-v2.md)
 
-### STR-007: Configurable Test File Patterns + Import-Grep Fallback
-- [ ] Add `execution.smartTestRunner.testFilePatterns` config (default: `["test/**/*.test.ts"]`) — supports `__tests__/`, `spec/`, monorepos, any language layout
-- [ ] Add `execution.smartTestRunner.testFileFallback: "import-grep" | "full-suite"` (default: `"import-grep"`)
-- [ ] **Pass 1:** existing path-convention mapping (`src/foo/bar.ts` → `test/unit/foo/bar.test.ts`)
-- [ ] **Pass 2 (import-grep):** when Pass 1 yields nothing, grep files matching `testFilePatterns` for import statements referencing the changed module stem (e.g. `routing/strategies/llm`)
-- [ ] **Pass 3:** full-suite fallback when both passes yield nothing
-- [ ] Handles consolidated flat test files (e.g. nax's own `test/unit/routing.test.ts`), Jest `__tests__/`, pytest `tests/`, etc.
-- [ ] Update config schema + defaults + types
+### Bugfixes
+- [ ] **BUG-031:** Keyword fallback classifier gives inconsistent strategy across retries for same story. `priorErrors` text shifts keyword classification. **Fix:** Keyword classifier should only use original story fields; or lock `story.routing.testStrategy` once set.
+- [ ] **BUG-033:** LLM routing has no retry on timeout — single 15s attempt, then keyword fallback. **Fix:** Add `routing.llm.retries` config (default: 1) with backoff. Raise default timeout to 30s for batch routing.
 
 ---
 
@@ -193,6 +196,12 @@
 - [x] ~~**BUG-023:** Agent failure silent — no exitCode/stderr in JSONL → fixed in v0.18.0~~
 - [x] ~~**BUG-025:** `needsHumanReview` not triggering interactive plugin → fixed in v0.18.0~~
 
+- [x] **BUG-029:** Escalation resets story to `pending` → bypasses BUG-022 retry priority. `handleTierEscalation()` sets `status: "pending"` after escalation, but `getNextStory()` Priority 1 only checks `status === "failed"`. Result: after BUG-026 escalated (iter 1), nax moved to BUG-028 (iter 2) instead of retrying BUG-026 immediately. **Location:** `src/prd/index.ts:getNextStory()` + `src/execution/escalation/tier-escalation.ts`. **Fix:** `getNextStory()` should also prioritize stories with `story.routing.modelTier` that changed since last attempt (escalation marker), or `handleTierEscalation` should use a distinct status like `"retry-pending"` that Priority 1 recognizes.
+- [x] **BUG-030:** Review lint failure → hard `"fail"`, no rectification or retry. `src/pipeline/stages/review.ts:92` returns `{ action: "fail" }` for all review failures including lint. In `pipeline-result-handler.ts`, `"fail"` calls `markStoryFailed()` — permanently dead. But lint errors are auto-fixable (agent can run `biome check --fix`). Contrast with verify stage which returns `"escalate"` on test failure, allowing retry. SFC-001 and SFC-002 both hit this — tests passed but 5 Biome lint errors killed the stories permanently. **Fix:** Review stage should return `"escalate"` (not `"fail"`) for lint/typecheck failures, or add a review-rectification loop (like verify has) that gives the agent one retry with the lint output as context. Reserve `"fail"` for unfixable review issues (e.g. plugin reviewer rejection).
+- [ ] **BUG-031:** Keyword fallback classifier gives inconsistent strategy across retries for same story. BUG-026 was classified as `test-after` on iter 1 (keyword fallback), but `three-session-tdd-lite` on iter 5 (same keyword fallback). The keyword classifier in `src/routing/strategies/keyword.ts:classifyComplexity()` may be influenced by `priorErrors` text added between attempts, shifting the keyword match result. **Location:** `src/routing/strategies/keyword.ts`. **Fix:** Keyword classifier should only consider the story's original title + description + acceptance criteria, not accumulated `priorErrors` or `priorFailures`. Alternatively, once a strategy is set in `story.routing.testStrategy`, the routing stage should preserve it across retries (already partially done in `routing.ts:40-41` but may not apply when LLM falls back to keyword).
+- [x] **BUG-032:** Routing stage overrides escalated `modelTier` with complexity-derived tier. `src/pipeline/stages/routing.ts:43` always runs `complexityToModelTier(routing.complexity, config)` even when `story.routing.modelTier` was explicitly set by `handleTierEscalation()`. BUG-026 was escalated to `balanced` (logged in iteration header), but `Task classified` shows `modelTier=fast` because `complexityToModelTier("simple", config)` → `"fast"`. Related to BUG-013 (escalation routing not applied) which was marked fixed, but the fix in `applyCachedRouting()` in `pipeline-result-handler.ts:295-310` runs **after** the routing stage — too late. **Location:** `src/pipeline/stages/routing.ts:43`. **Fix:** When `story.routing.modelTier` is explicitly set (by escalation), skip `complexityToModelTier()` and use the cached tier directly. Only derive from complexity when `story.routing.modelTier` is absent.
+- [ ] **BUG-033:** LLM routing has no retry on timeout — single attempt with hardcoded 15s default. All 5 LLM routing attempts in the v0.18.3 run timed out at 15s, forcing keyword fallback every time. `src/routing/strategies/llm.ts:63` reads `llmConfig?.timeoutMs ?? 15000` but there's no retry logic — one timeout = immediate fallback. **Location:** `src/routing/strategies/llm.ts:callLlm()`. **Fix:** Add `routing.llm.retries` config (default: 1) with backoff. Also surface `routing.llm.timeoutMs` in `nax config --explain` and consider raising default to 30s for batch routing which processes multiple stories.
+
 ### Features
 - [x] ~~`nax unlock` command~~
 - [x] ~~Constitution file support~~
@@ -216,4 +225,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-04 (v0.18.3 Phase 1 planned; v0.18.4 STR-007 Smart Runner enhancement; v0.19.0 Architecture v2)*
+*Last updated: 2026-03-04 (v0.18.3: all items complete — BUG-026/028/029/030/032 + SFC-001/002 + STR-007; v0.18.4: BUG-031/033; v0.19.0: Verification Architecture v2)*

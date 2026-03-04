@@ -20,10 +20,23 @@
  * ```
  */
 
+import type { SmartTestRunnerConfig } from "../../config/types";
 import { getLogger } from "../../logger";
 import { regression } from "../../verification/gate";
 import { _smartRunnerDeps } from "../../verification/smart-runner";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+
+const DEFAULT_SMART_RUNNER_CONFIG: SmartTestRunnerConfig = {
+  enabled: true,
+  testFilePatterns: ["test/**/*.test.ts"],
+  fallback: "import-grep",
+};
+
+function coerceSmartTestRunner(val: boolean | SmartTestRunnerConfig | undefined): SmartTestRunnerConfig {
+  if (val === undefined || val === true) return DEFAULT_SMART_RUNNER_CONFIG;
+  if (val === false) return { ...DEFAULT_SMART_RUNNER_CONFIG, enabled: false };
+  return val;
+}
 
 export const verifyStage: PipelineStage = {
   name: "verify",
@@ -49,19 +62,39 @@ export const verifyStage: PipelineStage = {
 
     // Determine effective test command (smart runner or full suite)
     let effectiveCommand = testCommand;
-    const smartRunnerEnabled = ctx.config.execution.smartTestRunner !== false;
+    const smartRunnerConfig = coerceSmartTestRunner(ctx.config.execution.smartTestRunner);
 
-    if (smartRunnerEnabled) {
+    if (smartRunnerConfig.enabled) {
       const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(ctx.workdir);
-      const testFiles = await _smartRunnerDeps.mapSourceToTests(sourceFiles, ctx.workdir);
 
-      if (testFiles.length > 0) {
-        effectiveCommand = _smartRunnerDeps.buildSmartTestCommand(testFiles, testCommand);
-        logger.info("verify", `[smart-runner] Running ${testFiles.length} targeted test files`, {
+      // Pass 1: path convention mapping
+      const pass1Files = await _smartRunnerDeps.mapSourceToTests(sourceFiles, ctx.workdir);
+      if (pass1Files.length > 0) {
+        logger.info("verify", `[smart-runner] Pass 1: path convention matched ${pass1Files.length} test files`, {
           storyId: ctx.story.id,
         });
+        effectiveCommand = _smartRunnerDeps.buildSmartTestCommand(pass1Files, testCommand);
+      } else if (smartRunnerConfig.fallback === "import-grep") {
+        // Pass 2: import-grep fallback
+        const pass2Files = await _smartRunnerDeps.importGrepFallback(
+          sourceFiles,
+          ctx.workdir,
+          smartRunnerConfig.testFilePatterns,
+        );
+        if (pass2Files.length > 0) {
+          logger.info("verify", `[smart-runner] Pass 2: import-grep matched ${pass2Files.length} test files`, {
+            storyId: ctx.story.id,
+          });
+          effectiveCommand = _smartRunnerDeps.buildSmartTestCommand(pass2Files, testCommand);
+        } else {
+          logger.info("verify", "[smart-runner] No mapped tests — falling back to full suite", {
+            storyId: ctx.story.id,
+          });
+        }
       } else {
-        logger.info("verify", "[smart-runner] No mapped tests — falling back to full suite", { storyId: ctx.story.id });
+        logger.info("verify", "[smart-runner] No mapped tests — falling back to full suite", {
+          storyId: ctx.story.id,
+        });
       }
     }
 

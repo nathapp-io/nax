@@ -83,13 +83,15 @@ export const reviewStage: PipelineStage = {
     const reviewResult = await runReview(ctx.config.review, ctx.workdir, ctx.config.execution);
     ctx.reviewResult = reviewResult;
 
-    // HARD FAILURE: Review failure means code quality gate not met
+    // BUG-030: Review failure (lint/typecheck) should escalate, not hard-fail.
+    // Lint/typecheck errors are auto-fixable — give the agent a retry with error context.
+    // Only plugin reviewer rejections are hard failures.
     if (!reviewResult.success) {
-      logger.error("review", "Review failed (built-in checks)", {
+      logger.warn("review", "Review failed (built-in checks) — escalating for retry", {
         reason: reviewResult.failureReason,
         storyId: ctx.story.id,
       });
-      return { action: "fail", reason: `Review failed: ${reviewResult.failureReason}` };
+      return { action: "escalate", reason: `Review failed: ${reviewResult.failureReason}` };
     }
 
     // Run plugin reviewers if any are registered

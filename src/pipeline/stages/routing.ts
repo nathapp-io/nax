@@ -2,8 +2,8 @@
  * Routing Stage
  *
  * Classifies story complexity and determines model tier + test strategy.
- * Uses cached complexity/testStrategy from story if available, but ALWAYS
- * derives modelTier from current config (never cached).
+ * Uses cached complexity/testStrategy/modelTier from story if available.
+ * modelTier: uses escalated tier if explicitly set (BUG-032), otherwise derives from config.
  *
  * @returns
  * - `continue`: Routing determined, proceed to next stage
@@ -30,17 +30,22 @@ export const routingStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
-    // If story has cached routing, use it but re-derive modelTier from current config
+    // If story has cached routing, use cached values (escalated modelTier takes priority)
     // Otherwise, perform fresh classification
     let routing: { complexity: string; testStrategy: string; modelTier: string; reasoning?: string };
     if (ctx.story.routing) {
-      // Use cached complexity/testStrategy, but re-derive modelTier from current config
+      // Use cached complexity/testStrategy/modelTier
       routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
       // Override with cached values only when they are actually set
       if (ctx.story.routing?.complexity) routing.complexity = ctx.story.routing.complexity;
       if (ctx.story.routing?.testStrategy) routing.testStrategy = ctx.story.routing.testStrategy;
-      // Re-derive modelTier from (possibly overridden) complexity and current config
-      routing.modelTier = complexityToModelTier(routing.complexity as import("../../config").Complexity, ctx.config);
+      // BUG-032: Use escalated modelTier if explicitly set (by handleTierEscalation),
+      // otherwise derive from complexity + current config
+      if (ctx.story.routing?.modelTier) {
+        routing.modelTier = ctx.story.routing.modelTier;
+      } else {
+        routing.modelTier = complexityToModelTier(routing.complexity as import("../../config").Complexity, ctx.config);
+      }
     } else {
       // Fresh classification
       routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);

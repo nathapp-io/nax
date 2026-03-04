@@ -70,12 +70,24 @@ export interface RectificationConfig {
   abortOnIncreasingFailures: boolean;
 }
 
-/** Regression gate config (BUG-009) */
+/** Regression gate config (BUG-009, BUG-026) */
 export interface RegressionGateConfig {
   /** Enable full-suite regression gate after scoped verification (default: true) */
   enabled: boolean;
   /** Timeout for full-suite regression run in seconds (default: 120) */
   timeoutSeconds: number;
+  /** Accept timeout as pass instead of failing (BUG-026, default: true) */
+  acceptOnTimeout?: boolean;
+}
+
+/** Smart test runner configuration (STR-007) */
+export interface SmartTestRunnerConfig {
+  /** Enable smart test runner (default: true) */
+  enabled: boolean;
+  /** Glob patterns to scan for test files during import-grep fallback */
+  testFilePatterns: string[];
+  /** Fallback strategy when path-convention mapping yields no results */
+  fallback: "import-grep" | "full-suite";
 }
 
 /** Execution limits */
@@ -106,8 +118,9 @@ export interface ExecutionConfig {
   typecheckCommand?: string | null;
   /** Use --dangerously-skip-permissions flag for agent (default: true for backward compat, SEC-1 fix) */
   dangerouslySkipPermissions?: boolean;
-  /** Enable smart test runner to scope test runs to changed files (default: true) */
-  smartTestRunner?: boolean;
+  /** Enable smart test runner to scope test runs to changed files (default: true).
+   * Accepts boolean for backward compat or a SmartTestRunnerConfig object. */
+  smartTestRunner?: boolean | SmartTestRunnerConfig;
 }
 
 /** Quality gate config */

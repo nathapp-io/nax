@@ -11,6 +11,37 @@ import type { FailureCategory } from "../tdd/types";
 /** User story status */
 export type StoryStatus = "pending" | "in-progress" | "passed" | "failed" | "skipped" | "blocked" | "paused";
 
+/** Verification stage where failure occurred */
+export type VerificationStage = "verify" | "review" | "regression" | "rectification" | "agent-session" | "escalation";
+
+/** Test failure context from parsed test output */
+export interface TestFailureContext {
+  /** Test file path */
+  file: string;
+  /** Full test name (including describe blocks) */
+  testName: string;
+  /** Error message */
+  error: string;
+  /** Stack trace lines */
+  stackTrace: string[];
+}
+
+/** Structured failure context for escalated tiers */
+export interface StructuredFailure {
+  /** Attempt number when failure occurred */
+  attempt: number;
+  /** Model tier that was running */
+  modelTier: string;
+  /** Stage where failure occurred */
+  stage: VerificationStage;
+  /** Summary of what failed */
+  summary: string;
+  /** Parsed test failures (if applicable) */
+  testFailures?: TestFailureContext[];
+  /** ISO timestamp when failure was recorded */
+  timestamp: string;
+}
+
 /** Routing metadata per story */
 export interface StoryRouting {
   complexity: Complexity;
@@ -71,6 +102,8 @@ export interface UserStory {
   expectedFiles?: string[];
   /** Prior error messages from failed attempts */
   priorErrors?: string[];
+  /** Structured failure context for escalated tiers */
+  priorFailures?: StructuredFailure[];
   /** Custom context strings */
   customContext?: string[];
   /** Category of the last failure (set when story is marked failed) */
