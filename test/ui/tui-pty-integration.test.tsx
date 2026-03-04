@@ -11,22 +11,9 @@ import { PipelineEventEmitter } from "../../src/pipeline/events";
 import { App } from "../../src/tui/App";
 import type { StoryDisplayState } from "../../src/tui/types";
 
-// Check if node-pty binary support is available
-let canSpawnPty = false;
-try {
-  const { spawn } = await import("node-pty");
-  const pty = spawn("echo", ["test"], {
-    name: "xterm-color",
-    cols: 80,
-    rows: 30,
-    cwd: process.cwd(),
-  });
-  pty.kill();
-  canSpawnPty = true;
-} catch (err) {
-  // node-pty binary not available (posix_spawnp failed or other error)
-  canSpawnPty = false;
-}
+// BUN-001: node-pty removed — PTY spawn test always skipped in this environment.
+// PTY integration now uses Bun.spawn (piped stdio). TUI PTY test preserved for future re-enablement.
+const canSpawnPty = false;
 
 describe("App PTY integration", () => {
   const createMockStory = (id: string, status: StoryDisplayState["status"]): StoryDisplayState => ({
