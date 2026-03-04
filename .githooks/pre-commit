@@ -4,6 +4,9 @@
 
 set -e
 
+# Ensure bun is on PATH (git hooks run with minimal PATH)
+export PATH="$HOME/.bun/bin:$PATH"
+
 echo "[pre-commit] Running typecheck..."
 bun run typecheck
 
