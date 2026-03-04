@@ -186,7 +186,28 @@
 - [x] ~~BUG-012: Greenfield detection ignores pre-existing test files~~
 - [x] ~~BUG-013: Escalation routing not applied in iterations~~
 - [x] ~~BUG-014: buildAllowedEnv() strips USER/LOGNAME~~
+<<<<<<< Updated upstream
 - [x] ~~**BUG-015:** `loadConstitution()` leaks global `~/.nax/constitution.md` into unit tests — fixed via `skipGlobal: true` in all unit tests~~
+=======
+- [ ] **BUG-015:** `loadConstitution()` leaks global `~/.nax/constitution.md` into unit tests
+- [ ] **BUG-027:** `runPrecheck()` always prints to stdout — pollutes test output when called programmatically.
+  - **Observed (2026-03-03):** `bun test` output starts with precheck JSON from `US-002-orchestrator.test.ts` calling `runPrecheck()`, which unconditionally calls `console.log()`. nax verify stage captures this, making every failure look like a `git-repo-exists` blocker.
+  - **Root cause:** `runPrecheck()` mixes side-effects (printing) with logic (returning result).
+  - **Fix:** Add `silent?: boolean` to `PrecheckOptions`; test callers pass `silent: true`.
+  - **Workaround (active):** `silent` option + test update shipped in v0.18.2 branch.
+  - **Target:** v0.18.2
+- [ ] **BUG-028:** Routing cache ignores escalation tier — escalated stories re-run at original tier.
+  - **Observed (2026-03-03):** STR-006 escalated to `powerful`. Router returned LLM cache hit from prior `balanced` run → agent ran as `balanced` anyway.
+  - **Root cause:** Cache key does not include requested tier. Lower-tier cache hit served for higher-tier request.
+  - **Fix:** Include `requestedTier` in cache key; only serve cache hit if cached tier >= requested tier.
+  - **Target:** v0.19.0
+- [ ] **BUG-026:** Regression gate failure triggers full story re-implementation instead of targeted rectification.
+  - **Observed (2026-03-03):** During v0.18.2 smart-runner development on Mac01, STR-001 passed scoped verification (5/5 tests green) but the full-suite regression gate timed out (exit code 132, SIGILL/Bun crash). nax treated this as a story failure and re-ran the coding agent, which rewrote already-correct code. The retry agent then produced a different (worse) implementation that failed verification.
+  - **Root cause:** Escalation logic does not distinguish between "story code is wrong" and "story code is fine but introduced a regression". Both flow through the same retry path.
+  - **Fix:** After regression gate failure, spawn a rectification agent with context of what regressed (failing test names + diff), not a full story re-implementation. Only fall back to full re-implementation if rectification also fails.
+  - **Workaround (active):** Disabled regression gate via `rectification.enabled: false` in project nax/config.json for self-dev runs. CI on VPS is the regression gate instead.
+  - **Target:** v0.19.0
+>>>>>>> Stashed changes
 - [x] ~~**BUG-016:** Hardcoded 120s timeout in pipeline verify stage → fixed in v0.18.0~~
 - [x] ~~**BUG-017:** run.complete not emitted on SIGTERM → fixed in v0.18.0~~
 - [x] ~~**BUG-018:** Test-writer wastes ~3min/retry when tests already exist → fixed in v0.18.0~~
