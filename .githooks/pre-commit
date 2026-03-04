@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# nax pre-commit hook — runs typecheck + lint
+# Install: git config core.hooksPath .githooks
+
+set -e
+
+echo "[pre-commit] Running typecheck..."
+bun run typecheck
+
+echo "[pre-commit] Running lint..."
+bun run lint
+
+echo "[pre-commit] OK"

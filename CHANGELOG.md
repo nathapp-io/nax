@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.4] - 2026-03-04
+
+### Fixed
+- **BUG-031:** Keyword classifier no longer drifts across retries — `description` excluded from complexity/strategy classification (only `title`, `acceptanceCriteria`, `tags` used). Prevents prior error context from upgrading story complexity mid-run.
+- **BUG-033:** LLM routing now retries on timeout/transient failure. New config: `routing.llm.retries` (default: 1), `routing.llm.retryDelayMs` (default: 1000ms). Default timeout raised from 15s to 30s.
+
+### Added
+- Pre-commit hook (`.githooks/pre-commit`) — runs `typecheck` + `lint` before every commit. Install with: `git config core.hooksPath .githooks`
+
 ## [0.10.0] - 2026-02-23
 
 ### Added

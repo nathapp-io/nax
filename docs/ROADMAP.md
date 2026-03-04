@@ -107,14 +107,14 @@
 
 ---
 
-## v0.18.4 — Routing Stability
+## v0.18.4 — Routing Stability ✅
 
 **Theme:** Fix routing classifier consistency and LLM routing reliability
-**Status:** 🔲 Planned
+**Status:** ✅ Shipped (2026-03-04)
 
 ### Bugfixes
-- [ ] **BUG-031:** Keyword fallback classifier gives inconsistent strategy across retries for same story. `priorErrors` text shifts keyword classification. **Fix:** Keyword classifier should only use original story fields; or lock `story.routing.testStrategy` once set.
-- [ ] **BUG-033:** LLM routing has no retry on timeout — single 15s attempt, then keyword fallback. **Fix:** Add `routing.llm.retries` config (default: 1) with backoff. Raise default timeout to 30s for batch routing.
+- [x] **BUG-031:** Keyword fallback classifier gives inconsistent strategy across retries for same story. `priorErrors` text shifts keyword classification. **Fix:** Keyword classifier should only use original story fields; or lock `story.routing.testStrategy` once set.
+- [x] **BUG-033:** LLM routing has no retry on timeout — single 15s attempt, then keyword fallback. **Fix:** Add `routing.llm.retries` config (default: 1) with backoff. Raise default timeout to 30s for batch routing.
 
 ---
 
@@ -150,6 +150,7 @@
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
 | v0.18.1 | Type Safety + CI Pipeline | 2026-03-03 | 60 TS errors + 12 lint errors fixed, GitLab CI green (1952/56/0) |
+| v0.18.4 | Routing Stability | 2026-03-04 | BUG-031 keyword drift, BUG-033 LLM retry, pre-commit hook |
 | v0.18.3 | Execution Reliability + Smart Runner | 2026-03-04 | BUG-026/028/029/030/032 + SFC-001/002 + STR-007, all items complete |
 | v0.18.2 | Smart Test Runner + Routing Fix | 2026-03-03 | FIX-001 + STR-001–006, 2038 pass/11 skip/0 fail |
 | v0.18.0 | Orchestration Quality | 2026-03-03 | BUG-016/017/018/019/020/021/022/023/025 all fixed |
@@ -201,9 +202,9 @@
 
 - [x] **BUG-029:** Escalation resets story to `pending` → bypasses BUG-022 retry priority. `handleTierEscalation()` sets `status: "pending"` after escalation, but `getNextStory()` Priority 1 only checks `status === "failed"`. Result: after BUG-026 escalated (iter 1), nax moved to BUG-028 (iter 2) instead of retrying BUG-026 immediately. **Location:** `src/prd/index.ts:getNextStory()` + `src/execution/escalation/tier-escalation.ts`. **Fix:** `getNextStory()` should also prioritize stories with `story.routing.modelTier` that changed since last attempt (escalation marker), or `handleTierEscalation` should use a distinct status like `"retry-pending"` that Priority 1 recognizes.
 - [x] **BUG-030:** Review lint failure → hard `"fail"`, no rectification or retry. `src/pipeline/stages/review.ts:92` returns `{ action: "fail" }` for all review failures including lint. In `pipeline-result-handler.ts`, `"fail"` calls `markStoryFailed()` — permanently dead. But lint errors are auto-fixable (agent can run `biome check --fix`). Contrast with verify stage which returns `"escalate"` on test failure, allowing retry. SFC-001 and SFC-002 both hit this — tests passed but 5 Biome lint errors killed the stories permanently. **Fix:** Review stage should return `"escalate"` (not `"fail"`) for lint/typecheck failures, or add a review-rectification loop (like verify has) that gives the agent one retry with the lint output as context. Reserve `"fail"` for unfixable review issues (e.g. plugin reviewer rejection).
-- [ ] **BUG-031:** Keyword fallback classifier gives inconsistent strategy across retries for same story. BUG-026 was classified as `test-after` on iter 1 (keyword fallback), but `three-session-tdd-lite` on iter 5 (same keyword fallback). The keyword classifier in `src/routing/strategies/keyword.ts:classifyComplexity()` may be influenced by `priorErrors` text added between attempts, shifting the keyword match result. **Location:** `src/routing/strategies/keyword.ts`. **Fix:** Keyword classifier should only consider the story's original title + description + acceptance criteria, not accumulated `priorErrors` or `priorFailures`. Alternatively, once a strategy is set in `story.routing.testStrategy`, the routing stage should preserve it across retries (already partially done in `routing.ts:40-41` but may not apply when LLM falls back to keyword).
+- [x] **BUG-031:** Keyword fallback classifier gives inconsistent strategy across retries for same story. BUG-026 was classified as `test-after` on iter 1 (keyword fallback), but `three-session-tdd-lite` on iter 5 (same keyword fallback). The keyword classifier in `src/routing/strategies/keyword.ts:classifyComplexity()` may be influenced by `priorErrors` text added between attempts, shifting the keyword match result. **Location:** `src/routing/strategies/keyword.ts`. **Fix:** Keyword classifier should only consider the story's original title + description + acceptance criteria, not accumulated `priorErrors` or `priorFailures`. Alternatively, once a strategy is set in `story.routing.testStrategy`, the routing stage should preserve it across retries (already partially done in `routing.ts:40-41` but may not apply when LLM falls back to keyword).
 - [x] **BUG-032:** Routing stage overrides escalated `modelTier` with complexity-derived tier. `src/pipeline/stages/routing.ts:43` always runs `complexityToModelTier(routing.complexity, config)` even when `story.routing.modelTier` was explicitly set by `handleTierEscalation()`. BUG-026 was escalated to `balanced` (logged in iteration header), but `Task classified` shows `modelTier=fast` because `complexityToModelTier("simple", config)` → `"fast"`. Related to BUG-013 (escalation routing not applied) which was marked fixed, but the fix in `applyCachedRouting()` in `pipeline-result-handler.ts:295-310` runs **after** the routing stage — too late. **Location:** `src/pipeline/stages/routing.ts:43`. **Fix:** When `story.routing.modelTier` is explicitly set (by escalation), skip `complexityToModelTier()` and use the cached tier directly. Only derive from complexity when `story.routing.modelTier` is absent.
-- [ ] **BUG-033:** LLM routing has no retry on timeout — single attempt with hardcoded 15s default. All 5 LLM routing attempts in the v0.18.3 run timed out at 15s, forcing keyword fallback every time. `src/routing/strategies/llm.ts:63` reads `llmConfig?.timeoutMs ?? 15000` but there's no retry logic — one timeout = immediate fallback. **Location:** `src/routing/strategies/llm.ts:callLlm()`. **Fix:** Add `routing.llm.retries` config (default: 1) with backoff. Also surface `routing.llm.timeoutMs` in `nax config --explain` and consider raising default to 30s for batch routing which processes multiple stories.
+- [x] **BUG-033:** LLM routing has no retry on timeout — single attempt with hardcoded 15s default. All 5 LLM routing attempts in the v0.18.3 run timed out at 15s, forcing keyword fallback every time. `src/routing/strategies/llm.ts:63` reads `llmConfig?.timeoutMs ?? 15000` but there's no retry logic — one timeout = immediate fallback. **Location:** `src/routing/strategies/llm.ts:callLlm()`. **Fix:** Add `routing.llm.retries` config (default: 1) with backoff. Also surface `routing.llm.timeoutMs` in `nax config --explain` and consider raising default to 30s for batch routing which processes multiple stories.
 
 ### Features
 - [x] ~~`nax unlock` command~~
