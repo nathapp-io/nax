@@ -118,6 +118,22 @@
 
 ---
 
+## v0.18.5 — Bun PTY Migration
+
+**Theme:** Remove native `node-pty` dependency, Bun-native subprocess for agent sessions
+**Status:** 🔲 Planned
+**Spec:** [docs/specs/bun-pty-migration.md](specs/bun-pty-migration.md)
+
+### BUN-001: Replace node-pty with Bun.spawn
+- [ ] Research gate: verify `Bun.Terminal` availability on Bun 1.3.9; confirm Claude Code works with piped stdio
+- [ ] `src/agents/claude.ts` `runInteractive()` — replace `nodePty.spawn()` with `Bun.spawn` (piped stdio)
+- [ ] `src/tui/hooks/usePty.ts` — replace `pty.IPty` state with `Bun.Subprocess`
+- [ ] `src/agents/types.ts` — remove `IPty` dependency from `PtyHandle` interface
+- [ ] `package.json` — remove `node-pty` from dependencies
+- [ ] `.gitlab-ci.yml` — remove `python3 make g++` from `apk add`; remove `--ignore-scripts` from `bun install`
+
+---
+
 ## v0.19.0 — Verification Architecture v2
 
 **Theme:** Eliminate duplicate test runs, deferred regression gate, structured escalation context
