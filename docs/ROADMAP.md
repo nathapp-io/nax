@@ -99,11 +99,11 @@
 - [x] **BUG-030:** Review lint/typecheck failure → hard `"fail"`, no rectification or retry. `review.ts:92` returns `{ action: "fail" }` → `markStoryFailed()` permanently. Lint errors are auto-fixable but story is killed with zero retry. **Fix:** Return `"escalate"` for lint/typecheck failures (or add review-rectification loop). Reserve `"fail"` for plugin reviewer rejection only.
 - [x] **BUG-032:** Routing stage overrides escalated `modelTier` with complexity-derived tier. `routing.ts:43` always runs `complexityToModelTier()` even when `story.routing.modelTier` was set by escalation → escalated tier silently ignored. BUG-013 fix (`applyCachedRouting`) runs too late. **Fix:** Skip `complexityToModelTier()` when `story.routing.modelTier` is explicitly set.
 
-### STR-007: Smart Test Runner Enhancement
-- [ ] Configurable `testFilePatterns` in config (default: `test/**/*.test.ts`)
-- [ ] `testFileFallback` config option: `"import-grep"` | `"full-suite"` (default: `"import-grep"`)
-- [ ] 3-pass test discovery: path-convention → import-grep (grep test files for changed module name) → full-suite
-- [ ] Config schema update: `execution.smartTestRunner` becomes object `{ enabled, testFilePatterns, fallback }`
+### STR-007: Smart Test Runner Enhancement — Completed
+- [x] Configurable `testFilePatterns` in config (default: `test/**/*.test.ts`)
+- [x] `testFileFallback` config option: `"import-grep"` | `"full-suite"` (default: `"import-grep"`)
+- [x] 3-pass test discovery: path-convention → import-grep (grep test files for changed module name) → full-suite
+- [x] Config schema update: `execution.smartTestRunner` becomes object `{ enabled, testFilePatterns, fallback }` (backward compat: boolean coerced)
 
 ---
 
@@ -225,4 +225,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-04 (v0.18.3: BUG-026/028 done + BUG-029/030/032 + STR-007 remaining; v0.18.4: BUG-031/033; v0.19.0: Verification Architecture v2)*
+*Last updated: 2026-03-04 (v0.18.3: all items complete — BUG-026/028/029/030/032 + SFC-001/002 + STR-007; v0.18.4: BUG-031/033; v0.19.0: Verification Architecture v2)*
