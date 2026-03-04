@@ -1,0 +1,17 @@
+version: "3.9"
+services:
+  app:
+    image: oven/bun:1.3.8
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: >
+      sh -c "
+        echo 'Running pre-step...' &&
+        apt-get update && apt-get install -y --no-install-recommends git &&
+        bun install &&
+        bun run test:unit
+      "    
+    environment:
+      - NAX_SKIP_PRECHECK=1
+      - CI=true
