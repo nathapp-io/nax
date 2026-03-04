@@ -10,4 +10,3 @@ export * from "./executor";
 export * from "./parser";
 export * from "./gate";
 export * from "./rectification";
-export * from "./smart-runner";

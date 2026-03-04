@@ -11,7 +11,7 @@ import type { StoryMetrics } from "../metrics";
 import type { PRD, StructuredFailure, UserStory, VerificationStage } from "../prd";
 import { getExpectedFiles, savePRD } from "../prd";
 import type { TestFailure, VerificationResult } from "../verification";
-import { parseBunTestOutput } from "../verification/parser";
+import { parseBunTestOutput } from "../verification";
 import { getTierConfig } from "./escalation";
 import { revertStoriesOnFailure, runRectificationLoop } from "./post-verify-rectification";
 import { appendProgress } from "./progress";
