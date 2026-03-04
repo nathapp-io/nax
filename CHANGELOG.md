@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.6] - 2026-03-04
+
+### Fixed
+- **BUG-2:** Infinite PTY respawn loop in `usePty` hook by destructuring object-identity dependencies.
+- **MEM-1 & MEM-3:** Prevented child process hangs on full `stderr` pipes by switching to `stderr: "inherit"`.
+- **BUG-21 & BUG-22:** Added missing error handling and `.catch()` chains to process `stdout` streaming and exit handlers.
+
 ## [0.18.5] - 2026-03-04
 
 ### Changed
