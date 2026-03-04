@@ -188,6 +188,7 @@
 - [x] ~~BUG-014: buildAllowedEnv() strips USER/LOGNAME~~
 - [x] ~~**BUG-015:** `loadConstitution()` leaks global `~/.nax/constitution.md` into unit tests — fixed via `skipGlobal: true` in all unit tests~~
 - [x] ~~**BUG-027:** `runPrecheck()` always prints to stdout — pollutes test output when called programmatically. Shipped in v0.18.2.~~
+- [x] ~~**BUG-028:** Routing cache ignores escalation tier — escalated stories re-run at original tier. Shipped in v0.18.3.~~
 - [x] ~~**BUG-016:** Hardcoded 120s timeout in pipeline verify stage → fixed in v0.18.0~~
 - [x] ~~**BUG-017:** run.complete not emitted on SIGTERM → fixed in v0.18.0~~
 - [x] ~~**BUG-018:** Test-writer wastes ~3min/retry when tests already exist → fixed in v0.18.0~~
