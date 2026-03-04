@@ -84,16 +84,22 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
   const [ptyProcess, setPtyProcess] = useState<ReturnType<typeof Bun.spawn> | null>(null);
 
   // Spawn PTY process
+  // BUG-2: Destructure options to prevent infinite respawn loop due to object identity
+  const command = options?.command;
+  const argsJson = JSON.stringify(options?.args);
+  const cwd = options?.cwd;
+  const envJson = JSON.stringify(options?.env);
+
   useEffect(() => {
-    if (!options) {
+    if (!command) {
       return;
     }
 
     // BUN-001: Replaced node-pty with Bun.spawn (piped stdio).
     // TERM + FORCE_COLOR preserve Claude Code output formatting.
-    const proc = Bun.spawn([options.command, ...(options.args || [])], {
-      cwd: options.cwd || process.cwd(),
-      env: { ...process.env, ...options.env, TERM: "xterm-256color", FORCE_COLOR: "1" },
+    const proc = Bun.spawn([command, ...(JSON.parse(argsJson) || [])], {
+      cwd: cwd || process.cwd(),
+      env: { ...process.env, ...JSON.parse(envJson), TERM: "xterm-256color", FORCE_COLOR: "1" },
       stdin: "pipe",
       stdout: "pipe",
       stderr: "inherit", // MEM-1: Inherit stderr to avoid blocking on unread pipe
@@ -157,7 +163,7 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
     return () => {
       proc.kill();
     };
-  }, [options]);
+  }, [command, argsJson, cwd, envJson]);
 
   // Handle terminal resize
   // resize is a no-op with Bun.spawn (no PTY) — kept for API compatibility
