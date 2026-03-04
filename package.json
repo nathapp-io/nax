@@ -7,6 +7,7 @@
     "nax": "./bin/nax.ts"
   },
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks",
     "dev": "bun run bin/nax.ts",
     "build": "bun build bin/nax.ts --outdir dist --target bun",
     "typecheck": "bun x tsc --noEmit",
