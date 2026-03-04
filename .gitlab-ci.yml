@@ -16,10 +16,10 @@ stages:
 test:
   stage: test
   image: 
-    name: oven/bun:1.3.8
+    name: nathapp/node-bun:22.21.0-1.3.9-alpine
     pull_policy: if-not-present
   before_script:
-    - apt-get update && apt-get install -y --no-install-recommends git  
+    - apk add --no-cache git python3 make g++ 
     - git config --global safe.directory '*'
     - git config --global user.name "CI Runner"
     - git config --global user.email "ci@nathapp.io"
@@ -34,7 +34,7 @@ test:
     - bun install --frozen-lockfile --ignore-scripts
     - bun run typecheck
     - bun run lint
-    - NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000
+    - bun run test
   rules:
     - if: '$CI_COMMIT_MESSAGE =~ /release-by-bot/ || $CI_COMMIT_TAG'
       when: never
@@ -46,7 +46,7 @@ test:
 release:
   stage: release
   image: 
-    name: oven/bun:1.3.8
+    name: nathapp/node-bun:22.21.0-1.3.9-alpine
     pull_policy: if-not-present
   cache:
     key:
@@ -59,7 +59,7 @@ release:
     NPM_REGISTRY: "//registry.npmjs.org/"
     NPM_RELEASE_TOKEN: $NPM_TOKEN
   before_script:
-    - apt-get update && apt-get install -y --no-install-recommends git
+    - apk add --no-cache git python3 make g++
     - git config --global user.name "$GITLAB_USER_NAME"
     - git config --global user.email "$GITLAB_USER_EMAIL"
   script:
