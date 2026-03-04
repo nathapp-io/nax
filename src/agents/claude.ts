@@ -284,41 +284,47 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   }
 
   runInteractive(options: InteractiveRunOptions): PtyHandle {
-    let nodePty: typeof import("node-pty");
-    try {
-      nodePty = require("node-pty");
-    } catch (error) {
-      throw new Error(`node-pty not available: ${(error as Error).message}`);
-    }
-
     const model = options.modelDef.model;
     const cmd = [this.binary, "--model", model, options.prompt];
 
-    const ptyProc = nodePty.spawn(cmd[0], cmd.slice(1), {
-      name: "xterm-256color",
-      cols: 80,
-      rows: 24,
+    // BUN-001: Replaced node-pty with Bun.spawn (piped stdio).
+    // runInteractive() is TUI-only and currently dormant in headless nax runs.
+    // TERM + FORCE_COLOR preserve formatting output from Claude Code.
+    const proc = Bun.spawn(cmd, {
       cwd: options.workdir,
-      env: this.buildAllowedEnv(options),
+      env: { ...this.buildAllowedEnv(options), TERM: "xterm-256color", FORCE_COLOR: "1" },
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
     });
 
     const pidRegistry = this.getPidRegistry(options.workdir);
-    pidRegistry.register(ptyProc.pid).catch(() => {});
+    pidRegistry.register(proc.pid).catch(() => {});
 
-    ptyProc.onData((data) => {
-      options.onOutput(Buffer.from(data));
-    });
+    // Stream stdout to onOutput callback
+    (async () => {
+      for await (const chunk of proc.stdout) {
+        options.onOutput(Buffer.from(chunk));
+      }
+    })();
 
-    ptyProc.onExit((event) => {
-      pidRegistry.unregister(ptyProc.pid).catch(() => {});
-      options.onExit(event.exitCode);
+    // Fire onExit when process completes
+    proc.exited.then((code) => {
+      pidRegistry.unregister(proc.pid).catch(() => {});
+      options.onExit(code ?? 1);
     });
 
     return {
-      write: (data: string) => ptyProc.write(data),
-      resize: (cols: number, rows: number) => ptyProc.resize(cols, rows),
-      kill: () => ptyProc.kill(),
-      pid: ptyProc.pid,
+      write: (data: string) => {
+        proc.stdin.write(data);
+      },
+      resize: (_cols: number, _rows: number) => {
+        /* no-op: Bun.spawn has no PTY resize */
+      },
+      kill: () => {
+        proc.kill();
+      },
+      pid: proc.pid,
     };
   }
 }

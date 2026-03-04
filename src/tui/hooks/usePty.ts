@@ -1,10 +1,9 @@
 /**
- * usePty hook — manages node-pty lifecycle for agent PTY sessions.
+ * usePty hook — manages Bun.spawn subprocess lifecycle for agent sessions (BUN-001).
  *
  * Spawns, buffers output, handles resize, and cleanup for PTY processes.
  */
 
-import type * as pty from "node-pty";
 import { useCallback, useEffect, useState } from "react";
 import type { PtyHandle } from "../../agents/types";
 
@@ -82,7 +81,7 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
   }));
 
   const [handle, setHandle] = useState<PtyHandle | null>(null);
-  const [ptyProcess, setPtyProcess] = useState<pty.IPty | null>(null);
+  const [ptyProcess, setPtyProcess] = useState<ReturnType<typeof Bun.spawn> | null>(null);
 
   // Spawn PTY process
   useEffect(() => {
@@ -90,91 +89,76 @@ export function usePty(options: PtySpawnOptions | null): PtyState & { handle: Pt
       return;
     }
 
-    // Lazy load node-pty (only when needed)
-    let nodePty: typeof pty;
-    try {
-      nodePty = require("node-pty");
-    } catch (error) {
-      console.error("[usePty] node-pty not available:", error);
-      return;
-    }
-
-    const ptyProc = nodePty.spawn(options.command, options.args || [], {
-      name: "xterm-256color",
-      cols: options.cols || 80,
-      rows: options.rows || 24,
+    // BUN-001: Replaced node-pty with Bun.spawn (piped stdio).
+    // TERM + FORCE_COLOR preserve Claude Code output formatting.
+    const proc = Bun.spawn([options.command, ...(options.args || [])], {
       cwd: options.cwd || process.cwd(),
-      env: {
-        ...process.env,
-        ...options.env,
-      },
+      env: { ...process.env, ...options.env, TERM: "xterm-256color", FORCE_COLOR: "1" },
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
     });
 
-    setPtyProcess(ptyProc);
+    setPtyProcess(proc);
     setState((prev) => ({ ...prev, isRunning: true }));
 
-    // Buffer output line-by-line
-    let currentLine = "";
-    ptyProc.onData((data) => {
-      const lines = (currentLine + data).split("\n");
-      currentLine = lines.pop() || "";
+    // Stream stdout line-by-line into state buffer
+    (async () => {
+      let currentLine = "";
+      for await (const chunk of proc.stdout) {
+        const data = Buffer.from(chunk).toString();
+        const lines = (currentLine + data).split("\n");
+        currentLine = lines.pop() || "";
 
-      // Truncate incomplete line if too long
-      if (currentLine.length > MAX_LINE_LENGTH) {
-        currentLine = currentLine.slice(-MAX_LINE_LENGTH);
+        if (currentLine.length > MAX_LINE_LENGTH) {
+          currentLine = currentLine.slice(-MAX_LINE_LENGTH);
+        }
+
+        if (lines.length > 0) {
+          const truncatedLines = lines.map((line) =>
+            line.length > MAX_LINE_LENGTH ? `${line.slice(0, MAX_LINE_LENGTH)}…` : line,
+          );
+          setState((prev) => {
+            const newLines = [...prev.outputLines, ...truncatedLines];
+            const trimmed = newLines.length > MAX_PTY_BUFFER_LINES ? newLines.slice(-MAX_PTY_BUFFER_LINES) : newLines;
+            return { ...prev, outputLines: trimmed };
+          });
+        }
       }
-
-      if (lines.length > 0) {
-        // Truncate each complete line
-        const truncatedLines = lines.map((line) =>
-          line.length > MAX_LINE_LENGTH ? `${line.slice(0, MAX_LINE_LENGTH)}…` : line,
-        );
-
-        setState((prev) => {
-          const newLines = [...prev.outputLines, ...truncatedLines];
-          // Keep only last N lines
-          const trimmed = newLines.length > MAX_PTY_BUFFER_LINES ? newLines.slice(-MAX_PTY_BUFFER_LINES) : newLines;
-          return { ...prev, outputLines: trimmed };
-        });
-      }
-    });
+    })();
 
     // Handle exit
-    ptyProc.onExit((event) => {
-      setState((prev) => ({
-        ...prev,
-        isRunning: false,
-        exitCode: event.exitCode,
-      }));
+    proc.exited.then((code) => {
+      setState((prev) => ({ ...prev, isRunning: false, exitCode: code ?? undefined }));
     });
 
     // Create handle
     const ptyHandle: PtyHandle = {
-      write: (data: string) => ptyProc.write(data),
-      resize: (cols: number, rows: number) => ptyProc.resize(cols, rows),
-      kill: () => ptyProc.kill(),
-      pid: ptyProc.pid,
+      write: (data: string) => {
+        proc.stdin.write(data);
+      },
+      resize: (_cols: number, _rows: number) => {
+        /* no-op: Bun.spawn has no PTY resize */
+      },
+      kill: () => {
+        proc.kill();
+      },
+      pid: proc.pid,
     };
 
     setHandle(ptyHandle);
 
     // Cleanup on unmount
     return () => {
-      if (ptyProc) {
-        ptyProc.kill();
-      }
+      proc.kill();
     };
   }, [options]);
 
   // Handle terminal resize
-  const handleResize = useCallback(
-    (cols: number, rows: number) => {
-      if (ptyProcess) {
-        ptyProcess.resize(cols, rows);
-      }
-    },
-    [ptyProcess],
-  );
+  // resize is a no-op with Bun.spawn (no PTY) — kept for API compatibility
+  const handleResize = useCallback((_cols: number, _rows: number) => {
+    // BUN-001: no-op — Bun.spawn does not support PTY resize
+  }, []);
 
   useEffect(() => {
     const onResize = () => {
