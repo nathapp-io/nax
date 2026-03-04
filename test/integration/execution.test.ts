@@ -278,7 +278,13 @@ describe("execution runner", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
-      config: { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, maxIterations: 2 } },
+      config: {
+        ...DEFAULT_CONFIG,
+        execution: { ...DEFAULT_CONFIG.execution, maxIterations: 2 },
+        // Disable acceptance loop — it runs after completion and increments iterations,
+        // making the iterations === 1 assertion flaky.
+        acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false },
+      },
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: false, // Not dry run since all stories already complete
