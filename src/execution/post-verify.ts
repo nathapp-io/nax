@@ -26,7 +26,7 @@ function buildStructuredFailure(
 ): StructuredFailure {
   const testFailures =
     verificationResult.status === "TEST_FAILURE" && verificationResult.output
-      ? parseBunTestOutput(verificationResult.output).failures.map((f) => ({
+      ? _postVerifyDeps.parseBunTestOutput(verificationResult.output).failures.map((f) => ({
           file: f.file,
           testName: f.testName,
           error: f.error,
@@ -121,9 +121,9 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
   const testCommand = scopeTestCommand(config.quality.commands.test, changedTestFiles);
   const timeoutRetryCount = timeoutRetryCountMap.get(story.id) || 0;
 
-  const verificationResult = await runVerification({
+  const verificationResult = await _postVerifyDeps.runVerification({
     workingDirectory: workdir,
-    expectedFiles: getExpectedFiles(story),
+    expectedFiles: _postVerifyDeps.getExpectedFiles(story),
     command: testCommand,
     timeoutSeconds: config.execution.verificationTimeoutSeconds,
     forceExit: config.quality.forceExit,
@@ -141,7 +141,7 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
   if (verificationResult.success) {
     logger?.info("verification", "Scoped verification passed");
     if (verificationResult.output) {
-      const analysis = parseTestOutput(verificationResult.output, 0);
+      const analysis = _postVerifyDeps.parseTestOutput(verificationResult.output, 0);
       if (analysis.passCount > 0) {
         logger?.debug("verification", "Scoped test results", {
           passCount: analysis.passCount,
@@ -175,7 +175,7 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
       regressionVerificationResult,
       "Full-suite regression detected",
     );
-    const updatedPrd = await revertStoriesOnFailure({
+    const updatedPrd = await _postVerifyDeps.revertStoriesOnFailure({
       prd,
       prdPath,
       story,
@@ -193,7 +193,7 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
   // Attempt rectification if enabled and tests failed (not timeout/env)
   const isTestFailure = verificationResult.status === "TEST_FAILURE" && verificationResult.output;
   if (rectificationEnabled && isTestFailure && verificationResult.output) {
-    const fixed = await runRectificationLoop({
+    const fixed = await _postVerifyDeps.runRectificationLoop({
       config,
       workdir,
       story,
@@ -222,7 +222,7 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
   // Revert stories and save
   const diagnosticContext = verificationResult.error || `Verification failed: ${verificationResult.status}`;
   const verifyFailure = buildStructuredFailure(story, "verify", verificationResult, diagnosticContext);
-  const updatedPrd = await revertStoriesOnFailure({
+  const updatedPrd = await _postVerifyDeps.revertStoriesOnFailure({
     prd,
     prdPath,
     story,
@@ -263,9 +263,9 @@ async function runRegressionGate(
 
   logger?.info("regression-gate", "Running full-suite regression gate");
   const fullSuiteCommand = config.quality.commands.test ?? "bun test";
-  const regressionResult = await runVerification({
+  const regressionResult = await _postVerifyDeps.runVerification({
     workingDirectory: workdir,
-    expectedFiles: getExpectedFiles(story),
+    expectedFiles: _postVerifyDeps.getExpectedFiles(story),
     command: fullSuiteCommand,
     timeoutSeconds: config.execution.regressionGate.timeoutSeconds,
     forceExit: config.quality.forceExit,
@@ -297,7 +297,7 @@ async function runRegressionGate(
   // Attempt rectification on regression failures
   const isTestFailure = regressionResult.status === "TEST_FAILURE" && regressionResult.output;
   if (rectificationEnabled && isTestFailure && regressionResult.output) {
-    const fixed = await runRectificationLoop({
+    const fixed = await _postVerifyDeps.runRectificationLoop({
       config,
       workdir,
       story,
@@ -321,10 +321,10 @@ function checkEnvironmentalEscalation(
   logger: ReturnType<typeof getSafeLogger>,
 ): void {
   const currentTier = story.routing?.modelTier || config.autoMode.escalation.tierOrder[0]?.tier;
-  const tierCfg = currentTier ? getTierConfig(currentTier, config.autoMode.escalation.tierOrder) : undefined;
+  const tierCfg = currentTier ? _postVerifyDeps.getTierConfig(currentTier, config.autoMode.escalation.tierOrder) : undefined;
   if (!tierCfg) return;
 
-  const threshold = getEnvironmentalEscalationThreshold(
+  const threshold = _postVerifyDeps.getEnvironmentalEscalationThreshold(
     tierCfg.attempts,
     config.quality.environmentalEscalationDivisor,
   );
@@ -336,3 +336,19 @@ function checkEnvironmentalEscalation(
     });
   }
 }
+
+/**
+ * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ */
+export const _postVerifyDeps = {
+  parseBunTestOutput,
+  parseTestOutput,
+  runVerification,
+  getExpectedFiles,
+  savePRD,
+  revertStoriesOnFailure,
+  runRectificationLoop,
+  appendProgress,
+  getTierConfig,
+  getEnvironmentalEscalationThreshold,
+};

@@ -15,10 +15,10 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { NaxConfig } from "../../src/config";
-import type { PRD, UserStory } from "../../src/prd/types";
-import type { StoryMetrics } from "../../src/metrics";
-import type { VerificationResult } from "../../src/verification";
+import type { NaxConfig } from "../../../src/config";
+import type { PRD, UserStory } from "../../../src/prd/types";
+import type { StoryMetrics } from "../../../src/metrics";
+import type { VerificationResult } from "../../../src/verification";
 
 // ---------------------------------------------------------------------------
 // Mock runVerification with call-order-based responses
@@ -41,54 +41,13 @@ const mockRevertStoriesOnFailure = mock(async ({ prd }: { prd: PRD; [k: string]:
 const mockRunRectificationLoop = mock(async () => false);
 
 // ---------------------------------------------------------------------------
-// Module mocks — must be top-level (Bun ESM hoisting)
+// Static imports — uses _postVerifyDeps pattern (no mock.module() needed)
 // ---------------------------------------------------------------------------
 
-mock.module("../../src/execution/verification", () => ({
-  runVerification: mockRunVerification,
-  parseTestOutput: () => ({ passCount: 5, failCount: 0, isEnvironmentalFailure: false }),
-  getEnvironmentalEscalationThreshold: () => 3,
-}));
+import { _postVerifyDeps, runPostAgentVerification } from "../../../src/execution/post-verify";
 
-mock.module("../../src/execution/post-verify-rectification", () => ({
-  revertStoriesOnFailure: mockRevertStoriesOnFailure,
-  runRectificationLoop: mockRunRectificationLoop,
-}));
-
-mock.module("../../src/prd", () => ({
-  getExpectedFiles: () => [],
-  savePRD: mock(async () => {}),
-}));
-
-mock.module("../../src/execution/progress", () => ({
-  appendProgress: mock(async () => {}),
-}));
-
-mock.module("../../src/execution/escalation", () => ({
-  getTierConfig: () => undefined,
-}));
-
-mock.module("../../src/verification/parser", () => ({
-  parseBunTestOutput: () => ({ failed: 0, passed: 5, failures: [] }),
-}));
-
-mock.module("../../src/logger", () => ({
-  getSafeLogger: () => ({
-    info: () => {},
-    warn: () => {},
-    debug: () => {},
-    error: () => {},
-  }),
-  getLogger: () => ({
-    info: () => {},
-    warn: () => {},
-    debug: () => {},
-    error: () => {},
-  }),
-}));
-
-// Dynamic import after mocks
-const { runPostAgentVerification } = await import("../../src/execution/post-verify");
+// ── Capture originals for afterEach restoration ───────────────────────────────
+const _origPostVerifyDeps = { ..._postVerifyDeps };
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -283,6 +242,17 @@ let tempDir: string;
 let storyGitRef: string;
 
 beforeEach(() => {
+  // Wire _postVerifyDeps to mocks
+  _postVerifyDeps.runVerification = mockRunVerification as typeof _postVerifyDeps.runVerification;
+  _postVerifyDeps.parseTestOutput = () => ({ passCount: 5, failCount: 0, isEnvironmentalFailure: false }) as any;
+  _postVerifyDeps.getEnvironmentalEscalationThreshold = () => 3;
+  _postVerifyDeps.revertStoriesOnFailure = mockRevertStoriesOnFailure as typeof _postVerifyDeps.revertStoriesOnFailure;
+  _postVerifyDeps.runRectificationLoop = mockRunRectificationLoop as typeof _postVerifyDeps.runRectificationLoop;
+  _postVerifyDeps.getExpectedFiles = () => [];
+  _postVerifyDeps.savePRD = mock(async () => {}) as typeof _postVerifyDeps.savePRD;
+  _postVerifyDeps.appendProgress = mock(async () => {}) as typeof _postVerifyDeps.appendProgress;
+  _postVerifyDeps.getTierConfig = () => undefined as any;
+  _postVerifyDeps.parseBunTestOutput = () => ({ failed: 0, passed: 5, failures: [] }) as any;
   mockRunVerification.mockClear();
   mockRevertStoriesOnFailure.mockClear();
   mockRunRectificationLoop.mockClear();
@@ -295,6 +265,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  Object.assign(_postVerifyDeps, _origPostVerifyDeps);
+  mock.restore();
   rmSync(tempDir, { recursive: true, force: true });
 });
 

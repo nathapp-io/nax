@@ -14,9 +14,9 @@ const skipInCI = process.env.CI ? test.skip : test;
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { NaxConfig } from "../src/config";
-import type { PRD } from "../src/prd/types";
-import { EXIT_CODES, runPrecheck } from "../src/precheck";
+import type { NaxConfig } from "../../src/config";
+import type { PRD } from "../../src/prd/types";
+import { EXIT_CODES, runPrecheck } from "../../src/precheck";
 
 // Helper to create a minimal valid git environment
 async function setupGitRepo(dir: string): Promise<void> {

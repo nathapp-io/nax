@@ -85,7 +85,7 @@ export const executionStage: PipelineStage = {
     const logger = getLogger();
 
     // HARD FAILURE: No agent available — cannot proceed without an agent
-    const agent = getAgent(ctx.config.autoMode.defaultAgent);
+    const agent = _executionDeps.getAgent(ctx.config.autoMode.defaultAgent);
     if (!agent) {
       return {
         action: "fail",
@@ -152,7 +152,7 @@ export const executionStage: PipelineStage = {
     }
 
     // Validate agent supports the requested tier
-    if (!validateAgentForTier(agent, ctx.routing.modelTier)) {
+    if (!_executionDeps.validateAgentForTier(agent, ctx.routing.modelTier)) {
       logger.warn("execution", "Agent tier mismatch", {
         storyId: ctx.story.id,
         agentName: agent.name,
@@ -191,4 +191,12 @@ export const executionStage: PipelineStage = {
     });
     return { action: "continue" };
   },
+};
+
+/**
+ * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ */
+export const _executionDeps = {
+  getAgent,
+  validateAgentForTier,
 };

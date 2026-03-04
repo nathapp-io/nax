@@ -99,7 +99,7 @@ export const verifyStage: PipelineStage = {
     }
 
     // Use unified regression gate (includes 2s wait for agent process cleanup)
-    const result = await regression({
+    const result = await _verifyDeps.regression({
       workdir: ctx.workdir,
       command: effectiveCommand,
       timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
@@ -150,4 +150,11 @@ export const verifyStage: PipelineStage = {
     logger.info("verify", "Tests passed", { storyId: ctx.story.id });
     return { action: "continue" };
   },
+};
+
+/**
+ * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ */
+export const _verifyDeps = {
+  regression,
 };

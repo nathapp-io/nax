@@ -35,7 +35,7 @@ export const routingStage: PipelineStage = {
     let routing: { complexity: string; testStrategy: string; modelTier: string; reasoning?: string };
     if (ctx.story.routing) {
       // Use cached complexity/testStrategy/modelTier
-      routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
+      routing = await _routingDeps.routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
       // Override with cached values only when they are actually set
       if (ctx.story.routing?.complexity) routing.complexity = ctx.story.routing.complexity;
       if (ctx.story.routing?.testStrategy) routing.testStrategy = ctx.story.routing.testStrategy;
@@ -44,17 +44,17 @@ export const routingStage: PipelineStage = {
       if (ctx.story.routing?.modelTier) {
         routing.modelTier = ctx.story.routing.modelTier;
       } else {
-        routing.modelTier = complexityToModelTier(routing.complexity as import("../../config").Complexity, ctx.config);
+        routing.modelTier = _routingDeps.complexityToModelTier(routing.complexity as import("../../config").Complexity, ctx.config);
       }
     } else {
       // Fresh classification
-      routing = await routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
+      routing = await _routingDeps.routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
     }
 
     // BUG-010: Greenfield detection — force test-after if no test files exist
     const greenfieldDetectionEnabled = ctx.config.tdd.greenfieldDetection ?? true;
     if (greenfieldDetectionEnabled && routing.testStrategy.startsWith("three-session-tdd")) {
-      const isGreenfield = await isGreenfieldStory(ctx.story, ctx.workdir);
+      const isGreenfield = await _routingDeps.isGreenfieldStory(ctx.story, ctx.workdir);
       if (isGreenfield) {
         logger.info("routing", "Greenfield detected — forcing test-after strategy", {
           storyId: ctx.story.id,
@@ -83,4 +83,15 @@ export const routingStage: PipelineStage = {
 
     return { action: "continue" };
   },
+};
+
+/**
+ * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ * Tests can override individual functions without poisoning the module registry.
+ */
+export const _routingDeps = {
+  routeStory,
+  complexityToModelTier,
+  isGreenfieldStory,
+  clearCache,
 };

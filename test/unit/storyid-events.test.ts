@@ -10,14 +10,14 @@ import type { NaxConfig } from "../../src/config";
 import { getLogger, initLogger, resetLogger } from "../../src/logger";
 import type { PipelineContext } from "../../src/pipeline/types";
 import type { UserStory } from "../../src/prd/types";
-import { ALL_AGENTS } from "../../src/agents/registry";
-import {
-  validateAgentForTier as realValidateAgentForTier,
-  validateAgentFeature,
-  describeAgentCapabilities,
-} from "../../src/agents/validation";
 
-// ── Module mocks (must be set up before dynamic imports) ──────────────────────
+// ── Static imports (uses _deps pattern — no mock.module() needed) ────────────
+
+import { verifyStage } from "../../src/pipeline/stages/verify";
+import { _executionDeps, executionStage } from "../../src/pipeline/stages/execution";
+import { runThreeSessionTdd } from "../../src/tdd/orchestrator";
+
+// ── Mock agent ────────────────────────────────────────────────────────────────
 
 const mockAgentRun = mock(async () => ({
   success: true,
@@ -28,33 +28,18 @@ const mockAgentRun = mock(async () => ({
   durationMs: 100,
 }));
 
-mock.module("../../src/agents", () => ({
-  getAgent: (name: string) => {
-    if (name === "claude") {
-      return {
-        name: "claude",
-        // Only supports "balanced"/"powerful" — triggers tier mismatch when ctx.routing.modelTier="fast"
-        capabilities: { supportedTiers: ["balanced", "powerful"] },
-        run: mockAgentRun,
-        isInstalled: async () => true,
-        buildCommand: () => ["claude"],
-      };
-    }
-    // Delegate all other names to the real registry so integration tests that
-    // push their own mock agents to ALL_AGENTS (via beforeAll/afterAll) can
-    // still find them even when this module mock is active.
-    return ALL_AGENTS.find((a) => a.name === name);
-  },
-  validateAgentForTier: realValidateAgentForTier,
-  validateAgentFeature,
-  describeAgentCapabilities,
-}));
+const mockAgent = {
+  name: "claude",
+  // Only supports "balanced"/"powerful" — triggers tier mismatch when ctx.routing.modelTier="fast"
+  capabilities: { supportedTiers: ["balanced", "powerful"] },
+  run: mockAgentRun,
+  isInstalled: async () => true,
+  buildCommand: () => ["claude"],
+};
 
-// ── Dynamic imports after mock setup ─────────────────────────────────────────
+// ── Capture originals for afterEach restoration ───────────────────────────────
 
-const { verifyStage } = await import("../../src/pipeline/stages/verify");
-const { executionStage } = await import("../../src/pipeline/stages/execution");
-const { runThreeSessionTdd } = await import("../../src/tdd/orchestrator");
+const _origExecutionDeps = { ..._executionDeps };
 
 // ── Shared fixtures ───────────────────────────────────────────────────────────
 
@@ -116,12 +101,15 @@ function makeCtx(
 // ── Logger lifecycle ──────────────────────────────────────────────────────────
 
 beforeEach(() => {
+  _executionDeps.getAgent = () => mockAgent as any;
   resetLogger();
   initLogger({ level: "debug", useChalk: false });
   mockAgentRun.mockClear();
 });
 
 afterEach(() => {
+  Object.assign(_executionDeps, _origExecutionDeps);
+  mock.restore();
   resetLogger();
 });
 

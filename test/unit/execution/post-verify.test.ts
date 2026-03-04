@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { RegressionGateConfig } from "../../src/config/schema";
+import type { RegressionGateConfig } from "../../../src/config/schema";
 
 describe("RegressionGateConfig", () => {
   test("should have correct default values", () => {

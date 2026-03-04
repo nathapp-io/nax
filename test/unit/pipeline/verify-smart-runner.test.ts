@@ -23,15 +23,12 @@ import type { PRD, UserStory } from "../../../src/prd/types";
 
 const mockRegression = mock(async () => ({ success: true, status: "SUCCESS" as const }));
 
-mock.module("../../../src/verification/gate", () => ({
-  regression: mockRegression,
-}));
+// ---- Static imports — no mock.module() needed (uses _deps pattern) ----------
+import { _verifyDeps, verifyStage } from "../../../src/pipeline/stages/verify";
 
 // ---- Capture originals for afterEach restoration ----------------------------
 const _origDeps = { ..._smartRunnerDeps };
-
-// ---- Dynamic import after gate mock -----------------------------------------
-const { verifyStage } = await import("../../../src/pipeline/stages/verify");
+const _origVerifyDeps = { ..._verifyDeps };
 
 // ---- Mock functions ---------------------------------------------------------
 
@@ -160,6 +157,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
     _smartRunnerDeps.mapSourceToTests = mockMapSourceToTests;
     _smartRunnerDeps.importGrepFallback = mockImportGrepFallback;
     _smartRunnerDeps.buildSmartTestCommand = mockBuildSmartTestCommand;
+    _verifyDeps.regression = mockRegression as typeof _verifyDeps.regression;
     mockRegression.mockClear();
     mockGetChangedSourceFiles.mockClear();
     mockMapSourceToTests.mockClear();
@@ -170,6 +168,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
   afterEach(() => {
     resetLogger();
     Object.assign(_smartRunnerDeps, _origDeps);
+    Object.assign(_verifyDeps, _origVerifyDeps);
   });
 
   describe("AC1: uses scoped test command when smart runner finds test files", () => {

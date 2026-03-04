@@ -6,13 +6,14 @@
  * a fresh classification.
  */
 
-import { beforeEach, afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { initLogger, resetLogger } from "../../../src/logger";
-import type { PipelineContext } from "../../../src/pipeline/types";
+import { _routingDeps, routingStage } from "../../../src/pipeline/stages/routing";
 import type { NaxConfig } from "../../../src/config";
+import type { PipelineContext } from "../../../src/pipeline/types";
 import type { UserStory } from "../../../src/prd/types";
 
-// ── Module mocks (must be declared before dynamic imports) ────────────────────
+// ── Mock functions ────────────────────────────────────────────────────────────
 
 const mockRouteStory = mock(async () => ({
   complexity: "medium",
@@ -22,26 +23,11 @@ const mockRouteStory = mock(async () => ({
 }));
 
 const mockComplexityToModelTier = mock((_complexity: string, _config: unknown) => "balanced" as const);
+const mockIsGreenfieldStory = mock(async () => false);
 
-mock.module("../../../src/routing", () => ({
-  routeStory: mockRouteStory,
-  complexityToModelTier: mockComplexityToModelTier,
-}));
+// ── Capture originals for afterEach restoration ───────────────────────────────
 
-// Greenfield check: return false so it never interferes with test strategy
-mock.module("../../../src/context/greenfield", () => ({
-  isGreenfieldStory: mock(async () => false),
-}));
-
-// LLM batch cache is not relevant here
-mock.module("../../../src/routing/strategies/llm", () => ({
-  clearCache: mock(() => {}),
-  routeBatch: mock(async () => []),
-}));
-
-// ── Dynamic imports after mocks ───────────────────────────────────────────────
-
-const { routingStage } = await import("../../../src/pipeline/stages/routing");
+const _origDeps = { ..._routingDeps };
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -58,11 +44,9 @@ function makeStory(routingOverride?: Partial<UserStory["routing"]>): UserStory {
     tags: [],
     dependencies: [],
   };
-
   if (routingOverride !== undefined) {
     story.routing = routingOverride as UserStory["routing"];
   }
-
   return story;
 }
 
@@ -82,16 +66,22 @@ function makeCtx(story: UserStory): PipelineContext {
   } as PipelineContext;
 }
 
-// ── Logger setup ──────────────────────────────────────────────────────────────
+// ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
   resetLogger();
   initLogger({ level: "error", useChalk: false });
+  _routingDeps.routeStory = mockRouteStory as typeof _routingDeps.routeStory;
+  _routingDeps.complexityToModelTier = mockComplexityToModelTier as typeof _routingDeps.complexityToModelTier;
+  _routingDeps.isGreenfieldStory = mockIsGreenfieldStory as typeof _routingDeps.isGreenfieldStory;
   mockRouteStory.mockClear();
   mockComplexityToModelTier.mockClear();
+  mockIsGreenfieldStory.mockClear();
 });
 
 afterEach(() => {
+  Object.assign(_routingDeps, _origDeps);
+  mock.restore();
   resetLogger();
 });
 
@@ -99,42 +89,31 @@ afterEach(() => {
 
 describe("routing stage — partial override (FIX-001)", () => {
   test("(1) partial override with only testStrategy preserves LLM complexity", async () => {
-    // Story sets only testStrategy — complexity should come from LLM
     const story = makeStory({ testStrategy: "test-after", complexity: undefined as any, reasoning: "manual" });
     const ctx = makeCtx(story);
 
     await routingStage.execute(ctx);
 
-    // testStrategy is overridden by the story field
     expect(ctx.routing.testStrategy).toBe("test-after");
-    // complexity should remain from the LLM result ("medium"), not undefined
     expect(ctx.routing.complexity).toBe("medium");
   });
 
   test("(2) LLM-classified complexity is preserved when story.routing has no complexity", async () => {
-    // story.routing is present but complexity is undefined (falsy)
     const story = makeStory({ testStrategy: "test-after", complexity: undefined as any, reasoning: "" });
     const ctx = makeCtx(story);
 
     await routingStage.execute(ctx);
 
-    // LLM returned "medium" — it must not be overwritten with undefined
     expect(ctx.routing.complexity).toBe("medium");
     expect(ctx.routing.complexity).not.toBeUndefined();
   });
 
   test("(3) full override works when both complexity and testStrategy are set", async () => {
-    // Story has explicit values for both fields
-    const story = makeStory({
-      complexity: "simple",
-      testStrategy: "test-after",
-      reasoning: "manual override",
-    });
+    const story = makeStory({ complexity: "simple", testStrategy: "test-after", reasoning: "manual override" });
     const ctx = makeCtx(story);
 
     await routingStage.execute(ctx);
 
-    // Both fields should be overridden from the story
     expect(ctx.routing.complexity).toBe("simple");
     expect(ctx.routing.testStrategy).toBe("test-after");
   });
