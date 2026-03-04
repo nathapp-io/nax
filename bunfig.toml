@@ -9,3 +9,6 @@ timeout = 30000
 exclude = ["nax/**"]
 
 # Note: E2E tests may override this with longer timeouts using test options
+
+[test]
+concurrent = 1
