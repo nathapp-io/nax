@@ -113,7 +113,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
   },
   review: {
     enabled: true,
-    checks: ["typecheck", "lint", "test"],
+    checks: ["typecheck", "lint"],
     commands: {},
   },
   plan: {

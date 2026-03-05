@@ -8,21 +8,59 @@
       "title": "Remove test from review defaults",
       "description": "Change review.checks default from ['typecheck', 'lint', 'test'] to ['typecheck', 'lint'] in src/config/defaults.ts. The test check in review duplicates the pipeline verify stage. Keep 'test' as a valid enum value in the schema for backwards compatibility but remove it from the default config. Update any tests that assert on the default review checks array.",
       "complexity": "simple",
-      "status": "pending"
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "acceptanceCriteria": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "modelTier": "balanced",
+        "testStrategy": "test-after",
+        "reasoning": "override: simple config default change, tests already exist"
+      }
     },
     {
       "id": "US-002",
       "title": "Remove post-verify scoped duplicate",
       "description": "In src/execution/post-verify.ts, remove the scoped verification logic (getChangedTestFiles + runVerification for scoped tests) from runPostAgentVerification(). The pipeline verify stage already runs Smart Test Runner scoped tests. post-verify should ONLY run the regression gate (full suite) and handle failure revert with StructuredFailure. Remove getChangedTestFiles() and scopeTestCommand() helper functions. Remove the scoped rectification loop call. Update the function signature to no longer need storyGitRef. Update all tests for post-verify accordingly.",
       "complexity": "medium",
-      "status": "pending"
+      "status": "passed",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "acceptanceCriteria": [],
+      "storyPoints": 1,
+      "passes": true
     },
     {
       "id": "US-003",
       "title": "Deferred regression gate",
       "description": "Create new src/execution/lifecycle/run-regression.ts that implements a deferred regression gate. Instead of running the full test suite after every story, run it once after all stories complete. Steps: (1) Add 'mode' field to RegressionGateConfigSchema with values 'deferred' | 'per-story' | 'disabled' (default: 'deferred'). (2) Add 'maxRectificationAttempts' field (default: 2). (3) In run-regression.ts: run full suite once, parse failures, use reverse Smart Test Runner mapping (test file -> source file -> responsible story via git log), attempt targeted rectification per responsible story, re-run full suite to confirm. (4) Call deferred regression from run-completion.ts before final metrics, only when mode is 'deferred'. (5) When mode is 'deferred', skip the per-story regression gate in post-verify.ts. (6) Add reverseMapTestToSource() to smart-runner.ts. (7) Handle edge cases: partial completion (only check passed stories), overlapping file changes (try last story first), unmapped tests (warn and mark all passed stories for re-verification).",
       "complexity": "complex",
-      "status": "pending"
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "acceptanceCriteria": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "complex",
+        "modelTier": "powerful",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "override: complex new file + schema changes, needs powerful model"
+      }
     }
-  ]
+  ],
+  "updatedAt": "2026-03-05T07:19:33.087Z"
 }

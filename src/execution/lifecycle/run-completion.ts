@@ -2,6 +2,7 @@
  * Run Completion — Final Metrics and Status Updates
  *
  * Handles the final steps after sequential execution completes:
+ * - Run deferred regression gate (if configured)
  * - Save run metrics
  * - Log completion summary with per-story metrics
  * - Update final status
@@ -13,6 +14,7 @@ import { saveRunMetrics } from "../../metrics";
 import { countStories, isComplete, isStalled } from "../../prd";
 import type { PRD } from "../../prd";
 import type { StatusWriter } from "../status-writer";
+import type { NaxConfig } from "../../config";
 
 export interface RunCompletionOptions {
   runId: string;
@@ -26,6 +28,7 @@ export interface RunCompletionOptions {
   startTime: number;
   workdir: string;
   statusWriter: StatusWriter;
+  config: NaxConfig;
 }
 
 export interface RunCompletionResult {
@@ -57,7 +60,25 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     startTime,
     workdir,
     statusWriter,
+    config,
   } = options;
+
+  // Run deferred regression gate before final metrics
+  const regressionMode = config.execution.regressionGate?.mode ?? "deferred";
+  if (regressionMode === "deferred" && config.quality.commands.test) {
+    const { runDeferredRegression } = await import("./run-regression");
+    const regressionResult = await runDeferredRegression({
+      config,
+      prd,
+      workdir,
+    });
+
+    logger?.info("regression", "Deferred regression gate completed", {
+      success: regressionResult.success,
+      failedTests: regressionResult.failedTests,
+      affectedStories: regressionResult.affectedStories,
+    });
+  }
 
   const durationMs = Date.now() - startTime;
   const runCompletedAt = new Date().toISOString();

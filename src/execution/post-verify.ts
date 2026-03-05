@@ -70,8 +70,14 @@ export async function runPostAgentVerification(opts: PostVerifyOptions): Promise
   if (!config.quality.commands.test) return { passed: true, prd };
 
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
+  const regressionMode = config.execution.regressionGate?.mode ?? "deferred";
 
-  // Run full-suite regression gate (no longer scoped)
+  // Skip per-story regression gate if mode is deferred
+  if (regressionMode === "deferred") {
+    return { passed: true, prd };
+  }
+
+  // Run full-suite regression gate (per-story mode)
   const regressionGateResult = await runRegressionGate(config, workdir, story, rectificationEnabled);
 
   if (regressionGateResult.status === "passed" || regressionGateResult.status === "skipped") {

@@ -200,6 +200,57 @@ export async function getChangedSourceFiles(workdir: string): Promise<string[]> 
 }
 
 /**
+ * Map test files back to their corresponding source files.
+ *
+ * For each test file path, converts it back to the likely source file path.
+ * Handles both `test/unit/` and `test/integration/` conventions.
+ * Only processes .test.ts files (not .test.js).
+ *
+ * @param testFiles - Array of test file paths (e.g. `["/repo/test/unit/foo/bar.test.ts"]`)
+ * @param workdir - Absolute path to the repository root (to normalize paths)
+ * @returns Source file paths (e.g. `["src/foo/bar.ts"]`)
+ *
+ * @example
+ * ```typescript
+ * const sources = reverseMapTestToSource(["/repo/test/unit/foo/bar.test.ts"], "/repo");
+ * // Returns: ["src/foo/bar.ts"]
+ * ```
+ */
+export function reverseMapTestToSource(testFiles: string[], workdir: string): string[] {
+  const result: string[] = [];
+  const seenPaths = new Set<string>();
+
+  for (const testFile of testFiles) {
+    // Only process .test.ts files
+    if (!testFile.endsWith(".test.ts")) {
+      continue;
+    }
+
+    // Normalize the path to be relative to workdir
+    let relativePath = testFile.startsWith(workdir) ? testFile.slice(workdir.length + 1) : testFile;
+
+    // Remove test/unit/ or test/integration/ prefix
+    if (relativePath.startsWith("test/unit/")) {
+      relativePath = relativePath.slice("test/unit/".length);
+    } else if (relativePath.startsWith("test/integration/")) {
+      relativePath = relativePath.slice("test/integration/".length);
+    } else {
+      continue; // Not a recognized test file pattern
+    }
+
+    // Replace .test.ts with .ts and add src/ prefix
+    const sourcePath = "src/" + relativePath.replace(/\.test\.ts$/, ".ts");
+
+    if (!seenPaths.has(sourcePath)) {
+      result.push(sourcePath);
+      seenPaths.add(sourcePath);
+    }
+  }
+
+  return result;
+}
+
+/**
  * Injectable dependencies for testing.
  * Allows tests to swap implementations without using mock.module(),
  * which leaks across files in Bun 1.x due to shared module registry.
@@ -211,4 +262,5 @@ export const _smartRunnerDeps = {
   mapSourceToTests,
   importGrepFallback,
   buildSmartTestCommand,
+  reverseMapTestToSource,
 };

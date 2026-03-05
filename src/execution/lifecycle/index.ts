@@ -9,3 +9,4 @@ export { handleParallelCompletion, type ParallelCompletionOptions } from "./para
 export { handleRunCompletion, type RunCompletionOptions, type RunCompletionResult } from "./run-completion";
 export { cleanupRun, type RunCleanupOptions } from "./run-cleanup";
 export { setupRun, type RunSetupOptions, type RunSetupResult } from "./run-setup";
+export { runDeferredRegression, type DeferredRegressionOptions, type DeferredRegressionResult } from "./run-regression";
