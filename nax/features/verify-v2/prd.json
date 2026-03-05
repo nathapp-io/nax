@@ -32,7 +32,8 @@
         "modelTier": "powerful",
         "testStrategy": "test-after",
         "reasoning": "override: simple config default change, tests already exist"
-      }
+      },
+      "passes": true
     },
     {
       "id": "US-002",
@@ -55,7 +56,7 @@
       "title": "Deferred regression gate",
       "description": "Create new src/execution/lifecycle/run-regression.ts that implements a deferred regression gate. Instead of running the full test suite after every story, run it once after all stories complete. Steps: (1) Add 'mode' field to RegressionGateConfigSchema with values 'deferred' | 'per-story' | 'disabled' (default: 'deferred'). (2) Add 'maxRectificationAttempts' field (default: 2). (3) In run-regression.ts: run full suite once, parse failures, use reverse Smart Test Runner mapping (test file -> source file -> responsible story via git log), attempt targeted rectification per responsible story, re-run full suite to confirm. (4) Call deferred regression from run-completion.ts before final metrics, only when mode is 'deferred'. (5) When mode is 'deferred', skip the per-story regression gate in post-verify.ts. (6) Add reverseMapTestToSource() to smart-runner.ts. (7) Handle edge cases: partial completion (only check passed stories), overlapping file changes (try last story first), unmapped tests (warn and mark all passed stories for re-verification).",
       "complexity": "complex",
-      "status": "pending",
+      "status": "passed",
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
@@ -70,7 +71,8 @@
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "override: complex new file + schema changes, needs powerful model"
       },
-      "failureCategory": "session-failure"
+      "failureCategory": "session-failure",
+      "passes": true
     }
   ],
   "updatedAt": "2026-03-05T11:58:46.858Z"
