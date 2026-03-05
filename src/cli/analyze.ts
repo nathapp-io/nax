@@ -193,6 +193,7 @@ async function generateAcceptanceTestsForFeature(
       codebaseContext,
       modelTier,
       modelDef,
+      config,
     });
 
     const acceptanceTestPath = join(featureDir, config.acceptance.testPath);

@@ -6,7 +6,7 @@
  */
 
 import type { AgentAdapter } from "../agents/types";
-import type { ModelDef } from "../config/schema";
+import type { ModelDef, NaxConfig } from "../config/schema";
 import { getLogger } from "../logger";
 import type { PRD, UserStory } from "../prd/types";
 
@@ -70,6 +70,8 @@ export interface GenerateFixStoriesOptions {
   workdir: string;
   /** Model definition for LLM call */
   modelDef: ModelDef;
+  /** Global config */
+  config: NaxConfig;
 }
 
 /**
@@ -224,7 +226,9 @@ export async function generateFixStories(
 
     try {
       // Call agent to generate fix description
-      const cmd = [adapter.binary, "--model", modelDef.model, "--dangerously-skip-permissions", "-p", prompt];
+      const skipPerms = options.config.quality?.dangerouslySkipPermissions ?? true;
+      const permArgs = skipPerms ? ["--dangerously-skip-permissions"] : [];
+      const cmd = [adapter.binary, "--model", modelDef.model, ...permArgs, "-p", prompt];
 
       const proc = Bun.spawn(cmd, {
         cwd: workdir,

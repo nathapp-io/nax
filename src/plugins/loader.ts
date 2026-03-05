@@ -10,6 +10,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { getSafeLogger as _getSafeLoggerFromModule } from "../logger";
+import { validateModulePath } from "../utils/path-security";
 import { PluginRegistry } from "./registry";
 import type { NaxPlugin, PluginConfigEntry } from "./types";
 import { validatePlugin } from "./validator";
@@ -78,12 +79,13 @@ export async function loadPlugins(
   projectRoot?: string,
 ): Promise<PluginRegistry> {
   const loadedPlugins: LoadedPlugin[] = [];
+  const effectiveProjectRoot = projectRoot || projectDir;
   const pluginNames = new Set<string>();
 
   // 1. Load plugins from global directory
   const globalPlugins = await discoverPlugins(globalDir);
   for (const plugin of globalPlugins) {
-    const validated = await loadAndValidatePlugin(plugin.path, {});
+    const validated = await loadAndValidatePlugin(plugin.path, {}, [globalDir]);
     if (validated) {
       if (pluginNames.has(validated.name)) {
         const logger = getSafeLogger();
@@ -100,7 +102,7 @@ export async function loadPlugins(
   // 2. Load plugins from project directory
   const projectPlugins = await discoverPlugins(projectDir);
   for (const plugin of projectPlugins) {
-    const validated = await loadAndValidatePlugin(plugin.path, {});
+    const validated = await loadAndValidatePlugin(plugin.path, {}, [projectDir]);
     if (validated) {
       if (pluginNames.has(validated.name)) {
         const logger = getSafeLogger();
@@ -116,9 +118,14 @@ export async function loadPlugins(
 
   // 3. Load plugins from config entries
   for (const entry of configPlugins) {
-    // Resolve module path relative to project root for relative paths
-    const resolvedModule = resolveModulePath(entry.module, projectRoot);
-    const validated = await loadAndValidatePlugin(resolvedModule, entry.config ?? {}, entry.module);
+    // Resolve module path relative to effective project root for relative paths
+    const resolvedModule = resolveModulePath(entry.module, effectiveProjectRoot);
+    const validated = await loadAndValidatePlugin(
+      resolvedModule,
+      entry.config ?? {},
+      [globalDir, projectDir, effectiveProjectRoot].filter(Boolean),
+      entry.module,
+    );
     if (validated) {
       if (pluginNames.has(validated.name)) {
         const logger = getSafeLogger();
@@ -228,12 +235,32 @@ function resolveModulePath(modulePath: string, projectRoot?: string): string {
  * @returns Validated plugin or null if invalid
  */
 async function loadAndValidatePlugin(
-  modulePath: string,
+  initialModulePath: string,
   config: Record<string, unknown>,
+  allowedRoots: string[] = [],
   originalPath?: string,
 ): Promise<NaxPlugin | null> {
+  let attemptedPath = initialModulePath;
   try {
+    // SEC-1: Validate module path if it's a file path (not an npm package)
+    let modulePath = initialModulePath;
+    const isFilePath = modulePath.startsWith("/") || modulePath.startsWith("./") || modulePath.startsWith("../");
+
+    if (isFilePath && allowedRoots.length > 0) {
+      const validation = validateModulePath(modulePath, allowedRoots);
+      if (!validation.valid) {
+        const logger = getSafeLogger();
+        logger?.error("plugins", `Security: ${validation.error}`);
+        _pluginErrorSink(`[plugins] Security: ${validation.error}`);
+        return null;
+      }
+      // Use the normalized absolute path from the validator
+      const validatedPath = validation.absolutePath as string;
+      modulePath = validatedPath;
+    }
+
     // Import the module
+    attemptedPath = modulePath;
     const imported = await import(modulePath);
 
     // Try default export first, then named exports
@@ -258,7 +285,7 @@ async function loadAndValidatePlugin(
 
     return validated;
   } catch (error) {
-    const displayPath = originalPath || modulePath;
+    const displayPath = originalPath || initialModulePath;
     const errorMsg = error instanceof Error ? error.message : String(error);
     const logger = getSafeLogger();
 
@@ -266,14 +293,14 @@ async function loadAndValidatePlugin(
     if (errorMsg.includes("Cannot find module") || errorMsg.includes("ENOENT")) {
       const msg = `Failed to load plugin module '${displayPath}'`;
       logger?.error("plugins", msg);
-      logger?.error("plugins", `Attempted path: ${modulePath}`);
+      logger?.error("plugins", `Attempted path: ${attemptedPath}`);
       logger?.error(
         "plugins",
         "Ensure the module exists and the path is correct (relative paths are resolved from project root)",
       );
       // Always emit to sink so tests (and headless mode without logger) can capture output
       _pluginErrorSink(`[plugins] ${msg}`);
-      _pluginErrorSink(`[plugins] Attempted path: ${modulePath}`);
+      _pluginErrorSink(`[plugins] Attempted path: ${attemptedPath}`);
       _pluginErrorSink(
         "[plugins] Ensure the module exists and the path is correct (relative paths are resolved from project root)",
       );

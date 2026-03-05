@@ -1,0 +1,84 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "v0.19.0-hardening",
+  "branchName": "feat/v0.19.0-sec",
+  "createdAt": "2026-03-05T02:58:00Z",
+  "updatedAt": "2026-03-05T03:13:29.408Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Security P0 Hardening",
+      "description": "Implement path validation for loaders (SEC-1, SEC-2), fix shell injection vectors (SEC-3, SEC-4), and respect dangerouslySkipPermissions config (SEC-5).",
+      "status": "passed",
+      "passes": true,
+      "attempts": 1,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "acceptanceCriteria": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-002",
+      "title": "BUG-1 Parallel Race Condition",
+      "description": "Replace Promise.race loop with proper concurrency control in parallel executor.",
+      "status": "passed",
+      "passes": true,
+      "attempts": 1,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "acceptanceCriteria": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-003",
+      "title": "Node.js API Removal",
+      "description": "Replace readFileSync, appendFileSync, existsSync, and setTimeout with Bun-native equivalents.",
+      "status": "passed",
+      "passes": true,
+      "attempts": 1,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "acceptanceCriteria": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-004",
+      "title": "Type Fixes (v0.19.0)",
+      "description": "Fix the 18 type errors introduced during the Node.js API removal and security hardening in the src/ directory. Ensure all Bun-native APIs (Bun.file, Bun.write) are used correctly with valid types. Fix variable scopes and missing imports.",
+      "status": "failed",
+      "passes": false,
+      "attempts": 1,
+      "routing": {
+        "complexity": "medium",
+        "modelTier": "powerful",
+        "testStrategy": "test-after"
+      },
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Stage requested escalation to higher tier"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "timestamp": "2026-03-05T03:12:59.254Z"
+        }
+      ],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "acceptanceCriteria": [],
+      "storyPoints": 1
+    }
+  ]
+}

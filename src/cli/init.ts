@@ -4,7 +4,8 @@
  * Initializes nax configuration directories and files.
  */
 
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { globalConfigDir, projectConfigDir } from "../config/paths";
 import { DEFAULT_CONFIG } from "../config/schema";
@@ -34,7 +35,7 @@ async function updateGitignore(projectRoot: string): Promise<void> {
 
   let existing = "";
   if (existsSync(gitignorePath)) {
-    existing = readFileSync(gitignorePath, "utf-8");
+    existing = await Bun.file(gitignorePath).text();
   }
 
   const missingEntries = NAX_GITIGNORE_ENTRIES.filter((entry) => !existing.includes(entry));
@@ -95,7 +96,7 @@ async function initGlobal(): Promise<void> {
 
   // Create ~/.nax if it doesn't exist
   if (!existsSync(globalDir)) {
-    mkdirSync(globalDir, { recursive: true });
+    await mkdir(globalDir, { recursive: true });
     logger.info("init", "Created global config directory", { path: globalDir });
   }
 
@@ -120,7 +121,7 @@ async function initGlobal(): Promise<void> {
   // Create ~/.nax/hooks/ directory if it doesn't exist
   const hooksDir = join(globalDir, "hooks");
   if (!existsSync(hooksDir)) {
-    mkdirSync(hooksDir, { recursive: true });
+    await mkdir(hooksDir, { recursive: true });
     logger.info("init", "Created global hooks directory", { path: hooksDir });
   } else {
     logger.info("init", "Global hooks directory already exists", { path: hooksDir });
@@ -138,7 +139,7 @@ async function initProject(projectRoot: string): Promise<void> {
 
   // Create nax/ directory if it doesn't exist
   if (!existsSync(projectDir)) {
-    mkdirSync(projectDir, { recursive: true });
+    await mkdir(projectDir, { recursive: true });
     logger.info("init", "Created project config directory", { path: projectDir });
   }
 
@@ -163,7 +164,7 @@ async function initProject(projectRoot: string): Promise<void> {
   // Create nax/hooks/ directory if it doesn't exist
   const hooksDir = join(projectDir, "hooks");
   if (!existsSync(hooksDir)) {
-    mkdirSync(hooksDir, { recursive: true });
+    await mkdir(hooksDir, { recursive: true });
     logger.info("init", "Created project hooks directory", { path: hooksDir });
   } else {
     logger.info("init", "Project hooks directory already exists", { path: hooksDir });

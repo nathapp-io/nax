@@ -80,6 +80,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
     detectOpenHandles: true,
     detectOpenHandlesRetries: 1,
     gracePeriodMs: 5000,
+    dangerouslySkipPermissions: true,
     drainTimeoutMs: 2000,
     shell: "/bin/sh",
     stripEnvVars: ["CLAUDECODE", "REPL_ID", "AGENT"],

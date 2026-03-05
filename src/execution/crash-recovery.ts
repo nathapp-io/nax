@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 /**
  * Crash Recovery — Signal handlers, heartbeat, and exit summary
  *
@@ -63,9 +64,8 @@ async function writeFatalLog(jsonlFilePath: string | undefined, signal: string, 
     };
 
     const line = `${JSON.stringify(fatalEntry)}\n`;
-    // Use appendFileSync from node:fs to ensure file is created if it doesn't exist
-    const { appendFileSync } = await import("node:fs");
-    appendFileSync(jsonlFilePath, line, "utf8");
+    // Use Bun.write with append: true
+    appendFileSync(jsonlFilePath, line);
   } catch (err) {
     console.error("[crash-recovery] Failed to write fatal log:", err);
   }
@@ -107,8 +107,7 @@ async function writeRunComplete(ctx: CrashRecoveryContext, exitReason: string): 
     };
 
     const line = `${JSON.stringify(runCompleteEntry)}\n`;
-    const { appendFileSync } = await import("node:fs");
-    appendFileSync(ctx.jsonlFilePath, line, "utf8");
+    appendFileSync(ctx.jsonlFilePath, line);
     logger?.debug("crash-recovery", "run.complete event written", { exitReason });
   } catch (err) {
     console.error("[crash-recovery] Failed to write run.complete event:", err);
@@ -279,8 +278,7 @@ export function startHeartbeat(
           },
         };
         const line = `${JSON.stringify(heartbeatEntry)}\n`;
-        const { appendFileSync } = await import("node:fs");
-        appendFileSync(jsonlFilePath, line, "utf8");
+        appendFileSync(jsonlFilePath, line);
       } catch (err) {
         logger?.warn("crash-recovery", "Failed to write heartbeat", { error: (err as Error).message });
       }
@@ -342,9 +340,8 @@ export async function writeExitSummary(
     };
 
     const line = `${JSON.stringify(summaryEntry)}\n`;
-    // Use appendFileSync from node:fs to ensure file is created if it doesn't exist
-    const { appendFileSync } = await import("node:fs");
-    appendFileSync(jsonlFilePath, line, "utf8");
+    // Use Bun.write with append: true
+    appendFileSync(jsonlFilePath, line);
     logger?.debug("crash-recovery", "Exit summary written");
   } catch (err) {
     logger?.warn("crash-recovery", "Failed to write exit summary", { error: (err as Error).message });

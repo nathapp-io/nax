@@ -93,6 +93,7 @@ async function generateAndAddFixStories(
     specContent: await loadSpecContent(ctx.featureDir),
     workdir: ctx.workdir,
     modelDef,
+    config: ctx.config,
   });
   if (fixStories.length === 0) {
     logger?.error("acceptance", "Failed to generate fix stories");

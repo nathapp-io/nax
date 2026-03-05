@@ -379,6 +379,7 @@ describe("loadPlugins", () => {
         path.join(tempDir, "nonexistent"),
         path.join(tempDir, "nonexistent"),
         configPlugins,
+        tempDir,
       );
 
       expect(registry.plugins).toHaveLength(1);
@@ -428,6 +429,7 @@ export default {
         path.join(tempDir, "nonexistent"),
         path.join(tempDir, "nonexistent"),
         configPlugins,
+        tempDir,
       );
 
       expect(registry.plugins).toHaveLength(1);
@@ -574,7 +576,7 @@ export default {
         },
       ];
 
-      const registry = await loadPlugins(globalDir, projectDir, configPlugins);
+      const registry = await loadPlugins(globalDir, projectDir, configPlugins, tempDir);
 
       expect(registry.plugins).toHaveLength(3);
       expect(registry.plugins[0].name).toBe("global");

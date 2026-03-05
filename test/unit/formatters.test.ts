@@ -44,9 +44,8 @@ describe("formatConsole", () => {
 
     const output = formatConsole(entry);
 
-    // Should not contain brackets around storyId
-    const bracketCount = (output.match(/\[/g) || []).length;
-    expect(bracketCount).toBe(2); // Only timestamp and stage
+    // Visibility test instead of raw bracket count (avoid ANSI issues)
+    expect(output).not.toContain("[user-auth-001]");
   });
 
   test("formats data as pretty JSON on new line", () => {

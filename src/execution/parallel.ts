@@ -18,7 +18,7 @@ import type { PipelineContext, RoutingResult } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd";
 import { markStoryFailed, markStoryPassed, savePRD } from "../prd";
-import { routeTask } from "../routing";
+import { routeTask, tryLlmBatchRoute } from "../routing";
 import { WorktreeManager } from "../worktree/manager";
 import { MergeEngine, type StoryDependencies } from "../worktree/merge";
 

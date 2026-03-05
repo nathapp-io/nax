@@ -4,7 +4,7 @@
  * Types for generating acceptance tests from spec.md acceptance criteria.
  */
 
-import type { ModelDef, ModelTier } from "../config/schema";
+import type { ModelDef, ModelTier, NaxConfig } from "../config/schema";
 
 /**
  * A single acceptance criterion extracted from spec.md.
@@ -55,6 +55,8 @@ export interface GenerateAcceptanceTestsOptions {
   modelTier: ModelTier;
   /** Resolved model definition */
   modelDef: ModelDef;
+  /** Global config for quality settings */
+  config: NaxConfig;
 }
 
 /**

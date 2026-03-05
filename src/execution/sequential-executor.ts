@@ -12,7 +12,7 @@ import type { PipelineContext, RoutingResult } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
 import { generateHumanHaltSummary, getNextStory, isComplete, isStalled, loadPRD } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
-import { routeTask } from "../routing";
+import { routeTask, tryLlmBatchRoute } from "../routing";
 import { captureGitRef } from "../utils/git";
 import type { StoryBatch } from "./batching";
 import { startHeartbeat, stopHeartbeat, writeExitSummary } from "./crash-recovery";
