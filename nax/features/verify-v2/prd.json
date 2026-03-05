@@ -8,7 +8,7 @@
       "title": "Remove test from review defaults",
       "description": "Change review.checks default from ['typecheck', 'lint', 'test'] to ['typecheck', 'lint'] in src/config/defaults.ts. The test check in review duplicates the pipeline verify stage. Keep 'test' as a valid enum value in the schema for backwards compatibility but remove it from the default config. Update any tests that assert on the default review checks array.",
       "complexity": "simple",
-      "status": "pending",
+      "status": "passed",
       "attempts": 0,
       "priorErrors": [
         "Attempt 1 failed with model tier: balanced: Stage requested escalation to higher tier"
@@ -57,18 +57,8 @@
       "complexity": "complex",
       "status": "pending",
       "attempts": 0,
-      "priorErrors": [
-        "Attempt 1 failed with model tier: balanced: Stage requested escalation to higher tier"
-      ],
-      "priorFailures": [
-        {
-          "attempt": 1,
-          "modelTier": "balanced",
-          "stage": "escalation",
-          "summary": "Failed with tier balanced, escalating to next tier",
-          "timestamp": "2026-03-05T11:58:46.858Z"
-        }
-      ],
+      "priorErrors": [],
+      "priorFailures": [],
       "escalations": [],
       "dependencies": [],
       "tags": [],
@@ -76,7 +66,7 @@
       "storyPoints": 1,
       "routing": {
         "complexity": "complex",
-        "modelTier": "powerful",
+        "modelTier": "balanced",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "override: complex new file + schema changes, needs powerful model"
       },
