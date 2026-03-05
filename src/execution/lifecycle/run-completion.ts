@@ -15,6 +15,15 @@ import { saveRunMetrics } from "../../metrics";
 import { countStories, isComplete, isStalled } from "../../prd";
 import type { PRD } from "../../prd";
 import type { StatusWriter } from "../status-writer";
+import { runDeferredRegression } from "./run-regression";
+
+/**
+ * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ * @internal - test use only.
+ */
+export const _runCompletionDeps = {
+  runDeferredRegression,
+};
 
 export interface RunCompletionOptions {
   runId: string;
@@ -64,10 +73,9 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   } = options;
 
   // Run deferred regression gate before final metrics
-  const regressionMode = config.execution.regressionGate?.mode ?? "deferred";
+  const regressionMode = config.execution.regressionGate?.mode;
   if (regressionMode === "deferred" && config.quality.commands.test) {
-    const { runDeferredRegression } = await import("./run-regression");
-    const regressionResult = await runDeferredRegression({
+    const regressionResult = await _runCompletionDeps.runDeferredRegression({
       config,
       prd,
       workdir,

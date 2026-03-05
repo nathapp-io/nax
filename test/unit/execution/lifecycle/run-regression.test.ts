@@ -6,10 +6,15 @@
  * - runDeferredRegression: deferred regression gate behavior
  */
 
-import { describe, test, expect } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
+import {
+  _regressionDeps,
+  runDeferredRegression,
+} from "../../../../src/execution/lifecycle/run-regression";
+import type { VerificationResult } from "../../../../src/verification";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -250,5 +255,164 @@ describe("runDeferredRegression", () => {
 
     expect(result.passedTests).toBeGreaterThanOrEqual(0);
     expect(Number.isInteger(result.passedTests)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runDeferredRegression — behavioral tests with mocked _regressionDeps
+// ---------------------------------------------------------------------------
+
+const origRegressionDeps = {
+  runVerification: _regressionDeps.runVerification,
+  runRectificationLoop: _regressionDeps.runRectificationLoop,
+  parseBunTestOutput: _regressionDeps.parseBunTestOutput,
+  reverseMapTestToSource: _regressionDeps.reverseMapTestToSource,
+};
+
+beforeEach(() => {
+  // Reset mocks to identity (no-op) before each behavioral test
+  // Specific tests override as needed
+  _regressionDeps.runRectificationLoop = mock(async () => false);
+  _regressionDeps.reverseMapTestToSource = mock(() => []);
+});
+
+afterEach(() => {
+  Object.assign(_regressionDeps, origRegressionDeps);
+  mock.restore();
+});
+
+describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
+  test("full suite passes → success with 0 rectification attempts", async () => {
+    _regressionDeps.runVerification = mock(async (): Promise<VerificationResult> => ({
+      status: "SUCCESS",
+      success: true,
+      countsTowardEscalation: true,
+      passCount: 42,
+    }));
+
+    const result = await runDeferredRegression({
+      config: makeConfig("deferred", "bun test"),
+      prd: makePRD([{ id: "US-001", status: "passed" }]),
+      workdir: "/tmp/nax-test-behavioral",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.passedTests).toBe(42);
+    expect(result.rectificationAttempts).toBe(0);
+    expect(result.affectedStories).toEqual([]);
+  });
+
+  test("TIMEOUT + acceptOnTimeout=true → success", async () => {
+    _regressionDeps.runVerification = mock(async (): Promise<VerificationResult> => ({
+      status: "TIMEOUT",
+      success: false,
+      countsTowardEscalation: false,
+    }));
+
+    const config = makeConfig("deferred", "bun test");
+    // acceptOnTimeout=true is already default in makeConfig
+    const result = await runDeferredRegression({
+      config,
+      prd: makePRD([{ id: "US-001", status: "passed" }]),
+      workdir: "/tmp/nax-test-timeout-accept",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.rectificationAttempts).toBe(0);
+  });
+
+  test("TIMEOUT + acceptOnTimeout=false → failure", async () => {
+    _regressionDeps.runVerification = mock(async (): Promise<VerificationResult> => ({
+      status: "TIMEOUT",
+      success: false,
+      countsTowardEscalation: false,
+    }));
+
+    const config: NaxConfig = {
+      ...makeConfig("deferred", "bun test"),
+      execution: {
+        ...makeConfig("deferred", "bun test").execution,
+        regressionGate: {
+          enabled: true,
+          timeoutSeconds: 30,
+          acceptOnTimeout: false,
+          mode: "deferred",
+          maxRectificationAttempts: 2,
+        },
+      },
+    };
+
+    const result = await runDeferredRegression({
+      config,
+      prd: makePRD([{ id: "US-001", status: "passed" }]),
+      workdir: "/tmp/nax-test-timeout-reject",
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  test("full suite fails with no output → failure immediately (no rectification)", async () => {
+    _regressionDeps.runVerification = mock(async (): Promise<VerificationResult> => ({
+      status: "TEST_FAILURE",
+      success: false,
+      countsTowardEscalation: true,
+      failCount: 3,
+      // no output field
+    }));
+
+    const result = await runDeferredRegression({
+      config: makeConfig("deferred", "bun test"),
+      prd: makePRD([{ id: "US-001", status: "passed" }]),
+      workdir: "/tmp/nax-test-no-output",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.rectificationAttempts).toBe(0);
+  });
+
+  test("unmapped failures (no file field) → all passed stories in affectedStories", async () => {
+    let verCallCount = 0;
+    _regressionDeps.runVerification = mock(async (): Promise<VerificationResult> => {
+      verCallCount++;
+      if (verCallCount === 1) {
+        return {
+          status: "TEST_FAILURE",
+          success: false,
+          countsTowardEscalation: true,
+          output: "FAIL: some test\nerror: boom",
+          failCount: 1,
+        };
+      }
+      // second call (after rectification) still fails
+      return {
+        status: "TEST_FAILURE",
+        success: false,
+        countsTowardEscalation: true,
+        failCount: 1,
+      };
+    });
+
+    // parseBunTestOutput returns failures WITHOUT file property (unmapped)
+    // Cast via unknown to satisfy TestFailure type while testing the undefined case
+    _regressionDeps.parseBunTestOutput = mock(() => ({
+      failed: 1,
+      passed: 5,
+      failures: [{ testName: "some test", error: "boom" }],
+    })) as unknown as typeof _regressionDeps.parseBunTestOutput;
+
+    _regressionDeps.runRectificationLoop = mock(async () => false);
+
+    const result = await runDeferredRegression({
+      config: makeConfig("deferred", "bun test"),
+      prd: makePRD([
+        { id: "US-001", status: "passed" },
+        { id: "US-002", status: "passed" },
+      ]),
+      workdir: "/tmp/nax-test-unmapped",
+    });
+
+    // Both passed stories should be marked as affected (unmapped case)
+    expect(result.affectedStories).toContain("US-001");
+    expect(result.affectedStories).toContain("US-002");
   });
 });

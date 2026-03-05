@@ -18,6 +18,17 @@ import { reverseMapTestToSource } from "../../verification/smart-runner";
 import { runRectificationLoop } from "../post-verify-rectification";
 import { runVerification } from "../verification";
 
+/**
+ * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ * @internal - test use only.
+ */
+export const _regressionDeps = {
+  runVerification,
+  runRectificationLoop,
+  parseBunTestOutput,
+  reverseMapTestToSource,
+};
+
 export interface DeferredRegressionOptions {
   config: NaxConfig;
   prd: PRD;
@@ -121,7 +132,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
   });
 
   // Step 1: Run full test suite
-  const fullSuiteResult = await runVerification({
+  const fullSuiteResult = await _regressionDeps.runVerification({
     workingDirectory: workdir,
     command: testCommand,
     timeoutSeconds,
@@ -171,7 +182,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
   }
 
   // Step 2: Parse failures and map to source files to stories
-  const testSummary = parseBunTestOutput(fullSuiteResult.output);
+  const testSummary = _regressionDeps.parseBunTestOutput(fullSuiteResult.output);
   const affectedStories = new Set<string>();
   const affectedStoriesObjs = new Map<string, UserStory>();
 
@@ -198,7 +209,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
   } else {
     // Map test files to source files to stories
     const testFilesArray = Array.from(testFilesInFailures);
-    const sourceFilesArray = reverseMapTestToSource(testFilesArray, workdir);
+    const sourceFilesArray = _regressionDeps.reverseMapTestToSource(testFilesArray, workdir);
 
     logger?.info("regression", "Mapped test files to source files", {
       testFiles: testFilesArray.length,
@@ -237,7 +248,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
 
       logger?.info("regression", `Rectifying story ${story.id} (attempt ${attempt + 1}/${maxRectificationAttempts})`);
 
-      const fixed = await runRectificationLoop({
+      const fixed = await _regressionDeps.runRectificationLoop({
         config,
         workdir,
         story,
@@ -256,7 +267,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
 
   // Step 4: Re-run full suite to confirm
   logger?.info("regression", "Re-running full suite after rectification");
-  const retryResult = await runVerification({
+  const retryResult = await _regressionDeps.runVerification({
     workingDirectory: workdir,
     command: testCommand,
     timeoutSeconds,
