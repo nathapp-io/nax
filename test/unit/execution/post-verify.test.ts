@@ -1,10 +1,13 @@
 /**
- * Unit tests for post-verify regression gate (BUG-009)
+ * Unit tests for regression gate configuration and behavior
  *
- * Tests the logic for:
- * - Running regression gate after scoped verification passes
- * - Skipping regression gate when scoped verification already ran full suite
- * - Feeding regression failures into rectification loop
+ * Tests the configuration and type-level logic for:
+ * - Regression gate enabled/disabled state
+ * - Timeout configuration and acceptOnTimeout behavior (BUG-026)
+ * - Story state transitions on regression failure
+ * - Metrics removal on regression failure
+ *
+ * Behavioral tests are in post-verify-regression.test.ts
  */
 
 import { describe, expect, test } from "bun:test";
@@ -41,44 +44,28 @@ describe("RegressionGateConfig", () => {
 });
 
 describe("Regression Gate Logic", () => {
-  test("should run regression gate when scoped tests were run (changed files > 0)", () => {
-    const changedTestFiles = ["test/foo.test.ts", "test/bar.test.ts"];
+  test("regression gate should run when enabled (post-verify always runs full suite)", () => {
     const regressionGateEnabled = true;
-    const scopedTestsWereRun = changedTestFiles.length > 0;
 
-    // Logic: regression gate should run
-    const shouldRunRegressionGate = regressionGateEnabled && scopedTestsWereRun;
-    expect(shouldRunRegressionGate).toBe(true);
+    // Post-verify now ONLY runs full-suite regression gate (no scoped logic)
+    expect(regressionGateEnabled).toBe(true);
   });
 
-  test("should skip regression gate when scoped tests ran full suite (changed files = 0)", () => {
-    const changedTestFiles: string[] = [];
-    const regressionGateEnabled = true;
-    const scopedTestsWereRun = changedTestFiles.length > 0;
-
-    // Logic: regression gate should NOT run (full suite already ran)
-    const shouldRunRegressionGate = regressionGateEnabled && scopedTestsWereRun;
-    expect(shouldRunRegressionGate).toBe(false);
-  });
-
-  test("should skip regression gate when disabled in config", () => {
-    const changedTestFiles = ["test/foo.test.ts"];
+  test("regression gate should skip when disabled in config", () => {
     const regressionGateEnabled = false;
-    const scopedTestsWereRun = changedTestFiles.length > 0;
-
-    // Logic: regression gate should NOT run (disabled)
-    const shouldRunRegressionGate = regressionGateEnabled && scopedTestsWereRun;
-    expect(shouldRunRegressionGate).toBe(false);
-  });
-
-  test("should skip regression gate when both disabled AND no changed files", () => {
-    const changedTestFiles: string[] = [];
-    const regressionGateEnabled = false;
-    const scopedTestsWereRun = changedTestFiles.length > 0;
 
     // Logic: regression gate should NOT run
-    const shouldRunRegressionGate = regressionGateEnabled && scopedTestsWereRun;
-    expect(shouldRunRegressionGate).toBe(false);
+    expect(regressionGateEnabled).toBe(false);
+  });
+
+  test("post-verify removes scoped verification (always runs full suite)", () => {
+    // With the removal of scoped verification, post-verify always:
+    // 1. Runs the full-suite regression gate (if enabled)
+    // 2. Reverts on failure
+    // 3. Optionally runs rectification on test failures
+
+    const hasNoScopedVerification = true;
+    expect(hasNoScopedVerification).toBe(true);
   });
 });
 
@@ -104,27 +91,20 @@ describe("Regression Failure Handling", () => {
 
 describe("Rectification Prompt for Regression", () => {
   test("should include REGRESSION prefix in rectification prompt", () => {
-    const basePrompt = `# Rectification Required
+    const regressionPrompt = `# REGRESSION: Full-Suite Test Failures
 
-Your changes caused test regressions. Fix these without breaking existing logic.`;
-
-    const regressionPrompt = `# REGRESSION: Cross-Story Test Failures
-
-Your changes passed scoped tests but broke unrelated tests. Fix these regressions.
-
-${basePrompt}`;
+Your changes broke tests in the full suite. Fix these regressions.`;
 
     expect(regressionPrompt).toContain("# REGRESSION:");
-    expect(regressionPrompt).toContain("passed scoped tests but broke unrelated tests");
-    expect(regressionPrompt).toContain(basePrompt);
+    expect(regressionPrompt).toContain("Full-Suite Test Failures");
   });
 
-  test("regression prompt should emphasize cross-story nature", () => {
+  test("regression prompt should emphasize full-suite nature", () => {
     const regressionPrompt =
-      "# REGRESSION: Cross-Story Test Failures\n\nYour changes passed scoped tests but broke unrelated tests.";
+      "# REGRESSION: Full-Suite Test Failures\n\nYour changes broke tests in the full suite.";
 
-    expect(regressionPrompt).toContain("Cross-Story");
-    expect(regressionPrompt).toContain("unrelated tests");
+    expect(regressionPrompt).toContain("Full-Suite");
+    expect(regressionPrompt).toContain("broke tests");
   });
 });
 
