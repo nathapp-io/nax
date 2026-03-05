@@ -7,7 +7,7 @@
  *           Ruby (Gemfile), Java/Kotlin (pom.xml / build.gradle).
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import type { ProjectMetadata } from "./types";
@@ -68,12 +68,12 @@ async function detectNode(workdir: string): Promise<{ name?: string; lang: strin
 }
 
 /** Go: read go.mod for module name + direct dependencies */
-function detectGo(workdir: string): { name?: string; lang: string; dependencies: string[] } | null {
+async function detectGo(workdir: string): Promise<{ name?: string; lang: string; dependencies: string[] } | null> {
   const goMod = join(workdir, "go.mod");
   if (!existsSync(goMod)) return null;
 
   try {
-    const content = readFileSync(goMod, "utf8");
+    const content = await Bun.file(goMod).text();
     const moduleMatch = content.match(/^module\s+(\S+)/m);
     const name = moduleMatch?.[1];
 
@@ -95,12 +95,12 @@ function detectGo(workdir: string): { name?: string; lang: string; dependencies:
 }
 
 /** Rust: read Cargo.toml for package name + dependencies */
-function detectRust(workdir: string): { name?: string; lang: string; dependencies: string[] } | null {
+async function detectRust(workdir: string): Promise<{ name?: string; lang: string; dependencies: string[] } | null> {
   const cargoPath = join(workdir, "Cargo.toml");
   if (!existsSync(cargoPath)) return null;
 
   try {
-    const content = readFileSync(cargoPath, "utf8");
+    const content = await Bun.file(cargoPath).text();
     const nameMatch = content.match(/^\[package\][^[]*name\s*=\s*"([^"]+)"/ms);
     const name = nameMatch?.[1];
 
@@ -119,7 +119,7 @@ function detectRust(workdir: string): { name?: string; lang: string; dependencie
 }
 
 /** Python: read pyproject.toml or requirements.txt */
-function detectPython(workdir: string): { name?: string; lang: string; dependencies: string[] } | null {
+async function detectPython(workdir: string): Promise<{ name?: string; lang: string; dependencies: string[] } | null> {
   const pyproject = join(workdir, "pyproject.toml");
   const requirements = join(workdir, "requirements.txt");
 
@@ -127,7 +127,7 @@ function detectPython(workdir: string): { name?: string; lang: string; dependenc
 
   try {
     if (existsSync(pyproject)) {
-      const content = readFileSync(pyproject, "utf8");
+      const content = await Bun.file(pyproject).text();
       const nameMatch = content.match(/^\s*name\s*=\s*"([^"]+)"/m);
       const depsSection = content.match(/^\[project\][^[]*dependencies\s*=\s*\[([^\]]*)\]/ms)?.[1] ?? "";
       const deps = depsSection
@@ -139,7 +139,7 @@ function detectPython(workdir: string): { name?: string; lang: string; dependenc
     }
 
     // Fallback: requirements.txt
-    const lines = readFileSync(requirements, "utf8")
+    const lines = (await Bun.file(requirements).text())
       .split("\n")
       .map((l) => l.split(/[>=<!]/)[0].trim())
       .filter((l) => l && !l.startsWith("#"))
@@ -169,12 +169,12 @@ async function detectPhp(workdir: string): Promise<{ name?: string; lang: string
 }
 
 /** Ruby: read Gemfile */
-function detectRuby(workdir: string): { name?: string; lang: string; dependencies: string[] } | null {
+async function detectRuby(workdir: string): Promise<{ name?: string; lang: string; dependencies: string[] } | null> {
   const gemfile = join(workdir, "Gemfile");
   if (!existsSync(gemfile)) return null;
 
   try {
-    const content = readFileSync(gemfile, "utf8");
+    const content = await Bun.file(gemfile).text();
     const gems = [...content.matchAll(/^\s*gem\s+['"]([^'"]+)['"]/gm)].map((m) => m[1]).slice(0, 10);
     return { lang: "Ruby", dependencies: gems };
   } catch {
@@ -183,7 +183,7 @@ function detectRuby(workdir: string): { name?: string; lang: string; dependencie
 }
 
 /** Java/Kotlin: detect from pom.xml or build.gradle */
-function detectJvm(workdir: string): { name?: string; lang: string; dependencies: string[] } | null {
+async function detectJvm(workdir: string): Promise<{ name?: string; lang: string; dependencies: string[] } | null> {
   const pom = join(workdir, "pom.xml");
   const gradle = join(workdir, "build.gradle");
   const gradleKts = join(workdir, "build.gradle.kts");
@@ -192,7 +192,7 @@ function detectJvm(workdir: string): { name?: string; lang: string; dependencies
 
   try {
     if (existsSync(pom)) {
-      const content = readFileSync(pom, "utf8");
+      const content = await Bun.file(pom).text();
       const nameMatch = content.match(/<artifactId>([^<]+)<\/artifactId>/);
       const deps = [...content.matchAll(/<artifactId>([^<]+)<\/artifactId>/g)]
         .map((m) => m[1])
@@ -203,7 +203,7 @@ function detectJvm(workdir: string): { name?: string; lang: string; dependencies
     }
 
     const gradleFile = existsSync(gradleKts) ? gradleKts : gradle;
-    const content = readFileSync(gradleFile, "utf8");
+    const content = await Bun.file(gradleFile).text();
     const lang = gradleFile.endsWith(".kts") ? "Kotlin" : "Java";
     const deps = [...content.matchAll(/implementation[^'"]*['"]([^:'"]+:[^:'"]+)[^'"]*['"]/g)]
       .map((m) => m[1].split(":").pop() ?? m[1])
@@ -223,12 +223,12 @@ function detectJvm(workdir: string): { name?: string; lang: string; dependencies
 export async function buildProjectMetadata(workdir: string, config: NaxConfig): Promise<ProjectMetadata> {
   // Priority: Go > Rust > Python > PHP > Ruby > JVM > Node
   const detected =
-    detectGo(workdir) ??
-    detectRust(workdir) ??
-    detectPython(workdir) ??
+    (await detectGo(workdir)) ??
+    (await detectRust(workdir)) ??
+    (await detectPython(workdir)) ??
     (await detectPhp(workdir)) ??
-    detectRuby(workdir) ??
-    detectJvm(workdir) ??
+    (await detectRuby(workdir)) ??
+    (await detectJvm(workdir)) ??
     (await detectNode(workdir));
 
   return {

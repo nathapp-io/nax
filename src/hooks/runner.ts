@@ -106,7 +106,7 @@ function buildEnv(ctx: HookContext): Record<string, string> {
  * @param command - Command string to check
  * @returns true if shell operators detected
  */
-function hasShellOperators(command: string): boolean {
+export function hasShellOperators(command: string): boolean {
   // Check for common shell operators that require shell interpretation
   const shellOperators = /[|&;$`<>(){}]/;
   return shellOperators.test(command);
@@ -117,7 +117,7 @@ function hasShellOperators(command: string): boolean {
  * @param command - Command string to validate
  * @throws Error if obvious injection pattern detected
  */
-function validateHookCommand(command: string): void {
+export function validateHookCommand(command: string): void {
   // Reject commands with obvious injection patterns
   const dangerousPatterns = [
     /\$\(.*\)/, // Command substitution $(...)

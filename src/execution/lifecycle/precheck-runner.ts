@@ -62,7 +62,7 @@ export async function runPrecheckValidation(ctx: PrecheckContext): Promise<void>
       warnings: precheckResult.output.warnings.map((w) => ({ name: w.name, message: w.message })),
       summary: precheckResult.output.summary,
     };
-    appendFileSync(ctx.logFilePath, `${JSON.stringify(precheckLog)}\n`, "utf8");
+    require("node:fs").appendFileSync(ctx.logFilePath, `${JSON.stringify(precheckLog)}\n`);
   }
 
   // Handle blockers (Tier 1 failures)

@@ -122,20 +122,6 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     getStoriesCompleted: options.getStoriesCompleted,
   });
 
-  // Acquire lock to prevent concurrent execution
-  const lockAcquired = await acquireLock(workdir);
-  if (!lockAcquired) {
-    logger?.error("execution", "Another nax process is already running in this directory");
-    logger?.error("execution", "If you believe this is an error, remove nax.lock manually");
-    throw new LockAcquisitionError(workdir);
-  }
-
-  // Load plugins (before try block so it's accessible in finally)
-  const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
-  const projectPluginsDir = path.join(workdir, "nax", "plugins");
-  const configPlugins = config.plugins || [];
-  const pluginRegistry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, workdir);
-
   // Load PRD (before try block so it's accessible in finally for onRunEnd)
   let prd = await loadPRD(prdPath);
 
@@ -162,6 +148,20 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   } else {
     logger?.warn("precheck", "Precheck validations skipped (--skip-precheck)");
   }
+
+  // Acquire lock to prevent concurrent execution
+  const lockAcquired = await acquireLock(workdir);
+  if (!lockAcquired) {
+    logger?.error("execution", "Another nax process is already running in this directory");
+    logger?.error("execution", "If you believe this is an error, remove nax.lock manually");
+    throw new LockAcquisitionError(workdir);
+  }
+
+  // Load plugins (before try block so it's accessible in finally)
+  const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
+  const projectPluginsDir = path.join(workdir, "nax", "plugins");
+  const configPlugins = config.plugins || [];
+  const pluginRegistry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, workdir);
 
   // Log plugins loaded
   logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {

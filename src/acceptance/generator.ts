@@ -178,7 +178,9 @@ export async function generateAcceptanceTests(
 
   try {
     // Call agent to generate tests (using decompose as pattern)
-    const cmd = [adapter.binary, "--model", options.modelDef.model, "--dangerously-skip-permissions", "-p", prompt];
+    const skipPerms = options.config.quality?.dangerouslySkipPermissions ?? true;
+    const permArgs = skipPerms ? ["--dangerously-skip-permissions"] : [];
+    const cmd = [adapter.binary, "--model", options.modelDef.model, ...permArgs, "-p", prompt];
 
     const proc = Bun.spawn(cmd, {
       cwd: options.workdir,

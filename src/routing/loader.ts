@@ -5,6 +5,7 @@
  */
 
 import { resolve } from "node:path";
+import { validateModulePath } from "../utils/path-security";
 import type { RoutingStrategy } from "./strategy";
 
 /**
@@ -26,6 +27,12 @@ import type { RoutingStrategy } from "./strategy";
  */
 export async function loadCustomStrategy(strategyPath: string, workdir: string): Promise<RoutingStrategy> {
   const absolutePath = resolve(workdir, strategyPath);
+
+  // SEC-2: Validate path against workdir root
+  const validation = validateModulePath(absolutePath, [workdir]);
+  if (!validation.valid) {
+    throw new Error(`Security: ${validation.error}`);
+  }
 
   try {
     // Dynamic import (works with both .ts and .js files in Bun)

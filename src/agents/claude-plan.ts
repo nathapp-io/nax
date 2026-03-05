@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 /**
  * Claude Code Plan Logic
  *
@@ -96,9 +99,7 @@ export async function runPlan(
   }
 
   // Non-interactive: redirect stdout to temp file via Bun.file()
-  const { join } = require("node:path");
-  const { mkdtempSync, readFileSync, rmSync } = require("node:fs");
-  const { tmpdir } = require("node:os");
+
   const tempDir = mkdtempSync(join(tmpdir(), "nax-plan-"));
   const outFile = join(tempDir, "stdout.txt");
   const errFile = join(tempDir, "stderr.txt");
@@ -120,8 +121,8 @@ export async function runPlan(
     // Unregister PID after exit
     await pidRegistry.unregister(proc.pid);
 
-    const specContent = readFileSync(outFile, "utf-8");
-    const conversationLog = readFileSync(errFile, "utf-8");
+    const specContent = await Bun.file(outFile).text();
+    const conversationLog = await Bun.file(errFile).text();
 
     if (exitCode !== 0) {
       throw new Error(`Plan mode failed with exit code ${exitCode}: ${conversationLog || "unknown error"}`);

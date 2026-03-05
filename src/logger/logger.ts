@@ -1,4 +1,4 @@
-import { appendFileSync } from "node:fs";
+import { appendFileSync, mkdirSync } from "node:fs";
 import { type FormatterOptions, type VerbosityMode, formatLogEntry } from "../logging/index.js";
 import { formatConsole, formatJsonl } from "./formatters.js";
 import type { LogEntry, LogLevel, LoggerOptions, StoryLogger } from "./types.js";
@@ -64,7 +64,7 @@ export class Logger {
     try {
       const dir = this.filePath.substring(0, this.filePath.lastIndexOf("/"));
       if (dir) {
-        Bun.spawnSync(["mkdir", "-p", dir]);
+        mkdirSync(dir, { recursive: true });
       }
     } catch (error) {
       console.error(`[logger] Failed to create log directory: ${error}`);
@@ -149,9 +149,7 @@ export class Logger {
     if (!this.filePath) return;
 
     try {
-      const line = `${formatJsonl(entry)}\n`;
-      // Use Node.js fs for simple synchronous append
-      appendFileSync(this.filePath, line, "utf8");
+      appendFileSync(this.filePath, `${formatJsonl(entry)}\n`);
     } catch (error) {
       console.error(`[logger] Failed to write to log file: ${error}`);
     }

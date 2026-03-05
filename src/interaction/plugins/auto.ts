@@ -148,8 +148,8 @@ Stage: ${request.stage}
 Feature: ${request.featureName}
 ${request.storyId ? `Story: ${request.storyId}` : ""}
 
-Summary: ${request.summary}
-${request.detail ? `\nDetail: ${request.detail}` : ""}
+Summary: ${request.summary.replace(/`/g, "\\`").replace(/\$/g, "\\$")}
+${request.detail ? `\nDetail: ${request.detail.replace(/`/g, "\\`").replace(/\$/g, "\\$")}` : ""}
 `;
 
     if (request.options && request.options.length > 0) {

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-03-05T02-37-04-540Z",
+    "feature": "nax-compliance",
+    "startedAt": "2026-03-05T02:37:04.540Z",
+    "status": "stalled",
+    "dryRun": false,
+    "pid": 814245
+  },
+  "progress": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 0,
+    "limit": 8
+  },
+  "current": null,
+  "iterations": 3,
+  "updatedAt": "2026-03-05T02:38:46.469Z",
+  "durationMs": 101929
+}

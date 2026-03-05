@@ -1,0 +1,52 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "nax-compliance",
+  "branchName": "feat/v0.19.0-sec",
+  "createdAt": "2026-03-05T02:37:00Z",
+  "updatedAt": "2026-03-05T02:38:46.450Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Node.js API Removal",
+      "description": "Replace all forbidden Node.js APIs (readFileSync, appendFileSync, existsSync, setTimeout) with Bun-native equivalents (Bun.file().text(), Bun.write, Bun.file().exists(), Bun.sleep) across the codebase as per the v0.19.0 roadmap. Refer to .claude/rules/04-forbidden-patterns.md.",
+      "acceptanceCriteria": [
+        "No occurrences of readFileSync or appendFileSync remain in src/",
+        "No occurrences of existsSync remain in src/ (unless performance critical)",
+        "No occurrences of setTimeout remain in src/",
+        "Codebase passes typecheck and lint after changes"
+      ],
+      "status": "failed",
+      "passes": false,
+      "attempts": 1,
+      "routing": {
+        "complexity": "simple",
+        "modelTier": "powerful",
+        "testStrategy": "test-after"
+      },
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast: Stage requested escalation to higher tier",
+        "Attempt 1 failed with model tier: balanced: Stage requested escalation to higher tier"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "fast",
+          "stage": "escalation",
+          "summary": "Failed with tier fast, escalating to next tier",
+          "timestamp": "2026-03-05T02:37:41.586Z"
+        },
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "timestamp": "2026-03-05T02:38:14.713Z"
+        }
+      ],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "storyPoints": 1
+    }
+  ]
+}

@@ -230,7 +230,7 @@ describe("Plugin config path resolution (US-007)", () => {
       expect(registry.plugins[0].name).toBe("relative-plugin");
     });
 
-    test("resolves ../relative/path from project root", async () => {
+    test("blocks ../ traversal outside project root (SEC-1/SEC-2)", async () => {
       const projectRoot = path.join(tempDir, "project");
       const pluginDir = path.join(tempDir, "shared-plugins");
       await fs.mkdir(projectRoot, { recursive: true });
@@ -271,8 +271,8 @@ describe("Plugin config path resolution (US-007)", () => {
         projectRoot,
       );
 
-      expect(registry.plugins).toHaveLength(1);
-      expect(registry.plugins[0].name).toBe("parent-relative-plugin");
+      // SEC-1/SEC-2: traversal outside project root is blocked
+      expect(registry.plugins).toHaveLength(0);
     });
   });
 

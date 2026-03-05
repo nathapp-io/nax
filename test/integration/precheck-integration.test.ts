@@ -114,21 +114,23 @@ describe("Precheck Integration with nax run", () => {
    * Helper to read JSONL log and parse precheck entry
    */
   async function readPrecheckLog(logFilePath: string): Promise<any | null> {
-    const logFile = Bun.file(logFilePath);
-    if (!(await logFile.exists())) {
-      return null;
-    }
+    const { existsSync, readFileSync } = await import("node:fs");
+    if (!existsSync(logFilePath)) return null;
 
-    const content = await logFile.text();
+    const content = readFileSync(logFilePath, "utf8");
+    if (!content.trim()) return null;
+
     const lines = content.trim().split("\n");
-
     for (const line of lines) {
-      const entry = JSON.parse(line);
-      if (entry.type === "precheck") {
-        return entry;
+      try {
+        const entry = JSON.parse(line);
+        if (entry.type === "precheck") return entry;
+      } catch {
+        // ignore
       }
     }
 
+    console.log(`[DEBUG] precheckLog not found. Content=<<<${content}>>>`);
     return null;
   }
 
@@ -183,7 +185,8 @@ describe("Precheck Integration with nax run", () => {
       expect(result.success).toBe(true);
 
       // Verify precheck was NOT logged to JSONL
-      const precheckLog = await readPrecheckLog(logFilePath);
+      console.log(`[DEBUG] TEST READING FROM: ${logFilePath}`);
+    const precheckLog = await readPrecheckLog(logFilePath);
       expect(precheckLog).toBeNull();
     } finally {
       rmSync(nonGitDir, { recursive: true, force: true });
@@ -225,6 +228,7 @@ describe("Precheck Integration with nax run", () => {
     });
 
     // Verify precheck was logged to JSONL (AC5)
+    console.log(`[DEBUG] TEST READING FROM: ${logFilePath}`);
     const precheckLog = await readPrecheckLog(logFilePath);
     expect(precheckLog).not.toBeNull();
     expect(precheckLog.type).toBe("precheck");
@@ -302,7 +306,8 @@ describe("Precheck Integration with nax run", () => {
       }
 
       // Verify precheck failure was logged (AC5)
-      const precheckLog = await readPrecheckLog(logFilePath);
+      console.log(`[DEBUG] TEST READING FROM: ${logFilePath}`);
+    const precheckLog = await readPrecheckLog(logFilePath);
       expect(precheckLog).not.toBeNull();
       expect(precheckLog.passed).toBe(false);
       expect(precheckLog.blockers.length).toBeGreaterThan(0);
@@ -355,6 +360,7 @@ describe("Precheck Integration with nax run", () => {
     expect(result.success).toBe(true);
 
     // Verify precheck passed (may have warnings)
+    console.log(`[DEBUG] TEST READING FROM: ${logFilePath}`);
     const precheckLog = await readPrecheckLog(logFilePath);
     expect(precheckLog).not.toBeNull();
     expect(precheckLog.passed).toBe(true);
@@ -396,6 +402,7 @@ describe("Precheck Integration with nax run", () => {
     });
 
     // Verify precheck entry structure
+    console.log(`[DEBUG] TEST READING FROM: ${logFilePath}`);
     const precheckLog = await readPrecheckLog(logFilePath);
     expect(precheckLog).not.toBeNull();
     expect(precheckLog.type).toBe("precheck");

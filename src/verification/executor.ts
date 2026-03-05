@@ -85,15 +85,13 @@ export async function executeWithTimeout(
   });
 
   const timeoutMs = timeoutSeconds * 1000;
-  let timeoutId: Timer | null = null;
+
   let timedOut = false;
 
-  const timeoutPromise = new Promise<void>((resolve) => {
-    timeoutId = setTimeout(() => {
-      timedOut = true;
-      resolve();
-    }, timeoutMs);
-  });
+  const timeoutPromise = (async () => {
+    await Bun.sleep(timeoutMs);
+    timedOut = true;
+  })();
 
   const processPromise = proc.exited;
 
@@ -115,7 +113,7 @@ export async function executeWithTimeout(
     }
 
     // Wait for graceful shutdown
-    await new Promise((resolve) => setTimeout(resolve, gracePeriodMs));
+    await Bun.sleep(gracePeriodMs);
 
     // Force SIGKILL entire process group if still running
     try {
@@ -140,11 +138,6 @@ export async function executeWithTimeout(
       error: `EXECUTION_TIMEOUT: Verification process exceeded ${timeoutSeconds}s. Process group (PID ${pid}) killed.`,
       countsTowardEscalation: false, // Timeout is environmental, not code failure
     };
-  }
-
-  // Clear timeout if process finished in time
-  if (timeoutId) {
-    clearTimeout(timeoutId);
   }
 
   const exitCode = raceResult as number;

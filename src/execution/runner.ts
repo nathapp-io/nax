@@ -15,6 +15,7 @@ import type { StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import { countStories, isComplete } from "../prd";
 import type { UserStory } from "../prd";
+import { tryLlmBatchRoute } from "../routing/batch-route";
 import { clearCache as clearLlmCache, routeBatch as llmRouteBatch } from "../routing/strategies/llm";
 import { precomputeBatchPlan } from "./batching";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
@@ -24,25 +25,6 @@ import { getAllReadyStories } from "./helpers";
 export { resolveMaxAttemptsOutcome } from "./escalation";
 
 /** Run options */
-
-/**
- * Try LLM batch routing for ready stories. Logs and swallows errors (falls back to per-story routing).
- */
-async function tryLlmBatchRoute(config: NaxConfig, stories: UserStory[], label = "routing"): Promise<void> {
-  const mode = config.routing.llm?.mode ?? "hybrid";
-  if (config.routing.strategy !== "llm" || mode === "per-story" || stories.length === 0) return;
-  const logger = getSafeLogger();
-  try {
-    logger?.debug("routing", `LLM batch routing: ${label}`, { storyCount: stories.length, mode });
-    await llmRouteBatch(stories, { config });
-    logger?.debug("routing", "LLM batch routing complete", { label });
-  } catch (err) {
-    logger?.warn("routing", "LLM batch routing failed, falling back to individual routing", {
-      error: (err as Error).message,
-      label,
-    });
-  }
-}
 
 export interface RunOptions {
   /** Path to prd.json */
