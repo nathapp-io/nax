@@ -57,8 +57,18 @@
       "complexity": "complex",
       "status": "pending",
       "attempts": 0,
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Stage requested escalation to higher tier"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "timestamp": "2026-03-05T11:58:46.858Z"
+        }
+      ],
       "escalations": [],
       "dependencies": [],
       "tags": [],
@@ -66,12 +76,12 @@
       "storyPoints": 1,
       "routing": {
         "complexity": "complex",
-        "modelTier": "balanced",
+        "modelTier": "powerful",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "override: complex new file + schema changes, needs powerful model"
       },
       "failureCategory": "session-failure"
     }
   ],
-  "updatedAt": "2026-03-05T11:14:42.774Z"
+  "updatedAt": "2026-03-05T11:58:46.858Z"
 }
