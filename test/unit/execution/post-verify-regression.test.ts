@@ -102,6 +102,7 @@ function makeConfig(
       regressionGate: {
         enabled: true,
         timeoutSeconds: 120,
+        mode: "per-story",
         ...regressionGateOverrides,
       },
       contextProviderTokenBudget: 2000,

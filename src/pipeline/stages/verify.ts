@@ -129,7 +129,7 @@ export const verifyStage: PipelineStage = {
 
       // Log first few lines of output for context (skip for TIMEOUT — output is misleading)
       if (result.output && result.status !== "TIMEOUT") {
-        const outputLines = result.output.split("\n").slice(0, 10);
+        const outputLines = result.output.split("\n").slice(-20);
         if (outputLines.length > 0) {
           logger.debug("verify", "Test output preview", {
             storyId: ctx.story.id,
