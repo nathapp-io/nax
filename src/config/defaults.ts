@@ -67,6 +67,8 @@ export const DEFAULT_CONFIG: NaxConfig = {
       enabled: true,
       timeoutSeconds: 120,
       acceptOnTimeout: true,
+      mode: "deferred",
+      maxRectificationAttempts: 2,
     },
     contextProviderTokenBudget: 2000,
     smartTestRunner: true,

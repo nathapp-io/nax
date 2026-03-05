@@ -8,15 +8,15 @@
  * - Unmapped tests: warn and mark all passed stories for re-verification
  */
 
-import { hasCommitsForStory } from "../../utils/git";
 import type { NaxConfig } from "../../config";
 import { getSafeLogger } from "../../logger";
 import type { PRD, UserStory } from "../../prd";
 import { countStories } from "../../prd";
-import { runVerification } from "../verification";
+import { hasCommitsForStory } from "../../utils/git";
 import { parseBunTestOutput } from "../../verification";
 import { reverseMapTestToSource } from "../../verification/smart-runner";
 import { runRectificationLoop } from "../post-verify-rectification";
+import { runVerification } from "../verification";
 
 export interface DeferredRegressionOptions {
   config: NaxConfig;
@@ -68,9 +68,7 @@ async function findResponsibleStory(
  * 4. Re-run full suite to confirm fixes
  * 5. Return results with affected story list
  */
-export async function runDeferredRegression(
-  options: DeferredRegressionOptions,
-): Promise<DeferredRegressionResult> {
+export async function runDeferredRegression(options: DeferredRegressionOptions): Promise<DeferredRegressionResult> {
   const logger = getSafeLogger();
   const { config, prd, workdir } = options;
 

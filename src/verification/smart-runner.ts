@@ -239,7 +239,7 @@ export function reverseMapTestToSource(testFiles: string[], workdir: string): st
     }
 
     // Replace .test.ts with .ts and add src/ prefix
-    const sourcePath = "src/" + relativePath.replace(/\.test\.ts$/, ".ts");
+    const sourcePath = `src/${relativePath.replace(/\.test\.ts$/, ".ts")}`;
 
     if (!seenPaths.has(sourcePath)) {
       result.push(sourcePath);

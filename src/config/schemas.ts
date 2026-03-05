@@ -63,6 +63,8 @@ const RegressionGateConfigSchema = z.object({
   enabled: z.boolean().default(true),
   timeoutSeconds: z.number().int().min(10).max(600).default(120),
   acceptOnTimeout: z.boolean().default(true),
+  mode: z.enum(["deferred", "per-story", "disabled"]).default("deferred"),
+  maxRectificationAttempts: z.number().int().min(1).default(2),
 });
 
 const SmartTestRunnerConfigSchema = z.object({

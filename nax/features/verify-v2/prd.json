@@ -10,8 +10,18 @@
       "complexity": "simple",
       "status": "pending",
       "attempts": 0,
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Stage requested escalation to higher tier"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "timestamp": "2026-03-05T11:14:42.773Z"
+        }
+      ],
       "escalations": [],
       "dependencies": [],
       "tags": [],
@@ -19,7 +29,7 @@
       "storyPoints": 1,
       "routing": {
         "complexity": "simple",
-        "modelTier": "balanced",
+        "modelTier": "powerful",
         "testStrategy": "test-after",
         "reasoning": "override: simple config default change, tests already exist"
       }
@@ -63,5 +73,5 @@
       "failureCategory": "session-failure"
     }
   ],
-  "updatedAt": "2026-03-05T08:13:50.585Z"
+  "updatedAt": "2026-03-05T11:14:42.774Z"
 }

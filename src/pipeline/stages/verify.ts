@@ -58,6 +58,13 @@ export const verifyStage: PipelineStage = {
       return { action: "continue" };
     }
 
+    // In deferred mode, skip per-story regression gate (full suite runs once at run end)
+    const regressionMode = ctx.config.execution.regressionGate?.mode ?? "deferred";
+    if (regressionMode === "deferred") {
+      logger.debug("verify", "Skipping per-story regression (mode: deferred)", { storyId: ctx.story.id });
+      return { action: "continue" };
+    }
+
     logger.info("verify", "Running verification", { storyId: ctx.story.id });
 
     // Determine effective test command (smart runner or full suite)

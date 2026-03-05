@@ -8,13 +8,13 @@
  * - Update final status
  */
 
+import type { NaxConfig } from "../../config";
 import { getSafeLogger } from "../../logger";
 import type { StoryMetrics } from "../../metrics";
 import { saveRunMetrics } from "../../metrics";
 import { countStories, isComplete, isStalled } from "../../prd";
 import type { PRD } from "../../prd";
 import type { StatusWriter } from "../status-writer";
-import type { NaxConfig } from "../../config";
 
 export interface RunCompletionOptions {
   runId: string;
