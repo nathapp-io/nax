@@ -1,0 +1,123 @@
+// RE-ARCH: keep
+/**
+ * Scoped Verification Strategy (ADR-005, Phase 1)
+ *
+ * Runs tests scoped to files changed by the current story using the smart
+ * test runner. Falls back to full suite when no specific tests are mapped.
+ * Falls through to SKIPPED when in deferred mode and no tests are mapped.
+ *
+ * Extracted from src/pipeline/stages/verify.ts (lines 40-164).
+ * Must produce identical results to the existing verify stage.
+ */
+
+import { getLogger } from "../../logger";
+import { regression } from "../gate";
+import type { IVerificationStrategy, VerifyContext, VerifyResult } from "../orchestrator-types";
+import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrator-types";
+import { parseBunTestOutput } from "../parser";
+import { _smartRunnerDeps } from "../smart-runner";
+
+const DEFAULT_SMART_RUNNER_CONFIG = {
+  enabled: true,
+  testFilePatterns: ["test/**/*.test.ts"],
+  fallback: "import-grep" as const,
+};
+
+function coerceSmartRunner(val: unknown) {
+  if (val === undefined || val === true) return DEFAULT_SMART_RUNNER_CONFIG;
+  if (val === false) return { ...DEFAULT_SMART_RUNNER_CONFIG, enabled: false };
+  return val as typeof DEFAULT_SMART_RUNNER_CONFIG;
+}
+
+export class ScopedStrategy implements IVerificationStrategy {
+  readonly name = "scoped" as const;
+
+  async execute(ctx: VerifyContext): Promise<VerifyResult> {
+    const logger = getLogger();
+    const smartCfg = coerceSmartRunner(ctx.smartRunnerConfig);
+    const regressionMode = ctx.regressionMode ?? "deferred";
+
+    let effectiveCommand = ctx.testCommand;
+    let isFullSuite = true;
+
+    if (smartCfg.enabled && ctx.storyGitRef) {
+      const sourceFiles = await _scopedDeps.getChangedSourceFiles(ctx.workdir, ctx.storyGitRef);
+
+      const pass1Files = await _scopedDeps.mapSourceToTests(sourceFiles, ctx.workdir);
+      if (pass1Files.length > 0) {
+        logger.info("verify[scoped]", `Pass 1: path convention matched ${pass1Files.length} test files`, {
+          storyId: ctx.storyId,
+        });
+        effectiveCommand = _scopedDeps.buildSmartTestCommand(pass1Files, ctx.testCommand);
+        isFullSuite = false;
+      } else if (smartCfg.fallback === "import-grep") {
+        const pass2Files = await _scopedDeps.importGrepFallback(sourceFiles, ctx.workdir, smartCfg.testFilePatterns);
+        if (pass2Files.length > 0) {
+          logger.info("verify[scoped]", `Pass 2: import-grep matched ${pass2Files.length} test files`, {
+            storyId: ctx.storyId,
+          });
+          effectiveCommand = _scopedDeps.buildSmartTestCommand(pass2Files, ctx.testCommand);
+          isFullSuite = false;
+        }
+      }
+    }
+
+    // Defer to regression gate when no scoped tests found and mode is deferred
+    if (isFullSuite && regressionMode === "deferred") {
+      logger.info("verify[scoped]", "No mapped tests — deferring to run-end (mode: deferred)", {
+        storyId: ctx.storyId,
+      });
+      return makeSkippedResult(ctx.storyId, "scoped");
+    }
+
+    if (isFullSuite) {
+      logger.info("verify[scoped]", "No mapped tests — falling back to full suite", { storyId: ctx.storyId });
+    }
+
+    const start = Date.now();
+    const result = await _scopedDeps.regression({
+      workdir: ctx.workdir,
+      command: effectiveCommand,
+      timeoutSeconds: ctx.timeoutSeconds,
+      acceptOnTimeout: ctx.acceptOnTimeout ?? true,
+    });
+    const durationMs = Date.now() - start;
+
+    if (result.success) {
+      const parsed = result.output ? parseBunTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
+      return makePassResult(ctx.storyId, "scoped", {
+        rawOutput: result.output,
+        passCount: parsed.passed,
+        durationMs,
+      });
+    }
+
+    if (result.status === "TIMEOUT") {
+      return makeFailResult(ctx.storyId, "scoped", "TIMEOUT", {
+        rawOutput: result.output,
+        durationMs,
+        countsTowardEscalation: false,
+      });
+    }
+
+    const parsed = result.output ? parseBunTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
+    return makeFailResult(ctx.storyId, "scoped", "TEST_FAILURE", {
+      rawOutput: result.output,
+      passCount: parsed.passed,
+      failCount: parsed.failed,
+      failures: parsed.failures,
+      durationMs,
+    });
+  }
+}
+
+/**
+ * Injectable deps for testing.
+ */
+export const _scopedDeps = {
+  getChangedSourceFiles: _smartRunnerDeps.getChangedSourceFiles,
+  mapSourceToTests: _smartRunnerDeps.mapSourceToTests,
+  importGrepFallback: _smartRunnerDeps.importGrepFallback,
+  buildSmartTestCommand: _smartRunnerDeps.buildSmartTestCommand,
+  regression,
+};
