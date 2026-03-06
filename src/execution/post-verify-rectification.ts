@@ -12,10 +12,14 @@ import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import type { PRD, StructuredFailure, UserStory } from "../prd";
 import { getExpectedFiles, savePRD } from "../prd";
+import { fullSuite as runVerification } from "../verification/gate";
+import {
+  type RectificationState,
+  createRectificationPrompt,
+  shouldRetryRectification,
+} from "../verification/rectification";
 import { appendProgress } from "./progress";
-import { type RectificationState, createRectificationPrompt, shouldRetryRectification } from "./rectification";
 import { parseBunTestOutput } from "./test-output-parser";
-import { runVerification } from "./verification";
 
 export interface RectificationLoopOptions {
   config: NaxConfig;
@@ -89,7 +93,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
     }
 
     const retryVerification = await runVerification({
-      workingDirectory: workdir,
+      workdir: workdir,
       expectedFiles: getExpectedFiles(story),
       command: testCommand,
       timeoutSeconds,

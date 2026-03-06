@@ -9,8 +9,8 @@
  * src/execution/lifecycle/run-regression.ts.
  */
 
-import { runVerification } from "../../execution/verification";
 import { getSafeLogger } from "../../logger";
+import { fullSuite } from "../gate";
 import type { IVerificationStrategy, VerifyContext, VerifyResult } from "../orchestrator-types";
 import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrator-types";
 import { parseBunTestOutput } from "../parser";
@@ -31,7 +31,7 @@ export class RegressionStrategy implements IVerificationStrategy {
 
     const start = Date.now();
     const result = await _regressionStrategyDeps.runVerification({
-      workingDirectory: ctx.workdir,
+      workdir: ctx.workdir,
       expectedFiles: [],
       command: ctx.testCommand,
       timeoutSeconds: ctx.timeoutSeconds,
@@ -78,4 +78,4 @@ export class RegressionStrategy implements IVerificationStrategy {
   }
 }
 
-export const _regressionStrategyDeps = { runVerification };
+export const _regressionStrategyDeps = { runVerification: fullSuite };

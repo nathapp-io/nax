@@ -16,18 +16,33 @@ import type { PipelineContext, RoutingResult } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
 import { generateHumanHaltSummary, getNextStory, isComplete, isStalled, loadPRD } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
-import { routeTask, tryLlmBatchRoute } from "../routing";
 import { captureGitRef } from "../utils/git";
 import type { StoryBatch } from "./batching";
 import { startHeartbeat, stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import { preIterationTierCheck } from "./escalation";
-import {
-  applyCachedRouting,
-  handleDryRun,
-  handlePipelineFailure,
-  handlePipelineSuccess,
-} from "./pipeline-result-handler";
+import { handleDryRun, handlePipelineFailure, handlePipelineSuccess } from "./pipeline-result-handler";
 import type { StatusWriter } from "./status-writer";
+
+/**
+ * P4-001: Build a preview routing from cached story.routing or config defaults.
+ * The pipeline routing stage will perform full LLM/keyword classification and overwrite ctx.routing.
+ * This preview is used only for pre-pipeline logging, status display, and event emission.
+ */
+function buildPreviewRouting(story: UserStory, config: NaxConfig): RoutingResult {
+  const cached = story.routing;
+  const defaultComplexity = "medium" as const;
+  const defaultTier = "balanced" as const;
+  const defaultStrategy = "test-after" as const;
+  return {
+    complexity: (cached?.complexity as RoutingResult["complexity"]) ?? defaultComplexity,
+    modelTier:
+      (cached?.modelTier as RoutingResult["modelTier"]) ??
+      (config.autoMode.complexityRouting?.[defaultComplexity] as RoutingResult["modelTier"]) ??
+      defaultTier,
+    testStrategy: (cached?.testStrategy as RoutingResult["testStrategy"]) ?? defaultStrategy,
+    reasoning: cached ? "cached from story.routing" : "preview (pending pipeline routing stage)",
+  };
+}
 
 export interface SequentialExecutionContext {
   prdPath: string;
@@ -54,7 +69,6 @@ export interface SequentialExecutionResult {
   storiesCompleted: number;
   totalCost: number;
   allStoryMetrics: StoryMetrics[];
-  timeoutRetryCountMap: Map<string, number>;
   exitReason: "completed" | "cost-limit" | "max-iterations" | "stalled" | "no-stories";
 }
 
@@ -72,7 +86,6 @@ export async function executeSequential(
   let storiesCompleted = 0;
   let totalCost = 0;
   const allStoryMetrics: StoryMetrics[] = [];
-  const timeoutRetryCountMap = new Map<string, number>();
   let currentBatchIndex = 0;
   let lastStoryId: string | null = null;
 
@@ -88,7 +101,6 @@ export async function executeSequential(
     storiesCompleted,
     totalCost,
     allStoryMetrics,
-    timeoutRetryCountMap,
     exitReason,
   });
 
@@ -141,7 +153,7 @@ export async function executeSequential(
       let storiesToExecute: UserStory[];
       let isBatchExecution: boolean;
       let story: UserStory;
-      let routing: ReturnType<typeof routeTask>;
+      let routing: RoutingResult;
 
       if (ctx.useBatch && currentBatchIndex < ctx.batchPlan.length) {
         // Get next batch from precomputed plan
@@ -167,8 +179,8 @@ export async function executeSequential(
 
         // Use first story as the primary story for routing/context
         story = storiesToExecute[0];
-        routing = routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, ctx.config);
-        routing = applyCachedRouting(routing, story, ctx.config);
+        // P4-001: Build preview routing from cached story.routing (pipeline routing stage does full classification)
+        routing = buildPreviewRouting(story, ctx.config);
       } else {
         // Fallback to single-story mode (when batching disabled or batch plan exhausted)
         const nextStory = getNextStory(prd, lastStoryId, ctx.config.execution.rectification?.maxRetries ?? 2);
@@ -182,8 +194,8 @@ export async function executeSequential(
         storiesToExecute = [story];
         isBatchExecution = false;
 
-        routing = routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, ctx.config);
-        routing = applyCachedRouting(routing, story, ctx.config);
+        // P4-001: Build preview routing from cached story.routing (pipeline routing stage does full classification)
+        routing = buildPreviewRouting(story, ctx.config);
       }
 
       // Pre-iteration tier escalation check
@@ -331,10 +343,9 @@ export async function executeSequential(
         pluginRegistry: ctx.pluginRegistry,
         story,
         storiesToExecute,
-        routing,
+        routing: pipelineResult.context.routing ?? routing, // P4-001: use pipeline routing stage result
         isBatchExecution,
         allStoryMetrics,
-        timeoutRetryCountMap,
         storyGitRef,
         interactionChain: ctx.interactionChain,
       };
