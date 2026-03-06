@@ -82,7 +82,7 @@
     "requireLint": true,
     "requireTests": true,
     "commands": {
-      "test": "NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000",
+      "test": "bun run test",
       "typecheck": "bun run typecheck",
       "lint": "bun run lint"
     },
