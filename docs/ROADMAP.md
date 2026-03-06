@@ -154,8 +154,8 @@
 ### TDD Test Writer Tier (FEAT-012)
 - [ ] **FEAT-012:** Test writer tier — currently uses `tdd.sessionTiers.testWriter` (default `balanced`). Evaluate whether test writer needs to be same tier as implementer or can stay lower. Risk: if test writer uses `fast` and implementer uses `powerful`, the tests may be too shallow to catch regressions. Recommendation: test writer tier should be ≥ implementer tier for the same story. Add validation/warning.
 
-### Cross-Story Test Isolation (BUG-041)
-- [ ] **BUG-041:** Failing test from story N bleeds into story N+1 verification — smart runner may pick up the same test file, masking whether story N+1 actually caused the failure. Fix: after each story's verify pass, record passing test list; flag regressions introduced by the current story only.
+### ~~Cross-Story Test Isolation (BUG-041)~~ — Won't Fix
+- [x] ~~**BUG-041:**~~ Superseded by FEAT-010 (baseRef tracking). Deferred regression gate + precise git diff eliminates the root cause.
 
 ### Test-After Strategy Review (FEAT-013)
 - [ ] **FEAT-013:** `test-after` strategy is reportedly fragile — agent writes code first, then tests, leaving a window where broken tests pass verify. Consider deprecating `test-after` in favour of `tdd-lite` as default, or adding a post-write strict isolation verify that ensures tests were not written to match broken code.

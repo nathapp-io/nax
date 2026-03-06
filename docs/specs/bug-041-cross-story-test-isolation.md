@@ -1,7 +1,7 @@
 # BUG-041 — Cross-Story Test Isolation
 
-**Status:** Proposal
-**Target:** v0.21.0
+**Status:** Won't Fix — superseded by FEAT-010 (baseRef tracking eliminates root cause)
+**Target:** N/A
 **Author:** Nax Dev
 **Date:** 2026-03-06
 
