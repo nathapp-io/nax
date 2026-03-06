@@ -1,6 +1,6 @@
 # FEAT-012 — TDD Test Writer Tier Validation
 
-**Status:** Proposal
+**Status:** Won't Fix — balanced tier is sufficient for test-writer; not worth the added complexity
 **Target:** v0.21.0
 **Author:** Nax Dev
 **Date:** 2026-03-06
