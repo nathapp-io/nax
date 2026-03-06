@@ -91,6 +91,8 @@ export interface PipelineContext {
   };
   /** Story start timestamp (ISO string, set by runner before pipeline) */
   storyStartTime?: string;
+  /** Git HEAD ref captured before agent ran this attempt (FEAT-010: precise smart-runner diff) */
+  storyGitRef?: string;
   /** Collected story metrics (set by completionStage) */
   storyMetrics?: StoryMetrics[];
   /** Whether to retry the story in lite mode after a failure */

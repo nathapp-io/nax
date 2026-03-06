@@ -179,10 +179,12 @@ export function buildSmartTestCommand(testFiles: string[], baseCommand: string):
   return newParts.join(" ");
 }
 
-export async function getChangedSourceFiles(workdir: string): Promise<string[]> {
+export async function getChangedSourceFiles(workdir: string, baseRef?: string): Promise<string[]> {
   try {
+    // FEAT-010: Use per-attempt baseRef for precise diff; fall back to HEAD~1 if not provided
+    const ref = baseRef ?? "HEAD~1";
     // BUG-039: Use gitWithTimeout to prevent orphan processes on hang
-    const { stdout, exitCode } = await gitWithTimeout(["diff", "--name-only", "HEAD~1"], workdir);
+    const { stdout, exitCode } = await gitWithTimeout(["diff", "--name-only", ref], workdir);
     if (exitCode !== 0) return [];
 
     const lines = stdout.trim().split("\n").filter(Boolean);

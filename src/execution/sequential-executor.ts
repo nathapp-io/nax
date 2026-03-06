@@ -271,6 +271,7 @@ export async function executeSequential(
         hooks: ctx.hooks,
         plugins: ctx.pluginRegistry,
         storyStartTime,
+        storyGitRef: storyGitRef ?? undefined, // FEAT-010: per-attempt baseRef for precise smart-runner diff
         interaction: ctx.interactionChain ?? undefined,
       };
 

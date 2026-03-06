@@ -59,7 +59,7 @@ export const verifyStage: PipelineStage = {
     const regressionMode = ctx.config.execution.regressionGate?.mode ?? "deferred";
 
     if (smartRunnerConfig.enabled) {
-      const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(ctx.workdir);
+      const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(ctx.workdir, ctx.storyGitRef);
 
       // Pass 1: path convention mapping
       const pass1Files = await _smartRunnerDeps.mapSourceToTests(sourceFiles, ctx.workdir);
