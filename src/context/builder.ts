@@ -232,13 +232,21 @@ async function addFileElements(
         continue;
       }
       if (file.size > MAX_FILE_SIZE_BYTES) {
+        // FEAT-011: File too large to inline — pass path-only so agent can read it if needed
         const logger = getLogger();
-        logger.warn("context", "File too large", {
+        logger.warn("context", "File too large for inline — using path-only", {
           filePath: relativeFilePath,
           sizeKB: Math.round(file.size / 1024),
           maxKB: 10,
           storyId: story.id,
         });
+        elements.push(
+          createFileContext(
+            relativeFilePath,
+            `_File too large to inline (${Math.round(file.size / 1024)}KB). Path: \`${relativeFilePath}\` — read it directly if needed._`,
+            5,
+          ),
+        );
         continue;
       }
       const content = await file.text();
