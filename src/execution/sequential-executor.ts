@@ -19,7 +19,6 @@ import type { PRD, UserStory } from "../prd/types";
 import { captureGitRef } from "../utils/git";
 import type { StoryBatch } from "./batching";
 import { startHeartbeat, stopHeartbeat, writeExitSummary } from "./crash-recovery";
-import { preIterationTierCheck } from "./escalation";
 import { handleDryRun, handlePipelineFailure, handlePipelineSuccess } from "./pipeline-result-handler";
 import type { StatusWriter } from "./status-writer";
 
@@ -196,26 +195,6 @@ export async function executeSequential(
 
         // P4-001: Build preview routing from cached story.routing (pipeline routing stage does full classification)
         routing = buildPreviewRouting(story, ctx.config);
-      }
-
-      // Pre-iteration tier escalation check
-      const tierCheckResult = await preIterationTierCheck(
-        story,
-        routing,
-        ctx.config,
-        prd,
-        ctx.prdPath,
-        ctx.featureDir,
-        ctx.hooks,
-        ctx.feature,
-        totalCost,
-        ctx.workdir,
-      );
-
-      if (tierCheckResult.shouldSkipIteration) {
-        prd = tierCheckResult.prd;
-        prdDirty = tierCheckResult.prdDirty;
-        continue;
       }
 
       // Check cost limit
