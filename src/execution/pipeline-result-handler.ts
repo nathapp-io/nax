@@ -6,19 +6,17 @@
  */
 
 import type { NaxConfig } from "../config";
-import { type LoadedHooksConfig, fireHook } from "../hooks";
+import type { LoadedHooksConfig } from "../hooks";
 import type { InteractionChain } from "../interaction/chain";
-import { executeTrigger, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
+import { pipelineEventBus } from "../pipeline/event-bus";
 import type { PipelineRunResult } from "../pipeline/runner";
 import type { PluginRegistry } from "../plugins";
 import { countStories, markStoryFailed, markStoryPaused, savePRD } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
 import type { routeTask } from "../routing";
 import { handleTierEscalation } from "./escalation";
-import { hookCtx } from "./helpers";
-import { emitStoryComplete } from "./lifecycle/story-hooks";
 import { runPostAgentVerification } from "./post-verify";
 import { appendProgress } from "./progress";
 import type { StatusWriter } from "./status-writer";
@@ -91,7 +89,6 @@ export async function handlePipelineSuccess(
   if (verificationPassed) {
     storiesCompletedDelta = ctx.storiesToExecute.length;
 
-    const reporters = ctx.pluginRegistry.getReporters();
     for (const completedStory of ctx.storiesToExecute) {
       logger?.info("story.complete", "Story completed successfully", {
         storyId: completedStory.id,
@@ -100,13 +97,15 @@ export async function handlePipelineSuccess(
         durationMs: Date.now() - ctx.startTime,
       });
 
-      await emitStoryComplete(reporters, {
-        runId: ctx.runId,
+      // Phase 3: emit event — hooks/reporter subscriber handles hook + reporter calls
+      pipelineEventBus.emit({
+        type: "story:completed",
         storyId: completedStory.id,
-        status: "completed",
+        story: completedStory,
+        passed: true,
         durationMs: Date.now() - ctx.startTime,
         cost: costDelta,
-        tier: ctx.routing.modelTier,
+        modelTier: ctx.routing.modelTier,
         testStrategy: ctx.routing.testStrategy,
       });
     }
@@ -142,7 +141,6 @@ export async function handlePipelineFailure(
   pipelineResult: PipelineRunResult,
 ): Promise<PipelineFailureResult> {
   const logger = getSafeLogger();
-  const reporters = ctx.pluginRegistry.getReporters();
   let prd = ctx.prd;
   let prdDirty = false;
 
@@ -157,25 +155,12 @@ export async function handlePipelineFailure(
         reason: pipelineResult.reason,
       });
 
-      await fireHook(
-        ctx.hooks,
-        "on-pause",
-        hookCtx(ctx.feature, {
-          storyId: ctx.story.id,
-          reason: pipelineResult.reason || "Pipeline paused",
-          cost: ctx.totalCost,
-        }),
-        ctx.workdir,
-      );
-
-      await emitStoryComplete(reporters, {
-        runId: ctx.runId,
+      // Phase 3: emit event — hooks/reporter subscriber handles hook + reporter calls
+      pipelineEventBus.emit({
+        type: "story:paused",
         storyId: ctx.story.id,
-        status: "paused",
-        durationMs: Date.now() - ctx.startTime,
-        cost: pipelineResult.context.agentResult?.estimatedCost || 0,
-        tier: ctx.routing.modelTier,
-        testStrategy: ctx.routing.testStrategy,
+        reason: pipelineResult.reason || "Pipeline paused",
+        cost: ctx.totalCost,
       });
       break;
 
@@ -186,15 +171,8 @@ export async function handlePipelineFailure(
       });
       prdDirty = true;
 
-      await emitStoryComplete(reporters, {
-        runId: ctx.runId,
-        storyId: ctx.story.id,
-        status: "skipped",
-        durationMs: Date.now() - ctx.startTime,
-        cost: 0,
-        tier: ctx.routing.modelTier,
-        testStrategy: ctx.routing.testStrategy,
-      });
+      // Note: no dedicated "story:skipped" event yet; skip is uncommon
+      // TODO Phase 4: add story:skipped event to event bus
       break;
 
     case "fail":
@@ -211,54 +189,27 @@ export async function handlePipelineFailure(
         await appendProgress(ctx.featureDir, ctx.story.id, "failed", `${ctx.story.title} — ${pipelineResult.reason}`);
       }
 
-      // Fire human-review trigger when story has exceeded max retries and interaction chain is available
-      if (
-        ctx.interactionChain &&
-        ctx.story.attempts !== undefined &&
-        ctx.story.attempts >= ctx.config.execution.rectification.maxRetries &&
-        isTriggerEnabled("human-review", ctx.config)
-      ) {
-        try {
-          await executeTrigger(
-            "human-review",
-            {
-              featureName: ctx.feature,
-              storyId: ctx.story.id,
-              iteration: ctx.story.attempts,
-              reason: pipelineResult.reason || "Max retries exceeded",
-            },
-            ctx.config,
-            ctx.interactionChain,
-          );
-        } catch (err) {
-          logger?.warn("pipeline", "human-review trigger failed", {
-            storyId: ctx.story.id,
-            error: String(err),
-          });
-        }
-      }
-
-      await fireHook(
-        ctx.hooks,
-        "on-story-fail",
-        hookCtx(ctx.feature, {
-          storyId: ctx.story.id,
-          status: "failed",
-          reason: pipelineResult.reason || "Pipeline failed",
-          cost: ctx.totalCost,
-        }),
-        ctx.workdir,
-      );
-
-      await emitStoryComplete(reporters, {
-        runId: ctx.runId,
+      // Phase 3: emit events — hooks/reporter/interaction subscribers handle the rest
+      pipelineEventBus.emit({
+        type: "story:failed",
         storyId: ctx.story.id,
-        status: "failed",
-        durationMs: Date.now() - ctx.startTime,
-        cost: pipelineResult.context.agentResult?.estimatedCost || 0,
-        tier: ctx.routing.modelTier,
-        testStrategy: ctx.routing.testStrategy,
+        story: ctx.story,
+        reason: pipelineResult.reason || "Pipeline failed",
+        countsTowardEscalation: true,
+        feature: ctx.feature,
+        attempts: ctx.story.attempts,
       });
+
+      // Emit human-review request if max retries exceeded
+      if (ctx.story.attempts !== undefined && ctx.story.attempts >= ctx.config.execution.rectification.maxRetries) {
+        pipelineEventBus.emit({
+          type: "human-review:requested",
+          storyId: ctx.story.id,
+          reason: pipelineResult.reason || "Max retries exceeded",
+          feature: ctx.feature,
+          attempts: ctx.story.attempts,
+        });
+      }
       break;
 
     case "escalate": {
@@ -366,15 +317,16 @@ export async function handleDryRun(ctx: DryRunContext): Promise<DryRunResult> {
   await savePRD(ctx.prd, ctx.prdPath);
 
   // Emit onStoryComplete events for dry-run
-  const reporters = ctx.pluginRegistry.getReporters();
   for (const s of ctx.storiesToExecute) {
-    await emitStoryComplete(reporters, {
-      runId: ctx.runId,
+    // Phase 3: emit event — reporter subscriber handles onStoryComplete
+    pipelineEventBus.emit({
+      type: "story:completed",
       storyId: s.id,
-      status: "completed",
+      story: s,
+      passed: true,
       durationMs: 0,
       cost: 0,
-      tier: ctx.routing.modelTier,
+      modelTier: ctx.routing.modelTier,
       testStrategy: ctx.routing.testStrategy,
     });
   }

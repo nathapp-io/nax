@@ -3,13 +3,14 @@
  *
  * Extracted from tier-escalation.ts: handles outcomes when escalation
  * is not possible (no tier available or max attempts reached).
+ *
+ * Phase 3 (ADR-005): Replaced direct fireHook() calls with event bus emissions.
  */
 
-import { fireHook } from "../../hooks";
 import { getSafeLogger } from "../../logger";
+import { pipelineEventBus } from "../../pipeline/event-bus";
 import { markStoryFailed, markStoryPaused, savePRD } from "../../prd";
 import type { FailureCategory } from "../../tdd/types";
-import { hookCtx } from "../helpers";
 import { appendProgress } from "../progress";
 import type { EscalationHandlerContext, EscalationHandlerResult } from "./tier-escalation";
 import { resolveMaxAttemptsOutcome } from "./tier-escalation";
@@ -43,16 +44,12 @@ export async function handleNoTierAvailable(
       );
     }
 
-    await fireHook(
-      ctx.hooks,
-      "on-pause",
-      hookCtx(ctx.feature, {
-        storyId: ctx.story.id,
-        reason: `Execution stopped (${failureCategory ?? "unknown"} requires human review)`,
-        cost: ctx.totalCost,
-      }),
-      ctx.workdir,
-    );
+    pipelineEventBus.emit({
+      type: "story:paused",
+      storyId: ctx.story.id,
+      reason: `Execution stopped (${failureCategory ?? "unknown"} requires human review)`,
+      cost: ctx.totalCost,
+    });
 
     return { outcome: "paused", prdDirty: true, prd: pausedPrd };
   }
@@ -70,17 +67,13 @@ export async function handleNoTierAvailable(
     await appendProgress(ctx.featureDir, ctx.story.id, "failed", `${ctx.story.title} — Execution failed`);
   }
 
-  await fireHook(
-    ctx.hooks,
-    "on-story-fail",
-    hookCtx(ctx.feature, {
-      storyId: ctx.story.id,
-      status: "failed",
-      reason: "Execution failed",
-      cost: ctx.totalCost,
-    }),
-    ctx.workdir,
-  );
+  pipelineEventBus.emit({
+    type: "story:failed",
+    storyId: ctx.story.id,
+    story: ctx.story,
+    reason: "Execution failed",
+    countsTowardEscalation: true,
+  });
 
   return { outcome: "failed", prdDirty: true, prd: failedPrd };
 }
@@ -114,16 +107,12 @@ export async function handleMaxAttemptsReached(
       );
     }
 
-    await fireHook(
-      ctx.hooks,
-      "on-pause",
-      hookCtx(ctx.feature, {
-        storyId: ctx.story.id,
-        reason: `Max attempts reached (${failureCategory ?? "unknown"} requires human review)`,
-        cost: ctx.totalCost,
-      }),
-      ctx.workdir,
-    );
+    pipelineEventBus.emit({
+      type: "story:paused",
+      storyId: ctx.story.id,
+      reason: `Max attempts reached (${failureCategory ?? "unknown"} requires human review)`,
+      cost: ctx.totalCost,
+    });
 
     return { outcome: "paused", prdDirty: true, prd: pausedPrd };
   }
@@ -142,17 +131,13 @@ export async function handleMaxAttemptsReached(
     await appendProgress(ctx.featureDir, ctx.story.id, "failed", `${ctx.story.title} — Max attempts reached`);
   }
 
-  await fireHook(
-    ctx.hooks,
-    "on-story-fail",
-    hookCtx(ctx.feature, {
-      storyId: ctx.story.id,
-      status: "failed",
-      reason: "Max attempts reached",
-      cost: ctx.totalCost,
-    }),
-    ctx.workdir,
-  );
+  pipelineEventBus.emit({
+    type: "story:failed",
+    storyId: ctx.story.id,
+    story: ctx.story,
+    reason: "Max attempts reached",
+    countsTowardEscalation: true,
+  });
 
   return { outcome: "failed", prdDirty: true, prd: failedPrd };
 }
