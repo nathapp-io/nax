@@ -5,10 +5,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _deps, type PipedProc } from "../../../../src/routing/strategies/llm";
+import type { NaxConfig } from "../../../../src/config";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import { initLogger, resetLogger } from "../../../../src/logger";
-import type { NaxConfig } from "../../../../src/config";
+import { type PipedProc, _deps } from "../../../../src/routing/strategies/llm";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -43,7 +43,7 @@ function makeHangingProc() {
 
   // ReadableStream that never produces data and never closes
   const neverStream = () => {
-    let cancelFn: () => void = () => {};
+    const cancelFn: () => void = () => {};
     const stream = new ReadableStream({
       start() {},
       cancel() {
@@ -139,9 +139,7 @@ describe("BUG-039: callLlmOnce stream drain on timeout", () => {
 
     const startTime = Date.now();
 
-    await expect(
-      llmStrategy.route(story, { config }),
-    ).rejects.toThrow(/timeout/i);
+    await expect(llmStrategy.route(story, { config })).rejects.toThrow(/timeout/i);
 
     const elapsed = Date.now() - startTime;
 
@@ -164,14 +162,16 @@ describe("BUG-039: callLlmOnce stream drain on timeout", () => {
     const successProc = {
       stdout: new ReadableStream({
         start(ctrl) {
-          ctrl.enqueue(new TextEncoder().encode(
-            JSON.stringify({
-              complexity: "simple",
-              modelTier: "fast",
-              testStrategy: "test-after",
-              reasoning: "Simple test story",
-            }),
-          ));
+          ctrl.enqueue(
+            new TextEncoder().encode(
+              JSON.stringify({
+                complexity: "simple",
+                modelTier: "fast",
+                testStrategy: "test-after",
+                reasoning: "Simple test story",
+              }),
+            ),
+          );
           ctrl.close();
         },
       }),
