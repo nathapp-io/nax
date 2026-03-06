@@ -17,7 +17,7 @@ import { countStories, markStoryFailed, markStoryPaused, savePRD } from "../prd"
 import type { PRD, UserStory } from "../prd/types";
 import type { routeTask } from "../routing";
 import { handleTierEscalation } from "./escalation";
-import { runPostAgentVerification } from "./post-verify";
+
 import { appendProgress } from "./progress";
 import type { StatusWriter } from "./status-writer";
 
@@ -39,7 +39,6 @@ export interface PipelineHandlerContext {
   routing: ReturnType<typeof routeTask>;
   isBatchExecution: boolean;
   allStoryMetrics: StoryMetrics[];
-  timeoutRetryCountMap: Map<string, number>;
   storyGitRef: string | null | undefined;
   interactionChain?: InteractionChain | null;
 }
@@ -63,52 +62,36 @@ export async function handlePipelineSuccess(
 ): Promise<PipelineSuccessResult> {
   const logger = getSafeLogger();
   const costDelta = pipelineResult.context.agentResult?.estimatedCost || 0;
-  let prd = ctx.prd;
+  const prd = ctx.prd;
 
   // Collect story metrics
   if (pipelineResult.context.storyMetrics) {
     ctx.allStoryMetrics.push(...pipelineResult.context.storyMetrics);
   }
 
-  // Post-agent verification
-  const verifyResult = await runPostAgentVerification({
-    config: ctx.config,
-    prd,
-    prdPath: ctx.prdPath,
-    workdir: ctx.workdir,
-    featureDir: ctx.featureDir,
-    story: ctx.story,
-    storiesToExecute: ctx.storiesToExecute,
-    allStoryMetrics: ctx.allStoryMetrics,
-    timeoutRetryCountMap: ctx.timeoutRetryCountMap,
-  });
-  const verificationPassed = verifyResult.passed;
-  prd = verifyResult.prd;
+  // P4-002: Post-agent verification removed — pipeline regression stage handles per-story mode,
+  // deferred mode handled by run-regression.ts. Pipeline success means all stages passed.
 
-  let storiesCompletedDelta = 0;
-  if (verificationPassed) {
-    storiesCompletedDelta = ctx.storiesToExecute.length;
+  const storiesCompletedDelta = ctx.storiesToExecute.length;
+  for (const completedStory of ctx.storiesToExecute) {
+    logger?.info("story.complete", "Story completed successfully", {
+      storyId: completedStory.id,
+      storyTitle: completedStory.title,
+      totalCost: ctx.totalCost + costDelta,
+      durationMs: Date.now() - ctx.startTime,
+    });
 
-    for (const completedStory of ctx.storiesToExecute) {
-      logger?.info("story.complete", "Story completed successfully", {
-        storyId: completedStory.id,
-        storyTitle: completedStory.title,
-        totalCost: ctx.totalCost + costDelta,
-        durationMs: Date.now() - ctx.startTime,
-      });
-
-      // Phase 3: emit event — hooks/reporter subscriber handles hook + reporter calls
-      pipelineEventBus.emit({
-        type: "story:completed",
-        storyId: completedStory.id,
-        story: completedStory,
-        passed: true,
-        durationMs: Date.now() - ctx.startTime,
-        cost: costDelta,
-        modelTier: ctx.routing.modelTier,
-        testStrategy: ctx.routing.testStrategy,
-      });
-    }
+    // Phase 3: emit event — hooks/reporter subscriber handles hook + reporter calls
+    pipelineEventBus.emit({
+      type: "story:completed",
+      storyId: completedStory.id,
+      story: completedStory,
+      passed: true,
+      durationMs: Date.now() - ctx.startTime,
+      cost: costDelta,
+      modelTier: ctx.routing.modelTier,
+      testStrategy: ctx.routing.testStrategy,
+    });
   }
 
   // Display progress

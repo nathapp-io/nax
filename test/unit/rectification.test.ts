@@ -9,7 +9,7 @@ import {
   type RectificationState,
   createRectificationPrompt,
   shouldRetryRectification,
-} from "../../src/execution/rectification";
+} from "../../src/verification/rectification";
 import type { TestFailure } from "../../src/execution/test-output-parser";
 import type { UserStory } from "../../src/prd";
 
