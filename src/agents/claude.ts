@@ -217,13 +217,40 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     let exitCode: number;
     try {
-      exitCode = await proc.exited;
+      // Hard deadline: if proc.exited doesn't resolve after kill signals are sent
+      // (Bun subprocess edge case on some environments), fall back to -1 so the
+      // caller can move on. timedOut flag ensures the result is still marked 124.
+      const hardDeadlineMs = options.timeoutSeconds * 1000 + SIGKILL_GRACE_PERIOD_MS + 3000;
+      exitCode = await Promise.race([
+        proc.exited,
+        new Promise<number>((resolve) => setTimeout(() => resolve(-1), hardDeadlineMs)),
+      ]);
+
+      // If hard deadline fired, the subprocess may still be alive (Bun SIGKILL edge case).
+      // Force-kill via OS-level signal so that the stdout pipe closes and we don't block.
+      if (exitCode === -1) {
+        try {
+          process.kill(processPid, "SIGKILL");
+        } catch {
+          /* already gone */
+        }
+        try {
+          process.kill(-processPid, "SIGKILL");
+        } catch {
+          /* no process group */
+        }
+      }
     } finally {
       clearTimeout(timeoutId);
       await pidRegistry.unregister(processPid);
     }
 
-    const stdout = await new Response(proc.stdout).text();
+    // Use a deadline on stdout read — if the subprocess pipe is still open
+    // (e.g. hard-deadline fired but process didn't fully die), don't block forever.
+    const stdout = await Promise.race([
+      new Response(proc.stdout).text(),
+      new Promise<string>((resolve) => setTimeout(() => resolve(""), 5000)),
+    ]);
     const stderr = await new Response(proc.stderr).text();
     const durationMs = Date.now() - startTime;
 
@@ -330,7 +357,12 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       throw new Error(`Decompose timed out after ${DECOMPOSE_TIMEOUT_MS / 1000}s`);
     }
 
-    const stdout = await new Response(proc.stdout).text();
+    // Use a deadline on stdout read — if the subprocess pipe is still open
+    // (e.g. hard-deadline fired but process didn't fully die), don't block forever.
+    const stdout = await Promise.race([
+      new Response(proc.stdout).text(),
+      new Promise<string>((resolve) => setTimeout(() => resolve(""), 5000)),
+    ]);
     const stderr = await new Response(proc.stderr).text();
 
     if (exitCode !== 0) {
