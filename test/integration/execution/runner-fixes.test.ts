@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Tests for BUG-2 (queue race condition) and PERF-1 (batching optimization)
  * Tests for PERF-2 (PRD dirty-flag reload optimization) and MEM-1 (file size limit)

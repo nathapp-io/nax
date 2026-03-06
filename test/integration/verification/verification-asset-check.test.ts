@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Tests for asset verification with contextFiles/expectedFiles split
  */

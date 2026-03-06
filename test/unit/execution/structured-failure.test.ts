@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Unit tests for StructuredFailure and priorFailures tracking
  *

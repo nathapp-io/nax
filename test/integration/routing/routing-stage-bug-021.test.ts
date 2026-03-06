@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Routing Stage Bug-021 Fix: Ensure "Task classified" log shows final routing state
  *

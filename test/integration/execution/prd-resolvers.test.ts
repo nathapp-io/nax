@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Tests for PRD resolver functions: getContextFiles and getExpectedFiles
  */

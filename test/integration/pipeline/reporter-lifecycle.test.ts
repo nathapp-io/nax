@@ -1,3 +1,5 @@
+// RE-ARCH: rewrite
+
 /**
  * Test reporter lifecycle events
  *

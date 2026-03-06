@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * S5: Strategy Fallback Tests
  *

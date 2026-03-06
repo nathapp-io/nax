@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Routing Stage Greenfield Detection Tests
  *

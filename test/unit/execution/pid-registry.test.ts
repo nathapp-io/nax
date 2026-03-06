@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * PID Registry Tests
  */

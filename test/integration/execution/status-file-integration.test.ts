@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Integration Tests: Status File — runner + CLI (T2)
  *

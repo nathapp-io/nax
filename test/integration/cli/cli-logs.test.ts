@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Integration tests for nax logs CLI command
  *

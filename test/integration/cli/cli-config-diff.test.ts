@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Config Command --diff Flag Integration Tests
  *

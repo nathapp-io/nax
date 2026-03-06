@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Tests for acceptance pipeline stage
  */

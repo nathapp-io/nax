@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Review Config-Driven Commands Tests (US-005)
  *

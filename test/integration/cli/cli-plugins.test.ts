@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * CLI 'nax plugins list' command tests
  *

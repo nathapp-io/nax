@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * End-to-End Integration Tests
  *

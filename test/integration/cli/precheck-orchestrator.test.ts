@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * US-002: Precheck orchestrator with formatted output
  *

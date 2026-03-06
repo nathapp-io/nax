@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Plugin Routing Integration Tests
  *

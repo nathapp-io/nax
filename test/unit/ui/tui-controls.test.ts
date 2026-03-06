@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * TUI Controls Tests
  *

@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Config Schema Validation for lintCommand and typecheckCommand (US-005)
  *

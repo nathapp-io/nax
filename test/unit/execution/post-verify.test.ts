@@ -1,3 +1,5 @@
+// RE-ARCH: delete-with-source
+
 /**
  * Unit tests for regression gate configuration and behavior
  *

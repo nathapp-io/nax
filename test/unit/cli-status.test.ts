@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Tests for src/cli/status.ts - Feature status display with active run detection
  */

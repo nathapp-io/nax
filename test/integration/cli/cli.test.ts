@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * CLI --parallel flag tests
  *

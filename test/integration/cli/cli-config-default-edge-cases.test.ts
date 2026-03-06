@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Edge Case Tests for `nax config` Default View
  *

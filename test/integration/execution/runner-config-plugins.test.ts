@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Runner config plugins integration test (US-007)
  *

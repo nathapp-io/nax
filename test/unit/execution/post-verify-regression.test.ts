@@ -1,3 +1,5 @@
+// RE-ARCH: delete-with-source
+
 /**
  * BUG-026: Regression gate timeout acceptance
  *

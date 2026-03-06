@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * PRD Auto-Default Tests (US-006 / BUG-004)
  *

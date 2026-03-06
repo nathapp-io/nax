@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Integration test for headless mode with formatter
  *

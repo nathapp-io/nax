@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * TUI Cost Accumulation and PTY Line Length Tests
  *

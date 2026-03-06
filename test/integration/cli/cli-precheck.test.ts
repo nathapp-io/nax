@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Integration tests for CLI precheck command
  *

@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Test: Verify storyId presence in JSONL events (BUG-020)
  *

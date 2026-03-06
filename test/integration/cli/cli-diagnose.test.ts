@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Integration Tests: nax diagnose CLI
  *

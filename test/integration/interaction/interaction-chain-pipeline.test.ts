@@ -1,3 +1,5 @@
+// RE-ARCH: rewrite
+
 /**
  * Integration Tests: Interaction Chain → Pipeline (BUG-025)
  *

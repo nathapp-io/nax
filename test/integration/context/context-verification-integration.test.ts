@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Integration tests for contextFiles/expectedFiles split
  * Verifies that context builder and verification use the correct resolvers

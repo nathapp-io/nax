@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Plugin config path resolution tests
  *

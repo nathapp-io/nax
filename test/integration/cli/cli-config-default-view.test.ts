@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * CLI Integration Tests for `nax config` Default View
  *

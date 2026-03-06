@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Smart Test Runner — 3-Pass Discovery Tests
  *

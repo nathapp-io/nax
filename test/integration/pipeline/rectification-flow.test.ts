@@ -1,3 +1,5 @@
+// RE-ARCH: delete-with-source
+
 /**
  * Integration tests for rectification flow (v0.11)
  *

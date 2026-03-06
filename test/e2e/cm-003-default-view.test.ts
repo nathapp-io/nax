@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Acceptance Tests for CM-003: nax config (default view)
  *

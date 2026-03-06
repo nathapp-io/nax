@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Unit tests for crash recovery module (US-007)
  */
