@@ -9,7 +9,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { ALL_AGENTS } from "../../../src/agents/registry";
+import { ALL_AGENTS } from "../../src/agents/registry";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -19,14 +19,14 @@ import type {
   DecomposeResult,
   PlanOptions,
   PlanResult,
-} from "../../../src/agents/types";
-import { analyzeFeature } from "../../../src/cli/analyze";
-import { planCommand } from "../../../src/cli/plan";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import type { NaxConfig } from "../../../src/config";
-import { run } from "../../../src/execution/runner";
-import { initLogger, resetLogger } from "../../../src/logger";
-import { loadPRD } from "../../../src/prd";
+} from "../../src/agents/types";
+import { analyzeFeature } from "../../src/cli/analyze";
+import { planCommand } from "../../src/cli/plan";
+import { DEFAULT_CONFIG } from "../../src/config";
+import type { NaxConfig } from "../../src/config";
+import { run } from "../../src/execution/runner";
+import { initLogger, resetLogger } from "../../src/logger";
+import { loadPRD } from "../../src/prd";
 
 /**
  * Mock Agent Adapter for testing
