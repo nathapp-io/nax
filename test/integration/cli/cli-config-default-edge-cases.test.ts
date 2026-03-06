@@ -36,7 +36,7 @@ describe("nax config (default view) - edge cases", () => {
 
     process.chdir(tempDir);
 
-    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../bin/nax.ts"), "config"], {
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
       cwd: tempDir,
       stdout: "pipe",
       stderr: "pipe",
@@ -77,7 +77,7 @@ describe("nax config (default view) - edge cases", () => {
     mkdirSync(deepDir, { recursive: true });
     process.chdir(deepDir);
 
-    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../bin/nax.ts"), "config"], {
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
       cwd: deepDir,
       stdout: "pipe",
       stderr: "pipe",
@@ -103,7 +103,7 @@ describe("nax config (default view) - edge cases", () => {
   test("outputs complete config structure with all top-level keys", async () => {
     process.chdir(tempDir);
 
-    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../bin/nax.ts"), "config"], {
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
       cwd: tempDir,
       stdout: "pipe",
       stderr: "pipe",
@@ -156,7 +156,7 @@ describe("nax config (default view) - edge cases", () => {
 
     process.chdir(tempDir);
 
-    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../bin/nax.ts"), "config"], {
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
       cwd: tempDir,
       stdout: "pipe",
       stderr: "pipe",
@@ -198,7 +198,7 @@ describe("nax config (default view) - edge cases", () => {
 
     process.chdir(tempDir);
 
-    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../bin/nax.ts"), "config"], {
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
       cwd: tempDir,
       stdout: "pipe",
       stderr: "pipe",

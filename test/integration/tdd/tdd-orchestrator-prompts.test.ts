@@ -6,6 +6,14 @@ import type { AgentAdapter, AgentResult } from "../../../src/agents";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
+import {
+  buildTestWriterLitePrompt,
+  buildImplementerLitePrompt,
+  buildVerifierPrompt,
+  buildSingleSessionPrompt,
+  buildTestWriterPrompt,
+  buildImplementerPrompt,
+} from "../../../src/tdd/prompts";
 import { VERDICT_FILE } from "../../../src/tdd/verdict";
 
 let originalSpawn: typeof Bun.spawn;

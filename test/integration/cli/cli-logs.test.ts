@@ -14,8 +14,8 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const TEST_WORKSPACE = join(import.meta.dir, "..", "tmp", "cli-logs-test");
-const NAX_BIN = join(import.meta.dir, "..", "..", "bin", "nax.ts");
+const TEST_WORKSPACE = join(import.meta.dir, "../../..", "tmp", "cli-logs-test");
+const NAX_BIN = join(import.meta.dir, "..", "..", "..", "bin", "nax.ts");
 
 function setupTestProject(featureName: string): string {
   const projectDir = join(TEST_WORKSPACE, `project-${Date.now()}`);

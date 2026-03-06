@@ -31,7 +31,7 @@ describe("nax config (default view) - CLI integration", () => {
     process.chdir(tempDir);
 
     // Run `nax config` command
-    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../bin/nax.ts"), "config"], {
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
       cwd: tempDir,
       stdout: "pipe",
       stderr: "pipe",
@@ -66,7 +66,7 @@ describe("nax config (default view) - CLI integration", () => {
   test("shows global config path in header", async () => {
     process.chdir(tempDir);
 
-    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../bin/nax.ts"), "config"], {
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
       cwd: tempDir,
       stdout: "pipe",
       stderr: "pipe",
@@ -87,7 +87,7 @@ describe("nax config (default view) - CLI integration", () => {
     mkdirSync(isolatedDir, { recursive: true });
     process.chdir(isolatedDir);
 
-    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../bin/nax.ts"), "config"], {
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
       cwd: isolatedDir,
       stdout: "pipe",
       stderr: "pipe",
@@ -117,7 +117,7 @@ describe("nax config (default view) - CLI integration", () => {
 
     process.chdir(tempDir);
 
-    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../bin/nax.ts"), "config"], {
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
       cwd: tempDir,
       stdout: "pipe",
       stderr: "pipe",
@@ -143,7 +143,7 @@ describe("nax config (default view) - CLI integration", () => {
   test("header precedes JSON output with blank line", async () => {
     process.chdir(tempDir);
 
-    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../bin/nax.ts"), "config"], {
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
       cwd: tempDir,
       stdout: "pipe",
       stderr: "pipe",
@@ -170,7 +170,7 @@ describe("nax config (default view) - CLI integration", () => {
   test("JSON output is pretty-printed (indented)", async () => {
     process.chdir(tempDir);
 
-    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../bin/nax.ts"), "config"], {
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
       cwd: tempDir,
       stdout: "pipe",
       stderr: "pipe",
@@ -205,7 +205,7 @@ describe("nax config (default view) - CLI integration", () => {
     mkdirSync(subdir, { recursive: true });
     process.chdir(subdir);
 
-    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../bin/nax.ts"), "config"], {
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
       cwd: subdir,
       stdout: "pipe",
       stderr: "pipe",

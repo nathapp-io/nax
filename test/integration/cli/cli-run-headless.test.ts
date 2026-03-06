@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { initLogger, resetLogger } from "../../../src/logger";
 
 describe("Headless mode formatter integration", () => {
-  const testDir = join(import.meta.dir, "..", "tmp", "headless-test");
+  const testDir = join(import.meta.dir, "../..", "tmp", "headless-test");
   const logFile = join(testDir, "test.jsonl");
 
   beforeEach(() => {
