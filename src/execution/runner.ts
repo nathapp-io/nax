@@ -299,6 +299,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       startTime,
       workdir,
       statusWriter,
+      config,
     });
 
     const { durationMs, runCompletedAt, finalCounts } = completionResult;

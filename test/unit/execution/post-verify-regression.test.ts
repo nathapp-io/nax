@@ -1,18 +1,18 @@
 /**
- * BUG-026: Regression gate timeout accepts scoped pass instead of escalating
+ * BUG-026: Regression gate timeout acceptance
  *
- * Tests that runRegressionGate (via runPostAgentVerification):
+ * Tests that runPostAgentVerification:
  * - Returns passed when regression gate TIMES OUT and acceptOnTimeout=true (default)
  * - Returns failed when regression gate TIMES OUT and acceptOnTimeout=false
- * - Returns failed when regression gate returns TEST_FAILURE (existing behavior unchanged)
+ * - Returns failed when regression gate returns TEST_FAILURE
  * - Defaults acceptOnTimeout to true when not set in config
  *
- * These are behavioral tests that call the actual function with mocked dependencies.
- * They complement the type-level tests already in post-verify.test.ts.
+ * With the removal of scoped verification, post-verify now ONLY runs the full-suite regression gate.
+ * These behavioral tests call the actual function with mocked dependencies.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { NaxConfig } from "../../../src/config";
@@ -37,7 +37,7 @@ const mockRunVerification = mock(async (): Promise<VerResult> => {
   return resp;
 });
 
-const mockRevertStoriesOnFailure = mock(async ({ prd }: { prd: PRD; [k: string]: unknown }) => prd);
+const mockRevertStoriesOnFailure = mock(async (opts: any) => opts.prd);
 const mockRunRectificationLoop = mock(async () => false);
 
 // ---------------------------------------------------------------------------
@@ -53,47 +53,10 @@ const _origPostVerifyDeps = { ..._postVerifyDeps };
 // Fixtures
 // ---------------------------------------------------------------------------
 
-/** Run a git command in a directory using Bun-native spawn. */
-function gitSync(args: string[], cwd: string): void {
-  const proc = Bun.spawnSync(["git", ...args], { cwd, stdin: "ignore", stdout: "ignore", stderr: "ignore" });
-  if (proc.exitCode !== 0) {
-    throw new Error(`git ${args[0]} failed in ${cwd}`);
-  }
-}
-
-/** Read stdout from a git command. */
-function gitOutput(args: string[], cwd: string): string {
-  const proc = Bun.spawnSync(["git", ...args], { cwd, stdin: "ignore", stdout: "pipe", stderr: "ignore" });
-  return new TextDecoder().decode(proc.stdout).trim();
-}
-
-/**
- * Create a temp git repo with two commits so that `git diff storyGitRef HEAD`
- * returns at least one test file — needed for the regression gate to activate.
- */
-function makeGitRepo(): { dir: string; storyGitRef: string } {
-  const dir = mkdtempSync(join(tmpdir(), "nax-bug026-"));
-
-  gitSync(["init"], dir);
-  gitSync(["config", "user.email", "test@example.com"], dir);
-  gitSync(["config", "user.name", "test"], dir);
-
-  // Initial commit → becomes storyGitRef
-  writeFileSync(join(dir, "src.ts"), "export const x = 1;");
-  gitSync(["add", "."], dir);
-  gitSync(["commit", "-m", "initial"], dir);
-  const storyGitRef = gitOutput(["rev-parse", "HEAD"], dir);
-
-  // Second commit: adds a test file (changed after storyGitRef)
-  mkdirSync(join(dir, "test"), { recursive: true });
-  writeFileSync(
-    join(dir, "test", "example.test.ts"),
-    'import { test, expect } from "bun:test";\ntest("x", () => expect(1).toBe(1));',
-  );
-  gitSync(["add", "."], dir);
-  gitSync(["commit", "-m", "add test"], dir);
-
-  return { dir, storyGitRef };
+/** Create a temp directory for test fixtures. */
+function makeTempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "nax-post-verify-"));
+  return dir;
 }
 
 function makeConfig(
@@ -139,6 +102,7 @@ function makeConfig(
       regressionGate: {
         enabled: true,
         timeoutSeconds: 120,
+        mode: "per-story",
         ...regressionGateOverrides,
       },
       contextProviderTokenBudget: 2000,
@@ -216,7 +180,6 @@ function makePRD(story: UserStory): PRD {
 
 function makeOpts(
   workdir: string,
-  storyGitRef: string,
   config: NaxConfig,
   story: UserStory,
   prd: PRD,
@@ -230,7 +193,6 @@ function makeOpts(
     storiesToExecute: [story],
     allStoryMetrics: [] as StoryMetrics[],
     timeoutRetryCountMap: new Map<string, number>(),
-    storyGitRef,
   };
 }
 
@@ -239,19 +201,14 @@ function makeOpts(
 // ---------------------------------------------------------------------------
 
 let tempDir: string;
-let storyGitRef: string;
 
 beforeEach(() => {
   // Wire _postVerifyDeps to mocks
   _postVerifyDeps.runVerification = mockRunVerification as typeof _postVerifyDeps.runVerification;
-  _postVerifyDeps.parseTestOutput = () => ({ passCount: 5, failCount: 0, isEnvironmentalFailure: false }) as any;
-  _postVerifyDeps.getEnvironmentalEscalationThreshold = () => 3;
   _postVerifyDeps.revertStoriesOnFailure = mockRevertStoriesOnFailure as typeof _postVerifyDeps.revertStoriesOnFailure;
   _postVerifyDeps.runRectificationLoop = mockRunRectificationLoop as typeof _postVerifyDeps.runRectificationLoop;
   _postVerifyDeps.getExpectedFiles = () => [];
   _postVerifyDeps.savePRD = mock(async () => {}) as typeof _postVerifyDeps.savePRD;
-  _postVerifyDeps.appendProgress = mock(async () => {}) as typeof _postVerifyDeps.appendProgress;
-  _postVerifyDeps.getTierConfig = () => undefined as any;
   _postVerifyDeps.parseBunTestOutput = () => ({ failed: 0, passed: 5, failures: [] }) as any;
   mockRunVerification.mockClear();
   mockRevertStoriesOnFailure.mockClear();
@@ -259,9 +216,7 @@ beforeEach(() => {
   _verificationResponses = [];
   _verificationCallIndex = 0;
 
-  const repo = makeGitRepo();
-  tempDir = repo.dir;
-  storyGitRef = repo.storyGitRef;
+  tempDir = makeTempDir();
 });
 
 afterEach(() => {
@@ -276,9 +231,8 @@ afterEach(() => {
 
 describe("BUG-026: regression gate TIMEOUT acceptance", () => {
   test("TIMEOUT + acceptOnTimeout=true → runPostAgentVerification returns passed", async () => {
-    // Call 1: scoped verification passes; Call 2: regression gate times out
+    // Now only one call: regression gate times out with acceptOnTimeout=true
     _verificationResponses = [
-      { success: true, status: "SUCCESS", countsTowardEscalation: true, output: "pass 5" },
       { success: false, status: "TIMEOUT", countsTowardEscalation: false },
     ];
 
@@ -286,14 +240,13 @@ describe("BUG-026: regression gate TIMEOUT acceptance", () => {
     const story = makeStory();
     const prd = makePRD(story);
 
-    const result = await runPostAgentVerification(makeOpts(tempDir, storyGitRef, config, story, prd));
+    const result = await runPostAgentVerification(makeOpts(tempDir, config, story, prd));
 
     expect(result.passed).toBe(true);
   });
 
   test("TIMEOUT + acceptOnTimeout=true → revertStoriesOnFailure is NOT called", async () => {
     _verificationResponses = [
-      { success: true, status: "SUCCESS", countsTowardEscalation: true, output: "pass 5" },
       { success: false, status: "TIMEOUT", countsTowardEscalation: false },
     ];
 
@@ -301,14 +254,13 @@ describe("BUG-026: regression gate TIMEOUT acceptance", () => {
     const story = makeStory();
     const prd = makePRD(story);
 
-    await runPostAgentVerification(makeOpts(tempDir, storyGitRef, config, story, prd));
+    await runPostAgentVerification(makeOpts(tempDir, config, story, prd));
 
     expect(mockRevertStoriesOnFailure).not.toHaveBeenCalled();
   });
 
   test("TIMEOUT + acceptOnTimeout=false → runPostAgentVerification returns failed", async () => {
     _verificationResponses = [
-      { success: true, status: "SUCCESS", countsTowardEscalation: true, output: "pass 5" },
       { success: false, status: "TIMEOUT", countsTowardEscalation: false },
     ];
 
@@ -316,14 +268,13 @@ describe("BUG-026: regression gate TIMEOUT acceptance", () => {
     const story = makeStory();
     const prd = makePRD(story);
 
-    const result = await runPostAgentVerification(makeOpts(tempDir, storyGitRef, config, story, prd));
+    const result = await runPostAgentVerification(makeOpts(tempDir, config, story, prd));
 
     expect(result.passed).toBe(false);
   });
 
   test("TIMEOUT + acceptOnTimeout=false → revertStoriesOnFailure IS called", async () => {
     _verificationResponses = [
-      { success: true, status: "SUCCESS", countsTowardEscalation: true, output: "pass 5" },
       { success: false, status: "TIMEOUT", countsTowardEscalation: false },
     ];
 
@@ -331,14 +282,13 @@ describe("BUG-026: regression gate TIMEOUT acceptance", () => {
     const story = makeStory();
     const prd = makePRD(story);
 
-    await runPostAgentVerification(makeOpts(tempDir, storyGitRef, config, story, prd));
+    await runPostAgentVerification(makeOpts(tempDir, config, story, prd));
 
     expect(mockRevertStoriesOnFailure).toHaveBeenCalledTimes(1);
   });
 
   test("TIMEOUT + acceptOnTimeout not set → defaults to true → returns passed", async () => {
     _verificationResponses = [
-      { success: true, status: "SUCCESS", countsTowardEscalation: true, output: "pass 5" },
       { success: false, status: "TIMEOUT", countsTowardEscalation: false },
     ];
 
@@ -347,14 +297,13 @@ describe("BUG-026: regression gate TIMEOUT acceptance", () => {
     const story = makeStory();
     const prd = makePRD(story);
 
-    const result = await runPostAgentVerification(makeOpts(tempDir, storyGitRef, config, story, prd));
+    const result = await runPostAgentVerification(makeOpts(tempDir, config, story, prd));
 
     expect(result.passed).toBe(true);
   });
 
   test("TEST_FAILURE in regression gate → returns failed regardless of acceptOnTimeout", async () => {
     _verificationResponses = [
-      { success: true, status: "SUCCESS", countsTowardEscalation: true, output: "pass 5" },
       { success: false, status: "TEST_FAILURE", countsTowardEscalation: true, output: "FAIL 1" },
     ];
 
@@ -362,14 +311,13 @@ describe("BUG-026: regression gate TIMEOUT acceptance", () => {
     const story = makeStory();
     const prd = makePRD(story);
 
-    const result = await runPostAgentVerification(makeOpts(tempDir, storyGitRef, config, story, prd));
+    const result = await runPostAgentVerification(makeOpts(tempDir, config, story, prd));
 
     expect(result.passed).toBe(false);
   });
 
   test("TEST_FAILURE in regression gate → revertStoriesOnFailure IS called", async () => {
     _verificationResponses = [
-      { success: true, status: "SUCCESS", countsTowardEscalation: true, output: "pass 5" },
       { success: false, status: "TEST_FAILURE", countsTowardEscalation: true, output: "FAIL 1" },
     ];
 
@@ -377,39 +325,38 @@ describe("BUG-026: regression gate TIMEOUT acceptance", () => {
     const story = makeStory();
     const prd = makePRD(story);
 
-    await runPostAgentVerification(makeOpts(tempDir, storyGitRef, config, story, prd));
+    await runPostAgentVerification(makeOpts(tempDir, config, story, prd));
 
     expect(mockRevertStoriesOnFailure).toHaveBeenCalledTimes(1);
   });
 
-  test("regression gate runs second → runVerification called twice (scoped + full suite)", async () => {
+  test("full-suite regression gate passes → returns passed (one call to runVerification)", async () => {
     _verificationResponses = [
       { success: true, status: "SUCCESS", countsTowardEscalation: true, output: "pass 5" },
-      { success: false, status: "TIMEOUT", countsTowardEscalation: false },
     ];
 
     const config = makeConfig({ acceptOnTimeout: true });
     const story = makeStory();
     const prd = makePRD(story);
 
-    await runPostAgentVerification(makeOpts(tempDir, storyGitRef, config, story, prd));
+    const result = await runPostAgentVerification(makeOpts(tempDir, config, story, prd));
 
-    // Once for scoped verification, once for regression gate
-    expect(mockRunVerification).toHaveBeenCalledTimes(2);
+    // Post-verify now ONLY runs the full-suite regression gate (no scoped verification)
+    expect(result.passed).toBe(true);
+    expect(mockRunVerification).toHaveBeenCalledTimes(1);
   });
 
-  test("regression gate disabled → only scoped test runs (one call to runVerification)", async () => {
-    _verificationResponses = [
-      { success: true, status: "SUCCESS", countsTowardEscalation: true, output: "pass 5" },
-    ];
+  test("regression gate disabled → returns passed (skips regression gate)", async () => {
+    _verificationResponses = [];
 
     const config = makeConfig({ enabled: false, timeoutSeconds: 120 });
     const story = makeStory();
     const prd = makePRD(story);
 
-    const result = await runPostAgentVerification(makeOpts(tempDir, storyGitRef, config, story, prd));
+    const result = await runPostAgentVerification(makeOpts(tempDir, config, story, prd));
 
     expect(result.passed).toBe(true);
-    expect(mockRunVerification).toHaveBeenCalledTimes(1);
+    // No verification calls when regression gate is disabled
+    expect(mockRunVerification).toHaveBeenCalledTimes(0);
   });
 });

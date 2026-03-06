@@ -159,6 +159,15 @@ describe("Verify Stage", () => {
       workdir: tempDir,
       config: {
         ...createTestContext().config,
+        execution: {
+          ...createTestContext().config.execution,
+          regressionGate: {
+            enabled: true,
+            timeoutSeconds: 30,
+            acceptOnTimeout: false,
+            mode: "per-story", // Override for this specific test
+          },
+        },
         review: {
           enabled: true,
           checks: ["test"],

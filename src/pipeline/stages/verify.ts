@@ -1,23 +1,12 @@
 /**
  * Verify Stage
  *
- * Verifies the agent's work meets basic requirements by running tests.
+ * Verifies the agent\'s work meets basic requirements by running tests.
  * This is a lightweight verification before the full review stage.
  *
  * @returns
  * - `continue`: Tests passed
  * - `escalate`: Tests failed (retry with escalation)
- *
- * @example
- * ```ts
- * // Tests pass
- * await verifyStage.execute(ctx);
- * // Logs: "✓ Tests passed"
- *
- * // Tests fail
- * await verifyStage.execute(ctx);
- * // Returns: { action: "escalate", reason: "Tests failed (exit code 1)" }
- * ```
  */
 
 import type { SmartTestRunnerConfig } from "../../config/types";
@@ -32,6 +21,9 @@ const DEFAULT_SMART_RUNNER_CONFIG: SmartTestRunnerConfig = {
   fallback: "import-grep",
 };
 
+/**
+ * Coerces boolean or partial config into a full SmartTestRunnerConfig
+ */
 function coerceSmartTestRunner(val: boolean | SmartTestRunnerConfig | undefined): SmartTestRunnerConfig {
   if (val === undefined || val === true) return DEFAULT_SMART_RUNNER_CONFIG;
   if (val === false) return { ...DEFAULT_SMART_RUNNER_CONFIG, enabled: false };
@@ -62,7 +54,9 @@ export const verifyStage: PipelineStage = {
 
     // Determine effective test command (smart runner or full suite)
     let effectiveCommand = testCommand;
+    let isFullSuite = true;
     const smartRunnerConfig = coerceSmartTestRunner(ctx.config.execution.smartTestRunner);
+    const regressionMode = ctx.config.execution.regressionGate?.mode ?? "deferred";
 
     if (smartRunnerConfig.enabled) {
       const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(ctx.workdir);
@@ -74,6 +68,7 @@ export const verifyStage: PipelineStage = {
           storyId: ctx.story.id,
         });
         effectiveCommand = _smartRunnerDeps.buildSmartTestCommand(pass1Files, testCommand);
+        isFullSuite = false;
       } else if (smartRunnerConfig.fallback === "import-grep") {
         // Pass 2: import-grep fallback
         const pass2Files = await _smartRunnerDeps.importGrepFallback(
@@ -86,16 +81,24 @@ export const verifyStage: PipelineStage = {
             storyId: ctx.story.id,
           });
           effectiveCommand = _smartRunnerDeps.buildSmartTestCommand(pass2Files, testCommand);
-        } else {
-          logger.info("verify", "[smart-runner] No mapped tests — falling back to full suite", {
-            storyId: ctx.story.id,
-          });
+          isFullSuite = false;
         }
-      } else {
-        logger.info("verify", "[smart-runner] No mapped tests — falling back to full suite", {
-          storyId: ctx.story.id,
-        });
       }
+    }
+
+    // US-003: If we are falling back to the full suite AND mode is deferred, skip this stage
+    // because the deferred regression gate will handle the full suite at run-end.
+    if (isFullSuite && regressionMode === "deferred") {
+      logger.info("verify", "[smart-runner] No mapped tests — deferring full suite to run-end (mode: deferred)", {
+        storyId: ctx.story.id,
+      });
+      return { action: "continue" };
+    }
+
+    if (isFullSuite) {
+      logger.info("verify", "[smart-runner] No mapped tests — falling back to full suite", {
+        storyId: ctx.story.id,
+      });
     }
 
     // Use unified regression gate (includes 2s wait for agent process cleanup)
@@ -127,9 +130,10 @@ export const verifyStage: PipelineStage = {
         });
       }
 
-      // Log first few lines of output for context (skip for TIMEOUT — output is misleading)
+      // Log first few lines of output for context
+      // BUG-037: Changed from .slice(0, 10) to .slice(-20) to show failures, not prechecks
       if (result.output && result.status !== "TIMEOUT") {
-        const outputLines = result.output.split("\n").slice(0, 10);
+        const outputLines = result.output.split("\n").slice(-20);
         if (outputLines.length > 0) {
           logger.debug("verify", "Test output preview", {
             storyId: ctx.story.id,

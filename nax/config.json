@@ -59,7 +59,7 @@
     "maxIterations": 6,
     "iterationDelayMs": 2000,
     "costLimit": 8.0,
-    "sessionTimeoutSeconds": 600,
+    "sessionTimeoutSeconds": 7200,
     "verificationTimeoutSeconds": 300,
     "maxStoriesPerFeature": 15,
     "rectification": {

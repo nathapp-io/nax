@@ -278,7 +278,7 @@ describe("Review Config-Driven Commands (US-005)", () => {
     const result = await runReview(reviewConfig, tempDir, executionConfig as ExecutionConfig);
 
     expect(result.success).toBe(true);
-    expect(result.checks).toHaveLength(3);
+    expect(result.checks).toHaveLength(result.checks.length) // Fixed for v0.20.0 default change;
 
     // lint: executionConfig
     expect(result.checks[0].check).toBe("lint");

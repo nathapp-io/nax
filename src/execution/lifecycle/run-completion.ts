@@ -2,17 +2,28 @@
  * Run Completion — Final Metrics and Status Updates
  *
  * Handles the final steps after sequential execution completes:
+ * - Run deferred regression gate (if configured)
  * - Save run metrics
  * - Log completion summary with per-story metrics
  * - Update final status
  */
 
+import type { NaxConfig } from "../../config";
 import { getSafeLogger } from "../../logger";
 import type { StoryMetrics } from "../../metrics";
 import { saveRunMetrics } from "../../metrics";
 import { countStories, isComplete, isStalled } from "../../prd";
 import type { PRD } from "../../prd";
 import type { StatusWriter } from "../status-writer";
+import { runDeferredRegression } from "./run-regression";
+
+/**
+ * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ * @internal - test use only.
+ */
+export const _runCompletionDeps = {
+  runDeferredRegression,
+};
 
 export interface RunCompletionOptions {
   runId: string;
@@ -26,6 +37,7 @@ export interface RunCompletionOptions {
   startTime: number;
   workdir: string;
   statusWriter: StatusWriter;
+  config: NaxConfig;
 }
 
 export interface RunCompletionResult {
@@ -57,7 +69,24 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     startTime,
     workdir,
     statusWriter,
+    config,
   } = options;
+
+  // Run deferred regression gate before final metrics
+  const regressionMode = config.execution.regressionGate?.mode;
+  if (regressionMode === "deferred" && config.quality.commands.test) {
+    const regressionResult = await _runCompletionDeps.runDeferredRegression({
+      config,
+      prd,
+      workdir,
+    });
+
+    logger?.info("regression", "Deferred regression gate completed", {
+      success: regressionResult.success,
+      failedTests: regressionResult.failedTests,
+      affectedStories: regressionResult.affectedStories,
+    });
+  }
 
   const durationMs = Date.now() - startTime;
   const runCompletedAt = new Date().toISOString();

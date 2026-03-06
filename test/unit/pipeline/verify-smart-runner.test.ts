@@ -73,6 +73,7 @@ function makeConfig(overrides: Partial<NaxConfig["execution"]> = {}): NaxConfig 
       verificationTimeoutSeconds: 30,
       maxStoriesPerFeature: 50,
       smartTestRunner: true,
+      regressionGate: { mode: "per-story" as const, acceptOnTimeout: true },
       ...overrides,
     },
     quality: {

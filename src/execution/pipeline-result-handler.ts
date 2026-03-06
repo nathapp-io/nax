@@ -83,7 +83,6 @@ export async function handlePipelineSuccess(
     storiesToExecute: ctx.storiesToExecute,
     allStoryMetrics: ctx.allStoryMetrics,
     timeoutRetryCountMap: ctx.timeoutRetryCountMap,
-    storyGitRef: ctx.storyGitRef ?? undefined,
   });
   const verificationPassed = verifyResult.passed;
   prd = verifyResult.prd;
