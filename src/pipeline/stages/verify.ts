@@ -56,7 +56,7 @@ export const verifyStage: PipelineStage = {
     let effectiveCommand = testCommand;
     let isFullSuite = true;
     const smartRunnerConfig = coerceSmartTestRunner(ctx.config.execution.smartTestRunner);
-    const regressionMode = ctx.config.execution.regressionGate?.mode ?? "per-story";
+    const regressionMode = ctx.config.execution.regressionGate?.mode ?? "deferred";
 
     if (smartRunnerConfig.enabled) {
       const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(ctx.workdir);
