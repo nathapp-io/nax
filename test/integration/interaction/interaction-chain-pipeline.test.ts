@@ -14,6 +14,8 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "../../../src/config";
 import { InteractionChain } from "../../../src/interaction/chain";
+import { pipelineEventBus } from "../../../src/pipeline/event-bus";
+import { wireInteraction } from "../../../src/pipeline/subscribers/interaction";
 import { CLIInteractionPlugin } from "../../../src/interaction/plugins/cli";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse, TriggerName } from "../../../src/interaction/types";
 import { TRIGGER_METADATA } from "../../../src/interaction/types";
@@ -229,6 +231,10 @@ describe("AC2: max retries triggers human-review interaction", () => {
 
     const prd: PRD = { ...basePrd, userStories: [exhaustedStory] };
 
+    // Wire interaction subscriber on the singleton bus (Phase 3: replaces direct executeTrigger call)
+    pipelineEventBus.clear();
+    wireInteraction(pipelineEventBus, chain, baseConfig as any);
+
     // Import and invoke the failure handler or sequential executor path
     // that should fire 'human-review' when a story has exceeded max retries
     const { handlePipelineFailure } = await import("../../../src/execution/pipeline-result-handler");
@@ -283,6 +289,10 @@ describe("AC2: max retries triggers human-review interaction", () => {
     const chain = buildInteractionChain();
     const { plugin, sentRequests } = buildCapturingPlugin();
     chain.register(plugin, 10);
+
+    // Wire interaction subscriber on the singleton bus (Phase 3)
+    pipelineEventBus.clear();
+    wireInteraction(pipelineEventBus, chain, baseConfig as any);
 
     const failingStory: UserStory = {
       ...baseStory,

@@ -30,6 +30,10 @@ export interface StoryStartedEvent {
   storyId: string;
   story: UserStory;
   workdir: string;
+  /** Optional: passed by executor for hook subscriber */
+  modelTier?: string;
+  agent?: string;
+  iteration?: number;
 }
 
 export interface StoryCompletedEvent {
@@ -38,6 +42,10 @@ export interface StoryCompletedEvent {
   story: UserStory;
   passed: boolean;
   durationMs: number;
+  /** Optional: passed by executor/stage for hook/reporter subscribers */
+  cost?: number;
+  modelTier?: string;
+  testStrategy?: string;
 }
 
 export interface StoryFailedEvent {
@@ -46,6 +54,9 @@ export interface StoryFailedEvent {
   story: UserStory;
   reason: string;
   countsTowardEscalation: boolean;
+  /** Optional: passed by executor for interaction subscriber */
+  feature?: string;
+  attempts?: number;
 }
 
 export interface VerifyCompletedEvent {
@@ -92,12 +103,36 @@ export interface RunCompletedEvent {
   passedStories: number;
   failedStories: number;
   durationMs: number;
+  totalCost?: number;
 }
 
 export interface HumanReviewRequestedEvent {
   type: "human-review:requested";
   storyId: string;
   reason: string;
+  feature?: string;
+  attempts?: number;
+}
+
+export interface RunStartedEvent {
+  type: "run:started";
+  feature: string;
+  totalStories: number;
+  workdir: string;
+}
+
+export interface RunPausedEvent {
+  type: "run:paused";
+  reason: string;
+  storyId?: string;
+  cost: number;
+}
+
+export interface StoryPausedEvent {
+  type: "story:paused";
+  storyId: string;
+  reason: string;
+  cost: number;
 }
 
 /** Discriminated union of all pipeline events. */
@@ -112,7 +147,10 @@ export type PipelineEvent =
   | AutofixCompletedEvent
   | RegressionDetectedEvent
   | RunCompletedEvent
-  | HumanReviewRequestedEvent;
+  | HumanReviewRequestedEvent
+  | RunStartedEvent
+  | RunPausedEvent
+  | StoryPausedEvent;
 
 export type PipelineEventType = PipelineEvent["type"];
 

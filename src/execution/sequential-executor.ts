@@ -1,13 +1,17 @@
 /** Sequential Story Executor — main execution loop for story pipeline. */
 
 import type { NaxConfig } from "../config";
-import { type LoadedHooksConfig, fireHook } from "../hooks";
+import type { LoadedHooksConfig } from "../hooks";
 import type { InteractionChain } from "../interaction/chain";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
+import { pipelineEventBus } from "../pipeline/event-bus";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import { runPipeline } from "../pipeline/runner";
 import { defaultPipeline } from "../pipeline/stages";
+import { wireHooks } from "../pipeline/subscribers/hooks";
+import { wireInteraction } from "../pipeline/subscribers/interaction";
+import { wireReporters } from "../pipeline/subscribers/reporters";
 import type { PipelineContext, RoutingResult } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
 import { generateHumanHaltSummary, getNextStory, isComplete, isStalled, loadPRD } from "../prd";
@@ -17,7 +21,6 @@ import { captureGitRef } from "../utils/git";
 import type { StoryBatch } from "./batching";
 import { startHeartbeat, stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import { preIterationTierCheck } from "./escalation";
-import { hookCtx } from "./helpers";
 import {
   applyCachedRouting,
   handleDryRun,
@@ -73,6 +76,12 @@ export async function executeSequential(
   let currentBatchIndex = 0;
   let lastStoryId: string | null = null;
 
+  // Phase 3: Wire singleton event bus with fresh subscribers each run
+  pipelineEventBus.clear();
+  wireHooks(pipelineEventBus, ctx.hooks, ctx.workdir, ctx.feature);
+  wireReporters(pipelineEventBus, ctx.pluginRegistry, ctx.runId, ctx.startTime);
+  wireInteraction(pipelineEventBus, ctx.interactionChain, ctx.config);
+
   const buildResult = (exitReason: SequentialExecutionResult["exitReason"]): SequentialExecutionResult => ({
     prd,
     iterations,
@@ -117,12 +126,14 @@ export async function executeSequential(
           feature: ctx.feature,
           totalCost,
         });
-        await fireHook(
-          ctx.hooks,
-          "on-complete",
-          hookCtx(ctx.feature, { status: "complete", cost: totalCost }),
-          ctx.workdir,
-        );
+        pipelineEventBus.emit({
+          type: "run:completed",
+          totalStories: 0,
+          passedStories: 0,
+          failedStories: 0,
+          durationMs: Date.now() - ctx.startTime,
+          totalCost,
+        });
         return buildResult("completed");
       }
 
@@ -201,16 +212,12 @@ export async function executeSequential(
           totalCost,
           costLimit: ctx.config.execution.costLimit,
         });
-        await fireHook(
-          ctx.hooks,
-          "on-pause",
-          hookCtx(ctx.feature, {
-            storyId: story.id,
-            reason: `Cost limit reached: $${totalCost.toFixed(2)}`,
-            cost: totalCost,
-          }),
-          ctx.workdir,
-        );
+        pipelineEventBus.emit({
+          type: "run:paused",
+          reason: `Cost limit reached: $${totalCost.toFixed(2)}`,
+          storyId: story.id,
+          cost: totalCost,
+        });
         return buildResult("cost-limit");
       }
 
@@ -225,18 +232,16 @@ export async function executeSequential(
         ...(isBatchExecution && { batchStoryIds: storiesToExecute.map((s) => s.id) }),
       });
 
-      // Fire story-start hook
-      await fireHook(
-        ctx.hooks,
-        "on-story-start",
-        hookCtx(ctx.feature, {
-          storyId: story.id,
-          model: routing.modelTier,
-          agent: ctx.config.autoMode.defaultAgent,
-          iteration: iterations,
-        }),
-        ctx.workdir,
-      );
+      // Phase 3: emit story started event
+      pipelineEventBus.emit({
+        type: "story:started",
+        storyId: story.id,
+        story,
+        workdir: ctx.workdir,
+        modelTier: routing.modelTier,
+        agent: ctx.config.autoMode.defaultAgent,
+        iteration: iterations,
+      });
 
       if (ctx.dryRun) {
         const dryRunResult = await handleDryRun({
@@ -362,15 +367,11 @@ export async function executeSequential(
           reason: "All remaining stories blocked or dependent on blocked stories",
           summary,
         });
-        await fireHook(
-          ctx.hooks,
-          "on-pause",
-          hookCtx(ctx.feature, {
-            reason: "All remaining stories blocked or dependent on blocked stories",
-            cost: totalCost,
-          }),
-          ctx.workdir,
-        );
+        pipelineEventBus.emit({
+          type: "run:paused",
+          reason: "All remaining stories blocked or dependent on blocked stories",
+          cost: totalCost,
+        });
         return buildResult("stalled");
       }
 
