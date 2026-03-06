@@ -256,7 +256,7 @@ describe("Router Tags Defensive Fallback (BUG-004)", () => {
 
     expect(result.complexity).toBe("simple");
     expect(result.modelTier).toBe("fast");
-    expect(result.testStrategy).toBe("test-after");
+    expect(result.testStrategy).toBe("three-session-tdd-lite");
   });
 
   test("routeTask handles null tags gracefully", () => {
@@ -270,7 +270,7 @@ describe("Router Tags Defensive Fallback (BUG-004)", () => {
 
     expect(result.complexity).toBe("simple");
     expect(result.modelTier).toBe("fast");
-    expect(result.testStrategy).toBe("test-after");
+    expect(result.testStrategy).toBe("three-session-tdd-lite");
   });
 
   test("routeTask with undefined tags does not crash on spread operation", () => {

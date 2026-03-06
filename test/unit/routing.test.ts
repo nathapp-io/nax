@@ -88,8 +88,8 @@ describe("classifyComplexity", () => {
 });
 
 describe("determineTestStrategy", () => {
-  test("simple → test-after", () => {
-    expect(determineTestStrategy("simple", "Fix typo", "Fix a typo", [])).toBe("test-after");
+  test("simple → three-session-tdd-lite", () => {
+    expect(determineTestStrategy("simple", "Fix typo", "Fix a typo", [])).toBe("three-session-tdd-lite");
   });
 
   test("complex → three-session-tdd", () => {
@@ -163,11 +163,11 @@ describe("determineTestStrategy", () => {
 });
 
 describe("routeTask", () => {
-  test("routes simple task to fast model with test-after", () => {
+  test("routes simple task to fast model with three-session-tdd-lite", () => {
     const result = routeTask("Fix typo", "Fix a typo", ["Typo fixed"], [], DEFAULT_CONFIG);
     expect(result.complexity).toBe("simple");
     expect(result.modelTier).toBe("fast");
-    expect(result.testStrategy).toBe("test-after");
+    expect(result.testStrategy).toBe("three-session-tdd-lite");
   });
 
   test("routes security task to powerful with three-session-tdd", () => {
@@ -262,9 +262,9 @@ describe("routeTask", () => {
       expect(result.testStrategy).toBe("test-after");
     });
 
-    test("default config (strategy='auto') preserves existing routing behavior", () => {
+    test("default config (strategy='auto') routes simple to three-session-tdd-lite", () => {
       const simpleResult = routeTask("Fix typo", "Fix a typo", ["Typo fixed"], [], DEFAULT_CONFIG);
-      expect(simpleResult.testStrategy).toBe("test-after");
+      expect(simpleResult.testStrategy).toBe("three-session-tdd-lite");
 
       const complexResult = routeTask(
         "Auth refactor",
@@ -487,7 +487,7 @@ describe("keywordStrategy", () => {
     expect(decision).not.toBeNull();
     expect(decision!.complexity).toBe("simple");
     expect(decision!.modelTier).toBe("fast");
-    expect(decision!.testStrategy).toBe("test-after");
+    expect(decision!.testStrategy).toBe("three-session-tdd-lite");
   });
 
   test("classifies complex story with security keywords", () => {

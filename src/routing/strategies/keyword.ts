@@ -117,7 +117,8 @@ function determineTestStrategy(
     return "three-session-tdd";
   }
 
-  return "test-after";
+  // FEAT-013: test-after deprecated from auto mode — use three-session-tdd-lite as default
+  return "three-session-tdd-lite";
 }
 
 /** Map complexity to model tier */
@@ -160,7 +161,9 @@ export const keywordStrategy: RoutingStrategy = {
       modelTier,
       testStrategy,
       reasoning:
-        reasons.length > 0 ? `three-session-tdd: ${reasons.join(", ")}` : `test-after: simple task (${complexity})`,
+        reasons.length > 0
+          ? `three-session-tdd: ${reasons.join(", ")}`
+          : `three-session-tdd-lite: simple task (${complexity})`,
     };
   },
 };

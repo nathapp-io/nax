@@ -152,7 +152,7 @@ const LITE_TAGS = ["ui", "layout", "cli", "integration", "polyglot"];
  * - 'auto'   → existing heuristic logic, plus:
  *              if tags include ui/layout/cli/integration/polyglot → three-session-tdd-lite
  *              if security/public-api/complex/expert → three-session-tdd
- *              otherwise → test-after
+ *              otherwise → three-session-tdd-lite (test-after deprecated from auto mode)
  *
  * @param complexity - Pre-classified complexity level
  * @param title - Story title
@@ -201,8 +201,8 @@ export function determineTestStrategy(
     return hasLiteTag ? "three-session-tdd-lite" : "three-session-tdd";
   }
 
-  // Simple/medium → test-after (default)
-  return "test-after";
+  // Simple/medium → three-session-tdd-lite (FEAT-013: test-after deprecated from auto mode)
+  return "three-session-tdd-lite";
 }
 
 /** Map complexity to model tier */
