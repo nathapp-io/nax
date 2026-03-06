@@ -94,6 +94,10 @@ export interface PipelineContext {
   };
   /** Story start timestamp (ISO string, set by runner before pipeline) */
   storyStartTime?: string;
+  /** Tracks how many times the rectify stage has run this pipeline (for event attempt numbers). */
+  rectifyAttempt?: number;
+  /** Tracks how many times the autofix stage has run this pipeline (for event attempt numbers). */
+  autofixAttempt?: number;
   /** Git HEAD ref captured before agent ran this attempt (FEAT-010: precise smart-runner diff) */
   storyGitRef?: string;
   /** Collected story metrics (set by completionStage) */

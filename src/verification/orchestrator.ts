@@ -13,7 +13,7 @@
 import type { IVerificationStrategy, VerifyContext, VerifyResult, VerifyStrategy } from "./orchestrator-types";
 import { makeSkippedResult } from "./orchestrator-types";
 import { AcceptanceStrategy } from "./strategies/acceptance";
-import { RegressionStrategy } from "./strategies/regression";
+import { DeferredRegressionStrategy, RegressionStrategy } from "./strategies/regression";
 import { ScopedStrategy } from "./strategies/scoped";
 
 export class VerificationOrchestrator {
@@ -23,7 +23,7 @@ export class VerificationOrchestrator {
     this.strategies = new Map([
       ["scoped", overrides?.scoped ?? new ScopedStrategy()],
       ["regression", overrides?.regression ?? new RegressionStrategy()],
-      ["deferred-regression", overrides?.["deferred-regression"] ?? new RegressionStrategy()],
+      ["deferred-regression", overrides?.["deferred-regression"] ?? new DeferredRegressionStrategy()],
       ["acceptance", overrides?.acceptance ?? new AcceptanceStrategy()],
     ]);
   }

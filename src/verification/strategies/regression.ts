@@ -16,7 +16,7 @@ import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrat
 import { parseBunTestOutput } from "../parser";
 
 export class RegressionStrategy implements IVerificationStrategy {
-  readonly name = "regression" as const;
+  readonly name: "regression" | "deferred-regression" = "regression";
 
   async execute(ctx: VerifyContext): Promise<VerifyResult> {
     const logger = getSafeLogger();
@@ -79,3 +79,12 @@ export class RegressionStrategy implements IVerificationStrategy {
 }
 
 export const _regressionStrategyDeps = { runVerification: fullSuite };
+
+/**
+ * Deferred Regression Strategy — same logic as RegressionStrategy but
+ * reports strategy name as "deferred-regression" in VerifyResult so
+ * downstream code branching on strategy name works correctly.
+ */
+export class DeferredRegressionStrategy extends RegressionStrategy {
+  override readonly name = "deferred-regression" as const;
+}

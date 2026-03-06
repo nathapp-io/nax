@@ -60,12 +60,13 @@ export const completionStage: PipelineStage = {
       }
 
       // Emit story:completed event — hooks + reporter subscribers handle the rest
+      const storyMetric = ctx.storyMetrics?.find((m) => m.storyId === completedStory.id) ?? ctx.storyMetrics?.[0];
       pipelineEventBus.emit({
         type: "story:completed",
         storyId: completedStory.id,
         story: completedStory,
         passed: true,
-        durationMs: ctx.storyMetrics?.[0]?.durationMs ?? 0,
+        durationMs: storyMetric?.durationMs ?? 0,
         // Extra fields picked up by subscribers via `as any`
         cost: costPerStory,
         modelTier: ctx.routing?.modelTier,

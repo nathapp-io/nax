@@ -56,6 +56,12 @@ export const autofixStage: PipelineStage = {
         pipelineEventBus.emit({ type: "autofix:started", storyId: ctx.story.id, command: lintFixCmd });
         const lintResult = await _autofixDeps.runCommand(lintFixCmd, ctx.workdir);
         logger.debug("autofix", `lintFix exit=${lintResult.exitCode}`, { storyId: ctx.story.id });
+        if (lintResult.exitCode !== 0) {
+          logger.warn("autofix", "lintFix command failed — may not have fixed all issues", {
+            storyId: ctx.story.id,
+            exitCode: lintResult.exitCode,
+          });
+        }
       }
 
       // Step 2: format fix
@@ -63,6 +69,12 @@ export const autofixStage: PipelineStage = {
         pipelineEventBus.emit({ type: "autofix:started", storyId: ctx.story.id, command: formatFixCmd });
         const fmtResult = await _autofixDeps.runCommand(formatFixCmd, ctx.workdir);
         logger.debug("autofix", `formatFix exit=${fmtResult.exitCode}`, { storyId: ctx.story.id });
+        if (fmtResult.exitCode !== 0) {
+          logger.warn("autofix", "formatFix command failed — may not have fixed all issues", {
+            storyId: ctx.story.id,
+            exitCode: fmtResult.exitCode,
+          });
+        }
       }
 
       // Re-run review to check if fixed
@@ -70,6 +82,10 @@ export const autofixStage: PipelineStage = {
       pipelineEventBus.emit({ type: "autofix:completed", storyId: ctx.story.id, fixed: recheckPassed });
 
       if (recheckPassed) {
+        // Update ctx.reviewResult so downstream stages see the corrected state
+        if (ctx.reviewResult) {
+          ctx.reviewResult = { ...ctx.reviewResult, success: true };
+        }
         fixed = true;
         break;
       }

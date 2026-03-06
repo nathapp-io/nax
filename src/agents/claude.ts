@@ -234,10 +234,13 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         } catch {
           /* already gone */
         }
+        // Note: process.kill(-pid) (process group) only works if the child called
+        // setpgid/setsid. Bun does not do this, so this will silently throw ESRCH.
+        // Left here as a best-effort safety net for environments that do set a pgid.
         try {
           process.kill(-processPid, "SIGKILL");
         } catch {
-          /* no process group */
+          /* no process group — expected in most environments */
         }
       }
     } finally {
@@ -254,11 +257,10 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     const stderr = await new Response(proc.stderr).text();
     const durationMs = Date.now() - startTime;
 
-    const rateLimited =
-      stderr.includes("rate limit") ||
-      stderr.includes("429") ||
-      stdout.includes("rate limit") ||
-      stdout.includes("Too many requests");
+    // Note: stderr is "inherit" (MEM-3), so proc.stderr is null/empty.
+    // Rate-limit detection relies on stdout only. Claude Code emits rate limit
+    // messages to stdout as part of its JSON stream output.
+    const rateLimited = stdout.includes("rate limit") || stdout.includes("429") || stdout.includes("Too many requests");
 
     const fullOutput = stdout + stderr;
     let costEstimate = estimateCostFromOutput(options.modelTier, fullOutput);

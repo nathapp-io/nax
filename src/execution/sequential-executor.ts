@@ -90,9 +90,9 @@ export async function executeSequential(
 
   // Phase 3: Wire singleton event bus with fresh subscribers each run
   pipelineEventBus.clear();
-  wireHooks(pipelineEventBus, ctx.hooks, ctx.workdir, ctx.feature);
-  wireReporters(pipelineEventBus, ctx.pluginRegistry, ctx.runId, ctx.startTime);
-  wireInteraction(pipelineEventBus, ctx.interactionChain, ctx.config);
+  const unsubHooks = wireHooks(pipelineEventBus, ctx.hooks, ctx.workdir, ctx.feature);
+  const unsubReporters = wireReporters(pipelineEventBus, ctx.pluginRegistry, ctx.runId, ctx.startTime);
+  const unsubInteraction = wireInteraction(pipelineEventBus, ctx.interactionChain, ctx.config);
 
   const buildResult = (exitReason: SequentialExecutionResult["exitReason"]): SequentialExecutionResult => ({
     prd,

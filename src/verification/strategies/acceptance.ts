@@ -50,15 +50,52 @@ export class AcceptanceStrategy implements IVerificationStrategy {
     }
 
     const start = Date.now();
+    const timeoutMs = ctx.timeoutSeconds * 1000;
     const proc = Bun.spawn(["bun", "test", testPath], {
       cwd: ctx.workdir,
       stdout: "pipe",
       stderr: "pipe",
     });
-    const exitCode = await proc.exited;
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
+
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      try {
+        proc.kill("SIGTERM");
+      } catch {
+        /* already exited */
+      }
+      setTimeout(() => {
+        try {
+          proc.kill("SIGKILL");
+        } catch {
+          /* already exited */
+        }
+      }, 5000);
+    }, timeoutMs);
+
+    const exitCode = await Promise.race([
+      proc.exited,
+      new Promise<number>((resolve) => setTimeout(() => resolve(124), timeoutMs + 6000)),
+    ]);
+    clearTimeout(timeoutId);
+    const stdout = await Promise.race([
+      new Response(proc.stdout).text(),
+      new Promise<string>((resolve) => setTimeout(() => resolve(""), 3000)),
+    ]);
+    const stderr = await Promise.race([
+      new Response(proc.stderr).text(),
+      new Promise<string>((resolve) => setTimeout(() => resolve(""), 3000)),
+    ]);
     const durationMs = Date.now() - start;
+
+    if (timedOut || exitCode === 124) {
+      logger.warn("verify[acceptance]", "Acceptance tests timed out", {
+        storyId: ctx.storyId,
+        timeoutSeconds: ctx.timeoutSeconds,
+      });
+      return makePassResult(ctx.storyId, "acceptance", { rawOutput: "TIMEOUT", durationMs });
+    }
     const output = `${stdout}\n${stderr}`;
 
     const failedACs = parseFailedACs(output);

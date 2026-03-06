@@ -44,10 +44,13 @@ export const rectifyStage: PipelineStage = {
       maxRetries,
     });
 
+    ctx.rectifyAttempt = (ctx.rectifyAttempt ?? 0) + 1;
+    const rectifyAttempt = ctx.rectifyAttempt;
+
     pipelineEventBus.emit({
       type: "rectify:started",
       storyId: ctx.story.id,
-      attempt: 1,
+      attempt: rectifyAttempt,
       testOutput,
     });
 
@@ -64,7 +67,7 @@ export const rectifyStage: PipelineStage = {
     pipelineEventBus.emit({
       type: "rectify:completed",
       storyId: ctx.story.id,
-      attempt: 1,
+      attempt: rectifyAttempt,
       fixed,
     });
 
