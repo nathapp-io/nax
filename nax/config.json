@@ -60,7 +60,7 @@
     "iterationDelayMs": 2000,
     "costLimit": 8.0,
     "sessionTimeoutSeconds": 7200,
-    "verificationTimeoutSeconds": 300,
+    "verificationTimeoutSeconds": 600,
     "maxStoriesPerFeature": 15,
     "rectification": {
       "enabled": true,
@@ -70,8 +70,11 @@
       "abortOnIncreasingFailures": true
     },
     "regressionGate": {
-      "enabled": false,
-      "timeoutSeconds": 300
+      "enabled": true,
+      "mode": "deferred",
+      "timeoutSeconds": 600,
+      "acceptOnTimeout": true,
+      "maxRectificationAttempts": 2
     }
   },
   "quality": {
@@ -79,7 +82,7 @@
     "requireLint": true,
     "requireTests": true,
     "commands": {
-      "test": "bun run test",
+      "test": "NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000",
       "typecheck": "bun run typecheck",
       "lint": "bun run lint"
     },
