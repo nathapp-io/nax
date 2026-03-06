@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * End-to-end plugin config integration test
  *

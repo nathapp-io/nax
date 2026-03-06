@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * getNextStory() Unit Tests (BUG-022)
  *

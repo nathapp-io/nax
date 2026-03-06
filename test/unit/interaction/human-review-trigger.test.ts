@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Unit Tests: human-review trigger (BUG-025)
  *

@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Verify Stage — per-story regression gate skipping (US-003)
  *

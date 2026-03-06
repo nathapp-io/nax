@@ -1,0 +1,355 @@
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import type { AgentAdapter, AgentResult } from "../../../src/agents";
+import { DEFAULT_CONFIG } from "../../../src/config";
+import type { UserStory } from "../../../src/prd";
+import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
+import { VERDICT_FILE } from "../../../src/tdd/verdict";
+
+let originalSpawn: typeof Bun.spawn;
+
+beforeEach(() => {
+  originalSpawn = Bun.spawn;
+});
+
+afterEach(() => {
+  Bun.spawn = originalSpawn;
+});
+
+/** Create a mock agent that returns sequential results */
+function createMockAgent(results: Partial<AgentResult>[]): AgentAdapter {
+  let callCount = 0;
+  return {
+    name: "mock",
+    displayName: "Mock Agent",
+    binary: "mock",
+    isInstalled: async () => true,
+    buildCommand: () => ["mock"],
+    run: mock(async () => {
+      const r = results[callCount] || {};
+      callCount++;
+      return {
+        success: r.success ?? true,
+        exitCode: r.exitCode ?? 0,
+        output: r.output ?? "",
+        rateLimited: r.rateLimited ?? false,
+        durationMs: r.durationMs ?? 100,
+        estimatedCost: r.estimatedCost ?? 0.01,
+      };
+    }),
+  };
+}
+
+/** Mock Bun.spawn to intercept git commands */
+function mockGitSpawn(opts: {
+  /** Files returned by git diff for each session (indexed by git-diff call number) */
+  diffFiles: string[][];
+  /** Optional: mock test command success (default: true) */
+  testCommandSuccess?: boolean;
+}) {
+  let revParseCount = 0;
+  let diffCount = 0;
+  const testSuccess = opts.testCommandSuccess ?? true;
+
+  // @ts-ignore — mocking global
+  Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    // Intercept test commands (bun test, npm test, etc.)
+    if ((cmd[0] === "/bin/sh" || cmd[0] === "/bin/bash" || cmd[0] === "/bin/zsh") && cmd[1] === "-c") {
+      return {
+        pid: 9999,
+        exited: Promise.resolve(testSuccess ? 0 : 1),
+        stdout: new Response(testSuccess ? "tests pass\n" : "tests fail\n").body,
+        stderr: new Response("").body,
+      };
+    }
+    if (cmd[0] === "git" && cmd[1] === "rev-parse") {
+      revParseCount++;
+      return {
+        exited: Promise.resolve(0),
+        stdout: new Response(`ref-${revParseCount}\n`).body,
+        stderr: new Response("").body,
+      };
+    }
+    if (cmd[0] === "git" && cmd[1] === "checkout") {
+      // Intercept git checkout (used in zero-file fallback) — silently succeed
+      return {
+        exited: Promise.resolve(0),
+        stdout: new Response("").body,
+        stderr: new Response("").body,
+      };
+    }
+    if (cmd[0] === "git" && cmd[1] === "diff") {
+      const files = opts.diffFiles[diffCount] || [];
+      diffCount++;
+      return {
+        exited: Promise.resolve(0),
+        stdout: new Response(files.join("\n") + "\n").body,
+        stderr: new Response("").body,
+      };
+    }
+    return originalSpawn(cmd, spawnOpts);
+  });
+}
+
+const story: UserStory = {
+  id: "US-001",
+  title: "Add user validation",
+  description: "Add validation to user input",
+  acceptanceCriteria: ["Validation works", "Errors are clear"],
+  dependencies: [],
+  tags: [],
+  status: "pending",
+  passes: false,
+  escalations: [],
+  attempts: 0,
+};
+
+
+describe("runThreeSessionTdd — failureCategory", () => {
+  test("test-writer isolation failure sets failureCategory='isolation-violation'", async () => {
+    // Test-writer modifies source files → isolation violation
+    mockGitSpawn({
+      diffFiles: [
+        // Isolation check: test-writer touched source files!
+        ["src/user.ts", "test/user.test.ts"],
+        // getChangedFiles
+        ["src/user.ts", "test/user.test.ts"],
+      ],
+    });
+
+    const agent = createMockAgent([{ success: true, estimatedCost: 0.01 }]);
+
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("isolation-violation");
+  });
+
+  test("test-writer zero files (non-auto strategy) sets failureCategory='isolation-violation'", async () => {
+    // In strict strategy, zero test files → greenfield-no-tests category (BUG-010 behavior)
+    mockGitSpawn({
+      diffFiles: [
+        ["requirements.md"], // s1 isolation — no source violations
+        ["requirements.md"], // s1 getChangedFiles — 0 test files
+      ],
+    });
+
+    const agent = createMockAgent([{ success: true, estimatedCost: 0.01 }]);
+
+    const configWithStrictStrategy = {
+      ...DEFAULT_CONFIG,
+      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "strict" as const },
+    };
+
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: configWithStrictStrategy,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("greenfield-no-tests");
+  });
+
+  test("test-writer crash/timeout (non-isolation failure) sets failureCategory='session-failure'", async () => {
+    // Test-writer agent crashes/times out but isolation is clean
+    mockGitSpawn({
+      diffFiles: [
+        // Isolation check: only test files (passes)
+        ["test/user.test.ts"],
+        // getChangedFiles
+        ["test/user.test.ts"],
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: false, exitCode: 1, estimatedCost: 0.01 }, // Agent crash
+    ]);
+
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
+
+    expect(result.success).toBe(false);
+    // isolation.passed=true but agent failed → session-failure
+    expect(result.failureCategory).toBe("session-failure");
+  });
+
+  test("implementer failure sets failureCategory='session-failure'", async () => {
+    mockGitSpawn({
+      diffFiles: [
+        // Session 1 isolation: OK
+        ["test/user.test.ts"],
+        // Session 1 getChangedFiles
+        ["test/user.test.ts"],
+        // Session 2 isolation: OK
+        ["src/user.ts"],
+        // Session 2 getChangedFiles
+        ["src/user.ts"],
+      ],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 }, // test-writer OK
+      { success: false, exitCode: 1, estimatedCost: 0.02 }, // implementer fails
+    ]);
+
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("session-failure");
+  });
+
+  test("post-TDD test failure sets failureCategory='tests-failing'", async () => {
+    // Verifier session fails AND independent test run also fails
+    let revParseCount = 0;
+    let diffCount = 0;
+
+    const diffFiles = [["test/user.test.ts"], ["test/user.test.ts"], ["src/user.ts"], ["src/user.ts"], ["src/user.ts"]];
+
+    // @ts-ignore — mocking global
+    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+      if (cmd[0] === "/bin/sh" && cmd[2]?.includes("bun test")) {
+        return {
+          pid: 9999,
+          exited: Promise.resolve(1), // Tests FAIL
+          stdout: new Response("3 pass, 2 fail\n").body,
+          stderr: new Response("Test errors...\n").body,
+        };
+      }
+      if (cmd[0] === "git" && cmd[1] === "rev-parse") {
+        revParseCount++;
+        return {
+          exited: Promise.resolve(0),
+          stdout: new Response(`ref-${revParseCount}\n`).body,
+          stderr: new Response("").body,
+        };
+      }
+      if (cmd[0] === "git" && cmd[1] === "diff") {
+        const files = diffFiles[diffCount] || [];
+        diffCount++;
+        return {
+          exited: Promise.resolve(0),
+          stdout: new Response(files.join("\n") + "\n").body,
+          stderr: new Response("").body,
+        };
+      }
+      return originalSpawn(cmd, spawnOpts);
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCost: 0.02 },
+      { success: false, exitCode: 1, estimatedCost: 0.01 }, // verifier fails
+    ]);
+
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("tests-failing");
+  });
+
+  test("success path has no failureCategory", async () => {
+    mockGitSpawn({
+      diffFiles: [["test/user.test.ts"], ["test/user.test.ts"], ["src/user.ts"], ["src/user.ts"], ["src/user.ts"]],
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 },
+      { success: true, estimatedCost: 0.02 },
+      { success: true, estimatedCost: 0.01 },
+    ]);
+
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: DEFAULT_CONFIG,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.failureCategory).toBeUndefined();
+  });
+
+  test("zero-file scenario (auto strategy) returns greenfield-no-tests (BUG-010 removed auto-fallback)", async () => {
+    // BUG-010: In auto strategy, zero test files → return greenfield-no-tests (no more fallback)
+    let diffCount = 0;
+
+    const diffFiles = [
+      ["requirements.md"], // s1 isolation (strict) — no source violations
+      ["requirements.md"], // s1 getChangedFiles (strict) — 0 test files → return greenfield-no-tests
+    ];
+
+    // @ts-ignore — mocking global
+    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+      if (cmd[0] === "git" && cmd[1] === "rev-parse") {
+        return {
+          exited: Promise.resolve(0),
+          stdout: new Response("ref-1\n").body,
+          stderr: new Response("").body,
+        };
+      }
+      if (cmd[0] === "git" && cmd[1] === "diff") {
+        const files = diffFiles[diffCount] || [];
+        diffCount++;
+        return {
+          exited: Promise.resolve(0),
+          stdout: new Response(files.join("\n") + "\n").body,
+          stderr: new Response("").body,
+        };
+      }
+      return originalSpawn(cmd, spawnOpts);
+    });
+
+    const agent = createMockAgent([
+      { success: true, estimatedCost: 0.01 }, // s1 strict test-writer
+    ]);
+
+    const configWithAutoStrategy = {
+      ...DEFAULT_CONFIG,
+      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "auto" as const },
+    };
+
+    const result = await runThreeSessionTdd({
+      agent,
+      story,
+      config: configWithAutoStrategy,
+      workdir: "/tmp/test",
+      modelTier: "balanced",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.lite).toBe(false);
+    expect(result.failureCategory).toBe("greenfield-no-tests");
+  });
+});
+
+// ─── T9: Verdict integration tests ───────────────────────────────────────────
+

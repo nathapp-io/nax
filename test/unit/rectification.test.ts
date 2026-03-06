@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Unit tests for rectification core logic (v0.11)
  */

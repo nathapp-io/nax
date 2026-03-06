@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Verify Stage --- Smart Runner Integration Tests (STR-005)
  *
