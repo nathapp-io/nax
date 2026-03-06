@@ -49,6 +49,22 @@ function evictOldest(): void {
   }
 }
 
+/** Minimal proc shape returned by spawn for piped stdio. */
+export interface PipedProc {
+  stdout: ReadableStream<Uint8Array>;
+  stderr: ReadableStream<Uint8Array>;
+  exited: Promise<number>;
+  kill(signal?: number | NodeJS.Signals): void;
+}
+
+/**
+ * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ */
+export const _deps = {
+  spawn: (cmd: string[], opts: { stdout: "pipe"; stderr: "pipe" }): PipedProc =>
+    Bun.spawn(cmd, opts) as unknown as PipedProc,
+};
+
 /**
  * Call LLM via claude CLI with timeout.
  *
@@ -69,7 +85,7 @@ async function callLlmOnce(modelTier: string, prompt: string, config: NaxConfig,
   const modelArg = modelDef.model;
 
   // Spawn claude CLI with timeout
-  const proc = Bun.spawn(["claude", "-p", prompt, "--model", modelArg], {
+  const proc = _deps.spawn(["claude", "-p", prompt, "--model", modelArg], {
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -100,6 +116,16 @@ async function callLlmOnce(modelTier: string, prompt: string, config: NaxConfig,
     return result;
   } catch (err) {
     clearTimeout(timeoutId);
+    try {
+      proc.stdout.cancel();
+    } catch {
+      // ignore cancel errors
+    }
+    try {
+      proc.stderr.cancel();
+    } catch {
+      // ignore cancel errors
+    }
     proc.kill();
     throw err;
   }

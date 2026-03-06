@@ -37,6 +37,24 @@ const MAX_AGENT_OUTPUT_CHARS = 5000;
 const MAX_AGENT_STDERR_CHARS = 1000;
 
 /**
+ * Grace period in ms between SIGTERM and SIGKILL on timeout.
+ * Mirrors the pattern in src/verification/executor.ts:executeWithTimeout().
+ */
+const SIGKILL_GRACE_PERIOD_MS = 5000;
+
+/**
+ * Injectable dependencies for runOnce() — allows tests to verify
+ * that PID cleanup (unregister) always runs even if kill() throws.
+ *
+ * @internal
+ */
+export const _runOnceDeps = {
+  killProc(proc: { kill(signal?: number | NodeJS.Signals): void }, signal: NodeJS.Signals): void {
+    proc.kill(signal);
+  },
+};
+
+/**
  * Claude Code agent adapter implementation.
  *
  * Implements the AgentAdapter interface for Claude Code CLI,
@@ -183,13 +201,27 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     let timedOut = false;
     const timeoutId = setTimeout(() => {
       timedOut = true;
-      proc.kill("SIGTERM");
+      try {
+        _runOnceDeps.killProc(proc, "SIGTERM" as NodeJS.Signals);
+      } catch {
+        /* already exited */
+      }
+      setTimeout(() => {
+        try {
+          _runOnceDeps.killProc(proc, "SIGKILL" as NodeJS.Signals);
+        } catch {
+          /* already exited */
+        }
+      }, SIGKILL_GRACE_PERIOD_MS);
     }, options.timeoutSeconds * 1000);
 
-    const exitCode = await proc.exited;
-    clearTimeout(timeoutId);
-
-    await pidRegistry.unregister(processPid);
+    let exitCode: number;
+    try {
+      exitCode = await proc.exited;
+    } finally {
+      clearTimeout(timeoutId);
+      await pidRegistry.unregister(processPid);
+    }
 
     const stdout = await new Response(proc.stdout).text();
     const stderr = await new Response(proc.stderr).text();
