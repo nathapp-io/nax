@@ -1,7 +1,7 @@
 /**
  * Verify Stage
  *
- * Verifies the agent\'s work meets basic requirements by running tests.
+ * Verifies the agent's work meets basic requirements by running tests.
  * This is a lightweight verification before the full review stage.
  *
  * @returns
@@ -12,6 +12,7 @@
 import type { SmartTestRunnerConfig } from "../../config/types";
 import { getLogger } from "../../logger";
 import { regression } from "../../verification/gate";
+import type { VerifyStatus } from "../../verification/orchestrator-types";
 import { _smartRunnerDeps } from "../../verification/smart-runner";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -108,6 +109,21 @@ export const verifyStage: PipelineStage = {
       timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
       acceptOnTimeout: ctx.config.execution.regressionGate?.acceptOnTimeout ?? true,
     });
+
+    // Store result on context for rectify stage
+    ctx.verifyResult = {
+      success: result.success,
+      status: (result.status === "TIMEOUT" ? "TIMEOUT" : result.success ? "PASS" : "TEST_FAILURE") as VerifyStatus,
+      storyId: ctx.story.id,
+      strategy: "scoped",
+      passCount: result.passCount ?? 0,
+      failCount: result.failCount ?? 0,
+      totalCount: (result.passCount ?? 0) + (result.failCount ?? 0),
+      failures: [],
+      rawOutput: result.output,
+      durationMs: 0,
+      countsTowardEscalation: result.countsTowardEscalation,
+    };
 
     // HARD FAILURE: Tests must pass for story to be marked complete
     if (!result.success) {

@@ -140,6 +140,17 @@ export interface QualityConfig {
     typecheck?: string;
     lint?: string;
     test?: string;
+    /** Auto-fix lint errors (e.g., "biome check --fix") */
+    lintFix?: string;
+    /** Auto-fix formatting (e.g., "biome format --write") */
+    formatFix?: string;
+  };
+  /** Auto-fix configuration (Phase 2) */
+  autofix?: {
+    /** Whether to auto-fix lint/format errors before escalating (default: true) */
+    enabled?: boolean;
+    /** Max auto-fix attempts (default: 2) */
+    maxAttempts?: number;
   };
   /** Append --forceExit to test command to prevent open handle hangs (default: false) */
   forceExit: boolean;

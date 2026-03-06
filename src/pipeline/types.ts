@@ -15,6 +15,7 @@ import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd/types";
 import type { ReviewResult } from "../review/types";
 import type { FailureCategory } from "../tdd/types";
+import type { VerifyResult } from "../verification/orchestrator-types";
 
 /**
  * Routing result from complexity classification
@@ -82,6 +83,8 @@ export interface PipelineContext {
   prompt?: string;
   /** Agent execution result (set by executionStage) */
   agentResult?: AgentResult;
+  /** Verify result (set by verifyStage) */
+  verifyResult?: VerifyResult;
   /** Review result (set by reviewStage) */
   reviewResult?: ReviewResult;
   /** Acceptance test failures (set by acceptanceStage) */
@@ -114,7 +117,9 @@ export type StageAction =
   /** Escalate to a higher tier and retry the pipeline */
   | { action: "escalate"; reason?: string; cost?: number }
   /** Pause execution (user intervention required via queue command) */
-  | { action: "pause"; reason: string; cost?: number };
+  | { action: "pause"; reason: string; cost?: number }
+  /** Retry from a specific stage (used by rectify/autofix stages) */
+  | { action: "retry"; fromStage: string; cost?: number };
 
 /**
  * Result returned by a pipeline stage after execution.
