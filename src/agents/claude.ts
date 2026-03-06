@@ -267,9 +267,36 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     await pidRegistry.register(proc.pid);
 
-    const exitCode = await proc.exited;
+    // BUG-039: Hard timeout for decompose — prevents infinite hang if claude hangs
+    const DECOMPOSE_TIMEOUT_MS = 300_000; // 5 minutes
+    let timedOut = false;
+    const decomposeTimerId = setTimeout(() => {
+      timedOut = true;
+      try {
+        proc.kill("SIGTERM");
+      } catch {
+        /* already exited */
+      }
+      setTimeout(() => {
+        try {
+          proc.kill("SIGKILL");
+        } catch {
+          /* already exited */
+        }
+      }, 5000);
+    }, DECOMPOSE_TIMEOUT_MS);
 
-    await pidRegistry.unregister(proc.pid);
+    let exitCode: number;
+    try {
+      exitCode = await proc.exited;
+    } finally {
+      clearTimeout(decomposeTimerId);
+      await pidRegistry.unregister(proc.pid);
+    }
+
+    if (timedOut) {
+      throw new Error(`Decompose timed out after ${DECOMPOSE_TIMEOUT_MS / 1000}s`);
+    }
 
     const stdout = await new Response(proc.stdout).text();
     const stderr = await new Response(proc.stderr).text();

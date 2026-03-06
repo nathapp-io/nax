@@ -17,8 +17,14 @@ import type { TestExecutionResult } from "./types";
  */
 async function drainWithDeadline(proc: Subprocess, deadlineMs: number): Promise<string> {
   const EMPTY = Symbol("timeout");
-  const race = <T>(p: Promise<T>) =>
-    Promise.race([p, new Promise<typeof EMPTY>((r) => setTimeout(() => r(EMPTY), deadlineMs))]);
+  const race = <T>(p: Promise<T>) => {
+    // BUG-039: Store timer handle so it can be cleared after race resolves (prevent leak)
+    let timerId: ReturnType<typeof setTimeout>;
+    const timeoutPromise = new Promise<typeof EMPTY>((r) => {
+      timerId = setTimeout(() => r(EMPTY), deadlineMs);
+    });
+    return Promise.race([p, timeoutPromise]).finally(() => clearTimeout(timerId));
+  };
 
   let out = "";
   try {

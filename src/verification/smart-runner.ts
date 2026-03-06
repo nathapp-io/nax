@@ -4,6 +4,7 @@
  * Detects changed TypeScript source files using git diff,
  * enabling targeted test runs on only the files that changed.
  */
+import { gitWithTimeout } from "../utils/git";
 
 /**
  * Get TypeScript source files changed since the previous commit.
@@ -180,17 +181,10 @@ export function buildSmartTestCommand(testFiles: string[], baseCommand: string):
 
 export async function getChangedSourceFiles(workdir: string): Promise<string[]> {
   try {
-    const proc = Bun.spawn({
-      cmd: ["git", "diff", "--name-only", "HEAD~1"],
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-
-    const exitCode = await proc.exited;
+    // BUG-039: Use gitWithTimeout to prevent orphan processes on hang
+    const { stdout, exitCode } = await gitWithTimeout(["diff", "--name-only", "HEAD~1"], workdir);
     if (exitCode !== 0) return [];
 
-    const stdout = await new Response(proc.stdout).text();
     const lines = stdout.trim().split("\n").filter(Boolean);
 
     return lines.filter((f) => f.startsWith("src/") && f.endsWith(".ts"));

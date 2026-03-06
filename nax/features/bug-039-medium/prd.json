@@ -1,0 +1,45 @@
+{
+  "project": "nax",
+  "feature": "bug-039-medium",
+  "branchName": "fix/bug-039-process-cleanup-medium",
+  "createdAt": "2026-03-06T04:51:00.000Z",
+  "updatedAt": "2026-03-06T04:51:00.000Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "runOnce() SIGKILL follow-up after grace period",
+      "description": "In src/agents/claude.ts:runOnce(), the timeout handler only sends SIGTERM but never follows up with SIGKILL. Claude may ignore SIGTERM and run indefinitely. Add a SIGKILL after a 5-second grace period, mirroring the pattern in src/verification/executor.ts:executeWithTimeout(). Also move pidRegistry.unregister(processPid) into a finally block so it is always called even if the timeout path throws an exception.",
+      "acceptanceCriteria": [
+        "When runOnce() times out, SIGTERM is sent first",
+        "After 5 seconds grace period, SIGKILL is sent to ensure the process is dead",
+        "pidRegistry.unregister(processPid) is called in a finally block — always runs regardless of success or exception path",
+        "Existing runOnce() tests still pass",
+        "New test: timeout path always unregisters PID even if SIGTERM/SIGKILL throws"
+      ],
+      "tags": ["bug", "process", "cleanup"],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0
+    },
+    {
+      "id": "US-002",
+      "title": "LLM routing stream drain fix on timeout",
+      "description": "In src/routing/strategies/llm.ts:callLlmOnce(), when the timeout fires, proc.kill() is called but the stdout/stderr ReadableStreams from the Bun.spawn() are never cancelled or drained. This can cause proc.exited to hang indefinitely because Bun's piped streams may block exit. Fix: before calling proc.kill(), cancel both streams with proc.stdout.cancel() and proc.stderr.cancel() wrapped in try/catch. This ensures proc.exited resolves promptly after kill.",
+      "acceptanceCriteria": [
+        "On LLM timeout, proc.stdout and proc.stderr are cancelled before proc.kill()",
+        "proc.exited resolves promptly after timeout kill (does not hang)",
+        "clearTimeout(timeoutId) still called in both success and error paths",
+        "Existing LLM routing tests still pass",
+        "New test: timeout path resolves without hanging (use fake timers or short timeout)"
+      ],
+      "tags": ["bug", "process", "cleanup", "llm"],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0
+    }
+  ]
+}

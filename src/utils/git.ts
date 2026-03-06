@@ -5,6 +5,48 @@
 import { spawn } from "bun";
 
 /**
+ * Default timeout for git subprocess calls.
+ * Prevents git from hanging indefinitely on locked repos or network mounts.
+ */
+const GIT_TIMEOUT_MS = 10_000;
+
+/**
+ * Spawn a git command with a hard timeout.
+ *
+ * Kills the process with SIGKILL after GIT_TIMEOUT_MS if it hasn't exited.
+ * Returns empty stdout and exit code 1 on timeout.
+ *
+ * @internal
+ */
+export async function gitWithTimeout(args: string[], workdir: string): Promise<{ stdout: string; exitCode: number }> {
+  const proc = Bun.spawn(["git", ...args], {
+    cwd: workdir,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  let timedOut = false;
+  const timerId = setTimeout(() => {
+    timedOut = true;
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      // Process may have already exited
+    }
+  }, GIT_TIMEOUT_MS);
+
+  const exitCode = await proc.exited;
+  clearTimeout(timerId);
+
+  if (timedOut) {
+    return { stdout: "", exitCode: 1 };
+  }
+
+  const stdout = await new Response(proc.stdout).text();
+  return { stdout, exitCode };
+}
+
+/**
  * Capture current git HEAD ref.
  *
  * Returns the current HEAD commit hash, or undefined if git is not available
@@ -23,17 +65,8 @@ import { spawn } from "bun";
  */
 export async function captureGitRef(workdir: string): Promise<string | undefined> {
   try {
-    const proc = spawn({
-      cmd: ["git", "rev-parse", "HEAD"],
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-
-    const exitCode = await proc.exited;
+    const { stdout, exitCode } = await gitWithTimeout(["rev-parse", "HEAD"], workdir);
     if (exitCode !== 0) return undefined;
-
-    const stdout = await new Response(proc.stdout).text();
     return stdout.trim() || undefined;
   } catch {
     return undefined;
@@ -43,7 +76,7 @@ export async function captureGitRef(workdir: string): Promise<string | undefined
 /**
  * Check if a story ID appears in recent git commit messages.
  *
- * Searches the last 20 commits for commit messages containing the story ID.
+ * Searches the last N commits for commit messages containing the story ID.
  * Used for state reconciliation: if a failed story has commits in git history,
  * it means the story was partially completed and should be marked as passed.
  *
@@ -62,21 +95,12 @@ export async function captureGitRef(workdir: string): Promise<string | undefined
  */
 export async function hasCommitsForStory(workdir: string, storyId: string, maxCommits = 20): Promise<boolean> {
   try {
-    const proc = spawn({
-      cmd: ["git", "log", `-${maxCommits}`, "--oneline", "--grep", storyId],
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-
-    const exitCode = await proc.exited;
+    const { stdout, exitCode } = await gitWithTimeout(
+      ["log", `-${maxCommits}`, "--oneline", "--grep", storyId],
+      workdir,
+    );
     if (exitCode !== 0) return false;
-
-    const stdout = await new Response(proc.stdout).text();
-    const commits = stdout.trim();
-
-    // If any commits found, return true
-    return commits.length > 0;
+    return stdout.trim().length > 0;
   } catch {
     return false;
   }

@@ -76,8 +76,13 @@ async function resolveCommand(
   return null;
 }
 
+/** Default timeout for review checks (lint, typecheck). BUG-039. */
+const REVIEW_CHECK_TIMEOUT_MS = 120_000;
+
 /**
- * Run a single review check
+ * Run a single review check with a hard timeout.
+ *
+ * BUG-039: Added SIGTERM + SIGKILL cleanup to prevent orphan lint/typecheck processes.
  */
 async function runCheck(check: ReviewCheckName, command: string, workdir: string): Promise<ReviewCheckResult> {
   const startTime = Date.now();
@@ -96,8 +101,38 @@ async function runCheck(check: ReviewCheckName, command: string, workdir: string
       stderr: "pipe",
     });
 
+    // BUG-039: Hard timeout — kill the process if it hangs
+    let timedOut = false;
+    const timerId = setTimeout(() => {
+      timedOut = true;
+      try {
+        proc.kill("SIGTERM");
+      } catch {
+        /* already exited */
+      }
+      setTimeout(() => {
+        try {
+          proc.kill("SIGKILL");
+        } catch {
+          /* already exited */
+        }
+      }, 5000);
+    }, REVIEW_CHECK_TIMEOUT_MS);
+
     // Wait for completion
-    const result = await proc.exited;
+    const exitCode = await proc.exited;
+    clearTimeout(timerId);
+
+    if (timedOut) {
+      return {
+        check,
+        command,
+        success: false,
+        exitCode: -1,
+        output: `[nax] ${check} timed out after ${REVIEW_CHECK_TIMEOUT_MS / 1000}s`,
+        durationMs: Date.now() - startTime,
+      };
+    }
 
     // Collect output
     const stdout = await new Response(proc.stdout).text();
@@ -107,8 +142,8 @@ async function runCheck(check: ReviewCheckName, command: string, workdir: string
     return {
       check,
       command,
-      success: result === 0,
-      exitCode: result,
+      success: exitCode === 0,
+      exitCode,
       output,
       durationMs: Date.now() - startTime,
     };
