@@ -134,27 +134,71 @@
 
 ---
 
-## v0.19.0 — Hardening & Compliance
+## v0.21.0 — Process Reliability & Observability
+
+**Theme:** Kill orphan processes cleanly, fix lint/typecheck auto-repair, structured heartbeat & log improvements
+**Status:** 🔲 Planned
+
+### Process Lifecycle (BUG-039)
+- [ ] **BUG-039:** Orphan processes on abort/timeout — `bun test`, `bun run lint`, `bun run typecheck`, LLM routing calls, and Claude agent sessions are not killed when nax exits or story fails. Use process groups (`Bun.spawn` `{detached: false}`) + kill on SIGTERM/SIGINT. Track all child PIDs in a run registry; sweep on run-end.
+
+### Lint/Typecheck Auto-Repair (BUG-040)
+- [ ] **BUG-040:** Story fails on trivial lint error → escales to next tier instead of auto-fixing. Root: `review.ts` returns `{ action: "fail" }` for lint/typecheck failures (BUG-030 pattern). Fix: add a review-rectification loop — give agent one retry with full lint/typecheck output; only escalate if retry fails. Reserve `"fail"` for unfixable failures.
+
+### Smart Test Runner — Git-History Mode (FEAT-010)
+- [ ] **FEAT-010:** Replace `git diff --name-only HEAD~1` heuristic with branch-vs-baseline comparison. Track `baseCommitHash` per story in `status.json` at story start; on verify, diff `HEAD` vs `baseCommitHash`. Survives multi-commit agent sessions and rebases. Config: `smartTestRunner.mode: "git-diff" | "git-history"`.
+
+### File Context Strategy (FEAT-011)
+- [ ] **FEAT-011:** Clarify and document file context injection behaviour. Currently injects full file content — evaluate switching to relative path only for large files (>N lines), with full content only for files <500 lines. Add `context.fileContext.maxInlineLines` config (default: 500).
+
+### TDD Test Writer Tier (FEAT-012)
+- [ ] **FEAT-012:** Test writer tier — currently uses `tdd.sessionTiers.testWriter` (default `balanced`). Evaluate whether test writer needs to be same tier as implementer or can stay lower. Risk: if test writer uses `fast` and implementer uses `powerful`, the tests may be too shallow to catch regressions. Recommendation: test writer tier should be ≥ implementer tier for the same story. Add validation/warning.
+
+### Cross-Story Test Isolation (BUG-041)
+- [ ] **BUG-041:** Failing test from story N bleeds into story N+1 verification — smart runner may pick up the same test file, masking whether story N+1 actually caused the failure. Fix: after each story's verify pass, record passing test list; flag regressions introduced by the current story only.
+
+### Test-After Strategy Review (FEAT-013)
+- [ ] **FEAT-013:** `test-after` strategy is reportedly fragile — agent writes code first, then tests, leaving a window where broken tests pass verify. Consider deprecating `test-after` in favour of `tdd-lite` as default, or adding a post-write strict isolation verify that ensures tests were not written to match broken code.
+
+### Structured Log & Heartbeat (FEAT-014)
+- [ ] **FEAT-014:** Add structured progress heartbeat to `nax logs --follow` and `status.json`. Show current story, current stage, elapsed time, pass/fail counts, and cost so far. Heartbeat line emitted every N seconds (config: `logging.heartbeatIntervalSeconds`, default: 30). Useful for long runs without terminal access.
+
+### Verifier Test Failure Capture (BUG-042)
+- [ ] **BUG-042:** Full suite knows pass/fail counts but verifier (`verify.ts`) does not surface them in failure context passed to rectification. `parseBunTestOutput()` is called in `run-regression.ts` but not in the per-story verify path. Fix: call `parseBunTestOutput()` in `verify.ts` on failure; attach structured `TestFailure[]` to `VerificationResult` and forward to rectification loop and `priorFailures`.
+
+---
+
+## v0.20.0 — Verification Architecture v2 ✅
 
 **Theme:** Eliminate duplicate test runs, deferred regression gate, structured escalation context
-**Status:** 🔲 Planned
+**Status:** ✅ Shipped (2026-03-06)
+**Spec:** [docs/specs/verification-architecture-v2.md](specs/verification-architecture-v2.md)
+
+### Shipped
+- [x] Pipeline verify stage is single test execution point (Smart Test Runner)
+- [x] Removed scoped re-test in `post-verify.ts` (duplicate eliminated)
+- [x] Review stage: typecheck + lint only — `checks: ["typecheck", "lint"]`
+- [x] Deferred regression gate — `src/execution/lifecycle/run-regression.ts`
+- [x] Reverse Smart Test Runner mapping: test → source → responsible story
+- [x] Targeted rectification per story with full failure context
+- [x] `regressionGate.mode: "deferred" | "per-story" | "disabled"` config
+- [x] `maxRectificationAttempts` config (default: 2)
+- [x] BUG-037: verify output shows last 20 lines (failures, not prechecks)
+
+---
+
+## v0.19.0 — Hardening & Compliance ✅
+
+**Theme:** Security hardening, _deps injection pattern, Node.js API removal
+**Status:** ✅ Shipped (2026-03-04)
 **Spec:** [docs/specs/verification-architecture-v2.md](specs/verification-architecture-v2.md) (Phase 2)
 
-### Remove Duplicate Test Execution
-- [ ] Pipeline verify stage is the single test execution point (Smart Test Runner)
-- [ ] Remove scoped re-test in `post-verify.ts` (duplicate of pipeline verify)
-- [ ] Review stage runs typecheck + lint only — remove `review.commands.test` execution
-
-### Deferred Regression Gate
-- [ ] New `src/execution/lifecycle/run-regression.ts` — run full suite once at run-end (not per-story)
-- [ ] Reverse Smart Test Runner mapping: failing test → source file → responsible story
-- [ ] Targeted rectification per responsible story with full failure context
-- [ ] Config: `execution.regressionGate.mode: "deferred" | "per-story" | "disabled"` (default `"deferred"`)
-- [ ] Call deferred regression in `run-completion.ts` before final metrics
-
-### Full Structured Failure Context
-- [ ] `priorFailures` injected into escalated agent prompts via `context/builder.ts`
-- [ ] Reverse file mapping for regression attribution
+### Shipped
+- [x] Pipeline verify stage is the single test execution point (Smart Test Runner)
+- [x] Remove scoped re-test in `post-verify.ts` (duplicate of pipeline verify)
+- [x] Review stage runs typecheck + lint only — remove `review.commands.test` execution
+- [x] `priorFailures` injected into escalated agent prompts via `context/builder.ts`
+- [x] Reverse file mapping for regression attribution
 
 ### Central Run Registry (carried forward)
 - [ ] `~/.nax/runs/<project>-<feature>-<runId>/` with status.json + events.jsonl symlink
@@ -166,7 +210,8 @@
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
 | v0.18.1 | Type Safety + CI Pipeline | 2026-03-03 | 60 TS errors + 12 lint errors fixed, GitLab CI green (1952/56/0) |
-| v0.19.0 | Hardening & Compliance | TBD | SEC-1 to SEC-5, BUG-1, Node.js API removal, _deps rollout |
+| v0.20.0 | Verification Architecture v2 | 2026-03-06 | Deferred regression gate, remove duplicate tests, BUG-037 |
+| v0.19.0 | Hardening & Compliance | 2026-03-04 | SEC-1 to SEC-5, BUG-1, Node.js API removal, _deps rollout |
 | v0.18.5 | Bun PTY Migration | 2026-03-04 | BUN-001: node-pty → Bun.spawn, CI cleanup, flaky test fix |
 | v0.18.4 | Routing Stability | 2026-03-04 | BUG-031 keyword drift, BUG-033 LLM retry, pre-commit hook |
 | v0.18.3 | Execution Reliability + Smart Runner | 2026-03-04 | BUG-026/028/029/030/032 + SFC-001/002 + STR-007, all items complete |
@@ -249,4 +294,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-04 (v0.18.3 shipped; v0.18.4: BUG-031/033; v0.19.0: Verification Architecture v2)*
+*Last updated: 2026-03-06 (v0.20.0 shipped; v0.21.0: Process Reliability & Observability planned — BUG-039..042, FEAT-010..014)*
