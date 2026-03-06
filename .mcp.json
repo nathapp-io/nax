@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "code-graph": {
+      "type": "http",
+      "url": "http://192.168.1.142:3100/mcp"
+    }
+  }
+}
