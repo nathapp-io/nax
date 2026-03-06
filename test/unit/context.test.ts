@@ -684,7 +684,7 @@ describe("Context Builder", () => {
       }
     });
 
-    test("should skip files larger than 10KB", async () => {
+    test("should add path-only element for files larger than 10KB", async () => {
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
 
       try {
@@ -726,9 +726,12 @@ describe("Context Builder", () => {
         console.warn = originalWarn;
 
         const fileElements = built.elements.filter((e) => e.type === "file");
-        expect(fileElements.length).toBe(1); // Only small file loaded
+        expect(fileElements.length).toBe(2); // small file (inline) + large file (path-only)
         expect(fileElements[0].filePath).toBe("small.ts");
-        // Large file should be skipped (warning logged via structured logger)
+        // Large file gets path-only hint (FEAT-011)
+        const largeElement = fileElements.find((e) => e.filePath === "large.ts");
+        expect(largeElement).toBeDefined();
+        expect(largeElement!.content).toContain("File too large to inline");
       } finally {
         await fs.rm(tempDir, { recursive: true, force: true });
       }

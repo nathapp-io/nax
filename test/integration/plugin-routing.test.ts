@@ -320,7 +320,7 @@ describe("Plugin router fallback to built-in strategy", () => {
     // Keyword strategy decision (not from plugin)
     expect(decision.complexity).toBe("simple");
     expect(decision.modelTier).toBe("fast");
-    expect(decision.testStrategy).toBe("test-after");
+    expect(decision.testStrategy).toBe("three-session-tdd-lite");
   });
 
   test("keyword strategy handles complex story when plugins return null", async () => {
