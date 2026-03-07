@@ -77,12 +77,8 @@ function makeCtx(overrides: Partial<StatusWriterContext> = {}): StatusWriterCont
 // ============================================================================
 
 describe("StatusWriter construction", () => {
-  test("constructs without error when statusFile is defined", () => {
+  test("constructs without error with statusFile path", () => {
     expect(() => new StatusWriter("/tmp/status.json", makeConfig(), makeCtx())).not.toThrow();
-  });
-
-  test("constructs without error when statusFile is undefined (no-op mode)", () => {
-    expect(() => new StatusWriter(undefined, makeConfig(), makeCtx())).not.toThrow();
   });
 
   test("costLimit Infinity → stored as null in snapshot", async () => {
@@ -214,13 +210,6 @@ describe("StatusWriter.getSnapshot", () => {
 // ============================================================================
 
 describe("StatusWriter.update no-op guards", () => {
-  test("no-op when statusFile is undefined (even with prd set)", async () => {
-    const sw = new StatusWriter(undefined, makeConfig(), makeCtx());
-    sw.setPrd(makePrd());
-    // Should not throw
-    await expect(sw.update(0, 0)).resolves.toBeUndefined();
-  });
-
   test("no-op when prd not yet set", async () => {
     const dir = await mkdtemp(join(tmpdir(), "sw-test-"));
     const path = join(dir, "status.json");

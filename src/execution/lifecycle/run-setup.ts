@@ -37,7 +37,7 @@ export interface RunSetupOptions {
   hooks: LoadedHooksConfig;
   feature: string;
   dryRun: boolean;
-  statusFile?: string;
+  statusFile: string;
   logFilePath?: string;
   runId: string;
   startedAt: string;

@@ -47,8 +47,8 @@ export interface RunOptions {
   parallel?: number;
   /** Optional event emitter for TUI integration */
   eventEmitter?: PipelineEventEmitter;
-  /** Path to write a machine-readable JSON status file. Omit to skip writing. */
-  statusFile?: string;
+  /** Path to write a machine-readable JSON status file */
+  statusFile: string;
   /** Path to JSONL log file (for crash recovery) */
   logFilePath?: string;
   /** Formatter verbosity mode for headless stdout (default: "normal") */
