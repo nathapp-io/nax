@@ -86,7 +86,7 @@ function isProcessAlive(pid: number): boolean {
 }
 
 async function loadStatusFile(workdir: string): Promise<NaxStatusFile | null> {
-  const statusPath = join(workdir, ".nax-status.json");
+  const statusPath = join(workdir, "nax", "status.json");
   if (!existsSync(statusPath)) return null;
   try {
     return (await Bun.file(statusPath).json()) as NaxStatusFile;
