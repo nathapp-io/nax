@@ -10,7 +10,7 @@
       "title": "Wire cost-exceeded and cost-warning triggers",
       "description": "In src/execution/sequential-executor.ts: (1) Before exiting on cost limit (line ~93), call checkCostExceeded({featureName: ctx.feature, cost: totalCost, limit: ctx.config.execution.costLimit}, ctx.config, ctx.interactionChain). Import checkCostExceeded from src/interaction/triggers.ts. If isTriggerEnabled(\"cost-exceeded\", config) is false or chain is null, keep today behavior. Trigger abort = exit \"cost-limit\". Trigger skip/continue = allow run to proceed past limit. (2) Add cost-warning: track a boolean warningSent=false. In the iteration loop, when totalCost >= costLimit * (interaction.triggers[\"cost-warning\"]?.threshold ?? 0.8) and !warningSent, call checkCostWarning({featureName, cost, limit}, config, interactionChain), set warningSent=true. isTriggerEnabled guards the call. Default fallback continue = proceed silently. Both calls must be best-effort: guard with if(interactionChain) check.",
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "acceptanceCriteria": [
         "When cost hits 80% of limit and cost-warning trigger is enabled, checkCostWarning fires once",
         "Warning fires only once per run even if cost stays above threshold for multiple iterations",
@@ -25,14 +25,15 @@
       "escalations": [],
       "dependencies": [],
       "tags": [],
-      "storyPoints": 2
+      "storyPoints": 2,
+      "passes": true
     },
     {
       "id": "TC-002",
       "title": "Wire max-retries trigger",
-      "description": "In src/pipeline/subscribers/interaction.ts, extend wireInteraction to also subscribe to story:failed event. When story:failed fires with countsTowardEscalation=true (permanent failure, all tiers exhausted), call executeTrigger(\"max-retries\", {featureName: ev.feature ?? \"\", storyId: ev.storyId, iteration: ev.attempts ?? 0}, config, interactionChain). Import StoryFailedEvent from event-bus. Guard with isTriggerEnabled(\"max-retries\", config) and interactionChain check. Response handling: abort = emit a new run:paused event with reason \"max-retries-abort\" (the executor checks this to halt); skip = default, proceed; escalate = not supported for this trigger, treat as skip. Note: the actual run halt on abort requires reading from a shared flag or emitting run:paused \u2014 simplest: log a warning and let the run continue (abort behavior can be enhanced later). For now, abort = warn log only.",
+      "description": "In src/pipeline/subscribers/interaction.ts, extend wireInteraction to also subscribe to story:failed event. When story:failed fires with countsTowardEscalation=true (permanent failure, all tiers exhausted), call executeTrigger(\"max-retries\", {featureName: ev.feature ?? \"\", storyId: ev.storyId, iteration: ev.attempts ?? 0}, config, interactionChain). Import StoryFailedEvent from event-bus. Guard with isTriggerEnabled(\"max-retries\", config) and interactionChain check. Response handling: abort = emit a new run:paused event with reason \"max-retries-abort\" (the executor checks this to halt); skip = default, proceed; escalate = not supported for this trigger, treat as skip. Note: the actual run halt on abort requires reading from a shared flag or emitting run:paused — simplest: log a warning and let the run continue (abort behavior can be enhanced later). For now, abort = warn log only.",
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "acceptanceCriteria": [
         "max-retries trigger fires when story:failed event has countsTowardEscalation=true",
         "max-retries trigger does NOT fire when countsTowardEscalation=false",
@@ -46,14 +47,15 @@
       "escalations": [],
       "dependencies": [],
       "tags": [],
-      "storyPoints": 2
+      "storyPoints": 2,
+      "passes": true
     },
     {
       "id": "TC-003",
       "title": "Wire security-review, merge-conflict, and pre-merge triggers",
-      "description": "Three trigger wiring points: (1) security-review in src/pipeline/stages/review.ts: when plugin reviewer (semgrep etc) returns failure (the existing check at ~line 50 that returns action:fail for plugin reviewer rejection), before permanently failing, call checkSecurityReview({featureName, storyId: ctx.story.id}, ctx.config, ctx.interactionChain) if isTriggerEnabled and chain present. abort=fail (today), escalate=return {action:\"escalate\"}. Import from interaction. (2) merge-conflict: add conflict detection in src/execution/git.ts \u2014 after any git merge/rebase/commit operation, check if stdout/stderr contains \"CONFLICT\" or \"conflict\". If detected and isTriggerEnabled(\"merge-conflict\") and chain, call checkMergeConflict. Export a detectMergeConflict(output: string): boolean helper. (3) pre-merge in sequential-executor.ts: after all stories complete (isComplete(prd)=true) and before emitting run:completed, call checkPreMerge({featureName: ctx.feature, totalStories: prd.userStories.length, cost: totalCost}, ctx.config, ctx.interactionChain) if enabled. abort = exit without completing.",
+      "description": "Three trigger wiring points: (1) security-review in src/pipeline/stages/review.ts: when plugin reviewer (semgrep etc) returns failure (the existing check at ~line 50 that returns action:fail for plugin reviewer rejection), before permanently failing, call checkSecurityReview({featureName, storyId: ctx.story.id}, ctx.config, ctx.interactionChain) if isTriggerEnabled and chain present. abort=fail (today), escalate=return {action:\"escalate\"}. Import from interaction. (2) merge-conflict: add conflict detection in src/execution/git.ts — after any git merge/rebase/commit operation, check if stdout/stderr contains \"CONFLICT\" or \"conflict\". If detected and isTriggerEnabled(\"merge-conflict\") and chain, call checkMergeConflict. Export a detectMergeConflict(output: string): boolean helper. (3) pre-merge in sequential-executor.ts: after all stories complete (isComplete(prd)=true) and before emitting run:completed, call checkPreMerge({featureName: ctx.feature, totalStories: prd.userStories.length, cost: totalCost}, ctx.config, ctx.interactionChain) if enabled. abort = exit without completing.",
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "acceptanceCriteria": [
         "security-review trigger fires when plugin reviewer rejects (not lint/typecheck)",
         "security-review abort = story permanently fails; escalate = story retried",
@@ -69,7 +71,8 @@
       "escalations": [],
       "dependencies": [],
       "tags": [],
-      "storyPoints": 3
+      "storyPoints": 3,
+      "passes": true
     },
     {
       "id": "TC-004",
@@ -96,7 +99,7 @@
     {
       "id": "TC-005",
       "title": "Wire missing hook events: on-resume, on-session-end, on-error",
-      "description": "Three missing hook events to wire in src/pipeline/subscribers/hooks.ts: (1) on-resume: add RunResumedEvent {type:\"run:resumed\"; feature: string} to PipelineEventBus. Emit it in sequential-executor.ts when resuming from pause state (detect via interaction state or run:paused\u2192run:resumed cycle). Wire bus.on(\"run:resumed\") \u2192 fireHook(hooks, \"on-resume\", ...) in wireHooks. (2) on-session-end: fire after every agent session ends (pass OR fail). Wire bus.on(\"story:completed\") AND bus.on(\"story:failed\") \u2192 fireHook(hooks, \"on-session-end\", hookCtx(feature, {storyId, status: passed?\"passed\":\"failed\"})). (3) on-error: emit a run:errored event in src/execution/crash-recovery.ts crash handler (unhandledRejection / SIGTERM / SIGINT handlers). Wire bus.on(\"run:errored\") \u2192 fireHook(hooks, \"on-error\", hookCtx(feature, {reason: signal/error})). Add RunErroredEvent type to event-bus. All three follow existing best-effort fire-and-forget pattern.",
+      "description": "Three missing hook events to wire in src/pipeline/subscribers/hooks.ts: (1) on-resume: add RunResumedEvent {type:\"run:resumed\"; feature: string} to PipelineEventBus. Emit it in sequential-executor.ts when resuming from pause state (detect via interaction state or run:paused→run:resumed cycle). Wire bus.on(\"run:resumed\") → fireHook(hooks, \"on-resume\", ...) in wireHooks. (2) on-session-end: fire after every agent session ends (pass OR fail). Wire bus.on(\"story:completed\") AND bus.on(\"story:failed\") → fireHook(hooks, \"on-session-end\", hookCtx(feature, {storyId, status: passed?\"passed\":\"failed\"})). (3) on-error: emit a run:errored event in src/execution/crash-recovery.ts crash handler (unhandledRejection / SIGTERM / SIGINT handlers). Wire bus.on(\"run:errored\") → fireHook(hooks, \"on-error\", hookCtx(feature, {reason: signal/error})). Add RunErroredEvent type to event-bus. All three follow existing best-effort fire-and-forget pattern.",
       "complexity": "medium",
       "status": "pending",
       "acceptanceCriteria": [
@@ -119,7 +122,7 @@
     {
       "id": "TC-006",
       "title": "Auto plugin and Telegram/Webhook plugin integration tests",
-      "description": "Add mock-based integration tests for the three untested plugins. File locations: test/unit/interaction/auto-plugin.test.ts, extend test/unit/interaction-plugins.test.ts. (1) AutoInteractionPlugin (_deps pattern): mock the LLM call via _deps.callLlm. Test: LLM returns approve \u2192 response.action=\"continue\"; LLM returns reject \u2192 response.action=\"abort\"; confidence < threshold \u2192 fallback to chain default; trigger=security-review \u2192 always rejects auto-approval (hardcoded block), returns chain default. Add _deps.callLlm to auto.ts if not present. (2) Telegram send flow: mock fetch globally in test. Verify send() POSTs to correct API URL with message text and inline keyboard buttons (approve/reject). Verify poll() parses callback_query correctly. (3) Webhook: mock an HTTP server using Bun.serve in test. Verify send() POSTs payload with correct Content-Type. Verify HMAC signature validation rejects tampered payload. All tests are pure unit/mock \u2014 no real network calls.",
+      "description": "Add mock-based integration tests for the three untested plugins. File locations: test/unit/interaction/auto-plugin.test.ts, extend test/unit/interaction-plugins.test.ts. (1) AutoInteractionPlugin (_deps pattern): mock the LLM call via _deps.callLlm. Test: LLM returns approve → response.action=\"continue\"; LLM returns reject → response.action=\"abort\"; confidence < threshold → fallback to chain default; trigger=security-review → always rejects auto-approval (hardcoded block), returns chain default. Add _deps.callLlm to auto.ts if not present. (2) Telegram send flow: mock fetch globally in test. Verify send() POSTs to correct API URL with message text and inline keyboard buttons (approve/reject). Verify poll() parses callback_query correctly. (3) Webhook: mock an HTTP server using Bun.serve in test. Verify send() POSTs payload with correct Content-Type. Verify HMAC signature validation rejects tampered payload. All tests are pure unit/mock — no real network calls.",
       "complexity": "medium",
       "status": "pending",
       "acceptanceCriteria": [
@@ -139,5 +142,6 @@
       "tags": [],
       "storyPoints": 2
     }
-  ]
+  ],
+  "updatedAt": "2026-03-07T14:30:04.762Z"
 }

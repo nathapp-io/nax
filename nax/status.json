@@ -1,37 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-07T06-14-21-018Z",
-    "feature": "status-file-consolidation",
-    "startedAt": "2026-03-07T06:14:21.018Z",
-    "status": "crashed",
+    "id": "run-2026-03-07T13-49-17-400Z",
+    "feature": "trigger-completion",
+    "startedAt": "2026-03-07T13:49:17.400Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 217461,
-    "crashedAt": "2026-03-07T06:22:36.300Z",
-    "crashSignal": "SIGTERM"
+    "pid": 97007
   },
   "progress": {
-    "total": 4,
-    "passed": 0,
+    "total": 6,
+    "passed": 3,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 0,
-    "limit": 3
+    "spent": 2.588776,
+    "limit": 8
   },
   "current": {
-    "storyId": "SFC-002",
-    "title": "Write feature-level status on run end",
+    "storyId": "TC-004",
+    "title": "Wire story-ambiguity and review-gate triggers",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 0,
-  "updatedAt": "2026-03-07T06:22:36.300Z",
-  "durationMs": 495282
+  "iterations": 4,
+  "updatedAt": "2026-03-07T14:35:45.070Z",
+  "durationMs": 2787670,
+  "lastHeartbeat": "2026-03-07T14:35:45.070Z"
 }
