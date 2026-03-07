@@ -147,6 +147,12 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): () => void {
 
   // Signal handler
   const handleSignal = async (signal: NodeJS.Signals) => {
+    // Hard deadline: force exit if any async operation hangs (FIX-H5)
+    const hardDeadline = setTimeout(() => {
+      process.exit(128 + getSignalNumber(signal));
+    }, 10_000);
+    if (hardDeadline.unref) hardDeadline.unref();
+
     logger?.error("crash-recovery", `Received ${signal}, shutting down...`, { signal });
 
     // Kill all spawned agent processes
@@ -166,6 +172,7 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): () => void {
     // Stop heartbeat
     stopHeartbeat();
 
+    clearTimeout(hardDeadline);
     // Exit cleanly
     process.exit(128 + getSignalNumber(signal));
   };
