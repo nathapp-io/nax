@@ -19,22 +19,21 @@ git config user.name "subrina.tai"
 git config user.email "subrina8080@outlook.com"
 ```
 
-## Verification Gates — Run After Every Change
+## Commands
 
-```bash
-bun run typecheck                           # tsc --noEmit — run after type changes
-bun run lint                                # Biome — run after every file edit
-bun test test/unit/foo.test.ts              # Targeted — run during iteration
-NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000 --bail  # Full suite — run before commit
-```
+| Command | Purpose |
+|:--------|:--------|
+| `bun run typecheck` | tsc --noEmit |
+| `bun run lint` | Biome |
+| `bun test test/unit/foo.test.ts` | Targeted test during iteration |
+| `NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000 --bail` | Full suite |
 
-**Never assume code is correct because it looks right. Run the verifier.**
+nax runs lint, typecheck, and tests automatically via the pipeline. Run these manually only when working outside a nax session.
 
 ## Engineering Persona
 
 - **Senior Engineer mindset**: check edge cases, null/undefined, race conditions, and error states.
 - **TDD first**: write or update tests before implementation when the story calls for it.
-- **Fail fast**: run `typecheck` + `lint` after every 2–3 file changes, not at the end.
 - **Stuck rule**: if the same test fails 2+ iterations, stop, summarise failed attempts, reassess approach.
 - **Never push to remote** — the human reviews and pushes.
 
@@ -92,8 +91,6 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator only]
 1. **Explore first**: use `grep`, `cat`, and solograph MCP to understand context before writing code.
 2. **Plan complex tasks**: for multi-file changes, write a short plan before implementing.
 3. **Implement in small chunks**: one logical concern per commit.
-4. **Verify after each chunk**: `typecheck` + `lint` + targeted test.
-5. **Full suite before done**: `NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000 --bail`
 
 ## Code Intelligence (Solograph MCP)
 
@@ -108,7 +105,7 @@ Use **solograph** MCP tools on-demand — do not use `web_search` or `kb_search`
 
 ## Coding Standards & Forbidden Patterns
 
-Full rules are in `.claude/rules/` (loaded automatically):
+Full rules in `.claude/rules/` (loaded automatically):
 
 - `01-project-conventions.md` — Bun-native APIs, 400-line limit, barrel imports, logging, commits
 - `02-test-architecture.md` — directory mirroring, placement rules, file naming
