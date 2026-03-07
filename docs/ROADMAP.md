@@ -135,6 +135,22 @@
 
 ---
 
+## v0.25.0 — Trigger Completion
+
+**Theme:** Wire all 8 unwired interaction triggers, 3 missing hook events, and add plugin integration tests
+**Status:** 🔲 Planned
+**Spec:** [docs/specs/trigger-completion.md](specs/trigger-completion.md)
+
+### Stories
+- [ ] **TC-001:** Wire `cost-exceeded` + `cost-warning` triggers — fire at 80%/100% of cost limit in sequential-executor.ts
+- [ ] **TC-002:** Wire `max-retries` trigger — fire on permanent story failure via `story:failed` event in wireInteraction
+- [ ] **TC-003:** Wire `security-review`, `merge-conflict`, `pre-merge` triggers — review rejection, git conflict detection, pre-completion gate
+- [ ] **TC-004:** Wire `story-ambiguity` + `review-gate` triggers — ambiguity keyword detection, per-story human checkpoint
+- [ ] **TC-005:** Wire missing hook events — `on-resume`, `on-session-end`, `on-error` to pipeline events
+- [ ] **TC-006:** Auto plugin + Telegram + Webhook integration tests — mock LLM/network, cover approve/reject/HMAC flows
+
+---
+
 ## v0.24.0 — Central Run Registry ✅
 
 **Theme:** Global run index across all projects — single source of truth for all nax run history
