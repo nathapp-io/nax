@@ -1,6 +1,6 @@
 /** Sequential Story Executor (ADR-005, Phase 4) — main execution loop. */
 
-import { checkCostExceeded, checkCostWarning, isTriggerEnabled } from "../interaction/triggers";
+import { checkCostExceeded, checkCostWarning, checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import { pipelineEventBus } from "../pipeline/event-bus";
@@ -71,6 +71,17 @@ export async function executeSequential(
         prdDirty = false;
       }
       if (isComplete(prd)) {
+        // pre-merge trigger: prompt before completing the run
+        if (ctx.interactionChain && isTriggerEnabled("pre-merge", ctx.config)) {
+          const shouldProceed = await checkPreMerge(
+            { featureName: ctx.feature, totalStories: prd.userStories.length, cost: totalCost },
+            ctx.config,
+            ctx.interactionChain,
+          );
+          if (!shouldProceed) {
+            return buildResult("pre-merge-aborted");
+          }
+        }
         pipelineEventBus.emit({
           type: "run:completed",
           totalStories: 0,

@@ -9,7 +9,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "../../../src/config";
 import { InteractionChain } from "../../../src/interaction/chain";
 import type { InteractionPlugin, InteractionResponse } from "../../../src/interaction/types";
-import { checkCostExceeded, checkCostWarning, isTriggerEnabled } from "../../../src/interaction/triggers";
+import { checkCostExceeded, checkCostWarning, checkPreMerge, isTriggerEnabled } from "../../../src/interaction/triggers";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -194,5 +194,42 @@ describe("cost-warning threshold guard logic", () => {
   test("defaults to 0.8 when trigger config is a boolean", () => {
     expect(shouldFireWarning(7.9, 10, true, false)).toBe(false);
     expect(shouldFireWarning(8.0, 10, true, false)).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// checkPreMerge — pre-merge trigger before run:completed
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("checkPreMerge — approve/abort responses", () => {
+  const context = { featureName: "feature-x", totalStories: 3, cost: 0.5 };
+
+  test("returns false when trigger responds abort", async () => {
+    const config = makeConfig({ "pre-merge": { enabled: true } });
+    const chain = makeChain("abort");
+    const result = await checkPreMerge(context, config, chain);
+    expect(result).toBe(false);
+  });
+
+  test("returns true when trigger responds approve", async () => {
+    const config = makeConfig({ "pre-merge": { enabled: true } });
+    const chain = makeChain("approve");
+    const result = await checkPreMerge(context, config, chain);
+    expect(result).toBe(true);
+  });
+
+  test("returns false when trigger responds skip (non-approve = abort run)", async () => {
+    const config = makeConfig({ "pre-merge": { enabled: true } });
+    const chain = makeChain("skip");
+    const result = await checkPreMerge(context, config, chain);
+    expect(result).toBe(false);
+  });
+
+  test("returns true without prompting when trigger is disabled", async () => {
+    const config = makeConfig({});
+    const chain = makeChain("abort");
+    const result = await checkPreMerge(context, config, chain);
+    // Trigger disabled: checkPreMerge returns true (proceed normally)
+    expect(result).toBe(true);
   });
 });

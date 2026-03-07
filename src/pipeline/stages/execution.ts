@@ -32,9 +32,11 @@
 
 import { getAgent, validateAgentForTier } from "../../agents";
 import { resolveModel } from "../../config";
+import { checkMergeConflict, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import type { FailureCategory } from "../../tdd";
 import { runThreeSessionTdd } from "../../tdd";
+import { detectMergeConflict } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**
@@ -172,6 +174,24 @@ export const executionStage: PipelineStage = {
 
     ctx.agentResult = result;
 
+    // merge-conflict trigger: detect CONFLICT markers in agent output
+    const combinedOutput = (result.output ?? "") + (result.stderr ?? "");
+    if (
+      _executionDeps.detectMergeConflict(combinedOutput) &&
+      ctx.interaction &&
+      isTriggerEnabled("merge-conflict", ctx.config)
+    ) {
+      const shouldProceed = await _executionDeps.checkMergeConflict(
+        { featureName: ctx.prd.feature, storyId: ctx.story.id },
+        ctx.config,
+        ctx.interaction,
+      );
+      if (!shouldProceed) {
+        logger.error("execution", "Merge conflict detected — aborting story", { storyId: ctx.story.id });
+        return { action: "fail", reason: "Merge conflict detected" };
+      }
+    }
+
     if (!result.success) {
       logger.error("execution", "Agent session failed", {
         exitCode: result.exitCode,
@@ -199,4 +219,6 @@ export const executionStage: PipelineStage = {
 export const _executionDeps = {
   getAgent,
   validateAgentForTier,
+  detectMergeConflict,
+  checkMergeConflict,
 };
