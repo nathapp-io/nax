@@ -125,11 +125,9 @@
 **Spec:** [docs/specs/central-run-registry.md](specs/central-run-registry.md)
 
 ### Stories
-- [ ] **CRR-001:** Create `~/.nax/runs/` directory structure on first run — `<project>-<feature>-<timestamp>/` with `status.json` + symlink to project `events.jsonl`
-- [ ] **CRR-002:** Write `status.json` on run start/end — fields: `runId`, `project`, `feature`, `workdir`, `startedAt`, `completedAt`, `status` (running/passed/failed/interrupted), `storiesTotal`, `storiesPassed`, `storiesFailed`
-- [ ] **CRR-003:** `nax runs` CLI command — list all runs across all projects (table: project, feature, status, duration, stories pass/fail, date)
-- [ ] **CRR-004:** `nax runs --project <name>` filter + `nax runs --last <n>` limit
-- [ ] **CRR-005:** `nax logs` enhancement — resolve run from global registry when no local feature context (e.g. `nax logs --run <runId>` from any directory)
+- [ ] **CRR-001:** `src/pipeline/subscribers/registry.ts` — `wireRegistry()` subscriber, listens to `run:started`, writes `~/.nax/runs/<project>-<feature>-<runId>/meta.json` (path pointers only — no data duplication, no symlinks)
+- [ ] **CRR-002:** `src/commands/runs.ts` — `nax runs` CLI, reads `meta.json` → resolves live `status.json` from `statusPath`, displays table (project, feature, status, stories, duration, date). Filters: `--project`, `--last`, `--status`
+- [ ] **CRR-003:** `nax logs --run <runId>` — resolve run from global registry via `eventsDir`, stream logs from any directory
 
 ---
 
