@@ -6,10 +6,10 @@
 
 ---
 
-## Next: v0.18.0 — Orchestration Quality
+## v0.18.0 — Orchestration Quality ✅
 
 **Theme:** Fix execution bugs and improve orchestration reliability
-**Status:** 🔲 Planned
+**Status:** ✅ Shipped (2026-03-03)
 
 ### Bugfixes (Priority)
 - [x] ~~**BUG-016:** Hardcoded 120s timeout in verify stage → read from config~~
@@ -64,12 +64,7 @@
 - [x] ~~Result: verify drops from ~125s to ~10-20s for typical single-file fixes~~
 
 ### Bun PTY Migration (BUN-001)
-- [ ] Replace `node-pty` (native addon, requires python/make/g++ to build) with `Bun.Terminal` API (v1.3.5+)
-- [ ] Update `src/agents/claude.ts` `runInteractive()` — replace `nodePty.spawn()` with `Bun.Terminal`
-- [ ] Update `src/tui/hooks/usePty.ts` — replace `IPty` interface with Bun equivalent
-- [ ] Remove `node-pty` from `dependencies` in `package.json`
-- [ ] Remove `--ignore-scripts` workaround from `.gitlab-ci.yml`
-- [ ] Benefit: no native build, no gyp/python/gcc in CI, cleaner alpine support
+- [x] ~~Replace `node-pty` with `Bun.spawn` (piped stdio) — shipped in v0.18.5~~
 
 ### CI Memory Optimization (CI-001)
 - [ ] Investigate splitting test suite into parallel jobs (unit / integration / ui) to reduce per-job peak memory
@@ -125,12 +120,7 @@
 **Spec:** [docs/specs/bun-pty-migration.md](specs/bun-pty-migration.md)
 
 ### BUN-001: Replace node-pty with Bun.spawn
-- [x] Research gate: verify `Bun.Terminal` availability on Bun 1.3.9; confirm Claude Code works with piped stdio
-- [ ] `src/agents/claude.ts` `runInteractive()` — replace `nodePty.spawn()` with `Bun.spawn` (piped stdio)
-- [ ] `src/tui/hooks/usePty.ts` — replace `pty.IPty` state with `Bun.Subprocess`
-- [ ] `src/agents/types.ts` — remove `IPty` dependency from `PtyHandle` interface
-- [ ] `package.json` — remove `node-pty` from dependencies
-- [ ] `.gitlab-ci.yml` — remove `python3 make g++` from `apk add`; remove `--ignore-scripts` from `bun install`
+- [x] ~~All sub-items complete — `claude.ts` + `usePty.ts` migrated to `Bun.spawn`, `node-pty` removed from `package.json`, CI cleaned up~~
 
 ---
 
