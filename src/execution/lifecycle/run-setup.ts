@@ -25,6 +25,7 @@ import { loadPlugins } from "../../plugins/loader";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { PRD } from "../../prd";
 import { loadPRD } from "../../prd";
+import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "../../version";
 import { installCrashHandlers } from "../crash-recovery";
 import { acquireLock, hookCtx, releaseLock } from "../helpers";
 import { PidRegistry } from "../pid-registry";
@@ -175,12 +176,14 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
 
     // Log run start
     const routingMode = config.routing.llm?.mode ?? "hybrid";
-    logger?.info("run.start", `Starting feature: ${feature}`, {
+    logger?.info("run.start", `Starting feature: ${feature} [nax ${NAX_BUILD_INFO}]`, {
       runId,
       feature,
       workdir,
       dryRun,
       routingMode,
+      naxVersion: NAX_VERSION,
+      naxCommit: NAX_COMMIT,
     });
 
     // Fire on-start hook
