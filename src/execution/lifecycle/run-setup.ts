@@ -36,6 +36,7 @@ export interface RunSetupOptions {
   config: NaxConfig;
   hooks: LoadedHooksConfig;
   feature: string;
+  featureDir?: string;
   dryRun: boolean;
   statusFile: string;
   logFilePath?: string;
@@ -117,6 +118,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     // BUG-017: Pass context for run.complete event on SIGTERM
     runId: options.runId,
     feature: options.feature,
+    featureDir: options.featureDir,
     getStartTime: () => options.startTime,
     getTotalStories: options.getTotalStories,
     getStoriesCompleted: options.getStoriesCompleted,

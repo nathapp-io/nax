@@ -41,14 +41,11 @@ interface FeatureSummary {
   };
 }
 
-/** Check if a process is alive via PID check */
+/** Check if a process is alive via POSIX signal 0 (portable, no subprocess) */
 function isPidAlive(pid: number): boolean {
   try {
-    const result = Bun.spawnSync(["ps", "-p", String(pid)], {
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-    return result.exitCode === 0;
+    process.kill(pid, 0);
+    return true;
   } catch {
     return false;
   }
@@ -57,6 +54,21 @@ function isPidAlive(pid: number): boolean {
 /** Load status.json for a feature (if it exists) */
 async function loadStatusFile(featureDir: string): Promise<NaxStatusFile | null> {
   const statusPath = join(featureDir, "status.json");
+  if (!existsSync(statusPath)) {
+    return null;
+  }
+
+  try {
+    const content = Bun.file(statusPath);
+    return (await content.json()) as NaxStatusFile;
+  } catch {
+    return null;
+  }
+}
+
+/** Load project-level status.json (if it exists) */
+async function loadProjectStatusFile(projectDir: string): Promise<NaxStatusFile | null> {
+  const statusPath = join(projectDir, "nax", "status.json");
   if (!existsSync(statusPath)) {
     return null;
   }
@@ -154,10 +166,46 @@ async function displayAllFeatures(projectDir: string): Promise<void> {
     return;
   }
 
+  // Load project-level status if available (current run info)
+  const projectStatus = await loadProjectStatusFile(projectDir);
+
+  // Display current run info if available
+  if (projectStatus) {
+    const pidAlive = isPidAlive(projectStatus.run.pid);
+
+    if (projectStatus.run.status === "running" && pidAlive) {
+      console.log(chalk.yellow("⚡ Currently Running:\n"));
+      console.log(chalk.dim(`   Feature:    ${projectStatus.run.feature}`));
+      console.log(chalk.dim(`   Run ID:     ${projectStatus.run.id}`));
+      console.log(chalk.dim(`   Started:    ${projectStatus.run.startedAt}`));
+      console.log(chalk.dim(`   Progress:   ${projectStatus.progress.passed}/${projectStatus.progress.total} stories`));
+      console.log(chalk.dim(`   Cost:       $${projectStatus.cost.spent.toFixed(4)}`));
+
+      if (projectStatus.current) {
+        console.log(chalk.dim(`   Current:    ${projectStatus.current.storyId} - ${projectStatus.current.title}`));
+      }
+
+      console.log();
+    } else if ((projectStatus.run.status === "running" && !pidAlive) || projectStatus.run.status === "crashed") {
+      console.log(chalk.red("💥 Crashed Run Detected:\n"));
+      console.log(chalk.dim(`   Feature:    ${projectStatus.run.feature}`));
+      console.log(chalk.dim(`   Run ID:     ${projectStatus.run.id}`));
+      console.log(chalk.dim(`   PID:        ${projectStatus.run.pid} (dead)`));
+      console.log(chalk.dim(`   Started:    ${projectStatus.run.startedAt}`));
+      if (projectStatus.run.crashedAt) {
+        console.log(chalk.dim(`   Crashed:    ${projectStatus.run.crashedAt}`));
+      }
+      if (projectStatus.run.crashSignal) {
+        console.log(chalk.dim(`   Signal:     ${projectStatus.run.crashSignal}`));
+      }
+      console.log();
+    }
+  }
+
   // Load summaries for all features
   const summaries = await Promise.all(features.map((name) => getFeatureSummary(name, join(featuresDir, name))));
 
-  console.log(chalk.bold("\n📊 Features\n"));
+  console.log(chalk.bold("📊 Features\n"));
 
   // Print table header
   const header = `  ${"Feature".padEnd(25)} ${"Done".padEnd(6)} ${"Failed".padEnd(8)} ${"Pending".padEnd(9)} ${"Last Run".padEnd(22)} ${"Cost".padEnd(10)} Status`;

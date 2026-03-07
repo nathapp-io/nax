@@ -97,7 +97,9 @@ async function createStatusFile(
 		...overrides,
 	};
 
-	await Bun.write(join(dir, ".nax-status.json"), JSON.stringify(status, null, 2));
+	// Ensure nax directory exists
+	mkdirSync(join(dir, "nax"), { recursive: true });
+	await Bun.write(join(dir, "nax", "status.json"), JSON.stringify(status, null, 2));
 }
 
 /**

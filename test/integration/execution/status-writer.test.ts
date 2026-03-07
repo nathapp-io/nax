@@ -333,3 +333,115 @@ describe("StatusWriter.update BUG-2 failure counter", () => {
     await rm(dir, { recursive: true, force: true });
   });
 });
+
+// ============================================================================
+// writeFeatureStatus — feature-level status writes (SFC-002)
+// ============================================================================
+
+describe("StatusWriter.writeFeatureStatus", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "sw-feature-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test("no-op when prd not yet set", async () => {
+    const featureDir = join(tmpDir, "features", "auth-feature");
+    const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
+    await sw.writeFeatureStatus(featureDir, 0, 0);
+    expect(existsSync(join(featureDir, "status.json"))).toBe(false);
+  });
+
+  test("writes feature status.json in feature directory", async () => {
+    const featureDir = join(tmpDir, "features", "auth-feature");
+    const statusPath = join(featureDir, "status.json");
+    const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
+    sw.setPrd(makePrd());
+    sw.setRunStatus("completed");
+    await sw.writeFeatureStatus(featureDir, 2.5, 5);
+
+    expect(existsSync(statusPath)).toBe(true);
+    const content = JSON.parse(readFileSync(statusPath, "utf8")) as NaxStatusFile;
+    expect(content.version).toBe(1);
+    expect(content.run.status).toBe("completed");
+    expect(content.cost.spent).toBe(2.5);
+    expect(content.iterations).toBe(5);
+  });
+
+  test("writes feature status with 'completed' status after successful run", async () => {
+    const featureDir = join(tmpDir, "features", "auth-feature");
+    const statusPath = join(featureDir, "status.json");
+    const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
+    sw.setPrd(makePrd(3));
+    sw.setRunStatus("completed");
+    await sw.writeFeatureStatus(featureDir, 1.0, 1);
+
+    const content = JSON.parse(readFileSync(statusPath, "utf8")) as NaxStatusFile;
+    expect(content.run.status).toBe("completed");
+    expect(content.progress.total).toBe(3);
+  });
+
+  test("writes feature status with 'failed' status after unsuccessful run", async () => {
+    const featureDir = join(tmpDir, "features", "auth-feature");
+    const statusPath = join(featureDir, "status.json");
+    const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
+    sw.setPrd(makePrd(2));
+    sw.setRunStatus("failed");
+    await sw.writeFeatureStatus(featureDir, 0.5, 2);
+
+    const content = JSON.parse(readFileSync(statusPath, "utf8")) as NaxStatusFile;
+    expect(content.run.status).toBe("failed");
+  });
+
+  test("writes feature status with 'crashed' status on crash with overrides", async () => {
+    const featureDir = join(tmpDir, "features", "auth-feature");
+    const statusPath = join(featureDir, "status.json");
+    const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
+    sw.setPrd(makePrd());
+    sw.setRunStatus("crashed");
+    const crashTime = new Date().toISOString();
+    await sw.writeFeatureStatus(featureDir, 1.0, 2, {
+      crashedAt: crashTime,
+      crashSignal: "SIGTERM",
+    });
+
+    const content = JSON.parse(readFileSync(statusPath, "utf8")) as NaxStatusFile;
+    expect(content.run.status).toBe("crashed");
+    expect(content.run.crashedAt).toBe(crashTime);
+    expect(content.run.crashSignal).toBe("SIGTERM");
+  });
+
+  test("fails gracefully when feature directory cannot be created", async () => {
+    const invalidFeatureDir = "/root/cannot/create/here/feature";
+    const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
+    sw.setPrd(makePrd());
+    // Should not throw — failure is logged, not re-thrown
+    await expect(sw.writeFeatureStatus(invalidFeatureDir, 0, 0)).resolves.toBeUndefined();
+  });
+
+  test("uses same schema as project-level status file", async () => {
+    const projectStatusPath = join(tmpDir, "status.json");
+    const featureDir = join(tmpDir, "features", "auth-feature");
+    const featureStatusPath = join(featureDir, "status.json");
+
+    const sw = new StatusWriter(projectStatusPath, makeConfig(), makeCtx());
+    sw.setPrd(makePrd(2));
+    sw.setRunStatus("completed");
+    await sw.update(2.0, 4);
+    await sw.writeFeatureStatus(featureDir, 2.0, 4);
+
+    const projectContent = JSON.parse(readFileSync(projectStatusPath, "utf8")) as NaxStatusFile;
+    const featureContent = JSON.parse(readFileSync(featureStatusPath, "utf8")) as NaxStatusFile;
+
+    // Verify both have same schema version and structure
+    expect(projectContent.version).toBe(featureContent.version);
+    expect(projectContent.version).toBe(1);
+    expect(projectContent.run.status).toBe(featureContent.run.status);
+    expect(projectContent.cost.spent).toBe(featureContent.cost.spent);
+    expect(projectContent.progress.total).toBe(featureContent.progress.total);
+  });
+});

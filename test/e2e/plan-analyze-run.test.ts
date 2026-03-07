@@ -402,6 +402,7 @@ describe("E2E: plan → analyze → run workflow", () => {
       featureDir,
       dryRun: false,
       useBatch: true, // Enable batching
+      statusFile: join(testDir, "nax", "status.json"),
       skipPrecheck: true, // Skip precheck for E2E test (no git repo in temp dir)
     });
 
@@ -479,6 +480,7 @@ describe("E2E: plan → analyze → run workflow", () => {
       feature: "simple-task",
       featureDir,
       dryRun: false,
+      statusFile: join(testDir, "nax", "status.json"),
       skipPrecheck: true, // Skip precheck for E2E test (no git repo in temp dir)
     });
 
@@ -560,6 +562,7 @@ describe("E2E: plan → analyze → run workflow", () => {
       feature: "fail-task",
       featureDir,
       dryRun: false,
+      statusFile: join(testDir, "nax", "status.json"),
       skipPrecheck: true, // Skip precheck for E2E test (no git repo in temp dir)
     });
 
@@ -623,6 +626,7 @@ describe("E2E: plan → analyze → run workflow", () => {
       feature: "rate-limit-task",
       featureDir,
       dryRun: false,
+      statusFile: join(testDir, "nax", "status.json"),
       skipPrecheck: true, // Skip precheck for E2E test (no git repo in temp dir)
     });
 
@@ -729,6 +733,7 @@ describe("E2E: plan → analyze → run workflow", () => {
       featureDir,
       dryRun: false,
       useBatch: true,
+      statusFile: join(testDir, "nax", "status.json"),
       skipPrecheck: true, // Skip precheck for E2E test (no git repo in temp dir)
     });
 
