@@ -10,7 +10,7 @@
       "title": "Auto-write project-level status",
       "description": "Remove --status-file CLI option. StatusWriter always writes to <workdir>/nax/status.json automatically. In bin/nax.ts, remove --status-file option and compute statusFile = join(workdir, 'nax', 'status.json'). In runner.ts, statusFile is no longer optional. In status-writer.ts, remove the if (!this.statusFile) guard in update().",
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "acceptanceCriteria": [
         "Running nax without --status-file flag writes nax/status.json automatically",
         "nax/status.json contains valid NaxStatusFile schema with run.id, run.status, progress counts",
@@ -34,7 +34,7 @@
     {
       "id": "SFC-003",
       "title": "Align status readers",
-      "description": "Make nax status read project-level status from nax/status.json for currently running info. Make nax diagnose read from nax/status.json instead of .nax-status.json. status-features.ts loadStatusFile() already reads <featureDir>/status.json which SFC-002 now writes — no change needed for feature-level reads.",
+      "description": "Make nax status read project-level status from nax/status.json for currently running info. Make nax diagnose read from nax/status.json instead of .nax-status.json. status-features.ts loadStatusFile() already reads <featureDir>/status.json which SFC-002 now writes \u2014 no change needed for feature-level reads.",
       "complexity": "simple",
       "status": "pending",
       "acceptanceCriteria": [
