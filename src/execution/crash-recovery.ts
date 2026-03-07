@@ -27,6 +27,8 @@ export interface CrashRecoveryContext {
   // BUG-017: Additional context for run.complete event on SIGTERM
   runId?: string;
   feature?: string;
+  // SFC-002: Feature directory for writing feature-level status on crash
+  featureDir?: string;
   getStartTime?: () => number;
   getTotalStories?: () => number;
   getStoriesCompleted?: () => number;
@@ -115,13 +117,14 @@ async function writeRunComplete(ctx: CrashRecoveryContext, exitReason: string): 
 }
 
 /**
- * Update status.json to "crashed" state
+ * Update status.json to "crashed" state (both project-level and feature-level)
  */
 async function updateStatusToCrashed(
   statusWriter: StatusWriter,
   totalCost: number,
   iterations: number,
   signal: string,
+  featureDir?: string,
 ): Promise<void> {
   try {
     statusWriter.setRunStatus("crashed");
@@ -129,6 +132,14 @@ async function updateStatusToCrashed(
       crashedAt: new Date().toISOString(),
       crashSignal: signal,
     });
+
+    // Write feature-level status (SFC-002)
+    if (featureDir) {
+      await statusWriter.writeFeatureStatus(featureDir, totalCost, iterations, {
+        crashedAt: new Date().toISOString(),
+        crashSignal: signal,
+      });
+    }
   } catch (err) {
     console.error("[crash-recovery] Failed to update status.json:", err);
   }
@@ -166,8 +177,8 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): () => void {
     // Write run.complete event (BUG-017)
     await writeRunComplete(ctx, signal.toLowerCase());
 
-    // Update status.json to crashed
-    await updateStatusToCrashed(ctx.statusWriter, ctx.getTotalCost(), ctx.getIterations(), signal);
+    // Update status.json to crashed (SFC-002: include feature-level status)
+    await updateStatusToCrashed(ctx.statusWriter, ctx.getTotalCost(), ctx.getIterations(), signal, ctx.featureDir);
 
     // Stop heartbeat
     stopHeartbeat();
@@ -201,8 +212,14 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): () => void {
     // Write fatal log with stack trace
     await writeFatalLog(ctx.jsonlFilePath, "uncaughtException", error);
 
-    // Update status.json to crashed
-    await updateStatusToCrashed(ctx.statusWriter, ctx.getTotalCost(), ctx.getIterations(), "uncaughtException");
+    // Update status.json to crashed (SFC-002: include feature-level status)
+    await updateStatusToCrashed(
+      ctx.statusWriter,
+      ctx.getTotalCost(),
+      ctx.getIterations(),
+      "uncaughtException",
+      ctx.featureDir,
+    );
 
     // Stop heartbeat
     stopHeartbeat();
@@ -228,8 +245,14 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): () => void {
     // Write fatal log
     await writeFatalLog(ctx.jsonlFilePath, "unhandledRejection", error);
 
-    // Update status.json to crashed
-    await updateStatusToCrashed(ctx.statusWriter, ctx.getTotalCost(), ctx.getIterations(), "unhandledRejection");
+    // Update status.json to crashed (SFC-002: include feature-level status)
+    await updateStatusToCrashed(
+      ctx.statusWriter,
+      ctx.getTotalCost(),
+      ctx.getIterations(),
+      "unhandledRejection",
+      ctx.featureDir,
+    );
 
     // Stop heartbeat
     stopHeartbeat();

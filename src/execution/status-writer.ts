@@ -6,6 +6,7 @@
  * write failure counter. Provides atomic status file writes via writeStatusFile.
  */
 
+import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { getSafeLogger } from "../logger";
 import type { PRD } from "../prd";
@@ -133,6 +134,47 @@ export class StatusWriter {
         path: this.statusFile,
         error: (err as Error).message,
         consecutiveFailures: this._consecutiveWriteFailures,
+      });
+    }
+  }
+
+  /**
+   * Write the current status snapshot to feature-level status.json file.
+   *
+   * Called on run completion, failure, or crash to persist the final state
+   * to <featureDir>/status.json. Uses the same NaxStatusFile schema as
+   * the project-level status file.
+   *
+   * No-ops if _prd has not been set.
+   * On failure, logs a warning/error but does not throw (non-fatal).
+   *
+   * @param featureDir - Feature directory (e.g., nax/features/auth-system)
+   * @param totalCost - Accumulated cost at this write point
+   * @param iterations - Loop iteration count at this write point
+   * @param overrides  - Optional partial snapshot overrides (spread last)
+   */
+  async writeFeatureStatus(
+    featureDir: string,
+    totalCost: number,
+    iterations: number,
+    overrides: Partial<RunStateSnapshot> = {},
+  ): Promise<void> {
+    if (!this._prd) return;
+    const safeLogger = getSafeLogger();
+    const featureStatusPath = join(featureDir, "status.json");
+
+    try {
+      const base = this.getSnapshot(totalCost, iterations);
+      if (!base) {
+        throw new Error("Failed to get snapshot");
+      }
+      const state: RunStateSnapshot = { ...base, ...overrides };
+      await writeStatusFile(featureStatusPath, buildStatusSnapshot(state));
+      safeLogger?.debug("status-file", "Feature status written", { path: featureStatusPath });
+    } catch (err) {
+      safeLogger?.warn("status-file", "Failed to write feature status file (non-fatal)", {
+        path: featureStatusPath,
+        error: (err as Error).message,
       });
     }
   }

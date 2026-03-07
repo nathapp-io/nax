@@ -110,6 +110,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     config,
     hooks,
     feature,
+    featureDir,
     dryRun,
     statusFile,
     logFilePath,
@@ -306,6 +307,13 @@ export async function run(options: RunOptions): Promise<RunResult> {
     });
 
     const { durationMs, runCompletedAt, finalCounts } = completionResult;
+
+    // ── Write feature-level status (SFC-002) ────────────────────────────────
+    if (featureDir) {
+      const finalStatus = isComplete(prd) ? "completed" : "failed";
+      statusWriter.setRunStatus(finalStatus);
+      await statusWriter.writeFeatureStatus(featureDir, totalCost, iterations);
+    }
 
     // ── Output run footer in headless mode ─────────────────────────────────
     if (headless && formatterMode !== "json") {
