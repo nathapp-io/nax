@@ -13,6 +13,7 @@
  */
 
 import { appendProgress } from "../../execution/progress";
+import { checkReviewGate, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { collectBatchMetrics, collectStoryMetrics } from "../../metrics";
 import { countStories, markStoryPassed, savePRD } from "../../prd";
@@ -72,6 +73,18 @@ export const completionStage: PipelineStage = {
         modelTier: ctx.routing?.modelTier,
         testStrategy: ctx.routing?.testStrategy,
       });
+
+      // review-gate trigger: check if story needs re-review after passing
+      if (ctx.interaction && isTriggerEnabled("review-gate", ctx.config)) {
+        const shouldContinue = await _completionDeps.checkReviewGate(
+          { featureName: ctx.prd.feature, storyId: completedStory.id },
+          ctx.config,
+          ctx.interaction,
+        );
+        if (!shouldContinue) {
+          logger.warn("completion", "Story marked for re-review", { storyId: completedStory.id });
+        }
+      }
     }
 
     // Save PRD
@@ -88,4 +101,11 @@ export const completionStage: PipelineStage = {
 
     return { action: "continue" };
   },
+};
+
+/**
+ * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ */
+export const _completionDeps = {
+  checkReviewGate,
 };

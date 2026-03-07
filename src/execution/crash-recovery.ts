@@ -32,6 +32,8 @@ export interface CrashRecoveryContext {
   getStartTime?: () => number;
   getTotalStories?: () => number;
   getStoriesCompleted?: () => number;
+  /** Optional callback to emit run:errored event (fire-and-forget) */
+  emitError?: (reason: string) => void;
 }
 
 /**
@@ -171,6 +173,9 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): () => void {
       await ctx.pidRegistry.killAll();
     }
 
+    // Emit run:errored event (fire-and-forget)
+    ctx.emitError?.(signal.toLowerCase());
+
     // Write fatal log
     await writeFatalLog(ctx.jsonlFilePath, signal);
 
@@ -209,6 +214,9 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): () => void {
       await ctx.pidRegistry.killAll();
     }
 
+    // Emit run:errored event (fire-and-forget)
+    ctx.emitError?.("uncaughtException");
+
     // Write fatal log with stack trace
     await writeFatalLog(ctx.jsonlFilePath, "uncaughtException", error);
 
@@ -241,6 +249,9 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): () => void {
     if (ctx.pidRegistry) {
       await ctx.pidRegistry.killAll();
     }
+
+    // Emit run:errored event (fire-and-forget)
+    ctx.emitError?.("unhandledRejection");
 
     // Write fatal log
     await writeFatalLog(ctx.jsonlFilePath, "unhandledRejection", error);

@@ -19,7 +19,7 @@ import type { NaxConfig } from "../../config";
 import type { InteractionChain } from "../../interaction/chain";
 import { executeTrigger, isTriggerEnabled } from "../../interaction/triggers";
 import { getSafeLogger } from "../../logger";
-import type { PipelineEventBus } from "../event-bus";
+import type { PipelineEventBus, StoryFailedEvent } from "../event-bus";
 import type { UnsubscribeFn } from "./hooks";
 
 /**
@@ -58,6 +58,41 @@ export function wireInteraction(
             error: String(err),
           });
         });
+      }),
+    );
+  }
+
+  // story:failed (countsTowardEscalation=true) → executeTrigger("max-retries")
+  if (interactionChain && isTriggerEnabled("max-retries", config)) {
+    unsubs.push(
+      bus.on("story:failed", (ev: StoryFailedEvent) => {
+        if (!ev.countsTowardEscalation) {
+          return;
+        }
+
+        executeTrigger(
+          "max-retries",
+          {
+            featureName: ev.feature ?? "",
+            storyId: ev.storyId,
+            iteration: ev.attempts ?? 0,
+          },
+          config,
+          interactionChain,
+        )
+          .then((response) => {
+            if (response.action === "abort") {
+              logger?.warn("interaction-subscriber", "max-retries abort requested", {
+                storyId: ev.storyId,
+              });
+            }
+          })
+          .catch((err) => {
+            logger?.warn("interaction-subscriber", "max-retries trigger failed", {
+              storyId: ev.storyId,
+              error: String(err),
+            });
+          });
       }),
     );
   }

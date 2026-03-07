@@ -309,7 +309,9 @@ export interface InteractionConfig {
     fallback: "continue" | "skip" | "escalate" | "abort";
   };
   /** Enable/disable built-in triggers */
-  triggers: Partial<Record<string, boolean | { enabled: boolean; fallback?: string; timeout?: number }>>;
+  triggers: Partial<
+    Record<string, boolean | { enabled: boolean; fallback?: string; timeout?: number; threshold?: number }>
+  >;
 }
 
 /** Test coverage context config */

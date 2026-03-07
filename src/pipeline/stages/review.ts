@@ -6,10 +6,12 @@
  * @returns
  * - `continue`: Review passed
  * - `escalate`: Built-in check failed (lint/typecheck) — autofix stage handles retry
- * - `fail`: Plugin reviewer hard-failed
+ * - `escalate`: Plugin reviewer failed and security-review trigger responded non-abort
+ * - `fail`: Plugin reviewer hard-failed (no trigger, or trigger responded abort)
  */
 
 // RE-ARCH: rewrite
+import { checkSecurityReview, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { reviewOrchestrator } from "../../review/orchestrator";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -29,6 +31,21 @@ export const reviewStage: PipelineStage = {
 
     if (!result.success) {
       if (result.pluginFailed) {
+        // security-review trigger: prompt before permanently failing
+        if (ctx.interaction && isTriggerEnabled("security-review", ctx.config)) {
+          const shouldContinue = await _reviewDeps.checkSecurityReview(
+            { featureName: ctx.prd.feature, storyId: ctx.story.id },
+            ctx.config,
+            ctx.interaction,
+          );
+          if (!shouldContinue) {
+            logger.error("review", `Plugin reviewer failed: ${result.failureReason}`, { storyId: ctx.story.id });
+            return { action: "fail", reason: `Review failed: ${result.failureReason}` };
+          }
+          logger.warn("review", "Security-review trigger escalated — retrying story", { storyId: ctx.story.id });
+          return { action: "escalate", reason: `Review failed: ${result.failureReason}` };
+        }
+
         logger.error("review", `Plugin reviewer failed: ${result.failureReason}`, { storyId: ctx.story.id });
         return { action: "fail", reason: `Review failed: ${result.failureReason}` };
       }
@@ -46,4 +63,11 @@ export const reviewStage: PipelineStage = {
     });
     return { action: "continue" };
   },
+};
+
+/**
+ * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ */
+export const _reviewDeps = {
+  checkSecurityReview,
 };

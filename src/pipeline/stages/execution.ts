@@ -32,10 +32,32 @@
 
 import { getAgent, validateAgentForTier } from "../../agents";
 import { resolveModel } from "../../config";
+import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import type { FailureCategory } from "../../tdd";
 import { runThreeSessionTdd } from "../../tdd";
+import { detectMergeConflict } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+
+/**
+ * Detect if agent output contains ambiguity signals
+ * Checks for keywords that indicate the agent is unsure about the implementation
+ */
+export function isAmbiguousOutput(output: string): boolean {
+  if (!output) return false;
+
+  const ambiguityKeywords = [
+    "unclear",
+    "ambiguous",
+    "need clarification",
+    "please clarify",
+    "which one",
+    "not sure which",
+  ];
+
+  const lowerOutput = output.toLowerCase();
+  return ambiguityKeywords.some((keyword) => lowerOutput.includes(keyword));
+}
 
 /**
  * Determine the pipeline action for a failed TDD result, based on its failureCategory.
@@ -172,6 +194,42 @@ export const executionStage: PipelineStage = {
 
     ctx.agentResult = result;
 
+    // merge-conflict trigger: detect CONFLICT markers in agent output
+    const combinedOutput = (result.output ?? "") + (result.stderr ?? "");
+    if (
+      _executionDeps.detectMergeConflict(combinedOutput) &&
+      ctx.interaction &&
+      isTriggerEnabled("merge-conflict", ctx.config)
+    ) {
+      const shouldProceed = await _executionDeps.checkMergeConflict(
+        { featureName: ctx.prd.feature, storyId: ctx.story.id },
+        ctx.config,
+        ctx.interaction,
+      );
+      if (!shouldProceed) {
+        logger.error("execution", "Merge conflict detected — aborting story", { storyId: ctx.story.id });
+        return { action: "fail", reason: "Merge conflict detected" };
+      }
+    }
+
+    // story-ambiguity trigger: detect ambiguity signals in agent output
+    if (
+      result.success &&
+      _executionDeps.isAmbiguousOutput(combinedOutput) &&
+      ctx.interaction &&
+      isTriggerEnabled("story-ambiguity", ctx.config)
+    ) {
+      const shouldContinue = await _executionDeps.checkStoryAmbiguity(
+        { featureName: ctx.prd.feature, storyId: ctx.story.id, reason: "Agent output suggests ambiguity" },
+        ctx.config,
+        ctx.interaction,
+      );
+      if (!shouldContinue) {
+        logger.warn("execution", "Story ambiguity detected — escalating story", { storyId: ctx.story.id });
+        return { action: "escalate", reason: "Story ambiguity detected — needs clarification" };
+      }
+    }
+
     if (!result.success) {
       logger.error("execution", "Agent session failed", {
         exitCode: result.exitCode,
@@ -199,4 +257,8 @@ export const executionStage: PipelineStage = {
 export const _executionDeps = {
   getAgent,
   validateAgentForTier,
+  detectMergeConflict,
+  checkMergeConflict,
+  isAmbiguousOutput,
+  checkStoryAmbiguity,
 };

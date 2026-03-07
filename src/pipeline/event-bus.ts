@@ -135,6 +135,17 @@ export interface StoryPausedEvent {
   cost: number;
 }
 
+export interface RunResumedEvent {
+  type: "run:resumed";
+  feature: string;
+}
+
+export interface RunErroredEvent {
+  type: "run:errored";
+  reason: string;
+  feature?: string;
+}
+
 /** Discriminated union of all pipeline events. */
 export type PipelineEvent =
   | StoryStartedEvent
@@ -150,7 +161,9 @@ export type PipelineEvent =
   | HumanReviewRequestedEvent
   | RunStartedEvent
   | RunPausedEvent
-  | StoryPausedEvent;
+  | StoryPausedEvent
+  | RunResumedEvent
+  | RunErroredEvent;
 
 export type PipelineEventType = PipelineEvent["type"];
 

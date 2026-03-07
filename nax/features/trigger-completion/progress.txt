@@ -1,0 +1,7 @@
+[2026-03-07T14:04:48.521Z] TC-001 — PASSED — Wire cost-exceeded and cost-warning triggers — Cost: $1.1231
+[2026-03-07T14:11:47.185Z] TC-002 — PASSED — Wire max-retries trigger — Cost: $0.1029
+[2026-03-07T14:30:04.761Z] TC-003 — PASSED — Wire security-review, merge-conflict, and pre-merge triggers — Cost: $1.3628
+[2026-03-07T14:36:14.823Z] TC-004 — PASSED — Wire story-ambiguity and review-gate triggers — Cost: $0.0000
+[2026-03-07T14:38:01.345Z] TC-004 — PASSED — Wire story-ambiguity and review-gate triggers — Cost: $0.1019
+[2026-03-07T14:43:51.353Z] TC-005 — PASSED — Wire missing hook events: on-resume, on-session-end, on-error — Cost: $0.4284
+[2026-03-07T14:53:47.397Z] TC-006 — PASSED — Auto plugin and Telegram/Webhook plugin integration tests — Cost: $0.7347

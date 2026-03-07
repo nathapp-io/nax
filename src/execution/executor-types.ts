@@ -40,7 +40,7 @@ export interface SequentialExecutionResult {
   storiesCompleted: number;
   totalCost: number;
   allStoryMetrics: StoryMetrics[];
-  exitReason: "completed" | "cost-limit" | "max-iterations" | "stalled" | "no-stories";
+  exitReason: "completed" | "cost-limit" | "max-iterations" | "stalled" | "no-stories" | "pre-merge-aborted";
 }
 
 /**
