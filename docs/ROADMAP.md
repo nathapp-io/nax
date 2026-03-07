@@ -118,22 +118,22 @@
 
 ---
 
-## v0.22.2 — Status File Consolidation
+## v0.23.0 — Status File Consolidation
 
 **Theme:** Auto-write status.json to well-known paths, align readers, remove dead options
-**Status:** 🔲 Planned
+**Status:** 🔄 In Progress (self-dev running, SFC-001 ✅)
 **Spec:** [docs/specs/status-file-consolidation.md](specs/status-file-consolidation.md)
-**Pre-requisite for:** v0.23.0 (Central Run Registry)
+**Pre-requisite for:** v0.24.0 (Central Run Registry)
 
 ### Stories
-- [ ] **SFC-001:** Auto-write project-level status — remove `--status-file` flag, always write to `<workdir>/nax/status.json`
+- [x] ~~**SFC-001:** Auto-write project-level status — remove `--status-file` flag, always write to `<workdir>/nax/status.json`~~
 - [ ] **SFC-002:** Write feature-level status on run end — copy final snapshot to `<workdir>/nax/features/<feature>/status.json`
 - [ ] **SFC-003:** Align status readers — `nax status` + `nax diagnose` read from correct paths
 - [ ] **SFC-004:** Clean up dead code — remove `--status-file` option, `.nax-status.json` references
 
 ---
 
-## v0.23.0 — Central Run Registry
+## v0.24.0 — Central Run Registry
 
 **Theme:** Global run index across all projects — single source of truth for all nax run history
 **Status:** 🔲 Planned
@@ -221,6 +221,7 @@
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
 | v0.18.1 | Type Safety + CI Pipeline | 2026-03-03 | 60 TS errors + 12 lint errors fixed, GitLab CI green (1952/56/0) |
+| v0.22.2 | Routing Stability + SFC-001 | 2026-03-07 | BUG-040 floating outputPromise crash on LLM timeout retry; SFC-001 auto-write status.json |
 | v0.22.1 | Pipeline Re-Architecture | 2026-03-07 | VerificationOrchestrator, EventBus, new stages (rectify/autofix/regression/deferred-regression), post-run SSOT. 2264 pass |
 | v0.20.0 | Verification Architecture v2 | 2026-03-06 | Deferred regression gate, remove duplicate tests, BUG-037 |
 | v0.19.0 | Hardening & Compliance | 2026-03-04 | SEC-1 to SEC-5, BUG-1, Node.js API removal, _deps rollout |
@@ -288,7 +289,7 @@
 - [x] ~~Constitution file support~~
 - [x] ~~Per-story testStrategy override — v0.18.1~~
 - [x] ~~Smart Test Runner — v0.18.2~~
-- [ ] **Central Run Registry** — moved to v0.23.0
+- [ ] **Central Run Registry** — moved to v0.24.0
 - [x] ~~**BUN-001:** Bun PTY Migration — replace `node-pty` with `Bun.spawn` (piped stdio). Shipped in v0.18.5.~~
 - [ ] **CI-001:** CI Memory Optimization — parallel test sharding for 1GB runners
 - [ ] **CI-001:** CI Memory Optimization — parallel test sharding to pass on 1GB runners (currently requires 8GB). Evaluate `bun test --shard` when stable.

@@ -26,7 +26,7 @@ import type { PluginRegistry } from "../../plugins/registry";
 import type { PRD } from "../../prd";
 import { loadPRD } from "../../prd";
 import { installCrashHandlers } from "../crash-recovery";
-import { acquireLock, hookCtx } from "../helpers";
+import { acquireLock, hookCtx, releaseLock } from "../helpers";
 import { PidRegistry } from "../pid-registry";
 import { StatusWriter } from "../status-writer";
 
@@ -157,48 +157,56 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     throw new LockAcquisitionError(workdir);
   }
 
-  // Load plugins (before try block so it's accessible in finally)
-  const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
-  const projectPluginsDir = path.join(workdir, "nax", "plugins");
-  const configPlugins = config.plugins || [];
-  const pluginRegistry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, workdir);
+  // Everything after lock acquisition is wrapped in try-catch to ensure
+  // the lock is released if any setup step fails (FIX-H16)
+  try {
+    // Load plugins (before try block so it's accessible in finally)
+    const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
+    const projectPluginsDir = path.join(workdir, "nax", "plugins");
+    const configPlugins = config.plugins || [];
+    const pluginRegistry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, workdir);
 
-  // Log plugins loaded
-  logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {
-    plugins: pluginRegistry.plugins.map((p) => ({ name: p.name, version: p.version, provides: p.provides })),
-  });
+    // Log plugins loaded
+    logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {
+      plugins: pluginRegistry.plugins.map((p) => ({ name: p.name, version: p.version, provides: p.provides })),
+    });
 
-  // Log run start
-  const routingMode = config.routing.llm?.mode ?? "hybrid";
-  logger?.info("run.start", `Starting feature: ${feature}`, {
-    runId,
-    feature,
-    workdir,
-    dryRun,
-    routingMode,
-  });
+    // Log run start
+    const routingMode = config.routing.llm?.mode ?? "hybrid";
+    logger?.info("run.start", `Starting feature: ${feature}`, {
+      runId,
+      feature,
+      workdir,
+      dryRun,
+      routingMode,
+    });
 
-  // Fire on-start hook
-  await fireHook(hooks, "on-start", hookCtx(feature), workdir);
+    // Fire on-start hook
+    await fireHook(hooks, "on-start", hookCtx(feature), workdir);
 
-  // Initialize run: check agent, reconcile state, validate limits
-  const { initializeRun } = await import("./run-initialization");
-  const initResult = await initializeRun({
-    config,
-    prdPath,
-    workdir,
-    dryRun,
-  });
-  prd = initResult.prd;
-  const counts = initResult.storyCounts;
+    // Initialize run: check agent, reconcile state, validate limits
+    const { initializeRun } = await import("./run-initialization");
+    const initResult = await initializeRun({
+      config,
+      prdPath,
+      workdir,
+      dryRun,
+    });
+    prd = initResult.prd;
+    const counts = initResult.storyCounts;
 
-  return {
-    statusWriter,
-    pidRegistry,
-    cleanupCrashHandlers,
-    pluginRegistry,
-    prd,
-    storyCounts: counts,
-    interactionChain,
-  };
+    return {
+      statusWriter,
+      pidRegistry,
+      cleanupCrashHandlers,
+      pluginRegistry,
+      prd,
+      storyCounts: counts,
+      interactionChain,
+    };
+  } catch (error) {
+    // Release lock before re-throwing so the directory isn't permanently locked
+    await releaseLock(workdir);
+    throw error;
+  }
 }

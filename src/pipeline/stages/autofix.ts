@@ -113,9 +113,11 @@ interface CommandResult {
 async function runCommand(cmd: string, cwd: string): Promise<CommandResult> {
   const parts = cmd.split(/\s+/);
   const proc = Bun.spawn(parts, { cwd, stdout: "pipe", stderr: "pipe" });
-  const exitCode = await proc.exited;
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
+  const [exitCode, stdout, stderr] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
   return { exitCode, output: `${stdout}\n${stderr}` };
 }
 

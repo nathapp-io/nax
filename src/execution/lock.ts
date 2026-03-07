@@ -49,22 +49,38 @@ export async function acquireLock(workdir: string): Promise<boolean> {
     if (exists) {
       // Read lock data
       const lockContent = await lockFile.text();
-      const lockData = JSON.parse(lockContent);
-      const lockPid = lockData.pid;
-
-      // Check if the process is still alive
-      if (isProcessAlive(lockPid)) {
-        // Process is alive, lock is valid
-        return false;
+      let lockData: { pid: number };
+      try {
+        lockData = JSON.parse(lockContent);
+      } catch {
+        // Corrupt/unparseable lock file — treat as stale and delete
+        const logger = getSafeLogger();
+        logger?.warn("execution", "Corrupt lock file detected, removing", {
+          lockPath,
+        });
+        const fs = await import("node:fs/promises");
+        await fs.unlink(lockPath).catch(() => {});
+        // Fall through to create a new lock
+        lockData = undefined as unknown as { pid: number };
       }
 
-      // Process is dead, remove stale lock
-      const logger = getSafeLogger();
-      logger?.warn("execution", "Removing stale lock", {
-        pid: lockPid,
-      });
-      const fs = await import("node:fs/promises");
-      await fs.unlink(lockPath).catch(() => {});
+      if (lockData) {
+        const lockPid = lockData.pid;
+
+        // Check if the process is still alive
+        if (isProcessAlive(lockPid)) {
+          // Process is alive, lock is valid
+          return false;
+        }
+
+        // Process is dead, remove stale lock
+        const logger = getSafeLogger();
+        logger?.warn("execution", "Removing stale lock", {
+          pid: lockPid,
+        });
+        const fs = await import("node:fs/promises");
+        await fs.unlink(lockPath).catch(() => {});
+      }
     }
 
     // Create lock file atomically using exclusive create (O_CREAT | O_EXCL)

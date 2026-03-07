@@ -99,6 +99,9 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   const logger = getSafeLogger();
 
+  // Declare prd before crash handler setup to avoid TDZ if SIGTERM arrives during setupRun
+  let prd: Awaited<ReturnType<typeof import("./lifecycle/run-setup").setupRun>>["prd"] | undefined;
+
   // ── Execute initial setup phase ──────────────────────────────────────────────
   const { setupRun } = await import("./lifecycle/run-setup");
   const setupResult = await setupRun({
@@ -120,7 +123,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     getIterations: () => iterations,
     // BUG-017: Pass getters for run.complete event on SIGTERM
     getStoriesCompleted: () => storiesCompleted,
-    getTotalStories: () => countStories(prd).total,
+    getTotalStories: () => (prd ? countStories(prd).total : 0),
   });
 
   const {
@@ -131,7 +134,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     storyCounts: counts,
     interactionChain,
   } = setupResult;
-  let prd = setupResult.prd;
+  prd = setupResult.prd;
 
   try {
     // ── Output run header in headless mode ─────────────────────────────────

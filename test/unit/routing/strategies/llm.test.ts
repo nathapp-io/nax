@@ -112,17 +112,15 @@ afterEach(() => {
   resetLogger();
 });
 
-describe("BUG-039: callLlmOnce stream drain on timeout", () => {
-  test("cancels stdout and stderr before proc.kill() on timeout", async () => {
-    const { proc, stdoutCancelled, stderrCancelled, killCalled, killCalledAfterCancel } = makeHangingProc();
+describe("BUG-039/BUG-040: stream cleanup on timeout", () => {
+  test("kills process on timeout without calling cancel() on locked streams", async () => {
+    const { proc, stdoutCancelled, stderrCancelled, killCalled } = makeHangingProc();
 
     const originalSpawn = _deps.spawn;
     _deps.spawn = mock(() => proc as PipedProc);
 
     const config = makeConfig({ timeoutMs: 30 });
 
-    // Import callLlmOnce indirectly through llmStrategy to trigger the private function.
-    // We test via the exported llmStrategy.route() which calls callLlm → callLlmOnce.
     const { llmStrategy } = await import("../../../../src/routing/strategies/llm");
 
     const story = {
@@ -147,13 +145,70 @@ describe("BUG-039: callLlmOnce stream drain on timeout", () => {
     // Should resolve promptly — within 500ms of the 30ms timeout
     expect(elapsed).toBeLessThan(500);
 
-    expect(stdoutCancelled.value).toBe(true);
-    expect(stderrCancelled.value).toBe(true);
+    // BUG-040: cancel() must NOT be called on locked streams — it returns a rejected
+    // Promise (per Web Streams spec) which becomes an unhandled rejection crash.
+    expect(stdoutCancelled.value).toBe(false);
+    expect(stderrCancelled.value).toBe(false);
     expect(killCalled.value).toBe(true);
-    // kill() was called after both streams were cancelled
-    expect(killCalledAfterCancel.value).toBe(true);
 
     _deps.spawn = originalSpawn;
+  });
+
+  test("no unhandled rejection when Response.text() locks streams and proc is killed", async () => {
+    // Simulate the exact BUG-040 scenario:
+    // 1. Spawn proc with piped streams
+    // 2. Response(proc.stdout).text() locks the streams
+    // 3. Timeout fires, proc.kill() called
+    // 4. No unhandled rejection should occur
+
+    const unhandledRejections: Error[] = [];
+    const handler = (event: PromiseRejectionEvent) => {
+      unhandledRejections.push(event.reason as Error);
+      event.preventDefault();
+    };
+
+    // biome-ignore lint/suspicious/noGlobalAssign: test-only override
+    globalThis.addEventListener("unhandledrejection", handler);
+
+    // Create a proc where streams are locked by Response readers
+    const stdout = new ReadableStream({ start() {} });
+    const stderr = new ReadableStream({ start() {} });
+    const proc = {
+      stdout,
+      stderr,
+      exited: new Promise<number>(() => {}),
+      kill: mock(() => {}),
+    };
+
+    const originalSpawn = _deps.spawn;
+    _deps.spawn = mock(() => proc as PipedProc);
+
+    const config = makeConfig({ timeoutMs: 20, retries: 0 });
+
+    const { llmStrategy } = await import("../../../../src/routing/strategies/llm");
+    const story = {
+      id: "BUG040",
+      title: "Bug test",
+      description: "Test",
+      acceptanceCriteria: ["AC1"],
+      tags: [],
+      dependencies: [],
+      status: "pending" as const,
+      passes: false,
+      escalations: [],
+      attempts: 0,
+    };
+
+    await expect(llmStrategy.route(story, { config })).rejects.toThrow(/timeout/i);
+
+    // Give microtasks time to settle
+    await Bun.sleep(50);
+
+    globalThis.removeEventListener("unhandledrejection", handler);
+    _deps.spawn = originalSpawn;
+
+    // No unhandled rejections should have occurred
+    expect(unhandledRejections).toHaveLength(0);
   });
 
   test("clearTimeout is called on success path (no resource leak)", async () => {

@@ -98,6 +98,8 @@ async function callLlmOnce(modelTier: string, prompt: string, config: NaxConfig,
       reject(new Error(`LLM call timeout after ${timeoutMs}ms`));
     }, timeoutMs);
   });
+  // Prevent unhandled rejection if timer fires between race resolution and clearTimeout
+  timeoutPromise.catch(() => {});
 
   const outputPromise = (async () => {
     const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
@@ -116,20 +118,16 @@ async function callLlmOnce(modelTier: string, prompt: string, config: NaxConfig,
     return result;
   } catch (err) {
     clearTimeout(timeoutId);
-    // Silence the floating outputPromise — after kill() the proc exits non-zero,
-    // causing outputPromise to throw. Without this, it becomes an unhandled rejection.
+    // Silence the floating outputPromise BEFORE killing the process.
+    // proc.kill() causes piped streams to error → Response.text() rejects →
+    // outputPromise rejects. The .catch() must be attached first to prevent
+    // an unhandled rejection that crashes nax via crash-recovery.
     outputPromise.catch(() => {});
-    try {
-      proc.stdout.cancel();
-    } catch {
-      // ignore cancel errors — stream may already be locked by Response
-    }
-    try {
-      proc.stderr.cancel();
-    } catch {
-      // ignore cancel errors — stream may already be locked by Response
-    }
     proc.kill();
+    // DO NOT call proc.stdout.cancel() / proc.stderr.cancel() here.
+    // The streams are locked by Response.text() readers. Per Web Streams spec,
+    // cancel() on a locked stream returns a rejected Promise (not a sync throw),
+    // which becomes an unhandled rejection. Let proc.kill() handle cleanup.
     throw err;
   }
 }
