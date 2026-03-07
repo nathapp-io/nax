@@ -2,7 +2,7 @@
  * Pipeline Runner
  *
  * Executes a sequence of pipeline stages, handling stage results and
- * controlling the flow (continue/skip/fail/escalate/pause).
+ * controlling the flow (continue/skip/fail/escalate/pause/retry).
  */
 
 import { getLogger } from "../logger";
@@ -15,7 +15,7 @@ import type { PipelineContext, PipelineStage, StageResult } from "./types";
 export interface PipelineRunResult {
   /** Whether the pipeline completed successfully (reached the end) */
   success: boolean;
-  /** Final action taken (e.g., "skip", "fail", "escalate", "pause", "complete") */
+  /** Final action taken */
   finalAction: "complete" | "skip" | "fail" | "escalate" | "pause";
   /** Reason for non-complete outcomes */
   reason?: string;
@@ -25,39 +25,17 @@ export interface PipelineRunResult {
   context: PipelineContext;
 }
 
+/** Maximum number of retries per stage to prevent infinite loops. */
+export const MAX_STAGE_RETRIES = 5;
+
 /**
  * Run a pipeline of stages against a context.
  *
- * Iterates through each enabled stage, executing them in sequence.
- * Stops early if a stage returns skip/fail/escalate/pause.
+ * Supports a `retry` action that jumps back to a named stage (used by
+ * rectify/autofix stages). Retry count per target stage is tracked;
+ * exceeding MAX_STAGE_RETRIES converts to a `fail`.
  *
- * **IMPORTANT - Context Mutation Contract:**
- * This function mutates the input context in-place. Stages modify the context
- * object directly (e.g., `ctx.constitution = result`, `ctx.routing = routing`).
- * The returned `context` in PipelineRunResult is the same object reference,
- * not a clone. If you need immutability, clone the context before calling
- * runPipeline.
- *
- * @param stages - Array of pipeline stages to execute
- * @param context - Initial pipeline context (WILL BE MUTATED IN-PLACE)
- * @param eventEmitter - Optional event emitter for TUI integration
- * @returns Pipeline execution result with mutated context
- *
- * @example
- * ```ts
- * const stages = [routingStage, contextStage, executionStage];
- * const ctx = createInitialContext(); // { config, prd, story, ... }
- *
- * const result = await runPipeline(stages, ctx);
- *
- * if (result.success) {
- *   // Pipeline completed successfully
- *   // ctx and result.context are the same object
- *   // ctx.agentResult === result.context.agentResult is true
- * } else {
- *   // Pipeline stopped: ${result.finalAction} - ${result.reason}
- * }
- * ```
+ * **Context Mutation:** This function mutates the input context in-place.
  */
 export async function runPipeline(
   stages: PipelineStage[],
@@ -65,97 +43,93 @@ export async function runPipeline(
   eventEmitter?: PipelineEventEmitter,
 ): Promise<PipelineRunResult> {
   const logger = getLogger();
+  const retryCountMap = new Map<string, number>();
+  let i = 0;
 
-  for (const stage of stages) {
+  while (i < stages.length) {
+    const stage = stages[i];
+
     // Skip disabled stages
     if (!stage.enabled(context)) {
       logger.debug("pipeline", `Stage "${stage.name}" skipped (disabled)`);
+      i++;
       continue;
     }
 
-    // Emit stage:enter event
     eventEmitter?.emit("stage:enter", stage.name, context.story);
 
-    // Execute the stage
     let result: StageResult;
     try {
       result = await stage.execute(context);
     } catch (error) {
-      // Stage execution failed with an exception
       const failResult: StageResult = {
         action: "fail",
         reason: `Stage "${stage.name}" threw error: ${error instanceof Error ? error.message : String(error)}`,
       };
-
-      // Emit stage:exit event
       eventEmitter?.emit("stage:exit", stage.name, failResult);
-
-      return {
-        success: false,
-        finalAction: "fail",
-        reason: failResult.reason,
-        stoppedAtStage: stage.name,
-        context,
-      };
+      return { success: false, finalAction: "fail", reason: failResult.reason, stoppedAtStage: stage.name, context };
     }
 
-    // Emit stage:exit event
     eventEmitter?.emit("stage:exit", stage.name, result);
 
-    // Handle stage result
     switch (result.action) {
       case "continue":
-        // Proceed to next stage
+        i++;
         continue;
 
       case "skip":
-        return {
-          success: false,
-          finalAction: "skip",
-          reason: result.reason,
-          stoppedAtStage: stage.name,
-          context,
-        };
+        return { success: false, finalAction: "skip", reason: result.reason, stoppedAtStage: stage.name, context };
 
       case "fail":
-        return {
-          success: false,
-          finalAction: "fail",
-          reason: result.reason,
-          stoppedAtStage: stage.name,
-          context,
-        };
+        return { success: false, finalAction: "fail", reason: result.reason, stoppedAtStage: stage.name, context };
 
       case "escalate":
         return {
           success: false,
           finalAction: "escalate",
-          reason: "Stage requested escalation to higher tier",
+          reason: result.reason ?? "Stage requested escalation to higher tier",
           stoppedAtStage: stage.name,
           context,
         };
 
       case "pause":
-        return {
-          success: false,
-          finalAction: "pause",
-          reason: result.reason,
-          stoppedAtStage: stage.name,
-          context,
-        };
+        return { success: false, finalAction: "pause", reason: result.reason, stoppedAtStage: stage.name, context };
+
+      case "retry": {
+        const retries = (retryCountMap.get(result.fromStage) ?? 0) + 1;
+        if (retries > MAX_STAGE_RETRIES) {
+          logger.warn("pipeline", `Stage retry limit reached for "${result.fromStage}" (max ${MAX_STAGE_RETRIES})`);
+          return {
+            success: false,
+            finalAction: "fail",
+            reason: `Stage "${stage.name}" exceeded max retries (${MAX_STAGE_RETRIES}) for "${result.fromStage}"`,
+            stoppedAtStage: stage.name,
+            context,
+          };
+        }
+        retryCountMap.set(result.fromStage, retries);
+        const targetIndex = stages.findIndex((s) => s.name === result.fromStage);
+        if (targetIndex === -1) {
+          logger.warn("pipeline", `Retry target stage "${result.fromStage}" not found — escalating`);
+          return {
+            success: false,
+            finalAction: "escalate",
+            reason: `Retry target stage "${result.fromStage}" not found`,
+            stoppedAtStage: stage.name,
+            context,
+          };
+        }
+        logger.debug("pipeline", `Retrying from stage "${result.fromStage}" (attempt ${retries}/${MAX_STAGE_RETRIES})`);
+        i = targetIndex;
+        continue;
+      }
 
       default: {
-        // Exhaustiveness check
         const _exhaustive: never = result;
         throw new Error(`Unknown stage action: ${JSON.stringify(_exhaustive)}`);
       }
     }
   }
 
-  // All stages completed successfully
-  return {
-    success: true,
-    finalAction: "complete",
-    context,
-  };
+  return { success: true, finalAction: "complete", context };
 }

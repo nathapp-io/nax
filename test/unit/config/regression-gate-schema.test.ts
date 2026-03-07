@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * RegressionGateConfigSchema — mode and maxRectificationAttempts fields
  *

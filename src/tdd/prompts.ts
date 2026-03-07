@@ -1,7 +1,7 @@
 import type { RectificationConfig } from "../config";
-import { createRectificationPrompt } from "../execution/rectification";
 import type { TestFailure } from "../execution/test-output-parser";
 import type { UserStory } from "../prd";
+import { createRectificationPrompt } from "../verification/rectification";
 import type { TddSessionRole } from "./types";
 
 /**

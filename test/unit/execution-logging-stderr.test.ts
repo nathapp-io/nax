@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Tests for exitCode and stderr in agent error scenarios
  *

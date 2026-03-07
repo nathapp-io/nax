@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * run-completion.ts — Deferred regression gate invocation (US-003)
  *

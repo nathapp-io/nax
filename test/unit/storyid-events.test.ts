@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * BUG-020: Verify storyId is present in JSONL event logger calls.
  *

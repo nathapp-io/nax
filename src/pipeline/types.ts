@@ -15,6 +15,7 @@ import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd/types";
 import type { ReviewResult } from "../review/types";
 import type { FailureCategory } from "../tdd/types";
+import type { VerifyResult } from "../verification/orchestrator-types";
 
 /**
  * Routing result from complexity classification
@@ -82,6 +83,8 @@ export interface PipelineContext {
   prompt?: string;
   /** Agent execution result (set by executionStage) */
   agentResult?: AgentResult;
+  /** Verify result (set by verifyStage) */
+  verifyResult?: VerifyResult;
   /** Review result (set by reviewStage) */
   reviewResult?: ReviewResult;
   /** Acceptance test failures (set by acceptanceStage) */
@@ -91,6 +94,10 @@ export interface PipelineContext {
   };
   /** Story start timestamp (ISO string, set by runner before pipeline) */
   storyStartTime?: string;
+  /** Tracks how many times the rectify stage has run this pipeline (for event attempt numbers). */
+  rectifyAttempt?: number;
+  /** Tracks how many times the autofix stage has run this pipeline (for event attempt numbers). */
+  autofixAttempt?: number;
   /** Git HEAD ref captured before agent ran this attempt (FEAT-010: precise smart-runner diff) */
   storyGitRef?: string;
   /** Collected story metrics (set by completionStage) */
@@ -114,7 +121,9 @@ export type StageAction =
   /** Escalate to a higher tier and retry the pipeline */
   | { action: "escalate"; reason?: string; cost?: number }
   /** Pause execution (user intervention required via queue command) */
-  | { action: "pause"; reason: string; cost?: number };
+  | { action: "pause"; reason: string; cost?: number }
+  /** Retry from a specific stage (used by rectify/autofix stages) */
+  | { action: "retry"; fromStage: string; cost?: number };
 
 /**
  * Result returned by a pipeline stage after execution.

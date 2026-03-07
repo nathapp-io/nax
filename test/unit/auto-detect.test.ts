@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Tests for context auto-detection (BUG-006)
  */

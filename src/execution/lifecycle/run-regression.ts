@@ -14,16 +14,16 @@ import type { PRD, UserStory } from "../../prd";
 import { countStories } from "../../prd";
 import { hasCommitsForStory } from "../../utils/git";
 import { parseBunTestOutput } from "../../verification";
+import { runRectificationLoop } from "../../verification/rectification-loop";
+import { fullSuite } from "../../verification/runners";
 import { reverseMapTestToSource } from "../../verification/smart-runner";
-import { runRectificationLoop } from "../post-verify-rectification";
-import { runVerification } from "../verification";
 
 /**
  * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
  * @internal - test use only.
  */
 export const _regressionDeps = {
-  runVerification,
+  runVerification: fullSuite,
   runRectificationLoop,
   parseBunTestOutput,
   reverseMapTestToSource,
@@ -133,7 +133,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
 
   // Step 1: Run full test suite
   const fullSuiteResult = await _regressionDeps.runVerification({
-    workingDirectory: workdir,
+    workdir: workdir,
     command: testCommand,
     timeoutSeconds,
     forceExit: config.quality.forceExit,
@@ -268,7 +268,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
   // Step 4: Re-run full suite to confirm
   logger?.info("regression", "Re-running full suite after rectification");
   const retryResult = await _regressionDeps.runVerification({
-    workingDirectory: workdir,
+    workdir: workdir,
     command: testCommand,
     timeoutSeconds,
     forceExit: config.quality.forceExit,

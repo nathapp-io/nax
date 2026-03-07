@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Config Merger Test Suite
  *

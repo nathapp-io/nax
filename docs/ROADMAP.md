@@ -148,10 +148,25 @@
 - [x] ~~**BUG-041:**~~ Won't fix — superseded by FEAT-010
 - [x] ~~**FEAT-012:**~~ Won't fix — balanced tier sufficient for test-writer
 
-### KIV → v0.22.0 Pipeline Observability
-- [ ] **BUG-040:** Lint/typecheck auto-repair (re-architecture with BUG-042 + FEAT-014)
-- [ ] **BUG-042:** Verifier failure capture (re-architecture with BUG-040 + FEAT-014)
-- [ ] **FEAT-014:** Heartbeat observability (unified pipeline event bus re-architecture)
+### → v0.22.0 Pipeline Re-Architecture (in progress)
+**ADR:** [docs/adr/ADR-005-pipeline-re-architecture.md](adr/ADR-005-pipeline-re-architecture.md)
+**Plan:** [docs/adr/ADR-005-implementation-plan.md](adr/ADR-005-implementation-plan.md)
+**Branch:** `feat/re-architecture`
+
+**Theme:** Eliminate ad-hoc orchestration, consolidate 4 scattered verification paths into single orchestrator, add event-bus-driven hooks/plugins/interaction, new stages (rectify, autofix, regression).
+
+- [ ] **Phase 0:** Test suite preparation — reorganize, split monsters, RE-ARCH tags, coverage gaps
+- [ ] **Phase 1:** VerificationOrchestrator + Pipeline Event Bus (additive, no behavior change)
+- [ ] **Phase 2:** New stages — `rectify`, `autofix`, `regression` + `retry` stage action
+- [ ] **Phase 3:** Event-bus subscribers for hooks, reporters, interaction (replace 20+ scattered call sites)
+- [ ] **Phase 4:** Delete deprecated files, simplify sequential executor to ~80 lines
+
+**Resolves in this version:**
+- [ ] **BUG-040:** Lint/typecheck auto-repair → `autofix` stage + `quality.commands.lintFix/formatFix`
+- [ ] **BUG-042:** Verifier failure capture → unified `VerifyResult` with `failures[]` always populated
+- [ ] **FEAT-014:** Heartbeat observability → Pipeline Event Bus with typed events
+- [ ] **BUG-026:** Regression gate triggers full retry → targeted `rectify` stage with `retry` action
+- [ ] **BUG-028:** Routing cache ignores escalation tier → cache key includes tier
 
 ---
 
@@ -281,4 +296,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-06 (v0.21.0 shipped; v0.22.0: Pipeline Observability planned — BUG-040, BUG-042, FEAT-014)*
+*Last updated: 2026-03-06 (v0.21.0 shipped; v0.22.0: Pipeline Re-Architecture in progress — ADR-005, 5 phases, resolves BUG-026/028/040/042 + FEAT-014)*

@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Smart Test Runner — 3-Pass Discovery Tests
  *
@@ -115,7 +116,7 @@ describe("Pass 2: importGrepFallback", () => {
   test("matches test file that imports the source by basename path", async () => {
     mockGlob(["test/unit/routing.test.ts"]);
     mockFileContent({
-      "/repo/test/unit/routing.test.ts": `import { route } from "../../src/routing/strategies/llm";`,
+      "/repo/test/unit/routing.test.ts": `import { route } from "../../../src/routing/strategies/llm";`,
     });
 
     const result = await importGrepFallback(
@@ -145,7 +146,7 @@ describe("Pass 2: importGrepFallback", () => {
   test("does not match test file with no import reference", async () => {
     mockGlob(["test/unit/other.test.ts"]);
     mockFileContent({
-      "/repo/test/unit/other.test.ts": `import { something } from "../../src/other/module";`,
+      "/repo/test/unit/other.test.ts": `import { something } from "../../../src/other/module";`,
     });
 
     const result = await importGrepFallback(
@@ -160,8 +161,8 @@ describe("Pass 2: importGrepFallback", () => {
   test("returns multiple matching test files", async () => {
     mockGlob(["test/unit/a.test.ts", "test/unit/b.test.ts"]);
     mockFileContent({
-      "/repo/test/unit/a.test.ts": `import { fn } from "../src/utils/helper";`,
-      "/repo/test/unit/b.test.ts": `import { fn } from "../../src/utils/helper";`,
+      "/repo/test/unit/a.test.ts": `import { fn } from "../../../src/utils/helper";`,
+      "/repo/test/unit/b.test.ts": `import { fn } from "../../../src/utils/helper";`,
     });
 
     const result = await importGrepFallback(
@@ -182,7 +183,7 @@ describe("Pass 2: importGrepFallback", () => {
       exists: () => Promise.resolve(true),
       text: () => {
         if (path.includes("broken")) throw new Error("read error");
-        return Promise.resolve(`import { fn } from "../src/utils/helper";`);
+        return Promise.resolve(`import { fn } from "../../../src/utils/helper";`);
       },
     });
 
@@ -200,7 +201,7 @@ describe("Pass 2: importGrepFallback", () => {
     mockGlob(["test/unit/routing.test.ts"]);
     // Content contains both "/llm" and "routing/strategies/llm"
     mockFileContent({
-      "/repo/test/unit/routing.test.ts": `import { classify } from "../../src/routing/strategies/llm";`,
+      "/repo/test/unit/routing.test.ts": `import { classify } from "../../../src/routing/strategies/llm";`,
     });
 
     const result = await importGrepFallback(
@@ -273,7 +274,7 @@ describe("Pass 3: full-suite fallback (empty return from both passes)", () => {
     };
     // biome-ignore lint/suspicious/noExplicitAny: mocking
     (Bun as any).file = (_path: string) => ({
-      text: () => Promise.resolve(`import { x } from "../src/completely/different";`),
+      text: () => Promise.resolve(`import { x } from "../../../src/completely/different";`),
     });
 
     const result = await importGrepFallback(

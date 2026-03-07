@@ -1,31 +1,27 @@
 /**
- * Pipeline Result Handlers
+ * Pipeline Result Handlers (ADR-005, Phase 4)
  *
- * Extracted from sequential-executor.ts: handles pipeline success, failure,
- * and dry-run outcomes after a story has been executed through the pipeline.
+ * Handles pipeline success, failure outcomes after story execution.
+ * Dry-run handling: see execution/dry-run.ts
+ * applyCachedRouting: removed (P4-001 — pipeline routing stage is sole source)
  */
 
 import type { NaxConfig } from "../config";
-import { type LoadedHooksConfig, fireHook } from "../hooks";
+import type { LoadedHooksConfig } from "../hooks";
 import type { InteractionChain } from "../interaction/chain";
-import { executeTrigger, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
+import { pipelineEventBus } from "../pipeline/event-bus";
 import type { PipelineRunResult } from "../pipeline/runner";
 import type { PluginRegistry } from "../plugins";
 import { countStories, markStoryFailed, markStoryPaused, savePRD } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
 import type { routeTask } from "../routing";
 import { handleTierEscalation } from "./escalation";
-import { hookCtx } from "./helpers";
-import { emitStoryComplete } from "./lifecycle/story-hooks";
-import { runPostAgentVerification } from "./post-verify";
 import { appendProgress } from "./progress";
-import type { StatusWriter } from "./status-writer";
 
-/** Context needed by pipeline result handlers */
 export interface PipelineHandlerContext {
-  config: import("../config").NaxConfig;
+  config: NaxConfig;
   prd: PRD;
   prdPath: string;
   workdir: string;
@@ -41,7 +37,6 @@ export interface PipelineHandlerContext {
   routing: ReturnType<typeof routeTask>;
   isBatchExecution: boolean;
   allStoryMetrics: StoryMetrics[];
-  timeoutRetryCountMap: Map<string, number>;
   storyGitRef: string | null | undefined;
   interactionChain?: InteractionChain | null;
 }
@@ -53,68 +48,40 @@ export interface PipelineSuccessResult {
   prdDirty: boolean;
 }
 
-/**
- * Handle a successful pipeline execution:
- * - Post-agent verification
- * - Emit story completion events
- * - Log progress
- */
 export async function handlePipelineSuccess(
   ctx: PipelineHandlerContext,
   pipelineResult: PipelineRunResult,
 ): Promise<PipelineSuccessResult> {
   const logger = getSafeLogger();
   const costDelta = pipelineResult.context.agentResult?.estimatedCost || 0;
-  let prd = ctx.prd;
+  const prd = ctx.prd;
 
-  // Collect story metrics
   if (pipelineResult.context.storyMetrics) {
     ctx.allStoryMetrics.push(...pipelineResult.context.storyMetrics);
   }
 
-  // Post-agent verification
-  const verifyResult = await runPostAgentVerification({
-    config: ctx.config,
-    prd,
-    prdPath: ctx.prdPath,
-    workdir: ctx.workdir,
-    featureDir: ctx.featureDir,
-    story: ctx.story,
-    storiesToExecute: ctx.storiesToExecute,
-    allStoryMetrics: ctx.allStoryMetrics,
-    timeoutRetryCountMap: ctx.timeoutRetryCountMap,
-  });
-  const verificationPassed = verifyResult.passed;
-  prd = verifyResult.prd;
+  const storiesCompletedDelta = ctx.storiesToExecute.length;
+  for (const completedStory of ctx.storiesToExecute) {
+    logger?.info("story.complete", "Story completed successfully", {
+      storyId: completedStory.id,
+      storyTitle: completedStory.title,
+      totalCost: ctx.totalCost + costDelta,
+      durationMs: Date.now() - ctx.startTime,
+    });
 
-  let storiesCompletedDelta = 0;
-  if (verificationPassed) {
-    storiesCompletedDelta = ctx.storiesToExecute.length;
-
-    const reporters = ctx.pluginRegistry.getReporters();
-    for (const completedStory of ctx.storiesToExecute) {
-      logger?.info("story.complete", "Story completed successfully", {
-        storyId: completedStory.id,
-        storyTitle: completedStory.title,
-        totalCost: ctx.totalCost + costDelta,
-        durationMs: Date.now() - ctx.startTime,
-      });
-
-      await emitStoryComplete(reporters, {
-        runId: ctx.runId,
-        storyId: completedStory.id,
-        status: "completed",
-        durationMs: Date.now() - ctx.startTime,
-        cost: costDelta,
-        tier: ctx.routing.modelTier,
-        testStrategy: ctx.routing.testStrategy,
-      });
-    }
+    pipelineEventBus.emit({
+      type: "story:completed",
+      storyId: completedStory.id,
+      story: completedStory,
+      passed: true,
+      durationMs: Date.now() - ctx.startTime,
+      cost: costDelta,
+      modelTier: ctx.routing.modelTier,
+      testStrategy: ctx.routing.testStrategy,
+    });
   }
 
-  // Display progress
   const updatedCounts = countStories(prd);
-  const elapsedMs = Date.now() - ctx.startTime;
   logger?.info("progress", "Progress update", {
     totalStories: updatedCounts.total,
     passedStories: updatedCounts.passed,
@@ -122,7 +89,7 @@ export async function handlePipelineSuccess(
     pendingStories: updatedCounts.pending,
     totalCost: ctx.totalCost + costDelta,
     costLimit: ctx.config.execution.costLimit,
-    elapsedMs,
+    elapsedMs: Date.now() - ctx.startTime,
   });
 
   return { storiesCompletedDelta, costDelta, prd, prdDirty: true };
@@ -133,16 +100,11 @@ export interface PipelineFailureResult {
   prdDirty: boolean;
 }
 
-/**
- * Handle a failed pipeline execution based on finalAction:
- * pause, skip, fail, or escalate.
- */
 export async function handlePipelineFailure(
   ctx: PipelineHandlerContext,
   pipelineResult: PipelineRunResult,
 ): Promise<PipelineFailureResult> {
   const logger = getSafeLogger();
-  const reporters = ctx.pluginRegistry.getReporters();
   let prd = ctx.prd;
   let prdDirty = false;
 
@@ -151,114 +113,49 @@ export async function handlePipelineFailure(
       markStoryPaused(prd, ctx.story.id);
       await savePRD(prd, ctx.prdPath);
       prdDirty = true;
-
-      logger?.warn("pipeline", "Story paused", {
+      logger?.warn("pipeline", "Story paused", { storyId: ctx.story.id, reason: pipelineResult.reason });
+      pipelineEventBus.emit({
+        type: "story:paused",
         storyId: ctx.story.id,
-        reason: pipelineResult.reason,
-      });
-
-      await fireHook(
-        ctx.hooks,
-        "on-pause",
-        hookCtx(ctx.feature, {
-          storyId: ctx.story.id,
-          reason: pipelineResult.reason || "Pipeline paused",
-          cost: ctx.totalCost,
-        }),
-        ctx.workdir,
-      );
-
-      await emitStoryComplete(reporters, {
-        runId: ctx.runId,
-        storyId: ctx.story.id,
-        status: "paused",
-        durationMs: Date.now() - ctx.startTime,
-        cost: pipelineResult.context.agentResult?.estimatedCost || 0,
-        tier: ctx.routing.modelTier,
-        testStrategy: ctx.routing.testStrategy,
+        reason: pipelineResult.reason || "Pipeline paused",
+        cost: ctx.totalCost,
       });
       break;
 
     case "skip":
-      logger?.warn("pipeline", "Story skipped", {
-        storyId: ctx.story.id,
-        reason: pipelineResult.reason,
-      });
+      logger?.warn("pipeline", "Story skipped", { storyId: ctx.story.id, reason: pipelineResult.reason });
       prdDirty = true;
-
-      await emitStoryComplete(reporters, {
-        runId: ctx.runId,
-        storyId: ctx.story.id,
-        status: "skipped",
-        durationMs: Date.now() - ctx.startTime,
-        cost: 0,
-        tier: ctx.routing.modelTier,
-        testStrategy: ctx.routing.testStrategy,
-      });
       break;
 
     case "fail":
       markStoryFailed(prd, ctx.story.id, pipelineResult.context.tddFailureCategory);
       await savePRD(prd, ctx.prdPath);
       prdDirty = true;
-
-      logger?.error("pipeline", "Story failed", {
-        storyId: ctx.story.id,
-        reason: pipelineResult.reason,
-      });
+      logger?.error("pipeline", "Story failed", { storyId: ctx.story.id, reason: pipelineResult.reason });
 
       if (ctx.featureDir) {
         await appendProgress(ctx.featureDir, ctx.story.id, "failed", `${ctx.story.title} — ${pipelineResult.reason}`);
       }
 
-      // Fire human-review trigger when story has exceeded max retries and interaction chain is available
-      if (
-        ctx.interactionChain &&
-        ctx.story.attempts !== undefined &&
-        ctx.story.attempts >= ctx.config.execution.rectification.maxRetries &&
-        isTriggerEnabled("human-review", ctx.config)
-      ) {
-        try {
-          await executeTrigger(
-            "human-review",
-            {
-              featureName: ctx.feature,
-              storyId: ctx.story.id,
-              iteration: ctx.story.attempts,
-              reason: pipelineResult.reason || "Max retries exceeded",
-            },
-            ctx.config,
-            ctx.interactionChain,
-          );
-        } catch (err) {
-          logger?.warn("pipeline", "human-review trigger failed", {
-            storyId: ctx.story.id,
-            error: String(err),
-          });
-        }
-      }
-
-      await fireHook(
-        ctx.hooks,
-        "on-story-fail",
-        hookCtx(ctx.feature, {
-          storyId: ctx.story.id,
-          status: "failed",
-          reason: pipelineResult.reason || "Pipeline failed",
-          cost: ctx.totalCost,
-        }),
-        ctx.workdir,
-      );
-
-      await emitStoryComplete(reporters, {
-        runId: ctx.runId,
+      pipelineEventBus.emit({
+        type: "story:failed",
         storyId: ctx.story.id,
-        status: "failed",
-        durationMs: Date.now() - ctx.startTime,
-        cost: pipelineResult.context.agentResult?.estimatedCost || 0,
-        tier: ctx.routing.modelTier,
-        testStrategy: ctx.routing.testStrategy,
+        story: ctx.story,
+        reason: pipelineResult.reason || "Pipeline failed",
+        countsTowardEscalation: true,
+        feature: ctx.feature,
+        attempts: ctx.story.attempts,
       });
+
+      if (ctx.story.attempts !== undefined && ctx.story.attempts >= ctx.config.execution.rectification.maxRetries) {
+        pipelineEventBus.emit({
+          type: "human-review:requested",
+          storyId: ctx.story.id,
+          reason: pipelineResult.reason || "Max retries exceeded",
+          feature: ctx.feature,
+          attempts: ctx.story.attempts,
+        });
+      }
       break;
 
     case "escalate": {
@@ -277,7 +174,6 @@ export async function handlePipelineFailure(
         totalCost: ctx.totalCost,
         workdir: ctx.workdir,
       });
-
       prd = escalationResult.prd;
       prdDirty = escalationResult.prdDirty;
       break;
@@ -285,103 +181,4 @@ export async function handlePipelineFailure(
   }
 
   return { prd, prdDirty };
-}
-
-/**
- * Apply cached routing overrides from story.routing to a fresh routing decision.
- */
-export function applyCachedRouting(
-  routing: ReturnType<typeof routeTask>,
-  story: UserStory,
-  config: NaxConfig,
-): ReturnType<typeof routeTask> {
-  if (!story.routing) return routing;
-  const overrides: Partial<ReturnType<typeof routeTask>> = {};
-  if (story.routing.complexity) {
-    overrides.complexity = story.routing.complexity;
-  }
-  // BUG-013 fix: Use story.routing.modelTier directly if present (set by escalation).
-  // Only derive from complexity if modelTier is not explicitly set.
-  if (story.routing.modelTier) {
-    overrides.modelTier = story.routing.modelTier as ReturnType<typeof routeTask>["modelTier"];
-  } else if (story.routing.complexity) {
-    const tierFromComplexity = config.autoMode.complexityRouting[story.routing.complexity] ?? "balanced";
-    overrides.modelTier = tierFromComplexity as ReturnType<typeof routeTask>["modelTier"];
-  }
-  if (story.routing.testStrategy) {
-    overrides.testStrategy = story.routing.testStrategy;
-  }
-  return { ...routing, ...overrides };
-}
-
-/** Context for dry-run iteration handling */
-export interface DryRunContext {
-  prd: PRD;
-  prdPath: string;
-  storiesToExecute: UserStory[];
-  routing: ReturnType<typeof routeTask>;
-  statusWriter: StatusWriter;
-  pluginRegistry: PluginRegistry;
-  runId: string;
-  totalCost: number;
-  iterations: number;
-}
-
-export interface DryRunResult {
-  storiesCompletedDelta: number;
-  prdDirty: boolean;
-}
-
-/** Handle dry-run iteration: log what would happen, mark stories passed. */
-export async function handleDryRun(ctx: DryRunContext): Promise<DryRunResult> {
-  const logger = getSafeLogger();
-
-  ctx.statusWriter.setPrd(ctx.prd);
-  ctx.statusWriter.setCurrentStory({
-    storyId: ctx.storiesToExecute[0].id,
-    title: ctx.storiesToExecute[0].title,
-    complexity: ctx.routing.complexity,
-    tddStrategy: ctx.routing.testStrategy,
-    model: ctx.routing.modelTier,
-    attempt: (ctx.storiesToExecute[0].attempts ?? 0) + 1,
-    phase: "routing",
-  });
-  await ctx.statusWriter.update(ctx.totalCost, ctx.iterations);
-
-  for (const s of ctx.storiesToExecute) {
-    logger?.info("execution", "[DRY RUN] Would execute agent here", {
-      storyId: s.id,
-      storyTitle: s.title,
-      modelTier: ctx.routing.modelTier,
-      complexity: ctx.routing.complexity,
-      testStrategy: ctx.routing.testStrategy,
-    });
-  }
-
-  // Mark stories as passed so the loop progresses
-  for (const s of ctx.storiesToExecute) {
-    const { markStoryPassed } = await import("../prd");
-    markStoryPassed(ctx.prd, s.id);
-  }
-  await savePRD(ctx.prd, ctx.prdPath);
-
-  // Emit onStoryComplete events for dry-run
-  const reporters = ctx.pluginRegistry.getReporters();
-  for (const s of ctx.storiesToExecute) {
-    await emitStoryComplete(reporters, {
-      runId: ctx.runId,
-      storyId: s.id,
-      status: "completed",
-      durationMs: 0,
-      cost: 0,
-      tier: ctx.routing.modelTier,
-      testStrategy: ctx.routing.testStrategy,
-    });
-  }
-
-  ctx.statusWriter.setPrd(ctx.prd);
-  ctx.statusWriter.setCurrentStory(null);
-  await ctx.statusWriter.update(ctx.totalCost, ctx.iterations);
-
-  return { storiesCompletedDelta: ctx.storiesToExecute.length, prdDirty: true };
 }

@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Tests for ClaudeCodeAdapter.runOnce() timeout behavior
  *

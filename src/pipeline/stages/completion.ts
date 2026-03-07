@@ -1,32 +1,22 @@
+// RE-ARCH: keep
 /**
  * Completion Stage
  *
- * Marks stories as passed, logs progress, fires completion hooks.
+ * Marks stories as passed, logs progress, emits lifecycle events.
  * This is the final stage in the pipeline for successful executions.
  *
+ * Phase 3 (ADR-005): Replaced direct fireHook() calls with event bus emissions.
+ * The hooks/reporters subscriber wires those events to actual hook/reporter calls.
+ *
  * @returns
- * - `continue`: Stories marked complete, hooks fired
- *
- * @example
- * ```ts
- * // Single story completion
- * await completionStage.execute(ctx);
- * // Logs: "✓ Story US-001 passed"
- * // Fires: on-story-complete hook
- *
- * // Batch completion
- * await completionStage.execute(ctx);
- * // Logs: "✓ Story US-001 passed", "✓ Story US-002 passed", ...
- * // Progress: "📊 Progress: 5/20 stories | ✅ 5 passed | ❌ 0 failed"
- * ```
+ * - `continue`: Stories marked complete, events emitted
  */
 
-import { hookCtx } from "../../execution/helpers";
 import { appendProgress } from "../../execution/progress";
-import { fireHook } from "../../hooks";
 import { getLogger } from "../../logger";
 import { collectBatchMetrics, collectStoryMetrics } from "../../metrics";
 import { countStories, markStoryPassed, savePRD } from "../../prd";
+import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const completionStage: PipelineStage = {
@@ -53,14 +43,14 @@ export const completionStage: PipelineStage = {
     for (const completedStory of ctx.stories) {
       markStoryPassed(ctx.prd, completedStory.id);
 
+      const costPerStory = sessionCost / ctx.stories.length;
       logger.info("completion", "Story passed", {
         storyId: completedStory.id,
-        cost: sessionCost / ctx.stories.length,
+        cost: costPerStory,
       });
 
       // Log progress
       if (ctx.featureDir) {
-        const costPerStory = sessionCost / ctx.stories.length;
         await appendProgress(
           ctx.featureDir,
           completedStory.id,
@@ -69,17 +59,19 @@ export const completionStage: PipelineStage = {
         );
       }
 
-      // Fire story-complete hook
-      await fireHook(
-        ctx.hooks,
-        "on-story-complete",
-        hookCtx(ctx.prd.feature, {
-          storyId: completedStory.id,
-          status: "passed",
-          cost: sessionCost / ctx.stories.length,
-        }),
-        ctx.workdir,
-      );
+      // Emit story:completed event — hooks + reporter subscribers handle the rest
+      const storyMetric = ctx.storyMetrics?.find((m) => m.storyId === completedStory.id) ?? ctx.storyMetrics?.[0];
+      pipelineEventBus.emit({
+        type: "story:completed",
+        storyId: completedStory.id,
+        story: completedStory,
+        passed: true,
+        durationMs: storyMetric?.durationMs ?? 0,
+        // Extra fields picked up by subscribers via `as any`
+        cost: costPerStory,
+        modelTier: ctx.routing?.modelTier,
+        testStrategy: ctx.routing?.testStrategy,
+      });
     }
 
     // Save PRD

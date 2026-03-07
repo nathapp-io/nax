@@ -1,3 +1,4 @@
+// RE-ARCH: keep
 /**
  * Interaction Plugins Unit Tests (v0.15.0 Phase 2)
  *
