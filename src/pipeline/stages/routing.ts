@@ -55,6 +55,7 @@ export const routingStage: PipelineStage = {
       routing = await _routingDeps.routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
       ctx.story.routing = {
         complexity: routing.complexity as import("../../config").Complexity,
+        initialComplexity: routing.complexity as import("../../config").Complexity,
         testStrategy: routing.testStrategy as import("../../config").TestStrategy,
         reasoning: routing.reasoning ?? "",
       };

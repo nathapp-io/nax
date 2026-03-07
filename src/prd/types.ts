@@ -45,6 +45,8 @@ export interface StructuredFailure {
 /** Routing metadata per story */
 export interface StoryRouting {
   complexity: Complexity;
+  /** Initial complexity from first classification — written once, never overwritten by escalation */
+  initialComplexity?: Complexity;
   /** Model tier (derived at runtime from config, not persisted) */
   modelTier?: ModelTier;
   testStrategy: TestStrategy;

@@ -110,7 +110,8 @@ export function calculateAggregateMetrics(runs: RunMetrics[]): AggregateMetrics 
   >();
 
   for (const story of allStories) {
-    const complexity = story.complexity;
+    // Use initialComplexity (first-classify prediction) when available; fall back to complexity
+    const complexity = story.initialComplexity ?? story.complexity;
     const existing = complexityStats.get(complexity) || {
       predicted: 0,
       tierCounts: new Map<string, number>(),
