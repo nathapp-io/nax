@@ -15,3 +15,6 @@ export { keywordStrategy, llmStrategy, manualStrategy } from "./strategies";
 // Custom strategy loader
 export { loadCustomStrategy } from "./loader";
 export { tryLlmBatchRoute } from "./batch-route";
+
+// Content hash for staleness detection (RRP-003)
+export { computeStoryContentHash } from "./content-hash";

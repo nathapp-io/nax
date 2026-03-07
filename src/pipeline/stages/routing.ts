@@ -2,15 +2,18 @@
  * Routing Stage
  *
  * Classifies story complexity and determines model tier + test strategy.
- * Uses cached complexity/testStrategy/modelTier from story if available.
+ * Uses cached complexity/testStrategy/modelTier from story if contentHash matches.
  * modelTier: uses escalated tier if explicitly set (BUG-032), otherwise derives from config.
+ *
+ * RRP-003: contentHash staleness detection — if story.routing.contentHash is missing or
+ * does not match the current story content, treats cached routing as a miss and re-classifies.
  *
  * @returns
  * - `continue`: Routing determined, proceed to next stage
  *
  * @example
  * ```ts
- * // Story has cached routing with complexity
+ * // Story has cached routing with matching contentHash
  * await routingStage.execute(ctx);
  * // ctx.routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "..." }
  * // modelTier is derived from current config.autoMode.complexityRouting
@@ -20,7 +23,7 @@
 import { isGreenfieldStory } from "../../context/greenfield";
 import { getLogger } from "../../logger";
 import { savePRD } from "../../prd";
-import { complexityToModelTier, routeStory } from "../../routing";
+import { complexityToModelTier, computeStoryContentHash, routeStory } from "../../routing";
 import { clearCache, routeBatch } from "../../routing/strategies/llm";
 import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
 
@@ -31,11 +34,25 @@ export const routingStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
-    // If story has cached routing, use cached values (escalated modelTier takes priority)
-    // Otherwise, perform fresh classification
+    // Staleness detection (RRP-003):
+    // - story.routing absent                   → cache miss (no prior routing)
+    // - story.routing + no contentHash         → legacy cache hit (manual / pre-RRP-003 routing, honor as-is)
+    // - story.routing + contentHash matches    → cache hit
+    // - story.routing + contentHash mismatches → cache miss (stale, re-classify)
+    const hasExistingRouting = ctx.story.routing !== undefined;
+    const hasContentHash = ctx.story.routing?.contentHash !== undefined;
+    let currentHash: string | undefined;
+    let hashMatch = false;
+    if (hasContentHash) {
+      currentHash = _routingDeps.computeStoryContentHash(ctx.story);
+      hashMatch = ctx.story.routing?.contentHash === currentHash;
+    }
+    const isCacheHit = hasExistingRouting && (!hasContentHash || hashMatch);
+
     let routing: { complexity: string; testStrategy: string; modelTier: string; reasoning?: string };
-    if (ctx.story.routing) {
-      // Use cached complexity/testStrategy/modelTier
+
+    if (isCacheHit) {
+      // Cache hit: legacy routing (no contentHash) or matching contentHash — use cached values
       routing = await _routingDeps.routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
       // Override with cached values only when they are actually set
       if (ctx.story.routing?.complexity) routing.complexity = ctx.story.routing.complexity;
@@ -51,13 +68,18 @@ export const routingStage: PipelineStage = {
         );
       }
     } else {
-      // Fresh classification — persist routing to prd.json so resume/crash uses the same values
+      // Cache miss: no routing, or contentHash present but mismatched — fresh classification
       routing = await _routingDeps.routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
+      // currentHash already computed if a mismatch was detected; compute now if starting fresh
+      currentHash = currentHash ?? _routingDeps.computeStoryContentHash(ctx.story);
       ctx.story.routing = {
+        ...(ctx.story.routing ?? {}),
         complexity: routing.complexity as import("../../config").Complexity,
-        initialComplexity: routing.complexity as import("../../config").Complexity,
+        initialComplexity:
+          ctx.story.routing?.initialComplexity ?? (routing.complexity as import("../../config").Complexity),
         testStrategy: routing.testStrategy as import("../../config").TestStrategy,
         reasoning: routing.reasoning ?? "",
+        contentHash: currentHash,
       };
       if (ctx.prdPath) {
         await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
@@ -108,4 +130,5 @@ export const _routingDeps = {
   isGreenfieldStory,
   clearCache,
   savePRD,
+  computeStoryContentHash,
 };
