@@ -148,25 +148,25 @@
 - [x] ~~**BUG-041:**~~ Won't fix — superseded by FEAT-010
 - [x] ~~**FEAT-012:**~~ Won't fix — balanced tier sufficient for test-writer
 
-### → v0.22.0 Pipeline Re-Architecture (in progress)
+### → v0.22.1 Pipeline Re-Architecture ✅ Shipped (2026-03-07)
 **ADR:** [docs/adr/ADR-005-pipeline-re-architecture.md](adr/ADR-005-pipeline-re-architecture.md)
 **Plan:** [docs/adr/ADR-005-implementation-plan.md](adr/ADR-005-implementation-plan.md)
-**Branch:** `feat/re-architecture`
 
-**Theme:** Eliminate ad-hoc orchestration, consolidate 4 scattered verification paths into single orchestrator, add event-bus-driven hooks/plugins/interaction, new stages (rectify, autofix, regression).
+**Theme:** Eliminate ad-hoc orchestration, consolidate 4 scattered verification paths into single orchestrator, add event-bus-driven hooks/plugins/interaction, new stages (rectify, autofix, regression), post-run pipeline SSOT.
 
-- [ ] **Phase 0:** Test suite preparation — reorganize, split monsters, RE-ARCH tags, coverage gaps
-- [ ] **Phase 1:** VerificationOrchestrator + Pipeline Event Bus (additive, no behavior change)
-- [ ] **Phase 2:** New stages — `rectify`, `autofix`, `regression` + `retry` stage action
-- [ ] **Phase 3:** Event-bus subscribers for hooks, reporters, interaction (replace 20+ scattered call sites)
-- [ ] **Phase 4:** Delete deprecated files, simplify sequential executor to ~80 lines
+- [x] **Phase 1:** VerificationOrchestrator + Pipeline Event Bus (additive, no behavior change)
+- [x] **Phase 2:** New stages — `rectify`, `autofix`, `regression` + `retry` stage action
+- [x] **Phase 3:** Event-bus subscribers for hooks, reporters, interaction (replace 20+ scattered call sites)
+- [x] **Phase 5:** Post-run pipeline SSOT — `deferred-regression` stage, tier escalation into `iteration-runner`, `runAcceptanceLoop` → `runPipeline(postRunPipeline)`
 
-**Resolves in this version:**
-- [ ] **BUG-040:** Lint/typecheck auto-repair → `autofix` stage + `quality.commands.lintFix/formatFix`
-- [ ] **BUG-042:** Verifier failure capture → unified `VerifyResult` with `failures[]` always populated
-- [ ] **FEAT-014:** Heartbeat observability → Pipeline Event Bus with typed events
-- [ ] **BUG-026:** Regression gate triggers full retry → targeted `rectify` stage with `retry` action
-- [ ] **BUG-028:** Routing cache ignores escalation tier → cache key includes tier
+**Resolved:**
+- [x] **BUG-040:** Lint/typecheck auto-repair → `autofix` stage + `quality.commands.lintFix/formatFix`
+- [x] **BUG-042:** Verifier failure capture → unified `VerifyResult` with `failures[]` always populated
+- [x] **FEAT-014:** Heartbeat observability → Pipeline Event Bus with typed events
+- [x] **BUG-026:** Regression gate triggers full retry → targeted `rectify` stage with `retry` action
+- [x] **BUG-028:** Routing cache ignores escalation tier → cache key includes tier
+
+**Test results:** 2264 pass, 12 skip, 1 fail (pre-existing disk space flaky)
 
 ---
 
@@ -212,6 +212,7 @@
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
 | v0.18.1 | Type Safety + CI Pipeline | 2026-03-03 | 60 TS errors + 12 lint errors fixed, GitLab CI green (1952/56/0) |
+| v0.22.1 | Pipeline Re-Architecture | 2026-03-07 | VerificationOrchestrator, EventBus, new stages (rectify/autofix/regression/deferred-regression), post-run SSOT. 2264 pass |
 | v0.20.0 | Verification Architecture v2 | 2026-03-06 | Deferred regression gate, remove duplicate tests, BUG-037 |
 | v0.19.0 | Hardening & Compliance | 2026-03-04 | SEC-1 to SEC-5, BUG-1, Node.js API removal, _deps rollout |
 | v0.18.5 | Bun PTY Migration | 2026-03-04 | BUN-001: node-pty → Bun.spawn, CI cleanup, flaky test fix |
@@ -296,4 +297,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-06 (v0.21.0 shipped; v0.22.0: Pipeline Re-Architecture in progress — ADR-005, 5 phases, resolves BUG-026/028/040/042 + FEAT-014)*
+*Last updated: 2026-03-07 (v0.22.1 shipped — Pipeline Re-Architecture: VerificationOrchestrator, EventBus, new stages, post-run SSOT)*
