@@ -39,6 +39,14 @@ interface DecisionResponse {
 }
 
 /**
+ * Module-level deps for testability (_deps pattern).
+ * Override callLlm in tests to avoid spawning the claude CLI.
+ */
+export const _deps = {
+  callLlm: null as ((request: InteractionRequest) => Promise<DecisionResponse>) | null,
+};
+
+/**
  * Auto plugin for AI-powered interaction responses
  */
 export class AutoInteractionPlugin implements InteractionPlugin {
@@ -80,7 +88,8 @@ export class AutoInteractionPlugin implements InteractionPlugin {
     }
 
     try {
-      const decision = await this.callLlm(request);
+      const callFn = _deps.callLlm ?? this.callLlm.bind(this);
+      const decision = await callFn(request);
 
       // Check confidence threshold
       if (decision.confidence < (this.config.confidenceThreshold ?? 0.7)) {
