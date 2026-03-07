@@ -5,6 +5,7 @@ import type { StoryMetrics } from "../metrics";
 import { pipelineEventBus } from "../pipeline/event-bus";
 import { runPipeline } from "../pipeline/runner";
 import { postRunPipeline } from "../pipeline/stages";
+import { wireEventsWriter } from "../pipeline/subscribers/events-writer";
 import { wireHooks } from "../pipeline/subscribers/hooks";
 import { wireInteraction } from "../pipeline/subscribers/interaction";
 import { wireReporters } from "../pipeline/subscribers/reporters";
@@ -38,6 +39,7 @@ export async function executeSequential(
   wireHooks(pipelineEventBus, ctx.hooks, ctx.workdir, ctx.feature);
   wireReporters(pipelineEventBus, ctx.pluginRegistry, ctx.runId, ctx.startTime);
   wireInteraction(pipelineEventBus, ctx.interactionChain, ctx.config);
+  wireEventsWriter(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir);
 
   const buildResult = (exitReason: SequentialExecutionResult["exitReason"]): SequentialExecutionResult => ({
     prd,
