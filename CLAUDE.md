@@ -89,7 +89,7 @@ Use **solograph** MCP tools on-demand for code understanding. Do not use web_sea
 | `codegraph_shared` | Find packages shared across projects |
 | `session_search` | Search prior Claude Code session history for relevant context |
 | `project_info` | Project registry info |
-| `project_code_reindex` | Reindex after large structural changes |
+| `project_code_reindex` | Reindex after creating or deleting source files, or major refactors |
 
 Single source of truth: VPS solograph instance (Mac01 tunnels to VPS — same data either way).
 ## IMPORTANT
