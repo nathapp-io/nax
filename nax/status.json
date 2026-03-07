@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 6,
-    "passed": 3,
+    "passed": 4,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 2
   },
   "cost": {
     "spent": 2.588776,
     "limit": 8
   },
   "current": {
-    "storyId": "TC-004",
+    "storyId": "TC-005",
     "title": "Wire story-ambiguity and review-gate triggers",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
-    "phase": "routing"
+    "phase": "pending"
   },
-  "iterations": 4,
-  "updatedAt": "2026-03-07T14:35:45.070Z",
+  "iterations": 5,
+  "updatedAt": "2026-03-07T14:36:14.823Z",
   "durationMs": 2787670,
   "lastHeartbeat": "2026-03-07T14:35:45.070Z"
 }
