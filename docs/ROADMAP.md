@@ -66,12 +66,6 @@
 ### Bun PTY Migration (BUN-001)
 - [x] ~~Replace `node-pty` with `Bun.spawn` (piped stdio) — shipped in v0.18.5~~
 
-### CI Memory Optimization (CI-001)
-- [ ] Investigate splitting test suite into parallel jobs (unit / integration / ui) to reduce per-job peak memory
-- [ ] Evaluate `bun test --shard` when stable (currently experimental)
-- [ ] Target: make test suite pass on 1GB runners (currently requires 8GB shared runner)
-- [ ] Known constraints: 2008 tests across 125 files, ~75s on local VPS (3.8GB), OOMs even with `--smol --concurrency 1`
-- [ ] Current workaround: use `saas-linux-small-amd64` (8GB) shared runner
 
 ---
 
@@ -284,6 +278,7 @@
 - [ ] **Central Run Registry** — moved to v0.23.0
 - [x] ~~**BUN-001:** Bun PTY Migration — replace `node-pty` with `Bun.spawn` (piped stdio). Shipped in v0.18.5.~~
 - [ ] **CI-001:** CI Memory Optimization — parallel test sharding for 1GB runners
+- [ ] **CI-001:** CI Memory Optimization — parallel test sharding to pass on 1GB runners (currently requires 8GB). Evaluate `bun test --shard` when stable.
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
 - [ ] `nax diagnose --ai` flag (LLM-assisted, future TBD)
