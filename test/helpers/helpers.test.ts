@@ -283,9 +283,9 @@ describe("acquireLock and releaseLock", () => {
     // Create invalid JSON lock file
     await Bun.write(lockPath, "not valid json");
 
-    // Should fail to acquire but not crash
+    // Should treat corrupt lock as stale and acquire successfully
     const acquired = await acquireLock(testDir);
-    expect(acquired).toBe(false);
+    expect(acquired).toBe(true);
   });
 
   test("handles release when lock file doesn't exist", async () => {
