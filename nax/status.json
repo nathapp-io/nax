@@ -4,33 +4,24 @@
     "id": "run-2026-03-07T13-49-17-400Z",
     "feature": "trigger-completion",
     "startedAt": "2026-03-07T13:49:17.400Z",
-    "status": "running",
+    "status": "completed",
     "dryRun": false,
     "pid": 97007
   },
   "progress": {
     "total": 6,
-    "passed": 4,
+    "passed": 6,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 0
   },
   "cost": {
-    "spent": 2.588776,
+    "spent": 3.85387425,
     "limit": 8
   },
-  "current": {
-    "storyId": "TC-005",
-    "title": "Wire story-ambiguity and review-gate triggers",
-    "complexity": "medium",
-    "tddStrategy": "test-after",
-    "model": "balanced",
-    "attempt": 1,
-    "phase": "pending"
-  },
-  "iterations": 5,
-  "updatedAt": "2026-03-07T14:36:14.823Z",
-  "durationMs": 2787670,
-  "lastHeartbeat": "2026-03-07T14:35:45.070Z"
+  "current": null,
+  "iterations": 7,
+  "updatedAt": "2026-03-07T14:58:57.404Z",
+  "durationMs": 4180004
 }
