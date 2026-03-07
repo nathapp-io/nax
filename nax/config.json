@@ -52,7 +52,7 @@
       "fallbackToKeywords": true,
       "cacheDecisions": true,
       "mode": "hybrid",
-      "timeoutMs": 15000
+      "timeoutMs": 60000
     }
   },
   "execution": {
@@ -84,7 +84,8 @@
     "commands": {
       "test": "bun run test",
       "typecheck": "bun run typecheck",
-      "lint": "bun run lint"
+      "lint": "bun run lint",
+      "testScoped": "bun test --timeout=60000 {{files}}"
     },
     "forceExit": false,
     "detectOpenHandles": true,

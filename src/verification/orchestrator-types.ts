@@ -23,6 +23,8 @@ export type VerifyStrategy = "scoped" | "regression" | "deferred-regression" | "
 export interface VerifyContext {
   workdir: string;
   testCommand: string;
+  /** Scoped test command template with {{files}} placeholder — overrides buildSmartTestCommand heuristic */
+  testScopedTemplate?: string;
   timeoutSeconds: number;
   storyId: string;
   storyGitRef?: string;

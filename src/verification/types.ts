@@ -112,4 +112,6 @@ export interface VerificationGateOptions {
   acceptOnTimeout?: boolean;
   /** Scoped test paths (for scoped verification) */
   scopedTestPaths?: string[];
+  /** Scoped test command template with {{files}} placeholder — overrides buildSmartTestCommand heuristic */
+  testScopedTemplate?: string;
 }

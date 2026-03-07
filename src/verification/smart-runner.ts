@@ -174,8 +174,11 @@ export function buildSmartTestCommand(testFiles: string[], baseCommand: string):
     return `${baseCommand} ${testFiles.join(" ")}`;
   }
 
-  // Replace the last path argument with the specific test files
-  const newParts = [...parts.slice(0, lastPathIndex), ...testFiles];
+  // Replace the last path argument with the specific test files,
+  // preserving any flags that appear after the path (e.g. --timeout=60000).
+  const beforePath = parts.slice(0, lastPathIndex);
+  const afterPath = parts.slice(lastPathIndex + 1);
+  const newParts = [...beforePath, ...testFiles, ...afterPath];
   return newParts.join(" ");
 }
 
