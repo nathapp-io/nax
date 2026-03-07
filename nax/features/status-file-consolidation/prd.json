@@ -9,6 +9,7 @@
       "id": "SFC-001",
       "title": "Auto-write project-level status",
       "description": "Remove --status-file CLI option. StatusWriter always writes to <workdir>/nax/status.json automatically. In bin/nax.ts, remove --status-file option and compute statusFile = join(workdir, 'nax', 'status.json'). In runner.ts, statusFile is no longer optional. In status-writer.ts, remove the if (!this.statusFile) guard in update().",
+      "complexity": "medium",
       "status": "pending",
       "acceptanceCriteria": [
         "Running nax without --status-file flag writes nax/status.json automatically",
@@ -21,6 +22,7 @@
       "id": "SFC-002",
       "title": "Write feature-level status on run end",
       "description": "On run complete/fail/crash, write the final status snapshot to <workdir>/nax/features/<feature>/status.json. Add writeFeatureStatus(featureDir) method to StatusWriter. Call it in runner.ts finally block and in crash-recovery.ts.",
+      "complexity": "medium",
       "status": "pending",
       "acceptanceCriteria": [
         "After a completed run, nax/features/<feature>/status.json exists with status 'completed'",
@@ -33,6 +35,7 @@
       "id": "SFC-003",
       "title": "Align status readers",
       "description": "Make nax status read project-level status from nax/status.json for currently running info. Make nax diagnose read from nax/status.json instead of .nax-status.json. status-features.ts loadStatusFile() already reads <featureDir>/status.json which SFC-002 now writes — no change needed for feature-level reads.",
+      "complexity": "simple",
       "status": "pending",
       "acceptanceCriteria": [
         "nax status shows current run info from nax/status.json at the top",
@@ -45,6 +48,7 @@
       "id": "SFC-004",
       "title": "Clean up dead code",
       "description": "Remove --status-file option definition from bin/nax.ts. Remove .nax-status.json path from diagnose.ts. Remove statusFile optional from RunOptions type (now required, auto-computed). Verify no stale references remain.",
+      "complexity": "simple",
       "status": "pending",
       "acceptanceCriteria": [
         "No references to --status-file CLI option in codebase",
