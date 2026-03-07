@@ -1,0 +1,55 @@
+{
+  "feature": "status-file-consolidation",
+  "version": "0.22.2",
+  "description": "Auto-write status.json to well-known paths (project-level + feature-level). Remove --status-file CLI flag. Align nax status and nax diagnose readers.",
+  "stories": [
+    {
+      "id": "SFC-001",
+      "title": "Auto-write project-level status",
+      "description": "Remove --status-file CLI option. StatusWriter always writes to <workdir>/nax/status.json automatically. In bin/nax.ts, remove --status-file option and compute statusFile = join(workdir, 'nax', 'status.json'). In runner.ts, statusFile is no longer optional. In status-writer.ts, remove the if (!this.statusFile) guard in update().",
+      "status": "pending",
+      "acceptanceCriteria": [
+        "Running nax without --status-file flag writes nax/status.json automatically",
+        "nax/status.json contains valid NaxStatusFile schema with run.id, run.status, progress counts",
+        "--status-file CLI option no longer exists",
+        "StatusWriter.update() always writes (no no-op guard on missing statusFile)"
+      ]
+    },
+    {
+      "id": "SFC-002",
+      "title": "Write feature-level status on run end",
+      "description": "On run complete/fail/crash, write the final status snapshot to <workdir>/nax/features/<feature>/status.json. Add writeFeatureStatus(featureDir) method to StatusWriter. Call it in runner.ts finally block and in crash-recovery.ts.",
+      "status": "pending",
+      "acceptanceCriteria": [
+        "After a completed run, nax/features/<feature>/status.json exists with status 'completed'",
+        "After a failed run, nax/features/<feature>/status.json exists with status 'failed'",
+        "After a crash, nax/features/<feature>/status.json exists with status 'crashed'",
+        "Feature status.json uses the same NaxStatusFile schema as project-level"
+      ]
+    },
+    {
+      "id": "SFC-003",
+      "title": "Align status readers",
+      "description": "Make nax status read project-level status from nax/status.json for 'currently running' info. Make nax diagnose read from nax/status.json instead of .nax-status.json. status-features.ts loadStatusFile() already reads <featureDir>/status.json which SFC-002 now writes — no change needed for feature-level reads.",
+      "status": "pending",
+      "acceptanceCriteria": [
+        "nax status shows current run info from nax/status.json at the top",
+        "nax status shows per-feature historical status from nax/features/<feature>/status.json",
+        "nax diagnose reads from nax/status.json (not .nax-status.json)",
+        "No references to .nax-status.json remain in codebase"
+      ]
+    },
+    {
+      "id": "SFC-004",
+      "title": "Clean up dead code",
+      "description": "Remove --status-file option definition from bin/nax.ts. Remove .nax-status.json path from diagnose.ts. Remove statusFile optional from RunOptions type (now required, auto-computed). Verify no stale references remain.",
+      "status": "pending",
+      "acceptanceCriteria": [
+        "No references to --status-file CLI option in codebase",
+        "No references to .nax-status.json in codebase",
+        "RunOptions.statusFile is required (not optional)",
+        "All existing tests pass"
+      ]
+    }
+  ]
+}

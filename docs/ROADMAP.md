@@ -118,6 +118,21 @@
 
 ---
 
+## v0.22.2 — Status File Consolidation
+
+**Theme:** Auto-write status.json to well-known paths, align readers, remove dead options
+**Status:** 🔲 Planned
+**Spec:** [docs/specs/status-file-consolidation.md](specs/status-file-consolidation.md)
+**Pre-requisite for:** v0.23.0 (Central Run Registry)
+
+### Stories
+- [ ] **SFC-001:** Auto-write project-level status — remove `--status-file` flag, always write to `<workdir>/nax/status.json`
+- [ ] **SFC-002:** Write feature-level status on run end — copy final snapshot to `<workdir>/nax/features/<feature>/status.json`
+- [ ] **SFC-003:** Align status readers — `nax status` + `nax diagnose` read from correct paths
+- [ ] **SFC-004:** Clean up dead code — remove `--status-file` option, `.nax-status.json` references
+
+---
+
 ## v0.23.0 — Central Run Registry
 
 **Theme:** Global run index across all projects — single source of truth for all nax run history
