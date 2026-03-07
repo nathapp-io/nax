@@ -133,9 +133,11 @@ export const acceptanceStage: PipelineStage = {
       stderr: "pipe",
     });
 
-    const exitCode = await proc.exited;
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
 
     // Combine stdout and stderr for parsing
     const output = `${stdout}\n${stderr}`;

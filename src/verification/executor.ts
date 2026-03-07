@@ -34,8 +34,16 @@ async function drainWithDeadline(proc: Subprocess, deadlineMs: number): Promise<
     if (o !== EMPTY) out += o;
     if (e !== EMPTY) out += (out ? "\n" : "") + e;
   } catch (error) {
-    // Streams may already be destroyed - this is expected after kill
-    // No logger available in this utility function context
+    // Expected: streams destroyed after kill (e.g. TypeError from closed ReadableStream)
+    const isExpectedStreamError =
+      error instanceof TypeError ||
+      (error instanceof Error && /abort|cancel|close|destroy|locked/i.test(error.message));
+    if (!isExpectedStreamError) {
+      const { getSafeLogger } = await import("../logger");
+      getSafeLogger()?.debug("executor", "Unexpected error draining process output", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
   return out;
 }
@@ -93,15 +101,19 @@ export async function executeWithTimeout(
   const timeoutMs = timeoutSeconds * 1000;
 
   let timedOut = false;
+  const timer = { id: undefined as ReturnType<typeof setTimeout> | undefined };
 
-  const timeoutPromise = (async () => {
-    await Bun.sleep(timeoutMs);
-    timedOut = true;
-  })();
+  const timeoutPromise = new Promise<void>((resolve) => {
+    timer.id = setTimeout(() => {
+      timedOut = true;
+      resolve();
+    }, timeoutMs);
+  });
 
   const processPromise = proc.exited;
 
   const raceResult = await Promise.race([processPromise, timeoutPromise]);
+  clearTimeout(timer.id);
 
   if (timedOut) {
     const pid = proc.pid;

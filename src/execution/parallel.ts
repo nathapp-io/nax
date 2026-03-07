@@ -180,8 +180,7 @@ async function executeParallelBatch(
   }
 
   // Execute stories in parallel with concurrency limit
-  const executing: Promise<void>[] = [];
-  let activeCount = 0;
+  const executing = new Set<Promise<void>>();
 
   for (const { story, worktreePath } of worktreeSetup) {
     const routing = routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, config);
@@ -205,19 +204,13 @@ async function executeParallelBatch(
         }
       })
       .finally(() => {
-        activeCount--;
-        // BUG-4 fix: Remove completed promise from executing array
-        const index = executing.indexOf(executePromise);
-        if (index > -1) {
-          executing.splice(index, 1);
-        }
+        executing.delete(executePromise);
       });
 
-    executing.push(executePromise);
-    activeCount++;
+    executing.add(executePromise);
 
     // Wait if we've hit the concurrency limit
-    if (activeCount >= maxConcurrency) {
+    if (executing.size >= maxConcurrency) {
       await Promise.race(executing);
     }
   }
