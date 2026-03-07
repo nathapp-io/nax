@@ -148,7 +148,7 @@ export async function handlePipelineFailure(
       });
 
       if (ctx.story.attempts !== undefined && ctx.story.attempts >= ctx.config.execution.rectification.maxRetries) {
-        pipelineEventBus.emit({
+        await pipelineEventBus.emitAsync({
           type: "human-review:requested",
           storyId: ctx.story.id,
           reason: pipelineResult.reason || "Max retries exceeded",
