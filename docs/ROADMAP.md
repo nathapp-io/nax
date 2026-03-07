@@ -273,7 +273,7 @@
 - [x] **BUG-033:** LLM routing has no retry on timeout — single attempt with hardcoded 15s default. All 5 LLM routing attempts in the v0.18.3 run timed out at 15s, forcing keyword fallback every time. `src/routing/strategies/llm.ts:63` reads `llmConfig?.timeoutMs ?? 15000` but there's no retry logic — one timeout = immediate fallback. **Location:** `src/routing/strategies/llm.ts:callLlm()`. **Fix:** Add `routing.llm.retries` config (default: 1) with backoff. Also surface `routing.llm.timeoutMs` in `nax config --explain` and consider raising default to 30s for batch routing which processes multiple stories.
 
 - [x] ~~**BUG-037:** Test output summary (verify stage) captures precheck boilerplate instead of actual `bun test` failure. Fixed: `.slice(-20)` tail — shipped in v0.22.1 (re-arch phase 2).~~
-- [ ] **BUG-038:** `smart-runner` over-matching when global defaults change. **Symptom:** Changing `DEFAULT_CONFIG` matches broad integration tests that fail due to environment/precheck side effects, obscuring targeted results. **Fix:** Refine path mapping to prioritize direct unit tests and exclude known heavy integration tests from default smart-runner matches unless explicitly relevant.
+- [x] ~~**BUG-038:** `smart-runner` over-matching when global defaults change. Fixed by FEAT-010 (v0.21.0) — per-attempt `storyGitRef` baseRef tracking; `git diff <baseRef>..HEAD` prevents cross-story file pollution.~~
 ### Features
 - [x] ~~`nax unlock` command~~
 - [x] ~~Constitution file support~~
