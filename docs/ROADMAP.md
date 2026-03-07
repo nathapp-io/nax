@@ -272,7 +272,7 @@
 - [x] **BUG-032:** Routing stage overrides escalated `modelTier` with complexity-derived tier. `src/pipeline/stages/routing.ts:43` always runs `complexityToModelTier(routing.complexity, config)` even when `story.routing.modelTier` was explicitly set by `handleTierEscalation()`. BUG-026 was escalated to `balanced` (logged in iteration header), but `Task classified` shows `modelTier=fast` because `complexityToModelTier("simple", config)` → `"fast"`. Related to BUG-013 (escalation routing not applied) which was marked fixed, but the fix in `applyCachedRouting()` in `pipeline-result-handler.ts:295-310` runs **after** the routing stage — too late. **Location:** `src/pipeline/stages/routing.ts:43`. **Fix:** When `story.routing.modelTier` is explicitly set (by escalation), skip `complexityToModelTier()` and use the cached tier directly. Only derive from complexity when `story.routing.modelTier` is absent.
 - [x] **BUG-033:** LLM routing has no retry on timeout — single attempt with hardcoded 15s default. All 5 LLM routing attempts in the v0.18.3 run timed out at 15s, forcing keyword fallback every time. `src/routing/strategies/llm.ts:63` reads `llmConfig?.timeoutMs ?? 15000` but there's no retry logic — one timeout = immediate fallback. **Location:** `src/routing/strategies/llm.ts:callLlm()`. **Fix:** Add `routing.llm.retries` config (default: 1) with backoff. Also surface `routing.llm.timeoutMs` in `nax config --explain` and consider raising default to 30s for batch routing which processes multiple stories.
 
-- [ ] **BUG-037:** Test output summary (verify stage) captures precheck boilerplate instead of actual `bun test` failure. **Symptom:** Logs show successful prechecks (Head) instead of failed tests (Tail). **Fix:** Change `Test output preview` log to tail the last 20 lines of output instead of heading the first 10.
+- [x] ~~**BUG-037:** Test output summary (verify stage) captures precheck boilerplate instead of actual `bun test` failure. Fixed: `.slice(-20)` tail — shipped in v0.22.1 (re-arch phase 2).~~
 - [ ] **BUG-038:** `smart-runner` over-matching when global defaults change. **Symptom:** Changing `DEFAULT_CONFIG` matches broad integration tests that fail due to environment/precheck side effects, obscuring targeted results. **Fix:** Refine path mapping to prioritize direct unit tests and exclude known heavy integration tests from default smart-runner matches unless explicitly relevant.
 ### Features
 - [x] ~~`nax unlock` command~~
@@ -280,7 +280,7 @@
 - [x] ~~Per-story testStrategy override — v0.18.1~~
 - [x] ~~Smart Test Runner — v0.18.2~~
 - [x] ~~Central Run Registry — v0.19.0~~
-- [ ] **BUN-001:** Bun PTY Migration — replace `node-pty` with `Bun.Terminal` API
+- [x] ~~**BUN-001:** Bun PTY Migration — replace `node-pty` with `Bun.spawn` (piped stdio). Shipped in v0.18.5.~~
 - [ ] **CI-001:** CI Memory Optimization — parallel test sharding for 1GB runners
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
