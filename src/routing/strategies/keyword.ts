@@ -117,7 +117,8 @@ function determineTestStrategy(
     return "three-session-tdd";
   }
 
-  // FEAT-013: test-after deprecated from auto mode — use three-session-tdd-lite as default
+  // BUG-045: simple → test-after (low overhead), medium → tdd-lite (sweet spot)
+  if (complexity === "simple") return "test-after";
   return "three-session-tdd-lite";
 }
 

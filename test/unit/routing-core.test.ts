@@ -86,8 +86,8 @@ describe("classifyComplexity", () => {
 });
 
 describe("determineTestStrategy", () => {
-  test("simple → three-session-tdd-lite", () => {
-    expect(determineTestStrategy("simple", "Fix typo", "Fix a typo", [])).toBe("three-session-tdd-lite");
+  test("simple → test-after (BUG-045)", () => {
+    expect(determineTestStrategy("simple", "Fix typo", "Fix a typo", [])).toBe("test-after");
   });
 
   test("complex → three-session-tdd", () => {
@@ -161,11 +161,11 @@ describe("determineTestStrategy", () => {
 });
 
 describe("routeTask", () => {
-  test("routes simple task to fast model with three-session-tdd-lite", () => {
+  test("routes simple task to fast model with test-after (BUG-045)", () => {
     const result = routeTask("Fix typo", "Fix a typo", ["Typo fixed"], [], DEFAULT_CONFIG);
     expect(result.complexity).toBe("simple");
     expect(result.modelTier).toBe("fast");
-    expect(result.testStrategy).toBe("three-session-tdd-lite");
+    expect(result.testStrategy).toBe("test-after");
   });
 
   test("routes security task to powerful with three-session-tdd", () => {
@@ -262,7 +262,7 @@ describe("routeTask", () => {
 
     test("default config (strategy='auto') routes simple to three-session-tdd-lite", () => {
       const simpleResult = routeTask("Fix typo", "Fix a typo", ["Typo fixed"], [], DEFAULT_CONFIG);
-      expect(simpleResult.testStrategy).toBe("three-session-tdd-lite");
+      expect(simpleResult.testStrategy).toBe("test-after");
 
       const complexResult = routeTask(
         "Auth refactor",

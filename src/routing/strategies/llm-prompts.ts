@@ -5,8 +5,9 @@
  * for LLM-based routing decisions.
  */
 
-import type { Complexity, ModelTier, NaxConfig, TestStrategy } from "../../config";
+import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../../config";
 import type { UserStory } from "../../prd/types";
+import { determineTestStrategy } from "../router";
 import type { RoutingDecision } from "../strategy";
 
 /**
@@ -34,18 +35,13 @@ Tags: ${tags.join(", ")}
 - balanced: Standard features, moderate logic, straightforward tests. 30-90 min.
 - powerful: Complex architecture, security-critical, multi-file refactors, novel algorithms. >90 min.
 
-## Available Test Strategies
-- test-after: Write implementation first, add tests after. For straightforward work.
-- three-session-tdd: Separate test-writer → implementer → verifier sessions. For complex/critical work where test design matters.
-
 ## Rules
-- Default to the CHEAPEST option that will succeed.
-- three-session-tdd ONLY when: (a) security/auth logic, (b) complex algorithms, (c) public API contracts that consumers depend on.
-- Simple barrel exports, re-exports, or index files are ALWAYS test-after + fast, regardless of keywords.
+- Default to the CHEAPEST tier that will succeed.
+- Simple barrel exports, re-exports, or index files are ALWAYS simple + fast.
 - A story touching many files doesn't automatically mean complex — copy-paste refactors are simple.
 
 Respond with ONLY this JSON (no markdown, no explanation):
-{"complexity":"simple|medium|complex|expert","modelTier":"fast|balanced|powerful","testStrategy":"test-after|three-session-tdd","reasoning":"<one line>"}`;
+{"complexity":"simple|medium|complex|expert","modelTier":"fast|balanced|powerful","reasoning":"<one line>"}`;
 }
 
 /**
@@ -77,18 +73,13 @@ ${storyBlocks}
 - balanced: Standard features, moderate logic, straightforward tests. 30-90 min.
 - powerful: Complex architecture, security-critical, multi-file refactors, novel algorithms. >90 min.
 
-## Available Test Strategies
-- test-after: Write implementation first, add tests after. For straightforward work.
-- three-session-tdd: Separate test-writer → implementer → verifier sessions. For complex/critical work where test design matters.
-
 ## Rules
-- Default to the CHEAPEST option that will succeed.
-- three-session-tdd ONLY when: (a) security/auth logic, (b) complex algorithms, (c) public API contracts that consumers depend on.
-- Simple barrel exports, re-exports, or index files are ALWAYS test-after + fast, regardless of keywords.
+- Default to the CHEAPEST tier that will succeed.
+- Simple barrel exports, re-exports, or index files are ALWAYS simple + fast.
 - A story touching many files doesn't automatically mean complex — copy-paste refactors are simple.
 
 Respond with ONLY a JSON array (no markdown, no explanation):
-[{"id":"US-001","complexity":"simple|medium|complex|expert","modelTier":"fast|balanced|powerful","testStrategy":"test-after|three-session-tdd","reasoning":"<one line>"}]`;
+[{"id":"US-001","complexity":"simple|medium|complex|expert","modelTier":"fast|balanced|powerful","reasoning":"<one line>"}]`;
 }
 
 /**
@@ -99,22 +90,21 @@ Respond with ONLY a JSON array (no markdown, no explanation):
  * @returns Validated routing decision
  * @throws Error if validation fails
  */
-export function validateRoutingDecision(parsed: Record<string, unknown>, config: NaxConfig): RoutingDecision {
-  // Validate required fields
-  if (!parsed.complexity || !parsed.modelTier || !parsed.testStrategy || !parsed.reasoning) {
+export function validateRoutingDecision(
+  parsed: Record<string, unknown>,
+  config: NaxConfig,
+  story?: UserStory,
+): RoutingDecision {
+  // Validate required fields (testStrategy no longer required from LLM — derived via BUG-045)
+  if (!parsed.complexity || !parsed.modelTier || !parsed.reasoning) {
     throw new Error(`Missing required fields in LLM response: ${JSON.stringify(parsed)}`);
   }
 
   // Validate field values
   const validComplexities: Complexity[] = ["simple", "medium", "complex", "expert"];
-  const validTestStrategies: TestStrategy[] = ["test-after", "three-session-tdd"];
 
   if (!validComplexities.includes(parsed.complexity as Complexity)) {
     throw new Error(`Invalid complexity: ${parsed.complexity}`);
-  }
-
-  if (!validTestStrategies.includes(parsed.testStrategy as TestStrategy)) {
-    throw new Error(`Invalid testStrategy: ${parsed.testStrategy}`);
   }
 
   // Validate modelTier exists in config
@@ -122,10 +112,21 @@ export function validateRoutingDecision(parsed: Record<string, unknown>, config:
     throw new Error(`Invalid modelTier: ${parsed.modelTier} (not in config.models)`);
   }
 
+  // BUG-045: Derive testStrategy from determineTestStrategy() — single source of truth.
+  // LLM decides complexity; testStrategy is a policy decision, not a judgment call.
+  const tddStrategy: TddStrategy = config.tdd?.strategy ?? "auto";
+  const testStrategy = determineTestStrategy(
+    parsed.complexity as Complexity,
+    story?.title ?? "",
+    story?.description ?? "",
+    story?.tags ?? [],
+    tddStrategy,
+  );
+
   return {
     complexity: parsed.complexity as Complexity,
     modelTier: parsed.modelTier as ModelTier,
-    testStrategy: parsed.testStrategy as TestStrategy,
+    testStrategy,
     reasoning: parsed.reasoning as string,
   };
 }
@@ -155,7 +156,7 @@ export function stripCodeFences(text: string): string {
 export function parseRoutingResponse(output: string, story: UserStory, config: NaxConfig): RoutingDecision {
   const jsonText = stripCodeFences(output);
   const parsed = JSON.parse(jsonText);
-  return validateRoutingDecision(parsed, config);
+  return validateRoutingDecision(parsed, config, story);
 }
 
 /**
@@ -201,7 +202,7 @@ export function parseBatchResponse(
     }
 
     // Validate entry directly (no re-serialization needed)
-    const decision = validateRoutingDecision(entry, config);
+    const decision = validateRoutingDecision(entry, config, story);
     decisions.set(entry.id, decision);
   }
 

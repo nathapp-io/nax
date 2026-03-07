@@ -235,7 +235,7 @@ describe("keywordStrategy", () => {
     expect(decision).not.toBeNull();
     expect(decision!.complexity).toBe("simple");
     expect(decision!.modelTier).toBe("fast");
-    expect(decision!.testStrategy).toBe("three-session-tdd-lite");
+    expect(decision!.testStrategy).toBe("test-after");
   });
 
   test("classifies complex story with security keywords", () => {
@@ -352,8 +352,6 @@ describe("LLM Routing Strategy - Prompt Building", () => {
     expect(prompt).toContain("fast: Simple changes");
     expect(prompt).toContain("balanced: Standard features");
     expect(prompt).toContain("powerful: Complex architecture");
-    expect(prompt).toContain("test-after: Write implementation first");
-    expect(prompt).toContain("three-session-tdd: Separate test-writer");
   });
 
   test("buildBatchPrompt formats multiple stories", () => {
