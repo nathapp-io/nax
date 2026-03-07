@@ -73,8 +73,10 @@ function cleanup(dir: string) {
   }
 }
 
+const CMD_TIMEOUT_MS = 15_000; // 15s per command — fast-fail instead of waiting full 60s
+
 function runNaxCommand(args: string[], cwd?: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const proc = spawn("bun", ["run", NAX_BIN, ...args], {
       cwd: cwd || process.cwd(),
       env: process.env,
@@ -82,6 +84,11 @@ function runNaxCommand(args: string[], cwd?: string): Promise<{ stdout: string; 
 
     let stdout = "";
     let stderr = "";
+
+    const timer = setTimeout(() => {
+      proc.kill();
+      reject(new Error(`runNaxCommand timed out after ${CMD_TIMEOUT_MS}ms: bun run nax ${args.join(" ")}`));
+    }, CMD_TIMEOUT_MS);
 
     proc.stdout.on("data", (data) => {
       stdout += data.toString();
@@ -92,6 +99,7 @@ function runNaxCommand(args: string[], cwd?: string): Promise<{ stdout: string; 
     });
 
     proc.on("close", (code) => {
+      clearTimeout(timer);
       resolve({ stdout, stderr, exitCode: code || 0 });
     });
   });
