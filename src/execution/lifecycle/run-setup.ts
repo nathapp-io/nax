@@ -21,6 +21,7 @@ import { fireHook } from "../../hooks";
 import type { InteractionChain } from "../../interaction";
 import { initInteractionChain } from "../../interaction";
 import { getSafeLogger } from "../../logger";
+import { pipelineEventBus } from "../../pipeline/event-bus";
 import { loadPlugins } from "../../plugins/loader";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { PRD } from "../../prd";
@@ -123,6 +124,9 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     getStartTime: () => options.startTime,
     getTotalStories: options.getTotalStories,
     getStoriesCompleted: options.getStoriesCompleted,
+    emitError: (reason: string) => {
+      pipelineEventBus.emit({ type: "run:errored", reason, feature: options.feature });
+    },
   });
 
   // Load PRD (before try block so it's accessible in finally for onRunEnd)

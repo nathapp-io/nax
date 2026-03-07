@@ -121,6 +121,7 @@ export async function executeSequential(
           });
           return buildResult("cost-limit");
         }
+        pipelineEventBus.emit({ type: "run:resumed", feature: ctx.feature });
       }
 
       pipelineEventBus.emit({

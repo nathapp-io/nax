@@ -127,6 +127,38 @@ export function wireHooks(
     }),
   );
 
+  // run:resumed → on-resume
+  unsubs.push(
+    bus.on("run:resumed", (ev) => {
+      safe("on-resume", () => fireHook(hooks, "on-resume", hookCtx(feature, { status: "running" }), workdir));
+    }),
+  );
+
+  // story:completed → on-session-end (passed)
+  unsubs.push(
+    bus.on("story:completed", (ev) => {
+      safe("on-session-end (completed)", () =>
+        fireHook(hooks, "on-session-end", hookCtx(feature, { storyId: ev.storyId, status: "passed" }), workdir),
+      );
+    }),
+  );
+
+  // story:failed → on-session-end (failed)
+  unsubs.push(
+    bus.on("story:failed", (ev) => {
+      safe("on-session-end (failed)", () =>
+        fireHook(hooks, "on-session-end", hookCtx(feature, { storyId: ev.storyId, status: "failed" }), workdir),
+      );
+    }),
+  );
+
+  // run:errored → on-error
+  unsubs.push(
+    bus.on("run:errored", (ev) => {
+      safe("on-error", () => fireHook(hooks, "on-error", hookCtx(feature, { reason: ev.reason }), workdir));
+    }),
+  );
+
   return () => {
     for (const u of unsubs) u();
   };
