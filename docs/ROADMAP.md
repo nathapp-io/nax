@@ -118,34 +118,34 @@
 
 ---
 
-## v0.23.0 — Status File Consolidation
+## v0.23.0 — Status File Consolidation ✅
 
 **Theme:** Auto-write status.json to well-known paths, align readers, remove dead options
-**Status:** 🔄 In Progress (self-dev running, SFC-001 ✅)
+**Status:** ✅ Shipped (2026-03-07)
 **Spec:** [docs/specs/status-file-consolidation.md](specs/status-file-consolidation.md)
 **Pre-requisite for:** v0.24.0 (Central Run Registry)
 
 ### Stories
 - [x] ~~**SFC-001:** Auto-write project-level status — remove `--status-file` flag, always write to `<workdir>/nax/status.json`~~
-- [ ] **BUG-043:** Fix scoped test command construction + add `testScoped` config with `{{files}}` template
-- [ ] **BUG-044:** Log scoped and full-suite test commands at info level in verify stage
-- [ ] **SFC-002:** Write feature-level status on run end — copy final snapshot to `<workdir>/nax/features/<feature>/status.json`
-- [ ] **SFC-003:** Align status readers — `nax status` + `nax diagnose` read from correct paths
-- [ ] **SFC-004:** Clean up dead code — remove `--status-file` option, `.nax-status.json` references
+- [x] ~~**BUG-043:** Fix scoped test command construction + add `testScoped` config with `{{files}}` template~~
+- [x] ~~**BUG-044:** Log scoped and full-suite test commands at info level in verify stage~~
+- [x] ~~**SFC-002:** Write feature-level status on run end — copy final snapshot to `<workdir>/nax/features/<feature>/status.json`~~
+- [x] ~~**SFC-003:** Align status readers — `nax status` + `nax diagnose` read from correct paths~~
+- [x] ~~**SFC-004:** Clean up dead code — remove `--status-file` option, `.nax-status.json` references~~
 
 ---
 
-## v0.24.0 — Central Run Registry
+## v0.24.0 — Central Run Registry ✅
 
 **Theme:** Global run index across all projects — single source of truth for all nax run history
-**Status:** 🔲 Planned
+**Status:** ✅ Shipped (2026-03-07)
 **Spec:** [docs/specs/central-run-registry.md](specs/central-run-registry.md)
 
 ### Stories
-- [ ] **CRR-000:** `src/pipeline/subscribers/events-writer.ts` — `wireEventsWriter()`, writes lifecycle events to `~/.nax/events/<project>/events.jsonl` (machine-readable completion signal for watchdog/CI)
-- [ ] **CRR-001:** `src/pipeline/subscribers/registry.ts` — `wireRegistry()` subscriber, listens to `run:started`, writes `~/.nax/runs/<project>-<feature>-<runId>/meta.json` (path pointers only — no data duplication, no symlinks)
-- [ ] **CRR-002:** `src/commands/runs.ts` — `nax runs` CLI, reads `meta.json` → resolves live `status.json` from `statusPath`, displays table (project, feature, status, stories, duration, date). Filters: `--project`, `--last`, `--status`
-- [ ] **CRR-003:** `nax logs --run <runId>` — resolve run from global registry via `eventsDir`, stream logs from any directory
+- [x] ~~**CRR-000:** `src/pipeline/subscribers/events-writer.ts` — `wireEventsWriter()`, writes lifecycle events to `~/.nax/events/<project>/events.jsonl` (machine-readable completion signal for watchdog/CI)~~
+- [x] ~~**CRR-001:** `src/pipeline/subscribers/registry.ts` — `wireRegistry()` subscriber, listens to `run:started`, writes `~/.nax/runs/<project>-<feature>-<runId>/meta.json` (path pointers only — no data duplication, no symlinks)~~
+- [x] ~~**CRR-002:** `src/commands/runs.ts` — `nax runs` CLI, reads `meta.json` → resolves live `status.json` from `statusPath`, displays table (project, feature, status, stories, duration, date). Filters: `--project`, `--last`, `--status`~~
+- [x] ~~**CRR-003:** `nax logs --run <runId>` — resolve run from global registry via `eventsDir`, stream logs from any directory~~
 
 ---
 
@@ -223,6 +223,8 @@
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.24.0 | Central Run Registry | 2026-03-07 | CRR-000–003: events writer, registry, nax runs CLI, nax logs --run global resolution |
+| v0.23.0 | Status File Consolidation | 2026-03-07 | SFC-001–004: auto-write status.json, feature-level status, align readers, remove dead code; BUG-043/044: testScoped config + command logging |
 | v0.18.1 | Type Safety + CI Pipeline | 2026-03-03 | 60 TS errors + 12 lint errors fixed, GitLab CI green (1952/56/0) |
 | v0.22.2 | Routing Stability + SFC-001 | 2026-03-07 | BUG-040 floating outputPromise crash on LLM timeout retry; SFC-001 auto-write status.json |
 | v0.22.1 | Pipeline Re-Architecture | 2026-03-07 | VerificationOrchestrator, EventBus, new stages (rectify/autofix/regression/deferred-regression), post-run SSOT. 2264 pass |
@@ -287,8 +289,8 @@
 
 - [x] ~~**BUG-037:** Test output summary (verify stage) captures precheck boilerplate instead of actual `bun test` failure. Fixed: `.slice(-20)` tail — shipped in v0.22.1 (re-arch phase 2).~~
 - [x] ~~**BUG-038:** `smart-runner` over-matching when global defaults change. Fixed by FEAT-010 (v0.21.0) — per-attempt `storyGitRef` baseRef tracking; `git diff <baseRef>..HEAD` prevents cross-story file pollution.~~
-- [ ] **BUG-043:** Scoped test command appends files instead of replacing path — `runners.ts:scoped()` concatenates `scopedTestPaths` to full-suite command, resulting in `bun test test/ --timeout=60000 /path/to/file.ts` (runs everything). Fix: use `testScoped` config with `{{files}}` template, fall back to `buildSmartTestCommand()` heuristic. **Location:** `src/verification/runners.ts:scoped()`
-- [ ] **BUG-044:** Scoped/full-suite test commands not logged — no visibility into what command was actually executed during verify stage. Fix: log at info level before execution.
+- [x] ~~**BUG-043:** Scoped test command appends files instead of replacing path — `runners.ts:scoped()` concatenates `scopedTestPaths` to full-suite command, resulting in `bun test test/ --timeout=60000 /path/to/file.ts` (runs everything). Fix: use `testScoped` config with `{{files}}` template, fall back to `buildSmartTestCommand()` heuristic. **Location:** `src/verification/runners.ts:scoped()`
+- [x] ~~**BUG-044:** Scoped/full-suite test commands not logged — no visibility into what command was actually executed during verify stage. Fix: log at info level before execution.
 
 ### Features
 - [x] ~~`nax unlock` command~~
