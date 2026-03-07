@@ -134,6 +134,21 @@
 
 ---
 
+## v0.23.0 — Central Run Registry
+
+**Theme:** Global run index across all projects — single source of truth for all nax run history
+**Status:** 🔲 Planned
+**Spec:** [docs/specs/central-run-registry.md](specs/central-run-registry.md)
+
+### Stories
+- [ ] **CRR-001:** Create `~/.nax/runs/` directory structure on first run — `<project>-<feature>-<timestamp>/` with `status.json` + symlink to project `events.jsonl`
+- [ ] **CRR-002:** Write `status.json` on run start/end — fields: `runId`, `project`, `feature`, `workdir`, `startedAt`, `completedAt`, `status` (running/passed/failed/interrupted), `storiesTotal`, `storiesPassed`, `storiesFailed`
+- [ ] **CRR-003:** `nax runs` CLI command — list all runs across all projects (table: project, feature, status, duration, stories pass/fail, date)
+- [ ] **CRR-004:** `nax runs --project <name>` filter + `nax runs --last <n>` limit
+- [ ] **CRR-005:** `nax logs` enhancement — resolve run from global registry when no local feature context (e.g. `nax logs --run <runId>` from any directory)
+
+---
+
 ## v0.21.0 — Process Reliability & Observability ✅
 
 **Theme:** Kill orphan processes cleanly, smart-runner precision, test strategy quality
@@ -201,9 +216,6 @@
 - [x] Review stage runs typecheck + lint only — remove `review.commands.test` execution
 - [x] `priorFailures` injected into escalated agent prompts via `context/builder.ts`
 - [x] Reverse file mapping for regression attribution
-
-### Central Run Registry (carried forward)
-- [ ] `~/.nax/runs/<project>-<feature>-<runId>/` with status.json + events.jsonl symlink
 
 ---
 
@@ -279,7 +291,7 @@
 - [x] ~~Constitution file support~~
 - [x] ~~Per-story testStrategy override — v0.18.1~~
 - [x] ~~Smart Test Runner — v0.18.2~~
-- [x] ~~Central Run Registry — v0.19.0~~
+- [ ] **Central Run Registry** — moved to v0.23.0
 - [x] ~~**BUN-001:** Bun PTY Migration — replace `node-pty` with `Bun.spawn` (piped stdio). Shipped in v0.18.5.~~
 - [ ] **CI-001:** CI Memory Optimization — parallel test sharding for 1GB runners
 - [ ] Cost tracking dashboard
