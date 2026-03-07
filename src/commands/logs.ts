@@ -6,12 +6,22 @@
  */
 
 import { existsSync, readdirSync } from "node:fs";
+import { readdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import chalk from "chalk";
 import type { LogEntry, LogLevel } from "../logger/types";
 import { type FormattedEntry, formatLogEntry, formatRunSummary } from "../logging/formatter";
 import type { RunSummary, VerbosityMode } from "../logging/types";
+import type { MetaJson } from "../pipeline/subscribers/registry";
 import { type ResolveProjectOptions, resolveProject } from "./common";
+
+/**
+ * Swappable dependencies for testing (project convention: _deps over mock.module).
+ */
+export const _deps = {
+  getRunsDir: () => process.env.NAX_RUNS_DIR ?? join(homedir(), ".nax", "runs"),
+};
 
 /**
  * Options for logs command
@@ -44,11 +54,83 @@ const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
 };
 
 /**
+ * Resolve log file path for a runId from the central registry (~/.nax/runs/).
+ *
+ * Scans all ~/.nax/runs/*\/meta.json entries for an exact or prefix match on runId.
+ * Returns the path to the matching run's JSONL file, or null if eventsDir/file is unavailable.
+ * Throws if the runId is not found in the registry at all.
+ *
+ * @param runId - Full or prefix run ID to look up
+ * @returns Absolute path to the JSONL log file, or null if unavailable
+ */
+async function resolveRunFileFromRegistry(runId: string): Promise<string | null> {
+  const runsDir = _deps.getRunsDir();
+
+  let entries: string[];
+  try {
+    entries = await readdir(runsDir);
+  } catch {
+    throw new Error(`Run not found in registry: ${runId}`);
+  }
+
+  let matched: MetaJson | null = null;
+  for (const entry of entries) {
+    const metaPath = join(runsDir, entry, "meta.json");
+    try {
+      const meta: MetaJson = await Bun.file(metaPath).json();
+      if (meta.runId === runId || meta.runId.startsWith(runId)) {
+        matched = meta;
+        break;
+      }
+    } catch {
+      // skip unreadable meta.json entries
+    }
+  }
+
+  if (!matched) {
+    throw new Error(`Run not found in registry: ${runId}`);
+  }
+
+  if (!existsSync(matched.eventsDir)) {
+    console.log(`Log directory unavailable for run: ${runId}`);
+    return null;
+  }
+
+  const files = readdirSync(matched.eventsDir)
+    .filter((f) => f.endsWith(".jsonl") && f !== "latest.jsonl")
+    .sort()
+    .reverse();
+
+  if (files.length === 0) {
+    console.log(`No log files found for run: ${runId}`);
+    return null;
+  }
+
+  // Look for the specific run file by runId, fall back to newest
+  const specificFile = files.find((f) => f === `${matched.runId}.jsonl`);
+  return join(matched.eventsDir, specificFile ?? files[0]);
+}
+
+/**
  * Display logs with filtering and formatting
  *
  * @param options - Command options
  */
 export async function logsCommand(options: LogsOptions): Promise<void> {
+  // When --run <runId> is provided, resolve via central registry
+  if (options.run) {
+    const runFile = await resolveRunFileFromRegistry(options.run);
+    if (!runFile) {
+      return;
+    }
+    if (options.follow) {
+      await followLogs(runFile, options);
+    } else {
+      await displayLogs(runFile, options);
+    }
+    return;
+  }
+
   // Resolve project directory
   const resolved = resolveProject({ dir: options.dir });
   const naxDir = join(resolved.projectDir, "nax");
@@ -77,8 +159,8 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
     return;
   }
 
-  // Determine which run to display
-  const runFile = await selectRunFile(runsDir, options.run);
+  // Determine which run to display (latest by default — --run handled above via registry)
+  const runFile = await selectRunFile(runsDir);
 
   if (!runFile) {
     throw new Error("No runs found for this feature");
@@ -95,9 +177,9 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
 }
 
 /**
- * Select which run file to display
+ * Select which run file to display (always returns the latest run)
  */
-async function selectRunFile(runsDir: string, runTimestamp?: string): Promise<string | null> {
+async function selectRunFile(runsDir: string): Promise<string | null> {
   const files = readdirSync(runsDir)
     .filter((f) => f.endsWith(".jsonl") && f !== "latest.jsonl")
     .sort()
@@ -107,19 +189,7 @@ async function selectRunFile(runsDir: string, runTimestamp?: string): Promise<st
     return null;
   }
 
-  // If no specific run requested, use latest
-  if (!runTimestamp) {
-    return join(runsDir, files[0]);
-  }
-
-  // Find matching run by partial timestamp
-  const matchingFile = files.find((f) => f.startsWith(runTimestamp));
-
-  if (!matchingFile) {
-    throw new Error(`Run not found: ${runTimestamp}`);
-  }
-
-  return join(runsDir, matchingFile);
+  return join(runsDir, files[0]);
 }
 
 /**

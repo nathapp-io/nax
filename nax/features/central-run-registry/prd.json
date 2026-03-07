@@ -1,0 +1,105 @@
+{
+  "project": "nax",
+  "branchName": "feat/central-run-registry",
+  "feature": "central-run-registry",
+  "version": "0.24.0",
+  "description": "Global run index across all projects. Events file writer for machine-readable lifecycle events, registry subscriber that indexes every run to ~/.nax/runs/, nax runs CLI for cross-project run history, and nax logs --run <runId> for global log resolution.",
+  "userStories": [
+    {
+      "id": "CRR-000",
+      "title": "Events file writer subscriber",
+      "description": "New subscriber: src/pipeline/subscribers/events-writer.ts \u2014 wireEventsWriter(bus, project, feature, runId, workdir). Listens to run:started, story:started, story:completed, story:failed, run:completed, run:paused. Writes one JSON line per event to ~/.nax/events/<project>/events.jsonl (append mode). Each line: {\"ts\": ISO8601, \"event\": string, \"runId\": string, \"feature\": string, \"project\": string, \"storyId\"?: string, \"data\"?: object}. The run:completed event writes an 'on-complete' entry \u2014 the machine-readable signal that nax exited gracefully (fixes watchdog false crash reports). Best-effort: wrap all writes in try/catch, log warnings on failure, never throw or block the pipeline. Create ~/.nax/events/<project>/ on first write via mkdir recursive. Derive project name from path.basename(workdir). Wire in sequential-executor.ts alongside existing wireHooks/wireReporters/wireInteraction calls. Return UnsubscribeFn matching existing subscriber pattern.",
+      "complexity": "medium",
+      "status": "pending",
+      "acceptanceCriteria": [
+        "After a run, ~/.nax/events/<project>/events.jsonl exists with JSONL entries",
+        "Each line is valid JSON with ts, event, runId, feature, project fields",
+        "run:completed produces an entry with event=on-complete",
+        "story:started/completed/failed events include storyId",
+        "Write failure does not crash or block the nax run",
+        "Directory is created automatically on first write",
+        "wireEventsWriter is called in sequential-executor.ts",
+        "Returns UnsubscribeFn consistent with wireHooks/wireReporters pattern"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "storyPoints": 2
+    },
+    {
+      "id": "CRR-001",
+      "title": "Registry writer subscriber",
+      "description": "New subscriber: src/pipeline/subscribers/registry.ts \u2014 wireRegistry(bus, project, feature, runId, workdir). Listens to run:started. On event, creates ~/.nax/runs/<project>-<feature>-<runId>/meta.json with fields: {runId, project, feature, workdir, statusPath: join(workdir, 'nax/features', feature, 'status.json'), eventsDir: join(workdir, 'nax/features', feature, 'runs'), registeredAt: ISO8601}. meta.json schema exported as MetaJson interface. Written once, never updated. Best-effort: try/catch + warn log, never throw/block. Create ~/.nax/runs/ directory on first call via mkdir recursive. Derive project from path.basename(workdir). Wire in sequential-executor.ts alongside wireEventsWriter. Return UnsubscribeFn.",
+      "complexity": "medium",
+      "status": "pending",
+      "acceptanceCriteria": [
+        "After run start, ~/.nax/runs/<project>-<feature>-<runId>/meta.json exists",
+        "meta.json contains runId, project, feature, workdir, statusPath, eventsDir, registeredAt",
+        "statusPath points to <workdir>/nax/features/<feature>/status.json",
+        "eventsDir points to <workdir>/nax/features/<feature>/runs",
+        "MetaJson interface is exported from the module",
+        "Write failure does not crash or block the nax run",
+        "wireRegistry is called in sequential-executor.ts"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "storyPoints": 2
+    },
+    {
+      "id": "CRR-002",
+      "title": "nax runs CLI command",
+      "description": "New command: src/commands/runs.ts \u2014 runsCommand(options). Reads all ~/.nax/runs/*/meta.json, resolves each statusPath to read the live NaxStatusFile for current state. Displays a table sorted by registeredAt desc. Columns: RUN ID, PROJECT, FEATURE, STATUS, STORIES (passed/total), DURATION, DATE. Default limit: 20. Options: --project <name> (filter), --last <N> (limit), --status <running|completed|failed|crashed> (filter). If statusPath missing, show status as '[unavailable]'. Register in src/commands/index.ts and wire in bin/nax.ts CLI arg parser (match pattern of existing diagnose/logs/status commands). Use chalk for colored output. Green for completed, red for failed, yellow for running, dim for unavailable.",
+      "complexity": "medium",
+      "status": "pending",
+      "acceptanceCriteria": [
+        "nax runs displays a table of all registered runs sorted newest-first",
+        "nax runs --project <name> filters by project name",
+        "nax runs --last <N> limits output to N runs",
+        "nax runs --status <status> filters by run status",
+        "Runs with missing statusPath show '[unavailable]' status gracefully",
+        "Empty registry shows 'No runs found' message",
+        "Command is registered in CLI help output and bin/nax.ts"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [
+        "CRR-001"
+      ],
+      "tags": [],
+      "storyPoints": 3
+    },
+    {
+      "id": "CRR-003",
+      "title": "nax logs --run <runId> global resolution",
+      "description": "Enhance src/commands/logs.ts logsCommand: when --run <runId> is provided, scan ~/.nax/runs/*/meta.json for matching runId (exact or prefix match). Read eventsDir from meta.json, locate the JSONL log file in that directory (newest .jsonl file), then display using existing displayLogs/followLogs functions. Falls back to current behavior (local feature context) when --run is not specified. If runId not found in registry, throw error Run not found in registry: <runId>. If eventsDir or log file missing, show unavailable message. Update LogsOptions interface to accept run?: string. Update bin/nax.ts to pass --run option through.",
+      "complexity": "medium",
+      "status": "pending",
+      "acceptanceCriteria": [
+        "nax logs --run <runId> displays logs from the matching run regardless of cwd",
+        "Resolution uses ~/.nax/runs/*/meta.json to find eventsDir path",
+        "Unknown runId shows clear error message",
+        "Missing log files show unavailable message",
+        "Without --run flag, existing local behavior is unchanged",
+        "Partial runId matching works (prefix match on runId field)"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [
+        "CRR-001"
+      ],
+      "tags": [],
+      "storyPoints": 2
+    }
+  ]
+}

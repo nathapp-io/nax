@@ -62,6 +62,7 @@ import { generateCommand } from "../src/cli/generate";
 import { diagnose } from "../src/commands/diagnose";
 import { logsCommand } from "../src/commands/logs";
 import { precheckCommand } from "../src/commands/precheck";
+import { runsCommand } from "../src/commands/runs";
 import { unlockCommand } from "../src/commands/unlock";
 import { DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from "../src/config";
 import { run } from "../src/execution";
@@ -685,7 +686,7 @@ program
   .option("-s, --story <id>", "Filter to specific story")
   .option("--level <level>", "Filter by log level (debug|info|warn|error)")
   .option("-l, --list", "List all runs in table format", false)
-  .option("-r, --run <timestamp>", "Select specific run by timestamp")
+  .option("-r, --run <runId>", "Select run by run ID from central registry (global)")
   .option("-j, --json", "Output raw JSONL", false)
   .action(async (options) => {
     let workdir: string;
@@ -773,7 +774,24 @@ program
   });
 
 // ── runs ─────────────────────────────────────────────
-const runs = program.command("runs").description("Manage and view run history");
+const runs = program
+  .command("runs")
+  .description("Show all registered runs from the central registry (~/.nax/runs/)")
+  .option("--project <name>", "Filter by project name")
+  .option("--last <N>", "Limit to N most recent runs (default: 20)")
+  .option("--status <status>", "Filter by status (running|completed|failed|crashed)")
+  .action(async (options) => {
+    try {
+      await runsCommand({
+        project: options.project,
+        last: options.last !== undefined ? Number.parseInt(options.last, 10) : undefined,
+        status: options.status,
+      });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
 
 runs
   .command("list")
