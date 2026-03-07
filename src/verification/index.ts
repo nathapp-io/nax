@@ -8,5 +8,5 @@
 export * from "./types";
 export * from "./executor";
 export * from "./parser";
-export * from "./gate";
+export * from "./runners";
 export * from "./rectification";

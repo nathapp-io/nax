@@ -11,10 +11,10 @@
  */
 
 import { getLogger } from "../../logger";
-import { regression } from "../gate";
 import type { IVerificationStrategy, VerifyContext, VerifyResult } from "../orchestrator-types";
 import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrator-types";
 import { parseBunTestOutput } from "../parser";
+import { regression } from "../runners";
 import { _smartRunnerDeps } from "../smart-runner";
 
 const DEFAULT_SMART_RUNNER_CONFIG = {

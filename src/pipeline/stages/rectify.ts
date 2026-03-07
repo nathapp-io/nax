@@ -89,5 +89,5 @@ export const rectifyStage: PipelineStage = {
 /**
  * Injectable deps for testing.
  */
-import { runRectificationLoop } from "../../execution/post-verify-rectification";
+import { runRectificationLoop } from "../../verification/rectification-loop";
 export const _rectifyDeps = { runRectificationLoop };

@@ -254,15 +254,16 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       new Response(proc.stdout).text(),
       new Promise<string>((resolve) => setTimeout(() => resolve(""), 5000)),
     ]);
-    const stderr = await new Response(proc.stderr).text();
+    const stderr = proc.stderr ? await new Response(proc.stderr).text() : "";
     const durationMs = Date.now() - startTime;
 
-    // Note: stderr is "inherit" (MEM-3), so proc.stderr is null/empty.
-    // Rate-limit detection relies on stdout only. Claude Code emits rate limit
-    // messages to stdout as part of its JSON stream output.
-    const rateLimited = stdout.includes("rate limit") || stdout.includes("429") || stdout.includes("Too many requests");
-
+    // Claude Code emits rate limit messages as part of its output.
     const fullOutput = stdout + stderr;
+    const rateLimited =
+      fullOutput.toLowerCase().includes("rate limit") ||
+      fullOutput.includes("429") ||
+      fullOutput.toLowerCase().includes("too many requests");
+
     let costEstimate = estimateCostFromOutput(options.modelTier, fullOutput);
     const logger = getLogger();
     if (!costEstimate) {

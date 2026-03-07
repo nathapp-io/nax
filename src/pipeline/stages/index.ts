@@ -54,8 +54,13 @@ export const defaultPipeline: PipelineStage[] = [
   autofixStage,
   regressionStage,
   completionStage,
-  acceptanceStage,
 ];
+
+/**
+ * Post-run pipeline stages — run once after all per-story iterations complete.
+ * Handles deferred regression and acceptance tests.
+ */
+export const postRunPipeline: PipelineStage[] = [acceptanceStage];
 
 // Re-export individual stages for custom pipeline construction
 export { queueCheckStage } from "./queue-check";

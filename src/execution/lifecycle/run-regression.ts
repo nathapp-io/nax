@@ -14,9 +14,9 @@ import type { PRD, UserStory } from "../../prd";
 import { countStories } from "../../prd";
 import { hasCommitsForStory } from "../../utils/git";
 import { parseBunTestOutput } from "../../verification";
-import { fullSuite } from "../../verification/gate";
+import { runRectificationLoop } from "../../verification/rectification-loop";
+import { fullSuite } from "../../verification/runners";
 import { reverseMapTestToSource } from "../../verification/smart-runner";
-import { runRectificationLoop } from "../post-verify-rectification";
 
 /**
  * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).

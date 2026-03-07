@@ -11,8 +11,8 @@
 
 import type { SmartTestRunnerConfig } from "../../config/types";
 import { getLogger } from "../../logger";
-import { regression } from "../../verification/gate";
 import type { VerifyStatus } from "../../verification/orchestrator-types";
+import { regression } from "../../verification/runners";
 import { _smartRunnerDeps } from "../../verification/smart-runner";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 

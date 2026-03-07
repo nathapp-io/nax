@@ -1,25 +1,23 @@
 /**
- * Post-Verify Rectification Loop
+ * Rectification Loop (ADR-005, Phase 4)
  *
- * Extracted from post-verify.ts: rectification retry loop and
- * failure reversion logic shared by both scoped and regression paths.
+ * Replaces src/execution/post-verify-rectification.ts.
+ * Moved into the verification module where it belongs architecturally.
+ *
+ * Used by: src/pipeline/stages/rectify.ts, src/execution/lifecycle/run-regression.ts
  */
 
 import { getAgent } from "../agents";
 import type { NaxConfig } from "../config";
 import { resolveModel } from "../config";
+import { appendProgress } from "../execution/progress";
+import { parseBunTestOutput } from "../execution/test-output-parser";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import type { PRD, StructuredFailure, UserStory } from "../prd";
 import { getExpectedFiles, savePRD } from "../prd";
-import { fullSuite as runVerification } from "../verification/gate";
-import {
-  type RectificationState,
-  createRectificationPrompt,
-  shouldRetryRectification,
-} from "../verification/rectification";
-import { appendProgress } from "./progress";
-import { parseBunTestOutput } from "./test-output-parser";
+import { type RectificationState, createRectificationPrompt, shouldRetryRectification } from "./rectification";
+import { fullSuite as runVerification } from "./runners";
 
 export interface RectificationLoopOptions {
   config: NaxConfig;
@@ -31,15 +29,13 @@ export interface RectificationLoopOptions {
   promptPrefix?: string;
 }
 
-/**
- * Run the rectification retry loop. Returns true if rectification fixed all failures.
- */
+/** Run the rectification retry loop. Returns true if all failures were fixed. */
 export async function runRectificationLoop(opts: RectificationLoopOptions): Promise<boolean> {
   const { config, workdir, story, testCommand, timeoutSeconds, testOutput, promptPrefix } = opts;
   const logger = getSafeLogger();
-
   const rectificationConfig = config.execution.rectification;
   const testSummary = parseBunTestOutput(testOutput);
+  const label = promptPrefix ? "regression rectification" : "rectification";
 
   const rectificationState: RectificationState = {
     attempt: 0,
@@ -47,7 +43,6 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
     currentFailures: testSummary.failed,
   };
 
-  const label = promptPrefix ? "regression rectification" : "rectification";
   logger?.info("rectification", `Starting ${label} loop`, {
     storyId: story.id,
     initialFailures: rectificationState.initialFailures,
@@ -63,9 +58,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
     });
 
     let rectificationPrompt = createRectificationPrompt(testSummary.failures, story, rectificationConfig);
-    if (promptPrefix) {
-      rectificationPrompt = `${promptPrefix}\n\n${rectificationPrompt}`;
-    }
+    if (promptPrefix) rectificationPrompt = `${promptPrefix}\n\n${rectificationPrompt}`;
 
     const agent = getAgent(config.autoMode.defaultAgent);
     if (!agent) {
@@ -93,7 +86,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
     }
 
     const retryVerification = await runVerification({
-      workdir: workdir,
+      workdir,
       expectedFiles: getExpectedFiles(story),
       command: testCommand,
       timeoutSeconds,
@@ -158,14 +151,10 @@ export interface RevertStoriesOptions {
 export async function revertStoriesOnFailure(opts: RevertStoriesOptions): Promise<PRD> {
   const storyIds = new Set(opts.storiesToExecute.map((s) => s.id));
 
-  // Remove stale metrics
   for (let i = opts.allStoryMetrics.length - 1; i >= 0; i--) {
-    if (storyIds.has(opts.allStoryMetrics[i].storyId)) {
-      opts.allStoryMetrics.splice(i, 1);
-    }
+    if (storyIds.has(opts.allStoryMetrics[i].storyId)) opts.allStoryMetrics.splice(i, 1);
   }
 
-  // Revert stories to pending with diagnostic context and priorFailures
   opts.prd.userStories = opts.prd.userStories.map((s) =>
     storyIds.has(s.id)
       ? {

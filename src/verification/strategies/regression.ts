@@ -10,10 +10,10 @@
  */
 
 import { getSafeLogger } from "../../logger";
-import { fullSuite } from "../gate";
 import type { IVerificationStrategy, VerifyContext, VerifyResult } from "../orchestrator-types";
 import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrator-types";
 import { parseBunTestOutput } from "../parser";
+import { fullSuite } from "../runners";
 
 export class RegressionStrategy implements IVerificationStrategy {
   readonly name: "regression" | "deferred-regression" = "regression";
