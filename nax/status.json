@@ -1,27 +1,28 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-05T02-37-04-540Z",
-    "feature": "nax-compliance",
-    "startedAt": "2026-03-05T02:37:04.540Z",
-    "status": "stalled",
+    "id": "run-2026-03-07T06-14-21-018Z",
+    "feature": "status-file-consolidation",
+    "startedAt": "2026-03-07T06:14:21.018Z",
+    "status": "completed",
     "dryRun": false,
-    "pid": 814245
+    "pid": 217461
   },
   "progress": {
-    "total": 1,
-    "passed": 0,
-    "failed": 1,
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
     "paused": 0,
     "blocked": 0,
     "pending": 0
   },
   "cost": {
     "spent": 0,
-    "limit": 8
+    "limit": 3
   },
   "current": null,
-  "iterations": 3,
-  "updatedAt": "2026-03-05T02:38:46.469Z",
-  "durationMs": 101929
+  "iterations": 0,
+  "updatedAt": "2026-03-07T06:19:54.528Z",
+  "durationMs": 1000,
+  "lastHeartbeat": "2026-03-07T06:19:34.987Z"
 }
