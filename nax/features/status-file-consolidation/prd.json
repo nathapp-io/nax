@@ -2,7 +2,7 @@
   "feature": "status-file-consolidation",
   "version": "0.22.2",
   "description": "Auto-write status.json to well-known paths (project-level + feature-level). Remove --status-file CLI flag. Align nax status and nax diagnose readers.",
-  "stories": [
+  "userStories": [
     {
       "id": "SFC-001",
       "title": "Auto-write project-level status",
@@ -30,7 +30,7 @@
     {
       "id": "SFC-003",
       "title": "Align status readers",
-      "description": "Make nax status read project-level status from nax/status.json for 'currently running' info. Make nax diagnose read from nax/status.json instead of .nax-status.json. status-features.ts loadStatusFile() already reads <featureDir>/status.json which SFC-002 now writes — no change needed for feature-level reads.",
+      "description": "Make nax status read project-level status from nax/status.json for currently running info. Make nax diagnose read from nax/status.json instead of .nax-status.json. status-features.ts loadStatusFile() already reads <featureDir>/status.json which SFC-002 now writes — no change needed for feature-level reads.",
       "status": "pending",
       "acceptanceCriteria": [
         "nax status shows current run info from nax/status.json at the top",
