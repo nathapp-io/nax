@@ -75,6 +75,23 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator only]
 
 Detailed coding standards, test architecture, and forbidden patterns are in `.claude/rules/`. Claude Code loads these automatically.
 
+
+## Code Intelligence (Solograph MCP)
+
+Use **solograph** MCP tools on-demand for code understanding. Do not use web_search, kb_search, or source_* tools.
+
+| Tool | When to use |
+|:-----|:------------|
+| `project_code_search` | Find existing patterns, symbols, or implementations before writing new code |
+| `codegraph_explain` | Get architecture overview of nax before tackling unfamiliar areas |
+| `codegraph_query` | Cypher queries — dependency analysis, impact analysis, hub files |
+| `codegraph_stats` | Quick graph stats (file/symbol counts) |
+| `codegraph_shared` | Find packages shared across projects |
+| `session_search` | Search prior Claude Code session history for relevant context |
+| `project_info` | Project registry info |
+| `project_code_reindex` | Reindex after large structural changes |
+
+Single source of truth: VPS solograph instance (Mac01 tunnels to VPS — same data either way).
 ## IMPORTANT
 
 - Do NOT push to remote — let the human review and push.
