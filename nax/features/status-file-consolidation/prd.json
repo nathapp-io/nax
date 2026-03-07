@@ -1,4 +1,6 @@
 {
+  "project": "nax",
+  "branchName": "feat/status-file-consolidation",
   "feature": "status-file-consolidation",
   "version": "0.22.2",
   "description": "Auto-write status.json to well-known paths (project-level + feature-level). Remove --status-file CLI flag. Align nax status and nax diagnose readers.",
