@@ -98,6 +98,8 @@ async function callLlmOnce(modelTier: string, prompt: string, config: NaxConfig,
       reject(new Error(`LLM call timeout after ${timeoutMs}ms`));
     }, timeoutMs);
   });
+  // Prevent unhandled rejection if timer fires between race resolution and clearTimeout
+  timeoutPromise.catch(() => {});
 
   const outputPromise = (async () => {
     const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
