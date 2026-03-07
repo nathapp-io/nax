@@ -135,7 +135,7 @@
 
 ---
 
-## v0.25.0 — Trigger Completion
+## v0.25.0 — Trigger Completion ✅ Shipped (2026-03-07)
 
 **Theme:** Wire all 8 unwired interaction triggers, 3 missing hook events, and add plugin integration tests
 **Status:** 🔲 Planned
