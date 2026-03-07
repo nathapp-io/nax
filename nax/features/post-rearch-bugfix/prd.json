@@ -3,7 +3,7 @@
   "branchName": "feat/post-rearch-bugfix",
   "feature": "post-rearch-bugfix",
   "version": "0.22.3",
-  "description": "Fix critical and high-priority bugs found in post-re-architecture code review. Focus on stream deadlocks, unhandled rejections, signal handler safety, and lock file reliability.",
+  "description": "Fix all critical and key high-priority bugs found in post-re-architecture code review. Stream deadlocks, unhandled rejections, signal handler safety, lock file reliability, interaction system, parallel executor race, and error swallowing.",
   "userStories": [
     {
       "id": "FIX-C1",
@@ -19,9 +19,22 @@
       ]
     },
     {
+      "id": "FIX-C2",
+      "title": "Fix emitAsync never called for human-in-the-loop interaction",
+      "description": "In src/execution/pipeline-result-handler.ts (line ~151), human-review:requested is emitted via fire-and-forget emit() instead of emitAsync(). The emitAsync() method in src/pipeline/subscribers/interaction.ts was specifically designed to wait for human response but is never called anywhere. The pipeline races past without waiting for human input. Fix: use await pipelineEventBus.emitAsync() for human-review events.",
+      "complexity": "medium",
+      "status": "pending",
+      "acceptanceCriteria": [
+        "human-review:requested event uses emitAsync instead of emit",
+        "Pipeline waits for human response before continuing",
+        "emitAsync is properly awaited at the call site",
+        "Existing tests pass"
+      ]
+    },
+    {
       "id": "FIX-C5",
       "title": "Fix timeoutPromise unhandled rejection in LLM routing",
-      "description": "In src/routing/strategies/llm.ts, the timeoutPromise created in callLlmOnce() uses reject() but if the timer fires between race resolution and clearTimeout, the rejection is unhandled. Add timeoutPromise.catch(() => {}) right after creation, or restructure to use a clearable pattern that doesn't reject.",
+      "description": "In src/routing/strategies/llm.ts, the timeoutPromise created in callLlmOnce() uses reject() but if the timer fires between race resolution and clearTimeout, the rejection is unhandled. Add timeoutPromise.catch(() => {}) right after creation, or restructure to use a clearable pattern that does not reject.",
       "complexity": "simple",
       "status": "pending",
       "acceptanceCriteria": [
@@ -44,6 +57,19 @@
       ]
     },
     {
+      "id": "FIX-C6",
+      "title": "Fix parallel executor shared mutable state race condition",
+      "description": "In src/execution/parallel.ts around line 191 and 213, results.totalCost += ... and executing.splice(index, 1) are mutated concurrently from parallel promises. The splice inside .finally() can corrupt array indices when two promises resolve in the same microtask batch. Fix: replace executing array with a Set pattern; use executing.delete(p) instead of splice.",
+      "complexity": "medium",
+      "status": "pending",
+      "acceptanceCriteria": [
+        "executing collection uses Set instead of Array with splice",
+        "totalCost accumulation is safe against concurrent updates",
+        "No array index corruption possible when promises resolve simultaneously",
+        "Existing tests pass"
+      ]
+    },
+    {
       "id": "FIX-C7",
       "title": "Fix corrupt lock file permanently blocking all runs",
       "description": "In src/execution/lock.ts around line 48-79, if JSON.parse(lockContent) throws on a corrupted lock file, the error propagates to the outer catch which returns false, the caller interprets this as another process is running. Fix: wrap JSON.parse in its own try-catch; treat unparseable lock files as stale and delete them.",
@@ -53,6 +79,19 @@
         "Corrupt/unparseable lock file is treated as stale and deleted",
         "A warning is logged when a corrupt lock file is found",
         "nax can start normally after encountering a corrupt lock file",
+        "Existing tests pass"
+      ]
+    },
+    {
+      "id": "FIX-C8",
+      "title": "Fix empty catch in drainWithDeadline swallowing all errors",
+      "description": "In src/verification/executor.ts around line 36-39, the catch block in drainWithDeadline swallows ALL exceptions including TypeError, OutOfMemoryError etc. Output silently becomes empty string with no diagnostic. Fix: narrow the catch to expected stream-destroyed errors only; log unexpected errors at debug level.",
+      "complexity": "simple",
+      "status": "pending",
+      "acceptanceCriteria": [
+        "Expected stream errors (after kill) are still silently handled",
+        "Unexpected errors are logged at debug level",
+        "Output defaults to empty string on expected stream errors",
         "Existing tests pass"
       ]
     },
