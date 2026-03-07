@@ -41,14 +41,11 @@ interface FeatureSummary {
   };
 }
 
-/** Check if a process is alive via PID check */
+/** Check if a process is alive via POSIX signal 0 (portable, no subprocess) */
 function isPidAlive(pid: number): boolean {
   try {
-    const result = Bun.spawnSync(["ps", "-p", String(pid)], {
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-    return result.exitCode === 0;
+    process.kill(pid, 0);
+    return true;
   } catch {
     return false;
   }
