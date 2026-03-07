@@ -1,5 +1,6 @@
 /** Sequential Story Executor (ADR-005, Phase 4) — main execution loop. */
 
+import { checkCostExceeded, checkCostWarning, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import { pipelineEventBus } from "../pipeline/event-bus";
@@ -35,6 +36,7 @@ export async function executeSequential(
     0,
   ];
   const allStoryMetrics: StoryMetrics[] = [];
+  let warningSent = false;
 
   pipelineEventBus.clear();
   wireHooks(pipelineEventBus, ctx.hooks, ctx.workdir, ctx.feature);
@@ -91,13 +93,23 @@ export async function executeSequential(
       if (!ctx.useBatch) lastStoryId = selection.story.id;
 
       if (totalCost >= ctx.config.execution.costLimit) {
-        pipelineEventBus.emit({
-          type: "run:paused",
-          reason: `Cost limit reached: $${totalCost.toFixed(2)}`,
-          storyId: selection.story.id,
-          cost: totalCost,
-        });
-        return buildResult("cost-limit");
+        const shouldProceed =
+          ctx.interactionChain && isTriggerEnabled("cost-exceeded", ctx.config)
+            ? await checkCostExceeded(
+                { featureName: ctx.feature, cost: totalCost, limit: ctx.config.execution.costLimit },
+                ctx.config,
+                ctx.interactionChain,
+              )
+            : false;
+        if (!shouldProceed) {
+          pipelineEventBus.emit({
+            type: "run:paused",
+            reason: `Cost limit reached: $${totalCost.toFixed(2)}`,
+            storyId: selection.story.id,
+            cost: totalCost,
+          });
+          return buildResult("cost-limit");
+        }
       }
 
       pipelineEventBus.emit({
@@ -117,6 +129,20 @@ export async function executeSequential(
         totalCost + iter.costDelta,
         iter.prdDirty,
       ];
+
+      if (ctx.interactionChain && isTriggerEnabled("cost-warning", ctx.config) && !warningSent) {
+        const costLimit = ctx.config.execution.costLimit;
+        const triggerCfg = ctx.config.interaction?.triggers?.["cost-warning"];
+        const threshold = typeof triggerCfg === "object" ? (triggerCfg.threshold ?? 0.8) : 0.8;
+        if (totalCost >= costLimit * threshold) {
+          await checkCostWarning(
+            { featureName: ctx.feature, cost: totalCost, limit: costLimit },
+            ctx.config,
+            ctx.interactionChain,
+          );
+          warningSent = true;
+        }
+      }
 
       if (iter.prdDirty) {
         prd = await loadPRD(ctx.prdPath);
