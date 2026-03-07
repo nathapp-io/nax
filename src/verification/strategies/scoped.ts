@@ -29,6 +29,13 @@ function coerceSmartRunner(val: unknown) {
   return val as typeof DEFAULT_SMART_RUNNER_CONFIG;
 }
 
+function buildScopedCommand(testFiles: string[], baseCommand: string, testScopedTemplate?: string): string {
+  if (testScopedTemplate) {
+    return testScopedTemplate.replace("{{files}}", testFiles.join(" "));
+  }
+  return _scopedDeps.buildSmartTestCommand(testFiles, baseCommand);
+}
+
 export class ScopedStrategy implements IVerificationStrategy {
   readonly name = "scoped" as const;
 
@@ -48,7 +55,7 @@ export class ScopedStrategy implements IVerificationStrategy {
         logger.info("verify[scoped]", `Pass 1: path convention matched ${pass1Files.length} test files`, {
           storyId: ctx.storyId,
         });
-        effectiveCommand = _scopedDeps.buildSmartTestCommand(pass1Files, ctx.testCommand);
+        effectiveCommand = buildScopedCommand(pass1Files, ctx.testCommand, ctx.testScopedTemplate);
         isFullSuite = false;
       } else if (smartCfg.fallback === "import-grep") {
         const pass2Files = await _scopedDeps.importGrepFallback(sourceFiles, ctx.workdir, smartCfg.testFilePatterns);
@@ -56,7 +63,7 @@ export class ScopedStrategy implements IVerificationStrategy {
           logger.info("verify[scoped]", `Pass 2: import-grep matched ${pass2Files.length} test files`, {
             storyId: ctx.storyId,
           });
-          effectiveCommand = _scopedDeps.buildSmartTestCommand(pass2Files, ctx.testCommand);
+          effectiveCommand = buildScopedCommand(pass2Files, ctx.testCommand, ctx.testScopedTemplate);
           isFullSuite = false;
         }
       }

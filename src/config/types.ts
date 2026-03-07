@@ -140,6 +140,8 @@ export interface QualityConfig {
     typecheck?: string;
     lint?: string;
     test?: string;
+    /** Scoped test command template with {{files}} placeholder (e.g., "bun test --timeout=60000 {{files}}") */
+    testScoped?: string;
     /** Auto-fix lint errors (e.g., "biome check --fix") */
     lintFix?: string;
     /** Auto-fix formatting (e.g., "biome format --write") */

@@ -127,6 +127,8 @@
 
 ### Stories
 - [x] ~~**SFC-001:** Auto-write project-level status — remove `--status-file` flag, always write to `<workdir>/nax/status.json`~~
+- [ ] **BUG-043:** Fix scoped test command construction + add `testScoped` config with `{{files}}` template
+- [ ] **BUG-044:** Log scoped and full-suite test commands at info level in verify stage
 - [ ] **SFC-002:** Write feature-level status on run end — copy final snapshot to `<workdir>/nax/features/<feature>/status.json`
 - [ ] **SFC-003:** Align status readers — `nax status` + `nax diagnose` read from correct paths
 - [ ] **SFC-004:** Clean up dead code — remove `--status-file` option, `.nax-status.json` references
@@ -140,6 +142,7 @@
 **Spec:** [docs/specs/central-run-registry.md](specs/central-run-registry.md)
 
 ### Stories
+- [ ] **CRR-000:** `src/pipeline/subscribers/events-writer.ts` — `wireEventsWriter()`, writes lifecycle events to `~/.nax/events/<project>/events.jsonl` (machine-readable completion signal for watchdog/CI)
 - [ ] **CRR-001:** `src/pipeline/subscribers/registry.ts` — `wireRegistry()` subscriber, listens to `run:started`, writes `~/.nax/runs/<project>-<feature>-<runId>/meta.json` (path pointers only — no data duplication, no symlinks)
 - [ ] **CRR-002:** `src/commands/runs.ts` — `nax runs` CLI, reads `meta.json` → resolves live `status.json` from `statusPath`, displays table (project, feature, status, stories, duration, date). Filters: `--project`, `--last`, `--status`
 - [ ] **CRR-003:** `nax logs --run <runId>` — resolve run from global registry via `eventsDir`, stream logs from any directory
@@ -284,6 +287,9 @@
 
 - [x] ~~**BUG-037:** Test output summary (verify stage) captures precheck boilerplate instead of actual `bun test` failure. Fixed: `.slice(-20)` tail — shipped in v0.22.1 (re-arch phase 2).~~
 - [x] ~~**BUG-038:** `smart-runner` over-matching when global defaults change. Fixed by FEAT-010 (v0.21.0) — per-attempt `storyGitRef` baseRef tracking; `git diff <baseRef>..HEAD` prevents cross-story file pollution.~~
+- [ ] **BUG-043:** Scoped test command appends files instead of replacing path — `runners.ts:scoped()` concatenates `scopedTestPaths` to full-suite command, resulting in `bun test test/ --timeout=60000 /path/to/file.ts` (runs everything). Fix: use `testScoped` config with `{{files}}` template, fall back to `buildSmartTestCommand()` heuristic. **Location:** `src/verification/runners.ts:scoped()`
+- [ ] **BUG-044:** Scoped/full-suite test commands not logged — no visibility into what command was actually executed during verify stage. Fix: log at info level before execution.
+
 ### Features
 - [x] ~~`nax unlock` command~~
 - [x] ~~Constitution file support~~

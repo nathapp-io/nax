@@ -4,25 +4,34 @@
     "id": "run-2026-03-07T06-14-21-018Z",
     "feature": "status-file-consolidation",
     "startedAt": "2026-03-07T06:14:21.018Z",
-    "status": "completed",
+    "status": "crashed",
     "dryRun": false,
-    "pid": 217461
+    "pid": 217461,
+    "crashedAt": "2026-03-07T06:22:36.300Z",
+    "crashSignal": "SIGTERM"
   },
   "progress": {
     "total": 4,
-    "passed": 4,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 4
   },
   "cost": {
     "spent": 0,
     "limit": 3
   },
-  "current": null,
+  "current": {
+    "storyId": "SFC-002",
+    "title": "Write feature-level status on run end",
+    "complexity": "medium",
+    "tddStrategy": "test-after",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
   "iterations": 0,
-  "updatedAt": "2026-03-07T06:19:54.528Z",
-  "durationMs": 1000,
-  "lastHeartbeat": "2026-03-07T06:19:34.987Z"
+  "updatedAt": "2026-03-07T06:22:36.300Z",
+  "durationMs": 495282
 }

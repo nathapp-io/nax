@@ -31,6 +31,18 @@ function coerceSmartTestRunner(val: boolean | SmartTestRunnerConfig | undefined)
   return val;
 }
 
+/**
+ * Build the scoped test command from discovered test files.
+ * Uses the testScoped template (with {{files}} placeholder) if configured,
+ * otherwise falls back to buildSmartTestCommand heuristic.
+ */
+function buildScopedCommand(testFiles: string[], baseCommand: string, testScopedTemplate?: string): string {
+  if (testScopedTemplate) {
+    return testScopedTemplate.replace("{{files}}", testFiles.join(" "));
+  }
+  return _smartRunnerDeps.buildSmartTestCommand(testFiles, baseCommand);
+}
+
 export const verifyStage: PipelineStage = {
   name: "verify",
   enabled: () => true,
@@ -46,6 +58,7 @@ export const verifyStage: PipelineStage = {
 
     // Skip verification if no test command is configured
     const testCommand = ctx.config.review?.commands?.test ?? ctx.config.quality.commands.test;
+    const testScopedTemplate = ctx.config.quality.commands.testScoped;
     if (!testCommand) {
       logger.debug("verify", "Skipping verification (no test command configured)", { storyId: ctx.story.id });
       return { action: "continue" };
@@ -68,7 +81,7 @@ export const verifyStage: PipelineStage = {
         logger.info("verify", `[smart-runner] Pass 1: path convention matched ${pass1Files.length} test files`, {
           storyId: ctx.story.id,
         });
-        effectiveCommand = _smartRunnerDeps.buildSmartTestCommand(pass1Files, testCommand);
+        effectiveCommand = buildScopedCommand(pass1Files, testCommand, testScopedTemplate);
         isFullSuite = false;
       } else if (smartRunnerConfig.fallback === "import-grep") {
         // Pass 2: import-grep fallback
@@ -81,7 +94,7 @@ export const verifyStage: PipelineStage = {
           logger.info("verify", `[smart-runner] Pass 2: import-grep matched ${pass2Files.length} test files`, {
             storyId: ctx.story.id,
           });
-          effectiveCommand = _smartRunnerDeps.buildSmartTestCommand(pass2Files, testCommand);
+          effectiveCommand = buildScopedCommand(pass2Files, testCommand, testScopedTemplate);
           isFullSuite = false;
         }
       }
@@ -101,6 +114,12 @@ export const verifyStage: PipelineStage = {
         storyId: ctx.story.id,
       });
     }
+
+    // BUG-044: Log the effective command for observability
+    logger.info("verify", isFullSuite ? "Running full suite" : "Running scoped tests", {
+      storyId: ctx.story.id,
+      command: effectiveCommand,
+    });
 
     // Use unified regression gate (includes 2s wait for agent process cleanup)
     const result = await _verifyDeps.regression({

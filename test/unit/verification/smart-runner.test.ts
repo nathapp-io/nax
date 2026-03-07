@@ -50,6 +50,22 @@ describe("buildSmartTestCommand", () => {
     );
     expect(result).toBe("bun test --coverage test/unit/foo.test.ts");
   });
+
+  test("preserves trailing flags after path argument (BUG-043)", () => {
+    const result = buildSmartTestCommand(
+      ["test/unit/foo.test.ts"],
+      "bun test test/ --timeout=60000",
+    );
+    expect(result).toBe("bun test test/unit/foo.test.ts --timeout=60000");
+  });
+
+  test("preserves trailing flags with multiple test files", () => {
+    const result = buildSmartTestCommand(
+      ["test/unit/foo.test.ts", "test/unit/bar.test.ts"],
+      "bun test test/ --timeout=60000 --bail",
+    );
+    expect(result).toBe("bun test test/unit/foo.test.ts test/unit/bar.test.ts --timeout=60000 --bail");
+  });
 });
 
 // ---------------------------------------------------------------------------

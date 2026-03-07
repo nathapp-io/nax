@@ -223,13 +223,32 @@ Config is layered — project overrides global:
   },
   "quality": {
     "commands": {
-      "test": "bun test",
+      "test": "bun test test/ --timeout=60000",
+      "testScoped": "bun test --timeout=60000 {{files}}",
       "lint": "bun run lint",
-      "typecheck": "bun x tsc --noEmit"
+      "typecheck": "bun x tsc --noEmit",
+      "lintFix": "bun x biome check --fix src/",
+      "formatFix": "bun x biome format --write src/"
     }
   }
 }
 ```
+
+### Scoped Test Command
+
+By default, nax runs scoped tests (per-story verification) by appending discovered test files to the `test` command. This can produce incorrect commands when the base command includes a directory path (e.g. `bun test test/`), since the path is not replaced — it is appended alongside it.
+
+Use `testScoped` to define the exact scoped test command with a `{{files}}` placeholder:
+
+| Runner | `test` | `testScoped` |
+|:-------|:-------|:-------------|
+| Bun | `bun test test/ --timeout=60000` | `bun test --timeout=60000 {{files}}` |
+| Jest | `npx jest` | `npx jest -- {{files}}` |
+| pytest | `pytest tests/` | `pytest {{files}}` |
+| cargo | `cargo test` | `cargo test {{files}}` |
+| go | `go test ./...` | `go test {{files}}` |
+
+If `testScoped` is not configured, nax falls back to a heuristic that replaces the last path-like token in the `test` command. **Recommended:** always configure `testScoped` explicitly to avoid surprises.
 
 **TDD strategy options:**
 

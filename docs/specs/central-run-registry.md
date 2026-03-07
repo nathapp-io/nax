@@ -1,6 +1,6 @@
 # Central Run Registry — Spec
 
-**Version:** v0.23.0
+**Version:** v0.24.0
 **Status:** Planned
 
 ---
@@ -59,6 +59,18 @@ A global `~/.nax/runs/` registry that indexes every nax run via path references 
 ---
 
 ## Implementation
+
+### CRR-000: Events File Writer (new subscriber)
+
+- New module: `src/pipeline/subscribers/events-writer.ts` — `wireEventsWriter()`
+- Writes to `~/.nax/events/<project>/events.jsonl` — one JSON line per lifecycle event
+- Listens to event bus: `run:started`, `story:started`, `story:completed`, `story:failed`, `run:completed`
+- Each line: `{"ts", "event", "runId", "feature", "project", "storyId?"}`
+- `run:completed` emits an `on-complete` event — used by external tooling (watchdog) to distinguish clean exit from crash
+- Best-effort: never throw/block the main run on write failure
+- Directory created on first write
+
+**Motivation:** External tools (nax-watchdog, CI integrations) need a reliable signal that nax exited gracefully. Currently nax writes no machine-readable completion event, causing false crash reports. This also provides the foundation for CRR — `meta.json` can reference the events file path.
 
 ### CRR-001: Registry Writer (new subscriber)
 
