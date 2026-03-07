@@ -16,6 +16,7 @@ import { join } from "node:path";
 
 const TEST_WORKSPACE = join(import.meta.dir, "../../..", "tmp", "cli-logs-test");
 const NAX_BIN = join(import.meta.dir, "..", "..", "..", "bin", "nax.ts");
+const REGISTRY_DIR = join(TEST_WORKSPACE, "registry");
 
 function setupTestProject(featureName: string): string {
   const projectDir = join(TEST_WORKSPACE, `project-${Date.now()}`);
@@ -24,6 +25,7 @@ function setupTestProject(featureName: string): string {
   const runsDir = join(featureDir, "runs");
 
   mkdirSync(runsDir, { recursive: true });
+  mkdirSync(REGISTRY_DIR, { recursive: true });
 
   writeFileSync(join(naxDir, "config.json"), JSON.stringify({ feature: featureName }));
 
@@ -62,7 +64,24 @@ function setupTestProject(featureName: string): string {
     },
   ];
 
-  writeFileSync(join(runsDir, "2026-02-27T12-00-00.jsonl"), logs.map((l) => JSON.stringify(l)).join("\n"));
+  const runId = "2026-02-27T12-00-00";
+  writeFileSync(join(runsDir, `${runId}.jsonl`), logs.map((l) => JSON.stringify(l)).join("\n"));
+
+  // Create matching registry entry so --run <runId> resolves via registry
+  const entryDir = join(REGISTRY_DIR, `testproject-${featureName}-${runId}`);
+  mkdirSync(entryDir, { recursive: true });
+  writeFileSync(
+    join(entryDir, "meta.json"),
+    JSON.stringify({
+      runId,
+      project: "testproject",
+      feature: featureName,
+      workdir: projectDir,
+      statusPath: join(projectDir, "nax", "features", featureName, "status.json"),
+      eventsDir: runsDir,
+      registeredAt: "2026-02-27T12:00:00.000Z",
+    }),
+  );
 
   return projectDir;
 }
@@ -75,11 +94,15 @@ function cleanup(dir: string) {
 
 const CMD_TIMEOUT_MS = 15_000; // 15s per command — fast-fail instead of waiting full 60s
 
-function runNaxCommand(args: string[], cwd?: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+function runNaxCommand(
+  args: string[],
+  cwd?: string,
+  extraEnv?: Record<string, string>,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolve, reject) => {
     const proc = spawn("bun", ["run", NAX_BIN, ...args], {
       cwd: cwd || process.cwd(),
-      env: process.env,
+      env: { ...process.env, ...extraEnv },
     });
 
     let stdout = "";
@@ -156,22 +179,24 @@ describe("nax logs CLI integration", () => {
   });
 
   describe("--run flag", () => {
-    test("nax logs --run <timestamp> selects specific run", async () => {
-      const result = await runNaxCommand(["logs", "--run", "2026-02-27T12-00-00", "-d", projectDir]);
+    const registryEnv = { NAX_RUNS_DIR: REGISTRY_DIR };
+
+    test("nax logs --run <runId> displays logs from matching registry entry", async () => {
+      const result = await runNaxCommand(["logs", "--run", "2026-02-27T12-00-00"], undefined, registryEnv);
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain("run-001");
     });
 
     test("nax logs -r is shorthand for --run", async () => {
-      const result = await runNaxCommand(["logs", "-r", "2026-02-27T12-00-00", "-d", projectDir]);
+      const result = await runNaxCommand(["logs", "-r", "2026-02-27T12-00-00"], undefined, registryEnv);
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain("run-001");
     });
 
-    test("nax logs --run fails when run not found", async () => {
-      const result = await runNaxCommand(["logs", "--run", "2026-01-01T00-00-00", "-d", projectDir]);
+    test("nax logs --run fails when run not found in registry", async () => {
+      const result = await runNaxCommand(["logs", "--run", "2026-01-01T00-00-00"], undefined, registryEnv);
 
       expect(result.exitCode).not.toBe(0);
       expect(result.stderr).toContain("not found");
@@ -256,6 +281,7 @@ describe("nax logs CLI integration", () => {
       // We verify the process starts and produces stdout output.
       const proc = spawn("bun", ["run", NAX_BIN, "logs", "--follow", "-d", projectDir], {
         cwd: process.cwd(),
+        env: process.env,
       });
 
       let started = false;
@@ -275,6 +301,7 @@ describe("nax logs CLI integration", () => {
     test("nax logs -f is shorthand for --follow", async () => {
       const proc = spawn("bun", ["run", NAX_BIN, "logs", "-f", "-d", projectDir], {
         cwd: process.cwd(),
+        env: process.env,
       });
 
       let started = false;
@@ -306,15 +333,11 @@ describe("nax logs CLI integration", () => {
     });
 
     test("--run + --story", async () => {
-      const result = await runNaxCommand([
-        "logs",
-        "--run",
-        "2026-02-27T12-00-00",
-        "--story",
-        "US-001",
-        "-d",
-        projectDir,
-      ]);
+      const result = await runNaxCommand(
+        ["logs", "--run", "2026-02-27T12-00-00", "--story", "US-001"],
+        undefined,
+        { NAX_RUNS_DIR: REGISTRY_DIR },
+      );
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain("US-001");

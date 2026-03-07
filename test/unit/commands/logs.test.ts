@@ -16,7 +16,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type LogsOptions, logsCommand } from "../../../src/commands/logs";
+import { type LogsOptions, _deps, logsCommand } from "../../../src/commands/logs";
 
 const TEST_WORKSPACE = join(import.meta.dir, "..", "..", "tmp", "logs-test");
 
@@ -110,13 +110,43 @@ function cleanup(projectDir: string) {
 
 describe("logsCommand", () => {
   let projectDir: string;
+  let registryDir: string;
+  let originalGetRunsDir: () => string;
 
   beforeEach(() => {
     projectDir = setupTestProject("test-feature");
+
+    // Set up a temp registry dir and override _deps
+    registryDir = join(TEST_WORKSPACE, `registry-${Date.now()}`);
+    mkdirSync(registryDir, { recursive: true });
+    originalGetRunsDir = _deps.getRunsDir;
+    _deps.getRunsDir = () => registryDir;
+
+    // Create registry entries pointing to the test runs
+    const runsDir = join(projectDir, "nax", "features", "test-feature", "runs");
+
+    for (const runId of ["2026-02-27T10-00-00", "2026-02-26T09-00-00"]) {
+      const entryDir = join(registryDir, `testproject-test-feature-${runId}`);
+      mkdirSync(entryDir, { recursive: true });
+      writeFileSync(
+        join(entryDir, "meta.json"),
+        JSON.stringify({
+          runId,
+          project: "testproject",
+          feature: "test-feature",
+          workdir: projectDir,
+          statusPath: join(projectDir, "nax", "features", "test-feature", "status.json"),
+          eventsDir: runsDir,
+          registeredAt: "2026-02-27T10:00:00.000Z",
+        }),
+      );
+    }
   });
 
   afterEach(() => {
+    _deps.getRunsDir = originalGetRunsDir;
     cleanup(projectDir);
+    cleanup(registryDir);
   });
 
   describe("default behavior (latest run formatted)", () => {
@@ -259,33 +289,46 @@ describe("logsCommand", () => {
     });
   });
 
-  describe("--run (specific run selection)", () => {
-    test("displays specific run by timestamp", async () => {
-      const options: LogsOptions = {
-        dir: projectDir,
-        run: "2026-02-26T09-00-00",
-      };
+  describe("--run (registry-based run selection)", () => {
+    test("displays run resolved from central registry by exact runId", async () => {
+      const options: LogsOptions = { run: "2026-02-26T09-00-00" };
 
-      // Should display the older run
       await expect(logsCommand(options)).resolves.toBeUndefined();
     });
 
-    test("throws when specified run does not exist", async () => {
-      const options: LogsOptions = {
-        dir: projectDir,
-        run: "2026-01-01T00-00-00",
-      };
-
-      await expect(logsCommand(options)).rejects.toThrow(/run not found/i);
-    });
-
-    test("works with partial timestamp matching", async () => {
-      const options: LogsOptions = {
-        dir: projectDir,
-        run: "2026-02-26",
-      };
+    test("displays run resolved from central registry by prefix match", async () => {
+      const options: LogsOptions = { run: "2026-02-26" };
 
       // Should match "2026-02-26T09-00-00"
+      await expect(logsCommand(options)).resolves.toBeUndefined();
+    });
+
+    test("throws with clear error when runId not found in registry", async () => {
+      const options: LogsOptions = { run: "2026-01-01T00-00-00" };
+
+      await expect(logsCommand(options)).rejects.toThrow(/run not found in registry/i);
+    });
+
+    test("shows unavailable message when eventsDir does not exist", async () => {
+      // Add a registry entry pointing to a non-existent eventsDir
+      const entryDir = join(registryDir, "proj-feat-ghost-run");
+      mkdirSync(entryDir, { recursive: true });
+      writeFileSync(
+        join(entryDir, "meta.json"),
+        JSON.stringify({
+          runId: "ghost-run",
+          project: "proj",
+          feature: "feat",
+          workdir: "/nonexistent",
+          statusPath: "/nonexistent/nax/features/feat/status.json",
+          eventsDir: "/nonexistent/nax/features/feat/runs",
+          registeredAt: "2026-01-01T00:00:00.000Z",
+        }),
+      );
+
+      const options: LogsOptions = { run: "ghost-run" };
+
+      // Should resolve without throwing — prints unavailable message
       await expect(logsCommand(options)).resolves.toBeUndefined();
     });
   });
@@ -350,7 +393,6 @@ describe("logsCommand", () => {
 
     test("--run + --story + --level", async () => {
       const options: LogsOptions = {
-        dir: projectDir,
         run: "2026-02-27T10-00-00",
         story: "US-001",
         level: "info",
@@ -361,7 +403,6 @@ describe("logsCommand", () => {
 
     test("all filters combined", async () => {
       const options: LogsOptions = {
-        dir: projectDir,
         run: "2026-02-27T10-00-00",
         story: "US-001",
         level: "info",

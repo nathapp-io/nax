@@ -686,7 +686,7 @@ program
   .option("-s, --story <id>", "Filter to specific story")
   .option("--level <level>", "Filter by log level (debug|info|warn|error)")
   .option("-l, --list", "List all runs in table format", false)
-  .option("-r, --run <timestamp>", "Select specific run by timestamp")
+  .option("-r, --run <runId>", "Select run by run ID from central registry (global)")
   .option("-j, --json", "Output raw JSONL", false)
   .action(async (options) => {
     let workdir: string;
