@@ -3,12 +3,11 @@
  * Integration Tests: Status File — runner + CLI (T2)
  *
  * Verifies:
- * - RunOptions.statusFile?: string exists
- * - Status file written at all 4 write points (dry-run path)
- * - Status file NOT written when statusFile omitted
+ * - RunOptions.statusFile: string is required
+ * - Status file always written at all 4 write points (dry-run path)
  * - Valid JSON at each stage, NaxStatusFile schema correct
  * - completed status, progress counts, null current at end
- * - --status-file CLI option wiring (type-level)
+ * - CLI automatically computes statusFile to <workdir>/nax/status.json
  */
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
@@ -53,13 +52,13 @@ class MockAgentAdapter implements AgentAdapter {
     return [this.binary];
   }
   async run(_o: AgentRunOptions): Promise<AgentResult> {
-    return { success: true, exitCode: 0, output: "", durationMs: 10, estimatedCost: 0 };
+    return { success: true, exitCode: 0, output: "", durationMs: 10, estimatedCost: 0, rateLimited: false };
   }
   async plan(_o: PlanOptions): Promise<PlanResult> {
-    return { specContent: "# Feature\n", success: true };
+    return { specContent: "# Feature\n" };
   }
   async decompose(_o: DecomposeOptions): Promise<DecomposeResult> {
-    return { stories: [], success: true };
+    return { stories: [] };
   }
 }
 
@@ -143,7 +142,7 @@ async function runWithStatus(feature: string, storyCount = 1, extraOpts: Partial
 // RunOptions type-level checks
 // ============================================================================
 describe("RunOptions.statusFile", () => {
-  it("is optional (can be omitted)", () => {
+  it("is required", () => {
     const opts: RunOptions = {
       prdPath: "/tmp/prd.json",
       workdir: "/tmp",
@@ -151,52 +150,25 @@ describe("RunOptions.statusFile", () => {
       hooks: { hooks: {} },
       feature: "test",
       dryRun: true,
+      statusFile: "/tmp/nax/status.json",
     };
-    expect(opts.statusFile).toBeUndefined();
-  });
-
-  it("accepts a string value", () => {
-    const opts: RunOptions = {
-      prdPath: "/tmp/prd.json",
-      workdir: "/tmp",
-      config: createTestConfig(),
-      hooks: { hooks: {} },
-      feature: "test",
-      dryRun: true,
-      statusFile: "/tmp/nax-status.json",
-    };
-    expect(opts.statusFile).toBe("/tmp/nax-status.json");
+    expect(opts.statusFile).toBe("/tmp/nax/status.json");
   });
 });
 
 // ============================================================================
-// No status file when option omitted (regression test)
+// Status file is always written when provided
 // ============================================================================
-describe("status file not written when omitted", () => {
+describe("status file always written when provided", () => {
   let tmpDir: string;
   afterEach(async () => {
     if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("does not create any .json file in tmpDir", async () => {
-    const setup = await setupDir("no-sf", 1);
+  it("writes status file to provided path during dry-run", async () => {
+    const { setup, statusFilePath } = await runWithStatus("sf-always-written", 1);
     tmpDir = setup.tmpDir;
-    const before = await fs.readdir(setup.tmpDir);
-
-    await run({
-      prdPath: setup.prdPath,
-      workdir: setup.tmpDir,
-      config: createTestConfig(),
-      hooks: { hooks: {} },
-      feature: "no-sf",
-      featureDir: setup.featureDir,
-      dryRun: true, // no statusFile
-      skipPrecheck: true,
-    });
-
-    const after = await fs.readdir(setup.tmpDir);
-    const newJson = after.filter((f) => f.endsWith(".json") && !before.includes(f));
-    expect(newJson).toHaveLength(0);
+    expect(nodeFs.existsSync(statusFilePath)).toBe(true);
   });
 });
 
@@ -299,28 +271,19 @@ describe("status file written during dry-run", () => {
 });
 
 // ============================================================================
-// CLI --status-file wiring (type check only)
+// CLI status file wiring (type check only)
 // ============================================================================
-describe("CLI --status-file wiring", () => {
-  it("RunOptions.statusFile is passed through correctly", () => {
-    const withFile: RunOptions = {
+describe("CLI auto-computed status file", () => {
+  it("RunOptions.statusFile is required and always provided", () => {
+    const opts: RunOptions = {
       prdPath: "/tmp/prd.json",
       workdir: "/tmp",
       config: createTestConfig(),
       hooks: { hooks: {} },
       feature: "test",
       dryRun: false,
-      statusFile: "/tmp/status.json",
+      statusFile: "/tmp/nax/status.json",
     };
-    const withoutFile: RunOptions = {
-      prdPath: "/tmp/prd.json",
-      workdir: "/tmp",
-      config: createTestConfig(),
-      hooks: { hooks: {} },
-      feature: "test",
-      dryRun: false,
-    };
-    expect(withFile.statusFile).toBe("/tmp/status.json");
-    expect(withoutFile.statusFile).toBeUndefined();
+    expect(opts.statusFile).toBe("/tmp/nax/status.json");
   });
 });

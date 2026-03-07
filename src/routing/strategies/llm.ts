@@ -116,15 +116,18 @@ async function callLlmOnce(modelTier: string, prompt: string, config: NaxConfig,
     return result;
   } catch (err) {
     clearTimeout(timeoutId);
+    // Silence the floating outputPromise — after kill() the proc exits non-zero,
+    // causing outputPromise to throw. Without this, it becomes an unhandled rejection.
+    outputPromise.catch(() => {});
     try {
       proc.stdout.cancel();
     } catch {
-      // ignore cancel errors
+      // ignore cancel errors — stream may already be locked by Response
     }
     try {
       proc.stderr.cancel();
     } catch {
-      // ignore cancel errors
+      // ignore cancel errors — stream may already be locked by Response
     }
     proc.kill();
     throw err;

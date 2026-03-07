@@ -39,7 +39,7 @@
 
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import chalk from "chalk";
 import { Command } from "commander";
 
@@ -217,7 +217,6 @@ program
   .option("--silent", "Silent mode (errors only)", false)
   .option("--json", "JSON mode (raw JSONL output to stdout)", false)
   .option("-d, --dir <path>", "Working directory", process.cwd())
-  .option("--status-file <path>", "Write machine-readable JSON status file (updated during run)")
   .option("--skip-precheck", "Skip precheck validations (advanced users only)", false)
   .action(async (options) => {
     // Validate directory path
@@ -331,8 +330,8 @@ program
       console.log(chalk.dim("   [Headless mode — pipe output]"));
     }
 
-    // Resolve --status-file relative to cwd (absolute paths unchanged)
-    const statusFilePath = options.statusFile ? resolve(process.cwd(), options.statusFile) : undefined;
+    // Compute status file path: <workdir>/nax/status.json
+    const statusFilePath = join(workdir, "nax", "status.json");
 
     // Parse --parallel option
     let parallel: number | undefined;

@@ -50,7 +50,7 @@ export interface StatusWriterContext {
  *   await sw.update(totalCost, iterations);
  */
 export class StatusWriter {
-  private readonly statusFile: string | undefined;
+  private readonly statusFile: string;
   private readonly costLimit: number | null;
   private readonly ctx: StatusWriterContext;
 
@@ -60,7 +60,7 @@ export class StatusWriter {
   private _currentStory: RunStateSnapshot["currentStory"] = null;
   private _consecutiveWriteFailures = 0; // BUG-2: Track consecutive write failures
 
-  constructor(statusFile: string | undefined, config: NaxConfig, ctx: StatusWriterContext) {
+  constructor(statusFile: string, config: NaxConfig, ctx: StatusWriterContext) {
     this.statusFile = statusFile;
     this.costLimit = config.execution.costLimit === Number.POSITIVE_INFINITY ? null : config.execution.costLimit;
     this.ctx = ctx;
@@ -107,7 +107,7 @@ export class StatusWriter {
   /**
    * Write the current status to disk (atomic via .tmp + rename).
    *
-   * No-ops if statusFile was not provided or _prd has not been set.
+   * No-ops if _prd has not been set.
    * On failure, logs a warning/error and increments the BUG-2 failure counter.
    * Counter resets to 0 on next successful write.
    *
@@ -116,7 +116,7 @@ export class StatusWriter {
    * @param overrides  - Optional partial snapshot overrides (spread last)
    */
   async update(totalCost: number, iterations: number, overrides: Partial<RunStateSnapshot> = {}): Promise<void> {
-    if (!this.statusFile || !this._prd) return;
+    if (!this._prd) return;
     const safeLogger = getSafeLogger();
     try {
       const base = this.getSnapshot(totalCost, iterations);
