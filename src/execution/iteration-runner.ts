@@ -66,6 +66,7 @@ export async function runIteration(
     stories: storiesToExecute,
     routing,
     workdir: ctx.workdir,
+    prdPath: ctx.prdPath,
     featureDir: ctx.featureDir,
     hooks: ctx.hooks,
     plugins: ctx.pluginRegistry,

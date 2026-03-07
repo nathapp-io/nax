@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-07T13-49-17-400Z",
-    "feature": "trigger-completion",
-    "startedAt": "2026-03-07T13:49:17.400Z",
-    "status": "completed",
+    "id": "run-2026-03-07T16-14-49-336Z",
+    "feature": "routing-persistence",
+    "startedAt": "2026-03-07T16:14:49.336Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 97007
+    "pid": 3412
   },
   "progress": {
-    "total": 6,
-    "passed": 6,
+    "total": 4,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 4
   },
   "cost": {
-    "spent": 3.85387425,
+    "spent": 0,
     "limit": 8
   },
-  "current": null,
-  "iterations": 7,
-  "updatedAt": "2026-03-07T14:58:57.404Z",
-  "durationMs": 4180004
+  "current": {
+    "storyId": "RRP-001",
+    "title": "Persist initial routing to prd.json on first classification",
+    "complexity": "medium",
+    "tddStrategy": "test-after",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 1,
+  "updatedAt": "2026-03-07T16:30:19.199Z",
+  "durationMs": 929863,
+  "lastHeartbeat": "2026-03-07T16:30:19.199Z"
 }

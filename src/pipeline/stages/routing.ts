@@ -19,6 +19,7 @@
 
 import { isGreenfieldStory } from "../../context/greenfield";
 import { getLogger } from "../../logger";
+import { savePRD } from "../../prd";
 import { complexityToModelTier, routeStory } from "../../routing";
 import { clearCache, routeBatch } from "../../routing/strategies/llm";
 import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
@@ -50,8 +51,16 @@ export const routingStage: PipelineStage = {
         );
       }
     } else {
-      // Fresh classification
+      // Fresh classification — persist routing to prd.json so resume/crash uses the same values
       routing = await _routingDeps.routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
+      ctx.story.routing = {
+        complexity: routing.complexity as import("../../config").Complexity,
+        testStrategy: routing.testStrategy as import("../../config").TestStrategy,
+        reasoning: routing.reasoning ?? "",
+      };
+      if (ctx.prdPath) {
+        await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
+      }
     }
 
     // BUG-010: Greenfield detection — force test-after if no test files exist
@@ -97,4 +106,5 @@ export const _routingDeps = {
   complexityToModelTier,
   isGreenfieldStory,
   clearCache,
+  savePRD,
 };
