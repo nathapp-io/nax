@@ -101,15 +101,19 @@ export async function executeWithTimeout(
   const timeoutMs = timeoutSeconds * 1000;
 
   let timedOut = false;
+  const timer = { id: undefined as ReturnType<typeof setTimeout> | undefined };
 
-  const timeoutPromise = (async () => {
-    await Bun.sleep(timeoutMs);
-    timedOut = true;
-  })();
+  const timeoutPromise = new Promise<void>((resolve) => {
+    timer.id = setTimeout(() => {
+      timedOut = true;
+      resolve();
+    }, timeoutMs);
+  });
 
   const processPromise = proc.exited;
 
   const raceResult = await Promise.race([processPromise, timeoutPromise]);
+  clearTimeout(timer.id);
 
   if (timedOut) {
     const pid = proc.pid;
