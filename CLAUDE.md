@@ -1,6 +1,16 @@
 # nax — AI Coding Agent Orchestrator
 
-Bun + TypeScript CLI that orchestrates AI coding agents with model routing, TDD strategies, and lifecycle hooks.
+Bun + TypeScript CLI that orchestrates AI coding agents (Claude Code) with model-tier routing, TDD strategies, plugin hooks, and a Central Run Registry.
+
+## Tech Stack
+
+| Layer | Choice |
+|:------|:-------|
+| Runtime | **Bun 1.3.7+** — Bun-native APIs only, no Node.js equivalents |
+| Language | **TypeScript strict** — no `any` without explicit justification |
+| Test | **`bun:test`** — describe/test/expect |
+| Lint/Format | **Biome** (`bun run lint`) |
+| Build | `bun run build` |
 
 ## Git Identity
 
@@ -9,16 +19,24 @@ git config user.name "subrina.tai"
 git config user.email "subrina8080@outlook.com"
 ```
 
-## Commands
+## Verification Gates — Run After Every Change
 
 ```bash
-bun test                          # Full test suite
-bun test test/unit/foo.test.ts    # Specific file
-bun run typecheck                 # tsc --noEmit
-bun run lint                      # Biome
-bun run build                     # Production build
-bun test && bun run typecheck     # Pre-commit check
+bun run typecheck                           # tsc --noEmit — run after type changes
+bun run lint                                # Biome — run after every file edit
+bun test test/unit/foo.test.ts              # Targeted — run during iteration
+NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000 --bail  # Full suite — run before commit
 ```
+
+**Never assume code is correct because it looks right. Run the verifier.**
+
+## Engineering Persona
+
+- **Senior Engineer mindset**: check edge cases, null/undefined, race conditions, and error states.
+- **TDD first**: write or update tests before implementation when the story calls for it.
+- **Fail fast**: run `typecheck` + `lint` after every 2–3 file changes, not at the end.
+- **Stuck rule**: if the same test fails 2+ iterations, stop, summarise failed attempts, reassess approach.
+- **Never push to remote** — the human reviews and pushes.
 
 ## Architecture
 
@@ -33,67 +51,66 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator only]
   → registry.teardownAll()
 ```
 
-### Key Directories
+### Key Source Directories
 
 | Directory | Purpose |
-|:---|:---|
-| `src/execution/` | Runner loop, agent adapters, TDD strategies |
-| `src/execution/lifecycle/` | Lifecycle hooks, startup/teardown |
-| `src/execution/escalation/` | Escalation logic on repeated failures |
-| `src/execution/acceptance/` | Acceptance-loop iteration |
-| `src/pipeline/stages/` | Pipeline stages |
-| `src/routing/` | Model routing — tier classification, router chain |
+|:----------|:--------|
+| `src/execution/` | Runner loop, agent adapters, escalation, lifecycle hooks |
+| `src/execution/escalation/` | Tier escalation on repeated failures |
+| `src/pipeline/stages/` | One file per pipeline stage |
+| `src/pipeline/subscribers/` | Event-driven hooks (interaction, hooks.ts) |
+| `src/routing/` | Model-tier routing — keyword, LLM, plugin chain |
+| `src/routing/strategies/` | keyword.ts, llm.ts, llm-prompts.ts |
+| `src/interaction/` | Interaction triggers + plugins (Auto, Telegram, Webhook) |
 | `src/plugins/` | Plugin system — loader, registry, validator |
-| `src/config/` | Config schema, loader (layered global + project) |
+| `src/verification/` | Test execution, smart runner, scoped runner |
+| `src/metrics/` | StoryMetrics, aggregator, tracker |
+| `src/config/` | Config schema + layered loader (global → project) |
 | `src/agents/adapters/` | Agent integrations (Claude Code) |
-| `src/cli/` + `src/commands/` | CLI commands (check both locations) |
-| `src/verification/` | Test execution, smart test runner |
-| `src/review/` | Post-verify review (typecheck, lint, plugin reviewers) |
+| `src/cli/` + `src/commands/` | CLI commands — check both locations |
+| `src/prd/` | PRD types, loader, story state machine |
+| `src/hooks/` | Lifecycle hook wiring |
+| `src/constitution/` | Constitution loader + injection |
+| `src/analyze/` | `nax analyze` — story classifier |
 
-### Plugin System (4 extension points)
+### Plugin Extension Points
 
-| Extension | Interface | Integration Point |
-|:---|:---|:---|
-| Context Provider | `IContextProvider` | `context.ts` stage — injects into prompts |
-| Reviewer | `IReviewer` | Review stage — after built-in checks |
-| Reporter | `IReporter` | Runner — onRunStart/onStoryComplete/onRunEnd |
-| Router | `IRoutingStrategy` | Router chain — overrides model routing |
+| Interface | Loaded By | Purpose |
+|:----------|:----------|:--------|
+| `IContextProvider` | `context.ts` stage | Inject context into agent prompts |
+| `IReviewer` | Review stage | Post-verify quality checks |
+| `IReporter` | Runner | onRunStart / onStoryComplete / onRunEnd events |
+| `IRoutingStrategy` | Router chain | Override model-tier routing |
 
 ### Config
 
 - Global: `~/.nax/config.json` → Project: `<workdir>/nax/config.json`
-- Schema: `src/config/schema.ts` — no hardcoded flags or credentials
+- Schema: `src/config/schema.ts` — no hardcoded flags or credentials anywhere
 
-## Design Principles
+## Workflow Protocol
 
-- **`runner.ts` is a thin orchestrator.** Never add new concerns — extract into focused sub-modules.
-- **`src/verification/` is the single test execution layer.** Don't duplicate test invocation in pipeline stages.
-- **Closures over values** for long-lived handlers (crash handlers, timers) — prevents stale state capture.
-- **New agent adapters** go in `src/agents/adapters/<name>.ts` — never inline in runner or existing adapters.
-
-## Rules
-
-Detailed coding standards, test architecture, and forbidden patterns are in `.claude/rules/`. Claude Code loads these automatically.
-
+1. **Explore first**: use `grep`, `cat`, and solograph MCP to understand context before writing code.
+2. **Plan complex tasks**: for multi-file changes, write a short plan before implementing.
+3. **Implement in small chunks**: one logical concern per commit.
+4. **Verify after each chunk**: `typecheck` + `lint` + targeted test.
+5. **Full suite before done**: `NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000 --bail`
 
 ## Code Intelligence (Solograph MCP)
 
-Use **solograph** MCP tools on-demand for code understanding. Do not use web_search, kb_search, or source_* tools.
+Use **solograph** MCP tools on-demand — do not use `web_search` or `kb_search`.
 
-| Tool | When to use |
-|:-----|:------------|
-| `project_code_search` | Find existing patterns, symbols, or implementations before writing new code |
-| `codegraph_explain` | Get architecture overview of nax before tackling unfamiliar areas |
-| `codegraph_query` | Cypher queries — dependency analysis, impact analysis, hub files |
-| `codegraph_stats` | Quick graph stats (file/symbol counts) |
-| `codegraph_shared` | Find packages shared across projects |
-| `session_search` | Search prior Claude Code session history for relevant context |
-| `project_info` | Project registry info |
-| `project_code_reindex` | Reindex after creating or deleting source files, or major refactors |
+| Tool | When |
+|:-----|:-----|
+| `project_code_search` | Find existing patterns before writing new code |
+| `codegraph_explain` | Architecture overview before tackling unfamiliar areas |
+| `codegraph_query` | Dependency/impact analysis (Cypher) |
+| `project_code_reindex` | After creating or deleting source files |
 
-Single source of truth: VPS solograph instance (Mac01 tunnels to VPS — same data either way).
-## IMPORTANT
+## Coding Standards & Forbidden Patterns
 
-- Do NOT push to remote — let the human review and push.
-- Never hardcode API keys — agents use their own auth from env.
-- Agent adapters spawn external processes — always handle timeouts and cleanup.
+Full rules are in `.claude/rules/` (loaded automatically):
+
+- `01-project-conventions.md` — Bun-native APIs, 400-line limit, barrel imports, logging, commits
+- `02-test-architecture.md` — directory mirroring, placement rules, file naming
+- `03-test-writing.md` — `_deps` injection pattern, mock discipline, CI guards
+- `04-forbidden-patterns.md` — banned APIs and test anti-patterns with alternatives
