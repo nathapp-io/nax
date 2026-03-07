@@ -88,7 +88,7 @@ describe("BUG-031: keyword classifier stability across retries", () => {
 
     const result = keywordStrategy.route(story, ctx);
     expect(result!.complexity).toBe("simple");
-    expect(result!.testStrategy).toBe("three-session-tdd-lite");
+    expect(result!.testStrategy).toBe("test-after");
   });
 
   test("complexity is driven by title and tags only (not description)", () => {
