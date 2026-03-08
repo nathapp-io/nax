@@ -57,8 +57,8 @@
 **Status:** 🔜 Planned
 
 ### Fixes
-- [ ] **BUG-056:** Normalize `"open"` → `"pending"` and `"done"` → `"passed"` on PRD load
-- [ ] **BUG-057:** `checkOptionalCommands` checks `quality.commands` + `package.json` scripts
+- [x] **BUG-056:** Normalize `"open"` → `"pending"` and `"done"` → `"passed"` on PRD load
+- [x] **BUG-057:** `checkOptionalCommands` checks `quality.commands` + `package.json` scripts
 
 ---
 ## v0.30.0 — Prompt Builder Completion ✅ Shipped (2026-03-08)
