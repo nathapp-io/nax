@@ -108,7 +108,7 @@
         "Integration test: build each of the 6 roles with no override, verify output contains story title, acceptance criteria, and role-specific instructions"
       ],
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "tags": [
         "feature",
         "prompts",
@@ -134,7 +134,7 @@
         "Unit tests: override path exists -> no warning; override path set but file missing -> warning emitted; config.prompts absent -> no warning"
       ],
       "complexity": "simple",
-      "status": "pending",
+      "status": "passed",
       "tags": [
         "feature",
         "prompts",
