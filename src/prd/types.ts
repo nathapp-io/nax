@@ -47,6 +47,8 @@ export interface StoryRouting {
   complexity: Complexity;
   /** Initial complexity from first classification — written once, never overwritten by escalation */
   initialComplexity?: Complexity;
+  /** Content hash of story fields at time of routing — used to detect stale cached routing (RRP-003) */
+  contentHash?: string;
   /** Model tier (derived at runtime from config, not persisted) */
   modelTier?: ModelTier;
   testStrategy: TestStrategy;
