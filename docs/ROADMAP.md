@@ -6,6 +6,20 @@
 
 ---
 
+## v0.30.0 — Prompt Builder Completion ✅ Shipped (2026-03-08)
+
+**Theme:** Wire PromptBuilder to sections, fix global install crash
+**Status:** ✅ Shipped (2026-03-08)
+
+### Stories
+- [x] **PW-001:** Expand `role-task.ts` and `isolation.ts` sections to cover all 4 roles — including critical `git commit` instruction in implementer variants.
+- [x] **PW-002:** Wire `PromptBuilder` to use `sections/` functions, remove 80+ lines of inline duplicates, delete all 4 empty template stubs.
+
+### Fixes
+- **Global install crash:** `bin/nax.ts`, `headless-formatter.ts`, `cli/analyze.ts` read `package.json` at runtime via relative paths — broken in global bun installs. All replaced with static `NAX_VERSION`.
+
+---
+
 ## v0.29.0 — Context Simplification ✅ Shipped (2026-03-08)
 
 **Theme:** Disable built-in keyword-based file injection; agents use MCP/tools for context on-demand
@@ -192,6 +206,7 @@
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.30.0 | Prompt Builder Completion | 2026-03-08 | PW-001/002: sections wired, stubs deleted, git commit instruction live; global install crash fix |
 | v0.29.0 | Context Simplification | 2026-03-08 | `context.fileInjection: "disabled"` default; prompt/review/version/CI fixes |
 | v0.28.0 | Prompt Builder | 2026-03-08 | Unified, user-overridable prompt architecture; fluent API; default templates |
 | v0.27.1 | Pipeline Observability | 2026-03-08 | BUG-054: skip redundant verify after full-suite gate; BUG-055: differentiate skip reasons |
@@ -237,4 +252,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-08 (v0.29.0 shipped — Context Simplification)*
+*Last updated: 2026-03-08 (v0.30.0 shipped — Prompt Builder Completion)*
