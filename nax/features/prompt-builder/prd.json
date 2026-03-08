@@ -2,7 +2,7 @@
   "project": "nax-prompt-builder",
   "branchName": "feat/prompt-builder",
   "feature": "prompt-builder",
-  "updatedAt": "2026-03-08T06:50:00.000Z",
+  "updatedAt": "2026-03-08T07:39:46.206Z",
   "userStories": [
     {
       "id": "PB-001",
@@ -17,8 +17,26 @@
         "Unit tests: verify section order for each role; verify non-overridable sections always present; verify missing override falls through to default template"
       ],
       "complexity": "medium",
-      "status": "pending",
-      "tags": ["feature", "prompts", "architecture"]
+      "status": "passed",
+      "tags": [
+        "feature",
+        "prompts",
+        "architecture"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Class design with fluent API, async file loading, section composition/ordering logic, and section non-overridability enforcement.",
+        "contentHash": "0a1c55a2430989f408b99f7b75a82491fc6606eb736f734386e36c61ccc143c9"
+      },
+      "passes": true
     },
     {
       "id": "PB-002",
@@ -34,8 +52,19 @@
         "Unit tests: isolation strict does not contain 'MAY read'; isolation lite contains 'MAY read src/'; role-task standard contains 'Do NOT modify test files'; role-task lite contains 'Write tests first'"
       ],
       "complexity": "simple",
-      "status": "pending",
-      "tags": ["feature", "prompts", "sections"]
+      "status": "passed",
+      "tags": [
+        "feature",
+        "prompts",
+        "sections"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "storyPoints": 1,
+      "passes": true
     },
     {
       "id": "PB-003",
@@ -51,8 +80,20 @@
         "Unit tests: loader returns null when config.prompts undefined; returns null when file missing; returns content when file exists; throws on permission error"
       ],
       "complexity": "simple",
-      "status": "pending",
-      "tags": ["feature", "prompts", "config", "loader"]
+      "status": "passed",
+      "tags": [
+        "feature",
+        "prompts",
+        "config",
+        "loader"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "storyPoints": 1,
+      "passes": true
     },
     {
       "id": "PB-004",
@@ -68,7 +109,18 @@
       ],
       "complexity": "medium",
       "status": "pending",
-      "tags": ["feature", "prompts", "migration", "refactor"]
+      "tags": [
+        "feature",
+        "prompts",
+        "migration",
+        "refactor"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "storyPoints": 1
     },
     {
       "id": "PB-005",
@@ -83,7 +135,18 @@
       ],
       "complexity": "simple",
       "status": "pending",
-      "tags": ["feature", "prompts", "docs", "precheck"]
+      "tags": [
+        "feature",
+        "prompts",
+        "docs",
+        "precheck"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "storyPoints": 1
     }
   ]
 }

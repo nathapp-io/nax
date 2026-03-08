@@ -290,6 +290,15 @@ const PrecheckConfigSchema = z.object({
   storySizeGate: StorySizeGateConfigSchema,
 });
 
+const PromptsConfigSchema = z.object({
+  overrides: z
+    .record(
+      z.enum(["test-writer", "implementer", "verifier", "single-session"]),
+      z.string().min(1, "Override path must be non-empty"),
+    )
+    .optional(),
+});
+
 export const NaxConfigSchema = z
   .object({
     version: z.number(),
@@ -310,6 +319,7 @@ export const NaxConfigSchema = z
     hooks: HooksConfigSchema.optional(),
     interaction: InteractionConfigSchema.optional(),
     precheck: PrecheckConfigSchema.optional(),
+    prompts: PromptsConfigSchema.optional(),
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",

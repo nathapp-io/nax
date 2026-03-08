@@ -1,36 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-07T16-14-49-336Z",
-    "feature": "routing-persistence",
-    "startedAt": "2026-03-07T16:14:49.336Z",
+    "id": "run-2026-03-08T07-06-40-645Z",
+    "feature": "prompt-builder",
+    "startedAt": "2026-03-08T07:06:40.645Z",
     "status": "running",
     "dryRun": false,
-    "pid": 3412
+    "pid": 42182
   },
   "progress": {
-    "total": 4,
-    "passed": 1,
+    "total": 5,
+    "passed": 3,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 2
   },
   "cost": {
-    "spent": 0.52230675,
+    "spent": 0.7924205000000001,
     "limit": 8
   },
   "current": {
-    "storyId": "RRP-002",
-    "title": "Add initialComplexity to StoryRouting and StoryMetrics for accurate reporting",
+    "storyId": "PB-004",
+    "title": "Migrate all existing prompt-building call sites to PromptBuilder",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-03-07T16:45:19.261Z",
-  "durationMs": 1829925,
-  "lastHeartbeat": "2026-03-07T16:45:19.261Z"
+  "iterations": 4,
+  "updatedAt": "2026-03-08T07:59:01.999Z",
+  "durationMs": 3141354,
+  "lastHeartbeat": "2026-03-08T07:59:01.999Z"
 }

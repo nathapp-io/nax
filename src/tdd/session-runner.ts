@@ -9,15 +9,9 @@ import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
+import { PromptBuilder } from "../prompts";
 import { cleanupProcessTree } from "./cleanup";
 import { getChangedFiles, verifyImplementerIsolation, verifyTestWriterIsolation } from "./isolation";
-import {
-  buildImplementerLitePrompt,
-  buildImplementerPrompt,
-  buildTestWriterLitePrompt,
-  buildTestWriterPrompt,
-  buildVerifierPrompt,
-} from "./prompts";
 import type { IsolationCheck } from "./types";
 import type { TddSessionResult, TddSessionRole } from "./types";
 
@@ -95,15 +89,21 @@ export async function runTddSession(
   let prompt: string;
   switch (role) {
     case "test-writer":
-      prompt = lite ? buildTestWriterLitePrompt(story, contextMarkdown) : buildTestWriterPrompt(story, contextMarkdown);
+      prompt = await PromptBuilder.for("test-writer", { isolation: lite ? "lite" : "strict" })
+        .withLoader(workdir, config)
+        .story(story)
+        .context(contextMarkdown)
+        .build();
       break;
     case "implementer":
-      prompt = lite
-        ? buildImplementerLitePrompt(story, contextMarkdown)
-        : buildImplementerPrompt(story, contextMarkdown);
+      prompt = await PromptBuilder.for("implementer", { variant: lite ? "lite" : "standard" })
+        .withLoader(workdir, config)
+        .story(story)
+        .context(contextMarkdown)
+        .build();
       break;
     case "verifier":
-      prompt = buildVerifierPrompt(story);
+      prompt = await PromptBuilder.for("verifier").withLoader(workdir, config).story(story).build();
       break;
   }
 

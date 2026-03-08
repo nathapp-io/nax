@@ -406,6 +406,11 @@ export interface RoutingConfig {
   llm?: LlmRoutingConfig;
 }
 
+/** Prompt overrides config (PB-003) */
+export interface PromptsConfig {
+  overrides?: Partial<Record<"test-writer" | "implementer" | "verifier" | "single-session", string>>;
+}
+
 /** Full nax configuration */
 export interface NaxConfig {
   /** Schema version */
@@ -444,6 +449,8 @@ export interface NaxConfig {
   interaction?: InteractionConfig;
   /** Precheck settings (v0.16.0) */
   precheck?: PrecheckConfig;
+  /** Prompt override settings (PB-003) */
+  prompts?: PromptsConfig;
 }
 
 /** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */
