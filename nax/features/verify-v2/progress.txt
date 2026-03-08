@@ -1,3 +1,0 @@
-[2026-03-05T07:05:07.935Z] US-002 — PASSED — Remove post-verify scoped duplicate — Cost: $0.1170
-[2026-03-05T08:08:59.656Z] US-003 — FAILED — Deferred regression gate — Execution failed
-[2026-03-05T08:13:50.586Z] US-001 — FAILED — Remove test from review defaults — Execution failed

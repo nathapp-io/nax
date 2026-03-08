@@ -1,3 +1,0 @@
-[2026-03-04T04:36:19.998Z] BUG-028 — PASSED — Clear LLM routing cache on tier escalation — Cost: $0.0779
-[2026-03-04T04:51:46.868Z] SFC-001 — FAILED — Add StructuredFailure type and populate priorFailures on verify failure — Review failed: lint failed (exit code 1)
-[2026-03-04T05:01:36.022Z] SFC-002 — FAILED — Format priorFailures into agent prompt context — Review failed: lint failed (exit code 1)
