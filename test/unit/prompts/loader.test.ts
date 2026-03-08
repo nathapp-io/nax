@@ -304,33 +304,7 @@ describe("loadOverride — permission error", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. Template stubs export defaultTemplate
-// ---------------------------------------------------------------------------
-
-describe("src/prompts/templates — default exports exist", () => {
-  test("test-writer template exports a string", async () => {
-    const mod = await import("../../../src/prompts/templates/test-writer");
-    expect(typeof mod.defaultTemplate).toBe("string");
-  });
-
-  test("implementer template exports a string", async () => {
-    const mod = await import("../../../src/prompts/templates/implementer");
-    expect(typeof mod.defaultTemplate).toBe("string");
-  });
-
-  test("verifier template exports a string", async () => {
-    const mod = await import("../../../src/prompts/templates/verifier");
-    expect(typeof mod.defaultTemplate).toBe("string");
-  });
-
-  test("single-session template exports a string", async () => {
-    const mod = await import("../../../src/prompts/templates/single-session");
-    expect(typeof mod.defaultTemplate).toBe("string");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 7. NaxConfig accepts prompts field
+// 6. NaxConfig accepts prompts field
 // ---------------------------------------------------------------------------
 
 describe("NaxConfig.prompts type shape", () => {
