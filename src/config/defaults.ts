@@ -161,4 +161,5 @@ export const DEFAULT_CONFIG: NaxConfig = {
       maxBulletPoints: 8,
     },
   },
+  prompts: {},
 };
