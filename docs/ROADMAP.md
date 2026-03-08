@@ -135,6 +135,19 @@
 
 ---
 
+## v0.27.0 — Review Quality
+
+**Theme:** Fix review stage reliability — dirty working tree false-positive, stale precheck, dead config fields
+**Status:** 🔲 Planned
+**Spec:** `nax/features/review-quality/prd.json`
+
+### Stories
+- [ ] **RQ-001:** Assert clean working tree before running review typecheck/lint (BUG-049)
+- [ ] **RQ-002:** Fix `checkOptionalCommands` precheck to use correct config resolution path (BUG-050)
+- [ ] **RQ-003:** Consolidate dead `quality.commands.typecheck/lint` into review resolution chain (BUG-051)
+
+---
+
 ## v0.26.0 — Routing Persistence ✅ Shipped (2026-03-08)
 
 - **RRP-001:** Persist initial routing classification to `prd.json` on first classification
