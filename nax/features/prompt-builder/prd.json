@@ -1,0 +1,89 @@
+{
+  "project": "nax-prompt-builder",
+  "branchName": "feat/prompt-builder",
+  "feature": "prompt-builder",
+  "updatedAt": "2026-03-08T06:50:00.000Z",
+  "userStories": [
+    {
+      "id": "PB-001",
+      "title": "Create PromptBuilder class with layered section architecture",
+      "description": "Currently nax has 11 scattered prompt-building functions across src/tdd/prompts.ts and src/execution/prompts.ts. There is no unified entry point, no user override support, and adding a new prompt variable requires touching multiple files. Introduce a PromptBuilder class in src/prompts/builder.ts with a fluent API. The builder composes a prompt from ordered sections: (1) Constitution, (2) Role task, (3) User override OR default template body, (4) Story context, (5) Isolation rules, (6) Context markdown, (7) Conventions footer. Each section is a typed unit independently testable. The builder is the single entry point — all existing prompt-building calls are migrated to use it.",
+      "acceptanceCriteria": [
+        "src/prompts/builder.ts exports PromptBuilder class with fluent API: PromptBuilder.for(role, options).story(story).context(md).constitution(c).override(path).build()",
+        "PromptBuilder.build() returns Promise<string> — async to support file loading for overrides",
+        "Section precedence enforced: constitution first, role task prepended, isolation rules appended, story context always included, conventions footer always last",
+        "Non-overridable sections (isolation rules, story context, conventions footer) cannot be removed by user override",
+        "src/prompts/types.ts exports: PromptRole ('test-writer' | 'implementer' | 'verifier' | 'single-session'), PromptSection interface, PromptOptions type",
+        "Unit tests: verify section order for each role; verify non-overridable sections always present; verify missing override falls through to default template"
+      ],
+      "complexity": "medium",
+      "status": "pending",
+      "tags": ["feature", "prompts", "architecture"]
+    },
+    {
+      "id": "PB-002",
+      "title": "Implement typed sections: isolation, role-task, story, verdict, conventions",
+      "description": "The PromptBuilder needs typed section builders that produce the non-overridable parts of each prompt. Five sections: (1) isolation.ts — generates isolation rules based on strict (no src/ access) or lite (may read src/, create stubs) mode; (2) role-task.ts — generates role definition for standard implementer (make failing tests pass) or lite implementer (write tests and implement); (3) story.ts — formats title, description, acceptance criteria; (4) verdict.ts — verifier verdict JSON schema instructions (non-overridable); (5) conventions.ts — bun test scoping warning and commit conventions.",
+      "acceptanceCriteria": [
+        "src/prompts/sections/isolation.ts exports buildIsolationSection(mode: 'strict' | 'lite'): string — strict forbids src/ modification, lite allows reading src/ and creating stubs",
+        "src/prompts/sections/role-task.ts exports buildRoleTaskSection(variant: 'standard' | 'lite'): string — standard says 'make failing tests pass, do not modify test files', lite says 'write tests first then implement'",
+        "src/prompts/sections/story.ts exports buildStorySection(story: UserStory): string — formats title, description, numbered acceptance criteria",
+        "src/prompts/sections/verdict.ts exports buildVerdictSection(story: UserStory): string — identical content to current buildVerifierPrompt verdict instructions",
+        "src/prompts/sections/conventions.ts exports buildConventionsSection(): string — includes bun test scoping warning and commit message instruction",
+        "Each section function is pure (no side effects, no file I/O) and independently unit-testable",
+        "Unit tests: isolation strict does not contain 'MAY read'; isolation lite contains 'MAY read src/'; role-task standard contains 'Do NOT modify test files'; role-task lite contains 'Write tests first'"
+      ],
+      "complexity": "simple",
+      "status": "pending",
+      "tags": ["feature", "prompts", "sections"]
+    },
+    {
+      "id": "PB-003",
+      "title": "Implement default templates and user override loader",
+      "description": "Each PromptRole needs a default template forming the overridable body of the prompt. Implement src/prompts/loader.ts which resolves and reads the user override file relative to workdir. If the path is missing or the file does not exist, the loader returns null and the default template is used. The NaxConfig schema gains a new optional prompts block: { overrides: { 'test-writer'?: string, 'implementer'?: string, 'verifier'?: string, 'single-session'?: string } }.",
+      "acceptanceCriteria": [
+        "src/prompts/templates/ contains test-writer.ts, implementer.ts, verifier.ts, single-session.ts — each exports a default template string (body section only, no story/isolation/conventions)",
+        "src/prompts/loader.ts exports loadOverride(role: PromptRole, workdir: string, config: NaxConfig): Promise<string | null>",
+        "Loader resolves path relative to workdir — e.g. '.nax/prompts/test-writer.md' -> '<workdir>/.nax/prompts/test-writer.md'",
+        "Loader returns null (not error) when config.prompts is absent, role key is absent, or file does not exist",
+        "Loader throws with clear message when file path is set but file is unreadable (permissions error)",
+        "src/config/types.ts NaxConfig gains optional prompts?: { overrides?: Partial<Record<PromptRole, string>> }",
+        "Unit tests: loader returns null when config.prompts undefined; returns null when file missing; returns content when file exists; throws on permission error"
+      ],
+      "complexity": "simple",
+      "status": "pending",
+      "tags": ["feature", "prompts", "config", "loader"]
+    },
+    {
+      "id": "PB-004",
+      "title": "Migrate all existing prompt-building call sites to PromptBuilder",
+      "description": "Replace the 6 user-facing scattered prompt functions with PromptBuilder calls. Mapping: buildTestWriterPrompt -> PromptBuilder.for('test-writer', { isolation: 'strict' }); buildTestWriterLitePrompt -> PromptBuilder.for('test-writer', { isolation: 'lite' }); buildImplementerPrompt -> PromptBuilder.for('implementer', { variant: 'standard' }); buildImplementerLitePrompt -> PromptBuilder.for('implementer', { variant: 'lite' }); buildVerifierPrompt -> PromptBuilder.for('verifier'); buildSingleSessionPrompt -> PromptBuilder.for('single-session'). Internal prompts (rectification, routing, batch) remain unchanged.",
+      "acceptanceCriteria": [
+        "All 6 user-facing prompt functions replaced with PromptBuilder calls in their respective call sites",
+        "buildImplementerRectificationPrompt, buildRectificationPrompt, buildBatchPrompt (execution), buildRoutingPrompt, buildBatchPrompt (routing) remain unchanged",
+        "Generated prompt text for each role is semantically equivalent to previous output when no user override is set (no regression)",
+        "All call sites pass workdir and config so the loader can check for overrides",
+        "src/tdd/prompts.ts and src/execution/prompts.ts deleted or reduced to re-exports only if referenced by tests",
+        "Integration test: build each of the 6 roles with no override, verify output contains story title, acceptance criteria, and role-specific instructions"
+      ],
+      "complexity": "medium",
+      "status": "pending",
+      "tags": ["feature", "prompts", "migration", "refactor"]
+    },
+    {
+      "id": "PB-005",
+      "title": "Document prompts config in nax config --explain and add precheck validation",
+      "description": "Users need to discover the prompts.overrides config block. Update nax config --explain to document it with example paths. Add a precheck warning (non-blocking) when a configured override file path does not exist at run start — surfaces the issue early rather than silently falling back to the default at runtime.",
+      "acceptanceCriteria": [
+        "nax config --explain output includes a 'prompts' section describing overrides for each role with example: '.nax/prompts/test-writer.md'",
+        "src/precheck/checks-warnings.ts adds check: for each key in config.prompts?.overrides, if resolved file does not exist, emit warning 'Prompt override file not found for role <role>: <resolved-path>'",
+        "Precheck warning is non-blocking — run continues with default template",
+        "Precheck skipped when config.prompts absent or overrides empty",
+        "Unit tests: override path exists -> no warning; override path set but file missing -> warning emitted; config.prompts absent -> no warning"
+      ],
+      "complexity": "simple",
+      "status": "pending",
+      "tags": ["feature", "prompts", "docs", "precheck"]
+    }
+  ]
+}
