@@ -256,3 +256,83 @@ describe("src/prompts/types exports", () => {
     expect(roles).toHaveLength(4);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 6. TS-002: tdd-simple PromptBuilder support (RED phase — will fail until implemented)
+// ---------------------------------------------------------------------------
+
+describe("PromptBuilder — tdd-simple role", () => {
+  test("PromptBuilder.for('tdd-simple') returns a PromptBuilder instance", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const builder = PromptBuilder.for("tdd-simple" as any);
+    expect(builder).toBeInstanceOf(PromptBuilder);
+  });
+
+  test(".build() resolves to a non-empty string for tdd-simple", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const prompt = await PromptBuilder.for("tdd-simple" as any).story(makeStory()).build();
+    expect(typeof prompt).toBe("string");
+    expect(prompt.length).toBeGreaterThan(0);
+  });
+
+  test("tdd-simple prompt contains TDD red-green-refactor instructions", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const prompt = await PromptBuilder.for("tdd-simple" as any).story(makeStory()).build();
+    expect(prompt).toContain("Write failing tests FIRST");
+  });
+
+  test("tdd-simple prompt includes git commit instruction", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const prompt = await PromptBuilder.for("tdd-simple" as any).story(makeStory()).build();
+    expect(prompt).toContain("git commit -m");
+  });
+
+  test("tdd-simple prompt isolation section does not forbid src/ modification", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const prompt = await PromptBuilder.for("tdd-simple" as any).story(makeStory()).build();
+    expect(prompt).not.toContain("Only create or modify files in the test/ directory");
+    expect(prompt).not.toContain("Do not modify test files");
+  });
+
+  test("tdd-simple prompt includes story context", async () => {
+    const story = makeStory({ title: "TDD_SIMPLE_STORY_MARKER" });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const prompt = await PromptBuilder.for("tdd-simple" as any).story(story).build();
+    expect(prompt).toContain("TDD_SIMPLE_STORY_MARKER");
+  });
+
+  test("tdd-simple prompt includes conventions footer", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const prompt = await PromptBuilder.for("tdd-simple" as any).story(makeStory()).build();
+    expect(prompt.toLowerCase()).toContain("conventions");
+  });
+
+  test("tdd-simple prompt section order: role task before story before conventions", async () => {
+    const story = makeStory({ title: "TDD_SIMPLE_ORDER_MARKER" });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const prompt = await PromptBuilder.for("tdd-simple" as any)
+      .story(story)
+      .constitution("TDD_SIMPLE_CONSTITUTION")
+      .build();
+
+    const constitutionIdx = prompt.indexOf("TDD_SIMPLE_CONSTITUTION");
+    const storyIdx = prompt.indexOf("TDD_SIMPLE_ORDER_MARKER");
+    const conventionsIdx = prompt.lastIndexOf("conventions");
+
+    expect(constitutionIdx).toBeGreaterThanOrEqual(0);
+    expect(storyIdx).toBeGreaterThanOrEqual(0);
+    expect(constitutionIdx).toBeLessThan(storyIdx);
+    expect(storyIdx).toBeLessThan(conventionsIdx);
+  });
+});
+
+describe("src/prompts/types exports — tdd-simple", () => {
+  test("PromptRole type should include 'tdd-simple' (5 roles total)", () => {
+    // Once tdd-simple is added to PromptRole, this array should be valid TypeScript.
+    // Until then, tdd-simple is cast to bypass the TS check; this test documents intent.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const roles: PromptRole[] = ["test-writer", "implementer", "verifier", "single-session", "tdd-simple" as any];
+    expect(roles).toContain("tdd-simple");
+    expect(roles).toHaveLength(5);
+  });
+});
