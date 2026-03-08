@@ -1,0 +1,55 @@
+{
+  "project": "nax",
+  "branchName": "feat/prompt-export",
+  "feature": "prompt-export",
+  "userStories": [
+    {
+      "id": "PE-001",
+      "title": "Add `nax prompts --init` command to export default templates",
+      "description": "Add a `--init` flag to the existing `nax prompts` CLI command. When invoked, it:\n\n1. Creates `nax/templates/` directory in the project workdir\n2. Writes the 4 default role-body templates as markdown files:\n   - `nax/templates/test-writer.md`\n   - `nax/templates/implementer.md`\n   - `nax/templates/verifier.md`\n   - `nax/templates/single-session.md`\n3. Each file contains the output of `buildRoleTaskSection(role)` for the default variant (standard for implementer). Note: overrides only replace the role body — isolation, story context, and conventions are non-overridable.\n4. Prints a summary of files written and instructions on how to activate overrides\n\nIf `nax/templates/` already has files, print a warning and do NOT overwrite unless `--force` is also passed. This prevents accidental loss of user customizations.\n\nEach template should include a header comment explaining what the file controls and which sections are non-overridable (isolation, story context, conventions).\n\nImplementation: extend `src/cli/prompts.ts` (existing command handler).\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/cli/ test/integration/cli/ --timeout=60000\nCommit: 'feat: add nax prompts --init to export default templates'",
+      "complexity": "simple",
+      "status": "open",
+      "dependencies": [],
+      "acceptanceCriteria": [
+        "`nax prompts --init` creates `nax/templates/` directory",
+        "Writes 4 files: test-writer.md, implementer.md, verifier.md, single-session.md",
+        "Each file contains the default role-body content from buildRoleTaskSection()",
+        "Each file has a header comment explaining what it controls and what cannot be overridden",
+        "If files already exist, prints warning and exits without overwriting (no data loss)",
+        "`--force` flag overwrites existing files",
+        "Prints summary of files written and activation instructions after success",
+        "All existing prompts tests still pass",
+        "TypeScript and lint checks pass"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "tags": [],
+      "storyPoints": 2
+    },
+    {
+      "id": "PE-002",
+      "title": "Auto-configure prompts.overrides when templates exist",
+      "description": "After `nax prompts --init` writes the template files, the user still needs to manually add `prompts.overrides` paths to `nax.config.json`. This story adds automatic wiring.\n\nWhen `nax prompts --init` completes successfully:\n1. Check if `nax.config.json` exists in workdir\n2. If it exists and `prompts.overrides` is not already set, add the override paths:\n   ```json\n   {\n     \"prompts\": {\n       \"overrides\": {\n         \"test-writer\": \"nax/templates/test-writer.md\",\n         \"implementer\": \"nax/templates/implementer.md\",\n         \"verifier\": \"nax/templates/verifier.md\",\n         \"single-session\": \"nax/templates/single-session.md\"\n       }\n     }\n   }\n   ```\n3. If `prompts.overrides` already has entries, do NOT modify — print a note that overrides are already configured\n4. In headless/non-TTY mode, auto-write the config without prompting\n\nNote: The override loader (`src/prompts/loader.ts`) already reads from these paths — no changes needed there.\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/cli/ test/integration/cli/ test/integration/config/ --timeout=60000\nCommit: 'feat: auto-configure prompts.overrides on init'",
+      "complexity": "simple",
+      "status": "open",
+      "dependencies": ["PE-001"],
+      "acceptanceCriteria": [
+        "After writing templates, auto-adds prompts.overrides to nax.config.json if not already set",
+        "Does not overwrite existing prompts.overrides entries",
+        "Handles missing nax.config.json gracefully (prints manual instructions instead)",
+        "Config file is written with proper JSON formatting (2-space indent)",
+        "All existing config and prompts tests still pass",
+        "TypeScript and lint checks pass"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "tags": [],
+      "storyPoints": 2
+    }
+  ],
+  "updatedAt": "2026-03-08T14:35:00.000Z"
+}

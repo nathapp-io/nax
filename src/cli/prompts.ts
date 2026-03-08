@@ -266,7 +266,7 @@ async function handleThreeSessionTddPrompts(
       .story(story)
       .context(ctx.contextMarkdown)
       .build(),
-    PromptBuilder.for("verifier").withLoader(ctx.workdir, ctx.config).story(story).build(),
+    PromptBuilder.for("verifier").withLoader(ctx.workdir, ctx.config).story(story).context(ctx.contextMarkdown).build(),
   ]);
 
   const sessions = [

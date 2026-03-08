@@ -103,7 +103,11 @@ export async function runTddSession(
         .build();
       break;
     case "verifier":
-      prompt = await PromptBuilder.for("verifier").withLoader(workdir, config).story(story).build();
+      prompt = await PromptBuilder.for("verifier")
+        .withLoader(workdir, config)
+        .story(story)
+        .context(contextMarkdown)
+        .build();
       break;
   }
 
