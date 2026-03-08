@@ -235,7 +235,7 @@ describe("keywordStrategy", () => {
     expect(decision).not.toBeNull();
     expect(decision!.complexity).toBe("simple");
     expect(decision!.modelTier).toBe("fast");
-    expect(decision!.testStrategy).toBe("test-after");
+    expect(decision!.testStrategy).toBe("tdd-simple");
   });
 
   test("classifies complex story with security keywords", () => {
@@ -374,7 +374,7 @@ describe("LLM Routing Strategy - Response Parsing", () => {
 
     expect(decision.complexity).toBe("simple");
     expect(decision.modelTier).toBe("fast");
-    expect(decision.testStrategy).toBe("test-after");
+    expect(decision.testStrategy).toBe("tdd-simple");
     expect(decision.reasoning).toBe("Simple documentation fix");
   });
 
@@ -423,7 +423,7 @@ describe("validateRoutingDecision", () => {
     expect(result).toEqual({
       complexity: "simple",
       modelTier: "fast",
-      testStrategy: "test-after",
+      testStrategy: "tdd-simple",
       reasoning: "trivial",
     });
   });
