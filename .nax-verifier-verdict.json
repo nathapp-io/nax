@@ -3,40 +3,56 @@
   "approved": true,
   "tests": {
     "allPassing": true,
-    "passCount": 22,
+    "passCount": 60,
     "failCount": 0
   },
   "testModifications": {
     "detected": false,
     "files": [],
     "legitimate": true,
-    "reasoning": "No test files were modified by the implementer. All tests were created correctly from scratch."
+    "reasoning": "No test files were modified by the implementer. All test files are newly created."
   },
   "acceptanceCriteria": {
     "allMet": true,
     "criteria": [
       {
-        "criterion": "src/prompts/builder.ts exports PromptBuilder class with fluent API",
+        "criterion": "src/prompts/sections/isolation.ts exports buildIsolationSection(mode: 'strict' | 'lite'): string",
         "met": true
       },
       {
-        "criterion": "PromptBuilder.build() returns Promise<string> and supports async file loading",
+        "criterion": "src/prompts/sections/role-task.ts exports buildRoleTaskSection(variant: 'standard' | 'lite'): string",
         "met": true
       },
       {
-        "criterion": "Section precedence enforced: constitution → role task → story context → isolation rules → context md → conventions footer",
+        "criterion": "src/prompts/sections/story.ts exports buildStorySection(story: UserStory): string",
         "met": true
       },
       {
-        "criterion": "Non-overridable sections (isolation rules, story context, conventions footer) cannot be removed",
+        "criterion": "src/prompts/sections/verdict.ts exports buildVerdictSection(story: UserStory): string",
         "met": true
       },
       {
-        "criterion": "src/prompts/types.ts exports PromptRole, PromptSection interface, PromptOptions type",
+        "criterion": "src/prompts/sections/conventions.ts exports buildConventionsSection(): string",
         "met": true
       },
       {
-        "criterion": "Unit tests verify section order, non-overridable sections, and override fallthrough",
+        "criterion": "Each section function is pure (no side effects, no file I/O)",
+        "met": true
+      },
+      {
+        "criterion": "isolation strict does not contain 'MAY read'",
+        "met": true
+      },
+      {
+        "criterion": "isolation lite contains 'MAY read src/'",
+        "met": true
+      },
+      {
+        "criterion": "role-task standard contains 'Do NOT modify test files'",
+        "met": true
+      },
+      {
+        "criterion": "role-task lite contains 'Write tests first'",
         "met": true
       }
     ]
@@ -46,16 +62,13 @@
     "issues": []
   },
   "fixes": [
-    {
-      "file": "src/prompts/builder.ts",
-      "issue": "Import statement ordering and string concatenation style",
-      "action": "Fixed import ordering (node imports before local type imports) and converted string concatenation to template literals in buildIsolationRules function"
-    },
-    {
-      "file": "test/unit/prompts/builder.test.ts",
-      "issue": "Import statement ordering and formatting",
-      "action": "Fixed import ordering and multi-line ternary operator formatting"
-    }
+    "Fixed import sorting in verdict.test.ts",
+    "Fixed import sorting in story.test.ts",
+    "Fixed import sorting in role-task.test.ts",
+    "Fixed import sorting in isolation.test.ts",
+    "Fixed import sorting in conventions.test.ts",
+    "Fixed import sorting and array formatting in sections.test.ts",
+    "Converted string concatenations to single template literals in isolation.ts, story.ts, verdict.ts, and conventions.ts for linter compliance"
   ],
-  "reasoning": "All 22 tests pass without modification. The implementation is clean, follows conventions, and meets all acceptance criteria. The code uses proper TypeScript typing, Bun-native APIs, and immutability patterns. Minor formatting issues were fixed via Biome linter. The PromptBuilder class provides a fluent API with proper section ordering, non-overridable sections are enforced, and override fallthrough works correctly."
+  "reasoning": "All 60 tests pass. Implementation is clean and follows project conventions. All acceptance criteria are met. No test files were modified by the implementer - all test files are newly created. Code quality is excellent with proper typing, pure functions, and comprehensive test coverage. Linting issues were resolved during verification."
 }
