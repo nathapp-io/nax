@@ -90,15 +90,19 @@ export async function checkPendingStories(prd: PRD): Promise<Check> {
 /**
  * Check if optional commands are configured.
  */
-export async function checkOptionalCommands(config: NaxConfig): Promise<Check> {
+export async function checkOptionalCommands(config: NaxConfig, workdir: string): Promise<Check> {
   const missing: string[] = [];
 
-  if (!config.execution.lintCommand) {
-    missing.push("lint");
-  }
-  if (!config.execution.typecheckCommand) {
-    missing.push("typecheck");
-  }
+  // Check quality.commands first, then execution config, then package.json fallback
+  const hasLint =
+    config.quality?.commands?.lint || config.execution?.lintCommand || (await hasPackageScript(workdir, "lint"));
+  const hasTypecheck =
+    config.quality?.commands?.typecheck ||
+    config.execution?.typecheckCommand ||
+    (await hasPackageScript(workdir, "typecheck"));
+
+  if (!hasLint) missing.push("lint");
+  if (!hasTypecheck) missing.push("typecheck");
 
   const passed = missing.length === 0;
 
@@ -108,6 +112,16 @@ export async function checkOptionalCommands(config: NaxConfig): Promise<Check> {
     passed,
     message: passed ? "All optional commands configured" : `Optional commands not configured: ${missing.join(", ")}`,
   };
+}
+
+/** Check if package.json has a script by name */
+async function hasPackageScript(workdir: string, name: string): Promise<boolean> {
+  try {
+    const pkg = await Bun.file(`${workdir}/package.json`).json();
+    return Boolean(pkg?.scripts?.[name]);
+  } catch {
+    return false;
+  }
 }
 
 /**

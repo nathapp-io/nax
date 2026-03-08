@@ -49,6 +49,10 @@ export async function loadPRD(path: string): Promise<PRD> {
     story.escalations = story.escalations ?? [];
     story.dependencies = story.dependencies ?? [];
     story.tags = story.tags ?? [];
+    // Normalize aliases: "open" → "pending", "done" → "passed"
+    const rawStatus = story.status as string;
+    if (rawStatus === "open") story.status = "pending";
+    if (rawStatus === "done") story.status = "passed";
     story.status = story.status ?? "pending";
     story.acceptanceCriteria = story.acceptanceCriteria ?? [];
     story.storyPoints = story.storyPoints ?? 1;

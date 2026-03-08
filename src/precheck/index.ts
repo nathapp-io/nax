@@ -141,7 +141,7 @@ export async function runPrecheck(
       () => checkClaudeMdExists(workdir),
       () => checkDiskSpace(),
       () => checkPendingStories(prd),
-      () => checkOptionalCommands(config),
+      () => checkOptionalCommands(config, workdir),
       () => checkGitignoreCoversNax(workdir),
       () => checkPromptOverrideFiles(config, workdir),
     ];
