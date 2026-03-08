@@ -134,3 +134,79 @@ describe("buildRoleTaskSection — all roles return strings", () => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// TS-002: tdd-simple role tests (RED phase — will fail until implemented)
+// ---------------------------------------------------------------------------
+
+describe("buildRoleTaskSection — tdd-simple role", () => {
+  test("returns non-empty string", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = buildRoleTaskSection("tdd-simple" as any);
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  test("instructs to write failing tests FIRST for acceptance criteria", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = buildRoleTaskSection("tdd-simple" as any);
+    expect(result).toContain("Write failing tests FIRST");
+  });
+
+  test("instructs to confirm tests fail (red phase)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = buildRoleTaskSection("tdd-simple" as any);
+    expect(result.toLowerCase()).toMatch(/red phase|confirm.*fail|run.*test.*fail/);
+  });
+
+  test("instructs to implement minimum code to make tests pass (green phase)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = buildRoleTaskSection("tdd-simple" as any);
+    expect(result.toLowerCase()).toMatch(/green phase|implement.*pass|minimum.*code/);
+  });
+
+  test("instructs to refactor while keeping tests green", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = buildRoleTaskSection("tdd-simple" as any);
+    expect(result.toLowerCase()).toContain("refactor");
+  });
+
+  test("includes git commit instruction", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = buildRoleTaskSection("tdd-simple" as any);
+    expect(result).toContain("git commit -m");
+  });
+
+  test("includes commit instruction with feat: prefix", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = buildRoleTaskSection("tdd-simple" as any);
+    expect(result).toContain("feat: <description>");
+  });
+
+  test("does NOT say 'Do NOT modify test files' (agent can modify both)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = buildRoleTaskSection("tdd-simple" as any);
+    expect(result).not.toContain("Do NOT modify test files");
+  });
+
+  test("is distinct from single-session role", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tddSimple = buildRoleTaskSection("tdd-simple" as any);
+    const singleSession = buildRoleTaskSection("single-session");
+    expect(tddSimple).not.toEqual(singleSession);
+  });
+
+  test("is distinct from test-writer role", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tddSimple = buildRoleTaskSection("tdd-simple" as any);
+    const testWriter = buildRoleTaskSection("test-writer");
+    expect(tddSimple).not.toEqual(testWriter);
+  });
+
+  test("mentions red-green-refactor workflow phases", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = buildRoleTaskSection("tdd-simple" as any);
+    // Must mention at least the red and green phases
+    expect(result.toLowerCase()).toMatch(/red/);
+    expect(result.toLowerCase()).toMatch(/green/);
+  });
+});

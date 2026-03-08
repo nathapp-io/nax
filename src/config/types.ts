@@ -6,7 +6,7 @@
  */
 
 export type Complexity = "simple" | "medium" | "complex" | "expert";
-export type TestStrategy = "test-after" | "three-session-tdd" | "three-session-tdd-lite";
+export type TestStrategy = "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite";
 export type TddStrategy = "auto" | "strict" | "lite" | "off";
 
 export interface EscalationEntry {
@@ -409,7 +409,7 @@ export interface RoutingConfig {
 
 /** Prompt overrides config (PB-003) */
 export interface PromptsConfig {
-  overrides?: Partial<Record<"test-writer" | "implementer" | "verifier" | "single-session", string>>;
+  overrides?: Partial<Record<"test-writer" | "implementer" | "verifier" | "single-session" | "tdd-simple", string>>;
 }
 
 /** Full nax configuration */

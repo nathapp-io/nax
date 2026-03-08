@@ -1,11 +1,12 @@
 /**
  * Isolation Rules Section
  *
- * Generates isolation rules for all 4 roles:
+ * Generates isolation rules for all 5 roles:
  * - test-writer: Strict/Lite modes for test-first TDD
  * - implementer: Implement source while respecting test integrity
  * - verifier: Read-only inspection
  * - single-session: Both test/ and src/ modification allowed
+ * - tdd-simple: Both test/ and src/ modification allowed (no isolation)
  *
  * Backwards compatible: also accepts old API (mode only)
  * - buildIsolationSection("strict") → test-writer, strict
@@ -18,7 +19,7 @@ const TEST_FILTER_RULE =
   "— full suite output will flood your context window and cause failures.";
 
 export function buildIsolationSection(
-  roleOrMode: "implementer" | "test-writer" | "verifier" | "single-session" | "strict" | "lite",
+  roleOrMode: "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple" | "strict" | "lite",
   mode?: "strict" | "lite",
 ): string {
   // Old API support: buildIsolationSection("strict") or buildIsolationSection("lite")
@@ -26,7 +27,7 @@ export function buildIsolationSection(
     return buildIsolationSection("test-writer", roleOrMode);
   }
 
-  const role = roleOrMode as "implementer" | "test-writer" | "verifier" | "single-session";
+  const role = roleOrMode as "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple";
 
   const header = "# Isolation Rules\n\n";
   const footer = `\n\n${TEST_FILTER_RULE}`;
@@ -49,6 +50,10 @@ export function buildIsolationSection(
     return `${header}isolation scope: Read-only inspection. Review all test results, implementation code, and acceptance criteria compliance. You MAY write a verdict file (.nax-verifier-verdict.json) and apply legitimate fixes if needed.${footer}`;
   }
 
-  // single-session role
-  return `${header}isolation scope: Create test files in test/ directory, then implement source code in src/ to make tests pass. Both directories are in scope for this session.${footer}`;
+  if (role === "single-session") {
+    return `${header}isolation scope: Create test files in test/ directory, then implement source code in src/ to make tests pass. Both directories are in scope for this session.${footer}`;
+  }
+
+  // tdd-simple role — no isolation restrictions (no footer needed)
+  return `${header}isolation scope: You may modify both src/ and test/ files. Write failing tests FIRST, then implement to make them pass.`;
 }

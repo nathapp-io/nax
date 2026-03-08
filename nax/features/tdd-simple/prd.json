@@ -19,11 +19,29 @@
         "TypeScript and lint checks pass"
       ],
       "attempts": 0,
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast: Review failed: Working tree has uncommitted changes:\n  - src/routing/strategies/keyword.ts\n  - test/integration/routing/plugin-routing-core.test.ts\n  - test/unit/prd-auto-default.test.ts\n  - test/unit/routing-core.test.ts\n  - test/unit/routing-strategies.test.ts\n\nStage and commit these files before running review."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "fast",
+          "stage": "escalation",
+          "summary": "Failed with tier fast, escalating to next tier",
+          "timestamp": "2026-03-08T15:58:26.143Z"
+        }
+      ],
       "escalations": [],
       "tags": [],
-      "storyPoints": 2
+      "storyPoints": 2,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Type system extension + routing config updates with no novel logic; straightforward additions to existing enums and prompts",
+        "contentHash": "ef96bf29ca7e9ab3b534d2b17834641cb6a04853e46948c7362dd18fa5887091",
+        "modelTier": "balanced"
+      }
     },
     {
       "id": "TS-002",
@@ -31,7 +49,9 @@
       "description": "Create the prompt content for the `tdd-simple` role. This is a single-session prompt that instructs the agent to follow TDD discipline: write failing tests first, confirm they fail, then implement to make them pass.\n\nChanges:\n1. `src/prompts/sections/role-task.ts`: Add `tdd-simple` case to `buildRoleTaskSection()`. The prompt should:\n   - Instruct: 'Write failing tests FIRST for the acceptance criteria'\n   - Instruct: 'Run the tests to confirm they fail (red phase)'\n   - Instruct: 'Implement the minimum code to make tests pass (green phase)'\n   - Instruct: 'Refactor if needed while keeping tests green'\n   - Include the git commit instruction (same as implementer)\n   - NOT include isolation rules (agent can touch both src/ and test/)\n2. `src/prompts/sections/isolation.ts`: Add `tdd-simple` case that returns NO isolation rules (empty string or a note saying 'You may modify both src/ and test/ files')\n3. `src/prompts/types.ts`: Add `tdd-simple` to `PromptRole` type\n4. `src/prompts/builder.ts`: Ensure `tdd-simple` works through the existing build() flow\n5. Update `src/cli/prompts.ts` to include `tdd-simple` in the `nax prompts -f <feature>` output\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/prompts/ --timeout=60000\nCommit: 'feat: add tdd-simple prompt section'",
       "complexity": "simple",
       "status": "pending",
-      "dependencies": ["TS-001"],
+      "dependencies": [
+        "TS-001"
+      ],
       "acceptanceCriteria": [
         "PromptRole type includes 'tdd-simple'",
         "buildRoleTaskSection('tdd-simple') returns TDD-disciplined prompt with red-green-refactor instructions",
@@ -55,7 +75,9 @@
       "description": "Connect the tdd-simple strategy to the execution pipeline so stories routed to it actually run as a single TDD session.\n\nChanges:\n1. `src/pipeline/stages/execution.ts`: When `testStrategy === 'tdd-simple'`, run a single session (not 3-session TDD). Use the `tdd-simple` PromptBuilder role.\n2. `src/tdd/session-runner.ts` or create `src/execution/tdd-simple-runner.ts`: Single session that builds a tdd-simple prompt (with story context and conventions) and runs one agent session. Returns a result compatible with the pipeline.\n3. `src/pipeline/stages/prompt.ts`: Handle `tdd-simple` strategy — build prompt using `PromptBuilder.for('tdd-simple')`\n4. Ensure pipeline stages (verify, review, etc.) work correctly after a tdd-simple session — they should behave the same as after any other strategy.\n5. Update `src/execution/lifecycle/headless-formatter.ts` if needed to display tdd-simple sessions correctly.\n\nKey: tdd-simple is essentially like single-session but with a TDD-specific prompt. It should reuse the single-session execution path where possible.\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/ --timeout=60000 --bail\nCommit: 'feat: wire tdd-simple execution path'",
       "complexity": "medium",
       "status": "pending",
-      "dependencies": ["TS-002"],
+      "dependencies": [
+        "TS-002"
+      ],
       "acceptanceCriteria": [
         "Stories with testStrategy tdd-simple execute as a single agent session",
         "tdd-simple session uses PromptBuilder.for('tdd-simple') with story context and conventions",
@@ -73,5 +95,5 @@
       "storyPoints": 3
     }
   ],
-  "updatedAt": "2026-03-08T14:57:00.000Z"
+  "updatedAt": "2026-03-08T15:58:26.143Z"
 }

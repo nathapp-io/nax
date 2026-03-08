@@ -117,8 +117,8 @@ function determineTestStrategy(
     return "three-session-tdd";
   }
 
-  // BUG-045: simple → test-after (low overhead), medium → tdd-lite (sweet spot)
-  if (complexity === "simple") return "test-after";
+  // TS-001: simple → tdd-simple (TDD discipline, 1 session), medium → tdd-lite (3 sessions)
+  if (complexity === "simple") return "tdd-simple";
   return "three-session-tdd-lite";
 }
 
@@ -150,21 +150,31 @@ export const keywordStrategy: RoutingStrategy = {
     const testStrategy = determineTestStrategy(complexity, title, description, tags);
 
     const reasons: string[] = [];
+    const text = [title, description, ...tags].join(" ").toLowerCase();
+
     if (testStrategy === "three-session-tdd") {
-      const text = [title, description, ...tags].join(" ").toLowerCase();
       if (SECURITY_KEYWORDS.some((kw) => text.includes(kw))) reasons.push("security-critical");
       if (PUBLIC_API_KEYWORDS.some((kw) => text.includes(kw))) reasons.push("public-api");
       if (complexity === "complex" || complexity === "expert") reasons.push(`complexity:${complexity}`);
+    }
+
+    let reasoning = "";
+    if (testStrategy === "three-session-tdd") {
+      reasoning =
+        reasons.length > 0 ? `three-session-tdd: ${reasons.join(", ")}` : `three-session-tdd: ${complexity} task`;
+    } else if (testStrategy === "three-session-tdd-lite") {
+      reasoning = `three-session-tdd-lite: simple task (${complexity})`;
+    } else if (testStrategy === "tdd-simple") {
+      reasoning = `tdd-simple: simple task (${complexity})`;
+    } else {
+      reasoning = `${testStrategy}: ${complexity} task`;
     }
 
     return {
       complexity,
       modelTier,
       testStrategy,
-      reasoning:
-        reasons.length > 0
-          ? `three-session-tdd: ${reasons.join(", ")}`
-          : `three-session-tdd-lite: simple task (${complexity})`,
+      reasoning,
     };
   },
 };

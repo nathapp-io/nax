@@ -26,7 +26,7 @@ export interface RoutingResult {
   /** Selected model tier */
   modelTier: "fast" | "balanced" | "powerful";
   /** Test strategy */
-  testStrategy: "test-after" | "three-session-tdd" | "three-session-tdd-lite";
+  testStrategy: "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite";
   /** Reasoning for the classification */
   reasoning: string;
   /** Estimated cost for this story */

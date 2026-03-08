@@ -273,10 +273,13 @@ const TEMPLATE_HEADER = `<!--
 /**
  * Execute the `nax prompts --init` command.
  *
- * Creates nax/templates/ and writes 4 default role-body template files.
+ * Creates nax/templates/ and writes 4 default role-body template files
+ * (test-writer, implementer, verifier, single-session).
  * Auto-wires prompts.overrides in nax.config.json if the file exists and overrides are not already set.
  * Returns the list of file paths written. Returns empty array if files
  * already exist and force is not set.
+ *
+ * Note: tdd-simple role is supported in the prompt system but not auto-generated as a template.
  *
  * @param options - Command options
  * @returns Array of file paths written

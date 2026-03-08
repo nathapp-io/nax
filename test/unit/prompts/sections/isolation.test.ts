@@ -112,3 +112,64 @@ describe("buildIsolationSection — all roles return strings", () => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// TS-002: tdd-simple isolation tests (RED phase — will fail until implemented)
+// ---------------------------------------------------------------------------
+
+describe("buildIsolationSection — tdd-simple role", () => {
+  test("returns a string (empty or with a permissive note)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = buildIsolationSection("tdd-simple" as any);
+    expect(typeof result).toBe("string");
+  });
+
+  test("does NOT forbid modification of src/ files", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = buildIsolationSection("tdd-simple" as any);
+    expect(result).not.toMatch(/Do NOT modify.*src|Only.*test\//i);
+  });
+
+  test("does NOT forbid modification of test/ files", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = buildIsolationSection("tdd-simple" as any);
+    expect(result).not.toMatch(/Do NOT modify.*test|Only.*src\//i);
+  });
+
+  test("allows agent to modify both src/ and test/ directories", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = buildIsolationSection("tdd-simple" as any);
+    // Either empty (no restrictions) or explicitly states both are allowed
+    const lower = result.toLowerCase();
+    const isEmpty = result.trim() === "";
+    const allowsBoth =
+      (lower.includes("src/") && lower.includes("test/")) ||
+      lower.includes("both") ||
+      lower.includes("may modify both");
+    expect(isEmpty || allowsBoth).toBe(true);
+  });
+
+  test("returns empty string or only a permissive note (no restriction block)", () => {
+    // The tdd-simple role should have NO isolation restrictions —
+    // agent writes tests and implements in the same session
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = buildIsolationSection("tdd-simple" as any);
+    // Must NOT contain the strict isolation header text
+    expect(result).not.toContain("Only create or modify files in the test/ directory");
+    expect(result).not.toContain("Do not modify test files");
+  });
+
+  test("is distinct from test-writer strict isolation", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tddSimple = buildIsolationSection("tdd-simple" as any);
+    const testWriterStrict = buildIsolationSection("test-writer", "strict");
+    expect(tddSimple).not.toEqual(testWriterStrict);
+  });
+
+  test("is distinct from implementer isolation", () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tddSimple = buildIsolationSection("tdd-simple" as any);
+    const implementer = buildIsolationSection("implementer");
+    expect(tddSimple).not.toEqual(implementer);
+  });
+});
