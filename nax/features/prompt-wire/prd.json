@@ -6,9 +6,9 @@
     {
       "id": "PW-001",
       "title": "Expand sections to cover all prompt roles",
-      "description": "The current sections in src/prompts/sections/ are incomplete — role-task.ts only covers the implementer role (standard/lite variants), and isolation.ts only covers the test-writer role (strict/lite). The PromptBuilder cannot be wired to them until they handle all 4 roles.\n\nExpand both sections to cover all 4 roles:\n- role-task.ts: add test-writer, verifier, single-session\n- isolation.ts: add implementer, verifier, single-session\n\nCritical: the implementer role-task MUST include explicit 'git commit' instructions (both standard and lite variants). This is the bug we are fixing. The instruction should say: 'When all tests are green, stage and commit ALL changed files with: git commit -m \"feat: <description>\"'\n\nUpdate all existing section tests in test/unit/prompts/sections/ to cover the new role variants. Add new test cases for each added role. All existing tests must still pass.\n\nDo NOT touch builder.ts or templates/ in this story.\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/prompts/sections/ --timeout=60000\nCommit: 'refactor: expand role-task and isolation sections to cover all roles'",
+      "description": "The current sections in src/prompts/sections/ are incomplete \u2014 role-task.ts only covers the implementer role (standard/lite variants), and isolation.ts only covers the test-writer role (strict/lite). The PromptBuilder cannot be wired to them until they handle all 4 roles.\n\nExpand both sections to cover all 4 roles:\n- role-task.ts: add test-writer, verifier, single-session\n- isolation.ts: add implementer, verifier, single-session\n\nCritical: the implementer role-task MUST include explicit 'git commit' instructions (both standard and lite variants). This is the bug we are fixing. The instruction should say: 'When all tests are green, stage and commit ALL changed files with: git commit -m \"feat: <description>\"'\n\nUpdate all existing section tests in test/unit/prompts/sections/ to cover the new role variants. Add new test cases for each added role. All existing tests must still pass.\n\nDo NOT touch builder.ts or templates/ in this story.\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/prompts/sections/ --timeout=60000\nCommit: 'refactor: expand role-task and isolation sections to cover all roles'",
       "complexity": "simple",
-      "status": "open",
+      "status": "passed",
       "dependencies": [],
       "acceptanceCriteria": [
         "role-task.ts exports buildRoleTaskSection that accepts 'implementer' | 'test-writer' | 'verifier' | 'single-session' as first arg (plus optional variant for implementer)",
@@ -18,15 +18,49 @@
         "All 4 roles covered in both sections return non-empty strings",
         "All existing section tests pass",
         "New tests added for test-writer, verifier, single-session in both role-task and isolation"
-      ]
+      ],
+      "attempts": 0,
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast: Review failed: Working tree has uncommitted changes:\n  - nax/features/prompt-wire/prd.json\n  - nax/status.json\n  - test/unit/prompts/sections/isolation.test.ts\n  - test/unit/prompts/sections/role-task.test.ts\n\nStage and commit these files before running review.",
+        "Attempt 1 failed with model tier: balanced: Review failed: Working tree has uncommitted changes:\n  - nax/status.json\n\nStage and commit these files before running review."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "fast",
+          "stage": "escalation",
+          "summary": "Failed with tier fast, escalating to next tier",
+          "timestamp": "2026-03-08T12:52:39.416Z"
+        },
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "timestamp": "2026-03-08T13:00:32.123Z"
+        }
+      ],
+      "escalations": [],
+      "tags": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Straightforward copy-paste refactoring expanding two section files with role variants and mirroring test cases; no architectural changes, clear scope, well-defined acceptance criteria.",
+        "contentHash": "fb83da5aecd144a5a3883dd09c2a5aa14d0d4f476077cffc8fffefe790f0eba4",
+        "modelTier": "powerful"
+      }
     },
     {
       "id": "PW-002",
       "title": "Wire PromptBuilder to sections, remove inline duplicates and template stubs",
-      "description": "The PromptBuilder in src/prompts/builder.ts has inline duplicates of the section logic: buildDefaultRoleBody(), buildIsolationRules(), buildStoryContext(), and a hardcoded CONVENTIONS_FOOTER. These must be replaced with calls to the sections from PW-001.\n\nChanges to src/prompts/builder.ts:\n1. Import buildRoleTaskSection from './sections/role-task'\n2. Import buildIsolationSection from './sections/isolation'\n3. Import buildStorySection from './sections/story'\n4. Import buildConventionsSection from './sections/conventions'\n5. In build(), replace inline function calls with section imports\n6. Remove dead inline functions: buildDefaultRoleBody, buildIsolationRules, buildStoryContext, CONVENTIONS_FOOTER\n\nNote on API: the expanded sections take role as first arg; builder must map PromptRole accordingly. Verifier role already uses buildVerdictSection — do not change that.\n\nAlso delete dead template stubs:\n- src/prompts/templates/implementer.ts\n- src/prompts/templates/test-writer.ts\n- src/prompts/templates/verifier.ts\n- src/prompts/templates/single-session.ts\n- Remove src/prompts/templates/ dir if empty after deletion\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/prompts/ --timeout=60000\nThen: NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000 --bail\nCommit: 'refactor: wire PromptBuilder to sections, remove inline duplicates and template stubs'",
+      "description": "The PromptBuilder in src/prompts/builder.ts has inline duplicates of the section logic: buildDefaultRoleBody(), buildIsolationRules(), buildStoryContext(), and a hardcoded CONVENTIONS_FOOTER. These must be replaced with calls to the sections from PW-001.\n\nChanges to src/prompts/builder.ts:\n1. Import buildRoleTaskSection from './sections/role-task'\n2. Import buildIsolationSection from './sections/isolation'\n3. Import buildStorySection from './sections/story'\n4. Import buildConventionsSection from './sections/conventions'\n5. In build(), replace inline function calls with section imports\n6. Remove dead inline functions: buildDefaultRoleBody, buildIsolationRules, buildStoryContext, CONVENTIONS_FOOTER\n\nNote on API: the expanded sections take role as first arg; builder must map PromptRole accordingly. Verifier role already uses buildVerdictSection \u2014 do not change that.\n\nAlso delete dead template stubs:\n- src/prompts/templates/implementer.ts\n- src/prompts/templates/test-writer.ts\n- src/prompts/templates/verifier.ts\n- src/prompts/templates/single-session.ts\n- Remove src/prompts/templates/ dir if empty after deletion\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/prompts/ --timeout=60000\nThen: NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000 --bail\nCommit: 'refactor: wire PromptBuilder to sections, remove inline duplicates and template stubs'",
       "complexity": "simple",
       "status": "open",
-      "dependencies": ["PW-001"],
+      "dependencies": [
+        "PW-001"
+      ],
       "acceptanceCriteria": [
         "PromptBuilder.build() uses buildRoleTaskSection() from sections/ (no inline buildDefaultRoleBody)",
         "PromptBuilder.build() uses buildIsolationSection() from sections/ (no inline buildIsolationRules)",
@@ -37,7 +71,14 @@
         "All existing builder and section tests pass",
         "Full test suite passes 0 failures",
         "TypeScript and lint checks pass"
-      ]
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "tags": [],
+      "storyPoints": 1
     }
-  ]
+  ],
+  "updatedAt": "2026-03-08T13:00:32.123Z"
 }

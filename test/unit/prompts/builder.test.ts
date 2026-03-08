@@ -84,7 +84,7 @@ describe("PromptBuilder section order", () => {
       .build();
 
     const constitutionIdx = prompt.indexOf("CONSTITUTION_MARKER");
-    const roleTaskIdx = prompt.indexOf("YOUR TASK") !== -1 ? prompt.indexOf("YOUR TASK") : prompt.indexOf("Your role");
+    const roleTaskIdx = prompt.indexOf("# Role:");
 
     expect(constitutionIdx).toBeGreaterThanOrEqual(0);
     expect(roleTaskIdx).toBeGreaterThanOrEqual(0);

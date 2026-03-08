@@ -12,6 +12,10 @@
 
 import type { NaxConfig } from "../config/types";
 import type { UserStory } from "../prd";
+import { buildConventionsSection } from "./sections/conventions";
+import { buildIsolationSection } from "./sections/isolation";
+import { buildRoleTaskSection } from "./sections/role-task";
+import { buildStorySection } from "./sections/story";
 import type { PromptOptions, PromptRole } from "./types";
 
 const SECTION_SEP = "\n\n---\n\n";
@@ -69,16 +73,17 @@ export class PromptBuilder {
       sections.push(`# CONSTITUTION (follow these rules strictly)\n\n${this._constitution}`);
     }
 
-    // (2) Role task body — user override or default template
+    // (2) Role task body — user override or default section
     sections.push(await this._resolveRoleBody());
 
     // (3) Story context — non-overridable
     if (this._story) {
-      sections.push(buildStoryContext(this._story));
+      sections.push(buildStorySection(this._story));
     }
 
     // (4) Isolation rules — non-overridable
-    sections.push(buildIsolationRules(this._role, this._options));
+    const isolation = this._options.isolation as string | undefined;
+    sections.push(buildIsolationSection(this._role, isolation as "strict" | "lite" | undefined));
 
     // (5) Context markdown
     if (this._contextMd) {
@@ -86,7 +91,7 @@ export class PromptBuilder {
     }
 
     // (6) Conventions footer — non-overridable, always last
-    sections.push(CONVENTIONS_FOOTER);
+    sections.push(buildConventionsSection());
 
     return sections.join(SECTION_SEP);
   }
@@ -107,72 +112,10 @@ export class PromptBuilder {
           return await file.text();
         }
       } catch {
-        // fall through to default template
+        // fall through to default section
       }
     }
-    return buildDefaultRoleBody(this._role, this._story?.title, this._options);
+    const variant = this._options.variant as "standard" | "lite" | undefined;
+    return buildRoleTaskSection(this._role, variant);
   }
 }
-
-// ---------------------------------------------------------------------------
-// Section builders (module-private)
-// ---------------------------------------------------------------------------
-
-function buildDefaultRoleBody(role: PromptRole, title = "", options: PromptOptions = {}): string {
-  const variant = options.variant as string | undefined;
-  switch (role) {
-    case "test-writer":
-      return `# Test Writer — "${title}"\n\nYour role: Write failing tests ONLY. Do NOT implement any source code.`;
-    case "implementer":
-      if (variant === "lite") {
-        return `# Implementer (Lite) — "${title}"\n\nYour role: Write tests AND implement the feature in a single session.`;
-      }
-      return `# Implementer — "${title}"\n\nYour role: Make all failing tests pass.`;
-    case "verifier":
-      return `# Verifier — "${title}"\n\nYour role: Verify the implementation and tests.`;
-    case "single-session":
-      return `# Task — "${title}"\n\nYour role: Write tests AND implement the feature in a single session.`;
-  }
-}
-
-function buildStoryContext(story: UserStory): string {
-  return `# Story Context
-
-**Story:** ${story.title}
-
-**Description:**
-${story.description}
-
-**Acceptance Criteria:**
-${story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}`;
-}
-
-const TEST_FILTER_RULE =
-  "When running tests, run ONLY test files related to your changes" +
-  " (e.g. `bun test ./test/specific.test.ts`). NEVER run `bun test` without a file filter" +
-  " — full suite output will flood your context window and cause failures.";
-
-function buildIsolationRules(role: PromptRole, options: PromptOptions = {}): string {
-  const header = "# Isolation Rules\n\n";
-  const footer = `\n\n${TEST_FILTER_RULE}`;
-  const isolation = options.isolation as string | undefined;
-
-  switch (role) {
-    case "test-writer":
-      if (isolation === "lite") {
-        return `${header}isolation scope: Primarily create test files in the test/ directory. You MAY read source files and MAY import from source files to ensure correct types/interfaces. Stub-only src/ files are allowed (empty exports, no logic). Tests must fail for the right reasons (feature not implemented).${footer}`;
-      }
-      return `${header}isolation scope: Only create or modify files in the test/ directory. Tests must fail because the feature is not yet implemented. Do NOT modify any source files in src/.${footer}`;
-    case "implementer":
-      return `${header}isolation scope: Implement source code in src/ to make the tests pass. Do NOT modify test files. Run tests frequently to track progress.${footer}`;
-    case "verifier":
-      return `${header}isolation scope: Verify and fix only — do not change behaviour unless it violates acceptance criteria. Ensure all tests pass and all criteria are met.${footer}`;
-    case "single-session":
-      return `${header}isolation scope: Write tests first (test/ directory), then implement (src/ directory). All tests must pass by the end.${footer}`;
-  }
-}
-
-const CONVENTIONS_FOOTER =
-  "# Conventions\n\n" +
-  "Follow existing code patterns and conventions. Write idiomatic, maintainable code." +
-  " Commit your changes when done.";
