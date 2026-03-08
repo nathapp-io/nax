@@ -115,3 +115,34 @@ describe("runReview — dirty working tree guard (RQ-001)", () => {
     });
   });
 });
+
+describe("nax runtime file exclusions", () => {
+  test("nax/status.json is excluded from uncommitted check", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => ["nax/status.json"]);
+    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    expect(result.success).toBe(true);
+  });
+
+  test(".nax-verifier-verdict.json is excluded from uncommitted check", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => [".nax-verifier-verdict.json"]);
+    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    expect(result.success).toBe(true);
+  });
+
+  test("nax/features/*/prd.json is excluded from uncommitted check", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => ["nax/features/ctx-simplify/prd.json"]);
+    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    expect(result.success).toBe(true);
+  });
+
+  test("agent source files are still caught by uncommitted check", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => [
+      "nax/status.json",
+      "src/config/types.ts",
+    ]);
+    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    expect(result.success).toBe(false);
+    expect(result.failureReason).toContain("src/config/types.ts");
+    expect(result.failureReason).not.toContain("nax/status.json");
+  });
+});

@@ -208,7 +208,12 @@ export async function runReview(
   let firstFailure: string | undefined;
 
   // RQ-001: Check for uncommitted tracked files before running checks
-  const uncommittedFiles = await _deps.getUncommittedFiles(workdir);
+  const allUncommittedFiles = await _deps.getUncommittedFiles(workdir);
+  // Exclude nax runtime files — written by nax itself during the run, not by the agent
+  const NAX_RUNTIME_FILES = new Set(["nax/status.json", ".nax-verifier-verdict.json"]);
+  const uncommittedFiles = allUncommittedFiles.filter(
+    (f) => !NAX_RUNTIME_FILES.has(f) && !f.match(/^nax\/features\/.+\/prd\.json$/),
+  );
   if (uncommittedFiles.length > 0) {
     const fileList = uncommittedFiles.join(", ");
     logger?.warn("review", `Uncommitted changes detected before review: ${fileList}`);
