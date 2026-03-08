@@ -129,6 +129,9 @@ export async function runTddSession(
     await cleanupProcessTree(result.pid);
   }
 
+  // BUG-058: Auto-commit if agent left uncommitted changes
+  await autoCommitIfDirty(workdir, role, story.id);
+
   // Check isolation based on role and skipIsolation flag.
   let isolation: IsolationCheck | undefined;
   if (!skipIsolation) {
@@ -180,4 +183,52 @@ export async function runTddSession(
     durationMs,
     estimatedCost: result.estimatedCost,
   };
+}
+
+/**
+ * BUG-058: Auto-commit safety net.
+ *
+ * If the agent left uncommitted changes, stage and commit them automatically.
+ * This prevents the review stage from failing with "uncommitted changes" errors.
+ * Only triggers when the agent forgot — if tree is clean, this is a no-op.
+ */
+async function autoCommitIfDirty(workdir: string, role: string, storyId: string): Promise<void> {
+  const logger = getLogger();
+
+  // Check if working tree is dirty
+  try {
+    const statusProc = Bun.spawn(["git", "status", "--porcelain"], {
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const statusOutput = await new Response(statusProc.stdout).text();
+    await statusProc.exited;
+
+    if (!statusOutput.trim()) return; // Clean tree, nothing to do
+
+    logger.warn("tdd", `Agent did not commit after ${role} session — auto-committing`, {
+      role,
+      storyId,
+      dirtyFiles: statusOutput.trim().split("\n").length,
+    });
+
+    // Stage all changes
+    const addProc = Bun.spawn(["git", "add", "-A"], {
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    await addProc.exited;
+
+    // Commit with descriptive message
+    const commitProc = Bun.spawn(["git", "commit", "-m", `chore(${storyId}): auto-commit after ${role} session`], {
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    await commitProc.exited;
+  } catch {
+    // Silently ignore — auto-commit is best-effort
+  }
 }

@@ -199,6 +199,9 @@ export const executionStage: PipelineStage = {
 
     ctx.agentResult = result;
 
+    // BUG-058: Auto-commit if agent left uncommitted changes (single-session/test-after)
+    await autoCommitIfDirty(ctx.workdir, "single-session", ctx.story.id);
+
     // merge-conflict trigger: detect CONFLICT markers in agent output
     const combinedOutput = (result.output ?? "") + (result.stderr ?? "");
     if (
@@ -267,3 +270,40 @@ export const _executionDeps = {
   isAmbiguousOutput,
   checkStoryAmbiguity,
 };
+
+/**
+ * BUG-058: Auto-commit safety net for single-session/test-after.
+ * Mirrors the same function in tdd/session-runner.ts for three-session TDD.
+ */
+async function autoCommitIfDirty(workdir: string, role: string, storyId: string): Promise<void> {
+  try {
+    const statusProc = Bun.spawn(["git", "status", "--porcelain"], {
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const statusOutput = await new Response(statusProc.stdout).text();
+    await statusProc.exited;
+
+    if (!statusOutput.trim()) return;
+
+    const logger = getLogger();
+    logger.warn("execution", `Agent did not commit after ${role} session — auto-committing`, {
+      role,
+      storyId,
+      dirtyFiles: statusOutput.trim().split("\n").length,
+    });
+
+    const addProc = Bun.spawn(["git", "add", "-A"], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
+    await addProc.exited;
+
+    const commitProc = Bun.spawn(["git", "commit", "-m", `chore(${storyId}): auto-commit after ${role} session`], {
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    await commitProc.exited;
+  } catch {
+    // Silently ignore — auto-commit is best-effort
+  }
+}
