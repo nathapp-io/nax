@@ -35,10 +35,18 @@ Tags: ${tags.join(", ")}
 - balanced: Standard features, moderate logic, straightforward tests. 30-90 min.
 - powerful: Complex architecture, security-critical, multi-file refactors, novel algorithms. >90 min.
 
+## Test Strategies (derived from complexity)
+Your complexity classification will determine the execution strategy:
+- simple → tdd-simple: Single-session TDD (agent writes tests first, then implements)
+- medium → three-session-tdd-lite: Multi-session with lite isolation
+- complex/expert → three-session-tdd: Strict multi-session TDD isolation
+- test-after: Reserved for non-TDD work (refactors, deletions, config-only changes)
+
 ## Rules
 - Default to the CHEAPEST tier that will succeed.
 - Simple barrel exports, re-exports, or index files are ALWAYS simple + fast.
 - A story touching many files doesn't automatically mean complex — copy-paste refactors are simple.
+- If the story is pure refactoring/deletion with no new behavior, consider it "simple" for tdd-simple strategy.
 
 Respond with ONLY this JSON (no markdown, no explanation):
 {"complexity":"simple|medium|complex|expert","modelTier":"fast|balanced|powerful","reasoning":"<one line>"}`;
@@ -73,10 +81,18 @@ ${storyBlocks}
 - balanced: Standard features, moderate logic, straightforward tests. 30-90 min.
 - powerful: Complex architecture, security-critical, multi-file refactors, novel algorithms. >90 min.
 
+## Test Strategies (derived from complexity)
+Your complexity classification will determine the execution strategy:
+- simple → tdd-simple: Single-session TDD (agent writes tests first, then implements)
+- medium → three-session-tdd-lite: Multi-session with lite isolation
+- complex/expert → three-session-tdd: Strict multi-session TDD isolation
+- test-after: Reserved for non-TDD work (refactors, deletions, config-only changes)
+
 ## Rules
 - Default to the CHEAPEST tier that will succeed.
 - Simple barrel exports, re-exports, or index files are ALWAYS simple + fast.
 - A story touching many files doesn't automatically mean complex — copy-paste refactors are simple.
+- If the story is pure refactoring/deletion with no new behavior, consider it "simple" for tdd-simple strategy.
 
 Respond with ONLY a JSON array (no markdown, no explanation):
 [{"id":"US-001","complexity":"simple|medium|complex|expert","modelTier":"fast|balanced|powerful","reasoning":"<one line>"}]`;

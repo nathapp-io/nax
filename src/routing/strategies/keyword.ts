@@ -117,8 +117,8 @@ function determineTestStrategy(
     return "three-session-tdd";
   }
 
-  // BUG-045: simple → test-after (low overhead), medium → tdd-lite (sweet spot)
-  if (complexity === "simple") return "test-after";
+  // TS-001: simple → tdd-simple (TDD discipline, 1 session), medium → tdd-lite (3 sessions)
+  if (complexity === "simple") return "tdd-simple";
   return "three-session-tdd-lite";
 }
 
