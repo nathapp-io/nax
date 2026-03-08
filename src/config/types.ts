@@ -339,6 +339,7 @@ export interface ContextAutoDetectConfig {
 export interface ContextConfig {
   testCoverage: TestCoverageConfig;
   autoDetect: ContextAutoDetectConfig;
+  fileInjection?: "keyword" | "disabled";
 }
 
 /** Story size gate thresholds (v0.16.0) */

@@ -128,6 +128,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
     testPath: "acceptance.test.ts",
   },
   context: {
+    fileInjection: "disabled",
     testCoverage: {
       enabled: true,
       detail: "names-and-counts",

@@ -202,6 +202,7 @@ const ContextAutoDetectConfigSchema = z.object({
 const ContextConfigSchema = z.object({
   testCoverage: TestCoverageConfigSchema,
   autoDetect: ContextAutoDetectConfigSchema,
+  fileInjection: z.enum(["keyword", "disabled"]).default("disabled"),
 });
 
 const AdaptiveRoutingConfigSchema = z.object({
