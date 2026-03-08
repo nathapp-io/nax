@@ -4,7 +4,7 @@
   "description": "AI Coding Agent Orchestrator \u2014 loops until done",
   "type": "module",
   "bin": {
-    "nax": "./bin/nax.ts"
+    "nax": "./dist/nax.js"
   },
   "scripts": {
     "prepare": "git config core.hooksPath .githooks",
@@ -16,7 +16,8 @@
     "test:watch": "bun test --watch",
     "test:unit": "bun test ./test/unit/ --timeout=60000",
     "test:integration": "bun test ./test/integration/ --timeout=60000",
-    "test:ui": "bun test ./test/ui/ --timeout=60000"
+    "test:ui": "bun test ./test/ui/ --timeout=60000",
+    "prepublishOnly": "bun run build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
@@ -43,5 +44,12 @@
     "orchestrator",
     "tdd",
     "coding"
+  ],
+  "files": [
+    "dist/",
+    "src/",
+    "bin/",
+    "README.md",
+    "CHANGELOG.md"
   ]
 }
