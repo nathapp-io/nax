@@ -6,6 +6,40 @@
 
 ---
 
+
+## v0.31.0 — Prompt Template Export
+
+**Theme:** Export default prompt templates for user customization
+**Status:** 🚧 In Progress
+
+### Stories
+- [ ] **PE-001:** `nax prompts --init` — export 4 default role-body templates to `nax/templates/` with header comments
+- [ ] **PE-002:** Auto-configure `prompts.overrides` in `nax.config.json` when templates exist
+
+### Fixes
+- **Verifier context:** Injected missing `.context(contextMarkdown)` into verifier prompt builder calls
+
+---
+
+## v0.32.0 — TDD Simple Strategy
+
+**Theme:** Single-session TDD strategy for simple stories — TDD discipline without session isolation overhead
+**Status:** 🔜 Planned
+
+### Stories
+- [ ] **TS-001:** Add `tdd-simple` test strategy type and update routing (simple → tdd-simple default, test-after preserved for non-TDD work)
+- [ ] **TS-002:** Add `tdd-simple` prompt section — red-green-refactor instructions, no isolation, git commit instruction
+- [ ] **TS-003:** Wire `tdd-simple` execution path in session runner and pipeline (single session, reuse single-session path)
+
+### Strategy Spectrum
+| Strategy | Sessions | Use Case |
+|:---------|:---------|:---------|
+| `test-after` | 1 | Non-TDD: refactors, deletions, config, docs |
+| `tdd-simple` | 1 | Simple stories: single agent, TDD discipline |
+| `three-session-tdd-lite` | 3 | Medium stories: lite isolation |
+| `three-session-tdd` | 3 | Complex stories: strict isolation |
+
+---
 ## v0.30.0 — Prompt Builder Completion ✅ Shipped (2026-03-08)
 
 **Theme:** Wire PromptBuilder to sections, fix global install crash
