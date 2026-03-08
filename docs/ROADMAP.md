@@ -135,16 +135,16 @@
 
 ---
 
-## v0.27.0 — Review Quality
+## v0.27.0 — Review Quality ✅ Shipped (2026-03-08)
 
 **Theme:** Fix review stage reliability — dirty working tree false-positive, stale precheck, dead config fields
-**Status:** 🔲 Planned
+**Status:** ✅ Shipped (2026-03-08)
 **Spec:** `nax/features/review-quality/prd.json`
 
 ### Stories
-- [ ] **RQ-001:** Assert clean working tree before running review typecheck/lint (BUG-049)
-- [ ] **RQ-002:** Fix `checkOptionalCommands` precheck to use correct config resolution path (BUG-050)
-- [ ] **RQ-003:** Consolidate dead `quality.commands.typecheck/lint` into review resolution chain (BUG-051)
+- [x] **RQ-001:** Assert clean working tree before running review typecheck/lint (BUG-049)
+- [x] **RQ-002:** Fix `checkOptionalCommands` precheck to use correct config resolution path (BUG-050)
+- [x] **RQ-003:** Consolidate dead `quality.commands.typecheck/lint` into review resolution chain (BUG-051)
 
 ---
 
