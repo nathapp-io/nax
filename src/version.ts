@@ -5,9 +5,6 @@
  * When running from source (bin/nax.ts), falls back to runtime git rev-parse.
  */
 
-import { spawnSync } from "node:child_process";
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import pkg from "../package.json";
 
 declare const GIT_COMMIT: string;
@@ -22,16 +19,16 @@ export const NAX_COMMIT: string = (() => {
   } catch {
     // not injected — fall through to runtime resolution
   }
-  // Runtime fallback: resolve from the source file's git repo
+  // Runtime fallback: resolve from the source file's git repo (Bun-native)
   try {
-    const sourceDir = dirname(fileURLToPath(import.meta.url));
-    const result = spawnSync("git", ["rev-parse", "--short", "HEAD"], {
-      cwd: sourceDir,
-      encoding: "utf8",
-      timeout: 2000,
+    const result = Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], {
+      cwd: import.meta.dir,
+      stderr: "ignore",
     });
-    const hash = result.stdout?.trim();
-    if (hash && /^[0-9a-f]{6,10}$/.test(hash)) return hash;
+    if (result.exitCode === 0) {
+      const hash = result.stdout.toString().trim();
+      if (/^[0-9a-f]{6,10}$/.test(hash)) return hash;
+    }
   } catch {
     // git not available
   }
