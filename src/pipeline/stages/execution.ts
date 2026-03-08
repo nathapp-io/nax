@@ -147,6 +147,11 @@ export const executionStage: PipelineStage = {
         durationMs: 0, // TDD result doesn't track total duration
       };
 
+      // Propagate full-suite gate result so verify stage can skip redundant run (BUG-054)
+      if (tddResult.fullSuiteGatePassed) {
+        ctx.fullSuiteGatePassed = true;
+      }
+
       if (!tddResult.success) {
         // Store failure category in context for runner to use at max-attempts decision
         ctx.tddFailureCategory = tddResult.failureCategory;
