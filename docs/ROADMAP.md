@@ -7,14 +7,14 @@
 ---
 
 
-## v0.31.0 — Prompt Template Export
+## v0.31.0 — Prompt Template Export ✅ Shipped (2026-03-08)
 
 **Theme:** Export default prompt templates for user customization
-**Status:** 🚧 In Progress
+**Status:** ✅ Shipped (2026-03-08)
 
 ### Stories
-- [ ] **PE-001:** `nax prompts --init` — export 4 default role-body templates to `nax/templates/` with header comments
-- [ ] **PE-002:** Auto-configure `prompts.overrides` in `nax.config.json` when templates exist
+- [x] **PE-001:** `nax prompts --init` — export 4 default role-body templates to `nax/templates/` with header comments
+- [x] **PE-002:** Auto-configure `prompts.overrides` in `nax.config.json` when templates exist
 
 ### Fixes
 - **Verifier context:** Injected missing `.context(contextMarkdown)` into verifier prompt builder calls
@@ -240,6 +240,7 @@
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.31.0 | Prompt Template Export | 2026-03-08 | PE-001/002: `nax prompts --init` + auto-configure overrides; verifier context fix |
 | v0.30.0 | Prompt Builder Completion | 2026-03-08 | PW-001/002: sections wired, stubs deleted, git commit instruction live; global install crash fix |
 | v0.29.0 | Context Simplification | 2026-03-08 | `context.fileInjection: "disabled"` default; prompt/review/version/CI fixes |
 | v0.28.0 | Prompt Builder | 2026-03-08 | Unified, user-overridable prompt architecture; fluent API; default templates |
