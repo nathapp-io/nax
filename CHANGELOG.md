@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.30.0] - 2026-03-08
+
+### Fixed
+- **Global install crash:** `bin/nax.ts`, `headless-formatter.ts`, and `cli/analyze.ts` were reading `package.json` at runtime via `import.meta.dir`-relative paths. In a global bun install, these paths resolve incorrectly, causing an ENOENT crash on launch. All three now use the static `NAX_VERSION` constant (baked in at build time).
+
+### Refactored
+- **Prompt Builder wired to sections:** `PromptBuilder` now calls `buildRoleTaskSection()`, `buildIsolationSection()`, `buildStorySection()`, and `buildConventionsSection()` from `src/prompts/sections/` instead of duplicated inline functions. Eliminates 80+ lines of dead code.
+- **Sections expanded:** `role-task.ts` and `isolation.ts` now cover all 4 roles (`implementer`, `test-writer`, `verifier`, `single-session`). Previously only covered 1–2 roles each.
+- **Template stubs removed:** `src/prompts/templates/` directory deleted — all 4 stub files (`implementer.ts`, `test-writer.ts`, `verifier.ts`, `single-session.ts`) were empty and unused.
+
 ## [0.29.0] - 2026-03-08
 
 ### Added
