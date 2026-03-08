@@ -21,7 +21,7 @@
 
 ---
 
-## v0.32.0 — TDD Simple Strategy
+## v0.32.0 — TDD Simple Strategy ✅ Shipped (2026-03-09)
 
 **Theme:** Single-session TDD strategy for simple stories — TDD discipline without session isolation overhead
 **Status:** 🔜 Planned
