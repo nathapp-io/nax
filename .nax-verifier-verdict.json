@@ -3,72 +3,78 @@
   "approved": true,
   "tests": {
     "allPassing": true,
-    "passCount": 60,
+    "passCount": 102,
     "failCount": 0
   },
   "testModifications": {
     "detected": false,
     "files": [],
     "legitimate": true,
-    "reasoning": "No test files were modified by the implementer. All test files are newly created."
+    "reasoning": "No test files were modified by the implementer. All 20 loader tests passed without modification."
   },
   "acceptanceCriteria": {
     "allMet": true,
     "criteria": [
       {
-        "criterion": "src/prompts/sections/isolation.ts exports buildIsolationSection(mode: 'strict' | 'lite'): string",
+        "criterion": "src/prompts/templates/ contains test-writer.ts, implementer.ts, verifier.ts, single-session.ts — each exports defaultTemplate string",
         "met": true
       },
       {
-        "criterion": "src/prompts/sections/role-task.ts exports buildRoleTaskSection(variant: 'standard' | 'lite'): string",
+        "criterion": "src/prompts/loader.ts exports loadOverride(role: PromptRole, workdir: string, config: NaxConfig): Promise<string | null>",
         "met": true
       },
       {
-        "criterion": "src/prompts/sections/story.ts exports buildStorySection(story: UserStory): string",
+        "criterion": "Loader resolves path relative to workdir correctly",
         "met": true
       },
       {
-        "criterion": "src/prompts/sections/verdict.ts exports buildVerdictSection(story: UserStory): string",
+        "criterion": "Loader returns null when config.prompts absent, role key absent, or file missing",
         "met": true
       },
       {
-        "criterion": "src/prompts/sections/conventions.ts exports buildConventionsSection(): string",
+        "criterion": "Loader throws with clear message on unreadable file (permissions error)",
         "met": true
       },
       {
-        "criterion": "Each section function is pure (no side effects, no file I/O)",
+        "criterion": "NaxConfig gains optional prompts?: { overrides?: Partial<Record<PromptRole, string>> }",
         "met": true
       },
       {
-        "criterion": "isolation strict does not contain 'MAY read'",
-        "met": true
-      },
-      {
-        "criterion": "isolation lite contains 'MAY read src/'",
-        "met": true
-      },
-      {
-        "criterion": "role-task standard contains 'Do NOT modify test files'",
-        "met": true
-      },
-      {
-        "criterion": "role-task lite contains 'Write tests first'",
+        "criterion": "Unit tests cover all required scenarios (null cases, file exists, permission error)",
         "met": true
       }
     ]
   },
   "quality": {
     "rating": "good",
-    "issues": []
+    "issues": [
+      {
+        "type": "fixed",
+        "severity": "medium",
+        "description": "Node.js fs.existsSync usage violated Bun-native-only convention",
+        "fix": "Replaced fs.existsSync with Bun.file().exists() for Bun API compliance",
+        "status": "resolved"
+      },
+      {
+        "type": "fixed",
+        "severity": "low",
+        "description": "Biome formatter issue with function signature line wrapping",
+        "fix": "Collapsed loadOverride function signature onto single line",
+        "status": "resolved"
+      }
+    ]
   },
   "fixes": [
-    "Fixed import sorting in verdict.test.ts",
-    "Fixed import sorting in story.test.ts",
-    "Fixed import sorting in role-task.test.ts",
-    "Fixed import sorting in isolation.test.ts",
-    "Fixed import sorting in conventions.test.ts",
-    "Fixed import sorting and array formatting in sections.test.ts",
-    "Converted string concatenations to single template literals in isolation.ts, story.ts, verdict.ts, and conventions.ts for linter compliance"
+    {
+      "file": "src/prompts/loader.ts",
+      "description": "Use Bun-native APIs: replaced Node.js fs.existsSync with Bun.file().exists()",
+      "detail": "Changed from import { existsSync } from 'node:fs' to using Bun.file(absolutePath).exists() for consistency with project conventions"
+    },
+    {
+      "file": "src/prompts/loader.ts",
+      "description": "Fixed Biome formatting: collapsed function signature to single line",
+      "detail": "Reformatted loadOverride function signature to comply with formatter expectations"
+    }
   ],
-  "reasoning": "All 60 tests pass. Implementation is clean and follows project conventions. All acceptance criteria are met. No test files were modified by the implementer - all test files are newly created. Code quality is excellent with proper typing, pure functions, and comprehensive test coverage. Linting issues were resolved during verification."
+  "reasoning": "All acceptance criteria are fully met. The implementation correctly loads prompt overrides relative to workdir, returns null for missing/absent configurations, throws descriptive errors on permission issues, and exports default template stubs. All 102 tests pass (20 loader-specific tests confirm core functionality). Two quality issues were identified and fixed: replacing Node.js fs.existsSync with Bun.file().exists() for Bun-native compliance, and correcting Biome formatting. No test assertions were loosened. The implementation is clean, follows conventions, and ready for integration."
 }
