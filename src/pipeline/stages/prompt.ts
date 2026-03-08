@@ -39,7 +39,8 @@ export const promptStage: PipelineStage = {
     if (isBatch) {
       prompt = buildBatchPrompt(ctx.stories, ctx.contextMarkdown, ctx.constitution);
     } else {
-      const builder = PromptBuilder.for("single-session")
+      const role = ctx.routing.testStrategy === "tdd-simple" ? "tdd-simple" : "single-session";
+      const builder = PromptBuilder.for(role)
         .withLoader(ctx.workdir, ctx.config)
         .story(ctx.story)
         .context(ctx.contextMarkdown)
