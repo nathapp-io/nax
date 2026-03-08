@@ -10,6 +10,7 @@
  *   (6) Conventions footer     [non-overridable, always last]
  */
 
+import type { NaxConfig } from "../config/types";
 import type { UserStory } from "../prd";
 import type { PromptOptions, PromptRole } from "./types";
 
@@ -22,6 +23,8 @@ export class PromptBuilder {
   private _contextMd: string | undefined;
   private _constitution: string | undefined;
   private _overridePath: string | undefined;
+  private _workdir: string | undefined;
+  private _loaderConfig: NaxConfig | undefined;
 
   private constructor(role: PromptRole, options: PromptOptions = {}) {
     this._role = role;
@@ -37,18 +40,24 @@ export class PromptBuilder {
     return this;
   }
 
-  context(md: string): PromptBuilder {
-    this._contextMd = md;
+  context(md: string | undefined): PromptBuilder {
+    if (md) this._contextMd = md;
     return this;
   }
 
-  constitution(c: string): PromptBuilder {
-    this._constitution = c;
+  constitution(c: string | undefined): PromptBuilder {
+    if (c) this._constitution = c;
     return this;
   }
 
   override(path: string): PromptBuilder {
     this._overridePath = path;
+    return this;
+  }
+
+  withLoader(workdir: string, config: NaxConfig): PromptBuilder {
+    this._workdir = workdir;
+    this._loaderConfig = config;
     return this;
   }
 
@@ -69,7 +78,7 @@ export class PromptBuilder {
     }
 
     // (4) Isolation rules — non-overridable
-    sections.push(buildIsolationRules(this._role));
+    sections.push(buildIsolationRules(this._role, this._options));
 
     // (5) Context markdown
     if (this._contextMd) {
@@ -83,6 +92,14 @@ export class PromptBuilder {
   }
 
   private async _resolveRoleBody(): Promise<string> {
+    // withLoader takes priority over explicit override path
+    if (this._workdir && this._loaderConfig) {
+      const { loadOverride } = await import("./loader");
+      const content = await loadOverride(this._role, this._workdir, this._loaderConfig);
+      if (content !== null) {
+        return content;
+      }
+    }
     if (this._overridePath) {
       try {
         const file = Bun.file(this._overridePath);
@@ -93,7 +110,7 @@ export class PromptBuilder {
         // fall through to default template
       }
     }
-    return buildDefaultRoleBody(this._role, this._story?.title);
+    return buildDefaultRoleBody(this._role, this._story?.title, this._options);
   }
 }
 
@@ -101,11 +118,15 @@ export class PromptBuilder {
 // Section builders (module-private)
 // ---------------------------------------------------------------------------
 
-function buildDefaultRoleBody(role: PromptRole, title = ""): string {
+function buildDefaultRoleBody(role: PromptRole, title = "", options: PromptOptions = {}): string {
+  const variant = options.variant as string | undefined;
   switch (role) {
     case "test-writer":
       return `# Test Writer — "${title}"\n\nYour role: Write failing tests ONLY. Do NOT implement any source code.`;
     case "implementer":
+      if (variant === "lite") {
+        return `# Implementer (Lite) — "${title}"\n\nYour role: Write tests AND implement the feature in a single session.`;
+      }
       return `# Implementer — "${title}"\n\nYour role: Make all failing tests pass.`;
     case "verifier":
       return `# Verifier — "${title}"\n\nYour role: Verify the implementation and tests.`;
@@ -131,12 +152,16 @@ const TEST_FILTER_RULE =
   " (e.g. `bun test ./test/specific.test.ts`). NEVER run `bun test` without a file filter" +
   " — full suite output will flood your context window and cause failures.";
 
-function buildIsolationRules(role: PromptRole): string {
+function buildIsolationRules(role: PromptRole, options: PromptOptions = {}): string {
   const header = "# Isolation Rules\n\n";
   const footer = `\n\n${TEST_FILTER_RULE}`;
+  const isolation = options.isolation as string | undefined;
 
   switch (role) {
     case "test-writer":
+      if (isolation === "lite") {
+        return `${header}isolation scope: Primarily create test files in the test/ directory. You MAY read source files and MAY import from source files to ensure correct types/interfaces. Stub-only src/ files are allowed (empty exports, no logic). Tests must fail for the right reasons (feature not implemented).${footer}`;
+      }
       return `${header}isolation scope: Only create or modify files in the test/ directory. Tests must fail because the feature is not yet implemented. Do NOT modify any source files in src/.${footer}`;
     case "implementer":
       return `${header}isolation scope: Implement source code in src/ to make the tests pass. Do NOT modify test files. Run tests frequently to track progress.${footer}`;

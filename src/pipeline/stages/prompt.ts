@@ -21,8 +21,9 @@
  * ```
  */
 
-import { buildBatchPrompt, buildSingleSessionPrompt } from "../../execution/prompts";
+import { buildBatchPrompt } from "../../execution/prompts";
 import { getLogger } from "../../logger";
+import { PromptBuilder } from "../../prompts";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const promptStage: PipelineStage = {
@@ -34,9 +35,17 @@ export const promptStage: PipelineStage = {
     const logger = getLogger();
     const isBatch = ctx.stories.length > 1;
 
-    const prompt = isBatch
-      ? buildBatchPrompt(ctx.stories, ctx.contextMarkdown, ctx.constitution)
-      : buildSingleSessionPrompt(ctx.story, ctx.contextMarkdown, ctx.constitution);
+    let prompt: string;
+    if (isBatch) {
+      prompt = buildBatchPrompt(ctx.stories, ctx.contextMarkdown, ctx.constitution);
+    } else {
+      const builder = PromptBuilder.for("single-session")
+        .withLoader(ctx.workdir, ctx.config)
+        .story(ctx.story)
+        .context(ctx.contextMarkdown)
+        .constitution(ctx.constitution?.content);
+      prompt = await builder.build();
+    }
 
     ctx.prompt = prompt;
 

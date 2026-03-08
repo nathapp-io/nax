@@ -17,6 +17,7 @@ import type { PipelineContext } from "../pipeline";
 import { constitutionStage, contextStage, promptStage, routingStage } from "../pipeline/stages";
 import type { UserStory } from "../prd";
 import { loadPRD } from "../prd";
+import { PromptBuilder } from "../prompts";
 
 export interface PromptsCommandOptions {
   /** Feature name */
@@ -253,14 +254,25 @@ async function handleThreeSessionTddPrompts(
   outputDir: string | undefined,
   logger: ReturnType<typeof getLogger>,
 ): Promise<void> {
-  // Import TDD prompt builders
-  const { buildTestWriterPrompt, buildImplementerPrompt, buildVerifierPrompt } = await import("../tdd/prompts");
+  // Build prompts for each session using PromptBuilder
+  const [testWriterPrompt, implementerPrompt, verifierPrompt] = await Promise.all([
+    PromptBuilder.for("test-writer", { isolation: "strict" })
+      .withLoader(ctx.workdir, ctx.config)
+      .story(story)
+      .context(ctx.contextMarkdown)
+      .build(),
+    PromptBuilder.for("implementer", { variant: "standard" })
+      .withLoader(ctx.workdir, ctx.config)
+      .story(story)
+      .context(ctx.contextMarkdown)
+      .build(),
+    PromptBuilder.for("verifier").withLoader(ctx.workdir, ctx.config).story(story).build(),
+  ]);
 
-  // Build prompts for each session
   const sessions = [
-    { role: "test-writer", prompt: buildTestWriterPrompt(story, ctx.contextMarkdown) },
-    { role: "implementer", prompt: buildImplementerPrompt(story, ctx.contextMarkdown) },
-    { role: "verifier", prompt: buildVerifierPrompt(story) },
+    { role: "test-writer", prompt: testWriterPrompt },
+    { role: "implementer", prompt: implementerPrompt },
+    { role: "verifier", prompt: verifierPrompt },
   ];
 
   for (const session of sessions) {
