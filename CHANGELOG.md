@@ -96,7 +96,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - TypeScript compilation errors across 9 files (20 total errors resolved)
 - Import organization and code formatting issues (96 files auto-formatted)
 
-## [0.9.2] - 2026-02-XX
-
 ### Previous releases
 - See git history for changes prior to v0.10.0
