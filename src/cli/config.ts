@@ -143,6 +143,8 @@ const FIELD_DESCRIPTIONS: Record<string, string> = {
 
   // Context
   context: "Context injection configuration",
+  "context.fileInjection":
+    "Mode: 'disabled' (default, MCP-aware agents pull context on-demand) | 'keyword' (legacy git-grep injection for non-MCP agents). Set context.fileInjection in config.",
   "context.testCoverage": "Test coverage context settings",
   "context.testCoverage.enabled": "Enable test coverage context injection",
   "context.testCoverage.detail": "Detail level: names-only | names-and-counts | describe-blocks",
@@ -517,7 +519,7 @@ function displayConfigWithDescriptions(
 
     // Display description comment if available
     if (description) {
-      // Include path only for prompts section (where tests expect "prompts.overrides" to appear)
+      // Include path for prompts section (where tests expect "prompts.overrides" to appear)
       const isPromptsSubSection = currentPathStr.startsWith("prompts.");
       const comment = isPromptsSubSection ? `${currentPathStr}: ${description}` : description;
       console.log(`${indentStr}# ${comment}`);
