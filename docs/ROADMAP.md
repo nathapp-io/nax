@@ -135,6 +135,31 @@
 
 ---
 
+
+## v0.28.0 — Prompt Builder
+
+**Theme:** Unified, user-overridable prompt architecture replacing 11 scattered functions
+**Status:** 🔲 Planned
+**Spec:** `nax/features/prompt-builder/prd.json`
+
+### Stories
+- [ ] **PB-001:** PromptBuilder class with layered section architecture + fluent API
+- [ ] **PB-002:** Typed sections: isolation, role-task, story, verdict, conventions
+- [ ] **PB-003:** Default templates + user override loader + config schema (`prompts.overrides`)
+- [ ] **PB-004:** Migrate all 6 user-facing prompt call sites to PromptBuilder
+- [ ] **PB-005:** Document `prompts` config in `nax config --explain` + precheck validation
+
+---
+
+## v0.27.1 — Pipeline Observability ✅ Shipped (2026-03-08)
+
+**Theme:** Fix redundant verify stage + improve pipeline skip log messages
+**Status:** ✅ Shipped (2026-03-08)
+
+### Bugfixes
+- [x] **BUG-054:** Skip pipeline verify stage when TDD full-suite gate already passed — `runFullSuiteGate()` now returns `boolean`, propagated via `ThreeSessionTddResult` → `executionStage` → `ctx.fullSuiteGatePassed` → `verifyStage.enabled()` returns false with reason "not needed (full-suite gate already passed)"
+- [x] **BUG-055:** Pipeline skip messages now differentiate "not needed" from "disabled". Added optional `skipReason(ctx)` to `PipelineStage` interface; `rectify`, `autofix`, `regression`, `verify` stages all provide context-aware reasons
+
 ## v0.27.0 — Review Quality ✅ Shipped (2026-03-08)
 
 **Theme:** Fix review stage reliability — dirty working tree false-positive, stale precheck, dead config fields
@@ -262,6 +287,7 @@
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.27.1 | Pipeline Observability | 2026-03-08 | BUG-054: skip redundant verify after full-suite gate; BUG-055: differentiate skip reasons |
 | v0.26.0 | Routing Persistence | 2026-03-08 | RRP-001–004: persist initial routing, initialComplexity, contentHash staleness detection, unit tests; BUG-052: structured logger in review/optimizer |
 | v0.25.0 | Trigger Completion | 2026-03-07 | TC-001–004: run.complete event, crash recovery, headless formatter, trigger completion |
 | v0.24.0 | Central Run Registry | 2026-03-07 | CRR-000–003: events writer, registry, nax runs CLI, nax logs --run global resolution |
@@ -334,8 +360,8 @@
 - [x] ~~**BUG-050:** `checkOptionalCommands` precheck uses legacy config fields. Fixed in v0.27.0.~~
 - [x] ~~**BUG-051:** `quality.commands.typecheck/lint` are dead config. Fixed in v0.27.0.~~
 - [x] ~~**BUG-052:** `console.warn` in runtime pipeline code bypasses JSONL logger. Fixed in v0.26.0.~~
-- [ ] **BUG-054:** Redundant scoped verify after TDD full-suite gate passes. When rectification gate runs full test suite and passes, the pipeline verify stage re-runs scoped tests (subset). **Fix:** Skip verify if full-suite gate already passed.
-- [ ] **BUG-055:** Pipeline skip messages conflate "not needed" with "disabled". `runner.ts:54` logs "skipped (disabled)" for all stages where `enabled()` returns false, even if just because tests passed. **Fix:** Differentiate log message.
+- [x] ~~**BUG-054:** Redundant scoped verify after TDD full-suite gate passes. Fixed in v0.27.1.~~ When rectification gate runs full test suite and passes, the pipeline verify stage re-runs scoped tests (subset). **Fix:** Skip verify if full-suite gate already passed.
+- [x] ~~**BUG-055:** Pipeline skip messages conflate "not needed" with "disabled". Fixed in v0.27.1.~~ `runner.ts:54` logs "skipped (disabled)" for all stages where `enabled()` returns false, even if just because tests passed. **Fix:** Differentiate log message.
 
 ### Features
 - [x] ~~`nax unlock` command~~
@@ -361,4 +387,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-08 (v0.27.0 shipped — Review Quality)*
+*Last updated: 2026-03-08 (v0.27.1 shipped — Pipeline Observability; v0.28.0 PRD ready — Prompt Builder)*
