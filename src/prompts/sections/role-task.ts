@@ -1,11 +1,12 @@
 /**
  * Role-Task Section
  *
- * Generates role definition for all 4 roles in nax prompt orchestration:
+ * Generates role definition for all 5 roles in nax prompt orchestration:
  * - implementer: Make failing tests pass (standard/lite variants)
  * - test-writer: Write tests first (RED phase)
  * - verifier: Review and verify implementation
  * - single-session: Write tests AND implement in one session
+ * - tdd-simple: Write failing tests FIRST, then implement in one session
  *
  * Backwards compatible: also accepts old API (variant only)
  * - buildRoleTaskSection("standard") → implementer, standard
@@ -13,7 +14,7 @@
  */
 
 export function buildRoleTaskSection(
-  roleOrVariant: "implementer" | "test-writer" | "verifier" | "single-session" | "standard" | "lite",
+  roleOrVariant: "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple" | "standard" | "lite",
   variant?: "standard" | "lite",
 ): string {
   // Old API support: buildRoleTaskSection("standard") or buildRoleTaskSection("lite")
@@ -21,7 +22,7 @@ export function buildRoleTaskSection(
     return buildRoleTaskSection("implementer", roleOrVariant);
   }
 
-  const role = roleOrVariant as "implementer" | "test-writer" | "verifier" | "single-session";
+  const role = roleOrVariant as "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple";
 
   if (role === "implementer") {
     const v = variant ?? "standard";
@@ -79,16 +80,30 @@ export function buildRoleTaskSection(
     );
   }
 
-  // single-session role
+  if (role === "single-session") {
+    return (
+      "# Role: Single-Session\n\n" +
+      "Your task: Write tests AND implement the feature in a single focused session.\n\n" +
+      "Instructions:\n" +
+      "- Phase 1: Write comprehensive tests (test/ directory)\n" +
+      "- Phase 2: Implement to make all tests pass (src/ directory)\n" +
+      "- Use Bun test (describe/test/expect)\n" +
+      "- Run tests frequently throughout implementation\n" +
+      "- When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'\n" +
+      "- Goal: all tests passing, all changes committed, full story complete"
+    );
+  }
+
+  // tdd-simple role — test-driven development in one session
   return (
-    "# Role: Single-Session\n\n" +
-    "Your task: Write tests AND implement the feature in a single focused session.\n\n" +
+    "# Role: TDD-Simple\n\n" +
+    "Your task: Write failing tests FIRST, then implement to make them pass.\n\n" +
     "Instructions:\n" +
-    "- Phase 1: Write comprehensive tests (test/ directory)\n" +
-    "- Phase 2: Implement to make all tests pass (src/ directory)\n" +
-    "- Use Bun test (describe/test/expect)\n" +
-    "- Run tests frequently throughout implementation\n" +
+    "- RED phase: Write failing tests FIRST for the acceptance criteria\n" +
+    "- RED phase: Run the tests to confirm they fail\n" +
+    "- GREEN phase: Implement the minimum code to make tests pass\n" +
+    "- REFACTOR phase: Refactor while keeping tests green\n" +
     "- When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'\n" +
-    "- Goal: all tests passing, all changes committed, full story complete"
+    "- Goal: all tests passing, feature complete, all changes committed"
   );
 }

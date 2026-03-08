@@ -253,6 +253,7 @@ const TEMPLATE_ROLES = [
   { file: "implementer.md", role: "implementer" as const, variant: "standard" as const },
   { file: "verifier.md", role: "verifier" as const },
   { file: "single-session.md", role: "single-session" as const },
+  { file: "tdd-simple.md", role: "tdd-simple" as const },
 ] as const;
 
 const TEMPLATE_HEADER = `<!--
@@ -343,6 +344,7 @@ async function autoWirePromptsConfig(workdir: string): Promise<void> {
             implementer: "nax/templates/implementer.md",
             verifier: "nax/templates/verifier.md",
             "single-session": "nax/templates/single-session.md",
+            "tdd-simple": "nax/templates/tdd-simple.md",
           },
         },
       },
@@ -373,6 +375,7 @@ async function autoWirePromptsConfig(workdir: string): Promise<void> {
     implementer: "nax/templates/implementer.md",
     verifier: "nax/templates/verifier.md",
     "single-session": "nax/templates/single-session.md",
+    "tdd-simple": "nax/templates/tdd-simple.md",
   };
 
   // Add or update prompts section
