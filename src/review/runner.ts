@@ -161,6 +161,40 @@ async function runCheck(check: ReviewCheckName, command: string, workdir: string
 }
 
 /**
+ * Get uncommitted tracked files via git diff --name-only HEAD.
+ * Returns empty array if git command fails or working tree is clean.
+ */
+async function getUncommittedFilesImpl(workdir: string): Promise<string[]> {
+  try {
+    const proc = spawn({
+      cmd: ["git", "diff", "--name-only", "HEAD"],
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const exitCode = await proc.exited;
+    if (exitCode !== 0) {
+      return [];
+    }
+
+    const output = await new Response(proc.stdout).text();
+    return output.trim().split("\n").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ * RQ-001: getUncommittedFiles enables mocking of the git dirty-tree check.
+ */
+export const _deps = {
+  /** Returns tracked files with uncommitted changes (git diff --name-only HEAD). */
+  getUncommittedFiles: getUncommittedFilesImpl,
+};
+
+/**
  * Run all configured review checks
  */
 export async function runReview(
@@ -169,8 +203,22 @@ export async function runReview(
   executionConfig?: ExecutionConfig,
 ): Promise<ReviewResult> {
   const startTime = Date.now();
+  const logger = getSafeLogger();
   const checks: ReviewCheckResult[] = [];
   let firstFailure: string | undefined;
+
+  // RQ-001: Check for uncommitted tracked files before running checks
+  const uncommittedFiles = await _deps.getUncommittedFiles(workdir);
+  if (uncommittedFiles.length > 0) {
+    const fileList = uncommittedFiles.join(", ");
+    logger?.warn("review", `Uncommitted changes detected before review: ${fileList}`);
+    return {
+      success: false,
+      checks: [],
+      totalDurationMs: Date.now() - startTime,
+      failureReason: `Working tree has uncommitted changes:\n${uncommittedFiles.map((f) => `  - ${f}`).join("\n")}\n\nStage and commit these files before running review.`,
+    };
+  }
 
   for (const checkName of config.checks) {
     // Resolve command using resolution strategy
