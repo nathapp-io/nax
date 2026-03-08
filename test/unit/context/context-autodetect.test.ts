@@ -92,6 +92,7 @@ describe("Context Builder", () => {
           workdir: tempDir,
           config: {
             context: {
+              fileInjection: "keyword",
               autoDetect: {
                 enabled: true,
                 maxFiles: 5,
@@ -154,6 +155,7 @@ describe("Context Builder", () => {
           workdir: tempDir,
           config: {
             context: {
+              fileInjection: "keyword",
               autoDetect: {
                 enabled: true,
                 maxFiles: 5,

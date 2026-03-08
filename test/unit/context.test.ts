@@ -532,6 +532,7 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
+          config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
         };
 
         const budget: ContextBudget = {
@@ -577,6 +578,7 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
+          config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
         };
 
         const budget: ContextBudget = {
@@ -621,6 +623,7 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
+          config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
         };
 
         const budget: ContextBudget = {
@@ -668,6 +671,7 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
+          config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
         };
 
         const budget: ContextBudget = {
@@ -709,6 +713,7 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
+          config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
         };
 
         const budget: ContextBudget = {
@@ -958,6 +963,7 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
+          config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
         };
 
         const budget: ContextBudget = {
@@ -1521,6 +1527,7 @@ describe("Context Builder", () => {
           workdir: tempDir,
           config: {
             context: {
+              fileInjection: "keyword",
               autoDetect: {
                 enabled: true,
                 maxFiles: 5,
@@ -1583,6 +1590,7 @@ describe("Context Builder", () => {
           workdir: tempDir,
           config: {
             context: {
+              fileInjection: "keyword",
               autoDetect: {
                 enabled: true,
                 maxFiles: 5,

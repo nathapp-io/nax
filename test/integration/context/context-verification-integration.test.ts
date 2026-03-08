@@ -60,6 +60,7 @@ describe("Context and Verification Integration", () => {
         prd,
         currentStoryId: "US-001",
         workdir: tempDir,
+        config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
       };
 
       const budget: ContextBudget = {
@@ -108,6 +109,7 @@ describe("Context and Verification Integration", () => {
         prd,
         currentStoryId: "US-001",
         workdir: tempDir,
+        config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
       };
 
       const budget: ContextBudget = {
@@ -176,6 +178,7 @@ describe("Context and Verification Integration", () => {
         prd,
         currentStoryId: "US-001",
         workdir: tempDir,
+        config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
       };
 
       const budget: ContextBudget = {
@@ -222,6 +225,7 @@ describe("Context and Verification Integration", () => {
         prd,
         currentStoryId: "US-001",
         workdir: tempDir,
+        config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
       };
 
       const budget: ContextBudget = {
@@ -271,6 +275,7 @@ describe("Context and Verification Integration", () => {
         prd,
         currentStoryId: "US-001",
         workdir: tempDir,
+        config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
       };
 
       const budget: ContextBudget = {

@@ -262,6 +262,7 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
+          config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
         };
 
         const budget: ContextBudget = {
@@ -307,6 +308,7 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
+          config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
         };
 
         const budget: ContextBudget = {
@@ -351,6 +353,7 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
+          config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
         };
 
         const budget: ContextBudget = {
@@ -398,6 +401,7 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
+          config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
         };
 
         const budget: ContextBudget = {
@@ -439,6 +443,7 @@ describe("Context Builder", () => {
           prd,
           currentStoryId: "US-001",
           workdir: tempDir,
+          config: { context: { fileInjection: "keyword", testCoverage: { enabled: false } } } as any,
         };
 
         const budget: ContextBudget = {
