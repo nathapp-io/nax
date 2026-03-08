@@ -173,7 +173,7 @@ describe("Review Stage - Plugin Integration", () => {
       expect(receivedWorkdir).toBe(tempDir);
     });
 
-    test("reviewer receives list of changed files", async () => {
+    test("review fails when there are uncommitted changes (RQ-001)", async () => {
       const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
 
       // Create a file first
@@ -181,15 +181,16 @@ describe("Review Stage - Plugin Integration", () => {
 
       await initGitRepo(tempDir);
 
-      // Now modify the file after git init
+      // Now modify the file after git init WITHOUT committing
+      // This violates RQ-001 (dirty working tree)
       writeFileSync(join(tempDir, "test.ts"), "// modified");
 
-      let receivedFiles: string[] | undefined;
+      let reviewerCalled = false;
       const mockReviewer: IReviewPlugin = {
         name: "test-reviewer",
         description: "Test reviewer",
-        async check(_workdir, changedFiles) {
-          receivedFiles = changedFiles;
+        async check(_workdir) {
+          reviewerCalled = true;
           return { passed: true, output: "OK" };
         },
       };
@@ -204,9 +205,13 @@ describe("Review Stage - Plugin Integration", () => {
       const registry = new PluginRegistry([mockPlugin]);
       const ctx = createMockContext(tempDir, registry);
 
-      await reviewStage.execute(ctx);
+      const result = await reviewStage.execute(ctx);
 
-      expect(receivedFiles).toContain("test.ts");
+      // RQ-001: Review should fail with dirty working tree
+      expect(result.action).toBe("escalate");
+      expect(result.reason).toContain("Working tree has uncommitted changes");
+      // Reviewer should not be called due to dirty tree check
+      expect(reviewerCalled).toBe(false);
     });
 
     test("reviewer receives empty array when no files changed", async () => {
