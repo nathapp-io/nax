@@ -8,7 +8,7 @@
       "title": "Add tdd-simple test strategy type and routing",
       "description": "Introduce `tdd-simple` as a new TestStrategy. This is a single-session TDD approach where one agent writes failing tests first, then implements to make them pass — no session isolation.\n\nChanges:\n1. `src/config/types.ts`: Add `\"tdd-simple\"` to `TestStrategy` union type\n2. `src/routing/strategies/keyword.ts`: Change `simple` complexity default from `test-after` to `tdd-simple` (line ~121). `test-after` remains available for manual routing (refactors, deletions, config-only changes).\n3. `src/routing/strategies/llm-prompts.ts`: Update the LLM routing prompt to include `tdd-simple` as an option with guidance on when to use it vs test-after\n4. Update any Zod schemas or config validation that enumerate TestStrategy values\n\nThe strategy spectrum becomes:\n- `test-after`: Non-TDD work (refactors, deletions, config changes, documentation)\n- `tdd-simple`: Simple stories — single agent, TDD discipline, 1 session\n- `three-session-tdd-lite`: Medium stories — 3 sessions, lite isolation\n- `three-session-tdd`: Complex stories — 3 sessions, strict isolation\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/routing/ test/unit/config/ --timeout=60000\nCommit: 'feat: add tdd-simple test strategy type and routing'",
       "complexity": "simple",
-      "status": "open",
+      "status": "pending",
       "dependencies": [],
       "acceptanceCriteria": [
         "TestStrategy type includes 'tdd-simple'",
@@ -30,7 +30,7 @@
       "title": "Add tdd-simple prompt section and PromptBuilder support",
       "description": "Create the prompt content for the `tdd-simple` role. This is a single-session prompt that instructs the agent to follow TDD discipline: write failing tests first, confirm they fail, then implement to make them pass.\n\nChanges:\n1. `src/prompts/sections/role-task.ts`: Add `tdd-simple` case to `buildRoleTaskSection()`. The prompt should:\n   - Instruct: 'Write failing tests FIRST for the acceptance criteria'\n   - Instruct: 'Run the tests to confirm they fail (red phase)'\n   - Instruct: 'Implement the minimum code to make tests pass (green phase)'\n   - Instruct: 'Refactor if needed while keeping tests green'\n   - Include the git commit instruction (same as implementer)\n   - NOT include isolation rules (agent can touch both src/ and test/)\n2. `src/prompts/sections/isolation.ts`: Add `tdd-simple` case that returns NO isolation rules (empty string or a note saying 'You may modify both src/ and test/ files')\n3. `src/prompts/types.ts`: Add `tdd-simple` to `PromptRole` type\n4. `src/prompts/builder.ts`: Ensure `tdd-simple` works through the existing build() flow\n5. Update `src/cli/prompts.ts` to include `tdd-simple` in the `nax prompts -f <feature>` output\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/prompts/ --timeout=60000\nCommit: 'feat: add tdd-simple prompt section'",
       "complexity": "simple",
-      "status": "open",
+      "status": "pending",
       "dependencies": ["TS-001"],
       "acceptanceCriteria": [
         "PromptRole type includes 'tdd-simple'",
@@ -54,7 +54,7 @@
       "title": "Wire tdd-simple execution path in session runner and pipeline",
       "description": "Connect the tdd-simple strategy to the execution pipeline so stories routed to it actually run as a single TDD session.\n\nChanges:\n1. `src/pipeline/stages/execution.ts`: When `testStrategy === 'tdd-simple'`, run a single session (not 3-session TDD). Use the `tdd-simple` PromptBuilder role.\n2. `src/tdd/session-runner.ts` or create `src/execution/tdd-simple-runner.ts`: Single session that builds a tdd-simple prompt (with story context and conventions) and runs one agent session. Returns a result compatible with the pipeline.\n3. `src/pipeline/stages/prompt.ts`: Handle `tdd-simple` strategy — build prompt using `PromptBuilder.for('tdd-simple')`\n4. Ensure pipeline stages (verify, review, etc.) work correctly after a tdd-simple session — they should behave the same as after any other strategy.\n5. Update `src/execution/lifecycle/headless-formatter.ts` if needed to display tdd-simple sessions correctly.\n\nKey: tdd-simple is essentially like single-session but with a TDD-specific prompt. It should reuse the single-session execution path where possible.\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/ --timeout=60000 --bail\nCommit: 'feat: wire tdd-simple execution path'",
       "complexity": "medium",
-      "status": "open",
+      "status": "pending",
       "dependencies": ["TS-002"],
       "acceptanceCriteria": [
         "Stories with testStrategy tdd-simple execute as a single agent session",
