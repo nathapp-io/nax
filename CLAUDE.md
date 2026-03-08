@@ -96,12 +96,42 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator only]
 
 **Always use solograph MCP tools before writing code or analyzing architecture.** Do NOT use `web_search` or `kb_search` as substitutes.
 
-| Tool | When | Example |
-|:-----|:-----|:--------|
-| `project_code_search` | Plan feature, find existing patterns | Before implementing new routing strategy, search for existing patterns |
-| `codegraph_explain` | Understand unfamiliar subsystems | Before touching `src/execution/escalation/`, explain the architecture |
-| `codegraph_query` | Analyze dependencies, impact of changes | Before refactoring metrics, query what depends on it |
-| `project_code_reindex` | After creating or deleting source files | After adding new stage file, reindex the project |
+### Tool Selection Guide
+
+| Tool | Capability | When to Use | Availability |
+|:-----|:-----------|:-----------|:-------------|
+| `codegraph_query` | Structural queries (Cypher) — find calls, dependencies, imports | **Preferred for dependency analysis, call tracing, symbol lookup** | ✅ Always works (in-memory graph) |
+| `project_code_search` | Semantic search (Redis vector DB) — pattern matching by meaning | Natural language queries like "find auth patterns" | ⚠️ Requires explicit `project_code_reindex` + Redis daemon |
+| `codegraph_explain` | Architecture overview for unfamiliar subsystems | Understand module relationships before major changes | ✅ Always works |
+| `project_code_reindex` | Index project for semantic search | After creating/deleting source files | ✅ Always works |
+
+### Recommended Workflow
+
+For nax, **prefer `codegraph_query`** for routine tasks:
+- Finding where functions are called (`calculateAggregateMetrics` called by `status-cost.ts`)
+- Analyzing dependencies before refactoring
+- Tracing import/export chains
+- Querying symbol definitions and relationships
+
+**Use `project_code_search` only if:**
+- You need semantic similarity ("find authentication patterns")
+- Redis is indexed and running (not guaranteed in all sessions)
+
+### Example Queries
+
+```cypher
+-- Find files calling calculateAggregateMetrics
+MATCH (f:File)-[:CALLS]->(s:Symbol {name: "calculateAggregateMetrics"})
+RETURN f.path
+
+-- Find all imports of aggregator.ts
+MATCH (f:File)-[:IMPORTS]->(target:File {path: "src/metrics/aggregator.ts"})
+RETURN f.path
+
+-- Find symbols defined in a file
+MATCH (f:File {path: "src/metrics/aggregator.ts"})-[:DEFINES]->(s:Symbol)
+RETURN s.name, s.type
+```
 
 ## Coding Standards & Forbidden Patterns
 
