@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.29.0] - 2026-03-08
+
+### Added
+- **CTX-001:** `context.fileInjection` config flag (`"keyword" | "disabled"`, default `"disabled"`). MCP-aware agents pull context on-demand; file injection is now opt-in.
+- **CTX-002:** `nax config --explain` documents `context.fileInjection` with rationale and examples.
+- **CTX-003:** Unit tests covering all `fileInjection` modes (disabled, keyword, legacy compat).
+
+### Fixed
+- **Implementer prompt:** Agent sessions now include explicit `git commit` instruction — implementation changes were previously left uncommitted, blocking the review stage.
+- **Review stage:** `nax/status.json`, `nax/features/*/prd.json`, and `.nax-verifier-verdict.json` are excluded from the working-tree-clean check (nax runtime files, not agent changes).
+- **Version display:** Installed binary no longer shows `(dev)` — `bin` now points to pre-built `dist/nax.js` with `GIT_COMMIT` injected at publish time.
+
+
 ## [0.18.6] - 2026-03-04
 
 ### Fixed
