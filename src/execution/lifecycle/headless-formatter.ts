@@ -5,10 +5,10 @@
  * Extracts run header and footer formatting logic from runner.ts.
  */
 
-import path from "node:path";
 import chalk from "chalk";
 import type { RunSummary } from "../../logging";
 import { formatRunSummary } from "../../logging";
+import { NAX_VERSION } from "../../version";
 
 export interface RunHeaderOptions {
   feature: string;
@@ -42,11 +42,9 @@ export async function outputRunHeader(options: RunHeaderOptions): Promise<void> 
     return;
   }
 
-  const pkg = await Bun.file(path.join(import.meta.dir, "..", "..", "..", "package.json")).json();
-
   console.log("");
   console.log(chalk.bold(chalk.blue("═".repeat(60))));
-  console.log(chalk.bold(chalk.blue(`  ▶ NAX v${pkg.version} — RUN STARTED`)));
+  console.log(chalk.bold(chalk.blue(`  ▶ NAX v${NAX_VERSION} — RUN STARTED`)));
   console.log(chalk.blue("═".repeat(60)));
   console.log(`  ${chalk.gray("Feature:")}  ${chalk.cyan(feature)}`);
   console.log(`  ${chalk.gray("Stories:")}  ${chalk.cyan(`${totalStories} total, ${pendingStories} pending`)}`);

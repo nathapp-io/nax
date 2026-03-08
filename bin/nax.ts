@@ -70,12 +70,11 @@ import { loadHooksConfig } from "../src/hooks";
 import { type LogLevel, initLogger } from "../src/logger";
 import { countStories, loadPRD } from "../src/prd";
 import { PipelineEventEmitter, type StoryDisplayState, renderTui } from "../src/tui";
-
-const pkg = await Bun.file(join(import.meta.dir, "..", "package.json")).json();
+import { NAX_VERSION } from "../src/version";
 
 const program = new Command();
 
-program.name("nax").description("AI Coding Agent Orchestrator — loops until done").version(pkg.version);
+program.name("nax").description("AI Coding Agent Orchestrator — loops until done").version(NAX_VERSION);
 
 // ── init ─────────────────────────────────────────────
 program

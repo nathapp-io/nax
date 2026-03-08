@@ -15,6 +15,7 @@ import { resolveModel } from "../config/schema";
 import { getLogger } from "../logger";
 import type { PRD, UserStory } from "../prd";
 import { routeTask } from "../routing";
+import { NAX_VERSION } from "../version";
 import {
   applyKeywordClassification,
   buildCodebaseContext,
@@ -63,13 +64,7 @@ export async function analyzeFeature(options: AnalyzeOptions): Promise<PRD> {
     );
   }
 
-  let naxVersion = "unknown";
-  try {
-    const pkgPath = new URL("../../package.json", import.meta.url);
-    naxVersion = (await Bun.file(pkgPath).json()).version;
-  } catch {
-    /* version is metadata only */
-  }
+  const naxVersion = NAX_VERSION;
 
   const now = new Date().toISOString();
   const prd: PRD = {
