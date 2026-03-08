@@ -135,6 +135,16 @@
 
 ---
 
+## v0.26.0 — Routing Persistence ✅ Shipped (2026-03-08)
+
+- **RRP-001:** Persist initial routing classification to `prd.json` on first classification
+- **RRP-002:** Add `initialComplexity` to `StoryRouting` and `StoryMetrics` for accurate reporting
+- **RRP-003:** Add `contentHash` to `StoryRouting` for staleness detection — stale cached routing is re-classified
+- **RRP-004:** Unit tests for routing persistence, idempotence, staleness, content hash, metrics
+- **BUG-052:** Replace `console.warn` with structured JSONL logger in `review/runner.ts` and `optimizer/index.ts`
+
+---
+
 ## v0.25.0 — Trigger Completion ✅ Shipped (2026-03-07)
 
 **Theme:** Wire all 8 unwired interaction triggers, 3 missing hook events, and add plugin integration tests
@@ -239,6 +249,8 @@
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.26.0 | Routing Persistence | 2026-03-08 | RRP-001–004: persist initial routing, initialComplexity, contentHash staleness detection, unit tests; BUG-052: structured logger in review/optimizer |
+| v0.25.0 | Trigger Completion | 2026-03-07 | TC-001–004: run.complete event, crash recovery, headless formatter, trigger completion |
 | v0.24.0 | Central Run Registry | 2026-03-07 | CRR-000–003: events writer, registry, nax runs CLI, nax logs --run global resolution |
 | v0.23.0 | Status File Consolidation | 2026-03-07 | SFC-001–004: auto-write status.json, feature-level status, align readers, remove dead code; BUG-043/044: testScoped config + command logging |
 | v0.18.1 | Type Safety + CI Pipeline | 2026-03-03 | 60 TS errors + 12 lint errors fixed, GitLab CI green (1952/56/0) |
