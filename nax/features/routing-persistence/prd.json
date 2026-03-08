@@ -15,11 +15,15 @@
         "Unit tests verify prd.json is updated after first routing stage execution"
       ],
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "tags": [],
       "dependencies": [],
       "escalations": [],
-      "attempts": 0
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "passes": true
     },
     {
       "id": "RRP-002",
@@ -37,9 +41,14 @@
       "complexity": "medium",
       "status": "pending",
       "tags": [],
-      "dependencies": ["RRP-001"],
+      "dependencies": [
+        "RRP-001"
+      ],
       "escalations": [],
-      "attempts": 0
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "RRP-003",
@@ -56,9 +65,14 @@
       "complexity": "medium",
       "status": "pending",
       "tags": [],
-      "dependencies": ["RRP-001"],
+      "dependencies": [
+        "RRP-001"
+      ],
       "escalations": [],
-      "attempts": 0
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "RRP-004",
@@ -74,9 +88,17 @@
       "complexity": "medium",
       "status": "pending",
       "tags": [],
-      "dependencies": ["RRP-001", "RRP-002", "RRP-003"],
+      "dependencies": [
+        "RRP-001",
+        "RRP-002",
+        "RRP-003"
+      ],
       "escalations": [],
-      "attempts": 0
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
-  ]
+  ],
+  "updatedAt": "2026-03-07T16:32:39.496Z"
 }

@@ -58,9 +58,14 @@ export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string
   const modelDef = modelEntry ? resolveModel(modelEntry) : null;
   const modelUsed = modelDef?.model || routing.modelTier;
 
+  // initialComplexity: prefer story.routing.initialComplexity (first classify),
+  // fall back to routing.complexity for backward compat
+  const initialComplexity = story.routing?.initialComplexity ?? routing.complexity;
+
   return {
     storyId: story.id,
     complexity: routing.complexity,
+    initialComplexity,
     modelTier: routing.modelTier,
     modelUsed,
     attempts,
@@ -108,20 +113,27 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
   const modelDef = modelEntry ? resolveModel(modelEntry) : null;
   const modelUsed = modelDef?.model || routing.modelTier;
 
-  return stories.map((story) => ({
-    storyId: story.id,
-    complexity: routing.complexity,
-    modelTier: routing.modelTier,
-    modelUsed,
-    attempts: 1, // batch stories don't escalate individually
-    finalTier: routing.modelTier,
-    success: true, // if batch succeeded, all stories succeeded
-    cost: costPerStory,
-    durationMs: durationPerStory,
-    firstPassSuccess: true, // batch = first pass success
-    startedAt: storyStartTime,
-    completedAt: new Date().toISOString(),
-  }));
+  return stories.map((story) => {
+    // initialComplexity: prefer story.routing.initialComplexity (if individual routing exists),
+    // fall back to shared routing.complexity (batch stories classified together)
+    const initialComplexity = story.routing?.initialComplexity ?? routing.complexity;
+
+    return {
+      storyId: story.id,
+      complexity: routing.complexity,
+      initialComplexity,
+      modelTier: routing.modelTier,
+      modelUsed,
+      attempts: 1, // batch stories don't escalate individually
+      finalTier: routing.modelTier,
+      success: true, // if batch succeeded, all stories succeeded
+      cost: costPerStory,
+      durationMs: durationPerStory,
+      firstPassSuccess: true, // batch = first pass success
+      startedAt: storyStartTime,
+      completedAt: new Date().toISOString(),
+    };
+  });
 }
 
 /**

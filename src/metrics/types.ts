@@ -12,6 +12,8 @@ export interface StoryMetrics {
   storyId: string;
   /** Classified complexity */
   complexity: string;
+  /** Initial complexity from first classification — preserved across escalations */
+  initialComplexity?: string;
   /** Initial model tier */
   modelTier: string;
   /** Actual model used (e.g., "claude-sonnet-4.5") */

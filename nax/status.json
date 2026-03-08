@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-07T13-49-17-400Z",
-    "feature": "trigger-completion",
-    "startedAt": "2026-03-07T13:49:17.400Z",
-    "status": "completed",
+    "id": "run-2026-03-07T16-14-49-336Z",
+    "feature": "routing-persistence",
+    "startedAt": "2026-03-07T16:14:49.336Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 97007
+    "pid": 3412
   },
   "progress": {
-    "total": 6,
-    "passed": 6,
+    "total": 4,
+    "passed": 1,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 3
   },
   "cost": {
-    "spent": 3.85387425,
+    "spent": 0.52230675,
     "limit": 8
   },
-  "current": null,
-  "iterations": 7,
-  "updatedAt": "2026-03-07T14:58:57.404Z",
-  "durationMs": 4180004
+  "current": {
+    "storyId": "RRP-002",
+    "title": "Add initialComplexity to StoryRouting and StoryMetrics for accurate reporting",
+    "complexity": "medium",
+    "tddStrategy": "test-after",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 2,
+  "updatedAt": "2026-03-07T16:45:19.261Z",
+  "durationMs": 1829925,
+  "lastHeartbeat": "2026-03-07T16:45:19.261Z"
 }

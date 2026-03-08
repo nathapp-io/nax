@@ -65,6 +65,8 @@ export interface PipelineContext {
   routing: RoutingResult;
   /** Working directory (project root) */
   workdir: string;
+  /** Absolute path to the prd.json file (used by routing stage to persist initial classification) */
+  prdPath?: string;
   /** Feature directory (optional, e.g., nax/features/my-feature/) */
   featureDir?: string;
   /** Hooks configuration */
