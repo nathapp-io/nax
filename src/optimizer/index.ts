@@ -14,6 +14,7 @@ export { NoopOptimizer } from "./noop.optimizer.js";
 export { RuleBasedOptimizer } from "./rule-based.optimizer.js";
 
 import type { NaxConfig } from "../config/schema.js";
+import { getSafeLogger } from "../logger/index.js";
 import type { PluginRegistry } from "../plugins/registry.js";
 import { NoopOptimizer } from "./noop.optimizer.js";
 import { RuleBasedOptimizer } from "./rule-based.optimizer.js";
@@ -56,7 +57,7 @@ export function resolveOptimizer(config: NaxConfig, pluginRegistry?: PluginRegis
       return new NoopOptimizer();
     default:
       // Unknown strategy, fallback to noop
-      console.warn(`[nax] Unknown optimizer strategy '${strategy}', using noop`);
+      getSafeLogger()?.warn("optimizer", `Unknown optimizer strategy '${strategy}', using noop`);
       return new NoopOptimizer();
   }
 }

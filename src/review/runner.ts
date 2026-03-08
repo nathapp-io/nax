@@ -6,6 +6,7 @@
 
 import { spawn } from "bun";
 import type { ExecutionConfig } from "../config/schema";
+import { getSafeLogger } from "../logger";
 import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
 
 /** Default commands for each check type */
@@ -177,7 +178,7 @@ export async function runReview(
 
     // Skip if explicitly disabled or not found
     if (command === null) {
-      console.warn(`[nax] Skipping ${checkName} check (command not configured or disabled)`);
+      getSafeLogger()?.warn("review", `Skipping ${checkName} check (command not configured or disabled)`);
       continue;
     }
 
