@@ -18,6 +18,7 @@ import { constitutionStage, contextStage, promptStage, routingStage } from "../p
 import type { UserStory } from "../prd";
 import { loadPRD } from "../prd";
 import { PromptBuilder } from "../prompts";
+import { buildRoleTaskSection } from "../prompts/sections/role-task";
 
 export interface PromptsCommandOptions {
   /** Feature name */
@@ -238,6 +239,86 @@ function buildFrontmatter(story: UserStory, ctx: PipelineContext, role?: string)
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+export interface PromptsInitCommandOptions {
+  /** Working directory (project root) */
+  workdir: string;
+  /** Overwrite existing files if true */
+  force?: boolean;
+}
+
+const TEMPLATE_ROLES = [
+  { file: "test-writer.md", role: "test-writer" as const },
+  { file: "implementer.md", role: "implementer" as const, variant: "standard" as const },
+  { file: "verifier.md", role: "verifier" as const },
+  { file: "single-session.md", role: "single-session" as const },
+] as const;
+
+const TEMPLATE_HEADER = `<!--
+  This file controls the role-body section of the nax prompt for this role.
+  Edit the content below to customize the task instructions given to the agent.
+
+  NON-OVERRIDABLE SECTIONS (always injected by nax, cannot be changed here):
+    - Isolation rules (scope, file access boundaries)
+    - Story context (acceptance criteria, description, dependencies)
+    - Conventions (project coding standards)
+
+  To activate overrides, add to your nax/config.json:
+    { "prompts": { "overrides": { "<role>": "nax/templates/<role>.md" } } }
+-->
+
+`;
+
+/**
+ * Execute the `nax prompts --init` command.
+ *
+ * Creates nax/templates/ and writes 4 default role-body template files.
+ * Returns the list of file paths written. Returns empty array if files
+ * already exist and force is not set.
+ *
+ * @param options - Command options
+ * @returns Array of file paths written
+ */
+export async function promptsInitCommand(options: PromptsInitCommandOptions): Promise<string[]> {
+  const { workdir, force = false } = options;
+  const templatesDir = join(workdir, "nax", "templates");
+
+  mkdirSync(templatesDir, { recursive: true });
+
+  // Check for existing files
+  const existingFiles = TEMPLATE_ROLES.map((t) => t.file).filter((f) => existsSync(join(templatesDir, f)));
+
+  if (existingFiles.length > 0 && !force) {
+    console.warn(
+      `[WARN] nax/templates/ already contains files: ${existingFiles.join(", ")}. No files overwritten.\n       Pass --force to overwrite existing templates.`,
+    );
+    return [];
+  }
+
+  const written: string[] = [];
+
+  for (const template of TEMPLATE_ROLES) {
+    const filePath = join(templatesDir, template.file);
+    const roleBody =
+      template.role === "implementer"
+        ? buildRoleTaskSection(template.role, template.variant)
+        : buildRoleTaskSection(template.role);
+    const content = TEMPLATE_HEADER + roleBody;
+    await Bun.write(filePath, content);
+    written.push(filePath);
+  }
+
+  console.log(`[OK] Written ${written.length} template files to nax/templates/:`);
+  for (const filePath of written) {
+    console.log(`  - ${filePath.replace(`${workdir}/`, "")}`);
+  }
+  console.log(
+    "\nTo activate overrides, add to nax/config.json:\n" +
+      '  { "prompts": { "overrides": { "implementer": "nax/templates/implementer.md" } } }',
+  );
+
+  return written;
 }
 
 /**
