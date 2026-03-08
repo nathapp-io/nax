@@ -20,7 +20,9 @@ export {
 } from "./runs";
 export {
   promptsCommand,
+  promptsInitCommand,
   type PromptsCommandOptions,
+  type PromptsInitCommandOptions,
 } from "./prompts";
 export { initCommand, type InitOptions } from "./init";
 export { pluginsListCommand } from "./plugins";

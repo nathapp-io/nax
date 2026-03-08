@@ -26,7 +26,14 @@
       "priorFailures": [],
       "escalations": [],
       "tags": [],
-      "storyPoints": 2
+      "storyPoints": 2,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Standard CLI feature extending existing prompts command with conditional file writes, argument parsing, and integration tests; straightforward logic but requires careful file I/O error handling and user-facing messaging.",
+        "contentHash": "5b59849281d2a23e35661c44375b77b75c915101d75e1f70157483af9d2d965b"
+      }
     },
     {
       "id": "PE-002",
@@ -34,7 +41,9 @@
       "description": "After `nax prompts --init` writes the template files, the user still needs to manually add `prompts.overrides` paths to `nax.config.json`. This story adds automatic wiring.\n\nWhen `nax prompts --init` completes successfully:\n1. Check if `nax.config.json` exists in workdir\n2. If it exists and `prompts.overrides` is not already set, add the override paths:\n   ```json\n   {\n     \"prompts\": {\n       \"overrides\": {\n         \"test-writer\": \"nax/templates/test-writer.md\",\n         \"implementer\": \"nax/templates/implementer.md\",\n         \"verifier\": \"nax/templates/verifier.md\",\n         \"single-session\": \"nax/templates/single-session.md\"\n       }\n     }\n   }\n   ```\n3. If `prompts.overrides` already has entries, do NOT modify — print a note that overrides are already configured\n4. In headless/non-TTY mode, auto-write the config without prompting\n\nNote: The override loader (`src/prompts/loader.ts`) already reads from these paths — no changes needed there.\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/cli/ test/integration/cli/ test/integration/config/ --timeout=60000\nCommit: 'feat: auto-configure prompts.overrides on init'",
       "complexity": "simple",
       "status": "open",
-      "dependencies": ["PE-001"],
+      "dependencies": [
+        "PE-001"
+      ],
       "acceptanceCriteria": [
         "After writing templates, auto-adds prompts.overrides to nax.config.json if not already set",
         "Does not overwrite existing prompts.overrides entries",
@@ -51,5 +60,5 @@
       "storyPoints": 2
     }
   ],
-  "updatedAt": "2026-03-08T14:35:00.000Z"
+  "updatedAt": "2026-03-08T14:43:35.400Z"
 }

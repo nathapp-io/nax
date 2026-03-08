@@ -54,6 +54,7 @@ import {
   planCommand,
   pluginsListCommand,
   promptsCommand,
+  promptsInitCommand,
   runsListCommand,
   runsShowCommand,
 } from "../src/cli";
@@ -849,8 +850,10 @@ program
 // ── prompts ──────────────────────────────────────────
 program
   .command("prompts")
-  .description("Assemble prompts for stories without executing agents")
-  .requiredOption("-f, --feature <name>", "Feature name")
+  .description("Assemble or initialize prompts")
+  .option("-f, --feature <name>", "Feature name (required unless using --init)")
+  .option("--init", "Initialize default prompt templates", false)
+  .option("--force", "Overwrite existing template files", false)
   .option("--story <id>", "Filter to a single story ID (e.g., US-003)")
   .option("--out <dir>", "Output directory for prompt files (default: stdout)")
   .option("-d, --dir <path>", "Project directory", process.cwd())
@@ -861,6 +864,26 @@ program
       workdir = validateDirectory(options.dir);
     } catch (err) {
       console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    // Handle --init command
+    if (options.init) {
+      try {
+        await promptsInitCommand({
+          workdir,
+          force: options.force,
+        });
+      } catch (err) {
+        console.error(chalk.red(`Error: ${(err as Error).message}`));
+        process.exit(1);
+      }
+      return;
+    }
+
+    // Handle regular prompts command (requires --feature)
+    if (!options.feature) {
+      console.error(chalk.red("Error: --feature is required (unless using --init)"));
       process.exit(1);
     }
 
