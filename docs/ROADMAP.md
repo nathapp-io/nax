@@ -41,24 +41,16 @@
 
 ---
 
-## v0.32.1 — Session Auto-Commit
+## v0.31.1 — Bugfixes ✅ Shipped (2026-03-09)
 
-**Theme:** Auto-commit after each agent session to prevent review failures from uncommitted changes
-**Status:** 🔜 Planned
-
-### Fixes
-- [ ] **BUG-058:** Auto-commit safety net after each TDD session and single-session strategies. Only triggers when agent forgot to commit. Logs warning for observability.
-
----
-
-## v0.32.2 — Precheck Fixes
-
-**Theme:** Fix false warnings in precheck system
-**Status:** 🔜 Planned
+**Theme:** Auto-commit safety net + precheck fixes
+**Status:** ✅ Shipped (2026-03-09)
 
 ### Fixes
+- [x] **BUG-058:** Auto-commit after each agent session to prevent review failures from uncommitted changes
 - [x] **BUG-056:** Normalize `"open"` → `"pending"` and `"done"` → `"passed"` on PRD load
 - [x] **BUG-057:** `checkOptionalCommands` checks `quality.commands` + `package.json` scripts
+
 
 ---
 ## v0.30.0 — Prompt Builder Completion ✅ Shipped (2026-03-08)
@@ -261,6 +253,7 @@
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.31.1 | Bugfixes | 2026-03-09 | BUG-056/057/058: PRD status normalization, precheck command detection, session auto-commit |
 | v0.31.0 | Prompt Template Export | 2026-03-08 | PE-001/002: `nax prompts --init` + auto-configure overrides; verifier context fix |
 | v0.30.0 | Prompt Builder Completion | 2026-03-08 | PW-001/002: sections wired, stubs deleted, git commit instruction live; global install crash fix |
 | v0.29.0 | Context Simplification | 2026-03-08 | `context.fileInjection: "disabled"` default; prompt/review/version/CI fixes |
