@@ -40,6 +40,27 @@
 | `three-session-tdd` | 3 | Complex stories: strict isolation |
 
 ---
+
+## v0.32.1 — Session Auto-Commit
+
+**Theme:** Auto-commit after each agent session to prevent review failures from uncommitted changes
+**Status:** 🔜 Planned
+
+### Fixes
+- [ ] **BUG-058:** Auto-commit safety net after each TDD session and single-session strategies. Only triggers when agent forgot to commit. Logs warning for observability.
+
+---
+
+## v0.32.2 — Precheck Fixes
+
+**Theme:** Fix false warnings in precheck system
+**Status:** 🔜 Planned
+
+### Fixes
+- [ ] **BUG-056:** Normalize `"open"` → `"pending"` and `"done"` → `"passed"` on PRD load
+- [ ] **BUG-057:** `checkOptionalCommands` checks `quality.commands` + `package.json` scripts
+
+---
 ## v0.30.0 — Prompt Builder Completion ✅ Shipped (2026-03-08)
 
 **Theme:** Wire PromptBuilder to sections, fix global install crash
