@@ -26,10 +26,15 @@ export const regressionStage: PipelineStage = {
     const mode = ctx.config.execution.regressionGate?.mode ?? "deferred";
     if (mode !== "per-story") return false;
     // Only run when verify passed (or was skipped/not set)
-    // Only run when verify passed (or was skipped/not set)
     if (ctx.verifyResult && !ctx.verifyResult.success) return false;
     const gateEnabled = ctx.config.execution.regressionGate?.enabled ?? true;
     return gateEnabled;
+  },
+
+  skipReason(ctx: PipelineContext): string {
+    const mode = ctx.config.execution.regressionGate?.mode ?? "deferred";
+    if (mode !== "per-story") return `not needed (regression mode is '${mode}', not 'per-story')`;
+    return "disabled (regression gate not enabled in config)";
   },
 
   async execute(ctx: PipelineContext): Promise<StageResult> {

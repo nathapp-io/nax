@@ -27,6 +27,11 @@ export const rectifyStage: PipelineStage = {
     return ctx.config.execution.rectification?.enabled ?? false;
   },
 
+  skipReason(ctx: PipelineContext): string {
+    if (!ctx.verifyResult || ctx.verifyResult.success) return "not needed (verify passed)";
+    return "disabled (rectification not enabled in config)";
+  },
+
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
     const { verifyResult } = ctx;

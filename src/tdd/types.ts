@@ -78,4 +78,6 @@ export interface ThreeSessionTddResult {
    * undefined = verdict was not attempted (e.g. early-exit before session 3 ran)
    */
   verdict?: import("./verdict").VerifierVerdict | null;
+  /** Whether the TDD full-suite gate passed (used by verify stage to skip redundant run, BUG-054) */
+  fullSuiteGatePassed?: boolean;
 }

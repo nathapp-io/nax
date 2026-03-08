@@ -29,6 +29,11 @@ export const autofixStage: PipelineStage = {
     return autofixEnabled;
   },
 
+  skipReason(ctx: PipelineContext): string {
+    if (!ctx.reviewResult || ctx.reviewResult.success) return "not needed (review passed)";
+    return "disabled (autofix not enabled in config)";
+  },
+
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
     const { reviewResult } = ctx;

@@ -108,6 +108,8 @@ export interface PipelineContext {
   retryAsLite?: boolean;
   /** Failure category from TDD orchestrator (set by executionStage on TDD failure) */
   tddFailureCategory?: FailureCategory;
+  /** Set to true when TDD full-suite gate already passed — verify stage skips to avoid redundant run (BUG-054) */
+  fullSuiteGatePassed?: boolean;
 }
 
 /**
@@ -166,6 +168,13 @@ export interface PipelineStage {
    * @returns true if the stage should execute, false to skip
    */
   enabled: (ctx: PipelineContext) => boolean;
+
+  /**
+   * Optional human-readable reason why the stage was skipped.
+   * Distinguishes "not needed" (conditions not met) from "disabled" (config).
+   * Used by the pipeline runner for better observability (BUG-055).
+   */
+  skipReason?: (ctx: PipelineContext) => string;
 
   /**
    * Execute the stage logic.

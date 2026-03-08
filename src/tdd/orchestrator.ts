@@ -255,7 +255,16 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   }
 
   // Full-Suite Gate (v0.11 Rectification)
-  await runFullSuiteGate(story, config, workdir, agent, implementerTier, contextMarkdown, lite, logger);
+  const fullSuiteGatePassed = await runFullSuiteGate(
+    story,
+    config,
+    workdir,
+    agent,
+    implementerTier,
+    contextMarkdown,
+    lite,
+    logger,
+  );
 
   // Session 3: Verifier
   const session3Ref = (await captureGitRef(workdir)) ?? "HEAD";
@@ -379,5 +388,6 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     verdict,
     totalCost,
     lite,
+    fullSuiteGatePassed,
   };
 }

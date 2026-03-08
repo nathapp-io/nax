@@ -51,7 +51,8 @@ export async function runPipeline(
 
     // Skip disabled stages
     if (!stage.enabled(context)) {
-      logger.debug("pipeline", `Stage "${stage.name}" skipped (disabled)`);
+      const reason = stage.skipReason?.(context) ?? "disabled";
+      logger.debug("pipeline", `Stage "${stage.name}" skipped (${reason})`);
       i++;
       continue;
     }

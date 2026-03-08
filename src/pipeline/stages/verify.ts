@@ -45,7 +45,8 @@ function buildScopedCommand(testFiles: string[], baseCommand: string, testScoped
 
 export const verifyStage: PipelineStage = {
   name: "verify",
-  enabled: () => true,
+  enabled: (ctx: PipelineContext) => !ctx.fullSuiteGatePassed,
+  skipReason: () => "not needed (full-suite gate already passed)",
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();

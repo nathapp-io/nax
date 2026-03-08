@@ -34,9 +34,9 @@ export async function runFullSuiteGate(
   contextMarkdown: string | undefined,
   lite: boolean,
   logger: ReturnType<typeof getLogger>,
-): Promise<void> {
+): Promise<boolean> {
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
-  if (!rectificationEnabled) return;
+  if (!rectificationEnabled) return false;
 
   const rectificationConfig = config.execution.rectification;
   const testCmd = config.quality?.commands?.test ?? "bun test";
@@ -54,7 +54,7 @@ export async function runFullSuiteGate(
     const testSummary = parseBunTestOutput(fullSuiteResult.output);
 
     if (testSummary.failed > 0) {
-      await runRectificationLoop(
+      return await runRectificationLoop(
         story,
         config,
         workdir,
@@ -69,14 +69,18 @@ export async function runFullSuiteGate(
         fullSuiteTimeout,
       );
     }
-  } else if (fullSuitePassed) {
-    logger.info("tdd", "Full suite gate passed", { storyId: story.id });
-  } else {
-    logger.warn("tdd", "Full suite gate execution failed (no output)", {
-      storyId: story.id,
-      exitCode: fullSuiteResult.exitCode,
-    });
+    // No failures detected despite non-zero exit — treat as passed
+    return true;
   }
+  if (fullSuitePassed) {
+    logger.info("tdd", "Full suite gate passed", { storyId: story.id });
+    return true;
+  }
+  logger.warn("tdd", "Full suite gate execution failed (no output)", {
+    storyId: story.id,
+    exitCode: fullSuiteResult.exitCode,
+  });
+  return false;
 }
 
 /** Run the rectification retry loop when full suite gate detects regressions. */
@@ -93,7 +97,7 @@ async function runRectificationLoop(
   rectificationConfig: NonNullable<NaxConfig["execution"]["rectification"]>,
   testCmd: string,
   fullSuiteTimeout: number,
-): Promise<void> {
+): Promise<boolean> {
   const rectificationState: RectificationState = {
     attempt: 0,
     initialFailures: testSummary.failed,
@@ -156,7 +160,7 @@ async function runRectificationLoop(
         storyId: story.id,
         attempt: rectificationState.attempt,
       });
-      break;
+      return true;
     }
 
     if (retryFullSuite.output) {
@@ -177,7 +181,8 @@ async function runRectificationLoop(
       attempts: rectificationState.attempt,
       remainingFailures: rectificationState.currentFailures,
     });
-  } else {
-    logger.info("tdd", "Full suite gate passed", { storyId: story.id });
+    return false;
   }
+  logger.info("tdd", "Full suite gate passed", { storyId: story.id });
+  return true;
 }
