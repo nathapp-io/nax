@@ -92,16 +92,16 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator only]
 2. **Plan complex tasks**: for multi-file changes, write a short plan before implementing.
 3. **Implement in small chunks**: one logical concern per commit.
 
-## Code Intelligence (Solograph MCP)
+## Code Intelligence (Solograph MCP) — MANDATORY
 
-Use **solograph** MCP tools on-demand — do not use `web_search` or `kb_search`.
+**Always use solograph MCP tools before writing code or analyzing architecture.** Do NOT use `web_search` or `kb_search` as substitutes.
 
-| Tool | When |
-|:-----|:-----|
-| `project_code_search` | Find existing patterns before writing new code |
-| `codegraph_explain` | Architecture overview before tackling unfamiliar areas |
-| `codegraph_query` | Dependency/impact analysis (Cypher) |
-| `project_code_reindex` | After creating or deleting source files |
+| Tool | When | Example |
+|:-----|:-----|:--------|
+| `project_code_search` | Plan feature, find existing patterns | Before implementing new routing strategy, search for existing patterns |
+| `codegraph_explain` | Understand unfamiliar subsystems | Before touching `src/execution/escalation/`, explain the architecture |
+| `codegraph_query` | Analyze dependencies, impact of changes | Before refactoring metrics, query what depends on it |
+| `project_code_reindex` | After creating or deleting source files | After adding new stage file, reindex the project |
 
 ## Coding Standards & Forbidden Patterns
 
