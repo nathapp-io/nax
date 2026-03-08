@@ -136,7 +136,7 @@
 ---
 
 
-## v0.28.0 — Prompt Builder
+## v0.28.0 — Prompt Builder ✅ Shipped (2026-03-08)
 
 **Theme:** Unified, user-overridable prompt architecture replacing 11 scattered functions
 **Status:** 🔲 Planned
