@@ -14,8 +14,9 @@ export const NAX_VERSION: string = pkg.version;
 /** Short git commit hash — injected at build time, or resolved at runtime from git. */
 export const NAX_COMMIT: string = (() => {
   // Build-time injection (bun build --define GIT_COMMIT=...)
+  // Guard: must be a non-empty string that looks like a real commit hash
   try {
-    if (typeof GIT_COMMIT === "string" && GIT_COMMIT !== "dev") return GIT_COMMIT;
+    if (typeof GIT_COMMIT === "string" && /^[0-9a-f]{6,10}$/.test(GIT_COMMIT)) return GIT_COMMIT;
   } catch {
     // not injected — fall through to runtime resolution
   }
