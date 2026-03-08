@@ -53,12 +53,12 @@ export const promptStage: PipelineStage = {
     if (isBatch) {
       logger.info("prompt", "Batch session prepared", {
         storyCount: ctx.stories.length,
-        testStrategy: "test-after",
+        testStrategy: ctx.routing.testStrategy,
       });
     } else {
       logger.info("prompt", "Single session prepared", {
         storyId: ctx.story.id,
-        testStrategy: "test-after",
+        testStrategy: ctx.routing.testStrategy,
       });
     }
 
