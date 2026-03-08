@@ -140,3 +140,40 @@ export async function checkGitignoreCoversNax(workdir: string): Promise<Check> {
     message: passed ? ".gitignore covers nax runtime files" : `.gitignore missing patterns: ${missing.join(", ")}`,
   };
 }
+
+/**
+ * Check if configured prompt override files exist.
+ *
+ * For each role in config.prompts.overrides, verify the file exists.
+ * Emits one warning per missing file (non-blocking).
+ * Returns empty array if config.prompts is absent or overrides is empty.
+ *
+ * @param config - nax configuration
+ * @param workdir - working directory for resolving relative paths
+ * @returns Array of warning checks (one per missing file)
+ */
+export async function checkPromptOverrideFiles(config: NaxConfig, workdir: string): Promise<Check[]> {
+  // Skip if prompts config is absent or overrides is empty
+  if (!config.prompts?.overrides || Object.keys(config.prompts.overrides).length === 0) {
+    return [];
+  }
+
+  const checks: Check[] = [];
+
+  // Check each override file
+  for (const [role, relativePath] of Object.entries(config.prompts.overrides)) {
+    const resolvedPath = `${workdir}/${relativePath}`;
+    const exists = existsSync(resolvedPath);
+
+    if (!exists) {
+      checks.push({
+        name: `prompt-override-${role}`,
+        tier: "warning",
+        passed: false,
+        message: `Prompt override file not found for role ${role}: ${resolvedPath}`,
+      });
+    }
+  }
+
+  return checks;
+}

@@ -20,6 +20,7 @@ import {
   checkOptionalCommands,
   checkPRDValid,
   checkPendingStories,
+  checkPromptOverrideFiles,
   checkStaleLock,
   checkTestCommand,
   checkTypecheckCommand,
@@ -142,19 +143,25 @@ export async function runPrecheck(
       () => checkPendingStories(prd),
       () => checkOptionalCommands(config),
       () => checkGitignoreCoversNax(workdir),
+      () => checkPromptOverrideFiles(config, workdir),
     ];
 
     for (const checkFn of tier2Checks) {
       const result = await checkFn();
 
-      if (format === "human") {
-        printCheckResult(result);
-      }
+      // Handle both single checks and arrays of checks
+      const checksToProcess = Array.isArray(result) ? result : [result];
 
-      if (result.passed) {
-        passed.push(result);
-      } else {
-        warnings.push(result);
+      for (const check of checksToProcess) {
+        if (format === "human") {
+          printCheckResult(check);
+        }
+
+        if (check.passed) {
+          passed.push(check);
+        } else {
+          warnings.push(check);
+        }
       }
     }
 
