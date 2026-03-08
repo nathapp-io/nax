@@ -117,6 +117,17 @@ describe("runReview — dirty working tree guard (RQ-001)", () => {
 });
 
 describe("nax runtime file exclusions", () => {
+  let originalGetUncommittedFiles: typeof _deps.getUncommittedFiles;
+
+  beforeEach(() => {
+    originalGetUncommittedFiles = _deps.getUncommittedFiles;
+  });
+
+  afterEach(() => {
+    mock.restore();
+    _deps.getUncommittedFiles = originalGetUncommittedFiles;
+  });
+
   test("nax/status.json is excluded from uncommitted check", async () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => ["nax/status.json"]);
     const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
