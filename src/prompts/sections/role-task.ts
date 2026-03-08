@@ -15,7 +15,8 @@ export function buildRoleTaskSection(variant: "standard" | "lite"): string {
       "- Implement source code in src/ to make tests pass\n" +
       "- Do NOT modify test files\n" +
       "- Run tests frequently to track progress\n" +
-      "- Goal: all tests green"
+      "- When all tests are green, stage and commit ALL changed files with git commit -m 'feat: <description>'\n" +
+      "- Goal: all tests green, all changes committed"
     );
   }
 
@@ -27,6 +28,7 @@ export function buildRoleTaskSection(variant: "standard" | "lite"): string {
     "- Write tests first (test/ directory), then implement (src/ directory)\n" +
     "- All tests must pass by the end\n" +
     "- Use Bun test (describe/test/expect)\n" +
-    "- Goal: all tests green, all criteria met"
+    "- When all tests are green, stage and commit ALL changed files with git commit -m 'feat: <description>'\n" +
+    "- Goal: all tests green, all criteria met, all changes committed"
   );
 }
