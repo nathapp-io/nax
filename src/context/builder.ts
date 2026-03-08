@@ -23,6 +23,11 @@ import {
 import { generateTestCoverageSummary } from "./test-scanner";
 import type { BuiltContext, ContextBudget, ContextElement, StoryContext } from "./types";
 
+// Dependency injection for testability
+export const _deps = {
+  autoDetectContextFiles,
+};
+
 // Re-export for backward compatibility
 export {
   estimateTokens,
@@ -188,6 +193,10 @@ async function addFileElements(
   const MAX_FILE_SIZE_BYTES = 10 * 1024;
   const MAX_FILES = 5;
 
+  // Skip all file injection when fileInjection is 'disabled' or undefined (treat missing as disabled)
+  const fileInjection = storyContext.config?.context?.fileInjection;
+  if (fileInjection !== "keyword") return;
+
   let contextFiles = getContextFiles(story);
 
   // Auto-detect contextFiles if empty and enabled (BUG-006)
@@ -198,7 +207,7 @@ async function addFileElements(
   ) {
     const autoDetectConfig = storyContext.config?.context?.autoDetect;
     try {
-      const detected = await autoDetectContextFiles({
+      const detected = await _deps.autoDetectContextFiles({
         workdir: storyContext.workdir,
         storyTitle: story.title,
         maxFiles: autoDetectConfig?.maxFiles ?? 5,
