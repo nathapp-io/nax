@@ -155,9 +155,9 @@
 - [x] **TC-001:** Wire `cost-exceeded` + `cost-warning` triggers — fire at 80%/100% of cost limit in sequential-executor.ts
 - [x] **TC-002:** Wire `max-retries` trigger — fire on permanent story failure via `story:failed` event in wireInteraction
 - [x] **TC-003:** Wire `security-review`, `merge-conflict`, `pre-merge` triggers — review rejection, git conflict detection, pre-completion gate
-- [ ] **TC-004:** Wire `story-ambiguity` + `review-gate` triggers — ambiguity keyword detection, per-story human checkpoint
-- [ ] **TC-005:** Wire missing hook events — `on-resume`, `on-session-end`, `on-error` to pipeline events
-- [ ] **TC-006:** Auto plugin + Telegram + Webhook integration tests — mock LLM/network, cover approve/reject/HMAC flows
+- [x] **TC-004:** Wire `story-ambiguity` + `review-gate` triggers — ambiguity keyword detection, per-story human checkpoint
+- [x] **TC-005:** Wire missing hook events — `on-resume`, `on-session-end`, `on-error` to pipeline events
+- [x] **TC-006:** Auto plugin + Telegram + Webhook integration tests — mock LLM/network, cover approve/reject/HMAC flows
 
 ---
 
