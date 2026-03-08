@@ -1,36 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-08T07-06-40-645Z",
-    "feature": "prompt-builder",
-    "startedAt": "2026-03-08T07:06:40.645Z",
+    "id": "run-2026-03-08T10-04-10-708Z",
+    "feature": "ctx-simplify",
+    "startedAt": "2026-03-08T10:04:10.708Z",
     "status": "running",
     "dryRun": false,
-    "pid": 42182
+    "pid": 88905
   },
   "progress": {
-    "total": 5,
-    "passed": 3,
+    "total": 3,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 3
   },
   "cost": {
-    "spent": 0.7924205000000001,
+    "spent": 0,
     "limit": 8
   },
   "current": {
-    "storyId": "PB-004",
-    "title": "Migrate all existing prompt-building call sites to PromptBuilder",
+    "storyId": "CTX-001",
+    "title": "Add context.fileInjection config flag and disable auto-detect by default",
     "complexity": "medium",
-    "tddStrategy": "test-after",
-    "model": "balanced",
+    "tddStrategy": "three-session-tdd-lite",
+    "model": "powerful",
     "attempt": 1,
     "phase": "routing"
   },
   "iterations": 4,
-  "updatedAt": "2026-03-08T07:59:01.999Z",
-  "durationMs": 3141354,
-  "lastHeartbeat": "2026-03-08T07:59:01.999Z"
+  "updatedAt": "2026-03-08T10:49:31.720Z",
+  "durationMs": 2721012,
+  "lastHeartbeat": "2026-03-08T10:49:31.720Z"
 }

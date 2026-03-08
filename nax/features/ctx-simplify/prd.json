@@ -2,7 +2,7 @@
   "project": "nax-ctx-simplify",
   "branchName": "feat/ctx-simplify",
   "feature": "ctx-simplify",
-  "updatedAt": "2026-03-08T10:00:00.000Z",
+  "updatedAt": "2026-03-08T10:47:03.449Z",
   "userStories": [
     {
       "id": "CTX-001",
@@ -24,7 +24,30 @@
         "context",
         "config"
       ],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "attempts": 0,
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Review failed: Working tree has uncommitted changes:\n  - .nax-verifier-verdict.json\n  - nax/features/ctx-simplify/prd.json\n  - nax/status.json\n  - src/config/defaults.ts\n  - src/config/schemas.ts\n  - src/config/types.ts\n  - src/context/builder.ts\n  - test/integration/context/context-verification-integration.test.ts\n  - test/unit/context.test.ts\n  - test/unit/context/context-autodetect.test.ts\n  - test/unit/context/context-build.test.ts\n  - test/unit/context/context-format.test.ts\n\nStage and commit these files before running review."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "timestamp": "2026-03-08T10:25:31.640Z"
+        }
+      ],
+      "escalations": [],
+      "dependencies": [],
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Config schema updates + conditional logic in builder + unit tests across 5 files, straightforward but moderate scope",
+        "contentHash": "35b9d715baa3b2e53ee58e2ab0c9e8693c044b180950d978f52d441d7398dc6f",
+        "modelTier": "powerful"
+      }
     },
     {
       "id": "CTX-002",
@@ -43,7 +66,28 @@
         "context",
         "docs"
       ],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "attempts": 0,
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast: Review failed: Working tree has uncommitted changes:\n  - .nax-verifier-verdict.json\n  - nax/features/ctx-simplify/prd.json\n  - nax/status.json\n  - src/config/defaults.ts\n  - src/config/schemas.ts\n  - src/config/types.ts\n  - src/context/builder.ts\n  - test/integration/context/context-verification-integration.test.ts\n  - test/unit/context.test.ts\n  - test/unit/context/context-autodetect.test.ts\n  - test/unit/context/context-build.test.ts\n  - test/unit/context/context-format.test.ts\n\nStage and commit these files before running review."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "fast",
+          "stage": "escalation",
+          "summary": "Failed with tier fast, escalating to next tier",
+          "timestamp": "2026-03-08T10:37:26.718Z"
+        }
+      ],
+      "escalations": [],
+      "dependencies": [],
+      "routing": {
+        "complexity": "simple",
+        "modelTier": "balanced",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Add documentation text to help output + one integration test with process spawn and assertion"
+      }
     },
     {
       "id": "CTX-003",
@@ -60,7 +104,28 @@
         "test",
         "context"
       ],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "attempts": 0,
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast: Review failed: Working tree has uncommitted changes:\n  - .nax-verifier-verdict.json\n  - nax/features/ctx-simplify/prd.json\n  - nax/status.json\n  - src/config/defaults.ts\n  - src/config/schemas.ts\n  - src/config/types.ts\n  - test/integration/context/context-verification-integration.test.ts\n  - test/unit/context.test.ts\n  - test/unit/context/context-autodetect.test.ts\n  - test/unit/context/context-build.test.ts\n  - test/unit/context/context-format.test.ts\n\nStage and commit these files before running review."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "fast",
+          "stage": "escalation",
+          "summary": "Failed with tier fast, escalating to next tier",
+          "timestamp": "2026-03-08T10:47:03.449Z"
+        }
+      ],
+      "escalations": [],
+      "dependencies": [],
+      "routing": {
+        "complexity": "simple",
+        "modelTier": "balanced",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Pure test writing with mocked dependencies, 5 straightforward test cases covering different config modes"
+      }
     }
   ]
 }
