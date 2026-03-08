@@ -36,4 +36,5 @@ export const NAX_COMMIT: string = (() => {
   return "dev";
 })();
 
-export const NAX_BUILD_INFO = `v${NAX_VERSION} (${NAX_COMMIT})`;
+/** Human-readable build info string — omits commit when unavailable. */
+export const NAX_BUILD_INFO: string = NAX_COMMIT === "dev" ? `v${NAX_VERSION}` : `v${NAX_VERSION} (${NAX_COMMIT})`;
