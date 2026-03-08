@@ -376,8 +376,21 @@
 - [ ] npm publish setup
 - [ ] `nax diagnose --ai` flag (LLM-assisted, future TBD)
 - [ ] **Auto-decompose oversized stories** — When story size gate triggers, offer via interaction chain to auto-decompose using `nax analyse`.
-- [ ] **AST-based context file detection** — replace keyword-matching with import/symbol graph analysis. Target: v0.19+
+- [x] ~~**AST-based context file detection** — dropped. Agents use MCP/tools for graph-aware context on-demand; built-in keyword-matching being disabled instead.~~
 - [ ] VitePress documentation site — full CLI reference, hosted as standalone docs (pre-publish requirement)
+
+---
+
+
+## v0.29.0 — Context Simplification 🔲
+
+**Theme:** Disable built-in keyword-based file injection; agents use MCP/tools for context on-demand
+**Status:** 🔲 Planned
+
+### Stories
+- [ ] **CTX-001:** Add `context.fileInjection: "keyword" | "disabled"` config flag — default `"disabled"`. Remove keyword-matching as the active default. Keep infrastructure for opt-in.
+- [ ] **CTX-002:** Update `nax config --explain` to document `context.fileInjection` with rationale (MCP-aware agents don't need pre-injected file contents).
+- [ ] **CTX-003:** Unit tests — disabled mode injects no file content; keyword mode still works when explicitly enabled.
 
 ---
 
