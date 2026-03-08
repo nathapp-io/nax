@@ -1,36 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-08T10-04-10-708Z",
-    "feature": "ctx-simplify",
-    "startedAt": "2026-03-08T10:04:10.708Z",
+    "id": "run-2026-03-08T12-42-47-722Z",
+    "feature": "prompt-wire",
+    "startedAt": "2026-03-08T12:42:47.722Z",
     "status": "running",
     "dryRun": false,
-    "pid": 88905
+    "pid": 34533
   },
   "progress": {
-    "total": 3,
+    "total": 2,
     "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 2
   },
   "cost": {
     "spent": 0,
     "limit": 8
   },
   "current": {
-    "storyId": "CTX-001",
-    "title": "Add context.fileInjection config flag and disable auto-detect by default",
-    "complexity": "medium",
+    "storyId": "PW-001",
+    "title": "Expand sections to cover all prompt roles",
+    "complexity": "simple",
     "tddStrategy": "three-session-tdd-lite",
-    "model": "powerful",
+    "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 4,
-  "updatedAt": "2026-03-08T10:49:31.720Z",
-  "durationMs": 2721012,
-  "lastHeartbeat": "2026-03-08T10:49:31.720Z"
+  "iterations": 2,
+  "updatedAt": "2026-03-08T12:53:04.222Z",
+  "durationMs": 616500,
+  "lastHeartbeat": "2026-03-08T12:53:04.222Z"
 }
