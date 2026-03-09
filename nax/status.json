@@ -1,12 +1,12 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-09T06-25-32-944Z",
-    "feature": "run-lifecycle-hooks",
-    "startedAt": "2026-03-09T06:25:32.944Z",
+    "id": "run-2026-03-09T10-42-23-564Z",
+    "feature": "agent-abstraction",
+    "startedAt": "2026-03-09T10:42:23.564Z",
     "status": "running",
     "dryRun": false,
-    "pid": 41089
+    "pid": 90238
   },
   "progress": {
     "total": 7,
@@ -17,20 +17,20 @@
     "pending": 1
   },
   "cost": {
-    "spent": 3.5503649999999998,
+    "spent": 1.61502525,
     "limit": 8
   },
   "current": {
-    "storyId": "RL-007",
-    "title": "Fix duplicate exit summary (BUG-060)",
+    "storyId": "AA-007",
+    "title": "Scaffold CodexAdapter implementing AgentAdapter",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 7,
-  "updatedAt": "2026-03-09T08:29:01.069Z",
-  "durationMs": 7408125,
-  "lastHeartbeat": "2026-03-09T08:29:01.069Z"
+  "iterations": 8,
+  "updatedAt": "2026-03-09T13:43:45.558Z",
+  "durationMs": 10881994,
+  "lastHeartbeat": "2026-03-09T13:43:45.557Z"
 }

@@ -5,6 +5,7 @@
  * Strategies can return null to delegate to the next strategy in the chain.
  */
 
+import type { AgentAdapter } from "../agents/types";
 import type { Complexity, ModelTier, NaxConfig, TestStrategy } from "../config";
 import type { UserStory } from "../prd/types";
 
@@ -45,6 +46,8 @@ export interface RoutingContext {
   codebaseContext?: string;
   /** Optional historical metrics (v0.5 Phase 1) */
   metrics?: AggregateMetrics;
+  /** Optional agent adapter for LLM-based routing (AA-003) */
+  adapter?: AgentAdapter;
 }
 
 /** Routing decision returned by strategies */

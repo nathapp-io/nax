@@ -12,6 +12,7 @@ import type {
   AgentCapabilities,
   AgentResult,
   AgentRunOptions,
+  CompleteOptions,
   DecomposeOptions,
   DecomposeResult,
   InteractiveRunOptions,
@@ -19,6 +20,7 @@ import type {
   PlanResult,
   PtyHandle,
 } from "./types";
+import { CompleteError } from "./types";
 
 /**
  * Maximum characters to capture from agent stdout.
@@ -41,6 +43,53 @@ const MAX_AGENT_STDERR_CHARS = 1000;
  * Mirrors the pattern in src/verification/executor.ts:executeWithTimeout().
  */
 const SIGKILL_GRACE_PERIOD_MS = 5000;
+
+/**
+ * Injectable dependencies for complete() — allows tests to intercept
+ * Bun.spawn calls and verify correct CLI args without the claude binary.
+ *
+ * @internal
+ */
+export const _completeDeps = {
+  spawn(
+    cmd: string[],
+    opts: { stdout: "pipe"; stderr: "pipe" | "inherit" },
+  ): { stdout: ReadableStream<Uint8Array>; stderr: ReadableStream<Uint8Array>; exited: Promise<number>; pid: number } {
+    return Bun.spawn(cmd, opts) as unknown as {
+      stdout: ReadableStream<Uint8Array>;
+      stderr: ReadableStream<Uint8Array>;
+      exited: Promise<number>;
+      pid: number;
+    };
+  },
+};
+
+/**
+ * Injectable dependencies for decompose() — allows tests to intercept
+ * Bun.spawn calls and verify correct CLI args without the claude binary.
+ *
+ * @internal
+ */
+export const _decomposeDeps = {
+  spawn(
+    cmd: string[],
+    opts: { cwd?: string; stdout: "pipe"; stderr: "inherit" | "pipe"; env?: Record<string, string | undefined> },
+  ): {
+    stdout: ReadableStream<Uint8Array>;
+    stderr?: ReadableStream<Uint8Array>;
+    exited: Promise<number>;
+    pid: number;
+    kill(signal?: NodeJS.Signals | number): void;
+  } {
+    return Bun.spawn(cmd, opts) as unknown as {
+      stdout: ReadableStream<Uint8Array>;
+      stderr?: ReadableStream<Uint8Array>;
+      exited: Promise<number>;
+      pid: number;
+      kill(signal?: NodeJS.Signals | number): void;
+    };
+  },
+};
 
 /**
  * Injectable dependencies for runOnce() — allows tests to verify
@@ -295,34 +344,76 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     };
   }
 
+  async complete(prompt: string, options?: CompleteOptions): Promise<string> {
+    // Build command: claude -p <prompt> [--model <model>] [--max-tokens <tokens>] [--output-format json]
+    const cmd = ["claude", "-p", prompt];
+
+    if (options?.model) {
+      cmd.push("--model", options.model);
+    }
+
+    if (options?.maxTokens !== undefined) {
+      cmd.push("--max-tokens", String(options.maxTokens));
+    }
+
+    if (options?.jsonMode) {
+      cmd.push("--output-format", "json");
+    }
+
+    const proc = _completeDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
+    const exitCode = await proc.exited;
+
+    // Read stdout and stderr for error messages
+    const stdout = await new Response(proc.stdout).text();
+    const stderr = await new Response(proc.stderr).text();
+    const trimmed = stdout.trim();
+
+    // Validate exit code and output
+    if (exitCode !== 0) {
+      const errorDetails = stderr.trim() || trimmed;
+      const errorMessage = errorDetails || `complete() failed with exit code ${exitCode}`;
+      throw new CompleteError(errorMessage, exitCode);
+    }
+
+    if (!trimmed) {
+      throw new CompleteError("complete() returned empty output");
+    }
+
+    return trimmed;
+  }
+
   async plan(options: PlanOptions): Promise<PlanResult> {
     const pidRegistry = this.getPidRegistry(options.workdir);
     return runPlan(this.binary, options, pidRegistry, this.buildAllowedEnv.bind(this));
   }
 
   async decompose(options: DecomposeOptions): Promise<DecomposeResult> {
+    const { resolveBalancedModelDef } = await import("./model-resolution");
+
     const prompt = buildDecomposePrompt(options);
 
-    const cmd = [
-      this.binary,
-      "--model",
-      options.modelDef?.model || "claude-sonnet-4-5",
-      "--dangerously-skip-permissions",
-      "-p",
-      prompt,
-    ];
+    // Resolve model: explicit modelDef > config.models.balanced > throw
+    let modelDef = options.modelDef;
+    if (!modelDef) {
+      if (!options.config) {
+        throw new Error("decompose() requires either modelDef or config with models.balanced configured");
+      }
+      modelDef = resolveBalancedModelDef(options.config);
+    }
+
+    const cmd = [this.binary, "--model", modelDef.model, "--dangerously-skip-permissions", "-p", prompt];
 
     const pidRegistry = this.getPidRegistry(options.workdir);
 
-    const proc = Bun.spawn(cmd, {
+    const proc = _decomposeDeps.spawn(cmd, {
       cwd: options.workdir,
       stdout: "pipe",
       stderr: "inherit", // MEM-3: Inherit stderr to avoid blocking on unread pipe
       env: this.buildAllowedEnv({
         workdir: options.workdir,
-        modelDef: options.modelDef || { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
+        modelDef,
         prompt: "",
-        modelTier: "balanced",
+        modelTier: options.modelTier || "balanced",
         timeoutSeconds: 600,
       }),
     });

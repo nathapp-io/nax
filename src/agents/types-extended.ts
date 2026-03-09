@@ -5,7 +5,7 @@
  * Separated from core types to keep each file under 400 lines.
  */
 
-import type { ModelDef, ModelTier } from "../config/schema";
+import type { ModelDef, ModelTier, NaxConfig } from "../config/schema";
 
 /**
  * Configuration options for running an agent in plan mode.
@@ -28,6 +28,8 @@ export interface PlanOptions {
   modelTier?: ModelTier;
   /** Resolved model definition */
   modelDef?: ModelDef;
+  /** Global config — used to resolve models.balanced when modelDef is absent */
+  config?: Partial<NaxConfig>;
 }
 
 /**
@@ -59,6 +61,8 @@ export interface DecomposeOptions {
   modelTier?: ModelTier;
   /** Resolved model definition */
   modelDef?: ModelDef;
+  /** Global config — used to resolve models.balanced when modelDef is absent */
+  config?: Partial<NaxConfig>;
 }
 
 /** A single classified user story from decompose result. */

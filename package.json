@@ -20,7 +20,6 @@
     "prepublishOnly": "bun run build"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.74.0",
     "@types/react": "^19.2.14",
     "chalk": "^5.6.2",
     "commander": "^13.1.0",

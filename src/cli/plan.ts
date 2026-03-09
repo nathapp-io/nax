@@ -91,6 +91,7 @@ export async function planCommand(
     inputFile: options.from,
     modelTier,
     modelDef,
+    config,
   };
 
   // Run agent in plan mode

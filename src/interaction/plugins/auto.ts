@@ -6,6 +6,7 @@
  */
 
 import { z } from "zod";
+import type { AgentAdapter } from "../../agents/types";
 import type { NaxConfig } from "../../config";
 import { resolveModel } from "../../config";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
@@ -40,9 +41,12 @@ interface DecisionResponse {
 
 /**
  * Module-level deps for testability (_deps pattern).
- * Override callLlm in tests to avoid spawning the claude CLI.
+ * Override adapter in tests to mock adapter.complete() without spawning the claude CLI.
+ *
+ * For backward compatibility, also supports _deps.callLlm (deprecated).
  */
 export const _deps = {
+  adapter: null as AgentAdapter | null,
   callLlm: null as ((request: InteractionRequest) => Promise<DecisionResponse>) | null,
 };
 
@@ -71,7 +75,7 @@ export class AutoInteractionPlugin implements InteractionPlugin {
     // No-op — in-process plugin
   }
 
-  async receive(requestId: string, timeout = 60000): Promise<InteractionResponse> {
+  async receive(_requestId: string, _timeout = 60000): Promise<InteractionResponse> {
     // For auto plugin, we need to fetch the request from somewhere
     // In practice, the chain should pass the request to us
     // For now, throw an error since we need the full request
@@ -88,8 +92,23 @@ export class AutoInteractionPlugin implements InteractionPlugin {
     }
 
     try {
-      const callFn = _deps.callLlm ?? this.callLlm.bind(this);
-      const decision = await callFn(request);
+      // Use deprecated callLlm if provided (backward compatibility)
+      if (_deps.callLlm) {
+        const decision = await _deps.callLlm(request);
+        if (decision.confidence < (this.config.confidenceThreshold ?? 0.7)) {
+          return undefined;
+        }
+        return {
+          requestId: request.id,
+          action: decision.action,
+          value: decision.value,
+          respondedBy: "auto-ai",
+          respondedAt: Date.now(),
+        };
+      }
+
+      // Use new adapter-based path
+      const decision = await this.callLlm(request);
 
       // Check confidence threshold
       if (decision.confidence < (this.config.confidenceThreshold ?? 0.7)) {
@@ -114,34 +133,31 @@ export class AutoInteractionPlugin implements InteractionPlugin {
    */
   private async callLlm(request: InteractionRequest): Promise<DecisionResponse> {
     const prompt = this.buildPrompt(request);
-    const modelTier = this.config.model ?? "fast";
 
-    if (!this.config.naxConfig) {
-      throw new Error("Auto plugin requires naxConfig in init()");
+    // Get adapter from dependency injection or throw
+    const adapter = _deps.adapter;
+    if (!adapter) {
+      throw new Error("Auto plugin requires adapter to be injected via _deps.adapter");
     }
 
-    const modelEntry = this.config.naxConfig.models[modelTier];
-    if (!modelEntry) {
-      throw new Error(`Model tier "${modelTier}" not found in config.models`);
+    // Resolve model option if naxConfig is available
+    let modelArg: string | undefined;
+    if (this.config.naxConfig) {
+      const modelTier = this.config.model ?? "fast";
+      const modelEntry = this.config.naxConfig.models[modelTier];
+      if (!modelEntry) {
+        throw new Error(`Model tier "${modelTier}" not found in config.models`);
+      }
+      const modelDef = resolveModel(modelEntry);
+      modelArg = modelDef.model;
     }
 
-    const modelDef = resolveModel(modelEntry);
-    const modelArg = modelDef.model;
-
-    // Spawn claude CLI
-    const proc = Bun.spawn(["claude", "-p", prompt, "--model", modelArg], {
-      stdout: "pipe",
-      stderr: "pipe",
+    // Use adapter.complete() for one-shot LLM call
+    const output = await adapter.complete(prompt, {
+      ...(modelArg && { model: modelArg }),
+      jsonMode: true,
     });
 
-    const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) {
-      throw new Error(`claude CLI failed with exit code ${exitCode}: ${stderr}`);
-    }
-
-    const output = stdout.trim();
     return this.parseResponse(output);
   }
 

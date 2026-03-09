@@ -74,6 +74,31 @@ export interface AgentCapabilities {
 }
 
 /**
+ * Options for one-shot LLM completion calls.
+ */
+export interface CompleteOptions {
+  /** Maximum tokens for the response */
+  maxTokens?: number;
+  /** Request JSON-formatted output (adds --output-format json) */
+  jsonMode?: boolean;
+  /** Override the model (adds --model flag) */
+  model?: string;
+}
+
+/**
+ * Typed error thrown when complete() fails due to non-zero exit or empty output.
+ */
+export class CompleteError extends Error {
+  constructor(
+    message: string,
+    public readonly exitCode?: number,
+  ) {
+    super(message);
+    this.name = "CompleteError";
+  }
+}
+
+/**
  * Agent adapter interface — one implementation per supported coding agent.
  *
  * Provides uniform interface for checking installation, running agents,
@@ -103,6 +128,12 @@ export interface AgentAdapter {
 
   /** Run the agent in decompose mode to break spec into classified stories. */
   decompose(options: import("./types-extended").DecomposeOptions): Promise<import("./types-extended").DecomposeResult>;
+
+  /**
+   * Run a one-shot LLM call and return the plain text response.
+   * Uses claude -p CLI for non-interactive completions.
+   */
+  complete(prompt: string, options?: CompleteOptions): Promise<string>;
 
   /**
    * Run the agent in interactive PTY mode for TUI embedding.

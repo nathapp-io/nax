@@ -9,7 +9,7 @@
 import type { NaxConfig } from "../config";
 import type { PRD } from "../prd/types";
 import {
-  checkClaudeCLI,
+  checkAgentCLI,
   checkClaudeMdExists,
   checkDependenciesInstalled,
   checkDiskSpace,
@@ -105,7 +105,7 @@ export async function runPrecheck(
     () => checkWorkingTreeClean(workdir),
     () => checkStaleLock(workdir),
     () => checkPRDValid(prd),
-    () => checkClaudeCLI(),
+    () => checkAgentCLI(config),
     () => checkDependenciesInstalled(workdir),
     () => checkTestCommand(config),
     () => checkLintCommand(config),
