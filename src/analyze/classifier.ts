@@ -105,8 +105,7 @@ async function classifyWithLLM(
   config: NaxConfig,
 ): Promise<StoryClassification[]> {
   // Check for required environment variables
-  // In tests, ANTHROPIC_API_KEY may not be set, but adapter.complete will be mocked
-  if (!process.env.ANTHROPIC_API_KEY && process.env.NODE_ENV !== "test") {
+  if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error("ANTHROPIC_API_KEY environment variable not configured — cannot use LLM classification");
   }
 

@@ -54,9 +54,10 @@ export const _completeDeps = {
   spawn(
     cmd: string[],
     opts: { stdout: "pipe"; stderr: "pipe" | "inherit" },
-  ): { stdout: ReadableStream<Uint8Array>; exited: Promise<number>; pid: number } {
+  ): { stdout: ReadableStream<Uint8Array>; stderr: ReadableStream<Uint8Array>; exited: Promise<number>; pid: number } {
     return Bun.spawn(cmd, opts) as unknown as {
       stdout: ReadableStream<Uint8Array>;
+      stderr: ReadableStream<Uint8Array>;
       exited: Promise<number>;
       pid: number;
     };
@@ -362,13 +363,16 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     const proc = _completeDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
     const exitCode = await proc.exited;
 
-    // Read stdout
+    // Read stdout and stderr for error messages
     const stdout = await new Response(proc.stdout).text();
+    const stderr = await new Response(proc.stderr).text();
     const trimmed = stdout.trim();
 
     // Validate exit code and output
     if (exitCode !== 0) {
-      throw new CompleteError(`complete() failed with exit code ${exitCode}`, exitCode);
+      const errorDetails = stderr.trim() || trimmed;
+      const errorMessage = errorDetails || `complete() failed with exit code ${exitCode}`;
+      throw new CompleteError(errorMessage, exitCode);
     }
 
     if (!trimmed) {

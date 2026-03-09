@@ -174,6 +174,23 @@ function restoreComplete() {
   _classifyDeps.adapter.complete = savedComplete;
 }
 
+/** Helper to set/restore ANTHROPIC_API_KEY for LLM path tests */
+function withApiKey(fn: () => Promise<void>): () => Promise<void> {
+  return async () => {
+    const originalKey = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "test-key";
+    try {
+      await fn();
+    } finally {
+      if (originalKey) {
+        process.env.ANTHROPIC_API_KEY = originalKey;
+      } else {
+        delete process.env.ANTHROPIC_API_KEY;
+      }
+    }
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Test suite
 // ─────────────────────────────────────────────────────────────────────────────
@@ -192,244 +209,283 @@ describe("classifyStories — adapter.complete() integration (AA-002)", () => {
   // ── LLM path: adapter.complete() is called with jsonMode: true ───────────
 
   describe("when llmEnhanced is true", () => {
-    test("calls adapter.complete() with jsonMode: true", async () => {
-      saveComplete();
-      const stories = [makeStory("US-001")];
-      const scan = makeScan();
-      const config = makeConfig();
+    test(
+      "calls adapter.complete() with jsonMode: true",
+      withApiKey(async () => {
+        saveComplete();
+        const stories = [makeStory("US-001")];
+        const scan = makeScan();
+        const config = makeConfig();
 
-      let capturedOptions: Parameters<typeof _classifyDeps.adapter.complete>[1];
-      _classifyDeps.adapter.complete = mock(async (_prompt: string, options) => {
-        capturedOptions = options;
-        return makeAdapterResponse(stories);
-      });
+        let capturedOptions: Parameters<typeof _classifyDeps.adapter.complete>[1];
+        _classifyDeps.adapter.complete = mock(async (_prompt: string, options) => {
+          capturedOptions = options;
+          return makeAdapterResponse(stories);
+        });
 
-      await classifyStories(stories, scan, config);
-      restoreComplete();
+        await classifyStories(stories, scan, config);
+        restoreComplete();
 
-      expect(capturedOptions?.jsonMode).toBe(true);
-    });
+        expect(capturedOptions?.jsonMode).toBe(true);
+      })
+    );
 
-    test("calls adapter.complete() exactly once per classifyStories call", async () => {
-      saveComplete();
-      const stories = [makeStory("US-001"), makeStory("US-002")];
-      const scan = makeScan();
-      const config = makeConfig();
-      let callCount = 0;
+    test(
+      "calls adapter.complete() exactly once per classifyStories call",
+      withApiKey(async () => {
+        saveComplete();
+        const stories = [makeStory("US-001"), makeStory("US-002")];
+        const scan = makeScan();
+        const config = makeConfig();
+        let callCount = 0;
 
-      _classifyDeps.adapter.complete = mock(async () => {
-        callCount++;
-        return makeAdapterResponse(stories);
-      });
+        _classifyDeps.adapter.complete = mock(async () => {
+          callCount++;
+          return makeAdapterResponse(stories);
+        });
 
-      await classifyStories(stories, scan, config);
-      restoreComplete();
+        await classifyStories(stories, scan, config);
+        restoreComplete();
 
-      expect(callCount).toBe(1);
-    });
+        expect(callCount).toBe(1);
+      })
+    );
 
-    test("passes model from config.models.fast to adapter.complete()", async () => {
-      saveComplete();
-      const stories = [makeStory("US-001")];
-      const scan = makeScan();
-      const config = makeConfig();
+    test(
+      "passes model from config.models.fast to adapter.complete()",
+      withApiKey(async () => {
+        saveComplete();
+        const stories = [makeStory("US-001")];
+        const scan = makeScan();
+        const config = makeConfig();
 
-      let capturedOptions: Parameters<typeof _classifyDeps.adapter.complete>[1];
-      _classifyDeps.adapter.complete = mock(async (_prompt: string, options) => {
-        capturedOptions = options;
-        return makeAdapterResponse(stories);
-      });
+        let capturedOptions: Parameters<typeof _classifyDeps.adapter.complete>[1];
+        _classifyDeps.adapter.complete = mock(async (_prompt: string, options) => {
+          capturedOptions = options;
+          return makeAdapterResponse(stories);
+        });
 
-      await classifyStories(stories, scan, config);
-      restoreComplete();
+        await classifyStories(stories, scan, config);
+        restoreComplete();
 
-      // config.models.fast.model = "claude-haiku-4-5-20251001"
-      expect(capturedOptions?.model).toBe("claude-haiku-4-5-20251001");
-    });
+        // config.models.fast.model = "claude-haiku-4-5-20251001"
+        expect(capturedOptions?.model).toBe("claude-haiku-4-5-20251001");
+      })
+    );
 
-    test("model dynamically reflects config.models.fast — not hardcoded", async () => {
-      saveComplete();
-      const stories = [makeStory("US-001")];
-      const scan = makeScan();
-      // Use a custom fast model to verify dynamic resolution
-      const config = makeConfig();
-      config.models.fast = { provider: "anthropic", model: "claude-haiku-custom-model" };
+    test(
+      "model dynamically reflects config.models.fast — not hardcoded",
+      withApiKey(async () => {
+        saveComplete();
+        const stories = [makeStory("US-001")];
+        const scan = makeScan();
+        // Use a custom fast model to verify dynamic resolution
+        const config = makeConfig();
+        config.models.fast = { provider: "anthropic", model: "claude-haiku-custom-model" };
 
-      let capturedOptions: Parameters<typeof _classifyDeps.adapter.complete>[1];
-      _classifyDeps.adapter.complete = mock(async (_prompt: string, options) => {
-        capturedOptions = options;
-        return makeAdapterResponse(stories);
-      });
+        let capturedOptions: Parameters<typeof _classifyDeps.adapter.complete>[1];
+        _classifyDeps.adapter.complete = mock(async (_prompt: string, options) => {
+          capturedOptions = options;
+          return makeAdapterResponse(stories);
+        });
 
-      await classifyStories(stories, scan, config);
-      restoreComplete();
+        await classifyStories(stories, scan, config);
+        restoreComplete();
 
-      expect(capturedOptions?.model).toBe("claude-haiku-custom-model");
-    });
+        expect(capturedOptions?.model).toBe("claude-haiku-custom-model");
+      })
+    );
 
-    test("model is never the old hardcoded 'claude-haiku-4-20250514'", async () => {
-      saveComplete();
-      const stories = [makeStory("US-001")];
-      const scan = makeScan();
-      const config = makeConfig();
+    test(
+      "model is never the old hardcoded 'claude-haiku-4-20250514'",
+      withApiKey(async () => {
+        saveComplete();
+        const stories = [makeStory("US-001")];
+        const scan = makeScan();
+        const config = makeConfig();
 
-      let capturedOptions: Parameters<typeof _classifyDeps.adapter.complete>[1];
-      _classifyDeps.adapter.complete = mock(async (_prompt: string, options) => {
-        capturedOptions = options;
-        return makeAdapterResponse(stories);
-      });
+        let capturedOptions: Parameters<typeof _classifyDeps.adapter.complete>[1];
+        _classifyDeps.adapter.complete = mock(async (_prompt: string, options) => {
+          capturedOptions = options;
+          return makeAdapterResponse(stories);
+        });
 
-      await classifyStories(stories, scan, config);
-      restoreComplete();
+        await classifyStories(stories, scan, config);
+        restoreComplete();
 
-      expect(capturedOptions?.model).not.toBe("claude-haiku-4-20250514");
-    });
+        expect(capturedOptions?.model).not.toBe("claude-haiku-4-20250514");
+      })
+    );
 
-    test("returns llm method when adapter.complete() succeeds", async () => {
-      saveComplete();
-      const stories = [makeStory("US-001")];
-      const scan = makeScan();
-      const config = makeConfig();
+    test(
+      "returns llm method when adapter.complete() succeeds",
+      withApiKey(async () => {
+        saveComplete();
+        const stories = [makeStory("US-001")];
+        const scan = makeScan();
+        const config = makeConfig();
 
-      _classifyDeps.adapter.complete = mock(async () => makeAdapterResponse(stories));
+        _classifyDeps.adapter.complete = mock(async () => makeAdapterResponse(stories));
 
-      const result = await classifyStories(stories, scan, config);
-      restoreComplete();
+        const result = await classifyStories(stories, scan, config);
+        restoreComplete();
 
-      expect(result.method).toBe("llm");
-    });
+        expect(result.method).toBe("llm");
+      })
+    );
 
-    test("returns classifications for all stories", async () => {
-      saveComplete();
-      const stories = [makeStory("US-001"), makeStory("US-002"), makeStory("US-003")];
-      const scan = makeScan();
-      const config = makeConfig();
+    test(
+      "returns classifications for all stories",
+      withApiKey(async () => {
+        saveComplete();
+        const stories = [makeStory("US-001"), makeStory("US-002"), makeStory("US-003")];
+        const scan = makeScan();
+        const config = makeConfig();
 
-      _classifyDeps.adapter.complete = mock(async () => makeAdapterResponse(stories));
+        _classifyDeps.adapter.complete = mock(async () => makeAdapterResponse(stories));
 
-      const result = await classifyStories(stories, scan, config);
-      restoreComplete();
+        const result = await classifyStories(stories, scan, config);
+        restoreComplete();
 
-      expect(result.classifications).toHaveLength(3);
-      const ids = result.classifications.map((c) => c.storyId);
-      expect(ids).toContain("US-001");
-      expect(ids).toContain("US-002");
-      expect(ids).toContain("US-003");
-    });
+        expect(result.classifications).toHaveLength(3);
+        const ids = result.classifications.map((c) => c.storyId);
+        expect(ids).toContain("US-001");
+        expect(ids).toContain("US-002");
+        expect(ids).toContain("US-003");
+      })
+    );
 
-    test("classifications include contextFiles from adapter response", async () => {
-      saveComplete();
-      const stories = [makeStory("US-001")];
-      const scan = makeScan();
-      const config = makeConfig();
+    test(
+      "classifications include contextFiles from adapter response",
+      withApiKey(async () => {
+        saveComplete();
+        const stories = [makeStory("US-001")];
+        const scan = makeScan();
+        const config = makeConfig();
 
-      _classifyDeps.adapter.complete = mock(async () =>
-        JSON.stringify([
-          {
-            storyId: "US-001",
-            complexity: "simple",
-            relevantFiles: ["src/foo.ts", "src/bar.ts"],
-            reasoning: "Two files only",
-            estimatedLOC: 50,
-            risks: [],
-          },
-        ]),
-      );
+        _classifyDeps.adapter.complete = mock(async () =>
+          JSON.stringify([
+            {
+              storyId: "US-001",
+              complexity: "simple",
+              relevantFiles: ["src/foo.ts", "src/bar.ts"],
+              reasoning: "Two files only",
+              estimatedLOC: 50,
+              risks: [],
+            },
+          ]),
+        );
 
-      const result = await classifyStories(stories, scan, config);
-      restoreComplete();
+        const result = await classifyStories(stories, scan, config);
+        restoreComplete();
 
-      expect(result.classifications[0].contextFiles).toEqual(["src/foo.ts", "src/bar.ts"]);
-    });
+        expect(result.classifications[0].contextFiles).toEqual(["src/foo.ts", "src/bar.ts"]);
+      })
+    );
 
-    test("prompt passed to adapter.complete() includes story ID and title", async () => {
-      saveComplete();
-      const stories = [makeStory("US-001", "Add caching layer")];
-      const scan = makeScan();
-      const config = makeConfig();
+    test(
+      "prompt passed to adapter.complete() includes story ID and title",
+      withApiKey(async () => {
+        saveComplete();
+        const stories = [makeStory("US-001", "Add caching layer")];
+        const scan = makeScan();
+        const config = makeConfig();
 
-      let capturedPrompt = "";
-      _classifyDeps.adapter.complete = mock(async (prompt: string) => {
-        capturedPrompt = prompt;
-        return makeAdapterResponse(stories);
-      });
+        let capturedPrompt = "";
+        _classifyDeps.adapter.complete = mock(async (prompt: string) => {
+          capturedPrompt = prompt;
+          return makeAdapterResponse(stories);
+        });
 
-      await classifyStories(stories, scan, config);
-      restoreComplete();
+        await classifyStories(stories, scan, config);
+        restoreComplete();
 
-      expect(capturedPrompt).toContain("US-001");
-      expect(capturedPrompt).toContain("Add caching layer");
-    });
+        expect(capturedPrompt).toContain("US-001");
+        expect(capturedPrompt).toContain("Add caching layer");
+      })
+    );
 
-    test("prompt passed to adapter.complete() includes codebase file tree", async () => {
-      saveComplete();
-      const stories = [makeStory("US-001")];
-      const scan = { ...makeScan(), fileTree: "src/\n  custom-tree.ts" };
-      const config = makeConfig();
+    test(
+      "prompt passed to adapter.complete() includes codebase file tree",
+      withApiKey(async () => {
+        saveComplete();
+        const stories = [makeStory("US-001")];
+        const scan = { ...makeScan(), fileTree: "src/\n  custom-tree.ts" };
+        const config = makeConfig();
 
-      let capturedPrompt = "";
-      _classifyDeps.adapter.complete = mock(async (prompt: string) => {
-        capturedPrompt = prompt;
-        return makeAdapterResponse(stories);
-      });
+        let capturedPrompt = "";
+        _classifyDeps.adapter.complete = mock(async (prompt: string) => {
+          capturedPrompt = prompt;
+          return makeAdapterResponse(stories);
+        });
 
-      await classifyStories(stories, scan, config);
-      restoreComplete();
+        await classifyStories(stories, scan, config);
+        restoreComplete();
 
-      expect(capturedPrompt).toContain("custom-tree.ts");
-    });
+        expect(capturedPrompt).toContain("custom-tree.ts");
+      })
+    );
   });
 
   // ── Fallback: adapter.complete() throws → keyword fallback ───────────────
 
   describe("when adapter.complete() throws", () => {
-    test("falls back to keyword-fallback method", async () => {
-      saveComplete();
-      const stories = [makeStory("US-001")];
-      const scan = makeScan();
-      const config = makeConfig();
+    test(
+      "falls back to keyword-fallback method",
+      withApiKey(async () => {
+        saveComplete();
+        const stories = [makeStory("US-001")];
+        const scan = makeScan();
+        const config = makeConfig();
 
-      _classifyDeps.adapter.complete = mock(async () => {
-        throw new Error("adapter failure");
-      });
+        _classifyDeps.adapter.complete = mock(async () => {
+          throw new Error("adapter failure");
+        });
 
-      const result = await classifyStories(stories, scan, config);
-      restoreComplete();
+        const result = await classifyStories(stories, scan, config);
+        restoreComplete();
 
-      expect(result.method).toBe("keyword-fallback");
-    });
+        expect(result.method).toBe("keyword-fallback");
+      })
+    );
 
-    test("includes fallbackReason describing the error", async () => {
-      saveComplete();
-      const stories = [makeStory("US-001")];
-      const scan = makeScan();
-      const config = makeConfig();
+    test(
+      "includes fallbackReason describing the error",
+      withApiKey(async () => {
+        saveComplete();
+        const stories = [makeStory("US-001")];
+        const scan = makeScan();
+        const config = makeConfig();
 
-      _classifyDeps.adapter.complete = mock(async () => {
-        throw new Error("network timeout");
-      });
+        _classifyDeps.adapter.complete = mock(async () => {
+          throw new Error("network timeout");
+        });
 
-      const result = await classifyStories(stories, scan, config);
-      restoreComplete();
+        const result = await classifyStories(stories, scan, config);
+        restoreComplete();
 
-      expect(result.fallbackReason).toContain("network timeout");
-    });
+        expect(result.fallbackReason).toContain("network timeout");
+      })
+    );
 
-    test("still returns classifications for all stories on fallback", async () => {
-      saveComplete();
-      const stories = [makeStory("US-001"), makeStory("US-002")];
-      const scan = makeScan();
-      const config = makeConfig();
+    test(
+      "still returns classifications for all stories on fallback",
+      withApiKey(async () => {
+        saveComplete();
+        const stories = [makeStory("US-001"), makeStory("US-002")];
+        const scan = makeScan();
+        const config = makeConfig();
 
-      _classifyDeps.adapter.complete = mock(async () => {
-        throw new Error("adapter failure");
-      });
+        _classifyDeps.adapter.complete = mock(async () => {
+          throw new Error("adapter failure");
+        });
 
-      const result = await classifyStories(stories, scan, config);
-      restoreComplete();
+        const result = await classifyStories(stories, scan, config);
+        restoreComplete();
 
-      expect(result.classifications).toHaveLength(2);
-    });
+        expect(result.classifications).toHaveLength(2);
+      })
+    );
   });
 
   // ── Disabled LLM path ────────────────────────────────────────────────────
@@ -472,46 +528,52 @@ describe("classifyStories — adapter.complete() integration (AA-002)", () => {
   // ── No Anthropic SDK — prompt is plain string ────────────────────────────
 
   describe("API shape — no SDK message objects", () => {
-    test("adapter.complete() receives a plain string prompt (not SDK message format)", async () => {
-      saveComplete();
-      const stories = [makeStory("US-001")];
-      const scan = makeScan();
-      const config = makeConfig();
+    test(
+      "adapter.complete() receives a plain string prompt (not SDK message format)",
+      withApiKey(async () => {
+        saveComplete();
+        const stories = [makeStory("US-001")];
+        const scan = makeScan();
+        const config = makeConfig();
 
-      let capturedFirstArg: unknown;
-      _classifyDeps.adapter.complete = mock(async (prompt) => {
-        capturedFirstArg = prompt;
-        return makeAdapterResponse(stories);
-      });
+        let capturedFirstArg: unknown;
+        _classifyDeps.adapter.complete = mock(async (prompt) => {
+          capturedFirstArg = prompt;
+          return makeAdapterResponse(stories);
+        });
 
-      await classifyStories(stories, scan, config);
-      restoreComplete();
+        await classifyStories(stories, scan, config);
+        restoreComplete();
 
-      expect(typeof capturedFirstArg).toBe("string");
-    });
+        expect(typeof capturedFirstArg).toBe("string");
+      })
+    );
 
-    test("adapter.complete() second arg is an options object, not an SDK model param", async () => {
-      saveComplete();
-      const stories = [makeStory("US-001")];
-      const scan = makeScan();
-      const config = makeConfig();
+    test(
+      "adapter.complete() second arg is an options object, not an SDK model param",
+      withApiKey(async () => {
+        saveComplete();
+        const stories = [makeStory("US-001")];
+        const scan = makeScan();
+        const config = makeConfig();
 
-      const callArgs: unknown[][] = [];
-      _classifyDeps.adapter.complete = mock(async (...args: unknown[]) => {
-        callArgs.push(args);
-        return makeAdapterResponse(stories);
-      });
+        const callArgs: unknown[][] = [];
+        _classifyDeps.adapter.complete = mock(async (...args: unknown[]) => {
+          callArgs.push(args);
+          return makeAdapterResponse(stories);
+        });
 
-      await classifyStories(stories, scan, config);
-      restoreComplete();
+        await classifyStories(stories, scan, config);
+        restoreComplete();
 
-      expect(callArgs).toHaveLength(1);
-      // Second arg: options object or undefined (never a string model name like SDK expects)
-      const secondArg = callArgs[0][1];
-      if (secondArg !== undefined) {
-        expect(typeof secondArg).toBe("object");
-        expect(Array.isArray(secondArg)).toBe(false);
-      }
-    });
+        expect(callArgs).toHaveLength(1);
+        // Second arg: options object or undefined (never a string model name like SDK expects)
+        const secondArg = callArgs[0][1];
+        if (secondArg !== undefined) {
+          expect(typeof secondArg).toBe("object");
+          expect(Array.isArray(secondArg)).toBe(false);
+        }
+      })
+    );
   });
 });
