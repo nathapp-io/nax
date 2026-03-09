@@ -7,6 +7,36 @@
 ---
 
 
+## v0.37.0 — Test Health Audit (Planned)
+
+**Theme:** Audit and slim down the test suite — remove redundant coverage, consolidate copy-paste tests, delete dead feature tests
+**Status:** 🔲 Planned
+**Depends on:** None (can run anytime)
+
+### Context
+
+- **226 test files**, 3,014 tests, 67K lines of test code
+- 10 files exceed 600 lines (largest: `context.test.ts` at 1,734 lines)
+- Integration tests likely duplicate unit test coverage in several areas
+- Copy-paste test patterns (same logic, one param changed) inflate line count
+
+### Stories
+
+- [ ] **TH-001:** Automated coverage overlap report — script that cross-references integration tests against unit tests, flags tests covering identical code paths. Output: markdown report with recommended deletions
+- [ ] **TH-002:** Dead test detection — identify test files importing functions/modules that no longer exist in `src/`, or testing removed features (pre-v0.22.1 verification paths, old routing, etc.)
+- [ ] **TH-003:** Copy-paste consolidation — convert repeated test patterns to `test.each()` / table-driven style. Target: files with 3+ similar `describe` blocks differing by 1-2 params
+- [ ] **TH-004:** Execute cleanup — delete confirmed redundant tests, apply `test.each()` conversions, verify full suite still passes with same or higher coverage
+- [ ] **TH-005:** Test file size enforcement — add a precheck/lint rule that warns on test files exceeding 500 lines (soft limit) or 800 lines (hard limit)
+
+### Success Criteria
+
+- Test count reduced by ≥15% without losing meaningful coverage
+- No test file exceeds 800 lines
+- Full suite runtime unchanged or faster
+- CI still passes on 8GB runner
+
+---
+
 ## v0.36.0 — Multi-Agent Adapters (Planned, Experimental)
 
 **Theme:** Scaffold adapters for Codex, OpenCode, Gemini CLI, and Aider — enabling nax to orchestrate any major coding agent
