@@ -5,6 +5,7 @@
  */
 
 import { CodexAdapter } from "./adapters/codex";
+import { OpenCodeAdapter } from "./adapters/opencode";
 import { ClaudeCodeAdapter } from "./claude";
 import type { AgentAdapter } from "./types";
 
@@ -12,7 +13,7 @@ import type { AgentAdapter } from "./types";
 export const ALL_AGENTS: AgentAdapter[] = [
   new ClaudeCodeAdapter(),
   new CodexAdapter(),
-  // Future: new OpenCodeAdapter(),
+  new OpenCodeAdapter(),
   // Future: new GeminiAdapter(),
 ];
 
