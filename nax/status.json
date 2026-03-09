@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 12,
-    "passed": 3,
+    "passed": 4,
     "failed": 2,
     "paused": 0,
     "blocked": 0,
-    "pending": 7
+    "pending": 6
   },
   "cost": {
-    "spent": 0,
+    "spent": 0.0529945,
     "limit": 8
   },
   "current": {
-    "storyId": "MA-005",
-    "title": "Codex context generator",
+    "storyId": "MA-006",
+    "title": "Gemini CLI context generator",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 6,
-  "updatedAt": "2026-03-09T15:28:53.698Z",
-  "durationMs": 1190358,
-  "lastHeartbeat": "2026-03-09T15:28:53.698Z"
+  "iterations": 7,
+  "updatedAt": "2026-03-09T15:31:53.708Z",
+  "durationMs": 1370368,
+  "lastHeartbeat": "2026-03-09T15:31:53.708Z"
 }

@@ -134,7 +134,7 @@
         "Correctly maps nax context fields to target format"
       ],
       "complexity": "simple",
-      "status": "pending",
+      "status": "passed",
       "tags": [
         "context"
       ],
@@ -152,7 +152,8 @@
         "testStrategy": "tdd-simple",
         "reasoning": "tdd-simple: simple task (simple)",
         "contentHash": "8ea7b0dc920dd62415e53c75ecf72a4255e4da490d609d062adc806714a702de"
-      }
+      },
+      "passes": true
     },
     {
       "id": "MA-006",
@@ -175,7 +176,14 @@
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
-      "escalations": []
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "tdd-simple: simple task (simple)",
+        "contentHash": "b7d3e2efdfc892e773ff745d784fa9b280f7140ffa5fb5b94c19f7dd70c093a0"
+      }
     },
     {
       "id": "MA-007",
@@ -331,5 +339,5 @@
       "escalations": []
     }
   ],
-  "updatedAt": "2026-03-09T15:25:53.704Z"
+  "updatedAt": "2026-03-09T15:30:31.181Z"
 }
