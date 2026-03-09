@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 3,
+    "passed": 4,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 2.8532569999999997,
+    "spent": 3.5503649999999998,
     "limit": 8
   },
   "current": {
-    "storyId": "RL-004",
-    "title": "Handle deferred regression failure in run-completion.ts",
+    "storyId": "RL-005",
+    "title": "Track fullSuiteGatePassed per story",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 4,
-  "updatedAt": "2026-03-09T07:46:00.995Z",
-  "durationMs": 4828051,
-  "lastHeartbeat": "2026-03-09T07:46:00.995Z"
+  "iterations": 5,
+  "updatedAt": "2026-03-09T07:49:01.000Z",
+  "durationMs": 5008056,
+  "lastHeartbeat": "2026-03-09T07:49:01.000Z"
 }

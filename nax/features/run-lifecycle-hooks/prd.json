@@ -80,14 +80,15 @@
         "New StoryStatus 'regression-failed' added to types"
       ],
       "complexity": "complex",
-      "status": "pending",
+      "status": "passed",
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
       "escalations": [],
       "dependencies": [],
       "tags": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "passes": true
     },
     {
       "id": "RL-005",
@@ -146,5 +147,5 @@
       "storyPoints": 1
     }
   ],
-  "updatedAt": "2026-03-09T07:30:56.821Z"
+  "updatedAt": "2026-03-09T07:47:14.195Z"
 }
