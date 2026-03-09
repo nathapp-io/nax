@@ -7,6 +7,49 @@
 ---
 
 
+## v0.36.0 — Multi-Agent Adapters (Planned, Experimental)
+
+**Theme:** Scaffold adapters for Codex, OpenCode, Gemini CLI, and Aider — enabling nax to orchestrate any major coding agent
+**Status:** 🔲 Planned
+**Depends on:** v0.35.0 (Agent Abstraction Layer — `AgentAdapter` interface with `complete()`)
+
+> ⚠️ **Experimental:** Adapters are scaffolds based on documented CLI interfaces. They require community validation by users of each tool. Integration tests skip unless the binary is detected.
+
+### Adapters
+
+| Agent | Binary | Prompt Mode | Context File | Status |
+|:------|:-------|:------------|:-------------|:-------|
+| Codex | `codex` | `codex -q --prompt <text>` | `AGENTS.md` / `codex.md` | 🔲 |
+| OpenCode | `opencode` | `opencode --prompt <text>` | `AGENTS.md` | 🔲 |
+| Gemini CLI | `gemini` | `gemini -p <text>` | `GEMINI.md` | 🔲 |
+| Aider | `aider` | `aider --message <text> --yes` | `.aider.conf.yml` | 🔲 |
+
+### Stories — Adapters
+
+- [ ] **MA-001:** Codex adapter — implement `AgentAdapter` interface (`execute()`, `complete()`, binary detection). Handle `codex -q --prompt` for one-shot, `codex` interactive for sessions. Parse exit codes and output
+- [ ] **MA-002:** OpenCode adapter — implement `AgentAdapter` interface. Handle `opencode --prompt` for one-shot mode. Detect binary via `Bun.which("opencode")`
+- [ ] **MA-003:** Gemini CLI adapter — implement `AgentAdapter` interface. Handle `gemini -p` for one-shot mode. Support Google auth flow detection in precheck
+- [ ] **MA-004:** Aider adapter — implement `AgentAdapter` interface. Handle `aider --message --yes` for headless mode. Support `--model` flag passthrough from nax config
+
+### Stories — Context Generators
+
+- [ ] **MA-005:** Add Codex context generator — output `codex.md` from `nax/context.md` (verify if Codex prefers `codex.md` or `AGENTS.md`, support both)
+- [ ] **MA-006:** Add Gemini CLI context generator — output `GEMINI.md` from `nax/context.md`
+- [ ] **MA-007:** Update `nax generate` to include new generators. Update `AgentType` union type. Verify existing OpenCode and Aider generators still work
+
+### Stories — Testing & Validation
+
+- [ ] **MA-008:** Unit tests for all 4 adapters — mock `Bun.spawn`, test prompt construction, exit code handling, output parsing. Use `_deps` injection pattern
+- [ ] **MA-009:** Integration test suite — skip-unless-installed (`Bun.which()` guard). Smoke test: `adapter.complete("return hello")` for each installed agent
+- [ ] **MA-010:** Precheck updates — `nax precheck` detects and reports which agents are available. Show version for each detected binary
+
+### CLI Integration
+
+- [ ] **MA-011:** `nax config --explain agents` — document multi-agent config: `autoMode.defaultAgent`, `autoMode.fallbackOrder`, per-agent model mapping
+- [ ] **MA-012:** `nax agents` CLI command — list available agents with binary path, version, and health status
+
+---
+
 ## v0.35.0 — Agent Abstraction Layer (Planned)
 
 **Theme:** Decouple nax from Anthropic/Claude — make all LLM calls agent-agnostic
