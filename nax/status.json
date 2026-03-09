@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 4,
-    "passed": 0,
+    "passed": 1,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 0,
+    "spent": 0.7975115,
     "limit": 8
   },
   "current": {
-    "storyId": "SD-001",
-    "title": "DecomposeBuilder fluent API and prompt sections",
+    "storyId": "SD-002",
+    "title": "Post-decompose validators",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 1,
-  "updatedAt": "2026-03-09T04:18:29.947Z",
-  "durationMs": 859473,
-  "lastHeartbeat": "2026-03-09T04:18:29.947Z"
+  "iterations": 2,
+  "updatedAt": "2026-03-09T04:25:29.946Z",
+  "durationMs": 1279472,
+  "lastHeartbeat": "2026-03-09T04:25:29.946Z"
 }

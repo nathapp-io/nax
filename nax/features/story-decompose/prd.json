@@ -12,7 +12,7 @@
       "title": "DecomposeBuilder fluent API and prompt sections",
       "description": "Create the core DecomposeBuilder class in `src/decompose/builder.ts` with fluent API following the PromptBuilder pattern.\n\nNew files:\n- `src/decompose/types.ts` — DecomposeConfig, DecomposeResult, SubStory, ValidationResult types\n- `src/decompose/builder.ts` — DecomposeBuilder class with `.for(story).prd(prd).codebase(ctx).config(cfg).buildPrompt()` and `.decompose(adapter)` methods\n- `src/decompose/sections/target-story.ts` — builds the target story section (full story details + decompose instruction)\n- `src/decompose/sections/sibling-stories.ts` — builds sibling stories section (all other PRD stories: id, title, status, AC summary for overlap prevention)\n- `src/decompose/sections/codebase.ts` — builds codebase context section (reuse scanCodebase output)\n- `src/decompose/sections/constraints.ts` — builds constraints section (max substories, max complexity, output JSON schema, nonOverlapJustification requirement)\n- `src/decompose/sections/index.ts` — barrel export\n- `src/decompose/index.ts` — barrel export\n\nThe builder composes sections with SECTION_SEP (same as PromptBuilder). The `.decompose(adapter)` method calls `adapter.decompose()` with the composed prompt, then parses and validates the result.\n\nParsing reuses `parseDecomposeOutput()` from `src/agents/claude-decompose.ts` — extend it to handle the substory schema (parentStoryId, nonOverlapJustification fields).\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/decompose/ --timeout=60000\nCommit: 'feat(decompose): add DecomposeBuilder fluent API and prompt sections'",
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "dependencies": [],
       "acceptanceCriteria": [
         "DecomposeBuilder.for(story) returns builder instance",
@@ -28,7 +28,7 @@
         "architecture"
       ],
       "attempts": 0,
-      "passes": false,
+      "passes": true,
       "escalations": [],
       "priorErrors": [],
       "priorFailures": [],
@@ -68,7 +68,14 @@
       "escalations": [],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multiple self-contained validators with straightforward algorithms (similarity matching, dependency traversal, coverage checking); integration into DecomposeBuilder with retry logic adds moderate orchestration complexity.",
+        "contentHash": "f72b21a069369d85562c7a20eba5f37d7a7f7deedb48a80b3aff8058ee4b679b"
+      }
     },
     {
       "id": "SD-003",
@@ -134,5 +141,5 @@
     }
   ],
   "createdAt": "2026-03-09T03:35:00.000Z",
-  "updatedAt": "2026-03-09T04:04:29.972Z"
+  "updatedAt": "2026-03-09T04:19:47.149Z"
 }
