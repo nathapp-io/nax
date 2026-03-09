@@ -121,10 +121,10 @@ nax currently hardcodes `claude` CLI and `@anthropic-ai/sdk` in several places, 
 
 ---
 
-## v0.34.0 — Run Lifecycle Hooks & Smart Regression (Planned)
+## v0.34.0 — Run Lifecycle Hooks & Smart Regression ✅ Shipped (2026-03-09)
 
 **Theme:** Fix run lifecycle ordering (BUG-060), add missing hooks, skip redundant deferred regression
-**Status:** 🔲 Planned
+**Status:** ✅ Shipped (2026-03-09)
 
 ### Hook Architecture
 
@@ -207,6 +207,8 @@ Stories classified as complex/expert with >6 acceptance criteria.
 
 | Version | Theme | Date |
 |:--------|:------|:-----|
+| v0.34.0 | Run Hooks + Smart Skip | 2026-03-09 |
+| v0.33.0 | Story Decomposer | 2026-03-09 |
 | v0.32.2 | BUG-059 Fix (silent gate pass on crash) | 2026-03-09 |
 | v0.32.1 | Portable Hooks + Docs | 2026-03-09 |
 | v0.32.0 | TDD Simple Strategy | 2026-03-09 |
