@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 4,
-    "passed": 2,
+    "passed": 3,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 2.3594155000000003,
+    "spent": 3.14635325,
     "limit": 8
   },
   "current": {
-    "storyId": "SD-003",
-    "title": "Config schema, PRD mutation, and story-oversized trigger",
+    "storyId": "SD-004",
+    "title": "Pipeline integration and CLI entry point",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-03-09T05:10:30.029Z",
-  "durationMs": 3979555,
-  "lastHeartbeat": "2026-03-09T05:10:30.029Z"
+  "iterations": 4,
+  "updatedAt": "2026-03-09T05:19:30.034Z",
+  "durationMs": 4519560,
+  "lastHeartbeat": "2026-03-09T05:19:30.034Z"
 }

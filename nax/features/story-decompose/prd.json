@@ -82,7 +82,7 @@
       "title": "Config schema, PRD mutation, and story-oversized trigger",
       "description": "Wire decomposition into config, PRD lifecycle, and interaction system.\n\n1. Config schema changes:\n- Add DecomposeConfig to src/config/types.ts: { trigger: 'auto'|'confirm'|'disabled', maxAcceptanceCriteria: number (default 6), maxSubstories: number (default 5), maxSubstoryComplexity: Complexity (default 'medium'), maxRetries: number (default 2), model: ModelTier (default 'balanced') }\n- Add `decompose: DecomposeConfig` to NaxConfig\n- Add defaults to src/config/schema.ts\n- Add decompose section to `nax config --explain`\n\n2. PRD mutation:\n- Add 'decomposed' to StoryStatus union in src/prd/types.ts\n- Create src/decompose/apply.ts — applyDecomposition(prd, result): marks original story as 'decomposed', inserts substories after original with status 'pending' and parentStoryId reference, re-routes each substory via routeTask()\n- Update getNextStory() to skip 'decomposed' stories (same as 'skipped')\n- Update countStories() to include decomposed count\n\n3. Interaction trigger:\n- Add 'story-oversized' to TriggerName union in src/interaction/types.ts\n- Add metadata to TRIGGER_METADATA: { defaultFallback: 'continue', safety: 'yellow', defaultSummary: 'Story {{storyId}} is oversized ({{criteriaCount}} acceptance criteria) — decompose into smaller stories?' }\n- Add checkStoryOversized() to src/interaction/triggers.ts\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/decompose/ test/unit/prd/ test/unit/config/ --timeout=60000\nCommit: 'feat(decompose): add config schema, PRD mutation, and story-oversized trigger'",
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "dependencies": [
         "SD-001"
       ],
@@ -101,7 +101,7 @@
         "interaction"
       ],
       "attempts": 0,
-      "passes": false,
+      "passes": true,
       "escalations": [],
       "priorErrors": [],
       "priorFailures": [],
@@ -144,9 +144,16 @@
       "escalations": [],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "complex",
+        "initialComplexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multi-file integration (routing.ts, analyze.ts) with conditional trigger modes (disabled/confirm/auto), interaction trigger handling, PRD mutations, and state restart logic across 9 acceptance criteria—requires deep reasoning about error paths and system coordination.",
+        "contentHash": "a95a91d24f9f49b0a2f3ecfd6458ac5a6388aac0abcfc95023218cce68a8231a"
+      }
     }
   ],
   "createdAt": "2026-03-09T03:35:00.000Z",
-  "updatedAt": "2026-03-09T04:49:01.055Z"
+  "updatedAt": "2026-03-09T05:12:02.909Z"
 }
