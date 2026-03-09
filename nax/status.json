@@ -1,36 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-09T06-25-32-944Z",
-    "feature": "run-lifecycle-hooks",
-    "startedAt": "2026-03-09T06:25:32.944Z",
+    "id": "run-2026-03-09T10-42-23-564Z",
+    "feature": "agent-abstraction",
+    "startedAt": "2026-03-09T10:42:23.564Z",
     "status": "running",
     "dryRun": false,
-    "pid": 41089
+    "pid": 90238
   },
   "progress": {
     "total": 7,
-    "passed": 6,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 7
   },
   "cost": {
-    "spent": 3.5503649999999998,
+    "spent": 0,
     "limit": 8
   },
   "current": {
-    "storyId": "RL-007",
-    "title": "Fix duplicate exit summary (BUG-060)",
+    "storyId": "AA-001",
+    "title": "Add complete() method to AgentAdapter interface",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 7,
-  "updatedAt": "2026-03-09T08:29:01.069Z",
-  "durationMs": 7408125,
-  "lastHeartbeat": "2026-03-09T08:29:01.069Z"
+  "iterations": 1,
+  "updatedAt": "2026-03-09T10:46:45.254Z",
+  "durationMs": 261690,
+  "lastHeartbeat": "2026-03-09T10:46:45.254Z"
 }

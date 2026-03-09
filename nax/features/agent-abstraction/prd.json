@@ -23,8 +23,17 @@
       "priorFailures": [],
       "escalations": [],
       "dependencies": [],
-      "tags": ["p1"],
-      "storyPoints": 2
+      "tags": [
+        "p1"
+      ],
+      "storyPoints": 2,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Single interface method with straightforward CLI flag mapping and clear error handling",
+        "contentHash": "eeaee619d24043146055693404810e656b8fd9345b46f91c13f2e65931772bc6"
+      }
     },
     {
       "id": "AA-002",
@@ -45,8 +54,12 @@
       "priorErrors": [],
       "priorFailures": [],
       "escalations": [],
-      "dependencies": ["AA-001"],
-      "tags": ["p1"],
+      "dependencies": [
+        "AA-001"
+      ],
+      "tags": [
+        "p1"
+      ],
       "storyPoints": 2
     },
     {
@@ -66,8 +79,12 @@
       "priorErrors": [],
       "priorFailures": [],
       "escalations": [],
-      "dependencies": ["AA-001"],
-      "tags": ["p2"],
+      "dependencies": [
+        "AA-001"
+      ],
+      "tags": [
+        "p2"
+      ],
       "storyPoints": 2
     },
     {
@@ -87,8 +104,12 @@
       "priorErrors": [],
       "priorFailures": [],
       "escalations": [],
-      "dependencies": ["AA-001"],
-      "tags": ["p2"],
+      "dependencies": [
+        "AA-001"
+      ],
+      "tags": [
+        "p2"
+      ],
       "storyPoints": 2
     },
     {
@@ -110,7 +131,9 @@
       "priorFailures": [],
       "escalations": [],
       "dependencies": [],
-      "tags": ["p2"],
+      "tags": [
+        "p2"
+      ],
       "storyPoints": 2
     },
     {
@@ -131,7 +154,9 @@
       "priorFailures": [],
       "escalations": [],
       "dependencies": [],
-      "tags": ["p3"],
+      "tags": [
+        "p3"
+      ],
       "storyPoints": 2
     },
     {
@@ -153,10 +178,14 @@
       "priorErrors": [],
       "priorFailures": [],
       "escalations": [],
-      "dependencies": ["AA-001"],
-      "tags": ["p3"],
+      "dependencies": [
+        "AA-001"
+      ],
+      "tags": [
+        "p3"
+      ],
       "storyPoints": 2
     }
   ],
-  "updatedAt": "2026-03-09T09:58:00.000Z"
+  "updatedAt": "2026-03-09T10:42:45.275Z"
 }
