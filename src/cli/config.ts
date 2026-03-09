@@ -193,6 +193,15 @@ const FIELD_DESCRIPTIONS: Record<string, string> = {
   "prompts.overrides.implementer": 'Path to custom implementer prompt (e.g., ".nax/prompts/implementer.md")',
   "prompts.overrides.verifier": 'Path to custom verifier prompt (e.g., ".nax/prompts/verifier.md")',
   "prompts.overrides.single-session": 'Path to custom single-session prompt (e.g., ".nax/prompts/single-session.md")',
+
+  // Decompose
+  decompose: "Story decomposition configuration (SD-003)",
+  "decompose.trigger": "Decomposition trigger mode: auto | confirm | disabled",
+  "decompose.maxAcceptanceCriteria": "Max acceptance criteria before flagging as oversized (default: 6)",
+  "decompose.maxSubstories": "Max number of substories to generate (default: 5)",
+  "decompose.maxSubstoryComplexity": "Max complexity for any generated substory (default: 'medium')",
+  "decompose.maxRetries": "Max retries on decomposition validation failure (default: 2)",
+  "decompose.model": "Model tier for decomposition LLM calls (default: 'balanced')",
 };
 
 /** Options for config command */
