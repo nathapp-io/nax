@@ -25,14 +25,15 @@ nax run -f my-feature
 ## How It Works
 
 ```
-analyze → route → execute (loop until all stories pass)
+analyze → route → execute → verify → (loop until all stories pass) → regression gate
 ```
 
 1. **Analyze** each user story — classify complexity, select test strategy
 2. **Route** to the right model tier (cheap → standard → premium)
 3. **Execute** an agent session (Claude Code by default)
-4. **Verify** tests pass; escalate model on failure
+4. **Verify** tests pass; escalate model tier on failure
 5. **Loop** until all stories are complete or a cost/iteration limit is hit
+6. **Regression gate** — deferred full-suite verification after all stories pass
 
 ---
 
@@ -77,11 +78,18 @@ nax features list
 
 ### `nax analyze -f <name>`
 
-Parse a `spec.md` file into a structured `prd.json`. Useful if you prefer writing specs in markdown first.
+Parse a `spec.md` file into a structured `prd.json`. Uses an LLM to decompose the spec into classified user stories.
 
 ```bash
 nax analyze -f my-feature
 ```
+
+**Flags:**
+
+| Flag | Description |
+|:-----|:------------|
+| `--from <path>` | Explicit spec path (overrides default `spec.md`) |
+| `--reclassify` | Re-classify existing `prd.json` without re-decomposing |
 
 ---
 
@@ -191,12 +199,61 @@ Output sections:
 
 ---
 
+### `nax prompts -f <name>`
+
+Assemble and display the prompt that would be sent to the agent for each story role.
+
+```bash
+nax prompts -f my-feature
+```
+
+**Flags:**
+
+| Flag | Description |
+|:-----|:------------|
+| `--init` | Export default role templates to `nax/templates/` for customization |
+| `--role <role>` | Show prompt for a specific role (`implementer`, `test-writer`, `verifier`, `tdd-simple`) |
+
+After running `--init`, edit the templates and nax will use them automatically via `prompts.overrides` config.
+
+---
+
+### `nax unlock`
+
+Release a stale `nax.lock` from a crashed process.
+
+```bash
+nax unlock -f my-feature
+```
+
+---
+
+### `nax runs`
+
+Show all registered runs from the central registry (`~/.nax/runs/`).
+
+```bash
+nax runs
+```
+
+---
+
 ### `nax agents`
 
 List installed coding agents and which models they support.
 
 ```bash
 nax agents
+```
+
+---
+
+### `nax config --explain`
+
+Display the effective merged configuration with inline explanations for every field.
+
+```bash
+nax config -f my-feature --explain
 ```
 
 ---
@@ -260,6 +317,35 @@ If `testScoped` is not configured, nax falls back to a heuristic that replaces t
 
 ---
 
+## Test Strategies
+
+nax selects a test strategy per story based on complexity and tags:
+
+| Strategy | Sessions | When | Description |
+|:---------|:---------|:-----|:------------|
+| `test-after` | 1 | Refactors, deletions, config, docs | Single session, no TDD discipline |
+| `tdd-simple` | 1 | Simple stories | Single session with TDD prompt (red-green-refactor) |
+| `three-session-tdd-lite` | 3 | Medium stories | Three sessions, relaxed isolation rules |
+| `three-session-tdd` | 3 | Complex/security stories | Three sessions, strict file isolation |
+
+Configure the default TDD behavior in `nax/config.json`:
+
+```json
+{
+  "tdd": {
+    "strategy": "auto"
+  }
+}
+```
+
+| Value | Behaviour |
+|:------|:----------|
+| `auto` | nax decides based on complexity and tags (default) |
+| `lite` | Prefer `three-session-tdd-lite` for complex stories |
+| `strict` | Always use full `three-session-tdd` for complex stories |
+
+---
+
 ## Three-Session TDD
 
 For complex or security-critical stories, nax enforces strict role separation:
@@ -271,6 +357,66 @@ For complex or security-critical stories, nax enforces strict role separation:
 | 3 | Verifier | Reviews quality, auto-approves or flags |
 
 Isolation is verified automatically via `git diff` between sessions. Violations cause an immediate failure.
+
+---
+
+## Story Decomposition
+
+When a story is too large (complex/expert with >6 acceptance criteria), nax can automatically decompose it into smaller sub-stories. This runs during the routing stage.
+
+**Trigger:** The `story-oversized` interaction trigger fires when a story exceeds the configured thresholds. You can approve decomposition, skip the story, or continue as-is.
+
+**How it works:**
+
+1. The `DecomposeBuilder` constructs a prompt with the target story, sibling stories (to prevent overlap), and codebase context
+2. An LLM generates sub-stories with IDs, titles, descriptions, acceptance criteria, and dependency ordering
+3. Post-decompose validators check:
+   - **Overlap** — sub-stories must not duplicate scope of existing stories
+   - **Coverage** — sub-stories must cover all parent acceptance criteria
+   - **Complexity** — each sub-story must be simpler than the parent
+   - **Dependencies** — dependency graph must be acyclic with valid references
+4. The parent story is replaced in the PRD with the validated sub-stories
+
+**Configuration:**
+
+```json
+{
+  "decompose": {
+    "enabled": true,
+    "maxSubStories": 5,
+    "minAcceptanceCriteria": 6,
+    "complexityThreshold": ["complex", "expert"]
+  }
+}
+```
+
+---
+
+## Regression Gate
+
+After all stories pass their individual verification, nax can run a deferred full-suite regression gate to catch cross-story regressions.
+
+```json
+{
+  "execution": {
+    "regressionGate": {
+      "mode": "deferred",
+      "acceptOnTimeout": true,
+      "maxRectificationAttempts": 2
+    }
+  }
+}
+```
+
+| Mode | Behaviour |
+|:-----|:----------|
+| `disabled` | No regression gate |
+| `per-story` | Full suite after each story (expensive) |
+| `deferred` | Full suite once after all stories pass (recommended) |
+
+If the regression gate detects failures, nax maps them to the responsible story via git blame and attempts automated rectification. If rectification fails, affected stories are marked as `regression-failed`.
+
+> **Smart skip (v0.34.0):** When all stories used `three-session-tdd` or `three-session-tdd-lite` in sequential mode, each story already ran the full suite gate. nax will skip the redundant deferred regression in this case.
 
 ---
 
@@ -306,8 +452,21 @@ Integrate notifications, CI triggers, or custom scripts via lifecycle hooks.
 | `on-pause` | Run paused (awaiting human input) |
 | `on-resume` | Run resumed after pause |
 | `on-session-end` | An agent session ends (per-session teardown) |
-| `on-complete` | All stories finished successfully |
+| `on-all-stories-complete` | All stories passed — regression gate pending *(v0.34.0)* |
+| `on-final-regression-fail` | Deferred regression failed after rectification *(v0.34.0)* |
+| `on-complete` | Everything finished and verified (including regression gate) |
 | `on-error` | Unhandled error terminates the run |
+
+**Hook lifecycle:**
+
+```
+on-start
+  └─ on-story-start → on-story-complete (or on-story-fail)  ← per story
+       └─ on-all-stories-complete                            ← all stories done
+            └─ deferred regression gate (if enabled)
+                 └─ on-final-regression-fail                 ← if regression fails
+       └─ on-complete                                        ← everything verified
+```
 
 Each hook receives context via `NAX_*` environment variables and full JSON on stdin.
 
@@ -348,6 +507,7 @@ nax can pause execution and prompt you for decisions at critical points. Configu
       "max-retries": true,
       "human-review": true,
       "story-ambiguity": true,
+      "story-oversized": true,
       "review-gate": true,
       "pre-merge": false,
       "merge-conflict": true
@@ -367,6 +527,7 @@ nax can pause execution and prompt you for decisions at critical points. Configu
 | `max-retries` | 🟡 Yellow | `skip` | Story exhausted all retry attempts — skip and continue? |
 | `pre-merge` | 🟡 Yellow | `escalate` | Checkpoint before merging to main branch |
 | `human-review` | 🟡 Yellow | `skip` | Human review required on critical failure |
+| `story-oversized` | 🟡 Yellow | `continue` | Story too complex — decompose into sub-stories? |
 | `story-ambiguity` | 🟢 Green | `continue` | Story requirements unclear — continue with best effort? |
 | `review-gate` | 🟢 Green | `continue` | Code review checkpoint before proceeding |
 
@@ -394,7 +555,9 @@ nax can pause execution and prompt you for decisions at critical points. Configu
 
 ## Plugins
 
-Extend nax with custom reporters or integrations. Configure in `nax/config.json`:
+Extend nax with custom reviewers, reporters, or integrations.
+
+**Project plugins** (`nax/config.json`):
 
 ```json
 {
@@ -404,7 +567,29 @@ Extend nax with custom reporters or integrations. Configure in `nax/config.json`
 }
 ```
 
-Global plugin directory: `~/.nax/plugins/`
+**Global plugin directory:** `~/.nax/plugins/` — plugins here are loaded for all projects.
+
+### Reviewer Plugins
+
+Reviewer plugins run during the review pipeline stage and return structured `ReviewFinding` objects:
+
+```typescript
+interface ReviewFinding {
+  ruleId: string;        // e.g. "javascript.express.security.audit.xss"
+  severity: "critical" | "error" | "warning" | "info" | "low";
+  file: string;
+  line: number;
+  column?: number;
+  message: string;
+  url?: string;          // Link to rule documentation
+  source: string;        // e.g. "semgrep", "eslint", "snyk"
+  category?: string;     // e.g. "security", "performance"
+}
+```
+
+Findings are threaded through the escalation pipeline — if a story fails review, the retry agent receives the exact file, line, and rule to fix.
+
+**Example:** The built-in Semgrep reviewer plugin scans for security issues using `semgrep scan --config auto` and returns structured findings.
 
 ---
 
