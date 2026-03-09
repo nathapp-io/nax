@@ -101,7 +101,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator only]
 | Tool | Capability | When to Use | Availability |
 |:-----|:-----------|:-----------|:-------------|
 | `codegraph_query` | Structural queries (Cypher) — find calls, dependencies, imports | **Preferred for dependency analysis, call tracing, symbol lookup** | ✅ Always works (in-memory graph) |
-| `project_code_search` | Semantic search (Redis vector DB) — pattern matching by meaning | Natural language queries like "find auth patterns" | ⚠️ Requires explicit `project_code_reindex` + Redis daemon |
+| `project_code_search` | Semantic search (Redis vector DB) — pattern matching by meaning | Natural language queries like "find auth patterns" | ⚠️ Requires explicit `project_code_reindex` |
 | `codegraph_explain` | Architecture overview for unfamiliar subsystems | Understand module relationships before major changes | ✅ Always works |
 | `project_code_reindex` | Index project for semantic search | After creating/deleting source files | ✅ Always works |
 
