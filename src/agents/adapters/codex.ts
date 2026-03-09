@@ -1,15 +1,22 @@
 /**
- * Codex Agent Adapter — stub
+ * Codex Agent Adapter — implements AgentAdapter interface
  *
- * STUB ONLY: This file exists to satisfy import resolution for the test suite.
- * Real implementation is pending (AA-007).
- *
- * DO NOT add real logic here. This stub intentionally throws on all method calls
- * so that tests remain RED until the implementation is written.
+ * Provides uniform interface for spawning Codex agent processes,
+ * supporting one-shot completions and headless execution.
  */
 
-import type { AgentAdapter, AgentCapabilities, AgentResult, AgentRunOptions, CompleteOptions } from "../types";
-import type { DecomposeOptions, DecomposeResult, PlanOptions, PlanResult } from "../types-extended";
+import type {
+  AgentAdapter,
+  AgentCapabilities,
+  AgentResult,
+  AgentRunOptions,
+  CompleteOptions,
+  DecomposeOptions,
+  DecomposeResult,
+  PlanOptions,
+  PlanResult,
+} from "../types";
+import { CompleteError } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable dependencies — matches the _deps pattern used in claude.ts
@@ -21,8 +28,8 @@ export const _codexRunDeps = {
     return Bun.which(name);
   },
   spawn(
-    _cmd: string[],
-    _opts: { cwd?: string; stdout: "pipe"; stderr: "pipe" | "inherit"; env?: Record<string, string | undefined> },
+    cmd: string[],
+    opts: { cwd?: string; stdout: "pipe"; stderr: "pipe" | "inherit"; env?: Record<string, string | undefined> },
   ): {
     stdout: ReadableStream<Uint8Array>;
     stderr: ReadableStream<Uint8Array>;
@@ -30,27 +37,43 @@ export const _codexRunDeps = {
     pid: number;
     kill(signal?: number | NodeJS.Signals): void;
   } {
-    throw new Error("CodexAdapter.run() not implemented");
+    return Bun.spawn(cmd, opts) as unknown as {
+      stdout: ReadableStream<Uint8Array>;
+      stderr: ReadableStream<Uint8Array>;
+      exited: Promise<number>;
+      pid: number;
+      kill(signal?: number | NodeJS.Signals): void;
+    };
   },
 };
 
 export const _codexCompleteDeps = {
   spawn(
-    _cmd: string[],
-    _opts: { stdout: "pipe"; stderr: "pipe" | "inherit" },
+    cmd: string[],
+    opts: { stdout: "pipe"; stderr: "pipe" | "inherit" },
   ): {
     stdout: ReadableStream<Uint8Array>;
     stderr: ReadableStream<Uint8Array>;
     exited: Promise<number>;
     pid: number;
   } {
-    throw new Error("CodexAdapter.complete() not implemented");
+    return Bun.spawn(cmd, opts) as unknown as {
+      stdout: ReadableStream<Uint8Array>;
+      stderr: ReadableStream<Uint8Array>;
+      exited: Promise<number>;
+      pid: number;
+    };
   },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CodexAdapter — stub implementation
+// CodexAdapter implementation
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Maximum characters to capture from agent stdout.
+ */
+const MAX_AGENT_OUTPUT_CHARS = 5000;
 
 export class CodexAdapter implements AgentAdapter {
   readonly name = "codex";
@@ -64,19 +87,60 @@ export class CodexAdapter implements AgentAdapter {
   };
 
   async isInstalled(): Promise<boolean> {
-    throw new Error("CodexAdapter.isInstalled() not implemented");
+    const path = _codexRunDeps.which("codex");
+    return path !== null;
   }
 
-  buildCommand(_options: AgentRunOptions): string[] {
-    throw new Error("CodexAdapter.buildCommand() not implemented");
+  buildCommand(options: AgentRunOptions): string[] {
+    return ["codex", "-q", "--prompt", options.prompt];
   }
 
-  async run(_options: AgentRunOptions): Promise<AgentResult> {
-    throw new Error("CodexAdapter.run() not implemented");
+  async run(options: AgentRunOptions): Promise<AgentResult> {
+    const cmd = this.buildCommand(options);
+    const startTime = Date.now();
+
+    const proc = _codexRunDeps.spawn(cmd, {
+      cwd: options.workdir,
+      stdout: "pipe",
+      stderr: "inherit",
+    });
+
+    const exitCode = await proc.exited;
+    const stdout = await new Response(proc.stdout).text();
+    const durationMs = Date.now() - startTime;
+
+    return {
+      success: exitCode === 0,
+      exitCode,
+      output: stdout.slice(-MAX_AGENT_OUTPUT_CHARS),
+      rateLimited: false,
+      durationMs,
+      estimatedCost: 0,
+      pid: proc.pid,
+    };
   }
 
-  async complete(_prompt: string, _options?: CompleteOptions): Promise<string> {
-    throw new Error("CodexAdapter.complete() not implemented");
+  async complete(prompt: string, _options?: CompleteOptions): Promise<string> {
+    const cmd = ["codex", "-q", "--prompt", prompt];
+
+    const proc = _codexCompleteDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
+    const exitCode = await proc.exited;
+
+    const stdout = await new Response(proc.stdout).text();
+    const stderr = await new Response(proc.stderr).text();
+    const trimmed = stdout.trim();
+
+    if (exitCode !== 0) {
+      const errorDetails = stderr.trim() || trimmed;
+      const errorMessage = errorDetails || `complete() failed with exit code ${exitCode}`;
+      throw new CompleteError(errorMessage, exitCode);
+    }
+
+    if (!trimmed) {
+      throw new CompleteError("complete() returned empty output");
+    }
+
+    return trimmed;
   }
 
   async plan(_options: PlanOptions): Promise<PlanResult> {
