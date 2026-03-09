@@ -304,3 +304,83 @@ describe("BUG-039/BUG-040: stream cleanup on timeout", () => {
     _deps.spawn = originalSpawn;
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cache hit: testStrategy must be recomputed from complexity (TS-001 regression)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("LLM cache hit: testStrategy recomputed from complexity", () => {
+  test("cache hit for simple story returns tdd-simple, not stale three-session-tdd-lite", async () => {
+    const { llmStrategy, clearCache, injectCacheEntry } = await import(
+      "../../../../src/routing/strategies/llm"
+    );
+    clearCache();
+
+    const config = makeConfig();
+
+    const story = {
+      id: "CACHE-SIMPLE-001",
+      title: "Update button label",
+      description: "Change the submit button text",
+      acceptanceCriteria: ["Label reads 'Submit'"],
+      tags: [],
+      dependencies: [],
+      status: "pending" as const,
+      passes: false,
+      escalations: [],
+      attempts: 0,
+    };
+
+    // Inject a stale cache entry that has the old strategy (pre TS-001)
+    injectCacheEntry(story.id, {
+      complexity: "simple",
+      modelTier: "fast",
+      testStrategy: "three-session-tdd-lite", // stale — was the old mapping
+      reasoning: "stale cached result",
+    });
+
+    const result = await llmStrategy.route(story, { config: makeConfig({ cacheDecisions: true }) });
+
+    // Must recompute: simple → tdd-simple (TS-001)
+    expect(result?.complexity).toBe("simple");
+    expect(result?.testStrategy).toBe("tdd-simple");
+
+    clearCache();
+  });
+
+  test("cache hit for medium story returns three-session-tdd-lite", async () => {
+    const { llmStrategy, clearCache, injectCacheEntry } = await import(
+      "../../../../src/routing/strategies/llm"
+    );
+    clearCache();
+
+    const config = makeConfig();
+
+    const story = {
+      id: "CACHE-MEDIUM-001",
+      title: "Implement user settings page",
+      description: "Build settings screen with multiple sections",
+      acceptanceCriteria: ["AC1", "AC2", "AC3", "AC4", "AC5"],
+      tags: [],
+      dependencies: [],
+      status: "pending" as const,
+      passes: false,
+      escalations: [],
+      attempts: 0,
+    };
+
+    injectCacheEntry(story.id, {
+      complexity: "medium",
+      modelTier: "balanced",
+      testStrategy: "three-session-tdd-lite",
+      reasoning: "cached medium result",
+    });
+
+    const result = await llmStrategy.route(story, { config: makeConfig({ cacheDecisions: true }) });
+
+    expect(result?.complexity).toBe("medium");
+    expect(result?.testStrategy).toBe("three-session-tdd-lite");
+
+    clearCache();
+  });
+});

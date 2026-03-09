@@ -9,6 +9,7 @@ import type { NaxConfig } from "../../config";
 import { resolveModel } from "../../config";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd/types";
+import { determineTestStrategy } from "../router";
 import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../strategy";
 import { keywordStrategy } from "./keyword";
 import { buildBatchPrompt, buildRoutingPrompt, parseBatchResponse, parseRoutingResponse } from "./llm-prompts";
@@ -39,6 +40,11 @@ export function getCacheSize(): number {
 /** Clear routing cache entry for a specific story (used on tier escalation) */
 export function clearCacheForStory(storyId: string): void {
   cachedDecisions.delete(storyId);
+}
+
+/** Inject a cache entry directly (test helper only) */
+export function injectCacheEntry(storyId: string, decision: RoutingDecision): void {
+  cachedDecisions.set(storyId, decision);
 }
 
 /** Evict oldest entry when cache is full (LRU) */
@@ -241,14 +247,25 @@ export const llmStrategy: RoutingStrategy = {
       if (!cached) {
         throw new Error(`Cached decision not found for story: ${story.id}`);
       }
+      // Recompute testStrategy from complexity — cache is authoritative on complexity/modelTier
+      // only. testStrategy must always reflect the current determineTestStrategy() rules
+      // (e.g. TS-001: simple → tdd-simple) even if the cache was populated under older rules.
+      const tddStrategy = config.tdd?.strategy ?? "auto";
+      const freshTestStrategy = determineTestStrategy(
+        cached.complexity,
+        story.title,
+        story.description,
+        story.tags,
+        tddStrategy,
+      );
       const logger = getLogger();
       logger.debug("routing", "LLM cache hit", {
         storyId: story.id,
         complexity: cached.complexity,
         modelTier: cached.modelTier,
-        testStrategy: cached.testStrategy,
+        testStrategy: freshTestStrategy,
       });
-      return cached;
+      return { ...cached, testStrategy: freshTestStrategy };
     }
 
     // One-shot mode: cache miss -> keyword fallback without new LLM call
