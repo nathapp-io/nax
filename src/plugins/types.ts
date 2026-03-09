@@ -120,6 +120,37 @@ export type { IPromptOptimizer } from "../optimizer/types";
 // ============================================================================
 
 /**
+ * A single structured finding from a review check.
+ *
+ * Designed to be service-agnostic — works with Semgrep, ESLint, SonarQube,
+ * Snyk, CodeQL, and other SAST/DAST/linting tools.
+ */
+export interface ReviewFinding {
+  /** Rule or check ID (e.g., "detect-non-literal-regexp", "no-unused-vars") */
+  ruleId: string;
+  /** Severity level (tool-agnostic scale) */
+  severity: "critical" | "error" | "warning" | "info" | "low";
+  /** File path (relative to workdir) */
+  file: string;
+  /** Line number (1-indexed) */
+  line: number;
+  /** Column number (1-indexed, optional) */
+  column?: number;
+  /** End line number (optional, for multi-line findings) */
+  endLine?: number;
+  /** End column number (optional) */
+  endColumn?: number;
+  /** Human-readable message */
+  message: string;
+  /** Optional URL for rule documentation or details */
+  url?: string;
+  /** Source tool that produced this finding (e.g., "semgrep", "eslint", "snyk") */
+  source?: string;
+  /** Finding category (e.g., "security", "performance", "style", "bug") */
+  category?: string;
+}
+
+/**
  * Result from a review check.
  */
 export interface ReviewCheckResult {
@@ -129,6 +160,8 @@ export interface ReviewCheckResult {
   output: string;
   /** Exit code from the check process (if applicable) */
   exitCode?: number;
+  /** Structured findings (optional — plugins can provide machine-readable results) */
+  findings?: ReviewFinding[];
 }
 
 /**

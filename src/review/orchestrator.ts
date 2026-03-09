@@ -72,6 +72,7 @@ export class ReviewOrchestrator {
               passed: result.passed,
               output: result.output,
               exitCode: result.exitCode,
+              findings: result.findings,
             });
             if (!result.passed) {
               builtIn.pluginReviewers = pluginResults;
