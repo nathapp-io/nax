@@ -1,36 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-08T15-22-49-642Z",
-    "feature": "tdd-simple",
-    "startedAt": "2026-03-08T15:22:49.642Z",
+    "id": "run-2026-03-09T04-04-10-474Z",
+    "feature": "story-decompose",
+    "startedAt": "2026-03-09T04:04:10.474Z",
     "status": "running",
     "dryRun": false,
-    "pid": 97924
+    "pid": 10253
   },
   "progress": {
-    "total": 3,
+    "total": 4,
     "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 4
   },
   "cost": {
     "spent": 0,
     "limit": 8
   },
   "current": {
-    "storyId": "TS-001",
-    "title": "Add tdd-simple test strategy type and routing",
-    "complexity": "simple",
-    "tddStrategy": "three-session-tdd-lite",
+    "storyId": "SD-001",
+    "title": "DecomposeBuilder fluent API and prompt sections",
+    "complexity": "medium",
+    "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-03-08T15:59:03.395Z",
-  "durationMs": 2173753,
-  "lastHeartbeat": "2026-03-08T15:59:03.395Z"
+  "iterations": 1,
+  "updatedAt": "2026-03-09T04:09:29.946Z",
+  "durationMs": 319472,
+  "lastHeartbeat": "2026-03-09T04:09:29.946Z"
 }
