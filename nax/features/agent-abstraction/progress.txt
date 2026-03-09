@@ -2,3 +2,4 @@
 [2026-03-09T11:05:37.945Z] AA-005 — PASSED — Refactor precheck to detect configured agent binary — Cost: $0.1980
 [2026-03-09T11:24:37.739Z] AA-006 — PASSED — Remove hardcoded claude-sonnet-4-5 model fallbacks — Cost: $0.6853
 [2026-03-09T12:02:29.751Z] AA-002 — PASSED — Refactor classifier.ts to use adapter.complete() — drop @anthropic-ai/sdk — Cost: $0.3818
+[2026-03-09T13:18:05.932Z] AA-003 — PASSED — Refactor llm.ts routing strategy to use adapter.complete() — Cost: $0.2892
