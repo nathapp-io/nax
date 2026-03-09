@@ -316,9 +316,39 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     };
   }
 
-  async complete(_prompt: string, _options?: CompleteOptions): Promise<string> {
-    void _options;
-    throw new CompleteError("complete() is not yet implemented");
+  async complete(prompt: string, options?: CompleteOptions): Promise<string> {
+    // Build command: claude -p <prompt> [--model <model>] [--max-tokens <tokens>] [--output-format json]
+    const cmd = ["claude", "-p", prompt];
+
+    if (options?.model) {
+      cmd.push("--model", options.model);
+    }
+
+    if (options?.maxTokens !== undefined) {
+      cmd.push("--max-tokens", String(options.maxTokens));
+    }
+
+    if (options?.jsonMode) {
+      cmd.push("--output-format", "json");
+    }
+
+    const proc = _completeDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
+    const exitCode = await proc.exited;
+
+    // Read stdout
+    const stdout = await new Response(proc.stdout).text();
+    const trimmed = stdout.trim();
+
+    // Validate exit code and output
+    if (exitCode !== 0) {
+      throw new CompleteError(`complete() failed with exit code ${exitCode}`, exitCode);
+    }
+
+    if (!trimmed) {
+      throw new CompleteError("complete() returned empty output");
+    }
+
+    return trimmed;
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {
