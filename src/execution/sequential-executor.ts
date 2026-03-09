@@ -82,14 +82,6 @@ export async function executeSequential(
             return buildResult("pre-merge-aborted");
           }
         }
-        pipelineEventBus.emit({
-          type: "run:completed",
-          totalStories: 0,
-          passedStories: 0,
-          failedStories: 0,
-          durationMs: Date.now() - ctx.startTime,
-          totalCost,
-        });
         return buildResult("completed");
       }
 

@@ -12,6 +12,7 @@ import type { NaxConfig } from "../../config";
 import { getSafeLogger } from "../../logger";
 import type { StoryMetrics } from "../../metrics";
 import { saveRunMetrics } from "../../metrics";
+import { pipelineEventBus } from "../../pipeline/event-bus";
 import { countStories, isComplete, isStalled } from "../../prd";
 import type { PRD } from "../../prd";
 import type { StatusWriter } from "../status-writer";
@@ -91,7 +92,20 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
   const durationMs = Date.now() - startTime;
   const runCompletedAt = new Date().toISOString();
 
-  // Save run metrics
+  // Compute final story counts before emitting completion event (RL-002)
+  const finalCounts = countStories(prd);
+
+  // Emit run:completed after regression gate with real story counts (RL-002)
+  pipelineEventBus.emit({
+    type: "run:completed",
+    totalStories: finalCounts.total,
+    passedStories: finalCounts.passed,
+    failedStories: finalCounts.failed,
+    durationMs,
+    totalCost,
+  });
+
+  // Save run metrics (best-effort — disk write errors do not fail the run)
   const runMetrics = {
     runId,
     feature,
@@ -100,15 +114,18 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     totalCost,
     totalStories: allStoryMetrics.length,
     storiesCompleted,
-    storiesFailed: countStories(prd).failed,
+    storiesFailed: finalCounts.failed,
     totalDurationMs: durationMs,
     stories: allStoryMetrics,
   };
 
-  await saveRunMetrics(workdir, runMetrics);
+  try {
+    await saveRunMetrics(workdir, runMetrics);
+  } catch (err) {
+    logger?.warn("run.complete", "Failed to save run metrics", { error: String(err) });
+  }
 
   // Log run completion
-  const finalCounts = countStories(prd);
 
   // Prepare per-story metrics summary
   const storyMetricsSummary = allStoryMetrics.map((sm) => ({
