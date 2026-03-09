@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 5,
+    "passed": 6,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
     "spent": 3.5503649999999998,
     "limit": 8
   },
   "current": {
-    "storyId": "RL-006",
-    "title": "Smart-skip deferred regression",
+    "storyId": "RL-007",
+    "title": "Fix duplicate exit summary (BUG-060)",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 6,
-  "updatedAt": "2026-03-09T08:12:00.974Z",
-  "durationMs": 6388030,
-  "lastHeartbeat": "2026-03-09T08:12:00.974Z"
+  "iterations": 7,
+  "updatedAt": "2026-03-09T08:17:00.981Z",
+  "durationMs": 6688037,
+  "lastHeartbeat": "2026-03-09T08:17:00.981Z"
 }

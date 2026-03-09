@@ -3,3 +3,4 @@
 [2026-03-09T07:30:54.800Z] RL-003 — PASSED — Add on-final-regression-fail hook — Cost: $0.4057
 [2026-03-09T07:47:12.173Z] RL-004 — PASSED — Handle deferred regression failure in run-completion.ts — Cost: $0.6971
 [2026-03-09T07:59:00.573Z] RL-005 — PASSED — Track fullSuiteGatePassed per story — Cost: $0.2317
+[2026-03-09T08:12:16.766Z] RL-006 — PASSED — Smart-skip deferred regression — Cost: $0.3162
