@@ -78,10 +78,17 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       dangerouslySkipPermissions: config.execution.dangerouslySkipPermissions,
     });
 
-    if (!agentResult.success) {
+    if (agentResult.success) {
+      logger?.info("rectification", `Agent ${label} session complete`, {
+        storyId: story.id,
+        attempt: rectificationState.attempt,
+        cost: agentResult.estimatedCost,
+      });
+    } else {
       logger?.warn("rectification", `Agent ${label} session failed`, {
         storyId: story.id,
         attempt: rectificationState.attempt,
+        exitCode: agentResult.exitCode,
       });
     }
 
@@ -116,6 +123,12 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       testSummary.failed = newTestSummary.failed;
       testSummary.passed = newTestSummary.passed;
     }
+
+    logger?.warn("rectification", `${label} still failing after attempt`, {
+      storyId: story.id,
+      attempt: rectificationState.attempt,
+      remainingFailures: rectificationState.currentFailures,
+    });
   }
 
   if (rectificationState.attempt >= rectificationConfig.maxRetries) {

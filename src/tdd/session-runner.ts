@@ -129,6 +129,22 @@ export async function runTddSession(
     await cleanupProcessTree(result.pid);
   }
 
+  if (result.success) {
+    logger.info("tdd", `Session complete: ${role}`, {
+      role,
+      storyId: story.id,
+      durationMs: Date.now() - startTime,
+      cost: result.estimatedCost,
+    });
+  } else {
+    logger.warn("tdd", `Session failed: ${role}`, {
+      role,
+      storyId: story.id,
+      durationMs: Date.now() - startTime,
+      exitCode: result.exitCode,
+    });
+  }
+
   // BUG-058: Auto-commit if agent left uncommitted changes
   await autoCommitIfDirty(workdir, role, story.id);
 

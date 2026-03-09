@@ -162,6 +162,20 @@ async function runRectificationLoop(
       await cleanupProcessTree(rectifyResult.pid);
     }
 
+    if (rectifyResult.success) {
+      logger.info("tdd", "Rectification agent session complete", {
+        storyId: story.id,
+        attempt: rectificationState.attempt,
+        cost: rectifyResult.estimatedCost,
+      });
+    } else {
+      logger.warn("tdd", "Rectification agent session failed", {
+        storyId: story.id,
+        attempt: rectificationState.attempt,
+        exitCode: rectifyResult.exitCode,
+      });
+    }
+
     const rectifyIsolation = lite ? undefined : await verifyImplementerIsolation(workdir, rectifyBeforeRef);
 
     if (rectifyIsolation && !rectifyIsolation.passed) {
@@ -191,6 +205,12 @@ async function runRectificationLoop(
       testSummary.failed = newTestSummary.failed;
       testSummary.passed = newTestSummary.passed;
     }
+
+    logger.warn("tdd", "Full suite still failing after rectification attempt", {
+      storyId: story.id,
+      attempt: rectificationState.attempt,
+      remainingFailures: rectificationState.currentFailures,
+    });
   }
 
   const finalFullSuite = await executeWithTimeout(testCmd, fullSuiteTimeout, undefined, { cwd: workdir });
