@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 1,
+    "passed": 2,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 6
+    "pending": 5
   },
   "cost": {
-    "spent": 1.0054064999999999,
+    "spent": 2.4475985,
     "limit": 8
   },
   "current": {
-    "storyId": "RL-002",
-    "title": "Move on-complete hook after regression gate",
+    "storyId": "RL-003",
+    "title": "Add on-final-regression-fail hook",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-03-09T07:18:00.735Z",
-  "durationMs": 3147791,
-  "lastHeartbeat": "2026-03-09T07:18:00.735Z"
+  "iterations": 3,
+  "updatedAt": "2026-03-09T07:21:00.735Z",
+  "durationMs": 3327791,
+  "lastHeartbeat": "2026-03-09T07:21:00.735Z"
 }

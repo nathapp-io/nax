@@ -40,14 +40,15 @@
         "Hook payload reflects final success status (including regression result)"
       ],
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
       "escalations": [],
       "dependencies": [],
       "tags": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "passes": true
     },
     {
       "id": "RL-003",
@@ -144,5 +145,5 @@
       "storyPoints": 1
     }
   ],
-  "updatedAt": "2026-03-09T06:43:34.786Z"
+  "updatedAt": "2026-03-09T07:19:15.668Z"
 }
