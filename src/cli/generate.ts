@@ -26,7 +26,7 @@ export interface GenerateCommandOptions {
   noAutoInject?: boolean;
 }
 
-const VALID_AGENTS: AgentType[] = ["claude", "opencode", "cursor", "windsurf", "aider"];
+const VALID_AGENTS: AgentType[] = ["claude", "codex", "opencode", "cursor", "windsurf", "aider"];
 
 /**
  * `nax generate` command handler.
