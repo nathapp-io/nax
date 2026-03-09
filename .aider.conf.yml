@@ -150,9 +150,21 @@ instructions: |
   RETURN s.name, s.type
   ```
   
-  ## Coding Standards & Forbidden Patterns
+  ## Coding Standards & Architecture Patterns
   
-  Full rules in `.claude/rules/` (loaded automatically):
+  **Read `docs/ARCHITECTURE.md` before writing any code.** It defines all enterprise-grade patterns:
+  
+  - **Dependency injection** — `_deps` pattern for all external calls (spawn, fs, fetch)
+  - **Error handling** — `[stage]` prefix + context + `{ cause: err }`
+  - **Constants** — no magic numbers, `UPPER_SNAKE_CASE`, `_` separators
+  - **Function design** — ≤30 lines, ≤3 positional params, options objects
+  - **Async patterns** — concurrent reads, `Promise.race` safety, no uncancellable `Bun.sleep`
+  - **Type safety** — no `any` in public APIs, discriminated unions, `satisfies`
+  - **Testing** — `_deps` mocking, `test.each()` for parametric tests, descriptive names
+  - **Logging** — structured JSONL with stage prefix
+  - **Git** — conventional commits, one concern per commit
+  
+  Additional rules in `.claude/rules/` (loaded automatically):
   
   - `01-project-conventions.md` — Bun-native APIs, 400-line limit, barrel imports, logging, commits
   - `02-test-architecture.md` — directory mirroring, placement rules, file naming
