@@ -409,3 +409,11 @@ export function resetCrashHandlers(): void {
   handlersInstalled = false;
   stopHeartbeat();
 }
+
+/**
+ * Returns true if heartbeat timer is currently active.
+ * @internal - test use only.
+ */
+export function _isHeartbeatActive(): boolean {
+  return heartbeatTimer !== null;
+}
