@@ -21,6 +21,17 @@
 
 ---
 
+## v0.32.1 — Portable Hooks + PRD Templates ✅ Shipped (2026-03-09)
+
+**Theme:** Fix nax-global portability (tilde expansion) and PRD schema compliance
+**Status:** ✅ Shipped (2026-03-09)
+
+### Stories
+- [x] **GH-001:** Tilde (`~/`) expansion in hook command parser — allows portable `hooks.json` across nodes (VPS/Mac01)
+- [x] **GT-001:** Update `nax-global` PRD templates — added missing required fields (`project`, `branchName`, `tags`, etc.) for schema compliance
+
+---
+
 ## v0.32.0 — TDD Simple Strategy ✅ Shipped (2026-03-09)
 
 **Theme:** Single-session TDD strategy for simple stories — TDD discipline without session isolation overhead
