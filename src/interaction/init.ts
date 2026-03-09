@@ -41,15 +41,17 @@ function createInteractionPlugin(pluginName: string): InteractionPlugin {
 export async function initInteractionChain(config: NaxConfig, headless: boolean): Promise<InteractionChain | null> {
   const logger = getSafeLogger();
 
-  // If headless mode, skip interaction system
-  if (headless) {
-    logger?.debug("interaction", "Headless mode - skipping interaction system");
-    return null;
-  }
-
   // If no interaction config, skip
   if (!config.interaction) {
     logger?.debug("interaction", "No interaction config - skipping interaction system");
+    return null;
+  }
+
+  // In headless mode, skip CLI plugin only — it requires stdin (TTY).
+  // Telegram and Webhook plugins work via HTTP and don't need a TTY.
+  const pluginName = config.interaction.plugin;
+  if (headless && pluginName === "cli") {
+    logger?.debug("interaction", "Headless mode with CLI plugin - skipping interaction system (stdin unavailable)");
     return null;
   }
 
@@ -60,7 +62,6 @@ export async function initInteractionChain(config: NaxConfig, headless: boolean)
   });
 
   // Create and register plugin
-  const pluginName = config.interaction.plugin;
   try {
     const plugin = createInteractionPlugin(pluginName);
     chain.register(plugin, 100);
