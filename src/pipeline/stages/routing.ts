@@ -25,6 +25,7 @@
  * ```
  */
 
+import { getAgent } from "../../agents/registry";
 import type { NaxConfig } from "../../config";
 import { isGreenfieldStory } from "../../context/greenfield";
 import { applyDecomposition } from "../../decompose/apply";
@@ -68,6 +69,10 @@ export const routingStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
+    // Resolve agent adapter for LLM routing (shared with execution)
+    const agentName = ctx.config.execution?.agent ?? "claude";
+    const adapter = _routingDeps.getAgent(agentName);
+
     // Staleness detection (RRP-003):
     // - story.routing absent                   → cache miss (no prior routing)
     // - story.routing + no contentHash         → legacy cache hit (manual / pre-RRP-003 routing, honor as-is)
@@ -87,7 +92,7 @@ export const routingStage: PipelineStage = {
 
     if (isCacheHit) {
       // Cache hit: legacy routing (no contentHash) or matching contentHash — use cached values
-      routing = await _routingDeps.routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
+      routing = await _routingDeps.routeStory(ctx.story, { config: ctx.config, adapter }, ctx.workdir, ctx.plugins);
       // Override with cached values only when they are actually set
       if (ctx.story.routing?.complexity) routing.complexity = ctx.story.routing.complexity;
       // BUG-062: Only honor stored testStrategy for legacy/manual routing (no contentHash).
@@ -106,7 +111,7 @@ export const routingStage: PipelineStage = {
       }
     } else {
       // Cache miss: no routing, or contentHash present but mismatched — fresh classification
-      routing = await _routingDeps.routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
+      routing = await _routingDeps.routeStory(ctx.story, { config: ctx.config, adapter }, ctx.workdir, ctx.plugins);
       // currentHash already computed if a mismatch was detected; compute now if starting fresh
       currentHash = currentHash ?? _routingDeps.computeStoryContentHash(ctx.story);
       ctx.story.routing = {
@@ -223,4 +228,5 @@ export const _routingDeps = {
   applyDecomposition,
   runDecompose,
   checkStoryOversized,
+  getAgent,
 };

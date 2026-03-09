@@ -4,7 +4,10 @@
  * Discovers and manages available coding agents.
  */
 
+import { AiderAdapter } from "./adapters/aider";
 import { CodexAdapter } from "./adapters/codex";
+import { GeminiAdapter } from "./adapters/gemini";
+import { OpenCodeAdapter } from "./adapters/opencode";
 import { ClaudeCodeAdapter } from "./claude";
 import type { AgentAdapter } from "./types";
 
@@ -12,8 +15,9 @@ import type { AgentAdapter } from "./types";
 export const ALL_AGENTS: AgentAdapter[] = [
   new ClaudeCodeAdapter(),
   new CodexAdapter(),
-  // Future: new OpenCodeAdapter(),
-  // Future: new GeminiAdapter(),
+  new OpenCodeAdapter(),
+  new GeminiAdapter(),
+  new AiderAdapter(),
 ];
 
 /** Get all registered agent names */

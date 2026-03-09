@@ -57,6 +57,7 @@ function makeCtx(story: UserStory): PipelineContext {
       tdd: { greenfieldDetection: false },
       autoMode: { complexityRouting: {} },
       routing: { strategy: "complexity", llm: { mode: "per-story" } },
+      execution: { agent: "claude" },
     } as unknown as NaxConfig,
     story,
     stories: [story],

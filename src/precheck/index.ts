@@ -17,6 +17,7 @@ import {
   checkGitUserConfigured,
   checkGitignoreCoversNax,
   checkLintCommand,
+  checkMultiAgentHealth,
   checkOptionalCommands,
   checkPRDValid,
   checkPendingStories,
@@ -144,6 +145,7 @@ export async function runPrecheck(
       () => checkOptionalCommands(config, workdir),
       () => checkGitignoreCoversNax(workdir),
       () => checkPromptOverrideFiles(config, workdir),
+      () => checkMultiAgentHealth(),
     ];
 
     for (const checkFn of tier2Checks) {

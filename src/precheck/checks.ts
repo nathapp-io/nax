@@ -30,3 +30,6 @@ export {
   checkGitignoreCoversNax,
   checkPromptOverrideFiles,
 } from "./checks-warnings";
+
+// Agent checks
+export { checkMultiAgentHealth } from "./checks-agents";

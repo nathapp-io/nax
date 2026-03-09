@@ -30,6 +30,13 @@ describe("CodexAdapter integration (requires codex binary)", () => {
 
     expect(installedResult).toBe(whichResult !== null);
   });
+
+  skipIfNoCodex("complete() returns non-empty output for simple prompt", async () => {
+    const result = await adapter.complete("return hello");
+
+    expect(result).toBeTruthy();
+    expect(typeof result).toBe("string");
+  });
 });
 
 describe("CodexAdapter binary absence (always runs)", () => {
