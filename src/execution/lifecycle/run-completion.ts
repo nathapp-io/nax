@@ -43,6 +43,8 @@ export interface RunCompletionOptions {
   statusWriter: StatusWriter;
   config: NaxConfig;
   hooksConfig?: HooksConfig;
+  /** Whether the run used sequential (non-parallel) execution. Defaults to true. */
+  isSequential?: boolean;
 }
 
 export interface RunCompletionResult {
