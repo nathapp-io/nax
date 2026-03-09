@@ -14,7 +14,7 @@ import { wireReporters } from "../pipeline/subscribers/reporters";
 import type { PipelineContext } from "../pipeline/types";
 import { generateHumanHaltSummary, isComplete, isStalled, loadPRD } from "../prd";
 import type { PRD } from "../prd/types";
-import { startHeartbeat, stopHeartbeat, writeExitSummary } from "./crash-recovery";
+import { startHeartbeat } from "./crash-recovery";
 import type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
 import { runIteration } from "./iteration-runner";
 import { selectNextStories } from "./story-selector";
@@ -173,7 +173,6 @@ export async function executeSequential(
 
     return buildResult("max-iterations");
   } finally {
-    stopHeartbeat();
-    writeExitSummary(ctx.logFilePath, totalCost, iterations, storiesCompleted, Date.now() - ctx.startTime);
+    // Cleanup moved to runner.ts (RL-007): exit summary and heartbeat stop are owned by runner
   }
 }
