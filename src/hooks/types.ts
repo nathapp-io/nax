@@ -13,6 +13,7 @@ export const HOOK_EVENTS = [
   "on-pause",
   "on-resume",
   "on-session-end",
+  "on-all-stories-complete",
   "on-complete",
   "on-error",
 ] as const;

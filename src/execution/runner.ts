@@ -21,6 +21,7 @@ import { clearCache as clearLlmCache, routeBatch as llmRouteBatch } from "../rou
 import { precomputeBatchPlan } from "./batching";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import { getAllReadyStories } from "./helpers";
+import { hookCtx } from "./story-context";
 
 /**
  * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
@@ -296,6 +297,16 @@ export async function run(options: RunOptions): Promise<RunResult> {
       totalCost = acceptanceResult.totalCost;
       iterations = acceptanceResult.iterations;
       storiesCompleted = acceptanceResult.storiesCompleted;
+    }
+
+    // Fire on-all-stories-complete before regression gate (RL-001)
+    if (isComplete(prd)) {
+      await _runnerDeps.fireHook(
+        hooks,
+        "on-all-stories-complete",
+        hookCtx(feature, { status: "passed", cost: totalCost }),
+        workdir,
+      );
     }
 
     // Handle run completion: save metrics, log summary, update status

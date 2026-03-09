@@ -166,7 +166,18 @@ export async function runParallelExecution(
       feature,
       totalCost,
     });
-    await fireHook(hooks, "on-complete", hookCtx(feature, { status: "complete", cost: totalCost }), workdir);
+    await _parallelExecutorDeps.fireHook(
+      hooks,
+      "on-all-stories-complete",
+      hookCtx(feature, { status: "passed", cost: totalCost }),
+      workdir,
+    );
+    await _parallelExecutorDeps.fireHook(
+      hooks,
+      "on-complete",
+      hookCtx(feature, { status: "complete", cost: totalCost }),
+      workdir,
+    );
 
     // Skip to metrics and cleanup
     const durationMs = Date.now() - startTime;
