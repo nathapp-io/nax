@@ -9,6 +9,8 @@
  */
 
 import type { NaxConfig } from "../../config";
+import { fireHook } from "../../hooks/runner";
+import type { HooksConfig } from "../../hooks/types";
 import { getSafeLogger } from "../../logger";
 import type { StoryMetrics } from "../../metrics";
 import { saveRunMetrics } from "../../metrics";
@@ -24,6 +26,7 @@ import { runDeferredRegression } from "./run-regression";
  */
 export const _runCompletionDeps = {
   runDeferredRegression,
+  fireHook,
 };
 
 export interface RunCompletionOptions {
@@ -39,6 +42,7 @@ export interface RunCompletionOptions {
   workdir: string;
   statusWriter: StatusWriter;
   config: NaxConfig;
+  hooksConfig?: HooksConfig;
 }
 
 export interface RunCompletionResult {
@@ -71,6 +75,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     workdir,
     statusWriter,
     config,
+    hooksConfig,
   } = options;
 
   // Run deferred regression gate before final metrics
@@ -87,6 +92,21 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
       failedTests: regressionResult.failedTests,
       affectedStories: regressionResult.affectedStories,
     });
+
+    if (!regressionResult.success && hooksConfig) {
+      await _runCompletionDeps.fireHook(
+        hooksConfig as import("../../hooks/runner").LoadedHooksConfig,
+        "on-final-regression-fail",
+        {
+          event: "on-final-regression-fail",
+          feature,
+          status: "failed",
+          failedTests: regressionResult.failedTests,
+          affectedStories: regressionResult.affectedStories,
+        },
+        workdir,
+      );
+    }
   }
 
   const durationMs = Date.now() - startTime;

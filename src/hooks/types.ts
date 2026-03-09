@@ -16,6 +16,7 @@ export const HOOK_EVENTS = [
   "on-all-stories-complete",
   "on-complete",
   "on-error",
+  "on-final-regression-fail",
 ] as const;
 
 /** All supported hook events */
@@ -69,4 +70,8 @@ export interface HookContext {
   agent?: string;
   /** Current iteration number */
   iteration?: number;
+  /** Number of failed tests (on-final-regression-fail) */
+  failedTests?: number;
+  /** Stories affected by regression failure (on-final-regression-fail) */
+  affectedStories?: string[];
 }
