@@ -1,1 +1,2 @@
 [2026-03-09T10:54:33.632Z] AA-001 — PASSED — Add complete() method to AgentAdapter interface — Cost: $0.3499
+[2026-03-09T11:05:37.945Z] AA-005 — PASSED — Refactor precheck to detect configured agent binary — Cost: $0.1980

@@ -126,7 +126,7 @@
         "Unit tests cover each agent type and missing-binary case"
       ],
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
@@ -135,7 +135,8 @@
       "tags": [
         "p2"
       ],
-      "storyPoints": 2
+      "storyPoints": 2,
+      "passes": true
     },
     {
       "id": "AA-006",
@@ -188,5 +189,5 @@
       "storyPoints": 2
     }
   ],
-  "updatedAt": "2026-03-09T10:54:35.655Z"
+  "updatedAt": "2026-03-09T11:05:39.969Z"
 }
