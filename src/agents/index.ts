@@ -12,3 +12,5 @@ export {
   formatCostWithConfidence,
 } from "./cost";
 export { validateAgentForTier, validateAgentFeature, describeAgentCapabilities } from "./validation";
+export type { AgentVersionInfo } from "./version-detection";
+export { getAgentVersion, getAgentVersions } from "./version-detection";

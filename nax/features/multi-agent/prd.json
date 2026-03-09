@@ -274,7 +274,7 @@
         "One-shot completion verified in real (mocked or local) environment"
       ],
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "tags": [
         "test"
       ],
@@ -292,7 +292,8 @@
         "testStrategy": "tdd-simple",
         "reasoning": "tdd-simple: simple task (simple)",
         "contentHash": "e35ea64e1562d3bafba9cb42d161b5c952034191e7eece721d63f11f4afc6c0a"
-      }
+      },
+      "passes": true
     },
     {
       "id": "MA-010",
@@ -318,7 +319,14 @@
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
-      "escalations": []
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "tdd-simple: simple task (simple)",
+        "contentHash": "33853cdea7554f8c408fc528d89bd6f78efe0bbaf493f139a9292dad542a34c0"
+      }
     },
     {
       "id": "MA-011",
@@ -374,5 +382,5 @@
       "escalations": []
     }
   ],
-  "updatedAt": "2026-03-09T15:41:17.193Z"
+  "updatedAt": "2026-03-09T15:44:23.435Z"
 }
