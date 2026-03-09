@@ -153,6 +153,7 @@ export async function readVerdict(workdir: string): Promise<VerifierVerdict | nu
     if (!isValidVerdict(parsed)) {
       logger.warn("tdd", "Verifier verdict file missing required fields — ignoring", {
         path: verdictPath,
+        content: JSON.stringify(parsed).slice(0, 500),
       });
       return null;
     }
