@@ -28,14 +28,26 @@ describe("wireEventsWriter", () => {
   });
 
   async function readLines(): Promise<object[]> {
-    // Small delay to let async fire-and-forget writes finish
-    await Bun.sleep(50);
-    const text = await readFile(eventsFile, "utf8");
-    return text
-      .trim()
-      .split("\n")
-      .filter(Boolean)
-      .map((l) => JSON.parse(l));
+    // Poll until the file exists — write() is fire-and-forget so 50ms fixed sleep
+    // is insufficient under suite load (mkdir + appendFile can take longer).
+    const deadline = Date.now() + 500;
+    while (Date.now() < deadline) {
+      try {
+        const text = await readFile(eventsFile, "utf8");
+        return text
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((l) => JSON.parse(l));
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+          await Bun.sleep(20);
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new Error(`Events file not created within 500ms: ${eventsFile}`);
   }
 
   test("returns an UnsubscribeFn", () => {
