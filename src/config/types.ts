@@ -125,6 +125,8 @@ export interface ExecutionConfig {
   /** Enable smart test runner to scope test runs to changed files (default: true).
    * Accepts boolean for backward compat or a SmartTestRunnerConfig object. */
   smartTestRunner?: boolean | SmartTestRunnerConfig;
+  /** Configured agent binary: claude, codex, opencode, gemini, aider (default: claude) */
+  agent?: string;
 }
 
 /** Quality gate config */
