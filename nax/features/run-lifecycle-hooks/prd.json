@@ -13,7 +13,21 @@
         "Works in both sequential and parallel modes"
       ],
       "complexity": "medium",
-      "status": "pending"
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New hook requires understanding runner loop sequencing and hook payload passing across multiple components",
+        "contentHash": "25a10bd4f0522ecf1ce69c2c2930f110fff487c67fe52047099cb14a00530e4d"
+      }
     },
     {
       "id": "RL-002",
@@ -25,7 +39,14 @@
         "Hook payload reflects final success status (including regression result)"
       ],
       "complexity": "medium",
-      "status": "pending"
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "storyPoints": 1
     },
     {
       "id": "RL-003",
@@ -37,7 +58,14 @@
         "Hook triggered correctly in run-completion.ts"
       ],
       "complexity": "medium",
-      "status": "pending"
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "storyPoints": 1
     },
     {
       "id": "RL-004",
@@ -49,7 +77,14 @@
         "New StoryStatus 'regression-failed' added to types"
       ],
       "complexity": "complex",
-      "status": "pending"
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "storyPoints": 1
     },
     {
       "id": "RL-005",
@@ -61,7 +96,14 @@
         "test-after and tdd-simple always have flag as false"
       ],
       "complexity": "medium",
-      "status": "pending"
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "storyPoints": 1
     },
     {
       "id": "RL-006",
@@ -73,7 +115,14 @@
         "Skip reason is logged to console"
       ],
       "complexity": "medium",
-      "status": "pending"
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "storyPoints": 1
     },
     {
       "id": "RL-007",
@@ -84,7 +133,15 @@
         "Heartbeat protection active during regression gate"
       ],
       "complexity": "simple",
-      "status": "pending"
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": [],
+      "storyPoints": 1
     }
-  ]
+  ],
+  "updatedAt": "2026-03-09T06:26:00.729Z"
 }
