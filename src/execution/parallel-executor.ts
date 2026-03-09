@@ -22,6 +22,14 @@ import { getAllReadyStories, hookCtx } from "./helpers";
 import { executeParallel } from "./parallel";
 import type { StatusWriter } from "./status-writer";
 
+/**
+ * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ * @internal - test use only.
+ */
+export const _parallelExecutorDeps = {
+  fireHook,
+};
+
 export interface ParallelExecutorOptions {
   prdPath: string;
   workdir: string;

@@ -10,6 +10,7 @@
 
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
+import { fireHook } from "../hooks";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
@@ -20,6 +21,14 @@ import { clearCache as clearLlmCache, routeBatch as llmRouteBatch } from "../rou
 import { precomputeBatchPlan } from "./batching";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import { getAllReadyStories } from "./helpers";
+
+/**
+ * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ * @internal - test use only.
+ */
+export const _runnerDeps = {
+  fireHook,
+};
 
 // Re-export for backward compatibility
 export { resolveMaxAttemptsOutcome } from "./escalation";
