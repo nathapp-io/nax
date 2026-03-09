@@ -46,7 +46,7 @@
       "title": "Post-decompose validators",
       "description": "Create validators that run after LLM decomposition to ensure quality.\n\nNew files:\n- `src/decompose/validators/overlap.ts` — keyword + acceptance-criteria similarity check between each substory and all existing PRD stories. Uses normalized keyword intersection (Jaccard-like). Flag pairs with similarity > 0.6 as warnings, > 0.8 as errors.\n- `src/decompose/validators/coverage.ts` — checks that the union of substory acceptance criteria covers the original story's AC. Uses keyword matching to map each original AC to at least one substory AC. Warns on unmatched original criteria.\n- `src/decompose/validators/complexity.ts` — validates each substory complexity is <= config.maxSubstoryComplexity (default: medium). Reuses classifyComplexity() from src/routing/router.ts as a cross-check against LLM-assigned complexity.\n- `src/decompose/validators/dependency.ts` — validates no circular dependencies among substories, all referenced dependency IDs exist (in substories or existing PRD), no ID collisions with existing PRD story IDs.\n- `src/decompose/validators/index.ts` — runAllValidators() function that runs all validators in sequence and returns merged ValidationResult.\n\nValidationResult type: { valid: boolean; errors: string[]; warnings: string[] }\n\nIntegrate into DecomposeBuilder.decompose() — after parsing, run validators. If valid=false and retries remaining, re-prompt LLM with error feedback. If retries exhausted, return result with errors for caller to handle.\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/decompose/ --timeout=60000\nCommit: 'feat(decompose): add post-decompose validators (overlap, coverage, complexity, dependency)'",
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "dependencies": [
         "SD-001"
       ],
@@ -64,7 +64,7 @@
         "validation"
       ],
       "attempts": 0,
-      "passes": false,
+      "passes": true,
       "escalations": [],
       "priorErrors": [],
       "priorFailures": [],
@@ -105,7 +105,14 @@
       "escalations": [],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multiple modules touched (config, prd, interaction, decompose) with moderate logic (applyDecomposition with mutations/routing, checkStoryOversized trigger). Mostly boilerplate but requires coordinating type changes, PRD mutations, and trigger integration across the system.",
+        "contentHash": "ec130ca37080bdb798932210e7e78893e3fd94b1d1d088fa7508378c0f3ff9ad"
+      }
     },
     {
       "id": "SD-004",
@@ -141,5 +148,5 @@
     }
   ],
   "createdAt": "2026-03-09T03:35:00.000Z",
-  "updatedAt": "2026-03-09T04:19:47.149Z"
+  "updatedAt": "2026-03-09T04:49:01.055Z"
 }

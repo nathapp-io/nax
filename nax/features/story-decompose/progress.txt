@@ -1,1 +1,2 @@
 [2026-03-09T04:19:26.667Z] SD-001 — PASSED — DecomposeBuilder fluent API and prompt sections — Cost: $0.7975
+[2026-03-09T04:48:40.337Z] SD-002 — PASSED — Post-decompose validators — Cost: $1.5619
