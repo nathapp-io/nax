@@ -61,7 +61,14 @@
       "tags": [
         "p1"
       ],
-      "storyPoints": 2
+      "storyPoints": 2,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Single-file refactor swapping SDK calls for adapter, config-driven model resolution, mechanical test updates — no new behavior or architecture changes.",
+        "contentHash": "ffce611ba32165cd37e385d939883353efdb3d4529a39a7a599ba6b1a27b08ef"
+      }
     },
     {
       "id": "AA-003",
@@ -150,7 +157,7 @@
         "Unit tests verify model resolution from config"
       ],
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
@@ -159,7 +166,8 @@
       "tags": [
         "p3"
       ],
-      "storyPoints": 2
+      "storyPoints": 2,
+      "passes": true
     },
     {
       "id": "AA-007",
@@ -189,5 +197,5 @@
       "storyPoints": 2
     }
   ],
-  "updatedAt": "2026-03-09T11:05:39.969Z"
+  "updatedAt": "2026-03-09T11:24:58.094Z"
 }
