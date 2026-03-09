@@ -21,26 +21,26 @@
 
 ---
 
-## v0.32.1 — Portable Hooks + PRD Templates ✅ Shipped (2026-03-09)
+## v0.32.1 — Portable Hooks + Docs ✅ Shipped (2026-03-09)
 
-**Theme:** Fix nax-global portability (tilde expansion) and PRD schema compliance
+**Theme:** Hook portability (tilde expansion) and README documentation
 **Status:** ✅ Shipped (2026-03-09)
 
-### Stories
+### Changes
 - [x] **GH-001:** Tilde (`~/`) expansion in hook command parser — allows portable `hooks.json` across nodes (VPS/Mac01)
-- [x] **GT-001:** Update `nax-global` PRD templates — added missing required fields (`project`, `branchName`, `tags`, etc.) for schema compliance
+- [x] **DOC-001:** Document hooks env vars, interaction triggers & plugins in README
 
 ---
 
 ## v0.32.0 — TDD Simple Strategy ✅ Shipped (2026-03-09)
 
 **Theme:** Single-session TDD strategy for simple stories — TDD discipline without session isolation overhead
-**Status:** 🔜 Planned
+**Status:** ✅ Shipped (2026-03-09)
 
 ### Stories
-- [ ] **TS-001:** Add `tdd-simple` test strategy type and update routing (simple → tdd-simple default, test-after preserved for non-TDD work)
-- [ ] **TS-002:** Add `tdd-simple` prompt section — red-green-refactor instructions, no isolation, git commit instruction
-- [ ] **TS-003:** Wire `tdd-simple` execution path in session runner and pipeline (single session, reuse single-session path)
+- [x] **TS-001:** Add `tdd-simple` test strategy type and update routing (simple → tdd-simple default, test-after preserved for non-TDD work)
+- [x] **TS-002:** Add `tdd-simple` prompt section — red-green-refactor instructions, no isolation, git commit instruction
+- [x] **TS-003:** Wire `tdd-simple` execution path in session runner and pipeline (single session, reuse single-session path)
 
 ### Strategy Spectrum
 | Strategy | Sessions | Use Case |
@@ -264,6 +264,8 @@
 
 | Version | Theme | Date | Details |
 |:---|:---|:---|:---|
+| v0.32.1 | Portable Hooks + Docs | 2026-03-09 | GH-001: tilde expansion in hook parser; DOC-001: hooks/triggers/plugins README docs |
+| v0.32.0 | TDD Simple Strategy | 2026-03-09 | TS-001–003: `tdd-simple` strategy type, prompt section, execution wiring |
 | v0.31.1 | Bugfixes | 2026-03-09 | BUG-056/057/058: PRD status normalization, precheck command detection, session auto-commit |
 | v0.31.0 | Prompt Template Export | 2026-03-08 | PE-001/002: `nax prompts --init` + auto-configure overrides; verifier context fix |
 | v0.30.0 | Prompt Builder Completion | 2026-03-08 | PW-001/002: sections wired, stubs deleted, git commit instruction live; global install crash fix |
