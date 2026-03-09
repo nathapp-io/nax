@@ -1,0 +1,193 @@
+{
+  "project": "nax",
+  "branchName": "feat/multi-agent",
+  "feature": "multi-agent",
+  "userStories": [
+    {
+      "id": "MA-001",
+      "title": "Codex adapter implementation",
+      "description": "Implement AgentAdapter interface for Codex. Handle 'codex -q --prompt' for one-shot calls and 'codex' interactive for sessions. Parse exit codes and output.",
+      "acceptanceCriteria": [
+        "CodexAdapter implements execute(), complete(), and isInstalled()",
+        "complete() uses 'codex -q --prompt <text>'",
+        "execute() uses 'codex' in interactive mode",
+        "Binary detection via Bun.which('codex')",
+        "Unit tests cover binary detection, success/error exit codes, and output parsing"
+      ],
+      "complexity": "medium",
+      "status": "passed",
+      "tags": ["adapter"],
+      "storyPoints": 2,
+      "dependencies": []
+    },
+    {
+      "id": "MA-002",
+      "title": "OpenCode adapter implementation",
+      "description": "Implement AgentAdapter interface for OpenCode. Handle 'opencode --prompt' for one-shot mode. Detect binary via Bun.which('opencode').",
+      "acceptanceCriteria": [
+        "OpenCodeAdapter implements complete() using 'opencode --prompt <text>'",
+        "isInstalled() returns true if 'opencode' binary exists",
+        "Unit tests mock Bun.spawn and verify command construction",
+        "Integrated into AgentRegistry"
+      ],
+      "complexity": "simple",
+      "status": "pending",
+      "tags": ["adapter"],
+      "storyPoints": 1,
+      "dependencies": []
+    },
+    {
+      "id": "MA-003",
+      "title": "Gemini CLI adapter implementation",
+      "description": "Implement AgentAdapter interface for Gemini CLI. Handle 'gemini -p' for one-shot mode. Support Google auth flow detection in precheck.",
+      "acceptanceCriteria": [
+        "GeminiAdapter implements complete() using 'gemini -p <text>'",
+        "isInstalled() returns true if 'gemini' binary exists",
+        "Authentication check (Google auth) included in isInstalled() or precheck",
+        "Unit tests verify correct command line flags"
+      ],
+      "complexity": "simple",
+      "status": "pending",
+      "tags": ["adapter"],
+      "storyPoints": 1,
+      "dependencies": []
+    },
+    {
+      "id": "MA-004",
+      "title": "Aider adapter implementation",
+      "description": "Implement AgentAdapter interface for Aider. Handle 'aider --message --yes' for headless mode. Support --model flag passthrough from nax config.",
+      "acceptanceCriteria": [
+        "AiderAdapter implements complete() using 'aider --message <text> --yes'",
+        "--model flag passed correctly when specified in options",
+        "isInstalled() returns true if 'aider' binary exists",
+        "Unit tests verify headless mode flags (--yes)"
+      ],
+      "complexity": "simple",
+      "status": "pending",
+      "tags": ["adapter"],
+      "storyPoints": 1,
+      "dependencies": []
+    },
+    {
+      "id": "MA-005",
+      "title": "Codex context generator",
+      "description": "Add Codex context generator to output codex.md or AGENTS.md from nax/context.md.",
+      "acceptanceCriteria": [
+        "Codex context generator implemented",
+        "Supports AGENTS.md and codex.md naming conventions",
+        "Correctly maps nax context fields to target format"
+      ],
+      "complexity": "simple",
+      "status": "pending",
+      "tags": ["context"],
+      "storyPoints": 1,
+      "dependencies": ["MA-001"]
+    },
+    {
+      "id": "MA-006",
+      "title": "Gemini CLI context generator",
+      "description": "Add Gemini CLI context generator to output GEMINI.md from nax/context.md.",
+      "acceptanceCriteria": [
+        "Gemini CLI context generator implemented",
+        "Generates GEMINI.md in the project root",
+        "Follows Gemini CLI context expectations"
+      ],
+      "complexity": "simple",
+      "status": "pending",
+      "tags": ["context"],
+      "storyPoints": 1,
+      "dependencies": ["MA-003"]
+    },
+    {
+      "id": "MA-007",
+      "title": "Update nax generate to include new generators",
+      "description": "Update 'nax generate' command to include the new context generators for multi-agent support. Update AgentType union type.",
+      "acceptanceCriteria": [
+        "'nax generate' lists new agents as options",
+        "AgentType type includes 'codex', 'opencode', 'gemini', 'aider'",
+        "Existing generators (Claude, Aider) still work"
+      ],
+      "complexity": "simple",
+      "status": "pending",
+      "tags": ["cli"],
+      "storyPoints": 1,
+      "dependencies": ["MA-005", "MA-006"]
+    },
+    {
+      "id": "MA-008",
+      "title": "Unit tests for all multi-agent adapters",
+      "description": "Add comprehensive unit tests for all 4 new adapters mocking Bun.spawn and testing all logic paths.",
+      "acceptanceCriteria": [
+        "Tests cover success and failure exit codes for each agent",
+        "Prompt construction and flag mapping verified",
+        "Output parsing (stderr vs stdout) covered",
+        "Use _deps injection pattern for testability"
+      ],
+      "complexity": "medium",
+      "status": "pending",
+      "tags": ["test"],
+      "storyPoints": 2,
+      "dependencies": ["MA-001", "MA-002", "MA-003", "MA-004"]
+    },
+    {
+      "id": "MA-009",
+      "title": "Integration test suite for multi-agent support",
+      "description": "Create an integration test suite that smoke tests each adapter by calling complete('return hello') when the binary is found.",
+      "acceptanceCriteria": [
+        "Tests skip gracefully when binary is missing",
+        "Success path verified for each installed agent",
+        "One-shot completion verified in real (mocked or local) environment"
+      ],
+      "complexity": "medium",
+      "status": "pending",
+      "tags": ["test"],
+      "storyPoints": 2,
+      "dependencies": ["MA-008"]
+    },
+    {
+      "id": "MA-010",
+      "title": "Precheck updates for multi-agent support",
+      "description": "Update nax precheck to detect and report which agents are available in the system path.",
+      "acceptanceCriteria": [
+        "nax precheck identifies installed agents",
+        "Displays version information for each detected binary",
+        "Health status reported for each configured agent"
+      ],
+      "complexity": "simple",
+      "status": "pending",
+      "tags": ["precheck"],
+      "storyPoints": 1,
+      "dependencies": ["MA-001", "MA-002", "MA-003", "MA-004"]
+    },
+    {
+      "id": "MA-011",
+      "title": "Document multi-agent config in nax config --explain",
+      "description": "Update 'nax config --explain agents' to document defaultAgent, fallbackOrder, and per-agent model mapping.",
+      "acceptanceCriteria": [
+        "--explain output includes multi-agent configuration details",
+        "Clear documentation for fallback logic provided",
+        "Model mapping rules explained"
+      ],
+      "complexity": "simple",
+      "status": "pending",
+      "tags": ["cli", "docs"],
+      "storyPoints": 1,
+      "dependencies": []
+    },
+    {
+      "id": "MA-012",
+      "title": "Implement nax agents CLI command",
+      "description": "Add a new 'nax agents' command to list available agents with their binary paths, versions, and health status.",
+      "acceptanceCriteria": [
+        "'nax agents' displays a table of agents",
+        "Shows version, path, and capabilities for each",
+        "Identifies which agent is currently configured as default"
+      ],
+      "complexity": "simple",
+      "status": "pending",
+      "tags": ["cli"],
+      "storyPoints": 1,
+      "dependencies": ["MA-010"]
+    }
+  ]
+}
