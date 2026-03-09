@@ -188,7 +188,7 @@ describe("Config Command", () => {
 
       const output = consoleOutput.join("\n");
 
-      expect(output).toContain("# Enable automatic agent selection");
+      expect(output).toContain("Enable automatic agent selection and escalation");
       expect(output).toContain("# Max iterations per feature run");
       expect(output).toContain("# Require typecheck to pass");
       expect(output).toContain("# TDD strategy: auto | strict | lite | off");

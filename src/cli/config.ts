@@ -23,19 +23,27 @@ const FIELD_DESCRIPTIONS: Record<string, string> = {
   "models.powerful": "Powerful model for complex tasks (e.g., opus)",
 
   // Auto mode
-  autoMode: "Auto mode configuration for agent orchestration",
+  autoMode:
+    "Auto mode configuration for agent orchestration. Enables multi-agent routing with model tier selection per task complexity and escalation on failures.",
   "autoMode.enabled": "Enable automatic agent selection and escalation",
-  "autoMode.defaultAgent": "Default agent to use (e.g., claude, codex)",
-  "autoMode.fallbackOrder": "Fallback order when agent is rate-limited",
-  "autoMode.complexityRouting": "Model tier per complexity level",
-  "autoMode.complexityRouting.simple": "Model tier for simple tasks",
-  "autoMode.complexityRouting.medium": "Model tier for medium tasks",
-  "autoMode.complexityRouting.complex": "Model tier for complex tasks",
-  "autoMode.complexityRouting.expert": "Model tier for expert tasks",
-  "autoMode.escalation": "Escalation settings for failed stories",
+  "autoMode.defaultAgent":
+    "Default agent to use when no specific agent is requested. Examples: 'claude' (Claude Code), 'codex' (GitHub Copilot), 'opencode' (OpenCode). The agent handles the main coding tasks.",
+  "autoMode.fallbackOrder":
+    'Fallback order for agent selection when the primary agent is rate-limited, unavailable, or fails. Tries each agent in sequence until one succeeds. Example: ["claude", "codex", "opencode"] means try Claude first, then Copilot, then OpenCode.',
+  "autoMode.complexityRouting":
+    "Model tier routing rules mapped to story complexity levels. Determines which model (fast/balanced/powerful) to use based on task complexity: simple → fast, medium → balanced, complex → powerful, expert → powerful.",
+  "autoMode.complexityRouting.simple": "Model tier for simple tasks (low complexity, straightforward changes)",
+  "autoMode.complexityRouting.medium": "Model tier for medium tasks (moderate complexity, multi-file changes)",
+  "autoMode.complexityRouting.complex": "Model tier for complex tasks (high complexity, architectural decisions)",
+  "autoMode.complexityRouting.expert":
+    "Model tier for expert tasks (highest complexity, novel problems, design patterns)",
+  "autoMode.escalation":
+    "Escalation settings for failed stories. When a story fails after max attempts at current tier, escalate to the next tier in tierOrder. Enables progressive use of more powerful models.",
   "autoMode.escalation.enabled": "Enable tier escalation on failure",
-  "autoMode.escalation.tierOrder": "Ordered tier escalation with per-tier attempt budgets",
-  "autoMode.escalation.escalateEntireBatch": "Escalate all stories in batch when one fails",
+  "autoMode.escalation.tierOrder":
+    'Ordered tier escalation chain with per-tier attempt budgets. Format: [{"tier": "fast", "attempts": 2}, {"tier": "balanced", "attempts": 2}, {"tier": "powerful", "attempts": 1}]. Allows each tier to attempt fixes before escalating to the next.',
+  "autoMode.escalation.escalateEntireBatch":
+    "When enabled, escalate all stories in a batch if one fails. When disabled, only the failing story escalates (allows parallel attempts at different tiers).",
 
   // Routing
   routing: "Model routing strategy configuration",
@@ -528,9 +536,15 @@ function displayConfigWithDescriptions(
 
     // Display description comment if available
     if (description) {
-      // Include path for prompts section (where tests expect "prompts.overrides" to appear)
-      const isPromptsSubSection = currentPathStr.startsWith("prompts.");
-      const comment = isPromptsSubSection ? `${currentPathStr}: ${description}` : description;
+      // Include path for direct subsections of key configuration sections
+      // (to improve clarity of important configs like multi-agent setup)
+      const pathParts = currentPathStr.split(".");
+      // Only show path for 2-level paths (e.g., "autoMode.enabled", "models.fast")
+      // to keep deeply nested descriptions concise
+      const isDirectSubsection = pathParts.length === 2;
+      const isKeySection = ["prompts", "autoMode", "models", "routing"].includes(pathParts[0]);
+      const shouldIncludePath = isKeySection && isDirectSubsection;
+      const comment = shouldIncludePath ? `${currentPathStr}: ${description}` : description;
       console.log(`${indentStr}# ${comment}`);
     }
 
