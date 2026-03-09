@@ -305,7 +305,7 @@
         "Health status reported for each configured agent"
       ],
       "complexity": "simple",
-      "status": "pending",
+      "status": "passed",
       "tags": [
         "precheck"
       ],
@@ -326,7 +326,8 @@
         "testStrategy": "tdd-simple",
         "reasoning": "tdd-simple: simple task (simple)",
         "contentHash": "33853cdea7554f8c408fc528d89bd6f78efe0bbaf493f139a9292dad542a34c0"
-      }
+      },
+      "passes": true
     },
     {
       "id": "MA-011",
@@ -379,8 +380,15 @@
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
-      "escalations": []
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "tdd-simple: simple task (simple)",
+        "contentHash": "01b13af6c88fc52a483f2e800678c89a118d83a72e8d81a569a0b31f4dcb8634"
+      }
     }
   ],
-  "updatedAt": "2026-03-09T15:44:23.435Z"
+  "updatedAt": "2026-03-09T15:46:52.687Z"
 }
