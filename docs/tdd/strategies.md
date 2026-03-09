@@ -24,6 +24,7 @@ Controlled by `config.tdd.strategy`:
 |---|---|
 | `"strict"` | Always `three-session-tdd` |
 | `"lite"` | Always `three-session-tdd-lite` |
+| `"simple"` | Always `tdd-simple` (single-session TDD for all stories) |
 | `"off"` | Always `test-after` |
 | `"auto"` | LLM/keyword router decides (see routing rules below) |
 

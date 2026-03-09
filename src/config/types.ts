@@ -7,7 +7,7 @@
 
 export type Complexity = "simple" | "medium" | "complex" | "expert";
 export type TestStrategy = "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite";
-export type TddStrategy = "auto" | "strict" | "lite" | "off";
+export type TddStrategy = "auto" | "strict" | "lite" | "simple" | "off";
 
 export interface EscalationEntry {
   from: string;

@@ -181,6 +181,7 @@ export function determineTestStrategy(
   // Explicit overrides — ignore all heuristics
   if (tddStrategy === "strict") return "three-session-tdd";
   if (tddStrategy === "lite") return "three-session-tdd-lite";
+  if (tddStrategy === "simple") return "tdd-simple";
   if (tddStrategy === "off") return "test-after";
 
   // auto mode: apply heuristics
