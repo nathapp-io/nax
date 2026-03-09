@@ -1,2 +1,3 @@
 [2026-03-09T06:43:32.763Z] RL-001 — PASSED — Add on-all-stories-complete hook — Cost: $1.0054
 [2026-03-09T07:19:13.646Z] RL-002 — PASSED — Move on-complete hook after regression gate — Cost: $1.4422
+[2026-03-09T07:30:54.800Z] RL-003 — PASSED — Add on-final-regression-fail hook — Cost: $0.4057
