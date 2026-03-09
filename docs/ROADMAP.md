@@ -80,10 +80,10 @@
 
 ---
 
-## v0.35.0 — Agent Abstraction Layer (Planned)
+## v0.35.0 — Agent Abstraction Layer ✅ Shipped (2026-03-09)
 
 **Theme:** Decouple nax from Anthropic/Claude — make all LLM calls agent-agnostic
-**Status:** 🔲 Planned
+**Status:** ✅ Shipped (2026-03-09)
 
 ### Motivation
 
@@ -91,19 +91,25 @@ nax currently hardcodes `claude` CLI and `@anthropic-ai/sdk` in several places, 
 
 ### Priority 1 — Drop `@anthropic-ai/sdk` dependency
 
-- [ ] **AA-001:** Add `complete(prompt, options)` method to `AgentAdapter` interface — one-shot LLM call that returns text. Options: `{ maxTokens?, jsonMode?, model? }`. Implement in `ClaudeAdapter` using `claude -p` CLI
-- [ ] **AA-002:** Refactor `src/analyze/classifier.ts` to use `adapter.complete()` instead of `new Anthropic()`. Remove `@anthropic-ai/sdk` from `package.json` dependencies
+- [x] **AA-001:** Add `complete(prompt, options)` method to `AgentAdapter` interface — one-shot LLM call that returns text. Options: `{ maxTokens?, jsonMode?, model? }`. Implement in `ClaudeAdapter` using `claude -p` CLI
+- [x] **AA-002:** Refactor `src/analyze/classifier.ts` to use `adapter.complete()` instead of `new Anthropic()`. Remove `@anthropic-ai/sdk` from `package.json` dependencies
 
 ### Priority 2 — Agent-agnostic CLI calls
 
-- [ ] **AA-003:** Refactor `src/routing/strategies/llm.ts` to use `adapter.complete()` instead of hardcoded `Bun.spawn(["claude", ...])`. Resolve binary from configured agent
-- [ ] **AA-004:** Refactor `src/interaction/plugins/auto.ts` to use `adapter.complete()` instead of hardcoded `Bun.spawn(["claude", ...])`
-- [ ] **AA-005:** Refactor `src/precheck/checks-blockers.ts` to check configured agent binary (not just `claude`). Support `codex`, `opencode`, `gemini`, `aider` version checks
+- [x] **AA-003:** Refactor `src/routing/strategies/llm.ts` to use `adapter.complete()` instead of hardcoded `Bun.spawn(["claude", ...])`. Resolve binary from configured agent
+- [x] **AA-004:** Refactor `src/interaction/plugins/auto.ts` to use `adapter.complete()` instead of hardcoded `Bun.spawn(["claude", ...])`
+- [x] **AA-005:** Refactor `src/precheck/checks-blockers.ts` to check configured agent binary (not just `claude`). Support `codex`, `opencode`, `gemini`, `aider` version checks
 
 ### Priority 3 — Model name portability
 
-- [ ] **AA-006:** Remove hardcoded `"claude-sonnet-4-5"` fallbacks from `src/agents/claude.ts`, `claude-plan.ts`, and `src/acceptance/` — resolve model from config `models.balanced` instead
-- [ ] **AA-007:** Add adapter scaffolding for at least one non-Claude agent (Codex or OpenCode) — implement `AgentAdapter` interface with `execute()`, `complete()`, and binary detection
+- [x] **AA-006:** Remove hardcoded `"claude-sonnet-4-5"` fallbacks from `src/agents/claude.ts`, `claude-plan.ts`, and `src/acceptance/` — resolve model from config `models.balanced` instead
+- [x] **AA-007:** Add adapter scaffolding for at least one non-Claude agent (Codex or OpenCode) — implement `AgentAdapter` interface with `execute()`, `complete()`, and binary detection
+
+### Also includes
+- **BUG-062:** Routing cache hit overwrote fresh `testStrategy` with stale PRD value — fixed in two passes (`945cc8d` + `4987d75`)
+- **BUG-063:** Rectification agent sessions left uncommitted changes, causing false-positive review failures — added `autoCommitIfDirty()` to rectification gate
+- **PluginLogger:** Structured write-only logger for nax plugins — `createPluginLogger(name)` wraps `getSafeLogger()` with `plugin:<name>` stage prefix
+- **TDD Strategy `simple`:** New `TddStrategy` option; `nax/config.json` switched to `auto` for heuristic routing
 
 ### Hardcoded Claude References (audit)
 
@@ -207,6 +213,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 
 | Version | Theme | Date |
 |:--------|:------|:-----|
+| v0.35.0 | Agent Abstraction Layer | 2026-03-09 |
 | v0.34.0 | Run Hooks + Smart Skip | 2026-03-09 |
 | v0.33.0 | Story Decomposer | 2026-03-09 |
 | v0.32.2 | BUG-059 Fix (silent gate pass on crash) | 2026-03-09 |
@@ -263,4 +270,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-09 (v0.35.0 spec added — Agent Abstraction Layer)*
+*Last updated: 2026-03-09 (v0.35.0 shipped — Agent Abstraction Layer)*
