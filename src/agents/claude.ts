@@ -12,6 +12,7 @@ import type {
   AgentCapabilities,
   AgentResult,
   AgentRunOptions,
+  CompleteOptions,
   DecomposeOptions,
   DecomposeResult,
   InteractiveRunOptions,
@@ -19,6 +20,7 @@ import type {
   PlanResult,
   PtyHandle,
 } from "./types";
+import { CompleteError } from "./types";
 
 /**
  * Maximum characters to capture from agent stdout.
@@ -41,6 +43,25 @@ const MAX_AGENT_STDERR_CHARS = 1000;
  * Mirrors the pattern in src/verification/executor.ts:executeWithTimeout().
  */
 const SIGKILL_GRACE_PERIOD_MS = 5000;
+
+/**
+ * Injectable dependencies for complete() — allows tests to intercept
+ * Bun.spawn calls and verify correct CLI args without the claude binary.
+ *
+ * @internal
+ */
+export const _completeDeps = {
+  spawn(
+    cmd: string[],
+    opts: { stdout: "pipe"; stderr: "pipe" | "inherit" },
+  ): { stdout: ReadableStream<Uint8Array>; exited: Promise<number>; pid: number } {
+    return Bun.spawn(cmd, opts) as unknown as {
+      stdout: ReadableStream<Uint8Array>;
+      exited: Promise<number>;
+      pid: number;
+    };
+  },
+};
 
 /**
  * Injectable dependencies for runOnce() — allows tests to verify
@@ -293,6 +314,11 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       estimatedCost: cost,
       pid: processPid,
     };
+  }
+
+  async complete(_prompt: string, _options?: CompleteOptions): Promise<string> {
+    void _options;
+    throw new CompleteError("complete() is not yet implemented");
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {
