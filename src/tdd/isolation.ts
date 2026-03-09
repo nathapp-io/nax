@@ -55,7 +55,7 @@ function matchesAllowedPath(filePath: string, allowedPaths: string[]): boolean {
   return allowedPaths.some((pattern) => {
     // Simple glob matching: ** = any directory, * = any filename segment
     const regexPattern = pattern.replace(/\*\*/g, ".*").replace(/\*/g, "[^/]*").replace(/\//g, "\\/");
-    const regex = new RegExp(`^${regexPattern}$`);
+    const regex = new RegExp(`^${regexPattern}$`); // nosemgrep: detect-non-literal-regexp — pattern from PRD scope config, not user input
     return regex.test(filePath);
   });
 }
