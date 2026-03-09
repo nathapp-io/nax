@@ -11,7 +11,7 @@ import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config";
 import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
-import { captureGitRef } from "../utils/git";
+import { autoCommitIfDirty, captureGitRef } from "../utils/git";
 import {
   type RectificationState,
   executeWithTimeout,
@@ -178,7 +178,7 @@ async function runRectificationLoop(
 
     // BUG-063: Auto-commit after rectification agent — prevents uncommitted changes
     // from leaking into verifier/review stages. Same pattern as session-runner.ts.
-    await autoCommitIfDirty(workdir, "rectification", story.id, logger);
+    await autoCommitIfDirty(workdir, "tdd", "rectification", story.id);
 
     const rectifyIsolation = lite ? undefined : await verifyImplementerIsolation(workdir, rectifyBeforeRef);
 
@@ -230,48 +230,4 @@ async function runRectificationLoop(
   }
   logger.info("tdd", "Full suite gate passed", { storyId: story.id });
   return true;
-}
-
-/**
- * BUG-063: Auto-commit safety net for rectification agent sessions.
- *
- * Rectification runs agent.run() directly (not via runTddSession), so it
- * needs its own auto-commit. Without this, uncommitted changes from
- * rectification leak into verifier/review stages causing spurious failures.
- */
-async function autoCommitIfDirty(
-  workdir: string,
-  role: string,
-  storyId: string,
-  logger: ReturnType<typeof getLogger>,
-): Promise<void> {
-  try {
-    const statusProc = Bun.spawn(["git", "status", "--porcelain"], {
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const statusOutput = await new Response(statusProc.stdout).text();
-    await statusProc.exited;
-
-    if (!statusOutput.trim()) return;
-
-    logger.warn("tdd", `Agent did not commit after ${role} session — auto-committing`, {
-      role,
-      storyId,
-      dirtyFiles: statusOutput.trim().split("\n").length,
-    });
-
-    const addProc = Bun.spawn(["git", "add", "-A"], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
-    await addProc.exited;
-
-    const commitProc = Bun.spawn(["git", "commit", "-m", `chore(${storyId}): auto-commit after ${role} session`], {
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    await commitProc.exited;
-  } catch {
-    // Silently ignore — auto-commit is best-effort
-  }
 }

@@ -3,6 +3,7 @@
  */
 
 import { spawn } from "bun";
+import { getSafeLogger } from "../logger";
 
 /**
  * Default timeout for git subprocess calls.
@@ -125,4 +126,52 @@ export async function hasCommitsForStory(workdir: string, storyId: string, maxCo
  */
 export function detectMergeConflict(output: string): boolean {
   return output.includes("CONFLICT") || output.includes("conflict");
+}
+
+/**
+ * Auto-commit safety net.
+ *
+ * If the agent left uncommitted changes after a session, stage and commit them
+ * automatically. Prevents the review stage from failing with "uncommitted
+ * changes" errors. No-op when the working tree is clean.
+ *
+ * Used by session-runner.ts (TDD sessions), rectification-gate.ts, and
+ * execution.ts (single-session / test-after).
+ *
+ * @param workdir - Working directory (git repo root)
+ * @param stage   - Log stage prefix (e.g. "tdd", "execution")
+ * @param role    - Session role for the commit message (e.g. "implementer")
+ * @param storyId - Story ID for the commit message
+ */
+export async function autoCommitIfDirty(workdir: string, stage: string, role: string, storyId: string): Promise<void> {
+  const logger = getSafeLogger();
+  try {
+    const statusProc = Bun.spawn(["git", "status", "--porcelain"], {
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const statusOutput = await new Response(statusProc.stdout).text();
+    await statusProc.exited;
+
+    if (!statusOutput.trim()) return;
+
+    logger?.warn(stage, `Agent did not commit after ${role} session — auto-committing`, {
+      role,
+      storyId,
+      dirtyFiles: statusOutput.trim().split("\n").length,
+    });
+
+    const addProc = Bun.spawn(["git", "add", "-A"], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
+    await addProc.exited;
+
+    const commitProc = Bun.spawn(["git", "commit", "-m", `chore(${storyId}): auto-commit after ${role} session`], {
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    await commitProc.exited;
+  } catch {
+    // Silently ignore — auto-commit is best-effort
+  }
 }
