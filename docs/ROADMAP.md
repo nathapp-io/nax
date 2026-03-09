@@ -242,7 +242,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 - [x] ~~BUG-015: fixed via `skipGlobal: true` in all unit tests~~
 - [x] ~~BUG-054: skip redundant verify after full-suite gate passes. Fixed in v0.27.1.~~
 - [x] ~~BUG-055: Pipeline skip messages conflate "not needed" with "disabled". Fixed in v0.27.1.~~
-- [ ] **BUG-061:** `story.complete` and `progress` log entries report `durationMs`/`elapsedMs` as cumulative time since run start — not per-story duration. Log audit tools flag every story as a "timing anomaly" since cumulative time always exceeds thresholds. **Fix:** Log both `storyDurationMs` (per-story wall clock) and `elapsedMs` (cumulative) in `story.complete` events. Add `storyStartedAt` timestamp to story metrics. **Target:** v0.35.1
+- [x] ~~**BUG-061:** `story.complete` and `progress` log entries reported `durationMs`/`elapsedMs` as cumulative time since run start. Fixed: added `storyDurationMs` (per-story wall clock) to both events. `cca4ff3`~~
 
 ### Features
 - [ ] **CI-001:** CI Memory Optimization — parallel test sharding to pass on 1GB runners (currently requires 8GB).
