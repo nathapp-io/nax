@@ -58,6 +58,7 @@ export async function runIteration(
     };
   }
 
+  const storyStartTime = Date.now();
   const storyGitRef = await captureGitRef(ctx.workdir);
   const pipelineContext: PipelineContext = {
     config: ctx.config,
@@ -109,6 +110,7 @@ export async function runIteration(
     allStoryMetrics,
     storyGitRef,
     interactionChain: ctx.interactionChain,
+    storyStartTime,
   };
 
   if (pipelineResult.success) {

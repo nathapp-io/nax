@@ -39,6 +39,7 @@ export interface PipelineHandlerContext {
   allStoryMetrics: StoryMetrics[];
   storyGitRef: string | null | undefined;
   interactionChain?: InteractionChain | null;
+  storyStartTime?: number;
 }
 
 export interface PipelineSuccessResult {
@@ -62,11 +63,13 @@ export async function handlePipelineSuccess(
 
   const storiesCompletedDelta = ctx.storiesToExecute.length;
   for (const completedStory of ctx.storiesToExecute) {
+    const now = Date.now();
     logger?.info("story.complete", "Story completed successfully", {
       storyId: completedStory.id,
       storyTitle: completedStory.title,
       totalCost: ctx.totalCost + costDelta,
-      durationMs: Date.now() - ctx.startTime,
+      durationMs: now - ctx.startTime,
+      storyDurationMs: ctx.storyStartTime ? now - ctx.storyStartTime : undefined,
     });
 
     pipelineEventBus.emit({
@@ -90,6 +93,7 @@ export async function handlePipelineSuccess(
     totalCost: ctx.totalCost + costDelta,
     costLimit: ctx.config.execution.costLimit,
     elapsedMs: Date.now() - ctx.startTime,
+    storyDurationMs: ctx.storyStartTime ? Date.now() - ctx.storyStartTime : undefined,
   });
 
   return { storiesCompletedDelta, costDelta, prd, prdDirty: true };
