@@ -233,7 +233,14 @@ async function reclassifyWithLLM(
   const modelTier = config.analyze.model;
   const modelDef = resolveModel(config.models[modelTier]);
 
-  const result = await adapter.decompose({ specContent: storySpec, workdir, codebaseContext, modelTier, modelDef });
+  const result = await adapter.decompose({
+    specContent: storySpec,
+    workdir,
+    codebaseContext,
+    modelTier,
+    modelDef,
+    config,
+  });
 
   if (result.stories.length === 0) return story;
   const ds = result.stories[0];

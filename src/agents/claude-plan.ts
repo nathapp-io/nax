@@ -9,6 +9,7 @@ import { join } from "node:path";
 
 import type { PidRegistry } from "../execution/pid-registry";
 import { getLogger } from "../logger";
+import { resolveBalancedModelDef } from "./model-resolution";
 import type { AgentRunOptions } from "./types";
 import type { PlanOptions, PlanResult } from "./types-extended";
 
@@ -18,9 +19,14 @@ import type { PlanOptions, PlanResult } from "./types-extended";
 export function buildPlanCommand(binary: string, options: PlanOptions): string[] {
   const cmd = [binary, "--permission-mode", "plan"];
 
-  // Add model if specified
-  if (options.modelDef) {
-    cmd.push("--model", options.modelDef.model);
+  // Add model if specified (explicit or resolved from config)
+  let modelDef = options.modelDef;
+  if (!modelDef && options.config) {
+    modelDef = resolveBalancedModelDef(options.config);
+  }
+
+  if (modelDef) {
+    cmd.push("--model", modelDef.model);
   }
 
   // Add dangerously-skip-permissions for automation
@@ -64,13 +70,24 @@ export async function runPlan(
   pidRegistry: PidRegistry,
   buildAllowedEnv: (options: AgentRunOptions) => Record<string, string | undefined>,
 ): Promise<PlanResult> {
+  const { resolveBalancedModelDef } = await import("./model-resolution");
+
   const cmd = buildPlanCommand(binary, options);
+
+  // Resolve model: explicit modelDef > config.models.balanced > throw
+  let modelDef = options.modelDef;
+  if (!modelDef) {
+    if (!options.config) {
+      throw new Error("runPlan() requires either modelDef or config with models.balanced configured");
+    }
+    modelDef = resolveBalancedModelDef(options.config);
+  }
 
   const envOptions: AgentRunOptions = {
     workdir: options.workdir,
-    modelDef: options.modelDef || { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
+    modelDef,
     prompt: "",
-    modelTier: "balanced",
+    modelTier: options.modelTier || "balanced",
     timeoutSeconds: 600,
   };
 

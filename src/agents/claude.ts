@@ -384,16 +384,20 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   }
 
   async decompose(options: DecomposeOptions): Promise<DecomposeResult> {
+    const { resolveBalancedModelDef } = await import("./model-resolution");
+
     const prompt = buildDecomposePrompt(options);
 
-    const cmd = [
-      this.binary,
-      "--model",
-      options.modelDef?.model || "claude-sonnet-4-5",
-      "--dangerously-skip-permissions",
-      "-p",
-      prompt,
-    ];
+    // Resolve model: explicit modelDef > config.models.balanced > throw
+    let modelDef = options.modelDef;
+    if (!modelDef) {
+      if (!options.config) {
+        throw new Error("decompose() requires either modelDef or config with models.balanced configured");
+      }
+      modelDef = resolveBalancedModelDef(options.config);
+    }
+
+    const cmd = [this.binary, "--model", modelDef.model, "--dangerously-skip-permissions", "-p", prompt];
 
     const pidRegistry = this.getPidRegistry(options.workdir);
 
@@ -403,9 +407,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       stderr: "inherit", // MEM-3: Inherit stderr to avoid blocking on unread pipe
       env: this.buildAllowedEnv({
         workdir: options.workdir,
-        modelDef: options.modelDef || { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
+        modelDef,
         prompt: "",
-        modelTier: "balanced",
+        modelTier: options.modelTier || "balanced",
         timeoutSeconds: 600,
       }),
     });

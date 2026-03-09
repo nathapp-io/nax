@@ -115,7 +115,7 @@ async function decomposeLLM(
 
     const modelTier = config.analyze.model;
     const modelDef = resolveModel(config.models[modelTier]);
-    const result = await adapter.decompose({ specContent, workdir, codebaseContext, modelTier, modelDef });
+    const result = await adapter.decompose({ specContent, workdir, codebaseContext, modelTier, modelDef, config });
 
     logger.info("cli", "[OK] Agent decompose complete", { storiesCount: result.stories.length });
 

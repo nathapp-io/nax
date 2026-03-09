@@ -7,6 +7,7 @@
  * Implementation placeholder — logic to be filled in by the implementer.
  */
 
+import { resolveModel } from "../config/schema";
 import type { ModelDef, NaxConfig } from "../config/schema";
 
 /**
@@ -26,6 +27,17 @@ export function resolveBalancedModelDef(
   config: Pick<NaxConfig, "models"> | Partial<NaxConfig>,
   adapterDefault?: ModelDef,
 ): ModelDef {
-  // TODO(AA-006): Implement — remove hardcoded fallbacks and resolve from config
-  throw new Error("resolveBalancedModelDef not yet implemented (AA-006)");
+  const configWithModels = config as Pick<NaxConfig, "models">;
+  const models = configWithModels.models as Record<string, unknown> | undefined;
+  const balancedEntry = models?.balanced;
+
+  if (balancedEntry) {
+    return resolveModel(balancedEntry as string | ModelDef);
+  }
+
+  if (adapterDefault) {
+    return adapterDefault;
+  }
+
+  throw new Error("No balanced model configured in config.models.balanced and no adapter default provided");
 }
