@@ -136,7 +136,7 @@ export function countStories(prd: PRD): {
   return {
     total: prd.userStories.length,
     passed: prd.userStories.filter((s) => s.passes || s.status === "passed").length,
-    failed: prd.userStories.filter((s) => s.status === "failed").length,
+    failed: prd.userStories.filter((s) => s.status === "failed" || s.status === "regression-failed").length,
     pending: prd.userStories.filter(
       (s) =>
         !s.passes &&
@@ -144,7 +144,8 @@ export function countStories(prd: PRD): {
         s.status !== "failed" &&
         s.status !== "skipped" &&
         s.status !== "blocked" &&
-        s.status !== "paused",
+        s.status !== "paused" &&
+        s.status !== "regression-failed",
     ).length,
     skipped: prd.userStories.filter((s) => s.status === "skipped").length,
     blocked: prd.userStories.filter((s) => s.status === "blocked").length,

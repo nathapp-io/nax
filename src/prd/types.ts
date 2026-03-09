@@ -9,7 +9,15 @@ import type { ModelTier } from "../config";
 import type { FailureCategory } from "../tdd/types";
 
 /** User story status */
-export type StoryStatus = "pending" | "in-progress" | "passed" | "failed" | "skipped" | "blocked" | "paused";
+export type StoryStatus =
+  | "pending"
+  | "in-progress"
+  | "passed"
+  | "failed"
+  | "skipped"
+  | "blocked"
+  | "paused"
+  | "regression-failed";
 
 /** Verification stage where failure occurred */
 export type VerificationStage = "verify" | "review" | "regression" | "rectification" | "agent-session" | "escalation";
@@ -150,7 +158,10 @@ export function isStalled(prd: PRD): boolean {
 
   const blockedIds = new Set(
     prd.userStories
-      .filter((s) => s.status === "blocked" || s.status === "failed" || s.status === "paused")
+      .filter(
+        (s) =>
+          s.status === "blocked" || s.status === "failed" || s.status === "paused" || s.status === "regression-failed",
+      )
       .map((s) => s.id),
   );
 
@@ -159,6 +170,7 @@ export function isStalled(prd: PRD): boolean {
       s.status === "blocked" ||
       s.status === "failed" ||
       s.status === "paused" ||
+      s.status === "regression-failed" ||
       s.dependencies.some((dep) => blockedIds.has(dep)),
   );
 }

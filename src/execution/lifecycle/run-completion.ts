@@ -93,19 +93,31 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
       affectedStories: regressionResult.affectedStories,
     });
 
-    if (!regressionResult.success && hooksConfig) {
-      await _runCompletionDeps.fireHook(
-        hooksConfig as import("../../hooks/runner").LoadedHooksConfig,
-        "on-final-regression-fail",
-        {
-          event: "on-final-regression-fail",
-          feature,
-          status: "failed",
-          failedTests: regressionResult.failedTests,
-          affectedStories: regressionResult.affectedStories,
-        },
-        workdir,
-      );
+    if (!regressionResult.success) {
+      // Mark affected stories as regression-failed (RL-004)
+      for (const storyId of regressionResult.affectedStories) {
+        const story = prd.userStories.find((s) => s.id === storyId);
+        if (story) {
+          story.status = "regression-failed";
+        }
+      }
+      // Reflect regression gate failure in run status (RL-004)
+      statusWriter.setRunStatus("failed");
+
+      if (hooksConfig) {
+        await _runCompletionDeps.fireHook(
+          hooksConfig as import("../../hooks/runner").LoadedHooksConfig,
+          "on-final-regression-fail",
+          {
+            event: "on-final-regression-fail",
+            feature,
+            status: "failed",
+            failedTests: regressionResult.failedTests,
+            affectedStories: regressionResult.affectedStories,
+          },
+          workdir,
+        );
+      }
     }
   }
 
