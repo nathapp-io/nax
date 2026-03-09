@@ -16,14 +16,14 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "../../../../src/config";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
-import type { PRD, UserStory } from "../../../../src/prd";
-import type { StoryMetrics } from "../../../../src/metrics";
 import {
-  handleRunCompletion,
-  _runCompletionDeps,
   type RunCompletionOptions,
+  _runCompletionDeps,
+  handleRunCompletion,
 } from "../../../../src/execution/lifecycle/run-completion";
 import type { DeferredRegressionResult } from "../../../../src/execution/lifecycle/run-regression";
+import type { StoryMetrics } from "../../../../src/metrics";
+import type { PRD, UserStory } from "../../../../src/prd";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -110,9 +110,7 @@ function makeStatusWriter() {
   };
 }
 
-function makeOpts(
-  overrides: Partial<RunCompletionOptions> = {},
-): RunCompletionOptions {
+function makeOpts(overrides: Partial<RunCompletionOptions> = {}): RunCompletionOptions {
   const story = makeStory("US-001", "passed");
   const prd = makePRD([story]);
   return {
@@ -156,10 +154,7 @@ afterEach(() => {
 
 describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => {
   test("skips regression when all stories have fullSuiteGatePassed=true in sequential mode", async () => {
-    const metrics = [
-      makeStoryMetrics("US-001", true),
-      makeStoryMetrics("US-002", true),
-    ];
+    const metrics = [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", true)];
 
     await handleRunCompletion(
       makeOpts({
@@ -172,10 +167,7 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
   });
 
   test("does NOT skip regression when at least one story has fullSuiteGatePassed=false", async () => {
-    const metrics = [
-      makeStoryMetrics("US-001", true),
-      makeStoryMetrics("US-002", false),
-    ];
+    const metrics = [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", false)];
 
     await handleRunCompletion(
       makeOpts({
@@ -188,10 +180,7 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
   });
 
   test("does NOT skip regression when fullSuiteGatePassed is undefined for any story", async () => {
-    const metrics = [
-      makeStoryMetrics("US-001", true),
-      makeStoryMetrics("US-002", undefined),
-    ];
+    const metrics = [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", undefined)];
 
     await handleRunCompletion(
       makeOpts({
@@ -204,10 +193,7 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
   });
 
   test("does NOT skip regression when all stories have fullSuiteGatePassed=true but mode is parallel", async () => {
-    const metrics = [
-      makeStoryMetrics("US-001", true),
-      makeStoryMetrics("US-002", true),
-    ];
+    const metrics = [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", true)];
 
     await handleRunCompletion(
       makeOpts({
@@ -258,15 +244,12 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
 
   test("skip applies when isSequential is not provided (defaults to sequential)", async () => {
     // When isSequential is absent from options, sequential is the default behaviour
-    const metrics = [
-      makeStoryMetrics("US-001", true),
-      makeStoryMetrics("US-002", true),
-    ];
+    const metrics = [makeStoryMetrics("US-001", true), makeStoryMetrics("US-002", true)];
 
     // Intentionally omit isSequential to verify default behaviour
     const opts = makeOpts({ allStoryMetrics: metrics });
     // Ensure isSequential is absent
-    delete (opts as Partial<RunCompletionOptions>).isSequential;
+    (opts as Partial<RunCompletionOptions>).isSequential = undefined;
 
     await handleRunCompletion(opts);
 
