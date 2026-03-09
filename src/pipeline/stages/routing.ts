@@ -70,7 +70,7 @@ export const routingStage: PipelineStage = {
     const logger = getLogger();
 
     // Resolve agent adapter for LLM routing (shared with execution)
-    const agentName = ctx.config.execution.agent ?? "claude";
+    const agentName = ctx.config.execution?.agent ?? "claude";
     const adapter = _routingDeps.getAgent(agentName);
 
     // Staleness detection (RRP-003):
