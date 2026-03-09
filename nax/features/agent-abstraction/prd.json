@@ -1,0 +1,162 @@
+{
+  "project": "nax",
+  "branchName": "feat/agent-abstraction",
+  "feature": "agent-abstraction",
+  "userStories": [
+    {
+      "id": "AA-001",
+      "title": "Add complete() method to AgentAdapter interface",
+      "description": "Add a one-shot LLM call method complete(prompt, options) to the AgentAdapter interface and implement it in ClaudeAdapter using claude -p CLI. Options: { maxTokens?, jsonMode?, model? }. Returns plain text string.",
+      "acceptanceCriteria": [
+        "AgentAdapter interface has complete(prompt: string, options?: CompleteOptions): Promise<string>",
+        "ClaudeAdapter implements complete() using Bun.spawn(['claude', '-p', prompt, ...flags])",
+        "jsonMode option adds --output-format json flag",
+        "model option passes --model flag when provided",
+        "maxTokens option passes --max-tokens flag when provided",
+        "Non-zero exit or empty output throws a typed error",
+        "Unit tests cover success, jsonMode, model override, and error cases"
+      ],
+      "complexity": "medium",
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": ["p1"],
+      "storyPoints": 2
+    },
+    {
+      "id": "AA-002",
+      "title": "Refactor classifier.ts to use adapter.complete() — drop @anthropic-ai/sdk",
+      "description": "Replace the direct Anthropic SDK usage in src/analyze/classifier.ts with adapter.complete(). Remove @anthropic-ai/sdk from package.json dependencies entirely. The hardcoded model 'claude-haiku-4-20250514' should be resolved from config models.fast instead.",
+      "acceptanceCriteria": [
+        "src/analyze/classifier.ts imports adapter instead of Anthropic SDK",
+        "adapter.complete() called with jsonMode: true for classification",
+        "Model resolved from config models.fast (not hardcoded)",
+        "@anthropic-ai/sdk removed from package.json dependencies",
+        "bun install reflects removal (lockfile updated)",
+        "nax analyse still classifies stories correctly",
+        "Unit tests mock adapter.complete() — no real API calls"
+      ],
+      "complexity": "medium",
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": ["AA-001"],
+      "tags": ["p1"],
+      "storyPoints": 2
+    },
+    {
+      "id": "AA-003",
+      "title": "Refactor llm.ts routing strategy to use adapter.complete()",
+      "description": "Replace hardcoded Bun.spawn(['claude', ...]) in src/routing/strategies/llm.ts with adapter.complete(). The adapter instance should be resolved from the execution context or passed as a dependency.",
+      "acceptanceCriteria": [
+        "src/routing/strategies/llm.ts no longer spawns 'claude' directly",
+        "Uses adapter.complete() for LLM-based routing decisions",
+        "Adapter resolved via dependency injection or context — not hardcoded",
+        "Behaviour identical: returns routing tier classification",
+        "Unit tests mock adapter.complete() for routing responses"
+      ],
+      "complexity": "medium",
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": ["AA-001"],
+      "tags": ["p2"],
+      "storyPoints": 2
+    },
+    {
+      "id": "AA-004",
+      "title": "Refactor interaction/plugins/auto.ts to use adapter.complete()",
+      "description": "Replace hardcoded Bun.spawn(['claude', ...]) in src/interaction/plugins/auto.ts with adapter.complete(). This plugin handles auto-responses during interactive prompts.",
+      "acceptanceCriteria": [
+        "src/interaction/plugins/auto.ts no longer spawns 'claude' directly",
+        "Uses adapter.complete() for generating auto-responses",
+        "Adapter resolved via dependency injection",
+        "Auto-response behaviour unchanged",
+        "Unit tests mock adapter.complete()"
+      ],
+      "complexity": "medium",
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": ["AA-001"],
+      "tags": ["p2"],
+      "storyPoints": 2
+    },
+    {
+      "id": "AA-005",
+      "title": "Refactor precheck to detect configured agent binary",
+      "description": "Update src/precheck/checks-blockers.ts to check for the configured agent binary instead of hardcoding 'claude'. Support codex, opencode, gemini, and aider version checks. The check should read the configured agent from config and validate that binary exists and responds to --version.",
+      "acceptanceCriteria": [
+        "Precheck reads agent from config (default: 'claude')",
+        "Supports binaries: claude, codex, opencode, gemini, aider",
+        "Each binary has its correct --version flag pattern",
+        "Missing binary returns a typed blocker with agent name in message",
+        "Claude path unchanged — no regression on existing behaviour",
+        "Unit tests cover each agent type and missing-binary case"
+      ],
+      "complexity": "medium",
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": ["p2"],
+      "storyPoints": 2
+    },
+    {
+      "id": "AA-006",
+      "title": "Remove hardcoded claude-sonnet-4-5 model fallbacks",
+      "description": "Replace all hardcoded 'claude-sonnet-4-5' fallback strings in src/agents/claude.ts, src/agents/claude-plan.ts, src/acceptance/fix-generator.ts, and src/acceptance/generator.ts with dynamic resolution from config models.balanced. This ensures model portability across agent types.",
+      "acceptanceCriteria": [
+        "No hardcoded 'claude-sonnet-4-5' strings remain in src/agents/ or src/acceptance/",
+        "Model resolved from config.models.balanced at runtime",
+        "Fallback chain: config value -> adapter default -> throw if none configured",
+        "Existing routing behaviour unchanged (model still passed correctly to spawn)",
+        "Unit tests verify model resolution from config"
+      ],
+      "complexity": "medium",
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": [],
+      "tags": ["p3"],
+      "storyPoints": 2
+    },
+    {
+      "id": "AA-007",
+      "title": "Scaffold CodexAdapter implementing AgentAdapter",
+      "description": "Create a Codex adapter at src/agents/adapters/codex.ts that implements AgentAdapter interface with execute(), complete(), and binary detection. execute() uses 'codex -q --prompt <text>' for headless sessions. complete() uses the same for one-shot calls. Register adapter in the adapter factory.",
+      "acceptanceCriteria": [
+        "src/agents/adapters/codex.ts implements AgentAdapter interface",
+        "execute() spawns codex with headless flags",
+        "complete() spawns codex -q --prompt for one-shot response",
+        "Bun.which('codex') used for binary detection",
+        "Adapter factory returns CodexAdapter when config agent is 'codex'",
+        "Integration tests skip if codex binary not installed (Bun.which guard)",
+        "Unit tests mock Bun.spawn for all methods"
+      ],
+      "complexity": "medium",
+      "status": "pending",
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "dependencies": ["AA-001"],
+      "tags": ["p3"],
+      "storyPoints": 2
+    }
+  ],
+  "updatedAt": "2026-03-09T09:58:00.000Z"
+}
