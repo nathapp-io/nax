@@ -17,7 +17,8 @@ export type StoryStatus =
   | "skipped"
   | "blocked"
   | "paused"
-  | "regression-failed";
+  | "regression-failed"
+  | "decomposed";
 
 /** Verification stage where failure occurred */
 export type VerificationStage = "verify" | "review" | "regression" | "rectification" | "agent-session" | "escalation";
@@ -46,6 +47,8 @@ export interface StructuredFailure {
   summary: string;
   /** Parsed test failures (if applicable) */
   testFailures?: TestFailureContext[];
+  /** Structured review findings from plugin reviewers (e.g., semgrep, eslint) */
+  reviewFindings?: import("../plugins/types").ReviewFinding[];
   /** ISO timestamp when failure was recorded */
   timestamp: string;
 }

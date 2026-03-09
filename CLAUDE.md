@@ -1,3 +1,21 @@
+# Project Context
+
+This file is auto-generated from `nax/context.md`.
+DO NOT EDIT MANUALLY — run `nax generate` to regenerate.
+
+---
+
+## Project Metadata
+
+> Auto-injected by `nax generate`
+
+**Project:** `@nathapp/nax`
+
+**Language:** TypeScript
+
+**Key dependencies:** @types/react, react, zod, @types/bun, react-devtools-core, typescript
+
+---
 # nax — AI Coding Agent Orchestrator
 
 Bun + TypeScript CLI that orchestrates AI coding agents (Claude Code) with model-tier routing, TDD strategies, plugin hooks, and a Central Run Registry.
@@ -101,14 +119,14 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator only]
 | Tool | Capability | When to Use | Availability |
 |:-----|:-----------|:-----------|:-------------|
 | `codegraph_query` | Structural queries (Cypher) — find calls, dependencies, imports | **Preferred for dependency analysis, call tracing, symbol lookup** | ✅ Always works (in-memory graph) |
-| `project_code_search` | Semantic search (Redis vector DB) — pattern matching by meaning | Natural language queries like "find auth patterns" | ⚠️ Requires explicit `project_code_reindex` + Redis daemon |
+| `project_code_search` | Semantic search (Redis vector DB) — pattern matching by meaning | Natural language queries like "find auth patterns" | ⚠️ Requires explicit `project_code_reindex` |
 | `codegraph_explain` | Architecture overview for unfamiliar subsystems | Understand module relationships before major changes | ✅ Always works |
 | `project_code_reindex` | Index project for semantic search | After creating/deleting source files | ✅ Always works |
 
 ### Recommended Workflow
 
 For nax, **prefer `codegraph_query`** for routine tasks:
-- Finding where functions are called (`calculateAggregateMetrics` called by `status-cost.ts`)
+- Finding where functions are called
 - Analyzing dependencies before refactoring
 - Tracing import/export chains
 - Querying symbol definitions and relationships

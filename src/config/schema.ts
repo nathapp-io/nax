@@ -45,6 +45,7 @@ export type {
   StorySizeGateConfig,
   PrecheckConfig,
   SmartTestRunnerConfig,
+  DecomposeConfig,
   NaxConfig,
 } from "./types";
 

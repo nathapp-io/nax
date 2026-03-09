@@ -30,6 +30,12 @@ export const reviewStage: PipelineStage = {
     ctx.reviewResult = result.builtIn;
 
     if (!result.success) {
+      // Collect structured findings from plugin reviewers for escalation context
+      const allFindings = result.builtIn.pluginReviewers?.flatMap((pr) => pr.findings ?? []) ?? [];
+      if (allFindings.length > 0) {
+        ctx.reviewFindings = allFindings;
+      }
+
       if (result.pluginFailed) {
         // security-review trigger: prompt before permanently failing
         if (ctx.interaction && isTriggerEnabled("security-review", ctx.config)) {

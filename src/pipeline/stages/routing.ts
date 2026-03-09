@@ -8,8 +8,13 @@
  * RRP-003: contentHash staleness detection — if story.routing.contentHash is missing or
  * does not match the current story content, treats cached routing as a miss and re-classifies.
  *
+ * SD-004: Oversized story detection — after routing, checks if story exceeds
+ * config.decompose.maxAcceptanceCriteria with complex/expert complexity. Decomposes
+ * based on trigger mode (auto / confirm / disabled).
+ *
  * @returns
  * - `continue`: Routing determined, proceed to next stage
+ * - `skip`: Story was decomposed into substories; runner should pick up first substory
  *
  * @example
  * ```ts
@@ -20,12 +25,41 @@
  * ```
  */
 
+import type { NaxConfig } from "../../config";
 import { isGreenfieldStory } from "../../context/greenfield";
+import { applyDecomposition } from "../../decompose/apply";
+import { DecomposeBuilder } from "../../decompose/builder";
+import type { DecomposeConfig as BuilderDecomposeConfig, DecomposeResult } from "../../decompose/types";
+import { checkStoryOversized } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { savePRD } from "../../prd";
+import type { PRD, UserStory } from "../../prd";
 import { complexityToModelTier, computeStoryContentHash, routeStory } from "../../routing";
 import { clearCache, routeBatch } from "../../routing/strategies/llm";
 import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
+
+/**
+ * Run story decomposition using DecomposeBuilder.
+ * Used as the default implementation in _routingDeps.runDecompose.
+ * In production, replace with an LLM-backed adapter.
+ */
+async function runDecompose(story: UserStory, prd: PRD, config: NaxConfig, _workdir: string): Promise<DecomposeResult> {
+  const naxDecompose = config.decompose;
+  const builderConfig: BuilderDecomposeConfig = {
+    maxSubStories: naxDecompose?.maxSubstories ?? 5,
+    maxComplexity: naxDecompose?.maxSubstoryComplexity ?? "medium",
+    maxRetries: naxDecompose?.maxRetries ?? 2,
+  };
+
+  // Stub adapter — replaced in tests via _routingDeps injection.
+  const adapter = {
+    async decompose(_prompt: string): Promise<string> {
+      throw new Error("[decompose] No LLM adapter configured for story decomposition");
+    },
+  };
+
+  return DecomposeBuilder.for(story).prd(prd).config(builderConfig).decompose(adapter);
+}
 
 export const routingStage: PipelineStage = {
   name: "routing",
@@ -116,6 +150,58 @@ export const routingStage: PipelineStage = {
       logger.debug("routing", ctx.routing.reasoning);
     }
 
+    // SD-004: Oversized story detection and decomposition
+    const decomposeConfig = ctx.config.decompose;
+    if (decomposeConfig) {
+      const acCount = ctx.story.acceptanceCriteria.length;
+      const complexity = ctx.routing.complexity;
+      const isOversized =
+        acCount > decomposeConfig.maxAcceptanceCriteria && (complexity === "complex" || complexity === "expert");
+
+      if (isOversized) {
+        if (decomposeConfig.trigger === "disabled") {
+          logger.warn(
+            "routing",
+            `Story ${ctx.story.id} is oversized (${acCount} ACs) but decompose is disabled — continuing with original`,
+          );
+        } else if (decomposeConfig.trigger === "auto") {
+          const result = await _routingDeps.runDecompose(ctx.story, ctx.prd, ctx.config, ctx.workdir);
+          if (result.validation.valid) {
+            _routingDeps.applyDecomposition(ctx.prd, result);
+            if (ctx.prdPath) {
+              await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
+            }
+            logger.info("routing", `Story ${ctx.story.id} decomposed into ${result.subStories.length} substories`);
+            return { action: "skip", reason: `Decomposed into ${result.subStories.length} substories` };
+          }
+          logger.warn("routing", `Story ${ctx.story.id} decompose failed after retries — continuing with original`, {
+            errors: result.validation.errors,
+          });
+        } else if (decomposeConfig.trigger === "confirm") {
+          const action = await _routingDeps.checkStoryOversized(
+            { featureName: ctx.prd.feature, storyId: ctx.story.id, criteriaCount: acCount },
+            ctx.config,
+            // biome-ignore lint/style/noNonNullAssertion: confirm mode is only reached when interaction chain is present in production; tests mock checkStoryOversized directly
+            ctx.interaction!,
+          );
+          if (action === "decompose") {
+            const result = await _routingDeps.runDecompose(ctx.story, ctx.prd, ctx.config, ctx.workdir);
+            if (result.validation.valid) {
+              _routingDeps.applyDecomposition(ctx.prd, result);
+              if (ctx.prdPath) {
+                await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
+              }
+              logger.info("routing", `Story ${ctx.story.id} decomposed into ${result.subStories.length} substories`);
+              return { action: "skip", reason: `Decomposed into ${result.subStories.length} substories` };
+            }
+            logger.warn("routing", `Story ${ctx.story.id} decompose failed after retries — continuing with original`, {
+              errors: result.validation.errors,
+            });
+          }
+        }
+      }
+    }
+
     return { action: "continue" };
   },
 };
@@ -131,4 +217,7 @@ export const _routingDeps = {
   clearCache,
   savePRD,
   computeStoryContentHash,
+  applyDecomposition,
+  runDecompose,
+  checkStoryOversized,
 };

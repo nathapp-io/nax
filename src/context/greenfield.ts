@@ -69,7 +69,7 @@ function globToRegex(pattern: string): RegExp {
     .replace(/\{([^}]+)\}/g, (_, group) => `(${group.replace(/,/g, "|")})`) // {a,b} = (a|b)
     .replace(/\\\.\\\*/g, "\\.[^/]*"); // Fix escaped .* back to .\*
 
-  return new RegExp(`${regexStr}$`);
+  return new RegExp(`${regexStr}$`); // nosemgrep: detect-non-literal-regexp — pattern from internal .gitignore, not user input
 }
 
 /**

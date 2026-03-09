@@ -69,8 +69,29 @@ export async function runFullSuiteGate(
         fullSuiteTimeout,
       );
     }
-    // No failures detected despite non-zero exit — treat as passed
-    return true;
+
+    // BUG-059: Non-zero exit with 0 parsed failures could mean:
+    // (a) Environmental noise (linter warning) — safe to pass
+    // (b) Bun crashed/OOM mid-run — truncated output, parser found nothing
+    // Distinguish by checking if any tests were actually detected in the output.
+    if (testSummary.passed > 0) {
+      // Tests ran and passed, but exit code was non-zero (environmental noise)
+      logger.info("tdd", "Full suite gate passed (non-zero exit, 0 failures, tests detected)", {
+        storyId: story.id,
+        exitCode: fullSuiteResult.exitCode,
+        passedTests: testSummary.passed,
+      });
+      return true;
+    }
+
+    // No tests passed AND no tests failed — output is likely truncated/crashed
+    logger.warn("tdd", "Full suite gate inconclusive — no test results parsed from output (possible crash/OOM)", {
+      storyId: story.id,
+      exitCode: fullSuiteResult.exitCode,
+      outputLength: fullSuiteResult.output.length,
+      outputTail: fullSuiteResult.output.slice(-200),
+    });
+    return false;
   }
   if (fullSuitePassed) {
     logger.info("tdd", "Full suite gate passed", { storyId: story.id });

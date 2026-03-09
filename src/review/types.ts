@@ -35,6 +35,8 @@ export interface PluginReviewerResult {
   exitCode?: number;
   /** Error message if reviewer threw an exception */
   error?: string;
+  /** Structured findings from the reviewer (optional) */
+  findings?: import("../plugins/types").ReviewFinding[];
 }
 
 /** Review phase result */

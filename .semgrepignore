@@ -1,0 +1,4 @@
+# Semgrep ignore rules for nax
+
+# Test and CI infrastructure
+docker-compose.test.yml

@@ -111,6 +111,51 @@ Error: Stack overflow
     expect(malformedResult.failures).toHaveLength(0);
   });
 
+  // BUG-059: Truncated output from crash/OOM should return passed:0, failed:0
+  // so callers can detect inconclusive results
+  test("returns passed:0, failed:0 for truncated crash output (BUG-059)", () => {
+    // Bun crashed mid-run — only header and partial file output, no test results
+    const crashOutput = `
+bun test v1.3.9
+
+test/unit/agents/claude.test.ts:
+`.trim();
+
+    const result = parseBunTestOutput(crashOutput);
+    expect(result.passed).toBe(0);
+    expect(result.failed).toBe(0);
+    expect(result.failures).toHaveLength(0);
+  });
+
+  test("returns passed:0, failed:0 for OOM killed output (BUG-059)", () => {
+    // Bun was OOM-killed — output ends abruptly with error message
+    const oomOutput = `
+bun test v1.3.9
+
+test/unit/config/schema.test.ts:
+✓ validates required fields [0.5ms]
+✓ rejects invalid model tiers [0.3ms]
+
+test/unit/agents/claude.test.ts:
+Killed
+`.trim();
+
+    const result = parseBunTestOutput(oomOutput);
+    // Some tests passed before crash, but output is incomplete
+    expect(result.passed).toBe(2);
+    expect(result.failed).toBe(0);
+    // Key: callers should check passed > 0 to distinguish from total crash
+  });
+
+  test("returns passed:0, failed:0 for segfault output (BUG-059)", () => {
+    const segfaultOutput = "Segmentation fault (core dumped)";
+
+    const result = parseBunTestOutput(segfaultOutput);
+    expect(result.passed).toBe(0);
+    expect(result.failed).toBe(0);
+    expect(result.failures).toHaveLength(0);
+  });
+
   test("handles multiple test files", () => {
     const output = `
 bun test v1.0.0

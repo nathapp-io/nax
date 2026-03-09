@@ -163,4 +163,12 @@ export const DEFAULT_CONFIG: NaxConfig = {
     },
   },
   prompts: {},
+  decompose: {
+    trigger: "auto",
+    maxAcceptanceCriteria: 6,
+    maxSubstories: 5,
+    maxSubstoryComplexity: "medium",
+    maxRetries: 2,
+    model: "balanced",
+  },
 };
