@@ -300,14 +300,95 @@ Integrate notifications, CI triggers, or custom scripts via lifecycle hooks.
 | Event | Fires when |
 |:------|:-----------|
 | `on-start` | Run begins |
-| `on-story-start` | A story starts |
-| `on-story-complete` | A story passes |
-| `on-story-fail` | A story exhausts all attempts |
-| `on-pause` | Run paused (awaiting input) |
-| `on-complete` | All stories done |
-| `on-error` | Unhandled error |
+| `on-story-start` | A story starts processing |
+| `on-story-complete` | A story passes all checks |
+| `on-story-fail` | A story exhausts all retry attempts |
+| `on-pause` | Run paused (awaiting human input) |
+| `on-resume` | Run resumed after pause |
+| `on-session-end` | An agent session ends (per-session teardown) |
+| `on-complete` | All stories finished successfully |
+| `on-error` | Unhandled error terminates the run |
 
 Each hook receives context via `NAX_*` environment variables and full JSON on stdin.
+
+**Environment variables passed to hooks:**
+
+| Variable | Description |
+|:---------|:------------|
+| `NAX_EVENT` | Event name (e.g., `on-story-complete`) |
+| `NAX_FEATURE` | Feature name |
+| `NAX_STORY_ID` | Current story ID (if applicable) |
+| `NAX_STATUS` | Status (`pass`, `fail`, `paused`, `error`) |
+| `NAX_REASON` | Reason for pause or error |
+| `NAX_COST` | Accumulated cost in USD |
+| `NAX_MODEL` | Current model |
+| `NAX_AGENT` | Current agent |
+| `NAX_ITERATION` | Current iteration number |
+
+**Global vs project hooks:** Global hooks (`~/.nax/hooks.json`) fire alongside project hooks. Set `"skipGlobal": true` in your project `hooks.json` to disable global hooks.
+
+---
+
+## Interaction Triggers
+
+nax can pause execution and prompt you for decisions at critical points. Configure triggers in `nax/config.json` (or `~/.nax/config.json` globally):
+
+```json
+{
+  "interaction": {
+    "plugin": "telegram",
+    "defaults": {
+      "timeout": 600000,
+      "fallback": "escalate"
+    },
+    "triggers": {
+      "security-review": true,
+      "cost-exceeded": true,
+      "cost-warning": true,
+      "max-retries": true,
+      "human-review": true,
+      "story-ambiguity": true,
+      "review-gate": true,
+      "pre-merge": false,
+      "merge-conflict": true
+    }
+  }
+}
+```
+
+**Available triggers:**
+
+| Trigger | Safety | Default Fallback | Description |
+|:--------|:------:|:----------------:|:------------|
+| `security-review` | 🔴 Red | `abort` | Critical security issues found during review |
+| `cost-exceeded` | 🔴 Red | `abort` | Run cost exceeded the configured limit |
+| `merge-conflict` | 🔴 Red | `abort` | Git merge conflict detected |
+| `cost-warning` | 🟡 Yellow | `escalate` | Approaching cost limit — escalate to higher model tier? |
+| `max-retries` | 🟡 Yellow | `skip` | Story exhausted all retry attempts — skip and continue? |
+| `pre-merge` | 🟡 Yellow | `escalate` | Checkpoint before merging to main branch |
+| `human-review` | 🟡 Yellow | `skip` | Human review required on critical failure |
+| `story-ambiguity` | 🟢 Green | `continue` | Story requirements unclear — continue with best effort? |
+| `review-gate` | 🟢 Green | `continue` | Code review checkpoint before proceeding |
+
+**Safety tiers:**
+- 🔴 **Red** — Critical; defaults to aborting if no response
+- 🟡 **Yellow** — Caution; defaults to escalating or skipping
+- 🟢 **Green** — Informational; defaults to continuing
+
+**Fallback behaviors** (when interaction times out):
+- `continue` — proceed as normal
+- `skip` — skip the current story
+- `escalate` — escalate to a higher model tier
+- `abort` — stop the run
+
+**Interaction plugins:**
+
+| Plugin | Description |
+|:-------|:------------|
+| `telegram` | Send prompts via Telegram bot (recommended for remote runs) |
+| `cli` | Interactive terminal prompts (for local runs) |
+| `webhook` | POST interaction requests to a webhook URL |
+| `auto` | Auto-respond based on fallback behavior (no human prompt) |
 
 ---
 
