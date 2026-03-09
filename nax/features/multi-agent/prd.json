@@ -207,7 +207,7 @@
         "Existing generators (Claude, Aider) still work"
       ],
       "complexity": "simple",
-      "status": "pending",
+      "status": "passed",
       "tags": [
         "cli"
       ],
@@ -226,7 +226,8 @@
         "testStrategy": "tdd-simple",
         "reasoning": "tdd-simple: simple task (simple)",
         "contentHash": "f28e42817f6dc37e4c772b7e615c7393096d289cb2504b524a27ffdf4ebf0226"
-      }
+      },
+      "passes": true
     },
     {
       "id": "MA-008",
@@ -253,7 +254,14 @@
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
-      "escalations": []
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "tdd-simple: simple task (simple)",
+        "contentHash": "915a173fdde8655cb78b43f6b673e91c35f647beabaebc85a4b7cf3545851fa6"
+      }
     },
     {
       "id": "MA-009",
@@ -358,5 +366,5 @@
       "escalations": []
     }
   ],
-  "updatedAt": "2026-03-09T15:35:30.001Z"
+  "updatedAt": "2026-03-09T15:38:13.624Z"
 }

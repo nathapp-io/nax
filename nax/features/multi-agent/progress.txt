@@ -5,3 +5,4 @@
 [2026-03-09T15:25:52.581Z] MA-011 — PASSED — Document multi-agent config in nax config --explain — Cost: $0.0522
 [2026-03-09T15:30:29.157Z] MA-005 — PASSED — Codex context generator — Cost: $0.0530
 [2026-03-09T15:35:27.980Z] MA-006 — PASSED — Gemini CLI context generator — Cost: $0.1309
+[2026-03-09T15:38:11.602Z] MA-007 — PASSED — Update nax generate to include new generators — Cost: $0.0387
