@@ -23,14 +23,14 @@
   "current": {
     "storyId": "AA-003",
     "title": "Refactor llm.ts routing strategy to use adapter.complete()",
-    "complexity": "medium",
-    "tddStrategy": "test-after",
+    "complexity": "simple",
+    "tddStrategy": "three-session-tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 5,
-  "updatedAt": "2026-03-09T13:05:45.438Z",
-  "durationMs": 8601874,
-  "lastHeartbeat": "2026-03-09T13:05:45.438Z"
+  "iterations": 6,
+  "updatedAt": "2026-03-09T13:08:45.443Z",
+  "durationMs": 8781879,
+  "lastHeartbeat": "2026-03-09T13:08:45.443Z"
 }
