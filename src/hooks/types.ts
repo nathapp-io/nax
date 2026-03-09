@@ -4,17 +4,23 @@
  * Script-based lifecycle hooks configured via hooks.json.
  */
 
+/** All supported hook events — runtime array used for validation */
+export const HOOK_EVENTS = [
+  "on-start",
+  "on-story-start",
+  "on-story-complete",
+  "on-story-fail",
+  "on-pause",
+  "on-resume",
+  "on-session-end",
+  "on-all-stories-complete",
+  "on-complete",
+  "on-error",
+  "on-final-regression-fail",
+] as const;
+
 /** All supported hook events */
-export type HookEvent =
-  | "on-start"
-  | "on-story-start"
-  | "on-story-complete"
-  | "on-story-fail"
-  | "on-pause"
-  | "on-resume"
-  | "on-session-end"
-  | "on-complete"
-  | "on-error";
+export type HookEvent = (typeof HOOK_EVENTS)[number];
 
 /** Single hook definition */
 export interface HookDef {
@@ -64,4 +70,8 @@ export interface HookContext {
   agent?: string;
   /** Current iteration number */
   iteration?: number;
+  /** Number of failed tests (on-final-regression-fail) */
+  failedTests?: number;
+  /** Stories affected by regression failure (on-final-regression-fail) */
+  affectedStories?: string[];
 }

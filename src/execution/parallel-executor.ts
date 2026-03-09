@@ -22,6 +22,14 @@ import { getAllReadyStories, hookCtx } from "./helpers";
 import { executeParallel } from "./parallel";
 import type { StatusWriter } from "./status-writer";
 
+/**
+ * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ * @internal - test use only.
+ */
+export const _parallelExecutorDeps = {
+  fireHook,
+};
+
 export interface ParallelExecutorOptions {
   prdPath: string;
   workdir: string;
@@ -158,7 +166,18 @@ export async function runParallelExecution(
       feature,
       totalCost,
     });
-    await fireHook(hooks, "on-complete", hookCtx(feature, { status: "complete", cost: totalCost }), workdir);
+    await _parallelExecutorDeps.fireHook(
+      hooks,
+      "on-all-stories-complete",
+      hookCtx(feature, { status: "passed", cost: totalCost }),
+      workdir,
+    );
+    await _parallelExecutorDeps.fireHook(
+      hooks,
+      "on-complete",
+      hookCtx(feature, { status: "complete", cost: totalCost }),
+      workdir,
+    );
 
     // Skip to metrics and cleanup
     const durationMs = Date.now() - startTime;

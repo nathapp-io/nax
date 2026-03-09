@@ -82,14 +82,6 @@ export async function executeSequential(
             return buildResult("pre-merge-aborted");
           }
         }
-        pipelineEventBus.emit({
-          type: "run:completed",
-          totalStories: 0,
-          passedStories: 0,
-          failedStories: 0,
-          durationMs: Date.now() - ctx.startTime,
-          totalCost,
-        });
         return buildResult("completed");
       }
 
@@ -181,8 +173,6 @@ export async function executeSequential(
 
     return buildResult("max-iterations");
   } finally {
-    // BUG-060: Do NOT stopHeartbeat or writeExitSummary here.
-    // runner.ts owns the full lifecycle (including deferred regression gate)
-    // and handles heartbeat + exit summary after all post-run work completes.
+    // Cleanup moved to runner.ts (RL-007): exit summary and heartbeat stop are owned by runner
   }
 }

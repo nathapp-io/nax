@@ -17,6 +17,7 @@ export type StoryStatus =
   | "skipped"
   | "blocked"
   | "paused"
+  | "regression-failed"
   | "decomposed";
 
 /** Verification stage where failure occurred */
@@ -160,7 +161,10 @@ export function isStalled(prd: PRD): boolean {
 
   const blockedIds = new Set(
     prd.userStories
-      .filter((s) => s.status === "blocked" || s.status === "failed" || s.status === "paused")
+      .filter(
+        (s) =>
+          s.status === "blocked" || s.status === "failed" || s.status === "paused" || s.status === "regression-failed",
+      )
       .map((s) => s.id),
   );
 
@@ -169,6 +173,7 @@ export function isStalled(prd: PRD): boolean {
       s.status === "blocked" ||
       s.status === "failed" ||
       s.status === "paused" ||
+      s.status === "regression-failed" ||
       s.dependencies.some((dep) => blockedIds.has(dep)),
   );
 }

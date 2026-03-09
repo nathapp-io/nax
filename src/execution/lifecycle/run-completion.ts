@@ -9,9 +9,12 @@
  */
 
 import type { NaxConfig } from "../../config";
+import { fireHook } from "../../hooks/runner";
+import type { HooksConfig } from "../../hooks/types";
 import { getSafeLogger } from "../../logger";
 import type { StoryMetrics } from "../../metrics";
 import { saveRunMetrics } from "../../metrics";
+import { pipelineEventBus } from "../../pipeline/event-bus";
 import { countStories, isComplete, isStalled } from "../../prd";
 import type { PRD } from "../../prd";
 import type { StatusWriter } from "../status-writer";
@@ -23,6 +26,7 @@ import { runDeferredRegression } from "./run-regression";
  */
 export const _runCompletionDeps = {
   runDeferredRegression,
+  fireHook,
 };
 
 export interface RunCompletionOptions {
@@ -38,6 +42,9 @@ export interface RunCompletionOptions {
   workdir: string;
   statusWriter: StatusWriter;
   config: NaxConfig;
+  hooksConfig?: HooksConfig;
+  /** Whether the run used sequential (non-parallel) execution. Defaults to true. */
+  isSequential?: boolean;
 }
 
 export interface RunCompletionResult {
@@ -50,6 +57,32 @@ export interface RunCompletionResult {
     skipped: number;
     pending: number;
   };
+}
+
+/**
+ * Check if deferred regression should be skipped (RL-006).
+ *
+ * Smart-skip applies when:
+ * 1. All stories have fullSuiteGatePassed === true
+ * 2. Execution is sequential (or defaults to sequential when not specified)
+ * 3. There is at least one story metric
+ */
+function shouldSkipDeferredRegression(allStoryMetrics: StoryMetrics[], isSequential: boolean | undefined): boolean {
+  // Default to sequential mode
+  const effectiveSequential = isSequential !== false;
+
+  // Must be sequential mode
+  if (!effectiveSequential) {
+    return false;
+  }
+
+  // Must have at least one story metric
+  if (allStoryMetrics.length === 0) {
+    return false;
+  }
+
+  // All stories must have fullSuiteGatePassed === true
+  return allStoryMetrics.every((m) => m.fullSuiteGatePassed === true);
 }
 
 /**
@@ -70,28 +103,77 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     workdir,
     statusWriter,
     config,
+    hooksConfig,
+    isSequential,
   } = options;
 
   // Run deferred regression gate before final metrics
   const regressionMode = config.execution.regressionGate?.mode;
   if (regressionMode === "deferred" && config.quality.commands.test) {
-    const regressionResult = await _runCompletionDeps.runDeferredRegression({
-      config,
-      prd,
-      workdir,
-    });
+    if (shouldSkipDeferredRegression(allStoryMetrics, isSequential)) {
+      logger?.info(
+        "regression",
+        "Smart-skip: skipping deferred regression (all stories passed full-suite gate in sequential mode)",
+      );
+    } else {
+      const regressionResult = await _runCompletionDeps.runDeferredRegression({
+        config,
+        prd,
+        workdir,
+      });
 
-    logger?.info("regression", "Deferred regression gate completed", {
-      success: regressionResult.success,
-      failedTests: regressionResult.failedTests,
-      affectedStories: regressionResult.affectedStories,
-    });
+      logger?.info("regression", "Deferred regression gate completed", {
+        success: regressionResult.success,
+        failedTests: regressionResult.failedTests,
+        affectedStories: regressionResult.affectedStories,
+      });
+
+      if (!regressionResult.success) {
+        // Mark affected stories as regression-failed (RL-004)
+        for (const storyId of regressionResult.affectedStories) {
+          const story = prd.userStories.find((s) => s.id === storyId);
+          if (story) {
+            story.status = "regression-failed";
+          }
+        }
+        // Reflect regression gate failure in run status (RL-004)
+        statusWriter.setRunStatus("failed");
+
+        if (hooksConfig) {
+          await _runCompletionDeps.fireHook(
+            hooksConfig as import("../../hooks/runner").LoadedHooksConfig,
+            "on-final-regression-fail",
+            {
+              event: "on-final-regression-fail",
+              feature,
+              status: "failed",
+              failedTests: regressionResult.failedTests,
+              affectedStories: regressionResult.affectedStories,
+            },
+            workdir,
+          );
+        }
+      }
+    }
   }
 
   const durationMs = Date.now() - startTime;
   const runCompletedAt = new Date().toISOString();
 
-  // Save run metrics
+  // Compute final story counts before emitting completion event (RL-002)
+  const finalCounts = countStories(prd);
+
+  // Emit run:completed after regression gate with real story counts (RL-002)
+  pipelineEventBus.emit({
+    type: "run:completed",
+    totalStories: finalCounts.total,
+    passedStories: finalCounts.passed,
+    failedStories: finalCounts.failed,
+    durationMs,
+    totalCost,
+  });
+
+  // Save run metrics (best-effort — disk write errors do not fail the run)
   const runMetrics = {
     runId,
     feature,
@@ -100,15 +182,18 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     totalCost,
     totalStories: allStoryMetrics.length,
     storiesCompleted,
-    storiesFailed: countStories(prd).failed,
+    storiesFailed: finalCounts.failed,
     totalDurationMs: durationMs,
     stories: allStoryMetrics,
   };
 
-  await saveRunMetrics(workdir, runMetrics);
+  try {
+    await saveRunMetrics(workdir, runMetrics);
+  } catch (err) {
+    logger?.warn("run.complete", "Failed to save run metrics", { error: String(err) });
+  }
 
   // Log run completion
-  const finalCounts = countStories(prd);
 
   // Prepare per-story metrics summary
   const storyMetricsSummary = allStoryMetrics.map((sm) => ({

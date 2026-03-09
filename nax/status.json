@@ -1,36 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-09T04-04-10-474Z",
-    "feature": "story-decompose",
-    "startedAt": "2026-03-09T04:04:10.474Z",
+    "id": "run-2026-03-09T06-25-32-944Z",
+    "feature": "run-lifecycle-hooks",
+    "startedAt": "2026-03-09T06:25:32.944Z",
     "status": "running",
     "dryRun": false,
-    "pid": 10253
+    "pid": 41089
   },
   "progress": {
-    "total": 4,
-    "passed": 3,
+    "total": 7,
+    "passed": 6,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
     "pending": 1
   },
   "cost": {
-    "spent": 3.14635325,
+    "spent": 3.5503649999999998,
     "limit": 8
   },
   "current": {
-    "storyId": "SD-004",
-    "title": "Pipeline integration and CLI entry point",
+    "storyId": "RL-007",
+    "title": "Fix duplicate exit summary (BUG-060)",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 4,
-  "updatedAt": "2026-03-09T05:35:30.044Z",
-  "durationMs": 5479570,
-  "lastHeartbeat": "2026-03-09T05:35:30.044Z"
+  "iterations": 7,
+  "updatedAt": "2026-03-09T08:29:01.069Z",
+  "durationMs": 7408125,
+  "lastHeartbeat": "2026-03-09T08:29:01.069Z"
 }

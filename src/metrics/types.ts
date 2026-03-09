@@ -34,6 +34,8 @@ export interface StoryMetrics {
   startedAt: string;
   /** Timestamp when completed */
   completedAt: string;
+  /** Whether TDD full-suite gate passed (only true for TDD strategies when gate passes) */
+  fullSuiteGatePassed?: boolean;
 }
 
 /**
