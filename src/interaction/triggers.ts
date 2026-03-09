@@ -227,3 +227,24 @@ export async function checkReviewGate(
   const response = await executeTrigger("review-gate", context, config, chain);
   return response.action === "approve";
 }
+
+/**
+ * Check story-oversized trigger (decompose, skip, or continue)
+ */
+export async function checkStoryOversized(
+  context: TriggerContext,
+  config: NaxConfig,
+  chain: InteractionChain,
+): Promise<"decompose" | "skip" | "continue"> {
+  if (!isTriggerEnabled("story-oversized", config)) return "continue";
+
+  try {
+    const response = await executeTrigger("story-oversized", context, config, chain);
+    if (response.action === "approve") return "decompose";
+    if (response.action === "skip") return "skip";
+    return "continue";
+  } catch {
+    // No plugin registered or all plugins failed — apply default fallback
+    return "continue";
+  }
+}

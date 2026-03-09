@@ -2,14 +2,17 @@
   "project": "nax",
   "branchName": "feat/story-decompose",
   "feature": "story-decompose",
-  "tags": ["architecture", "decompose"],
+  "tags": [
+    "architecture",
+    "decompose"
+  ],
   "userStories": [
     {
       "id": "SD-001",
       "title": "DecomposeBuilder fluent API and prompt sections",
       "description": "Create the core DecomposeBuilder class in `src/decompose/builder.ts` with fluent API following the PromptBuilder pattern.\n\nNew files:\n- `src/decompose/types.ts` — DecomposeConfig, DecomposeResult, SubStory, ValidationResult types\n- `src/decompose/builder.ts` — DecomposeBuilder class with `.for(story).prd(prd).codebase(ctx).config(cfg).buildPrompt()` and `.decompose(adapter)` methods\n- `src/decompose/sections/target-story.ts` — builds the target story section (full story details + decompose instruction)\n- `src/decompose/sections/sibling-stories.ts` — builds sibling stories section (all other PRD stories: id, title, status, AC summary for overlap prevention)\n- `src/decompose/sections/codebase.ts` — builds codebase context section (reuse scanCodebase output)\n- `src/decompose/sections/constraints.ts` — builds constraints section (max substories, max complexity, output JSON schema, nonOverlapJustification requirement)\n- `src/decompose/sections/index.ts` — barrel export\n- `src/decompose/index.ts` — barrel export\n\nThe builder composes sections with SECTION_SEP (same as PromptBuilder). The `.decompose(adapter)` method calls `adapter.decompose()` with the composed prompt, then parses and validates the result.\n\nParsing reuses `parseDecomposeOutput()` from `src/agents/claude-decompose.ts` — extend it to handle the substory schema (parentStoryId, nonOverlapJustification fields).\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/decompose/ --timeout=60000\nCommit: 'feat(decompose): add DecomposeBuilder fluent API and prompt sections'",
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "dependencies": [],
       "acceptanceCriteria": [
         "DecomposeBuilder.for(story) returns builder instance",
@@ -21,20 +24,32 @@
         "All types exported from src/decompose/index.ts",
         "TypeScript compiles cleanly"
       ],
-      "tags": ["architecture"],
+      "tags": [
+        "architecture"
+      ],
       "attempts": 0,
-      "passes": false,
+      "passes": true,
       "escalations": [],
       "priorErrors": [],
-      "priorFailures": []
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multi-file architectural feature following established PromptBuilder pattern; straightforward section composition and type design with clear AC, but involves 8 coordinated files and pattern application across multiple concerns.",
+        "contentHash": "1b5e044bf38f71be3d01b2e821f39e8a7d6e4a914eafa68970eee31151e8a02a"
+      }
     },
     {
       "id": "SD-002",
       "title": "Post-decompose validators",
       "description": "Create validators that run after LLM decomposition to ensure quality.\n\nNew files:\n- `src/decompose/validators/overlap.ts` — keyword + acceptance-criteria similarity check between each substory and all existing PRD stories. Uses normalized keyword intersection (Jaccard-like). Flag pairs with similarity > 0.6 as warnings, > 0.8 as errors.\n- `src/decompose/validators/coverage.ts` — checks that the union of substory acceptance criteria covers the original story's AC. Uses keyword matching to map each original AC to at least one substory AC. Warns on unmatched original criteria.\n- `src/decompose/validators/complexity.ts` — validates each substory complexity is <= config.maxSubstoryComplexity (default: medium). Reuses classifyComplexity() from src/routing/router.ts as a cross-check against LLM-assigned complexity.\n- `src/decompose/validators/dependency.ts` — validates no circular dependencies among substories, all referenced dependency IDs exist (in substories or existing PRD), no ID collisions with existing PRD story IDs.\n- `src/decompose/validators/index.ts` — runAllValidators() function that runs all validators in sequence and returns merged ValidationResult.\n\nValidationResult type: { valid: boolean; errors: string[]; warnings: string[] }\n\nIntegrate into DecomposeBuilder.decompose() — after parsing, run validators. If valid=false and retries remaining, re-prompt LLM with error feedback. If retries exhausted, return result with errors for caller to handle.\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/decompose/ --timeout=60000\nCommit: 'feat(decompose): add post-decompose validators (overlap, coverage, complexity, dependency)'",
       "complexity": "medium",
-      "status": "pending",
-      "dependencies": ["SD-001"],
+      "status": "passed",
+      "dependencies": [
+        "SD-001"
+      ],
       "acceptanceCriteria": [
         "Overlap validator detects >0.6 keyword similarity between substory and existing story",
         "Coverage validator warns when original AC has no matching substory AC",
@@ -45,20 +60,32 @@
         "runAllValidators() returns merged ValidationResult with all errors and warnings",
         "DecomposeBuilder.decompose() retries on validation failure up to config.maxRetries"
       ],
-      "tags": ["validation"],
+      "tags": [
+        "validation"
+      ],
       "attempts": 0,
-      "passes": false,
+      "passes": true,
       "escalations": [],
       "priorErrors": [],
-      "priorFailures": []
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multiple self-contained validators with straightforward algorithms (similarity matching, dependency traversal, coverage checking); integration into DecomposeBuilder with retry logic adds moderate orchestration complexity.",
+        "contentHash": "f72b21a069369d85562c7a20eba5f37d7a7f7deedb48a80b3aff8058ee4b679b"
+      }
     },
     {
       "id": "SD-003",
       "title": "Config schema, PRD mutation, and story-oversized trigger",
       "description": "Wire decomposition into config, PRD lifecycle, and interaction system.\n\n1. Config schema changes:\n- Add DecomposeConfig to src/config/types.ts: { trigger: 'auto'|'confirm'|'disabled', maxAcceptanceCriteria: number (default 6), maxSubstories: number (default 5), maxSubstoryComplexity: Complexity (default 'medium'), maxRetries: number (default 2), model: ModelTier (default 'balanced') }\n- Add `decompose: DecomposeConfig` to NaxConfig\n- Add defaults to src/config/schema.ts\n- Add decompose section to `nax config --explain`\n\n2. PRD mutation:\n- Add 'decomposed' to StoryStatus union in src/prd/types.ts\n- Create src/decompose/apply.ts — applyDecomposition(prd, result): marks original story as 'decomposed', inserts substories after original with status 'pending' and parentStoryId reference, re-routes each substory via routeTask()\n- Update getNextStory() to skip 'decomposed' stories (same as 'skipped')\n- Update countStories() to include decomposed count\n\n3. Interaction trigger:\n- Add 'story-oversized' to TriggerName union in src/interaction/types.ts\n- Add metadata to TRIGGER_METADATA: { defaultFallback: 'continue', safety: 'yellow', defaultSummary: 'Story {{storyId}} is oversized ({{criteriaCount}} acceptance criteria) — decompose into smaller stories?' }\n- Add checkStoryOversized() to src/interaction/triggers.ts\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/decompose/ test/unit/prd/ test/unit/config/ --timeout=60000\nCommit: 'feat(decompose): add config schema, PRD mutation, and story-oversized trigger'",
       "complexity": "medium",
-      "status": "pending",
-      "dependencies": ["SD-001"],
+      "status": "passed",
+      "dependencies": [
+        "SD-001"
+      ],
       "acceptanceCriteria": [
         "DecomposeConfig added to NaxConfig with all fields and defaults",
         "nax config --explain includes decompose section",
@@ -69,12 +96,23 @@
         "'story-oversized' trigger registered in TRIGGER_METADATA",
         "checkStoryOversized() fires trigger and returns decompose/skip/continue action"
       ],
-      "tags": ["config", "interaction"],
+      "tags": [
+        "config",
+        "interaction"
+      ],
       "attempts": 0,
-      "passes": false,
+      "passes": true,
       "escalations": [],
       "priorErrors": [],
-      "priorFailures": []
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multiple modules touched (config, prd, interaction, decompose) with moderate logic (applyDecomposition with mutations/routing, checkStoryOversized trigger). Mostly boilerplate but requires coordinating type changes, PRD mutations, and trigger integration across the system.",
+        "contentHash": "ec130ca37080bdb798932210e7e78893e3fd94b1d1d088fa7508378c0f3ff9ad"
+      }
     },
     {
       "id": "SD-004",
@@ -82,7 +120,10 @@
       "description": "Wire DecomposeBuilder into the pipeline routing stage and CLI.\n\n1. Pipeline integration:\n- In src/pipeline/stages/routing.ts (or the appropriate stage): after classifyComplexity(), check if story exceeds config.decompose.maxAcceptanceCriteria AND complexity is complex/expert. If yes:\n  - If config.decompose.trigger === 'disabled': log warning, continue with original story\n  - If config.decompose.trigger === 'confirm': fire 'story-oversized' interaction trigger. On approve → decompose. On reject → continue with original.\n  - If config.decompose.trigger === 'auto': decompose directly without interaction\n- On successful decomposition: call applyDecomposition(prd, result), savePRD(), then restart story iteration from the first new substory\n- On failed decomposition (validators failed after retries): log warning, continue with original story\n\n2. CLI entry point:\n- Add --decompose <storyId> flag to nax analyse command in src/commands/analyze.ts or src/cli/analyze.ts\n- When --decompose is passed: loadPRD(), find story by ID, run DecomposeBuilder.for(story).prd(prd).codebase(scanCodebase).config(config.decompose).decompose(adapter), validate, apply, savePRD(), print summary table\n- Add --decompose-oversized flag: iterate all stories, decompose any that exceed threshold\n\nRun: NAX_SKIP_PRECHECK=1 bun test test/unit/decompose/ test/unit/pipeline/ --timeout=60000\nCommit: 'feat(decompose): wire pipeline integration and CLI entry point'",
       "complexity": "complex",
       "status": "pending",
-      "dependencies": ["SD-002", "SD-003"],
+      "dependencies": [
+        "SD-002",
+        "SD-003"
+      ],
       "acceptanceCriteria": [
         "Routing stage detects oversized stories based on config threshold",
         "confirm mode fires story-oversized trigger and respects response",
@@ -94,14 +135,25 @@
         "nax analyse --decompose-oversized bulk-decomposes all oversized stories",
         "CLI prints summary table of decomposed substories"
       ],
-      "tags": ["pipeline", "cli"],
+      "tags": [
+        "pipeline",
+        "cli"
+      ],
       "attempts": 0,
       "passes": false,
       "escalations": [],
       "priorErrors": [],
-      "priorFailures": []
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "complex",
+        "initialComplexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multi-file integration (routing.ts, analyze.ts) with conditional trigger modes (disabled/confirm/auto), interaction trigger handling, PRD mutations, and state restart logic across 9 acceptance criteria—requires deep reasoning about error paths and system coordination.",
+        "contentHash": "a95a91d24f9f49b0a2f3ecfd6458ac5a6388aac0abcfc95023218cce68a8231a"
+      }
     }
   ],
   "createdAt": "2026-03-09T03:35:00.000Z",
-  "updatedAt": "2026-03-09T03:35:00.000Z"
+  "updatedAt": "2026-03-09T05:12:02.909Z"
 }
