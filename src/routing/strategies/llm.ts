@@ -5,6 +5,7 @@
  * Falls back to keyword strategy on failure. Supports batch mode for efficiency.
  */
 
+import type { AgentAdapter } from "../../agents/types";
 import type { NaxConfig } from "../../config";
 import { resolveModel } from "../../config";
 import { getLogger } from "../../logger";
@@ -59,22 +60,31 @@ export interface PipedProc {
 
 /**
  * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ * Includes spawn for backward compatibility with BUG-039 tests, and adapter for new AA-003.
  */
 export const _deps = {
   spawn: (cmd: string[], opts: { stdout: "pipe"; stderr: "pipe" }): PipedProc =>
     Bun.spawn(cmd, opts) as unknown as PipedProc,
+  adapter: undefined as AgentAdapter | undefined,
 };
 
 /**
- * Call LLM via claude CLI with timeout.
+ * Call LLM via adapter.complete() with timeout.
  *
+ * @param adapter - Agent adapter to use for completion
  * @param modelTier - Model tier to use for routing call
  * @param prompt - Prompt to send to LLM
  * @param config - nax configuration
  * @returns LLM response text
- * @throws Error on timeout or spawn failure
+ * @throws Error on timeout or completion failure
  */
-async function callLlmOnce(modelTier: string, prompt: string, config: NaxConfig, timeoutMs: number): Promise<string> {
+async function callLlmOnce(
+  adapter: AgentAdapter,
+  modelTier: string,
+  prompt: string,
+  config: NaxConfig,
+  timeoutMs: number,
+): Promise<string> {
   // Resolve model tier to actual model identifier
   const modelEntry = config.models[modelTier];
   if (!modelEntry) {
@@ -83,12 +93,6 @@ async function callLlmOnce(modelTier: string, prompt: string, config: NaxConfig,
 
   const modelDef = resolveModel(modelEntry);
   const modelArg = modelDef.model;
-
-  // Spawn claude CLI with timeout
-  const proc = _deps.spawn(["claude", "-p", prompt, "--model", modelArg], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
 
   // Race between completion and timeout, ensuring cleanup on either path
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -101,16 +105,7 @@ async function callLlmOnce(modelTier: string, prompt: string, config: NaxConfig,
   // Prevent unhandled rejection if timer fires between race resolution and clearTimeout
   timeoutPromise.catch(() => {});
 
-  const outputPromise = (async () => {
-    const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) {
-      throw new Error(`claude CLI failed with exit code ${exitCode}: ${stderr}`);
-    }
-
-    return stdout.trim();
-  })();
+  const outputPromise = adapter.complete(prompt, { model: modelArg });
 
   try {
     const result = await Promise.race([outputPromise, timeoutPromise]);
@@ -118,30 +113,23 @@ async function callLlmOnce(modelTier: string, prompt: string, config: NaxConfig,
     return result;
   } catch (err) {
     clearTimeout(timeoutId);
-    // Silence the floating outputPromise BEFORE killing the process.
-    // proc.kill() causes piped streams to error → Response.text() rejects →
-    // outputPromise rejects. The .catch() must be attached first to prevent
-    // an unhandled rejection that crashes nax via crash-recovery.
+    // Silence the floating outputPromise to prevent unhandled rejection
     outputPromise.catch(() => {});
-    proc.kill();
-    // DO NOT call proc.stdout.cancel() / proc.stderr.cancel() here.
-    // The streams are locked by Response.text() readers. Per Web Streams spec,
-    // cancel() on a locked stream returns a rejected Promise (not a sync throw),
-    // which becomes an unhandled rejection. Let proc.kill() handle cleanup.
     throw err;
   }
 }
 
 /**
- * Call LLM via claude CLI with timeout and retry (BUG-033).
+ * Call LLM via adapter.complete() with timeout and retry (BUG-033).
  *
+ * @param adapter - Agent adapter to use for completion
  * @param modelTier - Model tier to use for routing call
  * @param prompt - Prompt to send to LLM
  * @param config - nax configuration
  * @returns LLM response text
  * @throws Error after all retries exhausted
  */
-async function callLlm(modelTier: string, prompt: string, config: NaxConfig): Promise<string> {
+async function callLlm(adapter: AgentAdapter, modelTier: string, prompt: string, config: NaxConfig): Promise<string> {
   const llmConfig = config.routing.llm;
   const timeoutMs = llmConfig?.timeoutMs ?? 30000;
   const maxRetries = llmConfig?.retries ?? 1;
@@ -151,7 +139,7 @@ async function callLlm(modelTier: string, prompt: string, config: NaxConfig): Pr
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await callLlmOnce(modelTier, prompt, config, timeoutMs);
+      return await callLlmOnce(adapter, modelTier, prompt, config, timeoutMs);
     } catch (err) {
       lastError = err as Error;
       if (attempt < maxRetries) {
@@ -189,11 +177,17 @@ export async function routeBatch(stories: UserStory[], context: RoutingContext):
     throw new Error("LLM routing config not found");
   }
 
+  // Resolve adapter from context or _deps
+  const adapter = context.adapter ?? _deps.adapter;
+  if (!adapter) {
+    throw new Error("No agent adapter available for batch routing (AA-003)");
+  }
+
   const modelTier = llmConfig.model ?? "fast";
   const prompt = buildBatchPrompt(stories, config);
 
   try {
-    const output = await callLlm(modelTier, prompt, config);
+    const output = await callLlm(adapter, modelTier, prompt, config);
     const decisions = parseBatchResponse(output, stories, config);
 
     // Populate cache (PERF-1 fix: evict oldest if full)
@@ -217,7 +211,7 @@ export async function routeBatch(stories: UserStory[], context: RoutingContext):
  *
  * This strategy:
  * - Checks cache first (if enabled)
- * - Calls LLM with story context to classify complexity
+ * - Calls LLM with story context to classify complexity (via adapter.complete())
  * - Parses structured JSON response
  * - Maps complexity to model tier and test strategy
  * - Falls back to null (keyword fallback) on any failure
@@ -261,9 +255,15 @@ export const llmStrategy: RoutingStrategy = {
     }
 
     try {
+      // Resolve adapter from context or _deps (AA-003)
+      const adapter = context.adapter ?? _deps.adapter;
+      if (!adapter) {
+        throw new Error("No agent adapter available for LLM routing (AA-003)");
+      }
+
       const modelTier = llmConfig.model ?? "fast";
       const prompt = buildRoutingPrompt(story, config);
-      const output = await callLlm(modelTier, prompt, config);
+      const output = await callLlm(adapter, modelTier, prompt, config);
       const decision = parseRoutingResponse(output, story, config);
 
       // Cache decision (PERF-1 fix: evict oldest if full)

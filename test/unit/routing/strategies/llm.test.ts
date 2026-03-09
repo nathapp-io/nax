@@ -3,13 +3,14 @@
  * LLM Routing Strategy Tests
  *
  * BUG-039: Stream drain fix — stdout/stderr cancelled before proc.kill() on timeout
+ * Now also tests AA-003: adapter.complete() integration for timeout scenarios
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { AgentAdapter, CompleteOptions } from "../../../../src/agents/types";
 import type { NaxConfig } from "../../../../src/config";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import { initLogger, resetLogger } from "../../../../src/logger";
-import { type PipedProc, _deps } from "../../../../src/routing/strategies/llm";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -35,67 +36,24 @@ function makeConfig(overrides: Partial<NaxConfig["routing"]["llm"]> = {}): NaxCo
   } as NaxConfig;
 }
 
-/** Creates a fake Bun.spawn proc that never resolves (simulates a hanging LLM call). */
-function makeHangingProc() {
-  const stdoutCancelled = { value: false };
-  const stderrCancelled = { value: false };
-  const killCalled = { value: false };
-  const killCalledAfterCancel = { value: false };
-
-  // ReadableStream that never produces data and never closes
-  const neverStream = () => {
-    const cancelFn: () => void = () => {};
-    const stream = new ReadableStream({
-      start() {},
-      cancel() {
-        cancelFn();
-      },
-    });
-    return stream;
-  };
-
-  const stdout = neverStream();
-  const stderr = neverStream();
-
-  const originalStdoutCancel = stdout.cancel.bind(stdout);
-  const originalStderrCancel = stderr.cancel.bind(stderr);
-
-  // Wrap cancel to track calls
-  const trackedStdout = new Proxy(stdout, {
-    get(target, prop) {
-      if (prop === "cancel") {
-        return () => {
-          stdoutCancelled.value = true;
-          return originalStdoutCancel();
-        };
-      }
-      return (target as unknown as Record<string | symbol, unknown>)[prop as string | symbol];
+/** Creates a mock adapter that never resolves (simulates a hanging LLM call for timeout testing). */
+function makeHangingAdapter() {
+  return {
+    name: "hanging-mock",
+    displayName: "Hanging Mock",
+    binary: "hanging-mock",
+    capabilities: {
+      supportedTiers: ["fast", "balanced", "powerful"],
+      maxContextTokens: 200_000,
+      features: new Set(["tdd", "review", "refactor", "batch"]),
     },
-  });
-
-  const trackedStderr = new Proxy(stderr, {
-    get(target, prop) {
-      if (prop === "cancel") {
-        return () => {
-          stderrCancelled.value = true;
-          return originalStderrCancel();
-        };
-      }
-      return (target as unknown as Record<string | symbol, unknown>)[prop as string | symbol];
-    },
-  });
-
-  const proc = {
-    stdout: trackedStdout,
-    stderr: trackedStderr,
-    exited: new Promise<number>(() => {}), // never resolves
-    kill() {
-      killCalledAfterCancel.value = stdoutCancelled.value && stderrCancelled.value;
-      killCalled.value = true;
-    },
-  };
-
-  return { proc, stdoutCancelled, stderrCancelled, killCalled, killCalledAfterCancel };
+    isInstalled: mock(() => Promise.resolve(true)),
+    run: mock(() => Promise.reject(new Error("run() should not be called"))),
+    buildCommand: mock(() => []),
+    plan: mock(() => Promise.reject(new Error("plan() should not be called"))),
+    decompose: mock(() => Promise.reject(new Error("decompose() should not be called"))),
+    complete: mock((_prompt: string, _options?: CompleteOptions) => new Promise<string>(() => {})), // never resolves
+  } as AgentAdapter;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,16 +70,13 @@ afterEach(() => {
   resetLogger();
 });
 
-describe("BUG-039/BUG-040: stream cleanup on timeout", () => {
-  test("kills process on timeout without calling cancel() on locked streams", async () => {
-    const { proc, stdoutCancelled, stderrCancelled, killCalled } = makeHangingProc();
-
-    const originalSpawn = _deps.spawn;
-    _deps.spawn = mock(() => proc as PipedProc);
-
+describe("BUG-039/BUG-040: stream cleanup on timeout (adapter-based)", () => {
+  test("timeout via adapter.complete() rejects within timeout window", async () => {
+    const mockAdapter = makeHangingAdapter();
     const config = makeConfig({ timeoutMs: 30 });
 
-    const { llmStrategy } = await import("../../../../src/routing/strategies/llm");
+    const { llmStrategy, clearCache } = await import("../../../../src/routing/strategies/llm");
+    clearCache();
 
     const story = {
       id: "TEST-001",
@@ -138,28 +93,20 @@ describe("BUG-039/BUG-040: stream cleanup on timeout", () => {
 
     const startTime = Date.now();
 
-    await expect(llmStrategy.route(story, { config })).rejects.toThrow(/timeout/i);
+    await expect(llmStrategy.route(story, { config, adapter: mockAdapter })).rejects.toThrow(/timeout/i);
 
     const elapsed = Date.now() - startTime;
 
     // Should resolve promptly — within 500ms of the 30ms timeout
     expect(elapsed).toBeLessThan(500);
-
-    // BUG-040: cancel() must NOT be called on locked streams — it returns a rejected
-    // Promise (per Web Streams spec) which becomes an unhandled rejection crash.
-    expect(stdoutCancelled.value).toBe(false);
-    expect(stderrCancelled.value).toBe(false);
-    expect(killCalled.value).toBe(true);
-
-    _deps.spawn = originalSpawn;
+    expect(mockAdapter.complete).toHaveBeenCalledTimes(1);
   });
 
-  test("no unhandled rejection when Response.text() locks streams and proc is killed", async () => {
-    // Simulate the exact BUG-040 scenario:
-    // 1. Spawn proc with piped streams
-    // 2. Response(proc.stdout).text() locks the streams
-    // 3. Timeout fires, proc.kill() called
-    // 4. No unhandled rejection should occur
+  test("no unhandled rejection when adapter.complete() times out", async () => {
+    // Simulate timeout scenario:
+    // 1. Adapter.complete() promise never resolves
+    // 2. Timeout fires and rejects
+    // 3. No unhandled rejection should occur
 
     const unhandledRejections: Error[] = [];
     const handler = (event: PromiseRejectionEvent) => {
@@ -167,25 +114,14 @@ describe("BUG-039/BUG-040: stream cleanup on timeout", () => {
       event.preventDefault();
     };
 
-    // biome-ignore lint/suspicious/noGlobalAssign: test-only override
     globalThis.addEventListener("unhandledrejection", handler);
 
-    // Create a proc where streams are locked by Response readers
-    const stdout = new ReadableStream({ start() {} });
-    const stderr = new ReadableStream({ start() {} });
-    const proc = {
-      stdout,
-      stderr,
-      exited: new Promise<number>(() => {}),
-      kill: mock(() => {}),
-    };
-
-    const originalSpawn = _deps.spawn;
-    _deps.spawn = mock(() => proc as PipedProc);
-
+    const mockAdapter = makeHangingAdapter();
     const config = makeConfig({ timeoutMs: 20, retries: 0 });
 
-    const { llmStrategy } = await import("../../../../src/routing/strategies/llm");
+    const { llmStrategy, clearCache } = await import("../../../../src/routing/strategies/llm");
+    clearCache();
+
     const story = {
       id: "BUG040",
       title: "Bug test",
@@ -199,50 +135,46 @@ describe("BUG-039/BUG-040: stream cleanup on timeout", () => {
       attempts: 0,
     };
 
-    await expect(llmStrategy.route(story, { config })).rejects.toThrow(/timeout/i);
+    await expect(llmStrategy.route(story, { config, adapter: mockAdapter })).rejects.toThrow(/timeout/i);
 
     // Give microtasks time to settle
     await Bun.sleep(50);
 
     globalThis.removeEventListener("unhandledrejection", handler);
-    _deps.spawn = originalSpawn;
 
     // No unhandled rejections should have occurred
     expect(unhandledRejections).toHaveLength(0);
   });
 
-  test("clearTimeout is called on success path (no resource leak)", async () => {
-    const originalSpawn = _deps.spawn;
-
-    // proc that resolves immediately with valid output
-    const successProc = {
-      stdout: new ReadableStream({
-        start(ctrl) {
-          ctrl.enqueue(
-            new TextEncoder().encode(
-              JSON.stringify({
-                complexity: "simple",
-                modelTier: "fast",
-                testStrategy: "test-after",
-                reasoning: "Simple test story",
-              }),
-            ),
-          );
-          ctrl.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(ctrl) {
-          ctrl.close();
-        },
-      }),
-      exited: Promise.resolve(0),
-      kill: mock(() => {}),
-    };
-
-    _deps.spawn = mock(() => successProc as PipedProc);
-
+  test("adapter.complete() resolves on success path (no timeout)", async () => {
     const config = makeConfig({ timeoutMs: 5000 });
+
+    // Adapter that resolves with valid JSON response
+    const successAdapter = {
+      name: "success-mock",
+      displayName: "Success Mock",
+      binary: "success-mock",
+      capabilities: {
+        supportedTiers: ["fast", "balanced", "powerful"],
+        maxContextTokens: 200_000,
+        features: new Set(["tdd", "review", "refactor", "batch"]),
+      },
+      isInstalled: mock(() => Promise.resolve(true)),
+      run: mock(() => Promise.reject(new Error("run() should not be called"))),
+      buildCommand: mock(() => []),
+      plan: mock(() => Promise.reject(new Error("plan() should not be called"))),
+      decompose: mock(() => Promise.reject(new Error("decompose() should not be called"))),
+      complete: mock(() =>
+        Promise.resolve(
+          JSON.stringify({
+            complexity: "simple",
+            modelTier: "fast",
+            testStrategy: "tdd-simple",
+            reasoning: "Simple test story",
+          }),
+        ),
+      ),
+    } as AgentAdapter;
 
     const { llmStrategy, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
@@ -260,26 +192,21 @@ describe("BUG-039/BUG-040: stream cleanup on timeout", () => {
       attempts: 0,
     };
 
-    const result = await llmStrategy.route(story, { config });
+    const result = await llmStrategy.route(story, { config, adapter: successAdapter });
 
     expect(result).not.toBeNull();
     expect(result?.complexity).toBe("simple");
-    // kill() must NOT be called on the success path
-    expect(successProc.kill).not.toHaveBeenCalled();
+    expect(successAdapter.complete).toHaveBeenCalledTimes(1);
 
-    _deps.spawn = originalSpawn;
     clearCache();
   });
 
-  test("timeout promise rejects and does not hang beyond timeout window", async () => {
-    const originalSpawn = _deps.spawn;
-    const { proc } = makeHangingProc();
-
-    _deps.spawn = mock(() => proc as PipedProc);
-
+  test("adapter.complete() timeout rejects within timeout window", async () => {
+    const mockAdapter = makeHangingAdapter();
     const config = makeConfig({ timeoutMs: 50, retries: 0 });
 
-    const { llmStrategy } = await import("../../../../src/routing/strategies/llm");
+    const { llmStrategy, clearCache } = await import("../../../../src/routing/strategies/llm");
+    clearCache();
 
     const story = {
       id: "TEST-003",
@@ -295,12 +222,10 @@ describe("BUG-039/BUG-040: stream cleanup on timeout", () => {
     };
 
     const before = Date.now();
-    await expect(llmStrategy.route(story, { config })).rejects.toThrow();
+    await expect(llmStrategy.route(story, { config, adapter: mockAdapter })).rejects.toThrow();
     const after = Date.now();
 
-    // Should complete well under 2s even though proc never exits
+    // Should complete well under 2s even though adapter.complete() never resolves
     expect(after - before).toBeLessThan(2000);
-
-    _deps.spawn = originalSpawn;
   });
 });

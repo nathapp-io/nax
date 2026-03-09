@@ -37,17 +37,19 @@ function makeConfig(overrides: Partial<NaxConfig["routing"]["llm"]> = {}): NaxCo
   } as NaxConfig;
 }
 
+// Note: parseRoutingResponse derives testStrategy via determineTestStrategy() (BUG-045),
+// so the testStrategy field in the adapter response is ignored.
+// For complexity="simple", determineTestStrategy returns "tdd-simple"
+// For complexity="complex", determineTestStrategy returns "three-session-tdd" (by default)
 const VALID_ROUTING_RESPONSE = JSON.stringify({
   complexity: "simple",
   modelTier: "fast",
-  testStrategy: "test-after",
   reasoning: "Simple test story",
 });
 
 const COMPLEX_ROUTING_RESPONSE = JSON.stringify({
   complexity: "complex",
   modelTier: "powerful",
-  testStrategy: "three-session-tdd",
   reasoning: "Complex feature requiring expert model",
 });
 
@@ -119,7 +121,8 @@ describe("AA-003: llmStrategy.route() uses adapter.complete()", () => {
     expect(mockAdapter.complete).toHaveBeenCalledTimes(1);
     expect(result?.complexity).toBe("simple");
     expect(result?.modelTier).toBe("fast");
-    expect(result?.testStrategy).toBe("test-after");
+    // testStrategy is derived by determineTestStrategy() from complexity (BUG-045)
+    expect(result?.testStrategy).toBe("tdd-simple");
   });
 
   test("does NOT call _deps.spawn when adapter is provided", async () => {
