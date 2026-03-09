@@ -64,6 +64,33 @@ export const _completeDeps = {
 };
 
 /**
+ * Injectable dependencies for decompose() — allows tests to intercept
+ * Bun.spawn calls and verify correct CLI args without the claude binary.
+ *
+ * @internal
+ */
+export const _decomposeDeps = {
+  spawn(
+    cmd: string[],
+    opts: { cwd?: string; stdout: "pipe"; stderr: "inherit" | "pipe"; env?: Record<string, string | undefined> },
+  ): {
+    stdout: ReadableStream<Uint8Array>;
+    stderr?: ReadableStream<Uint8Array>;
+    exited: Promise<number>;
+    pid: number;
+    kill(signal?: NodeJS.Signals | number): void;
+  } {
+    return Bun.spawn(cmd, opts) as unknown as {
+      stdout: ReadableStream<Uint8Array>;
+      stderr?: ReadableStream<Uint8Array>;
+      exited: Promise<number>;
+      pid: number;
+      kill(signal?: NodeJS.Signals | number): void;
+    };
+  },
+};
+
+/**
  * Injectable dependencies for runOnce() — allows tests to verify
  * that PID cleanup (unregister) always runs even if kill() throws.
  *
@@ -370,7 +397,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     const pidRegistry = this.getPidRegistry(options.workdir);
 
-    const proc = Bun.spawn(cmd, {
+    const proc = _decomposeDeps.spawn(cmd, {
       cwd: options.workdir,
       stdout: "pipe",
       stderr: "inherit", // MEM-3: Inherit stderr to avoid blocking on unread pipe
