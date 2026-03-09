@@ -14,7 +14,7 @@ import { wireReporters } from "../pipeline/subscribers/reporters";
 import type { PipelineContext } from "../pipeline/types";
 import { generateHumanHaltSummary, isComplete, isStalled, loadPRD } from "../prd";
 import type { PRD } from "../prd/types";
-import { startHeartbeat, stopHeartbeat, writeExitSummary } from "./crash-recovery";
+import { startHeartbeat } from "./crash-recovery";
 import type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
 import { runIteration } from "./iteration-runner";
 import { selectNextStories } from "./story-selector";
@@ -181,7 +181,8 @@ export async function executeSequential(
 
     return buildResult("max-iterations");
   } finally {
-    stopHeartbeat();
-    writeExitSummary(ctx.logFilePath, totalCost, iterations, storiesCompleted, Date.now() - ctx.startTime);
+    // BUG-060: Do NOT stopHeartbeat or writeExitSummary here.
+    // runner.ts owns the full lifecycle (including deferred regression gate)
+    // and handles heartbeat + exit summary after all post-run work completes.
   }
 }
