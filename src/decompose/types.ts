@@ -10,6 +10,8 @@ export interface DecomposeConfig {
   maxSubStories: number;
   /** Maximum allowed complexity for any sub-story */
   maxComplexity: "simple" | "medium" | "complex" | "expert";
+  /** Maximum number of retries on validation failure */
+  maxRetries?: number;
 }
 
 /** A single decomposed sub-story */
@@ -38,6 +40,7 @@ export interface SubStory {
 export interface ValidationResult {
   valid: boolean;
   errors: string[];
+  warnings: string[];
 }
 
 /** Result of decomposing a story */

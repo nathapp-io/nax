@@ -93,14 +93,14 @@ function parseSubStories(output: string): DecomposeResult {
   } catch (err) {
     return {
       subStories: [],
-      validation: { valid: false, errors: [`Failed to parse JSON: ${(err as Error).message}`] },
+      validation: { valid: false, errors: [`Failed to parse JSON: ${(err as Error).message}`], warnings: [] },
     };
   }
 
   if (!Array.isArray(parsed)) {
     return {
       subStories: [],
-      validation: { valid: false, errors: ["Output is not a JSON array"] },
+      validation: { valid: false, errors: ["Output is not a JSON array"], warnings: [] },
     };
   }
 
@@ -128,7 +128,7 @@ function parseSubStories(output: string): DecomposeResult {
 
   return {
     subStories,
-    validation: { valid: errors.length === 0, errors },
+    validation: { valid: errors.length === 0, errors, warnings: [] },
   };
 }
 
