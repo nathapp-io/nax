@@ -13,6 +13,7 @@ export {
   checkStaleLock,
   checkPRDValid,
   checkClaudeCLI,
+  checkAgentCLI,
   checkDependenciesInstalled,
   checkTestCommand,
   checkLintCommand,
