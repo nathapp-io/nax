@@ -8,6 +8,7 @@ import { describe, expect, test } from "bun:test";
 import { claudeGenerator } from "../../../src/context/generators/claude";
 import { opencodeGenerator } from "../../../src/context/generators/opencode";
 import { codexGenerator } from "../../../src/context/generators/codex";
+import { geminiGenerator } from "../../../src/context/generators/gemini";
 import type { ContextContent } from "../../../src/context/types";
 
 const sampleContext: ContextContent = {
@@ -162,6 +163,54 @@ describe("Context Generators", () => {
       const uniqueNames = new Set(names);
 
       expect(uniqueNames.size).toBe(3);
+    });
+  });
+
+  describe("Gemini Generator", () => {
+    test("should generate GEMINI.md with correct format", () => {
+      const result = geminiGenerator.generate(sampleContext);
+
+      expect(result).toContain("# Gemini CLI Context");
+      expect(result).toContain("auto-generated from `nax/context.md`");
+      expect(result).toContain("DO NOT EDIT MANUALLY");
+      expect(result).toContain("## Architecture");
+      expect(result).toContain("Microservices with Docker");
+    });
+
+    test("should have correct output filename", () => {
+      expect(geminiGenerator.outputFile).toBe("GEMINI.md");
+    });
+
+    test("should have correct generator name", () => {
+      expect(geminiGenerator.name).toBe("gemini");
+    });
+
+    test("should include metadata section when provided", () => {
+      const result = geminiGenerator.generate(contextWithMetadata);
+
+      expect(result).toContain("## Project Metadata");
+      expect(result).toContain("@myapp/core");
+      expect(result).toContain("TypeScript");
+      expect(result).toContain("express");
+    });
+
+    test("should preserve context content correctly", () => {
+      const result = geminiGenerator.generate(sampleContext);
+
+      expect(result).toContain("## Testing Requirements");
+      expect(result).toContain("## Development Workflow");
+      expect(result).toContain("Feature branches");
+      expect(result).toContain("Conventional commits");
+    });
+
+    test("should handle empty context", () => {
+      const emptyContext: ContextContent = { markdown: "" };
+      const result = geminiGenerator.generate(emptyContext);
+
+      // Should still have header and basic structure
+      expect(result.length).toBeGreaterThan(0);
+      expect(result).toContain("# Gemini CLI Context");
+      expect(result).toContain("DO NOT EDIT MANUALLY");
     });
   });
 

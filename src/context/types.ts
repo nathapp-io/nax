@@ -40,7 +40,7 @@ export interface AgentContextGenerator {
 }
 
 /** All available generator types */
-export type AgentType = "claude" | "codex" | "opencode" | "cursor" | "windsurf" | "aider";
+export type AgentType = "claude" | "codex" | "opencode" | "cursor" | "windsurf" | "aider" | "gemini";
 
 /** Generator registry map */
 export type GeneratorMap = Record<AgentType, AgentContextGenerator>;
