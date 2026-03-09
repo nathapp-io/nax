@@ -11,6 +11,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { getSafeLogger as _getSafeLoggerFromModule } from "../logger";
 import { validateModulePath } from "../utils/path-security";
+import { createPluginLogger } from "./plugin-logger";
 import { PluginRegistry } from "./registry";
 import type { NaxPlugin, PluginConfigEntry } from "./types";
 import { validatePlugin } from "./validator";
@@ -272,10 +273,11 @@ async function loadAndValidatePlugin(
       return null;
     }
 
-    // Call setup() if defined
+    // Call setup() if defined — pass plugin-scoped logger
     if (validated.setup) {
       try {
-        await validated.setup(config);
+        const pluginLogger = createPluginLogger(validated.name);
+        await validated.setup(config, pluginLogger);
       } catch (error) {
         const logger = getSafeLogger();
         logger?.error("plugins", `Plugin '${validated.name}' setup failed`, { error });

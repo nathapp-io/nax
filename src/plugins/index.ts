@@ -9,6 +9,7 @@ export type {
   PluginType,
   PluginExtensions,
   PluginConfigEntry,
+  PluginLogger,
   IReviewPlugin,
   ReviewCheckResult,
   IContextProvider,
@@ -29,3 +30,4 @@ export type {
 export { validatePlugin } from "./validator";
 export { loadPlugins } from "./loader";
 export { PluginRegistry } from "./registry";
+export { createPluginLogger } from "./plugin-logger";

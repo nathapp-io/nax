@@ -61,8 +61,9 @@ export interface NaxPlugin {
    * validating config, establishing connections, etc.
    *
    * @param config - Plugin-specific config from nax config.json
+   * @param logger - Write-only logger scoped to this plugin (stage auto-prefixed as `plugin:<name>`)
    */
-  setup?(config: Record<string, unknown>): Promise<void>;
+  setup?(config: Record<string, unknown>, logger: PluginLogger): Promise<void>;
 
   /**
    * Called when the nax run ends (success or failure).
@@ -331,6 +332,54 @@ export interface IReporter {
 
   /** Called when a run ends */
   onRunEnd?(event: RunEndEvent): Promise<void>;
+}
+
+// ============================================================================
+// Plugin Logger
+// ============================================================================
+
+/**
+ * Write-only, level-gated logger provided to plugins via setup().
+ *
+ * All log entries are auto-prefixed with `plugin:<name>` as the stage,
+ * so plugins cannot impersonate core nax stages. The interface is
+ * intentionally minimal — plugins only need to emit messages, not
+ * configure log levels or access log files.
+ *
+ * @example
+ * ```ts
+ * let log: PluginLogger;
+ *
+ * const myPlugin: NaxPlugin = {
+ *   name: "my-plugin",
+ *   version: "1.0.0",
+ *   provides: ["reviewer"],
+ *   async setup(config, logger) {
+ *     log = logger;
+ *     log.info("Initialized with config", { keys: Object.keys(config) });
+ *   },
+ *   extensions: {
+ *     reviewer: {
+ *       name: "my-check",
+ *       description: "Custom check",
+ *       async check(workdir, changedFiles) {
+ *         log.debug("Scanning files", { count: changedFiles.length });
+ *         // ...
+ *       }
+ *     }
+ *   }
+ * };
+ * ```
+ */
+export interface PluginLogger {
+  /** Log an error message */
+  error(message: string, data?: Record<string, unknown>): void;
+  /** Log a warning message */
+  warn(message: string, data?: Record<string, unknown>): void;
+  /** Log an informational message */
+  info(message: string, data?: Record<string, unknown>): void;
+  /** Log a debug message */
+  debug(message: string, data?: Record<string, unknown>): void;
 }
 
 // ============================================================================
