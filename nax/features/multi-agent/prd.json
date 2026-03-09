@@ -369,7 +369,7 @@
         "Identifies which agent is currently configured as default"
       ],
       "complexity": "simple",
-      "status": "pending",
+      "status": "passed",
       "tags": [
         "cli"
       ],
@@ -387,8 +387,9 @@
         "testStrategy": "tdd-simple",
         "reasoning": "tdd-simple: simple task (simple)",
         "contentHash": "01b13af6c88fc52a483f2e800678c89a118d83a72e8d81a569a0b31f4dcb8634"
-      }
+      },
+      "passes": true
     }
   ],
-  "updatedAt": "2026-03-09T15:46:52.687Z"
+  "updatedAt": "2026-03-09T15:51:15.841Z"
 }

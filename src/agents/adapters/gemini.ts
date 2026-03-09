@@ -1,8 +1,8 @@
 /**
  * Gemini CLI Agent Adapter — implements AgentAdapter interface
  *
- * Provides uniform interface for spawning Gemini CLI agent processes,
- * supporting one-shot completions.
+ * Provides uniform interface for spawning Gemini CLI processes,
+ * supporting one-shot completions via 'gemini -p' and Google auth detection.
  */
 
 import type {
@@ -19,14 +19,35 @@ import type {
 import { CompleteError } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Injectable dependencies — matches the _deps pattern used in claude.ts
-// These are replaced in unit tests to intercept Bun.spawn calls.
+// Injectable dependencies — follows the _deps pattern
+// Replaced in unit tests to intercept Bun.spawn/Bun.which calls.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const _geminiCompleteDeps = {
+export const _geminiRunDeps = {
   which(name: string): string | null {
     return Bun.which(name);
   },
+  spawn(
+    cmd: string[],
+    opts: { cwd?: string; stdout: "pipe"; stderr: "pipe" | "inherit"; env?: Record<string, string | undefined> },
+  ): {
+    stdout: ReadableStream<Uint8Array>;
+    stderr: ReadableStream<Uint8Array>;
+    exited: Promise<number>;
+    pid: number;
+    kill(signal?: number | NodeJS.Signals): void;
+  } {
+    return Bun.spawn(cmd, opts) as unknown as {
+      stdout: ReadableStream<Uint8Array>;
+      stderr: ReadableStream<Uint8Array>;
+      exited: Promise<number>;
+      pid: number;
+      kill(signal?: number | NodeJS.Signals): void;
+    };
+  },
+};
+
+export const _geminiCompleteDeps = {
   spawn(
     cmd: string[],
     opts: { stdout: "pipe"; stderr: "pipe" | "inherit" },
@@ -49,28 +70,78 @@ export const _geminiCompleteDeps = {
 // GeminiAdapter implementation
 // ─────────────────────────────────────────────────────────────────────────────
 
+const MAX_AGENT_OUTPUT_CHARS = 5000;
+
 export class GeminiAdapter implements AgentAdapter {
   readonly name = "gemini";
   readonly displayName = "Gemini CLI";
   readonly binary = "gemini";
 
   readonly capabilities: AgentCapabilities = {
-    supportedTiers: ["fast", "balanced"],
-    maxContextTokens: 32_000,
-    features: new Set<"tdd" | "review" | "refactor" | "batch">(["tdd", "refactor"]),
+    supportedTiers: ["fast", "balanced", "powerful"],
+    maxContextTokens: 1_000_000,
+    features: new Set<"tdd" | "review" | "refactor" | "batch">(["tdd", "review", "refactor"]),
   };
 
   async isInstalled(): Promise<boolean> {
-    const path = _geminiCompleteDeps.which("gemini");
-    return path !== null;
+    const path = _geminiRunDeps.which("gemini");
+    if (path === null) {
+      return false;
+    }
+
+    // Check Google auth — run 'gemini' with a flag that shows auth status
+    try {
+      const proc = _geminiRunDeps.spawn(["gemini", "--version"], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        return false;
+      }
+
+      const stdout = await new Response(proc.stdout).text();
+      const lowerOut = stdout.toLowerCase();
+
+      // If output explicitly says "not logged in", auth has failed
+      if (lowerOut.includes("not logged in")) {
+        return false;
+      }
+
+      return true;
+    } catch {
+      return false;
+    }
   }
 
-  buildCommand(_options: AgentRunOptions): string[] {
-    throw new Error("GeminiAdapter.buildCommand() not implemented");
+  buildCommand(options: AgentRunOptions): string[] {
+    return ["gemini", "-p", options.prompt];
   }
 
-  async run(_options: AgentRunOptions): Promise<AgentResult> {
-    throw new Error("GeminiAdapter.run() not implemented");
+  async run(options: AgentRunOptions): Promise<AgentResult> {
+    const cmd = this.buildCommand(options);
+    const startTime = Date.now();
+
+    const proc = _geminiRunDeps.spawn(cmd, {
+      cwd: options.workdir,
+      stdout: "pipe",
+      stderr: "inherit",
+    });
+
+    const exitCode = await proc.exited;
+    const stdout = await new Response(proc.stdout).text();
+    const durationMs = Date.now() - startTime;
+
+    return {
+      success: exitCode === 0,
+      exitCode,
+      output: stdout.slice(-MAX_AGENT_OUTPUT_CHARS),
+      rateLimited: false,
+      durationMs,
+      estimatedCost: 0,
+      pid: proc.pid,
+    };
   }
 
   async complete(prompt: string, _options?: CompleteOptions): Promise<string> {

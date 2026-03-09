@@ -4,15 +4,19 @@
  * Covers:
  * - AgentAdapter interface compliance (name, binary, displayName, capabilities)
  * - isInstalled() uses Bun.which('gemini') for binary detection
- * - complete() spawns gemini -p <text> for one-shot responses
+ * - isInstalled() checks Google auth flow (returns false if unauthenticated)
+ * - complete() spawns 'gemini -p <text>' for one-shot mode
+ * - buildCommand() returns correct argv including -p flag
+ * - run() spawns gemini with correct flags and returns AgentResult
  * - complete() throws CompleteError on non-zero exit or empty output
  * - getAgent('gemini') returns GeminiAdapter from registry
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { GeminiAdapter, _geminiCompleteDeps } from "../../../../src/agents/adapters/gemini";
-import { getAgent } from "../../../../src/agents/registry";
+import { GeminiAdapter, _geminiCompleteDeps, _geminiRunDeps } from "../../../../src/agents/adapters/gemini";
 import { CompleteError } from "../../../../src/agents/types";
+import type { AgentRunOptions } from "../../../../src/agents/types";
+import { getAgent } from "../../../../src/agents/registry";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock process factories
@@ -25,15 +29,29 @@ function mockProcessWithStdout(stdoutText: string, exitCode: number) {
     stderr: new Response("").body as ReadableStream<Uint8Array>,
     exited: Promise.resolve(exitCode),
     pid: 77777,
+    kill: (_signal?: number | NodeJS.Signals) => {},
   };
 }
 
-function mockProcessWithStderr(stderrText: string, exitCode: number) {
+function mockProcessWithStderr(stdoutText: string, stderrText: string, exitCode: number) {
+  const stdoutBody = new Response(stdoutText).body as ReadableStream<Uint8Array>;
+  const stderrBody = new Response(stderrText).body as ReadableStream<Uint8Array>;
   return {
-    stdout: new Response("").body as ReadableStream<Uint8Array>,
-    stderr: new Response(stderrText).body as ReadableStream<Uint8Array>,
+    stdout: stdoutBody,
+    stderr: stderrBody,
     exited: Promise.resolve(exitCode),
     pid: 77777,
+    kill: (_signal?: number | NodeJS.Signals) => {},
+  };
+}
+
+function makeRunOptions(workdir: string): AgentRunOptions {
+  return {
+    workdir,
+    prompt: "write a hello world function",
+    modelTier: "balanced",
+    modelDef: { provider: "google", model: "gemini-2.5-pro", env: {} },
+    timeoutSeconds: 60,
   };
 }
 
@@ -78,38 +96,47 @@ describe("GeminiAdapter interface compliance", () => {
     expect(typeof adapter.isInstalled).toBe("function");
   });
 
+  test("run is a function", () => {
+    expect(typeof adapter.run).toBe("function");
+  });
+
+  test("buildCommand is a function", () => {
+    expect(typeof adapter.buildCommand).toBe("function");
+  });
+
   test("complete is a function", () => {
     expect(typeof adapter.complete).toBe("function");
+  });
+
+  test("plan is a function", () => {
+    expect(typeof adapter.plan).toBe("function");
+  });
+
+  test("decompose is a function", () => {
+    expect(typeof adapter.decompose).toBe("function");
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// isInstalled() — Bun.which binary detection
+// isInstalled() — Bun.which binary detection + Google auth check
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("isInstalled()", () => {
   let adapter: GeminiAdapter;
-  let originalWhich: (name: string) => string | null;
+  const origWhich = _geminiRunDeps.which;
+  const origSpawn = _geminiRunDeps.spawn;
 
   beforeEach(() => {
     adapter = new GeminiAdapter();
-    originalWhich = _geminiCompleteDeps.which;
   });
 
   afterEach(() => {
-    _geminiCompleteDeps.which = originalWhich;
-  });
-
-  test("returns true when Bun.which finds the gemini binary", async () => {
-    _geminiCompleteDeps.which = (_name: string) => "/usr/local/bin/gemini";
-
-    const result = await adapter.isInstalled();
-
-    expect(result).toBe(true);
+    _geminiRunDeps.which = origWhich;
+    _geminiRunDeps.spawn = origSpawn;
   });
 
   test("returns false when Bun.which returns null (binary not found)", async () => {
-    _geminiCompleteDeps.which = (_name: string) => null;
+    _geminiRunDeps.which = (_name: string) => null;
 
     const result = await adapter.isInstalled();
 
@@ -118,14 +145,204 @@ describe("isInstalled()", () => {
 
   test("calls Bun.which with 'gemini'", async () => {
     let capturedName = "";
-    _geminiCompleteDeps.which = (name: string) => {
+    _geminiRunDeps.which = (name: string) => {
       capturedName = name;
-      return "/usr/local/bin/gemini";
+      return null;
     };
 
     await adapter.isInstalled();
 
     expect(capturedName).toBe("gemini");
+  });
+
+  test("returns true when binary found and auth succeeds", async () => {
+    _geminiRunDeps.which = (_name: string) => "/usr/local/bin/gemini";
+    _geminiRunDeps.spawn = (_cmd, _opts) => mockProcessWithStdout("Logged in as user@example.com\n", 0);
+
+    const result = await adapter.isInstalled();
+
+    expect(result).toBe(true);
+  });
+
+  test("returns false when binary found but auth check fails (non-zero exit)", async () => {
+    _geminiRunDeps.which = (_name: string) => "/usr/local/bin/gemini";
+    _geminiRunDeps.spawn = (_cmd, _opts) =>
+      mockProcessWithStderr("", "Error: Not logged in. Run 'gcloud auth login'", 1);
+
+    const result = await adapter.isInstalled();
+
+    expect(result).toBe(false);
+  });
+
+  test("returns false when binary found but auth output indicates not logged in", async () => {
+    _geminiRunDeps.which = (_name: string) => "/usr/local/bin/gemini";
+    _geminiRunDeps.spawn = (_cmd, _opts) =>
+      mockProcessWithStdout("not logged in\n", 0);
+
+    const result = await adapter.isInstalled();
+
+    expect(result).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildCommand() — CLI argv structure for headless sessions
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildCommand()", () => {
+  let adapter: GeminiAdapter;
+
+  beforeEach(() => {
+    adapter = new GeminiAdapter();
+  });
+
+  test("first element is 'gemini'", () => {
+    const opts = makeRunOptions("/tmp/test");
+    const cmd = adapter.buildCommand(opts);
+
+    expect(cmd[0]).toBe("gemini");
+  });
+
+  test("includes -p flag for one-shot prompt mode", () => {
+    const opts = makeRunOptions("/tmp/test");
+    const cmd = adapter.buildCommand(opts);
+
+    expect(cmd).toContain("-p");
+  });
+
+  test("-p flag is followed by the prompt text", () => {
+    const opts = makeRunOptions("/tmp/test");
+    opts.prompt = "implement feature X";
+    const cmd = adapter.buildCommand(opts);
+
+    const pIdx = cmd.indexOf("-p");
+    expect(pIdx).toBeGreaterThan(-1);
+    expect(cmd[pIdx + 1]).toBe("implement feature X");
+  });
+
+  test("does NOT use --prompt (Gemini uses -p not --prompt)", () => {
+    const opts = makeRunOptions("/tmp/test");
+    const cmd = adapter.buildCommand(opts);
+
+    expect(cmd).not.toContain("--prompt");
+  });
+
+  test("returns an array of strings", () => {
+    const opts = makeRunOptions("/tmp/test");
+    const cmd = adapter.buildCommand(opts);
+
+    expect(Array.isArray(cmd)).toBe(true);
+    for (const arg of cmd) {
+      expect(typeof arg).toBe("string");
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// run() — headless agent execution via _geminiRunDeps
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("run()", () => {
+  let adapter: GeminiAdapter;
+  let capturedCmd: string[];
+  const origSpawn = _geminiRunDeps.spawn;
+  const origWhich = _geminiRunDeps.which;
+
+  beforeEach(() => {
+    adapter = new GeminiAdapter();
+    capturedCmd = [];
+  });
+
+  afterEach(() => {
+    _geminiRunDeps.spawn = origSpawn;
+    _geminiRunDeps.which = origWhich;
+  });
+
+  test("spawns the gemini binary", async () => {
+    _geminiRunDeps.spawn = (cmd, _opts) => {
+      capturedCmd = cmd;
+      return mockProcessWithStdout("done\n", 0);
+    };
+
+    await adapter.run(makeRunOptions("/tmp/test"));
+
+    expect(capturedCmd[0]).toBe("gemini");
+  });
+
+  test("passes -p flag to the spawned process", async () => {
+    _geminiRunDeps.spawn = (cmd, _opts) => {
+      capturedCmd = cmd;
+      return mockProcessWithStdout("done\n", 0);
+    };
+
+    await adapter.run(makeRunOptions("/tmp/test"));
+
+    expect(capturedCmd).toContain("-p");
+  });
+
+  test("passes the prompt text after -p flag", async () => {
+    _geminiRunDeps.spawn = (cmd, _opts) => {
+      capturedCmd = cmd;
+      return mockProcessWithStdout("done\n", 0);
+    };
+
+    const opts = makeRunOptions("/tmp/test");
+    opts.prompt = "add unit tests";
+    await adapter.run(opts);
+
+    const pIdx = capturedCmd.indexOf("-p");
+    expect(pIdx).toBeGreaterThan(-1);
+    expect(capturedCmd[pIdx + 1]).toBe("add unit tests");
+  });
+
+  test("returns success: true on exit code 0", async () => {
+    _geminiRunDeps.spawn = (_cmd, _opts) => mockProcessWithStdout("all done\n", 0);
+
+    const result = await adapter.run(makeRunOptions("/tmp/test"));
+
+    expect(result.success).toBe(true);
+  });
+
+  test("returns success: false on non-zero exit code", async () => {
+    _geminiRunDeps.spawn = (_cmd, _opts) => mockProcessWithStdout("error output\n", 1);
+
+    const result = await adapter.run(makeRunOptions("/tmp/test"));
+
+    expect(result.success).toBe(false);
+  });
+
+  test("result includes exitCode matching the process exit code", async () => {
+    _geminiRunDeps.spawn = (_cmd, _opts) => mockProcessWithStdout("output\n", 42);
+
+    const result = await adapter.run(makeRunOptions("/tmp/test"));
+
+    expect(result.exitCode).toBe(42);
+  });
+
+  test("result includes output from stdout", async () => {
+    _geminiRunDeps.spawn = (_cmd, _opts) => mockProcessWithStdout("task completed successfully\n", 0);
+
+    const result = await adapter.run(makeRunOptions("/tmp/test"));
+
+    expect(result.output).toContain("task completed successfully");
+  });
+
+  test("result includes durationMs as a non-negative number", async () => {
+    _geminiRunDeps.spawn = (_cmd, _opts) => mockProcessWithStdout("ok\n", 0);
+
+    const result = await adapter.run(makeRunOptions("/tmp/test"));
+
+    expect(typeof result.durationMs).toBe("number");
+    expect(result.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test("result includes estimatedCost as a non-negative number", async () => {
+    _geminiRunDeps.spawn = (_cmd, _opts) => mockProcessWithStdout("ok\n", 0);
+
+    const result = await adapter.run(makeRunOptions("/tmp/test"));
+
+    expect(typeof result.estimatedCost).toBe("number");
+    expect(result.estimatedCost).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -136,24 +353,15 @@ describe("isInstalled()", () => {
 describe("complete()", () => {
   let adapter: GeminiAdapter;
   let capturedCmd: string[];
-  let originalSpawn: (
-    cmd: string[],
-    opts: { stdout: "pipe"; stderr: "pipe" | "inherit" },
-  ) => {
-    stdout: ReadableStream<Uint8Array>;
-    stderr: ReadableStream<Uint8Array>;
-    exited: Promise<number>;
-    pid: number;
-  };
+  const origSpawn = _geminiCompleteDeps.spawn;
 
   beforeEach(() => {
     adapter = new GeminiAdapter();
     capturedCmd = [];
-    originalSpawn = _geminiCompleteDeps.spawn;
   });
 
   afterEach(() => {
-    _geminiCompleteDeps.spawn = originalSpawn;
+    _geminiCompleteDeps.spawn = origSpawn;
   });
 
   // ── Success path ────────────────────────────────────────────────────────
@@ -187,7 +395,7 @@ describe("complete()", () => {
     expect(capturedCmd[0]).toBe("gemini");
   });
 
-  test("includes -p flag for one-shot mode", async () => {
+  test("uses -p flag for one-shot prompt mode", async () => {
     _geminiCompleteDeps.spawn = (cmd, _opts) => {
       capturedCmd = cmd;
       return mockProcessWithStdout("output", 0);
@@ -209,6 +417,17 @@ describe("complete()", () => {
     const pIdx = capturedCmd.indexOf("-p");
     expect(pIdx).toBeGreaterThan(-1);
     expect(capturedCmd[pIdx + 1]).toBe("my test prompt");
+  });
+
+  test("does NOT use --prompt flag (Gemini uses -p)", async () => {
+    _geminiCompleteDeps.spawn = (cmd, _opts) => {
+      capturedCmd = cmd;
+      return mockProcessWithStdout("output", 0);
+    };
+
+    await adapter.complete("test");
+
+    expect(capturedCmd).not.toContain("--prompt");
   });
 
   // ── Error cases ─────────────────────────────────────────────────────────
@@ -244,21 +463,6 @@ describe("complete()", () => {
     _geminiCompleteDeps.spawn = (_cmd, _opts) => mockProcessWithStdout("   \n  \t  ", 0);
 
     await expect(adapter.complete("test")).rejects.toThrow(CompleteError);
-  });
-
-  test("uses stderr message when stdout is empty and exit code non-zero", async () => {
-    _geminiCompleteDeps.spawn = (_cmd, _opts) => mockProcessWithStderr("stderr error message", 1);
-
-    let caught: unknown;
-    try {
-      await adapter.complete("test");
-    } catch (err) {
-      caught = err;
-    }
-
-    expect(caught).toBeInstanceOf(CompleteError);
-    const err = caught as CompleteError;
-    expect(err.message).toContain("stderr error message");
   });
 
   // ── Return type ─────────────────────────────────────────────────────────

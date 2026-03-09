@@ -4,33 +4,24 @@
     "id": "run-2026-03-09T15-09-03-340Z",
     "feature": "multi-agent",
     "startedAt": "2026-03-09T15:09:03.340Z",
-    "status": "running",
+    "status": "completed",
     "dryRun": false,
     "pid": 65408
   },
   "progress": {
     "total": 12,
-    "passed": 9,
+    "passed": 10,
     "failed": 2,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 0
   },
   "cost": {
-    "spent": 0.34533225,
+    "spent": 0.39837225,
     "limit": 8
   },
-  "current": {
-    "storyId": "MA-012",
-    "title": "Implement nax agents CLI command",
-    "complexity": "medium",
-    "tddStrategy": "test-after",
-    "model": "balanced",
-    "attempt": 1,
-    "phase": "routing"
-  },
+  "current": null,
   "iterations": 13,
-  "updatedAt": "2026-03-09T15:49:53.730Z",
-  "durationMs": 2450390,
-  "lastHeartbeat": "2026-03-09T15:49:53.730Z"
+  "updatedAt": "2026-03-09T15:57:20.345Z",
+  "durationMs": 2897005
 }

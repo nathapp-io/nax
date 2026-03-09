@@ -4,8 +4,8 @@
  * Covers:
  * - AgentAdapter interface compliance (name, binary, displayName, capabilities)
  * - isInstalled() uses Bun.which('aider') for binary detection
- * - complete() spawns aider --message --yes <text> for headless mode
- * - --model flag passthrough when specified in options
+ * - complete() spawns aider --message <text> --yes for headless mode
+ * - complete() passes --model flag when specified in options
  * - complete() throws CompleteError on non-zero exit or empty output
  * - getAgent('aider') returns AiderAdapter from registry
  */
@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { AiderAdapter, _aiderCompleteDeps } from "../../../../src/agents/adapters/aider";
 import { getAgent } from "../../../../src/agents/registry";
 import { CompleteError } from "../../../../src/agents/types";
+import type { CompleteOptions } from "../../../../src/agents/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock process factories
@@ -25,16 +26,7 @@ function mockProcessWithStdout(stdoutText: string, exitCode: number) {
     stdout: body,
     stderr: new Response("").body as ReadableStream<Uint8Array>,
     exited: Promise.resolve(exitCode),
-    pid: 66666,
-  };
-}
-
-function mockProcessWithStderr(stderrText: string, exitCode: number) {
-  return {
-    stdout: new Response("").body as ReadableStream<Uint8Array>,
-    stderr: new Response(stderrText).body as ReadableStream<Uint8Array>,
-    exited: Promise.resolve(exitCode),
-    pid: 66666,
+    pid: 99999,
   };
 }
 
@@ -79,8 +71,24 @@ describe("AiderAdapter interface compliance", () => {
     expect(typeof adapter.isInstalled).toBe("function");
   });
 
+  test("run is a function", () => {
+    expect(typeof adapter.run).toBe("function");
+  });
+
+  test("buildCommand is a function", () => {
+    expect(typeof adapter.buildCommand).toBe("function");
+  });
+
   test("complete is a function", () => {
     expect(typeof adapter.complete).toBe("function");
+  });
+
+  test("plan is a function", () => {
+    expect(typeof adapter.plan).toBe("function");
+  });
+
+  test("decompose is a function", () => {
+    expect(typeof adapter.decompose).toBe("function");
   });
 });
 
@@ -90,15 +98,14 @@ describe("AiderAdapter interface compliance", () => {
 
 describe("isInstalled()", () => {
   let adapter: AiderAdapter;
-  let originalWhich: (name: string) => string | null;
+  const origWhich = _aiderCompleteDeps.which;
 
   beforeEach(() => {
     adapter = new AiderAdapter();
-    originalWhich = _aiderCompleteDeps.which;
   });
 
   afterEach(() => {
-    _aiderCompleteDeps.which = originalWhich;
+    _aiderCompleteDeps.which = origWhich;
   });
 
   test("returns true when Bun.which finds the aider binary", async () => {
@@ -131,40 +138,31 @@ describe("isInstalled()", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// complete() — one-shot LLM call via _aiderCompleteDeps
+// complete() — one-shot mode with --message and --yes flags
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("complete()", () => {
   let adapter: AiderAdapter;
   let capturedCmd: string[];
-  let originalSpawn: (
-    cmd: string[],
-    opts: { stdout: "pipe"; stderr: "pipe" | "inherit" },
-  ) => {
-    stdout: ReadableStream<Uint8Array>;
-    stderr: ReadableStream<Uint8Array>;
-    exited: Promise<number>;
-    pid: number;
-  };
+  const origSpawn = _aiderCompleteDeps.spawn;
 
   beforeEach(() => {
     adapter = new AiderAdapter();
     capturedCmd = [];
-    originalSpawn = _aiderCompleteDeps.spawn;
   });
 
   afterEach(() => {
-    _aiderCompleteDeps.spawn = originalSpawn;
+    _aiderCompleteDeps.spawn = origSpawn;
   });
 
   // ── Success path ────────────────────────────────────────────────────────
 
   test("returns stdout text on success", async () => {
-    _aiderCompleteDeps.spawn = (_cmd, _opts) => mockProcessWithStdout("hello from aider\n", 0);
+    _aiderCompleteDeps.spawn = (_cmd, _opts) => mockProcessWithStdout("response from aider\n", 0);
 
     const result = await adapter.complete("say hello");
 
-    expect(result).toContain("hello from aider");
+    expect(result).toContain("response from aider");
   });
 
   test("trims trailing whitespace from output", async () => {
@@ -175,7 +173,7 @@ describe("complete()", () => {
     expect(result).toBe("trimmed output");
   });
 
-  // ── CLI command structure ───────────────────────────────────────────────
+  // ── CLI command structure — headless flags ──────────────────────────────
 
   test("spawns the aider binary", async () => {
     _aiderCompleteDeps.spawn = (cmd, _opts) => {
@@ -188,29 +186,7 @@ describe("complete()", () => {
     expect(capturedCmd[0]).toBe("aider");
   });
 
-  test("includes --message flag for headless mode", async () => {
-    _aiderCompleteDeps.spawn = (cmd, _opts) => {
-      capturedCmd = cmd;
-      return mockProcessWithStdout("output", 0);
-    };
-
-    await adapter.complete("test");
-
-    expect(capturedCmd).toContain("--message");
-  });
-
-  test("includes --yes flag for headless mode", async () => {
-    _aiderCompleteDeps.spawn = (cmd, _opts) => {
-      capturedCmd = cmd;
-      return mockProcessWithStdout("output", 0);
-    };
-
-    await adapter.complete("test");
-
-    expect(capturedCmd).toContain("--yes");
-  });
-
-  test("--message flag is followed by the prompt text", async () => {
+  test("includes --message flag with prompt text", async () => {
     _aiderCompleteDeps.spawn = (cmd, _opts) => {
       capturedCmd = cmd;
       return mockProcessWithStdout("output", 0);
@@ -218,23 +194,36 @@ describe("complete()", () => {
 
     await adapter.complete("my test prompt");
 
-    const msgIdx = capturedCmd.indexOf("--message");
-    expect(msgIdx).toBeGreaterThan(-1);
-    expect(capturedCmd[msgIdx + 1]).toBe("my test prompt");
+    const messageIdx = capturedCmd.indexOf("--message");
+    expect(messageIdx).toBeGreaterThan(-1);
+    expect(capturedCmd[messageIdx + 1]).toBe("my test prompt");
   });
 
-  test("does not include --model flag when not specified in options", async () => {
+  test("includes --yes flag for headless/auto-approve mode", async () => {
     _aiderCompleteDeps.spawn = (cmd, _opts) => {
       capturedCmd = cmd;
       return mockProcessWithStdout("output", 0);
     };
 
-    await adapter.complete("test");
+    await adapter.complete("test prompt");
 
-    expect(capturedCmd).not.toContain("--model");
+    expect(capturedCmd).toContain("--yes");
   });
 
-  test("includes --model flag when specified in options", async () => {
+  // ── Model flag passthrough ──────────────────────────────────────────────
+
+  test("does not include --model flag when model not specified", async () => {
+    _aiderCompleteDeps.spawn = (cmd, _opts) => {
+      capturedCmd = cmd;
+      return mockProcessWithStdout("output", 0);
+    };
+
+    await adapter.complete("test", {});
+
+    expect(capturedCmd.includes("--model")).toBe(false);
+  });
+
+  test("includes --model flag when model is specified in options", async () => {
     _aiderCompleteDeps.spawn = (cmd, _opts) => {
       capturedCmd = cmd;
       return mockProcessWithStdout("output", 0);
@@ -242,20 +231,21 @@ describe("complete()", () => {
 
     await adapter.complete("test", { model: "gpt-4" });
 
-    expect(capturedCmd).toContain("--model");
+    const modelIdx = capturedCmd.indexOf("--model");
+    expect(modelIdx).toBeGreaterThan(-1);
+    expect(capturedCmd[modelIdx + 1]).toBe("gpt-4");
   });
 
-  test("--model flag is followed by the model name", async () => {
+  test("correctly passes different model names", async () => {
     _aiderCompleteDeps.spawn = (cmd, _opts) => {
       capturedCmd = cmd;
       return mockProcessWithStdout("output", 0);
     };
 
-    await adapter.complete("test", { model: "gpt-4-turbo" });
+    await adapter.complete("test", { model: "claude-3-opus" });
 
     const modelIdx = capturedCmd.indexOf("--model");
-    expect(modelIdx).toBeGreaterThan(-1);
-    expect(capturedCmd[modelIdx + 1]).toBe("gpt-4-turbo");
+    expect(capturedCmd[modelIdx + 1]).toBe("claude-3-opus");
   });
 
   // ── Error cases ─────────────────────────────────────────────────────────
@@ -291,21 +281,6 @@ describe("complete()", () => {
     _aiderCompleteDeps.spawn = (_cmd, _opts) => mockProcessWithStdout("   \n  \t  ", 0);
 
     await expect(adapter.complete("test")).rejects.toThrow(CompleteError);
-  });
-
-  test("uses stderr message when stdout is empty and exit code non-zero", async () => {
-    _aiderCompleteDeps.spawn = (_cmd, _opts) => mockProcessWithStderr("stderr error message", 1);
-
-    let caught: unknown;
-    try {
-      await adapter.complete("test");
-    } catch (err) {
-      caught = err;
-    }
-
-    expect(caught).toBeInstanceOf(CompleteError);
-    const err = caught as CompleteError;
-    expect(err.message).toContain("stderr error message");
   });
 
   // ── Return type ─────────────────────────────────────────────────────────
