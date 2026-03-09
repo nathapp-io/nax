@@ -9,6 +9,7 @@ import { claudeGenerator } from "../../../src/context/generators/claude";
 import { opencodeGenerator } from "../../../src/context/generators/opencode";
 import { codexGenerator } from "../../../src/context/generators/codex";
 import { geminiGenerator } from "../../../src/context/generators/gemini";
+import { aiderGenerator } from "../../../src/context/generators/aider";
 import type { ContextContent } from "../../../src/context/types";
 
 const sampleContext: ContextContent = {
@@ -234,6 +235,96 @@ describe("Context Generators", () => {
       // Both should include the actual context
       expect(codexResult).toContain("## Architecture");
       expect(agentsResult).toContain("## Architecture");
+    });
+  });
+
+  describe("Aider Generator", () => {
+    test("should generate .aider.conf.yml with correct format", () => {
+      const result = aiderGenerator.generate(sampleContext);
+
+      expect(result).toContain("# Aider Configuration");
+      expect(result).toContain("Auto-generated from nax/context.md");
+      expect(result).toContain("DO NOT EDIT MANUALLY");
+      expect(result).toContain("## Architecture");
+      expect(result).toContain("Microservices with Docker");
+    });
+
+    test("should have correct output filename", () => {
+      expect(aiderGenerator.outputFile).toBe(".aider.conf.yml");
+    });
+
+    test("should have correct generator name", () => {
+      expect(aiderGenerator.name).toBe("aider");
+    });
+
+    test("should include metadata section when provided", () => {
+      const result = aiderGenerator.generate(contextWithMetadata);
+
+      expect(result).toContain("## Project Metadata");
+      expect(result).toContain("@myapp/core");
+      expect(result).toContain("TypeScript");
+      expect(result).toContain("express");
+    });
+
+    test("should preserve context content correctly", () => {
+      const result = aiderGenerator.generate(sampleContext);
+
+      expect(result).toContain("## Testing Requirements");
+      expect(result).toContain("## Development Workflow");
+      expect(result).toContain("Feature branches");
+      expect(result).toContain("Conventional commits");
+    });
+
+    test("should handle empty context", () => {
+      const emptyContext: ContextContent = { markdown: "" };
+      const result = aiderGenerator.generate(emptyContext);
+
+      // Should still have header and basic structure
+      expect(result.length).toBeGreaterThan(0);
+      expect(result).toContain("# Aider Configuration");
+      expect(result).toContain("DO NOT EDIT MANUALLY");
+    });
+  });
+
+  describe("All New Generators", () => {
+    test("should have new agents codex, opencode, gemini, aider registered", () => {
+      const newAgentGenerators = [codexGenerator, opencodeGenerator, geminiGenerator, aiderGenerator];
+
+      for (const generator of newAgentGenerators) {
+        expect(generator.name).toBeDefined();
+        expect(generator.outputFile).toBeDefined();
+        expect(generator.generate).toBeDefined();
+      }
+    });
+
+    test("should support all required new agents", () => {
+      const generatorMap = {
+        codex: codexGenerator,
+        opencode: opencodeGenerator,
+        gemini: geminiGenerator,
+        aider: aiderGenerator,
+      };
+
+      expect(Object.keys(generatorMap)).toContain("codex");
+      expect(Object.keys(generatorMap)).toContain("opencode");
+      expect(Object.keys(generatorMap)).toContain("gemini");
+      expect(Object.keys(generatorMap)).toContain("aider");
+    });
+
+    test("should generate content for all new agents", () => {
+      const generators = [codexGenerator, opencodeGenerator, geminiGenerator, aiderGenerator];
+
+      for (const generator of generators) {
+        const result = generator.generate(sampleContext);
+        expect(result.length).toBeGreaterThan(0);
+        expect(result).toContain("DO NOT EDIT MANUALLY");
+        // Aider uses different format
+        if (generator.name === "aider") {
+          expect(result).toContain("Auto-generated from nax/context.md");
+        } else {
+          expect(result).toContain("auto-generated from `nax/context.md`");
+        }
+      }
     });
   });
 });
