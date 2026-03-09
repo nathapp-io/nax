@@ -89,8 +89,9 @@ export const routingStage: PipelineStage = {
       // Cache hit: legacy routing (no contentHash) or matching contentHash — use cached values
       routing = await _routingDeps.routeStory(ctx.story, { config: ctx.config }, ctx.workdir, ctx.plugins);
       // Override with cached values only when they are actually set
+      // BUG-062: Only cache complexity, NOT testStrategy — testStrategy is recomputed
+      // fresh by llmStrategy on every cache hit via determineTestStrategy()
       if (ctx.story.routing?.complexity) routing.complexity = ctx.story.routing.complexity;
-      if (ctx.story.routing?.testStrategy) routing.testStrategy = ctx.story.routing.testStrategy;
       // BUG-032: Use escalated modelTier if explicitly set (by handleTierEscalation),
       // otherwise derive from complexity + current config
       if (ctx.story.routing?.modelTier) {
