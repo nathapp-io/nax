@@ -2,11 +2,25 @@
  * Codebase context section builder.
  *
  * Builds a prompt section from scanCodebase output.
- * NOT IMPLEMENTED — stub for test RED phase.
  */
 
 import type { CodebaseScan } from "../../analyze/types";
 
-export function buildCodebaseSection(_scan: CodebaseScan): string {
-  throw new Error("Not implemented: buildCodebaseSection");
+export function buildCodebaseSection(scan: CodebaseScan): string {
+  const deps = Object.entries(scan.dependencies)
+    .slice(0, 15)
+    .map(([k, v]) => `  ${k}: ${v}`)
+    .join("\n");
+
+  return [
+    "# Codebase Context",
+    "",
+    "**File Tree:**",
+    scan.fileTree,
+    "",
+    "**Dependencies:**",
+    deps || "  (none)",
+    "",
+    `**Test Patterns:** ${scan.testPatterns.join(", ")}`,
+  ].join("\n");
 }
