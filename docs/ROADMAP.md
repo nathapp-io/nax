@@ -7,6 +7,47 @@
 ---
 
 
+## v0.35.0 — Agent Abstraction Layer (Planned)
+
+**Theme:** Decouple nax from Anthropic/Claude — make all LLM calls agent-agnostic
+**Status:** 🔲 Planned
+
+### Motivation
+
+nax currently hardcodes `claude` CLI and `@anthropic-ai/sdk` in several places, locking users to Anthropic. For public release, developers must be able to use any supported agent (Claude Code, Codex, OpenCode, Gemini CLI, Aider).
+
+### Priority 1 — Drop `@anthropic-ai/sdk` dependency
+
+- [ ] **AA-001:** Add `complete(prompt, options)` method to `AgentAdapter` interface — one-shot LLM call that returns text. Options: `{ maxTokens?, jsonMode?, model? }`. Implement in `ClaudeAdapter` using `claude -p` CLI
+- [ ] **AA-002:** Refactor `src/analyze/classifier.ts` to use `adapter.complete()` instead of `new Anthropic()`. Remove `@anthropic-ai/sdk` from `package.json` dependencies
+
+### Priority 2 — Agent-agnostic CLI calls
+
+- [ ] **AA-003:** Refactor `src/routing/strategies/llm.ts` to use `adapter.complete()` instead of hardcoded `Bun.spawn(["claude", ...])`. Resolve binary from configured agent
+- [ ] **AA-004:** Refactor `src/interaction/plugins/auto.ts` to use `adapter.complete()` instead of hardcoded `Bun.spawn(["claude", ...])`
+- [ ] **AA-005:** Refactor `src/precheck/checks-blockers.ts` to check configured agent binary (not just `claude`). Support `codex`, `opencode`, `gemini`, `aider` version checks
+
+### Priority 3 — Model name portability
+
+- [ ] **AA-006:** Remove hardcoded `"claude-sonnet-4-5"` fallbacks from `src/agents/claude.ts`, `claude-plan.ts`, and `src/acceptance/` — resolve model from config `models.balanced` instead
+- [ ] **AA-007:** Add adapter scaffolding for at least one non-Claude agent (Codex or OpenCode) — implement `AgentAdapter` interface with `execute()`, `complete()`, and binary detection
+
+### Hardcoded Claude References (audit)
+
+| File | Line | Issue |
+|:-----|:-----|:------|
+| `src/analyze/classifier.ts:101` | `new Anthropic()` | Direct SDK — **only SDK usage** |
+| `src/analyze/classifier.ts:108` | `"claude-haiku-4-20250514"` | Hardcoded model ID |
+| `src/routing/strategies/llm.ts:88` | `spawn(["claude", ...])` | Hardcoded binary |
+| `src/interaction/plugins/auto.ts:132` | `spawn(["claude", ...])` | Hardcoded binary |
+| `src/precheck/checks-blockers.ts:168` | `spawn(["claude", "--version"])` | Hardcoded binary check |
+| `src/agents/claude.ts:309,323` | `"claude-sonnet-4-5"` | Hardcoded model fallback |
+| `src/agents/claude-plan.ts:71` | `"claude-sonnet-4-5"` | Hardcoded model fallback |
+| `src/acceptance/fix-generator.ts:56,191` | `"claude-sonnet-4-5"` | Hardcoded model fallback |
+| `src/acceptance/generator.ts:151` | `"claude-sonnet-4-5"` | Hardcoded model fallback |
+
+---
+
 ## v0.34.0 — Run Lifecycle Hooks & Smart Regression (Planned)
 
 **Theme:** Fix run lifecycle ordering (BUG-060), add missing hooks, skip redundant deferred regression
@@ -62,10 +103,10 @@ All stories pass individually
 
 ---
 
-## v0.33.0 — Story Decomposer (In Progress)
+## v0.33.0 — Story Decomposer ✅ Shipped (2026-03-09)
 
 **Theme:** Auto-decompose oversized stories into manageable sub-stories
-**Status:** 🔲 In Review (MR !23)
+**Status:** ✅ Shipped (2026-03-09)
 **Spec:** `nax/features/story-decompose/prd.json`
 
 ### Stories
