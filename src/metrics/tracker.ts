@@ -62,6 +62,11 @@ export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string
   // fall back to routing.complexity for backward compat
   const initialComplexity = story.routing?.initialComplexity ?? routing.complexity;
 
+  // fullSuiteGatePassed: true only for TDD strategies when gate passes
+  const isTddStrategy =
+    routing.testStrategy === "three-session-tdd" || routing.testStrategy === "three-session-tdd-lite";
+  const fullSuiteGatePassed = isTddStrategy ? (ctx.fullSuiteGatePassed ?? false) : false;
+
   return {
     storyId: story.id,
     complexity: routing.complexity,
@@ -76,6 +81,7 @@ export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string
     firstPassSuccess,
     startedAt: storyStartTime,
     completedAt: new Date().toISOString(),
+    fullSuiteGatePassed,
   };
 }
 
@@ -132,6 +138,7 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
       firstPassSuccess: true, // batch = first pass success
       startedAt: storyStartTime,
       completedAt: new Date().toISOString(),
+      fullSuiteGatePassed: false, // batches are not TDD-gated
     };
   });
 }
