@@ -16,9 +16,23 @@
       ],
       "complexity": "medium",
       "status": "passed",
-      "tags": ["adapter"],
+      "tags": [
+        "adapter"
+      ],
       "storyPoints": 2,
-      "dependencies": []
+      "dependencies": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "three-session-tdd-lite: simple task (medium)",
+        "contentHash": "7eda0288037211f22f255843195f2abcb1949c0d7a64ab3ef4e4c74978dc494e"
+      },
+      "passes": true
     },
     {
       "id": "MA-002",
@@ -31,10 +45,24 @@
         "Integrated into AgentRegistry"
       ],
       "complexity": "simple",
-      "status": "pending",
-      "tags": ["adapter"],
+      "status": "passed",
+      "tags": [
+        "adapter"
+      ],
       "storyPoints": 1,
-      "dependencies": []
+      "dependencies": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "tdd-simple: simple task (simple)",
+        "contentHash": "e607d044806798a573d9899c35281c308da324e1f6b3ad05dfdf66608dec2859"
+      },
+      "passes": true
     },
     {
       "id": "MA-003",
@@ -47,10 +75,24 @@
         "Unit tests verify correct command line flags"
       ],
       "complexity": "simple",
-      "status": "pending",
-      "tags": ["adapter"],
+      "status": "failed",
+      "tags": [
+        "adapter"
+      ],
       "storyPoints": 1,
-      "dependencies": []
+      "dependencies": [],
+      "attempts": 1,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "initialComplexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "three-session-tdd: security-critical, complexity:complex",
+        "contentHash": "d03fe135f172c3394c1af7e16fb829b3f8905820d0a75df29e8d86915b261c04"
+      },
+      "passes": true
     },
     {
       "id": "MA-004",
@@ -63,10 +105,24 @@
         "Unit tests verify headless mode flags (--yes)"
       ],
       "complexity": "simple",
-      "status": "pending",
-      "tags": ["adapter"],
+      "status": "failed",
+      "tags": [
+        "adapter"
+      ],
       "storyPoints": 1,
-      "dependencies": []
+      "dependencies": [],
+      "attempts": 1,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "tdd-simple: simple task (simple)",
+        "contentHash": "56e03b4fa8be90fcbbd96b199e39525069c5a6569022707fad2ee8dbf2a9785b"
+      },
+      "passes": true
     },
     {
       "id": "MA-005",
@@ -79,9 +135,24 @@
       ],
       "complexity": "simple",
       "status": "pending",
-      "tags": ["context"],
+      "tags": [
+        "context"
+      ],
       "storyPoints": 1,
-      "dependencies": ["MA-001"]
+      "dependencies": [
+        "MA-001"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "tdd-simple: simple task (simple)",
+        "contentHash": "8ea7b0dc920dd62415e53c75ecf72a4255e4da490d609d062adc806714a702de"
+      }
     },
     {
       "id": "MA-006",
@@ -94,9 +165,17 @@
       ],
       "complexity": "simple",
       "status": "pending",
-      "tags": ["context"],
+      "tags": [
+        "context"
+      ],
       "storyPoints": 1,
-      "dependencies": ["MA-003"]
+      "dependencies": [
+        "MA-003"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": []
     },
     {
       "id": "MA-007",
@@ -109,9 +188,18 @@
       ],
       "complexity": "simple",
       "status": "pending",
-      "tags": ["cli"],
+      "tags": [
+        "cli"
+      ],
       "storyPoints": 1,
-      "dependencies": ["MA-005", "MA-006"]
+      "dependencies": [
+        "MA-005",
+        "MA-006"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": []
     },
     {
       "id": "MA-008",
@@ -125,9 +213,20 @@
       ],
       "complexity": "medium",
       "status": "pending",
-      "tags": ["test"],
+      "tags": [
+        "test"
+      ],
       "storyPoints": 2,
-      "dependencies": ["MA-001", "MA-002", "MA-003", "MA-004"]
+      "dependencies": [
+        "MA-001",
+        "MA-002",
+        "MA-003",
+        "MA-004"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": []
     },
     {
       "id": "MA-009",
@@ -140,9 +239,17 @@
       ],
       "complexity": "medium",
       "status": "pending",
-      "tags": ["test"],
+      "tags": [
+        "test"
+      ],
       "storyPoints": 2,
-      "dependencies": ["MA-008"]
+      "dependencies": [
+        "MA-008"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": []
     },
     {
       "id": "MA-010",
@@ -155,9 +262,20 @@
       ],
       "complexity": "simple",
       "status": "pending",
-      "tags": ["precheck"],
+      "tags": [
+        "precheck"
+      ],
       "storyPoints": 1,
-      "dependencies": ["MA-001", "MA-002", "MA-003", "MA-004"]
+      "dependencies": [
+        "MA-001",
+        "MA-002",
+        "MA-003",
+        "MA-004"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": []
     },
     {
       "id": "MA-011",
@@ -169,10 +287,25 @@
         "Model mapping rules explained"
       ],
       "complexity": "simple",
-      "status": "pending",
-      "tags": ["cli", "docs"],
+      "status": "passed",
+      "tags": [
+        "cli",
+        "docs"
+      ],
       "storyPoints": 1,
-      "dependencies": []
+      "dependencies": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "tdd-simple: simple task (simple)",
+        "contentHash": "d6d87b97bcf8e291388107eaadf43b143fcdb0f7ec243b256729637691b09f24"
+      },
+      "passes": true
     },
     {
       "id": "MA-012",
@@ -185,9 +318,18 @@
       ],
       "complexity": "simple",
       "status": "pending",
-      "tags": ["cli"],
+      "tags": [
+        "cli"
+      ],
       "storyPoints": 1,
-      "dependencies": ["MA-010"]
+      "dependencies": [
+        "MA-010"
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": []
     }
-  ]
+  ],
+  "updatedAt": "2026-03-09T15:25:53.704Z"
 }

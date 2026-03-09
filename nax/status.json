@@ -1,36 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-09T10-42-23-564Z",
-    "feature": "agent-abstraction",
-    "startedAt": "2026-03-09T10:42:23.564Z",
+    "id": "run-2026-03-09T15-09-03-340Z",
+    "feature": "multi-agent",
+    "startedAt": "2026-03-09T15:09:03.340Z",
     "status": "running",
     "dryRun": false,
-    "pid": 90238
+    "pid": 65408
   },
   "progress": {
-    "total": 7,
-    "passed": 6,
-    "failed": 0,
+    "total": 12,
+    "passed": 3,
+    "failed": 2,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 7
   },
   "cost": {
-    "spent": 1.61502525,
+    "spent": 0,
     "limit": 8
   },
   "current": {
-    "storyId": "AA-007",
-    "title": "Scaffold CodexAdapter implementing AgentAdapter",
+    "storyId": "MA-005",
+    "title": "Codex context generator",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 8,
-  "updatedAt": "2026-03-09T13:43:45.558Z",
-  "durationMs": 10881994,
-  "lastHeartbeat": "2026-03-09T13:43:45.557Z"
+  "iterations": 6,
+  "updatedAt": "2026-03-09T15:28:53.698Z",
+  "durationMs": 1190358,
+  "lastHeartbeat": "2026-03-09T15:28:53.698Z"
 }
