@@ -20,12 +20,17 @@ import { appendProgress } from "../progress";
 import { handleMaxAttemptsReached, handleNoTierAvailable } from "./tier-outcome";
 
 /** Build a StructuredFailure for tier escalation. */
-function buildEscalationFailure(story: UserStory, currentTier: string): StructuredFailure {
+function buildEscalationFailure(
+  story: UserStory,
+  currentTier: string,
+  reviewFindings?: import("../../plugins/types").ReviewFinding[],
+): StructuredFailure {
   return {
     attempt: (story.attempts ?? 0) + 1,
     modelTier: currentTier,
     stage: "escalation" as const,
     summary: `Failed with tier ${currentTier}, escalating to next tier`,
+    reviewFindings: reviewFindings && reviewFindings.length > 0 ? reviewFindings : undefined,
     timestamp: new Date().toISOString(),
   };
 }
@@ -192,6 +197,7 @@ export interface EscalationHandlerContext {
     context: {
       retryAsLite?: boolean;
       tddFailureCategory?: FailureCategory;
+      reviewFindings?: import("../../plugins/types").ReviewFinding[];
     };
   };
   config: NaxConfig;
@@ -224,6 +230,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   // Retrieve TDD-specific context flags set by executionStage
   const escalateRetryAsLite = ctx.pipelineResult.context.retryAsLite === true;
   const escalateFailureCategory = ctx.pipelineResult.context.tddFailureCategory;
+  const escalateReviewFindings = ctx.pipelineResult.context.reviewFindings;
   // S5: Auto-switch to test-after on greenfield-no-tests
   const escalateRetryAsTestAfter = escalateFailureCategory === "greenfield-no-tests";
   const routingMode = ctx.config.routing.llm?.mode ?? "hybrid";
@@ -288,7 +295,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
       const shouldResetAttempts = isChangingTier || shouldSwitchToTestAfter;
 
       // Build escalation failure
-      const escalationFailure = buildEscalationFailure(s, currentStoryTier);
+      const escalationFailure = buildEscalationFailure(s, currentStoryTier, escalateReviewFindings);
 
       return {
         ...s,

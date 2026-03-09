@@ -38,6 +38,8 @@ export interface StructuredFailure {
   summary: string;
   /** Parsed test failures (if applicable) */
   testFailures?: TestFailureContext[];
+  /** Structured review findings from plugin reviewers (e.g., semgrep, eslint) */
+  reviewFindings?: import("../plugins/types").ReviewFinding[];
   /** ISO timestamp when failure was recorded */
   timestamp: string;
 }

@@ -110,6 +110,8 @@ export interface PipelineContext {
   tddFailureCategory?: FailureCategory;
   /** Set to true when TDD full-suite gate already passed — verify stage skips to avoid redundant run (BUG-054) */
   fullSuiteGatePassed?: boolean;
+  /** Structured review findings from plugin reviewers — passed to escalation for retry context */
+  reviewFindings?: import("../plugins/types").ReviewFinding[];
 }
 
 /**

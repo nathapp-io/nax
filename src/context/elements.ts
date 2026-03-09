@@ -83,6 +83,19 @@ export function formatPriorFailures(failures: StructuredFailure[]): string {
         }
       }
     }
+
+    if (failure.reviewFindings && failure.reviewFindings.length > 0) {
+      parts.push("\n**Review Findings (fix these issues):**");
+      for (const finding of failure.reviewFindings) {
+        const source = finding.source ? ` (${finding.source})` : "";
+        parts.push(`\n- **[${finding.severity}]** \`${finding.file}:${finding.line}\`${source}`);
+        parts.push(`  **Rule:** ${finding.ruleId}`);
+        parts.push(`  **Issue:** ${finding.message}`);
+        if (finding.url) {
+          parts.push(`  **Docs:** ${finding.url}`);
+        }
+      }
+    }
     parts.push("");
   }
 
