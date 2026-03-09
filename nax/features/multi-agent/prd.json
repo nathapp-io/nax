@@ -240,7 +240,7 @@
         "Use _deps injection pattern for testability"
       ],
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "tags": [
         "test"
       ],
@@ -261,7 +261,8 @@
         "testStrategy": "tdd-simple",
         "reasoning": "tdd-simple: simple task (simple)",
         "contentHash": "915a173fdde8655cb78b43f6b673e91c35f647beabaebc85a4b7cf3545851fa6"
-      }
+      },
+      "passes": true
     },
     {
       "id": "MA-009",
@@ -284,7 +285,14 @@
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
-      "escalations": []
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "tdd-simple: simple task (simple)",
+        "contentHash": "e35ea64e1562d3bafba9cb42d161b5c952034191e7eece721d63f11f4afc6c0a"
+      }
     },
     {
       "id": "MA-010",
@@ -366,5 +374,5 @@
       "escalations": []
     }
   ],
-  "updatedAt": "2026-03-09T15:38:13.624Z"
+  "updatedAt": "2026-03-09T15:41:17.193Z"
 }

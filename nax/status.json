@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 12,
-    "passed": 6,
+    "passed": 7,
     "failed": 2,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 0.22262550000000003,
+    "spent": 0.26580375,
     "limit": 8
   },
   "current": {
-    "storyId": "MA-008",
-    "title": "Unit tests for all multi-agent adapters",
+    "storyId": "MA-009",
+    "title": "Integration test suite for multi-agent support",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 10,
-  "updatedAt": "2026-03-09T15:40:53.715Z",
-  "durationMs": 1910375,
-  "lastHeartbeat": "2026-03-09T15:40:53.715Z"
+  "iterations": 11,
+  "updatedAt": "2026-03-09T15:43:53.720Z",
+  "durationMs": 2090380,
+  "lastHeartbeat": "2026-03-09T15:43:53.720Z"
 }
