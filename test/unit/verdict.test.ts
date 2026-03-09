@@ -80,51 +80,63 @@ describe("readVerdict", () => {
     expect(result).toBeNull();
   });
 
-  it("returns null when required field 'version' is missing", async () => {
+  it("coerces when required field 'version' is missing", async () => {
     const bad = { approved: true, tests: { allPassing: true, passCount: 5, failCount: 0 } };
     await writeFile(path.join(workdir, ".nax-verifier-verdict.json"), JSON.stringify(bad), "utf-8");
 
     const result = await readVerdict(workdir);
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.version).toBe(1);
+    expect(result!.approved).toBe(true);
+    expect(result!.tests.passCount).toBe(5);
   });
 
-  it("returns null when required field 'approved' is missing", async () => {
+  it("coerces when required field 'approved' is missing (defaults false)", async () => {
     const bad = { version: 1, tests: { allPassing: true, passCount: 5, failCount: 0 } };
     await writeFile(path.join(workdir, ".nax-verifier-verdict.json"), JSON.stringify(bad), "utf-8");
 
     const result = await readVerdict(workdir);
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.approved).toBe(false);
+    expect(result!.tests.passCount).toBe(5);
   });
 
-  it("returns null when required field 'tests' is missing", async () => {
+  it("coerces when required field 'tests' is missing", async () => {
     const bad = { version: 1, approved: true };
     await writeFile(path.join(workdir, ".nax-verifier-verdict.json"), JSON.stringify(bad), "utf-8");
 
     const result = await readVerdict(workdir);
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.approved).toBe(true);
+    expect(result!.tests.passCount).toBe(0);
   });
 
-  it("returns null when tests sub-fields are missing", async () => {
+  it("coerces when tests sub-fields are missing", async () => {
     const bad = { version: 1, approved: true, tests: { allPassing: true } };
     await writeFile(path.join(workdir, ".nax-verifier-verdict.json"), JSON.stringify(bad), "utf-8");
 
     const result = await readVerdict(workdir);
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.tests.allPassing).toBe(true);
   });
 
-  it("returns null when version is not 1", async () => {
+  it("coerces when version is not 1", async () => {
     const bad = { version: 2, approved: true, tests: { allPassing: true, passCount: 5, failCount: 0 } };
     await writeFile(path.join(workdir, ".nax-verifier-verdict.json"), JSON.stringify(bad), "utf-8");
 
     const result = await readVerdict(workdir);
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.version).toBe(1); // coerced
+    expect(result!.approved).toBe(true);
   });
 
   it("returns null for empty JSON object", async () => {
     await writeFile(path.join(workdir, ".nax-verifier-verdict.json"), JSON.stringify({}), "utf-8");
 
     const result = await readVerdict(workdir);
-    expect(result).toBeNull();
+    // Empty object coerces to approved:false with zero-value defaults — this is valid
+    expect(result).not.toBeNull();
+    expect(result!.approved).toBe(false);
   });
 
   it("returns null for JSON array (not an object)", async () => {
