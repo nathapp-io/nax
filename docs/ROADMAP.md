@@ -7,6 +7,94 @@
 ---
 
 
+## v0.34.0 — Run Lifecycle Hooks & Smart Regression (Planned)
+
+**Theme:** Fix run lifecycle ordering (BUG-060), add missing hooks, skip redundant deferred regression
+**Status:** 🔲 Planned
+
+### Hook Architecture
+
+Current `on-complete` fires before deferred regression gate — if regression fails, the notification is a false positive.
+
+**New hook lifecycle:**
+
+```
+All stories pass individually
+  │
+  ├─ 🔔 on-all-stories-complete  (NEW)
+  │     "4/4 stories done — running regression gate…"
+  │
+  ├─ Deferred regression gate (with rectification if failures)
+  │     │
+  │     ├─ Passed → continue
+  │     └─ Failed → 🔔 on-final-regression-fail (NEW)
+  │                  "⚠️ Regression: 3 tests still failing after rectification"
+  │
+  └─ 🔔 on-complete  (MOVED — fires LAST, means "everything verified")
+        "✅ story-decompose complete — $5.86"
+```
+
+### Stories
+
+- [ ] **RL-001:** Add `on-all-stories-complete` hook — fires when all stories pass, before deferred regression gate. Payload: `{ feature, storiesCompleted, totalCost }`
+- [ ] **RL-002:** Move `on-complete` hook to fire AFTER deferred regression gate — represents "fully verified" state. Remove premature `run:completed` event from `sequential-executor.ts`
+- [ ] **RL-003:** Add `on-final-regression-fail` hook — fires when deferred regression fails after rectification exhausted. Payload: `{ feature, failedTests, affectedStories[], rectificationAttempts }`
+- [ ] **RL-004:** Handle deferred regression failure in `run-completion.ts` — mark affected stories as `regression-failed` status (new `StoryStatus`), fire hook, reflect in final run result
+
+### Smart Regression Skip
+
+- [ ] **RL-005:** Track `fullSuiteGatePassed` per story in run metrics. Only set `true` when rectification gate passes (three-session-tdd and tdd-lite only; NOT tdd-simple or test-after)
+- [ ] **RL-006:** Skip deferred regression when ALL of: (a) sequential mode, (b) every story has `fullSuiteGatePassed === true`, (c) no test-after or tdd-simple stories in run. Log skip reason
+
+### Strategy Matrix (reference)
+
+| Strategy | Sessions | Per-story full suite gate? | Deferred regression needed? |
+|:---------|:---------|:--------------------------|:---------------------------|
+| `test-after` | 1 | ❌ No | ✅ Yes |
+| `tdd-simple` | 1 | ❌ No (single session, no rectification) | ✅ Yes |
+| `three-session-tdd-lite` | 3 | ✅ Yes (rectification gate) | ❌ Skip if sequential |
+| `three-session-tdd` | 3 | ✅ Yes (rectification gate) | ❌ Skip if sequential |
+| Mixed strategies | varies | Partial | ✅ Yes |
+| Parallel mode | any | Yes but isolated | ✅ Yes (stories don't see each other) |
+
+### Bugfixes
+- **BUG-060:** Duplicate exit summary + premature heartbeat stop — `sequential-executor.ts` called `stopHeartbeat()` + `writeExitSummary()` before `runner.ts` ran deferred regression
+
+---
+
+## v0.33.0 — Story Decomposer (In Progress)
+
+**Theme:** Auto-decompose oversized stories into manageable sub-stories
+**Status:** 🔲 In Review (MR !23)
+**Spec:** `nax/features/story-decompose/prd.json`
+
+### Stories
+- [x] **SD-001:** DecomposeBuilder fluent API and prompt sections
+- [x] **SD-002:** Post-decompose validators (overlap, coverage, complexity, dependency)
+- [x] **SD-003:** Config schema, PRD mutation, and story-oversized trigger
+- [x] **SD-004:** Pipeline integration and CLI entry point (`nax analyse --decompose`)
+
+### Trigger
+Stories classified as complex/expert with >6 acceptance criteria.
+
+### Also includes (on master)
+- **BUG-059:** Full-suite gate silently passes on crash/OOM truncated output
+- **Semgrep:** `.semgrepignore` + `// nosemgrep` suppressions for false-positive ReDoS
+- **ReviewFinding:** Service-agnostic structured finding type for plugin reviewers (Semgrep, ESLint, Snyk, etc.)
+- **Review escalation:** Thread structured findings through escalation to retry agent context
+
+---
+
+## v0.32.2 — BUG-059 Fix ✅ Shipped (2026-03-09)
+
+**Theme:** Fix silent full-suite gate pass on crash/OOM
+**Status:** ✅ Shipped (2026-03-09)
+
+### Fixes
+- **BUG-059:** `rectification-gate.ts` silently returned `true` when `parseBunTestOutput` found 0 failures from truncated output. Now checks `passed > 0` to distinguish environmental noise from crash/OOM
+
+---
+
 ## v0.31.0 — Prompt Template Export ✅ Shipped (2026-03-08)
 
 **Theme:** Export default prompt templates for user customization
