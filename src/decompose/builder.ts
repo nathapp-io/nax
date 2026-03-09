@@ -16,6 +16,7 @@ import { buildConstraintsSection } from "./sections/constraints";
 import { buildSiblingStoriesSection } from "./sections/sibling-stories";
 import { buildTargetStorySection } from "./sections/target-story";
 import type { DecomposeAdapter, DecomposeConfig, DecomposeResult, SubStory } from "./types";
+import { runAllValidators } from "./validators/index";
 
 export const SECTION_SEP = "\n\n---\n\n";
 
@@ -48,7 +49,7 @@ export class DecomposeBuilder {
     return this;
   }
 
-  buildPrompt(): string {
+  buildPrompt(errorFeedback?: string): string {
     const sections: string[] = [];
 
     sections.push(buildTargetStorySection(this._story));
@@ -65,13 +66,53 @@ export class DecomposeBuilder {
       sections.push(buildConstraintsSection(this._cfg));
     }
 
+    if (errorFeedback) {
+      sections.push(
+        `## Validation Errors from Previous Attempt\n\nFix the following errors and try again:\n\n${errorFeedback}`,
+      );
+    }
+
     return sections.join(SECTION_SEP);
   }
 
   async decompose(adapter: DecomposeAdapter): Promise<DecomposeResult> {
-    const prompt = this.buildPrompt();
-    const raw = await adapter.decompose(prompt);
-    return parseSubStories(raw);
+    const cfg = this._cfg;
+    const maxRetries = cfg?.maxRetries ?? 0;
+    const existingStories = this._prd ? this._prd.userStories.filter((s) => s.id !== this._story.id) : [];
+
+    let lastResult: DecomposeResult | undefined;
+    let errorFeedback: string | undefined;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const prompt = this.buildPrompt(errorFeedback);
+      const raw = await adapter.decompose(prompt);
+      const parsed = parseSubStories(raw);
+
+      if (!parsed.validation.valid) {
+        lastResult = parsed;
+        errorFeedback = parsed.validation.errors.join("\n");
+        continue;
+      }
+
+      // Run post-parse validators
+      const config: DecomposeConfig = cfg ?? { maxSubStories: 5, maxComplexity: "medium" };
+      const validation = runAllValidators(this._story, parsed.subStories, existingStories, config);
+
+      if (!validation.valid) {
+        lastResult = { subStories: parsed.subStories, validation };
+        errorFeedback = validation.errors.join("\n");
+        continue;
+      }
+
+      return { subStories: parsed.subStories, validation };
+    }
+
+    return (
+      lastResult ?? {
+        subStories: [],
+        validation: { valid: false, errors: ["Decomposition failed after all retries"], warnings: [] },
+      }
+    );
   }
 }
 
@@ -121,7 +162,7 @@ function parseSubStories(output: string): DecomposeResult {
       acceptanceCriteria: Array.isArray(r.acceptanceCriteria) ? (r.acceptanceCriteria as string[]) : [],
       tags: Array.isArray(r.tags) ? (r.tags as string[]) : [],
       dependencies: Array.isArray(r.dependencies) ? (r.dependencies as string[]) : [],
-      complexity: validateComplexity(r.complexity),
+      complexity: normalizeComplexity(r.complexity),
       nonOverlapJustification: String(r.nonOverlapJustification ?? ""),
     });
   }
@@ -132,7 +173,7 @@ function parseSubStories(output: string): DecomposeResult {
   };
 }
 
-function validateComplexity(value: unknown): "simple" | "medium" | "complex" | "expert" {
+function normalizeComplexity(value: unknown): "simple" | "medium" | "complex" | "expert" {
   if (value === "simple" || value === "medium" || value === "complex" || value === "expert") {
     return value;
   }
