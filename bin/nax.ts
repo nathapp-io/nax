@@ -43,9 +43,9 @@ import { join } from "node:path";
 import chalk from "chalk";
 import { Command } from "commander";
 
-import { checkAgentHealth, getAllAgentNames } from "../src/agents";
 import {
   acceptCommand,
+  agentsListCommand,
   analyzeFeature,
   displayCostMetrics,
   displayFeatureStatus,
@@ -605,16 +605,25 @@ program
 // ── agents ───────────────────────────────────────────
 program
   .command("agents")
-  .description("Check available coding agents")
-  .action(async () => {
-    const health = await checkAgentHealth();
-
-    console.log(chalk.bold("\nCoding Agents:\n"));
-    for (const agent of health) {
-      const status = agent.installed ? chalk.green("✅ installed") : chalk.red("❌ not found");
-      console.log(`  ${agent.displayName.padEnd(15)} ${status}`);
+  .description("List available coding agents with status and capabilities")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (options) => {
+    // Validate directory path
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
     }
-    console.log();
+
+    try {
+      const config = await loadConfig(workdir);
+      await agentsListCommand(config, workdir);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
   });
 
 // ── config ───────────────────────────────────────────
