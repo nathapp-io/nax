@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 3,
+    "passed": 4,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 1.2331915,
+    "spent": 1.61502525,
     "limit": 8
   },
   "current": {
-    "storyId": "AA-002",
-    "title": "Refactor classifier.ts to use adapter.complete() — drop @anthropic-ai/sdk",
+    "storyId": "AA-003",
+    "title": "Refactor llm.ts routing strategy to use adapter.complete()",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 4,
-  "updatedAt": "2026-03-09T12:01:45.429Z",
-  "durationMs": 4761865,
-  "lastHeartbeat": "2026-03-09T12:01:45.429Z"
+  "iterations": 5,
+  "updatedAt": "2026-03-09T12:05:45.441Z",
+  "durationMs": 5001877,
+  "lastHeartbeat": "2026-03-09T12:05:45.441Z"
 }

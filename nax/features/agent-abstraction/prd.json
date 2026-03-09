@@ -50,7 +50,7 @@
         "Unit tests mock adapter.complete() — no real API calls"
       ],
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
@@ -68,7 +68,8 @@
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "Single-file refactor swapping SDK calls for adapter, config-driven model resolution, mechanical test updates — no new behavior or architecture changes.",
         "contentHash": "ffce611ba32165cd37e385d939883353efdb3d4529a39a7a599ba6b1a27b08ef"
-      }
+      },
+      "passes": true
     },
     {
       "id": "AA-003",
@@ -93,7 +94,14 @@
       "tags": [
         "p2"
       ],
-      "storyPoints": 2
+      "storyPoints": 2,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Single-file refactor replacing spawn() with adapter.complete() via dependency injection, no behavior change, straightforward mocking pattern.",
+        "contentHash": "ebcffdfd25fe4a169fc0d09b9546b05bc9f2ca1291a540b6a761462cb3864475"
+      }
     },
     {
       "id": "AA-004",
@@ -197,5 +205,5 @@
       "storyPoints": 2
     }
   ],
-  "updatedAt": "2026-03-09T11:24:58.094Z"
+  "updatedAt": "2026-03-09T12:02:50.781Z"
 }
