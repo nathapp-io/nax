@@ -88,20 +88,20 @@ describe("validateOverlap — no overlap", () => {
 
 describe("validateOverlap — similarity > 0.6 produces warning", () => {
   test("produces a warning when keyword similarity is above 0.6", () => {
-    // Substory and existing story share many keywords (>60% overlap)
+    // Similarity ~0.67 (between 0.6 and 0.8)
     const substory = makeSubStory({
       id: "SD-001-1",
-      title: "JWT authentication with refresh tokens",
-      description: "Implement JWT authentication, token refresh, and token expiry",
-      acceptanceCriteria: ["JWT tokens are issued on login", "Tokens refresh before expiry"],
-      tags: ["auth", "jwt", "security"],
+      title: "user account profile management settings",
+      description: "Account and profile management features",
+      acceptanceCriteria: ["User can update profile"],
+      tags: ["user", "account", "profile", "settings"],
     });
     const existing = makeExistingStory({
       id: "EX-002",
-      title: "JWT authentication service",
-      description: "JWT authentication with refresh tokens and expiry handling",
-      acceptanceCriteria: ["JWT tokens issued correctly", "Token refresh works"],
-      tags: ["auth", "jwt", "security"],
+      title: "user profile management interface",
+      description: "Profile management system interface",
+      acceptanceCriteria: ["Profile works"],
+      tags: ["user", "profile", "settings", "interface"],
     });
     const result = validateOverlap([substory], [existing]);
     expect(result.warnings.length).toBeGreaterThan(0);
@@ -110,17 +110,17 @@ describe("validateOverlap — similarity > 0.6 produces warning", () => {
   test("warning message references the substory ID and existing story ID", () => {
     const substory = makeSubStory({
       id: "SD-001-1",
-      title: "JWT authentication with refresh tokens",
-      description: "Implement JWT authentication, token refresh, and token expiry",
-      acceptanceCriteria: ["JWT tokens are issued on login", "Tokens refresh before expiry"],
-      tags: ["auth", "jwt", "security"],
+      title: "user account profile management settings",
+      description: "Account and profile management features",
+      acceptanceCriteria: ["User can update profile"],
+      tags: ["user", "account", "profile", "settings"],
     });
     const existing = makeExistingStory({
       id: "EX-002",
-      title: "JWT authentication service",
-      description: "JWT authentication with refresh tokens and expiry handling",
-      acceptanceCriteria: ["JWT tokens issued correctly", "Token refresh works"],
-      tags: ["auth", "jwt", "security"],
+      title: "user profile management interface",
+      description: "Profile management system interface",
+      acceptanceCriteria: ["Profile works"],
+      tags: ["user", "profile", "settings", "interface"],
     });
     const result = validateOverlap([substory], [existing]);
     const combined = [...result.errors, ...result.warnings].join(" ");
@@ -129,25 +129,25 @@ describe("validateOverlap — similarity > 0.6 produces warning", () => {
   });
 
   test("similarity between 0.6 and 0.8 is a warning only, not an error", () => {
-    // Moderately overlapping stories
+    // Similarity ~0.67
     const substory = makeSubStory({
       id: "SD-001-2",
-      title: "user authentication login",
-      description: "basic user authentication and login flow",
-      acceptanceCriteria: ["user can login", "login form validates input"],
-      tags: ["auth"],
+      title: "user account profile management settings",
+      description: "Account and profile management features",
+      acceptanceCriteria: ["user can update profile"],
+      tags: ["user", "account", "profile", "settings"],
     });
     const existing = makeExistingStory({
       id: "EX-003",
-      title: "user authentication module",
-      description: "user authentication system for login and session",
-      acceptanceCriteria: ["authentication works", "user session is created"],
-      tags: ["auth", "session"],
+      title: "user profile management interface",
+      description: "Profile management system interface",
+      acceptanceCriteria: ["profile management works"],
+      tags: ["user", "profile", "settings", "interface"],
     });
     const result = validateOverlap([substory], [existing]);
-    // Should have warnings but may not have errors
-    // At minimum, result must surface findings
-    expect(result.warnings.length + result.errors.length).toBeGreaterThan(0);
+    // Should have warnings but not errors (similarity is 0.6-0.8)
+    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(result.errors.length).toBe(0);
   });
 });
 

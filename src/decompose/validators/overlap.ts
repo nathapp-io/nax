@@ -3,7 +3,7 @@
  *
  * Checks keyword + tag similarity between each substory and all existing PRD stories.
  * Uses Jaccard-like normalized keyword intersection over title + tags.
- * Flags pairs with similarity > 0.4 as warnings, > 0.7 as errors.
+ * Flags pairs with similarity > 0.6 as warnings, > 0.8 as errors.
  */
 
 import type { UserStory } from "../../prd";
@@ -112,13 +112,13 @@ export function validateOverlap(substories: SubStory[], existingStories: UserSto
     for (const existing of existingStories) {
       const exKw = storyKeywords(existing);
       const sim = jaccardSimilarity(subKw, exKw);
-      if (sim > 0.7) {
+      if (sim > 0.8) {
         errors.push(
-          `Substory ${sub.id} overlaps with existing story ${existing.id} (similarity ${sim.toFixed(2)} > 0.7)`,
+          `Substory ${sub.id} overlaps with existing story ${existing.id} (similarity ${sim.toFixed(2)} > 0.8)`,
         );
-      } else if (sim > 0.4) {
+      } else if (sim > 0.6) {
         warnings.push(
-          `Substory ${sub.id} may overlap with existing story ${existing.id} (similarity ${sim.toFixed(2)} > 0.4)`,
+          `Substory ${sub.id} may overlap with existing story ${existing.id} (similarity ${sim.toFixed(2)} > 0.6)`,
         );
       }
     }
