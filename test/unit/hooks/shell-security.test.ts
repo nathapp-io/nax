@@ -38,3 +38,27 @@ describe("Hook Shell Security (SEC-3)", () => {
     expect(() => validateHookCommand("bun test")).not.toThrow();
   });
 });
+
+// @ts-ignore — parseCommandToArgv is not exported but accessible for testing
+import { parseCommandToArgv } from "../../../src/hooks/runner";
+
+describe("Hook tilde expansion", () => {
+  test("expands ~/ to HOME in hook command tokens", () => {
+    const home = process.env.HOME ?? "";
+    // @ts-ignore
+    const argv = parseCommandToArgv("bash ~/.nax/scripts/hook-log.sh");
+    expect(argv).toEqual(["bash", `${home}/.nax/scripts/hook-log.sh`]);
+  });
+
+  test("does not expand ~ in the middle of a token", () => {
+    // @ts-ignore
+    const argv = parseCommandToArgv("echo foo~/bar");
+    expect(argv).toEqual(["echo", "foo~/bar"]);
+  });
+
+  test("handles command with no tilde", () => {
+    // @ts-ignore
+    const argv = parseCommandToArgv("bash /usr/local/bin/script.sh");
+    expect(argv).toEqual(["bash", "/usr/local/bin/script.sh"]);
+  });
+});

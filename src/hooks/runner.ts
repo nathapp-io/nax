@@ -144,8 +144,12 @@ export function validateHookCommand(command: string): void {
  * @param command - Command string
  * @returns Array of command and arguments
  */
-function parseCommandToArgv(command: string): string[] {
-  return command.trim().split(/\s+/);
+export function parseCommandToArgv(command: string): string[] {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
+  return command
+    .trim()
+    .split(/\s+/)
+    .map((token) => (token.startsWith("~/") ? home + token.slice(1) : token));
 }
 
 /**
