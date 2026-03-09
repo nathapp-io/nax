@@ -1,7 +1,9 @@
-# Project Context
+# Agent Instructions
 
 This file is auto-generated from `nax/context.md`.
 DO NOT EDIT MANUALLY — run `nax generate` to regenerate.
+
+These instructions apply to all AI coding agents in this project.
 
 ---
 
