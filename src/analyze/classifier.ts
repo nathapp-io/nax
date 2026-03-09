@@ -5,12 +5,24 @@
  * Falls back to keyword matching if LLM call fails.
  */
 
-import { Anthropic } from "@anthropic-ai/sdk";
+import type { AgentAdapter } from "../agents";
+import { ClaudeCodeAdapter } from "../agents/claude";
 import type { NaxConfig } from "../config";
+import { resolveModel } from "../config/schema";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { classifyComplexity } from "../routing";
 import type { ClassificationResult, CodebaseScan, StoryClassification } from "./types";
+
+/**
+ * Injectable dependencies for classifier — allows tests to mock adapter.complete()
+ * without needing the claude binary.
+ *
+ * @internal
+ */
+export const _classifyDeps = {
+  adapter: new ClaudeCodeAdapter() as AgentAdapter,
+};
 
 /**
  * Raw LLM classification item (before validation)
@@ -92,37 +104,24 @@ async function classifyWithLLM(
   scan: CodebaseScan,
   config: NaxConfig,
 ): Promise<StoryClassification[]> {
-  // Check API key
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY not set");
-  }
-
-  const client = new Anthropic({ apiKey });
-
   // Build prompt
-  const prompt = buildClassificationPrompt(stories, scan, config);
+  const prompt = buildClassificationPrompt(stories, scan);
 
-  // Make API call (use haiku for cheap classification)
-  const response = await client.messages.create({
-    model: "claude-haiku-4-20250514",
-    max_tokens: 4096,
-    messages: [
-      {
-        role: "user",
-        content: prompt,
-      },
-    ],
+  // Resolve model from config.models.fast
+  const fastModelEntry = config.models.fast;
+  if (!fastModelEntry) {
+    throw new Error("config.models.fast not configured");
+  }
+  const modelDef = resolveModel(fastModelEntry);
+
+  // Make API call via adapter (use haiku for cheap classification)
+  const jsonText = await _classifyDeps.adapter.complete(prompt, {
+    jsonMode: true,
+    maxTokens: 4096,
+    model: modelDef.model,
   });
 
-  // Extract text from response
-  const textContent = response.content.find((c) => c.type === "text");
-  if (!textContent || textContent.type !== "text") {
-    throw new Error("No text response from LLM");
-  }
-
   // Parse JSON response
-  const jsonText = extractJSON(textContent.text);
   const parsed: unknown = JSON.parse(jsonText);
 
   // Validate structure
@@ -159,10 +158,9 @@ async function classifyWithLLM(
  *
  * @param stories - User stories to classify
  * @param scan - Codebase scan result
- * @param config - Ngent configuration
  * @returns Formatted prompt string
  */
-function buildClassificationPrompt(stories: UserStory[], scan: CodebaseScan, config: NaxConfig): string {
+function buildClassificationPrompt(stories: UserStory[], scan: CodebaseScan): string {
   // Format codebase summary
   const codebaseSummary = `
 FILE TREE:
@@ -227,29 +225,6 @@ Consider:
 4. Does it require new dependencies or architectural decisions?
 
 Respond with ONLY the JSON array.`;
-}
-
-/**
- * Extract JSON from LLM response (handles markdown code fences).
- *
- * @param text - LLM response text
- * @returns JSON string
- */
-function extractJSON(text: string): string {
-  // Remove markdown code fences if present
-  const jsonMatch = text.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/);
-  if (jsonMatch) {
-    return jsonMatch[1];
-  }
-
-  // Try to find JSON array directly
-  const arrayMatch = text.match(/\[[\s\S]*\]/);
-  if (arrayMatch) {
-    return arrayMatch[0];
-  }
-
-  // Return as-is if no special formatting detected
-  return text.trim();
 }
 
 /**
