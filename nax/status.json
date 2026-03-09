@@ -23,14 +23,14 @@
   "current": {
     "storyId": "MA-006",
     "title": "Gemini CLI context generator",
-    "complexity": "medium",
-    "tddStrategy": "test-after",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 7,
-  "updatedAt": "2026-03-09T15:31:53.708Z",
-  "durationMs": 1370368,
-  "lastHeartbeat": "2026-03-09T15:31:53.708Z"
+  "iterations": 8,
+  "updatedAt": "2026-03-09T15:34:53.719Z",
+  "durationMs": 1550379,
+  "lastHeartbeat": "2026-03-09T15:34:53.719Z"
 }
