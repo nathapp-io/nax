@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 5,
+    "passed": 6,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
     "spent": 1.61502525,
     "limit": 8
   },
   "current": {
-    "storyId": "AA-004",
-    "title": "Refactor interaction/plugins/auto.ts to use adapter.complete()",
+    "storyId": "AA-007",
+    "title": "Scaffold CodexAdapter implementing AgentAdapter",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 7,
-  "updatedAt": "2026-03-09T13:30:45.460Z",
-  "durationMs": 10101896,
-  "lastHeartbeat": "2026-03-09T13:30:45.460Z"
+  "iterations": 8,
+  "updatedAt": "2026-03-09T13:34:45.463Z",
+  "durationMs": 10341899,
+  "lastHeartbeat": "2026-03-09T13:34:45.463Z"
 }

@@ -127,7 +127,7 @@
         "Unit tests mock adapter.complete()"
       ],
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
@@ -145,7 +145,8 @@
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "Single-file refactoring replacing Bun.spawn with adapter.complete(); no new behavior; standard mocking pattern; <30min",
         "contentHash": "71941e484f97ea3252dd6c74e7c86ade0e09ce7d9e21b77fc72fbf4527233ec8"
-      }
+      },
+      "passes": true
     },
     {
       "id": "AA-005",
@@ -221,8 +222,15 @@
       "tags": [
         "p3"
       ],
-      "storyPoints": 2
+      "storyPoints": 2,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Boilerplate adapter scaffolding with clear interface, established patterns, straightforward Bun.spawn usage, no novel logic",
+        "contentHash": "6092d03c6a8fd14babdc06963164cf5e8f94f01eff9801c86c222762f9f465be"
+      }
     }
   ],
-  "updatedAt": "2026-03-09T13:18:22.037Z"
+  "updatedAt": "2026-03-09T13:31:19.697Z"
 }
