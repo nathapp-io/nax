@@ -9,7 +9,15 @@ import type { ModelTier } from "../config";
 import type { FailureCategory } from "../tdd/types";
 
 /** User story status */
-export type StoryStatus = "pending" | "in-progress" | "passed" | "failed" | "skipped" | "blocked" | "paused";
+export type StoryStatus =
+  | "pending"
+  | "in-progress"
+  | "passed"
+  | "failed"
+  | "skipped"
+  | "blocked"
+  | "paused"
+  | "decomposed";
 
 /** Verification stage where failure occurred */
 export type VerificationStage = "verify" | "review" | "regression" | "rectification" | "agent-session" | "escalation";

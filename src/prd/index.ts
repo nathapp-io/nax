@@ -107,6 +107,7 @@ export function getNextStory(prd: PRD, currentStoryId?: string | null, maxRetrie
         s.status !== "blocked" &&
         s.status !== "failed" &&
         s.status !== "paused" &&
+        s.status !== "decomposed" &&
         s.dependencies.every((dep) => completedIds.has(dep)),
     ) ?? null
   );
@@ -132,6 +133,7 @@ export function countStories(prd: PRD): {
   skipped: number;
   blocked: number;
   paused: number;
+  decomposed: number;
 } {
   return {
     total: prd.userStories.length,
@@ -144,11 +146,13 @@ export function countStories(prd: PRD): {
         s.status !== "failed" &&
         s.status !== "skipped" &&
         s.status !== "blocked" &&
-        s.status !== "paused",
+        s.status !== "paused" &&
+        s.status !== "decomposed",
     ).length,
     skipped: prd.userStories.filter((s) => s.status === "skipped").length,
     blocked: prd.userStories.filter((s) => s.status === "blocked").length,
     paused: prd.userStories.filter((s) => s.status === "paused").length,
+    decomposed: prd.userStories.filter((s) => s.status === "decomposed").length,
   };
 }
 
