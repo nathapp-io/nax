@@ -104,6 +104,12 @@ async function classifyWithLLM(
   scan: CodebaseScan,
   config: NaxConfig,
 ): Promise<StoryClassification[]> {
+  // Check for required environment variables
+  // In tests, ANTHROPIC_API_KEY may not be set, but adapter.complete will be mocked
+  if (!process.env.ANTHROPIC_API_KEY && process.env.NODE_ENV !== "test") {
+    throw new Error("ANTHROPIC_API_KEY environment variable not configured — cannot use LLM classification");
+  }
+
   // Build prompt
   const prompt = buildClassificationPrompt(stories, scan);
 
