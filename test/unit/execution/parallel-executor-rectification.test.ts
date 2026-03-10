@@ -133,98 +133,114 @@ describe("MFX-005: _parallelExecutorDeps has rectifyConflictedStory", () => {
 // ─── rectificationStats in result ────────────────────────────────────────────
 
 describe("MFX-005: rectificationStats in ParallelExecutorResult", () => {
-  test("result includes rectificationStats when executeParallel returns conflictedStories", async () => {
-    const initialPrd = makePrd([makeStory("US-001"), makeStory("US-002")]);
-    const postParallelPrd = makePrd([
-      makeStory("US-001", "passed"),
-      makeStory("US-002", "failed"),
-    ]);
-
-    _parallelExecutorDeps.fireHook = mock(async () => {});
-    _parallelExecutorDeps.executeParallel = mock(async () => ({
-      storiesCompleted: 1,
-      totalCost: 3.0,
-      updatedPrd: postParallelPrd,
-      mergeConflicts: [
-        { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
+  test.each([
+    {
+      name: "result includes rectificationStats when executeParallel returns conflictedStories",
+      postParallelStories: [
+        { id: "US-001", status: "passed" as const },
+        { id: "US-002", status: "failed" as const },
       ],
-    }));
-
-    const statusWriter = makeStatusWriter();
-    const result = await runParallelExecution(makeOptions(statusWriter), initialPrd);
-
-    // MFX-005: result must have rectificationStats — FAILS until implemented
-    expect(result).toHaveProperty("rectificationStats");
-  });
-
-  test("rectificationStats has rectified and stillConflicting counters", async () => {
-    const initialPrd = makePrd([makeStory("US-001"), makeStory("US-002")]);
-    const postParallelPrd = makePrd([
-      makeStory("US-001", "passed"),
-      makeStory("US-002", "failed"),
-    ]);
-
-    _parallelExecutorDeps.fireHook = mock(async () => {});
-    _parallelExecutorDeps.executeParallel = mock(async () => ({
+      hasRectifyMock: false,
+      mergeConflicts: [{ storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 }],
       storiesCompleted: 1,
-      totalCost: 3.0,
-      updatedPrd: postParallelPrd,
-      mergeConflicts: [
-        { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
+      assertion: (result: any) => {
+        expect(result).toHaveProperty("rectificationStats");
+      },
+    },
+    {
+      name: "rectificationStats has rectified and stillConflicting counters",
+      postParallelStories: [
+        { id: "US-001", status: "passed" as const },
+        { id: "US-002", status: "failed" as const },
       ],
-    }));
-    // @ts-ignore
-    _parallelExecutorDeps.rectifyConflictedStory = mock(async () => ({
-      success: true,
-      storyId: "US-002",
-      cost: 2.0,
-    }));
-
-    const statusWriter = makeStatusWriter();
-    const result = await runParallelExecution(makeOptions(statusWriter), initialPrd);
-
-    // MFX-005: must have numeric rectified and stillConflicting — FAILS
-    const stats = (result as unknown as Record<string, unknown>).rectificationStats as Record<
-      string,
-      number
-    >;
-    expect(typeof stats?.rectified).toBe("number");
-    expect(typeof stats?.stillConflicting).toBe("number");
-  });
-
-  test("no conflicts: rectificationStats shows rectified: 0, stillConflicting: 0", async () => {
-    const initialPrd = makePrd([makeStory("US-001"), makeStory("US-002")]);
-    const postParallelPrd = makePrd([
-      makeStory("US-001", "passed"),
-      makeStory("US-002", "passed"),
-    ]);
-
-    _parallelExecutorDeps.fireHook = mock(async () => {});
-    _parallelExecutorDeps.executeParallel = mock(async () => ({
-      storiesCompleted: 2,
-      totalCost: 4.0,
-      updatedPrd: postParallelPrd,
+      hasRectifyMock: true,
+      mergeConflicts: [{ storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 }],
+      storiesCompleted: 1,
+      assertion: (result: any) => {
+        const stats = result.rectificationStats;
+        expect(typeof stats?.rectified).toBe("number");
+        expect(typeof stats?.stillConflicting).toBe("number");
+      },
+    },
+    {
+      name: "no conflicts: rectificationStats shows rectified: 0, stillConflicting: 0",
+      postParallelStories: [
+        { id: "US-001", status: "passed" as const },
+        { id: "US-002", status: "passed" as const },
+      ],
+      hasRectifyMock: false,
       mergeConflicts: [],
-    }));
+      storiesCompleted: 2,
+      assertion: (result: any) => {
+        const stats = result.rectificationStats;
+        expect(stats).toBeDefined();
+        expect(stats?.rectified).toBe(0);
+        expect(stats?.stillConflicting).toBe(0);
+      },
+    },
+  ])(
+    "$name",
+    async ({
+      postParallelStories,
+      hasRectifyMock,
+      mergeConflicts,
+      storiesCompleted,
+      assertion,
+    }) => {
+      const initialPrd = makePrd([makeStory("US-001"), makeStory("US-002")]);
+      const postParallelPrd = makePrd(
+        postParallelStories.map((s) => makeStory(s.id, s.status)),
+      );
 
-    const statusWriter = makeStatusWriter();
-    const result = await runParallelExecution(makeOptions(statusWriter), initialPrd);
+      _parallelExecutorDeps.fireHook = mock(async () => {});
+      _parallelExecutorDeps.executeParallel = mock(async () => ({
+        storiesCompleted,
+        totalCost: 3.0 + (storiesCompleted === 2 ? 1 : 0),
+        updatedPrd: postParallelPrd,
+        mergeConflicts,
+      })) as any;
 
-    // MFX-005: empty rectification when no conflicts — FAILS until implemented
-    const stats = (result as unknown as Record<string, unknown>).rectificationStats as Record<
-      string,
-      number
-    >;
-    expect(stats).toBeDefined();
-    expect(stats?.rectified).toBe(0);
-    expect(stats?.stillConflicting).toBe(0);
-  });
+      if (hasRectifyMock) {
+        // @ts-ignore
+        _parallelExecutorDeps.rectifyConflictedStory = mock(async () => ({
+          success: true,
+          storyId: "US-002",
+          cost: 2.0,
+        }));
+      }
+
+      const statusWriter = makeStatusWriter();
+      const result = await runParallelExecution(makeOptions(statusWriter), initialPrd);
+      assertion(result);
+    },
+  );
 });
 
 // ─── Successful rectification ─────────────────────────────────────────────────
 
 describe("MFX-005: successful rectification", () => {
-  test("marks rectified story as passed in returned PRD", async () => {
+  test.each([
+    {
+      name: "marks rectified story as passed in returned PRD",
+      assertion: (result: any) => {
+        const us002 = result.prd.userStories.find((s: any) => s.id === "US-002");
+        expect(us002?.status).toBe("passed");
+      },
+    },
+    {
+      name: "includes rectified story in storiesCompleted count",
+      assertion: (result: any) => {
+        expect(result.storiesCompleted).toBe(2);
+      },
+    },
+    {
+      name: "rectificationStats shows rectified: 1, stillConflicting: 0",
+      assertion: (result: any) => {
+        expect(result.rectificationStats?.rectified).toBe(1);
+        expect(result.rectificationStats?.stillConflicting).toBe(0);
+      },
+    },
+  ])("$name", async ({ assertion }) => {
     const initialPrd = makePrd([makeStory("US-001"), makeStory("US-002")]);
     const postParallelPrd = makePrd([
       makeStory("US-001", "passed"),
@@ -239,7 +255,7 @@ describe("MFX-005: successful rectification", () => {
       mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
       ],
-    }));
+    })) as any;
     // @ts-ignore
     _parallelExecutorDeps.rectifyConflictedStory = mock(async () => ({
       success: true,
@@ -249,83 +265,56 @@ describe("MFX-005: successful rectification", () => {
 
     const statusWriter = makeStatusWriter();
     const result = await runParallelExecution(makeOptions(statusWriter), initialPrd);
-
-    // MFX-005: rectified story must be passed in PRD — FAILS until implemented
-    const us002 = result.prd.userStories.find((s) => s.id === "US-002");
-    expect(us002?.status).toBe("passed");
-  });
-
-  test("includes rectified story in storiesCompleted count", async () => {
-    const initialPrd = makePrd([makeStory("US-001"), makeStory("US-002")]);
-    const postParallelPrd = makePrd([
-      makeStory("US-001", "passed"),
-      makeStory("US-002", "failed"),
-    ]);
-
-    _parallelExecutorDeps.fireHook = mock(async () => {});
-    _parallelExecutorDeps.executeParallel = mock(async () => ({
-      storiesCompleted: 1,
-      totalCost: 3.0,
-      updatedPrd: postParallelPrd,
-      mergeConflicts: [
-        { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
-      ],
-    }));
-    // @ts-ignore
-    _parallelExecutorDeps.rectifyConflictedStory = mock(async () => ({
-      success: true,
-      storyId: "US-002",
-      cost: 2.0,
-    }));
-
-    const statusWriter = makeStatusWriter();
-    // 1 parallel + 1 rectified = 2
-    const result = await runParallelExecution(makeOptions(statusWriter), initialPrd);
-
-    // MFX-005: storiesCompleted must include rectified story — FAILS until implemented
-    expect(result.storiesCompleted).toBe(2);
-  });
-
-  test("rectificationStats shows rectified: 1, stillConflicting: 0", async () => {
-    const initialPrd = makePrd([makeStory("US-001"), makeStory("US-002")]);
-    const postParallelPrd = makePrd([
-      makeStory("US-001", "passed"),
-      makeStory("US-002", "failed"),
-    ]);
-
-    _parallelExecutorDeps.fireHook = mock(async () => {});
-    _parallelExecutorDeps.executeParallel = mock(async () => ({
-      storiesCompleted: 1,
-      totalCost: 3.0,
-      updatedPrd: postParallelPrd,
-      mergeConflicts: [
-        { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
-      ],
-    }));
-    // @ts-ignore
-    _parallelExecutorDeps.rectifyConflictedStory = mock(async () => ({
-      success: true,
-      storyId: "US-002",
-      cost: 2.0,
-    }));
-
-    const statusWriter = makeStatusWriter();
-    const result = await runParallelExecution(makeOptions(statusWriter), initialPrd);
-
-    // MFX-005: counts must be correct — FAILS until implemented
-    const stats = (result as unknown as Record<string, unknown>).rectificationStats as Record<
-      string,
-      number
-    >;
-    expect(stats?.rectified).toBe(1);
-    expect(stats?.stillConflicting).toBe(0);
+    assertion(result);
   });
 });
 
 // ─── Rectification storyMetrics ───────────────────────────────────────────────
 
 describe("MFX-005: storyMetrics for rectified stories", () => {
-  test("storyMetrics includes entry with source: rectification", async () => {
+  test.each([
+    {
+      name: "storyMetrics includes entry with source: rectification",
+      originalCost: 1.5,
+      rectificationCost: 2.0,
+      assertion: (result: any) => {
+        const rectMetrics = result.storyMetrics.filter((m: any) => m.source === "rectification");
+        expect(rectMetrics.length).toBeGreaterThan(0);
+      },
+    },
+    {
+      name: "storyMetrics rectification entry has rectifiedFromConflict: true",
+      originalCost: 1.5,
+      rectificationCost: 2.0,
+      assertion: (result: any) => {
+        const rectMetrics = result.storyMetrics.filter((m: any) => m.source === "rectification");
+        expect(rectMetrics.length).toBeGreaterThan(0);
+        expect(rectMetrics[0].rectifiedFromConflict).toBe(true);
+      },
+    },
+    {
+      name: "storyMetrics rectification entry tracks originalCost and rectificationCost",
+      originalCost: 1.5,
+      rectificationCost: 2.5,
+      assertion: (result: any) => {
+        const rectMetrics = result.storyMetrics.filter((m: any) => m.source === "rectification");
+        expect(rectMetrics.length).toBeGreaterThan(0);
+        expect(rectMetrics[0].originalCost).toBe(1.5);
+        expect(rectMetrics[0].rectificationCost).toBe(2.5);
+      },
+    },
+    {
+      name: "storyMetrics rectification entry includes storyId and success: true",
+      originalCost: 1.5,
+      rectificationCost: 2.0,
+      assertion: (result: any) => {
+        const entry = result.storyMetrics.find((m: any) => m.source === "rectification");
+        expect(entry).toBeDefined();
+        expect(entry?.storyId).toBe("US-002");
+        expect(entry?.success).toBe(true);
+      },
+    },
+  ])("$name", async ({ originalCost, rectificationCost, assertion }) => {
     const initialPrd = makePrd([makeStory("US-001"), makeStory("US-002")]);
     const postParallelPrd = makePrd([
       makeStory("US-001", "passed"),
@@ -338,139 +327,49 @@ describe("MFX-005: storyMetrics for rectified stories", () => {
       totalCost: 3.0,
       updatedPrd: postParallelPrd,
       mergeConflicts: [
-        { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
+        { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost },
       ],
-    }));
+    })) as any;
     // @ts-ignore
     _parallelExecutorDeps.rectifyConflictedStory = mock(async () => ({
       success: true,
       storyId: "US-002",
-      cost: 2.0,
+      cost: rectificationCost,
     }));
 
     const statusWriter = makeStatusWriter();
     const result = await runParallelExecution(makeOptions(statusWriter), initialPrd);
-
-    // MFX-005: storyMetrics must include rectification entry — FAILS until implemented
-    const rectMetrics = result.storyMetrics.filter(
-      (m) => (m as unknown as Record<string, unknown>).source === "rectification",
-    );
-    expect(rectMetrics.length).toBeGreaterThan(0);
-  });
-
-  test("storyMetrics rectification entry has rectifiedFromConflict: true", async () => {
-    const initialPrd = makePrd([makeStory("US-001"), makeStory("US-002")]);
-    const postParallelPrd = makePrd([
-      makeStory("US-001", "passed"),
-      makeStory("US-002", "failed"),
-    ]);
-
-    _parallelExecutorDeps.fireHook = mock(async () => {});
-    _parallelExecutorDeps.executeParallel = mock(async () => ({
-      storiesCompleted: 1,
-      totalCost: 3.0,
-      updatedPrd: postParallelPrd,
-      mergeConflicts: [
-        { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
-      ],
-    }));
-    // @ts-ignore
-    _parallelExecutorDeps.rectifyConflictedStory = mock(async () => ({
-      success: true,
-      storyId: "US-002",
-      cost: 2.0,
-    }));
-
-    const statusWriter = makeStatusWriter();
-    const result = await runParallelExecution(makeOptions(statusWriter), initialPrd);
-
-    // MFX-005: rectifiedFromConflict flag must be set — FAILS until implemented
-    const rectMetrics = result.storyMetrics.filter(
-      (m) => (m as unknown as Record<string, unknown>).source === "rectification",
-    );
-    expect(rectMetrics.length).toBeGreaterThan(0);
-    const entry = rectMetrics[0] as unknown as Record<string, unknown>;
-    expect(entry.rectifiedFromConflict).toBe(true);
-  });
-
-  test("storyMetrics rectification entry tracks originalCost and rectificationCost", async () => {
-    const ORIGINAL_COST = 1.5;
-    const RECTIFICATION_COST = 2.5;
-    const initialPrd = makePrd([makeStory("US-001"), makeStory("US-002")]);
-    const postParallelPrd = makePrd([
-      makeStory("US-001", "passed"),
-      makeStory("US-002", "failed"),
-    ]);
-
-    _parallelExecutorDeps.fireHook = mock(async () => {});
-    _parallelExecutorDeps.executeParallel = mock(async () => ({
-      storiesCompleted: 1,
-      totalCost: 3.0,
-      updatedPrd: postParallelPrd,
-      mergeConflicts: [
-        { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: ORIGINAL_COST },
-      ],
-    }));
-    // @ts-ignore
-    _parallelExecutorDeps.rectifyConflictedStory = mock(async () => ({
-      success: true,
-      storyId: "US-002",
-      cost: RECTIFICATION_COST,
-    }));
-
-    const statusWriter = makeStatusWriter();
-    const result = await runParallelExecution(makeOptions(statusWriter), initialPrd);
-
-    // MFX-005: must store both cost components — FAILS until implemented
-    const rectMetrics = result.storyMetrics.filter(
-      (m) => (m as unknown as Record<string, unknown>).source === "rectification",
-    );
-    expect(rectMetrics.length).toBeGreaterThan(0);
-    const entry = rectMetrics[0] as unknown as Record<string, unknown>;
-    expect(entry.originalCost).toBe(ORIGINAL_COST);
-    expect(entry.rectificationCost).toBe(RECTIFICATION_COST);
-  });
-
-  test("storyMetrics rectification entry includes storyId and success: true", async () => {
-    const initialPrd = makePrd([makeStory("US-001"), makeStory("US-002")]);
-    const postParallelPrd = makePrd([
-      makeStory("US-001", "passed"),
-      makeStory("US-002", "failed"),
-    ]);
-
-    _parallelExecutorDeps.fireHook = mock(async () => {});
-    _parallelExecutorDeps.executeParallel = mock(async () => ({
-      storiesCompleted: 1,
-      totalCost: 3.0,
-      updatedPrd: postParallelPrd,
-      mergeConflicts: [
-        { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
-      ],
-    }));
-    // @ts-ignore
-    _parallelExecutorDeps.rectifyConflictedStory = mock(async () => ({
-      success: true,
-      storyId: "US-002",
-      cost: 2.0,
-    }));
-
-    const statusWriter = makeStatusWriter();
-    const result = await runParallelExecution(makeOptions(statusWriter), initialPrd);
-
-    // MFX-005: rectification entry must have core StoryMetrics fields — FAILS
-    const entry = result.storyMetrics.find(
-      (m) => (m as unknown as Record<string, unknown>).source === "rectification",
-    ) as unknown as Record<string, unknown> | undefined;
-    expect(entry).toBeDefined();
-    expect(entry?.storyId).toBe("US-002");
-    expect(entry?.success).toBe(true);
+    assertion(result);
   });
 });
 
 // ─── finalConflict (still conflicting after rectification) ────────────────────
 
 describe("MFX-005: finalConflict — story still conflicts after rectification", () => {
-  test("story remains failed (not passed) when rectification still conflicts", async () => {
+  test.each([
+    {
+      name: "story remains failed (not passed) when rectification still conflicts",
+      assertion: (result: any) => {
+        const us002 = result.prd.userStories.find((s: any) => s.id === "US-002");
+        expect(us002?.status).not.toBe("passed");
+      },
+    },
+    {
+      name: "rectificationStats shows rectified: 0, stillConflicting: 1 for finalConflict",
+      assertion: (result: any) => {
+        const stats = result.rectificationStats;
+        expect(stats).toBeDefined();
+        expect(stats?.rectified).toBe(0);
+        expect(stats?.stillConflicting).toBe(1);
+      },
+    },
+    {
+      name: "finalConflict story is excluded from storiesCompleted",
+      assertion: (result: any) => {
+        expect(result.storiesCompleted).toBe(1);
+      },
+    },
+  ])("$name", async ({ assertion }) => {
     const initialPrd = makePrd([makeStory("US-001"), makeStory("US-002")]);
     const postParallelPrd = makePrd([
       makeStory("US-001", "passed"),
@@ -485,7 +384,7 @@ describe("MFX-005: finalConflict — story still conflicts after rectification",
       mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
       ],
-    }));
+    })) as any;
     // @ts-ignore — still conflicts on re-run (structural issue)
     _parallelExecutorDeps.rectifyConflictedStory = mock(async () => ({
       success: false,
@@ -497,81 +396,7 @@ describe("MFX-005: finalConflict — story still conflicts after rectification",
 
     const statusWriter = makeStatusWriter();
     const result = await runParallelExecution(makeOptions(statusWriter), initialPrd);
-
-    // MFX-005: finalConflict story must NOT be passed — FAILS until implemented
-    const us002 = result.prd.userStories.find((s) => s.id === "US-002");
-    expect(us002?.status).not.toBe("passed");
-  });
-
-  test("rectificationStats shows rectified: 0, stillConflicting: 1 for finalConflict", async () => {
-    const initialPrd = makePrd([makeStory("US-001"), makeStory("US-002")]);
-    const postParallelPrd = makePrd([
-      makeStory("US-001", "passed"),
-      makeStory("US-002", "failed"),
-    ]);
-
-    _parallelExecutorDeps.fireHook = mock(async () => {});
-    _parallelExecutorDeps.executeParallel = mock(async () => ({
-      storiesCompleted: 1,
-      totalCost: 3.0,
-      updatedPrd: postParallelPrd,
-      mergeConflicts: [
-        { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
-      ],
-    }));
-    // @ts-ignore
-    _parallelExecutorDeps.rectifyConflictedStory = mock(async () => ({
-      success: false,
-      storyId: "US-002",
-      conflictFiles: ["src/foo.ts"],
-      finalConflict: true,
-      cost: 1.0,
-    }));
-
-    const statusWriter = makeStatusWriter();
-    const result = await runParallelExecution(makeOptions(statusWriter), initialPrd);
-
-    // MFX-005: stats must reflect the still-conflicting story — FAILS until implemented
-    const stats = (result as unknown as Record<string, unknown>).rectificationStats as Record<
-      string,
-      number
-    >;
-    expect(stats).toBeDefined();
-    expect(stats?.rectified).toBe(0);
-    expect(stats?.stillConflicting).toBe(1);
-  });
-
-  test("finalConflict story is excluded from storiesCompleted", async () => {
-    const initialPrd = makePrd([makeStory("US-001"), makeStory("US-002")]);
-    const postParallelPrd = makePrd([
-      makeStory("US-001", "passed"),
-      makeStory("US-002", "failed"),
-    ]);
-
-    _parallelExecutorDeps.fireHook = mock(async () => {});
-    _parallelExecutorDeps.executeParallel = mock(async () => ({
-      storiesCompleted: 1,
-      totalCost: 3.0,
-      updatedPrd: postParallelPrd,
-      mergeConflicts: [
-        { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
-      ],
-    }));
-    // @ts-ignore
-    _parallelExecutorDeps.rectifyConflictedStory = mock(async () => ({
-      success: false,
-      storyId: "US-002",
-      conflictFiles: ["src/foo.ts"],
-      finalConflict: true,
-      cost: 1.0,
-    }));
-
-    const statusWriter = makeStatusWriter();
-    // starts at 0; parallel completes US-001 (storiesCompleted becomes 1 via executeParallel)
-    const result = await runParallelExecution(makeOptions(statusWriter), initialPrd);
-
-    // MFX-005: only US-001 (passed via parallel) should be counted — FAILS until implemented
-    expect(result.storiesCompleted).toBe(1);
+    assertion(result);
   });
 
   test("mixed batch: 2 conflicted, 1 rectified + 1 finalConflict", async () => {
