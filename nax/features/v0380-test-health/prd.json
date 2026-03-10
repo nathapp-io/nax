@@ -88,18 +88,26 @@
         "docs/test-overlap-report.md and docs/dead-tests-report.md updated to mark deleted files as REMOVED"
       ],
       "complexity": "complex",
-      "status": "pending",
+      "status": "passed",
       "dependencies": [
         "TH-001",
         "TH-002",
         "TH-003"
       ],
-      "attempts": 0,
+      "attempts": 1,
       "priorErrors": [],
       "priorFailures": [],
       "escalations": [],
       "tags": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "passes": true,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure deletion task (no new code/behavior); mechanical deletions, import updates, and verification. Test suite runs and potential cascading failure debugging could extend duration, but conceptually straightforward.",
+        "contentHash": "84a24385bc061e6e9e932581b622ae6acde91a5bd6f4130453e729db71cacf0f"
+      }
     },
     {
       "id": "TH-005",
@@ -113,15 +121,16 @@
         "docs/testing-conventions.md documents the 500/800 line limits and test.each() recommendation"
       ],
       "complexity": "simple",
-      "status": "pending",
+      "status": "passed",
       "dependencies": [],
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
       "escalations": [],
       "tags": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "passes": true
     }
   ],
-  "updatedAt": "2026-03-10T10:04:47.000Z"
+  "updatedAt": "2026-03-10T10:07:42.060Z"
 }
