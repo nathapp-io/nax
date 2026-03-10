@@ -449,9 +449,9 @@ describe("Internal prompts: not migrated, still accessible", () => {
     expect(typeof mod.buildRoutingPrompt).toBe("function");
   });
 
-  test("buildBatchPrompt still exported from src/routing/strategies/llm-prompts", async () => {
+  test("buildBatchRoutingPrompt still exported from src/routing/strategies/llm-prompts", async () => {
     const mod = await import("../../../src/routing/strategies/llm-prompts");
-    expect(typeof mod.buildBatchPrompt).toBe("function");
+    expect(typeof mod.buildBatchRoutingPrompt).toBe("function");
   });
 });
 
