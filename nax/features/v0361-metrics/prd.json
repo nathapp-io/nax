@@ -93,7 +93,7 @@
       "title": "Classify runtime crashes separately from test failures to prevent spurious escalation (BUG-070)",
       "description": "When the verify stage detects test failure, it triggers escalation (e.g., haiku to sonnet). But some failures are actually Bun runtime crashes (segfaults, panics), not code errors. Escalating the model tier is useless for runtime crashes.\n\nFix in verify.ts (or the verify stage output handler):\n\n(1) Parse the test runner output for known crash patterns: 'panic(main thread)', 'Segmentation fault', 'Bun has crashed', 'oh no: Bun has crashed'. These are emitted by Bun itself before any test result.\n\n(2) If a crash pattern is detected, classify the result as RUNTIME_CRASH instead of TEST_FAILURE.\n\n(3) In the escalation handler, add a branch: if verifyResult.failureReason === RUNTIME_CRASH -> retry the SAME tier (transient failure, not a code quality issue). Only escalate on genuine TEST_FAILURE.\n\n(4) Add a runtimeCrashes counter to story metrics. If a story retried due to runtime crashes, log it and include in storyMetrics.\n\nAdd unit tests for the crash detection pattern matching, and integration tests for the escalation path branching (crash -> retry-same vs failure -> escalate).",
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "dependencies": [],
       "attempts": 0,
       "priorErrors": [],
@@ -101,23 +101,25 @@
       "escalations": [],
       "tags": [],
       "acceptanceCriteria": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "passes": true
     },
     {
       "id": "MFX-005",
       "title": "Merge conflict rectification: sequential re-run of conflicted stories on updated base",
       "description": "When parallel stories conflict during merge, they are currently marked as failed and require manual resolution. Implement automatic rectification: conflicted stories re-run sequentially on the updated base branch (which includes all successfully merged stories), giving the agent full context of what already exists.\n\nImplementation in src/execution/parallel-executor.ts:\n\nAfter the first merge pass (where some stories may conflict), collect a retryQueue of conflicted stories. For each story in retryQueue, sequentially:\n  1. Remove the old worktree (git worktree remove --force .nax-wt/<storyId>)\n  2. Create a fresh worktree from current HEAD (which has all clean merges)\n  3. Re-run the full story pipeline (routing -> prompt -> execution -> verify) - same as sequential executor\n  4. Attempt merge again on the now-updated base\n  5. If it conflicts again, preserve worktree and mark as finalConflict (structural issue, cannot auto-resolve)\n  6. If it succeeds, mark as rectified and include in merged count\n\nRectification runs strictly sequentially so each rectified story sees the previous one merge.\n\nCost tracking: each rectified story must track both originalCost (the failed parallel run) and rectificationCost (the re-run). Include both in storyMetrics with source: 'rectification' and a rectifiedFromConflict: true flag.\n\nLogging (prefix [parallel]):\n  - 'Merge conflict detected - scheduling for rectification {storyId, conflictFiles}'\n  - 'Starting merge conflict rectification {stories, totalConflicts}'\n  - 'Rectifying story on updated base {storyId, attempt: rectification}'\n  - 'Rectification succeeded - story merged {storyId, originalCost, rectificationCost}'\n  - 'Rectification failed - preserving worktree {storyId}'\n  - 'Rectification complete {rectified, stillConflicting}'\n\nEdge cases: rectified story fails verification (not merge conflict) -> treat as normal pipeline failure, escalate if configured.\n\nUpdate run summary to report rectification stats. Add integration tests for the rectification flow: parallel batch with conflict -> rectification pass -> successful merge.",
       "complexity": "high",
-      "status": "pending",
+      "status": "failed",
       "dependencies": [],
-      "attempts": 0,
+      "attempts": 1,
       "priorErrors": [],
       "priorFailures": [],
       "escalations": [],
       "tags": [],
       "acceptanceCriteria": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "failureCategory": "tests-failing"
     }
   ],
-  "updatedAt": "2026-03-10T03:57:49.138Z"
+  "updatedAt": "2026-03-10T04:55:08.644Z"
 }

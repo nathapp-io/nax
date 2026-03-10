@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 5,
-    "passed": 1,
-    "failed": 0,
+    "passed": 2,
+    "failed": 1,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 2
   },
   "cost": {
     "spent": 3.915035,
     "limit": 8
   },
   "current": {
-    "storyId": "MFX-004",
-    "title": "Classify runtime crashes separately from test failures to prevent spurious escalation (BUG-070)",
+    "storyId": "MFX-002",
+    "title": "Preserve story metrics across model escalation (BUG-067)",
     "complexity": "medium",
-    "tddStrategy": "test-after",
-    "model": "balanced",
+    "tddStrategy": "three-session-tdd-lite",
+    "model": "powerful",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 4,
-  "updatedAt": "2026-03-10T04:22:55.939Z",
-  "durationMs": 9121589,
-  "lastHeartbeat": "2026-03-10T04:22:55.939Z"
+  "iterations": 6,
+  "updatedAt": "2026-03-10T05:03:55.948Z",
+  "durationMs": 11581598,
+  "lastHeartbeat": "2026-03-10T05:03:55.948Z"
 }
