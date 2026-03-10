@@ -17,7 +17,11 @@
  * sequential totals.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test, describe as describeBase } from "bun:test";
+
+// These integration tests run the full runner pipeline and require a real agent
+// environment. Skip in CI where Claude CLI is not installed.
+const describeIntegration = process.env.CI ? describeBase.skip : describeBase;
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -127,7 +131,7 @@ function makeHooks(): LoadedHooksConfig {
 // Test setup
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("BUG-064 + BUG-065 + BUG-066: Runner parallel + sequential metric accumulation", () => {
+describeIntegration("BUG-064 + BUG-065 + BUG-066: Runner parallel + sequential metric accumulation", () => {
   let tempDir: string;
   let prdPath: string;
   // Capture originals inside describe scope to avoid contamination from other test files
