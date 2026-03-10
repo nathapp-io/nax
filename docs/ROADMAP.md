@@ -37,10 +37,10 @@
 
 ---
 
-## v0.37.0 — Prompt Template Export (Planned)
+## v0.37.0 — Prompt Template Export ✅ Shipped (2026-03-10)
 
 **Theme:** Complete the prompt override system — ship default templates, add CLI export, enable full user customization
-**Status:** 🔲 Planned
+**Status:** ✅ Shipped — commit `0a7a065`, [run-release] triggered
 **Depends on:** v0.36.2 (Prompt Optimization)
 
 ### Context
@@ -52,11 +52,11 @@ The override system exists (`config.prompts.overrides`, `loadOverride()`, `Promp
 
 ### Stories
 
-- [ ] **PT-001:** Add `tdd-simple` to `PromptsConfigSchema` override enum
-- [ ] **PT-002:** Ship default `.md` templates for all 5 roles in `nax/prompts/` scaffold
-- [ ] **PT-003:** `nax prompts export` CLI command — dumps default prompt for a given role to stdout or file
-- [ ] **PT-004:** Update `nax init` to scaffold `nax/prompts/` directory with default templates
-- [ ] **PT-005:** Documentation — prompt customization guide
+- [x] **PT-001:** Add `tdd-simple` to `PromptsConfigSchema` override enum
+- [x] **PT-002:** Ship default `.md` templates for all 5 roles in `nax/prompts/` scaffold
+- [x] **PT-003:** `nax prompts export` CLI command — dumps default prompt for a given role to stdout or file
+- [x] **PT-004:** Update `nax init` to scaffold `nax/prompts/` directory with default templates
+- [x] **PT-005:** Documentation — prompt customization guide
 
 ---
 
@@ -345,4 +345,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-10 (v0.36.2 shipped — Parallel Metrics + Rectification; v0.37.0 next)*
+*Last updated: 2026-03-10 (v0.37.0 shipped — Prompt Template Export; v0.38.0 next)*
