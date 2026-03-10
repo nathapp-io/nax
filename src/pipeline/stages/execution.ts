@@ -134,6 +134,7 @@ export const executionStage: PipelineStage = {
         workdir: ctx.workdir,
         modelTier: ctx.routing.modelTier,
         contextMarkdown: ctx.contextMarkdown,
+        constitution: ctx.constitution?.content,
         dryRun: false,
         lite: isLiteMode,
       });

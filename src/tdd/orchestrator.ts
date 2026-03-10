@@ -28,6 +28,7 @@ export interface ThreeSessionTddOptions {
   workdir: string;
   modelTier: ModelTier;
   contextMarkdown?: string;
+  constitution?: string;
   dryRun?: boolean;
   lite?: boolean;
   _recursionDepth?: number;
@@ -44,6 +45,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     workdir,
     modelTier,
     contextMarkdown,
+    constitution,
     dryRun = false,
     lite = false,
     _recursionDepth = 0,
@@ -131,6 +133,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
       contextMarkdown,
       lite,
       lite,
+      constitution,
     );
     sessions.push(session1);
   }
@@ -235,6 +238,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     contextMarkdown,
     lite,
     lite,
+    constitution,
   );
   sessions.push(session2);
 
@@ -280,6 +284,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     undefined,
     false,
     false,
+    constitution,
   );
   sessions.push(session3);
 
