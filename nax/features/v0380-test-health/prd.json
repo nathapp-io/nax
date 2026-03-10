@@ -16,7 +16,20 @@
       ],
       "complexity": "medium",
       "status": "pending",
-      "dependencies": []
+      "dependencies": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "tags": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single utility script with straightforward regex parsing, file I/O, and string matching—no architectural complexity, clear input/output, standard Bun patterns.",
+        "contentHash": "b05d60f3cce0497fb9ee33ee5a00b68ba40ed8dd528c7284d0e4cd36c41c7ade"
+      }
     },
     {
       "id": "TH-002",
@@ -31,7 +44,13 @@
       ],
       "complexity": "medium",
       "status": "pending",
-      "dependencies": []
+      "dependencies": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "tags": [],
+      "storyPoints": 1
     },
     {
       "id": "TH-003",
@@ -46,7 +65,13 @@
       ],
       "complexity": "complex",
       "status": "pending",
-      "dependencies": []
+      "dependencies": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "tags": [],
+      "storyPoints": 1
     },
     {
       "id": "TH-004",
@@ -65,7 +90,13 @@
         "TH-001",
         "TH-002",
         "TH-003"
-      ]
+      ],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "tags": [],
+      "storyPoints": 1
     },
     {
       "id": "TH-005",
@@ -80,7 +111,14 @@
       ],
       "complexity": "simple",
       "status": "pending",
-      "dependencies": []
+      "dependencies": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "tags": [],
+      "storyPoints": 1
     }
-  ]
+  ],
+  "updatedAt": "2026-03-10T09:52:16.044Z"
 }
