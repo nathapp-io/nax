@@ -338,17 +338,17 @@ const origRegressionDeps = {
   reverseMapTestToSource: _regressionDeps.reverseMapTestToSource,
 };
 
-beforeEach(() => {
-  _regressionDeps.runRectificationLoop = mock(async () => false);
-  _regressionDeps.reverseMapTestToSource = mock(() => []);
-});
-
-afterEach(() => {
-  Object.assign(_regressionDeps, origRegressionDeps);
-  mock.restore();
-});
-
 describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
+  beforeEach(() => {
+    _regressionDeps.runRectificationLoop = mock(async () => false);
+    _regressionDeps.reverseMapTestToSource = mock(() => []);
+  });
+
+  afterEach(() => {
+    Object.assign(_regressionDeps, origRegressionDeps);
+    mock.restore();
+  });
+
   test("full suite passes → success with 0 rectification attempts", async () => {
     _regressionDeps.runVerification = mock(async (): Promise<VerificationResult> => ({
       status: "SUCCESS",
@@ -482,27 +482,26 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
 // RL-002 AC#1: on-complete fires AFTER handleRunCompletion finishes
 // ---------------------------------------------------------------------------
 
-const origRunCompletionDeps = { ..._runCompletionDeps };
-
-beforeEach(() => {
-  _runCompletionDeps.runDeferredRegression = mock(
-    async (): Promise<DeferredRegressionResult> => ({
-      success: true,
-      failedTests: 0,
-      passedTests: 10,
-      rectificationAttempts: 0,
-      affectedStories: [],
-    }),
-  );
-});
-
-afterEach(() => {
-  Object.assign(_runCompletionDeps, origRunCompletionDeps);
-  pipelineEventBus.clear();
-  mock.restore();
-});
-
 describe("RL-002 AC#1: on-complete hook fires after handleRunCompletion()", () => {
+  const origRunCompletionDeps = { ..._runCompletionDeps };
+
+  beforeEach(() => {
+    _runCompletionDeps.runDeferredRegression = mock(
+      async (): Promise<DeferredRegressionResult> => ({
+        success: true,
+        failedTests: 0,
+        passedTests: 10,
+        rectificationAttempts: 0,
+        affectedStories: [],
+      }),
+    );
+  });
+
+  afterEach(() => {
+    Object.assign(_runCompletionDeps, origRunCompletionDeps);
+    pipelineEventBus.clear();
+    mock.restore();
+  });
   test("run:completed event is emitted AFTER handleRunCompletion resolves", async () => {
     const callOrder: string[] = [];
 
@@ -524,7 +523,7 @@ describe("RL-002 AC#1: on-complete hook fires after handleRunCompletion()", () =
     });
 
     const prd = makePRD([{ id: "US-001", status: "passed" }, { id: "US-002", status: "passed" }]);
-    const config = makeConfig("deferred");
+    const config = makeConfig("deferred", "bun test");
 
     try {
       await handleRunCompletion(makeOpts(config, prd));
@@ -563,7 +562,7 @@ describe("RL-002 AC#1: on-complete hook fires after handleRunCompletion()", () =
     });
 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
-    const config = makeConfig("deferred");
+    const config = makeConfig("deferred", "bun test");
 
     try {
       await handleRunCompletion(makeOpts(config, prd));
@@ -612,7 +611,7 @@ describe("RL-002 AC#3: run:completed payload reflects final success status", () 
 
     const stories = [{ id: "US-001", status: "passed" as const }, { id: "US-002", status: "passed" as const }];
     const prd = makePRD(stories);
-    const config = makeConfig("deferred");
+    const config = makeConfig("deferred", "bun test");
 
     try {
       await handleRunCompletion(makeOpts(config, prd));
