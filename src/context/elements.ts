@@ -5,20 +5,9 @@
  */
 
 import { getLogger } from "../logger";
+import { estimateTokens } from "../optimizer/types";
 import type { StructuredFailure, UserStory } from "../prd";
 import type { ContextElement } from "./types";
-
-/**
- * Approximate character-to-token ratio for token estimation.
- * Value of 3 is a middle ground optimized for mixed content (prose + code + markdown).
- * Slightly overestimates tokens, preventing budget overflow.
- */
-const CHARS_PER_TOKEN = 3;
-
-/** Estimate token count for text using character-to-token ratio. */
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / CHARS_PER_TOKEN);
-}
 
 /** Create context element from current story */
 export function createStoryContext(story: UserStory, priority: number): ContextElement {

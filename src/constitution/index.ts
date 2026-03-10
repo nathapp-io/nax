@@ -7,4 +7,5 @@
  */
 
 export type { ConstitutionConfig, ConstitutionResult } from "./types";
-export { loadConstitution, estimateTokens, truncateToTokens } from "./loader";
+export { loadConstitution, truncateToTokens } from "./loader";
+export { estimateTokens } from "../optimizer/types";

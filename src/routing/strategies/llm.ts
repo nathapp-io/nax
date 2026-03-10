@@ -13,12 +13,12 @@ import type { UserStory } from "../../prd/types";
 import { determineTestStrategy } from "../router";
 import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../strategy";
 import { keywordStrategy } from "./keyword";
-import { buildBatchPrompt, buildRoutingPrompt, parseBatchResponse, parseRoutingResponse } from "./llm-prompts";
+import { buildBatchRoutingPrompt, buildRoutingPrompt, parseBatchResponse, parseRoutingResponse } from "./llm-prompts";
 
 // Re-export for backward compatibility
 export {
   buildRoutingPrompt,
-  buildBatchPrompt,
+  buildBatchRoutingPrompt as buildBatchPrompt,
   validateRoutingDecision,
   stripCodeFences,
   parseRoutingResponse,
@@ -190,7 +190,7 @@ export async function routeBatch(stories: UserStory[], context: RoutingContext):
   }
 
   const modelTier = llmConfig.model ?? "fast";
-  const prompt = buildBatchPrompt(stories, config);
+  const prompt = buildBatchRoutingPrompt(stories, config);
 
   try {
     const output = await callLlm(adapter, modelTier, prompt, config);

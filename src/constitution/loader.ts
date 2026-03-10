@@ -8,20 +8,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { validateFilePath } from "../config/path-security";
 import { globalConfigDir } from "../config/paths";
+import { estimateTokens } from "../optimizer/types";
 import type { ConstitutionConfig, ConstitutionResult } from "./types";
-
-/**
- * Estimate token count for text
- *
- * Uses simple heuristic: 1 token ≈ 3 characters (conservative estimate)
- * This is a rough approximation sufficient for quota management.
- *
- * @param text - Text to estimate tokens for
- * @returns Estimated token count
- */
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 3);
-}
 
 /**
  * Truncate text to fit within token limit

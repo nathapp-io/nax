@@ -7,6 +7,7 @@
 import path from "node:path";
 import type { NaxConfig } from "../config";
 import { getLogger } from "../logger";
+import { estimateTokens } from "../optimizer/types";
 import type { UserStory } from "../prd";
 import { countStories, getContextFiles } from "../prd";
 import { autoDetectContextFiles } from "./auto-detect";
@@ -18,7 +19,6 @@ import {
   createProgressContext,
   createStoryContext,
   createTestCoverageContext,
-  estimateTokens,
 } from "./elements";
 import { generateTestCoverageSummary } from "./test-scanner";
 import type { BuiltContext, ContextBudget, ContextElement, StoryContext } from "./types";
@@ -30,7 +30,6 @@ export const _deps = {
 
 // Re-export for backward compatibility
 export {
-  estimateTokens,
   createStoryContext,
   createDependencyContext,
   createErrorContext,

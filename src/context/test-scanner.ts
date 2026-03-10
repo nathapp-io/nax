@@ -9,7 +9,7 @@
 import path from "node:path";
 import { Glob } from "bun";
 import { getLogger } from "../logger";
-import { estimateTokens } from "./builder";
+import { estimateTokens } from "../optimizer/types";
 
 // ============================================================================
 // Types

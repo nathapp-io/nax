@@ -130,7 +130,7 @@ export function parseDecomposeOutput(output: string): DecomposedStory[] {
         : ["Implementation complete"],
       tags: Array.isArray(record.tags) ? record.tags : [],
       dependencies: Array.isArray(record.dependencies) ? record.dependencies : [],
-      complexity: validateComplexity(record.complexity),
+      complexity: coerceComplexity(record.complexity),
       // contextFiles: prefer the new field; fall back to legacy relevantFiles from older LLM responses
       contextFiles: Array.isArray(record.contextFiles)
         ? record.contextFiles
@@ -158,9 +158,9 @@ export function parseDecomposeOutput(output: string): DecomposedStory[] {
 }
 
 /**
- * Validate complexity value from decompose output.
+ * Coerce complexity value from decompose output.
  */
-export function validateComplexity(value: unknown): "simple" | "medium" | "complex" | "expert" {
+export function coerceComplexity(value: unknown): "simple" | "medium" | "complex" | "expert" {
   if (value === "simple" || value === "medium" || value === "complex" || value === "expert") {
     return value;
   }

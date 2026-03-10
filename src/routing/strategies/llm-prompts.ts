@@ -59,7 +59,7 @@ Respond with ONLY this JSON (no markdown, no explanation):
  * @param config - nax configuration
  * @returns Formatted batch prompt string
  */
-export function buildBatchPrompt(stories: UserStory[], config: NaxConfig): string {
+export function buildBatchRoutingPrompt(stories: UserStory[], config: NaxConfig): string {
   const storyBlocks = stories
     .map((story, idx) => {
       const criteria = story.acceptanceCriteria.map((c, i) => `   ${i + 1}. ${c}`).join("\n");

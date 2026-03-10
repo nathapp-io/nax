@@ -5,7 +5,6 @@
 export type { ContextElement, ContextBudget, StoryContext, BuiltContext } from "./types";
 
 export {
-  estimateTokens,
   createStoryContext,
   createDependencyContext,
   createErrorContext,
@@ -16,6 +15,8 @@ export {
   createTestCoverageContext,
   formatContextAsMarkdown,
 } from "./builder";
+
+export { estimateTokens } from "../optimizer/types";
 
 export {
   generateTestCoverageSummary,

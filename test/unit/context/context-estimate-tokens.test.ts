@@ -22,7 +22,7 @@ import {
   estimateTokens,
   formatContextAsMarkdown,
   sortContextElements,
-} from "../../../src/context/builder";
+} from "../../../src/context";
 import type { ContextBudget, ContextElement, StoryContext } from "../../../src/context/types";
 import type { PRD, UserStory } from "../../../src/prd";
 
@@ -55,8 +55,8 @@ const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
 describe("Context Builder", () => {
   describe("estimateTokens", () => {
     test("should estimate tokens correctly", () => {
-      expect(estimateTokens("test")).toBe(2); // 4 chars = 2 tokens (1 token ≈ 3 chars)
-      expect(estimateTokens("hello world")).toBe(4); // 11 chars = 4 tokens
+      expect(estimateTokens("test")).toBe(1); // 4 chars = 1 token (1 token ≈ 4 chars)
+      expect(estimateTokens("hello world")).toBe(3); // 11 chars = 3 tokens (rounded up)
       expect(estimateTokens("")).toBe(0);
     });
   });
