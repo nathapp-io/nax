@@ -4,25 +4,33 @@
     "id": "run-2026-03-10T09-51-57-875Z",
     "feature": "v0380-test-health",
     "startedAt": "2026-03-10T09:51:57.875Z",
-    "status": "completed",
+    "status": "running",
     "dryRun": false,
     "pid": 26853
   },
   "progress": {
     "total": 5,
-    "passed": 5,
+    "passed": 4,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 1
   },
   "cost": {
     "spent": 0.2042045,
     "limit": 8
   },
-  "current": null,
+  "current": {
+    "storyId": "TH-004",
+    "title": "Execute confirmed redundant test cleanup",
+    "complexity": "medium",
+    "tddStrategy": "test-after",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
   "iterations": 5,
-  "updatedAt": "2026-03-10T10:53:59.385Z",
-  "durationMs": 3721510,
-  "lastHeartbeat": "2026-03-10T10:53:59.385Z"
+  "updatedAt": "2026-03-10T10:54:59.391Z",
+  "durationMs": 3781516,
+  "lastHeartbeat": "2026-03-10T10:54:59.391Z"
 }
