@@ -1,6 +1,17 @@
 # Test Overlap Report
 
-Generated: 2026-03-10T09:54:38.554Z
+Generated: 2026-03-10T10:49:48.272Z
+
+## REMOVED
+
+The following integration test files were deleted during TH-004 cleanup (unit tests provide full coverage via `_deps` injection; the only non-skipped test in each file verified `Bun.which` behavior, not adapter code):
+
+- ~~test/integration/agents/aider-integration.test.ts~~ — REMOVED (covered by test/unit/agents/adapters/aider.test.ts)
+- ~~test/integration/agents/codex-integration.test.ts~~ — REMOVED (covered by test/unit/agents/adapters/codex.test.ts)
+- ~~test/integration/agents/gemini-integration.test.ts~~ — REMOVED (covered by test/unit/agents/adapters/gemini.test.ts)
+- ~~test/integration/agents/opencode-integration.test.ts~~ — REMOVED (covered by test/unit/agents/adapters/opencode.test.ts)
+
+**Note on 15% reduction target:** The automated overlap detection found 0 REDUNDANT integration tests. The dead-test scanner reported 12 files but all were false positives (scanner checked `.js` extensions while source files use `.ts`). The 5 deletions (4 agent integration + verdict.test.ts) remove 40 tests (~1.1% of 3612 baseline). A 15% reduction (~540 tests) was not achievable through safe deletions based on report output.
 
 ## REDUNDANT
 
@@ -22,7 +33,7 @@ Found 3 integration test(s) with partial unit test coverage:
 
 ## UNIQUE
 
-Found 83 unique integration test(s) with no unit test coverage:
+Found 79 unique integration test(s) with no unit test coverage:
 
 - test/integration/pipeline/verify-stage.test.ts
 - test/integration/pipeline/pipeline-acceptance.test.ts
@@ -50,10 +61,6 @@ Found 83 unique integration test(s) with no unit test coverage:
 - test/integration/plan/logger.test.ts
 - test/integration/worktree/worktree-merge.test.ts
 - test/integration/worktree/manager.test.ts
-- test/integration/agents/aider-integration.test.ts
-- test/integration/agents/opencode-integration.test.ts
-- test/integration/agents/gemini-integration.test.ts
-- test/integration/agents/codex-integration.test.ts
 - test/integration/cli/cli-config-prompts-explain.test.ts
 - test/integration/cli/cli-precheck.test.ts
 - test/integration/cli/cli-diagnose.test.ts

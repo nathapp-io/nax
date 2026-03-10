@@ -1,8 +1,18 @@
 # Dead Tests Report
 
-Generated: 2026-03-10T09:57:51.495Z
+Generated: 2026-03-10T10:49:48.119Z
 
-Found **12** test file(s) with issues:
+## REMOVED
+
+The following test file was deleted during TH-004 cleanup due to redundancy:
+
+- ~~test/unit/verdict.test.ts~~ — REMOVED (24 tests for `src/tdd/verdict` covered by test/unit/tdd-verdict.test.ts which has 40 comprehensive tests for the same module including all critical coercion paths)
+
+## Scanner False Positive Notice
+
+**All 12 entries below are false positives.** The scanner checks for `.js` files on disk, but this project uses `.ts` source files. Bun resolves `.js` imports to `.ts` at runtime, so all "missing" modules actually exist. "Dead feature" references (`worktree`, `dispatcher`) appear only in test data string literals, not real imports. The `src/worktree/` module still exists and is actively used.
+
+Found **12** test file(s) with issues (all false positives — see notice above):
 
 ## test/unit/optimizer/rule-based.optimizer.test.ts
 
