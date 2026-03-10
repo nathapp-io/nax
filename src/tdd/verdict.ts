@@ -126,7 +126,12 @@ export function coerceVerdict(obj: Record<string, unknown>): VerifierVerdict | n
   try {
     // Determine approval status
     const verdictStr = String(obj.verdict ?? "").toUpperCase();
-    const approved = verdictStr === "PASS" || verdictStr === "APPROVED" || obj.approved === true;
+    const approved =
+      verdictStr === "PASS" ||
+      verdictStr === "APPROVED" ||
+      verdictStr.startsWith("VERIFIED") ||
+      verdictStr.includes("ALL ACCEPTANCE CRITERIA MET") ||
+      obj.approved === true;
 
     // Parse test results from verification_summary or top-level
     let passCount = 0;
