@@ -8,7 +8,7 @@
       "title": "Add tdd-simple to PromptsConfigSchema override enum",
       "description": "The PromptsConfigSchema Zod validator in src/config/schemas.ts lists only 4 roles in its z.enum: [\"test-writer\", \"implementer\", \"verifier\", \"single-session\"]. The TypeScript interface PromptsConfig in src/config/types.ts already includes \"tdd-simple\" in the overrides record key union. This mismatch means users who set a tdd-simple override in config.json will hit a Zod validation error at startup even though the rest of the system supports the role.\n\nFix: Add \"tdd-simple\" to the z.enum in PromptsConfigSchema so it matches the TypeScript type. The enum should be: [\"test-writer\", \"implementer\", \"verifier\", \"single-session\", \"tdd-simple\"].\n\nAcceptance criteria:\n- PromptsConfigSchema.parse({ overrides: { \"tdd-simple\": \"nax/templates/tdd-simple.md\" } }) succeeds without throwing\n- PromptsConfigSchema.parse({ overrides: { \"unknown-role\": \"path\" } }) still throws a ZodError\n- loadConfig() in a project with tdd-simple override set does not throw\n- Add unit test: test/unit/config/prompts-schema.test.ts covering all 5 valid roles and one invalid role",
       "complexity": "simple",
-      "status": "pending",
+      "status": "passed",
       "dependencies": [],
       "attempts": 0,
       "priorErrors": [],
@@ -23,7 +23,8 @@
         "testStrategy": "tdd-simple",
         "reasoning": "One-line enum addition in config schema + straightforward validation tests, no logic or architecture complexity, ~20 min total.",
         "contentHash": "a6289fe119060fb9ee7ae8f7f690365486ffa8c5778ff7cb19051af1b9f9e7cc"
-      }
+      },
+      "passes": true
     },
     {
       "id": "PT-002",
@@ -40,7 +41,14 @@
       "escalations": [],
       "tags": [],
       "acceptanceCriteria": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pattern replication: add tdd-simple to existing template array, copy template structure from other roles, add straightforward unit test. Clear acceptance criteria, one primary file modified, no novel logic.",
+        "contentHash": "c717251432da522c71a506178b0f734e2ed5ac2a35f60b059b548ea520516629"
+      }
     },
     {
       "id": "PT-003",
@@ -94,5 +102,5 @@
       "storyPoints": 1
     }
   ],
-  "updatedAt": "2026-03-10T07:35:18.129Z"
+  "updatedAt": "2026-03-10T07:42:42.510Z"
 }

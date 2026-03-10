@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 5,
-    "passed": 0,
+    "passed": 1,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 5
+    "pending": 4
   },
   "cost": {
-    "spent": 0,
+    "spent": 0.10374225000000001,
     "limit": 8
   },
   "current": {
-    "storyId": "PT-001",
-    "title": "Add tdd-simple to PromptsConfigSchema override enum",
+    "storyId": "PT-002",
+    "title": "Add tdd-simple default template to promptsInitCommand",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 1,
-  "updatedAt": "2026-03-10T07:42:02.399Z",
-  "durationMs": 421233,
-  "lastHeartbeat": "2026-03-10T07:42:02.399Z"
+  "iterations": 2,
+  "updatedAt": "2026-03-10T07:45:02.477Z",
+  "durationMs": 601311,
+  "lastHeartbeat": "2026-03-10T07:45:02.477Z"
 }
