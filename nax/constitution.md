@@ -81,6 +81,16 @@ Levels: `debug` (internal state), `info` (lifecycle), `warn` (recoverable), `err
 - Package manager: `bun` (never npm/yarn)
 - Test runner: `bun:test` (describe/test/expect)
 
+## Design Patterns
+
+Follow established patterns — see `docs/ARCHITECTURE.md` §11 for details:
+- **Builder:** `static for()` → method chain → `.build()` (PromptBuilder, DecomposeBuilder)
+- **Adapter:** interface in `types.ts`, class per backend (AgentAdapter)
+- **Registry:** typed accessors, never raw Map (PluginRegistry, agent registry)
+- **Strategy:** interface + implementations, selected by orchestrator (verification, routing)
+- **Chain:** priority-ordered handlers with timeout/fallback (InteractionChain)
+- **Singleton:** `getX()` / `getSafeX()` getters, never export instance directly (Logger)
+
 ## Boundaries
 
 - Never modify `docs/ROADMAP.md` unless the story explicitly requires it

@@ -491,6 +491,161 @@ chore: bump version to 0.36.0 [run-release]
 
 ---
 
+## 11. Design Patterns
+
+nax uses a small set of patterns consistently. Follow these when extending the codebase.
+
+### Builder (Fluent API)
+
+For multi-step object construction with optional configuration:
+
+```typescript
+// ✅ Static .for() entry point, method chaining, terminal .build()
+const prompt = await PromptBuilder.for("implementer")
+  .story(story)
+  .constitution(constitutionContent)
+  .context(contextMd)
+  .build();
+
+const result = await DecomposeBuilder.for(story)
+  .prd(prd)
+  .config(builderConfig)
+  .decompose(adapter);
+```
+
+**Rules:**
+- Entry point: `static for(...)` — returns new instance
+- Each setter returns `this` for chaining
+- Terminal method (`.build()`, `.decompose()`) produces the result
+- Setters are optional — builder has sensible defaults
+
+**Reference:** `src/prompts/builder.ts`, `src/decompose/builder.ts`
+
+### Adapter (Interface + Implementations)
+
+For extensible subsystems where multiple backends share a common contract:
+
+```typescript
+// ✅ Interface defines the contract
+export interface AgentAdapter {
+  name: string;
+  capabilities: AgentCapabilities;
+  run(options: AgentRunOptions): Promise<AgentResult>;
+  complete(prompt: string, options?: CompleteOptions): Promise<string>;
+}
+
+// ✅ Each backend implements it
+export class ClaudeCodeAdapter implements AgentAdapter { ... }
+export class CodexAdapter implements AgentAdapter { ... }
+export class GeminiAdapter implements AgentAdapter { ... }
+```
+
+**Rules:**
+- Interface in `types.ts`, implementations in separate files
+- Implementations are classes (stateful — may hold config, PID registries, etc.)
+- Capabilities declared as data, not methods — enables routing decisions without instantiation
+
+**Reference:** `src/agents/types.ts`, `src/agents/claude.ts`, `src/agents/adapters/`
+
+### Registry (Lookup + Discovery)
+
+For collecting and retrieving instances by name or capability:
+
+```typescript
+// ✅ Registry wraps a collection with typed accessors
+export class PluginRegistry {
+  getReviewers(): IReviewPlugin[] { ... }
+  getReporters(): IReporterPlugin[] { ... }
+  getOptimizers(): IPromptOptimizer[] { ... }
+}
+
+// ✅ Function-based registry for simpler cases
+export function getAgent(name: string): AgentAdapter | undefined { ... }
+export function listAgents(): AgentAdapter[] { ... }
+```
+
+**Rules:**
+- Class registry when it needs lifecycle (setup/teardown) — `PluginRegistry`
+- Function registry when it's pure lookup — agent registry
+- Never use Map/object directly in consumer code — wrap in typed accessor
+
+**Reference:** `src/plugins/registry.ts`, `src/agents/registry.ts`
+
+### Strategy (Pluggable Algorithms)
+
+For subsystems with multiple interchangeable algorithms:
+
+```typescript
+// ✅ Interface defines the strategy contract
+export interface IVerificationStrategy {
+  verify(workdir: string, options: VerifyOptions): Promise<VerifyResult>;
+}
+
+// ✅ Each strategy is a class implementing the interface
+export class ScopedStrategy implements IVerificationStrategy { ... }
+export class RegressionStrategy implements IVerificationStrategy { ... }
+export class AcceptanceStrategy implements IVerificationStrategy { ... }
+```
+
+**Rules:**
+- Strategy interface in `types.ts`
+- Selection logic outside the strategies (orchestrator or config-driven)
+- Strategies are stateless when possible — receive all context via method params
+
+**Reference:** `src/verification/strategies/`, `src/routing/strategies/`
+
+### Chain (Priority-Ordered Pipeline)
+
+For processing requests through prioritized handlers:
+
+```typescript
+// ✅ Register handlers with priority, first response wins
+const chain = new InteractionChain({ defaultTimeout: 30_000, defaultFallback: "abort" });
+chain.register(telegramPlugin, 10);  // highest priority
+chain.register(autoPlugin, 50);      // fallback
+const response = await chain.prompt(request);
+```
+
+**Rules:**
+- Lower priority number = higher precedence
+- Chain handles timeout and fallback — consumers don't
+- Used for interaction (human-in-the-loop) and routing (strategy selection)
+
+**Reference:** `src/interaction/chain.ts`, `src/routing/chain.ts`
+
+### Singleton (Module-Level Instance)
+
+For global services with one-time initialization:
+
+```typescript
+// ✅ Module-scoped instance with getter
+let _instance: Logger | null = null;
+
+export function initLogger(options: LoggerOptions): Logger {
+  _instance = new Logger(options);
+  return _instance;
+}
+
+export function getLogger(): Logger {
+  if (!_instance) throw new Error("Logger not initialized");
+  return _instance;
+}
+
+// ✅ Safe variant that returns null instead of throwing
+export function getSafeLogger(): Logger | null {
+  return _instance;
+}
+```
+
+**Rules:**
+- Use `getX()` / `getSafeX()` pattern — never export the instance directly
+- `getSafeLogger()` preferred in library code (no crash if logger not yet initialized)
+- Init once during startup (`run-setup.ts`), use everywhere via getter
+
+**Reference:** `src/logger/logger.ts`
+
+---
+
 ## Quick Reference Card
 
 | Rule | Limit |
@@ -503,6 +658,15 @@ chore: bump version to 0.36.0 [run-release]
 | Magic numbers | Forbidden (use named constants) |
 | `_deps` for externals | Required |
 | Error messages | Must include `[stage]` prefix + context |
+
+| Pattern | When to use | Entry point |
+|:--------|:-----------|:------------|
+| Builder | Multi-step object construction | `static for()` → chain → `.build()` |
+| Adapter | Multiple backends, one contract | Interface in `types.ts`, class per backend |
+| Registry | Lookup by name/capability | Class (lifecycle) or function (pure lookup) |
+| Strategy | Pluggable algorithms | Interface + classes, selected by orchestrator |
+| Chain | Priority-ordered handlers | `.register(handler, priority)` → `.prompt()` |
+| Singleton | Global services | `initX()` once, `getX()` / `getSafeX()` everywhere |
 
 ---
 
