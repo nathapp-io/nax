@@ -1,0 +1,136 @@
+{
+  "project": "nax",
+  "branchName": "feat/v0.38.0-test-health",
+  "feature": "v0380-test-health",
+  "userStories": [
+    {
+      "id": "TH-001",
+      "title": "Automated coverage overlap report",
+      "description": "Write a Bun script at scripts/check-test-overlap.ts that cross-references integration tests against unit tests to identify redundant coverage. The script should: (1) parse all test files under test/unit/ and test/integration/ using regex to extract describe/test block names and imported source modules; (2) for each integration test, check whether a unit test exists that imports the same source module and covers the same function/describe path; (3) output a markdown report at docs/test-overlap-report.md listing (a) integration tests fully covered by unit tests - safe to delete, (b) integration tests with partial overlap - review, (c) unique integration tests - keep. Run via: bun run scripts/check-test-overlap.ts. The script must not require packages beyond what is already in package.json.",
+      "acceptanceCriteria": [
+        "scripts/check-test-overlap.ts exists and runs without errors via bun run scripts/check-test-overlap.ts",
+        "Script parses all files under test/unit/ and test/integration/ without crashing",
+        "Output is written to docs/test-overlap-report.md with sections: REDUNDANT, PARTIAL, UNIQUE",
+        "REDUNDANT section lists at least one integration test that is fully covered by a unit test",
+        "Script completes in under 10 seconds on the full test suite"
+      ],
+      "complexity": "medium",
+      "status": "passed",
+      "dependencies": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "tags": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single utility script with straightforward regex parsing, file I/O, and string matching—no architectural complexity, clear input/output, standard Bun patterns.",
+        "contentHash": "b05d60f3cce0497fb9ee33ee5a00b68ba40ed8dd528c7284d0e4cd36c41c7ade"
+      },
+      "passes": true
+    },
+    {
+      "id": "TH-002",
+      "title": "Dead test detection",
+      "description": "Create scripts/check-dead-tests.ts to detect test files that import source modules that no longer exist in src/. The script should: (1) scan all test files for import statements pointing into src/; (2) verify each imported path exists on disk; (3) flag any test file where at least one src/ import is missing; (4) write a report to docs/dead-tests-report.md listing flagged files with their missing imports and a recommendation (delete/review). Also flag test files whose describe/test names reference removed features such as worktree/dispatcher, tdd-orchestrator-prompts, or old verification paths pre-v0.22.1.",
+      "acceptanceCriteria": [
+        "scripts/check-dead-tests.ts exists and runs via bun run scripts/check-dead-tests.ts",
+        "Script scans all files under test/ for broken src/ imports",
+        "Report written to docs/dead-tests-report.md listing flagged files with missing imports",
+        "Each entry shows: file path, missing import paths, recommendation",
+        "Script completes in under 10 seconds"
+      ],
+      "complexity": "medium",
+      "status": "passed",
+      "dependencies": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "tags": [],
+      "storyPoints": 1,
+      "passes": true
+    },
+    {
+      "id": "TH-003",
+      "title": "Copy-paste test consolidation",
+      "description": "Identify test files with 3 or more similar describe blocks differing by only 1-2 parameters and convert them to test.each() table-driven style. Target files: test/unit/context.test.ts (1734 lines), test/unit/execution/parallel-executor-rectification.test.ts, test/unit/metrics/tracker-escalation.test.ts. For each file: (1) identify repeated describe/test blocks with identical structure; (2) convert to test.each() with a table of varying parameters; (3) verify all tests still pass after conversion. Aim for 20% or more line reduction in each converted file. Do not change test semantics, only consolidate identical structure.",
+      "acceptanceCriteria": [
+        "At least 2 test files converted to test.each() table-driven style",
+        "Each converted file shows 20% or more line count reduction",
+        "All converted tests still pass: bun test on the converted file exits 0",
+        "No test descriptions or covered code paths are removed, only structure consolidated",
+        "Converted files use bun:test compatible test.each() syntax"
+      ],
+      "complexity": "complex",
+      "status": "passed",
+      "dependencies": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "tags": [],
+      "storyPoints": 1,
+      "passes": true
+    },
+    {
+      "id": "TH-004",
+      "title": "Execute confirmed redundant test cleanup",
+      "description": "Using the reports from TH-001 and TH-002, delete confirmed redundant and dead test files and verify the full suite still passes. Steps: (1) delete integration test files marked REDUNDANT in docs/test-overlap-report.md; (2) delete test files marked DEAD in docs/dead-tests-report.md; (3) run full suite: NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000; (4) fix any cascading failures; (5) update any barrel imports that referenced deleted files. Target: 15% or more reduction in total test count from the current approximately 3522 passing tests.",
+      "acceptanceCriteria": [
+        "At least 5 test files deleted (redundant and dead combined)",
+        "Full suite passes after deletion: bun test test/ --timeout=60000 exits 0",
+        "Total passing test count reduced by 15% or more vs baseline",
+        "No previously-passing test now fails",
+        "docs/test-overlap-report.md and docs/dead-tests-report.md updated to mark deleted files as REMOVED"
+      ],
+      "complexity": "complex",
+      "status": "passed",
+      "dependencies": [
+        "TH-001",
+        "TH-002",
+        "TH-003"
+      ],
+      "attempts": 1,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "tags": [],
+      "storyPoints": 1,
+      "passes": true,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure deletion task (no new code/behavior); mechanical deletions, import updates, and verification. Test suite runs and potential cascading failure debugging could extend duration, but conceptually straightforward.",
+        "contentHash": "84a24385bc061e6e9e932581b622ae6acde91a5bd6f4130453e729db71cacf0f"
+      }
+    },
+    {
+      "id": "TH-005",
+      "title": "Test file size enforcement",
+      "description": "Add a script that warns on test files exceeding 500 lines and fails on test files exceeding 800 lines. Implementation: (1) create scripts/check-test-sizes.ts scanning test/ for oversized files; (2) soft limit 500 lines: print a warning with file and line count; (3) hard limit 800 lines: exit with code 1 unless NAX_SKIP_PRECHECK=1; (4) add package.json script entry check:test-sizes; (5) create docs/testing-conventions.md documenting the 500/800 line limits and test.each() recommendation.",
+      "acceptanceCriteria": [
+        "scripts/check-test-sizes.ts exists and runs via bun run check:test-sizes",
+        "Script lists all test files over 500 lines with their line counts",
+        "Script exits with code 1 if any test file exceeds 800 lines",
+        "NAX_SKIP_PRECHECK=1 suppresses the hard-limit exit",
+        "docs/testing-conventions.md documents the 500/800 line limits and test.each() recommendation"
+      ],
+      "complexity": "simple",
+      "status": "passed",
+      "dependencies": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "escalations": [],
+      "tags": [],
+      "storyPoints": 1,
+      "passes": true
+    }
+  ],
+  "updatedAt": "2026-03-10T10:07:42.060Z"
+}

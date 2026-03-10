@@ -119,107 +119,88 @@ function makeCtx(story: UserStory, overrides: Record<string, unknown> = {}): Pip
 // ---------------------------------------------------------------------------
 
 describe("collectStoryMetrics — firstPassSuccess with escalation (BUG-067)", () => {
-  test("firstPassSuccess is false when story has priorFailures from haiku escalation", () => {
-    // Simulate: haiku ran, failed, escalated to sonnet.
-    // handleTierEscalation does NOT populate story.escalations[].
-    // It only appends to story.priorFailures[].
-    const story = makeStory({
-      attempts: 0, // reset to 0 by handleTierEscalation on escalation
-      escalations: [], // never populated by handleTierEscalation — this is the trap
-      priorFailures: [
-        {
-          attempt: 1,
-          modelTier: "fast",
-          stage: "escalation",
-          summary: "Failed with tier fast, escalating to next tier",
-          timestamp: new Date().toISOString(),
-        },
-      ],
-      routing: {
-        complexity: "medium",
-        testStrategy: "test-after",
-        reasoning: "test",
-        modelTier: "balanced",
-      } satisfies StoryRouting,
-    });
-
-    const ctx = makeCtx(story, {
-      routing: {
-        complexity: "medium",
-        modelTier: "balanced",
-        testStrategy: "test-after",
-        reasoning: "escalated to balanced after fast failure",
-      },
-      agentResult: {
-        success: true,
-        exitCode: 0,
-        output: "",
-        rateLimited: false,
-        estimatedCost: 0.10,
-        durationMs: 5000,
-      },
-    });
-
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
-
-    // RED: current implementation returns true because escalationCount === 0
-    // (story.escalations is empty — handleTierEscalation never populates it)
-    expect(metrics.firstPassSuccess).toBe(false);
-  });
-
-  test("firstPassSuccess is true when no prior failures and no escalations", () => {
-    // Regression guard: first-pass success case must still work
-    const story = makeStory({
-      attempts: 1,
-      escalations: [],
-      priorFailures: [],
-    });
-
-    const ctx = makeCtx(story, {
-      agentResult: {
-        success: true,
-        exitCode: 0,
-        output: "",
-        rateLimited: false,
-        estimatedCost: 0.05,
-        durationMs: 3000,
-      },
-    });
-
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
-
-    // This must keep working after the fix
-    expect(metrics.firstPassSuccess).toBe(true);
-  });
-
-  test("firstPassSuccess is false when story has both priorFailures and escalations", () => {
-    // Belt-and-suspenders: even when escalations IS populated, priorFailures also guards
-    const story = makeStory({
+  test.each([
+    {
+      name: "firstPassSuccess is false when story has priorFailures from haiku escalation",
       attempts: 0,
-      escalations: [
-        {
-          fromTier: "fast",
-          toTier: "balanced",
-          reason: "exceeded tier budget",
-          timestamp: new Date().toISOString(),
-        },
-      ],
-      priorFailures: [
-        {
-          attempt: 1,
-          modelTier: "fast",
-          stage: "escalation",
-          summary: "Failed with tier fast",
-          timestamp: new Date().toISOString(),
-        },
-      ],
-    });
+      hasPriorFailures: true,
+      hasEscalations: false,
+      expectedFirstPassSuccess: false,
+    },
+    {
+      name: "firstPassSuccess is true when no prior failures and no escalations",
+      attempts: 1,
+      hasPriorFailures: false,
+      hasEscalations: false,
+      expectedFirstPassSuccess: true,
+    },
+    {
+      name: "firstPassSuccess is false when story has both priorFailures and escalations",
+      attempts: 0,
+      hasPriorFailures: true,
+      hasEscalations: true,
+      expectedFirstPassSuccess: false,
+    },
+  ])(
+    "$name",
+    ({
+      attempts,
+      hasPriorFailures,
+      hasEscalations,
+      expectedFirstPassSuccess,
+    }) => {
+      const story = makeStory({
+        attempts,
+        escalations: hasEscalations
+          ? [
+              {
+                fromTier: "fast",
+                toTier: "balanced",
+                reason: "exceeded tier budget",
+                timestamp: new Date().toISOString(),
+              },
+            ]
+          : [],
+        priorFailures: hasPriorFailures
+          ? [
+              {
+                attempt: 1,
+                modelTier: "fast",
+                stage: "escalation",
+                summary: hasPriorFailures ? "Failed with tier fast" : "",
+                timestamp: new Date().toISOString(),
+              },
+            ]
+          : [],
+        routing: {
+          complexity: "medium",
+          testStrategy: "test-after",
+          reasoning: "test",
+          modelTier: "balanced",
+        } satisfies StoryRouting,
+      });
 
-    const ctx = makeCtx(story);
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+      const ctx = makeCtx(story, {
+        routing: {
+          complexity: "medium",
+          modelTier: "balanced",
+          testStrategy: "test-after",
+          reasoning: "escalated to balanced after fast failure",
+        },
+        agentResult: {
+          success: true,
+          exitCode: 0,
+          output: "",
+          rateLimited: false,
+          estimatedCost: 0.05,
+          durationMs: 3000,
+        },
+      });
 
-    expect(metrics.firstPassSuccess).toBe(false);
-  });
+      const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+      expect(metrics.firstPassSuccess).toBe(expectedFirstPassSuccess);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -231,92 +212,49 @@ describe("collectStoryMetrics — firstPassSuccess with escalation (BUG-067)", (
 // ---------------------------------------------------------------------------
 
 describe("collectStoryMetrics — attempt count with escalation (BUG-067)", () => {
-  test("reports 2 attempts when haiku failed once and sonnet succeeded once", () => {
-    // After escalation: story.attempts reset to 0, priorFailures has 1 entry.
-    // During sonnet execution: story.attempts is still 0 in the PRD.
-    // Total cross-tier attempts = 1 (prior failure) + 1 (current attempt) = 2.
-    const story = makeStory({
-      attempts: 0, // reset to 0 by handleTierEscalation
-      priorFailures: [
-        {
-          attempt: 1,
-          modelTier: "fast",
-          stage: "escalation",
-          summary: "Failed with tier fast",
-          timestamp: new Date().toISOString(),
-        },
-      ],
-    });
-
-    const ctx = makeCtx(story);
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
-
-    // RED: current implementation returns Math.max(1, 0 || 1) = 1
-    expect(metrics.attempts).toBe(2);
-  });
-
-  test("reports 3 attempts when haiku failed twice and sonnet succeeded once", () => {
-    // Haiku tier has 2 attempt budget; both failed before escalating.
-    const story = makeStory({
+  test.each([
+    {
+      name: "reports 2 attempts when haiku failed once and sonnet succeeded once",
       attempts: 0,
-      priorFailures: [
-        {
-          attempt: 1,
-          modelTier: "fast",
-          stage: "escalation",
-          summary: "Failed attempt 1",
-          timestamp: new Date().toISOString(),
-        },
-        {
-          attempt: 2,
-          modelTier: "fast",
-          stage: "escalation",
-          summary: "Failed attempt 2",
-          timestamp: new Date().toISOString(),
-        },
-      ],
-    });
-
-    const ctx = makeCtx(story);
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
-
-    // RED: current returns 1; expected is 3
-    expect(metrics.attempts).toBe(3);
-  });
-
-  test("reports 1 attempt when no prior failures (no escalation)", () => {
-    // Regression guard: normal first-pass story must still report 1
-    const story = makeStory({
+      priorFailuresCount: 1,
+      expectedAttempts: 2,
+    },
+    {
+      name: "reports 3 attempts when haiku failed twice and sonnet succeeded once",
+      attempts: 0,
+      priorFailuresCount: 2,
+      expectedAttempts: 3,
+    },
+    {
+      name: "reports 1 attempt when no prior failures (no escalation)",
       attempts: 1,
-      priorFailures: [],
-    });
-
-    const ctx = makeCtx(story);
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
-
-    expect(metrics.attempts).toBe(1);
-  });
-
-  test("reports correct attempts when story.attempts is 1 within new tier", () => {
-    // Story escalated from fast (1 failure), then sonnet ran once (attempts=1 in new tier)
-    const story = makeStory({
+      priorFailuresCount: 0,
+      expectedAttempts: 1,
+    },
+    {
+      name: "reports correct attempts when story.attempts is 1 within new tier",
       attempts: 1,
-      priorFailures: [
-        {
-          attempt: 1,
-          modelTier: "fast",
-          stage: "escalation",
-          summary: "Failed at fast",
-          timestamp: new Date().toISOString(),
-        },
-      ],
+      priorFailuresCount: 1,
+      expectedAttempts: 2,
+    },
+  ])("$name", ({ attempts, priorFailuresCount, expectedAttempts }) => {
+    const priorFailures = Array.from({ length: priorFailuresCount }, (_, i) => ({
+      attempt: i + 1,
+      modelTier: "fast" as const,
+      stage: "escalation" as const,
+      summary: priorFailuresCount > 1 ? `Failed attempt ${i + 1}` : "Failed with tier fast",
+      timestamp: new Date().toISOString(),
+    }));
+
+    const story = makeStory({
+      attempts,
+      priorFailures,
     });
 
     const ctx = makeCtx(story);
     const metrics = collectStoryMetrics(ctx, new Date().toISOString());
 
-    // 1 prior failure + 1 current tier attempt = 2 total
-    expect(metrics.attempts).toBe(2);
+    expect(metrics.attempts).toBe(expectedAttempts);
   });
 });
 
@@ -333,115 +271,79 @@ describe("collectStoryMetrics — attempt count with escalation (BUG-067)", () =
 // ---------------------------------------------------------------------------
 
 describe("collectStoryMetrics — cost accumulation across escalations (BUG-067)", () => {
-  test("cost includes prior attempt cost when story escalated (haiku cost + sonnet cost)", () => {
-    // Haiku (fast tier) attempt cost: $0.05 — happened in a prior iteration
-    // Sonnet (balanced tier) attempt cost: $0.10 — the current agentResult
-    // Expected total story cost: $0.15
-    const PRIOR_ATTEMPT_COST = 0.05;
-    const CURRENT_ATTEMPT_COST = 0.10;
+  test.each([
+    {
+      name: "cost includes prior attempt cost when story escalated (haiku cost + sonnet cost)",
+      priorFailuresCount: 1,
+      priorAttemptCost: 0.05,
+      currentAttemptCost: 0.10,
+      expectedCost: 0.15,
+    },
+    {
+      name: "cost is just agentResult.estimatedCost when no prior attempts (no escalation)",
+      priorFailuresCount: 0,
+      priorAttemptCost: 0,
+      currentAttemptCost: 0.05,
+      expectedCost: 0.05,
+    },
+    {
+      name: "cost sums across multiple tier escalations (fast + balanced + powerful)",
+      priorFailuresCount: 2,
+      priorAttemptCost: 0.1, // 0.02 + 0.08
+      currentAttemptCost: 0.2,
+      expectedCost: 0.3,
+    },
+  ])(
+    "$name",
+    ({
+      priorFailuresCount,
+      priorAttemptCost,
+      currentAttemptCost,
+      expectedCost,
+    }) => {
+      const priorFailures = Array.from({ length: priorFailuresCount }, (_, i) => ({
+        attempt: i + 1,
+        modelTier: i === 0 ? ("fast" as const) : ("balanced" as const),
+        stage: "escalation" as const,
+        summary: priorFailuresCount > 1 ? `Failed at ${i === 0 ? "fast" : "balanced"}` : "Failed at fast tier",
+        timestamp: new Date().toISOString(),
+      }));
 
-    const story = makeStory({
-      attempts: 0,
-      priorFailures: [
-        {
-          attempt: 1,
-          modelTier: "fast",
-          stage: "escalation",
-          summary: "Failed at fast tier",
-          timestamp: new Date().toISOString(),
+      const story = makeStory({
+        attempts: priorFailuresCount > 0 ? 0 : 1,
+        priorFailures,
+      });
+
+      const ctx = makeCtx(story, {
+        routing:
+          priorFailuresCount === 2
+            ? {
+                complexity: "expert",
+                modelTier: "powerful",
+                testStrategy: "three-session-tdd",
+                reasoning: "escalated twice",
+              }
+            : {
+                complexity: "medium",
+                modelTier: "balanced",
+                testStrategy: "test-after",
+                reasoning: "test",
+              },
+        agentResult: {
+          success: true,
+          exitCode: 0,
+          output: "",
+          rateLimited: false,
+          estimatedCost: currentAttemptCost,
+          durationMs: priorFailuresCount === 2 ? 30000 : 5000,
         },
-      ],
-    });
+        accumulatedAttemptCost: priorAttemptCost,
+      } as any);
 
-    // accumulatedAttemptCost: not yet on PipelineContext — the fix must add it.
-    // Cast to unknown first so TypeScript doesn't block the RED test.
-    const ctx = makeCtx(story, {
-      agentResult: {
-        success: true,
-        exitCode: 0,
-        output: "",
-        rateLimited: false,
-        estimatedCost: CURRENT_ATTEMPT_COST,
-        durationMs: 5000,
-      },
-      accumulatedAttemptCost: PRIOR_ATTEMPT_COST,
-    });
-
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
-
-    // RED: current implementation returns only 0.10 (ignores accumulatedAttemptCost)
-    expect(metrics.cost).toBeCloseTo(PRIOR_ATTEMPT_COST + CURRENT_ATTEMPT_COST, 5);
-  });
-
-  test("cost is just agentResult.estimatedCost when no prior attempts (no escalation)", () => {
-    // Regression guard: unescalated stories must still report correctly
-    const story = makeStory({ attempts: 1, priorFailures: [] });
-
-    const ctx = makeCtx(story, {
-      agentResult: {
-        success: true,
-        exitCode: 0,
-        output: "",
-        rateLimited: false,
-        estimatedCost: 0.05,
-        durationMs: 3000,
-      },
-    });
-
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
-
-    expect(metrics.cost).toBeCloseTo(0.05, 5);
-  });
-
-  test("cost sums across multiple tier escalations (fast + balanced + powerful)", () => {
-    // Story escalated twice: fast ($0.02) → balanced ($0.08) → powerful ($0.20, success)
-    const FAST_COST = 0.02;
-    const BALANCED_COST = 0.08;
-    const POWERFUL_COST = 0.20;
-
-    const story = makeStory({
-      attempts: 0,
-      priorFailures: [
-        {
-          attempt: 1,
-          modelTier: "fast",
-          stage: "escalation",
-          summary: "Failed at fast",
-          timestamp: new Date().toISOString(),
-        },
-        {
-          attempt: 2,
-          modelTier: "balanced",
-          stage: "escalation",
-          summary: "Failed at balanced",
-          timestamp: new Date().toISOString(),
-        },
-      ],
-    });
-
-    const ctx = makeCtx(story, {
-      routing: {
-        complexity: "expert",
-        modelTier: "powerful",
-        testStrategy: "three-session-tdd",
-        reasoning: "escalated twice",
-      },
-      agentResult: {
-        success: true,
-        exitCode: 0,
-        output: "",
-        rateLimited: false,
-        estimatedCost: POWERFUL_COST,
-        durationMs: 30000,
-      },
-      accumulatedAttemptCost: FAST_COST + BALANCED_COST,
-    });
-
-    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
-
-    // RED: returns only 0.20; expected 0.30
-    expect(metrics.cost).toBeCloseTo(FAST_COST + BALANCED_COST + POWERFUL_COST, 5);
-  });
+      const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+      expect(metrics.cost).toBeCloseTo(expectedCost, 5);
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -460,126 +362,81 @@ describe("handleTierEscalation — priorFailures records attempt data (BUG-067)"
     }
   });
 
-  test("escalated story has priorFailures entry identifying the failed tier", async () => {
-    origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = mock(() => Promise.resolve());
+  test.each([
+    {
+      name: "escalated story has priorFailures entry identifying the failed tier",
+      checkKey: "priorFailures",
+      assertion: (updatedStory: any) => {
+        expect(updatedStory!.priorFailures).toBeDefined();
+        expect(updatedStory!.priorFailures!.length).toBeGreaterThanOrEqual(1);
+        expect(updatedStory!.priorFailures![0].modelTier).toBe("fast");
+      },
+    },
+    {
+      name: "escalated story has attempts reset to 0 (BUG-011 preserved)",
+      checkKey: "attempts",
+      assertion: (updatedStory: any) => {
+        expect(updatedStory!.attempts).toBe(0);
+      },
+    },
+    {
+      name: "escalated story modelTier is updated to next tier (regression guard)",
+      checkKey: "routing",
+      assertion: (updatedStory: any) => {
+        expect(updatedStory!.routing?.modelTier).toBe("balanced");
+      },
+    },
+  ])(
+    "$name",
+    async ({ checkKey, assertion }) => {
+      origSavePRD = _tierEscalationDeps.savePRD;
+      _tierEscalationDeps.savePRD = mock(() => Promise.resolve());
 
-    const story = makeStory({
-      attempts: 1, // had 1 attempt at fast tier before escalation
-      priorFailures: [],
-    });
+      const baseStory = makeStory({
+        attempts: 1,
+        priorFailures: [],
+        ...(checkKey === "routing"
+          ? {
+              routing: {
+                complexity: "medium",
+                testStrategy: "test-after",
+                reasoning: "test",
+                modelTier: "fast",
+              } satisfies StoryRouting,
+            }
+          : {}),
+      });
 
-    const ctx = {
-      story,
-      storiesToExecute: [story],
-      isBatchExecution: false,
-      routing: { modelTier: "fast", testStrategy: "test-after" },
-      pipelineResult: {
-        reason: "Tests failing",
-        context: {
-          tddFailureCategory: undefined,
-          retryAsLite: false,
-          reviewFindings: undefined,
+      const ctx = {
+        story: baseStory,
+        storiesToExecute: [baseStory],
+        isBatchExecution: false,
+        routing: { modelTier: "fast", testStrategy: "test-after" },
+        pipelineResult: {
+          reason: "Tests failing",
+          context: {
+            tddFailureCategory: undefined,
+            retryAsLite: false,
+            reviewFindings: undefined,
+          },
         },
-      },
-      config: makeConfig(),
-      prd: makePRD([story]),
-      prdPath: "/tmp/prd.json",
-      featureDir: undefined,
-      hooks: { hooks: {} },
-      feature: "test-feature",
-      totalCost: 0,
-      workdir: "/tmp",
-    };
+        config: makeConfig(),
+        prd: makePRD([baseStory]),
+        prdPath: "/tmp/prd.json",
+        featureDir: undefined,
+        hooks: { hooks: {} },
+        feature: "test-feature",
+        totalCost: 0,
+        workdir: "/tmp",
+      };
 
-    const result = await handleTierEscalation(
-      ctx as Parameters<typeof handleTierEscalation>[0],
-    );
+      const result = await handleTierEscalation(
+        ctx as Parameters<typeof handleTierEscalation>[0],
+      );
 
-    const updatedStory = result.prd.userStories.find((s) => s.id === "US-001");
-    expect(updatedStory).toBeDefined();
-
-    // priorFailures must record the attempt that failed before escalation
-    expect(updatedStory!.priorFailures).toBeDefined();
-    expect(updatedStory!.priorFailures!.length).toBeGreaterThanOrEqual(1);
-
-    // The failure record must identify the tier that ran
-    expect(updatedStory!.priorFailures![0].modelTier).toBe("fast");
-  });
-
-  test("escalated story has attempts reset to 0 (BUG-011 preserved)", async () => {
-    origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = mock(() => Promise.resolve());
-
-    const story = makeStory({ attempts: 1, priorFailures: [] });
-
-    const ctx = {
-      story,
-      storiesToExecute: [story],
-      isBatchExecution: false,
-      routing: { modelTier: "fast", testStrategy: "test-after" },
-      pipelineResult: {
-        reason: "Tests failing",
-        context: { tddFailureCategory: undefined, retryAsLite: false, reviewFindings: undefined },
-      },
-      config: makeConfig(),
-      prd: makePRD([story]),
-      prdPath: "/tmp/prd.json",
-      featureDir: undefined,
-      hooks: { hooks: {} },
-      feature: "test-feature",
-      totalCost: 0,
-      workdir: "/tmp",
-    };
-
-    const result = await handleTierEscalation(
-      ctx as Parameters<typeof handleTierEscalation>[0],
-    );
-
-    const updatedStory = result.prd.userStories.find((s) => s.id === "US-001");
-    // BUG-011: attempts resets to 0 on tier change (this is intentional for per-tier budgeting)
-    expect(updatedStory!.attempts).toBe(0);
-  });
-
-  test("escalated story modelTier is updated to next tier (regression guard)", async () => {
-    origSavePRD = _tierEscalationDeps.savePRD;
-    _tierEscalationDeps.savePRD = mock(() => Promise.resolve());
-
-    const story = makeStory({
-      attempts: 1,
-      priorFailures: [],
-      routing: {
-        complexity: "medium",
-        testStrategy: "test-after",
-        reasoning: "test",
-        modelTier: "fast",
-      } satisfies StoryRouting,
-    });
-
-    const ctx = {
-      story,
-      storiesToExecute: [story],
-      isBatchExecution: false,
-      routing: { modelTier: "fast", testStrategy: "test-after" },
-      pipelineResult: {
-        reason: "Tests failing",
-        context: { tddFailureCategory: undefined, retryAsLite: false, reviewFindings: undefined },
-      },
-      config: makeConfig(),
-      prd: makePRD([story]),
-      prdPath: "/tmp/prd.json",
-      featureDir: undefined,
-      hooks: { hooks: {} },
-      feature: "test-feature",
-      totalCost: 0,
-      workdir: "/tmp",
-    };
-
-    const result = await handleTierEscalation(
-      ctx as Parameters<typeof handleTierEscalation>[0],
-    );
-
-    const updatedStory = result.prd.userStories.find((s) => s.id === "US-001");
-    expect(updatedStory!.routing?.modelTier).toBe("balanced");
-  });
+      const updatedStory = result.prd.userStories.find((s) => s.id === "US-001");
+      expect(updatedStory).toBeDefined();
+      assertion(updatedStory);
+    },
+  );
 });
