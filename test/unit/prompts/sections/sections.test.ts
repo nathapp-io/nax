@@ -216,15 +216,14 @@ describe("buildConventionsSection", () => {
     expect(result.length).toBeGreaterThan(0);
   });
 
-  test("includes bun test scoping warning", () => {
+  test("includes code pattern guidelines", () => {
     const result = buildConventionsSection();
-    expect(result).toContain("bun test");
-    expect(result).toMatch(/NEVER run `bun test` without a file filter|without a file filter/);
+    expect(result).toContain("code patterns");
   });
 
-  test("includes context window flood warning", () => {
+  test("includes maintainability guidance", () => {
     const result = buildConventionsSection();
-    expect(result.toLowerCase()).toMatch(/flood|context window/);
+    expect(result.toLowerCase()).toMatch(/idiomatic|maintainable/);
   });
 
   test("includes commit message instruction", () => {

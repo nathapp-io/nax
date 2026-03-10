@@ -29,31 +29,31 @@ export function buildIsolationSection(
 
   const role = roleOrMode as "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple";
 
-  const header = "# Isolation Rules\n\n";
+  const header = "# Isolation Rules";
   const footer = `\n\n${TEST_FILTER_RULE}`;
 
   if (role === "test-writer") {
     const m = mode ?? "strict";
     if (m === "strict") {
-      return `${header}isolation scope: Only create or modify files in the test/ directory. Tests must fail because the feature is not yet implemented. Do NOT modify any source files in src/.${footer}`;
+      return `${header}\n\nisolation scope: Only create or modify files in the test/ directory. Tests must fail because the feature is not yet implemented. Do NOT modify any source files in src/.${footer}`;
     }
 
     // lite mode for test-writer
-    return `${header}isolation scope: Create test files in test/. MAY read src/ files and MAY import from src/ to ensure correct types/interfaces. May create minimal stubs in src/ if needed to make imports work, but do NOT implement real logic.${footer}`;
+    return `${header}\n\nisolation scope: Create test files in test/. MAY read src/ files and MAY import from src/ to ensure correct types/interfaces. May create minimal stubs in src/ if needed to make imports work, but do NOT implement real logic.${footer}`;
   }
 
   if (role === "implementer") {
-    return `${header}isolation scope: Implement source code in src/ to make tests pass. Do not modify test files. Run tests frequently to track progress.${footer}`;
+    return `${header}\n\nisolation scope: Implement source code in src/ to make tests pass. Do not modify test files. Run tests frequently to track progress.${footer}`;
   }
 
   if (role === "verifier") {
-    return `${header}isolation scope: Read-only inspection. Review all test results, implementation code, and acceptance criteria compliance. You MAY write a verdict file (.nax-verifier-verdict.json) and apply legitimate fixes if needed.${footer}`;
+    return `${header}\n\nisolation scope: Read-only inspection. Review all test results, implementation code, and acceptance criteria compliance. You MAY write a verdict file (.nax-verifier-verdict.json) and apply legitimate fixes if needed.${footer}`;
   }
 
   if (role === "single-session") {
-    return `${header}isolation scope: Create test files in test/ directory, then implement source code in src/ to make tests pass. Both directories are in scope for this session.${footer}`;
+    return `${header}\n\nisolation scope: Create test files in test/ directory, then implement source code in src/ to make tests pass. Both directories are in scope for this session.${footer}`;
   }
 
   // tdd-simple role — no isolation restrictions (no footer needed)
-  return `${header}isolation scope: You may modify both src/ and test/ files. Write failing tests FIRST, then implement to make them pass.`;
+  return `${header}\n\nisolation scope: You may modify both src/ and test/ files. Write failing tests FIRST, then implement to make them pass.`;
 }

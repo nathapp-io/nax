@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { buildConventionsSection } from "../../../../src/prompts/sections/conventions";
 
 describe("buildConventionsSection", () => {
-  test("includes bun test scoping warning", () => {
+  test("includes code pattern guidelines", () => {
     const result = buildConventionsSection();
-    expect(result).toContain("bun test");
+    expect(result).toContain("code patterns");
   });
 
   test("includes commit message instruction", () => {
@@ -12,9 +12,9 @@ describe("buildConventionsSection", () => {
     expect(result).toContain("commit");
   });
 
-  test("includes context about test filtering", () => {
+  test("includes conventional commit format examples", () => {
     const result = buildConventionsSection();
-    expect(result).toContain("specific");
+    expect(result).toContain("feat:");
   });
 
   test("returns non-empty string", () => {
