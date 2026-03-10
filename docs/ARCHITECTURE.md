@@ -493,7 +493,23 @@ chore: bump version to 0.36.0 [run-release]
 
 ## 11. Design Patterns
 
-nax uses a small set of patterns consistently. Follow these when extending the codebase.
+nax is primarily functional (~90% exported functions, ~10% classes). Use patterns only when they solve a real problem — not as default.
+
+### When to Use a Pattern vs Plain Function
+
+| Scenario | Use | Example |
+|:---------|:----|:--------|
+| Stateless transformation or computation | **Plain function** | `estimateTokens()`, `coerceVerdict()`, `buildStorySection()` |
+| Single-use utility with no variants | **Plain function** | `loadConstitution()`, `runReview()`, `autoCommitIfDirty()` |
+| Multi-step construction with optional config | **Builder** | `PromptBuilder`, `DecomposeBuilder` |
+| Multiple backends sharing a contract | **Adapter** | `AgentAdapter` → Claude, Codex, Gemini |
+| Collection with typed lookup/lifecycle | **Registry** | `PluginRegistry`, agent registry |
+| Interchangeable algorithms for same task | **Strategy** | Verification strategies, routing strategies |
+| Ordered handler dispatch with fallback | **Chain** | `InteractionChain`, `StrategyChain` |
+| Global service with init-once semantics | **Singleton** | Logger |
+| Stateful object managing resources (PIDs, connections) | **Class** | `PidRegistry`, `StatusWriter` |
+
+**Rule: prefer plain functions.** Only introduce a class/pattern when you need state, multiple implementations, or complex construction. Never wrap a simple function in a class just to "follow patterns."
 
 ### Builder (Fluent API)
 

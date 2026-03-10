@@ -83,13 +83,15 @@ Levels: `debug` (internal state), `info` (lifecycle), `warn` (recoverable), `err
 
 ## Design Patterns
 
-Follow established patterns — see `docs/ARCHITECTURE.md` §11 for details:
-- **Builder:** `static for()` → method chain → `.build()` (PromptBuilder, DecomposeBuilder)
-- **Adapter:** interface in `types.ts`, class per backend (AgentAdapter)
-- **Registry:** typed accessors, never raw Map (PluginRegistry, agent registry)
-- **Strategy:** interface + implementations, selected by orchestrator (verification, routing)
-- **Chain:** priority-ordered handlers with timeout/fallback (InteractionChain)
-- **Singleton:** `getX()` / `getSafeX()` getters, never export instance directly (Logger)
+**Prefer plain functions** — only use patterns when you need state, multiple implementations, or complex construction. See `docs/ARCHITECTURE.md` §11 for details and decision guide.
+
+Established patterns (use when appropriate):
+- **Builder:** multi-step construction (`PromptBuilder`, `DecomposeBuilder`)
+- **Adapter:** multiple backends, one interface (`AgentAdapter`)
+- **Registry:** typed collection lookup (`PluginRegistry`)
+- **Strategy:** interchangeable algorithms (`IVerificationStrategy`)
+- **Chain:** priority-ordered dispatch (`InteractionChain`)
+- **Singleton:** global services (`getLogger()` / `getSafeLogger()`)
 
 ## Boundaries
 
