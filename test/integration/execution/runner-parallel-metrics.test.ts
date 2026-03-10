@@ -127,15 +127,19 @@ function makeHooks(): LoadedHooksConfig {
 // Test setup
 // ─────────────────────────────────────────────────────────────────────────────
 
-const originalExecuteParallel = _parallelExecutorDeps.executeParallel;
-const originalGetAgent = _executionDeps.getAgent;
-
 describe("BUG-064 + BUG-065 + BUG-066: Runner parallel + sequential metric accumulation", () => {
   let tempDir: string;
   let prdPath: string;
+  // Capture originals inside describe scope to avoid contamination from other test files
+  let originalExecuteParallel: typeof _parallelExecutorDeps.executeParallel;
+  let originalGetAgent: typeof _executionDeps.getAgent;
   let statusFile: string;
 
   beforeEach(async () => {
+    // Capture originals here (not at module level) to avoid contamination from other test files
+    originalExecuteParallel = _parallelExecutorDeps.executeParallel;
+    originalGetAgent = _executionDeps.getAgent;
+
     tempDir = await createTempDir();
     prdPath = await createTwoStoryPrd(tempDir, "test-parallel-metrics");
     statusFile = path.join(tempDir, "status.json");
