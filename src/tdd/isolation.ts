@@ -37,19 +37,6 @@ export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promis
   return output.trim().split("\n").filter(Boolean);
 }
 
-/** Get staged files */
-export async function getStagedFiles(workdir: string): Promise<string[]> {
-  const proc = Bun.spawn(["git", "diff", "--name-only", "--cached"], {
-    cwd: workdir,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  await proc.exited;
-  const output = await new Response(proc.stdout).text();
-  return output.trim().split("\n").filter(Boolean);
-}
-
 /** Check if a file path matches any of the allowed patterns (glob-like) */
 function matchesAllowedPath(filePath: string, allowedPaths: string[]): boolean {
   return allowedPaths.some((pattern) => {

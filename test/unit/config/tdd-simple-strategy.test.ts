@@ -147,8 +147,8 @@ describe("TS-001: LLM routing prompt describes tdd-simple strategy", () => {
     expect(prompt).toContain("test-after");
   });
 
-  test("buildBatchPrompt output mentions tdd-simple", async () => {
-    const { buildBatchPrompt } = await import("../../../src/routing/strategies/llm-prompts");
+  test("buildBatchRoutingPrompt output mentions tdd-simple", async () => {
+    const { buildBatchRoutingPrompt } = await import("../../../src/routing/strategies/llm-prompts");
     const { DEFAULT_CONFIG } = await import("../../../src/config/defaults");
 
     const stories = [
@@ -166,7 +166,7 @@ describe("TS-001: LLM routing prompt describes tdd-simple strategy", () => {
       },
     ];
 
-    const prompt = buildBatchPrompt(stories, DEFAULT_CONFIG);
+    const prompt = buildBatchRoutingPrompt(stories, DEFAULT_CONFIG);
     expect(prompt).toContain("tdd-simple");
   });
 });

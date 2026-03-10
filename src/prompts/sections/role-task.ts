@@ -27,83 +27,83 @@ export function buildRoleTaskSection(
   if (role === "implementer") {
     const v = variant ?? "standard";
     if (v === "standard") {
-      return (
-        "# Role: Implementer\n\n" +
-        "Your task: make failing tests pass.\n\n" +
-        "Instructions:\n" +
-        "- Implement source code in src/ to make tests pass\n" +
-        "- Do NOT modify test files\n" +
-        "- Run tests frequently to track progress\n" +
-        "- When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'\n" +
-        "- Goal: all tests green, all changes committed"
-      );
+      return `# Role: Implementer
+
+Your task: make failing tests pass.
+
+Instructions:
+- Implement source code in src/ to make tests pass
+- Do NOT modify test files
+- Run tests frequently to track progress
+- When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'
+- Goal: all tests green, all changes committed`;
     }
 
     // lite variant
-    return (
-      "# Role: Implementer (Lite)\n\n" +
-      "Your task: Write tests AND implement the feature in a single session.\n\n" +
-      "Instructions:\n" +
-      "- Write tests first (test/ directory), then implement (src/ directory)\n" +
-      "- All tests must pass by the end\n" +
-      "- Use Bun test (describe/test/expect)\n" +
-      "- When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'\n" +
-      "- Goal: all tests green, all criteria met, all changes committed"
-    );
+    return `# Role: Implementer (Lite)
+
+Your task: Write tests AND implement the feature in a single session.
+
+Instructions:
+- Write tests first (test/ directory), then implement (src/ directory)
+- All tests must pass by the end
+- Use Bun test (describe/test/expect)
+- When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'
+- Goal: all tests green, all criteria met, all changes committed`;
   }
 
   if (role === "test-writer") {
-    return (
-      "# Role: Test-Writer\n\n" +
-      "Your task: Write comprehensive failing tests for the feature.\n\n" +
-      "Instructions:\n" +
-      "- Create test files in test/ directory that cover acceptance criteria\n" +
-      "- Tests must fail initially (RED phase) — the feature is not yet implemented\n" +
-      "- Use Bun test (describe/test/expect)\n" +
-      "- Write clear test names that document expected behavior\n" +
-      "- Focus on behavior, not implementation details\n" +
-      "- Goal: comprehensive test suite ready for implementation"
-    );
+    return `# Role: Test-Writer
+
+Your task: Write comprehensive failing tests for the feature.
+
+Instructions:
+- Create test files in test/ directory that cover acceptance criteria
+- Tests must fail initially (RED phase) — the feature is not yet implemented
+- Use Bun test (describe/test/expect)
+- Write clear test names that document expected behavior
+- Focus on behavior, not implementation details
+- Goal: comprehensive test suite ready for implementation`;
   }
 
   if (role === "verifier") {
-    return (
-      "# Role: Verifier\n\n" +
-      "Your task: Review and verify the implementation against acceptance criteria.\n\n" +
-      "Instructions:\n" +
-      "- Review all test results — verify tests pass\n" +
-      "- Check that implementation meets all acceptance criteria\n" +
-      "- Inspect code quality, error handling, and edge cases\n" +
-      "- Verify test modifications (if any) are legitimate fixes\n" +
-      "- Write a detailed verdict with reasoning\n" +
-      "- Goal: provide comprehensive verification and quality assurance"
-    );
+    return `# Role: Verifier
+
+Your task: Review and verify the implementation against acceptance criteria.
+
+Instructions:
+- Review all test results — verify tests pass
+- Check that implementation meets all acceptance criteria
+- Inspect code quality, error handling, and edge cases
+- Verify test modifications (if any) are legitimate fixes
+- Write a detailed verdict with reasoning
+- Goal: provide comprehensive verification and quality assurance`;
   }
 
   if (role === "single-session") {
-    return (
-      "# Role: Single-Session\n\n" +
-      "Your task: Write tests AND implement the feature in a single focused session.\n\n" +
-      "Instructions:\n" +
-      "- Phase 1: Write comprehensive tests (test/ directory)\n" +
-      "- Phase 2: Implement to make all tests pass (src/ directory)\n" +
-      "- Use Bun test (describe/test/expect)\n" +
-      "- Run tests frequently throughout implementation\n" +
-      "- When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'\n" +
-      "- Goal: all tests passing, all changes committed, full story complete"
-    );
+    return `# Role: Single-Session
+
+Your task: Write tests AND implement the feature in a single focused session.
+
+Instructions:
+- Phase 1: Write comprehensive tests (test/ directory)
+- Phase 2: Implement to make all tests pass (src/ directory)
+- Use Bun test (describe/test/expect)
+- Run tests frequently throughout implementation
+- When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'
+- Goal: all tests passing, all changes committed, full story complete`;
   }
 
   // tdd-simple role — test-driven development in one session
-  return (
-    "# Role: TDD-Simple\n\n" +
-    "Your task: Write failing tests FIRST, then implement to make them pass.\n\n" +
-    "Instructions:\n" +
-    "- RED phase: Write failing tests FIRST for the acceptance criteria\n" +
-    "- RED phase: Run the tests to confirm they fail\n" +
-    "- GREEN phase: Implement the minimum code to make tests pass\n" +
-    "- REFACTOR phase: Refactor while keeping tests green\n" +
-    "- When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'\n" +
-    "- Goal: all tests passing, feature complete, all changes committed"
-  );
+  return `# Role: TDD-Simple
+
+Your task: Write failing tests FIRST, then implement to make them pass.
+
+Instructions:
+- RED phase: Write failing tests FIRST for the acceptance criteria
+- RED phase: Run the tests to confirm they fail
+- GREEN phase: Implement the minimum code to make tests pass
+- REFACTOR phase: Refactor while keeping tests green
+- When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'
+- Goal: all tests passing, feature complete, all changes committed`;
 }

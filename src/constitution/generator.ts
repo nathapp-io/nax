@@ -156,36 +156,3 @@ export async function generateAll(
 
   return results;
 }
-
-/**
- * Check if constitution file is newer than generated configs
- */
-export function isConstitutionNewer(constitutionPath: string, outputDir: string): boolean {
-  if (!existsSync(constitutionPath)) {
-    return false;
-  }
-
-  const constitutionStat = Bun.file(constitutionPath);
-  const constitutionMtime = constitutionStat.lastModified;
-
-  // Check all generated files
-  const agents: AgentType[] = ["claude", "opencode", "cursor", "windsurf", "aider"];
-  for (const agent of agents) {
-    const outputFile = GENERATORS[agent].outputFile;
-    const outputPath = join(outputDir, outputFile);
-
-    if (!existsSync(outputPath)) {
-      // If any config file is missing, consider constitution newer
-      return true;
-    }
-
-    const outputStat = Bun.file(outputPath);
-    const outputMtime = outputStat.lastModified;
-
-    if (constitutionMtime > outputMtime) {
-      return true;
-    }
-  }
-
-  return false;
-}

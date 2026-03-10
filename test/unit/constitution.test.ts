@@ -25,10 +25,10 @@ afterEach(() => {
 });
 
 describe("estimateTokens", () => {
-  test("estimates tokens using 1 token ≈ 3 chars", () => {
-    expect(estimateTokens("abc")).toBe(1); // 3 chars = 1 token
-    expect(estimateTokens("abcdef")).toBe(2); // 6 chars = 2 tokens
-    expect(estimateTokens("a".repeat(100))).toBe(34); // 100 chars = 34 tokens (rounded up)
+  test("estimates tokens using 1 token ≈ 4 chars", () => {
+    expect(estimateTokens("abcd")).toBe(1); // 4 chars = 1 token
+    expect(estimateTokens("abcdefgh")).toBe(2); // 8 chars = 2 tokens
+    expect(estimateTokens("a".repeat(100))).toBe(25); // 100 chars = 25 tokens (rounded up)
   });
 
   test("handles empty string", () => {
@@ -36,7 +36,7 @@ describe("estimateTokens", () => {
   });
 
   test("rounds up fractional tokens", () => {
-    expect(estimateTokens("ab")).toBe(1); // 2 chars = 0.67 tokens → rounds up to 1
+    expect(estimateTokens("abc")).toBe(1); // 3 chars = 0.75 tokens → rounds up to 1
   });
 });
 
@@ -131,7 +131,7 @@ describe("loadConstitution", () => {
   });
 
   test("truncates constitution if exceeds maxTokens", async () => {
-    const content = "A".repeat(300); // 300 chars = 100 tokens
+    const content = "A".repeat(300); // 300 chars = 75 tokens (1 token ≈ 4 chars)
     const constitutionPath = join(TEST_DIR, "constitution.md");
     await Bun.write(constitutionPath, content);
 
@@ -146,7 +146,7 @@ describe("loadConstitution", () => {
     expect(result).not.toBeNull();
     expect(result?.truncated).toBe(true);
     expect(result?.tokens).toBeLessThanOrEqual(50);
-    expect(result?.originalTokens).toBe(100);
+    expect(result?.originalTokens).toBe(75);
     expect(result?.content.length).toBeLessThan(content.length);
   });
 

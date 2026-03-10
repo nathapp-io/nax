@@ -83,6 +83,7 @@ export async function runTddSession(
   contextMarkdown?: string,
   lite = false,
   skipIsolation = false,
+  constitution?: string,
 ): Promise<TddSessionResult> {
   const startTime = Date.now();
 
@@ -101,6 +102,7 @@ export async function runTddSession(
         .withLoader(workdir, config)
         .story(story)
         .context(contextMarkdown)
+        .constitution(constitution)
         .build();
       break;
     case "verifier":

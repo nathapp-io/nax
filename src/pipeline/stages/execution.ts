@@ -134,6 +134,7 @@ export const executionStage: PipelineStage = {
         workdir: ctx.workdir,
         modelTier: ctx.routing.modelTier,
         contextMarkdown: ctx.contextMarkdown,
+        constitution: ctx.constitution?.content,
         dryRun: false,
         lite: isLiteMode,
       });
@@ -156,7 +157,7 @@ export const executionStage: PipelineStage = {
         // Store failure category in context for runner to use at max-attempts decision
         ctx.tddFailureCategory = tddResult.failureCategory;
 
-        // Log needsHumanReview context when present
+        // Log and notify when human review is needed
         if (tddResult.needsHumanReview) {
           logger.warn("execution", "Human review needed", {
             storyId: ctx.story.id,
@@ -164,6 +165,27 @@ export const executionStage: PipelineStage = {
             lite: tddResult.lite,
             failureCategory: tddResult.failureCategory,
           });
+          // Send notification via interaction chain (Telegram in headless mode)
+          if (ctx.interaction) {
+            try {
+              await ctx.interaction.send({
+                id: `human-review-${ctx.story.id}-${Date.now()}`,
+                type: "notify",
+                featureName: ctx.featureDir ? (ctx.featureDir.split("/").pop() ?? "unknown") : "unknown",
+                storyId: ctx.story.id,
+                stage: "execution",
+                summary: `⚠️ Human review needed: ${ctx.story.id}`,
+                detail: `Story: ${ctx.story.title}\nReason: ${tddResult.reviewReason ?? "No reason provided"}\nCategory: ${tddResult.failureCategory ?? "unknown"}`,
+                fallback: "continue",
+                createdAt: Date.now(),
+              });
+            } catch (notifyErr) {
+              logger.warn("execution", "Failed to send human review notification", {
+                storyId: ctx.story.id,
+                error: String(notifyErr),
+              });
+            }
+          }
         }
 
         return routeTddFailure(tddResult.failureCategory, isLiteMode, ctx, tddResult.reviewReason);

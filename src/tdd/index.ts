@@ -15,9 +15,8 @@ export {
 export { runThreeSessionTdd } from "./orchestrator";
 export { cleanupProcessTree, getPgid } from "./cleanup";
 export {
-  buildTestWriterPrompt,
-  buildImplementerPrompt,
-  buildVerifierPrompt,
+  buildImplementerRectificationPrompt,
+  buildRectificationPrompt,
 } from "./prompts";
 export type { VerifierVerdict, VerdictCategorization } from "./verdict";
 export { VERDICT_FILE, readVerdict, cleanupVerdict, categorizeVerdict } from "./verdict";
