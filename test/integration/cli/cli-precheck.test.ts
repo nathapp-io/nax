@@ -376,8 +376,6 @@ describe("CLI precheck command", () => {
  * Tests the complete precheck workflow including all Tier 1 blockers and Tier 2 warnings.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-
 // These integration tests run the full precheck pipeline including checkClaudeCLI
 // (a Tier 1 blocker). In CI, the `claude` binary is not installed, so checkClaudeCLI
 // always adds a blocker — causing all assertions like `expect(blockers.length).toBe(0)`
