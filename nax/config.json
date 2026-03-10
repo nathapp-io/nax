@@ -151,5 +151,10 @@
       "testPattern": "**/*.test.{ts,js}",
       "scopeToStory": true
     }
+  },
+  "precheck": {
+    "storySizeGate": {
+      "enabled": false
+    }
   }
 }

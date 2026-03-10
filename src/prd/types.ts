@@ -49,6 +49,8 @@ export interface StructuredFailure {
   testFailures?: TestFailureContext[];
   /** Structured review findings from plugin reviewers (e.g., semgrep, eslint) */
   reviewFindings?: import("../plugins/types").ReviewFinding[];
+  /** Estimated cost of this attempt (BUG-067: accumulated across escalations) */
+  cost?: number;
   /** ISO timestamp when failure was recorded */
   timestamp: string;
 }

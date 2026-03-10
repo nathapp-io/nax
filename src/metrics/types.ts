@@ -34,6 +34,8 @@ export interface StoryMetrics {
   startedAt: string;
   /** Timestamp when completed */
   completedAt: string;
+  /** Number of runtime crashes (RUNTIME_CRASH verify status) encountered for this story (BUG-070) */
+  runtimeCrashes?: number;
   /** Whether TDD full-suite gate passed (only true for TDD strategies when gate passes) */
   fullSuiteGatePassed?: boolean;
 }

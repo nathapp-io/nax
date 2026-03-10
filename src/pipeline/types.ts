@@ -110,8 +110,12 @@ export interface PipelineContext {
   tddFailureCategory?: FailureCategory;
   /** Set to true when TDD full-suite gate already passed — verify stage skips to avoid redundant run (BUG-054) */
   fullSuiteGatePassed?: boolean;
+  /** Number of runtime crashes (RUNTIME_CRASH verify status) encountered for this story (BUG-070) */
+  storyRuntimeCrashes?: number;
   /** Structured review findings from plugin reviewers — passed to escalation for retry context */
   reviewFindings?: import("../plugins/types").ReviewFinding[];
+  /** Accumulated cost across all prior escalation attempts (BUG-067) */
+  accumulatedAttemptCost?: number;
 }
 
 /**

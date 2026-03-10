@@ -26,14 +26,18 @@ import { MergeEngine, type StoryDependencies } from "../worktree/merge";
  * Result from parallel execution of a batch of stories
  */
 export interface ParallelBatchResult {
-  /** Stories that completed successfully */
-  successfulStories: UserStory[];
-  /** Stories that failed */
-  failedStories: Array<{ story: UserStory; error: string }>;
+  /** Stories that passed the TDD pipeline (pre-merge) */
+  pipelinePassed: UserStory[];
+  /** Stories that were actually merged to the base branch */
+  merged: UserStory[];
+  /** Stories that failed the pipeline */
+  failed: Array<{ story: UserStory; error: string }>;
   /** Total cost accumulated */
   totalCost: number;
-  /** Stories with merge conflicts */
-  conflictedStories: Array<{ storyId: string; conflictFiles: string[] }>;
+  /** Stories with merge conflicts (includes per-story original cost for rectification) */
+  mergeConflicts: Array<{ storyId: string; conflictFiles: string[]; originalCost: number }>;
+  /** Per-story execution costs for successful stories */
+  storyCosts: Map<string, number>;
 }
 
 /**
@@ -148,10 +152,12 @@ async function executeParallelBatch(
   const logger = getSafeLogger();
   const worktreeManager = new WorktreeManager();
   const results: ParallelBatchResult = {
-    successfulStories: [],
-    failedStories: [],
+    pipelinePassed: [],
+    merged: [],
+    failed: [],
     totalCost: 0,
-    conflictedStories: [],
+    mergeConflicts: [],
+    storyCosts: new Map(),
   };
 
   // Create worktrees for all stories in batch
@@ -168,7 +174,7 @@ async function executeParallelBatch(
         worktreePath,
       });
     } catch (error) {
-      results.failedStories.push({
+      results.failed.push({
         story,
         error: `Failed to create worktree: ${error instanceof Error ? error.message : String(error)}`,
       });
@@ -188,15 +194,16 @@ async function executeParallelBatch(
     const executePromise = executeStoryInWorktree(story, worktreePath, context, routing as RoutingResult, eventEmitter)
       .then((result) => {
         results.totalCost += result.cost;
+        results.storyCosts.set(story.id, result.cost);
 
         if (result.success) {
-          results.successfulStories.push(story);
+          results.pipelinePassed.push(story);
           logger?.info("parallel", "Story execution succeeded", {
             storyId: story.id,
             cost: result.cost,
           });
         } else {
-          results.failedStories.push({ story, error: result.error || "Unknown error" });
+          results.failed.push({ story, error: result.error || "Unknown error" });
           logger?.error("parallel", "Story execution failed", {
             storyId: story.id,
             error: result.error,
@@ -257,7 +264,12 @@ export async function executeParallel(
   featureDir: string | undefined,
   parallel: number,
   eventEmitter?: PipelineEventEmitter,
-): Promise<{ storiesCompleted: number; totalCost: number; updatedPrd: PRD }> {
+): Promise<{
+  storiesCompleted: number;
+  totalCost: number;
+  updatedPrd: PRD;
+  mergeConflicts: Array<{ storyId: string; conflictFiles: string[]; originalCost: number }>;
+}> {
   const logger = getSafeLogger();
   const maxConcurrency = resolveMaxConcurrency(parallel);
   const worktreeManager = new WorktreeManager();
@@ -278,6 +290,7 @@ export async function executeParallel(
   let storiesCompleted = 0;
   let totalCost = 0;
   const currentPrd = prd;
+  const allMergeConflicts: Array<{ storyId: string; conflictFiles: string[]; originalCost: number }> = [];
 
   // Execute each batch sequentially (stories within each batch run in parallel)
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
@@ -311,8 +324,8 @@ export async function executeParallel(
     totalCost += batchResult.totalCost;
 
     // Merge successful stories in topological order
-    if (batchResult.successfulStories.length > 0) {
-      const successfulIds = batchResult.successfulStories.map((s) => s.id);
+    if (batchResult.pipelinePassed.length > 0) {
+      const successfulIds = batchResult.pipelinePassed.map((s) => s.id);
       const deps = buildDependencyMap(batch);
 
       logger?.info("parallel", "Merging successful stories", {
@@ -327,6 +340,8 @@ export async function executeParallel(
           // Update PRD: mark story as passed
           markStoryPassed(currentPrd, mergeResult.storyId);
           storiesCompleted++;
+          const mergedStory = batchResult.pipelinePassed.find((s) => s.id === mergeResult.storyId);
+          if (mergedStory) batchResult.merged.push(mergedStory);
 
           logger?.info("parallel", "Story merged successfully", {
             storyId: mergeResult.storyId,
@@ -335,9 +350,10 @@ export async function executeParallel(
         } else {
           // Merge conflict — mark story as failed
           markStoryFailed(currentPrd, mergeResult.storyId);
-          batchResult.conflictedStories.push({
+          batchResult.mergeConflicts.push({
             storyId: mergeResult.storyId,
             conflictFiles: mergeResult.conflictFiles || [],
+            originalCost: batchResult.storyCosts.get(mergeResult.storyId) ?? 0,
           });
 
           logger?.error("parallel", "Merge conflict", {
@@ -355,7 +371,7 @@ export async function executeParallel(
     }
 
     // Mark failed stories in PRD and clean up their worktrees
-    for (const { story, error } of batchResult.failedStories) {
+    for (const { story, error } of batchResult.failed) {
       markStoryFailed(currentPrd, story.id);
 
       logger?.error("parallel", "Cleaning up failed story worktree", {
@@ -376,10 +392,13 @@ export async function executeParallel(
     // Save PRD after each batch
     await savePRD(currentPrd, prdPath);
 
+    allMergeConflicts.push(...batchResult.mergeConflicts);
+
     logger?.info("parallel", `Batch ${batchIndex + 1} complete`, {
-      successful: batchResult.successfulStories.length,
-      failed: batchResult.failedStories.length,
-      conflicts: batchResult.conflictedStories.length,
+      pipelinePassed: batchResult.pipelinePassed.length,
+      merged: batchResult.merged.length,
+      failed: batchResult.failed.length,
+      mergeConflicts: batchResult.mergeConflicts.length,
       batchCost: batchResult.totalCost,
     });
   }
@@ -389,5 +408,5 @@ export async function executeParallel(
     totalCost,
   });
 
-  return { storiesCompleted, totalCost, updatedPrd: currentPrd };
+  return { storiesCompleted, totalCost, updatedPrd: currentPrd, mergeConflicts: allMergeConflicts };
 }

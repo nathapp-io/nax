@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-09T15-09-03-340Z",
-    "feature": "multi-agent",
-    "startedAt": "2026-03-09T15:09:03.340Z",
-    "status": "completed",
+    "id": "run-2026-03-10T01-50-54-350Z",
+    "feature": "v0361-metrics",
+    "startedAt": "2026-03-10T01:50:54.350Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 65408
+    "pid": 2704
   },
   "progress": {
-    "total": 12,
-    "passed": 10,
-    "failed": 2,
+    "total": 5,
+    "passed": 2,
+    "failed": 1,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 2
   },
   "cost": {
-    "spent": 0.39837225,
+    "spent": 3.915035,
     "limit": 8
   },
-  "current": null,
-  "iterations": 13,
-  "updatedAt": "2026-03-09T15:57:20.345Z",
-  "durationMs": 2897005
+  "current": {
+    "storyId": "MFX-002",
+    "title": "Preserve story metrics across model escalation (BUG-067)",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
+    "model": "powerful",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 6,
+  "updatedAt": "2026-03-10T05:16:55.965Z",
+  "durationMs": 12361615,
+  "lastHeartbeat": "2026-03-10T05:16:55.965Z"
 }

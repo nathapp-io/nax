@@ -24,6 +24,7 @@ function buildEscalationFailure(
   story: UserStory,
   currentTier: string,
   reviewFindings?: import("../../plugins/types").ReviewFinding[],
+  cost?: number,
 ): StructuredFailure {
   return {
     attempt: (story.attempts ?? 0) + 1,
@@ -31,6 +32,7 @@ function buildEscalationFailure(
     stage: "escalation" as const,
     summary: `Failed with tier ${currentTier}, escalating to next tier`,
     reviewFindings: reviewFindings && reviewFindings.length > 0 ? reviewFindings : undefined,
+    cost: cost ?? 0,
     timestamp: new Date().toISOString(),
   };
 }
@@ -53,6 +55,8 @@ export function resolveMaxAttemptsOutcome(failureCategory?: FailureCategory): "p
     case "isolation-violation":
     case "verifier-rejected":
     case "greenfield-no-tests":
+      return "pause";
+    case "runtime-crash":
       return "pause";
     case "session-failure":
     case "tests-failing":
@@ -208,13 +212,37 @@ export interface EscalationHandlerContext {
   feature: string;
   totalCost: number;
   workdir: string;
+  /** Verify result from the pipeline verify stage — used to detect RUNTIME_CRASH (BUG-070) */
+  verifyResult?: { status: string; success: boolean };
+  /** Cost of the failed attempt being escalated (BUG-067: accumulated across escalations) */
+  attemptCost?: number;
 }
 
 export interface EscalationHandlerResult {
-  outcome: "escalated" | "paused" | "failed";
+  outcome: "escalated" | "paused" | "failed" | "retry-same";
   prdDirty: boolean;
   prd: PRD;
 }
+
+/**
+ * Determine if the pipeline should retry the same tier due to a transient runtime crash.
+ *
+ * Returns true when the verify result status is RUNTIME_CRASH — these are Bun
+ * runtime-level failures, not code quality issues, so escalating the model tier
+ * would not help. Instead the same tier should be retried.
+ *
+ * @param verifyResult - Verify result from the pipeline verify stage
+ */
+export function shouldRetrySameTier(verifyResult: { status: string; success: boolean } | undefined): boolean {
+  return verifyResult?.status === "RUNTIME_CRASH";
+}
+
+/**
+ * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ */
+export const _tierEscalationDeps = {
+  savePRD,
+};
 
 /**
  * Handle tier escalation after pipeline escalation action
@@ -223,6 +251,15 @@ export interface EscalationHandlerResult {
  */
 export async function handleTierEscalation(ctx: EscalationHandlerContext): Promise<EscalationHandlerResult> {
   const logger = getSafeLogger();
+
+  // BUG-070: Runtime crashes are transient — retry same tier, do NOT escalate
+  if (shouldRetrySameTier(ctx.verifyResult)) {
+    logger?.warn("escalation", "Runtime crash detected — retrying same tier (transient, not a code issue)", {
+      storyId: ctx.story.id,
+    });
+    return { outcome: "retry-same", prdDirty: false, prd: ctx.prd };
+  }
+
   const nextTier = escalateTier(ctx.routing.modelTier, ctx.config.autoMode.escalation.tierOrder);
   const escalateWholeBatch = ctx.config.autoMode.escalation.escalateEntireBatch ?? true;
   const storiesToEscalate = ctx.isBatchExecution && escalateWholeBatch ? ctx.storiesToExecute : [ctx.story];
@@ -294,8 +331,8 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
       const isChangingTier = currentStoryTier !== nextTier;
       const shouldResetAttempts = isChangingTier || shouldSwitchToTestAfter;
 
-      // Build escalation failure
-      const escalationFailure = buildEscalationFailure(s, currentStoryTier, escalateReviewFindings);
+      // Build escalation failure (BUG-067: include cost for accumulatedAttemptCost in metrics)
+      const escalationFailure = buildEscalationFailure(s, currentStoryTier, escalateReviewFindings, ctx.attemptCost);
 
       return {
         ...s,
@@ -307,7 +344,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
     }) as PRD["userStories"],
   } as PRD;
 
-  await savePRD(updatedPrd, ctx.prdPath);
+  await _tierEscalationDeps.savePRD(updatedPrd, ctx.prdPath);
 
   // Clear routing cache for all escalated stories to avoid returning old cached decisions
   for (const story of storiesToEscalate) {

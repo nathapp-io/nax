@@ -50,7 +50,14 @@ export interface StructuredTestFailure {
 // Result
 // ---------------------------------------------------------------------------
 
-export type VerifyStatus = "PASS" | "TEST_FAILURE" | "TIMEOUT" | "BUILD_ERROR" | "SKIPPED" | "ASSET_CHECK_FAILED";
+export type VerifyStatus =
+  | "PASS"
+  | "TEST_FAILURE"
+  | "TIMEOUT"
+  | "BUILD_ERROR"
+  | "SKIPPED"
+  | "ASSET_CHECK_FAILED"
+  | "RUNTIME_CRASH";
 
 export interface VerifyResult {
   success: boolean;

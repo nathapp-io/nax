@@ -66,7 +66,7 @@ export async function handleDryRun(ctx: DryRunContext): Promise<DryRunResult> {
       storyId: s.id,
       story: s,
       passed: true,
-      durationMs: 0,
+      runElapsedMs: 0,
       cost: 0,
       modelTier: ctx.routing.modelTier,
       testStrategy: ctx.routing.testStrategy,
