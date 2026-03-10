@@ -22,6 +22,9 @@ import { getAllReadyStories, hookCtx } from "./helpers";
 import { executeParallel } from "./parallel";
 import type { StatusWriter } from "./status-writer";
 
+/** StoryMetrics extended with execution-path source */
+export type ParallelStoryMetrics = StoryMetrics & { source: "parallel" | "sequential" };
+
 /**
  * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
  * @internal - test use only.
@@ -59,6 +62,8 @@ export interface ParallelExecutorResult {
   storiesCompleted: number;
   completed: boolean;
   durationMs?: number;
+  /** Per-story metrics for stories completed via the parallel path */
+  storyMetrics: ParallelStoryMetrics[];
 }
 
 /**
@@ -93,7 +98,7 @@ export async function runParallelExecution(
   const readyStories = getAllReadyStories(prd);
   if (readyStories.length === 0) {
     logger?.info("parallel", "No stories ready for parallel execution");
-    return { prd, totalCost, storiesCompleted, completed: false };
+    return { prd, totalCost, storiesCompleted, completed: false, storyMetrics: [] };
   }
 
   const maxConcurrency = parallelCount === 0 ? os.cpus().length : Math.max(1, parallelCount);
@@ -116,6 +121,12 @@ export async function runParallelExecution(
     },
   });
 
+  // Track which stories were already passed before this batch
+  const initialPassedIds = new Set(initialPrd.userStories.filter((s) => s.status === "passed").map((s) => s.id));
+  const batchStartedAt = new Date().toISOString();
+  const batchStartMs = Date.now();
+  const batchStoryMetrics: ParallelStoryMetrics[] = [];
+
   try {
     const parallelResult = await _parallelExecutorDeps.executeParallel(
       readyStories,
@@ -130,9 +141,35 @@ export async function runParallelExecution(
       eventEmitter,
     );
 
+    const batchDurationMs = Date.now() - batchStartMs;
+    const batchCompletedAt = new Date().toISOString();
+
     prd = parallelResult.updatedPrd;
     storiesCompleted += parallelResult.storiesCompleted;
     totalCost += parallelResult.totalCost;
+
+    // BUG-066: Build per-story metrics for stories newly completed by this parallel batch
+    const newlyPassedStories = prd.userStories.filter((s) => s.status === "passed" && !initialPassedIds.has(s.id));
+    const costPerStory = newlyPassedStories.length > 0 ? parallelResult.totalCost / newlyPassedStories.length : 0;
+    for (const story of newlyPassedStories) {
+      batchStoryMetrics.push({
+        storyId: story.id,
+        complexity: "unknown",
+        modelTier: "parallel",
+        modelUsed: "parallel",
+        attempts: 1,
+        finalTier: "parallel",
+        success: true,
+        cost: costPerStory,
+        durationMs: batchDurationMs,
+        firstPassSuccess: true,
+        startedAt: batchStartedAt,
+        completedAt: batchCompletedAt,
+        source: "parallel" as const,
+      });
+    }
+
+    allStoryMetrics.push(...batchStoryMetrics);
 
     logger?.info("parallel", "Parallel execution complete", {
       storiesCompleted: parallelResult.storiesCompleted,
@@ -229,8 +266,9 @@ export async function runParallelExecution(
       storiesCompleted,
       completed: true,
       durationMs,
+      storyMetrics: batchStoryMetrics,
     };
   }
 
-  return { prd, totalCost, storiesCompleted, completed: false };
+  return { prd, totalCost, storiesCompleted, completed: false, storyMetrics: batchStoryMetrics };
 }
