@@ -1441,7 +1441,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 // including spawning real agent subprocesses. CI runners lack the claude binary and
 // have restricted process/file system environments. These are end-to-end smoke tests
 // that must run in a properly configured dev environment (local, Mac01, or VPS).
-const skipInCI = process.env.CI ? test.skip : test;
+
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { NaxConfig } from "../../../src/config";
