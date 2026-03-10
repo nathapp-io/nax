@@ -735,3 +735,917 @@ describe("Config Command", () => {
     });
   });
 });
+/**
+ * Config Command --diff Flag Integration Tests
+ *
+ * Tests for `nax config --diff` command that shows only fields where
+ * project config overrides the global config.
+ */
+
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { configCommand } from "../../../src/cli/config";
+import { loadConfig } from "../../../src/config/loader";
+
+describe("Config Command --diff", () => {
+  let tempDir: string;
+  let originalCwd: string;
+  let consoleOutput: string[];
+  let originalConsoleLog: typeof console.log;
+  let originalProcessExit: typeof process.exit;
+  let exitCode: number | undefined;
+
+  beforeEach(() => {
+    // Create temp directory
+    tempDir = mkdtempSync(join(tmpdir(), "nax-config-diff-test-"));
+    originalCwd = process.cwd();
+
+    // Capture console output
+    consoleOutput = [];
+    originalConsoleLog = console.log;
+    console.log = (...args: unknown[]) => {
+      consoleOutput.push(args.map((a) => String(a)).join(" "));
+    };
+
+    // Mock process.exit to capture exit code
+    exitCode = undefined;
+    originalProcessExit = process.exit;
+    process.exit = ((code?: number) => {
+      exitCode = code ?? 0;
+      throw new Error(`process.exit(${code ?? 0})`);
+    }) as typeof process.exit;
+  });
+
+  afterEach(() => {
+    // Restore console and process.exit
+    console.log = originalConsoleLog;
+    process.exit = originalProcessExit;
+
+    // Cleanup
+    process.chdir(originalCwd);
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  describe("No project config", () => {
+    test("shows 'No project config found' when no nax/config.json exists", async () => {
+      // Set up: no project config, just load defaults
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      // Run with --diff
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+      expect(output).toContain("No project config found — using global defaults");
+    });
+
+    test("shows 'No project config found' when nax/ dir exists but config.json doesn't", async () => {
+      // Create nax/ dir but no config.json
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+      expect(output).toContain("No project config found — using global defaults");
+    });
+  });
+
+  describe("Project config exists but identical to global", () => {
+    test("shows 'No differences' when project config matches global", async () => {
+      // Create empty project config (should merge to same as global)
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      writeFileSync(join(naxDir, "config.json"), JSON.stringify({}));
+
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+      expect(output).toContain("No differences between project and global config");
+    });
+  });
+
+  describe("Project config overrides global", () => {
+    test("shows table with field path, project value, and global value", async () => {
+      // Create project config with a simple override
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      const projectConfig = {
+        execution: {
+          maxIterations: 25, // Different from any global value
+        },
+      };
+      writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
+
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      // Should show header
+      expect(output).toContain("# Config Differences (Project overrides Global)");
+
+      // Should show table separator
+      expect(output).toContain("─");
+
+      // Should show column headers
+      expect(output).toContain("Field");
+      expect(output).toContain("Project Value");
+      expect(output).toContain("Global Value");
+
+      // Should show the specific field
+      expect(output).toContain("execution.maxIterations");
+
+      // Should show project value (25)
+      expect(output).toContain("25");
+
+      // Global value will vary based on ~/.nax/config.json, just verify it's present
+      // The key assertion is that we show both values in a diff
+      const lines = output.split("\n");
+      const maxIterLine = lines.find((line) => line.includes("execution.maxIterations"));
+      expect(maxIterLine).toBeDefined();
+    });
+
+    test("shows multiple differences when multiple fields override", async () => {
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      const projectConfig = {
+        execution: {
+          maxIterations: 25,
+          costLimit: 10.0,
+        },
+        tdd: {
+          maxRetries: 5,
+        },
+      };
+      writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
+
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      // Should show all three differences
+      expect(output).toContain("execution.maxIterations");
+      expect(output).toContain("execution.costLimit");
+      expect(output).toContain("tdd.maxRetries");
+
+      // Check project values are present
+      expect(output).toContain("25"); // maxIterations project
+      expect(output).toContain("10"); // costLimit project
+      expect(output).toContain("5"); // tdd.maxRetries project
+
+      // Verify table structure exists
+      const lines = output.split("\n");
+      expect(lines.some((line) => line.includes("execution.maxIterations"))).toBe(true);
+      expect(lines.some((line) => line.includes("execution.costLimit"))).toBe(true);
+      expect(lines.some((line) => line.includes("tdd.maxRetries"))).toBe(true);
+    });
+
+    test("shows nested field paths correctly", async () => {
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      const projectConfig = {
+        routing: {
+          llm: {
+            timeoutMs: 30000, // Different from default (15000)
+          },
+        },
+      };
+      writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
+
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      // Should show nested path
+      expect(output).toContain("routing.llm.timeoutMs");
+      expect(output).toContain("30000");
+      expect(output).toContain("15000");
+    });
+
+    test("shows field descriptions when available", async () => {
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      const projectConfig = {
+        execution: {
+          maxIterations: 25,
+        },
+      };
+      writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
+
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      // Should show description for execution.maxIterations
+      // Description: "Max iterations per feature run (auto-calculated if not set)"
+      expect(output).toContain("Max iterations per feature run");
+    });
+
+    test("handles array differences correctly", async () => {
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      const projectConfig = {
+        quality: {
+          stripEnvVars: ["CUSTOM_VAR", "ANOTHER_VAR"], // Different from default
+        },
+      };
+      writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
+
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      // Should show the field
+      expect(output).toContain("quality.stripEnvVars");
+
+      // Arrays should be formatted compactly for table
+      expect(output).toContain("[..."); // Compact array notation
+    });
+
+    test("handles boolean differences correctly", async () => {
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      const projectConfig = {
+        quality: {
+          requireTests: false, // Different from default/global (true)
+        },
+      };
+      writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
+
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      expect(output).toContain("quality.requireTests");
+      expect(output).toContain("false");
+      expect(output).toContain("true");
+    });
+
+    test("handles string value differences correctly", async () => {
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      const projectConfig = {
+        routing: {
+          strategy: "manual", // Use "manual" to ensure it's different from any global
+        },
+      };
+      writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
+
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      expect(output).toContain("routing.strategy");
+      expect(output).toContain('"manual"'); // Project value
+      // Global value will vary, just verify the field is shown
+    });
+
+    test("truncates long string values in table", async () => {
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      const projectConfig = {
+        constitution: {
+          path: "very-long-constitution-filename-that-should-be-truncated.md",
+        },
+      };
+      writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
+
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      expect(output).toContain("constitution.path");
+      // Long strings should be truncated with "..."
+      expect(output).toMatch(/\.\.\./);
+    });
+
+    test("handles object differences correctly", async () => {
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      const projectConfig = {
+        models: {
+          fast: {
+            provider: "openai",
+            model: "gpt-4o-mini",
+          },
+        },
+      };
+      writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
+
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      // Should show nested differences (provider and model fields)
+      expect(output).toContain("models.fast.provider");
+      expect(output).toContain("models.fast.model");
+    });
+  });
+
+  describe("Mutual exclusivity with --explain", () => {
+    test("rejects when both --diff and --explain are provided", async () => {
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      // Attempt to use both flags
+      let didThrow = false;
+      try {
+        await configCommand(config, { diff: true, explain: true });
+      } catch (err) {
+        didThrow = true;
+        expect(String(err)).toContain("process.exit(1)");
+      }
+
+      expect(didThrow).toBe(true);
+      expect(exitCode).toBe(1);
+    });
+
+    test("shows error message when both flags provided", async () => {
+      // Capture console.error as well
+      const errorOutput: string[] = [];
+      const originalConsoleError = console.error;
+      console.error = (...args: unknown[]) => {
+        errorOutput.push(args.map((a) => String(a)).join(" "));
+      };
+
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      try {
+        await configCommand(config, { diff: true, explain: true });
+      } catch {
+        // Expected to throw
+      }
+
+      console.error = originalConsoleError;
+
+      const errorMsg = errorOutput.join("\n");
+      expect(errorMsg).toContain("--explain and --diff are mutually exclusive");
+    });
+  });
+
+  describe("Edge cases", () => {
+    test("handles null values in diff correctly", async () => {
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      const projectConfig = {
+        execution: {
+          lintCommand: null, // Explicitly disable
+        },
+      };
+      writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
+
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      // Should show the difference if global has undefined and project has null
+      // (depends on how deepDiffConfigs handles null vs undefined)
+      // This test verifies the function doesn't crash
+      expect(output).toBeDefined();
+    });
+
+    test("skips fields that are only in global (not overridden)", async () => {
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      const projectConfig = {
+        execution: {
+          maxIterations: 25, // Only override this one field
+        },
+      };
+      writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
+
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      // Should only show execution.maxIterations
+      expect(output).toContain("execution.maxIterations");
+
+      // Should NOT show other execution fields that weren't overridden
+      expect(output).not.toContain("execution.costLimit");
+      expect(output).not.toContain("execution.sessionTimeoutSeconds");
+    });
+
+    test("handles deeply nested config overrides", async () => {
+      const naxDir = join(tempDir, "nax");
+      mkdirSync(naxDir, { recursive: true });
+      const projectConfig = {
+        autoMode: {
+          escalation: {
+            tierOrder: [
+              { tier: "fast", attempts: 3 },
+              { tier: "balanced", attempts: 2 },
+            ],
+          },
+        },
+      };
+      writeFileSync(join(naxDir, "config.json"), JSON.stringify(projectConfig, null, 2));
+
+      process.chdir(tempDir);
+      const config = await loadConfig(tempDir);
+
+      await configCommand(config, { diff: true });
+
+      const output = consoleOutput.join("\n");
+
+      // Should show the nested field
+      expect(output).toContain("autoMode.escalation.tierOrder");
+    });
+  });
+});
+
+/**
+ * CLI Integration Tests for `nax config` Default View
+ *
+ * Tests the full end-to-end flow of running `nax config` without flags
+ * via the CLI entry point (bin/nax.ts).
+ */
+
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+describe("nax config (default view) - CLI integration", () => {
+  let tempDir: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    // Create temp directory
+    tempDir = mkdtempSync(join(tmpdir(), "nax-config-cli-test-"));
+    originalCwd = process.cwd();
+  });
+
+  afterEach(() => {
+    // Cleanup
+    process.chdir(originalCwd);
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test("prints effective merged config as JSON with header", async () => {
+    process.chdir(tempDir);
+
+    // Run `nax config` command
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
+      cwd: tempDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const output = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+
+    // Should have header
+    expect(output).toContain("// nax Configuration");
+    expect(output).toContain("// Resolution order: defaults → global → project → CLI overrides");
+    expect(output).toContain("// Global config:");
+    expect(output).toContain("// Project config:");
+
+    // Should have valid JSON after header
+    const lines = output.split("\n");
+    const jsonStartIndex = lines.findIndex((line) => line.startsWith("{"));
+    expect(jsonStartIndex).toBeGreaterThan(0);
+
+    const jsonOutput = lines.slice(jsonStartIndex).join("\n");
+    expect(() => JSON.parse(jsonOutput)).not.toThrow();
+
+    const parsed = JSON.parse(jsonOutput);
+    expect(parsed.version).toBe(1);
+    expect(parsed.models).toBeDefined();
+    expect(parsed.autoMode).toBeDefined();
+    expect(parsed.execution).toBeDefined();
+  });
+
+  test("shows global config path in header", async () => {
+    process.chdir(tempDir);
+
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
+      cwd: tempDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const output = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+
+    // Should show global config path (may be "not found" or actual path)
+    expect(output).toContain("// Global config:");
+  });
+
+  test("shows (not found) for missing project config", async () => {
+    // Use a directory without nax/config.json
+    const isolatedDir = join(tempDir, "isolated");
+    mkdirSync(isolatedDir, { recursive: true });
+    process.chdir(isolatedDir);
+
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
+      cwd: isolatedDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const output = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+
+    // Should show project config as not found
+    expect(output).toContain("// Project config: (not found)");
+  });
+
+  test("shows project config path when present", async () => {
+    // Create project config
+    const naxDir = join(tempDir, "nax");
+    mkdirSync(naxDir, { recursive: true });
+    writeFileSync(
+      join(naxDir, "config.json"),
+      JSON.stringify({
+        execution: {
+          maxIterations: 20,
+        },
+      }),
+    );
+
+    process.chdir(tempDir);
+
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
+      cwd: tempDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const output = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+
+    // Should show project config path
+    expect(output).toContain("// Project config:");
+    expect(output).toContain("config.json");
+
+    // Should reflect merged config
+    const lines = output.split("\n");
+    const jsonStartIndex = lines.findIndex((line) => line.startsWith("{"));
+    const jsonOutput = lines.slice(jsonStartIndex).join("\n");
+    const parsed = JSON.parse(jsonOutput);
+    expect(parsed.execution.maxIterations).toBe(20);
+  });
+
+  test("header precedes JSON output with blank line", async () => {
+    process.chdir(tempDir);
+
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
+      cwd: tempDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const output = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+
+    const lines = output.split("\n");
+
+    // Find header and JSON start
+    const headerLineIndex = lines.findIndex((line) => line.includes("// nax Configuration"));
+    const jsonLineIndex = lines.findIndex((line) => line.startsWith("{"));
+
+    expect(headerLineIndex).toBeGreaterThanOrEqual(0);
+    expect(jsonLineIndex).toBeGreaterThan(headerLineIndex);
+
+    // Should have blank line between header and JSON
+    expect(lines[jsonLineIndex - 1]).toBe("");
+  });
+
+  test("JSON output is pretty-printed (indented)", async () => {
+    process.chdir(tempDir);
+
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
+      cwd: tempDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const output = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+
+    // JSON should be pretty-printed with 2-space indentation
+    expect(output).toMatch(/"version": 1/);
+    expect(output).toMatch(/"models": \{/);
+    expect(output).toContain("  "); // Should have indentation
+  });
+
+  test("works when run from project subdirectory", async () => {
+    // Create project config
+    const naxDir = join(tempDir, "nax");
+    mkdirSync(naxDir, { recursive: true });
+    writeFileSync(
+      join(naxDir, "config.json"),
+      JSON.stringify({
+        execution: {
+          maxIterations: 30,
+        },
+      }),
+    );
+
+    // Create subdirectory and run from there
+    const subdir = join(tempDir, "src", "components");
+    mkdirSync(subdir, { recursive: true });
+    process.chdir(subdir);
+
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
+      cwd: subdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const output = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+
+    // Should find project config by walking up
+    expect(output).toContain("// Project config:");
+    expect(output).toContain("config.json");
+
+    // Should reflect merged config
+    const lines = output.split("\n");
+    const jsonStartIndex = lines.findIndex((line) => line.startsWith("{"));
+    const jsonOutput = lines.slice(jsonStartIndex).join("\n");
+    const parsed = JSON.parse(jsonOutput);
+    expect(parsed.execution.maxIterations).toBe(30);
+  });
+});
+
+/**
+ * Edge Case Tests for `nax config` Default View
+ *
+ * Tests edge cases and regression scenarios for the default view.
+ * These tests ensure the feature handles unusual scenarios correctly.
+ */
+
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+describe("nax config (default view) - edge cases", () => {
+  let tempDir: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "nax-config-edge-test-"));
+    originalCwd = process.cwd();
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  // NOTE: Error handling tests removed - those belong in a separate error handling story
+  // The current story (CM-003) focuses on the happy path: displaying config when files are valid
+
+  test("handles project config with only comments (valid but empty JSON)", async () => {
+    // Create project config with only {}
+    const naxDir = join(tempDir, "nax");
+    mkdirSync(naxDir, { recursive: true });
+    writeFileSync(join(naxDir, "config.json"), "{}");
+
+    process.chdir(tempDir);
+
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
+      cwd: tempDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const output = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+
+    // Should show project config as found (even though it's empty)
+    expect(output).toContain("// Project config:");
+    expect(output).toContain("config.json");
+
+    // Should still output valid JSON (merged with defaults)
+    const lines = output.split("\n");
+    const jsonStartIndex = lines.findIndex((line) => line.startsWith("{"));
+    const jsonOutput = lines.slice(jsonStartIndex).join("\n");
+    const parsed = JSON.parse(jsonOutput);
+    expect(parsed.version).toBe(1);
+  });
+
+  test("handles deep nesting when walking up directory tree", async () => {
+    // Create project config at root
+    const naxDir = join(tempDir, "nax");
+    mkdirSync(naxDir, { recursive: true });
+    writeFileSync(
+      join(naxDir, "config.json"),
+      JSON.stringify({
+        execution: {
+          maxIterations: 50,
+        },
+      }),
+    );
+
+    // Create deeply nested subdirectory
+    const deepDir = join(tempDir, "a", "b", "c", "d", "e", "f");
+    mkdirSync(deepDir, { recursive: true });
+    process.chdir(deepDir);
+
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
+      cwd: deepDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const output = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+
+    // Should find project config by walking up
+    expect(output).toContain("// Project config:");
+    expect(output).toContain("config.json");
+
+    // Should reflect merged config
+    const lines = output.split("\n");
+    const jsonStartIndex = lines.findIndex((line) => line.startsWith("{"));
+    const jsonOutput = lines.slice(jsonStartIndex).join("\n");
+    const parsed = JSON.parse(jsonOutput);
+    expect(parsed.execution.maxIterations).toBe(50);
+  });
+
+  test("outputs complete config structure with all top-level keys", async () => {
+    process.chdir(tempDir);
+
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
+      cwd: tempDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const output = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+
+    const lines = output.split("\n");
+    const jsonStartIndex = lines.findIndex((line) => line.startsWith("{"));
+    const jsonOutput = lines.slice(jsonStartIndex).join("\n");
+    const parsed = JSON.parse(jsonOutput);
+
+    // Verify all required top-level keys are present
+    expect(parsed).toHaveProperty("version");
+    expect(parsed).toHaveProperty("models");
+    expect(parsed).toHaveProperty("autoMode");
+    expect(parsed).toHaveProperty("routing");
+    expect(parsed).toHaveProperty("execution");
+    expect(parsed).toHaveProperty("quality");
+    expect(parsed).toHaveProperty("tdd");
+    expect(parsed).toHaveProperty("constitution");
+    expect(parsed).toHaveProperty("analyze");
+    expect(parsed).toHaveProperty("review");
+    expect(parsed).toHaveProperty("plan");
+    expect(parsed).toHaveProperty("acceptance");
+    expect(parsed).toHaveProperty("context");
+    expect(parsed).toHaveProperty("interaction");
+    expect(parsed).toHaveProperty("precheck");
+  });
+
+  test("merges nested config overrides correctly", async () => {
+    // Create project config with nested overrides
+    const naxDir = join(tempDir, "nax");
+    mkdirSync(naxDir, { recursive: true });
+    writeFileSync(
+      join(naxDir, "config.json"),
+      JSON.stringify({
+        execution: {
+          maxIterations: 15,
+          rectification: {
+            enabled: false,
+            maxRetries: 5,
+          },
+        },
+      }),
+    );
+
+    process.chdir(tempDir);
+
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
+      cwd: tempDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const output = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+
+    const lines = output.split("\n");
+    const jsonStartIndex = lines.findIndex((line) => line.startsWith("{"));
+    const jsonOutput = lines.slice(jsonStartIndex).join("\n");
+    const parsed = JSON.parse(jsonOutput);
+
+    // Verify nested overrides
+    expect(parsed.execution.maxIterations).toBe(15);
+    expect(parsed.execution.rectification.enabled).toBe(false);
+    expect(parsed.execution.rectification.maxRetries).toBe(5);
+
+    // Verify non-overridden fields are preserved
+    expect(parsed.execution.iterationDelayMs).toBeDefined();
+    expect(parsed.execution.rectification.fullSuiteTimeoutSeconds).toBeDefined();
+  });
+
+  test("handles project config with schema version mismatch", async () => {
+    // Create project config with future schema version
+    const naxDir = join(tempDir, "nax");
+    mkdirSync(naxDir, { recursive: true });
+    writeFileSync(
+      join(naxDir, "config.json"),
+      JSON.stringify({
+        version: 999, // Future version
+        execution: {
+          maxIterations: 25,
+        },
+      }),
+    );
+
+    process.chdir(tempDir);
+
+    const proc = Bun.spawn(["bun", join(import.meta.dir, "../../../bin/nax.ts"), "config"], {
+      cwd: tempDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const output = await new Response(proc.stdout).text();
+    const stderr = await new Response(proc.stderr).text();
+    const exitCode = await proc.exited;
+
+    // Should either succeed with warning or fail gracefully
+    if (exitCode !== 0) {
+      expect(stderr.toLowerCase()).toMatch(/error|invalid|version/);
+    } else {
+      // If it succeeds, verify output is valid
+      const lines = output.split("\n");
+      const jsonStartIndex = lines.findIndex((line) => line.startsWith("{"));
+      expect(jsonStartIndex).toBeGreaterThan(0);
+      const jsonOutput = lines.slice(jsonStartIndex).join("\n");
+      expect(() => JSON.parse(jsonOutput)).not.toThrow();
+    }
+  });
+});
+
