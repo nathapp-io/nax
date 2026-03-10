@@ -10,12 +10,10 @@
 import { getAgent } from "../agents";
 import type { NaxConfig } from "../config";
 import { resolveModel } from "../config";
-import { appendProgress } from "../execution/progress";
 import { parseBunTestOutput } from "../execution/test-output-parser";
 import { getSafeLogger } from "../logger";
-import type { StoryMetrics } from "../metrics";
-import type { PRD, StructuredFailure, UserStory } from "../prd";
-import { getExpectedFiles, savePRD } from "../prd";
+import type { UserStory } from "../prd";
+import { getExpectedFiles } from "../prd";
 import { type RectificationState, createRectificationPrompt, shouldRetryRectification } from "./rectification";
 import { fullSuite as runVerification } from "./runners";
 
@@ -146,51 +144,4 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
   }
 
   return false;
-}
-
-export interface RevertStoriesOptions {
-  prd: PRD;
-  prdPath: string;
-  story: UserStory;
-  storiesToExecute: UserStory[];
-  allStoryMetrics: StoryMetrics[];
-  featureDir?: string;
-  diagnosticContext: string;
-  countsTowardEscalation: boolean;
-  priorFailure?: StructuredFailure;
-}
-
-/** Revert stories to pending on verification failure and save PRD. */
-export async function revertStoriesOnFailure(opts: RevertStoriesOptions): Promise<PRD> {
-  const storyIds = new Set(opts.storiesToExecute.map((s) => s.id));
-
-  for (let i = opts.allStoryMetrics.length - 1; i >= 0; i--) {
-    if (storyIds.has(opts.allStoryMetrics[i].storyId)) opts.allStoryMetrics.splice(i, 1);
-  }
-
-  opts.prd.userStories = opts.prd.userStories.map((s) =>
-    storyIds.has(s.id)
-      ? {
-          ...s,
-          priorErrors: [...(s.priorErrors || []), opts.diagnosticContext],
-          priorFailures: opts.priorFailure ? [...(s.priorFailures || []), opts.priorFailure] : s.priorFailures,
-          status: "pending" as const,
-          passes: false,
-        }
-      : s,
-  );
-
-  if (opts.countsTowardEscalation) {
-    opts.prd.userStories = opts.prd.userStories.map((s) =>
-      s.id === opts.story.id ? { ...s, attempts: s.attempts + 1 } : s,
-    );
-  }
-
-  await savePRD(opts.prd, opts.prdPath);
-
-  if (opts.featureDir) {
-    await appendProgress(opts.featureDir, opts.story.id, "failed", `${opts.story.title} -- ${opts.diagnosticContext}`);
-  }
-
-  return opts.prd;
 }

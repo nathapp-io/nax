@@ -216,15 +216,5 @@ export function parseTestOutput(output: string, exitCode: number): TestOutputAna
   return result;
 }
 
-/**
- * Calculate early escalation threshold for environmental failures.
- *
- * Environmental failures should escalate faster: after ceil(tier.attempts / 2)
- * instead of the full tier budget.
- */
-export function getEnvironmentalEscalationThreshold(tierAttempts: number, divisor = 2): number {
-  return Math.ceil(tierAttempts / divisor);
-}
-
 // Re-export types for consumers that import from this module
 export type { TestFailure, TestSummary } from "./types";
