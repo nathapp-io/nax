@@ -60,6 +60,10 @@ export async function runIteration(
 
   const storyStartTime = Date.now();
   const storyGitRef = await captureGitRef(ctx.workdir);
+
+  // BUG-067: Accumulate cost from all prior failed attempts (stored in priorFailures by handleTierEscalation)
+  const accumulatedAttemptCost = (story.priorFailures || []).reduce((sum, f) => sum + (f.cost || 0), 0);
+
   const pipelineContext: PipelineContext = {
     config: ctx.config,
     prd,
@@ -74,6 +78,7 @@ export async function runIteration(
     storyStartTime: new Date().toISOString(),
     storyGitRef: storyGitRef ?? undefined,
     interaction: ctx.interactionChain ?? undefined,
+    accumulatedAttemptCost: accumulatedAttemptCost > 0 ? accumulatedAttemptCost : undefined,
   };
 
   ctx.statusWriter.setPrd(prd);

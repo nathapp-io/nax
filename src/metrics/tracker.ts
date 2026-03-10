@@ -44,14 +44,16 @@ export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string
   const agentResult = ctx.agentResult;
 
   // Calculate attempts (initial + escalations)
+  // BUG-067: priorFailures captures cross-tier attempts that story.escalations never records
   const escalationCount = story.escalations?.length || 0;
-  const attempts = Math.max(1, story.attempts || 1);
+  const priorFailureCount = story.priorFailures?.length || 0;
+  const attempts = priorFailureCount + Math.max(1, story.attempts || 1);
 
   // Determine final tier (from last escalation or initial routing)
   const finalTier = escalationCount > 0 ? story.escalations[escalationCount - 1].toTier : routing.modelTier;
 
-  // First pass success = succeeded with no escalations
-  const firstPassSuccess = agentResult?.success === true && escalationCount === 0;
+  // First pass success = succeeded with no prior failures and no escalations (BUG-067)
+  const firstPassSuccess = agentResult?.success === true && escalationCount === 0 && priorFailureCount === 0;
 
   // Extract model name from config
   const modelEntry = ctx.config.models[routing.modelTier];
@@ -76,7 +78,7 @@ export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string
     attempts,
     finalTier,
     success: agentResult?.success || false,
-    cost: agentResult?.estimatedCost || 0,
+    cost: (ctx.accumulatedAttemptCost ?? 0) + (agentResult?.estimatedCost || 0),
     durationMs: agentResult?.durationMs || 0,
     firstPassSuccess,
     startedAt: storyStartTime,

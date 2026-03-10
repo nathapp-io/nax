@@ -114,6 +114,8 @@ export interface PipelineContext {
   storyRuntimeCrashes?: number;
   /** Structured review findings from plugin reviewers — passed to escalation for retry context */
   reviewFindings?: import("../plugins/types").ReviewFinding[];
+  /** Accumulated cost across all prior escalation attempts (BUG-067) */
+  accumulatedAttemptCost?: number;
 }
 
 /**

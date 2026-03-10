@@ -177,6 +177,7 @@ export async function handlePipelineFailure(
         feature: ctx.feature,
         totalCost: ctx.totalCost,
         workdir: ctx.workdir,
+        attemptCost: pipelineResult.context.agentResult?.estimatedCost || 0,
       });
       prd = escalationResult.prd;
       prdDirty = escalationResult.prdDirty;

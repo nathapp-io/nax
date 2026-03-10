@@ -24,6 +24,7 @@ function buildEscalationFailure(
   story: UserStory,
   currentTier: string,
   reviewFindings?: import("../../plugins/types").ReviewFinding[],
+  cost?: number,
 ): StructuredFailure {
   return {
     attempt: (story.attempts ?? 0) + 1,
@@ -31,6 +32,7 @@ function buildEscalationFailure(
     stage: "escalation" as const,
     summary: `Failed with tier ${currentTier}, escalating to next tier`,
     reviewFindings: reviewFindings && reviewFindings.length > 0 ? reviewFindings : undefined,
+    cost: cost ?? 0,
     timestamp: new Date().toISOString(),
   };
 }
@@ -212,6 +214,8 @@ export interface EscalationHandlerContext {
   workdir: string;
   /** Verify result from the pipeline verify stage — used to detect RUNTIME_CRASH (BUG-070) */
   verifyResult?: { status: string; success: boolean };
+  /** Cost of the failed attempt being escalated (BUG-067: accumulated across escalations) */
+  attemptCost?: number;
 }
 
 export interface EscalationHandlerResult {
@@ -327,8 +331,8 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
       const isChangingTier = currentStoryTier !== nextTier;
       const shouldResetAttempts = isChangingTier || shouldSwitchToTestAfter;
 
-      // Build escalation failure
-      const escalationFailure = buildEscalationFailure(s, currentStoryTier, escalateReviewFindings);
+      // Build escalation failure (BUG-067: include cost for accumulatedAttemptCost in metrics)
+      const escalationFailure = buildEscalationFailure(s, currentStoryTier, escalateReviewFindings, ctx.attemptCost);
 
       return {
         ...s,
