@@ -60,19 +60,19 @@ The override system exists (`config.prompts.overrides`, `loadOverride()`, `Promp
 
 ---
 
-## v0.36.2 — Parallel Metrics & Rectification (Planned)
+## v0.36.2 — Parallel Metrics & Rectification (MR !28)
 
 **Theme:** Fix metrics aggregation for parallel runs (BUG-064–071) and implement sequential rectification for merge conflicts
-**Status:** 📋 Planned (nax self-dev run, post v0.36.1 release)
+**Status:** 🔀 MR !28 open — https://gitlab.com/nathapp/ai-agent/ngent/-/merge_requests/28
 **Depends on:** v0.36.1 (Prompt Optimization)
 
 ### Stories
 
-- [ ] **MFX-001:** Parallel batch metrics aggregation (BUG-064/065/066)
-- [ ] **MFX-002:** Escalation metrics preservation (BUG-067)
-- [ ] **MFX-003:** Parallel executor cleanup (BUG-068/069/071)
-- [ ] **MFX-004:** Runtime crash vs test failure classification (BUG-070)
-- [ ] **MFX-005:** Merge conflict rectification — sequential re-run of conflicted stories on updated base
+- [x] **MFX-001:** Parallel batch metrics aggregation (BUG-064/065/066)
+- [x] **MFX-002:** Escalation metrics preservation (BUG-067)
+- [x] **MFX-003:** Parallel executor cleanup — field renames, dedup log (BUG-068/069/071)
+- [x] **MFX-004:** Runtime crash vs test failure classification (BUG-070)
+- [x] **MFX-005:** Merge conflict rectification — sequential re-run of conflicted stories on updated base
 
 ---
 
@@ -344,4 +344,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-10 (v0.36.1 shipped — Prompt Optimization + BUG-072/073)*
+*Last updated: 2026-03-10 (v0.36.1 shipped — Prompt Optimization + BUG-072/073; v0.36.2 MR !28 open)*
