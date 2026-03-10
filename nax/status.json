@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 5,
-    "passed": 1,
+    "passed": 2,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 0.043034249999999996,
+    "spent": 0.080276,
     "limit": 8
   },
   "current": {
-    "storyId": "TH-002",
-    "title": "Dead test detection",
+    "storyId": "TH-003",
+    "title": "Copy-paste test consolidation",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-03-10T09:57:59.367Z",
-  "durationMs": 361492,
-  "lastHeartbeat": "2026-03-10T09:57:59.367Z"
+  "iterations": 3,
+  "updatedAt": "2026-03-10T10:03:59.372Z",
+  "durationMs": 721497,
+  "lastHeartbeat": "2026-03-10T10:03:59.372Z"
 }

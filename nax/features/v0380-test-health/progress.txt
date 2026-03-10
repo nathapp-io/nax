@@ -1,1 +1,2 @@
 [2026-03-10T09:55:15.241Z] TH-001 — PASSED — Automated coverage overlap report — Cost: $0.0430
+[2026-03-10T09:58:11.602Z] TH-002 — PASSED — Dead test detection — Cost: $0.0372
