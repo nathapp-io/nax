@@ -16,7 +16,14 @@
       "escalations": [],
       "tags": [],
       "acceptanceCriteria": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "One-line enum addition in config schema + straightforward validation tests, no logic or architecture complexity, ~20 min total.",
+        "contentHash": "a6289fe119060fb9ee7ae8f7f690365486ffa8c5778ff7cb19051af1b9f9e7cc"
+      }
     },
     {
       "id": "PT-002",
@@ -24,7 +31,9 @@
       "description": "The promptsInitCommand in src/cli/prompts.ts creates nax/templates/ with 4 default role-body template files. The tdd-simple role is explicitly excluded with a comment: \"tdd-simple role is supported in the prompt system but not auto-generated as a template.\" Now that PT-001 adds tdd-simple to the schema, it should be a first-class template.\n\nFix: Add tdd-simple to the TEMPLATE_ROLES array in src/cli/prompts.ts. Create the default template content for tdd-simple — this role is a single-session TDD approach (write tests AND implement in one pass). The template body should instruct the agent to: (1) understand the acceptance criteria, (2) write failing tests first, (3) implement until tests pass, (4) clean up and verify.\n\nThe template must use the same TEMPLATE_HEADER comment block as other roles (already defined as a constant in the file).\n\nAcceptance criteria:\n- promptsInitCommand creates 5 template files: test-writer.md, implementer.md, verifier.md, single-session.md, tdd-simple.md\n- tdd-simple.md contains meaningful content (not a stub) describing the single-session TDD task\n- Re-running promptsInitCommand without --force skips existing files (idempotent)\n- Re-running with --force overwrites all 5\n- nax prompts --init outputs a confirmation line mentioning tdd-simple.md\n- Add unit test: test/unit/cli/prompts-init.test.ts verifying 5 files are created and tdd-simple.md exists",
       "complexity": "simple",
       "status": "pending",
-      "dependencies": ["PT-001"],
+      "dependencies": [
+        "PT-001"
+      ],
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
@@ -39,7 +48,9 @@
       "description": "Users have no way to see what the default prompt for a given role looks like before customizing it. They must run nax prompts --init to get template files, but those files only contain the overridable body section — not the full assembled prompt with all non-overridable sections.\n\nAdd a new --export <role> flag to the nax prompts command that dumps the full default prompt for that role to stdout (or --out file). This shows users exactly what the agent receives, helping them understand what they can and cannot change.\n\nImplementation:\n- In bin/nax.ts: add .option(\"--export <role>\", \"Export default prompt for a role to stdout or --out file\") to the prompts command\n- In src/cli/prompts.ts: add exportPromptCommand(options) function\n- Use PromptBuilder.for(role) with a stub story and empty context to build a representative prompt\n- The stub story should use placeholder values: id=\"EXAMPLE\", title=\"Example story\", description=\"...\", acceptanceCriteria=[\"AC-1: Example criterion\"], complexity=\"medium\"\n- Valid roles: test-writer, implementer, verifier, single-session, tdd-simple\n- If role is not one of the 5 valid values, print error and exit 1\n- If --out is set, write to file; otherwise print to stdout\n- No feature or config loading required (export uses built-in defaults only, no user overrides)\n\nAcceptance criteria:\n- nax prompts --export test-writer prints prompt text to stdout\n- nax prompts --export tdd-simple prints prompt text to stdout\n- nax prompts --export --out ./dump.md writes file and prints \"[OK] Exported...\"\n- nax prompts --export unknown-role exits 1 with error message listing valid roles\n- Add unit test: test/unit/cli/prompts-export.test.ts calling exportPromptCommand and asserting output is non-empty string containing expected sections",
       "complexity": "simple",
       "status": "pending",
-      "dependencies": ["PT-002"],
+      "dependencies": [
+        "PT-002"
+      ],
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
@@ -54,7 +65,9 @@
       "description": "nax init creates the project nax/ directory structure but does not scaffold nax/templates/. Users discover prompt customization independently (via docs or help). The init flow should create templates alongside the rest of the project config so the feature is discoverable from day one.\n\nFix: In bin/nax.ts (nax init action) or src/cli/init.ts (initProject function), call promptsInitCommand({ workdir, force: false }) as the final step of project init. This will create nax/templates/ with 5 default template files.\n\nDo NOT auto-wire prompts.overrides in nax/config.json during init — the templates are created but NOT activated. Users must explicitly set overrides in config when they want to customize. This preserves the existing default behavior for new users.\n\nUpdate the init output block to include:\n   ├── templates/\n   │   ├── test-writer.md\n   │   ├── implementer.md\n   │   ├── verifier.md\n   │   ├── single-session.md\n   │   └── tdd-simple.md\n\nAcceptance criteria:\n- nax init creates nax/templates/ with all 5 template files\n- nax/config.json does NOT contain prompts.overrides after init (templates created but not activated)\n- nax init --force overwrites existing template files via force: true in promptsInitCommand\n- nax init output lists the templates directory and files\n- Add unit test: test/unit/cli/init.test.ts asserting template files exist after initProject()",
       "complexity": "simple",
       "status": "pending",
-      "dependencies": ["PT-003"],
+      "dependencies": [
+        "PT-003"
+      ],
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
@@ -69,7 +82,9 @@
       "description": "There is no user-facing documentation for the prompt customization system. Users don't know that overrides exist, how to create templates, or what each role does.\n\nCreate docs/prompt-customization.md covering:\n\n1. Overview — what the prompt system is and why you'd customize it\n2. Roles table — list all 5 roles (test-writer, implementer, verifier, single-session, tdd-simple) with a one-line description of what each agent does and when it's invoked\n3. Quick start — step-by-step: run nax prompts --init, edit a template, add prompts.overrides to config, run nax run\n4. Exporting defaults — show nax prompts --export <role> usage with example output\n5. What can and cannot be overridden — list non-overridable sections (isolation rules, story context, conventions) and explain why\n6. Config reference — the prompts.overrides config key with a JSON example\n7. Tips — keep overrides focused, test with nax prompts --feature <name> before a full run\n\nAlso update docs/README.md (or the main README.md if that's the docs index) to add a link to the new prompt customization guide under a \"Customization\" or \"Advanced\" section.\n\nAcceptance criteria:\n- docs/prompt-customization.md exists with all 7 sections above\n- All 5 roles are listed in the roles table\n- nax prompts --export and nax prompts --init commands are documented with example usage\n- The prompts.overrides config key is shown with a valid JSON example\n- README.md or docs/README.md links to docs/prompt-customization.md",
       "complexity": "simple",
       "status": "pending",
-      "dependencies": ["PT-004"],
+      "dependencies": [
+        "PT-004"
+      ],
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
@@ -78,5 +93,6 @@
       "acceptanceCriteria": [],
       "storyPoints": 1
     }
-  ]
+  ],
+  "updatedAt": "2026-03-10T07:35:18.129Z"
 }
