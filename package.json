@@ -17,6 +17,7 @@
     "test:unit": "bun test ./test/unit/ --timeout=60000",
     "test:integration": "bun test ./test/integration/ --timeout=60000",
     "test:ui": "bun test ./test/ui/ --timeout=60000",
+    "check-test-overlap": "bun run scripts/check-test-overlap.ts",
     "prepublishOnly": "bun run build"
   },
   "dependencies": {
