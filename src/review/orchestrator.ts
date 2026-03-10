@@ -15,16 +15,28 @@ import type { PluginRegistry } from "../plugins";
 import { runReview } from "./runner";
 import type { ReviewConfig, ReviewResult } from "./types";
 
-async function getChangedFiles(workdir: string): Promise<string[]> {
+async function getChangedFiles(workdir: string, baseRef?: string): Promise<string[]> {
   try {
-    const [stagedProc, unstagedProc] = [
-      spawn({ cmd: ["git", "diff", "--name-only", "--cached"], cwd: workdir, stdout: "pipe", stderr: "pipe" }),
-      spawn({ cmd: ["git", "diff", "--name-only"], cwd: workdir, stdout: "pipe", stderr: "pipe" }),
+    const diffArgs = ["diff", "--name-only"];
+    const [stagedProc, unstagedProc, baseProc] = [
+      spawn({ cmd: ["git", ...diffArgs, "--cached"], cwd: workdir, stdout: "pipe", stderr: "pipe" }),
+      spawn({ cmd: ["git", ...diffArgs], cwd: workdir, stdout: "pipe", stderr: "pipe" }),
+      baseRef
+        ? spawn({ cmd: ["git", ...diffArgs, `${baseRef}...HEAD`], cwd: workdir, stdout: "pipe", stderr: "pipe" })
+        : null,
     ];
-    await Promise.all([stagedProc.exited, unstagedProc.exited]);
-    const staged = (await new Response(stagedProc.stdout).text()).trim().split("\n").filter(Boolean);
-    const unstaged = (await new Response(unstagedProc.stdout).text()).trim().split("\n").filter(Boolean);
-    return Array.from(new Set([...staged, ...unstaged]));
+
+    await Promise.all([stagedProc.exited, unstagedProc.exited, baseProc?.exited]);
+
+    const [staged, unstaged, based] = await Promise.all([
+      new Response(stagedProc.stdout).text().then((t) => t.trim().split("\n").filter(Boolean)),
+      new Response(unstagedProc.stdout).text().then((t) => t.trim().split("\n").filter(Boolean)),
+      baseProc
+        ? new Response(baseProc.stdout).text().then((t) => t.trim().split("\n").filter(Boolean))
+        : Promise.resolve([]),
+    ]);
+
+    return Array.from(new Set([...staged, ...unstaged, ...based]));
   } catch {
     return [];
   }
@@ -60,7 +72,10 @@ export class ReviewOrchestrator {
     if (plugins) {
       const reviewers = plugins.getReviewers();
       if (reviewers.length > 0) {
-        const changedFiles = await getChangedFiles(workdir);
+        // Use the story's start ref if available to capture auto-committed changes
+        // biome-ignore lint/suspicious/noExplicitAny: baseRef injected into config for pipeline use
+        const baseRef = (executionConfig as any).storyGitRef;
+        const changedFiles = await getChangedFiles(workdir, baseRef);
         const pluginResults: ReviewResult["pluginReviewers"] = [];
 
         for (const reviewer of reviewers) {
