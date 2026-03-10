@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-09T15-09-03-340Z",
-    "feature": "multi-agent",
-    "startedAt": "2026-03-09T15:09:03.340Z",
-    "status": "completed",
+    "id": "run-2026-03-10T01-50-54-350Z",
+    "feature": "v0361-metrics",
+    "startedAt": "2026-03-10T01:50:54.350Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 65408
+    "pid": 2704
   },
   "progress": {
-    "total": 12,
-    "passed": 10,
-    "failed": 2,
+    "total": 5,
+    "passed": 0,
+    "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 5
   },
   "cost": {
-    "spent": 0.39837225,
+    "spent": 0,
     "limit": 8
   },
-  "current": null,
-  "iterations": 13,
-  "updatedAt": "2026-03-09T15:57:20.345Z",
-  "durationMs": 2897005
+  "current": {
+    "storyId": "MFX-001",
+    "title": "Fix parallel batch metrics aggregation (BUG-064, BUG-065, BUG-066)",
+    "complexity": "medium",
+    "tddStrategy": "test-after",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 1,
+  "updatedAt": "2026-03-10T02:36:55.720Z",
+  "durationMs": 2761370,
+  "lastHeartbeat": "2026-03-10T02:36:55.720Z"
 }
