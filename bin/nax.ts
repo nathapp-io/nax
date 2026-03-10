@@ -51,6 +51,7 @@ import {
   displayFeatureStatus,
   displayLastRunMetrics,
   displayModelEfficiency,
+  exportPromptCommand,
   planCommand,
   pluginsListCommand,
   promptsCommand,
@@ -860,11 +861,12 @@ program
 program
   .command("prompts")
   .description("Assemble or initialize prompts")
-  .option("-f, --feature <name>", "Feature name (required unless using --init)")
+  .option("-f, --feature <name>", "Feature name (required unless using --init or --export)")
   .option("--init", "Initialize default prompt templates", false)
+  .option("--export <role>", "Export default prompt for a role to stdout or --out file")
   .option("--force", "Overwrite existing template files", false)
   .option("--story <id>", "Filter to a single story ID (e.g., US-003)")
-  .option("--out <dir>", "Output directory for prompt files (default: stdout)")
+  .option("--out <path>", "Output file path for --export, or directory for regular prompts (default: stdout)")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .action(async (options) => {
     // Validate directory path
@@ -890,9 +892,23 @@ program
       return;
     }
 
+    // Handle --export command
+    if (options.export) {
+      try {
+        await exportPromptCommand({
+          role: options.export,
+          out: options.out,
+        });
+      } catch (err) {
+        console.error(chalk.red(`Error: ${(err as Error).message}`));
+        process.exit(1);
+      }
+      return;
+    }
+
     // Handle regular prompts command (requires --feature)
     if (!options.feature) {
-      console.error(chalk.red("Error: --feature is required (unless using --init)"));
+      console.error(chalk.red("Error: --feature is required (unless using --init or --export)"));
       process.exit(1);
     }
 

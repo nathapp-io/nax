@@ -21,8 +21,10 @@ export {
 export {
   promptsCommand,
   promptsInitCommand,
+  exportPromptCommand,
   type PromptsCommandOptions,
   type PromptsInitCommandOptions,
+  type ExportPromptCommandOptions,
 } from "./prompts";
 export { initCommand, type InitOptions } from "./init";
 export { pluginsListCommand } from "./plugins";
