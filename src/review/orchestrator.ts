@@ -74,7 +74,7 @@ export class ReviewOrchestrator {
       if (reviewers.length > 0) {
         // Use the story's start ref if available to capture auto-committed changes
         // biome-ignore lint/suspicious/noExplicitAny: baseRef injected into config for pipeline use
-        const baseRef = (executionConfig as any).storyGitRef;
+        const baseRef = (executionConfig as any)?.storyGitRef;
         const changedFiles = await getChangedFiles(workdir, baseRef);
         const pluginResults: ReviewResult["pluginReviewers"] = [];
 
