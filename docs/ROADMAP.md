@@ -7,7 +7,7 @@
 ---
 
 
-## v0.37.0 — Test Health Audit (Planned)
+## v0.38.0 — Test Health Audit (Planned)
 
 **Theme:** Audit and slim down the test suite — remove redundant coverage, consolidate copy-paste tests, delete dead feature tests
 **Status:** 🔲 Planned
@@ -34,6 +34,71 @@
 - No test file exceeds 800 lines
 - Full suite runtime unchanged or faster
 - CI still passes on 8GB runner
+
+---
+
+## v0.37.0 — Prompt Template Export (Planned)
+
+**Theme:** Complete the prompt override system — ship default templates, add CLI export, enable full user customization
+**Status:** 🔲 Planned
+**Depends on:** v0.36.2 (Prompt Optimization)
+
+### Context
+
+The override system exists (`config.prompts.overrides`, `loadOverride()`, `PromptBuilder.withLoader()`) but users can't easily customize prompts because:
+- No default templates shipped as files
+- No CLI command to export defaults as starting points
+- `tdd-simple` role missing from override schema
+
+### Stories
+
+- [ ] **PT-001:** Add `tdd-simple` to `PromptsConfigSchema` override enum
+- [ ] **PT-002:** Ship default `.md` templates for all 5 roles in `nax/prompts/` scaffold
+- [ ] **PT-003:** `nax prompts export` CLI command — dumps default prompt for a given role to stdout or file
+- [ ] **PT-004:** Update `nax init` to scaffold `nax/prompts/` directory with default templates
+- [ ] **PT-005:** Documentation — prompt customization guide
+
+---
+
+## v0.36.2 — Prompt Optimization (In Progress)
+
+**Theme:** Wire constitution into TDD sessions, deduplicate prompt sections, clean dead prompt code
+**Status:** 🏗️ In Progress
+**Depends on:** v0.36.1 (Parallel Metrics)
+
+### Context
+
+Analysis revealed TDD 3-session agents don't receive the project constitution (only pipeline single-session/tdd-simple do). Test filter warning is duplicated across 3 sections. Dead standalone prompt functions in `tdd/prompts.ts` duplicate what PromptBuilder handles. Verdict section exists but isn't wired into PromptBuilder for verifier role.
+
+### Agent Constitution Analysis
+
+| Role | Needs Constitution? | Reasoning |
+|:-----|:-------------------|:----------|
+| implementer | ✅ Full | Core code-writing role — needs all architectural rules |
+| rectification | ✅ Full | Fixing source code — same needs as implementer |
+| single-session | ✅ Full | Already wired via pipeline prompt stage |
+| tdd-simple | ✅ Full | Already wired via pipeline prompt stage |
+| test-writer | ❌ Skip | Writes test code only — doesn't need `_deps`, async, error patterns |
+| verifier | ❌ Skip | Reviews code, doesn't architect — constitution wastes ~950 tokens |
+
+### Stories
+
+- [ ] **PO-001:** Wire constitution into TDD `session-runner.ts` for implementer + rectification sessions only (skip test-writer and verifier)
+- [ ] **PO-002:** Wire verdict section into PromptBuilder for verifier role — move from hardcoded `tdd/prompts.ts` to composable section
+- [ ] **PO-003:** Deduplicate test filter warning (keep only in isolation section) + convert string concatenation → template literals in all section builders
+- [ ] **PO-004:** Delete dead standalone prompt functions in `tdd/prompts.ts`, clean barrel exports
+
+### Token Budget (per TDD story)
+
+| Section | Tokens | Included in |
+|:--------|:-------|:------------|
+| Global constitution | ~259 | implementer, rectification |
+| Project constitution | ~949 | implementer, rectification |
+| Role body | ~150-200 | all roles |
+| Story context | variable | all roles |
+| Isolation rules | ~100-150 | all roles |
+| Conventions footer | ~80 | all roles |
+| Verdict JSON schema | ~500 | verifier only |
 
 ---
 
