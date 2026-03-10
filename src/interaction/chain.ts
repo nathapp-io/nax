@@ -86,11 +86,27 @@ export class InteractionChain {
   }
 
   /**
-   * Send and receive in one call (convenience method)
+   * Send and receive in one call (convenience method).
+   *
+   * Normalizes "choose" type responses: when the plugin returns
+   * `action: "choose"` + `value: "<key>"`, remaps action to the selected
+   * option key so all consumers can switch on action directly without
+   * needing to inspect value themselves.
    */
   async prompt(request: InteractionRequest): Promise<InteractionResponse> {
     await this.send(request);
     const response = await this.receive(request.id, request.timeout);
+
+    // Normalize choose responses: action="choose" means the user picked an option;
+    // the actual selection is in value. Remap to the selected key if it matches
+    // one of the declared options.
+    if (response.action === "choose" && response.value && request.options) {
+      const matched = request.options.find((o) => o.key === response.value);
+      if (matched) {
+        return { ...response, action: matched.key as InteractionResponse["action"] };
+      }
+    }
+
     return response;
   }
 
