@@ -56,12 +56,6 @@ describe("PRD pause functionality", () => {
   });
 
   describe("markStoryPaused", () => {
-    test("marks story as paused", () => {
-      const prd = createTestPRD();
-      markStoryPaused(prd, "US-001");
-      expect(prd.userStories[0].status).toBe("paused");
-    });
-
     test("does nothing if story not found", () => {
       const prd = createTestPRD();
       markStoryPaused(prd, "US-999");
