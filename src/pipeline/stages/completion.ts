@@ -67,7 +67,7 @@ export const completionStage: PipelineStage = {
         storyId: completedStory.id,
         story: completedStory,
         passed: true,
-        durationMs: storyMetric?.durationMs ?? 0,
+        runElapsedMs: storyMetric?.durationMs ?? 0,
         // Extra fields picked up by subscribers via `as any`
         cost: costPerStory,
         modelTier: ctx.routing?.modelTier,

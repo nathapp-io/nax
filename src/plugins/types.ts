@@ -274,7 +274,7 @@ export interface StoryCompleteEvent {
   runId: string;
   storyId: string;
   status: "completed" | "failed" | "skipped" | "paused";
-  durationMs: number;
+  runElapsedMs: number;
   cost: number;
   tier: string;
   testStrategy: string;

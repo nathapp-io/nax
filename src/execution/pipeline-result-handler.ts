@@ -68,7 +68,7 @@ export async function handlePipelineSuccess(
       storyId: completedStory.id,
       storyTitle: completedStory.title,
       totalCost: ctx.totalCost + costDelta,
-      durationMs: now - ctx.startTime,
+      runElapsedMs: now - ctx.startTime,
       storyDurationMs: ctx.storyStartTime ? now - ctx.storyStartTime : undefined,
     });
 
@@ -77,7 +77,7 @@ export async function handlePipelineSuccess(
       storyId: completedStory.id,
       story: completedStory,
       passed: true,
-      durationMs: Date.now() - ctx.startTime,
+      runElapsedMs: Date.now() - ctx.startTime,
       cost: costDelta,
       modelTier: ctx.routing.modelTier,
       testStrategy: ctx.routing.testStrategy,

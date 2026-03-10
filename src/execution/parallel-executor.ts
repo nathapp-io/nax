@@ -371,7 +371,7 @@ export async function runParallelExecution(
     prd = parallelResult.updatedPrd;
     storiesCompleted += parallelResult.storiesCompleted;
     totalCost += parallelResult.totalCost;
-    conflictedStories = parallelResult.conflictedStories ?? [];
+    conflictedStories = parallelResult.mergeConflicts ?? [];
 
     // BUG-066: Build per-story metrics for stories newly completed by this parallel batch
     const newlyPassedStories = prd.userStories.filter((s) => s.status === "passed" && !initialPassedIds.has(s.id));
@@ -395,11 +395,6 @@ export async function runParallelExecution(
     }
 
     allStoryMetrics.push(...batchStoryMetrics);
-
-    logger?.info("parallel", "Parallel execution complete", {
-      storiesCompleted: parallelResult.storiesCompleted,
-      totalCost: parallelResult.totalCost,
-    });
 
     // Log each conflict before scheduling rectification
     for (const conflict of conflictedStories) {

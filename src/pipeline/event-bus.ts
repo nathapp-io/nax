@@ -41,7 +41,7 @@ export interface StoryCompletedEvent {
   storyId: string;
   story: UserStory;
   passed: boolean;
-  durationMs: number;
+  runElapsedMs: number;
   /** Optional: passed by executor/stage for hook/reporter subscribers */
   cost?: number;
   modelTier?: string;
