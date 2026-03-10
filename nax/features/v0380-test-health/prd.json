@@ -66,14 +66,15 @@
         "Converted files use bun:test compatible test.each() syntax"
       ],
       "complexity": "complex",
-      "status": "pending",
+      "status": "passed",
       "dependencies": [],
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
       "escalations": [],
       "tags": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "passes": true
     },
     {
       "id": "TH-004",
@@ -122,5 +123,5 @@
       "storyPoints": 1
     }
   ],
-  "updatedAt": "2026-03-10T09:58:30.308Z"
+  "updatedAt": "2026-03-10T10:04:47.000Z"
 }
