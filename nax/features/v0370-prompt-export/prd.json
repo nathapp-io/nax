@@ -31,7 +31,7 @@
       "title": "Add tdd-simple default template to promptsInitCommand",
       "description": "The promptsInitCommand in src/cli/prompts.ts creates nax/templates/ with 4 default role-body template files. The tdd-simple role is explicitly excluded with a comment: \"tdd-simple role is supported in the prompt system but not auto-generated as a template.\" Now that PT-001 adds tdd-simple to the schema, it should be a first-class template.\n\nFix: Add tdd-simple to the TEMPLATE_ROLES array in src/cli/prompts.ts. Create the default template content for tdd-simple — this role is a single-session TDD approach (write tests AND implement in one pass). The template body should instruct the agent to: (1) understand the acceptance criteria, (2) write failing tests first, (3) implement until tests pass, (4) clean up and verify.\n\nThe template must use the same TEMPLATE_HEADER comment block as other roles (already defined as a constant in the file).\n\nAcceptance criteria:\n- promptsInitCommand creates 5 template files: test-writer.md, implementer.md, verifier.md, single-session.md, tdd-simple.md\n- tdd-simple.md contains meaningful content (not a stub) describing the single-session TDD task\n- Re-running promptsInitCommand without --force skips existing files (idempotent)\n- Re-running with --force overwrites all 5\n- nax prompts --init outputs a confirmation line mentioning tdd-simple.md\n- Add unit test: test/unit/cli/prompts-init.test.ts verifying 5 files are created and tdd-simple.md exists",
       "complexity": "simple",
-      "status": "pending",
+      "status": "passed",
       "dependencies": [
         "PT-001"
       ],
@@ -48,7 +48,8 @@
         "testStrategy": "tdd-simple",
         "reasoning": "Pattern replication: add tdd-simple to existing template array, copy template structure from other roles, add straightforward unit test. Clear acceptance criteria, one primary file modified, no novel logic.",
         "contentHash": "c717251432da522c71a506178b0f734e2ed5ac2a35f60b059b548ea520516629"
-      }
+      },
+      "passes": true
     },
     {
       "id": "PT-003",
@@ -65,7 +66,14 @@
       "escalations": [],
       "tags": [],
       "acceptanceCriteria": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Single self-contained CLI feature with straightforward PromptBuilder integration, role validation, and I/O logic; touches multiple files (bin/, src/cli/, test/) but no architectural complexity or novel patterns.",
+        "contentHash": "12b8335828579019887b0ef27e5b865ec203d19da8aca15311285e223d4fc9b8"
+      }
     },
     {
       "id": "PT-004",
@@ -102,5 +110,5 @@
       "storyPoints": 1
     }
   ],
-  "updatedAt": "2026-03-10T07:42:42.510Z"
+  "updatedAt": "2026-03-10T07:45:34.324Z"
 }
