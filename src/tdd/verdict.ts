@@ -252,13 +252,26 @@ export async function readVerdict(workdir: string): Promise<VerifierVerdict | nu
       return null;
     }
 
+    // Read as text first so we can log raw content on parse failure
+    let rawText: string;
+    try {
+      rawText = await file.text();
+    } catch (readErr) {
+      logger.warn("tdd", "Failed to read verifier verdict file", {
+        path: verdictPath,
+        error: String(readErr),
+      });
+      return null;
+    }
+
     let parsed: unknown;
     try {
-      parsed = await file.json();
+      parsed = JSON.parse(rawText);
     } catch (parseErr) {
       logger.warn("tdd", "Verifier verdict file is not valid JSON — ignoring", {
         path: verdictPath,
         error: String(parseErr),
+        rawContent: rawText.slice(0, 1000),
       });
       return null;
     }
