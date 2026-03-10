@@ -60,10 +60,10 @@ The override system exists (`config.prompts.overrides`, `loadOverride()`, `Promp
 
 ---
 
-## v0.36.2 — Parallel Metrics & Rectification (MR !28)
+## v0.36.2 — Parallel Metrics & Rectification ✅ Shipped (2026-03-10)
 
 **Theme:** Fix metrics aggregation for parallel runs (BUG-064–071) and implement sequential rectification for merge conflicts
-**Status:** 🔀 MR !28 open — https://gitlab.com/nathapp/ai-agent/ngent/-/merge_requests/28
+**Status:** ✅ Shipped — commit `eb77e7d`, [run-release] triggered
 **Depends on:** v0.36.1 (Prompt Optimization)
 
 ### Stories
@@ -285,6 +285,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 
 | Version | Theme | Date |
 |:--------|:------|:-----|
+| v0.36.2 | Parallel Metrics & Rectification | 2026-03-10 |
 | v0.36.1 | Prompt Optimization | 2026-03-10 |
 | v0.36.0 | Multi-Agent Adapters | 2026-03-10 |
 | v0.35.0 | Agent Abstraction Layer | 2026-03-09 |
@@ -344,4 +345,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-10 (v0.36.1 shipped — Prompt Optimization + BUG-072/073; v0.36.2 MR !28 open)*
+*Last updated: 2026-03-10 (v0.36.2 shipped — Parallel Metrics + Rectification; v0.37.0 next)*
