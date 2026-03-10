@@ -5,8 +5,8 @@
  * Tests for `nax config` command with --explain flag.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configCommand } from "../../../src/cli/config";
@@ -742,13 +742,6 @@ describe("Config Command", () => {
  * project config overrides the global config.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { configCommand } from "../../../src/cli/config";
-import { loadConfig } from "../../../src/config/loader";
-
 describe("Config Command --diff", () => {
   let tempDir: string;
   let originalCwd: string;
@@ -1203,11 +1196,6 @@ describe("Config Command --diff", () => {
  * via the CLI entry point (bin/nax.ts).
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
 describe("nax config (default view) - CLI integration", () => {
   let tempDir: string;
   let originalCwd: string;
@@ -1433,11 +1421,6 @@ describe("nax config (default view) - CLI integration", () => {
  * These tests ensure the feature handles unusual scenarios correctly.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
 describe("nax config (default view) - edge cases", () => {
   let tempDir: string;
   let originalCwd: string;
@@ -1648,4 +1631,3 @@ describe("nax config (default view) - edge cases", () => {
     }
   });
 });
-

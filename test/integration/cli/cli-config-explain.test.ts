@@ -1,15 +1,14 @@
-import { describe, expect, test } from "bun:test";
-
+/**
  * Integration tests for `nax config --explain` prompts section (PB-005)
  *
  * Verifies that the prompts.overrides config block is documented in the
  * --explain output with example paths.
  */
 
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { configCommand } from "../../../src/cli/config";
 import { loadConfig } from "../../../src/config/loader";
 
@@ -67,25 +66,10 @@ describe("config --explain: prompts section", () => {
     const output = consoleOutput.join("\n");
     // At least one of the roles should appear in the prompts documentation
     const mentionsRole =
-      output.includes("test-writer") ||
-      output.includes("implementer") ||
-      output.includes("verifier");
+      output.includes("test-writer") || output.includes("implementer") || output.includes("verifier");
     expect(mentionsRole).toBe(true);
   });
 });
-
- * Integration tests for `nax config --explain` context.fileInjection section (CTX-002)
- *
- * Verifies that the context.fileInjection config option is documented in the
- * --explain output, including the 'keyword' and 'disabled' modes and their rationale.
- */
-
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { configCommand } from "../../../src/cli/config";
-import { loadConfig } from "../../../src/config/loader";
 
 describe("config --explain: context.fileInjection section", () => {
   let tempDir: string;
@@ -162,10 +146,7 @@ describe("config --explain: context.fileInjection section", () => {
 
     const output = consoleOutput.join("\n");
     // The description should explain that 'keyword' preserves legacy git-grep injection
-    const mentionsLegacy =
-      output.includes("git-grep") ||
-      output.includes("legacy") ||
-      output.includes("non-MCP");
+    const mentionsLegacy = output.includes("git-grep") || output.includes("legacy") || output.includes("non-MCP");
     expect(mentionsLegacy).toBe(true);
   });
 
@@ -178,19 +159,6 @@ describe("config --explain: context.fileInjection section", () => {
     expect(output).toContain("context.fileInjection");
   });
 });
-
- * Integration tests for `nax config --explain` autoMode section (MA-011)
- *
- * Verifies that the autoMode multi-agent configuration is documented in the
- * --explain output, including defaultAgent, fallbackOrder, and model mapping rules.
- */
-
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { configCommand } from "../../../src/cli/config";
-import { loadConfig } from "../../../src/config/loader";
 
 describe("config --explain: autoMode multi-agent section", () => {
   let tempDir: string;
@@ -241,9 +209,7 @@ describe("config --explain: autoMode multi-agent section", () => {
     expect(fallbackSectionStart).toBeGreaterThan(-1);
     // The description should mention rate-limited or retry concepts
     const hasFallbackLogicDoc =
-      output.includes("rate-limited") ||
-      output.includes("fallback") ||
-      output.includes("retry");
+      output.includes("rate-limited") || output.includes("fallback") || output.includes("retry");
     expect(hasFallbackLogicDoc).toBe(true);
   });
 
@@ -304,9 +270,7 @@ describe("config --explain: autoMode multi-agent section", () => {
 
     const output = consoleOutput.join("\n");
     // Overall context about multi-agent orchestration should be clear
-    const hasAutoModeSection =
-      output.includes("autoMode") && output.includes("configuration");
+    const hasAutoModeSection = output.includes("autoMode") && output.includes("configuration");
     expect(hasAutoModeSection).toBe(true);
   });
 });
-

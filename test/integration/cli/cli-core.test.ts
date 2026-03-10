@@ -1,12 +1,10 @@
-import { describe, expect, test } from "bun:test";
-
 /**
  * CLI --parallel flag tests
  *
  * Validates that the --parallel flag is correctly parsed and passed to RunOptions.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { RunOptions } from "../../../src/execution/runner";
 
 describe("CLI --parallel flag parsing", () => {
@@ -86,7 +84,6 @@ describe("CLI --parallel flag parsing", () => {
  * - Process behavior (follow mode)
  */
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -596,6 +593,7 @@ describe("Headless mode formatter integration", () => {
   });
 });
 
+/**
  * Generate Command Integration Tests
  *
  * Tests for `nax generate` command with support for new context generators.
@@ -1527,6 +1525,7 @@ describe("AC7: AUTO_RECOVERED stories shown as INFO", () => {
 // This is validated by running `bun run typecheck` separately
 // No test needed here — the entire test file compiling is the test
 
+/**
  * Integration tests for nax agents CLI command
  *
  * Tests the agents list command that displays available agents

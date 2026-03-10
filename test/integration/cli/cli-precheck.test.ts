@@ -10,12 +10,18 @@
  * - Error handling for missing feature/prd.json
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { precheckCommand } from "../../../src/commands/precheck";
-import type { PRD } from "../../../src/prd/types";
-import { EXIT_CODES } from "../../../src/precheck";
+import type { NaxConfig } from "../../../src/config";
+import { DEFAULT_CONFIG } from "../../../src/config";
+import { run } from "../../../src/execution";
+import type { PRD, UserStory } from "../../../src/prd/types";
+import { loadPRD } from "../../../src/prd";
+import { EXIT_CODES, runPrecheck } from "../../../src/precheck";
+import type { PrecheckResult } from "../../../src/precheck/types";
 
 const TEMP_DIR = join(import.meta.dir, "tmp-precheck-cli");
 
@@ -382,13 +388,6 @@ describe("CLI precheck command", () => {
 // to fail. The test logic is sound; the environment is simply incomplete.
 // Run these tests locally on Mac01/VPS where claude is installed.
 const describeWithClaude = process.env.CI ? describe.skip : describe;
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { NaxConfig } from "../../../src/config";
-import type { PRD, UserStory } from "../../../src/prd/types";
-import { runPrecheck } from "../../../src/precheck";
-import type { PrecheckResult } from "../../../src/precheck/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -1180,19 +1179,11 @@ describeWithClaude("precheck orchestrator behavior (US-002)", () => {
  * Acceptance criteria verification tests
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-
 // Skip in CI: AC2, AC5, AC6 call runPrecheck() which includes checkClaudeCLI as a
 // Tier 1 blocker. Without the claude binary installed, blockers.length > 0 always,
 // breaking assertions like expect(blockers.length).toBe(0). These ACs test correct
 // orchestration behaviour and pass reliably on Mac01/VPS where claude is installed.
 const skipInCI = process.env.CI ? test.skip : test;
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { NaxConfig } from "../../../src/config";
-import type { PRD } from "../../../src/prd/types";
-import { EXIT_CODES, runPrecheck } from "../../../src/precheck";
 
 // Helper to create a minimal valid git environment
 async function setupGitRepo(dir: string): Promise<void> {
@@ -1433,20 +1424,10 @@ describe("US-002: Precheck orchestrator acceptance criteria", () => {
  * - AC6: Failed precheck updates status.json with precheck-failed status
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-
 // Skip in CI: these tests call run() which invokes the full nax execution pipeline
 // including spawning real agent subprocesses. CI runners lack the claude binary and
 // have restricted process/file system environments. These are end-to-end smoke tests
 // that must run in a properly configured dev environment (local, Mac01, or VPS).
-
-import { mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import type { NaxConfig } from "../../../src/config";
-import { DEFAULT_CONFIG } from "../../../src/config";
-import { run } from "../../../src/execution";
-import type { PRD } from "../../../src/prd";
-import { loadPRD } from "../../../src/prd";
 
 describe("Precheck Integration with nax run", () => {
   let testDir: string;
