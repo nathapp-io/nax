@@ -64,9 +64,18 @@ export class ReviewOrchestrator {
         const pluginResults: ReviewResult["pluginReviewers"] = [];
 
         for (const reviewer of reviewers) {
-          logger?.info("review", `Running plugin reviewer: ${reviewer.name}`);
+          logger?.info("review", `Running plugin reviewer: ${reviewer.name}`, {
+            changedFiles: changedFiles.length,
+          });
           try {
             const result = await reviewer.check(workdir, changedFiles);
+            // Always log the result so skips/passes are visible in the log
+            logger?.info("review", `Plugin reviewer result: ${reviewer.name}`, {
+              passed: result.passed,
+              exitCode: result.exitCode,
+              output: result.output?.slice(0, 500),
+              findings: result.findings?.length ?? 0,
+            });
             pluginResults.push({
               name: reviewer.name,
               passed: result.passed,
@@ -85,6 +94,7 @@ export class ReviewOrchestrator {
             }
           } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error);
+            logger?.warn("review", `Plugin reviewer threw error: ${reviewer.name}`, { error: errorMsg });
             pluginResults.push({ name: reviewer.name, passed: false, output: "", error: errorMsg });
             builtIn.pluginReviewers = pluginResults;
             return {
