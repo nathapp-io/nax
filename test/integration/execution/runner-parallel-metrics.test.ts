@@ -25,7 +25,7 @@ import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config/types";
 import { _parallelExecutorDeps } from "../../../src/execution/parallel-executor";
 import { _executionDeps } from "../../../src/pipeline/stages/execution";
-import { run } from "../../../src/execution/runner";
+import { _runnerDeps, run } from "../../../src/execution/runner";
 import type { LoadedHooksConfig } from "../../../src/hooks";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -170,41 +170,57 @@ describe("BUG-064 + BUG-065 + BUG-066: Runner parallel + sequential metric accum
       buildCommand: () => ["claude", "--test"],
     } as unknown as ReturnType<typeof _executionDeps.getAgent>));
 
-    // Mock executeParallel to simulate parallel completing US-001 at PARALLEL_BATCH_COST
-    // and updating the PRD file so sequential can see US-001 as passed
+    // Also mock _parallelExecutorDeps.executeParallel for BUG-066 test which calls
+    // runParallelExecution directly (not through run())
     _parallelExecutorDeps.executeParallel = mock(async (
-      _stories,
-      _prdPath,
-      _workdir,
-      _config,
-      _hooks,
-      _plugins,
-      prd,
+      _stories: unknown,
+      _prdPath: unknown,
+      _workdir: unknown,
+      _config: unknown,
+      _hooks: unknown,
+      _plugins: unknown,
+      prd: unknown,
     ) => {
-      // Build updated PRD with US-001 marked as passed
+      const typedPrd = prd as { userStories: Array<{ id: string; status?: string; passes?: boolean }> };
       const updatedPrd = {
-        ...prd,
-        userStories: prd.userStories.map((s: { id: string }) =>
-          s.id === "US-001"
-            ? { ...s, status: "passed", passes: true }
-            : s,
+        ...typedPrd,
+        userStories: typedPrd.userStories.map((s) =>
+          s.id === "US-001" ? { ...s, status: "passed", passes: true } : s,
         ),
       };
-
-      // Write updated PRD to file so sequential executor's loadPRD sees it
-      await Bun.write(_prdPath, JSON.stringify(updatedPrd, null, 2));
-
-      return {
-        storiesCompleted: PARALLEL_STORIES_COMPLETED,
-        totalCost: PARALLEL_BATCH_COST,
-        updatedPrd,
-      };
+      await Bun.write(_prdPath as string, JSON.stringify(updatedPrd, null, 2));
+      return { storiesCompleted: PARALLEL_STORIES_COMPLETED, totalCost: PARALLEL_BATCH_COST, updatedPrd, mergeConflicts: [] };
     });
+
+    // Mock runParallelExecution at the runner level to avoid bun dynamic-import
+    // module-cache isolation issues (bun 1.3.9 may give fresh instances per dynamic import)
+    _runnerDeps.runParallelExecution = mock(async (_options: unknown, prd: unknown) => {
+      const typedPrd = prd as { userStories: Array<{ id: string; status?: string; passes?: boolean }> };
+      // Build updated PRD with US-001 marked as passed
+      const updatedPrd = {
+        ...typedPrd,
+        userStories: typedPrd.userStories.map((s) =>
+          s.id === "US-001" ? { ...s, status: "passed", passes: true } : s,
+        ),
+      };
+      // Write updated PRD to file so sequential executor's loadPRD sees it
+      const options = _options as { prdPath: string };
+      await Bun.write(options.prdPath, JSON.stringify(updatedPrd, null, 2));
+      return {
+        prd: updatedPrd,
+        totalCost: PARALLEL_BATCH_COST,
+        storiesCompleted: PARALLEL_STORIES_COMPLETED,
+        completed: false,
+        storyMetrics: [],
+        rectificationStats: { rectified: 0, stillConflicting: 0 },
+      };
+    }) as typeof _runnerDeps.runParallelExecution;
   });
 
   afterEach(async () => {
     await cleanupTempDir(tempDir);
     mock.restore();
+    _runnerDeps.runParallelExecution = null;
     _parallelExecutorDeps.executeParallel = originalExecuteParallel;
     _executionDeps.getAgent = originalGetAgent;
   });

@@ -21,6 +21,7 @@ import { clearCache as clearLlmCache, routeBatch as llmRouteBatch } from "../rou
 import { precomputeBatchPlan } from "./batching";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import { getAllReadyStories } from "./helpers";
+import type { ParallelExecutorOptions, ParallelExecutorResult } from "./parallel-executor";
 import { hookCtx } from "./story-context";
 
 /**
@@ -29,6 +30,10 @@ import { hookCtx } from "./story-context";
  */
 export const _runnerDeps = {
   fireHook,
+  // Injectable for tests — avoids dynamic-import module-cache issues in bun test (bun 1.3.9+)
+  runParallelExecution: null as
+    | null
+    | ((options: ParallelExecutorOptions, prd: import("../prd").PRD) => Promise<ParallelExecutorResult>),
 };
 
 // Re-export for backward compatibility
@@ -202,7 +207,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
     // ── Parallel Execution Path (when --parallel is set) ──────────────────────
     if (options.parallel !== undefined) {
-      const { runParallelExecution } = await import("./parallel-executor");
+      const runParallelExecution =
+        _runnerDeps.runParallelExecution ?? (await import("./parallel-executor")).runParallelExecution;
       const parallelResult = await runParallelExecution(
         {
           prdPath,
