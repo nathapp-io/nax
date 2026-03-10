@@ -37,46 +37,46 @@
 
 ---
 
-## v0.36.0 — Multi-Agent Adapters (Planned, Experimental)
+## v0.36.1 — Parallel Metrics & Rectification (In Progress)
+
+**Theme:** Fix metrics aggregation for parallel runs (BUG-064–071) and implement sequential rectification for merge conflicts
+**Status:** 🏗️ In Progress
+**Depends on:** v0.36.0 (Multi-Agent Adapters)
+
+### Stories
+
+- [ ] **MA-013:** Fix total cost and story count aggregation — ensure parallel batch metrics (`batchCost`, `storiesCompleted`) are merged back into the main `Runner` accumulator.
+- [ ] **MA-014:** Fix per-story metrics in parallel mode — ensure `storyMetrics` collection includes parallel stories and that escalation doesn't reset cost/attempt counters.
+- [ ] **MA-015:** Sequential Rectification Loop — implement the retry logic in `parallel-executor.ts` that detects merge conflicts, discards the worktree, and re-runs the full pipeline sequentially on the updated base.
+- [x] **MA-016:** Extract `autoCommitIfDirty` to shared utility — consolidate duplicated git logic from `session-runner.ts`, `execution.ts`, and `rectification-gate.ts` into `src/utils/git.ts`.
+
+---
+
+## v0.36.0 — Multi-Agent Adapters ✅ Shipped (2026-03-10)
 
 **Theme:** Scaffold adapters for Codex, OpenCode, Gemini CLI, and Aider — enabling nax to orchestrate any major coding agent
-**Status:** 🔲 Planned
-**Depends on:** v0.35.0 (Agent Abstraction Layer — `AgentAdapter` interface with `complete()`)
+**Status:** ✅ Shipped (2026-03-10)
+**Depends on:** v0.35.0 (Agent Abstraction Layer)
 
-> ⚠️ **Experimental:** Adapters are scaffolds based on documented CLI interfaces. They require community validation by users of each tool. Integration tests skip unless the binary is detected.
-
-### Adapters
-
-| Agent | Binary | Prompt Mode | Context File | Status |
-|:------|:-------|:------------|:-------------|:-------|
-| Codex | `codex` | `codex -q --prompt <text>` | `AGENTS.md` / `codex.md` | 🔲 |
-| OpenCode | `opencode` | `opencode --prompt <text>` | `AGENTS.md` | 🔲 |
-| Gemini CLI | `gemini` | `gemini -p <text>` | `GEMINI.md` | 🔲 |
-| Aider | `aider` | `aider --message <text> --yes` | `.aider.conf.yml` | 🔲 |
+### Key Improvements
+- **Multi-Agent Adapters:** Codex, OpenCode, Gemini CLI, Aider scaffolds.
+- **Enterprise Standards:** Added `docs/ARCHITECTURE.md` and wired into all agent configurations (`CLAUDE.md`, `AGENTS.md`, etc.).
+- **Parallel Execution:** Support for `--parallel N` with worktree isolation and merge-back.
+- **Verdict Coercion:** Tolerant parsing of agent pass/fail outputs.
 
 ### Stories — Adapters
-
-- [ ] **MA-001:** Codex adapter — implement `AgentAdapter` interface (`execute()`, `complete()`, binary detection). Handle `codex -q --prompt` for one-shot, `codex` interactive for sessions. Parse exit codes and output
-- [ ] **MA-002:** OpenCode adapter — implement `AgentAdapter` interface. Handle `opencode --prompt` for one-shot mode. Detect binary via `Bun.which("opencode")`
-- [ ] **MA-003:** Gemini CLI adapter — implement `AgentAdapter` interface. Handle `gemini -p` for one-shot mode. Support Google auth flow detection in precheck
-- [ ] **MA-004:** Aider adapter — implement `AgentAdapter` interface. Handle `aider --message --yes` for headless mode. Support `--model` flag passthrough from nax config
-
-### Stories — Context Generators
-
-- [ ] **MA-005:** Add Codex context generator — output `codex.md` from `nax/context.md` (verify if Codex prefers `codex.md` or `AGENTS.md`, support both)
-- [ ] **MA-006:** Add Gemini CLI context generator — output `GEMINI.md` from `nax/context.md`
-- [ ] **MA-007:** Update `nax generate` to include new generators. Update `AgentType` union type. Verify existing OpenCode and Aider generators still work
-
-### Stories — Testing & Validation
-
-- [ ] **MA-008:** Unit tests for all 4 adapters — mock `Bun.spawn`, test prompt construction, exit code handling, output parsing. Use `_deps` injection pattern
-- [ ] **MA-009:** Integration test suite — skip-unless-installed (`Bun.which()` guard). Smoke test: `adapter.complete("return hello")` for each installed agent
-- [ ] **MA-010:** Precheck updates — `nax precheck` detects and reports which agents are available. Show version for each detected binary
-
-### CLI Integration
-
-- [ ] **MA-011:** `nax config --explain agents` — document multi-agent config: `autoMode.defaultAgent`, `autoMode.fallbackOrder`, per-agent model mapping
-- [ ] **MA-012:** `nax agents` CLI command — list available agents with binary path, version, and health status
+- [x] **MA-001:** Codex adapter
+- [x] **MA-002:** OpenCode adapter
+- [x] **MA-003:** Gemini CLI adapter
+- [x] **MA-004:** Aider adapter
+- [x] **MA-005:** Codex context generator
+- [x] **MA-006:** Gemini CLI context generator
+- [x] **MA-007:** Update `nax generate`
+- [x] **MA-008:** Unit tests for all adapters
+- [x] **MA-009:** Integration test suite
+- [x] **MA-010:** Precheck updates
+- [x] **MA-011:** Documentation for agents config
+- [x] **MA-012:** `nax agents` CLI command
 
 ---
 
@@ -213,6 +213,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 
 | Version | Theme | Date |
 |:--------|:------|:-----|
+| v0.36.0 | Multi-Agent Adapters | 2026-03-10 |
 | v0.35.0 | Agent Abstraction Layer | 2026-03-09 |
 | v0.34.0 | Run Hooks + Smart Skip | 2026-03-09 |
 | v0.33.0 | Story Decomposer | 2026-03-09 |
@@ -270,4 +271,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-09 (v0.35.0 shipped — Agent Abstraction Layer)*
+*Last updated: 2026-03-10 (v0.36.0 shipped — Multi-Agent Adapters)*
