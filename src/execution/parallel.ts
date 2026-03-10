@@ -32,8 +32,10 @@ export interface ParallelBatchResult {
   failedStories: Array<{ story: UserStory; error: string }>;
   /** Total cost accumulated */
   totalCost: number;
-  /** Stories with merge conflicts */
-  conflictedStories: Array<{ storyId: string; conflictFiles: string[] }>;
+  /** Stories with merge conflicts (includes per-story original cost for rectification) */
+  conflictedStories: Array<{ storyId: string; conflictFiles: string[]; originalCost: number }>;
+  /** Per-story execution costs for successful stories */
+  storyCosts: Map<string, number>;
 }
 
 /**
@@ -152,6 +154,7 @@ async function executeParallelBatch(
     failedStories: [],
     totalCost: 0,
     conflictedStories: [],
+    storyCosts: new Map(),
   };
 
   // Create worktrees for all stories in batch
@@ -188,6 +191,7 @@ async function executeParallelBatch(
     const executePromise = executeStoryInWorktree(story, worktreePath, context, routing as RoutingResult, eventEmitter)
       .then((result) => {
         results.totalCost += result.cost;
+        results.storyCosts.set(story.id, result.cost);
 
         if (result.success) {
           results.successfulStories.push(story);
@@ -257,7 +261,12 @@ export async function executeParallel(
   featureDir: string | undefined,
   parallel: number,
   eventEmitter?: PipelineEventEmitter,
-): Promise<{ storiesCompleted: number; totalCost: number; updatedPrd: PRD }> {
+): Promise<{
+  storiesCompleted: number;
+  totalCost: number;
+  updatedPrd: PRD;
+  conflictedStories: Array<{ storyId: string; conflictFiles: string[]; originalCost: number }>;
+}> {
   const logger = getSafeLogger();
   const maxConcurrency = resolveMaxConcurrency(parallel);
   const worktreeManager = new WorktreeManager();
@@ -278,6 +287,7 @@ export async function executeParallel(
   let storiesCompleted = 0;
   let totalCost = 0;
   const currentPrd = prd;
+  const allConflictedStories: Array<{ storyId: string; conflictFiles: string[]; originalCost: number }> = [];
 
   // Execute each batch sequentially (stories within each batch run in parallel)
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
@@ -338,6 +348,7 @@ export async function executeParallel(
           batchResult.conflictedStories.push({
             storyId: mergeResult.storyId,
             conflictFiles: mergeResult.conflictFiles || [],
+            originalCost: batchResult.storyCosts.get(mergeResult.storyId) ?? 0,
           });
 
           logger?.error("parallel", "Merge conflict", {
@@ -376,6 +387,8 @@ export async function executeParallel(
     // Save PRD after each batch
     await savePRD(currentPrd, prdPath);
 
+    allConflictedStories.push(...batchResult.conflictedStories);
+
     logger?.info("parallel", `Batch ${batchIndex + 1} complete`, {
       successful: batchResult.successfulStories.length,
       failed: batchResult.failedStories.length,
@@ -389,5 +402,5 @@ export async function executeParallel(
     totalCost,
   });
 
-  return { storiesCompleted, totalCost, updatedPrd: currentPrd };
+  return { storiesCompleted, totalCost, updatedPrd: currentPrd, conflictedStories: allConflictedStories };
 }
