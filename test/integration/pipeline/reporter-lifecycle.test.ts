@@ -293,7 +293,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
     expect(new Date(runStartData.startTime).toString()).not.toBe("Invalid Date");
   });
 
-  test("AC2: onStoryComplete fires after each story with storyId, status, durationMs, cost, tier, testStrategy", async () => {
+  test("AC2: onStoryComplete fires after each story with storyId, status, runElapsedMs, cost, tier, testStrategy", async () => {
     // Create minimal PRD with 1 story
     const prd = {
       feature: "test-feature",
@@ -337,8 +337,8 @@ describe("Reporter Lifecycle Events (US-004)", () => {
     expect(storyCompleteData).toHaveProperty("runId");
     expect(storyCompleteData.storyId).toBe("US-001");
     expect(storyCompleteData.status).toBe("completed");
-    expect(typeof storyCompleteData.durationMs).toBe("number");
-    expect(storyCompleteData.durationMs).toBeGreaterThanOrEqual(0);
+    expect(typeof storyCompleteData.runElapsedMs).toBe("number");
+    expect(storyCompleteData.runElapsedMs).toBeGreaterThanOrEqual(0);
     expect(typeof storyCompleteData.cost).toBe("number");
     expect(storyCompleteData).toHaveProperty("tier");
     expect(storyCompleteData).toHaveProperty("testStrategy");

@@ -357,7 +357,7 @@ describe("MFX-005 Integration: parallel batch with conflict â†’ rectification â†
       totalCost: 6.0,
       updatedPrd: postParallelPrd,
       // MFX-005: executeParallel must return conflictedStories â€” FAILS until implemented
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/shared.ts"], originalCost: 2.0 },
       ],
     }));
@@ -398,7 +398,7 @@ describe("MFX-005 Integration: parallel batch with conflict â†’ rectification â†
       storiesCompleted: 1,
       totalCost: 4.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/shared.ts", "src/types.ts"], originalCost: 2.0 },
       ],
     }));
