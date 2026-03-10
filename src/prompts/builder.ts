@@ -5,9 +5,10 @@
  *   (1) Constitution
  *   (2) Role task body (user override OR default template)
  *   (3) Story context          [non-overridable]
- *   (4) Isolation rules        [non-overridable]
- *   (5) Context markdown
- *   (6) Conventions footer     [non-overridable, always last]
+ *   (4) Verdict section        [verifier only, non-overridable]
+ *   (5) Isolation rules        [non-overridable]
+ *   (6) Context markdown
+ *   (7) Conventions footer     [non-overridable, always last]
  */
 
 import type { NaxConfig } from "../config/types";
@@ -16,6 +17,7 @@ import { buildConventionsSection } from "./sections/conventions";
 import { buildIsolationSection } from "./sections/isolation";
 import { buildRoleTaskSection } from "./sections/role-task";
 import { buildStorySection } from "./sections/story";
+import { buildVerdictSection } from "./sections/verdict";
 import type { PromptOptions, PromptRole } from "./types";
 
 const SECTION_SEP = "\n\n---\n\n";
@@ -81,16 +83,21 @@ export class PromptBuilder {
       sections.push(buildStorySection(this._story));
     }
 
-    // (4) Isolation rules — non-overridable
+    // (4) Verdict section — verifier only, non-overridable
+    if (this._role === "verifier" && this._story) {
+      sections.push(buildVerdictSection(this._story));
+    }
+
+    // (5) Isolation rules — non-overridable
     const isolation = this._options.isolation as string | undefined;
     sections.push(buildIsolationSection(this._role, isolation as "strict" | "lite" | undefined));
 
-    // (5) Context markdown
+    // (6) Context markdown
     if (this._contextMd) {
       sections.push(this._contextMd);
     }
 
-    // (6) Conventions footer — non-overridable, always last
+    // (7) Conventions footer — non-overridable, always last
     sections.push(buildConventionsSection());
 
     return sections.join(SECTION_SEP);
