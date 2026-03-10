@@ -317,6 +317,25 @@ If `testScoped` is not configured, nax falls back to a heuristic that replaces t
 
 ---
 
+## Customization
+
+### Prompt Customization
+
+Customize the instructions sent to each agent role for your project's specific needs. Override prompts to enforce coding style, domain knowledge, or architectural constraints.
+
+**Quick start:**
+
+```bash
+nax prompts --init              # Create default templates
+# Edit nax/templates/*.md
+nax prompts --export test-writer # Preview a role's prompt
+nax run -f my-feature           # Uses your custom prompts
+```
+
+**Full guide:** See [Prompt Customization Guide](docs/prompt-customization.md) for detailed instructions, role reference, and best practices.
+
+---
+
 ## Test Strategies
 
 nax selects a test strategy per story based on complexity and tags:

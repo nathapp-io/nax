@@ -1,36 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-10T01-50-54-350Z",
-    "feature": "v0361-metrics",
-    "startedAt": "2026-03-10T01:50:54.350Z",
+    "id": "run-2026-03-10T07-35-01-166Z",
+    "feature": "v0370-prompt-export",
+    "startedAt": "2026-03-10T07:35:01.166Z",
     "status": "running",
     "dryRun": false,
-    "pid": 2704
+    "pid": 91809
   },
   "progress": {
     "total": 5,
-    "passed": 2,
-    "failed": 1,
+    "passed": 4,
+    "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 3.915035,
+    "spent": 0.69124225,
     "limit": 8
   },
   "current": {
-    "storyId": "MFX-002",
-    "title": "Preserve story metrics across model escalation (BUG-067)",
+    "storyId": "PT-005",
+    "title": "Prompt customization documentation",
     "complexity": "medium",
-    "tddStrategy": "three-session-tdd-lite",
-    "model": "powerful",
+    "tddStrategy": "test-after",
+    "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 6,
-  "updatedAt": "2026-03-10T05:16:55.965Z",
-  "durationMs": 12361615,
-  "lastHeartbeat": "2026-03-10T05:16:55.965Z"
+  "iterations": 5,
+  "updatedAt": "2026-03-10T08:12:02.511Z",
+  "durationMs": 2221345,
+  "lastHeartbeat": "2026-03-10T08:12:02.511Z"
 }

@@ -10,7 +10,6 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
-import type { BuiltContext } from "../context/types";
 import { getLogger } from "../logger";
 import { runPipeline } from "../pipeline";
 import type { PipelineContext } from "../pipeline";
@@ -246,6 +245,8 @@ export interface PromptsInitCommandOptions {
   workdir: string;
   /** Overwrite existing files if true */
   force?: boolean;
+  /** Auto-wire prompts.overrides in nax.config.json (default: true) */
+  autoWireConfig?: boolean;
 }
 
 const TEMPLATE_ROLES = [
@@ -253,6 +254,7 @@ const TEMPLATE_ROLES = [
   { file: "implementer.md", role: "implementer" as const, variant: "standard" as const },
   { file: "verifier.md", role: "verifier" as const },
   { file: "single-session.md", role: "single-session" as const },
+  { file: "tdd-simple.md", role: "tdd-simple" as const },
 ] as const;
 
 const TEMPLATE_HEADER = `<!--
@@ -273,19 +275,17 @@ const TEMPLATE_HEADER = `<!--
 /**
  * Execute the `nax prompts --init` command.
  *
- * Creates nax/templates/ and writes 4 default role-body template files
- * (test-writer, implementer, verifier, single-session).
+ * Creates nax/templates/ and writes 5 default role-body template files
+ * (test-writer, implementer, verifier, single-session, tdd-simple).
  * Auto-wires prompts.overrides in nax.config.json if the file exists and overrides are not already set.
  * Returns the list of file paths written. Returns empty array if files
  * already exist and force is not set.
- *
- * Note: tdd-simple role is supported in the prompt system but not auto-generated as a template.
  *
  * @param options - Command options
  * @returns Array of file paths written
  */
 export async function promptsInitCommand(options: PromptsInitCommandOptions): Promise<string[]> {
-  const { workdir, force = false } = options;
+  const { workdir, force = false, autoWireConfig = true } = options;
   const templatesDir = join(workdir, "nax", "templates");
 
   mkdirSync(templatesDir, { recursive: true });
@@ -318,8 +318,10 @@ export async function promptsInitCommand(options: PromptsInitCommandOptions): Pr
     console.log(`  - ${filePath.replace(`${workdir}/`, "")}`);
   }
 
-  // Auto-wire prompts.overrides in nax.config.json
-  await autoWirePromptsConfig(workdir);
+  // Auto-wire prompts.overrides in nax.config.json (if enabled)
+  if (autoWireConfig) {
+    await autoWirePromptsConfig(workdir);
+  }
 
   return written;
 }
@@ -346,6 +348,7 @@ async function autoWirePromptsConfig(workdir: string): Promise<void> {
             implementer: "nax/templates/implementer.md",
             verifier: "nax/templates/verifier.md",
             "single-session": "nax/templates/single-session.md",
+            "tdd-simple": "nax/templates/tdd-simple.md",
           },
         },
       },
@@ -376,6 +379,7 @@ async function autoWirePromptsConfig(workdir: string): Promise<void> {
     implementer: "nax/templates/implementer.md",
     verifier: "nax/templates/verifier.md",
     "single-session": "nax/templates/single-session.md",
+    "tdd-simple": "nax/templates/tdd-simple.md",
   };
 
   // Add or update prompts section
@@ -425,6 +429,56 @@ function formatConfigJson(config: Record<string, unknown>): string {
 
   lines.push("}");
   return lines.join("\n");
+}
+
+const VALID_EXPORT_ROLES = ["test-writer", "implementer", "verifier", "single-session", "tdd-simple"] as const;
+
+export interface ExportPromptCommandOptions {
+  /** Role to export prompt for */
+  role: string;
+  /** Optional output file path (stdout if not provided) */
+  out?: string;
+}
+
+/**
+ * Execute the `nax prompts --export <role>` command.
+ *
+ * Builds the full default prompt for the given role using a stub story
+ * and empty context, then writes it to stdout or a file.
+ *
+ * @param options - Command options
+ */
+export async function exportPromptCommand(options: ExportPromptCommandOptions): Promise<void> {
+  const { role, out } = options;
+
+  if (!VALID_EXPORT_ROLES.includes(role as (typeof VALID_EXPORT_ROLES)[number])) {
+    console.error(`[ERROR] Invalid role: "${role}". Valid roles: ${VALID_EXPORT_ROLES.join(", ")}`);
+    process.exit(1);
+  }
+
+  const stubStory: UserStory = {
+    id: "EXAMPLE",
+    title: "Example story",
+    description: "Story ID: EXAMPLE. This is a placeholder story used to demonstrate the default prompt.",
+    acceptanceCriteria: ["AC-1: Example criterion"],
+    tags: [],
+    dependencies: [],
+    status: "pending",
+    passes: false,
+    escalations: [],
+    attempts: 0,
+  };
+
+  const prompt = await PromptBuilder.for(role as (typeof VALID_EXPORT_ROLES)[number])
+    .story(stubStory)
+    .build();
+
+  if (out) {
+    await Bun.write(out, prompt);
+    console.log(`[OK] Exported prompt for "${role}" to ${out}`);
+  } else {
+    console.log(prompt);
+  }
 }
 
 /**

@@ -1,0 +1,4 @@
+[2026-03-10T07:42:22.057Z] PT-001 — PASSED — Add tdd-simple to PromptsConfigSchema override enum — Cost: $0.1037
+[2026-03-10T07:45:12.967Z] PT-002 — PASSED — Add tdd-simple default template to promptsInitCommand — Cost: $0.0354
+[2026-03-10T08:03:12.241Z] PT-003 — PASSED — nax prompts --export <role> CLI command — Cost: $0.4460
+[2026-03-10T08:10:40.675Z] PT-004 — PASSED — Wire promptsInitCommand into nax init scaffold — Cost: $0.1061

@@ -291,10 +291,14 @@ const PrecheckConfigSchema = z.object({
   storySizeGate: StorySizeGateConfigSchema,
 });
 
-const PromptsConfigSchema = z.object({
+export const PromptsConfigSchema = z.object({
   overrides: z
     .record(
-      z.enum(["test-writer", "implementer", "verifier", "single-session"]),
+      z
+        .string()
+        .refine((key) => ["test-writer", "implementer", "verifier", "single-session", "tdd-simple"].includes(key), {
+          message: "Role must be one of: test-writer, implementer, verifier, single-session, tdd-simple",
+        }),
       z.string().min(1, "Override path must be non-empty"),
     )
     .optional(),
