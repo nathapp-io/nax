@@ -17,6 +17,7 @@ const TEMPLATE_FILES = [
   "implementer.md",
   "verifier.md",
   "single-session.md",
+  "tdd-simple.md",
 ] as const;
 
 describe("promptsInitCommand — directory creation", () => {
@@ -45,7 +46,7 @@ describe("promptsInitCommand — directory creation", () => {
   });
 });
 
-describe("promptsInitCommand — writes 4 template files", () => {
+describe("promptsInitCommand — writes 5 template files", () => {
   let tempDir: string;
 
   beforeEach(() => {
@@ -65,12 +66,12 @@ describe("promptsInitCommand — writes 4 template files", () => {
     });
   }
 
-  test("writes exactly 4 template files", async () => {
+  test("writes exactly 5 template files", async () => {
     await promptsInitCommand({ workdir: tempDir });
 
     const templatesDir = join(tempDir, "nax", "templates");
     const files = (await import("node:fs")).readdirSync(templatesDir);
-    expect(files.length).toBe(4);
+    expect(files.length).toBe(5);
   });
 });
 
@@ -115,6 +116,14 @@ describe("promptsInitCommand — template file content", () => {
 
     const content = await Bun.file(join(tempDir, "nax", "templates", "single-session.md")).text();
     const expected = buildRoleTaskSection("single-session");
+    expect(content).toContain(expected);
+  });
+
+  test("tdd-simple.md contains buildRoleTaskSection('tdd-simple') output", async () => {
+    await promptsInitCommand({ workdir: tempDir });
+
+    const content = await Bun.file(join(tempDir, "nax", "templates", "tdd-simple.md")).text();
+    const expected = buildRoleTaskSection("tdd-simple");
     expect(content).toContain(expected);
   });
 
@@ -245,6 +254,7 @@ describe("promptsInitCommand — no-overwrite protection", () => {
     expect(existsSync(join(tempDir, "nax", "templates", "test-writer.md"))).toBe(false);
     expect(existsSync(join(tempDir, "nax", "templates", "verifier.md"))).toBe(false);
     expect(existsSync(join(tempDir, "nax", "templates", "single-session.md"))).toBe(false);
+    expect(existsSync(join(tempDir, "nax", "templates", "tdd-simple.md"))).toBe(false);
   });
 });
 
@@ -271,7 +281,7 @@ describe("promptsInitCommand — --force flag", () => {
     expect(content).toContain(buildRoleTaskSection("test-writer"));
   });
 
-  test("writes all 4 files when force=true even if all exist", async () => {
+  test("writes all 5 files when force=true even if all exist", async () => {
     for (const file of TEMPLATE_FILES) {
       writeFileSync(join(tempDir, "nax", "templates", file), "old content");
     }
@@ -314,6 +324,7 @@ describe("promptsInitCommand — summary output", () => {
     expect(allOutput).toContain("implementer.md");
     expect(allOutput).toContain("verifier.md");
     expect(allOutput).toContain("single-session.md");
+    expect(allOutput).toContain("tdd-simple.md");
   });
 
   test("prints activation instructions after success", async () => {
@@ -346,7 +357,7 @@ describe("promptsInitCommand — return value", () => {
     const result = await promptsInitCommand({ workdir: tempDir });
 
     expect(Array.isArray(result)).toBe(true);
-    expect(result.length).toBe(4);
+    expect(result.length).toBe(5);
   });
 
   test("returned paths are within nax/templates/", async () => {

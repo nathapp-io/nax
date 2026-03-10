@@ -253,6 +253,7 @@ const TEMPLATE_ROLES = [
   { file: "implementer.md", role: "implementer" as const, variant: "standard" as const },
   { file: "verifier.md", role: "verifier" as const },
   { file: "single-session.md", role: "single-session" as const },
+  { file: "tdd-simple.md", role: "tdd-simple" as const },
 ] as const;
 
 const TEMPLATE_HEADER = `<!--
@@ -273,13 +274,11 @@ const TEMPLATE_HEADER = `<!--
 /**
  * Execute the `nax prompts --init` command.
  *
- * Creates nax/templates/ and writes 4 default role-body template files
- * (test-writer, implementer, verifier, single-session).
+ * Creates nax/templates/ and writes 5 default role-body template files
+ * (test-writer, implementer, verifier, single-session, tdd-simple).
  * Auto-wires prompts.overrides in nax.config.json if the file exists and overrides are not already set.
  * Returns the list of file paths written. Returns empty array if files
  * already exist and force is not set.
- *
- * Note: tdd-simple role is supported in the prompt system but not auto-generated as a template.
  *
  * @param options - Command options
  * @returns Array of file paths written
@@ -346,6 +345,7 @@ async function autoWirePromptsConfig(workdir: string): Promise<void> {
             implementer: "nax/templates/implementer.md",
             verifier: "nax/templates/verifier.md",
             "single-session": "nax/templates/single-session.md",
+            "tdd-simple": "nax/templates/tdd-simple.md",
           },
         },
       },
@@ -376,6 +376,7 @@ async function autoWirePromptsConfig(workdir: string): Promise<void> {
     implementer: "nax/templates/implementer.md",
     verifier: "nax/templates/verifier.md",
     "single-session": "nax/templates/single-session.md",
+    "tdd-simple": "nax/templates/tdd-simple.md",
   };
 
   // Add or update prompts section

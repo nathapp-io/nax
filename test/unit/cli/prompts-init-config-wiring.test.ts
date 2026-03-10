@@ -16,6 +16,7 @@ const EXPECTED_OVERRIDES = {
   implementer: "nax/templates/implementer.md",
   verifier: "nax/templates/verifier.md",
   "single-session": "nax/templates/single-session.md",
+  "tdd-simple": "nax/templates/tdd-simple.md",
 };
 
 function readConfigJson(workdir: string): Record<string, unknown> {
@@ -65,7 +66,7 @@ describe("promptsInitCommand — auto-wires prompts.overrides", () => {
     expect(prompts.overrides).toEqual(EXPECTED_OVERRIDES);
   });
 
-  test("adds all 4 override keys: test-writer, implementer, verifier, single-session", async () => {
+  test("adds all 5 override keys: test-writer, implementer, verifier, single-session, tdd-simple", async () => {
     writeConfigJson(tempDir, { version: 1 });
 
     await promptsInitCommand({ workdir: tempDir });
@@ -74,7 +75,7 @@ describe("promptsInitCommand — auto-wires prompts.overrides", () => {
     const overrides = (config.prompts as { overrides?: Record<string, string> })?.overrides;
     expect(overrides).toBeDefined();
     expect(Object.keys(overrides!).sort()).toEqual(
-      ["implementer", "single-session", "test-writer", "verifier"].sort(),
+      ["implementer", "single-session", "tdd-simple", "test-writer", "verifier"].sort(),
     );
   });
 
@@ -89,6 +90,7 @@ describe("promptsInitCommand — auto-wires prompts.overrides", () => {
     expect(overrides["implementer"]).toBe("nax/templates/implementer.md");
     expect(overrides["verifier"]).toBe("nax/templates/verifier.md");
     expect(overrides["single-session"]).toBe("nax/templates/single-session.md");
+    expect(overrides["tdd-simple"]).toBe("nax/templates/tdd-simple.md");
   });
 
   test("preserves existing config fields when adding prompts.overrides", async () => {
