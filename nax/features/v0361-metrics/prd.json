@@ -8,7 +8,7 @@
       "title": "Fix parallel batch metrics aggregation (BUG-064, BUG-065, BUG-066)",
       "description": "The runner only tracks metrics from the sequential execution path. After a parallel batch completes, the runner does not add the batch cost, completed story count, or per-story metrics into its running totals. Fix three bugs in runner.ts and parallel-executor.ts:\n\n(1) BUG-064 - totalCost: After parallel-executor returns, add the returned batchCost to the runner cost accumulator before starting sequential execution. The run.complete event must include combined cost from both paths.\n\n(2) BUG-065 - storiesCompleted: After a parallel batch, increment the runner storiesCompleted counter by the number of stories that were successfully merged (not just pipeline-passed). Parallel stories must appear in the final storiesCompleted count in run.complete.\n\n(3) BUG-066 - storyMetrics: The parallel-executor already has per-story data (story id, cost, duration, attempts, firstPassSuccess) from each story pipeline run. Return this as a structured array from parallel-executor. In runner.ts, merge the parallel story metrics into the storyMetrics array alongside sequential story metrics. Each entry should have a source field ('parallel' | 'sequential') to distinguish origin.\n\nAll three bugs are in the data handoff between parallel-executor.ts and runner.ts. Add/update unit tests for the runner metric aggregation to cover the parallel + sequential combined scenario.",
       "complexity": "medium",
-      "status": "pending",
+      "status": "passed",
       "dependencies": [],
       "attempts": 0,
       "priorErrors": [],
@@ -23,7 +23,8 @@
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "Three interconnected metric aggregation bugs with clear data-flow fixes across two files; straightforward data plumbing logic with moderate test complexity for parallel+sequential combined scenario.",
         "contentHash": "d9b99f8cd5e75ae08c096c5a71b2807491a88351143bb9d0c4051e18c2d97243"
-      }
+      },
+      "passes": true
     },
     {
       "id": "MFX-002",
@@ -33,12 +34,28 @@
       "status": "pending",
       "dependencies": [],
       "attempts": 0,
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Stage requested escalation to higher tier"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "timestamp": "2026-03-10T03:31:33.843Z"
+        }
+      ],
       "escalations": [],
       "tags": [],
       "acceptanceCriteria": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "modelTier": "powerful",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Localized bug fix in escalation metrics handling with clear acceptance criteria, requires understanding existing metrics flow and escalation logic, moderate test setup for retry scenario."
+      }
     },
     {
       "id": "MFX-003",
@@ -48,12 +65,28 @@
       "status": "pending",
       "dependencies": [],
       "attempts": 0,
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast: Stage requested escalation to higher tier"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "fast",
+          "stage": "escalation",
+          "summary": "Failed with tier fast, escalating to next tier",
+          "timestamp": "2026-03-10T03:57:31.502Z"
+        }
+      ],
       "escalations": [],
       "tags": [],
       "acceptanceCriteria": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "modelTier": "balanced",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Mechanical refactoring only: field renames, log dedup, test assertion updates—no new behavior, no logic changes, well-scoped cleanup across 2-3 files."
+      }
     },
     {
       "id": "MFX-004",
@@ -86,5 +119,5 @@
       "storyPoints": 1
     }
   ],
-  "updatedAt": "2026-03-10T01:51:16.045Z"
+  "updatedAt": "2026-03-10T03:57:49.138Z"
 }
