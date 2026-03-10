@@ -56,7 +56,7 @@
       "title": "nax prompts --export <role> CLI command",
       "description": "Users have no way to see what the default prompt for a given role looks like before customizing it. They must run nax prompts --init to get template files, but those files only contain the overridable body section — not the full assembled prompt with all non-overridable sections.\n\nAdd a new --export <role> flag to the nax prompts command that dumps the full default prompt for that role to stdout (or --out file). This shows users exactly what the agent receives, helping them understand what they can and cannot change.\n\nImplementation:\n- In bin/nax.ts: add .option(\"--export <role>\", \"Export default prompt for a role to stdout or --out file\") to the prompts command\n- In src/cli/prompts.ts: add exportPromptCommand(options) function\n- Use PromptBuilder.for(role) with a stub story and empty context to build a representative prompt\n- The stub story should use placeholder values: id=\"EXAMPLE\", title=\"Example story\", description=\"...\", acceptanceCriteria=[\"AC-1: Example criterion\"], complexity=\"medium\"\n- Valid roles: test-writer, implementer, verifier, single-session, tdd-simple\n- If role is not one of the 5 valid values, print error and exit 1\n- If --out is set, write to file; otherwise print to stdout\n- No feature or config loading required (export uses built-in defaults only, no user overrides)\n\nAcceptance criteria:\n- nax prompts --export test-writer prints prompt text to stdout\n- nax prompts --export tdd-simple prints prompt text to stdout\n- nax prompts --export --out ./dump.md writes file and prints \"[OK] Exported...\"\n- nax prompts --export unknown-role exits 1 with error message listing valid roles\n- Add unit test: test/unit/cli/prompts-export.test.ts calling exportPromptCommand and asserting output is non-empty string containing expected sections",
       "complexity": "simple",
-      "status": "pending",
+      "status": "passed",
       "dependencies": [
         "PT-002"
       ],
@@ -73,7 +73,8 @@
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "Single self-contained CLI feature with straightforward PromptBuilder integration, role validation, and I/O logic; touches multiple files (bin/, src/cli/, test/) but no architectural complexity or novel patterns.",
         "contentHash": "12b8335828579019887b0ef27e5b865ec203d19da8aca15311285e223d4fc9b8"
-      }
+      },
+      "passes": true
     },
     {
       "id": "PT-004",
@@ -90,7 +91,14 @@
       "escalations": [],
       "tags": [],
       "acceptanceCriteria": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Integrating existing promptsInitCommand into init flow via single function call, updating output formatting, and adding straightforward file-existence test.",
+        "contentHash": "62fcc0d0240cee19d2dca1df3bdf87d28301f32c320a1953b1e7be64c86bb7de"
+      }
     },
     {
       "id": "PT-005",
@@ -110,5 +118,5 @@
       "storyPoints": 1
     }
   ],
-  "updatedAt": "2026-03-10T07:45:34.324Z"
+  "updatedAt": "2026-03-10T08:03:30.898Z"
 }

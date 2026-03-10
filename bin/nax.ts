@@ -192,13 +192,31 @@ Run \`nax generate\` to regenerate agent config files (CLAUDE.md, AGENTS.md, .cu
 `,
     );
 
+    // Initialize prompt templates (final step, don't auto-wire config)
+    try {
+      await promptsInitCommand({
+        workdir,
+        force: options.force,
+        autoWireConfig: false,
+      });
+    } catch (err) {
+      console.error(chalk.red(`Failed to initialize templates: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
     console.log(chalk.green("✅ Initialized nax"));
     console.log(chalk.dim(`   ${naxDir}/`));
     console.log(chalk.dim("   ├── config.json"));
     console.log(chalk.dim("   ├── context.md"));
     console.log(chalk.dim("   ├── hooks.json"));
     console.log(chalk.dim("   ├── features/"));
-    console.log(chalk.dim("   └── hooks/"));
+    console.log(chalk.dim("   ├── hooks/"));
+    console.log(chalk.dim("   └── templates/"));
+    console.log(chalk.dim("       ├── test-writer.md"));
+    console.log(chalk.dim("       ├── implementer.md"));
+    console.log(chalk.dim("       ├── verifier.md"));
+    console.log(chalk.dim("       ├── single-session.md"));
+    console.log(chalk.dim("       └── tdd-simple.md"));
     console.log(chalk.dim("\nNext: nax features create <name>"));
   });
 

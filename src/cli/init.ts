@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { globalConfigDir, projectConfigDir } from "../config/paths";
 import { DEFAULT_CONFIG } from "../config/schema";
 import { getLogger } from "../logger";
+import { promptsInitCommand } from "./prompts";
 
 /** Init command options */
 export interface InitOptions {
@@ -133,7 +134,7 @@ async function initGlobal(): Promise<void> {
 /**
  * Initialize project nax directory (nax/)
  */
-async function initProject(projectRoot: string): Promise<void> {
+export async function initProject(projectRoot: string): Promise<void> {
   const logger = getLogger();
   const projectDir = projectConfigDir(projectRoot);
 
@@ -172,6 +173,11 @@ async function initProject(projectRoot: string): Promise<void> {
 
   // Update .gitignore to include nax-specific entries
   await updateGitignore(projectRoot);
+
+  // Create prompt templates (final step)
+  // Pass autoWireConfig: false to prevent auto-wiring prompts.overrides
+  // Templates are created but not activated until user explicitly configures them
+  await promptsInitCommand({ workdir: projectRoot, force: false, autoWireConfig: false });
 
   logger.info("init", "Project config initialized successfully", { path: projectDir });
 }

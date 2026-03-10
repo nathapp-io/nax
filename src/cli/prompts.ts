@@ -245,6 +245,8 @@ export interface PromptsInitCommandOptions {
   workdir: string;
   /** Overwrite existing files if true */
   force?: boolean;
+  /** Auto-wire prompts.overrides in nax.config.json (default: true) */
+  autoWireConfig?: boolean;
 }
 
 const TEMPLATE_ROLES = [
@@ -283,7 +285,7 @@ const TEMPLATE_HEADER = `<!--
  * @returns Array of file paths written
  */
 export async function promptsInitCommand(options: PromptsInitCommandOptions): Promise<string[]> {
-  const { workdir, force = false } = options;
+  const { workdir, force = false, autoWireConfig = true } = options;
   const templatesDir = join(workdir, "nax", "templates");
 
   mkdirSync(templatesDir, { recursive: true });
@@ -316,8 +318,10 @@ export async function promptsInitCommand(options: PromptsInitCommandOptions): Pr
     console.log(`  - ${filePath.replace(`${workdir}/`, "")}`);
   }
 
-  // Auto-wire prompts.overrides in nax.config.json
-  await autoWirePromptsConfig(workdir);
+  // Auto-wire prompts.overrides in nax.config.json (if enabled)
+  if (autoWireConfig) {
+    await autoWirePromptsConfig(workdir);
+  }
 
   return written;
 }

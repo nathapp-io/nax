@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 5,
-    "passed": 2,
+    "passed": 3,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 2
   },
   "cost": {
-    "spent": 0.1391245,
+    "spent": 0.58515425,
     "limit": 8
   },
   "current": {
-    "storyId": "PT-003",
-    "title": "nax prompts --export <role> CLI command",
+    "storyId": "PT-004",
+    "title": "Wire promptsInitCommand into nax init scaffold",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-03-10T08:03:02.491Z",
-  "durationMs": 1681325,
-  "lastHeartbeat": "2026-03-10T08:03:02.491Z"
+  "iterations": 4,
+  "updatedAt": "2026-03-10T08:10:02.505Z",
+  "durationMs": 2101339,
+  "lastHeartbeat": "2026-03-10T08:10:02.505Z"
 }
