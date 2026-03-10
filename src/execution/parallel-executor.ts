@@ -28,6 +28,7 @@ import type { StatusWriter } from "./status-writer";
  */
 export const _parallelExecutorDeps = {
   fireHook,
+  executeParallel,
 };
 
 export interface ParallelExecutorOptions {
@@ -116,7 +117,7 @@ export async function runParallelExecution(
   });
 
   try {
-    const parallelResult = await executeParallel(
+    const parallelResult = await _parallelExecutorDeps.executeParallel(
       readyStories,
       prdPath,
       workdir,
