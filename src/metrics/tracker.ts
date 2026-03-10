@@ -82,6 +82,7 @@ export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string
     startedAt: storyStartTime,
     completedAt: new Date().toISOString(),
     fullSuiteGatePassed,
+    runtimeCrashes: ctx.storyRuntimeCrashes ?? 0,
   };
 }
 
@@ -139,6 +140,7 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
       startedAt: storyStartTime,
       completedAt: new Date().toISOString(),
       fullSuiteGatePassed: false, // batches are not TDD-gated
+      runtimeCrashes: 0, // batch stories don't have individual crash tracking
     };
   });
 }

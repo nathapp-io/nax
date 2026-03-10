@@ -12,7 +12,8 @@ export type FailureCategory =
   /** Verifier explicitly rejected the implementation */
   | "verifier-rejected"
   /** Greenfield project with no test files — TDD not applicable (BUG-010) */
-  | "greenfield-no-tests";
+  | "greenfield-no-tests"
+  | "runtime-crash";
 
 /** Isolation verification result */
 export interface IsolationCheck {

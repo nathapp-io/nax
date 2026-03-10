@@ -22,18 +22,20 @@ import type { TierConfig } from "../../config";
  * ```
  */
 export function escalateTier(currentTier: string, tierOrder: TierConfig[]): string | null {
-  const currentIndex = tierOrder.findIndex((t) => t.tier === currentTier);
+  const getName = (t: TierConfig) => t.tier ?? (t as unknown as { name?: string }).name ?? null;
+  const currentIndex = tierOrder.findIndex((t) => getName(t) === currentTier);
   if (currentIndex === -1 || currentIndex === tierOrder.length - 1) {
     return null;
   }
-  return tierOrder[currentIndex + 1].tier;
+  return getName(tierOrder[currentIndex + 1]);
 }
 
 /**
  * Get the tier config for a given tier name.
  */
 export function getTierConfig(tierName: string, tierOrder: TierConfig[]): TierConfig | undefined {
-  return tierOrder.find((t) => t.tier === tierName);
+  const getName = (t: TierConfig) => t.tier ?? (t as unknown as { name?: string }).name ?? null;
+  return tierOrder.find((t) => getName(t) === tierName);
 }
 
 /**

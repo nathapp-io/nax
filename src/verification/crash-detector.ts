@@ -27,7 +27,8 @@ export const CRASH_PATTERNS = [
  *
  * @param output - Raw stdout/stderr from the test runner
  */
-export function detectRuntimeCrash(_output: string | undefined | null): boolean {
+export function detectRuntimeCrash(output: string | undefined | null): boolean {
   // STUB: not implemented yet — always returns false
-  return false;
+  if (!output) return false;
+  return CRASH_PATTERNS.some((pattern) => output.includes(pattern));
 }

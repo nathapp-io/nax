@@ -11,6 +11,7 @@
 
 import type { SmartTestRunnerConfig } from "../../config/types";
 import { getLogger } from "../../logger";
+import { detectRuntimeCrash } from "../../verification/crash-detector";
 import type { VerifyStatus } from "../../verification/orchestrator-types";
 import { regression } from "../../verification/runners";
 import { _smartRunnerDeps } from "../../verification/smart-runner";
@@ -133,7 +134,13 @@ export const verifyStage: PipelineStage = {
     // Store result on context for rectify stage
     ctx.verifyResult = {
       success: result.success,
-      status: (result.status === "TIMEOUT" ? "TIMEOUT" : result.success ? "PASS" : "TEST_FAILURE") as VerifyStatus,
+      status: (result.status === "TIMEOUT"
+        ? "TIMEOUT"
+        : result.success
+          ? "PASS"
+          : detectRuntimeCrash(result.output)
+            ? "RUNTIME_CRASH"
+            : "TEST_FAILURE") as VerifyStatus,
       storyId: ctx.story.id,
       strategy: "scoped",
       passCount: result.passCount ?? 0,
