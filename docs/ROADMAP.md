@@ -7,10 +7,10 @@
 ---
 
 
-## v0.38.0 — Test Health Audit (Planned)
+## v0.38.0 — Test Health Audit ✅ Shipped (2026-03-10)
 
 **Theme:** Audit and slim down the test suite — remove redundant coverage, consolidate copy-paste tests, delete dead feature tests
-**Status:** 🔲 Planned
+**Status:** ✅ Shipped (2026-03-10)
 **Depends on:** None (can run anytime)
 
 ### Context
@@ -285,6 +285,8 @@ Stories classified as complex/expert with >6 acceptance criteria.
 
 | Version | Theme | Date |
 |:--------|:------|:-----|
+| v0.38.0 | Test Health Audit | 2026-03-10 |
+| v0.37.0 | Prompt Template Export | 2026-03-10 |
 | v0.36.2 | Parallel Metrics & Rectification | 2026-03-10 |
 | v0.36.1 | Prompt Optimization | 2026-03-10 |
 | v0.36.0 | Multi-Agent Adapters | 2026-03-10 |
@@ -345,4 +347,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-10 (v0.37.0 shipped — Prompt Template Export; v0.38.0 next)*
+*Last updated: 2026-03-10 (v0.38.0 shipped — Test Health Audit; v0.39.0 next)*
