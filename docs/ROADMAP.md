@@ -60,11 +60,27 @@ The override system exists (`config.prompts.overrides`, `loadOverride()`, `Promp
 
 ---
 
-## v0.36.2 — Prompt Optimization (In Progress)
+## v0.36.2 — Parallel Metrics & Rectification (Planned)
 
-**Theme:** Wire constitution into TDD sessions, deduplicate prompt sections, clean dead prompt code
-**Status:** 🏗️ In Progress
-**Depends on:** v0.36.1 (Parallel Metrics)
+**Theme:** Fix metrics aggregation for parallel runs (BUG-064–071) and implement sequential rectification for merge conflicts
+**Status:** 📋 Planned (nax self-dev run, post v0.36.1 release)
+**Depends on:** v0.36.1 (Prompt Optimization)
+
+### Stories
+
+- [ ] **MFX-001:** Parallel batch metrics aggregation (BUG-064/065/066)
+- [ ] **MFX-002:** Escalation metrics preservation (BUG-067)
+- [ ] **MFX-003:** Parallel executor cleanup (BUG-068/069/071)
+- [ ] **MFX-004:** Runtime crash vs test failure classification (BUG-070)
+- [ ] **MFX-005:** Merge conflict rectification — sequential re-run of conflicted stories on updated base
+
+---
+
+## v0.36.1 — Prompt Optimization ✅ Shipped (2026-03-10)
+
+**Theme:** Wire constitution into TDD sessions, deduplicate prompt sections, clean dead prompt code, fix verdict coercion
+**Status:** ✅ Shipped (2026-03-10)
+**Depends on:** v0.36.0 (Multi-Agent Adapters)
 
 ### Context
 
@@ -83,10 +99,12 @@ Analysis revealed TDD 3-session agents don't receive the project constitution (o
 
 ### Stories
 
-- [ ] **PO-001:** Wire constitution into TDD `session-runner.ts` for implementer + rectification sessions only (skip test-writer and verifier)
-- [ ] **PO-002:** Wire verdict section into PromptBuilder for verifier role — move from hardcoded `tdd/prompts.ts` to composable section
-- [ ] **PO-003:** Deduplicate test filter warning (keep only in isolation section) + convert string concatenation → template literals in all section builders
-- [ ] **PO-004:** Delete dead standalone prompt functions in `tdd/prompts.ts`, clean barrel exports
+- [x] **PO-001:** Wire constitution into TDD `session-runner.ts` for implementer + rectification sessions only (skip test-writer and verifier)
+- [x] **PO-002:** Wire verdict section into PromptBuilder for verifier role — move from hardcoded `tdd/prompts.ts` to composable section
+- [x] **PO-003:** Deduplicate test filter warning (keep only in isolation section) + convert string concatenation → template literals in all section builders
+- [x] **PO-004:** Delete dead standalone prompt functions in `tdd/prompts.ts`, clean barrel exports
+- [x] **BUG-072:** coerceVerdict recognizes VERIFIED keyword (free-form verdict handling)
+- [x] **BUG-073:** Headless human-review sends Telegram notification via interaction.send()
 
 ### Token Budget (per TDD story)
 
@@ -102,18 +120,7 @@ Analysis revealed TDD 3-session agents don't receive the project constitution (o
 
 ---
 
-## v0.36.1 — Parallel Metrics & Rectification (In Progress)
 
-**Theme:** Fix metrics aggregation for parallel runs (BUG-064–071) and implement sequential rectification for merge conflicts
-**Status:** 🏗️ In Progress
-**Depends on:** v0.36.0 (Multi-Agent Adapters)
-
-### Stories
-
-- [ ] **MA-013:** Fix total cost and story count aggregation — ensure parallel batch metrics (`batchCost`, `storiesCompleted`) are merged back into the main `Runner` accumulator.
-- [ ] **MA-014:** Fix per-story metrics in parallel mode — ensure `storyMetrics` collection includes parallel stories and that escalation doesn't reset cost/attempt counters.
-- [ ] **MA-015:** Sequential Rectification Loop — implement the retry logic in `parallel-executor.ts` that detects merge conflicts, discards the worktree, and re-runs the full pipeline sequentially on the updated base.
-- [x] **MA-016:** Extract `autoCommitIfDirty` to shared utility — consolidate duplicated git logic from `session-runner.ts`, `execution.ts`, and `rectification-gate.ts` into `src/utils/git.ts`.
 
 ---
 
@@ -278,6 +285,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 
 | Version | Theme | Date |
 |:--------|:------|:-----|
+| v0.36.1 | Prompt Optimization | 2026-03-10 |
 | v0.36.0 | Multi-Agent Adapters | 2026-03-10 |
 | v0.35.0 | Agent Abstraction Layer | 2026-03-09 |
 | v0.34.0 | Run Hooks + Smart Skip | 2026-03-09 |
@@ -336,4 +344,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-10 (v0.36.0 shipped — Multi-Agent Adapters)*
+*Last updated: 2026-03-10 (v0.36.1 shipped — Prompt Optimization + BUG-072/073)*
