@@ -145,7 +145,7 @@ describe("MFX-005: rectificationStats in ParallelExecutorResult", () => {
       storiesCompleted: 1,
       totalCost: 3.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
       ],
     }));
@@ -169,7 +169,7 @@ describe("MFX-005: rectificationStats in ParallelExecutorResult", () => {
       storiesCompleted: 1,
       totalCost: 3.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
       ],
     }));
@@ -204,7 +204,7 @@ describe("MFX-005: rectificationStats in ParallelExecutorResult", () => {
       storiesCompleted: 2,
       totalCost: 4.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [],
+      mergeConflicts: [],
     }));
 
     const statusWriter = makeStatusWriter();
@@ -236,7 +236,7 @@ describe("MFX-005: successful rectification", () => {
       storiesCompleted: 1,
       totalCost: 3.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
       ],
     }));
@@ -267,7 +267,7 @@ describe("MFX-005: successful rectification", () => {
       storiesCompleted: 1,
       totalCost: 3.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
       ],
     }));
@@ -298,7 +298,7 @@ describe("MFX-005: successful rectification", () => {
       storiesCompleted: 1,
       totalCost: 3.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
       ],
     }));
@@ -337,7 +337,7 @@ describe("MFX-005: storyMetrics for rectified stories", () => {
       storiesCompleted: 1,
       totalCost: 3.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
       ],
     }));
@@ -370,7 +370,7 @@ describe("MFX-005: storyMetrics for rectified stories", () => {
       storiesCompleted: 1,
       totalCost: 3.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
       ],
     }));
@@ -407,7 +407,7 @@ describe("MFX-005: storyMetrics for rectified stories", () => {
       storiesCompleted: 1,
       totalCost: 3.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: ORIGINAL_COST },
       ],
     }));
@@ -443,7 +443,7 @@ describe("MFX-005: storyMetrics for rectified stories", () => {
       storiesCompleted: 1,
       totalCost: 3.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
       ],
     }));
@@ -482,7 +482,7 @@ describe("MFX-005: finalConflict — story still conflicts after rectification",
       storiesCompleted: 1,
       totalCost: 3.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
       ],
     }));
@@ -515,7 +515,7 @@ describe("MFX-005: finalConflict — story still conflicts after rectification",
       storiesCompleted: 1,
       totalCost: 3.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
       ],
     }));
@@ -553,7 +553,7 @@ describe("MFX-005: finalConflict — story still conflicts after rectification",
       storiesCompleted: 1,
       totalCost: 3.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
       ],
     }));
@@ -591,7 +591,7 @@ describe("MFX-005: finalConflict — story still conflicts after rectification",
       storiesCompleted: 1,
       totalCost: 5.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/a.ts"], originalCost: 2.0 },
         { storyId: "US-003", conflictFiles: ["src/b.ts"], originalCost: 2.0 },
       ],
@@ -643,7 +643,7 @@ describe("MFX-005: rectification runs strictly sequentially", () => {
       storiesCompleted: 1,
       totalCost: 5.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/a.ts"], originalCost: 2.0 },
         { storyId: "US-003", conflictFiles: ["src/b.ts"], originalCost: 2.0 },
       ],
@@ -685,7 +685,7 @@ describe("MFX-005: rectification runs strictly sequentially", () => {
       storiesCompleted: 1,
       totalCost: 5.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/a.ts"], originalCost: 2.0 },
         { storyId: "US-003", conflictFiles: ["src/b.ts"], originalCost: 2.0 },
       ],
@@ -732,7 +732,7 @@ describe("MFX-005: edge case — verification failure during rectification", () 
       storiesCompleted: 1,
       totalCost: 3.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
       ],
     }));
@@ -774,7 +774,7 @@ describe("MFX-005: edge case — verification failure during rectification", () 
       storiesCompleted: 1,
       totalCost: 3.0,
       updatedPrd: postParallelPrd,
-      conflictedStories: [
+      mergeConflicts: [
         { storyId: "US-002", conflictFiles: ["src/foo.ts"], originalCost: 1.5 },
       ],
     }));
