@@ -15,14 +15,27 @@ import type { PluginRegistry } from "../plugins";
 import { runReview } from "./runner";
 import type { ReviewConfig, ReviewResult } from "./types";
 
+/**
+ * Injectable dependencies for getChangedFiles() — allows tests to intercept
+ * spawn calls without requiring the git binary.
+ *
+ * @internal
+ */
+export const _orchestratorDeps = { spawn };
+
 async function getChangedFiles(workdir: string, baseRef?: string): Promise<string[]> {
   try {
     const diffArgs = ["diff", "--name-only"];
     const [stagedProc, unstagedProc, baseProc] = [
-      spawn({ cmd: ["git", ...diffArgs, "--cached"], cwd: workdir, stdout: "pipe", stderr: "pipe" }),
-      spawn({ cmd: ["git", ...diffArgs], cwd: workdir, stdout: "pipe", stderr: "pipe" }),
+      _orchestratorDeps.spawn({ cmd: ["git", ...diffArgs, "--cached"], cwd: workdir, stdout: "pipe", stderr: "pipe" }),
+      _orchestratorDeps.spawn({ cmd: ["git", ...diffArgs], cwd: workdir, stdout: "pipe", stderr: "pipe" }),
       baseRef
-        ? spawn({ cmd: ["git", ...diffArgs, `${baseRef}...HEAD`], cwd: workdir, stdout: "pipe", stderr: "pipe" })
+        ? _orchestratorDeps.spawn({
+            cmd: ["git", ...diffArgs, `${baseRef}...HEAD`],
+            cwd: workdir,
+            stdout: "pipe",
+            stderr: "pipe",
+          })
         : null,
     ];
 
