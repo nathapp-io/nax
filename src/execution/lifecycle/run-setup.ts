@@ -171,7 +171,13 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
     const projectPluginsDir = path.join(workdir, "nax", "plugins");
     const configPlugins = config.plugins || [];
-    const pluginRegistry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, workdir);
+    const pluginRegistry = await loadPlugins(
+      globalPluginsDir,
+      projectPluginsDir,
+      configPlugins,
+      workdir,
+      config.disabledPlugins,
+    );
 
     // Log plugins loaded
     logger?.info("plugins", `Loaded ${pluginRegistry.plugins.length} plugins`, {

@@ -267,6 +267,7 @@ export interface OptimizerConfig {
 export interface PluginConfigEntry {
   module: string;
   config?: Record<string, unknown>;
+  enabled?: boolean;
 }
 
 export interface HooksConfig {
@@ -435,6 +436,8 @@ export interface NaxConfig {
   optimizer?: OptimizerConfig;
   /** Plugin configurations (v0.10) */
   plugins?: PluginConfigEntry[];
+  /** Disabled plugin names (v0.38.2) */
+  disabledPlugins?: string[];
   /** Hooks configuration (v0.10) */
   hooks?: HooksConfig;
   /** Interaction settings (v0.15.0) */

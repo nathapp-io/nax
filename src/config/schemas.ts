@@ -251,6 +251,7 @@ const OptimizerConfigSchema = z.object({
 const PluginConfigEntrySchema = z.object({
   module: z.string().min(1, "plugin.module must be non-empty"),
   config: z.record(z.string(), z.unknown()).optional(),
+  enabled: z.boolean().default(true),
 });
 
 const HooksConfigSchema = z.object({
@@ -330,6 +331,7 @@ export const NaxConfigSchema = z
     context: ContextConfigSchema,
     optimizer: OptimizerConfigSchema.optional(),
     plugins: z.array(PluginConfigEntrySchema).optional(),
+    disabledPlugins: z.array(z.string()).optional(),
     hooks: HooksConfigSchema.optional(),
     interaction: InteractionConfigSchema.optional(),
     precheck: PrecheckConfigSchema.optional(),
