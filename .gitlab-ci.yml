@@ -101,3 +101,32 @@ notify:
       when: never
     - if: '$CI_COMMIT_MESSAGE =~ /run-prerelease/ && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
     - if: '$CI_COMMIT_MESSAGE =~ /run-release/ && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# --- Notify: MR Success ---
+notify_mr_success:
+  stage: notify
+  image: 
+    name: registry-intl.cn-hongkong.aliyuncs.com/gkci/node:22.14.0-alpine-ci
+    pull_policy: always
+  script:
+    - 'curl -s -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$TELEGRAM_CHAT_ID\", \"text\": \"nax MR !${CI_MERGE_REQUEST_IID} merged to master\"}" https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage'
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      if: '$CI_MERGE_REQUEST_STATE == "merged"'
+    - if: '$TELEGRAM_BOT_TOKEN == null || $TELEGRAM_BOT_TOKEN == ""'
+      when: never
+
+# --- Notify: Pipeline Failed ---
+notify_pipeline_failed:
+  stage: notify
+  image: 
+    name: registry-intl.cn-hongkong.aliyuncs.com/gkci/node:22.14.0-alpine-ci
+    pull_policy: always
+  script:
+    - 'curl -s -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$TELEGRAM_CHAT_ID\", \"text\": \"nax CI pipeline FAILED on ${CI_COMMIT_BRANCH}: ${CI_JOB_URL}\"}" https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage'
+  rules:
+    - if: '$CI_COMMIT_MESSAGE =~ /release-by-bot/ || $CI_COMMIT_TAG'
+      when: never
+    - if: '$TELEGRAM_BOT_TOKEN == null || $TELEGRAM_BOT_TOKEN == ""'
+      when: never
+    - if: '$CI_JOB_STATUS == "failed"'
