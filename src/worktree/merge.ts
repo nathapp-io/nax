@@ -1,4 +1,5 @@
 import { getSafeLogger } from "../logger";
+import { errorMessage } from "../utils/errors";
 import type { WorktreeManager } from "./manager";
 
 export interface MergeResult {
@@ -44,7 +45,7 @@ export class MergeEngine {
           // Log warning but don't fail the merge
           const logger = getSafeLogger();
           logger?.warn("worktree", `Failed to cleanup worktree for ${storyId}`, {
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessage(error),
           });
         }
 
@@ -294,7 +295,7 @@ export class MergeEngine {
       // Log warning but don't throw - merge might already be aborted
       const logger = getSafeLogger();
       logger?.warn("worktree", "Failed to abort merge", {
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       });
     }
   }

@@ -7,6 +7,7 @@
 import { spawn } from "bun";
 import type { ExecutionConfig } from "../config/schema";
 import { getSafeLogger } from "../logger";
+import { errorMessage } from "../utils/errors";
 import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
 
 /**
@@ -165,7 +166,7 @@ async function runCheck(check: ReviewCheckName, command: string, workdir: string
       command,
       success: false,
       exitCode: -1,
-      output: error instanceof Error ? error.message : String(error),
+      output: errorMessage(error),
       durationMs: Date.now() - startTime,
     };
   }

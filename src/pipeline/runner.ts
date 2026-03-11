@@ -6,6 +6,7 @@
  */
 
 import { getLogger } from "../logger";
+import { errorMessage } from "../utils/errors";
 import type { PipelineEventEmitter } from "./events";
 import type { PipelineContext, PipelineStage, StageResult } from "./types";
 
@@ -65,7 +66,7 @@ export async function runPipeline(
     } catch (error) {
       const failResult: StageResult = {
         action: "fail",
-        reason: `Stage "${stage.name}" threw error: ${error instanceof Error ? error.message : String(error)}`,
+        reason: `Stage "${stage.name}" threw error: ${errorMessage(error)}`,
       };
       eventEmitter?.emit("stage:exit", stage.name, failResult);
       return { success: false, finalAction: "fail", reason: failResult.reason, stoppedAtStage: stage.name, context };

@@ -12,6 +12,7 @@ import { getSafeLogger } from "../logger";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD } from "../prd";
+import { errorMessage } from "../utils/errors";
 
 /** A story that conflicted during the initial parallel merge pass */
 export interface ConflictedStoryInfo {
@@ -127,7 +128,7 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
   } catch (error) {
     logger?.error("parallel", "Rectification failed - preserving worktree", {
       storyId,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     });
     return { success: false, storyId, cost: 0, finalConflict: false, pipelineFailure: true };
   }

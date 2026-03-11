@@ -10,6 +10,7 @@ import { getLogger } from "../logger";
 import { estimateTokens } from "../optimizer/types";
 import type { UserStory } from "../prd";
 import { countStories, getContextFiles } from "../prd";
+import { errorMessage } from "../utils/errors";
 import { autoDetectContextFiles } from "./auto-detect";
 import {
   createDependencyContext,
@@ -221,7 +222,7 @@ async function addFileElements(
       const logger = getLogger();
       logger.warn("context", "Context auto-detection failed", {
         storyId: story.id,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       });
     }
   }
@@ -266,7 +267,7 @@ async function addFileElements(
       const logger = getLogger();
       logger.warn("context", "Error loading file", {
         filePath: relativeFilePath,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       });
     }
   }

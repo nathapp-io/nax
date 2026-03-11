@@ -6,6 +6,7 @@
  */
 
 import { getLogger } from "../logger";
+import { errorMessage } from "../utils/errors";
 
 export interface AutoDetectOptions {
   /** Working directory for git grep */
@@ -220,7 +221,7 @@ export async function autoDetectContextFiles(options: AutoDetectOptions): Promis
     return selected;
   } catch (error) {
     logger.warn("auto-detect", "Auto-detection failed", {
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     });
     return [];
   }
