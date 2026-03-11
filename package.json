@@ -1,6 +1,6 @@
 {
   "name": "@nathapp/nax",
-  "version": "0.38.0",
+  "version": "0.38.1",
   "description": "AI Coding Agent Orchestrator \u2014 loops until done",
   "type": "module",
   "bin": {
