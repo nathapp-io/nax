@@ -40,7 +40,17 @@ src/
 
 ### Rules
 
-- **400-line hard limit** per file — split before exceeding
+- **File size limits (tiered):**
+
+  | File type | Soft limit | Hard limit | When to split |
+  |:----------|:-----------|:-----------|:--------------|
+  | Source files (`src/`) | 300 lines | **400 lines** | Logic/control flow too complex for one file |
+  | Test files (`test/`) | 500 lines | **800 lines** | >3 unrelated concerns in one file |
+  | Type-only files (interfaces, no logic) | 500 lines | **600 lines** | Only if mixing types with logic |
+  | Docs / generated reports | — | **No limit** | N/A |
+
+  The goal is **cognitive fit** — can you understand the file in one reading? Type declarations and test assertions are low-complexity per line; business logic is high-complexity.
+
 - **Barrel exports:** every directory with 2+ files gets an `index.ts`
 - **File naming:** `kebab-case.ts` for files, `PascalCase` for classes/interfaces
 - **One primary export per file** — avoid files with 5+ unrelated exports
@@ -666,10 +676,11 @@ export function getSafeLogger(): Logger | null {
 
 | Rule | Limit |
 |:-----|:------|
-| File size | ≤400 lines |
+| Source file size | ≤400 lines |
+| Test file size | ≤800 lines (split if >3 unrelated concerns) |
+| Type-only file size | ≤600 lines |
 | Function size | ≤30 lines (50 hard max) |
 | Positional params | ≤3 (use options object beyond) |
-| Test file size | ≤500 lines (800 hard max) |
 | `any` in public API | Forbidden |
 | Magic numbers | Forbidden (use named constants) |
 | `_deps` for externals | Required |
