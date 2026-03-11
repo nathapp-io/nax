@@ -102,3 +102,55 @@ describe("runOnce() timeout behavior", () => {
     }
   });
 });
+
+describe("run() pidRegistries cleanup", () => {
+  let tempDir: string;
+  const origBuildCmd = _runOnceDeps.buildCmd;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "nax-claude-cleanup-test-"));
+  });
+
+  afterEach(() => {
+    // Restore deps after each test
+    _runOnceDeps.buildCmd = origBuildCmd;
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true });
+    }
+  });
+
+  test("cleans up pidRegistries Map entry after successful run", async () => {
+    _runOnceDeps.buildCmd = () => ["true"]; // Quick exit
+
+    const adapter = new TestAdapter();
+    const workdir = tempDir;
+    const options = makeRunOptions(workdir, 30);
+
+    // Verify registry is created when first called
+    expect((adapter as unknown as { pidRegistries: Map<string, unknown> }).pidRegistries.has(workdir)).toBe(false);
+
+    // Run once to populate the Map
+    await adapter.run(options);
+
+    // After run() completes, the Map entry should be cleaned up
+    expect((adapter as unknown as { pidRegistries: Map<string, unknown> }).pidRegistries.has(workdir)).toBe(false);
+  });
+
+  test("cleans up pidRegistries Map entry even on error", async () => {
+    _runOnceDeps.buildCmd = () => ["false"]; // Exits with code 1
+
+    const adapter = new TestAdapter();
+    const workdir = tempDir;
+    const options = makeRunOptions(workdir, 30);
+
+    // Run should fail but still clean up
+    try {
+      await adapter.run(options);
+    } catch {
+      // Expected to fail, but Map should still be cleaned up
+    }
+
+    // Run failed but Map was still cleaned up
+    expect((adapter as unknown as { pidRegistries: Map<string, unknown> }).pidRegistries.has(workdir)).toBe(false);
+  });
+});
