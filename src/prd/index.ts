@@ -4,6 +4,7 @@
 
 import { existsSync, statSync } from "node:fs";
 import type { FailureCategory } from "../tdd/types";
+import { saveJsonFile } from "../utils/json-file";
 import type { PRD, UserStory } from "./types";
 
 export type {
@@ -64,7 +65,7 @@ export async function loadPRD(path: string): Promise<PRD> {
 /** Save PRD to file */
 export async function savePRD(prd: PRD, path: string): Promise<void> {
   prd.updatedAt = new Date().toISOString();
-  await Bun.write(path, JSON.stringify(prd, null, 2));
+  await saveJsonFile(path, prd, "prd");
 }
 
 /**

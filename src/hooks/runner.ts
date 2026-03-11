@@ -4,9 +4,9 @@
  * Loads hooks.json and executes hooks at lifecycle events.
  */
 
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getLogger } from "../logger";
+import { loadJsonFile } from "../utils/json-file";
 import type { HookContext, HookDef, HookEvent, HooksConfig } from "./types";
 
 const DEFAULT_TIMEOUT = 5000;
@@ -36,29 +36,19 @@ export async function loadHooksConfig(projectDir: string, globalDir?: string): P
 
   // Load project hooks first to check skipGlobal flag
   const projectPath = join(projectDir, "hooks.json");
-  if (existsSync(projectPath)) {
-    try {
-      const projectData = await Bun.file(projectPath).json();
-      projectHooks = projectData as HooksConfig;
-      // Check if project config has skipGlobal flag
-      skipGlobal = (projectData as { skipGlobal?: boolean }).skipGlobal ?? false;
-    } catch (err) {
-      const logger = getLogger();
-      logger.warn("hooks", "Failed to parse project hooks.json", { path: projectPath, error: String(err) });
-    }
+  const projectData = await loadJsonFile<HooksConfig & { skipGlobal?: boolean }>(projectPath, "hooks");
+  if (projectData) {
+    projectHooks = projectData;
+    // Check if project config has skipGlobal flag
+    skipGlobal = projectData.skipGlobal ?? false;
   }
 
   // Load global hooks only if not skipped
   if (!skipGlobal && globalDir) {
     const globalPath = join(globalDir, "hooks.json");
-    if (existsSync(globalPath)) {
-      try {
-        const globalData = await Bun.file(globalPath).json();
-        globalHooks = globalData as HooksConfig;
-      } catch (err) {
-        const logger = getLogger();
-        logger.warn("hooks", "Failed to parse global hooks.json", { path: globalPath, error: String(err) });
-      }
+    const globalData = await loadJsonFile<HooksConfig>(globalPath, "hooks");
+    if (globalData) {
+      globalHooks = globalData;
     }
   }
 

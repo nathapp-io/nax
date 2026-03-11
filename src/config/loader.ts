@@ -7,9 +7,10 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { getLogger } from "../logger";
+import { loadJsonFile } from "../utils/json-file";
 import { deepMergeConfig } from "./merger";
 import { MAX_DIRECTORY_DEPTH } from "./path-security";
-import { globalConfigDir, projectConfigDir } from "./paths";
+import { globalConfigDir } from "./paths";
 import { DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema } from "./schema";
 
 /** Global config path */
@@ -34,18 +35,6 @@ export function findProjectDir(startDir: string = process.cwd()): string | null 
   }
 
   return null;
-}
-
-/** Load and parse a JSON config file */
-async function loadJsonFile<T>(path: string): Promise<T | null> {
-  if (!existsSync(path)) return null;
-  try {
-    return await Bun.file(path).json();
-  } catch (err) {
-    const logger = getLogger();
-    logger.warn("config", "Failed to parse config file", { path, error: String(err) });
-    return null;
-  }
 }
 
 /** @internal Backward compat: map deprecated routing.llm.batchMode to routing.llm.mode.
@@ -83,7 +72,7 @@ export async function loadConfig(projectDir?: string, cliOverrides?: Record<stri
   let rawConfig: Record<string, unknown> = structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>);
 
   // Layer 1: Global config (~/.nax/config.json)
-  const globalConfRaw = await loadJsonFile<Record<string, unknown>>(globalConfigPath());
+  const globalConfRaw = await loadJsonFile<Record<string, unknown>>(globalConfigPath(), "config");
   if (globalConfRaw) {
     // Backward compatibility: apply batchMode->mode shim before merge so defaults don't shadow it
     const globalConf = applyBatchModeCompat(globalConfRaw);
@@ -93,7 +82,7 @@ export async function loadConfig(projectDir?: string, cliOverrides?: Record<stri
   // Layer 2: Project config (nax/config.json)
   const projDir = projectDir ?? findProjectDir();
   if (projDir) {
-    const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"));
+    const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"), "config");
     if (projConf) {
       // Backward compatibility: map deprecated batchMode -> mode on raw user config
       // MUST run before deepMergeConfig so defaults don't shadow the check.
