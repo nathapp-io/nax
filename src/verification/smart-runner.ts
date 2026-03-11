@@ -7,6 +7,18 @@
 import { gitWithTimeout } from "../utils/git";
 
 /**
+ * Bun API wrappers — defined before functions to avoid circular type inference.
+ * Use closures so tests mocking Bun.Glob / Bun.file on the global namespace
+ * continue to work (closures evaluate Bun.* at call time).
+ *
+ * @internal
+ */
+const _bunDeps = {
+  glob: (p: string) => new Bun.Glob(p),
+  file: (path: string) => Bun.file(path),
+};
+
+/**
  * Get TypeScript source files changed since the previous commit.
  *
  * Runs `git diff --name-only HEAD~1` in the given workdir and filters
@@ -85,7 +97,7 @@ export async function importGrepFallback(
   // Scan all test files matching the configured patterns
   const testFilePaths: string[] = [];
   for (const pattern of testFilePatterns) {
-    const glob = new Bun.Glob(pattern);
+    const glob = _bunDeps.glob(pattern);
     for await (const file of glob.scan(workdir)) {
       testFilePaths.push(`${workdir}/${file}`);
     }
@@ -96,7 +108,7 @@ export async function importGrepFallback(
   for (const testFile of testFilePaths) {
     let content: string;
     try {
-      content = await Bun.file(testFile).text();
+      content = await _bunDeps.file(testFile).text();
     } catch {
       continue;
     }
@@ -121,7 +133,7 @@ export async function mapSourceToTests(sourceFiles: string[], workdir: string): 
     const candidates = [`${workdir}/test/unit/${relative}`, `${workdir}/test/integration/${relative}`];
 
     for (const candidate of candidates) {
-      if (await Bun.file(candidate).exists()) {
+      if (await _bunDeps.file(candidate).exists()) {
         result.push(candidate);
       }
     }
@@ -254,9 +266,17 @@ export function reverseMapTestToSource(testFiles: string[], workdir: string): st
  * Allows tests to swap implementations without using mock.module(),
  * which leaks across files in Bun 1.x due to shared module registry.
  *
+ * Bun API wrappers use closures so that tests mocking Bun.Glob / Bun.file
+ * on the global namespace continue to work (closures evaluate Bun.* at
+ * call time, not at module initialisation time).
+ *
  * @internal - test use only. Do not use in production code.
  */
 export const _smartRunnerDeps = {
+  /** Wraps Bun.Glob construction — injectable for testing. */
+  glob: _bunDeps.glob,
+  /** Wraps Bun.file — injectable for testing. */
+  file: _bunDeps.file,
   getChangedSourceFiles,
   mapSourceToTests,
   importGrepFallback,
