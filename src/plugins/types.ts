@@ -201,4 +201,6 @@ export interface PluginConfigEntry {
   module: string;
   /** Plugin-specific configuration */
   config?: Record<string, unknown>;
+  /** Whether this plugin is enabled (default: true) */
+  enabled?: boolean;
 }

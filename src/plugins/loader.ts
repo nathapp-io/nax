@@ -51,6 +51,24 @@ export interface PluginSource {
 }
 
 /**
+ * Extract plugin name from file path.
+ * For index files (e.g., /path/to/plugin/index.ts), returns the parent directory name.
+ * For single files (e.g., /path/to/plugin.ts), returns the filename without extension.
+ *
+ * @param pluginPath - Path to plugin file
+ * @returns Plugin name
+ */
+function extractPluginName(pluginPath: string): string {
+  const basename = path.basename(pluginPath);
+  if (basename === "index.ts" || basename === "index.js" || basename === "index.mjs") {
+    // For index files, use the parent directory name
+    return path.basename(path.dirname(pluginPath));
+  }
+  // For single files, use filename without extension
+  return basename.replace(/\.(ts|js|mjs)$/, "");
+}
+
+/**
  * Plugin with source information.
  */
 export interface LoadedPlugin {
@@ -67,11 +85,13 @@ export interface LoadedPlugin {
  * 3. Load explicit modules from config.plugins[]
  *
  * Each plugin is validated, then setup() is called with its config.
+ * Plugins can be disabled via config.plugins[].enabled or config.disabledPlugins[].
  *
  * @param globalDir - Global plugins directory (e.g., ~/.nax/plugins)
  * @param projectDir - Project plugins directory (e.g., <project>/nax/plugins)
  * @param configPlugins - Explicit plugin entries from config
  * @param projectRoot - Project root directory for resolving relative paths in config
+ * @param disabledPlugins - List of plugin names to disable (auto-discovered plugins only)
  * @returns PluginRegistry with all loaded plugins and their sources
  */
 export async function loadPlugins(
@@ -79,18 +99,25 @@ export async function loadPlugins(
   projectDir: string,
   configPlugins: PluginConfigEntry[],
   projectRoot?: string,
+  disabledPlugins?: string[],
 ): Promise<PluginRegistry> {
   const loadedPlugins: LoadedPlugin[] = [];
   const effectiveProjectRoot = projectRoot || projectDir;
   const pluginNames = new Set<string>();
+  const disabledSet = new Set(disabledPlugins ?? []);
+  const logger = getSafeLogger();
 
   // 1. Load plugins from global directory
   const globalPlugins = await discoverPlugins(globalDir);
   for (const plugin of globalPlugins) {
+    const pluginName = extractPluginName(plugin.path);
+    if (disabledSet.has(pluginName)) {
+      logger?.info("plugins", `Skipping disabled plugin: '${pluginName}' (global directory)`);
+      continue;
+    }
     const validated = await loadAndValidatePlugin(plugin.path, {}, [globalDir]);
     if (validated) {
       if (pluginNames.has(validated.name)) {
-        const logger = getSafeLogger();
         logger?.warn("plugins", `Plugin name collision: '${validated.name}' (global directory)`);
       }
       loadedPlugins.push({
@@ -104,10 +131,14 @@ export async function loadPlugins(
   // 2. Load plugins from project directory
   const projectPlugins = await discoverPlugins(projectDir);
   for (const plugin of projectPlugins) {
+    const pluginName = extractPluginName(plugin.path);
+    if (disabledSet.has(pluginName)) {
+      logger?.info("plugins", `Skipping disabled plugin: '${pluginName}' (project directory)`);
+      continue;
+    }
     const validated = await loadAndValidatePlugin(plugin.path, {}, [projectDir]);
     if (validated) {
       if (pluginNames.has(validated.name)) {
-        const logger = getSafeLogger();
         logger?.warn("plugins", `Plugin name collision: '${validated.name}' (project directory overrides global)`);
       }
       loadedPlugins.push({
@@ -120,6 +151,11 @@ export async function loadPlugins(
 
   // 3. Load plugins from config entries
   for (const entry of configPlugins) {
+    // Check if plugin is explicitly disabled in config
+    if (entry.enabled === false) {
+      logger?.info("plugins", `Skipping disabled plugin: '${entry.module}'`);
+      continue;
+    }
     // Resolve module path relative to effective project root for relative paths
     const resolvedModule = resolveModulePath(entry.module, effectiveProjectRoot);
     const validated = await loadAndValidatePlugin(
@@ -130,7 +166,6 @@ export async function loadPlugins(
     );
     if (validated) {
       if (pluginNames.has(validated.name)) {
-        const logger = getSafeLogger();
         logger?.warn("plugins", `Plugin name collision: '${validated.name}' (config entry overrides previous)`);
       }
       loadedPlugins.push({

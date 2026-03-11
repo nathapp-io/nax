@@ -25,7 +25,13 @@ export async function pluginsListCommand(
   const globalPluginsDir = overrideGlobalPluginsDir ?? path.join(os.homedir(), ".nax", "plugins");
   const projectPluginsDir = path.join(workdir, "nax", "plugins");
   const configPlugins = config.plugins || [];
-  const registry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, workdir);
+  const registry = await loadPlugins(
+    globalPluginsDir,
+    projectPluginsDir,
+    configPlugins,
+    workdir,
+    config.disabledPlugins,
+  );
   const plugins = registry.plugins;
 
   if (plugins.length === 0) {
@@ -39,20 +45,24 @@ export async function pluginsListCommand(
   }
 
   // Build table data
+  const disabledSet = new Set(config.disabledPlugins ?? []);
   const rows: Array<{
     name: string;
     version: string;
     provides: string;
     source: string;
+    enabled: string;
   }> = plugins.map((plugin) => {
     const source = registry.getSource(plugin.name);
     const sourceStr = source ? formatSource(source.type, source.path) : "unknown";
+    const isDisabled = disabledSet.has(plugin.name);
 
     return {
       name: plugin.name,
       version: plugin.version,
       provides: plugin.provides.join(", "),
       source: sourceStr,
+      enabled: isDisabled ? "disabled" : "enabled",
     };
   });
 
@@ -62,20 +72,21 @@ export async function pluginsListCommand(
     version: Math.max(7, ...rows.map((r) => r.version.length)),
     provides: Math.max(8, ...rows.map((r) => r.provides.length)),
     source: Math.max(6, ...rows.map((r) => r.source.length)),
+    enabled: Math.max(7, ...rows.map((r) => r.enabled.length)),
   };
 
   // Display table
   console.log("\nInstalled Plugins:\n");
   console.log(
-    `${pad("Name", widths.name)}  ${pad("Version", widths.version)}  ${pad("Provides", widths.provides)}  ${pad("Source", widths.source)}`,
+    `${pad("Name", widths.name)}  ${pad("Version", widths.version)}  ${pad("Provides", widths.provides)}  ${pad("Source", widths.source)}  ${pad("Status", widths.enabled)}`,
   );
   console.log(
-    `${"-".repeat(widths.name)}  ${"-".repeat(widths.version)}  ${"-".repeat(widths.provides)}  ${"-".repeat(widths.source)}`,
+    `${"-".repeat(widths.name)}  ${"-".repeat(widths.version)}  ${"-".repeat(widths.provides)}  ${"-".repeat(widths.source)}  ${"-".repeat(widths.enabled)}`,
   );
 
   for (const row of rows) {
     console.log(
-      `${pad(row.name, widths.name)}  ${pad(row.version, widths.version)}  ${pad(row.provides, widths.provides)}  ${pad(row.source, widths.source)}`,
+      `${pad(row.name, widths.name)}  ${pad(row.version, widths.version)}  ${pad(row.provides, widths.provides)}  ${pad(row.source, widths.source)}  ${pad(row.enabled, widths.enabled)}`,
     );
   }
 
