@@ -132,6 +132,7 @@ export async function executeOnce(
       onTimeout: () => {
         timedOut = true;
       },
+      killFn: (p, signal) => _runOnceDeps.killProc(p, signal),
     });
     exitCode = timeoutResult.exitCode;
     timedOut = timeoutResult.timedOut;

@@ -12,6 +12,11 @@ export interface ProcessTimeoutOptions {
   onTimeout?: () => void;
   /** Hard deadline buffer in ms after SIGKILL (default: 3000) */
   hardDeadlineBufferMs?: number;
+  /**
+   * Optional injectable kill function for testability.
+   * Defaults to proc.kill(signal).
+   */
+  killFn?: (proc: { kill(signal?: NodeJS.Signals | number): void }, signal: NodeJS.Signals) => void;
 }
 
 export interface ProcessTimeoutResult {
@@ -41,6 +46,7 @@ export async function withProcessTimeout(
 ): Promise<ProcessTimeoutResult> {
   const graceMs = opts?.graceMs ?? 5000;
   const hardDeadlineBufferMs = opts?.hardDeadlineBufferMs ?? 3000;
+  const killFn = opts?.killFn ?? ((p, signal) => p.kill(signal));
 
   let timedOut = false;
   let sigkillId: ReturnType<typeof setTimeout> | undefined;
@@ -49,13 +55,13 @@ export async function withProcessTimeout(
     timedOut = true;
     opts?.onTimeout?.();
     try {
-      proc.kill("SIGTERM" as NodeJS.Signals);
+      killFn(proc, "SIGTERM");
     } catch {
       /* already exited */
     }
     sigkillId = setTimeout(() => {
       try {
-        proc.kill("SIGKILL" as NodeJS.Signals);
+        killFn(proc, "SIGKILL");
       } catch {
         /* already exited */
       }
