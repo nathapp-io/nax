@@ -127,6 +127,8 @@ export interface ExecutionConfig {
   smartTestRunner?: boolean | SmartTestRunnerConfig;
   /** Configured agent binary: claude, codex, opencode, gemini, aider (default: claude) */
   agent?: string;
+  /** Git HEAD ref captured before agent ran — passed through pipeline for plugin reviewers (FEAT-010) */
+  storyGitRef?: string;
 }
 
 /** Quality gate config */
