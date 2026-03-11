@@ -5,6 +5,7 @@
  */
 
 import type { PidRegistry } from "../execution/pid-registry";
+import { withProcessTimeout } from "../execution/timeout-handler";
 import { getLogger } from "../logger";
 import { estimateCostByDuration, estimateCostFromOutput } from "./cost";
 import type { AgentResult, AgentRunOptions } from "./types";
@@ -124,48 +125,17 @@ export async function executeOnce(
   await pidRegistry.register(processPid);
 
   let timedOut = false;
-  let sigkillId: ReturnType<typeof setTimeout> | undefined;
-  const timeoutId = setTimeout(() => {
-    timedOut = true;
-    try {
-      _runOnceDeps.killProc(proc, "SIGTERM" as NodeJS.Signals);
-    } catch {
-      /* already exited */
-    }
-    sigkillId = setTimeout(() => {
-      try {
-        _runOnceDeps.killProc(proc, "SIGKILL" as NodeJS.Signals);
-      } catch {
-        /* already exited */
-      }
-    }, SIGKILL_GRACE_PERIOD_MS);
-  }, options.timeoutSeconds * 1000);
-
   let exitCode: number;
   try {
-    const hardDeadlineMs = options.timeoutSeconds * 1000 + SIGKILL_GRACE_PERIOD_MS + 3000;
-    let hardDeadlineId: ReturnType<typeof setTimeout> | undefined;
-    const hardDeadlinePromise = new Promise<number>((resolve) => {
-      hardDeadlineId = setTimeout(() => resolve(-1), hardDeadlineMs);
+    const timeoutResult = await withProcessTimeout(proc, options.timeoutSeconds * 1000, {
+      graceMs: SIGKILL_GRACE_PERIOD_MS,
+      onTimeout: () => {
+        timedOut = true;
+      },
     });
-    exitCode = await Promise.race([proc.exited, hardDeadlinePromise]);
-    clearTimeout(hardDeadlineId); // prevent leaked timer when proc.exited wins the race
-
-    if (exitCode === -1) {
-      try {
-        process.kill(processPid, "SIGKILL");
-      } catch {
-        /* already gone */
-      }
-      try {
-        process.kill(-processPid, "SIGKILL");
-      } catch {
-        /* no process group */
-      }
-    }
+    exitCode = timeoutResult.exitCode;
+    timedOut = timeoutResult.timedOut;
   } finally {
-    clearTimeout(timeoutId);
-    clearTimeout(sigkillId); // prevent leaked SIGKILL timer from outliving proc.exited
     await pidRegistry.unregister(processPid);
   }
 

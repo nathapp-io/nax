@@ -5,6 +5,7 @@
  */
 
 import { PidRegistry } from "../execution/pid-registry";
+import { withProcessTimeout } from "../execution/timeout-handler";
 import { getLogger } from "../logger";
 import { _completeDeps, executeComplete } from "./claude-complete";
 import { buildDecomposePrompt, parseDecomposeOutput } from "./claude-decompose";
@@ -190,29 +191,17 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     const DECOMPOSE_TIMEOUT_MS = 300_000;
     let timedOut = false;
-    let sigkillId: ReturnType<typeof setTimeout> | undefined;
-    const decomposeTimerId = setTimeout(() => {
-      timedOut = true;
-      try {
-        proc.kill("SIGTERM");
-      } catch {
-        /* already exited */
-      }
-      sigkillId = setTimeout(() => {
-        try {
-          proc.kill("SIGKILL");
-        } catch {
-          /* already exited */
-        }
-      }, 5000);
-    }, DECOMPOSE_TIMEOUT_MS);
 
     let exitCode: number;
     try {
-      exitCode = await proc.exited;
+      const timeoutResult = await withProcessTimeout(proc, DECOMPOSE_TIMEOUT_MS, {
+        graceMs: 5000,
+        onTimeout: () => {
+          timedOut = true;
+        },
+      });
+      exitCode = timeoutResult.exitCode;
     } finally {
-      clearTimeout(decomposeTimerId);
-      clearTimeout(sigkillId);
       await pidRegistry.unregister(proc.pid);
     }
 
