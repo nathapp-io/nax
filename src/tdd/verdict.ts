@@ -11,8 +11,7 @@
 import type { FailureCategory } from "./types";
 
 // Re-export for backward compatibility
-export { VERDICT_FILE, isValidVerdict, readVerdict, cleanupVerdict } from "./verdict-reader";
-export { coerceVerdict } from "./verdict-coerce";
+export { VERDICT_FILE, isValidVerdict, readVerdict, cleanupVerdict, coerceVerdict } from "./verdict-reader";
 
 /** Structured verdict written by the verifier (session 3) */
 export interface VerifierVerdict {
