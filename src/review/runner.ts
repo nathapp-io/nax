@@ -88,6 +88,9 @@ async function resolveCommand(
 /** Default timeout for review checks (lint, typecheck). BUG-039. */
 const REVIEW_CHECK_TIMEOUT_MS = 120_000;
 
+/** Grace period between SIGTERM and SIGKILL for review check cleanup. */
+const SIGKILL_GRACE_PERIOD_MS = 5_000;
+
 /**
  * Run a single review check with a hard timeout.
  *
@@ -125,7 +128,7 @@ async function runCheck(check: ReviewCheckName, command: string, workdir: string
         } catch {
           /* already exited */
         }
-      }, 5000);
+      }, SIGKILL_GRACE_PERIOD_MS);
     }, REVIEW_CHECK_TIMEOUT_MS);
 
     // Wait for completion
