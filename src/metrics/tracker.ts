@@ -4,11 +4,10 @@
  * Collects and persists per-story and per-run metrics.
  */
 
-import { existsSync } from "node:fs";
 import path from "node:path";
 import { resolveModel } from "../config/schema";
-import { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline/types";
+import { loadJsonFile, saveJsonFile } from "../utils/json-file";
 import type { RunMetrics, StoryMetrics } from "./types";
 
 /**
@@ -170,26 +169,15 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
 export async function saveRunMetrics(workdir: string, runMetrics: RunMetrics): Promise<void> {
   const metricsPath = path.join(workdir, "nax", "metrics.json");
 
-  let allMetrics: RunMetrics[] = [];
-
-  // Load existing metrics if file exists
-  const logger = getLogger();
-  if (existsSync(metricsPath)) {
-    try {
-      const file = Bun.file(metricsPath);
-      const content = await file.json();
-      allMetrics = Array.isArray(content) ? content : [];
-    } catch (err) {
-      logger.warn("metrics", "Could not parse metrics file, starting fresh", { metricsPath });
-      allMetrics = [];
-    }
-  }
+  // Load existing metrics (returns empty array if file doesn't exist or is invalid)
+  const existing = await loadJsonFile<RunMetrics[]>(metricsPath, "metrics");
+  const allMetrics = Array.isArray(existing) ? existing : [];
 
   // Append new run
   allMetrics.push(runMetrics);
 
   // Write back
-  await Bun.write(metricsPath, JSON.stringify(allMetrics, null, 2));
+  await saveJsonFile(metricsPath, allMetrics, "metrics");
 }
 
 /**
@@ -207,17 +195,6 @@ export async function saveRunMetrics(workdir: string, runMetrics: RunMetrics): P
 export async function loadRunMetrics(workdir: string): Promise<RunMetrics[]> {
   const metricsPath = path.join(workdir, "nax", "metrics.json");
 
-  if (!existsSync(metricsPath)) {
-    return [];
-  }
-
-  try {
-    const file = Bun.file(metricsPath);
-    const content = await file.json();
-    return Array.isArray(content) ? content : [];
-  } catch (err) {
-    const logger = getLogger();
-    logger.warn("metrics", "Could not parse metrics file", { metricsPath });
-    return [];
-  }
+  const content = await loadJsonFile<RunMetrics[]>(metricsPath, "metrics");
+  return Array.isArray(content) ? content : [];
 }

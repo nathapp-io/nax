@@ -9,14 +9,13 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync } from "fs";
-import { tmpdir } from "os";
 import type { NaxConfig } from "../../../../src/config";
 import { InteractionChain } from "../../../../src/interaction/chain";
 import type { InteractionPlugin, InteractionResponse } from "../../../../src/interaction/types";
 import { _completionDeps } from "../../../../src/pipeline/stages/completion";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
+import { withTempDir } from "../../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration
@@ -89,8 +88,7 @@ function makePRD(): PRD {
   };
 }
 
-function makeCtx(config: NaxConfig, interaction?: InteractionChain): PipelineContext {
-  const tempDir = mkdtempSync(`${tmpdir()}/nax-test-`);
+function makeCtx(config: NaxConfig, tempDir: string, interaction?: InteractionChain): PipelineContext {
   return {
     config,
     prd: makePRD(),
@@ -117,102 +115,116 @@ afterEach(() => {
 
 describe("completionStage — review-gate trigger", () => {
   test("calls review-gate trigger after story passes when enabled", async () => {
-    const { completionStage } = await import("../../../../src/pipeline/stages/completion");
-    _completionDeps.checkReviewGate = mock(async () => true);
+    await withTempDir(async (tempDir) => {
+      const { completionStage } = await import("../../../../src/pipeline/stages/completion");
+      _completionDeps.checkReviewGate = mock(async () => true);
 
-    const config = makeConfig({ "review-gate": { enabled: true } });
-    const chain = makeChain("approve");
-    const ctx = makeCtx(config, chain);
+      const config = makeConfig({ "review-gate": { enabled: true } });
+      const chain = makeChain("approve");
+      const ctx = makeCtx(config, tempDir, chain);
 
-    const result = await completionStage.execute(ctx);
+      const result = await completionStage.execute(ctx);
 
-    expect(result.action).toBe("continue");
-    expect(_completionDeps.checkReviewGate).toHaveBeenCalledTimes(1);
+      expect(result.action).toBe("continue");
+      expect(_completionDeps.checkReviewGate).toHaveBeenCalledTimes(1);
+    });
   });
 
   test("does not call trigger when review-gate is disabled (default)", async () => {
-    const { completionStage } = await import("../../../../src/pipeline/stages/completion");
-    _completionDeps.checkReviewGate = mock(async () => true);
+    await withTempDir(async (tempDir) => {
+      const { completionStage } = await import("../../../../src/pipeline/stages/completion");
+      _completionDeps.checkReviewGate = mock(async () => true);
 
-    const config = makeConfig({});
-    const chain = makeChain("approve");
-    const ctx = makeCtx(config, chain);
+      const config = makeConfig({});
+      const chain = makeChain("approve");
+      const ctx = makeCtx(config, tempDir, chain);
 
-    const result = await completionStage.execute(ctx);
+      const result = await completionStage.execute(ctx);
 
-    expect(result.action).toBe("continue");
-    expect(_completionDeps.checkReviewGate).not.toHaveBeenCalled();
+      expect(result.action).toBe("continue");
+      expect(_completionDeps.checkReviewGate).not.toHaveBeenCalled();
+    });
   });
 
   test("does not fail pipeline when trigger responds abort", async () => {
-    const { completionStage } = await import("../../../../src/pipeline/stages/completion");
-    _completionDeps.checkReviewGate = mock(async () => false);
+    await withTempDir(async (tempDir) => {
+      const { completionStage } = await import("../../../../src/pipeline/stages/completion");
+      _completionDeps.checkReviewGate = mock(async () => false);
 
-    const config = makeConfig({ "review-gate": { enabled: true } });
-    const chain = makeChain("abort");
-    const ctx = makeCtx(config, chain);
+      const config = makeConfig({ "review-gate": { enabled: true } });
+      const chain = makeChain("abort");
+      const ctx = makeCtx(config, tempDir, chain);
 
-    const result = await completionStage.execute(ctx);
+      const result = await completionStage.execute(ctx);
 
-    expect(result.action).toBe("continue");
-    expect(_completionDeps.checkReviewGate).toHaveBeenCalledTimes(1);
+      expect(result.action).toBe("continue");
+      expect(_completionDeps.checkReviewGate).toHaveBeenCalledTimes(1);
+    });
   });
 
   test("continues normally when trigger approves", async () => {
-    const { completionStage } = await import("../../../../src/pipeline/stages/completion");
-    _completionDeps.checkReviewGate = mock(async () => true);
+    await withTempDir(async (tempDir) => {
+      const { completionStage } = await import("../../../../src/pipeline/stages/completion");
+      _completionDeps.checkReviewGate = mock(async () => true);
 
-    const config = makeConfig({ "review-gate": { enabled: true } });
-    const chain = makeChain("approve");
-    const ctx = makeCtx(config, chain);
+      const config = makeConfig({ "review-gate": { enabled: true } });
+      const chain = makeChain("approve");
+      const ctx = makeCtx(config, tempDir, chain);
 
-    const result = await completionStage.execute(ctx);
+      const result = await completionStage.execute(ctx);
 
-    expect(result.action).toBe("continue");
+      expect(result.action).toBe("continue");
+    });
   });
 
   test("does not call trigger when no interaction chain", async () => {
-    const { completionStage } = await import("../../../../src/pipeline/stages/completion");
-    _completionDeps.checkReviewGate = mock(async () => true);
+    await withTempDir(async (tempDir) => {
+      const { completionStage } = await import("../../../../src/pipeline/stages/completion");
+      _completionDeps.checkReviewGate = mock(async () => true);
 
-    const config = makeConfig({ "review-gate": { enabled: true } });
-    const ctx = makeCtx(config); // no chain
+      const config = makeConfig({ "review-gate": { enabled: true } });
+      const ctx = makeCtx(config, tempDir);
 
-    const result = await completionStage.execute(ctx);
+      const result = await completionStage.execute(ctx);
 
-    expect(result.action).toBe("continue");
-    expect(_completionDeps.checkReviewGate).not.toHaveBeenCalled();
+      expect(result.action).toBe("continue");
+      expect(_completionDeps.checkReviewGate).not.toHaveBeenCalled();
+    });
   });
 
   test("passes correct context to checkReviewGate", async () => {
-    const { completionStage } = await import("../../../../src/pipeline/stages/completion");
-    _completionDeps.checkReviewGate = mock(async () => true);
+    await withTempDir(async (tempDir) => {
+      const { completionStage } = await import("../../../../src/pipeline/stages/completion");
+      _completionDeps.checkReviewGate = mock(async () => true);
 
-    const config = makeConfig({ "review-gate": { enabled: true } });
-    const chain = makeChain("approve");
-    const ctx = makeCtx(config, chain);
+      const config = makeConfig({ "review-gate": { enabled: true } });
+      const chain = makeChain("approve");
+      const ctx = makeCtx(config, tempDir, chain);
 
-    await completionStage.execute(ctx);
+      await completionStage.execute(ctx);
 
-    const callArgs = (_completionDeps.checkReviewGate as any).mock.calls[0];
-    expect(callArgs[0].featureName).toBe("my-feature");
-    expect(callArgs[0].storyId).toBe("US-001");
+      const callArgs = (_completionDeps.checkReviewGate as any).mock.calls[0];
+      expect(callArgs[0].featureName).toBe("my-feature");
+      expect(callArgs[0].storyId).toBe("US-001");
+    });
   });
 
   test("calls trigger for each story when multiple stories passed", async () => {
-    const { completionStage } = await import("../../../../src/pipeline/stages/completion");
-    _completionDeps.checkReviewGate = mock(async () => true);
+    await withTempDir(async (tempDir) => {
+      const { completionStage } = await import("../../../../src/pipeline/stages/completion");
+      _completionDeps.checkReviewGate = mock(async () => true);
 
-    const config = makeConfig({ "review-gate": { enabled: true } });
-    const chain = makeChain("approve");
-    const ctx = makeCtx(config, chain);
+      const config = makeConfig({ "review-gate": { enabled: true } });
+      const chain = makeChain("approve");
+      const ctx = makeCtx(config, tempDir, chain);
 
-    const story2 = makeStory();
-    story2.id = "US-002";
-    ctx.stories = [makeStory(), story2];
+      const story2 = makeStory();
+      story2.id = "US-002";
+      ctx.stories = [makeStory(), story2];
 
-    await completionStage.execute(ctx);
+      await completionStage.execute(ctx);
 
-    expect(_completionDeps.checkReviewGate).toHaveBeenCalledTimes(2);
+      expect(_completionDeps.checkReviewGate).toHaveBeenCalledTimes(2);
+    });
   });
 });

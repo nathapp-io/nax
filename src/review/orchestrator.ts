@@ -15,14 +15,27 @@ import type { PluginRegistry } from "../plugins";
 import { runReview } from "./runner";
 import type { ReviewConfig, ReviewResult } from "./types";
 
+/**
+ * Injectable dependencies for getChangedFiles() — allows tests to intercept
+ * spawn calls without requiring the git binary.
+ *
+ * @internal
+ */
+export const _orchestratorDeps = { spawn };
+
 async function getChangedFiles(workdir: string, baseRef?: string): Promise<string[]> {
   try {
     const diffArgs = ["diff", "--name-only"];
     const [stagedProc, unstagedProc, baseProc] = [
-      spawn({ cmd: ["git", ...diffArgs, "--cached"], cwd: workdir, stdout: "pipe", stderr: "pipe" }),
-      spawn({ cmd: ["git", ...diffArgs], cwd: workdir, stdout: "pipe", stderr: "pipe" }),
+      _orchestratorDeps.spawn({ cmd: ["git", ...diffArgs, "--cached"], cwd: workdir, stdout: "pipe", stderr: "pipe" }),
+      _orchestratorDeps.spawn({ cmd: ["git", ...diffArgs], cwd: workdir, stdout: "pipe", stderr: "pipe" }),
       baseRef
-        ? spawn({ cmd: ["git", ...diffArgs, `${baseRef}...HEAD`], cwd: workdir, stdout: "pipe", stderr: "pipe" })
+        ? _orchestratorDeps.spawn({
+            cmd: ["git", ...diffArgs, `${baseRef}...HEAD`],
+            cwd: workdir,
+            stdout: "pipe",
+            stderr: "pipe",
+          })
         : null,
     ];
 
@@ -73,8 +86,7 @@ export class ReviewOrchestrator {
       const reviewers = plugins.getReviewers();
       if (reviewers.length > 0) {
         // Use the story's start ref if available to capture auto-committed changes
-        // biome-ignore lint/suspicious/noExplicitAny: baseRef injected into config for pipeline use
-        const baseRef = (executionConfig as any)?.storyGitRef;
+        const baseRef = executionConfig?.storyGitRef;
         const changedFiles = await getChangedFiles(workdir, baseRef);
         const pluginResults: ReviewResult["pluginReviewers"] = [];
 

@@ -2,8 +2,15 @@
  * Git utility functions
  */
 
-import { spawn } from "bun";
 import { getSafeLogger } from "../logger";
+
+/**
+ * Injectable dependencies for git subprocess calls — allows tests to intercept
+ * Bun.spawn without mock.module().
+ *
+ * @internal
+ */
+export const _gitDeps = { spawn: Bun.spawn };
 
 /**
  * Default timeout for git subprocess calls.
@@ -20,7 +27,7 @@ const GIT_TIMEOUT_MS = 10_000;
  * @internal
  */
 export async function gitWithTimeout(args: string[], workdir: string): Promise<{ stdout: string; exitCode: number }> {
-  const proc = Bun.spawn(["git", ...args], {
+  const proc = _gitDeps.spawn(["git", ...args], {
     cwd: workdir,
     stdout: "pipe",
     stderr: "pipe",
@@ -146,7 +153,7 @@ export function detectMergeConflict(output: string): boolean {
 export async function autoCommitIfDirty(workdir: string, stage: string, role: string, storyId: string): Promise<void> {
   const logger = getSafeLogger();
   try {
-    const statusProc = Bun.spawn(["git", "status", "--porcelain"], {
+    const statusProc = _gitDeps.spawn(["git", "status", "--porcelain"], {
       cwd: workdir,
       stdout: "pipe",
       stderr: "pipe",
@@ -162,10 +169,10 @@ export async function autoCommitIfDirty(workdir: string, stage: string, role: st
       dirtyFiles: statusOutput.trim().split("\n").length,
     });
 
-    const addProc = Bun.spawn(["git", "add", "-A"], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
+    const addProc = _gitDeps.spawn(["git", "add", "-A"], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
     await addProc.exited;
 
-    const commitProc = Bun.spawn(["git", "commit", "-m", `chore(${storyId}): auto-commit after ${role} session`], {
+    const commitProc = _gitDeps.spawn(["git", "commit", "-m", `chore(${storyId}): auto-commit after ${role} session`], {
       cwd: workdir,
       stdout: "pipe",
       stderr: "pipe",

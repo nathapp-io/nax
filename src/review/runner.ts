@@ -9,6 +9,14 @@ import type { ExecutionConfig } from "../config/schema";
 import { getSafeLogger } from "../logger";
 import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
 
+/**
+ * Injectable dependencies for runner internals — allows tests to intercept
+ * Bun.file and spawn calls without mock.module().
+ *
+ * @internal
+ */
+export const _reviewRunnerDeps = { spawn, file: Bun.file };
+
 /** Default commands for each check type */
 const DEFAULT_COMMANDS: Record<ReviewCheckName, string> = {
   typecheck: "bun run typecheck",
@@ -21,7 +29,7 @@ const DEFAULT_COMMANDS: Record<ReviewCheckName, string> = {
  */
 async function loadPackageJson(workdir: string): Promise<Record<string, unknown> | null> {
   try {
-    const file = Bun.file(`${workdir}/package.json`);
+    const file = _reviewRunnerDeps.file(`${workdir}/package.json`);
     const content = await file.text();
     return JSON.parse(content);
   } catch {
@@ -80,6 +88,9 @@ async function resolveCommand(
 /** Default timeout for review checks (lint, typecheck). BUG-039. */
 const REVIEW_CHECK_TIMEOUT_MS = 120_000;
 
+/** Grace period between SIGTERM and SIGKILL for review check cleanup. */
+const SIGKILL_GRACE_PERIOD_MS = 5_000;
+
 /**
  * Run a single review check with a hard timeout.
  *
@@ -95,7 +106,7 @@ async function runCheck(check: ReviewCheckName, command: string, workdir: string
     const args = parts.slice(1);
 
     // Spawn the process
-    const proc = spawn({
+    const proc = _reviewRunnerDeps.spawn({
       cmd: [executable, ...args],
       cwd: workdir,
       stdout: "pipe",
@@ -117,7 +128,7 @@ async function runCheck(check: ReviewCheckName, command: string, workdir: string
         } catch {
           /* already exited */
         }
-      }, 5000);
+      }, SIGKILL_GRACE_PERIOD_MS);
     }, REVIEW_CHECK_TIMEOUT_MS);
 
     // Wait for completion
@@ -166,7 +177,7 @@ async function runCheck(check: ReviewCheckName, command: string, workdir: string
  */
 async function getUncommittedFilesImpl(workdir: string): Promise<string[]> {
   try {
-    const proc = spawn({
+    const proc = _reviewRunnerDeps.spawn({
       cmd: ["git", "diff", "--name-only", "HEAD"],
       cwd: workdir,
       stdout: "pipe",

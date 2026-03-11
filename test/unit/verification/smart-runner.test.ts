@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _gitDeps } from "../../../src/utils/git";
 
 // Dynamic imports used intentionally: mock.module() in verify-smart-runner.test.ts (which runs
 // before this file alphabetically) poisons the ESM registry. Static imports capture the mock
@@ -187,15 +188,15 @@ describe("mapSourceToTests", () => {
 });
 
 describe("getChangedSourceFiles", () => {
-  let originalSpawn: typeof Bun.spawn;
+  let originalSpawn: typeof _gitDeps.spawn;
 
   beforeEach(() => {
-    originalSpawn = Bun.spawn;
+    originalSpawn = _gitDeps.spawn;
   });
 
   afterEach(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: restoring original
-    (Bun as any).spawn = originalSpawn;
+    mock.restore();
+    _gitDeps.spawn = originalSpawn;
   });
 
   test("returns only .ts files under src/", async () => {
@@ -208,8 +209,8 @@ describe("getChangedSourceFiles", () => {
       "src/config/schema.ts",
     ].join("\n");
 
-    // biome-ignore lint/suspicious/noExplicitAny: mocking
-    (Bun as any).spawn = mock(() => makeProc(gitOutput, 0));
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedSourceFiles("/fake/repo");
 
@@ -221,8 +222,8 @@ describe("getChangedSourceFiles", () => {
   });
 
   test("returns empty array when git exits with non-zero code", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking
-    (Bun as any).spawn = mock(() => makeProc("", 128));
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc("", 128)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedSourceFiles("/fake/repo");
 
@@ -230,10 +231,10 @@ describe("getChangedSourceFiles", () => {
   });
 
   test("returns empty array when git throws (e.g. not a repo)", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking
-    (Bun as any).spawn = mock(() => {
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => {
       throw new Error("git not found");
-    });
+    }) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedSourceFiles("/fake/repo");
 
@@ -243,8 +244,8 @@ describe("getChangedSourceFiles", () => {
   test("filters out non-.ts src files", async () => {
     const gitOutput = ["src/foo.js", "src/bar.tsx", "src/baz.ts"].join("\n");
 
-    // biome-ignore lint/suspicious/noExplicitAny: mocking
-    (Bun as any).spawn = mock(() => makeProc(gitOutput, 0));
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedSourceFiles("/fake/repo");
 
@@ -252,8 +253,8 @@ describe("getChangedSourceFiles", () => {
   });
 
   test("returns empty array when no files changed", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: mocking
-    (Bun as any).spawn = mock(() => makeProc("", 0));
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc("", 0)) as unknown as typeof _gitDeps.spawn;
 
     const result = await getChangedSourceFiles("/fake/repo");
 

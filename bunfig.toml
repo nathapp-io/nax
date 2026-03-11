@@ -8,5 +8,4 @@ timeout = 30000
 # Exclude nax dogfood feature directories (contain acceptance tests from nax runs, not source tests)
 exclude = ["nax/**"]
 
-[test]
 concurrent = 1

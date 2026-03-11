@@ -15,21 +15,12 @@ import { ClaudeCodeAdapter, _runOnceDeps } from "../../../src/agents/claude";
 import type { AgentRunOptions } from "../../../src/agents/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Test adapter — overrides buildCommand to avoid requiring the claude binary
+// Test adapter — injects command via _runOnceDeps.buildCmd to avoid spawning
+// the real claude binary (buildCommand override alone is insufficient because
+// executeOnce calls the module-level buildCommand, not this.buildCommand).
 // ─────────────────────────────────────────────────────────────────────────────
 
-class TestAdapter extends ClaudeCodeAdapter {
-  private readonly testCmd: string[];
-
-  constructor(cmd: string[]) {
-    super();
-    this.testCmd = cmd;
-  }
-
-  override buildCommand(_options: AgentRunOptions): string[] {
-    return this.testCmd;
-  }
-}
+class TestAdapter extends ClaudeCodeAdapter {}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -52,14 +43,16 @@ function makeRunOptions(workdir: string, timeoutSeconds: number): AgentRunOption
 describe("runOnce() timeout behavior", () => {
   let tempDir: string;
   const origKillProc = _runOnceDeps.killProc;
+  const origBuildCmd = _runOnceDeps.buildCmd;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "nax-claude-test-"));
   });
 
   afterEach(() => {
-    // Restore original killProc after each test
+    // Restore deps after each test
     _runOnceDeps.killProc = origKillProc;
+    _runOnceDeps.buildCmd = origBuildCmd;
     if (existsSync(tempDir)) {
       rmSync(tempDir, { recursive: true });
     }
@@ -68,6 +61,9 @@ describe("runOnce() timeout behavior", () => {
   test("timeout path sends SIGTERM to process first", async () => {
     const sentSignals: string[] = [];
 
+    // Inject long-running command directly (no shell wrapper — avoids orphaned child
+    // holding stdout pipe open which would cause the 5s stdout-read timeout to fire)
+    _runOnceDeps.buildCmd = () => ["sleep", "100"];
     // Record signals sent but still kill the process so proc.exited resolves
     _runOnceDeps.killProc = (proc, signal) => {
       sentSignals.push(String(signal));
@@ -75,7 +71,7 @@ describe("runOnce() timeout behavior", () => {
     };
 
     // Long-running process: will be killed by the 100ms timeout
-    const adapter = new TestAdapter(["/bin/sh", "-c", "sleep 100"]);
+    const adapter = new TestAdapter();
     const result = await adapter.run(makeRunOptions(tempDir, 0.1));
 
     expect(result.exitCode).toBe(124); // timeout exit code
@@ -83,15 +79,16 @@ describe("runOnce() timeout behavior", () => {
   });
 
   test("timeout path: unregisters PID even if killProc throws", async () => {
+    // Inject short-lived command directly (no shell wrapper — avoids orphaned child)
+    _runOnceDeps.buildCmd = () => ["sleep", "1"];
     // Override killProc to throw — simulates kill() failing (e.g., process already gone)
     _runOnceDeps.killProc = (_proc, _signal) => {
       throw new Error("kill failed");
     };
 
-    // Use a short-lived process (0.5s) with a timeout that fires first (50ms).
-    // killProc throws (process not killed), so proc exits naturally at ~0.5s.
-    // The finally block must still call unregister regardless.
-    const adapter = new TestAdapter(["/bin/sh", "-c", "sleep 0.5"]);
+    // 50ms timeout fires first, killProc throws (process not killed),
+    // proc exits naturally at ~0.5s. The finally block must still unregister.
+    const adapter = new TestAdapter();
     const options = makeRunOptions(tempDir, 0.05); // 50ms timeout
 
     // Should not throw — kill errors are caught internally
