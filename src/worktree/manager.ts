@@ -1,6 +1,8 @@
 import { existsSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { getSafeLogger } from "../logger";
+import { validateStoryId } from "../prd/validate";
+import { errorMessage } from "../utils/errors";
 import type { WorktreeInfo } from "./types";
 
 export class WorktreeManager {
@@ -9,6 +11,8 @@ export class WorktreeManager {
    * and symlinks node_modules and .env from project root
    */
   async create(projectRoot: string, storyId: string): Promise<void> {
+    validateStoryId(storyId);
+
     const worktreePath = join(projectRoot, ".nax-wt", storyId);
     const branchName = `nax/${storyId}`;
 
@@ -48,7 +52,7 @@ export class WorktreeManager {
       } catch (error) {
         // Clean up worktree if symlinking fails
         await this.remove(projectRoot, storyId);
-        throw new Error(`Failed to symlink node_modules: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`Failed to symlink node_modules: ${errorMessage(error)}`);
       }
     }
 
@@ -61,7 +65,7 @@ export class WorktreeManager {
       } catch (error) {
         // Clean up worktree if symlinking fails
         await this.remove(projectRoot, storyId);
-        throw new Error(`Failed to symlink .env: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`Failed to symlink .env: ${errorMessage(error)}`);
       }
     }
   }
@@ -70,6 +74,8 @@ export class WorktreeManager {
    * Removes worktree and deletes branch
    */
   async remove(projectRoot: string, storyId: string): Promise<void> {
+    validateStoryId(storyId);
+
     const worktreePath = join(projectRoot, ".nax-wt", storyId);
     const branchName = `nax/${storyId}`;
 
@@ -122,7 +128,7 @@ export class WorktreeManager {
       // Log warning but don't fail - worktree is already removed
       const logger = getSafeLogger();
       logger?.warn("worktree", `Failed to delete branch ${branchName}`, {
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       });
     }
   }
