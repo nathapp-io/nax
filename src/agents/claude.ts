@@ -1,12 +1,16 @@
 /**
  * Claude Code Agent Adapter
+ *
+ * Main adapter class coordinating execution, completion, decomposition, and interactive modes.
  */
 
 import { PidRegistry } from "../execution/pid-registry";
 import { getLogger } from "../logger";
+import { _completeDeps, executeComplete } from "./claude-complete";
 import { buildDecomposePrompt, parseDecomposeOutput } from "./claude-decompose";
+import { _runOnceDeps, buildAllowedEnv, buildCommand, executeOnce } from "./claude-execution";
+import { runInteractiveMode } from "./claude-interactive";
 import { runPlan } from "./claude-plan";
-import { estimateCostByDuration, estimateCostFromOutput } from "./cost";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -20,49 +24,6 @@ import type {
   PlanResult,
   PtyHandle,
 } from "./types";
-import { CompleteError } from "./types";
-
-/**
- * Maximum characters to capture from agent stdout.
- *
- * Last 5000 chars typically contain the most relevant info (final status, summary, errors).
- * This limit prevents memory bloat while preserving actionable output.
- */
-const MAX_AGENT_OUTPUT_CHARS = 5000;
-
-/**
- * Maximum characters to capture from agent stderr.
- *
- * Last 1000 chars typically contain the actual error message (e.g., 401, 500, crash).
- * Smaller than stdout since stderr is more focused on errors.
- */
-const MAX_AGENT_STDERR_CHARS = 1000;
-
-/**
- * Grace period in ms between SIGTERM and SIGKILL on timeout.
- * Mirrors the pattern in src/verification/executor.ts:executeWithTimeout().
- */
-const SIGKILL_GRACE_PERIOD_MS = 5000;
-
-/**
- * Injectable dependencies for complete() — allows tests to intercept
- * Bun.spawn calls and verify correct CLI args without the claude binary.
- *
- * @internal
- */
-export const _completeDeps = {
-  spawn(
-    cmd: string[],
-    opts: { stdout: "pipe"; stderr: "pipe" | "inherit" },
-  ): { stdout: ReadableStream<Uint8Array>; stderr: ReadableStream<Uint8Array>; exited: Promise<number>; pid: number } {
-    return Bun.spawn(cmd, opts) as unknown as {
-      stdout: ReadableStream<Uint8Array>;
-      stderr: ReadableStream<Uint8Array>;
-      exited: Promise<number>;
-      pid: number;
-    };
-  },
-};
 
 /**
  * Injectable dependencies for decompose() — allows tests to intercept
@@ -91,17 +52,8 @@ export const _decomposeDeps = {
   },
 };
 
-/**
- * Injectable dependencies for runOnce() — allows tests to verify
- * that PID cleanup (unregister) always runs even if kill() throws.
- *
- * @internal
- */
-export const _runOnceDeps = {
-  killProc(proc: { kill(signal?: number | NodeJS.Signals): void }, signal: NodeJS.Signals): void {
-    proc.kill(signal);
-  },
-};
+// Re-export deps for testing
+export { _runOnceDeps, _completeDeps };
 
 /**
  * Claude Code agent adapter implementation.
@@ -146,10 +98,11 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   }
 
   buildCommand(options: AgentRunOptions): string[] {
-    const model = options.modelDef.model;
-    const skipPermissions = options.dangerouslySkipPermissions ?? true;
-    const permArgs = skipPermissions ? ["--dangerously-skip-permissions"] : [];
-    return [this.binary, "--model", model, ...permArgs, "-p", options.prompt];
+    return buildCommand(this.binary, options);
+  }
+
+  buildAllowedEnv(options: AgentRunOptions): Record<string, string | undefined> {
+    return buildAllowedEnv(options);
   }
 
   async run(options: AgentRunOptions): Promise<AgentResult> {
@@ -158,7 +111,8 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const result = await this.runOnce(options, attempt);
+        const pidRegistry = this.getPidRegistry(options.workdir);
+        const result = await executeOnce(this.binary, options, pidRegistry);
 
         if (result.rateLimited && attempt < maxRetries) {
           const backoffMs = 2 ** attempt * 1000;
@@ -193,193 +147,8 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     throw lastError || new Error("Agent execution failed after all retries");
   }
 
-  /**
-   * Build allowed environment variables for spawned agents.
-   * SEC-4: Only pass essential env vars to prevent leaking sensitive data.
-   */
-  buildAllowedEnv(options: AgentRunOptions): Record<string, string | undefined> {
-    const allowed: Record<string, string | undefined> = {};
-
-    const essentialVars = ["PATH", "HOME", "TMPDIR", "NODE_ENV", "USER", "LOGNAME"];
-    for (const varName of essentialVars) {
-      if (process.env[varName]) {
-        allowed[varName] = process.env[varName];
-      }
-    }
-
-    const apiKeyVars = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"];
-    for (const varName of apiKeyVars) {
-      if (process.env[varName]) {
-        allowed[varName] = process.env[varName];
-      }
-    }
-
-    const allowedPrefixes = ["CLAUDE_", "NAX_", "CLAW_", "TURBO_"];
-    for (const [key, value] of Object.entries(process.env)) {
-      if (allowedPrefixes.some((prefix) => key.startsWith(prefix))) {
-        allowed[key] = value;
-      }
-    }
-
-    if (options.modelDef.env) {
-      Object.assign(allowed, options.modelDef.env);
-    }
-
-    if (options.env) {
-      Object.assign(allowed, options.env);
-    }
-
-    return allowed;
-  }
-
-  private async runOnce(options: AgentRunOptions, _attempt: number): Promise<AgentResult> {
-    const cmd = this.buildCommand(options);
-    const startTime = Date.now();
-
-    const proc = Bun.spawn(cmd, {
-      cwd: options.workdir,
-      stdout: "pipe",
-      stderr: "inherit", // MEM-3: Inherit stderr to avoid blocking on unread pipe
-      env: this.buildAllowedEnv(options),
-    });
-
-    const processPid = proc.pid;
-    const pidRegistry = this.getPidRegistry(options.workdir);
-    await pidRegistry.register(processPid);
-
-    let timedOut = false;
-    const timeoutId = setTimeout(() => {
-      timedOut = true;
-      try {
-        _runOnceDeps.killProc(proc, "SIGTERM" as NodeJS.Signals);
-      } catch {
-        /* already exited */
-      }
-      setTimeout(() => {
-        try {
-          _runOnceDeps.killProc(proc, "SIGKILL" as NodeJS.Signals);
-        } catch {
-          /* already exited */
-        }
-      }, SIGKILL_GRACE_PERIOD_MS);
-    }, options.timeoutSeconds * 1000);
-
-    let exitCode: number;
-    try {
-      // Hard deadline: if proc.exited doesn't resolve after kill signals are sent
-      // (Bun subprocess edge case on some environments), fall back to -1 so the
-      // caller can move on. timedOut flag ensures the result is still marked 124.
-      const hardDeadlineMs = options.timeoutSeconds * 1000 + SIGKILL_GRACE_PERIOD_MS + 3000;
-      exitCode = await Promise.race([
-        proc.exited,
-        new Promise<number>((resolve) => setTimeout(() => resolve(-1), hardDeadlineMs)),
-      ]);
-
-      // If hard deadline fired, the subprocess may still be alive (Bun SIGKILL edge case).
-      // Force-kill via OS-level signal so that the stdout pipe closes and we don't block.
-      if (exitCode === -1) {
-        try {
-          process.kill(processPid, "SIGKILL");
-        } catch {
-          /* already gone */
-        }
-        // Note: process.kill(-pid) (process group) only works if the child called
-        // setpgid/setsid. Bun does not do this, so this will silently throw ESRCH.
-        // Left here as a best-effort safety net for environments that do set a pgid.
-        try {
-          process.kill(-processPid, "SIGKILL");
-        } catch {
-          /* no process group — expected in most environments */
-        }
-      }
-    } finally {
-      clearTimeout(timeoutId);
-      await pidRegistry.unregister(processPid);
-    }
-
-    // Use a deadline on stdout read — if the subprocess pipe is still open
-    // (e.g. hard-deadline fired but process didn't fully die), don't block forever.
-    const stdout = await Promise.race([
-      new Response(proc.stdout).text(),
-      new Promise<string>((resolve) => setTimeout(() => resolve(""), 5000)),
-    ]);
-    const stderr = proc.stderr ? await new Response(proc.stderr).text() : "";
-    const durationMs = Date.now() - startTime;
-
-    // Claude Code emits rate limit messages as part of its output.
-    const fullOutput = stdout + stderr;
-    const rateLimited =
-      fullOutput.toLowerCase().includes("rate limit") ||
-      fullOutput.includes("429") ||
-      fullOutput.toLowerCase().includes("too many requests");
-
-    let costEstimate = estimateCostFromOutput(options.modelTier, fullOutput);
-    const logger = getLogger();
-    if (!costEstimate) {
-      const fallbackEstimate = estimateCostByDuration(options.modelTier, durationMs);
-      costEstimate = {
-        cost: fallbackEstimate.cost * 1.5,
-        confidence: "fallback",
-      };
-      logger.warn("agent", "Cost estimation fallback (duration-based)", {
-        modelTier: options.modelTier,
-        cost: costEstimate.cost,
-      });
-    } else if (costEstimate.confidence === "estimated") {
-      logger.warn("agent", "Cost estimation using regex parsing (estimated confidence)", { cost: costEstimate.cost });
-    }
-    const cost = costEstimate.cost;
-
-    const actualExitCode = timedOut ? 124 : exitCode;
-
-    return {
-      success: exitCode === 0 && !timedOut,
-      exitCode: actualExitCode,
-      output: stdout.slice(-MAX_AGENT_OUTPUT_CHARS),
-      stderr: stderr.slice(-MAX_AGENT_STDERR_CHARS),
-      rateLimited,
-      durationMs,
-      estimatedCost: cost,
-      pid: processPid,
-    };
-  }
-
   async complete(prompt: string, options?: CompleteOptions): Promise<string> {
-    // Build command: claude -p <prompt> [--model <model>] [--max-tokens <tokens>] [--output-format json]
-    const cmd = ["claude", "-p", prompt];
-
-    if (options?.model) {
-      cmd.push("--model", options.model);
-    }
-
-    if (options?.maxTokens !== undefined) {
-      cmd.push("--max-tokens", String(options.maxTokens));
-    }
-
-    if (options?.jsonMode) {
-      cmd.push("--output-format", "json");
-    }
-
-    const proc = _completeDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
-    const exitCode = await proc.exited;
-
-    // Read stdout and stderr for error messages
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
-    const trimmed = stdout.trim();
-
-    // Validate exit code and output
-    if (exitCode !== 0) {
-      const errorDetails = stderr.trim() || trimmed;
-      const errorMessage = errorDetails || `complete() failed with exit code ${exitCode}`;
-      throw new CompleteError(errorMessage, exitCode);
-    }
-
-    if (!trimmed) {
-      throw new CompleteError("complete() returned empty output");
-    }
-
-    return trimmed;
+    return executeComplete(this.binary, prompt, options);
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {
@@ -392,7 +161,6 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     const prompt = buildDecomposePrompt(options);
 
-    // Resolve model: explicit modelDef > config.models.balanced > throw
     let modelDef = options.modelDef;
     if (!modelDef) {
       if (!options.config) {
@@ -408,7 +176,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     const proc = _decomposeDeps.spawn(cmd, {
       cwd: options.workdir,
       stdout: "pipe",
-      stderr: "inherit", // MEM-3: Inherit stderr to avoid blocking on unread pipe
+      stderr: "inherit",
       env: this.buildAllowedEnv({
         workdir: options.workdir,
         modelDef,
@@ -420,8 +188,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     await pidRegistry.register(proc.pid);
 
-    // BUG-039: Hard timeout for decompose — prevents infinite hang if claude hangs
-    const DECOMPOSE_TIMEOUT_MS = 300_000; // 5 minutes
+    const DECOMPOSE_TIMEOUT_MS = 300_000;
     let timedOut = false;
     const decomposeTimerId = setTimeout(() => {
       timedOut = true;
@@ -451,8 +218,6 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       throw new Error(`Decompose timed out after ${DECOMPOSE_TIMEOUT_MS / 1000}s`);
     }
 
-    // Use a deadline on stdout read — if the subprocess pipe is still open
-    // (e.g. hard-deadline fired but process didn't fully die), don't block forever.
     const stdout = await Promise.race([
       new Response(proc.stdout).text(),
       new Promise<string>((resolve) => setTimeout(() => resolve(""), 5000)),
@@ -469,57 +234,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   }
 
   runInteractive(options: InteractiveRunOptions): PtyHandle {
-    const model = options.modelDef.model;
-    const cmd = [this.binary, "--model", model, options.prompt];
-
-    // BUN-001: Replaced node-pty with Bun.spawn (piped stdio).
-    // runInteractive() is TUI-only and currently dormant in headless nax runs.
-    // TERM + FORCE_COLOR preserve formatting output from Claude Code.
-    const proc = Bun.spawn(cmd, {
-      cwd: options.workdir,
-      env: { ...this.buildAllowedEnv(options), TERM: "xterm-256color", FORCE_COLOR: "1" },
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "inherit", // MEM-3: Inherit stderr to avoid blocking on unread pipe
-    });
-
     const pidRegistry = this.getPidRegistry(options.workdir);
-    pidRegistry.register(proc.pid).catch(() => {});
-
-    // Stream stdout to onOutput callback
-    (async () => {
-      try {
-        for await (const chunk of proc.stdout) {
-          options.onOutput(Buffer.from(chunk));
-        }
-      } catch (err) {
-        // BUG-21: Handle stream errors to avoid unhandled rejections
-        getLogger()?.error("agent", "runInteractive stdout error", { err });
-      }
-    })();
-
-    // Fire onExit when process completes
-    proc.exited
-      .then((code) => {
-        pidRegistry.unregister(proc.pid).catch(() => {});
-        options.onExit(code ?? 1);
-      })
-      .catch((err) => {
-        // BUG-22: Guard against onExit or unregister throws
-        getLogger()?.error("agent", "runInteractive exit error", { err });
-      });
-
-    return {
-      write: (data: string) => {
-        proc.stdin.write(data);
-      },
-      resize: (_cols: number, _rows: number) => {
-        /* no-op: Bun.spawn has no PTY resize */
-      },
-      kill: () => {
-        proc.kill();
-      },
-      pid: proc.pid,
-    };
+    return runInteractiveMode(this.binary, options, pidRegistry);
   }
 }

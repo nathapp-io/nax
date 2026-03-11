@@ -1,0 +1,207 @@
+/**
+ * Claude Code Agent - Execution Layer
+ *
+ * Handles building commands, preparing environment, and process execution.
+ */
+
+import type { PidRegistry } from "../execution/pid-registry";
+import { getLogger } from "../logger";
+import { estimateCostByDuration, estimateCostFromOutput } from "./cost";
+import type { AgentResult, AgentRunOptions } from "./types";
+
+/**
+ * Maximum characters to capture from agent stdout.
+ */
+const MAX_AGENT_OUTPUT_CHARS = 5000;
+
+/**
+ * Maximum characters to capture from agent stderr.
+ */
+const MAX_AGENT_STDERR_CHARS = 1000;
+
+/**
+ * Grace period in ms between SIGTERM and SIGKILL on timeout.
+ */
+const SIGKILL_GRACE_PERIOD_MS = 5000;
+
+/**
+ * Injectable dependencies for runOnce() — allows tests to verify
+ * that PID cleanup (unregister) always runs even if kill() throws.
+ *
+ * @internal
+ */
+export const _runOnceDeps = {
+  killProc(proc: { kill(signal?: number | NodeJS.Signals): void }, signal: NodeJS.Signals): void {
+    proc.kill(signal);
+  },
+};
+
+/**
+ * Build Claude Code command with model and permissions.
+ *
+ * @param binary - Path to claude binary
+ * @param options - Agent run options
+ * @returns Command array for Bun.spawn()
+ */
+export function buildCommand(binary: string, options: AgentRunOptions): string[] {
+  const model = options.modelDef.model;
+  const skipPermissions = options.dangerouslySkipPermissions ?? true;
+  const permArgs = skipPermissions ? ["--dangerously-skip-permissions"] : [];
+  return [binary, "--model", model, ...permArgs, "-p", options.prompt];
+}
+
+/**
+ * Build allowed environment variables for spawned agents.
+ * SEC-4: Only pass essential env vars to prevent leaking sensitive data.
+ *
+ * @param options - Agent run options
+ * @returns Filtered environment variables
+ */
+export function buildAllowedEnv(options: AgentRunOptions): Record<string, string | undefined> {
+  const allowed: Record<string, string | undefined> = {};
+
+  const essentialVars = ["PATH", "HOME", "TMPDIR", "NODE_ENV", "USER", "LOGNAME"];
+  for (const varName of essentialVars) {
+    if (process.env[varName]) {
+      allowed[varName] = process.env[varName];
+    }
+  }
+
+  const apiKeyVars = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"];
+  for (const varName of apiKeyVars) {
+    if (process.env[varName]) {
+      allowed[varName] = process.env[varName];
+    }
+  }
+
+  const allowedPrefixes = ["CLAUDE_", "NAX_", "CLAW_", "TURBO_"];
+  for (const [key, value] of Object.entries(process.env)) {
+    if (allowedPrefixes.some((prefix) => key.startsWith(prefix))) {
+      allowed[key] = value;
+    }
+  }
+
+  if (options.modelDef.env) {
+    Object.assign(allowed, options.modelDef.env);
+  }
+
+  if (options.env) {
+    Object.assign(allowed, options.env);
+  }
+
+  return allowed;
+}
+
+/**
+ * Execute agent process once with timeout and signal handling.
+ *
+ * @param binary - Path to claude binary
+ * @param options - Agent run options
+ * @param pidRegistry - PID registry for cleanup
+ * @returns Agent execution result
+ *
+ * @internal
+ */
+export async function executeOnce(
+  binary: string,
+  options: AgentRunOptions,
+  pidRegistry: PidRegistry,
+): Promise<AgentResult> {
+  const cmd = buildCommand(binary, options);
+  const startTime = Date.now();
+
+  const proc = Bun.spawn(cmd, {
+    cwd: options.workdir,
+    stdout: "pipe",
+    stderr: "inherit",
+    env: buildAllowedEnv(options),
+  });
+
+  const processPid = proc.pid;
+  await pidRegistry.register(processPid);
+
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    try {
+      _runOnceDeps.killProc(proc, "SIGTERM" as NodeJS.Signals);
+    } catch {
+      /* already exited */
+    }
+    setTimeout(() => {
+      try {
+        _runOnceDeps.killProc(proc, "SIGKILL" as NodeJS.Signals);
+      } catch {
+        /* already exited */
+      }
+    }, SIGKILL_GRACE_PERIOD_MS);
+  }, options.timeoutSeconds * 1000);
+
+  let exitCode: number;
+  try {
+    const hardDeadlineMs = options.timeoutSeconds * 1000 + SIGKILL_GRACE_PERIOD_MS + 3000;
+    exitCode = await Promise.race([
+      proc.exited,
+      new Promise<number>((resolve) => setTimeout(() => resolve(-1), hardDeadlineMs)),
+    ]);
+
+    if (exitCode === -1) {
+      try {
+        process.kill(processPid, "SIGKILL");
+      } catch {
+        /* already gone */
+      }
+      try {
+        process.kill(-processPid, "SIGKILL");
+      } catch {
+        /* no process group */
+      }
+    }
+  } finally {
+    clearTimeout(timeoutId);
+    await pidRegistry.unregister(processPid);
+  }
+
+  const stdout = await Promise.race([
+    new Response(proc.stdout).text(),
+    new Promise<string>((resolve) => setTimeout(() => resolve(""), 5000)),
+  ]);
+  const stderr = proc.stderr ? await new Response(proc.stderr).text() : "";
+  const durationMs = Date.now() - startTime;
+
+  const fullOutput = stdout + stderr;
+  const rateLimited =
+    fullOutput.toLowerCase().includes("rate limit") ||
+    fullOutput.includes("429") ||
+    fullOutput.toLowerCase().includes("too many requests");
+
+  let costEstimate = estimateCostFromOutput(options.modelTier, fullOutput);
+  const logger = getLogger();
+  if (!costEstimate) {
+    const fallbackEstimate = estimateCostByDuration(options.modelTier, durationMs);
+    costEstimate = {
+      cost: fallbackEstimate.cost * 1.5,
+      confidence: "fallback",
+    };
+    logger.warn("agent", "Cost estimation fallback (duration-based)", {
+      modelTier: options.modelTier,
+      cost: costEstimate.cost,
+    });
+  } else if (costEstimate.confidence === "estimated") {
+    logger.warn("agent", "Cost estimation using regex parsing (estimated confidence)", { cost: costEstimate.cost });
+  }
+  const cost = costEstimate.cost;
+
+  const actualExitCode = timedOut ? 124 : exitCode;
+
+  return {
+    success: exitCode === 0 && !timedOut,
+    exitCode: actualExitCode,
+    output: stdout.slice(-MAX_AGENT_OUTPUT_CHARS),
+    stderr: stderr.slice(-MAX_AGENT_STDERR_CHARS),
+    rateLimited,
+    durationMs,
+    estimatedCost: cost,
+    pid: processPid,
+  };
+}
