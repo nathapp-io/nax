@@ -190,6 +190,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     const DECOMPOSE_TIMEOUT_MS = 300_000;
     let timedOut = false;
+    let sigkillId: ReturnType<typeof setTimeout> | undefined;
     const decomposeTimerId = setTimeout(() => {
       timedOut = true;
       try {
@@ -197,7 +198,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       } catch {
         /* already exited */
       }
-      setTimeout(() => {
+      sigkillId = setTimeout(() => {
         try {
           proc.kill("SIGKILL");
         } catch {
@@ -211,6 +212,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       exitCode = await proc.exited;
     } finally {
       clearTimeout(decomposeTimerId);
+      clearTimeout(sigkillId);
       await pidRegistry.unregister(proc.pid);
     }
 
@@ -218,10 +220,14 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       throw new Error(`Decompose timed out after ${DECOMPOSE_TIMEOUT_MS / 1000}s`);
     }
 
+    let stdoutTimeoutId: ReturnType<typeof setTimeout> | undefined;
     const stdout = await Promise.race([
       new Response(proc.stdout).text(),
-      new Promise<string>((resolve) => setTimeout(() => resolve(""), 5000)),
+      new Promise<string>((resolve) => {
+        stdoutTimeoutId = setTimeout(() => resolve(""), 5000);
+      }),
     ]);
+    clearTimeout(stdoutTimeoutId);
     const stderr = await new Response(proc.stderr).text();
 
     if (exitCode !== 0) {
