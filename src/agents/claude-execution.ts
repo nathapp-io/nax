@@ -34,6 +34,9 @@ export const _runOnceDeps = {
   killProc(proc: { kill(signal?: number | NodeJS.Signals): void }, signal: NodeJS.Signals): void {
     proc.kill(signal);
   },
+  buildCmd(binary: string, options: AgentRunOptions): string[] {
+    return buildCommand(binary, options);
+  },
 };
 
 /**
@@ -107,7 +110,7 @@ export async function executeOnce(
   options: AgentRunOptions,
   pidRegistry: PidRegistry,
 ): Promise<AgentResult> {
-  const cmd = buildCommand(binary, options);
+  const cmd = _runOnceDeps.buildCmd(binary, options);
   const startTime = Date.now();
 
   const proc = Bun.spawn(cmd, {
@@ -121,6 +124,7 @@ export async function executeOnce(
   await pidRegistry.register(processPid);
 
   let timedOut = false;
+  let sigkillId: ReturnType<typeof setTimeout> | undefined;
   const timeoutId = setTimeout(() => {
     timedOut = true;
     try {
@@ -128,7 +132,7 @@ export async function executeOnce(
     } catch {
       /* already exited */
     }
-    setTimeout(() => {
+    sigkillId = setTimeout(() => {
       try {
         _runOnceDeps.killProc(proc, "SIGKILL" as NodeJS.Signals);
       } catch {
@@ -140,10 +144,12 @@ export async function executeOnce(
   let exitCode: number;
   try {
     const hardDeadlineMs = options.timeoutSeconds * 1000 + SIGKILL_GRACE_PERIOD_MS + 3000;
-    exitCode = await Promise.race([
-      proc.exited,
-      new Promise<number>((resolve) => setTimeout(() => resolve(-1), hardDeadlineMs)),
-    ]);
+    let hardDeadlineId: ReturnType<typeof setTimeout> | undefined;
+    const hardDeadlinePromise = new Promise<number>((resolve) => {
+      hardDeadlineId = setTimeout(() => resolve(-1), hardDeadlineMs);
+    });
+    exitCode = await Promise.race([proc.exited, hardDeadlinePromise]);
+    clearTimeout(hardDeadlineId); // prevent leaked timer when proc.exited wins the race
 
     if (exitCode === -1) {
       try {
@@ -159,13 +165,18 @@ export async function executeOnce(
     }
   } finally {
     clearTimeout(timeoutId);
+    clearTimeout(sigkillId); // prevent leaked SIGKILL timer from outliving proc.exited
     await pidRegistry.unregister(processPid);
   }
 
+  let stdoutTimeoutId: ReturnType<typeof setTimeout> | undefined;
   const stdout = await Promise.race([
     new Response(proc.stdout).text(),
-    new Promise<string>((resolve) => setTimeout(() => resolve(""), 5000)),
+    new Promise<string>((resolve) => {
+      stdoutTimeoutId = setTimeout(() => resolve(""), 5000);
+    }),
   ]);
+  clearTimeout(stdoutTimeoutId); // prevent leaked timer when stdout resolves first
   const stderr = proc.stderr ? await new Response(proc.stderr).text() : "";
   const durationMs = Date.now() - startTime;
 
