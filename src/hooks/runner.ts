@@ -110,8 +110,8 @@ export function hasShellOperators(command: string): boolean {
 export function validateHookCommand(command: string): void {
   // Reject commands with obvious injection patterns
   const dangerousPatterns = [
-    /\$\(.*\)/, // Command substitution $(...)
-    /`.*`/, // Backtick command substitution
+    /\$\([^)]*\)/, // Command substitution $(...) — bounded to avoid ReDoS
+    /`[^`]*`/, // Backtick command substitution — bounded to avoid ReDoS
     /\|\s*bash/, // Piping to bash
     /\|\s*sh/, // Piping to sh
     /;\s*rm\s+-rf/, // Dangerous deletion

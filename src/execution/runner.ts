@@ -6,23 +6,24 @@
  * 2. Run pipeline for each story/batch
  * 3. Handle pipeline results (escalate, mark complete, etc.)
  * 4. Loop until complete or blocked
+ *
+ * Delegates to extracted modules for each phase:
+ * - runner-setup.ts: Initial setup (PRD, status, loggers)
+ * - runner-execution.ts: Parallel/sequential execution
+ * - runner-completion.ts: Acceptance loop, hooks, metrics
  */
 
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import { fireHook } from "../hooks";
 import { getSafeLogger } from "../logger";
-import type { StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import { countStories, isComplete } from "../prd";
-import type { UserStory } from "../prd";
-import { tryLlmBatchRoute } from "../routing/batch-route";
-import { clearCache as clearLlmCache, routeBatch as llmRouteBatch } from "../routing/strategies/llm";
-import { precomputeBatchPlan } from "./batching";
-import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
-import { getAllReadyStories } from "./helpers";
+import { stopHeartbeat } from "./crash-recovery";
 import type { ParallelExecutorOptions, ParallelExecutorResult } from "./parallel-executor";
-import { hookCtx } from "./story-context";
+import { type RunnerCompletionOptions, runCompletionPhase } from "./runner-completion";
+import { type RunnerExecutionOptions, runExecutionPhase } from "./runner-execution";
+import { type RunnerSetupOptions, runSetupPhase } from "./runner-setup";
 
 /**
  * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
@@ -110,16 +111,17 @@ export async function run(options: RunOptions): Promise<RunResult> {
   let iterations = 0;
   let storiesCompleted = 0;
   let totalCost = 0;
-  const allStoryMetrics: StoryMetrics[] = [];
+  // biome-ignore lint/suspicious/noExplicitAny: Metrics array type varies
+  const allStoryMetrics: any[] = [];
 
   const logger = getSafeLogger();
 
-  // Declare prd before crash handler setup to avoid TDZ if SIGTERM arrives during setupRun
-  let prd: Awaited<ReturnType<typeof import("./lifecycle/run-setup").setupRun>>["prd"] | undefined;
+  // Declare prd before crash handler setup to avoid TDZ if SIGTERM arrives during setup
+  // biome-ignore lint/suspicious/noExplicitAny: PRD type initialized during setup
+  let prd: any | undefined;
 
-  // ── Execute initial setup phase ──────────────────────────────────────────────
-  const { setupRun } = await import("./lifecycle/run-setup");
-  const setupResult = await setupRun({
+  // ── Phase 1: Setup ──────────────────────────────────────────────────────────
+  const setupResult = await runSetupPhase({
     prdPath,
     workdir,
     config,
@@ -142,119 +144,12 @@ export async function run(options: RunOptions): Promise<RunResult> {
     getTotalStories: () => (prd ? countStories(prd).total : 0),
   });
 
-  const {
-    statusWriter,
-    pidRegistry,
-    cleanupCrashHandlers,
-    pluginRegistry,
-    storyCounts: counts,
-    interactionChain,
-  } = setupResult;
+  const { statusWriter, pidRegistry, cleanupCrashHandlers, pluginRegistry, interactionChain } = setupResult;
   prd = setupResult.prd;
 
   try {
-    // ── Output run header in headless mode ─────────────────────────────────
-    if (headless && formatterMode !== "json") {
-      const { outputRunHeader } = await import("./lifecycle/headless-formatter");
-      await outputRunHeader({
-        feature,
-        totalStories: counts.total,
-        pendingStories: counts.pending,
-        workdir,
-        formatterMode,
-      });
-    }
-
-    // ── Status write point 1: run started ───────────────────────────────────
-    statusWriter.setPrd(prd);
-    statusWriter.setRunStatus("running");
-    statusWriter.setCurrentStory(null);
-    await statusWriter.update(totalCost, iterations);
-
-    // Update reporters with correct totalStories count
-    const reporters = pluginRegistry.getReporters();
-    for (const reporter of reporters) {
-      if (reporter.onRunStart) {
-        try {
-          await reporter.onRunStart({
-            runId,
-            feature,
-            totalStories: counts.total,
-            startTime: runStartedAt,
-          });
-        } catch (error) {
-          logger?.warn("plugins", `Reporter '${reporter.name}' onRunStart failed`, { error });
-        }
-      }
-    }
-
-    logger?.info("execution", `Starting ${feature}`, {
-      totalStories: counts.total,
-      doneStories: counts.passed,
-      pendingStories: counts.pending,
-      batchingEnabled: useBatch,
-    });
-
-    // Clear LLM routing cache at start of new run
-    clearLlmCache();
-
-    // PERF-1: Precompute batch plan once from ready stories
-    const batchPlan = useBatch ? precomputeBatchPlan(getAllReadyStories(prd), 4) : [];
-
-    if (useBatch) {
-      await tryLlmBatchRoute(config, getAllReadyStories(prd), "routing");
-    }
-
-    // ── Parallel Execution Path (when --parallel is set) ──────────────────────
-    if (options.parallel !== undefined) {
-      const runParallelExecution =
-        _runnerDeps.runParallelExecution ?? (await import("./parallel-executor")).runParallelExecution;
-      const parallelResult = await runParallelExecution(
-        {
-          prdPath,
-          workdir,
-          config,
-          hooks,
-          feature,
-          featureDir,
-          parallelCount: options.parallel,
-          eventEmitter,
-          statusWriter,
-          runId,
-          startedAt: runStartedAt,
-          startTime,
-          totalCost,
-          iterations,
-          storiesCompleted,
-          allStoryMetrics,
-          pluginRegistry,
-          formatterMode,
-          headless,
-        },
-        prd,
-      );
-
-      prd = parallelResult.prd;
-      totalCost = parallelResult.totalCost;
-      storiesCompleted = parallelResult.storiesCompleted;
-      // BUG-066: merge parallel story metrics into the running accumulator
-      allStoryMetrics.push(...parallelResult.storyMetrics);
-
-      // If parallel execution completed everything, return early
-      if (parallelResult.completed && parallelResult.durationMs !== undefined) {
-        return {
-          success: true,
-          iterations,
-          storiesCompleted,
-          totalCost,
-          durationMs: parallelResult.durationMs,
-        };
-      }
-    }
-
-    // ── Sequential Execution Path (default) ────────────────────────────────────
-    const { executeSequential } = await import("./sequential-executor");
-    const sequentialResult = await executeSequential(
+    // ── Phase 2: Execution ──────────────────────────────────────────────────────
+    const executionResult = await runExecutionPhase(
       {
         prdPath,
         workdir,
@@ -264,108 +159,64 @@ export async function run(options: RunOptions): Promise<RunResult> {
         featureDir,
         dryRun,
         useBatch,
-        pluginRegistry,
         eventEmitter,
         statusWriter,
+        statusFile,
         logFilePath,
         runId,
+        startedAt: runStartedAt,
         startTime,
-        batchPlan,
+        formatterMode,
+        headless,
+        parallel,
+        runParallelExecution: _runnerDeps.runParallelExecution ?? undefined,
       },
       prd,
+      pluginRegistry,
     );
 
-    prd = sequentialResult.prd;
-    iterations = sequentialResult.iterations;
-    // BUG-064: accumulate (not overwrite) totalCost from sequential path
-    totalCost += sequentialResult.totalCost;
-    // BUG-065: accumulate (not overwrite) storiesCompleted from sequential path
-    storiesCompleted += sequentialResult.storiesCompleted;
-    allStoryMetrics.push(...sequentialResult.allStoryMetrics);
+    prd = executionResult.prd;
+    iterations = executionResult.iterations;
+    storiesCompleted = executionResult.storiesCompleted;
+    totalCost = executionResult.totalCost;
+    allStoryMetrics.push(...executionResult.allStoryMetrics);
 
-    // After main loop: Check if we need acceptance retry loop
-    if (config.acceptance.enabled && isComplete(prd)) {
-      const { runAcceptanceLoop } = await import("./lifecycle/acceptance-loop");
-      const acceptanceResult = await runAcceptanceLoop({
-        config,
-        prd,
-        prdPath,
-        workdir,
-        featureDir,
-        hooks,
-        feature,
-        totalCost,
+    // Return early if parallel execution completed everything
+    if (executionResult.completedEarly && executionResult.durationMs !== undefined) {
+      return {
+        success: isComplete(prd),
         iterations,
         storiesCompleted,
-        allStoryMetrics,
-        pluginRegistry,
-        eventEmitter,
-        statusWriter,
-      });
-
-      prd = acceptanceResult.prd;
-      totalCost = acceptanceResult.totalCost;
-      iterations = acceptanceResult.iterations;
-      storiesCompleted = acceptanceResult.storiesCompleted;
+        totalCost,
+        durationMs: executionResult.durationMs,
+      };
     }
 
-    // Fire on-all-stories-complete before regression gate (RL-001)
-    if (isComplete(prd)) {
-      await _runnerDeps.fireHook(
-        hooks,
-        "on-all-stories-complete",
-        hookCtx(feature, { status: "passed", cost: totalCost }),
-        workdir,
-      );
-    }
-
-    // Handle run completion: save metrics, log summary, update status
-    const { handleRunCompletion } = await import("./lifecycle/run-completion");
-    const completionResult = await handleRunCompletion({
-      runId,
+    // ── Phase 3: Completion ────────────────────────────────────────────────────
+    const completionResult = await runCompletionPhase({
+      config,
+      hooks,
       feature,
+      workdir,
+      statusFile,
+      logFilePath,
+      runId,
       startedAt: runStartedAt,
+      startTime,
+      formatterMode,
+      headless,
+      featureDir,
       prd,
       allStoryMetrics,
       totalCost,
       storiesCompleted,
       iterations,
-      startTime,
-      workdir,
       statusWriter,
-      config,
+      pluginRegistry,
+      eventEmitter,
     });
 
-    const { durationMs, runCompletedAt, finalCounts } = completionResult;
-
-    // ── Write feature-level status (SFC-002) ────────────────────────────────
-    if (featureDir) {
-      const finalStatus = isComplete(prd) ? "completed" : "failed";
-      statusWriter.setRunStatus(finalStatus);
-      await statusWriter.writeFeatureStatus(featureDir, totalCost, iterations);
-    }
-
-    // ── Output run footer in headless mode ─────────────────────────────────
-    if (headless && formatterMode !== "json") {
-      const { outputRunFooter } = await import("./lifecycle/headless-formatter");
-      outputRunFooter({
-        finalCounts: {
-          total: finalCounts.total,
-          passed: finalCounts.passed,
-          failed: finalCounts.failed,
-          skipped: finalCounts.skipped,
-        },
-        durationMs,
-        totalCost,
-        startedAt: runStartedAt,
-        completedAt: runCompletedAt,
-        formatterMode,
-      });
-    }
-
-    // Stop heartbeat and write exit summary (US-007)
-    stopHeartbeat();
-    await writeExitSummary(logFilePath, totalCost, iterations, storiesCompleted, durationMs);
+    const { durationMs } = completionResult;
 
     return {
       success: isComplete(prd),

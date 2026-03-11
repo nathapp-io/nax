@@ -1,35 +1,23 @@
-// RE-ARCH: keep
 /**
- * Execution Lifecycle Tests
+ * Completion Lifecycle Tests — handleRunCompletion & hooks
  *
- * Consolidated from 5 lifecycle test files:
- * - run-regression.test.ts: Smart Runner reverse mapping + deferred regression gate
- * - rl002-on-complete-after-regression.test.ts: on-complete hook fires after completion
- * - rl003-on-final-regression-fail.test.ts: on-final-regression-fail hook fires on failure
- * - run-completion-smart-skip.test.ts: Smart-skip deferred regression (RL-006)
- * - run-completion.test.ts: Deferred regression gate invocation (US-003)
+ * Tests for run completion, hooks, regression gates, and final state management.
+ * Extracted from lifecycle.test.ts for size management.
  */
 
-import { afterEach, afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { PRD, UserStory } from "../../../src/prd";
-import type { PRD as PRDTypes, UserStory as UserStoryTypes } from "../../../src/prd/types";
 import type { StoryMetrics } from "../../../src/metrics";
-import {
-  _regressionDeps,
-  runDeferredRegression,
-} from "../../../src/execution/lifecycle/run-regression";
 import {
   _runCompletionDeps,
   handleRunCompletion,
   type RunCompletionOptions,
 } from "../../../src/execution/lifecycle/run-completion";
 import type { DeferredRegressionResult } from "../../../src/execution/lifecycle/run-regression";
-import type { VerificationResult } from "../../../src/verification";
 import type { RunCompletedEvent } from "../../../src/pipeline/event-bus";
 import { pipelineEventBus } from "../../../src/pipeline/event-bus";
-import { HOOK_EVENTS } from "../../../src/hooks/types";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -138,348 +126,7 @@ function makeOpts(
 }
 
 // ---------------------------------------------------------------------------
-// run-regression.test.ts: reverseMapTestToSource
-// ---------------------------------------------------------------------------
-
-describe("reverseMapTestToSource", () => {
-  test("should map test/unit files to source files", async () => {
-    const { reverseMapTestToSource } = await import("../../../src/verification/smart-runner");
-
-    const testFiles = ["/repo/test/unit/foo/bar.test.ts"];
-    const result = reverseMapTestToSource(testFiles, "/repo");
-
-    expect(result).toEqual(["src/foo/bar.ts"]);
-  });
-
-  test("should map test/integration files to source files", async () => {
-    const { reverseMapTestToSource } = await import("../../../src/verification/smart-runner");
-
-    const testFiles = ["/repo/test/integration/foo/bar.test.ts"];
-    const result = reverseMapTestToSource(testFiles, "/repo");
-
-    expect(result).toEqual(["src/foo/bar.ts"]);
-  });
-
-  test("should ignore non-test files", async () => {
-    const { reverseMapTestToSource } = await import("../../../src/verification/smart-runner");
-
-    const testFiles = ["/repo/src/foo/bar.ts"];
-    const result = reverseMapTestToSource(testFiles, "/repo");
-
-    expect(result).toEqual([]);
-  });
-
-  test("should deduplicate results", async () => {
-    const { reverseMapTestToSource } = await import("../../../src/verification/smart-runner");
-
-    const testFiles = ["/repo/test/unit/foo/bar.test.ts", "/repo/test/integration/foo/bar.test.ts"];
-    const result = reverseMapTestToSource(testFiles, "/repo");
-
-    expect(result).toEqual(["src/foo/bar.ts"]);
-  });
-
-  test("should handle paths without leading workdir", async () => {
-    const { reverseMapTestToSource } = await import("../../../src/verification/smart-runner");
-
-    const testFiles = ["test/unit/foo/bar.test.ts"];
-    const result = reverseMapTestToSource(testFiles, "/repo");
-
-    expect(result).toEqual(["src/foo/bar.ts"]);
-  });
-
-  test("should preserve order when mapping multiple files", async () => {
-    const { reverseMapTestToSource } = await import("../../../src/verification/smart-runner");
-
-    const testFiles = [
-      "/repo/test/unit/aaa.test.ts",
-      "/repo/test/unit/bbb.test.ts",
-      "/repo/test/unit/ccc.test.ts",
-    ];
-    const result = reverseMapTestToSource(testFiles, "/repo");
-
-    expect(result).toEqual(["src/aaa.ts", "src/bbb.ts", "src/ccc.ts"]);
-  });
-
-  test("should handle empty input", async () => {
-    const { reverseMapTestToSource } = await import("../../../src/verification/smart-runner");
-
-    const testFiles: string[] = [];
-    const result = reverseMapTestToSource(testFiles, "/repo");
-
-    expect(result).toEqual([]);
-  });
-
-  test("should filter out files with .test.js extension", async () => {
-    const { reverseMapTestToSource } = await import("../../../src/verification/smart-runner");
-
-    const testFiles = ["/repo/test/unit/foo.js"];
-    const result = reverseMapTestToSource(testFiles, "/repo");
-
-    expect(result).toEqual([]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// run-regression.test.ts: runDeferredRegression
-// ---------------------------------------------------------------------------
-
-describe("runDeferredRegression", () => {
-  test("returns success immediately when mode is 'disabled'", async () => {
-    const { runDeferredRegression } = await import(
-      "../../../src/execution/lifecycle/run-regression"
-    );
-
-    const result = await runDeferredRegression({
-      config: makeConfig("disabled", "bun test"),
-      prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: "/tmp/nax-test-disabled",
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.failedTests).toBe(0);
-    expect(result.rectificationAttempts).toBe(0);
-    expect(result.affectedStories).toEqual([]);
-  });
-
-  test("returns success immediately when mode is 'per-story' (deferred not applicable)", async () => {
-    const { runDeferredRegression } = await import(
-      "../../../src/execution/lifecycle/run-regression"
-    );
-
-    const result = await runDeferredRegression({
-      config: makeConfig("per-story", "bun test"),
-      prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: "/tmp/nax-test-per-story",
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.rectificationAttempts).toBe(0);
-    expect(result.affectedStories).toEqual([]);
-  });
-
-  test("returns success when no passed stories exist (partial completion)", async () => {
-    const { runDeferredRegression } = await import(
-      "../../../src/execution/lifecycle/run-regression"
-    );
-
-    const result = await runDeferredRegression({
-      config: makeConfig("deferred", "bun test"),
-      prd: makePRD([
-        { id: "US-001", status: "pending" },
-        { id: "US-002", status: "failed" },
-      ]),
-      workdir: "/tmp/nax-test-no-passed",
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.passedTests).toBe(0);
-    expect(result.failedTests).toBe(0);
-    expect(result.affectedStories).toEqual([]);
-  });
-
-  test("result shape has all required fields", async () => {
-    const { runDeferredRegression } = await import(
-      "../../../src/execution/lifecycle/run-regression"
-    );
-
-    const result = await runDeferredRegression({
-      config: makeConfig("disabled", "bun test"),
-      prd: makePRD([]),
-      workdir: "/tmp/nax-test-shape",
-    });
-
-    expect(typeof result.success).toBe("boolean");
-    expect(typeof result.failedTests).toBe("number");
-    expect(typeof result.passedTests).toBe("number");
-    expect(typeof result.rectificationAttempts).toBe("number");
-    expect(Array.isArray(result.affectedStories)).toBe(true);
-  });
-
-  test("affectedStories contains only string values", async () => {
-    const { runDeferredRegression } = await import(
-      "../../../src/execution/lifecycle/run-regression"
-    );
-
-    const result = await runDeferredRegression({
-      config: makeConfig("disabled", "bun test"),
-      prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: "/tmp/nax-test-story-ids",
-    });
-
-    for (const storyId of result.affectedStories) {
-      expect(typeof storyId).toBe("string");
-    }
-  });
-
-  test("passedTests is non-negative integer", async () => {
-    const { runDeferredRegression } = await import(
-      "../../../src/execution/lifecycle/run-regression"
-    );
-
-    const result = await runDeferredRegression({
-      config: makeConfig("disabled", "bun test"),
-      prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: "/tmp/nax-test-counts",
-    });
-
-    expect(result.passedTests).toBeGreaterThanOrEqual(0);
-    expect(Number.isInteger(result.passedTests)).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// run-regression.test.ts: behavioral tests
-// ---------------------------------------------------------------------------
-
-const origRegressionDeps = {
-  runVerification: _regressionDeps.runVerification,
-  runRectificationLoop: _regressionDeps.runRectificationLoop,
-  parseBunTestOutput: _regressionDeps.parseBunTestOutput,
-  reverseMapTestToSource: _regressionDeps.reverseMapTestToSource,
-};
-
-describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
-  beforeEach(() => {
-    _regressionDeps.runRectificationLoop = mock(async () => false);
-    _regressionDeps.reverseMapTestToSource = mock(() => []);
-  });
-
-  afterEach(() => {
-    Object.assign(_regressionDeps, origRegressionDeps);
-    mock.restore();
-  });
-
-  test("full suite passes → success with 0 rectification attempts", async () => {
-    _regressionDeps.runVerification = mock(async (): Promise<VerificationResult> => ({
-      status: "SUCCESS",
-      success: true,
-      countsTowardEscalation: true,
-      passCount: 42,
-    }));
-
-    const result = await runDeferredRegression({
-      config: makeConfig("deferred", "bun test"),
-      prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: "/tmp/nax-test-behavioral",
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.passedTests).toBe(42);
-    expect(result.rectificationAttempts).toBe(0);
-    expect(result.affectedStories).toEqual([]);
-  });
-
-  test("TIMEOUT + acceptOnTimeout=true → success", async () => {
-    _regressionDeps.runVerification = mock(async (): Promise<VerificationResult> => ({
-      status: "TIMEOUT",
-      success: false,
-      countsTowardEscalation: false,
-    }));
-
-    const config = makeConfig("deferred", "bun test");
-    const result = await runDeferredRegression({
-      config,
-      prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: "/tmp/nax-test-timeout-accept",
-    });
-
-    expect(result.success).toBe(true);
-    expect(result.rectificationAttempts).toBe(0);
-  });
-
-  test("TIMEOUT + acceptOnTimeout=false → failure", async () => {
-    _regressionDeps.runVerification = mock(async (): Promise<VerificationResult> => ({
-      status: "TIMEOUT",
-      success: false,
-      countsTowardEscalation: false,
-    }));
-
-    const config: NaxConfig = {
-      ...makeConfig("deferred", "bun test"),
-      execution: {
-        ...makeConfig("deferred", "bun test").execution,
-        regressionGate: {
-          enabled: true,
-          timeoutSeconds: 30,
-          acceptOnTimeout: false,
-          mode: "deferred",
-          maxRectificationAttempts: 2,
-        },
-      },
-    };
-
-    const result = await runDeferredRegression({
-      config,
-      prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: "/tmp/nax-test-timeout-reject",
-    });
-
-    expect(result.success).toBe(false);
-  });
-
-  test("full suite fails with no output → failure immediately (no rectification)", async () => {
-    _regressionDeps.runVerification = mock(async (): Promise<VerificationResult> => ({
-      status: "TEST_FAILURE",
-      success: false,
-      countsTowardEscalation: true,
-      failCount: 3,
-    }));
-
-    const result = await runDeferredRegression({
-      config: makeConfig("deferred", "bun test"),
-      prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: "/tmp/nax-test-no-output",
-    });
-
-    expect(result.success).toBe(false);
-    expect(result.rectificationAttempts).toBe(0);
-  });
-
-  test("unmapped failures (no file field) → all passed stories in affectedStories", async () => {
-    let verCallCount = 0;
-    _regressionDeps.runVerification = mock(async (): Promise<VerificationResult> => {
-      verCallCount++;
-      if (verCallCount === 1) {
-        return {
-          status: "TEST_FAILURE",
-          success: false,
-          countsTowardEscalation: true,
-          output: "FAIL: some test\nerror: boom",
-          failCount: 1,
-        };
-      }
-      return {
-        status: "TEST_FAILURE",
-        success: false,
-        countsTowardEscalation: true,
-        failCount: 1,
-      };
-    });
-
-    _regressionDeps.parseBunTestOutput = mock(() => ({
-      failed: 1,
-      passed: 5,
-      failures: [{ testName: "some test", error: "boom" }],
-    })) as unknown as typeof _regressionDeps.parseBunTestOutput;
-
-    _regressionDeps.runRectificationLoop = mock(async () => false);
-
-    const result = await runDeferredRegression({
-      config: makeConfig("deferred", "bun test"),
-      prd: makePRD([
-        { id: "US-001", status: "passed" },
-        { id: "US-002", status: "passed" },
-      ]),
-      workdir: "/tmp/nax-test-unmapped",
-    });
-
-    expect(result.affectedStories).toContain("US-001");
-    expect(result.affectedStories).toContain("US-002");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// RL-002 AC#1: on-complete fires AFTER handleRunCompletion finishes
+// RL-002 AC#1: on-complete hook fires after handleRunCompletion()
 // ---------------------------------------------------------------------------
 
 describe("RL-002 AC#1: on-complete hook fires after handleRunCompletion()", () => {
@@ -502,6 +149,7 @@ describe("RL-002 AC#1: on-complete hook fires after handleRunCompletion()", () =
     pipelineEventBus.clear();
     mock.restore();
   });
+
   test("run:completed event is emitted AFTER handleRunCompletion resolves", async () => {
     const callOrder: string[] = [];
 
@@ -813,14 +461,6 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
 // ---------------------------------------------------------------------------
 // handleRunCompletion - deferred regression gate
 // ---------------------------------------------------------------------------
-
-const MOCK_REGRESSION_SUCCESS: DeferredRegressionResult = {
-  success: true,
-  failedTests: 0,
-  passedTests: 5,
-  rectificationAttempts: 0,
-  affectedStories: [],
-};
 
 describe("handleRunCompletion - deferred regression gate", () => {
   test("calls runDeferredRegression when mode is 'deferred' and test command exists", async () => {

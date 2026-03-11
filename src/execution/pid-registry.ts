@@ -10,6 +10,7 @@
  */
 
 import { existsSync } from "node:fs";
+import { appendFile } from "node:fs/promises";
 import { getSafeLogger } from "../logger";
 
 /**
@@ -77,15 +78,9 @@ export class PidRegistry {
     };
 
     try {
-      // Read existing content or create empty file
-      let existingContent = "";
-      if (existsSync(this.pidsFilePath)) {
-        existingContent = await Bun.file(this.pidsFilePath).text();
-      }
-
-      // Append to .nax-pids file (one JSON entry per line)
+      // Atomically append to .nax-pids file (one JSON entry per line)
       const line = `${JSON.stringify(entry)}\n`;
-      await Bun.write(this.pidsFilePath, existingContent + line);
+      await appendFile(this.pidsFilePath, line);
       logger?.debug("pid-registry", `Registered PID ${pid}`, { pid });
     } catch (err) {
       logger?.warn("pid-registry", `Failed to write PID ${pid} to registry`, {

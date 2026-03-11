@@ -10,6 +10,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { getSafeLogger as _getSafeLoggerFromModule } from "../logger";
+import { errorMessage } from "../utils/errors";
 import { validateModulePath } from "../utils/path-security";
 import { createPluginLogger } from "./plugin-logger";
 import { PluginRegistry } from "./registry";
@@ -288,7 +289,7 @@ async function loadAndValidatePlugin(
     return validated;
   } catch (error) {
     const displayPath = originalPath || initialModulePath;
-    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorMsg = errorMessage(error);
     const logger = getSafeLogger();
 
     // Provide helpful error message with attempted paths

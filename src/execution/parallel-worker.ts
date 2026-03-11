@@ -11,6 +11,7 @@ import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext, RoutingResult } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { routeTask } from "../routing";
+import { errorMessage } from "../utils/errors";
 
 /**
  * Execute a single story in its worktree
@@ -49,7 +50,7 @@ export async function executeStoryInWorktree(
     return {
       success: false,
       cost: 0,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     };
   }
 }

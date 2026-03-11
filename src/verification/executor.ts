@@ -6,6 +6,7 @@
  */
 
 import type { Subprocess } from "bun";
+import { errorMessage } from "../utils/errors";
 import type { TestExecutionResult } from "./types";
 
 /**
@@ -41,7 +42,7 @@ async function drainWithDeadline(proc: Subprocess, deadlineMs: number): Promise<
     if (!isExpectedStreamError) {
       const { getSafeLogger } = await import("../logger");
       getSafeLogger()?.debug("executor", "Unexpected error draining process output", {
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       });
     }
   }

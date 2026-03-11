@@ -20,6 +20,7 @@ import type { PipelineEventEmitter } from "../pipeline/events";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD } from "../prd";
 import { countStories, isComplete } from "../prd";
+import { errorMessage } from "../utils/errors";
 import { getAllReadyStories, hookCtx } from "./helpers";
 import { executeParallel } from "./parallel";
 import { type ParallelStoryMetrics, runRectificationPass } from "./parallel-executor-rectification-pass";
@@ -209,7 +210,7 @@ export async function runParallelExecution(
     });
   } catch (error) {
     logger?.error("parallel", "Parallel execution failed", {
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     });
 
     // Clear parallel status on error

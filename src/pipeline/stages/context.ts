@@ -23,6 +23,7 @@
 import type { ContextElement } from "../../context/types";
 import { buildStoryContextFull } from "../../execution/helpers";
 import { getLogger } from "../../logger";
+import { errorMessage } from "../../utils/errors";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const contextStage: PipelineStage = {
@@ -87,7 +88,7 @@ export const contextStage: PipelineStage = {
             );
           } catch (error) {
             logger.error("context", `Plugin context provider error: ${provider.name}`, {
-              error: error instanceof Error ? error.message : String(error),
+              error: errorMessage(error),
             });
             // Continue with other providers on error (soft failure)
           }

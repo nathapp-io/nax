@@ -12,6 +12,7 @@ import { resolveModel } from "../config/schema";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { classifyComplexity } from "../routing";
+import { errorMessage } from "../utils/errors";
 import type { ClassificationResult, CodebaseScan, StoryClassification } from "./types";
 
 /**
@@ -79,7 +80,7 @@ export async function classifyStories(
     };
   } catch (error) {
     // Fall back to keyword matching
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = errorMessage(error);
     const logger = getLogger();
     logger.warn("analyze", "LLM classification failed, falling back to keyword matching", { error: reason });
 

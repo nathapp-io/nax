@@ -12,6 +12,7 @@ import type { PipelineContext } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd";
 import { markStoryFailed, markStoryPassed, savePRD } from "../prd";
+import { errorMessage } from "../utils/errors";
 import { WorktreeManager } from "../worktree/manager";
 import { MergeEngine, type StoryDependencies } from "../worktree/merge";
 import { executeParallelBatch } from "./parallel-worker";
@@ -170,7 +171,7 @@ export async function executeParallel(
         markStoryFailed(currentPrd, story.id);
         logger?.error("parallel", "Failed to create worktree", {
           storyId: story.id,
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage(error),
         });
       }
     }

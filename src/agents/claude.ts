@@ -5,6 +5,7 @@
  */
 
 import { PidRegistry } from "../execution/pid-registry";
+import { withProcessTimeout } from "../execution/timeout-handler";
 import { getLogger } from "../logger";
 import { _completeDeps, executeComplete } from "./claude-complete";
 import { buildDecomposePrompt, parseDecomposeOutput } from "./claude-decompose";
@@ -109,42 +110,47 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     const maxRetries = 3;
     let lastError: Error | null = null;
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const pidRegistry = this.getPidRegistry(options.workdir);
-        const result = await executeOnce(this.binary, options, pidRegistry);
+    try {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const pidRegistry = this.getPidRegistry(options.workdir);
+          const result = await executeOnce(this.binary, options, pidRegistry);
 
-        if (result.rateLimited && attempt < maxRetries) {
-          const backoffMs = 2 ** attempt * 1000;
-          const logger = getLogger();
-          logger.warn("agent", "Rate limited, retrying", { backoffSeconds: backoffMs / 1000, attempt, maxRetries });
-          await Bun.sleep(backoffMs);
-          continue;
+          if (result.rateLimited && attempt < maxRetries) {
+            const backoffMs = 2 ** attempt * 1000;
+            const logger = getLogger();
+            logger.warn("agent", "Rate limited, retrying", { backoffSeconds: backoffMs / 1000, attempt, maxRetries });
+            await Bun.sleep(backoffMs);
+            continue;
+          }
+
+          return result;
+        } catch (error) {
+          lastError = error as Error;
+          const isSpawnError = lastError.message.includes("spawn") || lastError.message.includes("ENOENT");
+
+          if (isSpawnError && attempt < maxRetries) {
+            const backoffMs = 2 ** attempt * 1000;
+            const logger = getLogger();
+            logger.warn("agent", "Agent spawn error, retrying", {
+              error: lastError.message,
+              backoffSeconds: backoffMs / 1000,
+              attempt,
+              maxRetries,
+            });
+            await Bun.sleep(backoffMs);
+            continue;
+          }
+
+          throw lastError;
         }
-
-        return result;
-      } catch (error) {
-        lastError = error as Error;
-        const isSpawnError = lastError.message.includes("spawn") || lastError.message.includes("ENOENT");
-
-        if (isSpawnError && attempt < maxRetries) {
-          const backoffMs = 2 ** attempt * 1000;
-          const logger = getLogger();
-          logger.warn("agent", "Agent spawn error, retrying", {
-            error: lastError.message,
-            backoffSeconds: backoffMs / 1000,
-            attempt,
-            maxRetries,
-          });
-          await Bun.sleep(backoffMs);
-          continue;
-        }
-
-        throw lastError;
       }
-    }
 
-    throw lastError || new Error("Agent execution failed after all retries");
+      throw lastError || new Error("Agent execution failed after all retries");
+    } finally {
+      // Clean up pidRegistry entry for this workdir to prevent unbounded Map growth
+      this.pidRegistries.delete(options.workdir);
+    }
   }
 
   async complete(prompt: string, options?: CompleteOptions): Promise<string> {
@@ -190,27 +196,17 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     const DECOMPOSE_TIMEOUT_MS = 300_000;
     let timedOut = false;
-    const decomposeTimerId = setTimeout(() => {
-      timedOut = true;
-      try {
-        proc.kill("SIGTERM");
-      } catch {
-        /* already exited */
-      }
-      setTimeout(() => {
-        try {
-          proc.kill("SIGKILL");
-        } catch {
-          /* already exited */
-        }
-      }, 5000);
-    }, DECOMPOSE_TIMEOUT_MS);
 
     let exitCode: number;
     try {
-      exitCode = await proc.exited;
+      const timeoutResult = await withProcessTimeout(proc, DECOMPOSE_TIMEOUT_MS, {
+        graceMs: 5000,
+        onTimeout: () => {
+          timedOut = true;
+        },
+      });
+      exitCode = timeoutResult.exitCode;
     } finally {
-      clearTimeout(decomposeTimerId);
       await pidRegistry.unregister(proc.pid);
     }
 
@@ -218,10 +214,14 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       throw new Error(`Decompose timed out after ${DECOMPOSE_TIMEOUT_MS / 1000}s`);
     }
 
+    let stdoutTimeoutId: ReturnType<typeof setTimeout> | undefined;
     const stdout = await Promise.race([
       new Response(proc.stdout).text(),
-      new Promise<string>((resolve) => setTimeout(() => resolve(""), 5000)),
+      new Promise<string>((resolve) => {
+        stdoutTimeoutId = setTimeout(() => resolve(""), 5000);
+      }),
     ]);
+    clearTimeout(stdoutTimeoutId);
     const stderr = await new Response(proc.stderr).text();
 
     if (exitCode !== 0) {

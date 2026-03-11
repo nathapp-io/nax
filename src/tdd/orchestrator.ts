@@ -13,6 +13,7 @@ import { resolveModel } from "../config";
 import { isGreenfieldStory } from "../context/greenfield";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
+import { errorMessage } from "../utils/errors";
 import { captureGitRef } from "../utils/git";
 import { executeWithTimeout } from "../verification";
 import { runFullSuiteGate } from "./rectification-gate";
@@ -379,7 +380,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     } catch (error) {
       logger.error("tdd", "Failed to rollback git changes after TDD failure", {
         storyId: story.id,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       });
     }
   }

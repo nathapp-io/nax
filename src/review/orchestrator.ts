@@ -12,6 +12,7 @@ import { spawn } from "bun";
 import type { NaxConfig } from "../config";
 import { getSafeLogger } from "../logger";
 import type { PluginRegistry } from "../plugins";
+import { errorMessage } from "../utils/errors";
 import { runReview } from "./runner";
 import type { ReviewConfig, ReviewResult } from "./types";
 
@@ -120,7 +121,7 @@ export class ReviewOrchestrator {
               };
             }
           } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error);
+            const errorMsg = errorMessage(error);
             logger?.warn("review", `Plugin reviewer threw error: ${reviewer.name}`, { error: errorMsg });
             pluginResults.push({ name: reviewer.name, passed: false, output: "", error: errorMsg });
             builtIn.pluginReviewers = pluginResults;

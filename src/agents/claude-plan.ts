@@ -8,6 +8,7 @@ import { join } from "node:path";
  */
 
 import type { PidRegistry } from "../execution/pid-registry";
+import { withProcessTimeout } from "../execution/timeout-handler";
 import { getLogger } from "../logger";
 import { resolveBalancedModelDef } from "./model-resolution";
 import type { AgentRunOptions } from "./types";
@@ -91,6 +92,8 @@ export async function runPlan(
     timeoutSeconds: 600,
   };
 
+  const PLAN_TIMEOUT_MS = 600_000; // 10 minutes
+
   if (options.interactive) {
     // Interactive mode: inherit stdio
     const proc = Bun.spawn(cmd, {
@@ -104,10 +107,16 @@ export async function runPlan(
     // Register PID
     await pidRegistry.register(proc.pid);
 
-    const exitCode = await proc.exited;
-
-    // Unregister PID after exit
-    await pidRegistry.unregister(proc.pid);
+    let exitCode: number;
+    try {
+      const timeoutResult = await withProcessTimeout(proc, PLAN_TIMEOUT_MS, {
+        graceMs: 5000,
+      });
+      exitCode = timeoutResult.exitCode;
+    } finally {
+      // Unregister PID after exit
+      await pidRegistry.unregister(proc.pid);
+    }
 
     if (exitCode !== 0) {
       throw new Error(`Plan mode failed with exit code ${exitCode}`);
@@ -133,10 +142,16 @@ export async function runPlan(
     // Register PID
     await pidRegistry.register(proc.pid);
 
-    const exitCode = await proc.exited;
-
-    // Unregister PID after exit
-    await pidRegistry.unregister(proc.pid);
+    let exitCode: number;
+    try {
+      const timeoutResult = await withProcessTimeout(proc, PLAN_TIMEOUT_MS, {
+        graceMs: 5000,
+      });
+      exitCode = timeoutResult.exitCode;
+    } finally {
+      // Unregister PID after exit
+      await pidRegistry.unregister(proc.pid);
+    }
 
     const specContent = await Bun.file(outFile).text();
     const conversationLog = await Bun.file(errFile).text();

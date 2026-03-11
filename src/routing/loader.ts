@@ -5,6 +5,7 @@
  */
 
 import { resolve } from "node:path";
+import { errorMessage } from "../utils/errors";
 import { validateModulePath } from "../utils/path-security";
 import type { RoutingStrategy } from "./strategy";
 
@@ -56,10 +57,6 @@ export async function loadCustomStrategy(strategyPath: string, workdir: string):
 
     return strategy as RoutingStrategy;
   } catch (error) {
-    throw new Error(
-      `Failed to load custom routing strategy from ${absolutePath}: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
+    throw new Error(`Failed to load custom routing strategy from ${absolutePath}: ${errorMessage(error)}`);
   }
 }

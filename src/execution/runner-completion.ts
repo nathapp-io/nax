@@ -1,0 +1,160 @@
+/**
+ * Runner Completion Phase
+ *
+ * Handles post-execution steps: acceptance loop, hooks, metrics, and cleanup.
+ * Extracted from runner.ts for better code organization.
+ */
+
+import type { NaxConfig } from "../config";
+import type { LoadedHooksConfig } from "../hooks";
+import { fireHook } from "../hooks";
+import { getSafeLogger } from "../logger";
+import type { StoryMetrics } from "../metrics";
+import type { PipelineEventEmitter } from "../pipeline/events";
+import type { PluginRegistry } from "../plugins/registry";
+import { isComplete } from "../prd";
+import type { PRD } from "../prd";
+import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
+import { hookCtx } from "./story-context";
+
+/**
+ * Options for the completion phase.
+ */
+export interface RunnerCompletionOptions {
+  config: NaxConfig;
+  hooks: LoadedHooksConfig;
+  feature: string;
+  workdir: string;
+  statusFile: string;
+  logFilePath?: string;
+  runId: string;
+  startedAt: string;
+  startTime: number;
+  formatterMode: "quiet" | "normal" | "verbose" | "json";
+  headless: boolean;
+  featureDir?: string;
+  prd: PRD;
+  allStoryMetrics: StoryMetrics[];
+  totalCost: number;
+  storiesCompleted: number;
+  iterations: number;
+  // biome-ignore lint/suspicious/noExplicitAny: StatusWriter interface varies by platform
+  statusWriter: any;
+  pluginRegistry: PluginRegistry;
+  eventEmitter?: PipelineEventEmitter;
+}
+
+/**
+ * Result from the completion phase.
+ */
+export interface RunnerCompletionResult {
+  durationMs: number;
+  runCompletedAt: string;
+}
+
+/**
+ * Execute the completion phase of the run.
+ *
+ * @param options - Completion options
+ * @returns Completion result
+ */
+export async function runCompletionPhase(options: RunnerCompletionOptions): Promise<RunnerCompletionResult> {
+  const logger = getSafeLogger();
+
+  // Check if we need acceptance retry loop
+  if (options.config.acceptance.enabled && isComplete(options.prd)) {
+    const { runAcceptanceLoop } = await import("./lifecycle/acceptance-loop");
+    const acceptanceResult = await runAcceptanceLoop({
+      config: options.config,
+      prd: options.prd,
+      prdPath: "", // Not needed for this extraction
+      workdir: options.workdir,
+      featureDir: options.featureDir,
+      hooks: options.hooks,
+      feature: options.feature,
+      totalCost: options.totalCost,
+      iterations: options.iterations,
+      storiesCompleted: options.storiesCompleted,
+      allStoryMetrics: options.allStoryMetrics,
+      pluginRegistry: options.pluginRegistry,
+      eventEmitter: options.eventEmitter,
+      statusWriter: options.statusWriter,
+    });
+
+    Object.assign(options, {
+      prd: acceptanceResult.prd,
+      totalCost: acceptanceResult.totalCost,
+      iterations: acceptanceResult.iterations,
+      storiesCompleted: acceptanceResult.storiesCompleted,
+    });
+  }
+
+  // Fire on-all-stories-complete before regression gate (RL-001)
+  if (isComplete(options.prd)) {
+    await fireHook(
+      options.hooks,
+      "on-all-stories-complete",
+      hookCtx(options.feature, { status: "passed", cost: options.totalCost }),
+      options.workdir,
+    );
+  }
+
+  // Handle run completion: save metrics, log summary, update status
+  const { handleRunCompletion } = await import("./lifecycle/run-completion");
+  const completionResult = await handleRunCompletion({
+    runId: options.runId,
+    feature: options.feature,
+    startedAt: options.startedAt,
+    prd: options.prd,
+    allStoryMetrics: options.allStoryMetrics,
+    totalCost: options.totalCost,
+    storiesCompleted: options.storiesCompleted,
+    iterations: options.iterations,
+    startTime: options.startTime,
+    workdir: options.workdir,
+    statusWriter: options.statusWriter,
+    config: options.config,
+  });
+
+  const { durationMs, runCompletedAt, finalCounts } = completionResult;
+
+  // Write feature-level status (SFC-002)
+  if (options.featureDir) {
+    const finalStatus = isComplete(options.prd) ? "completed" : "failed";
+    options.statusWriter.setRunStatus(finalStatus);
+    await options.statusWriter.writeFeatureStatus(options.featureDir, options.totalCost, options.iterations);
+  }
+
+  // Output run footer in headless mode
+  if (options.headless && options.formatterMode !== "json") {
+    const { outputRunFooter } = await import("./lifecycle/headless-formatter");
+    outputRunFooter({
+      finalCounts: {
+        total: finalCounts.total,
+        passed: finalCounts.passed,
+        failed: finalCounts.failed,
+        skipped: finalCounts.skipped,
+      },
+      durationMs,
+      totalCost: options.totalCost,
+      startedAt: options.startedAt,
+      completedAt: runCompletedAt,
+      formatterMode: options.formatterMode,
+    });
+  }
+
+  // Stop heartbeat and write exit summary (US-007)
+  stopHeartbeat();
+  await writeExitSummary(
+    options.logFilePath,
+    options.totalCost,
+    options.iterations,
+    options.storiesCompleted,
+    durationMs,
+  );
+
+  return {
+    durationMs,
+    runCompletedAt,
+  };
+}

@@ -7,6 +7,7 @@
 
 import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd/types";
+import { errorMessage } from "../utils/errors";
 import type { RoutingContext, RoutingDecision, RoutingStrategy } from "./strategy";
 
 /**
@@ -51,7 +52,7 @@ export class StrategyChain {
         logger?.error("routing", `Plugin router "${strategy.name}" failed`, {
           strategyName: strategy.name,
           storyId: story.id,
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage(error),
         });
         // Continue to next strategy
       }
