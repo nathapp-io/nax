@@ -170,6 +170,7 @@ const ReviewConfigSchema = z.object({
     lint: z.string().optional(),
     test: z.string().optional(),
   }),
+  pluginMode: z.enum(["per-story", "deferred"]).default("per-story"),
 });
 
 const PlanConfigSchema = z.object({
