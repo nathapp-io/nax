@@ -411,6 +411,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 - [ ] `nax diagnose --ai` flag (LLM-assisted, future TBD)
 - [ ] **Auto-decompose oversized stories** — When story size gate triggers, offer via interaction chain to auto-decompose using `nax analyse`.
 - [ ] VitePress documentation site — full CLI reference, hosted as standalone docs (pre-publish requirement)
+- [ ] **Deprecate `single-session` prompt role** — no longer used by pipeline (unified into `tdd-simple`). Remove from `role-task.ts`, `isolation.ts`, `nax prompts --export`, and builder API.
 
 ---
 
