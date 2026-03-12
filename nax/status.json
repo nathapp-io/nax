@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 3,
-    "passed": 0,
+    "passed": 1,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 2
   },
   "cost": {
-    "spent": 0,
+    "spent": 0.02145475,
     "limit": 8
   },
   "current": {
-    "storyId": "DR-001",
-    "title": "Add pluginMode config to ReviewConfig schema",
+    "storyId": "DR-002",
+    "title": "Skip plugin reviewers in review stage when pluginMode is deferred",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 1,
-  "updatedAt": "2026-03-12T04:32:16.403Z",
-  "durationMs": 70998,
-  "lastHeartbeat": "2026-03-12T04:32:16.403Z"
+  "iterations": 2,
+  "updatedAt": "2026-03-12T04:38:16.409Z",
+  "durationMs": 431004,
+  "lastHeartbeat": "2026-03-12T04:38:16.409Z"
 }

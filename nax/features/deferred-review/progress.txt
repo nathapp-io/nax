@@ -1,0 +1,1 @@
+[2026-03-12T04:33:01.624Z] DR-001 — PASSED — Add pluginMode config to ReviewConfig schema — Cost: $0.0215
