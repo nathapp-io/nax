@@ -238,6 +238,12 @@ export interface AcceptanceConfig {
   generateTests: boolean;
   /** Path to acceptance test file (relative to feature directory) */
   testPath: string;
+  /** Model tier for AC refinement LLM calls (default: "fast") */
+  model: ModelTier;
+  /** Whether to LLM-refine acceptance criteria before generating tests (default: true) */
+  refinement: boolean;
+  /** Whether to run RED gate check after generating acceptance tests (default: true) */
+  redGate: boolean;
 }
 
 /** Optimizer config (v0.10) */

@@ -5,9 +5,18 @@
  * via LLM call to the agent adapter.
  */
 
+import { join } from "node:path";
+import { ClaudeCodeAdapter } from "../agents/claude";
 import type { AgentAdapter } from "../agents/types";
 import { getLogger } from "../logger";
-import type { AcceptanceCriterion, AcceptanceTestResult, GenerateAcceptanceTestsOptions } from "./types";
+import type { UserStory } from "../prd/types";
+import type {
+  AcceptanceCriterion,
+  AcceptanceTestResult,
+  GenerateAcceptanceTestsOptions,
+  GenerateFromPRDOptions,
+  RefinedCriterion,
+} from "./types";
 
 /**
  * Parse acceptance criteria from spec.md content.
@@ -31,6 +40,93 @@ import type { AcceptanceCriterion, AcceptanceTestResult, GenerateAcceptanceTests
  * // ]
  * ```
  */
+/**
+ * Injectable dependencies for generateFromPRD — allows tests to mock
+ * adapter.complete() and file writes without real binaries or disk I/O.
+ *
+ * @internal
+ */
+export const _generatorPRDDeps = {
+  adapter: new ClaudeCodeAdapter() as AgentAdapter,
+  writeFile: async (path: string, content: string): Promise<void> => {
+    await Bun.write(path, content);
+  },
+};
+
+/**
+ * Generate acceptance tests from PRD UserStory[] and RefinedCriterion[].
+ *
+ * This is a stub — implementation is provided by the implementer session.
+ *
+ * @param stories - User stories from the PRD
+ * @param refinedCriteria - Refined criteria produced by the refinement module
+ * @param options - Generation options
+ * @returns Generated test code and processed criteria
+ */
+export async function generateFromPRD(
+  _stories: UserStory[],
+  refinedCriteria: RefinedCriterion[],
+  options: GenerateFromPRDOptions,
+): Promise<AcceptanceTestResult> {
+  const logger = getLogger();
+
+  const criteria: AcceptanceCriterion[] = refinedCriteria.map((c, i) => ({
+    id: `AC-${i + 1}`,
+    text: c.refined,
+    lineNumber: i + 1,
+  }));
+
+  if (refinedCriteria.length === 0) {
+    return { testCode: "", criteria: [] };
+  }
+
+  const criteriaList = refinedCriteria.map((c, i) => `AC-${i + 1}: ${c.refined}`).join("\n");
+
+  const prompt = `You are a test engineer. Generate acceptance tests for the "${options.featureName}" feature based on the refined acceptance criteria below.
+
+CODEBASE CONTEXT:
+${options.codebaseContext}
+
+ACCEPTANCE CRITERIA (refined):
+${criteriaList}
+
+Generate a complete acceptance.test.ts file using bun:test framework. Each AC maps to exactly one test named "AC-N: <description>".
+
+Use this structure:
+
+\`\`\`typescript
+import { describe, test, expect } from "bun:test";
+
+describe("${options.featureName} - Acceptance Tests", () => {
+  test("AC-1: <description>", async () => {
+    // Test implementation
+  });
+});
+\`\`\`
+
+Respond with ONLY the TypeScript test code (no markdown code fences, no explanation).`;
+
+  logger.info("acceptance", "Generating tests from PRD refined criteria", { count: refinedCriteria.length });
+
+  const testCode = await _generatorPRDDeps.adapter.complete(prompt);
+
+  const refinedJsonContent = JSON.stringify(
+    refinedCriteria.map((c, i) => ({
+      acId: `AC-${i + 1}`,
+      original: c.original,
+      refined: c.refined,
+      testable: c.testable,
+      storyId: c.storyId,
+    })),
+    null,
+    2,
+  );
+
+  await _generatorPRDDeps.writeFile(join(options.workdir, "acceptance-refined.json"), refinedJsonContent);
+
+  return { testCode, criteria };
+}
+
 export function parseAcceptanceCriteria(specContent: string): AcceptanceCriterion[] {
   const criteria: AcceptanceCriterion[] = [];
   const lines = specContent.split("\n");

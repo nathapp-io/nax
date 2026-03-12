@@ -1,6 +1,6 @@
 # Test Overlap Report
 
-Generated: 2026-03-12T09:27:58.859Z
+Generated: 2026-03-12T10:57:52.364Z
 
 ## REDUNDANT
 
@@ -8,11 +8,14 @@ No redundant integration tests found.
 
 ## PARTIAL
 
-Found 2 integration test(s) with partial unit test coverage:
+Found 3 integration test(s) with partial unit test coverage:
 
 - **test/integration/pipeline/pipeline.test.ts**
   - Coverage: 11%
   - Missing: Pipeline Runner, runPipeline, isolation-violation, session-failure, tests-failing, verifier-rejected, no failureCategory (backward compat), retryAsLite is not set for non-isolation failures
+- **test/integration/pipeline/pipeline-acceptance.test.ts**
+  - Coverage: 71%
+  - Missing: acceptanceStage.enabled, acceptanceStage.execute
 - **test/integration/routing/routing-stage-greenfield.test.ts**
   - Coverage: 50%
   - Missing: Routing Stage - Greenfield Detection (BUG-010)
@@ -22,7 +25,6 @@ Found 2 integration test(s) with partial unit test coverage:
 Found 66 unique integration test(s) with no unit test coverage:
 
 - test/integration/pipeline/verify-stage.test.ts
-- test/integration/pipeline/pipeline-acceptance.test.ts
 - test/integration/pipeline/reporter-lifecycle.test.ts
 - test/integration/pipeline/hooks.test.ts
 - test/integration/pipeline/pipeline-events.test.ts
@@ -54,6 +56,7 @@ Found 66 unique integration test(s) with no unit test coverage:
 - test/integration/cli/cli-plugins.test.ts
 - test/integration/verification/test-scanner.test.ts
 - test/integration/verification/verification-asset-check.test.ts
+- test/integration/acceptance/red-green-cycle.test.ts
 - test/integration/execution/runner-parallel-metrics.test.ts
 - test/integration/execution/runner-config-plugins.test.ts
 - test/integration/execution/feature-status-write.test.ts

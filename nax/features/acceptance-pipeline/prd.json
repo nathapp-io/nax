@@ -1,0 +1,168 @@
+{
+  "project": "nax",
+  "feature": "acceptance-pipeline",
+  "branchName": "feat/acceptance-pipeline",
+  "userStories": [
+    {
+      "id": "ACC-001",
+      "title": "AC refinement module",
+      "description": "Create a module that takes raw PRD acceptanceCriteria strings and refines them into concrete, testable assertions using an LLM call.\n\nCreate `src/acceptance/refinement.ts` with:\n\n1. `refineAcceptanceCriteria(criteria: string[], context: RefinementContext): Promise<RefinedCriterion[]>` — main entry point. Takes raw AC strings from PRD, calls LLM to produce testable assertions.\n\n2. `RefinedCriterion` type: `{ original: string; refined: string; testable: boolean; storyId: string }`. The `refined` field contains a concrete, machine-verifiable description. `testable` is false if the LLM determines the criterion cannot be automatically tested (e.g., \"UX feels responsive\").\n\n3. `buildRefinementPrompt(criteria: string[], codebaseContext: string): string` — builds the LLM prompt that asks for concrete assertions.\n\n4. `parseRefinementResponse(response: string, criteria: string[]): RefinedCriterion[]` — parses LLM JSON response back into typed objects. Must handle malformed JSON gracefully (fall back to using original criterion text as-is).\n\nThe refinement uses `adapter.complete()` from the agent registry (same pattern as classifier.ts and llm routing). Use the model tier from `config.acceptance.model` (default: \"fast\").\n\nUpdate `src/acceptance/types.ts` with new types. Export from `src/acceptance/index.ts`.\n\nWrite tests in `test/unit/acceptance/refinement.test.ts`.",
+      "acceptanceCriteria": [
+        "refineAcceptanceCriteria returns RefinedCriterion[] with original and refined fields",
+        "buildRefinementPrompt includes all criteria and codebase context in output",
+        "parseRefinementResponse handles valid JSON response correctly",
+        "parseRefinementResponse falls back to original text on malformed JSON",
+        "Criteria marked testable:false are preserved but flagged",
+        "Module uses adapter.complete() for LLM calls, not direct Bun.spawn"
+      ],
+      "tags": [],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/acceptance/generator.ts",
+        "src/acceptance/types.ts",
+        "src/acceptance/index.ts",
+        "src/analyze/classifier.ts"
+      ],
+      "expectedFiles": [
+        "src/acceptance/refinement.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Standard feature with real logic (prompt building, JSON parsing, LLM integration) following established adapter pattern; requires understanding existing codebase patterns but has clear requirements and straightforward implementation path.",
+        "contentHash": "b83b2029ed0a086ad69c4db1c12fd4879d987ffdc9dbc281eaa76a6b0386e60f"
+      }
+    },
+    {
+      "id": "ACC-002",
+      "title": "Rewrite acceptance test generator for PRD-based input",
+      "description": "Rewrite `src/acceptance/generator.ts` to generate acceptance tests from PRD `acceptanceCriteria[]` (via refined criteria) instead of from spec.md AC-N lines.\n\nChanges:\n\n1. Add new function `generateFromPRD(stories: UserStory[], refinedCriteria: RefinedCriterion[], options: GenerateFromPRDOptions): Promise<AcceptanceTestResult>`. This replaces the spec.md-based flow for Method 1 (direct PRD).\n\n2. `GenerateFromPRDOptions` type: `{ featureName: string; workdir: string; codebaseContext: string; modelTier: ModelTier; modelDef: ModelDef; config: NaxConfig }`.\n\n3. Update `buildAcceptanceTestPrompt` to accept `RefinedCriterion[]` instead of `AcceptanceCriterion[]`. The refined text should be used for test generation, not the original vague text.\n\n4. Keep the existing `generateAcceptanceTests` function (for backward compatibility with `nax analyze`), but have it internally call the new code path.\n\n5. Write `acceptance-refined.json` alongside `acceptance.test.ts` for audit/debugging (contains the refined criteria mapping).\n\nWrite tests in `test/unit/acceptance/generator-prd.test.ts`.\n\nDo NOT delete the existing `parseAcceptanceCriteria` function — it is still used by the spec.md path.",
+      "acceptanceCriteria": [
+        "generateFromPRD produces acceptance.test.ts content from UserStory[] and RefinedCriterion[]",
+        "Generated tests use refined criterion text, not original vague text",
+        "Each test is named with AC-N format matching the story and criterion index",
+        "Generated test file imports from bun:test (describe/test/expect)",
+        "Backward compatible: existing generateAcceptanceTests still works for spec.md path",
+        "acceptance-refined.json is written with original-to-refined mapping"
+      ],
+      "tags": [],
+      "dependencies": [
+        "ACC-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/acceptance/generator.ts",
+        "src/acceptance/types.ts",
+        "src/acceptance/refinement.ts"
+      ],
+      "expectedFiles": [
+        "src/acceptance/generator.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Scoped refactoring with clear requirements, backward compatibility constraint, and integration of new refined-criteria input path—requires codebase understanding but no novel algorithms or architectural decisions.",
+        "contentHash": "6f134921a418ca8c55d2ee55c646ab29d18f3b539d17f2136e1cd1c8be32f2c6"
+      }
+    },
+    {
+      "id": "ACC-003",
+      "title": "acceptance-setup pipeline stage with RED gate",
+      "description": "Create a new pipeline stage `acceptance-setup` that runs once before story execution begins. This stage generates acceptance tests from the PRD and validates them with a RED gate.\n\nCreate `src/pipeline/stages/acceptance-setup.ts`:\n\n1. The stage collects all `acceptanceCriteria` from all stories in `ctx.prd.userStories`.\n\n2. Calls `refineAcceptanceCriteria()` to refine the raw criteria.\n\n3. Calls `generateFromPRD()` to produce `acceptance.test.ts`.\n\n4. Writes `acceptance.test.ts` to `ctx.featureDir` (e.g., `nax/features/<name>/acceptance.test.ts`).\n\n5. RED gate: Runs `bun test <acceptance.test.ts>`. Expected behavior:\n   - Exit code != 0 (tests fail) → valid RED, continue\n   - Exit code == 0 (all tests pass) → tests are not testing new behavior, warn and skip acceptance\n\n6. If `acceptance.test.ts` already exists in the feature dir (e.g., from a previous `nax analyze` run), skip generation and go directly to RED gate.\n\n7. Store filtered criteria count in `ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount }`.\n\nIntegration:\n- Add to `src/pipeline/stages/index.ts` — this stage goes in a new `preRunPipeline` array (runs once before the per-story loop, after PRD is loaded).\n- Wire into the runner (`src/execution/runner.ts` or wherever the per-story loop is orchestrated) to call preRunPipeline before starting stories.\n\nConfig additions in `src/config/defaults.ts` and `src/config/schemas.ts`:\n- `acceptance.refinement`: boolean (default: true) — whether to LLM-refine criteria\n- `acceptance.redGate`: boolean (default: true) — whether to run RED check\n- `acceptance.model`: ModelTier (default: \"fast\") — model tier for refinement LLM call\n\nRewire existing `src/pipeline/stages/acceptance.ts` (GREEN gate):\n- Remove the dependency on parsing AC-N lines from spec.md\n- Simply run `bun test <acceptance.test.ts>` from the feature dir (already mostly does this)\n- The test file is guaranteed to exist because acceptance-setup created it\n\nWrite tests in `test/unit/pipeline/stages/acceptance-setup.test.ts`.",
+      "acceptanceCriteria": [
+        "acceptance-setup stage collects criteria from all PRD stories",
+        "acceptance-setup calls refinement and generation modules",
+        "acceptance-setup writes acceptance.test.ts to feature directory",
+        "RED gate: tests that fail (exit != 0) are valid RED, stage continues",
+        "RED gate: tests that pass (exit == 0) trigger warning and skip acceptance",
+        "Skips generation if acceptance.test.ts already exists in feature dir",
+        "Config: acceptance.refinement, acceptance.redGate, acceptance.model added with defaults",
+        "Existing acceptance stage (GREEN gate) works with pre-generated test file",
+        "preRunPipeline is wired into runner before per-story loop"
+      ],
+      "tags": [],
+      "dependencies": [
+        "ACC-001",
+        "ACC-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/pipeline/stages/acceptance.ts",
+        "src/pipeline/stages/index.ts",
+        "src/config/defaults.ts",
+        "src/config/schemas.ts"
+      ],
+      "expectedFiles": [
+        "src/pipeline/stages/acceptance-setup.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multi-file integration work (7+ files: stages, runner, config, tests) with moderate logic (RED gate, criteria collection, skip logic), standard patterns, no novel algorithms or architecture decisions.",
+        "contentHash": "d49ba5c40918bf60c671257635353cb67fb3cbe3287d47c9a7e82056251cfcbf"
+      }
+    },
+    {
+      "id": "ACC-004",
+      "title": "Integration test for RED to GREEN acceptance cycle",
+      "description": "Write an integration test that validates the full acceptance pipeline flow: generate acceptance tests from PRD criteria, verify RED gate (tests fail before implementation), and verify GREEN gate (tests pass after implementation).\n\nCreate `test/integration/acceptance/red-green-cycle.test.ts`:\n\n1. Set up a temp directory with a minimal PRD containing 2 stories with clear acceptance criteria.\n\n2. Mock the LLM adapter to return predictable refined criteria and test code.\n\n3. Run acceptance-setup stage — verify:\n   - acceptance.test.ts is written to the feature dir\n   - RED gate detects failures (exit != 0)\n   - Stage returns continue (valid RED)\n\n4. Simulate implementation by writing stub files that make the acceptance tests pass.\n\n5. Run acceptance stage (GREEN gate) — verify:\n   - Tests now pass (exit == 0)\n   - Stage returns continue\n\n6. Test the edge case: acceptance.test.ts already exists → skip generation, still run RED gate.\n\n7. Test the edge case: all tests already pass before implementation → warn and skip acceptance.\n\nUse `_deps` injection pattern for Bun.spawn calls (same as other pipeline stage tests).",
+      "acceptanceCriteria": [
+        "Integration test covers full RED to GREEN cycle",
+        "RED gate correctly identifies failing tests as valid RED",
+        "GREEN gate correctly identifies passing tests as feature complete",
+        "Edge case: pre-existing acceptance.test.ts skips generation",
+        "Edge case: already-passing tests trigger warning",
+        "Uses _deps injection for process spawning (no real LLM calls)"
+      ],
+      "tags": [],
+      "dependencies": [
+        "ACC-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "test/integration/execution/runner-batching.test.ts",
+        "src/pipeline/stages/acceptance-setup.ts",
+        "src/pipeline/stages/acceptance.ts"
+      ],
+      "expectedFiles": [
+        "test/integration/acceptance/red-green-cycle.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Integration test with moderate logic: orchestrating multiple pipeline stages, LLM mocking, temp file setup, process spawning, and edge case handling. Straightforward test structure but requires codebase understanding.",
+        "contentHash": "e21bf0e513383bc016d2fec5a1da68c31418fc89833960a1629b0f7ef7d6117f"
+      }
+    }
+  ],
+  "updatedAt": "2026-03-12T10:47:34.543Z"
+}

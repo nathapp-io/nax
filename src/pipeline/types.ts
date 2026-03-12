@@ -106,6 +106,12 @@ export interface PipelineContext {
   storyMetrics?: StoryMetrics[];
   /** Whether to retry the story in lite mode after a failure */
   retryAsLite?: boolean;
+  /** Results from acceptance-setup stage (set by acceptanceSetupStage) */
+  acceptanceSetup?: {
+    totalCriteria: number;
+    testableCount: number;
+    redFailCount: number;
+  };
   /** Failure category from TDD orchestrator (set by executionStage on TDD failure) */
   tddFailureCategory?: FailureCategory;
   /** Set to true when TDD full-suite gate already passed — verify stage skips to avoid redundant run (BUG-054) */

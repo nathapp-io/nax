@@ -5,7 +5,7 @@ import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import { pipelineEventBus } from "../pipeline/event-bus";
 import { runPipeline } from "../pipeline/runner";
-import { postRunPipeline } from "../pipeline/stages";
+import { postRunPipeline, preRunPipeline } from "../pipeline/stages";
 import { wireEventsWriter } from "../pipeline/subscribers/events-writer";
 import { wireHooks } from "../pipeline/subscribers/hooks";
 import { wireInteraction } from "../pipeline/subscribers/interaction";
@@ -68,6 +68,20 @@ export async function executeSequential(
   );
 
   try {
+    // Pre-run pipeline (acceptance test setup with RED gate)
+    logger?.info("execution", "Running pre-run pipeline (acceptance test setup)");
+    const preRunCtx: PipelineContext = {
+      config: ctx.config,
+      prd,
+      workdir: ctx.workdir,
+      featureDir: ctx.featureDir,
+      story: prd.userStories[0],
+      stories: prd.userStories,
+      routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+      hooks: ctx.hooks,
+    };
+    await runPipeline(preRunPipeline, preRunCtx, ctx.eventEmitter);
+
     while (iterations < ctx.config.execution.maxIterations) {
       iterations++;
       if (Math.round(process.memoryUsage().heapUsed / 1024 / 1024) > 1024)
