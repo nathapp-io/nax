@@ -57,8 +57,8 @@
       "dependencies": [
         "ACC-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "contextFiles": [
@@ -115,7 +115,14 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multi-file integration work (7+ files: stages, runner, config, tests) with moderate logic (RED gate, criteria collection, skip logic), standard patterns, no novel algorithms or architecture decisions.",
+        "contentHash": "d49ba5c40918bf60c671257635353cb67fb3cbe3287d47c9a7e82056251cfcbf"
+      }
     },
     {
       "id": "ACC-004",
@@ -150,5 +157,5 @@
       "storyPoints": 1
     }
   ],
-  "updatedAt": "2026-03-12T10:16:32.601Z"
+  "updatedAt": "2026-03-12T10:30:37.751Z"
 }
