@@ -95,6 +95,8 @@ export async function runTddSession(
         .withLoader(workdir, config)
         .story(story)
         .context(contextMarkdown)
+        .constitution(constitution)
+        .testCommand(config.quality?.commands?.test)
         .build();
       break;
     case "implementer":
@@ -103,6 +105,7 @@ export async function runTddSession(
         .story(story)
         .context(contextMarkdown)
         .constitution(constitution)
+        .testCommand(config.quality?.commands?.test)
         .build();
       break;
     case "verifier":
@@ -110,6 +113,8 @@ export async function runTddSession(
         .withLoader(workdir, config)
         .story(story)
         .context(contextMarkdown)
+        .constitution(constitution)
+        .testCommand(config.quality?.commands?.test)
         .build();
       break;
   }
