@@ -5,6 +5,7 @@
  * via LLM call to the agent adapter.
  */
 
+import { join } from "node:path";
 import { ClaudeCodeAdapter } from "../agents/claude";
 import type { AgentAdapter } from "../agents/types";
 import { getLogger } from "../logger";
@@ -64,10 +65,66 @@ export const _generatorPRDDeps = {
  */
 export async function generateFromPRD(
   _stories: UserStory[],
-  _refinedCriteria: RefinedCriterion[],
-  _options: GenerateFromPRDOptions,
+  refinedCriteria: RefinedCriterion[],
+  options: GenerateFromPRDOptions,
 ): Promise<AcceptanceTestResult> {
-  throw new Error("[generator] generateFromPRD: not implemented");
+  const logger = getLogger();
+
+  const criteria: AcceptanceCriterion[] = refinedCriteria.map((c, i) => ({
+    id: `AC-${i + 1}`,
+    text: c.refined,
+    lineNumber: i + 1,
+  }));
+
+  if (refinedCriteria.length === 0) {
+    return { testCode: "", criteria: [] };
+  }
+
+  const criteriaList = refinedCriteria.map((c, i) => `AC-${i + 1}: ${c.refined}`).join("\n");
+
+  const prompt = `You are a test engineer. Generate acceptance tests for the "${options.featureName}" feature based on the refined acceptance criteria below.
+
+CODEBASE CONTEXT:
+${options.codebaseContext}
+
+ACCEPTANCE CRITERIA (refined):
+${criteriaList}
+
+Generate a complete acceptance.test.ts file using bun:test framework. Each AC maps to exactly one test named "AC-N: <description>".
+
+Use this structure:
+
+\`\`\`typescript
+import { describe, test, expect } from "bun:test";
+
+describe("${options.featureName} - Acceptance Tests", () => {
+  test("AC-1: <description>", async () => {
+    // Test implementation
+  });
+});
+\`\`\`
+
+Respond with ONLY the TypeScript test code (no markdown code fences, no explanation).`;
+
+  logger.info("acceptance", "Generating tests from PRD refined criteria", { count: refinedCriteria.length });
+
+  const testCode = await _generatorPRDDeps.adapter.complete(prompt);
+
+  const refinedJsonContent = JSON.stringify(
+    refinedCriteria.map((c, i) => ({
+      acId: `AC-${i + 1}`,
+      original: c.original,
+      refined: c.refined,
+      testable: c.testable,
+      storyId: c.storyId,
+    })),
+    null,
+    2,
+  );
+
+  await _generatorPRDDeps.writeFile(join(options.workdir, "acceptance-refined.json"), refinedJsonContent);
+
+  return { testCode, criteria };
 }
 
 export function parseAcceptanceCriteria(specContent: string): AcceptanceCriterion[] {
