@@ -25,7 +25,13 @@ export const reviewStage: PipelineStage = {
 
     logger.info("review", "Running review phase", { storyId: ctx.story.id });
 
-    const result = await reviewOrchestrator.review(ctx.config.review, ctx.workdir, ctx.config.execution, ctx.plugins);
+    const result = await reviewOrchestrator.review(
+      ctx.config.review,
+      ctx.workdir,
+      ctx.config.execution,
+      ctx.plugins,
+      ctx.storyGitRef,
+    );
 
     ctx.reviewResult = result.builtIn;
 

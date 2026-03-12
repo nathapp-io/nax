@@ -74,6 +74,7 @@ export class ReviewOrchestrator {
     workdir: string,
     executionConfig: NaxConfig["execution"],
     plugins?: PluginRegistry,
+    storyGitRef?: string,
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
@@ -87,7 +88,7 @@ export class ReviewOrchestrator {
       const reviewers = plugins.getReviewers();
       if (reviewers.length > 0) {
         // Use the story's start ref if available to capture auto-committed changes
-        const baseRef = executionConfig?.storyGitRef;
+        const baseRef = storyGitRef ?? executionConfig?.storyGitRef;
         const changedFiles = await getChangedFiles(workdir, baseRef);
         const pluginResults: ReviewResult["pluginReviewers"] = [];
 
