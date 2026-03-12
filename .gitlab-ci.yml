@@ -122,9 +122,7 @@ notify_pipeline_failed:
   image: 
     name: registry-intl.cn-hongkong.aliyuncs.com/gkci/node:22.14.0-alpine-ci
     pull_policy: always
-  needs:
-    - job: test
-      optional: true
+  needs: [test]
   when: on_failure
   script:
     - SUBJECT=$(echo "$CI_COMMIT_MESSAGE" | head -1)
@@ -136,5 +134,7 @@ notify_pipeline_failed:
       when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: on_failure
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_MESSAGE =~ /run-prerelease/ && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
+      when: on_failure
+    - if: '$CI_COMMIT_MESSAGE =~ /run-release/ && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
       when: on_failure
