@@ -68,6 +68,24 @@ export interface AcceptanceCriterion {
  * };
  * ```
  */
+/**
+ * Options for generating acceptance tests from PRD stories and refined criteria.
+ */
+export interface GenerateFromPRDOptions {
+  /** Feature name for context */
+  featureName: string;
+  /** Working directory for context scanning */
+  workdir: string;
+  /** Codebase context (file tree, dependencies, test patterns) */
+  codebaseContext: string;
+  /** Model tier to use for test generation */
+  modelTier: ModelTier;
+  /** Resolved model definition */
+  modelDef: ModelDef;
+  /** Global config for quality settings */
+  config: NaxConfig;
+}
+
 export interface GenerateAcceptanceTestsOptions {
   /** Full spec.md content */
   specContent: string;

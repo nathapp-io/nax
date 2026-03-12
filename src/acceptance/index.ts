@@ -7,6 +7,7 @@
 export type {
   AcceptanceCriterion,
   GenerateAcceptanceTestsOptions,
+  GenerateFromPRDOptions,
   AcceptanceTestResult,
   RefinedCriterion,
   RefinementContext,
@@ -23,7 +24,9 @@ export {
   parseAcceptanceCriteria,
   buildAcceptanceTestPrompt,
   generateAcceptanceTests,
+  generateFromPRD,
   generateSkeletonTests,
+  _generatorPRDDeps,
 } from "./generator";
 
 export type {

@@ -5,9 +5,17 @@
  * via LLM call to the agent adapter.
  */
 
+import { ClaudeCodeAdapter } from "../agents/claude";
 import type { AgentAdapter } from "../agents/types";
 import { getLogger } from "../logger";
-import type { AcceptanceCriterion, AcceptanceTestResult, GenerateAcceptanceTestsOptions } from "./types";
+import type { UserStory } from "../prd/types";
+import type {
+  AcceptanceCriterion,
+  AcceptanceTestResult,
+  GenerateAcceptanceTestsOptions,
+  GenerateFromPRDOptions,
+  RefinedCriterion,
+} from "./types";
 
 /**
  * Parse acceptance criteria from spec.md content.
@@ -31,6 +39,37 @@ import type { AcceptanceCriterion, AcceptanceTestResult, GenerateAcceptanceTests
  * // ]
  * ```
  */
+/**
+ * Injectable dependencies for generateFromPRD — allows tests to mock
+ * adapter.complete() and file writes without real binaries or disk I/O.
+ *
+ * @internal
+ */
+export const _generatorPRDDeps = {
+  adapter: new ClaudeCodeAdapter() as AgentAdapter,
+  writeFile: async (path: string, content: string): Promise<void> => {
+    await Bun.write(path, content);
+  },
+};
+
+/**
+ * Generate acceptance tests from PRD UserStory[] and RefinedCriterion[].
+ *
+ * This is a stub — implementation is provided by the implementer session.
+ *
+ * @param stories - User stories from the PRD
+ * @param refinedCriteria - Refined criteria produced by the refinement module
+ * @param options - Generation options
+ * @returns Generated test code and processed criteria
+ */
+export async function generateFromPRD(
+  _stories: UserStory[],
+  _refinedCriteria: RefinedCriterion[],
+  _options: GenerateFromPRDOptions,
+): Promise<AcceptanceTestResult> {
+  throw new Error("[generator] generateFromPRD: not implemented");
+}
+
 export function parseAcceptanceCriteria(specContent: string): AcceptanceCriterion[] {
   const criteria: AcceptanceCriterion[] = [];
   const lines = specContent.split("\n");
