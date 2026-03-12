@@ -108,7 +108,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator only]
 
 ## Coding Standards & Architecture Patterns
 
-**Read `docs/ARCHITECTURE.md` before writing any code.** It defines all enterprise-grade patterns:
+**Read `docs/architecture/ARCHITECTURE.md` before writing any code.** It defines all enterprise-grade patterns:
 
 - **Dependency injection** — `_deps` pattern for all external calls (spawn, fs, fetch)
 - **Error handling** — `[stage]` prefix + context + `{ cause: err }`
