@@ -12,7 +12,8 @@ import { type LoadedHooksConfig, fireHook } from "../../hooks";
 import { getSafeLogger } from "../../logger";
 import type { PRD, StructuredFailure, UserStory } from "../../prd";
 import { markStoryFailed, savePRD } from "../../prd";
-import { clearCacheForStory, routeBatch as llmRouteBatch } from "../../routing/strategies/llm";
+import { tryLlmBatchRoute } from "../../routing/batch-route";
+import { clearCacheForStory } from "../../routing/strategies/llm";
 import type { FailureCategory } from "../../tdd/types";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";
 import { hookCtx } from "../helpers";
@@ -170,25 +171,6 @@ export async function preIterationTierCheck(
 
   // Skip to next iteration (will pick next story)
   return { shouldSkipIteration: true, prdDirty: true, prd: failedPrd };
-}
-
-/**
- * Try LLM batch routing for ready stories. Logs and swallows errors (falls back to per-story routing).
- */
-async function tryLlmBatchRoute(config: NaxConfig, stories: UserStory[], label = "routing"): Promise<void> {
-  const mode = config.routing.llm?.mode ?? "hybrid";
-  if (config.routing.strategy !== "llm" || mode === "per-story" || stories.length === 0) return;
-  const logger = getSafeLogger();
-  try {
-    logger?.debug("routing", `LLM batch routing: ${label}`, { storyCount: stories.length, mode });
-    await llmRouteBatch(stories, { config });
-    logger?.debug("routing", "LLM batch routing complete", { label });
-  } catch (err) {
-    logger?.warn("routing", "LLM batch routing failed, falling back to individual routing", {
-      error: (err as Error).message,
-      label,
-    });
-  }
 }
 
 export interface EscalationHandlerContext {

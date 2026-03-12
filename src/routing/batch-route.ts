@@ -2,6 +2,7 @@
  * LLM Batch Routing Helper
  */
 
+import { getAgent } from "../agents/registry";
 import type { NaxConfig } from "../config";
 import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
@@ -21,7 +22,9 @@ export async function tryLlmBatchRoute(config: NaxConfig, stories: UserStory[], 
   const logger = getSafeLogger();
   try {
     logger?.debug("routing", `LLM batch routing: ${label}`, { storyCount: stories.length, mode });
-    await llmRouteBatch(stories, { config });
+    const agentName = config.execution?.agent ?? "claude";
+    const adapter = getAgent(agentName);
+    await llmRouteBatch(stories, { config, adapter });
     logger?.debug("routing", "LLM batch routing complete", { label });
   } catch (err) {
     logger?.warn("routing", "LLM batch routing failed, falling back to individual routing", {
