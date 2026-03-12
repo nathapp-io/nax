@@ -39,12 +39,14 @@ export const promptStage: PipelineStage = {
     if (isBatch) {
       prompt = buildBatchPrompt(ctx.stories, ctx.contextMarkdown, ctx.constitution);
     } else {
-      const role = ctx.routing.testStrategy === "tdd-simple" ? "tdd-simple" : "single-session";
+      // Both test-after and tdd-simple use the tdd-simple prompt (RED/GREEN/REFACTOR)
+      const role = "tdd-simple" as const;
       const builder = PromptBuilder.for(role)
         .withLoader(ctx.workdir, ctx.config)
         .story(ctx.story)
         .context(ctx.contextMarkdown)
-        .constitution(ctx.constitution?.content);
+        .constitution(ctx.constitution?.content)
+        .testCommand(ctx.config.quality?.commands?.test);
       prompt = await builder.build();
     }
 

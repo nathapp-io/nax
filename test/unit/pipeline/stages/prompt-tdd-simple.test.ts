@@ -3,10 +3,10 @@
  *
  * Covers:
  * - promptStage is enabled for tdd-simple strategy
- * - promptStage uses PromptBuilder.for('tdd-simple') (not 'single-session') for tdd-simple
+ * - promptStage uses PromptBuilder.for('tdd-simple') for both tdd-simple and test-after
  * - tdd-simple prompt includes RED/GREEN/REFACTOR phase instructions
  * - tdd-simple prompt does NOT use 'Single-Session' role header
- * - No regression: test-after still uses single-session role
+ * - test-after also uses tdd-simple prompt (unified single-session prompt)
  * - No regression: three-session-tdd still skips prompt stage
  */
 
@@ -190,26 +190,26 @@ describe("promptStage.execute() — tdd-simple strategy", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// No regression: test-after still uses single-session role
+// test-after now uses tdd-simple prompt (unified single-session prompt)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("promptStage.execute() — test-after strategy (no regression)", () => {
+describe("promptStage.execute() — test-after strategy (unified with tdd-simple)", () => {
   test("returns continue action", async () => {
     const ctx = makeCtx("test-after");
     const result = await promptStage.execute(ctx);
     expect(result.action).toBe("continue");
   });
 
-  test("test-after prompt uses Single-Session role (not TDD-Simple)", async () => {
+  test("test-after prompt uses TDD-Simple role (unified prompt)", async () => {
     const ctx = makeCtx("test-after");
     await promptStage.execute(ctx);
-    expect(ctx.prompt).toContain("# Role: Single-Session");
-    expect(ctx.prompt).not.toContain("# Role: TDD-Simple");
+    expect(ctx.prompt).toContain("# Role: TDD-Simple");
+    expect(ctx.prompt).not.toContain("# Role: Single-Session");
   });
 
-  test("test-after prompt does NOT contain RED phase instructions", async () => {
+  test("test-after prompt contains RED phase instructions (unified with tdd-simple)", async () => {
     const ctx = makeCtx("test-after");
     await promptStage.execute(ctx);
-    expect(ctx.prompt).not.toContain("RED phase");
+    expect(ctx.prompt).toContain("RED phase");
   });
 });

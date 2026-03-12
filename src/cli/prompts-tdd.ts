@@ -31,13 +31,23 @@ export async function handleThreeSessionTddPrompts(
       .withLoader(ctx.workdir, ctx.config)
       .story(story)
       .context(ctx.contextMarkdown)
+      .constitution(ctx.constitution?.content)
+      .testCommand(ctx.config.quality?.commands?.test)
       .build(),
     PromptBuilder.for("implementer", { variant: "standard" })
       .withLoader(ctx.workdir, ctx.config)
       .story(story)
       .context(ctx.contextMarkdown)
+      .constitution(ctx.constitution?.content)
+      .testCommand(ctx.config.quality?.commands?.test)
       .build(),
-    PromptBuilder.for("verifier").withLoader(ctx.workdir, ctx.config).story(story).context(ctx.contextMarkdown).build(),
+    PromptBuilder.for("verifier")
+      .withLoader(ctx.workdir, ctx.config)
+      .story(story)
+      .context(ctx.contextMarkdown)
+      .constitution(ctx.constitution?.content)
+      .testCommand(ctx.config.quality?.commands?.test)
+      .build(),
   ]);
 
   const sessions = [

@@ -121,10 +121,14 @@ describe("TS-001: LLM routing prompt describes tdd-simple strategy", () => {
     };
 
     const prompt = buildRoutingPrompt(story, DEFAULT_CONFIG);
-    expect(prompt).toContain("tdd-simple");
+    // Routing prompt focuses on complexity + model tier (test strategy is derived in code)
+    expect(prompt).toContain("Complexity Levels");
+    expect(prompt).toContain("Model Tiers");
+    expect(prompt).toContain("simple");
+    expect(prompt).toContain("complex");
   });
 
-  test("buildRoutingPrompt distinguishes tdd-simple from test-after", async () => {
+  test("buildRoutingPrompt does not mention test strategies (derived in code since BUG-045)", async () => {
     const { buildRoutingPrompt } = await import("../../../src/routing/strategies/llm-prompts");
     const { DEFAULT_CONFIG } = await import("../../../src/config/defaults");
 
@@ -142,12 +146,13 @@ describe("TS-001: LLM routing prompt describes tdd-simple strategy", () => {
     };
 
     const prompt = buildRoutingPrompt(story, DEFAULT_CONFIG);
-    // Prompt must describe both strategies so LLM can distinguish them
-    expect(prompt).toContain("tdd-simple");
-    expect(prompt).toContain("test-after");
+    // Test strategy is derived by determineTestStrategy() in code, not by LLM
+    expect(prompt).not.toContain("tdd-simple");
+    expect(prompt).not.toContain("test-after");
+    expect(prompt).not.toContain("three-session-tdd");
   });
 
-  test("buildBatchRoutingPrompt output mentions tdd-simple", async () => {
+  test("buildBatchRoutingPrompt uses same structure as single prompt", async () => {
     const { buildBatchRoutingPrompt } = await import("../../../src/routing/strategies/llm-prompts");
     const { DEFAULT_CONFIG } = await import("../../../src/config/defaults");
 
@@ -167,6 +172,8 @@ describe("TS-001: LLM routing prompt describes tdd-simple strategy", () => {
     ];
 
     const prompt = buildBatchRoutingPrompt(stories, DEFAULT_CONFIG);
-    expect(prompt).toContain("tdd-simple");
+    expect(prompt).toContain("Complexity Levels");
+    expect(prompt).toContain("Model Tiers");
+    expect(prompt).not.toContain("tdd-simple");
   });
 });

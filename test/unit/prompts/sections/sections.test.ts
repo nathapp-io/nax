@@ -99,9 +99,9 @@ describe("buildRoleTaskSection", () => {
     expect(result.toLowerCase()).toMatch(/make.*fail.*test.*pass|failing tests pass/);
   });
 
-  test("lite contains 'Write tests first'", () => {
+  test("lite acknowledges test-writer session", () => {
     const result = buildRoleTaskSection("lite");
-    expect(result).toContain("Write tests first");
+    expect(result).toContain("test-writer session");
   });
 
   test("lite contains instruction to implement", () => {

@@ -349,9 +349,9 @@ describe("LLM Routing Strategy - Prompt Building", () => {
     expect(prompt).toContain("Description: Correct spelling mistake");
     expect(prompt).toContain("1. Update README.md with correct spelling");
     expect(prompt).toContain("Tags: docs");
-    expect(prompt).toContain("fast: Simple changes");
-    expect(prompt).toContain("balanced: Standard features");
-    expect(prompt).toContain("powerful: Complex architecture");
+    expect(prompt).toContain("fast: For simple tasks");
+    expect(prompt).toContain("balanced: For medium tasks");
+    expect(prompt).toContain("powerful: For complex/expert tasks");
   });
 
   test("buildBatchPrompt formats multiple stories", () => {

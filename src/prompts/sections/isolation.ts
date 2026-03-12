@@ -13,24 +13,27 @@
  * - buildIsolationSection("lite") → test-writer, lite
  */
 
-const TEST_FILTER_RULE =
-  "When running tests, run ONLY test files related to your changes " +
-  "(e.g. `bun test ./test/specific.test.ts`). NEVER run `bun test` without a file filter " +
-  "— full suite output will flood your context window and cause failures.";
+const DEFAULT_TEST_CMD = "bun test";
+
+function buildTestFilterRule(testCommand: string): string {
+  return `When running tests, run ONLY test files related to your changes (e.g. \`${testCommand} <path/to/test-file>\`). NEVER run the full test suite without a filter — full suite output will flood your context window and cause failures.`;
+}
 
 export function buildIsolationSection(
   roleOrMode: "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple" | "strict" | "lite",
   mode?: "strict" | "lite",
+  testCommand?: string,
 ): string {
   // Old API support: buildIsolationSection("strict") or buildIsolationSection("lite")
   if ((roleOrMode === "strict" || roleOrMode === "lite") && mode === undefined) {
-    return buildIsolationSection("test-writer", roleOrMode);
+    return buildIsolationSection("test-writer", roleOrMode, testCommand);
   }
 
   const role = roleOrMode as "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple";
+  const testCmd = testCommand ?? DEFAULT_TEST_CMD;
 
   const header = "# Isolation Rules";
-  const footer = `\n\n${TEST_FILTER_RULE}`;
+  const footer = `\n\n${buildTestFilterRule(testCmd)}`;
 
   if (role === "test-writer") {
     const m = mode ?? "strict";
@@ -54,6 +57,6 @@ export function buildIsolationSection(
     return `${header}\n\nisolation scope: Create test files in test/ directory, then implement source code in src/ to make tests pass. Both directories are in scope for this session.${footer}`;
   }
 
-  // tdd-simple role — no isolation restrictions (no footer needed)
-  return `${header}\n\nisolation scope: You may modify both src/ and test/ files. Write failing tests FIRST, then implement to make them pass.`;
+  // tdd-simple role — no isolation restrictions but still needs the test filter rule
+  return `${header}\n\nisolation scope: You may modify both src/ and test/ files. Write failing tests FIRST, then implement to make them pass.${footer}`;
 }
