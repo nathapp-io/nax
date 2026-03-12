@@ -247,6 +247,5 @@ export async function run(options: RunOptions): Promise<RunResult> {
 }
 
 // Re-exports for backward compatibility with existing test imports
-export { buildSingleSessionPrompt, buildBatchPrompt } from "./prompts";
 export { groupStoriesIntoBatches, type StoryBatch } from "./batching";
 export { escalateTier } from "./escalation";

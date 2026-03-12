@@ -394,13 +394,14 @@ describe("Structural: call sites migrated away from old prompt functions", () =>
     expect(source).toContain("PromptBuilder");
   });
 
-  test("src/pipeline/stages/prompt.ts does not import buildSingleSessionPrompt after migration", async () => {
+  test("src/pipeline/stages/prompt.ts does not import buildSingleSessionPrompt or buildBatchPrompt after migration", async () => {
     const source = await Bun.file(
       new URL("../../../src/pipeline/stages/prompt.ts", import.meta.url).pathname,
     ).text();
 
-    // After migration, prompt stage should NOT use the old function
+    // After migration, prompt stage should NOT use the old functions
     expect(source).not.toContain("buildSingleSessionPrompt");
+    expect(source).not.toContain("buildBatchPrompt");
   });
 
   test("src/pipeline/stages/prompt.ts imports PromptBuilder after migration", async () => {
@@ -439,9 +440,16 @@ describe("Internal prompts: not migrated, still accessible", () => {
     expect(typeof mod.buildRectificationPrompt).toBe("function");
   });
 
-  test("buildBatchPrompt still exported from src/execution/prompts", async () => {
-    const mod = await import("../../../src/execution/prompts");
-    expect(typeof mod.buildBatchPrompt).toBe("function");
+  test("src/execution/prompts.ts has been deleted (buildBatchPrompt and buildSingleSessionPrompt are now dead code)", async () => {
+    // After migration, src/execution/prompts.ts should not exist
+    // The module should not be importable
+    let importError = null;
+    try {
+      await import("../../../src/execution/prompts");
+    } catch (err) {
+      importError = err;
+    }
+    expect(importError).not.toBeNull();
   });
 
   test("buildRoutingPrompt still exported from src/routing/strategies/llm-prompts", async () => {
