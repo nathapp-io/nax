@@ -1,36 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-10T09-51-57-875Z",
-    "feature": "v0380-test-health",
-    "startedAt": "2026-03-10T09:51:57.875Z",
+    "id": "run-2026-03-12T02-01-12-245Z",
+    "feature": "init-enhance",
+    "startedAt": "2026-03-12T02:01:12.245Z",
     "status": "running",
     "dryRun": false,
-    "pid": 26853
+    "pid": 2550
   },
   "progress": {
-    "total": 5,
-    "passed": 4,
+    "total": 3,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 3
   },
   "cost": {
-    "spent": 0.2042045,
+    "spent": 0,
     "limit": 8
   },
   "current": {
-    "storyId": "TH-004",
-    "title": "Execute confirmed redundant test cleanup",
+    "storyId": "INIT-001",
+    "title": "Auto-detect project stack and pre-fill config.json quality commands",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 5,
-  "updatedAt": "2026-03-10T10:54:59.391Z",
-  "durationMs": 3781516,
-  "lastHeartbeat": "2026-03-10T10:54:59.391Z"
+  "iterations": 1,
+  "updatedAt": "2026-03-12T02:04:16.082Z",
+  "durationMs": 183837,
+  "lastHeartbeat": "2026-03-12T02:04:16.082Z"
 }

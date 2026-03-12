@@ -30,7 +30,17 @@
       ],
       "expectedFiles": [
         "src/cli/init-detect.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Single new module with deterministic file-detection logic and clear mapping table, but multiple stack variants (7 languages/runtimes) and linter combinations requiring comprehensive test coverage using standard dependency injection patterns.",
+        "contentHash": "37e99a81f06bd8f8a6bdf6e3098dc542c8f4c574d87ef14dd0a0580200b748fb"
+      }
     },
     {
       "id": "INIT-002",
@@ -62,7 +72,10 @@
       ],
       "expectedFiles": [
         "src/cli/init-context.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "INIT-003",
@@ -91,7 +104,11 @@
       "contextFiles": [
         "src/cli/init.ts"
       ],
-      "expectedFiles": []
+      "expectedFiles": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
-  ]
+  ],
+  "updatedAt": "2026-03-12T02:01:30.505Z"
 }
