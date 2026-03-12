@@ -13,6 +13,7 @@ import type { RoutingResult } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
 import type { PRD, UserStory } from "../prd/types";
 import type { StoryBatch } from "./batching";
+import type { DeferredReviewResult } from "./deferred-review";
 import type { StatusWriter } from "./status-writer";
 
 export interface SequentialExecutionContext {
@@ -41,6 +42,7 @@ export interface SequentialExecutionResult {
   totalCost: number;
   allStoryMetrics: StoryMetrics[];
   exitReason: "completed" | "cost-limit" | "max-iterations" | "stalled" | "no-stories" | "pre-merge-aborted";
+  deferredReview?: DeferredReviewResult;
 }
 
 /**

@@ -1,0 +1,125 @@
+{
+  "project": "nax",
+  "feature": "deferred-review",
+  "branchName": "feat/deferred-review",
+  "userStories": [
+    {
+      "id": "DR-001",
+      "title": "Add pluginMode config to ReviewConfig schema",
+      "description": "Add a new optional field `pluginMode` to the ReviewConfig type and schema in `src/config/`. Valid values: \"per-story\" (default, current behavior) and \"deferred\" (skip plugin reviewers per-story, run once at end of run). Update the config schema validation (Zod) to accept and default this field. Update `src/review/types.ts` ReviewConfig type if it mirrors the config schema.",
+      "acceptanceCriteria": [
+        "ReviewConfig type has `pluginMode?: \"per-story\" | \"deferred\"` field",
+        "Zod schema in config validates pluginMode with default \"per-story\"",
+        "Existing configs without pluginMode continue to work (backward compatible)",
+        "Unit tests verify schema accepts both values and defaults correctly"
+      ],
+      "tags": [
+        "config",
+        "schema"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/config/schema.ts",
+        "src/config/runtime-types.ts",
+        "src/review/types.ts"
+      ],
+      "expectedFiles": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single optional config field addition with straightforward Zod schema validation and backward-compatible default; no new behavior or logic.",
+        "contentHash": "a011c5cd24183fa11a288ce4f2829a1dfc46d2220364c69e79b53ef29dbde5af"
+      }
+    },
+    {
+      "id": "DR-002",
+      "title": "Skip plugin reviewers in review stage when pluginMode is deferred",
+      "description": "Modify the review stage (`src/pipeline/stages/review.ts`) and review orchestrator (`src/review/orchestrator.ts`) to skip plugin reviewer execution when `config.review.pluginMode === \"deferred\"`. Built-in checks (typecheck, lint, test) must still run per-story regardless of pluginMode. When skipped, log a debug message indicating plugin reviews are deferred. The `ReviewOrchestrator.review()` method should accept the pluginMode and conditionally skip the plugin reviewer loop.",
+      "acceptanceCriteria": [
+        "When pluginMode is \"deferred\", plugin reviewers are NOT executed in the per-story review stage",
+        "Built-in review checks (typecheck, lint, format) still run per-story regardless of pluginMode",
+        "Debug log emitted when plugin reviewers are skipped due to deferred mode",
+        "When pluginMode is \"per-story\" or undefined, behavior is identical to current (no regression)",
+        "Unit tests for review stage cover both per-story and deferred paths"
+      ],
+      "tags": [
+        "review",
+        "pipeline"
+      ],
+      "dependencies": [
+        "DR-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/pipeline/stages/review.ts",
+        "src/review/orchestrator.ts"
+      ],
+      "expectedFiles": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Conditional logic across 2 files (review stage + orchestrator) with tests for multiple paths; straightforward implementation but requires understanding existing flow and ensuring no regression",
+        "contentHash": "d2b56a342345bdfb0abbf28ec268e605dd46cf7a2088e931b25172220bc24c55"
+      }
+    },
+    {
+      "id": "DR-003",
+      "title": "Run deferred plugin review after all stories complete in runner",
+      "description": "After all stories have been executed in the sequential executor flow, if `config.review.pluginMode === \"deferred\"` and plugin reviewers are registered, run plugin reviewers once against the full diff from the run start git ref to HEAD. Capture the run-start git ref at the beginning of execution (before any stories run). Use the existing `getChangedFiles()` from `src/review/orchestrator.ts` with the run-start ref as baseRef. Log results and emit appropriate events. If any plugin reviewer fails, log a warning with findings but do NOT fail the run (the run already succeeded per-story). Store the deferred review result in the run summary/metrics so reporters can include it.",
+      "acceptanceCriteria": [
+        "Run-start git ref is captured before first story executes",
+        "After all stories complete, plugin reviewers run once with full diff (run-start ref to HEAD)",
+        "Deferred review only runs when pluginMode is \"deferred\" AND plugin reviewers are registered",
+        "Plugin reviewer failures in deferred mode log warnings but do NOT fail the overall run",
+        "Deferred review results are available in run summary for reporters",
+        "Integration test verifies deferred review runs once at end with correct diff range",
+        "When no plugin reviewers are registered, deferred review is silently skipped"
+      ],
+      "tags": [
+        "execution",
+        "review"
+      ],
+      "dependencies": [
+        "DR-001",
+        "DR-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/execution/runner.ts",
+        "src/execution/runner-execution.ts",
+        "src/review/orchestrator.ts",
+        "src/execution/sequential-executor.ts"
+      ],
+      "expectedFiles": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multi-file integration touching runner, review, and metrics layers with conditional execution, event emission, and error handling; uses existing getChangedFiles() but requires lifecycle management and integration test coverage.",
+        "contentHash": "b6648fc91bdbbbdc776238b01d70f1f06d71adde2a2e06dd274000fc9cfdb9de"
+      }
+    }
+  ],
+  "updatedAt": "2026-03-12T04:52:11.150Z"
+}

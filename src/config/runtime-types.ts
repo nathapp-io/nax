@@ -216,6 +216,8 @@ export interface ReviewConfig {
     lint?: string;
     test?: string;
   };
+  /** Plugin reviewer mode: "per-story" (run after each story) or "deferred" (run once at end of run, default: "per-story") */
+  pluginMode?: "per-story" | "deferred";
 }
 
 /** Plan config */

@@ -65,4 +65,6 @@ export interface ReviewConfig {
     lint?: string;
     test?: string;
   };
+  /** When to run plugin reviewers: per-story (default) or deferred (skip per-story, run once at end) */
+  pluginMode?: "per-story" | "deferred";
 }

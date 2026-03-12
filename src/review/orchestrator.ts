@@ -84,6 +84,11 @@ export class ReviewOrchestrator {
       return { builtIn, success: false, failureReason: builtIn.failureReason, pluginFailed: false };
     }
 
+    if (reviewConfig.pluginMode === "deferred") {
+      logger?.debug("review", "Plugin reviewers deferred — skipping per-story execution");
+      return { builtIn, success: true, pluginFailed: false };
+    }
+
     if (plugins) {
       const reviewers = plugins.getReviewers();
       if (reviewers.length > 0) {

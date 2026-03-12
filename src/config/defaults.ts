@@ -116,6 +116,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
     enabled: true,
     checks: ["typecheck", "lint"],
     commands: {},
+    pluginMode: "per-story",
   },
   plan: {
     model: "balanced",

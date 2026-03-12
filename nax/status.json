@@ -1,12 +1,12 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-12T02-01-12-245Z",
-    "feature": "init-enhance",
-    "startedAt": "2026-03-12T02:01:12.245Z",
+    "id": "run-2026-03-12T04-31-05-405Z",
+    "feature": "deferred-review",
+    "startedAt": "2026-03-12T04:31:05.405Z",
     "status": "running",
     "dryRun": false,
-    "pid": 2550
+    "pid": 26970
   },
   "progress": {
     "total": 3,
@@ -17,12 +17,12 @@
     "pending": 1
   },
   "cost": {
-    "spent": 0.686063,
+    "spent": 0.5937804999999999,
     "limit": 8
   },
   "current": {
-    "storyId": "INIT-003",
-    "title": "Post-init checklist and unified init flow",
+    "storyId": "DR-003",
+    "title": "Run deferred plugin review after all stories complete in runner",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
@@ -30,7 +30,7 @@
     "phase": "routing"
   },
   "iterations": 3,
-  "updatedAt": "2026-03-12T02:38:16.108Z",
-  "durationMs": 2223863,
-  "lastHeartbeat": "2026-03-12T02:38:16.108Z"
+  "updatedAt": "2026-03-12T05:17:16.496Z",
+  "durationMs": 2771091,
+  "lastHeartbeat": "2026-03-12T05:17:16.496Z"
 }

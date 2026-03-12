@@ -130,7 +130,8 @@
     "commands": {
       "typecheck": "bun run typecheck",
       "lint": "bun run lint"
-    }
+    },
+    "pluginMode": "deferred"
   },
   "plan": {
     "model": "balanced",

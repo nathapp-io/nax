@@ -1,6 +1,6 @@
 # Test Overlap Report
 
-Generated: 2026-03-12T02:33:29.832Z
+Generated: 2026-03-12T05:12:30.459Z
 
 ## REDUNDANT
 
@@ -22,7 +22,7 @@ Found 3 integration test(s) with partial unit test coverage:
 
 ## UNIQUE
 
-Found 65 unique integration test(s) with no unit test coverage:
+Found 66 unique integration test(s) with no unit test coverage:
 
 - test/integration/pipeline/verify-stage.test.ts
 - test/integration/pipeline/pipeline-acceptance.test.ts
@@ -72,6 +72,7 @@ Found 65 unique integration test(s) with no unit test coverage:
 - test/integration/execution/status-file.test.ts
 - test/integration/execution/runner-queue-and-attempts.test.ts
 - test/integration/execution/execution-isolation.test.ts
+- test/integration/execution/deferred-review-integration.test.ts
 - test/integration/execution/status-file-integration.test.ts
 - test/integration/execution/prd-pause.test.ts
 - test/integration/review/review-config-commands.test.ts
