@@ -20,7 +20,15 @@ function buildTestFilterRule(testCommand: string): string {
 }
 
 export function buildIsolationSection(
-  roleOrMode: "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple" | "strict" | "lite",
+  roleOrMode:
+    | "implementer"
+    | "test-writer"
+    | "verifier"
+    | "single-session"
+    | "tdd-simple"
+    | "batch"
+    | "strict"
+    | "lite",
   mode?: "strict" | "lite",
   testCommand?: string,
 ): string {
@@ -29,7 +37,7 @@ export function buildIsolationSection(
     return buildIsolationSection("test-writer", roleOrMode, testCommand);
   }
 
-  const role = roleOrMode as "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple";
+  const role = roleOrMode as "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple" | "batch";
   const testCmd = testCommand ?? DEFAULT_TEST_CMD;
 
   const header = "# Isolation Rules";

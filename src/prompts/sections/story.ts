@@ -6,6 +6,14 @@
 
 import type { UserStory } from "../../prd/types";
 
+/**
+ * Stub: renders multiple stories for a batch prompt.
+ * Real implementation is provided by the implementer session.
+ */
+export function buildBatchStorySection(_stories: UserStory[]): string {
+  return "";
+}
+
 export function buildStorySection(story: UserStory): string {
   const criteria = story.acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
 

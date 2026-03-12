@@ -26,6 +26,7 @@ export class PromptBuilder {
   private _role: PromptRole;
   private _options: PromptOptions;
   private _story: UserStory | undefined;
+  private _stories: UserStory[] | undefined;
   private _contextMd: string | undefined;
   private _constitution: string | undefined;
   private _overridePath: string | undefined;
@@ -44,6 +45,11 @@ export class PromptBuilder {
 
   story(story: UserStory): PromptBuilder {
     this._story = story;
+    return this;
+  }
+
+  /** Stub: stores multiple stories for a batch prompt. Real logic implemented by implementer. */
+  stories(_stories: UserStory[]): PromptBuilder {
     return this;
   }
 

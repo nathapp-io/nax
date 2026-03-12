@@ -30,7 +30,15 @@ function buildTestFrameworkHint(testCommand: string): string {
 }
 
 export function buildRoleTaskSection(
-  roleOrVariant: "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple" | "standard" | "lite",
+  roleOrVariant:
+    | "implementer"
+    | "test-writer"
+    | "verifier"
+    | "single-session"
+    | "tdd-simple"
+    | "batch"
+    | "standard"
+    | "lite",
   variant?: "standard" | "lite",
   testCommand?: string,
   isolation?: "strict" | "lite",
@@ -40,7 +48,7 @@ export function buildRoleTaskSection(
     return buildRoleTaskSection("implementer", roleOrVariant, testCommand, isolation);
   }
 
-  const role = roleOrVariant as "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple";
+  const role = roleOrVariant as "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple" | "batch";
   const testCmd = testCommand ?? DEFAULT_TEST_CMD;
   const frameworkHint = buildTestFrameworkHint(testCmd);
 
