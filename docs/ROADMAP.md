@@ -452,7 +452,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 - [ ] **Auto-decompose oversized stories** — When story size gate triggers, offer via interaction chain to auto-decompose using `nax analyse`.
 - [ ] VitePress documentation site — full CLI reference, hosted as standalone docs (pre-publish requirement)
 - [ ] **Deprecate `single-session` prompt role** — no longer used by pipeline (unified into `tdd-simple`). Remove from `role-task.ts`, `isolation.ts`, `nax prompts --export`, and builder API.
-- [ ] **Migrate batch prompt to PromptBuilder** — `buildBatchPrompt()` in `execution/prompts.ts` bypasses PromptBuilder, missing: test command injection, security boundary tags, conventions section, test filter rule. Refactor to support multi-story in PromptBuilder. Also deprecate dead `buildSingleSessionPrompt()`. *(In progress — nax self-dev on Mac01)*
+- [x] ~~**Migrate batch prompt to PromptBuilder** — MR !40 merged. Batch prompts now go through PromptBuilder with security tags, test command injection, conventions, isolation rules.~~
 
 ---
 
