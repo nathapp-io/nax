@@ -63,7 +63,7 @@ export async function runDeferredReview(
   plugins: PluginRegistry,
   runStartRef: string,
 ): Promise<DeferredReviewResult | undefined> {
-  if (reviewConfig.pluginMode !== "deferred") {
+  if (!reviewConfig || reviewConfig.pluginMode !== "deferred") {
     return undefined;
   }
 
