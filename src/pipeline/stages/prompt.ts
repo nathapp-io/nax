@@ -44,7 +44,8 @@ export const promptStage: PipelineStage = {
         .withLoader(ctx.workdir, ctx.config)
         .story(ctx.story)
         .context(ctx.contextMarkdown)
-        .constitution(ctx.constitution?.content);
+        .constitution(ctx.constitution?.content)
+        .testCommand(ctx.config.quality?.commands?.test);
       prompt = await builder.build();
     }
 

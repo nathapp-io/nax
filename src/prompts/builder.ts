@@ -31,6 +31,7 @@ export class PromptBuilder {
   private _overridePath: string | undefined;
   private _workdir: string | undefined;
   private _loaderConfig: NaxConfig | undefined;
+  private _testCommand: string | undefined;
 
   private constructor(role: PromptRole, options: PromptOptions = {}) {
     this._role = role;
@@ -58,6 +59,11 @@ export class PromptBuilder {
 
   override(path: string): PromptBuilder {
     this._overridePath = path;
+    return this;
+  }
+
+  testCommand(cmd: string | undefined): PromptBuilder {
+    if (cmd) this._testCommand = cmd;
     return this;
   }
 
@@ -92,7 +98,7 @@ export class PromptBuilder {
 
     // (5) Isolation rules — non-overridable
     const isolation = this._options.isolation as string | undefined;
-    sections.push(buildIsolationSection(this._role, isolation as "strict" | "lite" | undefined));
+    sections.push(buildIsolationSection(this._role, isolation as "strict" | "lite" | undefined, this._testCommand));
 
     // (6) Context markdown
     if (this._contextMd) {
@@ -127,6 +133,6 @@ export class PromptBuilder {
       }
     }
     const variant = this._options.variant as "standard" | "lite" | undefined;
-    return buildRoleTaskSection(this._role, variant);
+    return buildRoleTaskSection(this._role, variant, this._testCommand);
   }
 }

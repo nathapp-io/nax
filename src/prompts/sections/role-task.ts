@@ -13,16 +13,35 @@
  * - buildRoleTaskSection("lite") → implementer, lite
  */
 
+const DEFAULT_TEST_CMD = "bun test";
+
+/**
+ * Build a human-readable hint about which test framework to use.
+ * Derives from the configured test command; falls back to Bun test hint.
+ */
+function buildTestFrameworkHint(testCommand: string): string {
+  const cmd = testCommand.trim();
+  if (!cmd || cmd.startsWith("bun test")) return "Use Bun test (describe/test/expect)";
+  if (cmd.startsWith("pytest")) return "Use pytest";
+  if (cmd.startsWith("cargo test")) return "Use Rust's cargo test";
+  if (cmd.startsWith("go test")) return "Use Go's testing package";
+  if (cmd.includes("jest") || cmd === "npm test" || cmd === "yarn test") return "Use Jest (describe/test/expect)";
+  return "Use your project's test framework";
+}
+
 export function buildRoleTaskSection(
   roleOrVariant: "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple" | "standard" | "lite",
   variant?: "standard" | "lite",
+  testCommand?: string,
 ): string {
   // Old API support: buildRoleTaskSection("standard") or buildRoleTaskSection("lite")
   if ((roleOrVariant === "standard" || roleOrVariant === "lite") && variant === undefined) {
-    return buildRoleTaskSection("implementer", roleOrVariant);
+    return buildRoleTaskSection("implementer", roleOrVariant, testCommand);
   }
 
   const role = roleOrVariant as "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple";
+  const testCmd = testCommand ?? DEFAULT_TEST_CMD;
+  const frameworkHint = buildTestFrameworkHint(testCmd);
 
   if (role === "implementer") {
     const v = variant ?? "standard";
@@ -47,7 +66,7 @@ Your task: Write tests AND implement the feature in a single session.
 Instructions:
 - Write tests first (test/ directory), then implement (src/ directory)
 - All tests must pass by the end
-- Use Bun test (describe/test/expect)
+- ${frameworkHint}
 - When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'
 - Goal: all tests green, all criteria met, all changes committed`;
   }
@@ -60,7 +79,7 @@ Your task: Write comprehensive failing tests for the feature.
 Instructions:
 - Create test files in test/ directory that cover acceptance criteria
 - Tests must fail initially (RED phase) — the feature is not yet implemented
-- Use Bun test (describe/test/expect)
+- ${frameworkHint}
 - Write clear test names that document expected behavior
 - Focus on behavior, not implementation details
 - Goal: comprehensive test suite ready for implementation`;
@@ -88,7 +107,7 @@ Your task: Write tests AND implement the feature in a single focused session.
 Instructions:
 - Phase 1: Write comprehensive tests (test/ directory)
 - Phase 2: Implement to make all tests pass (src/ directory)
-- Use Bun test (describe/test/expect)
+- ${frameworkHint}
 - Run tests frequently throughout implementation
 - When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'
 - Goal: all tests passing, all changes committed, full story complete`;
