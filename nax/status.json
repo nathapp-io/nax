@@ -1,36 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-12T02-01-12-245Z",
-    "feature": "init-enhance",
-    "startedAt": "2026-03-12T02:01:12.245Z",
+    "id": "run-2026-03-12T04-31-05-405Z",
+    "feature": "deferred-review",
+    "startedAt": "2026-03-12T04:31:05.405Z",
     "status": "running",
     "dryRun": false,
-    "pid": 2550
+    "pid": 26970
   },
   "progress": {
     "total": 3,
-    "passed": 2,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 3
   },
   "cost": {
-    "spent": 0.686063,
+    "spent": 0,
     "limit": 8
   },
   "current": {
-    "storyId": "INIT-003",
-    "title": "Post-init checklist and unified init flow",
+    "storyId": "DR-001",
+    "title": "Add pluginMode config to ReviewConfig schema",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-03-12T02:38:16.108Z",
-  "durationMs": 2223863,
-  "lastHeartbeat": "2026-03-12T02:38:16.108Z"
+  "iterations": 1,
+  "updatedAt": "2026-03-12T04:32:16.403Z",
+  "durationMs": 70998,
+  "lastHeartbeat": "2026-03-12T04:32:16.403Z"
 }

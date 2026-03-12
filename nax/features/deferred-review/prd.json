@@ -27,7 +27,17 @@
         "src/config/runtime-types.ts",
         "src/review/types.ts"
       ],
-      "expectedFiles": []
+      "expectedFiles": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single optional config field addition with straightforward Zod schema validation and backward-compatible default; no new behavior or logic.",
+        "contentHash": "a011c5cd24183fa11a288ce4f2829a1dfc46d2220364c69e79b53ef29dbde5af"
+      }
     },
     {
       "id": "DR-002",
@@ -55,7 +65,10 @@
         "src/pipeline/stages/review.ts",
         "src/review/orchestrator.ts"
       ],
-      "expectedFiles": []
+      "expectedFiles": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "DR-003",
@@ -88,7 +101,11 @@
         "src/review/orchestrator.ts",
         "src/execution/sequential-executor.ts"
       ],
-      "expectedFiles": []
+      "expectedFiles": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
-  ]
+  ],
+  "updatedAt": "2026-03-12T04:31:16.418Z"
 }
