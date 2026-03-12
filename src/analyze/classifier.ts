@@ -105,11 +105,6 @@ async function classifyWithLLM(
   scan: CodebaseScan,
   config: NaxConfig,
 ): Promise<StoryClassification[]> {
-  // Check for required environment variables
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY environment variable not configured — cannot use LLM classification");
-  }
-
   // Build prompt
   const prompt = buildClassificationPrompt(stories, scan);
 
@@ -120,7 +115,7 @@ async function classifyWithLLM(
   }
   const modelDef = resolveModel(fastModelEntry);
 
-  // Make API call via adapter (use haiku for cheap classification)
+  // Make API call via adapter (uses config.models.fast tier)
   const jsonText = await _classifyDeps.adapter.complete(prompt, {
     jsonMode: true,
     maxTokens: 4096,
