@@ -21,7 +21,7 @@ export function buildRoutingPrompt(story: UserStory, config: NaxConfig): string 
   const { title, description, acceptanceCriteria, tags } = story;
   const criteria = acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
 
-  return `You are a code task router. Given a user story, classify its complexity and select the appropriate execution strategy.
+  return `You are a code task router. Classify a user story's complexity and select the cheapest model tier that will succeed.
 
 ## Story
 Title: ${title}
@@ -30,23 +30,22 @@ Acceptance Criteria:
 ${criteria}
 Tags: ${tags.join(", ")}
 
-## Available Tiers
-- fast: Simple changes, typos, config updates, boilerplate. <30 min of coding.
-- balanced: Standard features, moderate logic, straightforward tests. 30-90 min.
-- powerful: Complex architecture, security-critical, multi-file refactors, novel algorithms. >90 min.
+## Complexity Levels
+- simple: Typos, config updates, boilerplate, barrel exports, re-exports. <30 min.
+- medium: Standard features, moderate logic, straightforward tests. 30-90 min.
+- complex: Multi-file refactors, new subsystems, integration work. >90 min.
+- expert: Security-critical, novel algorithms, complex architecture decisions.
 
-## Test Strategies (derived from complexity)
-Your complexity classification will determine the execution strategy:
-- simple → tdd-simple: Single-session TDD (agent writes tests first, then implements)
-- medium → three-session-tdd-lite: Multi-session with lite isolation
-- complex/expert → three-session-tdd: Strict multi-session TDD isolation
-- test-after: Reserved for non-TDD work (refactors, deletions, config-only changes)
+## Model Tiers
+- fast: For simple tasks. Cheapest.
+- balanced: For medium tasks. Standard cost.
+- powerful: For complex/expert tasks. Most capable, highest cost.
 
 ## Rules
 - Default to the CHEAPEST tier that will succeed.
-- Simple barrel exports, re-exports, or index files are ALWAYS simple + fast.
-- A story touching many files doesn't automatically mean complex — copy-paste refactors are simple.
-- If the story is pure refactoring/deletion with no new behavior, consider it "simple" for tdd-simple strategy.
+- Simple barrel exports, re-exports, or index files → always simple + fast.
+- Many files ≠ complex — copy-paste refactors across files are simple.
+- Pure refactoring/deletion with no new behavior → simple.
 
 Respond with ONLY this JSON (no markdown, no explanation):
 {"complexity":"simple|medium|complex|expert","modelTier":"fast|balanced|powerful","reasoning":"<one line>"}`;
@@ -71,28 +70,27 @@ ${criteria}
     })
     .join("\n\n");
 
-  return `You are a code task router. Given multiple user stories, classify each story's complexity and select the appropriate execution strategy.
+  return `You are a code task router. Classify each story's complexity and select the cheapest model tier that will succeed.
 
 ## Stories
 ${storyBlocks}
 
-## Available Tiers
-- fast: Simple changes, typos, config updates, boilerplate. <30 min of coding.
-- balanced: Standard features, moderate logic, straightforward tests. 30-90 min.
-- powerful: Complex architecture, security-critical, multi-file refactors, novel algorithms. >90 min.
+## Complexity Levels
+- simple: Typos, config updates, boilerplate, barrel exports, re-exports. <30 min.
+- medium: Standard features, moderate logic, straightforward tests. 30-90 min.
+- complex: Multi-file refactors, new subsystems, integration work. >90 min.
+- expert: Security-critical, novel algorithms, complex architecture decisions.
 
-## Test Strategies (derived from complexity)
-Your complexity classification will determine the execution strategy:
-- simple → tdd-simple: Single-session TDD (agent writes tests first, then implements)
-- medium → three-session-tdd-lite: Multi-session with lite isolation
-- complex/expert → three-session-tdd: Strict multi-session TDD isolation
-- test-after: Reserved for non-TDD work (refactors, deletions, config-only changes)
+## Model Tiers
+- fast: For simple tasks. Cheapest.
+- balanced: For medium tasks. Standard cost.
+- powerful: For complex/expert tasks. Most capable, highest cost.
 
 ## Rules
 - Default to the CHEAPEST tier that will succeed.
-- Simple barrel exports, re-exports, or index files are ALWAYS simple + fast.
-- A story touching many files doesn't automatically mean complex — copy-paste refactors are simple.
-- If the story is pure refactoring/deletion with no new behavior, consider it "simple" for tdd-simple strategy.
+- Simple barrel exports, re-exports, or index files → always simple + fast.
+- Many files ≠ complex — copy-paste refactors across files are simple.
+- Pure refactoring/deletion with no new behavior → simple.
 
 Respond with ONLY a JSON array (no markdown, no explanation):
 [{"id":"US-001","complexity":"simple|medium|complex|expert","modelTier":"fast|balanced|powerful","reasoning":"<one line>"}]`;
