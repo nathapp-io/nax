@@ -444,6 +444,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 - [x] ~~**BUG-062:** LLM routing cache returned stale `testStrategy` from pre-route phase — `simple` stories incorrectly used `three-session-tdd-lite` instead of `tdd-simple` (TS-001 rule not applied on cache hit). Fixed: cache hit now recomputes `testStrategy` via `determineTestStrategy()` from cached `complexity`; cache is authoritative on `complexity`/`modelTier` only. `945cc8d`~~
 
 ### Features
+- [ ] **ACC-001:** Acceptance Test Pipeline — Feature-level TDD (RED→GREEN) for verifying built features match original requirements. Generate acceptance tests from PRD `acceptanceCriteria[]`, run RED gate before stories, GREEN gate after. Includes LLM-based AC refinement for deterministic test generation. **Spec:** [`docs/specs/acceptance-pipeline.md`](specs/acceptance-pipeline.md)
 - [ ] **CI-001:** CI Memory Optimization — parallel test sharding to pass on 1GB runners (currently requires 8GB).
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
@@ -451,7 +452,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 - [ ] **Auto-decompose oversized stories** — When story size gate triggers, offer via interaction chain to auto-decompose using `nax analyse`.
 - [ ] VitePress documentation site — full CLI reference, hosted as standalone docs (pre-publish requirement)
 - [ ] **Deprecate `single-session` prompt role** — no longer used by pipeline (unified into `tdd-simple`). Remove from `role-task.ts`, `isolation.ts`, `nax prompts --export`, and builder API.
-- [ ] **Migrate batch prompt to PromptBuilder** — `buildBatchPrompt()` in `execution/prompts.ts` bypasses PromptBuilder, missing: test command injection, security boundary tags, conventions section, test filter rule. Refactor to support multi-story in PromptBuilder. Also deprecate dead `buildSingleSessionPrompt()`.
+- [ ] **Migrate batch prompt to PromptBuilder** — `buildBatchPrompt()` in `execution/prompts.ts` bypasses PromptBuilder, missing: test command injection, security boundary tags, conventions section, test filter rule. Refactor to support multi-story in PromptBuilder. Also deprecate dead `buildSingleSessionPrompt()`. *(In progress — nax self-dev on Mac01)*
 
 ---
 
