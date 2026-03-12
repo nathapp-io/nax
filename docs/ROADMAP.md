@@ -146,6 +146,42 @@ nax init --ai     # use LLM to generate richer context.md
 
 ---
 
+## v0.40.0 — Acceptance Test Pipeline ✅ Shipped (2026-03-12)
+
+**Theme:** Feature-level TDD — verify built features match original requirements via acceptance tests generated from PRD acceptanceCriteria[]
+**Status:** ✅ Shipped (2026-03-12) — commit `9915529`, [run-release] triggered
+**Depends on:** v0.39.3
+
+### Context
+
+nax verifies implementation tests (agent-written) but never independently verifies features match original requirements. The existing acceptance system (`src/acceptance/`) was unused because it depended on `spec.md` AC-N lines that don't exist in the Method 1 (direct PRD) workflow.
+
+### Feature: Acceptance Test Pipeline
+
+- **AC refinement:** LLM converts vague criteria (e.g., "Batch role uses TDD language") to concrete testable assertions (e.g., `output.includes("RED phase")`)
+- **PRD-based generation:** `generateFromPRD()` creates `acceptance.test.ts` directly from PRD `acceptanceCriteria[]` — no spec.md needed
+- **RED gate:** Acceptance tests run BEFORE stories execute. If they fail → RED (expected), stories implement until GREEN
+- **GREEN gate:** Acceptance tests run AFTER all stories pass. Must pass for feature to be complete
+- **Config:** `acceptance.refinement`, `acceptance.redGate`, `acceptance.model` added to config schema
+
+### Key Files
+
+- `src/acceptance/refinement.ts` — `refineAcceptanceCriteria()` LLM call wrapper
+- `src/acceptance/generator.ts:generateFromPRD()` — PRD-to-acceptance.test.ts
+- `src/pipeline/stages/acceptance-setup.ts` — pre-story RED gate stage
+- `src/pipeline/stages/index.ts:preRunPipeline` — runs before per-story loop
+
+### Test
+
+- Toy project end-to-end validation: 2 stories, 100% pass, $0.096, 2m51s
+
+### Stats
+
+- +3,088 lines across 21 files
+- 4/4 stories delivered via nax self-dev
+
+---
+
 ## v0.37.0 — Prompt Template Export ✅ Shipped (2026-03-10)
 
 **Theme:** Complete the prompt override system — ship default templates, add CLI export, enable full user customization
@@ -394,6 +430,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 
 | Version | Theme | Date |
 |:--------|:------|:-----|
+| v0.40.0 | Acceptance Test Pipeline (RED→GREEN gates, PRD-based AC generation) | 2026-03-12 |
 | v0.39.3 | Prompt Optimization (security hardening, test command injection) | 2026-03-12 |
 | v0.39.0 | Init Enhancement (auto-detect, context generation) | 2026-03-12 |
 | v0.38.1 | Code Audit Refactor (10 fixes) | 2026-03-11 |
