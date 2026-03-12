@@ -8,8 +8,8 @@ import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { globalConfigDir, projectConfigDir } from "../config/paths";
-import { DEFAULT_CONFIG } from "../config/schema";
 import { getLogger } from "../logger";
+import { buildInitConfig, detectProjectStack } from "./init-detect";
 import { promptsInitCommand } from "./prompts";
 
 /** Init command options */
@@ -75,14 +75,6 @@ const DEFAULT_CONSTITUTION = `# Project Constitution
 - Clear, descriptive naming
 `;
 
-/**
- * Template for minimal config.json (references defaults, only overrides)
- */
-const MINIMAL_PROJECT_CONFIG = {
-  version: 1,
-  // Add project-specific overrides here
-};
-
 const MINIMAL_GLOBAL_CONFIG = {
   version: 1,
   // Add global preferences here (e.g., model tiers, execution limits)
@@ -144,10 +136,20 @@ export async function initProject(projectRoot: string): Promise<void> {
     logger.info("init", "Created project config directory", { path: projectDir });
   }
 
+  // Detect project stack and build config
+  const stack = detectProjectStack(projectRoot);
+  const projectConfig = buildInitConfig(stack);
+  logger.info("init", "Detected project stack", {
+    runtime: stack.runtime,
+    language: stack.language,
+    linter: stack.linter,
+    monorepo: stack.monorepo,
+  });
+
   // Create nax/config.json if it doesn't exist
   const configPath = join(projectDir, "config.json");
   if (!existsSync(configPath)) {
-    await Bun.write(configPath, `${JSON.stringify(MINIMAL_PROJECT_CONFIG, null, 2)}\n`);
+    await Bun.write(configPath, `${JSON.stringify(projectConfig, null, 2)}\n`);
     logger.info("init", "Created project config", { path: configPath });
   } else {
     logger.info("init", "Project config already exists", { path: configPath });
