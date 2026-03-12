@@ -29,13 +29,6 @@ instructions: |
   | Lint/Format | **Biome** (`bun run lint`) |
   | Build | `bun run build` |
   
-  ## Git Identity
-  
-  ```bash
-  git config user.name "subrina.tai"
-  git config user.email "subrina8080@outlook.com"
-  ```
-  
   ## Commands
   
   | Command | Purpose |
@@ -105,50 +98,10 @@ instructions: |
   
   ## Workflow Protocol
   
-  1. **Explore first**: use `grep`, `cat`, and solograph MCP to understand context before writing code.
+  1. **Explore first**: use `grep`, `cat` to understand context before writing code.
   2. **Plan complex tasks**: for multi-file changes, write a short plan before implementing.
   3. **Implement in small chunks**: one logical concern per commit.
   
-  ## Code Intelligence (Solograph MCP) — MANDATORY
-  
-  **Always use solograph MCP tools before writing code or analyzing architecture.** Do NOT use `web_search` or `kb_search` as substitutes.
-  
-  ### Tool Selection Guide
-  
-  | Tool | Capability | When to Use | Availability |
-  |:-----|:-----------|:-----------|:-------------|
-  | `codegraph_query` | Structural queries (Cypher) — find calls, dependencies, imports | **Preferred for dependency analysis, call tracing, symbol lookup** | ✅ Always works (in-memory graph) |
-  | `project_code_search` | Semantic search (Redis vector DB) — pattern matching by meaning | Natural language queries like "find auth patterns" | ⚠️ Requires explicit `project_code_reindex` |
-  | `codegraph_explain` | Architecture overview for unfamiliar subsystems | Understand module relationships before major changes | ✅ Always works |
-  | `project_code_reindex` | Index project for semantic search | After creating/deleting source files | ✅ Always works |
-  
-  ### Recommended Workflow
-  
-  For nax, **prefer `codegraph_query`** for routine tasks:
-  - Finding where functions are called
-  - Analyzing dependencies before refactoring
-  - Tracing import/export chains
-  - Querying symbol definitions and relationships
-  
-  **Use `project_code_search` only if:**
-  - You need semantic similarity ("find authentication patterns")
-  - Redis is indexed and running (not guaranteed in all sessions)
-  
-  ### Example Queries
-  
-  ```cypher
-  -- Find files calling calculateAggregateMetrics
-  MATCH (f:File)-[:CALLS]->(s:Symbol {name: "calculateAggregateMetrics"})
-  RETURN f.path
-  
-  -- Find all imports of aggregator.ts
-  MATCH (f:File)-[:IMPORTS]->(target:File {path: "src/metrics/aggregator.ts"})
-  RETURN f.path
-  
-  -- Find symbols defined in a file
-  MATCH (f:File {path: "src/metrics/aggregator.ts"})-[:DEFINES]->(s:Symbol)
-  RETURN s.name, s.type
-  ```
   
   ## Coding Standards & Architecture Patterns
   

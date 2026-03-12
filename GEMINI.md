@@ -1,3 +1,21 @@
+# Gemini CLI Context
+
+This file is auto-generated from `nax/context.md`.
+DO NOT EDIT MANUALLY — run `nax generate` to regenerate.
+
+---
+
+## Project Metadata
+
+> Auto-injected by `nax generate`
+
+**Project:** `@nathapp/nax`
+
+**Language:** TypeScript
+
+**Key dependencies:** @types/react, react, zod, @types/bun, react-devtools-core, typescript
+
+---
 # nax — AI Coding Agent Orchestrator
 
 Bun + TypeScript CLI that orchestrates AI coding agents (Claude Code) with model-tier routing, TDD strategies, plugin hooks, and a Central Run Registry.
