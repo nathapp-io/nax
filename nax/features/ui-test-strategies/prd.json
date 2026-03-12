@@ -1,0 +1,112 @@
+{
+  "project": "nax",
+  "feature": "ui-test-strategies",
+  "branchName": "feat/ui-test-strategies",
+  "createdAt": "2026-03-12T20:56:00.000Z",
+  "updatedAt": "2026-03-12T20:56:00.000Z",
+  "userStories": [
+    {
+      "id": "ACS-001",
+      "title": "Test strategy types and config schema extension",
+      "description": "Add an AcceptanceTestStrategy union type ('unit' | 'component' | 'cli' | 'e2e' | 'snapshot') to the config type system. Extend AcceptanceConfig with optional testStrategy and testFramework fields. Update the Zod schema in schemas.ts to validate the new fields. Update defaults.ts to leave both undefined (auto-detect). The existing 'unit' behavior is the implicit default when testStrategy is omitted — no behavioral change required, only type + schema additions.",
+      "acceptanceCriteria": [
+        "AcceptanceTestStrategy type exported from src/config/ with 5 valid values: unit, component, cli, e2e, snapshot",
+        "AcceptanceConfig interface has optional testStrategy field of type AcceptanceTestStrategy",
+        "AcceptanceConfig interface has optional testFramework field of type string",
+        "Zod schema AcceptanceConfigSchema validates testStrategy as optional enum with 5 values",
+        "Zod schema AcceptanceConfigSchema validates testFramework as optional non-empty string",
+        "Default config omits testStrategy and testFramework (both undefined)",
+        "Existing tests pass without modification — backward compatible"
+      ],
+      "tags": ["config", "types"],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0
+    },
+    {
+      "id": "ACS-002",
+      "title": "Stack detection for UI frameworks",
+      "description": "Extend the stack detection in src/cli/init-detect.ts to detect UI frameworks from package.json dependencies. Detect: ink (TUI), react/next (web), vue/nuxt (web), svelte/sveltekit (web). Add a uiFramework field to the StackInfo return type. When a UI framework is detected, auto-populate acceptance.testStrategy and acceptance.testFramework in the generated config.json during nax init. Detection rules: ink in deps → component + ink-testing-library; react in deps → component + @testing-library/react; bin field in package.json → cli + bun:test. Also detect if a project has a bin field for CLI strategy.",
+      "acceptanceCriteria": [
+        "StackInfo type has optional uiFramework field with values: ink, react, vue, svelte, or undefined",
+        "detectStack() returns uiFramework: 'ink' when ink is in package.json dependencies",
+        "detectStack() returns uiFramework: 'react' when react is in package.json dependencies",
+        "detectStack() returns uiFramework: 'vue' when vue is in package.json dependencies",
+        "detectStack() returns uiFramework: 'svelte' when svelte is in package.json dependencies",
+        "StackInfo type has optional hasBin boolean field — true when package.json has bin",
+        "nax init with ink project sets acceptance.testStrategy to 'component' and acceptance.testFramework to 'ink-testing-library'",
+        "nax init with bin-only project sets acceptance.testStrategy to 'cli'"
+      ],
+      "tags": ["cli", "detection"],
+      "dependencies": ["ACS-001"],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0
+    },
+    {
+      "id": "ACS-003",
+      "title": "Strategy-aware acceptance test generator templates",
+      "description": "Modify src/acceptance/generator.ts to accept a testStrategy and testFramework parameter. Based on the strategy, generate different test file structures: (1) unit — current behavior unchanged (import function, assert on return). (2) component — import render from test framework, render component, assert on output (lastFrame for ink, screen.getByText for react). (3) cli — use Bun.spawn to run the binary, assert on stdout text. (4) e2e — use fetch() against localhost, assert on response body. (5) snapshot — render + toMatchSnapshot(). Create a src/acceptance/templates/ directory with template builder functions for each strategy. The generator selects the template based on strategy, falling back to 'unit' if unspecified. Update GenerateFromPRDOptions to include optional testStrategy and testFramework fields.",
+      "acceptanceCriteria": [
+        "GenerateFromPRDOptions has optional testStrategy and testFramework fields",
+        "Generator produces ink-testing-library render + lastFrame() assertions when testStrategy is 'component' and testFramework is 'ink-testing-library'",
+        "Generator produces Bun.spawn + stdout assertions when testStrategy is 'cli'",
+        "Generator produces fetch + response.text() assertions when testStrategy is 'e2e'",
+        "Generator produces toMatchSnapshot() assertions when testStrategy is 'snapshot'",
+        "Generator defaults to current 'unit' behavior when testStrategy is omitted",
+        "Template functions exist in src/acceptance/templates/ directory",
+        "Generated test files are valid TypeScript that passes tsc --noEmit syntax check"
+      ],
+      "tags": ["acceptance", "generator"],
+      "dependencies": ["ACS-001"],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0
+    },
+    {
+      "id": "ACS-004",
+      "title": "Strategy-aware refinement prompt",
+      "description": "Modify src/acceptance/refinement.ts to include the testStrategy in the LLM refinement prompt. When strategy is 'component', the prompt instructs the LLM to produce assertions about rendered output (text content visible on screen), not function return values. When 'cli', produce assertions about stdout/stderr text. When 'e2e', produce assertions about HTTP response content. When 'unit' or unset, keep current behavior. Also pass the testFramework so the LLM knows which testing library syntax to use in refined assertions. Update RefinementContext to include optional testStrategy and testFramework.",
+      "acceptanceCriteria": [
+        "RefinementContext has optional testStrategy and testFramework fields",
+        "Refinement prompt includes strategy-specific instructions when testStrategy is 'component'",
+        "Refinement prompt includes strategy-specific instructions when testStrategy is 'cli'",
+        "Refinement for 'component' strategy produces assertions about rendered text, not function returns",
+        "Refinement for 'cli' strategy produces assertions about stdout content",
+        "Refinement for unset testStrategy produces current behavior (backward compatible)",
+        "Strategy context appears in the system prompt sent to the LLM"
+      ],
+      "tags": ["acceptance", "refinement", "llm"],
+      "dependencies": ["ACS-001"],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0
+    },
+    {
+      "id": "ACS-005",
+      "title": "Integration test — component strategy end-to-end with Ink project",
+      "description": "Write an integration test that validates the full acceptance pipeline with testStrategy: 'component' and testFramework: 'ink-testing-library'. The test should: (1) Create a minimal Ink project fixture with a simple component. (2) Create a PRD with acceptanceCriteria describing the component behavior. (3) Run the acceptance generator with component strategy. (4) Verify the generated test file imports render from ink-testing-library and uses lastFrame(). (5) Verify the generated test file is syntactically valid TypeScript. Also add a unit test for the CLI strategy generator output verifying Bun.spawn usage. Place tests in test/unit/acceptance/. Wire the acceptance-setup stage to read testStrategy from config and pass it through to generator and refinement.",
+      "acceptanceCriteria": [
+        "Integration test exists in test/unit/acceptance/ that tests component strategy",
+        "Test verifies generated code imports from ink-testing-library when strategy is component",
+        "Test verifies generated code uses lastFrame() for assertions with ink",
+        "Test verifies generated code uses Bun.spawn when strategy is cli",
+        "Test verifies generated code defaults to import-and-call pattern when strategy is unset",
+        "acceptance-setup stage reads testStrategy from config.acceptance.testStrategy",
+        "acceptance-setup stage passes testStrategy to both refinement and generator",
+        "All existing acceptance tests continue to pass"
+      ],
+      "tags": ["test", "integration", "acceptance"],
+      "dependencies": ["ACS-003", "ACS-004"],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0
+    }
+  ]
+}
