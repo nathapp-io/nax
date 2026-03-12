@@ -23,14 +23,14 @@
   "current": {
     "storyId": "BP-002",
     "title": "Migrate prompt stage and remove dead code",
-    "complexity": "medium",
-    "tddStrategy": "test-after",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-03-12T09:26:47.870Z",
-  "durationMs": 1635840,
-  "lastHeartbeat": "2026-03-12T09:26:47.870Z"
+  "iterations": 3,
+  "updatedAt": "2026-03-12T09:28:47.871Z",
+  "durationMs": 1755841,
+  "lastHeartbeat": "2026-03-12T09:28:47.871Z"
 }

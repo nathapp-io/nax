@@ -75,17 +75,29 @@
       "expectedFiles": [
         "src/pipeline/stages/prompt.ts"
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast: Review failed: Working tree has uncommitted changes:\n  - docs/dead-tests-report.md\n  - docs/test-overlap-report.md\n\nStage and commit these files before running review."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "fast",
+          "stage": "escalation",
+          "summary": "Failed with tier fast, escalating to next tier",
+          "cost": 0.07309550000000001,
+          "timestamp": "2026-03-12T09:27:59.309Z"
+        }
+      ],
       "storyPoints": 1,
       "routing": {
         "complexity": "simple",
         "initialComplexity": "simple",
         "testStrategy": "tdd-simple",
         "reasoning": "Straightforward dead code removal + re-export cleanup + single API call replacement (exact code provided); no new behavior or complex logic.",
-        "contentHash": "11718785ee140199f0560e683267229061eb6883d2e3c2c6f26972f5c3ec99ec"
+        "contentHash": "11718785ee140199f0560e683267229061eb6883d2e3c2c6f26972f5c3ec99ec",
+        "modelTier": "balanced"
       }
     }
   ],
-  "updatedAt": "2026-03-12T09:22:23.239Z"
+  "updatedAt": "2026-03-12T09:27:59.309Z"
 }

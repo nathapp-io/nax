@@ -1,6 +1,6 @@
 # Test Overlap Report
 
-Generated: 2026-03-12T09:15:16.580Z
+Generated: 2026-03-12T09:27:58.859Z
 
 ## REDUNDANT
 
@@ -8,14 +8,11 @@ No redundant integration tests found.
 
 ## PARTIAL
 
-Found 3 integration test(s) with partial unit test coverage:
+Found 2 integration test(s) with partial unit test coverage:
 
 - **test/integration/pipeline/pipeline.test.ts**
   - Coverage: 11%
   - Missing: Pipeline Runner, runPipeline, isolation-violation, session-failure, tests-failing, verifier-rejected, no failureCategory (backward compat), retryAsLite is not set for non-isolation failures
-- **test/integration/execution/runner-batching.test.ts**
-  - Coverage: 33%
-  - Missing: groupStoriesIntoBatches, precomputeBatchPlan
 - **test/integration/routing/routing-stage-greenfield.test.ts**
   - Coverage: 50%
   - Missing: Routing Stage - Greenfield Detection (BUG-010)
