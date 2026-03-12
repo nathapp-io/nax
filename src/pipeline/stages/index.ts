@@ -62,6 +62,14 @@ export const defaultPipeline: PipelineStage[] = [
  */
 export const postRunPipeline: PipelineStage[] = [acceptanceStage];
 
+/**
+ * Pre-run pipeline stages — run once before the per-story loop, after PRD is loaded.
+ * Used for acceptance test setup (generation + RED gate).
+ *
+ * TODO: Wire acceptanceSetupStage here once implemented (ACC-003).
+ */
+export const preRunPipeline: PipelineStage[] = [];
+
 // Re-export individual stages for custom pipeline construction
 export { queueCheckStage } from "./queue-check";
 export { routingStage } from "./routing";
