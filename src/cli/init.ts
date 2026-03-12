@@ -20,6 +20,14 @@ export interface InitOptions {
   projectRoot?: string;
 }
 
+/** Options for initProject */
+export interface InitProjectOptions {
+  /** Use LLM to generate context.md (--ai flag) */
+  ai?: boolean;
+  /** Force overwrite of existing files */
+  force?: boolean;
+}
+
 /**
  * Gitignore entries added by nax init
  */
@@ -126,7 +134,7 @@ async function initGlobal(): Promise<void> {
 /**
  * Initialize project nax directory (nax/)
  */
-export async function initProject(projectRoot: string): Promise<void> {
+export async function initProject(projectRoot: string, _options?: InitProjectOptions): Promise<void> {
   const logger = getLogger();
   const projectDir = projectConfigDir(projectRoot);
 
