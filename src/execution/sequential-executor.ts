@@ -15,6 +15,8 @@ import type { PipelineContext } from "../pipeline/types";
 import { generateHumanHaltSummary, isComplete, isStalled, loadPRD } from "../prd";
 import type { PRD } from "../prd/types";
 import { startHeartbeat } from "./crash-recovery";
+import { captureRunStartRef, runDeferredReview } from "./deferred-review";
+import type { DeferredReviewResult } from "./deferred-review";
 import type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
 import { runIteration } from "./iteration-runner";
 import { selectNextStories } from "./story-selector";
@@ -37,6 +39,9 @@ export async function executeSequential(
   ];
   const allStoryMetrics: StoryMetrics[] = [];
   let warningSent = false;
+  let deferredReview: DeferredReviewResult | undefined;
+
+  const runStartRef = await captureRunStartRef(ctx.workdir);
 
   pipelineEventBus.clear();
   wireHooks(pipelineEventBus, ctx.hooks, ctx.workdir, ctx.feature);
@@ -52,6 +57,7 @@ export async function executeSequential(
     totalCost,
     allStoryMetrics,
     exitReason,
+    deferredReview,
   });
 
   startHeartbeat(
@@ -82,6 +88,7 @@ export async function executeSequential(
             return buildResult("pre-merge-aborted");
           }
         }
+        deferredReview = await runDeferredReview(ctx.workdir, ctx.config.review, ctx.pluginRegistry, runStartRef);
         return buildResult("completed");
       }
 
