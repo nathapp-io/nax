@@ -238,6 +238,8 @@ export interface AcceptanceConfig {
   generateTests: boolean;
   /** Path to acceptance test file (relative to feature directory) */
   testPath: string;
+  /** Model tier for AC refinement LLM calls (default: "fast") */
+  model?: ModelTier;
 }
 
 /** Optimizer config (v0.10) */

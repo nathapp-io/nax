@@ -8,7 +8,16 @@ export type {
   AcceptanceCriterion,
   GenerateAcceptanceTestsOptions,
   AcceptanceTestResult,
+  RefinedCriterion,
+  RefinementContext,
 } from "./types";
+
+export {
+  buildRefinementPrompt,
+  parseRefinementResponse,
+  refineAcceptanceCriteria,
+  _refineDeps,
+} from "./refinement";
 
 export {
   parseAcceptanceCriteria,

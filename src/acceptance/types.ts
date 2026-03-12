@@ -7,6 +7,32 @@
 import type { ModelDef, ModelTier, NaxConfig } from "../config/schema";
 
 /**
+ * A single refined acceptance criterion produced by the refinement module.
+ */
+export interface RefinedCriterion {
+  /** The original criterion text from the PRD */
+  original: string;
+  /** Concrete, machine-verifiable description produced by LLM */
+  refined: string;
+  /** False if the LLM determines the criterion cannot be automatically tested */
+  testable: boolean;
+  /** The story ID this criterion belongs to */
+  storyId: string;
+}
+
+/**
+ * Context passed to refineAcceptanceCriteria.
+ */
+export interface RefinementContext {
+  /** Story ID for attribution on each RefinedCriterion */
+  storyId: string;
+  /** Codebase context string (file tree, dependencies, etc.) */
+  codebaseContext: string;
+  /** Global config — model tier resolved from config.acceptance.model */
+  config: NaxConfig;
+}
+
+/**
  * A single acceptance criterion extracted from spec.md.
  *
  * @example
