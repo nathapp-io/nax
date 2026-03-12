@@ -1,36 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-12T08-59-32-030Z",
-    "feature": "batch-prompt-builder",
-    "startedAt": "2026-03-12T08:59:32.030Z",
+    "id": "run-2026-03-12T09-57-45-628Z",
+    "feature": "acceptance-pipeline",
+    "startedAt": "2026-03-12T09:57:45.628Z",
     "status": "running",
     "dryRun": false,
-    "pid": 64991
+    "pid": 83252
   },
   "progress": {
-    "total": 2,
-    "passed": 1,
+    "total": 4,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 4
   },
   "cost": {
-    "spent": 0.7311535,
+    "spent": 0,
     "limit": 8
   },
   "current": {
-    "storyId": "BP-002",
-    "title": "Migrate prompt stage and remove dead code",
-    "complexity": "simple",
-    "tddStrategy": "tdd-simple",
+    "storyId": "ACC-001",
+    "title": "AC refinement module",
+    "complexity": "medium",
+    "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-03-12T09:28:47.871Z",
-  "durationMs": 1755841,
-  "lastHeartbeat": "2026-03-12T09:28:47.871Z"
+  "iterations": 1,
+  "updatedAt": "2026-03-12T10:02:58.248Z",
+  "durationMs": 312620,
+  "lastHeartbeat": "2026-03-12T10:02:58.248Z"
 }
