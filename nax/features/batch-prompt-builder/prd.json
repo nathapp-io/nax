@@ -6,7 +6,7 @@
     {
       "id": "BP-001",
       "title": "Add batch role to PromptBuilder",
-      "description": "Add batch multi-story support to the existing PromptBuilder system.\n\nChanges required:\n\n1. `src/prompts/types.ts`: Add \"batch\" to the PromptRole union type.\n\n2. `src/prompts/builder.ts`: Add a `.stories(stories: UserStory[])` method that stores an array of stories. In `build()`, when role is \"batch\", use `buildBatchStorySection()` (from step 3) instead of `buildStorySection()` for section (3). Skip the verdict section for batch role.\n\n3. `src/prompts/sections/story.ts`: Add a new exported function `buildBatchStorySection(stories: UserStory[]): string` that renders multiple stories with the same USER-SUPPLIED DATA boundary tags as `buildStorySection`. Format each story as \"## Story N: {id} - {title}\" with description and numbered acceptance criteria.\n\n4. `src/prompts/sections/role-task.ts`: Add a \"batch\" case to `buildRoleTaskSection`. The batch role template should instruct the agent to implement each story in order, write tests for each, commit each story separately with the story ID in the commit message, and use the injected test command. Do NOT say \"test-after\" \u2014 use TDD-aligned language (write tests, then implement, then verify). Include the `buildTestFrameworkHint()` output.\n\nExisting tests in `test/unit/prompts/` must continue to pass. Add new tests covering the batch role in role-task, the batch story section rendering, and the builder with `.stories()` method.",
+      "description": "Add batch multi-story support to the existing PromptBuilder system.\n\nChanges required:\n\n1. `src/prompts/types.ts`: Add \"batch\" to the PromptRole union type.\n\n2. `src/prompts/builder.ts`: Add a `.stories(stories: UserStory[])` method that stores an array of stories. In `build()`, when role is \"batch\", use `buildBatchStorySection()` (from step 3) instead of `buildStorySection()` for section (3). Skip the verdict section for batch role.\n\n3. `src/prompts/sections/story.ts`: Add a new exported function `buildBatchStorySection(stories: UserStory[]): string` that renders multiple stories with the same USER-SUPPLIED DATA boundary tags as `buildStorySection`. Format each story as \"## Story N: {id} - {title}\" with description and numbered acceptance criteria.\n\n4. `src/prompts/sections/role-task.ts`: Add a \"batch\" case to `buildRoleTaskSection`. The batch role template should instruct the agent to implement each story in order, write tests for each, commit each story separately with the story ID in the commit message, and use the injected test command. Do NOT say \"test-after\" — use TDD-aligned language (write tests, then implement, then verify). Include the `buildTestFrameworkHint()` output.\n\nExisting tests in `test/unit/prompts/` must continue to pass. Add new tests covering the batch role in role-task, the batch story section rendering, and the builder with `.stories()` method.",
       "acceptanceCriteria": [
         "\"batch\" is a valid PromptRole in types.ts",
         "PromptBuilder has a .stories() method accepting UserStory[]",
@@ -34,12 +34,22 @@
         "src/prompts/types.ts",
         "src/prompts/sections/story.ts",
         "src/prompts/sections/role-task.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Standard feature: add new role type across 4 coordinated files with straightforward templating logic. Clear requirements, existing patterns to follow, standard tests.",
+        "contentHash": "f52ed15c63cb39c8e71c009dd1d432f8e4567010d8d206143d641d6342535ade"
+      }
     },
     {
       "id": "BP-002",
       "title": "Migrate prompt stage and remove dead code",
-      "description": "Migrate the pipeline prompt stage to use PromptBuilder for batch prompts, then remove the now-dead `src/execution/prompts.ts` file and its re-exports.\n\nChanges required:\n\n1. `src/pipeline/stages/prompt.ts`: Replace the `buildBatchPrompt()` import and call with PromptBuilder. The batch path should use:\n```typescript\nconst builder = PromptBuilder.for(\"batch\")\n  .withLoader(ctx.workdir, ctx.config)\n  .stories(ctx.stories)\n  .context(ctx.contextMarkdown)\n  .constitution(ctx.constitution?.content)\n  .testCommand(ctx.config.quality?.commands?.test);\nprompt = await builder.build();\n```\n\n2. Delete `src/execution/prompts.ts` entirely \u2014 both `buildSingleSessionPrompt` and `buildBatchPrompt` are dead code after this migration.\n\n3. `src/execution/runner.ts`: Remove the re-export line `export { buildSingleSessionPrompt, buildBatchPrompt } from \"./prompts\";`\n\n4. `src/execution/index.ts`: Remove the re-export line `export { buildSingleSessionPrompt, buildBatchPrompt } from \"./prompts\";`\n\n5. Update any tests that import from `src/execution/prompts.ts` to either delete them (if testing dead code) or update imports.\n\nExisting pipeline prompt stage tests must be updated to verify the batch path now uses PromptBuilder output (which includes constitution boundary tags, conventions section, isolation rules).",
+      "description": "Migrate the pipeline prompt stage to use PromptBuilder for batch prompts, then remove the now-dead `src/execution/prompts.ts` file and its re-exports.\n\nChanges required:\n\n1. `src/pipeline/stages/prompt.ts`: Replace the `buildBatchPrompt()` import and call with PromptBuilder. The batch path should use:\n```typescript\nconst builder = PromptBuilder.for(\"batch\")\n  .withLoader(ctx.workdir, ctx.config)\n  .stories(ctx.stories)\n  .context(ctx.contextMarkdown)\n  .constitution(ctx.constitution?.content)\n  .testCommand(ctx.config.quality?.commands?.test);\nprompt = await builder.build();\n```\n\n2. Delete `src/execution/prompts.ts` entirely — both `buildSingleSessionPrompt` and `buildBatchPrompt` are dead code after this migration.\n\n3. `src/execution/runner.ts`: Remove the re-export line `export { buildSingleSessionPrompt, buildBatchPrompt } from \"./prompts\";`\n\n4. `src/execution/index.ts`: Remove the re-export line `export { buildSingleSessionPrompt, buildBatchPrompt } from \"./prompts\";`\n\n5. Update any tests that import from `src/execution/prompts.ts` to either delete them (if testing dead code) or update imports.\n\nExisting pipeline prompt stage tests must be updated to verify the batch path now uses PromptBuilder output (which includes constitution boundary tags, conventions section, isolation rules).",
       "acceptanceCriteria": [
         "Pipeline prompt stage uses PromptBuilder.for(\"batch\") for multi-story prompts",
         "src/execution/prompts.ts is deleted",
@@ -64,7 +74,11 @@
       ],
       "expectedFiles": [
         "src/pipeline/stages/prompt.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
-  ]
+  ],
+  "updatedAt": "2026-03-12T08:59:47.830Z"
 }

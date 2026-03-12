@@ -1,36 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-12T04-31-05-405Z",
-    "feature": "deferred-review",
-    "startedAt": "2026-03-12T04:31:05.405Z",
+    "id": "run-2026-03-12T08-59-32-030Z",
+    "feature": "batch-prompt-builder",
+    "startedAt": "2026-03-12T08:59:32.030Z",
     "status": "running",
     "dryRun": false,
-    "pid": 26970
+    "pid": 64991
   },
   "progress": {
-    "total": 3,
-    "passed": 2,
+    "total": 2,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 2
   },
   "cost": {
-    "spent": 0.5937804999999999,
+    "spent": 0,
     "limit": 8
   },
   "current": {
-    "storyId": "DR-003",
-    "title": "Run deferred plugin review after all stories complete in runner",
+    "storyId": "BP-001",
+    "title": "Add batch role to PromptBuilder",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-03-12T05:17:16.496Z",
-  "durationMs": 2771091,
-  "lastHeartbeat": "2026-03-12T05:17:16.496Z"
+  "iterations": 1,
+  "updatedAt": "2026-03-12T09:06:47.819Z",
+  "durationMs": 435789,
+  "lastHeartbeat": "2026-03-12T09:06:47.819Z"
 }
