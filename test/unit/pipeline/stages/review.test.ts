@@ -95,6 +95,71 @@ afterEach(() => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// pluginMode deferred — stage-level paths (DR-002)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("reviewStage — pluginMode deferred path", () => {
+  test("returns continue when pluginMode is deferred and built-in checks pass", async () => {
+    const reviewResult = {
+      success: true,
+      pluginFailed: false,
+      builtIn: { totalDurationMs: 5 },
+    };
+    const { reviewOrchestrator } = await import("../../../../src/review/orchestrator");
+    const original = reviewOrchestrator.review;
+    reviewOrchestrator.review = mock(async () => reviewResult) as typeof reviewOrchestrator.review;
+
+    const config = makeConfig({});
+    config.review.pluginMode = "deferred";
+    const ctx = makeCtx({ config });
+    const result = await reviewStage.execute(ctx);
+
+    expect(result.action).toBe("continue");
+    reviewOrchestrator.review = original;
+  });
+
+  test("passes pluginMode deferred in reviewConfig to orchestrator", async () => {
+    const { reviewOrchestrator } = await import("../../../../src/review/orchestrator");
+    const original = reviewOrchestrator.review;
+    const orchestratorMock = mock(async () => ({
+      success: true,
+      pluginFailed: false,
+      builtIn: { totalDurationMs: 0 },
+    }));
+    reviewOrchestrator.review = orchestratorMock as typeof reviewOrchestrator.review;
+
+    const config = makeConfig({});
+    config.review.pluginMode = "deferred";
+    const ctx = makeCtx({ config });
+    await reviewStage.execute(ctx);
+
+    const calledConfig = orchestratorMock.mock.calls[0]?.[0];
+    expect(calledConfig?.pluginMode).toBe("deferred");
+    reviewOrchestrator.review = original;
+  });
+
+  test("escalates on built-in check failure even when pluginMode is deferred", async () => {
+    const reviewResult = {
+      success: false,
+      pluginFailed: false,
+      failureReason: "typecheck failed",
+      builtIn: { totalDurationMs: 0 },
+    };
+    const { reviewOrchestrator } = await import("../../../../src/review/orchestrator");
+    const original = reviewOrchestrator.review;
+    reviewOrchestrator.review = mock(async () => reviewResult) as typeof reviewOrchestrator.review;
+
+    const config = makeConfig({});
+    config.review.pluginMode = "deferred";
+    const ctx = makeCtx({ config });
+    const result = await reviewStage.execute(ctx);
+
+    expect(result.action).toBe("escalate");
+    reviewOrchestrator.review = original;
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Plugin reviewer failure — no trigger configured (today behavior)
 // ─────────────────────────────────────────────────────────────────────────────
 
