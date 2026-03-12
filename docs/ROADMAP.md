@@ -182,6 +182,42 @@ nax verifies implementation tests (agent-written) but never independently verifi
 
 ---
 
+## v0.40.1 — Acceptance UI Test Strategies (Planned)
+
+**Theme:** Extend acceptance pipeline to support UI projects (TUI, web, CLI) — not just backend/library code
+**Status:** Planned
+**Depends on:** v0.40.0
+
+### Problem
+
+v0.40.0 generates acceptance tests that `import` a function and assert on return values. This doesn't work for:
+- **TUI apps** (Ink) — need `render()` + `lastFrame()` assertions
+- **Web apps** (React/Vue) — need `@testing-library` or Playwright
+- **CLI tools** — need `Bun.spawn` + stdout assertions
+- **Visual output** — need snapshot matching
+
+### Feature: Test Strategy Selection
+
+- **5 strategies:** `unit` (default), `component`, `cli`, `e2e`, `snapshot`
+- **Auto-detection:** Extends `init-detect.ts` to detect UI frameworks (ink, react, vue, svelte)
+- **Per-criterion override:** Mix strategies in the same feature (e.g., API logic = unit, dashboard = component)
+- **Strategy-aware refinement:** LLM receives strategy context to produce appropriate assertions
+- **Backward compatible:** Omitting `testStrategy` defaults to `unit`
+
+### Stories
+
+| ID | Title | Complexity |
+|:---|:------|:-----------|
+| ACS-001 | Test strategy types + config schema extension | Simple |
+| ACS-002 | Stack detection for UI frameworks | Simple |
+| ACS-003 | Generator templates — strategy-aware test generation | Medium |
+| ACS-004 | Refinement prompt — strategy-aware LLM context | Simple |
+| ACS-005 | Integration test — component strategy E2E (Ink project) | Medium |
+
+**Spec:** [`docs/specs/acceptance-ui-strategies.md`](specs/acceptance-ui-strategies.md)
+
+---
+
 ## v0.37.0 — Prompt Template Export ✅ Shipped (2026-03-10)
 
 **Theme:** Complete the prompt override system — ship default templates, add CLI export, enable full user customization
@@ -481,7 +517,8 @@ Stories classified as complex/expert with >6 acceptance criteria.
 - [x] ~~**BUG-062:** LLM routing cache returned stale `testStrategy` from pre-route phase — `simple` stories incorrectly used `three-session-tdd-lite` instead of `tdd-simple` (TS-001 rule not applied on cache hit). Fixed: cache hit now recomputes `testStrategy` via `determineTestStrategy()` from cached `complexity`; cache is authoritative on `complexity`/`modelTier` only. `945cc8d`~~
 
 ### Features
-- [ ] **ACC-001:** Acceptance Test Pipeline — Feature-level TDD (RED→GREEN) for verifying built features match original requirements. Generate acceptance tests from PRD `acceptanceCriteria[]`, run RED gate before stories, GREEN gate after. Includes LLM-based AC refinement for deterministic test generation. **Spec:** [`docs/specs/acceptance-pipeline.md`](specs/acceptance-pipeline.md)
+- [x] ~~**ACC-001:** Acceptance Test Pipeline — shipped in v0.40.0~~
+- [ ] **MONO-001:** Monorepo Support — package-scoped acceptance tests, per-package test runners, cross-package AC, workspaces-aware context generation. Covers: AC scoped to specific packages, test file placement per package root, multi-package features spanning API + UI. **(To be discussed — needs design spec)**
 - [ ] **CI-001:** CI Memory Optimization — parallel test sharding to pass on 1GB runners (currently requires 8GB).
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
