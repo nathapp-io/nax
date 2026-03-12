@@ -84,7 +84,43 @@ export const DEFAULT_CONFIG: NaxConfig = {
     dangerouslySkipPermissions: true,
     drainTimeoutMs: 2000,
     shell: "/bin/sh",
-    stripEnvVars: ["CLAUDECODE", "REPL_ID", "AGENT"],
+    stripEnvVars: [
+      // Agent detection markers
+      "CLAUDECODE",
+      "REPL_ID",
+      "AGENT",
+      // Source control tokens
+      "GITLAB_ACCESS_TOKEN",
+      "GITHUB_TOKEN",
+      "GITHUB_ACCESS_TOKEN",
+      "GH_TOKEN",
+      "CI_GIT_TOKEN",
+      "CI_JOB_TOKEN",
+      "BITBUCKET_ACCESS_TOKEN",
+      // Package registry tokens
+      "NPM_TOKEN",
+      "NPM_AUTH_TOKEN",
+      "YARN_NPM_AUTH_TOKEN",
+      // LLM API keys (agent gets these via allowlist in buildAllowedEnv; test runners don't need them)
+      "ANTHROPIC_API_KEY",
+      "OPENAI_API_KEY",
+      "GEMINI_API_KEY",
+      "COHERE_API_KEY",
+      // Cloud / infra credentials
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
+      "GOOGLE_APPLICATION_CREDENTIALS",
+      "GCLOUD_SERVICE_KEY",
+      "AZURE_CLIENT_SECRET",
+      "AZURE_TENANT_ID",
+      // CI secrets
+      "TELEGRAM_BOT_TOKEN",
+      "SLACK_TOKEN",
+      "SLACK_WEBHOOK_URL",
+      "SENTRY_AUTH_TOKEN",
+      "DATADOG_API_KEY",
+    ],
     environmentalEscalationDivisor: 2,
   },
   tdd: {
