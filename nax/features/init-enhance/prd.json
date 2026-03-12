@@ -62,8 +62,8 @@
       "dependencies": [
         "INIT-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "contextFiles": [
@@ -114,8 +114,15 @@
       "expectedFiles": [],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Enhances existing init flow with stack-aware constitution generation, gitignore updates, and summary printing; multiple files but straightforward additive logic.",
+        "contentHash": "669700e4aa13daa7a35de78cd12685def5ca565282556053de447c2d179b2f6a"
+      }
     }
   ],
-  "updatedAt": "2026-03-12T02:14:12.029Z"
+  "updatedAt": "2026-03-12T02:25:16.325Z"
 }
