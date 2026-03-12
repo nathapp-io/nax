@@ -108,6 +108,44 @@ nax init --ai     # use LLM to generate richer context.md
 
 ---
 
+## v0.39.3 — Prompt Optimization ✅ Shipped (2026-03-12)
+
+**Theme:** Security hardening, test command injection, prompt unification, and full prompt audit
+**Status:** ✅ Shipped (2026-03-12) — commit `8cab535`, [run-release] triggered
+**Depends on:** v0.39.2
+
+### Security Hardening
+
+- `stripEnvVars` expanded from 3 to 22 variables (source control tokens, NPM tokens, LLM API keys, cloud credentials, CI secrets)
+- Story context, constitution, and context.md wrapped with `<!-- USER-SUPPLIED DATA -->` boundary tags
+- Security section added to conventions: forbids exfiltration via curl/webhooks
+
+### Prompt Optimization
+
+- **Test command injection:** All prompts now use `quality.commands.test` from config (no more hardcoded `bun test`)
+- **Unified prompts:** `test-after` and `tdd-simple` now use the same TDD prompt role
+- **Session context:** All TDD roles now know their position in the workflow (session 1/2/3)
+- **Implementer-lite rewrite:** No longer says "write tests AND implement" — acknowledges tests already exist from session 1
+- **LLM routing prompt:** Removed dead test strategy section (~80 tokens saved per call)
+- **Classifier fix:** Removed hardcoded `ANTHROPIC_API_KEY` check (leftover from pre-v0.35.0)
+
+### Prompts Shipped
+
+- `prompts/roles/` — implementer, implementer-lite, test-writer, verifier, single-session, tdd-simple
+- `prompts/sections/` — isolation, conventions
+- README with export commands
+
+### Tests
+
+- 3,577 pass, 0 fail
+
+### Roadmapped
+
+- Deprecate `single-session` prompt role
+- Migrate batch prompt to PromptBuilder
+
+---
+
 ## v0.37.0 — Prompt Template Export ✅ Shipped (2026-03-10)
 
 **Theme:** Complete the prompt override system — ship default templates, add CLI export, enable full user customization
@@ -356,6 +394,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 
 | Version | Theme | Date |
 |:--------|:------|:-----|
+| v0.39.3 | Prompt Optimization (security hardening, test command injection) | 2026-03-12 |
 | v0.39.0 | Init Enhancement (auto-detect, context generation) | 2026-03-12 |
 | v0.38.1 | Code Audit Refactor (10 fixes) | 2026-03-11 |
 | v0.38.0 | Test Health Audit | 2026-03-10 |
@@ -422,4 +461,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-12 (v0.39.0 shipped — Init Enhancement; v0.40.0 next)*
+*Last updated: 2026-03-12 (v0.39.3 shipped — Prompt Optimization; v0.40.0 next)*
