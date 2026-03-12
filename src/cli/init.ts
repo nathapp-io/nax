@@ -8,8 +8,10 @@ import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { globalConfigDir, projectConfigDir } from "../config/paths";
-import { DEFAULT_CONFIG } from "../config/schema";
 import { getLogger } from "../logger";
+import { initContext } from "./init-context";
+import { buildInitConfig, detectProjectStack } from "./init-detect";
+import type { ProjectStack } from "./init-detect";
 import { promptsInitCommand } from "./prompts";
 
 /** Init command options */
@@ -20,10 +22,18 @@ export interface InitOptions {
   projectRoot?: string;
 }
 
+/** Options for initProject */
+export interface InitProjectOptions {
+  /** Use LLM to generate context.md (--ai flag) */
+  ai?: boolean;
+  /** Force overwrite of existing files */
+  force?: boolean;
+}
+
 /**
  * Gitignore entries added by nax init
  */
-const NAX_GITIGNORE_ENTRIES = [".nax-verifier-verdict.json"];
+const NAX_GITIGNORE_ENTRIES = [".nax-verifier-verdict.json", "nax.lock", "nax/**/runs/", "nax/metrics.json"];
 
 /**
  * Add nax-specific entries to .gitignore if not already present.
@@ -55,33 +65,58 @@ async function updateGitignore(projectRoot: string): Promise<void> {
 }
 
 /**
- * Template for default constitution.md
+ * Build a stack-aware constitution.md from the detected project stack.
  */
-const DEFAULT_CONSTITUTION = `# Project Constitution
+function buildConstitution(stack: ProjectStack): string {
+  const sections: string[] = [];
 
-## Goals
-- Deliver high-quality, maintainable code
-- Follow project conventions and best practices
-- Maintain comprehensive test coverage
+  sections.push("# Project Constitution\n");
 
-## Constraints
-- Use Bun-native APIs only
-- Follow functional style for pure logic
-- Keep files focused and under 400 lines
+  sections.push("## Goals");
+  sections.push("- Deliver high-quality, maintainable code");
+  sections.push("- Follow project conventions and best practices");
+  sections.push("- Maintain comprehensive test coverage\n");
 
-## Preferences
-- Prefer immutability over mutation
-- Write tests first (TDD approach)
-- Clear, descriptive naming
-`;
+  sections.push("## Constraints");
+  sections.push("- Follow functional style for pure logic");
+  sections.push("- Keep files focused and under 400 lines\n");
 
-/**
- * Template for minimal config.json (references defaults, only overrides)
- */
-const MINIMAL_PROJECT_CONFIG = {
-  version: 1,
-  // Add project-specific overrides here
-};
+  if (stack.runtime === "bun") {
+    sections.push("## Bun-Native APIs");
+    sections.push("- Use `Bun.file()` for file reads, `Bun.write()` for file writes");
+    sections.push("- Use `Bun.spawn()` for subprocesses (never `child_process`)");
+    sections.push("- Use `Bun.sleep()` for delays");
+    sections.push("- Use `bun test` for running tests\n");
+  }
+
+  if (stack.language === "typescript") {
+    sections.push("## strict TypeScript");
+    sections.push("- Enable strict mode in tsconfig.json");
+    sections.push("- No `any` in public APIs — use `unknown` + type guards");
+    sections.push("- Explicit return types on all exported functions\n");
+  }
+
+  if (stack.language === "python") {
+    sections.push("## Python Standards");
+    sections.push("- Follow PEP 8 style guide for formatting and naming");
+    sections.push("- Add type hints to all function signatures");
+    sections.push("- Use type annotations for variables where non-obvious\n");
+  }
+
+  if (stack.monorepo === "turborepo") {
+    sections.push("## Monorepo Conventions");
+    sections.push("- Respect package boundaries — do not import across packages without explicit dependency");
+    sections.push("- Each package should be independently buildable and testable");
+    sections.push("- Shared utilities go in a dedicated `packages/shared` (or equivalent) package\n");
+  }
+
+  sections.push("## Preferences");
+  sections.push("- Prefer immutability over mutation");
+  sections.push("- Write tests first (TDD approach)");
+  sections.push("- Clear, descriptive naming");
+
+  return `${sections.join("\n")}\n`;
+}
 
 const MINIMAL_GLOBAL_CONFIG = {
   version: 1,
@@ -113,7 +148,10 @@ async function initGlobal(): Promise<void> {
   // Create ~/.nax/constitution.md if it doesn't exist
   const constitutionPath = join(globalDir, "constitution.md");
   if (!existsSync(constitutionPath)) {
-    await Bun.write(constitutionPath, DEFAULT_CONSTITUTION);
+    await Bun.write(
+      constitutionPath,
+      buildConstitution({ runtime: "unknown", language: "unknown", linter: "unknown", monorepo: "none" }),
+    );
     logger.info("init", "Created global constitution", { path: constitutionPath });
   } else {
     logger.info("init", "Global constitution already exists", { path: constitutionPath });
@@ -134,7 +172,7 @@ async function initGlobal(): Promise<void> {
 /**
  * Initialize project nax directory (nax/)
  */
-export async function initProject(projectRoot: string): Promise<void> {
+export async function initProject(projectRoot: string, options?: InitProjectOptions): Promise<void> {
   const logger = getLogger();
   const projectDir = projectConfigDir(projectRoot);
 
@@ -144,19 +182,32 @@ export async function initProject(projectRoot: string): Promise<void> {
     logger.info("init", "Created project config directory", { path: projectDir });
   }
 
+  // Detect project stack and build config
+  const stack = detectProjectStack(projectRoot);
+  const projectConfig = buildInitConfig(stack);
+  logger.info("init", "Detected project stack", {
+    runtime: stack.runtime,
+    language: stack.language,
+    linter: stack.linter,
+    monorepo: stack.monorepo,
+  });
+
   // Create nax/config.json if it doesn't exist
   const configPath = join(projectDir, "config.json");
   if (!existsSync(configPath)) {
-    await Bun.write(configPath, `${JSON.stringify(MINIMAL_PROJECT_CONFIG, null, 2)}\n`);
+    await Bun.write(configPath, `${JSON.stringify(projectConfig, null, 2)}\n`);
     logger.info("init", "Created project config", { path: configPath });
   } else {
     logger.info("init", "Project config already exists", { path: configPath });
   }
 
-  // Create nax/constitution.md if it doesn't exist
+  // Generate context.md (template or LLM-enhanced with --ai flag)
+  await initContext(projectRoot, { ai: options?.ai, force: options?.force });
+
+  // Create nax/constitution.md with stack-aware content
   const constitutionPath = join(projectDir, "constitution.md");
-  if (!existsSync(constitutionPath)) {
-    await Bun.write(constitutionPath, DEFAULT_CONSTITUTION);
+  if (!existsSync(constitutionPath) || options?.force) {
+    await Bun.write(constitutionPath, buildConstitution(stack));
     logger.info("init", "Created project constitution", { path: constitutionPath });
   } else {
     logger.info("init", "Project constitution already exists", { path: constitutionPath });
@@ -174,10 +225,24 @@ export async function initProject(projectRoot: string): Promise<void> {
   // Update .gitignore to include nax-specific entries
   await updateGitignore(projectRoot);
 
-  // Create prompt templates (final step)
+  // Create prompt templates
   // Pass autoWireConfig: false to prevent auto-wiring prompts.overrides
   // Templates are created but not activated until user explicitly configures them
   await promptsInitCommand({ workdir: projectRoot, force: false, autoWireConfig: false });
+
+  // Print summary
+  console.log("\n[OK] nax init complete. Created files:");
+  console.log("  - nax/config.json");
+  console.log("  - nax/context.md");
+  console.log("  - nax/constitution.md");
+  console.log("  - nax/hooks/");
+  console.log("  - nax/templates/");
+  console.log("\nNext steps:");
+  console.log("  1. Review nax/context.md and fill in TODOs");
+  console.log("  2. Review nax/config.json and adjust quality commands");
+  console.log("  3. Run: nax generate");
+  console.log("  4. Run: nax plan");
+  console.log("  5. Run: nax run");
 
   logger.info("init", "Project config initialized successfully", { path: projectDir });
 }

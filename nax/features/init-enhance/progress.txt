@@ -1,0 +1,2 @@
+[2026-03-12T02:13:55.459Z] INIT-001 — PASSED — Auto-detect project stack and pre-fill config.json quality commands — Cost: $0.4809
+[2026-03-12T02:24:59.541Z] INIT-002 — PASSED — Context.md generation: template by default, LLM-powered with --ai flag — Cost: $0.2052

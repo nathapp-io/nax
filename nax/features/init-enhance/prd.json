@@ -1,0 +1,128 @@
+{
+  "project": "nax",
+  "branchName": "feat/init-enhance",
+  "feature": "init-enhance",
+  "userStories": [
+    {
+      "id": "INIT-001",
+      "title": "Auto-detect project stack and pre-fill config.json quality commands",
+      "description": "When nax init runs, scan the project root for stack indicators and auto-fill quality.commands in nax/config.json.\n\nDetection logic (in priority order):\n1. bun.lockb or bunfig.toml -> runtime=bun\n2. package-lock.json or yarn.lock or pnpm-lock.yaml -> runtime=node\n3. tsconfig.json -> language=typescript\n4. turbo.json -> monorepo=turborepo\n5. pyproject.toml or setup.py -> language=python\n6. Cargo.toml -> language=rust\n7. go.mod -> language=go\n\nMapping to quality.commands:\n- bun+ts -> { typecheck: bun run tsc --noEmit, lint: bun run lint, test: bun test }\n- node+ts -> { typecheck: npx tsc --noEmit, lint: npm run lint, test: npm test }\n- python -> { lint: ruff check ., test: pytest }\n- rust -> { typecheck: cargo check, lint: cargo clippy, test: cargo test }\n- go -> { typecheck: go vet ./..., lint: golangci-lint run, test: go test ./... }\n\nAlso detect linter: biome.json/biome.jsonc -> biome check, eslint config -> eslint.\n\nCreate new file src/cli/init-detect.ts with:\n- detectProjectStack(projectRoot: string): ProjectStack\n- buildQualityCommands(stack: ProjectStack): QualityCommands\n- buildInitConfig(stack: ProjectStack): object\n\nIntegrate into initProject() in src/cli/init.ts: replace MINIMAL_PROJECT_CONFIG with buildInitConfig(detectProjectStack(projectRoot)).\n\nPrint detection result. If nothing detected, fall back to minimal config.",
+      "acceptanceCriteria": [
+        "detectProjectStack correctly identifies bun+ts, node+ts, python, rust, go stacks",
+        "buildQualityCommands returns correct commands for each stack variant",
+        "nax init creates config.json with pre-filled quality.commands when stack detected",
+        "nax init falls back to minimal config when no stack detected",
+        "Biome and ESLint detected and used in lint commands when present",
+        "Unit tests cover all detection combinations"
+      ],
+      "tags": [
+        "cli",
+        "init"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/cli/init.ts",
+        "src/config/defaults.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/init-detect.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Single new module with deterministic file-detection logic and clear mapping table, but multiple stack variants (7 languages/runtimes) and linter combinations requiring comprehensive test coverage using standard dependency injection patterns.",
+        "contentHash": "37e99a81f06bd8f8a6bdf6e3098dc542c8f4c574d87ef14dd0a0580200b748fb"
+      }
+    },
+    {
+      "id": "INIT-002",
+      "title": "Context.md generation: template by default, LLM-powered with --ai flag",
+      "description": "Add context.md generation to nax init. Two modes:\n\nDefault mode (no flag): Generate a structured template context.md from filesystem scan only -- zero LLM cost.\n\nAI mode (nax init --ai): Same scan, but pass results to an LLM to generate a richer narrative context.md.\n\nScan phase (both modes, no LLM, pure filesystem):\n1. File tree: find . -type f excluding node_modules/.git/dist, head -200\n2. Package manifest: read package.json (name, description, scripts, dependencies) or equivalent\n3. Existing docs: read first 100 lines of README.md if present\n4. Entry points: detect src/index.ts, src/main.ts, main.go, src/lib.rs, etc.\n5. Config files: list tsconfig.json, biome.json, turbo.json, .env.example (names only)\n\nTemplate mode (default):\n- Build structured markdown template with sections pre-filled from scan data\n- Sections left as TODO comments where scan data is insufficient\n- Print: Generated nax/context.md template from project scan.\n\nAI mode (--ai flag):\n- Build prompt with scan results for LLM\n- Use routing system cheapest available tier (fast/haiku-class)\n- Token budget: ~3-5K input, ~1-2K output max\n- Use existing nax LLM infrastructure -- do NOT hardcode a model\n- If LLM call fails, fall back to template mode with warning\n\nBoth modes: write to nax/context.md. If exists, skip unless --force.\n\nNew file: src/cli/init-context.ts with:\n- scanProject(projectRoot: string): ProjectScan\n- generateContextWithLLM(scan, config): Promise<string>\n- generateContextTemplate(scan): string\n- initContext(projectRoot, options): Promise<void>",
+      "acceptanceCriteria": [
+        "nax init generates nax/context.md template from filesystem scan (no LLM)",
+        "Template includes project name, detected stack, directory tree, entry points",
+        "nax init --ai calls LLM to generate richer context.md",
+        "LLM failure falls back to template mode with warning",
+        "Existing context.md is not overwritten without --force",
+        "Unit tests for scanProject and generateContextTemplate"
+      ],
+      "tags": [
+        "cli",
+        "init",
+        "context"
+      ],
+      "dependencies": [
+        "INIT-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/cli/init.ts",
+        "src/context/generator.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/init-context.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Single new file with straightforward filesystem scanning and template generation; LLM integration delegates to existing routing system; no complex logic or architectural changes needed.",
+        "contentHash": "a62a28f3265b233a58bd5dc247a29cde2e2009faa8c897b2c9f95ab0c7136e1e"
+      }
+    },
+    {
+      "id": "INIT-003",
+      "title": "Post-init checklist and unified init flow",
+      "description": "After nax init completes all setup steps, print a clear summary and next-steps checklist.\n\nUnified flow for nax init (update initProject()):\n1. Create nax/ directory structure (existing)\n2. Detect project stack -> write config.json with quality commands (INIT-001)\n3. Generate context.md template from scan (INIT-002); if --ai flag passed, use LLM\n4. Write constitution.md with stack-aware defaults (enhance with detected stack)\n5. Create hooks/ directory (existing)\n6. Create templates/ via promptsInitCommand (existing)\n7. Update .gitignore (add nax.lock, nax/**/runs/, nax/metrics.json)\n8. Print summary\n\nSummary shows all created files and next steps (review context.md, review config.json, nax generate, nax plan, nax run).\n\nEnhance constitution.md generation:\n- bun detected -> include Bun-native APIs guidance\n- typescript detected -> include strict TypeScript guidance\n- python detected -> include PEP 8 and type hints\n- turbo detected -> include monorepo package boundaries\n\nUpdate NAX_GITIGNORE_ENTRIES to include nax.lock, nax/**/runs/, nax/metrics.json.",
+      "acceptanceCriteria": [
+        "nax init prints summary with all created files listed",
+        "nax init prints next-steps checklist",
+        "constitution.md includes stack-specific conventions when stack detected",
+        ".gitignore includes nax.lock, nax/**/runs/, nax/metrics.json",
+        "--ai flag is wired through to context generation",
+        "Unit tests verify summary output and .gitignore entries"
+      ],
+      "tags": [
+        "cli",
+        "init"
+      ],
+      "dependencies": [
+        "INIT-001",
+        "INIT-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/cli/init.ts"
+      ],
+      "expectedFiles": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Enhances existing init flow with stack-aware constitution generation, gitignore updates, and summary printing; multiple files but straightforward additive logic.",
+        "contentHash": "669700e4aa13daa7a35de78cd12685def5ca565282556053de447c2d179b2f6a"
+      }
+    }
+  ],
+  "updatedAt": "2026-03-12T02:25:16.325Z"
+}
