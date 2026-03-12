@@ -1,36 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-12T04-31-05-405Z",
-    "feature": "deferred-review",
-    "startedAt": "2026-03-12T04:31:05.405Z",
+    "id": "run-2026-03-12T08-59-32-030Z",
+    "feature": "batch-prompt-builder",
+    "startedAt": "2026-03-12T08:59:32.030Z",
     "status": "running",
     "dryRun": false,
-    "pid": 26970
+    "pid": 64991
   },
   "progress": {
-    "total": 3,
-    "passed": 2,
+    "total": 2,
+    "passed": 1,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
     "pending": 1
   },
   "cost": {
-    "spent": 0.5937804999999999,
+    "spent": 0.7311535,
     "limit": 8
   },
   "current": {
-    "storyId": "DR-003",
-    "title": "Run deferred plugin review after all stories complete in runner",
-    "complexity": "medium",
-    "tddStrategy": "test-after",
+    "storyId": "BP-002",
+    "title": "Migrate prompt stage and remove dead code",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
   "iterations": 3,
-  "updatedAt": "2026-03-12T05:17:16.496Z",
-  "durationMs": 2771091,
-  "lastHeartbeat": "2026-03-12T05:17:16.496Z"
+  "updatedAt": "2026-03-12T09:28:47.871Z",
+  "durationMs": 1755841,
+  "lastHeartbeat": "2026-03-12T09:28:47.871Z"
 }

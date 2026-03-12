@@ -16,7 +16,7 @@ import type { UserStory } from "../prd";
 import { buildConventionsSection } from "./sections/conventions";
 import { buildIsolationSection } from "./sections/isolation";
 import { buildRoleTaskSection } from "./sections/role-task";
-import { buildStorySection } from "./sections/story";
+import { buildBatchStorySection, buildStorySection } from "./sections/story";
 import { buildVerdictSection } from "./sections/verdict";
 import type { PromptOptions, PromptRole } from "./types";
 
@@ -26,6 +26,7 @@ export class PromptBuilder {
   private _role: PromptRole;
   private _options: PromptOptions;
   private _story: UserStory | undefined;
+  private _stories: UserStory[] | undefined;
   private _contextMd: string | undefined;
   private _constitution: string | undefined;
   private _overridePath: string | undefined;
@@ -44,6 +45,11 @@ export class PromptBuilder {
 
   story(story: UserStory): PromptBuilder {
     this._story = story;
+    return this;
+  }
+
+  stories(stories: UserStory[]): PromptBuilder {
+    this._stories = stories;
     return this;
   }
 
@@ -87,7 +93,9 @@ export class PromptBuilder {
     sections.push(await this._resolveRoleBody());
 
     // (3) Story context — non-overridable
-    if (this._story) {
+    if (this._role === "batch" && this._stories && this._stories.length > 0) {
+      sections.push(buildBatchStorySection(this._stories));
+    } else if (this._story) {
       sections.push(buildStorySection(this._story));
     }
 

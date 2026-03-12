@@ -123,6 +123,71 @@ describe("buildRoleTaskSection — single-session role", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// BP-001: batch role tests (RED phase — will fail until implemented)
+// ---------------------------------------------------------------------------
+
+describe("buildRoleTaskSection — batch role", () => {
+  test("returns non-empty string", () => {
+    const result = buildRoleTaskSection("batch");
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  test("uses TDD-aligned language: instructs to write tests before implementing", () => {
+    const result = buildRoleTaskSection("batch");
+    // Must use TDD-aligned language, not "test-after"
+    expect(result.toLowerCase()).toMatch(/write.*test|test.*first|tdd/);
+  });
+
+  test("does NOT contain 'test-after' language", () => {
+    const result = buildRoleTaskSection("batch");
+    expect(result.toLowerCase()).not.toContain("test-after");
+  });
+
+  test("instructs to implement each story in order", () => {
+    const result = buildRoleTaskSection("batch");
+    expect(result.toLowerCase()).toMatch(/each story|in order|story.*order/);
+  });
+
+  test("instructs to commit each story separately with story ID in commit message", () => {
+    const result = buildRoleTaskSection("batch");
+    expect(result.toLowerCase()).toMatch(/commit.*story|story.*commit/);
+    expect(result.toLowerCase()).toMatch(/story.*id|id.*commit/);
+  });
+
+  test("includes git commit instruction", () => {
+    const result = buildRoleTaskSection("batch");
+    expect(result).toContain("git commit");
+  });
+
+  test("includes test framework hint for default bun test command", () => {
+    const result = buildRoleTaskSection("batch", undefined, "bun test");
+    expect(result).toContain("Bun test");
+  });
+
+  test("includes test framework hint from custom testCommand", () => {
+    const result = buildRoleTaskSection("batch", undefined, "pytest");
+    expect(result).toContain("pytest");
+  });
+
+  test("is distinct from single-session role", () => {
+    const batch = buildRoleTaskSection("batch");
+    const singleSession = buildRoleTaskSection("single-session");
+    expect(batch).not.toEqual(singleSession);
+  });
+
+  test("is distinct from tdd-simple role", () => {
+    const batch = buildRoleTaskSection("batch");
+    const tddSimple = buildRoleTaskSection("tdd-simple");
+    expect(batch).not.toEqual(tddSimple);
+  });
+
+  test("mentions verification (run tests after implementing)", () => {
+    const result = buildRoleTaskSection("batch");
+    expect(result.toLowerCase()).toMatch(/verif|run.*test|test.*pass/);
+  });
+});
+
 describe("buildRoleTaskSection — all roles return strings", () => {
   const roles = ["implementer", "test-writer", "verifier", "single-session"] as const;
 

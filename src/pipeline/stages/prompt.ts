@@ -21,7 +21,6 @@
  * ```
  */
 
-import { buildBatchPrompt } from "../../execution/prompts";
 import { getLogger } from "../../logger";
 import { PromptBuilder } from "../../prompts";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -37,7 +36,13 @@ export const promptStage: PipelineStage = {
 
     let prompt: string;
     if (isBatch) {
-      prompt = buildBatchPrompt(ctx.stories, ctx.contextMarkdown, ctx.constitution);
+      const builder = PromptBuilder.for("batch")
+        .withLoader(ctx.workdir, ctx.config)
+        .stories(ctx.stories)
+        .context(ctx.contextMarkdown)
+        .constitution(ctx.constitution?.content)
+        .testCommand(ctx.config.quality?.commands?.test);
+      prompt = await builder.build();
     } else {
       // Both test-after and tdd-simple use the tdd-simple prompt (RED/GREEN/REFACTOR)
       const role = "tdd-simple" as const;

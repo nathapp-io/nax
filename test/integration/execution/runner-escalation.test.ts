@@ -10,7 +10,6 @@ import { describe, expect, test } from "bun:test";
 import { groupStoriesIntoBatches, precomputeBatchPlan } from "../../../src/execution/batching";
 import type { StoryBatch } from "../../../src/execution/batching";
 import { escalateTier } from "../../../src/execution/escalation";
-import { buildBatchPrompt } from "../../../src/execution/prompts";
 import { resolveMaxAttemptsOutcome } from "../../../src/execution/runner";
 import type { UserStory } from "../../../src/prd";
 import type { FailureCategory } from "../../../src/tdd/types";

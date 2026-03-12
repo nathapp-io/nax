@@ -1,0 +1,103 @@
+{
+  "project": "nax",
+  "feature": "batch-prompt-builder",
+  "branchName": "feat/batch-prompt-builder",
+  "userStories": [
+    {
+      "id": "BP-001",
+      "title": "Add batch role to PromptBuilder",
+      "description": "Add batch multi-story support to the existing PromptBuilder system.\n\nChanges required:\n\n1. `src/prompts/types.ts`: Add \"batch\" to the PromptRole union type.\n\n2. `src/prompts/builder.ts`: Add a `.stories(stories: UserStory[])` method that stores an array of stories. In `build()`, when role is \"batch\", use `buildBatchStorySection()` (from step 3) instead of `buildStorySection()` for section (3). Skip the verdict section for batch role.\n\n3. `src/prompts/sections/story.ts`: Add a new exported function `buildBatchStorySection(stories: UserStory[]): string` that renders multiple stories with the same USER-SUPPLIED DATA boundary tags as `buildStorySection`. Format each story as \"## Story N: {id} - {title}\" with description and numbered acceptance criteria.\n\n4. `src/prompts/sections/role-task.ts`: Add a \"batch\" case to `buildRoleTaskSection`. The batch role template should instruct the agent to implement each story in order, write tests for each, commit each story separately with the story ID in the commit message, and use the injected test command. Do NOT say \"test-after\" — use TDD-aligned language (write tests, then implement, then verify). Include the `buildTestFrameworkHint()` output.\n\nExisting tests in `test/unit/prompts/` must continue to pass. Add new tests covering the batch role in role-task, the batch story section rendering, and the builder with `.stories()` method.",
+      "acceptanceCriteria": [
+        "\"batch\" is a valid PromptRole in types.ts",
+        "PromptBuilder has a .stories() method accepting UserStory[]",
+        "buildBatchStorySection renders multiple stories with boundary tags",
+        "Batch role template uses TDD-aligned language, not test-after",
+        "Batch role template includes test framework hint from testCommand",
+        "builder.build() uses buildBatchStorySection when role is batch",
+        "All existing prompt tests pass unchanged",
+        "New tests cover batch role-task, batch story section, and builder.stories()"
+      ],
+      "tags": [],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/prompts/builder.ts",
+        "src/prompts/types.ts",
+        "src/prompts/sections/story.ts",
+        "src/prompts/sections/role-task.ts"
+      ],
+      "expectedFiles": [
+        "src/prompts/builder.ts",
+        "src/prompts/types.ts",
+        "src/prompts/sections/story.ts",
+        "src/prompts/sections/role-task.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Standard feature: add new role type across 4 coordinated files with straightforward templating logic. Clear requirements, existing patterns to follow, standard tests.",
+        "contentHash": "f52ed15c63cb39c8e71c009dd1d432f8e4567010d8d206143d641d6342535ade"
+      }
+    },
+    {
+      "id": "BP-002",
+      "title": "Migrate prompt stage and remove dead code",
+      "description": "Migrate the pipeline prompt stage to use PromptBuilder for batch prompts, then remove the now-dead `src/execution/prompts.ts` file and its re-exports.\n\nChanges required:\n\n1. `src/pipeline/stages/prompt.ts`: Replace the `buildBatchPrompt()` import and call with PromptBuilder. The batch path should use:\n```typescript\nconst builder = PromptBuilder.for(\"batch\")\n  .withLoader(ctx.workdir, ctx.config)\n  .stories(ctx.stories)\n  .context(ctx.contextMarkdown)\n  .constitution(ctx.constitution?.content)\n  .testCommand(ctx.config.quality?.commands?.test);\nprompt = await builder.build();\n```\n\n2. Delete `src/execution/prompts.ts` entirely — both `buildSingleSessionPrompt` and `buildBatchPrompt` are dead code after this migration.\n\n3. `src/execution/runner.ts`: Remove the re-export line `export { buildSingleSessionPrompt, buildBatchPrompt } from \"./prompts\";`\n\n4. `src/execution/index.ts`: Remove the re-export line `export { buildSingleSessionPrompt, buildBatchPrompt } from \"./prompts\";`\n\n5. Update any tests that import from `src/execution/prompts.ts` to either delete them (if testing dead code) or update imports.\n\nExisting pipeline prompt stage tests must be updated to verify the batch path now uses PromptBuilder output (which includes constitution boundary tags, conventions section, isolation rules).",
+      "acceptanceCriteria": [
+        "Pipeline prompt stage uses PromptBuilder.for(\"batch\") for multi-story prompts",
+        "src/execution/prompts.ts is deleted",
+        "Re-exports removed from runner.ts and index.ts",
+        "No remaining imports of buildBatchPrompt or buildSingleSessionPrompt anywhere in src/",
+        "Pipeline prompt stage tests pass with updated assertions",
+        "Batch prompts now include constitution boundary tags, conventions section, and isolation rules"
+      ],
+      "tags": [],
+      "dependencies": [
+        "BP-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/pipeline/stages/prompt.ts",
+        "src/execution/prompts.ts",
+        "src/execution/runner.ts",
+        "src/execution/index.ts"
+      ],
+      "expectedFiles": [
+        "src/pipeline/stages/prompt.ts"
+      ],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast: Review failed: Working tree has uncommitted changes:\n  - docs/dead-tests-report.md\n  - docs/test-overlap-report.md\n\nStage and commit these files before running review."
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "fast",
+          "stage": "escalation",
+          "summary": "Failed with tier fast, escalating to next tier",
+          "cost": 0.07309550000000001,
+          "timestamp": "2026-03-12T09:27:59.309Z"
+        }
+      ],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Straightforward dead code removal + re-export cleanup + single API call replacement (exact code provided); no new behavior or complex logic.",
+        "contentHash": "11718785ee140199f0560e683267229061eb6883d2e3c2c6f26972f5c3ec99ec",
+        "modelTier": "balanced"
+      }
+    }
+  ],
+  "updatedAt": "2026-03-12T09:27:59.309Z"
+}

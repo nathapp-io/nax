@@ -28,6 +28,7 @@ function makeStory(overrides: Partial<UserStory> = {}): UserStory {
     status: "pending",
     passes: false,
     escalations: [],
+    attempts: 0,
     ...overrides,
   };
 }
@@ -334,5 +335,105 @@ describe("src/prompts/types exports — tdd-simple", () => {
     const roles: PromptRole[] = ["test-writer", "implementer", "verifier", "single-session", "tdd-simple" as any];
     expect(roles).toContain("tdd-simple");
     expect(roles).toHaveLength(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BP-001: batch role support (RED phase — will fail until implemented)
+// ---------------------------------------------------------------------------
+
+describe("PromptBuilder — batch role: .stories() method", () => {
+  test(".stories() is chainable", () => {
+    const builder = PromptBuilder.for("batch").stories([makeStory()]);
+    expect(builder).toBeInstanceOf(PromptBuilder);
+  });
+
+  test(".stories() accepts an array of UserStory", () => {
+    const stories = [makeStory({ id: "B-001" }), makeStory({ id: "B-002" })];
+    const builder = PromptBuilder.for("batch").stories(stories);
+    expect(builder).toBeInstanceOf(PromptBuilder);
+  });
+
+  test(".stories() accepts an empty array without error", () => {
+    const builder = PromptBuilder.for("batch").stories([]);
+    expect(builder).toBeInstanceOf(PromptBuilder);
+  });
+});
+
+describe("PromptBuilder — batch role: build()", () => {
+  const batchStories = [
+    makeStory({ id: "BP-001", title: "First Batch Story" }),
+    makeStory({ id: "BP-002", title: "Second Batch Story" }),
+  ];
+
+  test("resolves to a non-empty string", async () => {
+    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
+    expect(typeof prompt).toBe("string");
+    expect(prompt.length).toBeGreaterThan(0);
+  });
+
+  test("uses buildBatchStorySection: includes all story IDs", async () => {
+    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
+    expect(prompt).toContain("BP-001");
+    expect(prompt).toContain("BP-002");
+  });
+
+  test("uses batch story section with '## Story N:' headings", async () => {
+    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
+    expect(prompt).toContain("## Story 1:");
+    expect(prompt).toContain("## Story 2:");
+  });
+
+  test("does NOT include verdict section", async () => {
+    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
+    // Verdict section is verifier-only — batch must not include it
+    expect(prompt.toLowerCase()).not.toContain("verdict");
+  });
+
+  test("includes batch role-task instructions", async () => {
+    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
+    // Batch role should include TDD-aligned instructions
+    expect(prompt.toLowerCase()).toMatch(/each story|implement.*story|story.*implement/);
+  });
+
+  test("includes conventions footer", async () => {
+    const prompt = await PromptBuilder.for("batch").stories(batchStories).build();
+    expect(prompt.toLowerCase()).toContain("conventions");
+  });
+
+  test("section order: role task before batch stories before conventions", async () => {
+    const prompt = await PromptBuilder.for("batch")
+      .stories(batchStories)
+      .constitution("BATCH_CONSTITUTION_MARKER")
+      .build();
+
+    const constitutionIdx = prompt.indexOf("BATCH_CONSTITUTION_MARKER");
+    const storyIdx = prompt.indexOf("BP-001");
+    const conventionsIdx = prompt.lastIndexOf("conventions");
+
+    expect(constitutionIdx).toBeGreaterThanOrEqual(0);
+    expect(storyIdx).toBeGreaterThanOrEqual(0);
+    expect(constitutionIdx).toBeLessThan(storyIdx);
+    expect(storyIdx).toBeLessThan(conventionsIdx);
+  });
+
+  test("includes test framework hint from testCommand in role-task section", async () => {
+    const prompt = await PromptBuilder.for("batch").stories(batchStories).testCommand("pytest").build();
+    expect(prompt).toContain("pytest");
+  });
+});
+
+describe("src/prompts/types exports — batch", () => {
+  test("PromptRole type includes 'batch' (6 roles total)", () => {
+    const roles: PromptRole[] = [
+      "test-writer",
+      "implementer",
+      "verifier",
+      "single-session",
+      "tdd-simple",
+      "batch",
+    ];
+    expect(roles).toContain("batch");
+    expect(roles).toHaveLength(6);
   });
 });
