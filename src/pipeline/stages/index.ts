@@ -7,6 +7,7 @@
 
 import type { PipelineStage } from "../types";
 import { acceptanceStage } from "./acceptance";
+import { acceptanceSetupStage } from "./acceptance-setup";
 import { autofixStage } from "./autofix";
 import { completionStage } from "./completion";
 import { constitutionStage } from "./constitution";
@@ -65,10 +66,8 @@ export const postRunPipeline: PipelineStage[] = [acceptanceStage];
 /**
  * Pre-run pipeline stages — run once before the per-story loop, after PRD is loaded.
  * Used for acceptance test setup (generation + RED gate).
- *
- * TODO: Wire acceptanceSetupStage here once implemented (ACC-003).
  */
-export const preRunPipeline: PipelineStage[] = [];
+export const preRunPipeline: PipelineStage[] = [acceptanceSetupStage];
 
 // Re-export individual stages for custom pipeline construction
 export { queueCheckStage } from "./queue-check";

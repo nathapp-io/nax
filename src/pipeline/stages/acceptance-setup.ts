@@ -11,7 +11,9 @@
  * Stores results in ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount }.
  */
 
+import path from "node:path";
 import type { RefinedCriterion } from "../../acceptance/types";
+import { resolveModel } from "../../config";
 import type { UserStory } from "../../prd/types";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -25,8 +27,8 @@ export const _acceptanceSetupDeps = {
     const f = Bun.file(_path);
     return f.exists();
   },
-  writeFile: async (path: string, content: string): Promise<void> => {
-    await Bun.write(path, content);
+  writeFile: async (filePath: string, content: string): Promise<void> => {
+    await Bun.write(filePath, content);
   },
   runTest: async (_testPath: string, _workdir: string): Promise<{ exitCode: number; output: string }> => {
     const proc = Bun.spawn(["bun", "test", _testPath], {
@@ -61,13 +63,73 @@ export const _acceptanceSetupDeps = {
 export const acceptanceSetupStage: PipelineStage = {
   name: "acceptance-setup",
 
-  enabled(_ctx: PipelineContext): boolean {
-    // TODO: implement — stub for test-writer phase
-    throw new Error("[acceptance-setup] not implemented");
+  enabled(ctx: PipelineContext): boolean {
+    return ctx.config.acceptance.enabled && !!ctx.featureDir;
   },
 
-  async execute(_ctx: PipelineContext): Promise<StageResult> {
-    // TODO: implement — stub for test-writer phase
-    throw new Error("[acceptance-setup] not implemented");
+  async execute(ctx: PipelineContext): Promise<StageResult> {
+    if (!ctx.featureDir) {
+      return { action: "fail", reason: "[acceptance-setup] featureDir is not set" };
+    }
+
+    const testPath = path.join(ctx.featureDir, "acceptance.test.ts");
+    const fileExists = await _acceptanceSetupDeps.fileExists(testPath);
+
+    let totalCriteria = 0;
+    let testableCount = 0;
+
+    if (!fileExists) {
+      const allCriteria: string[] = ctx.prd.userStories.flatMap((s) => s.acceptanceCriteria);
+      totalCriteria = allCriteria.length;
+
+      let refinedCriteria: RefinedCriterion[];
+
+      if (ctx.config.acceptance.refinement) {
+        refinedCriteria = await _acceptanceSetupDeps.refine(allCriteria, {
+          storyId: ctx.prd.userStories[0]?.id ?? "US-001",
+          codebaseContext: "",
+          config: ctx.config,
+        });
+      } else {
+        refinedCriteria = allCriteria.map((c) => ({
+          original: c,
+          refined: c,
+          testable: true,
+          storyId: ctx.prd.userStories[0]?.id ?? "US-001",
+        }));
+      }
+
+      testableCount = refinedCriteria.filter((r) => r.testable).length;
+
+      const result = await _acceptanceSetupDeps.generate(ctx.prd.userStories, refinedCriteria, {
+        featureName: ctx.prd.feature,
+        workdir: ctx.workdir,
+        codebaseContext: "",
+        modelTier: ctx.config.acceptance.model ?? "fast",
+        modelDef: resolveModel(ctx.config.models[ctx.config.acceptance.model ?? "fast"]),
+        config: ctx.config,
+      });
+
+      await _acceptanceSetupDeps.writeFile(testPath, result.testCode);
+    }
+
+    if (ctx.config.acceptance.redGate === false) {
+      ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount: 0 };
+      return { action: "continue" };
+    }
+
+    const { exitCode } = await _acceptanceSetupDeps.runTest(testPath, ctx.workdir);
+
+    if (exitCode === 0) {
+      ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount: 0 };
+      return {
+        action: "skip",
+        reason:
+          "[acceptance-setup] Acceptance tests already pass — they are not testing new behavior. Skipping acceptance gate.",
+      };
+    }
+
+    ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount: 1 };
+    return { action: "continue" };
   },
 };

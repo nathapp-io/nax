@@ -163,6 +163,9 @@ export const DEFAULT_CONFIG: NaxConfig = {
     maxRetries: 2,
     generateTests: true,
     testPath: "acceptance.test.ts",
+    model: "fast" as const,
+    refinement: true,
+    redGate: true,
   },
   context: {
     fileInjection: "disabled",

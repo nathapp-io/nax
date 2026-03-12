@@ -215,6 +215,9 @@ const AcceptanceConfigSchema = z.object({
   maxRetries: z.number().int().nonnegative(),
   generateTests: z.boolean(),
   testPath: z.string().min(1, "acceptance.testPath must be non-empty"),
+  model: z.enum(["fast", "balanced", "powerful"]).default("fast"),
+  refinement: z.boolean().default(true),
+  redGate: z.boolean().default(true),
 });
 
 const TestCoverageConfigSchema = z.object({
