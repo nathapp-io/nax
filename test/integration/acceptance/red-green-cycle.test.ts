@@ -16,11 +16,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { initLogger, resetLogger } from "../../../src/logger";
-import {
-  _acceptanceSetupDeps,
-  acceptanceSetupStage,
-} from "../../../src/pipeline/stages/acceptance-setup";
 import { acceptanceStage } from "../../../src/pipeline/stages/acceptance";
+import { _acceptanceSetupDeps, acceptanceSetupStage } from "../../../src/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD } from "../../../src/prd/types";
 
@@ -74,7 +71,7 @@ function makeCtx(tmpDir: string, overrides: Partial<PipelineContext> = {}): Pipe
         redGate: true,
         model: "fast",
       },
-    } as any,
+    } as unknown as PipelineContext["config"],
     prd: makePrd(stories),
     story: stories[0],
     stories,
@@ -86,7 +83,7 @@ function makeCtx(tmpDir: string, overrides: Partial<PipelineContext> = {}): Pipe
     },
     workdir: tmpDir,
     featureDir,
-    hooks: { hooks: {} } as any,
+    hooks: { hooks: {} } as unknown as PipelineContext["hooks"],
     ...overrides,
   };
 }
@@ -155,7 +152,8 @@ describe("RED to GREEN acceptance cycle", () => {
 
     // RED gate detects failures — valid RED, stage continues
     expect(setupResult.action).toBe("continue");
-    expect((ctx as any).acceptanceSetup.redFailCount).toBeGreaterThan(0);
+    const contextWithSetup = ctx as unknown as Record<string, unknown>;
+    expect((contextWithSetup.acceptanceSetup as Record<string, unknown>).redFailCount).toBeGreaterThan(0);
   });
 
   test("GREEN gate passes after implementation stubs are written", async () => {
@@ -177,7 +175,7 @@ describe("RED to GREEN acceptance cycle", () => {
       makeStory("US-002", ["AC-1: third feature works"], "passed"),
     ];
     const greenCtx = makeCtx(tmpDir, {
-      prd: makePrd(completedStories) as any,
+      prd: makePrd(completedStories) as unknown as PRD,
       story: completedStories[0],
       stories: completedStories,
     });
@@ -222,7 +220,7 @@ describe("RED to GREEN acceptance cycle", () => {
       makeStory("US-002", ["AC-1: third feature works"], "passed"),
     ];
     const greenCtx = makeCtx(tmpDir, {
-      prd: makePrd(completedStories) as any,
+      prd: makePrd(completedStories) as unknown as PRD,
       story: completedStories[0],
       stories: completedStories,
     });
