@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 4,
-    "passed": 2,
+    "passed": 3,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 1.0697307500000002,
+    "spent": 1.7704337500000003,
     "limit": 8
   },
   "current": {
-    "storyId": "ACC-003",
-    "title": "acceptance-setup pipeline stage with RED gate",
+    "storyId": "ACC-004",
+    "title": "Integration test for RED to GREEN acceptance cycle",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-03-12T10:46:58.259Z",
-  "durationMs": 2952631,
-  "lastHeartbeat": "2026-03-12T10:46:58.259Z"
+  "iterations": 4,
+  "updatedAt": "2026-03-12T10:50:58.263Z",
+  "durationMs": 3192635,
+  "lastHeartbeat": "2026-03-12T10:50:58.263Z"
 }

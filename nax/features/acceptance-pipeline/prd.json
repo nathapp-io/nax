@@ -100,8 +100,8 @@
         "ACC-001",
         "ACC-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "contextFiles": [
@@ -154,8 +154,15 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Integration test with moderate logic: orchestrating multiple pipeline stages, LLM mocking, temp file setup, process spawning, and edge case handling. Straightforward test structure but requires codebase understanding.",
+        "contentHash": "e21bf0e513383bc016d2fec5a1da68c31418fc89833960a1629b0f7ef7d6117f"
+      }
     }
   ],
-  "updatedAt": "2026-03-12T10:30:37.751Z"
+  "updatedAt": "2026-03-12T10:47:34.543Z"
 }
