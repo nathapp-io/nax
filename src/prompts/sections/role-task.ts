@@ -33,10 +33,11 @@ export function buildRoleTaskSection(
   roleOrVariant: "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple" | "standard" | "lite",
   variant?: "standard" | "lite",
   testCommand?: string,
+  isolation?: "strict" | "lite",
 ): string {
   // Old API support: buildRoleTaskSection("standard") or buildRoleTaskSection("lite")
   if ((roleOrVariant === "standard" || roleOrVariant === "lite") && variant === undefined) {
-    return buildRoleTaskSection("implementer", roleOrVariant, testCommand);
+    return buildRoleTaskSection("implementer", roleOrVariant, testCommand, isolation);
   }
 
   const role = roleOrVariant as "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple";
@@ -58,31 +59,56 @@ Instructions:
 - Goal: all tests green, all changes committed`;
     }
 
-    // lite variant
+    // lite variant — session 2 of three-session-tdd-lite
     return `# Role: Implementer (Lite)
 
-Your task: Write tests AND implement the feature in a single session.
+Your task: Make the failing tests pass AND add any missing test coverage.
+
+Context: A test-writer session has already created test files with failing tests and possibly minimal stubs in src/. Your job is to make those tests pass by implementing the real logic.
 
 Instructions:
-- Write tests first (test/ directory), then implement (src/ directory)
-- All tests must pass by the end
+- Start by running the existing tests to see what's failing
+- Implement source code in src/ to make all failing tests pass
+- You MAY add additional tests if you find gaps in coverage
+- Replace any stubs with real implementations
 - ${frameworkHint}
 - When all tests are green, stage and commit ALL changed files with: git commit -m 'feat: <description>'
 - Goal: all tests green, all criteria met, all changes committed`;
   }
 
   if (role === "test-writer") {
+    if (isolation === "lite") {
+      return `# Role: Test-Writer (Lite)
+
+Your task: Write failing tests for the feature. You may create minimal stubs to support imports.
+
+Context: You are session 1 of a multi-session workflow. An implementer will follow to make your tests pass.
+
+Instructions:
+- Create test files in test/ directory that cover all acceptance criteria
+- Tests must fail initially (RED phase) — do NOT implement real logic
+- ${frameworkHint}
+- You MAY read src/ files and import types/interfaces from them
+- You MAY create minimal stubs in src/ (type definitions, empty functions) so tests can import and compile
+- Write clear test names that document expected behavior
+- Focus on behavior, not implementation details
+- Goal: comprehensive failing test suite with compilable imports, ready for implementation`;
+    }
+
     return `# Role: Test-Writer
 
 Your task: Write comprehensive failing tests for the feature.
 
+Context: You are session 1 of a multi-session workflow. An implementer will follow to make your tests pass.
+
 Instructions:
-- Create test files in test/ directory that cover acceptance criteria
+- Create test files in test/ directory that cover all acceptance criteria
 - Tests must fail initially (RED phase) — the feature is not yet implemented
+- Do NOT create or modify any files in src/
 - ${frameworkHint}
 - Write clear test names that document expected behavior
 - Focus on behavior, not implementation details
-- Goal: comprehensive test suite ready for implementation`;
+- Goal: comprehensive failing test suite ready for implementation`;
   }
 
   if (role === "verifier") {
@@ -90,11 +116,13 @@ Instructions:
 
 Your task: Review and verify the implementation against acceptance criteria.
 
+Context: You are the final session in a multi-session workflow. A test-writer created tests, and an implementer wrote the code. Your job is to verify everything works correctly.
+
 Instructions:
-- Review all test results — verify tests pass
-- Check that implementation meets all acceptance criteria
+- Run all relevant tests — verify they pass
+- Check that implementation meets all acceptance criteria from the story
 - Inspect code quality, error handling, and edge cases
-- Verify test modifications (if any) are legitimate fixes
+- Verify any test modifications (if any) are legitimate fixes, not shortcuts
 - Write a detailed verdict with reasoning
 - Goal: provide comprehensive verification and quality assurance`;
   }

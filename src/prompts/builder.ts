@@ -133,6 +133,7 @@ export class PromptBuilder {
       }
     }
     const variant = this._options.variant as "standard" | "lite" | undefined;
-    return buildRoleTaskSection(this._role, variant, this._testCommand);
+    const isolation = this._options.isolation as "strict" | "lite" | undefined;
+    return buildRoleTaskSection(this._role, variant, this._testCommand, isolation);
   }
 }

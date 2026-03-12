@@ -22,9 +22,9 @@ describe("buildRoleTaskSection — implementer role", () => {
     expect(result).toContain('feat: <description>');
   });
 
-  test("lite variant says 'Write tests first'", () => {
+  test("lite variant acknowledges test-writer session", () => {
     const result = buildRoleTaskSection("implementer", "lite");
-    expect(result).toContain("Write tests first");
+    expect(result).toContain("test-writer session");
   });
 
   test("lite variant says 'implement'", () => {
