@@ -149,6 +149,24 @@ Instructions:
 - Goal: all tests passing, all changes committed, full story complete`;
   }
 
+  if (role === "batch") {
+    return `# Role: Batch Implementer
+
+Your task: Implement each story in order using TDD — write tests first, then implement, then verify.
+
+Instructions:
+- Process each story in order (Story 1, Story 2, …)
+- For each story:
+  - Write failing tests FIRST covering the acceptance criteria
+  - Run tests to confirm they fail (RED phase)
+  - Implement the minimum code to make tests pass (GREEN phase)
+  - Verify all tests pass: ${testCmd}
+  - Commit the story with its story ID in the commit message: git commit -m 'feat(<story-id>): <description>'
+- ${frameworkHint}
+- Do NOT commit multiple stories together — each story gets its own commit
+- Goal: all stories implemented, all tests passing, each story committed with its story ID`;
+  }
+
   // tdd-simple role — test-driven development in one session
   return `# Role: TDD-Simple
 
