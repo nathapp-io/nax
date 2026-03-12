@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 2,
-    "passed": 0,
+    "passed": 1,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 0,
+    "spent": 0.7311535,
     "limit": 8
   },
   "current": {
-    "storyId": "BP-001",
-    "title": "Add batch role to PromptBuilder",
+    "storyId": "BP-002",
+    "title": "Migrate prompt stage and remove dead code",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 1,
-  "updatedAt": "2026-03-12T09:21:47.868Z",
-  "durationMs": 1335838,
-  "lastHeartbeat": "2026-03-12T09:21:47.868Z"
+  "iterations": 2,
+  "updatedAt": "2026-03-12T09:26:47.870Z",
+  "durationMs": 1635840,
+  "lastHeartbeat": "2026-03-12T09:26:47.870Z"
 }
