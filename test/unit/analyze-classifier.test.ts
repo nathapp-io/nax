@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from "bun:test";
 import type { CodebaseScan } from "../../src/analyze";
-import { classifyStories } from "../../src/analyze/classifier";
+import { classifyStories, _classifyDeps } from "../../src/analyze/classifier";
 import { DEFAULT_CONFIG } from "../../src/config";
 import type { UserStory } from "../../src/prd";
 
@@ -62,21 +62,24 @@ describe("classifyStories", () => {
       },
     };
 
-    // Temporarily unset API key
-    const originalKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
+    // Simulate adapter failure (e.g., no API key configured)
+    const originalAdapter = _classifyDeps.adapter;
+    _classifyDeps.adapter = {
+      execute: async () => ({ success: false, output: "", exitCode: 1, estimatedCost: 0, rateLimited: false, durationMs: 0 }),
+      complete: async () => { throw new Error("No API key configured"); },
+      resolveModel: () => ({ model: "test", provider: "test" }),
+      checkAvailability: async () => ({ available: false, binary: "test", reason: "test" }),
+    } as any;
 
     try {
       const result = await classifyStories(mockStories, mockScan, config);
 
       expect(result.method).toBe("keyword-fallback");
-      expect(result.fallbackReason).toContain("ANTHROPIC_API_KEY");
+      expect(result.fallbackReason).toContain("No API key configured");
       expect(result.classifications).toHaveLength(1);
     } finally {
-      // Restore API key
-      if (originalKey) {
-        process.env.ANTHROPIC_API_KEY = originalKey;
-      }
+      // Restore adapter
+      _classifyDeps.adapter = originalAdapter;
     }
   });
 
