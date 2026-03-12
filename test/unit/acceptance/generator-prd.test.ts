@@ -11,18 +11,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { mkdtempSync } from "node:fs";
-import {
-  _generatorPRDDeps,
-  generateAcceptanceTests,
-  generateFromPRD,
-} from "../../../src/acceptance/generator";
-import type { GenerateFromPRDOptions } from "../../../src/acceptance/types";
-import type { RefinedCriterion } from "../../../src/acceptance/types";
-import type { UserStory } from "../../../src/prd/types";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { _generatorPRDDeps, generateAcceptanceTests, generateFromPRD } from "../../../src/acceptance/generator";
+import type { GenerateFromPRDOptions, RefinedCriterion } from "../../../src/acceptance/types";
+import type { AgentAdapter } from "../../../src/agents/types";
 import type { NaxConfig } from "../../../src/config";
+import type { UserStory } from "../../../src/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -252,9 +248,7 @@ describe("generateFromPRD — result shape", () => {
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.adapter.complete = mock(async () =>
-      makeGeneratedTestCode(options.featureName, criteria),
-    );
+    _generatorPRDDeps.adapter.complete = mock(async () => makeGeneratedTestCode(options.featureName, criteria));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -269,9 +263,7 @@ describe("generateFromPRD — result shape", () => {
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.adapter.complete = mock(async () =>
-      makeGeneratedTestCode(options.featureName, criteria),
-    );
+    _generatorPRDDeps.adapter.complete = mock(async () => makeGeneratedTestCode(options.featureName, criteria));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -409,9 +401,7 @@ describe("generateFromPRD — AC-N naming format in generated tests", () => {
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.adapter.complete = mock(async () =>
-      makeGeneratedTestCode(options.featureName, criteria),
-    );
+    _generatorPRDDeps.adapter.complete = mock(async () => makeGeneratedTestCode(options.featureName, criteria));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -424,9 +414,7 @@ describe("generateFromPRD — AC-N naming format in generated tests", () => {
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.adapter.complete = mock(async () =>
-      makeGeneratedTestCode(options.featureName, criteria),
-    );
+    _generatorPRDDeps.adapter.complete = mock(async () => makeGeneratedTestCode(options.featureName, criteria));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -458,9 +446,7 @@ describe("generateFromPRD — bun:test import in generated file", () => {
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.adapter.complete = mock(async () =>
-      makeGeneratedTestCode(options.featureName, criteria),
-    );
+    _generatorPRDDeps.adapter.complete = mock(async () => makeGeneratedTestCode(options.featureName, criteria));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -473,9 +459,7 @@ describe("generateFromPRD — bun:test import in generated file", () => {
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    _generatorPRDDeps.adapter.complete = mock(async () =>
-      makeGeneratedTestCode(options.featureName, criteria),
-    );
+    _generatorPRDDeps.adapter.complete = mock(async () => makeGeneratedTestCode(options.featureName, criteria));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
@@ -508,9 +492,7 @@ describe("generateFromPRD — writes acceptance-refined.json", () => {
     const options = makeOptions(tmpDir);
     const writtenPaths: string[] = [];
 
-    _generatorPRDDeps.adapter.complete = mock(async () =>
-      makeGeneratedTestCode(options.featureName, criteria),
-    );
+    _generatorPRDDeps.adapter.complete = mock(async () => makeGeneratedTestCode(options.featureName, criteria));
     _generatorPRDDeps.writeFile = mock(async (path: string) => {
       writtenPaths.push(path);
     });
@@ -527,9 +509,7 @@ describe("generateFromPRD — writes acceptance-refined.json", () => {
     const options = makeOptions(tmpDir);
     let refinedJsonContent = "";
 
-    _generatorPRDDeps.adapter.complete = mock(async () =>
-      makeGeneratedTestCode(options.featureName, criteria),
-    );
+    _generatorPRDDeps.adapter.complete = mock(async () => makeGeneratedTestCode(options.featureName, criteria));
     _generatorPRDDeps.writeFile = mock(async (path: string, content: string) => {
       if (path.endsWith("acceptance-refined.json")) {
         refinedJsonContent = content;
@@ -550,9 +530,7 @@ describe("generateFromPRD — writes acceptance-refined.json", () => {
     const options = makeOptions(tmpDir);
     let refinedJsonContent = "";
 
-    _generatorPRDDeps.adapter.complete = mock(async () =>
-      makeGeneratedTestCode(options.featureName, criteria),
-    );
+    _generatorPRDDeps.adapter.complete = mock(async () => makeGeneratedTestCode(options.featureName, criteria));
     _generatorPRDDeps.writeFile = mock(async (path: string, content: string) => {
       if (path.endsWith("acceptance-refined.json")) {
         refinedJsonContent = content;
@@ -584,9 +562,7 @@ describe("generateFromPRD — writes acceptance-refined.json", () => {
       return originalSpawn(...(args as Parameters<typeof originalSpawn>));
     };
 
-    _generatorPRDDeps.adapter.complete = mock(async () =>
-      makeGeneratedTestCode(options.featureName, criteria),
-    );
+    _generatorPRDDeps.adapter.complete = mock(async () => makeGeneratedTestCode(options.featureName, criteria));
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     await generateFromPRD([story], criteria, options);
@@ -665,11 +641,19 @@ describe("backward compatibility — generateAcceptanceTests", () => {
 `;
 
     // Use a mock adapter that avoids real spawning
-    const mockAdapter = {
+    const mockAdapter: Partial<AgentAdapter> = {
       binary: "echo",
       name: "mock",
-      run: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 })),
-      complete: mock(async () => `import { describe, test, expect } from "bun:test";
+      run: mock(async () => ({
+        success: true,
+        exitCode: 0,
+        output: "",
+        rateLimited: false,
+        durationMs: 0,
+        estimatedCost: 0,
+      })),
+      complete: mock(
+        async () => `import { describe, test, expect } from "bun:test";
 
 describe("test-feature - Acceptance Tests", () => {
   test("AC-1: System should handle empty input", async () => {
@@ -679,10 +663,11 @@ describe("test-feature - Acceptance Tests", () => {
     expect(true).toBe(true);
   });
 });
-`),
+`,
+      ),
     };
 
-    const result = await generateAcceptanceTests(mockAdapter as any, {
+    const result = await generateAcceptanceTests(mockAdapter as AgentAdapter, {
       specContent,
       featureName: "test-feature",
       workdir: tmpdir(),
@@ -704,14 +689,21 @@ describe("test-feature - Acceptance Tests", () => {
 - AC-3: Third criterion
 `;
 
-    const mockAdapter = {
+    const mockAdapter: Partial<AgentAdapter> = {
       binary: "echo",
       name: "mock",
-      run: mock(async () => ({ success: true, exitCode: 0, output: "", rateLimited: false, durationMs: 0, estimatedCost: 0 })),
+      run: mock(async () => ({
+        success: true,
+        exitCode: 0,
+        output: "",
+        rateLimited: false,
+        durationMs: 0,
+        estimatedCost: 0,
+      })),
       complete: mock(async () => `import { describe, test, expect } from "bun:test"; describe("f", () => {});`),
     };
 
-    const result = await generateAcceptanceTests(mockAdapter as any, {
+    const result = await generateAcceptanceTests(mockAdapter as AgentAdapter, {
       specContent,
       featureName: "test-feature",
       workdir: tmpdir(),
