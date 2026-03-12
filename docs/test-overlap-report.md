@@ -1,6 +1,6 @@
 # Test Overlap Report
 
-Generated: 2026-03-12T10:40:21.538Z
+Generated: 2026-03-12T10:52:47.081Z
 
 ## REDUNDANT
 
@@ -22,7 +22,7 @@ Found 3 integration test(s) with partial unit test coverage:
 
 ## UNIQUE
 
-Found 65 unique integration test(s) with no unit test coverage:
+Found 66 unique integration test(s) with no unit test coverage:
 
 - test/integration/pipeline/verify-stage.test.ts
 - test/integration/pipeline/reporter-lifecycle.test.ts
@@ -56,6 +56,7 @@ Found 65 unique integration test(s) with no unit test coverage:
 - test/integration/cli/cli-plugins.test.ts
 - test/integration/verification/test-scanner.test.ts
 - test/integration/verification/verification-asset-check.test.ts
+- test/integration/acceptance/red-green-cycle.test.ts
 - test/integration/execution/runner-parallel-metrics.test.ts
 - test/integration/execution/runner-config-plugins.test.ts
 - test/integration/execution/feature-status-write.test.ts
