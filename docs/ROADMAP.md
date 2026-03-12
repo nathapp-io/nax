@@ -22,11 +22,17 @@
 
 ### Stories
 
-- [ ] **TH-001:** Automated coverage overlap report — script that cross-references integration tests against unit tests, flags tests covering identical code paths. Output: markdown report with recommended deletions
-- [ ] **TH-002:** Dead test detection — identify test files importing functions/modules that no longer exist in `src/`, or testing removed features (pre-v0.22.1 verification paths, old routing, etc.)
-- [ ] **TH-003:** Copy-paste consolidation — convert repeated test patterns to `test.each()` / table-driven style. Target: files with 3+ similar `describe` blocks differing by 1-2 params
-- [ ] **TH-004:** Execute cleanup — delete confirmed redundant tests, apply `test.each()` conversions, verify full suite still passes with same or higher coverage
-- [ ] **TH-005:** Test file size enforcement — add a precheck/lint rule that warns on test files exceeding 500 lines (soft limit) or 800 lines (hard limit)
+- [x] **TH-001:** Automated coverage overlap report — script that cross-references integration tests against unit tests, flags tests covering identical code paths. Output: markdown report with recommended deletions
+- [x] **TH-002:** Dead test detection — identify test files importing functions/modules that no longer exist in `src/`, or testing removed features (pre-v0.22.1 verification paths, old routing, etc.)
+- [x] **TH-003:** Copy-paste consolidation — convert repeated test patterns to `test.each()` / table-driven style. Target: files with 3+ similar `describe` blocks differing by 1-2 params
+- [x] **TH-004:** Execute cleanup — delete confirmed redundant tests, apply `test.each()` conversions, verify full suite still passes with same or higher coverage
+- [x] **TH-005:** Test file size enforcement — add a precheck/lint rule that warns on test files exceeding 500 lines (soft limit) or 800 lines (hard limit)
+
+### Outcome
+
+- Test files reduced: 226 → 183 files (−43 files via MRs !31/!32/!33)
+- File size tiers documented in `docs/ARCHITECTURE.md`: src/ 400-line, test/ 800-line, type-only 600-line
+- CI passes on 8GB runner; 0 regressions
 
 ### Success Criteria
 
@@ -34,6 +40,71 @@
 - No test file exceeds 800 lines
 - Full suite runtime unchanged or faster
 - CI still passes on 8GB runner
+
+---
+
+## v0.38.1 — Code Audit Refactor ✅ Shipped (2026-03-11)
+
+**Theme:** Code audit review fixes — 10-fix campaign addressing bugs, architecture, and quality findings from the comprehensive src/ code review
+**Status:** ✅ Shipped (2026-03-11) — commit `8a59f16`, [run-release] triggered
+**Depends on:** v0.38.0
+
+### Context
+
+Comprehensive code review (graded B+) identified 10 real findings across bug, architecture, and quality categories. All fixes implemented on `feat/review-fixes-v039` branch via Claude Code session on Mac01, then merged to master.
+
+### Stories
+
+- [x] **FIX-001:** PID registry race — read-then-write in `register()` loses PIDs under concurrent parallel execution
+- [x] **FIX-002:** ReDoS in hook validation — greedy regex `/\$\(.*\)/` hangs on pathological input
+- [x] **FIX-003:** Timer leaks in `claude.ts` decompose/plan — same pattern fixed in v0.38.0 for `executeOnce` not applied here
+- [x] **FIX-004:** Timeout handler utility — extracted `withProcessTimeout()` from `executeOnce` into reusable module
+- [x] **FIX-005:** `runner.ts` split — 307-line function broken into modular sub-files
+- [x] **FIX-006:** `config-display.ts` split — exceeded 400-line source file limit
+- [x] **FIX-007:** `lifecycle.test.ts` split — exceeded 800-line test file limit
+- [x] **FIX-008:** Story ID validation — IDs sanitized before flowing into git branch names
+- [x] **FIX-009:** `errorMessage` utility — centralized error-to-string conversion
+- [x] **FIX-010:** PID registry Map cleanup — proper cleanup on process exit
+
+### Hotfix (included)
+
+- `killFn` injectable param added to `withProcessTimeout()` — restores `_runOnceDeps.killProc` injection path broken by FIX-004 refactor
+
+### Lesson
+
+When extracting logic into a reusable utility, always check if the original call site had injectable deps — pass them through as optional params.
+
+---
+
+## v0.39.0 — Init Enhancement ✅ Shipped (2026-03-12)
+
+**Theme:** Enhance `nax init` with auto-detection, context.md generation, and guided onboarding
+**Status:** ✅ Shipped (2026-03-12) — commit `e6f293e`, [run-release] triggered
+**Depends on:** v0.38.1
+
+### Context
+
+Users faced a gap between `nax init` and first run — manual steps for context.md, constitution.md, and config.json. This release closes that gap with smart defaults.
+
+### Stories
+
+- [x] **INIT-001:** Auto-detect project stack (bun/node/python/rust/go) and pre-fill `quality.commands` in `nax/config.json`
+- [x] **INIT-002:** Context.md generation — template from filesystem scan (default, zero cost) or LLM-powered with `--ai` flag
+- [x] **INIT-003:** Post-init checklist + unified flow + stack-aware constitution.md + enhanced .gitignore entries
+
+### Usage
+
+```bash
+nax init           # detect stack, generate template context.md
+nax init --ai     # use LLM to generate richer context.md
+```
+
+### Outcome
+
+- New files: `src/cli/init-detect.ts`, `src/cli/init-context.ts`
+- Stack detection: bun, node, python, rust, go, turborepo
+- Linter detection: biome, eslint
+- Typecheck/lint/test commands auto-populated based on detected stack
 
 ---
 
@@ -285,6 +356,8 @@ Stories classified as complex/expert with >6 acceptance criteria.
 
 | Version | Theme | Date |
 |:--------|:------|:-----|
+| v0.39.0 | Init Enhancement (auto-detect, context generation) | 2026-03-12 |
+| v0.38.1 | Code Audit Refactor (10 fixes) | 2026-03-11 |
 | v0.38.0 | Test Health Audit | 2026-03-10 |
 | v0.37.0 | Prompt Template Export | 2026-03-10 |
 | v0.36.2 | Parallel Metrics & Rectification | 2026-03-10 |
@@ -347,4 +420,4 @@ Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
 
-*Last updated: 2026-03-10 (v0.38.0 shipped — Test Health Audit; v0.39.0 next)*
+*Last updated: 2026-03-12 (v0.39.0 shipped — Init Enhancement; v0.40.0 next)*
