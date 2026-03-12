@@ -122,7 +122,9 @@ notify_pipeline_failed:
   image: 
     name: registry-intl.cn-hongkong.aliyuncs.com/gkci/node:22.14.0-alpine-ci
     pull_policy: always
-  needs: [test]
+  needs:
+    - job: test
+      optional: true
   when: on_failure
   script:
     - SUBJECT=$(echo "$CI_COMMIT_MESSAGE" | head -1)
