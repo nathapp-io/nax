@@ -24,6 +24,7 @@ export { resolveModel } from "./schema-types";
 // Runtime types
 export type {
   AcceptanceConfig,
+  AcceptanceTestStrategy,
   AnalyzeConfig,
   AutoModeConfig,
   ConstitutionConfig,
