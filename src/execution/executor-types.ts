@@ -10,6 +10,7 @@ import type { InteractionChain } from "../interaction/chain";
 import type { StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import type { RoutingResult } from "../pipeline/types";
+import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
 import type { PRD, UserStory } from "../prd/types";
 import type { StoryBatch } from "./batching";
@@ -33,6 +34,8 @@ export interface SequentialExecutionContext {
   startTime: number;
   batchPlan: StoryBatch[];
   interactionChain?: InteractionChain | null;
+  /** Protocol-aware agent resolver (ACP wiring). Falls back to standalone getAgent when absent. */
+  agentGetFn?: AgentGetFn;
 }
 
 export interface SequentialExecutionResult {

@@ -9,10 +9,10 @@
  */
 
 import chalk from "chalk";
-import { getAgent } from "../../agents";
 import type { NaxConfig } from "../../config";
 import { AgentNotFoundError, AgentNotInstalledError, StoryLimitExceededError } from "../../errors";
 import { getSafeLogger } from "../../logger";
+import type { AgentGetFn } from "../../pipeline/types";
 import { countStories, loadPRD, markStoryPassed, savePRD } from "../../prd";
 import type { PRD } from "../../prd/types";
 import { hasCommitsForStory } from "../../utils/git";
@@ -22,6 +22,8 @@ export interface InitializationContext {
   prdPath: string;
   workdir: string;
   dryRun: boolean;
+  /** Protocol-aware agent resolver — passed from registry at run start */
+  agentGetFn?: AgentGetFn;
 }
 
 export interface InitializationResult {
@@ -74,11 +76,12 @@ async function reconcileState(prd: PRD, prdPath: string, workdir: string): Promi
 /**
  * Validate agent installation
  */
-async function checkAgentInstalled(config: NaxConfig, dryRun: boolean): Promise<void> {
+async function checkAgentInstalled(config: NaxConfig, dryRun: boolean, agentGetFn?: AgentGetFn): Promise<void> {
   if (dryRun) return;
 
   const logger = getSafeLogger();
-  const agent = getAgent(config.autoMode.defaultAgent);
+  const { getAgent } = await import("../../agents");
+  const agent = (agentGetFn ?? getAgent)(config.autoMode.defaultAgent);
 
   if (!agent) {
     logger?.error("execution", "Agent not found", {
@@ -130,7 +133,7 @@ export async function initializeRun(ctx: InitializationContext): Promise<Initial
   const logger = getSafeLogger();
 
   // Check agent installation
-  await checkAgentInstalled(ctx.config, ctx.dryRun);
+  await checkAgentInstalled(ctx.config, ctx.dryRun, ctx.agentGetFn);
 
   // Load and reconcile PRD
   let prd = await loadPRD(ctx.prdPath);

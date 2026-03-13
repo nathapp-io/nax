@@ -52,6 +52,8 @@ export interface RoutingResult {
  * };
  * ```
  */
+export type AgentGetFn = (name: string) => import("../agents/types").AgentAdapter | undefined;
+
 export interface PipelineContext {
   /** Ngent configuration */
   config: NaxConfig;
@@ -73,6 +75,11 @@ export interface PipelineContext {
   hooks: HooksConfig;
   /** Plugin registry (optional, for plugin-provided extensions) */
   plugins?: PluginRegistry;
+  /**
+   * Protocol-aware agent resolver. When set (ACP mode), returns AcpAgentAdapter;
+   * falls back to standalone getAgent (CLI mode) when absent.
+   */
+  agentGetFn?: AgentGetFn;
   /** Interaction chain (optional, for human-in-the-loop triggers) */
   interaction?: InteractionChain;
   /** Constitution result (set by constitutionStage) */

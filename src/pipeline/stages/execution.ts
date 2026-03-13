@@ -107,7 +107,7 @@ export const executionStage: PipelineStage = {
     const logger = getLogger();
 
     // HARD FAILURE: No agent available — cannot proceed without an agent
-    const agent = _executionDeps.getAgent(ctx.config.autoMode.defaultAgent);
+    const agent = (ctx.agentGetFn ?? _executionDeps.getAgent)(ctx.config.autoMode.defaultAgent);
     if (!agent) {
       return {
         action: "fail",

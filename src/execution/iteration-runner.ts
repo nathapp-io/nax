@@ -78,6 +78,7 @@ export async function runIteration(
     storyStartTime: new Date().toISOString(),
     storyGitRef: storyGitRef ?? undefined,
     interaction: ctx.interactionChain ?? undefined,
+    agentGetFn: ctx.agentGetFn,
     accumulatedAttemptCost: accumulatedAttemptCost > 0 ? accumulatedAttemptCost : undefined,
   };
 

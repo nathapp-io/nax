@@ -11,6 +11,7 @@ import { fireHook } from "../hooks";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
+import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import { isComplete } from "../prd";
 import type { PRD } from "../prd";
@@ -43,6 +44,8 @@ export interface RunnerCompletionOptions {
   statusWriter: any;
   pluginRegistry: PluginRegistry;
   eventEmitter?: PipelineEventEmitter;
+  /** Protocol-aware agent resolver */
+  agentGetFn?: AgentGetFn;
 }
 
 /**
@@ -80,6 +83,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       pluginRegistry: options.pluginRegistry,
       eventEmitter: options.eventEmitter,
       statusWriter: options.statusWriter,
+      agentGetFn: options.agentGetFn,
     });
 
     Object.assign(options, {
