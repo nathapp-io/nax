@@ -223,9 +223,13 @@ async function runDecomposeDefault(
     maxComplexity: naxDecompose?.maxSubstoryComplexity ?? "medium",
     maxRetries: naxDecompose?.maxRetries ?? 2,
   };
+  const agent = getAgent(config.autoMode.defaultAgent);
+  if (!agent) {
+    throw new Error(`[decompose] Agent "${config.autoMode.defaultAgent}" not found — cannot decompose`);
+  }
   const adapter = {
-    async decompose(_prompt: string): Promise<string> {
-      throw new Error("[decompose] No LLM adapter configured for story decomposition");
+    async decompose(prompt: string): Promise<string> {
+      return agent.complete(prompt, { jsonMode: true });
     },
   };
   return DecomposeBuilder.for(story).prd(prd).config(builderConfig).decompose(adapter);

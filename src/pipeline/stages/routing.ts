@@ -52,10 +52,15 @@ async function runDecompose(story: UserStory, prd: PRD, config: NaxConfig, _work
     maxRetries: naxDecompose?.maxRetries ?? 2,
   };
 
-  // Stub adapter — replaced in tests via _routingDeps injection.
+  // Resolve the default agent adapter for LLM-backed decompose.
+  // Falls back to agent.complete() with JSON mode — works with both CLI and ACP adapters.
+  const agent = getAgent(config.autoMode.defaultAgent);
+  if (!agent) {
+    throw new Error(`[decompose] Agent "${config.autoMode.defaultAgent}" not found — cannot decompose`);
+  }
   const adapter = {
-    async decompose(_prompt: string): Promise<string> {
-      throw new Error("[decompose] No LLM adapter configured for story decomposition");
+    async decompose(prompt: string): Promise<string> {
+      return agent.complete(prompt, { jsonMode: true });
     },
   };
 
