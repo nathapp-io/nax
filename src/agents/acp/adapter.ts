@@ -521,9 +521,22 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {
-    const model = options.modelDef?.model;
-    const specContent = await this.complete(options.prompt, { model });
-    return { specContent };
+    const modelDef = options.modelDef ?? { provider: "anthropic", model: "default" };
+    const result = await this.run({
+      prompt: options.prompt,
+      workdir: options.workdir,
+      modelTier: options.modelTier ?? "balanced",
+      modelDef,
+      timeoutSeconds: 600, // planning can take a while
+      dangerouslySkipPermissions: true,
+      interactionBridge: options.interactionBridge,
+    });
+
+    if (!result.success) {
+      throw new Error(`[acp-adapter] plan() failed: ${result.output}`);
+    }
+
+    return { specContent: result.output };
   }
 
   async decompose(options: DecomposeOptions): Promise<DecomposeResult> {

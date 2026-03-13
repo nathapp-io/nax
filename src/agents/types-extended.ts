@@ -30,6 +30,14 @@ export interface PlanOptions {
   modelDef?: ModelDef;
   /** Global config — used to resolve models.balanced when modelDef is absent */
   config?: Partial<NaxConfig>;
+  /**
+   * Interaction bridge for mid-session human Q&A (ACP only).
+   * If provided, the agent can pause and ask clarifying questions during planning.
+   */
+  interactionBridge?: {
+    detectQuestion: (text: string) => Promise<boolean>;
+    onQuestionDetected: (text: string) => Promise<string>;
+  };
 }
 
 /**
