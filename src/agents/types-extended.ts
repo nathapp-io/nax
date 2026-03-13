@@ -38,6 +38,15 @@ export interface PlanOptions {
     detectQuestion: (text: string) => Promise<boolean>;
     onQuestionDetected: (text: string) => Promise<string>;
   };
+  /** Feature name for ACP session naming (plan→run continuity) */
+  featureName?: string;
+  /** Story ID for ACP session naming (plan→run continuity) */
+  storyId?: string;
+  /**
+   * Callback invoked with the ACP session name after the session is created.
+   * Used to persist the name to status.json for plan→run session continuity.
+   */
+  onAcpSessionCreated?: (sessionName: string) => Promise<void> | void;
 }
 
 /**

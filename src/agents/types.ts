@@ -66,6 +66,12 @@ export interface AgentRunOptions {
   };
   /** PID registry for cleanup on crash/SIGTERM */
   pidRegistry?: import("../execution/pid-registry").PidRegistry;
+  /** ACP session name to resume for plan→run session continuity */
+  acpSessionName?: string;
+  /** Feature name for ACP session naming and logging */
+  featureName?: string;
+  /** Story ID for ACP session naming and logging */
+  storyId?: string;
 }
 
 /**

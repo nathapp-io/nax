@@ -1,11 +1,12 @@
 /**
- * ACP Agent Adapter — implements AgentAdapter interface via acpx CLI
+ * ACP Agent Adapter — implements AgentAdapter interface via ACP session protocol.
  *
- * Uses `acpx` as a headless CLI client for the Agent Client Protocol (ACP).
- * All interactions go through `acpx exec` (one-shot) for simplicity.
- * Agent NDJSON output is parsed for structured results and cost tracking.
+ * Session mode (run, plan) creates an ACP client session, sends a prompt, and
+ * maps the response to AgentResult. One-shot mode (complete) uses a lightweight
+ * single-turn session. The spawn-based _runOnce() is retained for backward
+ * compatibility.
  *
- * See: https://github.com/openclaw/acpx
+ * See: docs/specs/acp-agent-adapter.md
  */
 
 import { withProcessTimeout } from "../../execution/timeout-handler";
@@ -25,25 +26,24 @@ import type {
 } from "../types";
 import { CompleteError } from "../types";
 import { estimateCostFromTokenUsage } from "./cost";
+import { parseAcpxJsonOutput, streamJsonRpcEvents } from "./parser";
+import type { AcpxTokenUsage } from "./parser";
 import type { AgentRegistryEntry } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Maximum characters to capture from agent stdout. */
 const MAX_AGENT_OUTPUT_CHARS = 5000;
-/** Maximum characters to capture from agent stderr. */
 const MAX_AGENT_STDERR_CHARS = 1000;
-/** Grace period in ms between SIGTERM and SIGKILL on timeout. */
 const SIGKILL_GRACE_PERIOD_MS = 5000;
-/** Buffer added to timeoutSeconds for the outer acpx watchdog. */
 const ACPX_WATCHDOG_BUFFER_MS = 30_000;
-/** Fallback timeout for stdout drain after process exits. */
 const STDOUT_DRAIN_TIMEOUT_MS = 5_000;
+const MAX_RATE_LIMIT_RETRIES = 3;
+const RATE_LIMIT_BASE_DELAY_MS = 1_000;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Agent registry — maps nax agent names to acpx agent identifiers
+// Agent registry
 // ─────────────────────────────────────────────────────────────────────────────
 
 const AGENT_REGISTRY: Record<string, AgentRegistryEntry> = {
@@ -74,11 +74,32 @@ const DEFAULT_ENTRY: AgentRegistryEntry = {
   maxContextTokens: 128_000,
 };
 
-const MAX_RATE_LIMIT_RETRIES = 3;
-const RATE_LIMIT_BASE_DELAY_MS = 1_000;
+// ─────────────────────────────────────────────────────────────────────────────
+// ACP session interfaces
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AcpSessionResponse {
+  messages: Array<{ role: string; content: string }>;
+  stopReason: string;
+  cumulative_token_usage?: { input_tokens: number; output_tokens: number };
+}
+
+export interface AcpSession {
+  prompt(text: string): Promise<AcpSessionResponse>;
+  close(): Promise<void>;
+  cancelActivePrompt(): Promise<void>;
+}
+
+export interface AcpClient {
+  start(): Promise<void>;
+  createSession(opts: { agentName: string; permissionMode: string; sessionName?: string }): Promise<AcpSession>;
+  /** Resume an existing named session. Returns null if the session is not found. */
+  loadSession?(sessionName: string): Promise<AcpSession | null>;
+  close(): Promise<void>;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Injectable dependencies — follows the _deps pattern for testability
+// Injectable dependencies
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const _acpAdapterDeps = {
@@ -88,6 +109,16 @@ export const _acpAdapterDeps = {
 
   async sleep(ms: number): Promise<void> {
     await Bun.sleep(ms);
+  },
+
+  /**
+   * Create an ACP client for the given agent name.
+   * Override in tests via: _acpAdapterDeps.createClient = mock(...)
+   */
+  createClient(_agentName: string): AcpClient {
+    throw new Error(
+      "[acp-adapter] createClient not configured. Use _acpAdapterDeps.createClient in tests or provide an acpx AcpClient factory.",
+    );
   },
 
   spawn(
@@ -103,7 +134,6 @@ export const _acpAdapterDeps = {
   ): {
     stdout: ReadableStream<Uint8Array>;
     stderr: ReadableStream<Uint8Array>;
-    /** Bun FileSink — use .write() + .end(), NOT getWriter() */
     stdin: { write(data: string | Uint8Array): number; end(): void; flush(): void };
     exited: Promise<number>;
     pid: number;
@@ -134,7 +164,6 @@ function detectRateLimit(text: string): boolean {
     lower.includes("rate limit reached") ||
     lower.includes("rate_limit_exceeded") ||
     lower.includes("too many requests") ||
-    // Only match 429 when it appears in an HTTP/error context (not bare numbers in output)
     /\b(http|status|error|code)[:\s]+429\b/.test(lower) ||
     /\bstatus[:\s]+429\b/.test(lower)
   );
@@ -172,15 +201,8 @@ export function buildAllowedEnv(options?: {
     }
   }
 
-  // modelDef.env overrides (e.g., per-model API key or base URL)
-  if (options?.modelDef?.env) {
-    Object.assign(allowed, options.modelDef.env);
-  }
-
-  // options.env overrides (caller-supplied, highest priority)
-  if (options?.env) {
-    Object.assign(allowed, options.env);
-  }
+  if (options?.modelDef?.env) Object.assign(allowed, options.modelDef.env);
+  if (options?.env) Object.assign(allowed, options.env);
 
   return allowed;
 }
@@ -199,221 +221,198 @@ function buildAcpxExecCommand(opts: {
 }): string[] {
   const cmd = ["acpx"];
 
-  // Only add --approve-all if explicitly true (default false for ACP)
-  if (opts.skipPermissions) {
-    cmd.push("--approve-all");
-  }
+  if (opts.skipPermissions) cmd.push("--approve-all");
+  if (opts.format) cmd.push("--format", opts.format);
+  if (opts.jsonStrict) cmd.push("--json-strict");
+  if (opts.model) cmd.push("--model", opts.model);
+  if (opts.timeoutSeconds && opts.timeoutSeconds > 0) cmd.push("--timeout", String(opts.timeoutSeconds));
 
-  if (opts.format) {
-    cmd.push("--format", opts.format);
-  }
-
-  if (opts.jsonStrict) {
-    cmd.push("--json-strict");
-  }
-
-  if (opts.model) {
-    cmd.push("--model", opts.model);
-  }
-
-  if (opts.timeoutSeconds && opts.timeoutSeconds > 0) {
-    cmd.push("--timeout", String(opts.timeoutSeconds));
-  }
-
-  // Agent name (resolved by acpx's built-in registry)
   cmd.push(opts.agentName);
-
-  // exec subcommand for one-shot
   cmd.push("exec");
 
   return cmd;
 }
 
-/** Token usage from acpx NDJSON events */
-interface AcpxTokenUsage {
-  input_tokens: number;
-  output_tokens: number;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// JSON-RPC event parsing for interaction bridge
+// Session mode helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** JSON-RPC message from acpx --format json --json-strict */
-interface JsonRpcMessage {
-  jsonrpc: "2.0";
-  method?: string;
-  params?: {
-    sessionId: string;
-    update?: {
-      sessionUpdate: string;
-      content?: {
-        type: string;
-        text?: string;
-      };
-      used?: number;
-      size?: number;
-      cost?: { amount: number; currency: string };
-    };
-  };
-  id?: number | string;
-  result?: unknown;
-  error?: { code: number; message: string };
+/**
+ * Build a deterministic ACP session name from feature and story identifiers.
+ * Used to correlate plan() and run() calls for session continuity.
+ */
+export function buildSessionName(featureName?: string, storyId?: string): string {
+  const parts = ["nax"];
+  if (featureName) parts.push(featureName.replace(/[^a-z0-9]+/gi, "-").toLowerCase());
+  if (storyId) parts.push(storyId.replace(/[^a-z0-9]+/gi, "-").toLowerCase());
+  return parts.join("-");
 }
 
 /**
- * Stream stdout line-by-line, parse JSON-RPC, detect questions, call bridge.
+ * Ensure an ACP session exists via CLI (sessions ensure command).
+ * Spawns: acpx claude sessions ensure --name <sessionName>
+ * Returns the session name (deterministic from feature/story).
  */
-async function streamJsonRpcEvents(
-  stdout: ReadableStream<Uint8Array>,
-  bridge: AgentRunOptions["interactionBridge"],
-  sessionId: string,
-): Promise<{ text: string; tokenUsage?: AcpxTokenUsage }> {
-  let accumulatedText = "";
-  let tokenUsage: AcpxTokenUsage | undefined;
-  const decoder = new TextDecoder();
-  let buffer = "";
+export async function ensureAcpSession(sessionName?: string): Promise<string> {
+  const name = sessionName ?? buildSessionName();
+  const cmd = ["acpx", "claude", "sessions", "ensure", "--name", name];
 
-  const reader = stdout.getReader();
+  getSafeLogger()?.debug("acp-adapter", `Ensuring ACP session: ${name}`);
+
+  const proc = _acpAdapterDeps.spawn(cmd, {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const exitCode = await proc.exited;
+
+  if (exitCode !== 0) {
+    const stderr = await new Response(proc.stderr).text();
+    throw new Error(`[acp-adapter] ensureAcpSession failed: ${stderr || `exit code ${exitCode}`}`);
+  }
+
+  return name;
+}
+
+/**
+ * Send a prompt to the session via CLI (prompt command with -s flag).
+ * Spawns: acpx --cwd <cwd> --approve-all --format json --model <model> --timeout <secs> claude prompt -s <sessionName> --file -
+ * with prompt piped via stdin. Returns parsed response or null on timeout.
+ */
+export async function runSessionPrompt(
+  sessionName: string,
+  prompt: string,
+  workdir: string,
+  model: string,
+  timeoutSeconds: number,
+): Promise<AcpSessionResponse | null> {
+  const cmd = [
+    "acpx",
+    "--cwd",
+    workdir,
+    "--approve-all",
+    "--format",
+    "json",
+    "--model",
+    model,
+    "--timeout",
+    String(timeoutSeconds),
+    "claude",
+    "prompt",
+    "-s",
+    sessionName,
+    "--file",
+    "-",
+  ];
+
+  getSafeLogger()?.debug("acp-adapter", `Sending prompt to ACP session: ${sessionName}`);
+
+  const proc = _acpAdapterDeps.spawn(cmd, {
+    cwd: workdir,
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  proc.stdin.write(prompt);
+  proc.stdin.end();
+
+  const timeoutMs = timeoutSeconds * 1000;
+  const timeoutPromise = Bun.sleep(timeoutMs).then(() => ({ kind: "timeout" as const }));
+  const exitPromise = proc.exited.then(() => ({ kind: "exited" as const }));
+
+  const winner = await Promise.race([exitPromise, timeoutPromise]);
+
+  if (winner.kind === "timeout") {
+    proc.kill();
+    return null;
+  }
+
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
 
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-
-        let msg: JsonRpcMessage;
-        try {
-          msg = JSON.parse(line);
-        } catch {
-          // Not JSON - skip
-          continue;
-        }
-
-        // Handle session/update notifications
-        if (msg.method === "session/update" && msg.params?.update) {
-          const update = msg.params.update;
-
-          // Accumulate assistant text chunks
-          if (
-            update.sessionUpdate === "agent_message_chunk" &&
-            update.content?.type === "text" &&
-            update.content.text
-          ) {
-            accumulatedText += update.content.text;
-
-            // Check for question via bridge if provided
-            if (bridge?.detectQuestion && bridge.onQuestionDetected) {
-              const isQuestion = await bridge.detectQuestion(accumulatedText);
-              if (isQuestion) {
-                const response = await bridge.onQuestionDetected(accumulatedText);
-                // In a full implementation, we'd inject this response back into the session
-                // For now, we just capture the interaction
-                accumulatedText += `\n\n[Human response: ${response}]`;
-              }
-            }
-          }
-
-          // Capture token usage
-          if (update.sessionUpdate === "usage_update" && update.used !== undefined && update.size !== undefined) {
-            // usage_update gives us used/total, not input/output breakdown
-            // Estimate: assume 30% input, 70% output for running prompts
-            const total = update.used;
-            tokenUsage = {
-              input_tokens: Math.floor(total * 0.3),
-              output_tokens: Math.floor(total * 0.7),
-            };
-          }
-
-          // Capture final cost
-          if (update.sessionUpdate === "usage_update" && update.cost) {
-            // Cost is already calculated by the agent
-          }
-        }
-
-        // Handle result (final response)
-        if (msg.result) {
-          const result = msg.result as Record<string, unknown>;
-          if (typeof result === "string") {
-            accumulatedText += result;
-          }
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
+    const parsed = parseAcpxJsonOutput(stdout);
+    // Convert parsed output to AcpSessionResponse format
+    return {
+      messages: [{ role: "assistant", content: parsed.text || "" }],
+      stopReason: "end_turn",
+      cumulative_token_usage: parsed.tokenUsage,
+    };
+  } catch (err) {
+    getSafeLogger()?.warn("acp-adapter", "Failed to parse session prompt response", { stderr });
+    throw err;
   }
-
-  return { text: accumulatedText.trim(), tokenUsage };
 }
 
 /**
- * Parse acpx NDJSON output for assistant text and token usage.
- *
- * acpx --format json emits NDJSON lines. We look for:
- * - Lines with assistant content (text blocks)
- * - Lines with cumulative_token_usage
- * - Lines with error info
+ * Close an ACP session via CLI (sessions close command).
+ * Spawns: acpx claude sessions close <sessionName>
  */
-function parseAcpxJsonOutput(rawOutput: string): {
-  text: string;
-  tokenUsage?: AcpxTokenUsage;
-  stopReason?: string;
-  error?: string;
-} {
-  const lines = rawOutput.split("\n").filter((l) => l.trim());
-  let text = "";
-  let tokenUsage: AcpxTokenUsage | undefined;
-  let stopReason: string | undefined;
-  let error: string | undefined;
+export async function closeAcpSession(sessionName: string): Promise<void> {
+  const cmd = ["acpx", "claude", "sessions", "close", sessionName];
 
-  for (const line of lines) {
-    try {
-      const event = JSON.parse(line);
+  getSafeLogger()?.debug("acp-adapter", `Closing ACP session: ${sessionName}`);
 
-      // Extract assistant text from various event shapes
-      if (event.content && typeof event.content === "string") {
-        text += event.content;
-      }
-      if (event.text && typeof event.text === "string") {
-        text += event.text;
-      }
-      if (event.result && typeof event.result === "string") {
-        text = event.result;
-      }
+  const proc = _acpAdapterDeps.spawn(cmd, {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
 
-      // Token usage
-      if (event.cumulative_token_usage) {
-        tokenUsage = event.cumulative_token_usage;
-      }
-      if (event.usage) {
-        tokenUsage = {
-          input_tokens: event.usage.input_tokens ?? event.usage.prompt_tokens ?? 0,
-          output_tokens: event.usage.output_tokens ?? event.usage.completion_tokens ?? 0,
-        };
-      }
+  const exitCode = await proc.exited;
 
-      // Stop reason
-      if (event.stopReason) stopReason = event.stopReason;
-      if (event.stop_reason) stopReason = event.stop_reason;
+  if (exitCode !== 0) {
+    const stderr = await new Response(proc.stderr).text();
+    getSafeLogger()?.warn("acp-adapter", "Failed to close session", { sessionName, stderr });
+  }
+}
 
-      // Error
-      if (event.error) {
-        error = typeof event.error === "string" ? event.error : (event.error.message ?? JSON.stringify(event.error));
-      }
-    } catch {
-      // Not JSON — treat as plain text output (--format text fallback)
-      if (!text) text = line;
+/**
+ * Extract a question from agent output text, if present.
+ * Follows the spec: split into sentences, find last question, or check for markers.
+ */
+function extractQuestion(output: string): string | null {
+  const text = output.trim();
+  if (!text) return null;
+
+  // Split into sentences and find question sentences
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  const questionSentences = sentences.filter((s) => s.trim().endsWith("?"));
+  if (questionSentences.length > 0) {
+    const q = questionSentences[questionSentences.length - 1].trim();
+    if (q.length > 10) return q;
+  }
+
+  // Check for explicit question markers
+  const lower = text.toLowerCase();
+  const markers = [
+    "please confirm",
+    "please specify",
+    "please provide",
+    "which would you",
+    "should i ",
+    "do you want",
+    "can you clarify",
+  ];
+  for (const marker of markers) {
+    if (lower.includes(marker)) {
+      return text.slice(-200).trim();
     }
   }
 
-  return { text: text.trim(), tokenUsage, stopReason, error };
+  return null;
+}
+
+/**
+ * Extract combined assistant output text from a session response.
+ */
+function extractOutput(response: AcpSessionResponse | null): string {
+  if (!response) return "";
+  return response.messages
+    .filter((m) => m.role === "assistant")
+    .map((m) => m.content)
+    .join("\n")
+    .trim();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -439,9 +438,8 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async isInstalled(): Promise<boolean> {
-    // Check for acpx binary (the ACP CLI), not the agent binary directly
-    const acpxPath = _acpAdapterDeps.which("acpx");
-    return acpxPath !== null;
+    const path = _acpAdapterDeps.which(this.binary);
+    return path !== null;
   }
 
   buildCommand(options: AgentRunOptions): string[] {
@@ -455,10 +453,6 @@ export class AcpAgentAdapter implements AgentAdapter {
     });
   }
 
-  /**
-   * Build filtered environment variables for spawned acpx processes.
-   * SEC-4: Only passes essential and API key vars, plus options.env overrides.
-   */
   buildAllowedEnv(options?: AgentRunOptions): Record<string, string | undefined> {
     return buildAllowedEnv({ env: options?.env, modelDef: options?.modelDef });
   }
@@ -470,57 +464,25 @@ export class AcpAgentAdapter implements AgentAdapter {
     getSafeLogger()?.debug("acp-adapter", `Starting run for ${this.name}`, {
       model: options.modelDef.model,
       workdir: options.workdir,
-      hasBridge: !!options.interactionBridge,
     });
 
     for (let attempt = 0; attempt < MAX_RATE_LIMIT_RETRIES; attempt++) {
-      if (attempt > 0) {
-        getSafeLogger()?.debug("acp-adapter", `Retry attempt ${attempt + 1} for ${this.name}`);
-        await _acpAdapterDeps.sleep(RATE_LIMIT_BASE_DELAY_MS * 2 ** (attempt - 1));
-      }
-
       try {
-        const result = await this._runOnce(options, startTime);
-
-        // Retry on rate limit (mirrors ClaudeCodeAdapter behaviour)
-        if (result.rateLimited && attempt < MAX_RATE_LIMIT_RETRIES - 1) {
-          const backoffMs = 2 ** (attempt + 1) * 1000;
-          getSafeLogger()?.warn("acp-adapter", "Rate limited, retrying", {
-            backoffSeconds: backoffMs / 1000,
-            attempt: attempt + 1,
-            maxRetries: MAX_RATE_LIMIT_RETRIES,
-          });
-          await _acpAdapterDeps.sleep(backoffMs);
-          continue;
-        }
-
+        const result = await this._runSessionMode(options, startTime);
         if (!result.success) {
-          getSafeLogger()?.warn("acp-adapter", `Run failed for ${this.name}`, {
-            exitCode: result.exitCode,
-            output: result.output?.slice(0, 200),
-            rateLimited: result.rateLimited,
-          });
-        } else {
-          getSafeLogger()?.debug("acp-adapter", `Run succeeded for ${this.name}`, {
-            cost: result.estimatedCost,
-            durationMs: result.durationMs,
-          });
+          getSafeLogger()?.warn("acp-adapter", `Run failed for ${this.name}`, { exitCode: result.exitCode });
         }
         return result;
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
         lastError = error;
-        getSafeLogger()?.error("acp-adapter", `Run error for ${this.name}: ${error.message}`, {
-          attempt: attempt + 1,
-          error: error.message,
-        });
 
-        const shouldRetry = isRateLimitError(error) || isSpawnError(error);
-        if (!shouldRetry || attempt >= MAX_RATE_LIMIT_RETRIES - 1) break;
+        const shouldRetry = (isRateLimitError(error) || isSpawnError(error)) && attempt < MAX_RATE_LIMIT_RETRIES - 1;
+        if (!shouldRetry) break;
 
         const backoffMs = 2 ** (attempt + 1) * 1000;
         getSafeLogger()?.warn("acp-adapter", "Retrying after error", {
-          reason: isSpawnError(error) ? "spawn-error" : "rate-limit",
+          reason: isRateLimitError(error) ? "rate-limit" : "spawn-error",
           backoffSeconds: backoffMs / 1000,
           attempt: attempt + 1,
         });
@@ -539,6 +501,113 @@ export class AcpAgentAdapter implements AgentAdapter {
     };
   }
 
+  private async _runSessionMode(options: AgentRunOptions, startTime: number): Promise<AgentResult> {
+    const sessionName = options.acpSessionName ?? buildSessionName(options.featureName, options.storyId);
+    let response: AcpSessionResponse | null = null;
+    let timedOut = false;
+    let runError: Error | undefined;
+    const totalTokenUsage = { input_tokens: 0, output_tokens: 0 };
+
+    try {
+      // Ensure session exists
+      const session = await ensureAcpSession(sessionName);
+
+      // Multi-turn loop with interactionBridge support
+      let currentPrompt = options.prompt;
+      let turnCount = 0;
+      const MAX_TURNS = options.interactionBridge ? 10 : 1;
+
+      while (turnCount < MAX_TURNS) {
+        turnCount++;
+        getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
+
+        // Send prompt to session
+        response = await runSessionPrompt(
+          session,
+          currentPrompt,
+          options.workdir,
+          options.modelDef.model,
+          options.timeoutSeconds,
+        );
+
+        if (!response) {
+          timedOut = true;
+          break;
+        }
+
+        // Accumulate token usage
+        if (response.cumulative_token_usage) {
+          totalTokenUsage.input_tokens = response.cumulative_token_usage.input_tokens;
+          totalTokenUsage.output_tokens = response.cumulative_token_usage.output_tokens;
+        }
+
+        // Check if agent asked a question
+        const outputText = extractOutput(response);
+        const question = extractQuestion(outputText);
+
+        if (!question || !options.interactionBridge) {
+          // No question or no bridge — end session
+          break;
+        }
+
+        // Answer the question via interaction bridge
+        getSafeLogger()?.debug("acp-adapter", "Agent asked question, routing to interactionBridge", { question });
+
+        let answer: string;
+        try {
+          answer = await options.interactionBridge.onQuestionDetected(question);
+        } catch (err) {
+          getSafeLogger()?.warn("acp-adapter", "InteractionBridge failed to answer question", { error: String(err) });
+          break;
+        }
+
+        // Next turn: send the answer as the prompt
+        currentPrompt = answer;
+      }
+
+      if (turnCount >= MAX_TURNS) {
+        getSafeLogger()?.warn("acp-adapter", "Reached max turns limit", { sessionName, maxTurns: MAX_TURNS });
+      }
+    } catch (err) {
+      runError = err instanceof Error ? err : new Error(String(err));
+    } finally {
+      // Close session
+      try {
+        await closeAcpSession(sessionName);
+      } catch (err) {
+        getSafeLogger()?.warn("acp-adapter", "Failed to close session in finally", { error: String(err) });
+      }
+    }
+
+    if (runError) throw runError;
+
+    const durationMs = Date.now() - startTime;
+
+    if (timedOut) {
+      return {
+        success: false,
+        exitCode: 124,
+        output: `Session timed out after ${options.timeoutSeconds}s`,
+        rateLimited: false,
+        durationMs,
+        estimatedCost: 0,
+      };
+    }
+
+    const success = response?.stopReason === "end_turn";
+    const output = extractOutput(response);
+    const estimatedCost = estimateCostFromTokenUsage(totalTokenUsage, options.modelDef.model);
+
+    return {
+      success,
+      exitCode: success ? 0 : 1,
+      output: output.slice(-MAX_AGENT_OUTPUT_CHARS),
+      rateLimited: false,
+      durationMs,
+      estimatedCost,
+    };
+  }
+
   private async _runOnce(options: AgentRunOptions, startTime: number): Promise<AgentResult> {
     const hasBridge = !!options.interactionBridge;
     const pidRegistry = options.pidRegistry;
@@ -554,7 +623,6 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     getSafeLogger()?.debug("acp-adapter", `Spawning acpx: ${cmd.join(" ")}`, { cwd: options.workdir });
 
-    // Prompt is passed via stdin with --file - (supports arbitrarily long prompts)
     const proc = _acpAdapterDeps.spawn([...cmd, "--file", "-"], {
       cwd: options.workdir,
       stdin: "pipe",
@@ -563,13 +631,11 @@ export class AcpAgentAdapter implements AgentAdapter {
       env: this.buildAllowedEnv(options),
     });
 
-    // Register PID for crash recovery cleanup
     if (pidRegistry) {
       await pidRegistry.register(proc.pid);
       getSafeLogger()?.debug("acp-adapter", `Registered PID ${proc.pid} for ${this.name}`);
     }
 
-    // Write prompt to stdin (Bun FileSink API)
     proc.stdin.write(options.prompt);
     proc.stdin.end();
 
@@ -579,12 +645,10 @@ export class AcpAgentAdapter implements AgentAdapter {
     let stdout = "";
     let timedOut = false;
 
-    // Outer watchdog: timeoutSeconds covers the agent; add buffer for acpx overhead
     const watchdogMs = options.timeoutSeconds * 1000 + ACPX_WATCHDOG_BUFFER_MS;
 
     try {
       if (hasBridge) {
-        // Stream JSON-RPC events for interaction bridge
         const sessionId = `session-${Date.now()}`;
         const streamPromise = streamJsonRpcEvents(proc.stdout, options.interactionBridge, sessionId);
 
@@ -600,7 +664,6 @@ export class AcpAgentAdapter implements AgentAdapter {
         parsed = await streamPromise;
         stderr = await new Response(proc.stderr).text();
       } else {
-        // Non-streaming: collect all output at once; use watchdog for acpx hang protection
         const timeoutResult = await withProcessTimeout(proc, watchdogMs, {
           graceMs: SIGKILL_GRACE_PERIOD_MS,
           onTimeout: () => {
@@ -610,7 +673,6 @@ export class AcpAgentAdapter implements AgentAdapter {
         exitCode = timeoutResult.exitCode;
         timedOut = timeoutResult.timedOut;
 
-        // Drain stdout/stderr with fallback timeout (safety net for pipe backpressure)
         let stdoutTimeoutId: ReturnType<typeof setTimeout> | undefined;
         let stderrTimeoutId: ReturnType<typeof setTimeout> | undefined;
         [stdout, stderr] = await Promise.all([
@@ -636,7 +698,6 @@ export class AcpAgentAdapter implements AgentAdapter {
         parsed = parseAcpxJsonOutput(stdout);
       }
     } finally {
-      // Unregister PID on exit
       if (pidRegistry) {
         await pidRegistry.unregister(proc.pid);
         getSafeLogger()?.debug("acp-adapter", `Unregistered PID ${proc.pid} for ${this.name}`, { exitCode });
@@ -644,38 +705,19 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
 
     const durationMs = Date.now() - startTime;
-
-    // Map timeout to exit code 124 (matches POSIX timeout convention)
     const actualExitCode = timedOut ? 124 : exitCode;
-
-    // Rate limit detection: scan both stdout and stderr
-    // Only check when exit code is non-zero — a successful run (exitCode=0) cannot be rate limited.
-    // This prevents false positives when agent output contains "429" as a number/line/token count.
     const fullOutput = stdout + stderr + (parsed.text ?? "");
     const rateLimited = exitCode !== 0 ? detectRateLimit(fullOutput) : false;
 
-    // Cost estimation: prefer token-based, fall back to duration-based
     let estimatedCost: number;
     if (parsed.tokenUsage) {
       estimatedCost = estimateCostFromTokenUsage(parsed.tokenUsage, options.modelDef.model);
     } else {
-      // Try regex-based extraction from raw output
       const regexEstimate = estimateCostFromOutput(options.modelTier, fullOutput);
       if (regexEstimate) {
         estimatedCost = regexEstimate.cost;
-        if (regexEstimate.confidence === "estimated") {
-          getSafeLogger()?.warn("acp-adapter", "Cost estimation using regex parsing (estimated confidence)", {
-            cost: estimatedCost,
-          });
-        }
       } else {
-        // Duration-based fallback with 1.5x multiplier (matches claude adapter)
-        const fallback = estimateCostByDuration(options.modelTier, durationMs);
-        estimatedCost = fallback.cost * 1.5;
-        getSafeLogger()?.warn("acp-adapter", "Cost estimation fallback (duration-based)", {
-          modelTier: options.modelTier,
-          cost: estimatedCost,
-        });
+        estimatedCost = estimateCostByDuration(options.modelTier, durationMs).cost * 1.5;
       }
     }
 
@@ -709,69 +751,88 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async complete(prompt: string, _options?: CompleteOptions): Promise<string> {
-    const model = _options?.model;
-    const cmd = buildAcpxExecCommand({
-      agentName: this.name,
-      model,
-      format: "quiet", // quiet = final assistant text only
-      skipPermissions: true, // complete() is fire-and-forget, always skip prompts
-    });
+    const startTime = Date.now();
+    const modelDef = _options?.model
+      ? { provider: "anthropic", model: _options.model }
+      : { provider: "anthropic", model: "default" };
+    const result = await this._runOnce(
+      {
+        prompt,
+        workdir: process.cwd(),
+        modelTier: "balanced",
+        modelDef,
+        timeoutSeconds: 60,
+        dangerouslySkipPermissions: true,
+      },
+      startTime,
+    );
 
-    // Pass prompt via --file - (stdin)
-    const proc = _acpAdapterDeps.spawn([...cmd, "--file", "-"], {
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-      env: this.buildAllowedEnv(),
-    });
-
-    // Write prompt to stdin (Bun FileSink API)
-    proc.stdin.write(prompt);
-    proc.stdin.end();
-
-    const [exitCode, stdout, stderr] = await Promise.all([
-      proc.exited,
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
-
-    const trimmed = stdout.trim();
-
-    if (exitCode !== 0) {
-      const errorMsg = stderr.trim() || trimmed || `acpx exec failed with exit code ${exitCode}`;
-      throw new CompleteError(errorMsg, exitCode);
+    if (!result.success) {
+      throw new CompleteError(`complete() failed: ${result.output}`, result.exitCode);
     }
 
-    if (!trimmed) {
-      throw new CompleteError("acpx exec returned empty output");
+    const text = result.output.trim();
+    if (!text) {
+      throw new CompleteError("complete() returned empty output");
     }
 
-    return trimmed;
+    return text;
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {
+    if (options.interactive) {
+      throw new Error("[acp-adapter] plan() interactive mode is not yet supported via ACP");
+    }
+
+    // Create or ensure ACP session for plan→run continuity
+    const sessionName = await ensureAcpSession(buildSessionName(options.featureName, options.storyId));
+
+    // Notify caller of session name
+    if (options.onAcpSessionCreated) {
+      try {
+        await options.onAcpSessionCreated(sessionName);
+      } catch (err) {
+        getSafeLogger()?.warn("acp-adapter", "Failed to invoke onAcpSessionCreated callback", { error: String(err) });
+      }
+    }
+
     const modelDef = options.modelDef ?? { provider: "anthropic", model: "default" };
     const result = await this.run({
       prompt: options.prompt,
       workdir: options.workdir,
       modelTier: options.modelTier ?? "balanced",
       modelDef,
-      timeoutSeconds: 600, // planning can take a while
+      timeoutSeconds: 600,
       dangerouslySkipPermissions: true,
       interactionBridge: options.interactionBridge,
+      acpSessionName: sessionName,
+      featureName: options.featureName,
+      storyId: options.storyId,
     });
 
     if (!result.success) {
       throw new Error(`[acp-adapter] plan() failed: ${result.output}`);
     }
 
-    return { specContent: result.output };
+    const specContent = result.output.trim();
+    if (!specContent) {
+      throw new Error("[acp-adapter] plan() returned empty spec content");
+    }
+
+    return { specContent };
   }
 
   async decompose(options: DecomposeOptions): Promise<DecomposeResult> {
     const model = options.modelDef?.model;
     const prompt = buildDecomposePrompt(options);
-    const output = await this.complete(prompt, { model, jsonMode: true });
+
+    let output: string;
+    try {
+      output = await this.complete(prompt, { model, jsonMode: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`[acp-adapter] decompose() failed: ${msg}`, { cause: err });
+    }
 
     let stories: ReturnType<typeof parseDecomposeOutput>;
     try {
