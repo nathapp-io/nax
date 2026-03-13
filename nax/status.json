@@ -1,36 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-13T04-09-54-391Z",
+    "id": "run-2026-03-13T05-10-56-633Z",
     "feature": "acp-agent-adapter",
-    "startedAt": "2026-03-13T04:09:54.391Z",
+    "startedAt": "2026-03-13T05:10:56.633Z",
     "status": "running",
     "dryRun": false,
-    "pid": 42574
+    "pid": 59110
   },
   "progress": {
     "total": 7,
-    "passed": 0,
+    "passed": 1,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 7
+    "pending": 6
   },
   "cost": {
     "spent": 0,
     "limit": 8
   },
   "current": {
-    "storyId": "ACP-001",
-    "title": "Fix acceptance generators to use adapter.complete()",
-    "complexity": "simple",
-    "tddStrategy": "three-session-tdd-lite",
+    "storyId": "ACP-002",
+    "title": "ACP adapter core — run() and complete() via AcpClient",
+    "complexity": "complex",
+    "tddStrategy": "three-session-tdd",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
   "iterations": 1,
-  "updatedAt": "2026-03-13T04:27:11.595Z",
-  "durationMs": 1037204,
-  "lastHeartbeat": "2026-03-13T04:27:11.595Z"
+  "updatedAt": "2026-03-13T05:20:23.900Z",
+  "durationMs": 567267,
+  "lastHeartbeat": "2026-03-13T05:20:23.900Z"
 }
