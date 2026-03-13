@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-13T01-19-29-932Z",
-    "feature": "ui-test-strategies",
-    "startedAt": "2026-03-13T01:19:29.932Z",
-    "status": "completed",
+    "id": "run-2026-03-13T04-09-54-391Z",
+    "feature": "acp-agent-adapter",
+    "startedAt": "2026-03-13T04:09:54.391Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 1776
+    "pid": 42574
   },
   "progress": {
-    "total": 5,
-    "passed": 5,
+    "total": 7,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 7
   },
   "cost": {
-    "spent": 2.24773875,
+    "spent": 0,
     "limit": 8
   },
-  "current": null,
-  "iterations": 6,
-  "updatedAt": "2026-03-13T02:30:56.606Z",
-  "durationMs": 4286674
+  "current": {
+    "storyId": "ACP-001",
+    "title": "Fix acceptance generators to use adapter.complete()",
+    "complexity": "simple",
+    "tddStrategy": "three-session-tdd-lite",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 1,
+  "updatedAt": "2026-03-13T04:14:11.518Z",
+  "durationMs": 257127,
+  "lastHeartbeat": "2026-03-13T04:14:11.518Z"
 }
