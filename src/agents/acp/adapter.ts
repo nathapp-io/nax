@@ -403,6 +403,7 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   private async _runOnce(options: AgentRunOptions, startTime: number): Promise<AgentResult> {
     const hasBridge = !!options.interactionBridge;
+    const pidRegistry = options.pidRegistry;
     const cmd = buildAcpxExecCommand({
       agentName: this.name,
       model: options.modelDef.model,
@@ -421,39 +422,44 @@ export class AcpAgentAdapter implements AgentAdapter {
       stderr: "pipe",
     });
 
+    // Register PID for crash recovery cleanup
+    if (pidRegistry) {
+      await pidRegistry.register(proc.pid);
+    }
+
     // Write prompt to stdin (Bun FileSink API)
     proc.stdin.write(options.prompt);
     proc.stdin.end();
 
     let parsed: { text: string; tokenUsage?: AcpxTokenUsage };
     let stderr = "";
+    let exitCode = 0;
+    let stdout = "";
 
-    if (hasBridge) {
-      // Stream JSON-RPC events for interaction bridge
-      const sessionId = `session-${Date.now()}`;
-      parsed = await streamJsonRpcEvents(proc.stdout, options.interactionBridge, sessionId);
-      stderr = await new Response(proc.stderr).text();
-    } else {
-      // Non-streaming: collect all output at once
-      const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
-      // Handle early exit
-      if (exitCode !== 0 && !hasBridge) {
+    try {
+      if (hasBridge) {
+        // Stream JSON-RPC events for interaction bridge
+        const sessionId = `session-${Date.now()}`;
+        parsed = await streamJsonRpcEvents(proc.stdout, options.interactionBridge, sessionId);
         stderr = await new Response(proc.stderr).text();
+        exitCode = await proc.exited;
+      } else {
+        // Non-streaming: collect all output at once (stdout only read ONCE)
+        [exitCode, stdout, stderr] = await Promise.all([
+          proc.exited,
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+        ]);
+        parsed = parseAcpxJsonOutput(stdout);
       }
-      parsed = parseAcpxJsonOutput(hasBridge ? "" : await new Response(proc.stdout).text());
+    } finally {
+      // Unregister PID on exit
+      if (pidRegistry) {
+        await pidRegistry.unregister(proc.pid);
+      }
     }
-
-    const [exitCode, stdout] = await Promise.all([
-      proc.exited,
-      hasBridge ? Promise.resolve("") : new Response(proc.stdout).text(),
-    ]);
 
     const durationMs = Date.now() - startTime;
-
-    // If not using bridge, parse normally
-    if (!hasBridge) {
-      parsed = parseAcpxJsonOutput(stdout);
-    }
 
     if (exitCode !== 0 && !parsed.text && !stderr) {
       const errorMsg = `acpx exec failed with exit code ${exitCode}`;

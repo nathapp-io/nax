@@ -64,6 +64,8 @@ export interface AgentRunOptions {
     detectQuestion: (text: string) => Promise<boolean>;
     onQuestionDetected: (text: string) => Promise<string>;
   };
+  /** PID registry for cleanup on crash/SIGTERM */
+  pidRegistry?: import("../execution/pid-registry").PidRegistry;
 }
 
 /**
