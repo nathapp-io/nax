@@ -89,6 +89,8 @@ export const acceptanceSetupStage: PipelineStage = {
           storyId: ctx.prd.userStories[0]?.id ?? "US-001",
           codebaseContext: "",
           config: ctx.config,
+          testStrategy: ctx.config.acceptance.testStrategy,
+          testFramework: ctx.config.acceptance.testFramework,
         });
       } else {
         refinedCriteria = allCriteria.map((c) => ({
@@ -108,6 +110,8 @@ export const acceptanceSetupStage: PipelineStage = {
         modelTier: ctx.config.acceptance.model ?? "fast",
         modelDef: resolveModel(ctx.config.models[ctx.config.acceptance.model ?? "fast"]),
         config: ctx.config,
+        testStrategy: ctx.config.acceptance.testStrategy,
+        testFramework: ctx.config.acceptance.testFramework,
       });
 
       await _acceptanceSetupDeps.writeFile(testPath, result.testCode);

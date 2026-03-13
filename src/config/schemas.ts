@@ -210,7 +210,7 @@ const PlanConfigSchema = z.object({
   outputPath: z.string().min(1, "plan.outputPath must be non-empty"),
 });
 
-const AcceptanceConfigSchema = z.object({
+export const AcceptanceConfigSchema = z.object({
   enabled: z.boolean(),
   maxRetries: z.number().int().nonnegative(),
   generateTests: z.boolean(),
@@ -218,6 +218,8 @@ const AcceptanceConfigSchema = z.object({
   model: z.enum(["fast", "balanced", "powerful"]).default("fast"),
   refinement: z.boolean().default(true),
   redGate: z.boolean().default(true),
+  testStrategy: z.enum(["unit", "component", "cli", "e2e", "snapshot"]).optional(),
+  testFramework: z.string().min(1, "acceptance.testFramework must be non-empty").optional(),
 });
 
 const TestCoverageConfigSchema = z.object({

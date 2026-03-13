@@ -1,36 +1,27 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-12T09-57-45-628Z",
-    "feature": "acceptance-pipeline",
-    "startedAt": "2026-03-12T09:57:45.628Z",
-    "status": "running",
+    "id": "run-2026-03-13T01-19-29-932Z",
+    "feature": "ui-test-strategies",
+    "startedAt": "2026-03-13T01:19:29.932Z",
+    "status": "completed",
     "dryRun": false,
-    "pid": 83252
+    "pid": 1776
   },
   "progress": {
-    "total": 4,
-    "passed": 3,
+    "total": 5,
+    "passed": 5,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 0
   },
   "cost": {
-    "spent": 1.7704337500000003,
+    "spent": 2.24773875,
     "limit": 8
   },
-  "current": {
-    "storyId": "ACC-004",
-    "title": "Integration test for RED to GREEN acceptance cycle",
-    "complexity": "medium",
-    "tddStrategy": "test-after",
-    "model": "balanced",
-    "attempt": 1,
-    "phase": "routing"
-  },
-  "iterations": 4,
-  "updatedAt": "2026-03-12T11:03:58.270Z",
-  "durationMs": 3972642,
-  "lastHeartbeat": "2026-03-12T11:03:58.270Z"
+  "current": null,
+  "iterations": 6,
+  "updatedAt": "2026-03-13T02:30:56.606Z",
+  "durationMs": 4286674
 }

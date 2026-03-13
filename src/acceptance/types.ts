@@ -4,7 +4,7 @@
  * Types for generating acceptance tests from spec.md acceptance criteria.
  */
 
-import type { ModelDef, ModelTier, NaxConfig } from "../config/schema";
+import type { AcceptanceTestStrategy, ModelDef, ModelTier, NaxConfig } from "../config/schema";
 
 /**
  * A single refined acceptance criterion produced by the refinement module.
@@ -30,6 +30,10 @@ export interface RefinementContext {
   codebaseContext: string;
   /** Global config — model tier resolved from config.acceptance.model */
   config: NaxConfig;
+  /** Test strategy — controls strategy-specific prompt instructions */
+  testStrategy?: AcceptanceTestStrategy;
+  /** Test framework — informs LLM which testing library syntax to use */
+  testFramework?: string;
 }
 
 /**
@@ -84,6 +88,10 @@ export interface GenerateFromPRDOptions {
   modelDef: ModelDef;
   /** Global config for quality settings */
   config: NaxConfig;
+  /** Test strategy to use for template selection (default: 'unit') */
+  testStrategy?: AcceptanceTestStrategy;
+  /** Test framework for component/snapshot strategies (e.g. 'ink-testing-library', 'react') */
+  testFramework?: string;
 }
 
 export interface GenerateAcceptanceTestsOptions {

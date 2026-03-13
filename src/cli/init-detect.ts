@@ -5,11 +5,73 @@
  * for nax/config.json.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** Detected project runtime */
 export type Runtime = "bun" | "node" | "unknown";
+
+/** Detected UI framework */
+export type UIFramework = "ink" | "react" | "vue" | "svelte";
+
+/** Full stack info including UI framework and bin detection */
+export interface StackInfo extends ProjectStack {
+  uiFramework?: UIFramework;
+  hasBin?: boolean;
+}
+
+/** Shape of a parsed package.json for detection purposes */
+interface PackageJson {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  bin?: Record<string, string> | string;
+}
+
+function readPackageJson(projectRoot: string): PackageJson | undefined {
+  const pkgPath = join(projectRoot, "package.json");
+  if (!existsSync(pkgPath)) return undefined;
+  try {
+    return JSON.parse(readFileSync(pkgPath, "utf-8")) as PackageJson;
+  } catch {
+    return undefined;
+  }
+}
+
+function allDeps(pkg: PackageJson): Record<string, string> {
+  return {
+    ...pkg.dependencies,
+    ...pkg.devDependencies,
+    ...pkg.peerDependencies,
+  };
+}
+
+function detectUIFramework(pkg: PackageJson): UIFramework | undefined {
+  const deps = allDeps(pkg);
+  if ("ink" in deps) return "ink";
+  if ("react" in deps || "next" in deps) return "react";
+  if ("vue" in deps || "nuxt" in deps) return "vue";
+  if ("svelte" in deps || "@sveltejs/kit" in deps) return "svelte";
+  return undefined;
+}
+
+function detectHasBin(pkg: PackageJson): boolean {
+  return pkg.bin !== undefined;
+}
+
+/**
+ * Detect the project stack including UI framework from package.json.
+ */
+export function detectStack(projectRoot: string): StackInfo {
+  const base = detectProjectStack(projectRoot);
+  const pkg = readPackageJson(projectRoot);
+  if (!pkg) return base;
+  return {
+    ...base,
+    uiFramework: detectUIFramework(pkg),
+    hasBin: detectHasBin(pkg) || undefined,
+  };
+}
 
 /** Detected project language */
 export type Language = "typescript" | "python" | "rust" | "go" | "unknown";
@@ -146,24 +208,48 @@ function isStackDetected(stack: ProjectStack): boolean {
   return stack.runtime !== "unknown" || stack.language !== "unknown";
 }
 
+/** Build the acceptance config section from StackInfo, or undefined if not applicable. */
+function buildAcceptanceConfig(stack: StackInfo): { testStrategy: string; testFramework?: string } | undefined {
+  if (stack.uiFramework === "ink") {
+    return { testStrategy: "component", testFramework: "ink-testing-library" };
+  }
+  if (stack.uiFramework === "react") {
+    return { testStrategy: "component", testFramework: "@testing-library/react" };
+  }
+  if (stack.uiFramework === "vue") {
+    return { testStrategy: "component", testFramework: "@testing-library/vue" };
+  }
+  if (stack.uiFramework === "svelte") {
+    return { testStrategy: "component", testFramework: "@testing-library/svelte" };
+  }
+  if (stack.hasBin) {
+    const testFramework = stack.runtime === "bun" ? "bun:test" : "jest";
+    return { testStrategy: "cli", testFramework };
+  }
+  return undefined;
+}
+
 /**
  * Build the full init config object from a detected project stack.
  * Falls back to minimal config when stack is undetected.
  */
-export function buildInitConfig(stack: ProjectStack): object {
+export function buildInitConfig(stack: ProjectStack | StackInfo): object {
+  const stackInfo = stack as StackInfo;
+  const acceptance = buildAcceptanceConfig(stackInfo);
+
   if (!isStackDetected(stack)) {
-    return { version: 1 };
+    return acceptance ? { version: 1, acceptance } : { version: 1 };
   }
 
   const commands = buildQualityCommands(stack);
   const hasCommands = Object.keys(commands).length > 0;
 
-  if (!hasCommands) {
+  if (!hasCommands && !acceptance) {
     return { version: 1 };
   }
 
-  return {
-    version: 1,
-    quality: { commands },
-  };
+  const config: Record<string, unknown> = { version: 1 };
+  if (hasCommands) config.quality = { commands };
+  if (acceptance) config.acceptance = acceptance;
+  return config;
 }

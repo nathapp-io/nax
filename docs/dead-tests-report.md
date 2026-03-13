@@ -1,17 +1,8 @@
 # Dead Tests Report
 
-Generated: 2026-03-12T10:57:52.150Z
+Generated: 2026-03-13T02:38:26.376Z
 
-Found **7** test file(s) with issues:
-
-## test/unit/worktree-manager.test.ts
-
-### Dead Feature References
-
-- **worktree** — references removed feature
-
-**Recommendation:** Review this test file. 
-Either fix the imports/references, update the test, or delete it if no longer needed.
+Found **8** test file(s) with issues:
 
 ## test/unit/verification/smart-runner-discovery.test.ts
 
@@ -20,6 +11,16 @@ Either fix the imports/references, update the test, or delete it if no longer ne
 - `src/other/module` — module not found
 - `src/utils/helper` — module not found
 - `src/completely/different` — module not found
+
+**Recommendation:** Review this test file. 
+Either fix the imports/references, update the test, or delete it if no longer needed.
+
+## test/unit/scripts/check-test-overlap.test.ts
+
+### Missing Imports
+
+- `src/mymodule` — module not found
+- `src/other` — module not found
 
 **Recommendation:** Review this test file. 
 Either fix the imports/references, update the test, or delete it if no longer needed.
@@ -37,12 +38,29 @@ Either fix the imports/references, update the test, or delete it if no longer ne
 **Recommendation:** Review this test file. 
 Either fix the imports/references, update the test, or delete it if no longer needed.
 
-## test/unit/scripts/check-test-overlap.test.ts
+## test/unit/worktree-manager.test.ts
+
+### Dead Feature References
+
+- **worktree** — references removed feature
+
+**Recommendation:** Review this test file. 
+Either fix the imports/references, update the test, or delete it if no longer needed.
+
+## test/unit/acceptance/component-strategy-integration.test.ts
 
 ### Missing Imports
 
-- `src/mymodule` — module not found
-- `src/other` — module not found
+- `src/ink-counter` — module not found
+
+**Recommendation:** Review this test file. 
+Either fix the imports/references, update the test, or delete it if no longer needed.
+
+## test/integration/execution/parallel.test.ts
+
+### Dead Feature References
+
+- **worktree** — references removed feature
 
 **Recommendation:** Review this test file. 
 Either fix the imports/references, update the test, or delete it if no longer needed.
@@ -65,19 +83,10 @@ Either fix the imports/references, update the test, or delete it if no longer ne
 **Recommendation:** Review this test file. 
 Either fix the imports/references, update the test, or delete it if no longer needed.
 
-## test/integration/execution/parallel.test.ts
-
-### Dead Feature References
-
-- **worktree** — references removed feature
-
-**Recommendation:** Review this test file. 
-Either fix the imports/references, update the test, or delete it if no longer needed.
-
 ---
 
 ## Summary
 
-- Total files with issues: 7
-- Dead imports: 6
+- Total files with issues: 8
+- Dead imports: 7
 - Dead references: 5

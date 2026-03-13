@@ -3,7 +3,7 @@
   "feature": "ui-test-strategies",
   "branchName": "feat/ui-test-strategies",
   "createdAt": "2026-03-12T20:56:00.000Z",
-  "updatedAt": "2026-03-12T20:56:00.000Z",
+  "updatedAt": "2026-03-13T02:30:46.680Z",
   "userStories": [
     {
       "id": "ACS-001",
@@ -18,12 +18,25 @@
         "Default config omits testStrategy and testFramework (both undefined)",
         "Existing tests pass without modification — backward compatible"
       ],
-      "tags": ["config", "types"],
+      "tags": [
+        "config",
+        "types"
+      ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
-      "attempts": 0
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Type system extension with Zod schema validation across multiple config files—straightforward but requires coordinating AcceptanceTestStrategy type, interface updates, schema changes, and defaults.",
+        "contentHash": "ea2377582f3d7ab9d1f6d509333336d13f7fbb8944bd2c03fcfcd92addce8354"
+      }
     },
     {
       "id": "ACS-002",
@@ -39,12 +52,27 @@
         "nax init with ink project sets acceptance.testStrategy to 'component' and acceptance.testFramework to 'ink-testing-library'",
         "nax init with bin-only project sets acceptance.testStrategy to 'cli'"
       ],
-      "tags": ["cli", "detection"],
-      "dependencies": ["ACS-001"],
-      "status": "pending",
-      "passes": false,
+      "tags": [
+        "cli",
+        "detection"
+      ],
+      "dependencies": [
+        "ACS-001"
+      ],
+      "status": "passed",
+      "passes": true,
       "escalations": [],
-      "attempts": 0
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Straightforward detection logic with type additions and config integration across 2-3 files; no novel patterns or complex subsystems; ~60-90 minutes of standard feature work.",
+        "contentHash": "ac048ce20a6b6634e91fcb403ff0649db3b3f591338d4ce99e57cf2d17d0117d"
+      }
     },
     {
       "id": "ACS-003",
@@ -60,12 +88,27 @@
         "Template functions exist in src/acceptance/templates/ directory",
         "Generated test files are valid TypeScript that passes tsc --noEmit syntax check"
       ],
-      "tags": ["acceptance", "generator"],
-      "dependencies": ["ACS-001"],
-      "status": "pending",
-      "passes": false,
+      "tags": [
+        "acceptance",
+        "generator"
+      ],
+      "dependencies": [
+        "ACS-001"
+      ],
+      "status": "passed",
+      "passes": true,
       "escalations": [],
-      "attempts": 0
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multi-file template system with 5 distinct test patterns (unit/component/cli/e2e/snapshot) and conditional routing logic — standard feature implementation with moderate scope, not requiring expert architecture or complex algorithms.",
+        "contentHash": "28d9e6722f4045ec2c7922145a4f9a57a3f2eb615f76600f1cc599e26436bf78"
+      }
     },
     {
       "id": "ACS-004",
@@ -80,12 +123,28 @@
         "Refinement for unset testStrategy produces current behavior (backward compatible)",
         "Strategy context appears in the system prompt sent to the LLM"
       ],
-      "tags": ["acceptance", "refinement", "llm"],
-      "dependencies": ["ACS-001"],
-      "status": "pending",
-      "passes": false,
+      "tags": [
+        "acceptance",
+        "refinement",
+        "llm"
+      ],
+      "dependencies": [
+        "ACS-001"
+      ],
+      "status": "passed",
+      "passes": true,
       "escalations": [],
-      "attempts": 0
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Single-file feature adding conditional prompt logic for multiple strategies; moderate scope with straightforward test patterns, no refactoring or new subsystems.",
+        "contentHash": "e1db378da8d8a14c0f87ecc83496eacbc7ef966834a008bfb36db8b0ae2190ca"
+      }
     },
     {
       "id": "ACS-005",
@@ -101,12 +160,29 @@
         "acceptance-setup stage passes testStrategy to both refinement and generator",
         "All existing acceptance tests continue to pass"
       ],
-      "tags": ["test", "integration", "acceptance"],
-      "dependencies": ["ACS-003", "ACS-004"],
-      "status": "pending",
-      "passes": false,
+      "tags": [
+        "test",
+        "integration",
+        "acceptance"
+      ],
+      "dependencies": [
+        "ACS-003",
+        "ACS-004"
+      ],
+      "status": "passed",
+      "passes": true,
       "escalations": [],
-      "attempts": 0
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multiple test files + one pipeline stage modification, but straightforward test writing and config plumbing; 60-90 min effort.",
+        "contentHash": "48e8266b46a79d7dec71f40affc7e9cc36c101f533ef63bd2664510cdf3a136f"
+      }
     }
   ]
 }
