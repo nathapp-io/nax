@@ -157,5 +157,8 @@
     "storySizeGate": {
       "enabled": false
     }
+  },
+  "decompose": {
+    "trigger": "disabled"
   }
 }
