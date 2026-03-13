@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 3,
+    "passed": 4,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 0.6891849999999999,
+    "spent": 0.97999975,
     "limit": 8
   },
   "current": {
-    "storyId": "ACP-004",
-    "title": "Interaction bridge — sessionUpdate to interaction chain",
-    "complexity": "complex",
-    "tddStrategy": "three-session-tdd",
+    "storyId": "ACP-005",
+    "title": "Plan and decompose via ACP",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-03-13T06:13:24.020Z",
-  "durationMs": 3747387,
-  "lastHeartbeat": "2026-03-13T06:13:24.020Z"
+  "iterations": 4,
+  "updatedAt": "2026-03-13T06:17:24.030Z",
+  "durationMs": 3987397,
+  "lastHeartbeat": "2026-03-13T06:17:24.030Z"
 }
