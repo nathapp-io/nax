@@ -43,13 +43,13 @@ describe("ACP-001: Acceptance generators use adapter.complete()", () => {
 
 describe("ACP-002: AcpAgentAdapter core", () => {
   test("AcpAgentAdapter module exists and exports the class", async () => {
-    const mod = await import("../../src/agents/acp/adapter");
+    const mod = await import("../../../src/agents/acp/adapter");
     expect(mod.AcpAgentAdapter).toBeDefined();
     expect(typeof mod.AcpAgentAdapter).toBe("function");
   });
 
   test("AcpAgentAdapter implements all AgentAdapter methods", async () => {
-    const { AcpAgentAdapter } = await import("../../src/agents/acp/adapter");
+    const { AcpAgentAdapter } = await import("../../../src/agents/acp/adapter");
     const adapter = new AcpAgentAdapter("claude");
 
     // Required methods from AgentAdapter interface
@@ -71,18 +71,18 @@ describe("ACP-002: AcpAgentAdapter core", () => {
 
   test("AgentResult.success maps from ACP stopReason correctly", async () => {
     // Verify the mapping logic exists
-    const mod = await import("../../src/agents/acp/adapter");
+    const mod = await import("../../../src/agents/acp/adapter");
     // The adapter should export or internally handle stopReason → success mapping
     expect(mod.AcpAgentAdapter).toBeDefined();
   });
 
   test("ACP types module exists", async () => {
-    const mod = await import("../../src/agents/acp/types");
+    const mod = await import("../../../src/agents/acp/types");
     expect(mod).toBeDefined();
   });
 
   test("ACP index barrel exports", async () => {
-    const mod = await import("../../src/agents/acp/index");
+    const mod = await import("../../../src/agents/acp/index");
     expect(mod.AcpAgentAdapter).toBeDefined();
   });
 });
@@ -93,7 +93,7 @@ describe("ACP-002: AcpAgentAdapter core", () => {
 
 describe("ACP-003: Registry and config toggle", () => {
   test("config schema accepts agent.protocol field", async () => {
-    const { NaxConfigSchema } = await import("../../src/config/schema");
+    const { NaxConfigSchema } = await import("../../../src/config/schema");
     // Should parse successfully with agent.protocol = 'acp'
     const result = NaxConfigSchema.safeParse({
       agent: { protocol: "acp" },
@@ -111,8 +111,8 @@ describe("ACP-003: Registry and config toggle", () => {
 
   test("getAgent returns AcpAgentAdapter when protocol is 'acp'", async () => {
     // This test verifies the registry respects the protocol config
-    const { getAgent } = await import("../../src/agents/registry");
-    const { AcpAgentAdapter } = await import("../../src/agents/acp/adapter");
+    const { getAgent } = await import("../../../src/agents/registry");
+    const { AcpAgentAdapter } = await import("../../../src/agents/acp/adapter");
     // Note: actual behavior depends on global config state
     // This test validates the types exist and are importable
     expect(getAgent).toBeDefined();
@@ -120,7 +120,7 @@ describe("ACP-003: Registry and config toggle", () => {
   });
 
   test("default protocol is 'cli' for backward compatibility", async () => {
-    const { NaxConfigSchema } = await import("../../src/config/schema");
+    const { NaxConfigSchema } = await import("../../../src/config/schema");
     const result = NaxConfigSchema.safeParse({});
     if (result.success) {
       const protocol = result.data.agent?.protocol ?? "cli";
@@ -135,20 +135,20 @@ describe("ACP-003: Registry and config toggle", () => {
 
 describe("ACP-004: Interaction bridge", () => {
   test("AcpInteractionBridge module exists", async () => {
-    const mod = await import("../../src/agents/acp/interaction-bridge");
+    const mod = await import("../../../src/agents/acp/interaction-bridge");
     expect(mod.AcpInteractionBridge).toBeDefined();
     expect(typeof mod.AcpInteractionBridge).toBe("function");
   });
 
   test("Bridge detects question patterns in text", async () => {
-    const { AcpInteractionBridge } = await import("../../src/agents/acp/interaction-bridge");
+    const { AcpInteractionBridge } = await import("../../../src/agents/acp/interaction-bridge");
     // Bridge should expose or internally use question detection
     const bridge = new AcpInteractionBridge({} as any);
     expect(bridge).toBeDefined();
   });
 
   test("Bridge creates InteractionRequest from agent questions", async () => {
-    const { AcpInteractionBridge } = await import("../../src/agents/acp/interaction-bridge");
+    const { AcpInteractionBridge } = await import("../../../src/agents/acp/interaction-bridge");
     expect(AcpInteractionBridge).toBeDefined();
     // Detailed interaction flow tested in unit tests
   });
@@ -160,19 +160,19 @@ describe("ACP-004: Interaction bridge", () => {
 
 describe("ACP-005: Plan and decompose", () => {
   test("AcpAgentAdapter.plan() exists and is callable", async () => {
-    const { AcpAgentAdapter } = await import("../../src/agents/acp/adapter");
+    const { AcpAgentAdapter } = await import("../../../src/agents/acp/adapter");
     const adapter = new AcpAgentAdapter("claude");
     expect(typeof adapter.plan).toBe("function");
   });
 
   test("AcpAgentAdapter.decompose() exists and is callable", async () => {
-    const { AcpAgentAdapter } = await import("../../src/agents/acp/adapter");
+    const { AcpAgentAdapter } = await import("../../../src/agents/acp/adapter");
     const adapter = new AcpAgentAdapter("claude");
     expect(typeof adapter.decompose).toBe("function");
   });
 
   test("Interactive plan throws clear unsupported error", async () => {
-    const { AcpAgentAdapter } = await import("../../src/agents/acp/adapter");
+    const { AcpAgentAdapter } = await import("../../../src/agents/acp/adapter");
     const adapter = new AcpAgentAdapter("claude");
 
     await expect(
@@ -191,13 +191,13 @@ describe("ACP-005: Plan and decompose", () => {
 
 describe("ACP-006: Cost tracking", () => {
   test("estimateCostFromTokenUsage module exists", async () => {
-    const mod = await import("../../src/agents/acp/cost");
+    const mod = await import("../../../src/agents/acp/cost");
     expect(mod.estimateCostFromTokenUsage).toBeDefined();
     expect(typeof mod.estimateCostFromTokenUsage).toBe("function");
   });
 
   test("zero tokens returns zero cost", async () => {
-    const { estimateCostFromTokenUsage } = await import("../../src/agents/acp/cost");
+    const { estimateCostFromTokenUsage } = await import("../../../src/agents/acp/cost");
     const cost = estimateCostFromTokenUsage(
       { input_tokens: 0, output_tokens: 0 },
       "claude-sonnet-4",
@@ -206,7 +206,7 @@ describe("ACP-006: Cost tracking", () => {
   });
 
   test("known model returns non-zero cost for non-zero tokens", async () => {
-    const { estimateCostFromTokenUsage } = await import("../../src/agents/acp/cost");
+    const { estimateCostFromTokenUsage } = await import("../../../src/agents/acp/cost");
     const cost = estimateCostFromTokenUsage(
       { input_tokens: 1000, output_tokens: 500 },
       "claude-sonnet-4",
@@ -215,7 +215,7 @@ describe("ACP-006: Cost tracking", () => {
   });
 
   test("unknown model falls back to average rate", async () => {
-    const { estimateCostFromTokenUsage } = await import("../../src/agents/acp/cost");
+    const { estimateCostFromTokenUsage } = await import("../../../src/agents/acp/cost");
     const cost = estimateCostFromTokenUsage(
       { input_tokens: 1000, output_tokens: 500 },
       "unknown-model-xyz",
@@ -224,7 +224,7 @@ describe("ACP-006: Cost tracking", () => {
   });
 
   test("cache tokens use reduced rates", async () => {
-    const { estimateCostFromTokenUsage } = await import("../../src/agents/acp/cost");
+    const { estimateCostFromTokenUsage } = await import("../../../src/agents/acp/cost");
     const costWithCache = estimateCostFromTokenUsage(
       {
         input_tokens: 100,
@@ -249,16 +249,16 @@ describe("ACP-006: Cost tracking", () => {
 describe("ACP-007: TDD flow with ACP adapter", () => {
   test("TDD session runner accepts AcpAgentAdapter", async () => {
     // Verify the session runner's type signature accepts AgentAdapter (which AcpAgentAdapter implements)
-    const { runTddSession } = await import("../../src/tdd/session-runner");
-    const { AcpAgentAdapter } = await import("../../src/agents/acp/adapter");
+    const { runTddSession } = await import("../../../src/tdd/session-runner");
+    const { AcpAgentAdapter } = await import("../../../src/agents/acp/adapter");
     expect(runTddSession).toBeDefined();
     expect(AcpAgentAdapter).toBeDefined();
     // Type compatibility is verified at compile time — this test confirms both modules are importable
   });
 
   test("rectification gate accepts AcpAgentAdapter", async () => {
-    const { runFullSuiteGate } = await import("../../src/tdd/rectification-gate");
-    const { AcpAgentAdapter } = await import("../../src/agents/acp/adapter");
+    const { runFullSuiteGate } = await import("../../../src/tdd/rectification-gate");
+    const { AcpAgentAdapter } = await import("../../../src/agents/acp/adapter");
     expect(runFullSuiteGate).toBeDefined();
     expect(AcpAgentAdapter).toBeDefined();
   });
@@ -270,12 +270,12 @@ describe("ACP-007: TDD flow with ACP adapter", () => {
 
 describe("Cross-cutting: backward compatibility", () => {
   test("Legacy ClaudeCodeAdapter still exists and is importable", async () => {
-    const { ClaudeCodeAdapter } = await import("../../src/agents/claude");
+    const { ClaudeCodeAdapter } = await import("../../../src/agents/claude");
     expect(ClaudeCodeAdapter).toBeDefined();
   });
 
   test("Legacy adapter registry still works", async () => {
-    const { getAgent, getAllAgentNames } = await import("../../src/agents/registry");
+    const { getAgent, getAllAgentNames } = await import("../../../src/agents/registry");
     const names = getAllAgentNames();
     expect(names).toContain("claude");
     // Legacy adapter should still be accessible
