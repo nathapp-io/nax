@@ -115,6 +115,16 @@ function validateStoryCount(counts: ReturnType<typeof countStories>, config: Nax
 }
 
 /**
+ * Log the active agent protocol to aid debugging.
+ *
+ * Stub — ACP-003 implementer will fill in real logic.
+ */
+export function logActiveProtocol(_config: NaxConfig): void {
+  // Stub — not yet implemented
+  throw new Error("[run-initialization] logActiveProtocol() not yet implemented — ACP-003");
+}
+
+/**
  * Initialize execution: validate agent, reconcile state, check limits
  */
 export async function initializeRun(ctx: InitializationContext): Promise<InitializationResult> {

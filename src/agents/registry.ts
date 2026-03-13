@@ -4,6 +4,7 @@
  * Discovers and manages available coding agents.
  */
 
+import type { NaxConfig } from "../config/schema";
 import { AiderAdapter } from "./adapters/aider";
 import { CodexAdapter } from "./adapters/codex";
 import { GeminiAdapter } from "./adapters/gemini";
@@ -50,4 +51,29 @@ export async function checkAgentHealth(): Promise<Array<{ name: string; displayN
       installed: await agent.isInstalled(),
     })),
   );
+}
+
+/** Protocol-aware agent registry returned by createAgentRegistry() */
+export interface AgentRegistry {
+  /** Get a specific agent, respecting the configured protocol */
+  getAgent(name: string): AgentAdapter | undefined;
+  /** Get all installed agents */
+  getInstalledAgents(): Promise<AgentAdapter[]>;
+  /** Check health of all agents */
+  checkAgentHealth(): Promise<Array<{ name: string; displayName: string; installed: boolean }>>;
+  /** Active protocol ('acp' | 'cli') */
+  protocol: "acp" | "cli";
+}
+
+/**
+ * Create a protocol-aware agent registry.
+ *
+ * Stub — ACP-003 implementer will fill in real logic.
+ * When config.agent.protocol is 'acp', returns AcpAgentAdapter instances.
+ * When 'cli' (or unset), returns legacy CLI adapters.
+ * AcpAgentAdapter instances are cached per agent name for the lifetime of the registry.
+ */
+export function createAgentRegistry(_config: NaxConfig): AgentRegistry {
+  // Stub — not yet implemented
+  throw new Error("[registry] createAgentRegistry() not yet implemented — ACP-003");
 }
