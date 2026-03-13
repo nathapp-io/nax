@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 5,
-    "passed": 0,
+    "passed": 1,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 5
+    "pending": 4
   },
   "cost": {
-    "spent": 0,
+    "spent": 0.21513949999999998,
     "limit": 8
   },
   "current": {
-    "storyId": "ACS-001",
-    "title": "Test strategy types and config schema extension",
+    "storyId": "ACS-002",
+    "title": "Stack detection for UI frameworks",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 1,
-  "updatedAt": "2026-03-13T01:33:43.065Z",
-  "durationMs": 853133,
-  "lastHeartbeat": "2026-03-13T01:33:43.064Z"
+  "iterations": 2,
+  "updatedAt": "2026-03-13T01:36:43.079Z",
+  "durationMs": 1033147,
+  "lastHeartbeat": "2026-03-13T01:36:43.079Z"
 }

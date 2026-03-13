@@ -3,7 +3,7 @@
   "feature": "ui-test-strategies",
   "branchName": "feat/ui-test-strategies",
   "createdAt": "2026-03-12T20:56:00.000Z",
-  "updatedAt": "2026-03-13T01:19:43.014Z",
+  "updatedAt": "2026-03-13T01:34:08.100Z",
   "userStories": [
     {
       "id": "ACS-001",
@@ -23,8 +23,8 @@
         "types"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "priorErrors": [],
@@ -65,7 +65,14 @@
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Straightforward detection logic with type additions and config integration across 2-3 files; no novel patterns or complex subsystems; ~60-90 minutes of standard feature work.",
+        "contentHash": "ac048ce20a6b6634e91fcb403ff0649db3b3f591338d4ce99e57cf2d17d0117d"
+      }
     },
     {
       "id": "ACS-003",
