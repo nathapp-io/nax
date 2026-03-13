@@ -18,6 +18,7 @@ import type {
   PlanResult,
 } from "../types";
 import { CompleteError } from "../types";
+import { estimateCostFromTokenUsage } from "./cost";
 import type { AcpAdapterConfig, AcpClient, AcpSession, AcpSessionResponse, AgentRegistryEntry } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -97,17 +98,6 @@ function extractAssistantText(response: AcpSessionResponse): string {
 
 function mapStopReasonToSuccess(stopReason: string): boolean {
   return stopReason === "end_turn";
-}
-
-function estimateCostFromUsage(usage?: {
-  input_tokens: number;
-  output_tokens: number;
-}): number {
-  if (!usage) return 0;
-  // Conservative estimate: ~$3/1M input, ~$15/1M output (Sonnet-class)
-  const INPUT_RATE = 3 / 1_000_000;
-  const OUTPUT_RATE = 15 / 1_000_000;
-  return usage.input_tokens * INPUT_RATE + usage.output_tokens * OUTPUT_RATE;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -227,13 +217,16 @@ export class AcpAgentAdapter implements AgentAdapter {
       }
 
       const durationMs = Date.now() - startTime;
+      const estimatedCost = response.cumulative_token_usage
+        ? estimateCostFromTokenUsage(response.cumulative_token_usage, options.modelDef.model)
+        : 0;
       return {
         success: mapStopReasonToSuccess(response.stopReason),
         exitCode: mapStopReasonToSuccess(response.stopReason) ? 0 : 1,
         output: extractAssistantText(response),
         rateLimited: false,
         durationMs,
-        estimatedCost: estimateCostFromUsage(response.cumulative_token_usage),
+        estimatedCost,
       };
     } finally {
       if (session) {
