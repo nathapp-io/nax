@@ -74,15 +74,17 @@ export const _acpAdapterDeps = {
 
   spawn(
     cmd: string[],
-    opts: { cwd?: string; stdout: "pipe"; stderr: "pipe"; timeout?: number },
+    opts: { cwd?: string; stdin?: "pipe" | "inherit"; stdout: "pipe"; stderr: "pipe"; timeout?: number },
   ): {
     stdout: ReadableStream<Uint8Array>;
     stderr: ReadableStream<Uint8Array>;
+    /** Bun FileSink — use .write() + .end(), NOT getWriter() */
+    stdin: { write(data: string | Uint8Array): number; end(): void; flush(): void };
     exited: Promise<number>;
     pid: number;
     kill(signal?: number): void;
   } {
-    return Bun.spawn(cmd, opts) as ReturnType<typeof _acpAdapterDeps.spawn>;
+    return Bun.spawn(cmd, opts) as unknown as ReturnType<typeof _acpAdapterDeps.spawn>;
   },
 };
 
@@ -278,19 +280,17 @@ export class AcpAgentAdapter implements AgentAdapter {
       format: "json",
     });
 
-    // Prompt is passed via stdin (supports arbitrarily long prompts)
+    // Prompt is passed via stdin with --file - (supports arbitrarily long prompts)
     const proc = _acpAdapterDeps.spawn([...cmd, "--file", "-"], {
       cwd: options.workdir,
+      stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
     });
 
-    // Write prompt to stdin
-    const writer = (proc as unknown as { stdin: WritableStream<Uint8Array> }).stdin?.getWriter?.();
-    if (writer) {
-      await writer.write(new TextEncoder().encode(options.prompt));
-      await writer.close();
-    }
+    // Write prompt to stdin (Bun FileSink API)
+    proc.stdin.write(options.prompt);
+    proc.stdin.end();
 
     // Read stdout + stderr concurrently with process exit (avoid deadlock on >64KB)
     const [exitCode, stdout, stderr] = await Promise.all([
@@ -336,16 +336,14 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     // Pass prompt via --file - (stdin)
     const proc = _acpAdapterDeps.spawn([...cmd, "--file", "-"], {
+      stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
     });
 
-    // Write prompt to stdin
-    const writer = (proc as unknown as { stdin: WritableStream<Uint8Array> }).stdin?.getWriter?.();
-    if (writer) {
-      await writer.write(new TextEncoder().encode(prompt));
-      await writer.close();
-    }
+    // Write prompt to stdin (Bun FileSink API)
+    proc.stdin.write(prompt);
+    proc.stdin.end();
 
     const [exitCode, stdout, stderr] = await Promise.all([
       proc.exited,
