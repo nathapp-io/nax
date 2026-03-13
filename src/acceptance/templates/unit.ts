@@ -18,7 +18,31 @@ export interface UnitTemplateOptions {
  * @param options - Feature name and criteria list
  * @returns TypeScript test code string
  */
-export function buildUnitTemplate(_options: UnitTemplateOptions): string {
-  // stub — implementer will provide real logic
-  return "";
+export function buildUnitTemplate(options: UnitTemplateOptions): string {
+  const { featureName, criteria } = options;
+
+  const tests = criteria
+    .map(
+      (ac) => `  test("${ac.id}: ${ac.text}", async () => {
+    // TODO: import and call the function under test
+    expect(true).toBe(true); // Replace with real assertion
+  });`,
+    )
+    .join("\n\n");
+
+  return `import { describe, expect, test } from "bun:test";
+import { ${toCamelCase(featureName)} } from "../src/${toKebabCase(featureName)}";
+
+describe("${featureName} - Acceptance Tests", () => {
+${tests}
+});
+`;
+}
+
+function toCamelCase(name: string): string {
+  return name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
+function toKebabCase(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, "-");
 }

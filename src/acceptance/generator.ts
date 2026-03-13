@@ -82,6 +82,8 @@ export async function generateFromPRD(
 
   const criteriaList = refinedCriteria.map((c, i) => `AC-${i + 1}: ${c.refined}`).join("\n");
 
+  const strategyInstructions = buildStrategyInstructions(options.testStrategy, options.testFramework);
+
   const prompt = `You are a test engineer. Generate acceptance tests for the "${options.featureName}" feature based on the refined acceptance criteria below.
 
 CODEBASE CONTEXT:
@@ -90,7 +92,7 @@ ${options.codebaseContext}
 ACCEPTANCE CRITERIA (refined):
 ${criteriaList}
 
-Generate a complete acceptance.test.ts file using bun:test framework. Each AC maps to exactly one test named "AC-N: <description>".
+${strategyInstructions}Generate a complete acceptance.test.ts file using bun:test framework. Each AC maps to exactly one test named "AC-N: <description>".
 
 Use this structure:
 
@@ -125,6 +127,26 @@ Respond with ONLY the TypeScript test code (no markdown code fences, no explanat
   await _generatorPRDDeps.writeFile(join(options.workdir, "acceptance-refined.json"), refinedJsonContent);
 
   return { testCode, criteria };
+}
+
+function buildStrategyInstructions(strategy?: string, framework?: string): string {
+  switch (strategy) {
+    case "component": {
+      const fw = framework ?? "ink-testing-library";
+      if (fw === "react") {
+        return "TEST STRATEGY: component (react)\nImport render and screen from @testing-library/react. Render the component and use screen.getByText to assert on output.\n\n";
+      }
+      return "TEST STRATEGY: component (ink-testing-library)\nImport render from ink-testing-library. Render the component and use lastFrame() to assert on output.\n\n";
+    }
+    case "cli":
+      return "TEST STRATEGY: cli\nUse Bun.spawn to run the binary. Read stdout and assert on the text output.\n\n";
+    case "e2e":
+      return "TEST STRATEGY: e2e\nUse fetch() against http://localhost to call the running service. Assert on response body using response.text() or response.json().\n\n";
+    case "snapshot":
+      return "TEST STRATEGY: snapshot\nRender the component and use toMatchSnapshot() to capture and compare snapshots.\n\n";
+    default:
+      return "";
+  }
 }
 
 export function parseAcceptanceCriteria(specContent: string): AcceptanceCriterion[] {

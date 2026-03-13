@@ -18,7 +18,30 @@ export interface CliTemplateOptions {
  * @param options - Feature name and criteria list
  * @returns TypeScript test code string
  */
-export function buildCliTemplate(_options: CliTemplateOptions): string {
-  // stub — implementer will provide real logic
-  return "";
+export function buildCliTemplate(options: CliTemplateOptions): string {
+  const { featureName, criteria } = options;
+
+  const tests = criteria
+    .map(
+      (ac) => `  test("${ac.id}: ${ac.text}", async () => {
+    const proc = Bun.spawn(["bun", "run", "src/${featureName}.ts"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [exitCode, stdout] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+    ]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain(""); // Replace with expected stdout text
+  });`,
+    )
+    .join("\n\n");
+
+  return `import { describe, expect, test } from "bun:test";
+
+describe("${featureName} - Acceptance Tests", () => {
+${tests}
+});
+`;
 }
