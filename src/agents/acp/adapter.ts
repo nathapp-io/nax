@@ -1,8 +1,11 @@
 /**
- * ACP Agent Adapter — implements AgentAdapter interface via AcpClient
+ * ACP Agent Adapter — implements AgentAdapter interface via acpx CLI
  *
- * Provides uniform interface for running agents through the ACP protocol,
- * supporting one-shot completions and full run sessions.
+ * Uses `acpx` as a headless CLI client for the Agent Client Protocol (ACP).
+ * All interactions go through `acpx exec` (one-shot) for simplicity.
+ * Agent NDJSON output is parsed for structured results and cost tracking.
+ *
+ * See: https://github.com/openclaw/acpx
  */
 
 import { buildDecomposePrompt, parseDecomposeOutput } from "../claude-decompose";
@@ -19,10 +22,10 @@ import type {
 } from "../types";
 import { CompleteError } from "../types";
 import { estimateCostFromTokenUsage } from "./cost";
-import type { AcpAdapterConfig, AcpClient, AcpSession, AcpSessionResponse, AgentRegistryEntry } from "./types";
+import type { AgentRegistryEntry } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Agent registry — maps agent names to their ACP commands and metadata
+// Agent registry — maps nax agent names to acpx agent identifiers
 // ─────────────────────────────────────────────────────────────────────────────
 
 const AGENT_REGISTRY: Record<string, AgentRegistryEntry> = {
@@ -55,24 +58,31 @@ const DEFAULT_ENTRY: AgentRegistryEntry = {
 
 const MAX_RATE_LIMIT_RETRIES = 3;
 const RATE_LIMIT_BASE_DELAY_MS = 1_000;
-const PERMISSION_MODE = "approve-all";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Injectable dependencies — follows the _deps pattern
+// Injectable dependencies — follows the _deps pattern for testability
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const _acpAdapterDeps = {
-  createClient(_cmd: string): AcpClient {
-    // Default implementation — replaced in tests via _acpAdapterDeps.createClient = mock(...)
-    throw new Error("[acp-adapter] createClient not configured — inject a real AcpClient factory");
-  },
-
   which(name: string): string | null {
     return Bun.which(name);
   },
 
   async sleep(ms: number): Promise<void> {
     await Bun.sleep(ms);
+  },
+
+  spawn(
+    cmd: string[],
+    opts: { cwd?: string; stdout: "pipe"; stderr: "pipe"; timeout?: number },
+  ): {
+    stdout: ReadableStream<Uint8Array>;
+    stderr: ReadableStream<Uint8Array>;
+    exited: Promise<number>;
+    pid: number;
+    kill(signal?: number): void;
+  } {
+    return Bun.spawn(cmd, opts) as ReturnType<typeof _acpAdapterDeps.spawn>;
   },
 };
 
@@ -90,14 +100,106 @@ function isRateLimitError(err: unknown): boolean {
   return msg.includes("rate limit") || msg.includes("rate_limit") || msg.includes("429");
 }
 
-function extractAssistantText(response: AcpSessionResponse): string {
-  const messages = response.messages ?? [];
-  const assistantMessages = messages.filter((m) => m.role === "assistant").map((m) => m.content);
-  return assistantMessages.join("\n").trim();
+/**
+ * Build the acpx CLI command for exec (one-shot) mode.
+ */
+function buildAcpxExecCommand(opts: {
+  agentName: string;
+  model?: string;
+  workdir?: string;
+  timeoutSeconds?: number;
+  format?: "text" | "json" | "quiet";
+}): string[] {
+  const cmd = ["acpx", "--approve-all"];
+
+  if (opts.format) {
+    cmd.push("--format", opts.format);
+  }
+
+  if (opts.model) {
+    cmd.push("--model", opts.model);
+  }
+
+  if (opts.timeoutSeconds && opts.timeoutSeconds > 0) {
+    cmd.push("--timeout", String(opts.timeoutSeconds));
+  }
+
+  // Agent name (resolved by acpx's built-in registry)
+  cmd.push(opts.agentName);
+
+  // exec subcommand for one-shot
+  cmd.push("exec");
+
+  return cmd;
 }
 
-function mapStopReasonToSuccess(stopReason: string): boolean {
-  return stopReason === "end_turn";
+/** Token usage from acpx NDJSON events */
+interface AcpxTokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+}
+
+/**
+ * Parse acpx NDJSON output for assistant text and token usage.
+ *
+ * acpx --format json emits NDJSON lines. We look for:
+ * - Lines with assistant content (text blocks)
+ * - Lines with cumulative_token_usage
+ * - Lines with error info
+ */
+function parseAcpxJsonOutput(rawOutput: string): {
+  text: string;
+  tokenUsage?: AcpxTokenUsage;
+  stopReason?: string;
+  error?: string;
+} {
+  const lines = rawOutput.split("\n").filter((l) => l.trim());
+  let text = "";
+  let tokenUsage: AcpxTokenUsage | undefined;
+  let stopReason: string | undefined;
+  let error: string | undefined;
+
+  for (const line of lines) {
+    try {
+      const event = JSON.parse(line);
+
+      // Extract assistant text from various event shapes
+      if (event.content && typeof event.content === "string") {
+        text += event.content;
+      }
+      if (event.text && typeof event.text === "string") {
+        text += event.text;
+      }
+      if (event.result && typeof event.result === "string") {
+        text = event.result;
+      }
+
+      // Token usage
+      if (event.cumulative_token_usage) {
+        tokenUsage = event.cumulative_token_usage;
+      }
+      if (event.usage) {
+        tokenUsage = {
+          input_tokens: event.usage.input_tokens ?? event.usage.prompt_tokens ?? 0,
+          output_tokens: event.usage.output_tokens ?? event.usage.completion_tokens ?? 0,
+        };
+      }
+
+      // Stop reason
+      if (event.stopReason) stopReason = event.stopReason;
+      if (event.stop_reason) stopReason = event.stop_reason;
+
+      // Error
+      if (event.error) {
+        error = typeof event.error === "string" ? event.error : (event.error.message ?? JSON.stringify(event.error));
+      }
+    } catch {
+      // Not JSON — treat as plain text output (--format text fallback)
+      if (!text) text = line;
+    }
+  }
+
+  return { text: text.trim(), tokenUsage, stopReason, error };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -110,8 +212,6 @@ export class AcpAgentAdapter implements AgentAdapter {
   readonly binary: string;
   readonly capabilities: AgentCapabilities;
 
-  private readonly config: AcpAdapterConfig;
-
   constructor(agentName: string) {
     const entry = resolveRegistryEntry(agentName);
     this.name = agentName;
@@ -122,19 +222,22 @@ export class AcpAgentAdapter implements AgentAdapter {
       maxContextTokens: entry.maxContextTokens,
       features: new Set<"tdd" | "review" | "refactor" | "batch">(["tdd", "review", "refactor"]),
     };
-    this.config = {
-      agentName,
-      permissionMode: PERMISSION_MODE,
-    };
   }
 
   async isInstalled(): Promise<boolean> {
-    const path = _acpAdapterDeps.which(this.binary);
-    return path !== null;
+    // Check for acpx binary (the ACP CLI), not the agent binary directly
+    const acpxPath = _acpAdapterDeps.which("acpx");
+    return acpxPath !== null;
   }
 
   buildCommand(options: AgentRunOptions): string[] {
-    return [this.binary, "--permission-mode", this.config.permissionMode, "--model", options.modelDef.model];
+    return buildAcpxExecCommand({
+      agentName: this.name,
+      model: options.modelDef.model,
+      workdir: options.workdir,
+      timeoutSeconds: options.timeoutSeconds,
+      format: "json",
+    });
   }
 
   async run(options: AgentRunOptions): Promise<AgentResult> {
@@ -147,8 +250,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       }
 
       try {
-        const result = await this._runOnce(options, startTime);
-        return result;
+        return await this._runOnce(options, startTime);
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
         lastError = error;
@@ -168,189 +270,121 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   private async _runOnce(options: AgentRunOptions, startTime: number): Promise<AgentResult> {
-    const cmd = this.buildCommand(options).join(" ");
-    const client = _acpAdapterDeps.createClient(cmd);
+    const cmd = buildAcpxExecCommand({
+      agentName: this.name,
+      model: options.modelDef.model,
+      workdir: options.workdir,
+      timeoutSeconds: options.timeoutSeconds,
+      format: "json",
+    });
 
-    await client.start();
-    let session: AcpSession | undefined;
+    // Prompt is passed via stdin (supports arbitrarily long prompts)
+    const proc = _acpAdapterDeps.spawn([...cmd, "--file", "-"], {
+      cwd: options.workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
 
-    try {
-      session = await client.createSession({
-        agentName: this.config.agentName,
-        permissionMode: this.config.permissionMode,
-      });
-
-      const timeoutMs = (options.timeoutSeconds ?? 60) * 1_000;
-      let timedOut = false;
-      let clearTimer: (() => void) | undefined;
-
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        const handle = setTimeout(() => {
-          timedOut = true;
-          reject(new Error("[acp-adapter] prompt timed out"));
-        }, timeoutMs);
-        clearTimer = () => clearTimeout(handle);
-      });
-
-      let response: AcpSessionResponse;
-      try {
-        response = await Promise.race([session.prompt(options.prompt), timeoutPromise]);
-      } catch (err) {
-        if (timedOut && session) {
-          try {
-            await session.cancelActivePrompt();
-          } catch {
-            await session.close().catch(() => {});
-          }
-          return {
-            success: false,
-            exitCode: 1,
-            output: "[acp-adapter] prompt timed out",
-            rateLimited: false,
-            durationMs: Date.now() - startTime,
-            estimatedCost: 0,
-          };
-        }
-        throw err;
-      } finally {
-        clearTimer?.();
-      }
-
-      const durationMs = Date.now() - startTime;
-      const estimatedCost = response.cumulative_token_usage
-        ? estimateCostFromTokenUsage(response.cumulative_token_usage, options.modelDef.model)
-        : 0;
-      return {
-        success: mapStopReasonToSuccess(response.stopReason),
-        exitCode: mapStopReasonToSuccess(response.stopReason) ? 0 : 1,
-        output: extractAssistantText(response),
-        rateLimited: false,
-        durationMs,
-        estimatedCost,
-      };
-    } finally {
-      if (session) {
-        await session.close().catch(() => {});
-      }
-      await client.close().catch(() => {});
+    // Write prompt to stdin
+    const writer = (proc as unknown as { stdin: WritableStream<Uint8Array> }).stdin?.getWriter?.();
+    if (writer) {
+      await writer.write(new TextEncoder().encode(options.prompt));
+      await writer.close();
     }
+
+    // Read stdout + stderr concurrently with process exit (avoid deadlock on >64KB)
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+
+    const durationMs = Date.now() - startTime;
+    const parsed = parseAcpxJsonOutput(stdout);
+
+    if (exitCode !== 0 && !parsed.text) {
+      const errorMsg = stderr.trim() || parsed.error || `acpx exec failed with exit code ${exitCode}`;
+      return {
+        success: false,
+        exitCode,
+        output: errorMsg,
+        rateLimited: isRateLimitError(new Error(errorMsg)),
+        durationMs,
+        estimatedCost: 0,
+      };
+    }
+
+    const estimatedCost = parsed.tokenUsage ? estimateCostFromTokenUsage(parsed.tokenUsage, options.modelDef.model) : 0;
+
+    return {
+      success: exitCode === 0,
+      exitCode,
+      output: parsed.text || stdout.trim(),
+      rateLimited: false,
+      durationMs,
+      estimatedCost,
+    };
   }
 
   async complete(prompt: string, _options?: CompleteOptions): Promise<string> {
-    const cmd = this.buildCommand({
-      workdir: "",
-      prompt,
-      modelTier: "balanced",
-      modelDef: { provider: "anthropic", model: _options?.model ?? this.binary, env: {} },
-      timeoutSeconds: 60,
-    }).join(" ");
+    const model = _options?.model;
+    const cmd = buildAcpxExecCommand({
+      agentName: this.name,
+      model,
+      format: "quiet", // quiet = final assistant text only
+    });
 
-    const client = _acpAdapterDeps.createClient(cmd);
-    await client.start();
-    let session: AcpSession | undefined;
+    // Pass prompt via --file - (stdin)
+    const proc = _acpAdapterDeps.spawn([...cmd, "--file", "-"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
 
-    try {
-      session = await client.createSession({
-        agentName: this.config.agentName,
-        permissionMode: this.config.permissionMode,
-      });
-
-      const response = await session.prompt(prompt);
-
-      if (response.stopReason === "error") {
-        throw new CompleteError("[acp-adapter] complete() failed: agent returned stopReason=error");
-      }
-
-      const text = extractAssistantText(response);
-
-      if (!text) {
-        throw new CompleteError("[acp-adapter] complete() returned empty output");
-      }
-
-      return text;
-    } finally {
-      if (session) {
-        await session.close().catch(() => {});
-      }
-      await client.close().catch(() => {});
+    // Write prompt to stdin
+    const writer = (proc as unknown as { stdin: WritableStream<Uint8Array> }).stdin?.getWriter?.();
+    if (writer) {
+      await writer.write(new TextEncoder().encode(prompt));
+      await writer.close();
     }
+
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+
+    const trimmed = stdout.trim();
+
+    if (exitCode !== 0) {
+      const errorMsg = stderr.trim() || trimmed || `acpx exec failed with exit code ${exitCode}`;
+      throw new CompleteError(errorMsg, exitCode);
+    }
+
+    if (!trimmed) {
+      throw new CompleteError("acpx exec returned empty output");
+    }
+
+    return trimmed;
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {
-    if (options.interactive) {
-      throw new Error("[acp-adapter] interactive plan mode not yet supported via ACP");
-    }
-
-    const model = options.modelDef?.model ?? this.binary;
-    const cmd = [this.binary, "--permission-mode", this.config.permissionMode, "--model", model].join(" ");
-
-    const client = _acpAdapterDeps.createClient(cmd);
-    await client.start();
-    let session: AcpSession | undefined;
-
-    try {
-      session = await client.createSession({
-        agentName: this.config.agentName,
-        permissionMode: this.config.permissionMode,
-      });
-
-      let response: AcpSessionResponse;
-      try {
-        response = await session.prompt(options.prompt);
-      } catch (err) {
-        throw new Error(`[acp-adapter] plan() ACP session failed: ${(err as Error).message}`, { cause: err });
-      }
-
-      const specContent = extractAssistantText(response);
-      if (!specContent) {
-        throw new Error("[acp-adapter] plan() returned empty spec content");
-      }
-
-      return { specContent };
-    } finally {
-      if (session) {
-        await session.close().catch(() => {});
-      }
-      await client.close().catch(() => {});
-    }
+    const model = options.modelDef?.model;
+    const specContent = await this.complete(options.prompt, { model });
+    return { specContent };
   }
 
   async decompose(options: DecomposeOptions): Promise<DecomposeResult> {
-    const model = options.modelDef?.model ?? this.binary;
-    const cmd = [this.binary, "--permission-mode", this.config.permissionMode, "--model", model].join(" ");
+    const model = options.modelDef?.model;
+    const prompt = buildDecomposePrompt(options);
+    const output = await this.complete(prompt, { model, jsonMode: true });
 
-    const client = _acpAdapterDeps.createClient(cmd);
-    await client.start();
-    let session: AcpSession | undefined;
-
+    let stories: ReturnType<typeof parseDecomposeOutput>;
     try {
-      session = await client.createSession({
-        agentName: this.config.agentName,
-        permissionMode: this.config.permissionMode,
-      });
-
-      const prompt = buildDecomposePrompt(options);
-      let response: AcpSessionResponse;
-      try {
-        response = await session.prompt(prompt);
-      } catch (err) {
-        throw new Error(`[acp-adapter] decompose() ACP session failed: ${(err as Error).message}`, { cause: err });
-      }
-
-      const output = extractAssistantText(response);
-      let stories: ReturnType<typeof parseDecomposeOutput>;
-      try {
-        stories = parseDecomposeOutput(output);
-      } catch (err) {
-        throw new Error(`[acp-adapter] decompose() failed to parse stories: ${(err as Error).message}`, { cause: err });
-      }
-
-      return { stories };
-    } finally {
-      if (session) {
-        await session.close().catch(() => {});
-      }
-      await client.close().catch(() => {});
+      stories = parseDecomposeOutput(output);
+    } catch (err) {
+      throw new Error(`[acp-adapter] decompose() failed to parse stories: ${(err as Error).message}`, { cause: err });
     }
+
+    return { stories };
   }
 }
