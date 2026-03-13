@@ -295,36 +295,13 @@ export async function generateAcceptanceTests(
   const prompt = buildAcceptanceTestPrompt(criteria, options.featureName, options.codebaseContext);
 
   try {
-    // Call agent to generate tests (using decompose as pattern)
-    const skipPerms = options.config.quality?.dangerouslySkipPermissions ?? true;
-    const permArgs = skipPerms ? ["--dangerously-skip-permissions"] : [];
-    const cmd = [adapter.binary, "--model", options.modelDef.model, ...permArgs, "-p", prompt];
-
-    const proc = Bun.spawn(cmd, {
-      cwd: options.workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-      env: {
-        ...process.env,
-        ...(options.modelDef.env || {}),
-      },
+    // Call adapter to generate tests
+    const output = await adapter.complete(prompt, {
+      model: options.modelDef.model,
     });
 
-    const exitCode = await proc.exited;
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
-
-    if (exitCode !== 0) {
-      logger.warn("acceptance", "⚠ Agent test generation failed", { stderr });
-      // Fall back to skeleton
-      return {
-        testCode: generateSkeletonTests(options.featureName, criteria),
-        criteria,
-      };
-    }
-
     // Extract test code from output
-    const testCode = extractTestCode(stdout);
+    const testCode = extractTestCode(output);
 
     return {
       testCode,
