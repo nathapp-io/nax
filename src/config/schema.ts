@@ -53,7 +53,7 @@ export type {
 export { resolveModel } from "./types";
 
 // Zod schemas
-export { NaxConfigSchema } from "./schemas";
+export { NaxConfigSchema, AcceptanceConfigSchema } from "./schemas";
 
 // Default config
 export { DEFAULT_CONFIG } from "./defaults";

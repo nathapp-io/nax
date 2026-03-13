@@ -210,7 +210,7 @@ const PlanConfigSchema = z.object({
   outputPath: z.string().min(1, "plan.outputPath must be non-empty"),
 });
 
-const AcceptanceConfigSchema = z.object({
+export const AcceptanceConfigSchema = z.object({
   enabled: z.boolean(),
   maxRetries: z.number().int().nonnegative(),
   generateTests: z.boolean(),

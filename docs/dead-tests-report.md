@@ -1,17 +1,8 @@
 # Dead Tests Report
 
-Generated: 2026-03-13T02:27:58.168Z
+Generated: 2026-03-13T02:38:26.376Z
 
 Found **8** test file(s) with issues:
-
-## test/unit/worktree-manager.test.ts
-
-### Dead Feature References
-
-- **worktree** — references removed feature
-
-**Recommendation:** Review this test file. 
-Either fix the imports/references, update the test, or delete it if no longer needed.
 
 ## test/unit/verification/smart-runner-discovery.test.ts
 
@@ -24,11 +15,12 @@ Either fix the imports/references, update the test, or delete it if no longer ne
 **Recommendation:** Review this test file. 
 Either fix the imports/references, update the test, or delete it if no longer needed.
 
-## test/unit/acceptance/component-strategy-integration.test.ts
+## test/unit/scripts/check-test-overlap.test.ts
 
 ### Missing Imports
 
-- `src/ink-counter` — module not found
+- `src/mymodule` — module not found
+- `src/other` — module not found
 
 **Recommendation:** Review this test file. 
 Either fix the imports/references, update the test, or delete it if no longer needed.
@@ -46,12 +38,29 @@ Either fix the imports/references, update the test, or delete it if no longer ne
 **Recommendation:** Review this test file. 
 Either fix the imports/references, update the test, or delete it if no longer needed.
 
-## test/unit/scripts/check-test-overlap.test.ts
+## test/unit/worktree-manager.test.ts
+
+### Dead Feature References
+
+- **worktree** — references removed feature
+
+**Recommendation:** Review this test file. 
+Either fix the imports/references, update the test, or delete it if no longer needed.
+
+## test/unit/acceptance/component-strategy-integration.test.ts
 
 ### Missing Imports
 
-- `src/mymodule` — module not found
-- `src/other` — module not found
+- `src/ink-counter` — module not found
+
+**Recommendation:** Review this test file. 
+Either fix the imports/references, update the test, or delete it if no longer needed.
+
+## test/integration/execution/parallel.test.ts
+
+### Dead Feature References
+
+- **worktree** — references removed feature
 
 **Recommendation:** Review this test file. 
 Either fix the imports/references, update the test, or delete it if no longer needed.
@@ -66,15 +75,6 @@ Either fix the imports/references, update the test, or delete it if no longer ne
 Either fix the imports/references, update the test, or delete it if no longer needed.
 
 ## test/integration/worktree/manager.test.ts
-
-### Dead Feature References
-
-- **worktree** — references removed feature
-
-**Recommendation:** Review this test file. 
-Either fix the imports/references, update the test, or delete it if no longer needed.
-
-## test/integration/execution/parallel.test.ts
 
 ### Dead Feature References
 
