@@ -471,7 +471,7 @@ export interface NaxConfig {
 
 /** Agent protocol configuration (ACP-003) */
 export interface AgentConfig {
-  /** Protocol to use for agent communication (default: 'cli') */
+  /** Protocol to use for agent communication (default: 'acp') */
   protocol?: "acp" | "cli";
   /** ACP permission mode (default: 'approve-all') */
   acpPermissionMode?: string;

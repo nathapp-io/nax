@@ -82,7 +82,7 @@ describe("ACP-002: AcpAgentAdapter core", () => {
 
 describe("ACP-003: Registry and config toggle", () => {
   test("config schema file contains agent.protocol field", async () => {
-    const source = await Bun.file("src/config/schema.ts").text();
+    const source = await Bun.file("src/config/runtime-types.ts").text();
     expect(source).toContain("protocol");
   });
 
@@ -194,10 +194,9 @@ describe("Cross-cutting: backward compatibility", () => {
     expect(source).toContain("getAgent");
   });
 
-  test("Default protocol is cli (backward compatible)", async () => {
-    const source = await Bun.file("src/config/schema.ts").text();
-    // Schema should default to cli for backward compat
-    const hasCli = source.includes('cli');
-    expect(hasCli).toBe(true);
+  test("Default protocol is acp", async () => {
+    const source = await Bun.file("src/config/defaults.ts").text();
+    // Default protocol is acp
+    expect(source).toContain('"acp"');
   });
 });

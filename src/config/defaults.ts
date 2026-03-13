@@ -203,6 +203,9 @@ export const DEFAULT_CONFIG: NaxConfig = {
     },
   },
   prompts: {},
+  agent: {
+    protocol: "acp",
+  },
   decompose: {
     trigger: "auto",
     maxAcceptanceCriteria: 6,
