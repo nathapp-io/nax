@@ -1,6 +1,6 @@
 # Test Overlap Report
 
-Generated: 2026-03-13T06:38:00.714Z
+Generated: 2026-03-13T07:00:10.660Z
 
 ## REDUNDANT
 
@@ -22,7 +22,7 @@ Found 3 integration test(s) with partial unit test coverage:
 
 ## UNIQUE
 
-Found 66 unique integration test(s) with no unit test coverage:
+Found 67 unique integration test(s) with no unit test coverage:
 
 - test/integration/pipeline/verify-stage.test.ts
 - test/integration/pipeline/reporter-lifecycle.test.ts
@@ -49,6 +49,7 @@ Found 66 unique integration test(s) with no unit test coverage:
 - test/integration/plan/logger.test.ts
 - test/integration/worktree/worktree-merge.test.ts
 - test/integration/worktree/manager.test.ts
+- test/integration/agents/acp/tdd-flow.test.ts
 - test/integration/cli/cli-precheck.test.ts
 - test/integration/cli/cli-core.test.ts
 - test/integration/cli/cli-config.test.ts
