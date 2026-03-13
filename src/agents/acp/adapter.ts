@@ -111,11 +111,16 @@ function buildAcpxExecCommand(opts: {
   workdir?: string;
   timeoutSeconds?: number;
   format?: "text" | "json" | "quiet";
+  jsonStrict?: boolean;
 }): string[] {
   const cmd = ["acpx", "--approve-all"];
 
   if (opts.format) {
     cmd.push("--format", opts.format);
+  }
+
+  if (opts.jsonStrict) {
+    cmd.push("--json-strict");
   }
 
   if (opts.model) {
@@ -139,6 +144,124 @@ function buildAcpxExecCommand(opts: {
 interface AcpxTokenUsage {
   input_tokens: number;
   output_tokens: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// JSON-RPC event parsing for interaction bridge
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** JSON-RPC message from acpx --format json --json-strict */
+interface JsonRpcMessage {
+  jsonrpc: "2.0";
+  method?: string;
+  params?: {
+    sessionId: string;
+    update?: {
+      sessionUpdate: string;
+      content?: {
+        type: string;
+        text?: string;
+      };
+      used?: number;
+      size?: number;
+      cost?: { amount: number; currency: string };
+    };
+  };
+  id?: number | string;
+  result?: unknown;
+  error?: { code: number; message: string };
+}
+
+/**
+ * Stream stdout line-by-line, parse JSON-RPC, detect questions, call bridge.
+ */
+async function streamJsonRpcEvents(
+  stdout: ReadableStream<Uint8Array>,
+  bridge: AgentRunOptions["interactionBridge"],
+  sessionId: string,
+): Promise<{ text: string; tokenUsage?: AcpxTokenUsage }> {
+  let accumulatedText = "";
+  let tokenUsage: AcpxTokenUsage | undefined;
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const reader = stdout.getReader();
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+
+        let msg: JsonRpcMessage;
+        try {
+          msg = JSON.parse(line);
+        } catch {
+          // Not JSON - skip
+          continue;
+        }
+
+        // Handle session/update notifications
+        if (msg.method === "session/update" && msg.params?.update) {
+          const update = msg.params.update;
+
+          // Accumulate assistant text chunks
+          if (
+            update.sessionUpdate === "agent_message_chunk" &&
+            update.content?.type === "text" &&
+            update.content.text
+          ) {
+            accumulatedText += update.content.text;
+
+            // Check for question via bridge if provided
+            if (bridge?.detectQuestion && bridge.onQuestionDetected) {
+              const isQuestion = await bridge.detectQuestion(accumulatedText);
+              if (isQuestion) {
+                const response = await bridge.onQuestionDetected(accumulatedText);
+                // In a full implementation, we'd inject this response back into the session
+                // For now, we just capture the interaction
+                accumulatedText += `\n\n[Human response: ${response}]`;
+              }
+            }
+          }
+
+          // Capture token usage
+          if (update.sessionUpdate === "usage_update" && update.used !== undefined && update.size !== undefined) {
+            // usage_update gives us used/total, not input/output breakdown
+            // Estimate: assume 30% input, 70% output for running prompts
+            const total = update.used;
+            tokenUsage = {
+              input_tokens: Math.floor(total * 0.3),
+              output_tokens: Math.floor(total * 0.7),
+            };
+          }
+
+          // Capture final cost
+          if (update.sessionUpdate === "usage_update" && update.cost) {
+            // Cost is already calculated by the agent
+          }
+        }
+
+        // Handle result (final response)
+        if (msg.result) {
+          const result = msg.result as Record<string, unknown>;
+          if (typeof result === "string") {
+            accumulatedText += result;
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return { text: accumulatedText.trim(), tokenUsage };
 }
 
 /**
@@ -272,12 +395,15 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   private async _runOnce(options: AgentRunOptions, startTime: number): Promise<AgentResult> {
+    const hasBridge = !!options.interactionBridge;
     const cmd = buildAcpxExecCommand({
       agentName: this.name,
       model: options.modelDef.model,
       workdir: options.workdir,
       timeoutSeconds: options.timeoutSeconds,
-      format: "json",
+      // Use json-strict when bridge is enabled for structured JSON-RPC events
+      format: hasBridge ? "json" : "json",
+      jsonStrict: hasBridge,
     });
 
     // Prompt is passed via stdin with --file - (supports arbitrarily long prompts)
@@ -292,18 +418,38 @@ export class AcpAgentAdapter implements AgentAdapter {
     proc.stdin.write(options.prompt);
     proc.stdin.end();
 
-    // Read stdout + stderr concurrently with process exit (avoid deadlock on >64KB)
-    const [exitCode, stdout, stderr] = await Promise.all([
+    let parsed: { text: string; tokenUsage?: AcpxTokenUsage };
+    let stderr = "";
+
+    if (hasBridge) {
+      // Stream JSON-RPC events for interaction bridge
+      const sessionId = `session-${Date.now()}`;
+      parsed = await streamJsonRpcEvents(proc.stdout, options.interactionBridge, sessionId);
+      stderr = await new Response(proc.stderr).text();
+    } else {
+      // Non-streaming: collect all output at once
+      const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+      // Handle early exit
+      if (exitCode !== 0 && !hasBridge) {
+        stderr = await new Response(proc.stderr).text();
+      }
+      parsed = parseAcpxJsonOutput(hasBridge ? "" : await new Response(proc.stdout).text());
+    }
+
+    const [exitCode, stdout] = await Promise.all([
       proc.exited,
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
+      hasBridge ? Promise.resolve("") : new Response(proc.stdout).text(),
     ]);
 
     const durationMs = Date.now() - startTime;
-    const parsed = parseAcpxJsonOutput(stdout);
 
-    if (exitCode !== 0 && !parsed.text) {
-      const errorMsg = stderr.trim() || parsed.error || `acpx exec failed with exit code ${exitCode}`;
+    // If not using bridge, parse normally
+    if (!hasBridge) {
+      parsed = parseAcpxJsonOutput(stdout);
+    }
+
+    if (exitCode !== 0 && !parsed.text && !stderr) {
+      const errorMsg = `acpx exec failed with exit code ${exitCode}`;
       return {
         success: false,
         exitCode,
@@ -314,12 +460,13 @@ export class AcpAgentAdapter implements AgentAdapter {
       };
     }
 
+    const errorMsg = stderr.trim() || parsed.text?.includes("error") ? parsed.text : "";
     const estimatedCost = parsed.tokenUsage ? estimateCostFromTokenUsage(parsed.tokenUsage, options.modelDef.model) : 0;
 
     return {
       success: exitCode === 0,
       exitCode,
-      output: parsed.text || stdout.trim(),
+      output: parsed.text || stdout.trim() || errorMsg,
       rateLimited: false,
       durationMs,
       estimatedCost,

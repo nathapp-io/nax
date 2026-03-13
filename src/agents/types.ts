@@ -59,6 +59,11 @@ export interface AgentRunOptions {
   env?: Record<string, string>;
   /** Use --dangerously-skip-permissions flag (default: true) */
   dangerouslySkipPermissions?: boolean;
+  /** Interaction bridge for mid-session human interaction (ACP) */
+  interactionBridge?: {
+    detectQuestion: (text: string) => Promise<boolean>;
+    onQuestionDetected: (text: string) => Promise<string>;
+  };
 }
 
 /**
