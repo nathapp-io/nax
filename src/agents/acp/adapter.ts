@@ -8,8 +8,10 @@
  * See: https://github.com/openclaw/acpx
  */
 
+import { withProcessTimeout } from "../../execution/timeout-handler";
 import { getLogger } from "../../logger";
 import { buildDecomposePrompt, parseDecomposeOutput } from "../claude-decompose";
+import { estimateCostByDuration, estimateCostFromOutput } from "../cost";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -24,6 +26,21 @@ import type {
 import { CompleteError } from "../types";
 import { estimateCostFromTokenUsage } from "./cost";
 import type { AgentRegistryEntry } from "./types";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Maximum characters to capture from agent stdout. */
+const MAX_AGENT_OUTPUT_CHARS = 5000;
+/** Maximum characters to capture from agent stderr. */
+const MAX_AGENT_STDERR_CHARS = 1000;
+/** Grace period in ms between SIGTERM and SIGKILL on timeout. */
+const SIGKILL_GRACE_PERIOD_MS = 5000;
+/** Buffer added to timeoutSeconds for the outer acpx watchdog. */
+const ACPX_WATCHDOG_BUFFER_MS = 30_000;
+/** Fallback timeout for stdout drain after process exits. */
+const STDOUT_DRAIN_TIMEOUT_MS = 5_000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Agent registry — maps nax agent names to acpx agent identifiers
@@ -76,7 +93,14 @@ export const _acpAdapterDeps = {
 
   spawn(
     cmd: string[],
-    opts: { cwd?: string; stdin?: "pipe" | "inherit"; stdout: "pipe"; stderr: "pipe"; timeout?: number },
+    opts: {
+      cwd?: string;
+      stdin?: "pipe" | "inherit";
+      stdout: "pipe";
+      stderr: "pipe";
+      timeout?: number;
+      env?: Record<string, string | undefined>;
+    },
   ): {
     stdout: ReadableStream<Uint8Array>;
     stderr: ReadableStream<Uint8Array>;
@@ -102,6 +126,61 @@ function isRateLimitError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const msg = err.message.toLowerCase();
   return msg.includes("rate limit") || msg.includes("rate_limit") || msg.includes("429");
+}
+
+function detectRateLimit(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes("rate limit") ||
+    lower.includes("rate_limit") ||
+    lower.includes("429") ||
+    lower.includes("too many requests")
+  );
+}
+
+function isSpawnError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return err.message.includes("spawn") || err.message.includes("ENOENT");
+}
+
+/**
+ * Build allowed environment variables for spawned acpx processes.
+ * SEC-4: Only pass essential env vars to prevent leaking sensitive data.
+ */
+export function buildAllowedEnv(options?: {
+  env?: Record<string, string>;
+  modelDef?: { env?: Record<string, string | undefined> };
+}): Record<string, string | undefined> {
+  const allowed: Record<string, string | undefined> = {};
+
+  const essentialVars = ["PATH", "HOME", "TMPDIR", "NODE_ENV", "USER", "LOGNAME"];
+  for (const varName of essentialVars) {
+    if (process.env[varName]) allowed[varName] = process.env[varName];
+  }
+
+  const apiKeyVars = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "CLAUDE_API_KEY"];
+  for (const varName of apiKeyVars) {
+    if (process.env[varName]) allowed[varName] = process.env[varName];
+  }
+
+  const allowedPrefixes = ["CLAUDE_", "NAX_", "CLAW_", "TURBO_", "ACPX_", "CODEX_", "GEMINI_"];
+  for (const [key, value] of Object.entries(process.env)) {
+    if (allowedPrefixes.some((prefix) => key.startsWith(prefix))) {
+      allowed[key] = value;
+    }
+  }
+
+  // modelDef.env overrides (e.g., per-model API key or base URL)
+  if (options?.modelDef?.env) {
+    Object.assign(allowed, options.modelDef.env);
+  }
+
+  // options.env overrides (caller-supplied, highest priority)
+  if (options?.env) {
+    Object.assign(allowed, options.env);
+  }
+
+  return allowed;
 }
 
 /**
@@ -374,6 +453,14 @@ export class AcpAgentAdapter implements AgentAdapter {
     });
   }
 
+  /**
+   * Build filtered environment variables for spawned acpx processes.
+   * SEC-4: Only passes essential and API key vars, plus options.env overrides.
+   */
+  buildAllowedEnv(options?: AgentRunOptions): Record<string, string | undefined> {
+    return buildAllowedEnv({ env: options?.env, modelDef: options?.modelDef });
+  }
+
   async run(options: AgentRunOptions): Promise<AgentResult> {
     const startTime = Date.now();
     let lastError: Error | undefined;
@@ -392,6 +479,19 @@ export class AcpAgentAdapter implements AgentAdapter {
 
       try {
         const result = await this._runOnce(options, startTime);
+
+        // Retry on rate limit (mirrors ClaudeCodeAdapter behaviour)
+        if (result.rateLimited && attempt < MAX_RATE_LIMIT_RETRIES - 1) {
+          const backoffMs = 2 ** (attempt + 1) * 1000;
+          logger?.warn("acp-adapter", "Rate limited, retrying", {
+            backoffSeconds: backoffMs / 1000,
+            attempt: attempt + 1,
+            maxRetries: MAX_RATE_LIMIT_RETRIES,
+          });
+          await _acpAdapterDeps.sleep(backoffMs);
+          continue;
+        }
+
         if (!result.success) {
           logger?.warn("acp-adapter", `Run failed for ${this.name}`, {
             exitCode: result.exitCode,
@@ -412,7 +512,17 @@ export class AcpAgentAdapter implements AgentAdapter {
           attempt: attempt + 1,
           error: error.message,
         });
-        if (!isRateLimitError(error)) break;
+
+        const shouldRetry = isRateLimitError(error) || isSpawnError(error);
+        if (!shouldRetry || attempt >= MAX_RATE_LIMIT_RETRIES - 1) break;
+
+        const backoffMs = 2 ** (attempt + 1) * 1000;
+        logger?.warn("acp-adapter", "Retrying after error", {
+          reason: isSpawnError(error) ? "spawn-error" : "rate-limit",
+          backoffSeconds: backoffMs / 1000,
+          attempt: attempt + 1,
+        });
+        await _acpAdapterDeps.sleep(backoffMs);
       }
     }
 
@@ -435,7 +545,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       model: options.modelDef.model,
       workdir: options.workdir,
       timeoutSeconds: options.timeoutSeconds,
-      format: hasBridge ? "json" : "json",
+      format: "json",
       jsonStrict: hasBridge,
       skipPermissions: options.dangerouslySkipPermissions,
     });
@@ -448,6 +558,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
+      env: this.buildAllowedEnv(options),
     });
 
     // Register PID for crash recovery cleanup
@@ -464,20 +575,61 @@ export class AcpAgentAdapter implements AgentAdapter {
     let stderr = "";
     let exitCode = 0;
     let stdout = "";
+    let timedOut = false;
+
+    // Outer watchdog: timeoutSeconds covers the agent; add buffer for acpx overhead
+    const watchdogMs = options.timeoutSeconds * 1000 + ACPX_WATCHDOG_BUFFER_MS;
 
     try {
       if (hasBridge) {
         // Stream JSON-RPC events for interaction bridge
         const sessionId = `session-${Date.now()}`;
-        parsed = await streamJsonRpcEvents(proc.stdout, options.interactionBridge, sessionId);
+        const streamPromise = streamJsonRpcEvents(proc.stdout, options.interactionBridge, sessionId);
+
+        const timeoutResult = await withProcessTimeout(proc, watchdogMs, {
+          graceMs: SIGKILL_GRACE_PERIOD_MS,
+          onTimeout: () => {
+            timedOut = true;
+          },
+        });
+        exitCode = timeoutResult.exitCode;
+        timedOut = timeoutResult.timedOut;
+
+        parsed = await streamPromise;
         stderr = await new Response(proc.stderr).text();
-        exitCode = await proc.exited;
       } else {
-        // Non-streaming: collect all output at once (stdout only read ONCE)
-        [exitCode, stdout, stderr] = await Promise.all([
-          proc.exited,
-          new Response(proc.stdout).text(),
-          new Response(proc.stderr).text(),
+        // Non-streaming: collect all output at once; use watchdog for acpx hang protection
+        const timeoutResult = await withProcessTimeout(proc, watchdogMs, {
+          graceMs: SIGKILL_GRACE_PERIOD_MS,
+          onTimeout: () => {
+            timedOut = true;
+          },
+        });
+        exitCode = timeoutResult.exitCode;
+        timedOut = timeoutResult.timedOut;
+
+        // Drain stdout/stderr with fallback timeout (safety net for pipe backpressure)
+        let stdoutTimeoutId: ReturnType<typeof setTimeout> | undefined;
+        let stderrTimeoutId: ReturnType<typeof setTimeout> | undefined;
+        [stdout, stderr] = await Promise.all([
+          Promise.race([
+            new Response(proc.stdout).text(),
+            new Promise<string>((resolve) => {
+              stdoutTimeoutId = setTimeout(() => resolve(""), STDOUT_DRAIN_TIMEOUT_MS);
+            }),
+          ]).then((v) => {
+            clearTimeout(stdoutTimeoutId);
+            return v;
+          }),
+          Promise.race([
+            new Response(proc.stderr).text(),
+            new Promise<string>((resolve) => {
+              stderrTimeoutId = setTimeout(() => resolve(""), STDOUT_DRAIN_TIMEOUT_MS);
+            }),
+          ]).then((v) => {
+            clearTimeout(stderrTimeoutId);
+            return v;
+          }),
         ]);
         parsed = parseAcpxJsonOutput(stdout);
       }
@@ -491,28 +643,64 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     const durationMs = Date.now() - startTime;
 
-    if (exitCode !== 0 && !parsed.text && !stderr) {
-      const errorMsg = `acpx exec failed with exit code ${exitCode}`;
+    // Map timeout to exit code 124 (matches POSIX timeout convention)
+    const actualExitCode = timedOut ? 124 : exitCode;
+
+    // Rate limit detection: scan both stdout and stderr
+    const fullOutput = stdout + stderr + (parsed.text ?? "");
+    const rateLimited = detectRateLimit(fullOutput);
+
+    // Cost estimation: prefer token-based, fall back to duration-based
+    let estimatedCost: number;
+    if (parsed.tokenUsage) {
+      estimatedCost = estimateCostFromTokenUsage(parsed.tokenUsage, options.modelDef.model);
+    } else {
+      // Try regex-based extraction from raw output
+      const regexEstimate = estimateCostFromOutput(options.modelTier, fullOutput);
+      if (regexEstimate) {
+        estimatedCost = regexEstimate.cost;
+        if (regexEstimate.confidence === "estimated") {
+          logger?.warn("acp-adapter", "Cost estimation using regex parsing (estimated confidence)", {
+            cost: estimatedCost,
+          });
+        }
+      } else {
+        // Duration-based fallback with 1.5x multiplier (matches claude adapter)
+        const fallback = estimateCostByDuration(options.modelTier, durationMs);
+        estimatedCost = fallback.cost * 1.5;
+        logger?.warn("acp-adapter", "Cost estimation fallback (duration-based)", {
+          modelTier: options.modelTier,
+          cost: estimatedCost,
+        });
+      }
+    }
+
+    if (actualExitCode !== 0 && !parsed.text && !stderr) {
+      const errorMsg = timedOut
+        ? `acpx exec timed out after ${options.timeoutSeconds}s`
+        : `acpx exec failed with exit code ${exitCode}`;
       return {
         success: false,
-        exitCode,
+        exitCode: actualExitCode,
         output: errorMsg,
-        rateLimited: isRateLimitError(new Error(errorMsg)),
+        rateLimited: detectRateLimit(errorMsg),
         durationMs,
         estimatedCost: 0,
+        pid: proc.pid,
       };
     }
 
-    const errorMsg = stderr.trim() || parsed.text?.includes("error") ? parsed.text : "";
-    const estimatedCost = parsed.tokenUsage ? estimateCostFromTokenUsage(parsed.tokenUsage, options.modelDef.model) : 0;
+    const outputText = parsed.text || stdout.trim();
 
     return {
-      success: exitCode === 0,
-      exitCode,
-      output: parsed.text || stdout.trim() || errorMsg,
-      rateLimited: false,
+      success: exitCode === 0 && !timedOut,
+      exitCode: actualExitCode,
+      output: outputText.slice(-MAX_AGENT_OUTPUT_CHARS),
+      stderr: stderr.slice(-MAX_AGENT_STDERR_CHARS) || undefined,
+      rateLimited,
       durationMs,
       estimatedCost,
+      pid: proc.pid,
     };
   }
 
@@ -530,6 +718,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
+      env: this.buildAllowedEnv(),
     });
 
     // Write prompt to stdin (Bun FileSink API)
