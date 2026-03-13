@@ -3,7 +3,7 @@
   "feature": "ui-test-strategies",
   "branchName": "feat/ui-test-strategies",
   "createdAt": "2026-03-12T20:56:00.000Z",
-  "updatedAt": "2026-03-12T20:56:00.000Z",
+  "updatedAt": "2026-03-13T01:19:43.014Z",
   "userStories": [
     {
       "id": "ACS-001",
@@ -18,12 +18,25 @@
         "Default config omits testStrategy and testFramework (both undefined)",
         "Existing tests pass without modification — backward compatible"
       ],
-      "tags": ["config", "types"],
+      "tags": [
+        "config",
+        "types"
+      ],
       "dependencies": [],
       "status": "pending",
       "passes": false,
       "escalations": [],
-      "attempts": 0
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Type system extension with Zod schema validation across multiple config files—straightforward but requires coordinating AcceptanceTestStrategy type, interface updates, schema changes, and defaults.",
+        "contentHash": "ea2377582f3d7ab9d1f6d509333336d13f7fbb8944bd2c03fcfcd92addce8354"
+      }
     },
     {
       "id": "ACS-002",
@@ -39,12 +52,20 @@
         "nax init with ink project sets acceptance.testStrategy to 'component' and acceptance.testFramework to 'ink-testing-library'",
         "nax init with bin-only project sets acceptance.testStrategy to 'cli'"
       ],
-      "tags": ["cli", "detection"],
-      "dependencies": ["ACS-001"],
+      "tags": [
+        "cli",
+        "detection"
+      ],
+      "dependencies": [
+        "ACS-001"
+      ],
       "status": "pending",
       "passes": false,
       "escalations": [],
-      "attempts": 0
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "ACS-003",
@@ -60,12 +81,20 @@
         "Template functions exist in src/acceptance/templates/ directory",
         "Generated test files are valid TypeScript that passes tsc --noEmit syntax check"
       ],
-      "tags": ["acceptance", "generator"],
-      "dependencies": ["ACS-001"],
+      "tags": [
+        "acceptance",
+        "generator"
+      ],
+      "dependencies": [
+        "ACS-001"
+      ],
       "status": "pending",
       "passes": false,
       "escalations": [],
-      "attempts": 0
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "ACS-004",
@@ -80,12 +109,21 @@
         "Refinement for unset testStrategy produces current behavior (backward compatible)",
         "Strategy context appears in the system prompt sent to the LLM"
       ],
-      "tags": ["acceptance", "refinement", "llm"],
-      "dependencies": ["ACS-001"],
+      "tags": [
+        "acceptance",
+        "refinement",
+        "llm"
+      ],
+      "dependencies": [
+        "ACS-001"
+      ],
       "status": "pending",
       "passes": false,
       "escalations": [],
-      "attempts": 0
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "ACS-005",
@@ -101,12 +139,22 @@
         "acceptance-setup stage passes testStrategy to both refinement and generator",
         "All existing acceptance tests continue to pass"
       ],
-      "tags": ["test", "integration", "acceptance"],
-      "dependencies": ["ACS-003", "ACS-004"],
+      "tags": [
+        "test",
+        "integration",
+        "acceptance"
+      ],
+      "dependencies": [
+        "ACS-003",
+        "ACS-004"
+      ],
       "status": "pending",
       "passes": false,
       "escalations": [],
-      "attempts": 0
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ]
 }
