@@ -4,33 +4,24 @@
     "id": "run-2026-03-13T01-19-29-932Z",
     "feature": "ui-test-strategies",
     "startedAt": "2026-03-13T01:19:29.932Z",
-    "status": "running",
+    "status": "completed",
     "dryRun": false,
     "pid": 1776
   },
   "progress": {
     "total": 5,
-    "passed": 4,
+    "passed": 5,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 0
   },
   "cost": {
-    "spent": 1.665881,
+    "spent": 2.24773875,
     "limit": 8
   },
-  "current": {
-    "storyId": "ACS-005",
-    "title": "Integration test — component strategy end-to-end with Ink project",
-    "complexity": "medium",
-    "tddStrategy": "test-after",
-    "model": "balanced",
-    "attempt": 1,
-    "phase": "routing"
-  },
-  "iterations": 5,
-  "updatedAt": "2026-03-13T02:29:43.069Z",
-  "durationMs": 4213137,
-  "lastHeartbeat": "2026-03-13T02:29:43.069Z"
+  "current": null,
+  "iterations": 6,
+  "updatedAt": "2026-03-13T02:30:56.606Z",
+  "durationMs": 4286674
 }
