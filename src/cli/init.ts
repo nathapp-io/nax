@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { globalConfigDir, projectConfigDir } from "../config/paths";
 import { getLogger } from "../logger";
 import { initContext } from "./init-context";
-import { buildInitConfig, detectProjectStack } from "./init-detect";
+import { buildInitConfig, detectStack } from "./init-detect";
 import type { ProjectStack } from "./init-detect";
 import { promptsInitCommand } from "./prompts";
 
@@ -183,7 +183,7 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
   }
 
   // Detect project stack and build config
-  const stack = detectProjectStack(projectRoot);
+  const stack = detectStack(projectRoot);
   const projectConfig = buildInitConfig(stack);
   logger.info("init", "Detected project stack", {
     runtime: stack.runtime,
