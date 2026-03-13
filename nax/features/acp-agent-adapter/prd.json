@@ -1,0 +1,318 @@
+{
+  "project": "nax",
+  "feature": "acp-agent-adapter",
+  "branchName": "feat/acp-agent-adapter",
+  "acceptanceCriteria": [
+    "AcpAgentAdapter implements the full AgentAdapter interface (run, complete, plan, decompose, isInstalled, buildCommand)",
+    "agent.run() uses ACP persistent session (start \u2192 createSession \u2192 prompt \u2192 close) instead of Bun.spawn",
+    "adapter.complete() uses ACP one-shot mode and returns text response",
+    "AgentResult.estimatedCost is calculated from ACP cumulative_token_usage, not regex parsing",
+    "Acceptance generators use adapter.complete() instead of raw Bun.spawn",
+    "AcpInteractionBridge forwards sessionUpdate notifications to nax interaction chain",
+    "Human responses from interaction chain are sent as follow-up prompts to the same ACP session",
+    "Config toggle: protocol='acp' uses new adapter, protocol='cli' falls back to existing adapters",
+    "Timeout handling uses ACP cooperative cancel instead of SIGTERM/SIGKILL",
+    "All existing tests pass \u2014 zero regressions"
+  ],
+  "userStories": [
+    {
+      "id": "ACP-001",
+      "title": "Fix acceptance generators to use adapter.complete()",
+      "description": "Refactor `src/acceptance/generator.ts` and `src/acceptance/fix-generator.ts` to use `adapter.complete()` instead of directly spawning `Bun.spawn([adapter.binary, ...])`. This is tech debt that must be fixed before ACP migration.\n\nChanges:\n\n1. In `generator.ts`, replace the `Bun.spawn([adapter.binary, \"--model\", ...])` block (~30 lines around line 301) with a call to `adapter.complete(prompt, { model: options.modelDef.model })`. The adapter is already available in scope.\n\n2. In `fix-generator.ts`, replace the equivalent `Bun.spawn` block (~30 lines around line 231) with `adapter.complete(prompt, { model: modelDef.model })`.\n\n3. Remove the direct dependency on `adapter.binary` in both files \u2014 the adapter interface should be the only contract.\n\n4. Update the injectable `_deps` objects to use `adapter` instead of raw spawn, matching the pattern in `classifier.ts` and `refinement.ts`.\n\nWrite tests verifying the adapter.complete() calls in `test/unit/acceptance/generator-adapter.test.ts`.",
+      "acceptanceCriteria": [
+        "generator.ts calls adapter.complete() instead of Bun.spawn for LLM calls",
+        "fix-generator.ts calls adapter.complete() instead of Bun.spawn for LLM calls",
+        "Neither file references adapter.binary directly",
+        "Injectable _deps pattern used for testability",
+        "Existing acceptance generator tests still pass",
+        "New test file verifies adapter.complete() is called with correct prompt and model"
+      ],
+      "tags": [
+        "refactor",
+        "tech-debt"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/acceptance/generator.ts",
+        "src/acceptance/fix-generator.ts",
+        "src/acceptance/refinement.ts",
+        "src/analyze/classifier.ts"
+      ],
+      "expectedFiles": [
+        "src/acceptance/generator.ts",
+        "src/acceptance/fix-generator.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Straightforward refactor following established _deps pattern seen in classifier.ts and refinement.ts. No new architecture \u2014 just replacing Bun.spawn with adapter.complete()."
+      }
+    },
+    {
+      "id": "ACP-002",
+      "title": "ACP adapter core \u2014 run() and complete() via AcpClient",
+      "description": "Create the core `AcpAgentAdapter` class implementing `AgentAdapter` interface, using acpx's `AcpClient` for agent communication.\n\nNew files:\n\n1. `src/agents/acp/adapter.ts` \u2014 `AcpAgentAdapter` class:\n   - Constructor takes `agentName: string` (e.g., 'claude', 'codex', 'gemini')\n   - `resolveAgentCommand(agentName)` maps name to ACP command via acpx agent registry\n   - `run(options)` \u2192 AcpClient.start() \u2192 createSession() \u2192 prompt() \u2192 close() \u2192 return AgentResult\n   - `complete(prompt, options?)` \u2192 same flow but one-shot, extract text from response\n   - `isInstalled()` \u2192 check if agent binary exists on PATH\n   - `buildCommand(options)` \u2192 return the ACP command array (for dry-run display)\n   - Map `AgentResult` fields from ACP response: success from stopReason, cost from cumulative_token_usage, output from session messages\n   - Rate limit retry: detect rate limit from ACP error, retry with backoff (same logic as current ClaudeCodeAdapter)\n   - Timeout: use cooperative cancel via `client.cancelActivePrompt()` with fallback to close()\n\n2. `src/agents/acp/types.ts` \u2014 ACP-specific types:\n   - `AcpAdapterConfig` \u2014 agent name, permission mode, timeouts\n   - `AcpRunContext` \u2014 internal state during a run\n\n3. `src/agents/acp/index.ts` \u2014 barrel exports\n\nDependency: `acpx` (add to package.json). Import `AcpClient` and types from acpx.\n\nPermission mode: always `approve-all` for headless execution (matches current `--dangerously-skip-permissions`).\n\nWrite tests in `test/unit/agents/acp/adapter.test.ts`. Mock `AcpClient` \u2014 do not spawn real agents.",
+      "acceptanceCriteria": [
+        "AcpAgentAdapter implements AgentAdapter interface with all required methods",
+        "run() creates AcpClient, starts session, sends prompt, returns AgentResult",
+        "complete() works in one-shot mode and returns trimmed text response",
+        "AgentResult.estimatedCost uses cumulative_token_usage from ACP session",
+        "AgentResult.success maps correctly from ACP stopReason (end_turn=true, cancelled/error=false)",
+        "Rate limit retry works with exponential backoff (3 attempts max)",
+        "Timeout triggers cooperative cancel via AcpClient",
+        "isInstalled() checks if agent binary exists on PATH",
+        "All AcpClient interactions are mockable via injectable _deps pattern"
+      ],
+      "tags": [
+        "feature",
+        "architecture"
+      ],
+      "dependencies": [
+        "ACP-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/agents/claude.ts",
+        "src/agents/claude-execution.ts",
+        "src/agents/types.ts",
+        "src/agents/types-extended.ts",
+        "src/agents/cost.ts"
+      ],
+      "expectedFiles": [
+        "src/agents/acp/adapter.ts",
+        "src/agents/acp/types.ts",
+        "src/agents/acp/index.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 3,
+      "routing": {
+        "complexity": "complex",
+        "initialComplexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Core architectural change \u2014 new adapter wrapping external AcpClient library, mapping between two different result/error models, timeout handling, retry logic. Requires careful interface mapping and thorough mocking."
+      }
+    },
+    {
+      "id": "ACP-003",
+      "title": "Registry integration and config toggle",
+      "description": "Integrate `AcpAgentAdapter` into nax's agent registry with a config toggle to switch between ACP and legacy CLI adapters.\n\nChanges:\n\n1. `src/agents/registry.ts` \u2014 update `getAgent(name)` to return `AcpAgentAdapter` when config specifies `protocol: 'acp'`, or legacy adapter when `protocol: 'cli'` (default: 'cli' for backward compatibility).\n\n2. `src/config/schema.ts` \u2014 add `agent.protocol` field to NaxConfig: `'acp' | 'cli'` (default: 'cli'). Add `agent.acpPermissionMode` (default: 'approve-all').\n\n3. Registry should create ONE `AcpAgentAdapter` per agent name (not per call) \u2014 reuse across the run.\n\n4. Update `checkAgentHealth()` and `getInstalledAgents()` to work with ACP adapter.\n\n5. Update `src/execution/lifecycle/run-initialization.ts` to log which protocol is active.\n\nWrite tests in `test/unit/agents/acp/registry.test.ts`.",
+      "acceptanceCriteria": [
+        "getAgent('claude') returns AcpAgentAdapter when config.agent.protocol is 'acp'",
+        "getAgent('claude') returns ClaudeCodeAdapter when config.agent.protocol is 'cli' or unset",
+        "Config schema accepts agent.protocol field with 'acp' or 'cli' values",
+        "Default protocol is 'cli' for backward compatibility",
+        "AcpAgentAdapter instances are reused per agent name within a run",
+        "checkAgentHealth() works with both ACP and legacy adapters",
+        "Run initialization logs the active protocol"
+      ],
+      "tags": [
+        "feature",
+        "config"
+      ],
+      "dependencies": [
+        "ACP-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/agents/registry.ts",
+        "src/config/schema.ts",
+        "src/execution/lifecycle/run-initialization.ts",
+        "src/agents/acp/adapter.ts"
+      ],
+      "expectedFiles": [
+        "src/agents/registry.ts",
+        "src/config/schema.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 2,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Config toggle + registry wiring. Follows existing patterns. Main complexity is ensuring backward compatibility and correct adapter selection logic."
+      }
+    },
+    {
+      "id": "ACP-004",
+      "title": "Interaction bridge \u2014 sessionUpdate to interaction chain",
+      "description": "Create `AcpInteractionBridge` that connects ACP `sessionUpdate` notifications to nax's existing interaction chain, enabling mid-session agent \u2194 human communication.\n\nNew file: `src/agents/acp/interaction-bridge.ts`\n\n1. `AcpInteractionBridge` class:\n   - Constructor takes `InteractionPlugin` (from `src/interaction/types.ts`) and bridge config\n   - `onSessionUpdate(notification: SessionNotification)` \u2014 called by AcpClient's onSessionUpdate callback\n   - Detects question patterns in agent messages (\"?\", \"which\", \"should I\", \"unclear\", \"please clarify\")\n   - When question detected: creates `InteractionRequest` with type='input', sends via interaction chain\n   - `waitForResponse(requestId, timeout)` \u2014 blocks until human responds via interaction chain\n   - `getFollowUpPrompt(response)` \u2014 formats human response as follow-up prompt\n\n2. Update `AcpAgentAdapter.run()` to:\n   - Accept optional `InteractionPlugin` (from pipeline context `ctx.interaction`)\n   - Create bridge if interaction plugin is available\n   - When bridge receives a question: pause prompt, send to interaction chain, wait for response, send follow-up prompt to same session\n\n3. Bridge respects timeout \u2014 if human doesn't respond within configured time, falls back to 'continue' (agent decides).\n\n4. Bridge emits structured events for logging/reporting.\n\nWrite tests in `test/unit/agents/acp/interaction-bridge.test.ts`. Mock both AcpClient and InteractionPlugin.",
+      "acceptanceCriteria": [
+        "AcpInteractionBridge detects question patterns in sessionUpdate notifications",
+        "Detected questions are forwarded as InteractionRequests to the interaction chain",
+        "Human responses are formatted and sent as follow-up prompts to the same ACP session",
+        "Timeout fallback: if no response within configured time, agent continues autonomously",
+        "Bridge integrates with existing interaction plugins (Telegram, CLI, webhook)",
+        "Non-question sessionUpdate messages are ignored by the bridge (no false positives)",
+        "Bridge lifecycle is tied to the ACP session \u2014 created on run(), destroyed on close()"
+      ],
+      "tags": [
+        "feature",
+        "interaction"
+      ],
+      "dependencies": [
+        "ACP-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/interaction/types.ts",
+        "src/interaction/chain.ts",
+        "src/interaction/plugins/telegram.ts",
+        "src/agents/acp/adapter.ts",
+        "src/pipeline/stages/execution.ts"
+      ],
+      "expectedFiles": [
+        "src/agents/acp/interaction-bridge.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 3,
+      "routing": {
+        "complexity": "complex",
+        "initialComplexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Novel bridge pattern connecting two async systems (ACP notifications and interaction chain). Requires careful timeout handling, question detection heuristics, and session state management during mid-prompt pauses."
+      }
+    },
+    {
+      "id": "ACP-005",
+      "title": "Plan and decompose via ACP",
+      "description": "Implement `plan()` and `decompose()` methods on `AcpAgentAdapter` using ACP sessions.\n\nChanges to `src/agents/acp/adapter.ts`:\n\n1. `plan(options: PlanOptions)` \u2014 for non-interactive: use one-shot ACP session, send planning prompt, return spec content from response. For interactive: use persistent session with terminal I/O bridging (defer to future \u2014 return error for now).\n\n2. `decompose(options: DecomposeOptions)` \u2014 one-shot ACP session. Send decompose prompt, parse JSON response into DecomposedStory[]. Reuse existing `buildDecomposePrompt()` and `parseDecomposeOutput()` from `claude-decompose.ts`.\n\n3. Both methods support model override via `options.modelDef`.\n\nWrite tests in `test/unit/agents/acp/plan-decompose.test.ts`.",
+      "acceptanceCriteria": [
+        "plan() returns PlanResult with specContent from ACP session response",
+        "plan() in non-interactive mode works end-to-end via ACP one-shot",
+        "plan() in interactive mode throws clear 'not yet supported via ACP' error",
+        "decompose() returns DecomposeResult with parsed stories from ACP response",
+        "decompose() reuses existing buildDecomposePrompt and parseDecomposeOutput functions",
+        "Both methods respect model override from options.modelDef",
+        "Both methods handle ACP errors gracefully with clear error messages"
+      ],
+      "tags": [
+        "feature"
+      ],
+      "dependencies": [
+        "ACP-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/agents/claude-plan.ts",
+        "src/agents/claude-decompose.ts",
+        "src/agents/acp/adapter.ts",
+        "src/agents/types-extended.ts"
+      ],
+      "expectedFiles": [
+        "src/agents/acp/adapter.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 2,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Adapting existing plan/decompose logic to use ACP instead of Bun.spawn. Most complexity is already handled by the existing prompt builders and parsers \u2014 this is mainly wiring."
+      }
+    },
+    {
+      "id": "ACP-006",
+      "title": "ACP cost tracking from token usage",
+      "description": "Replace regex-based cost estimation with ACP's `cumulative_token_usage` data.\n\nChanges:\n\n1. `src/agents/acp/cost.ts` \u2014 new file:\n   - `estimateCostFromTokenUsage(usage: SessionTokenUsage, model: string): number` \u2014 calculate USD cost from token counts using per-model pricing table\n   - Pricing table for common models: claude-sonnet-4, claude-haiku, gpt-4.1, codex, gemini-2.5-pro, etc.\n   - Unknown model fallback: use average $/token rate\n   - Handle cache tokens: `cache_read_input_tokens` at reduced rate, `cache_creation_input_tokens` at creation rate\n\n2. Update `AcpAgentAdapter.toAgentResult()` to use the new cost calculation.\n\n3. Export `estimateCostFromTokenUsage` for use by reporters/metrics.\n\nKeep existing `src/agents/cost.ts` for legacy CLI adapter fallback.\n\nWrite tests in `test/unit/agents/acp/cost.test.ts`.",
+      "acceptanceCriteria": [
+        "estimateCostFromTokenUsage calculates cost from input_tokens and output_tokens",
+        "Cache tokens (cache_read, cache_creation) use correct reduced/creation rates",
+        "Known models have accurate per-token pricing",
+        "Unknown models fall back to a reasonable average rate",
+        "Zero token usage returns $0.00 cost",
+        "Cost calculation is used by AcpAgentAdapter.toAgentResult()"
+      ],
+      "tags": [
+        "feature"
+      ],
+      "dependencies": [
+        "ACP-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/agents/cost.ts",
+        "src/agents/acp/adapter.ts"
+      ],
+      "expectedFiles": [
+        "src/agents/acp/cost.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Pure function \u2014 pricing table lookup + arithmetic. No external dependencies beyond types. Clear inputs and outputs."
+      }
+    },
+    {
+      "id": "ACP-007",
+      "title": "TDD three-session flow via ACP persistent sessions",
+      "description": "Update the TDD three-session flow to use ACP persistent sessions instead of spawning 3 separate CLI processes.\n\nChanges to `src/tdd/session-runner.ts`:\n\n1. `runTddSession()` already receives an `AgentAdapter` and calls `agent.run()`. No changes needed here \u2014 the ACP adapter handles the protocol difference internally.\n\n2. However, the current flow creates a fresh process per session (test-writer \u2192 implementer \u2192 verifier). With ACP, we can optionally reuse the same session for all 3 roles by sending follow-up prompts. This is an optimization, not a requirement.\n\n3. For Phase 1: verify that the existing TDD flow works correctly with `AcpAgentAdapter.run()`. Each TDD session creates its own ACP session (3 sessions total). This is the simplest migration path.\n\n4. Update `src/tdd/rectification-gate.ts` to work with ACP adapter \u2014 same pattern (just calls agent.run()).\n\nWrite integration tests in `test/integration/agents/acp/tdd-flow.test.ts` verifying the 3-session sequence works with mocked AcpClient.",
+      "acceptanceCriteria": [
+        "TDD three-session flow works with AcpAgentAdapter (test-writer \u2192 implementer \u2192 verifier)",
+        "Each TDD session creates its own ACP session (3 total per story)",
+        "TDD rectification gate works with AcpAgentAdapter",
+        "Isolation checks still work correctly after ACP sessions",
+        "Auto-commit after each session still works",
+        "Cost tracking accumulates correctly across 3 ACP sessions"
+      ],
+      "tags": [
+        "feature",
+        "tdd"
+      ],
+      "dependencies": [
+        "ACP-002",
+        "ACP-006"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/tdd/session-runner.ts",
+        "src/tdd/rectification-gate.ts",
+        "src/tdd/orchestrator.ts",
+        "src/agents/acp/adapter.ts"
+      ],
+      "expectedFiles": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 2,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "The TDD flow already goes through agent.run() \u2014 main work is integration testing to verify the ACP adapter handles the 3-session sequence correctly. No structural changes to TDD code."
+      }
+    }
+  ]
+}
