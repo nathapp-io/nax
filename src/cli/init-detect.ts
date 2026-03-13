@@ -11,6 +11,23 @@ import { join } from "node:path";
 /** Detected project runtime */
 export type Runtime = "bun" | "node" | "unknown";
 
+/** Detected UI framework */
+export type UIFramework = "ink" | "react" | "vue" | "svelte";
+
+/** Full stack info including UI framework and bin detection */
+export interface StackInfo extends ProjectStack {
+  uiFramework?: UIFramework;
+  hasBin?: boolean;
+}
+
+/**
+ * Detect the project stack including UI framework from package.json.
+ * Stub — implementation pending.
+ */
+export function detectStack(projectRoot: string): StackInfo {
+  return detectProjectStack(projectRoot);
+}
+
 /** Detected project language */
 export type Language = "typescript" | "python" | "rust" | "go" | "unknown";
 
@@ -150,7 +167,7 @@ function isStackDetected(stack: ProjectStack): boolean {
  * Build the full init config object from a detected project stack.
  * Falls back to minimal config when stack is undetected.
  */
-export function buildInitConfig(stack: ProjectStack): object {
+export function buildInitConfig(stack: ProjectStack | StackInfo): object {
   if (!isStackDetected(stack)) {
     return { version: 1 };
   }
