@@ -12,10 +12,11 @@
 
 ```
 src/
-├── agents/           # Agent adapters (claude, codex, gemini, aider, opencode)
-│   ├── adapters/     # Non-Claude adapters
-│   ├── claude.ts     # Claude Code adapter (primary)
-│   ├── registry.ts   # Agent discovery and lookup
+├── agents/           # Agent adapters (CLI + ACP protocol modes)
+│   ├── acp/          # ACP protocol adapter (unified, agent-agnostic)
+│   ├── adapters/     # Legacy CLI adapters (codex, gemini, aider, opencode)
+│   ├── claude.ts     # Claude Code CLI adapter (primary CLI mode)
+│   ├── registry.ts   # Agent discovery, lookup, and protocol routing
 │   └── types.ts      # AgentAdapter interface, AgentResult, AgentRunOptions
 ├── cli/              # CLI command handlers
 ├── commands/         # Subcommand implementations (logs, runs, agents)
@@ -558,12 +559,13 @@ export interface AgentAdapter {
   capabilities: AgentCapabilities;
   run(options: AgentRunOptions): Promise<AgentResult>;
   complete(prompt: string, options?: CompleteOptions): Promise<string>;
+  plan(options: PlanOptions): Promise<PlanResult>;
+  decompose(options: DecomposeOptions): Promise<DecomposeResult>;
 }
 
 // ✅ Each backend implements it
-export class ClaudeCodeAdapter implements AgentAdapter { ... }
-export class CodexAdapter implements AgentAdapter { ... }
-export class GeminiAdapter implements AgentAdapter { ... }
+export class ClaudeCodeAdapter implements AgentAdapter { ... }  // CLI mode (Bun.spawn)
+export class AcpAgentAdapter implements AgentAdapter { ... }    // ACP mode (protocol)
 ```
 
 **Rules:**
@@ -571,7 +573,60 @@ export class GeminiAdapter implements AgentAdapter { ... }
 - Implementations are classes (stateful — may hold config, PID registries, etc.)
 - Capabilities declared as data, not methods — enables routing decisions without instantiation
 
-**Reference:** `src/agents/types.ts`, `src/agents/claude.ts`, `src/agents/adapters/`
+**Reference:** `src/agents/types.ts`, `src/agents/claude.ts`, `src/agents/acp/adapter.ts`
+
+#### Agent Protocol Modes
+
+nax supports two agent communication protocols, configured via `agent.protocol` in config:
+
+| Mode | Config value | Adapter | Communication |
+|:-----|:-------------|:--------|:--------------|
+| CLI (default) | `"cli"` | `ClaudeCodeAdapter` | `Bun.spawn(["claude", "-p", ...])` → parse stdout |
+| ACP | `"acp"` | `AcpAgentAdapter` | JSON-RPC over stdio via `AcpClient` from `acpx` |
+
+The protocol toggle is transparent to all consumers — pipeline stages, routing, TDD, acceptance generators all call the same `AgentAdapter` interface methods.
+
+#### LLM Fallback Rule
+
+**Any code that needs LLM capabilities MUST resolve the default agent adapter — never use inline stubs.**
+
+```typescript
+// ✅ Correct: resolve the default agent adapter
+import { getAgent } from "../agents/registry";
+
+const agent = getAgent(config.autoMode.defaultAgent);
+if (!agent) {
+  throw new Error(`[stage] Agent "${config.autoMode.defaultAgent}" not found`);
+}
+// Use agent.complete() for one-shot LLM calls
+const result = await agent.complete(prompt, { jsonMode: true });
+
+// ✅ Correct: wrapping agent.complete() for domain-specific interfaces
+const adapter = {
+  async decompose(prompt: string): Promise<string> {
+    return agent.complete(prompt, { jsonMode: true });
+  },
+};
+
+// ❌ Wrong: inline stub that throws
+const adapter = {
+  async decompose(_prompt: string): Promise<string> {
+    throw new Error("No LLM adapter configured");
+  },
+};
+
+// ❌ Wrong: hardcoding a specific agent
+import { ClaudeCodeAdapter } from "../agents/claude";
+const adapter = new ClaudeCodeAdapter();
+```
+
+This pattern is **forward-compatible** with ACP: when `agent.protocol` switches from `"cli"` to `"acp"`, `getAgent()` returns `AcpAgentAdapter` whose `complete()` uses the ACP protocol — no calling code changes needed.
+
+**Where this applies:**
+- Pipeline stages needing LLM calls (routing decompose, classification)
+- CLI commands (`nax analyze --decompose`)
+- Acceptance test generation and refinement
+- Any future feature that needs one-shot LLM completions
 
 ### Registry (Lookup + Discovery)
 
