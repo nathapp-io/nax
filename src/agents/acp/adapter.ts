@@ -189,9 +189,43 @@ export class AcpAgentAdapter implements AgentAdapter {
         permissionMode: this.config.permissionMode,
       });
 
-      const response = await session.prompt(options.prompt);
-      const durationMs = Date.now() - startTime;
+      const timeoutMs = (options.timeoutSeconds ?? 60) * 1_000;
+      let timedOut = false;
+      let clearTimer: (() => void) | undefined;
 
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        const handle = setTimeout(() => {
+          timedOut = true;
+          reject(new Error("[acp-adapter] prompt timed out"));
+        }, timeoutMs);
+        clearTimer = () => clearTimeout(handle);
+      });
+
+      let response: AcpSessionResponse;
+      try {
+        response = await Promise.race([session.prompt(options.prompt), timeoutPromise]);
+      } catch (err) {
+        if (timedOut && session) {
+          try {
+            await session.cancelActivePrompt();
+          } catch {
+            await session.close().catch(() => {});
+          }
+          return {
+            success: false,
+            exitCode: 1,
+            output: "[acp-adapter] prompt timed out",
+            rateLimited: false,
+            durationMs: Date.now() - startTime,
+            estimatedCost: 0,
+          };
+        }
+        throw err;
+      } finally {
+        clearTimer?.();
+      }
+
+      const durationMs = Date.now() - startTime;
       return {
         success: mapStopReasonToSuccess(response.stopReason),
         exitCode: mapStopReasonToSuccess(response.stopReason) ? 0 : 1,
