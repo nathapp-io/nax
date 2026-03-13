@@ -278,6 +278,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       if (session) {
         await session.close().catch(() => {});
       }
+      await client.close().catch(() => {});
     }
   }
 
