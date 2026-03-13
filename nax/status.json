@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 5,
-    "passed": 1,
+    "passed": 2,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 0.21513949999999998,
+    "spent": 0.6299825,
     "limit": 8
   },
   "current": {
-    "storyId": "ACS-002",
-    "title": "Stack detection for UI frameworks",
+    "storyId": "ACS-003",
+    "title": "Strategy-aware acceptance test generator templates",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-03-13T01:44:43.102Z",
-  "durationMs": 1513170,
-  "lastHeartbeat": "2026-03-13T01:44:43.102Z"
+  "iterations": 3,
+  "updatedAt": "2026-03-13T01:49:43.113Z",
+  "durationMs": 1813181,
+  "lastHeartbeat": "2026-03-13T01:49:43.113Z"
 }

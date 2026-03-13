@@ -3,7 +3,7 @@
   "feature": "ui-test-strategies",
   "branchName": "feat/ui-test-strategies",
   "createdAt": "2026-03-12T20:56:00.000Z",
-  "updatedAt": "2026-03-13T01:34:08.100Z",
+  "updatedAt": "2026-03-13T01:45:33.093Z",
   "userStories": [
     {
       "id": "ACS-001",
@@ -59,8 +59,8 @@
       "dependencies": [
         "ACS-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "priorErrors": [],
@@ -101,7 +101,14 @@
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multi-file template system with 5 distinct test patterns (unit/component/cli/e2e/snapshot) and conditional routing logic — standard feature implementation with moderate scope, not requiring expert architecture or complex algorithms.",
+        "contentHash": "28d9e6722f4045ec2c7922145a4f9a57a3f2eb615f76600f1cc599e26436bf78"
+      }
     },
     {
       "id": "ACS-004",
