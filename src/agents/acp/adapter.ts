@@ -9,6 +9,7 @@
  * See: docs/specs/acp-agent-adapter.md
  */
 
+import { join } from "node:path";
 import { withProcessTimeout } from "../../execution/timeout-handler";
 import { getSafeLogger } from "../../logger";
 import { buildDecomposePrompt, parseDecomposeOutput } from "../claude-decompose";
@@ -390,6 +391,68 @@ export async function closeAcpSession(sessionName: string, agentName = "claude")
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ACP session persistence (acp-sessions.json sidecar)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Path to the ACP sessions sidecar file for a feature. */
+function acpSessionsPath(workdir: string, featureName: string): string {
+  return join(workdir, "nax", "features", featureName, "acp-sessions.json");
+}
+
+/** Persist a session name to the sidecar file. Best-effort — errors are swallowed. */
+async function saveAcpSession(
+  workdir: string,
+  featureName: string,
+  storyId: string,
+  sessionName: string,
+): Promise<void> {
+  try {
+    const path = acpSessionsPath(workdir, featureName);
+    let data: Record<string, string> = {};
+    try {
+      const existing = await Bun.file(path).text();
+      data = JSON.parse(existing);
+    } catch {
+      // File doesn't exist yet — start fresh
+    }
+    data[storyId] = sessionName;
+    await Bun.write(path, JSON.stringify(data, null, 2));
+  } catch (err) {
+    getSafeLogger()?.warn("acp-adapter", "Failed to save session to sidecar", { error: String(err) });
+  }
+}
+
+/** Clear a session name from the sidecar file. Best-effort — errors are swallowed. */
+async function clearAcpSession(workdir: string, featureName: string, storyId: string): Promise<void> {
+  try {
+    const path = acpSessionsPath(workdir, featureName);
+    let data: Record<string, string> = {};
+    try {
+      const existing = await Bun.file(path).text();
+      data = JSON.parse(existing);
+    } catch {
+      return; // File doesn't exist — nothing to clear
+    }
+    delete data[storyId];
+    await Bun.write(path, JSON.stringify(data, null, 2));
+  } catch (err) {
+    getSafeLogger()?.warn("acp-adapter", "Failed to clear session from sidecar", { error: String(err) });
+  }
+}
+
+/** Read a persisted session name from the sidecar file. Returns null if not found. */
+async function readAcpSession(workdir: string, featureName: string, storyId: string): Promise<string | null> {
+  try {
+    const path = acpSessionsPath(workdir, featureName);
+    const existing = await Bun.file(path).text();
+    const data: Record<string, string> = JSON.parse(existing);
+    return data[storyId] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Extract a question from agent output text, if present.
  * Follows the spec: split into sentences, find last question, or check for markers.
@@ -525,19 +588,28 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   private async _runSessionMode(options: AgentRunOptions, startTime: number): Promise<AgentResult> {
-    const sessionName = options.acpSessionName ?? buildSessionName(options.featureName, options.storyId);
+    // Resolve session name: prefer explicit option, then sidecar file, then derive from feature/story
+    let sessionName = options.acpSessionName;
+    if (!sessionName && options.featureName && options.storyId) {
+      sessionName = (await readAcpSession(options.workdir, options.featureName, options.storyId)) ?? undefined;
+    }
+    sessionName ??= buildSessionName(options.featureName, options.storyId);
+
     let lastResponse: AcpSessionResponse | null = null;
     let timedOut = false;
     let lastExitCode = 0;
     let runError: Error | undefined;
-    // Fix: use += to accumulate across turns (not = which resets)
+    // use += to accumulate across turns (not = which resets)
     const totalTokenUsage = { input_tokens: 0, output_tokens: 0 };
     const env = this.buildAllowedEnv(options);
     const INTERACTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 min for human to respond
 
     try {
-      // Ensure session exists
+      // Ensure session exists and persist name to sidecar for plan→run continuity
       await ensureAcpSession(sessionName, this.name);
+      if (options.featureName && options.storyId) {
+        await saveAcpSession(options.workdir, options.featureName, options.storyId, sessionName);
+      }
 
       // Multi-turn loop with interactionBridge support
       let currentPrompt = options.prompt;
@@ -616,10 +688,13 @@ export class AcpAgentAdapter implements AgentAdapter {
     } catch (err) {
       runError = err instanceof Error ? err : new Error(String(err));
     } finally {
-      // Close session (best-effort, always)
+      // Close session and clear sidecar (best-effort, always)
       await closeAcpSession(sessionName, this.name).catch((err) => {
         getSafeLogger()?.warn("acp-adapter", "Failed to close session in finally", { error: String(err) });
       });
+      if (options.featureName && options.storyId) {
+        await clearAcpSession(options.workdir, options.featureName, options.storyId);
+      }
     }
 
     if (runError) throw runError;
@@ -829,6 +904,11 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     // Create or ensure ACP session for plan→run continuity
     const sessionName = await ensureAcpSession(buildSessionName(options.featureName, options.storyId), this.name);
+
+    // Persist session name to sidecar so run() can resume the same session
+    if (options.featureName && options.storyId) {
+      await saveAcpSession(options.workdir, options.featureName, options.storyId, sessionName);
+    }
 
     // Notify caller of session name
     if (options.onAcpSessionCreated) {

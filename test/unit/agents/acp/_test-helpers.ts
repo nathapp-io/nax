@@ -30,6 +30,11 @@ export function mockProcess(
         controller.close();
       },
     }),
+    stdin: {
+      write: (_data: string | Uint8Array) => 0,
+      end: () => {},
+      flush: () => {},
+    },
     exited: Promise.resolve(exitCode),
     pid: Math.floor(Math.random() * 90000) + 10000,
     kill: () => {},
