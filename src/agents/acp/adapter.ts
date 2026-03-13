@@ -277,7 +277,7 @@ export async function ensureAcpSession(sessionName?: string, agentName = "claude
 /**
  * Send a prompt to the session via CLI (prompt command with -s flag).
  * Spawns: acpx --cwd <cwd> --approve-all --format json --model <model> --timeout <secs> <agentName> prompt -s <sessionName> --file -
- * with prompt piped via stdin. Returns parsed response or null on timeout.
+ * with prompt piped via stdin.
  */
 export async function runSessionPrompt(
   sessionName: string,
@@ -286,7 +286,9 @@ export async function runSessionPrompt(
   model: string,
   timeoutSeconds: number,
   agentName = "claude",
-): Promise<AcpSessionResponse | null> {
+  env?: Record<string, string | undefined>,
+  pidRegistry?: import("../../execution/pid-registry").PidRegistry,
+): Promise<{ response: AcpSessionResponse | null; exitCode: number; timedOut: boolean }> {
   const cmd = [
     "acpx",
     "--cwd",
@@ -313,33 +315,53 @@ export async function runSessionPrompt(
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
+    env,
   });
+
+  if (pidRegistry) {
+    await pidRegistry.register(proc.pid);
+    getSafeLogger()?.debug("acp-adapter", `Registered PID ${proc.pid} for session turn`);
+  }
 
   proc.stdin.write(prompt);
   proc.stdin.end();
 
-  const timeoutMs = timeoutSeconds * 1000;
-  const timeoutPromise = Bun.sleep(timeoutMs).then(() => ({ kind: "timeout" as const }));
-  const exitPromise = proc.exited.then(() => ({ kind: "exited" as const }));
+  // Use ACPX_WATCHDOG_BUFFER_MS buffer beyond the agent's own timeout
+  const watchdogMs = timeoutSeconds * 1000 + ACPX_WATCHDOG_BUFFER_MS;
+  const timeoutPromise = Bun.sleep(watchdogMs).then(() => ({ kind: "timeout" as const }));
+  const exitPromise = proc.exited.then((code) => ({ kind: "exited" as const, code }));
 
   const winner = await Promise.race([exitPromise, timeoutPromise]);
 
-  if (winner.kind === "timeout") {
-    proc.kill();
-    return null;
+  if (pidRegistry) {
+    await pidRegistry.unregister(proc.pid).catch(() => {});
+    getSafeLogger()?.debug("acp-adapter", `Unregistered PID ${proc.pid}`);
   }
 
+  if (winner.kind === "timeout") {
+    proc.kill();
+    return { response: null, exitCode: 124, timedOut: true };
+  }
+
+  const exitCode = winner.code;
   const stdout = await new Response(proc.stdout).text();
   const stderr = await new Response(proc.stderr).text();
 
+  if (exitCode !== 0) {
+    getSafeLogger()?.warn("acp-adapter", `Session prompt exited with code ${exitCode}`, {
+      stderr: stderr.slice(0, 200),
+    });
+    return { response: null, exitCode, timedOut: false };
+  }
+
   try {
     const parsed = parseAcpxJsonOutput(stdout);
-    // Convert parsed output to AcpSessionResponse format
-    return {
+    const response: AcpSessionResponse = {
       messages: [{ role: "assistant", content: parsed.text || "" }],
       stopReason: "end_turn",
       cumulative_token_usage: parsed.tokenUsage,
     };
+    return { response, exitCode: 0, timedOut: false };
   } catch (err) {
     getSafeLogger()?.warn("acp-adapter", "Failed to parse session prompt response", { stderr });
     throw err;
@@ -504,14 +526,18 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   private async _runSessionMode(options: AgentRunOptions, startTime: number): Promise<AgentResult> {
     const sessionName = options.acpSessionName ?? buildSessionName(options.featureName, options.storyId);
-    let response: AcpSessionResponse | null = null;
+    let lastResponse: AcpSessionResponse | null = null;
     let timedOut = false;
+    let lastExitCode = 0;
     let runError: Error | undefined;
+    // Fix: use += to accumulate across turns (not = which resets)
     const totalTokenUsage = { input_tokens: 0, output_tokens: 0 };
+    const env = this.buildAllowedEnv(options);
+    const INTERACTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 min for human to respond
 
     try {
       // Ensure session exists
-      const session = await ensureAcpSession(sessionName, this.name);
+      await ensureAcpSession(sessionName, this.name);
 
       // Multi-turn loop with interactionBridge support
       let currentPrompt = options.prompt;
@@ -522,48 +548,65 @@ export class AcpAgentAdapter implements AgentAdapter {
         turnCount++;
         getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
 
-        // Send prompt to session
-        response = await runSessionPrompt(
-          session,
+        // Send prompt to session (includes PID registry + env)
+        const turnResult = await runSessionPrompt(
+          sessionName,
           currentPrompt,
           options.workdir,
           options.modelDef.model,
           options.timeoutSeconds,
           this.name,
+          env,
+          options.pidRegistry,
         );
 
-        if (!response) {
+        lastExitCode = turnResult.exitCode;
+
+        if (turnResult.timedOut) {
           timedOut = true;
           break;
         }
 
-        // Accumulate token usage
-        if (response.cumulative_token_usage) {
-          totalTokenUsage.input_tokens = response.cumulative_token_usage.input_tokens;
-          totalTokenUsage.output_tokens = response.cumulative_token_usage.output_tokens;
-        }
-
-        // Check if agent asked a question
-        const outputText = extractOutput(response);
-        const question = extractQuestion(outputText);
-
-        if (!question || !options.interactionBridge) {
-          // No question or no bridge — end session
+        if (!turnResult.response || turnResult.exitCode !== 0) {
+          // Non-zero exit: check for rate limit, otherwise stop
+          const rateLimited = detectRateLimit(String(turnResult.exitCode));
+          if (rateLimited) throw new Error("rate limit exceeded");
           break;
         }
 
-        // Answer the question via interaction bridge
+        lastResponse = turnResult.response;
+
+        // Fix: += to accumulate across turns
+        if (lastResponse.cumulative_token_usage) {
+          totalTokenUsage.input_tokens += lastResponse.cumulative_token_usage.input_tokens ?? 0;
+          totalTokenUsage.output_tokens += lastResponse.cumulative_token_usage.output_tokens ?? 0;
+        }
+
+        // Check if agent asked a question
+        const outputText = extractOutput(lastResponse);
+        const question = extractQuestion(outputText);
+
+        if (!question || !options.interactionBridge) {
+          // No question or no bridge — done
+          break;
+        }
+
+        // Route question to interaction bridge with timeout
         getSafeLogger()?.debug("acp-adapter", "Agent asked question, routing to interactionBridge", { question });
 
         let answer: string;
         try {
-          answer = await options.interactionBridge.onQuestionDetected(question);
+          const answerPromise = options.interactionBridge.onQuestionDetected(question);
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("interaction timeout")), INTERACTION_TIMEOUT_MS),
+          );
+          answer = await Promise.race([answerPromise, timeoutPromise]);
         } catch (err) {
-          getSafeLogger()?.warn("acp-adapter", "InteractionBridge failed to answer question", { error: String(err) });
+          const msg = err instanceof Error ? err.message : String(err);
+          getSafeLogger()?.warn("acp-adapter", `InteractionBridge failed: ${msg}`);
           break;
         }
 
-        // Next turn: send the answer as the prompt
         currentPrompt = answer;
       }
 
@@ -573,12 +616,10 @@ export class AcpAgentAdapter implements AgentAdapter {
     } catch (err) {
       runError = err instanceof Error ? err : new Error(String(err));
     } finally {
-      // Close session
-      try {
-        await closeAcpSession(sessionName, this.name);
-      } catch (err) {
+      // Close session (best-effort, always)
+      await closeAcpSession(sessionName, this.name).catch((err) => {
         getSafeLogger()?.warn("acp-adapter", "Failed to close session in finally", { error: String(err) });
-      }
+      });
     }
 
     if (runError) throw runError;
@@ -596,13 +637,13 @@ export class AcpAgentAdapter implements AgentAdapter {
       };
     }
 
-    const success = response?.stopReason === "end_turn";
-    const output = extractOutput(response);
+    const success = lastResponse?.stopReason === "end_turn";
+    const output = extractOutput(lastResponse);
     const estimatedCost = estimateCostFromTokenUsage(totalTokenUsage, options.modelDef.model);
 
     return {
       success,
-      exitCode: success ? 0 : 1,
+      exitCode: success ? 0 : lastExitCode || 1,
       output: output.slice(-MAX_AGENT_OUTPUT_CHARS),
       rateLimited: false,
       durationMs,
