@@ -30,6 +30,10 @@ export interface RefinementContext {
   codebaseContext: string;
   /** Global config — model tier resolved from config.acceptance.model */
   config: NaxConfig;
+  /** Test strategy — controls strategy-specific prompt instructions */
+  testStrategy?: AcceptanceTestStrategy;
+  /** Test framework — informs LLM which testing library syntax to use */
+  testFramework?: string;
 }
 
 /**

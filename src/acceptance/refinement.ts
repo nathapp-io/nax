@@ -23,13 +23,28 @@ export const _refineDeps = {
 };
 
 /**
+ * Strategy-specific context for the refinement prompt.
+ */
+export interface RefinementPromptOptions {
+  /** Test strategy — controls strategy-specific prompt instructions */
+  testStrategy?: "unit" | "component" | "cli" | "e2e" | "snapshot";
+  /** Test framework — informs LLM which testing library syntax to use */
+  testFramework?: string;
+}
+
+/**
  * Build the LLM prompt for refining acceptance criteria.
  *
  * @param criteria - Raw AC strings from PRD
  * @param codebaseContext - File tree / dependency context
+ * @param options - Optional strategy/framework context
  * @returns Formatted prompt string
  */
-export function buildRefinementPrompt(criteria: string[], codebaseContext: string): string {
+export function buildRefinementPrompt(
+  criteria: string[],
+  codebaseContext: string,
+  _options?: RefinementPromptOptions,
+): string {
   const criteriaList = criteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
 
   return `You are an acceptance criteria refinement assistant. Your task is to convert raw acceptance criteria into concrete, machine-verifiable assertions.
