@@ -1,8 +1,8 @@
 # Dead Tests Report
 
-Generated: 2026-03-13T02:09:55.238Z
+Generated: 2026-03-13T02:27:58.168Z
 
-Found **7** test file(s) with issues:
+Found **8** test file(s) with issues:
 
 ## test/unit/worktree-manager.test.ts
 
@@ -20,6 +20,15 @@ Either fix the imports/references, update the test, or delete it if no longer ne
 - `src/other/module` — module not found
 - `src/utils/helper` — module not found
 - `src/completely/different` — module not found
+
+**Recommendation:** Review this test file. 
+Either fix the imports/references, update the test, or delete it if no longer needed.
+
+## test/unit/acceptance/component-strategy-integration.test.ts
+
+### Missing Imports
+
+- `src/ink-counter` — module not found
 
 **Recommendation:** Review this test file. 
 Either fix the imports/references, update the test, or delete it if no longer needed.
@@ -78,6 +87,6 @@ Either fix the imports/references, update the test, or delete it if no longer ne
 
 ## Summary
 
-- Total files with issues: 7
-- Dead imports: 6
+- Total files with issues: 8
+- Dead imports: 7
 - Dead references: 5
