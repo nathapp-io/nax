@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 5,
+    "passed": 6,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 1.4712779999999999,
+    "spent": 1.76005325,
     "limit": 8
   },
   "current": {
-    "storyId": "ACP-006",
-    "title": "ACP cost tracking from token usage",
-    "complexity": "simple",
+    "storyId": "ACP-007",
+    "title": "TDD three-session flow via ACP persistent sessions",
+    "complexity": "medium",
     "tddStrategy": "three-session-tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 5,
-  "updatedAt": "2026-03-13T06:42:24.065Z",
-  "durationMs": 5487432,
-  "lastHeartbeat": "2026-03-13T06:42:24.065Z"
+  "iterations": 6,
+  "updatedAt": "2026-03-13T06:51:24.058Z",
+  "durationMs": 6027425,
+  "lastHeartbeat": "2026-03-13T06:51:24.058Z"
 }
