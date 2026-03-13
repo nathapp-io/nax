@@ -112,8 +112,14 @@ function buildAcpxExecCommand(opts: {
   timeoutSeconds?: number;
   format?: "text" | "json" | "quiet";
   jsonStrict?: boolean;
+  skipPermissions?: boolean;
 }): string[] {
-  const cmd = ["acpx", "--approve-all"];
+  const cmd = ["acpx"];
+
+  // Only add --approve-all if explicitly true (default false for ACP)
+  if (opts.skipPermissions) {
+    cmd.push("--approve-all");
+  }
 
   if (opts.format) {
     cmd.push("--format", opts.format);
@@ -362,6 +368,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       workdir: options.workdir,
       timeoutSeconds: options.timeoutSeconds,
       format: "json",
+      skipPermissions: options.dangerouslySkipPermissions,
     });
   }
 
@@ -401,9 +408,9 @@ export class AcpAgentAdapter implements AgentAdapter {
       model: options.modelDef.model,
       workdir: options.workdir,
       timeoutSeconds: options.timeoutSeconds,
-      // Use json-strict when bridge is enabled for structured JSON-RPC events
       format: hasBridge ? "json" : "json",
       jsonStrict: hasBridge,
+      skipPermissions: options.dangerouslySkipPermissions,
     });
 
     // Prompt is passed via stdin with --file - (supports arbitrarily long prompts)
@@ -479,6 +486,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       agentName: this.name,
       model,
       format: "quiet", // quiet = final assistant text only
+      skipPermissions: true, // complete() is fire-and-forget, always skip prompts
     });
 
     // Pass prompt via --file - (stdin)
