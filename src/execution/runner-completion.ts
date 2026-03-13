@@ -46,6 +46,8 @@ export interface RunnerCompletionOptions {
   eventEmitter?: PipelineEventEmitter;
   /** Protocol-aware agent resolver */
   agentGetFn?: AgentGetFn;
+  /** Path to prd.json — required for acceptance fix story writes */
+  prdPath: string;
 }
 
 /**
@@ -71,7 +73,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     const acceptanceResult = await runAcceptanceLoop({
       config: options.config,
       prd: options.prd,
-      prdPath: "", // Not needed for this extraction
+      prdPath: options.prdPath,
       workdir: options.workdir,
       featureDir: options.featureDir,
       hooks: options.hooks,

@@ -206,6 +206,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       hooks,
       feature,
       workdir,
+      prdPath,
       statusFile,
       logFilePath,
       runId,

@@ -9,7 +9,7 @@
  */
 
 import { withProcessTimeout } from "../../execution/timeout-handler";
-import { getLogger } from "../../logger";
+import { getSafeLogger } from "../../logger";
 import { buildDecomposePrompt, parseDecomposeOutput } from "../claude-decompose";
 import { estimateCostByDuration, estimateCostFromOutput } from "../cost";
 import type {
@@ -76,7 +76,6 @@ const DEFAULT_ENTRY: AgentRegistryEntry = {
 
 const MAX_RATE_LIMIT_RETRIES = 3;
 const RATE_LIMIT_BASE_DELAY_MS = 1_000;
-const logger = getLogger();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable dependencies — follows the _deps pattern for testability
@@ -465,7 +464,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     const startTime = Date.now();
     let lastError: Error | undefined;
 
-    logger?.debug("acp-adapter", `Starting run for ${this.name}`, {
+    getSafeLogger()?.debug("acp-adapter", `Starting run for ${this.name}`, {
       model: options.modelDef.model,
       workdir: options.workdir,
       hasBridge: !!options.interactionBridge,
@@ -473,7 +472,7 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     for (let attempt = 0; attempt < MAX_RATE_LIMIT_RETRIES; attempt++) {
       if (attempt > 0) {
-        logger?.debug("acp-adapter", `Retry attempt ${attempt + 1} for ${this.name}`);
+        getSafeLogger()?.debug("acp-adapter", `Retry attempt ${attempt + 1} for ${this.name}`);
         await _acpAdapterDeps.sleep(RATE_LIMIT_BASE_DELAY_MS * 2 ** (attempt - 1));
       }
 
@@ -483,7 +482,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         // Retry on rate limit (mirrors ClaudeCodeAdapter behaviour)
         if (result.rateLimited && attempt < MAX_RATE_LIMIT_RETRIES - 1) {
           const backoffMs = 2 ** (attempt + 1) * 1000;
-          logger?.warn("acp-adapter", "Rate limited, retrying", {
+          getSafeLogger()?.warn("acp-adapter", "Rate limited, retrying", {
             backoffSeconds: backoffMs / 1000,
             attempt: attempt + 1,
             maxRetries: MAX_RATE_LIMIT_RETRIES,
@@ -493,13 +492,13 @@ export class AcpAgentAdapter implements AgentAdapter {
         }
 
         if (!result.success) {
-          logger?.warn("acp-adapter", `Run failed for ${this.name}`, {
+          getSafeLogger()?.warn("acp-adapter", `Run failed for ${this.name}`, {
             exitCode: result.exitCode,
             output: result.output?.slice(0, 200),
             rateLimited: result.rateLimited,
           });
         } else {
-          logger?.debug("acp-adapter", `Run succeeded for ${this.name}`, {
+          getSafeLogger()?.debug("acp-adapter", `Run succeeded for ${this.name}`, {
             cost: result.estimatedCost,
             durationMs: result.durationMs,
           });
@@ -508,7 +507,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
         lastError = error;
-        logger?.error("acp-adapter", `Run error for ${this.name}: ${error.message}`, {
+        getSafeLogger()?.error("acp-adapter", `Run error for ${this.name}: ${error.message}`, {
           attempt: attempt + 1,
           error: error.message,
         });
@@ -517,7 +516,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         if (!shouldRetry || attempt >= MAX_RATE_LIMIT_RETRIES - 1) break;
 
         const backoffMs = 2 ** (attempt + 1) * 1000;
-        logger?.warn("acp-adapter", "Retrying after error", {
+        getSafeLogger()?.warn("acp-adapter", "Retrying after error", {
           reason: isSpawnError(error) ? "spawn-error" : "rate-limit",
           backoffSeconds: backoffMs / 1000,
           attempt: attempt + 1,
@@ -550,7 +549,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       skipPermissions: options.dangerouslySkipPermissions,
     });
 
-    logger?.debug("acp-adapter", `Spawning acpx: ${cmd.join(" ")}`, { cwd: options.workdir });
+    getSafeLogger()?.debug("acp-adapter", `Spawning acpx: ${cmd.join(" ")}`, { cwd: options.workdir });
 
     // Prompt is passed via stdin with --file - (supports arbitrarily long prompts)
     const proc = _acpAdapterDeps.spawn([...cmd, "--file", "-"], {
@@ -564,7 +563,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     // Register PID for crash recovery cleanup
     if (pidRegistry) {
       await pidRegistry.register(proc.pid);
-      logger?.debug("acp-adapter", `Registered PID ${proc.pid} for ${this.name}`);
+      getSafeLogger()?.debug("acp-adapter", `Registered PID ${proc.pid} for ${this.name}`);
     }
 
     // Write prompt to stdin (Bun FileSink API)
@@ -637,7 +636,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       // Unregister PID on exit
       if (pidRegistry) {
         await pidRegistry.unregister(proc.pid);
-        logger?.debug("acp-adapter", `Unregistered PID ${proc.pid} for ${this.name}`, { exitCode });
+        getSafeLogger()?.debug("acp-adapter", `Unregistered PID ${proc.pid} for ${this.name}`, { exitCode });
       }
     }
 
@@ -660,7 +659,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       if (regexEstimate) {
         estimatedCost = regexEstimate.cost;
         if (regexEstimate.confidence === "estimated") {
-          logger?.warn("acp-adapter", "Cost estimation using regex parsing (estimated confidence)", {
+          getSafeLogger()?.warn("acp-adapter", "Cost estimation using regex parsing (estimated confidence)", {
             cost: estimatedCost,
           });
         }
@@ -668,7 +667,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         // Duration-based fallback with 1.5x multiplier (matches claude adapter)
         const fallback = estimateCostByDuration(options.modelTier, durationMs);
         estimatedCost = fallback.cost * 1.5;
-        logger?.warn("acp-adapter", "Cost estimation fallback (duration-based)", {
+        getSafeLogger()?.warn("acp-adapter", "Cost estimation fallback (duration-based)", {
           modelTier: options.modelTier,
           cost: estimatedCost,
         });
