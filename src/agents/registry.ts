@@ -5,6 +5,7 @@
  */
 
 import type { NaxConfig } from "../config/schema";
+import { getLogger } from "../logger";
 import { AcpAgentAdapter } from "./acp/adapter";
 import { AiderAdapter } from "./adapters/aider";
 import { CodexAdapter } from "./adapters/codex";
@@ -75,7 +76,11 @@ export interface AgentRegistry {
  */
 export function createAgentRegistry(config: NaxConfig): AgentRegistry {
   const protocol: "acp" | "cli" = config.agent?.protocol ?? "cli";
+  const logger = getLogger();
   const acpCache = new Map<string, AcpAgentAdapter>();
+
+  // Log which protocol is being used at startup
+  logger?.info("agents", `Agent protocol: ${protocol}`, { protocol, hasConfig: !!config.agent });
 
   function getAgent(name: string): AgentAdapter | undefined {
     if (protocol === "acp") {
@@ -83,10 +88,15 @@ export function createAgentRegistry(config: NaxConfig): AgentRegistry {
       if (!known) return undefined;
       if (!acpCache.has(name)) {
         acpCache.set(name, new AcpAgentAdapter(name));
+        logger?.debug("agents", `Created AcpAgentAdapter for ${name}`, { name, protocol });
       }
       return acpCache.get(name);
     }
-    return ALL_AGENTS.find((a) => a.name === name);
+    const adapter = ALL_AGENTS.find((a) => a.name === name);
+    if (adapter) {
+      logger?.debug("agents", `Using CLI adapter for ${name}: ${adapter.constructor.name}`, { name });
+    }
+    return adapter;
   }
 
   async function getInstalledAgents(): Promise<AgentAdapter[]> {
