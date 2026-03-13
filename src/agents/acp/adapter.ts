@@ -130,10 +130,13 @@ function isRateLimitError(err: unknown): boolean {
 function detectRateLimit(text: string): boolean {
   const lower = text.toLowerCase();
   return (
-    lower.includes("rate limit") ||
-    lower.includes("rate_limit") ||
-    lower.includes("429") ||
-    lower.includes("too many requests")
+    lower.includes("rate limit exceeded") ||
+    lower.includes("rate limit reached") ||
+    lower.includes("rate_limit_exceeded") ||
+    lower.includes("too many requests") ||
+    // Only match 429 when it appears in an HTTP/error context (not bare numbers in output)
+    /\b(http|status|error|code)[:\s]+429\b/.test(lower) ||
+    /\bstatus[:\s]+429\b/.test(lower)
   );
 }
 
@@ -646,8 +649,10 @@ export class AcpAgentAdapter implements AgentAdapter {
     const actualExitCode = timedOut ? 124 : exitCode;
 
     // Rate limit detection: scan both stdout and stderr
+    // Only check when exit code is non-zero — a successful run (exitCode=0) cannot be rate limited.
+    // This prevents false positives when agent output contains "429" as a number/line/token count.
     const fullOutput = stdout + stderr + (parsed.text ?? "");
-    const rateLimited = detectRateLimit(fullOutput);
+    const rateLimited = exitCode !== 0 ? detectRateLimit(fullOutput) : false;
 
     // Cost estimation: prefer token-based, fall back to duration-based
     let estimatedCost: number;
