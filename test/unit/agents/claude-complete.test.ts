@@ -6,7 +6,7 @@
  * - ClaudeAdapter implements complete() using Bun.spawn(['claude', '-p', prompt, ...flags])
  * - jsonMode adds --output-format json flag
  * - model option passes --model flag
- * - maxTokens option passes --max-tokens flag
+ * - maxTokens option is accepted but NOT forwarded (Claude Code CLI doesn't support --max-tokens)
  * - Non-zero exit throws CompleteError
  * - Empty output throws CompleteError
  */
@@ -148,8 +148,10 @@ describe("complete()", () => {
   });
 
   // ── maxTokens option ────────────────────────────────────────────────────
+  // Note: Claude Code CLI does not support --max-tokens. The option is accepted in
+  // CompleteOptions for future use / other adapters, but is NOT forwarded to the binary.
 
-  test("maxTokens option passes --max-tokens flag with value as string", async () => {
+  test("maxTokens option does NOT pass --max-tokens flag (unsupported by Claude Code CLI)", async () => {
     _completeDeps.spawn = (cmd, _opts) => {
       capturedCmd = cmd;
       return mockProcess("output", 0);
@@ -157,9 +159,7 @@ describe("complete()", () => {
 
     await adapter.complete("test", { maxTokens: 1024 } satisfies CompleteOptions);
 
-    const idx = capturedCmd.indexOf("--max-tokens");
-    expect(idx).toBeGreaterThan(-1);
-    expect(capturedCmd[idx + 1]).toBe("1024");
+    expect(capturedCmd).not.toContain("--max-tokens");
   });
 
   test("without maxTokens, --max-tokens flag is absent", async () => {
@@ -188,8 +188,8 @@ describe("complete()", () => {
     expect(capturedCmd).toContain("json");
     expect(capturedCmd).toContain("--model");
     expect(capturedCmd).toContain("claude-haiku-4-5-20251001");
-    expect(capturedCmd).toContain("--max-tokens");
-    expect(capturedCmd).toContain("512");
+    // maxTokens is accepted in options but not forwarded to Claude Code CLI (unsupported flag)
+    expect(capturedCmd).not.toContain("--max-tokens");
   });
 
   // ── Error cases ─────────────────────────────────────────────────────────
