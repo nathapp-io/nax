@@ -5,6 +5,7 @@
  * supporting one-shot completions and full run sessions.
  */
 
+import { buildDecomposePrompt, parseDecomposeOutput } from "../claude-decompose";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -282,11 +283,81 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
   }
 
-  async plan(_options: PlanOptions): Promise<PlanResult> {
-    throw new Error("[acp-adapter] AcpAgentAdapter.plan() not implemented");
+  async plan(options: PlanOptions): Promise<PlanResult> {
+    if (options.interactive) {
+      throw new Error("[acp-adapter] interactive plan mode not yet supported via ACP");
+    }
+
+    const model = options.modelDef?.model ?? this.binary;
+    const cmd = [this.binary, "--permission-mode", this.config.permissionMode, "--model", model].join(" ");
+
+    const client = _acpAdapterDeps.createClient(cmd);
+    await client.start();
+    let session: AcpSession | undefined;
+
+    try {
+      session = await client.createSession({
+        agentName: this.config.agentName,
+        permissionMode: this.config.permissionMode,
+      });
+
+      let response: AcpSessionResponse;
+      try {
+        response = await session.prompt(options.prompt);
+      } catch (err) {
+        throw new Error(`[acp-adapter] plan() ACP session failed: ${(err as Error).message}`, { cause: err });
+      }
+
+      const specContent = extractAssistantText(response);
+      if (!specContent) {
+        throw new Error("[acp-adapter] plan() returned empty spec content");
+      }
+
+      return { specContent };
+    } finally {
+      if (session) {
+        await session.close().catch(() => {});
+      }
+      await client.close().catch(() => {});
+    }
   }
 
-  async decompose(_options: DecomposeOptions): Promise<DecomposeResult> {
-    throw new Error("[acp-adapter] AcpAgentAdapter.decompose() not implemented");
+  async decompose(options: DecomposeOptions): Promise<DecomposeResult> {
+    const model = options.modelDef?.model ?? this.binary;
+    const cmd = [this.binary, "--permission-mode", this.config.permissionMode, "--model", model].join(" ");
+
+    const client = _acpAdapterDeps.createClient(cmd);
+    await client.start();
+    let session: AcpSession | undefined;
+
+    try {
+      session = await client.createSession({
+        agentName: this.config.agentName,
+        permissionMode: this.config.permissionMode,
+      });
+
+      const prompt = buildDecomposePrompt(options);
+      let response: AcpSessionResponse;
+      try {
+        response = await session.prompt(prompt);
+      } catch (err) {
+        throw new Error(`[acp-adapter] decompose() ACP session failed: ${(err as Error).message}`, { cause: err });
+      }
+
+      const output = extractAssistantText(response);
+      let stories: ReturnType<typeof parseDecomposeOutput>;
+      try {
+        stories = parseDecomposeOutput(output);
+      } catch (err) {
+        throw new Error(`[acp-adapter] decompose() failed to parse stories: ${(err as Error).message}`, { cause: err });
+      }
+
+      return { stories };
+    } finally {
+      if (session) {
+        await session.close().catch(() => {});
+      }
+      await client.close().catch(() => {});
+    }
   }
 }
