@@ -228,6 +228,9 @@ export interface PlanConfig {
   outputPath: string;
 }
 
+/** Valid test strategy values for acceptance testing */
+export type AcceptanceTestStrategy = "unit" | "component" | "cli" | "e2e" | "snapshot";
+
 /** Acceptance validation config */
 export interface AcceptanceConfig {
   /** Enable acceptance test generation and validation */
@@ -244,6 +247,10 @@ export interface AcceptanceConfig {
   refinement: boolean;
   /** Whether to run RED gate check after generating acceptance tests (default: true) */
   redGate: boolean;
+  /** Test strategy for acceptance tests (default: auto-detect) */
+  testStrategy?: AcceptanceTestStrategy;
+  /** Test framework for acceptance tests (default: auto-detect) */
+  testFramework?: string;
 }
 
 /** Optimizer config (v0.10) */
