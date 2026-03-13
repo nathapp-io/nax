@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 5,
-    "passed": 2,
+    "passed": 3,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 2
   },
   "cost": {
-    "spent": 0.6299825,
+    "spent": 1.2265015,
     "limit": 8
   },
   "current": {
-    "storyId": "ACS-003",
-    "title": "Strategy-aware acceptance test generator templates",
+    "storyId": "ACS-004",
+    "title": "Strategy-aware refinement prompt",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-03-13T02:02:43.074Z",
-  "durationMs": 2593142,
-  "lastHeartbeat": "2026-03-13T02:02:43.074Z"
+  "iterations": 4,
+  "updatedAt": "2026-03-13T02:05:43.072Z",
+  "durationMs": 2773140,
+  "lastHeartbeat": "2026-03-13T02:05:43.072Z"
 }
