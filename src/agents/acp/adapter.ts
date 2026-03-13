@@ -250,12 +250,12 @@ export function buildSessionName(featureName?: string, storyId?: string): string
 
 /**
  * Ensure an ACP session exists via CLI (sessions ensure command).
- * Spawns: acpx claude sessions ensure --name <sessionName>
+ * Spawns: acpx <agentName> sessions ensure --name <sessionName>
  * Returns the session name (deterministic from feature/story).
  */
-export async function ensureAcpSession(sessionName?: string): Promise<string> {
+export async function ensureAcpSession(sessionName?: string, agentName = "claude"): Promise<string> {
   const name = sessionName ?? buildSessionName();
-  const cmd = ["acpx", "claude", "sessions", "ensure", "--name", name];
+  const cmd = ["acpx", agentName, "sessions", "ensure", "--name", name];
 
   getSafeLogger()?.debug("acp-adapter", `Ensuring ACP session: ${name}`);
 
@@ -276,7 +276,7 @@ export async function ensureAcpSession(sessionName?: string): Promise<string> {
 
 /**
  * Send a prompt to the session via CLI (prompt command with -s flag).
- * Spawns: acpx --cwd <cwd> --approve-all --format json --model <model> --timeout <secs> claude prompt -s <sessionName> --file -
+ * Spawns: acpx --cwd <cwd> --approve-all --format json --model <model> --timeout <secs> <agentName> prompt -s <sessionName> --file -
  * with prompt piped via stdin. Returns parsed response or null on timeout.
  */
 export async function runSessionPrompt(
@@ -285,6 +285,7 @@ export async function runSessionPrompt(
   workdir: string,
   model: string,
   timeoutSeconds: number,
+  agentName = "claude",
 ): Promise<AcpSessionResponse | null> {
   const cmd = [
     "acpx",
@@ -297,7 +298,7 @@ export async function runSessionPrompt(
     model,
     "--timeout",
     String(timeoutSeconds),
-    "claude",
+    agentName,
     "prompt",
     "-s",
     sessionName,
@@ -347,10 +348,10 @@ export async function runSessionPrompt(
 
 /**
  * Close an ACP session via CLI (sessions close command).
- * Spawns: acpx claude sessions close <sessionName>
+ * Spawns: acpx <agentName> sessions close <sessionName>
  */
-export async function closeAcpSession(sessionName: string): Promise<void> {
-  const cmd = ["acpx", "claude", "sessions", "close", sessionName];
+export async function closeAcpSession(sessionName: string, agentName = "claude"): Promise<void> {
+  const cmd = ["acpx", agentName, "sessions", "close", sessionName];
 
   getSafeLogger()?.debug("acp-adapter", `Closing ACP session: ${sessionName}`);
 
@@ -510,7 +511,7 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     try {
       // Ensure session exists
-      const session = await ensureAcpSession(sessionName);
+      const session = await ensureAcpSession(sessionName, this.name);
 
       // Multi-turn loop with interactionBridge support
       let currentPrompt = options.prompt;
@@ -528,6 +529,7 @@ export class AcpAgentAdapter implements AgentAdapter {
           options.workdir,
           options.modelDef.model,
           options.timeoutSeconds,
+          this.name,
         );
 
         if (!response) {
@@ -573,7 +575,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     } finally {
       // Close session
       try {
-        await closeAcpSession(sessionName);
+        await closeAcpSession(sessionName, this.name);
       } catch (err) {
         getSafeLogger()?.warn("acp-adapter", "Failed to close session in finally", { error: String(err) });
       }
@@ -785,7 +787,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
 
     // Create or ensure ACP session for plan→run continuity
-    const sessionName = await ensureAcpSession(buildSessionName(options.featureName, options.storyId));
+    const sessionName = await ensureAcpSession(buildSessionName(options.featureName, options.storyId), this.name);
 
     // Notify caller of session name
     if (options.onAcpSessionCreated) {
