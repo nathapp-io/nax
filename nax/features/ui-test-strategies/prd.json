@@ -3,7 +3,7 @@
   "feature": "ui-test-strategies",
   "branchName": "feat/ui-test-strategies",
   "createdAt": "2026-03-12T20:56:00.000Z",
-  "updatedAt": "2026-03-13T02:03:18.636Z",
+  "updatedAt": "2026-03-13T02:15:11.688Z",
   "userStories": [
     {
       "id": "ACS-001",
@@ -131,8 +131,8 @@
       "dependencies": [
         "ACS-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "priorErrors": [],
@@ -175,7 +175,14 @@
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Multiple test files + one pipeline stage modification, but straightforward test writing and config plumbing; 60-90 min effort.",
+        "contentHash": "48e8266b46a79d7dec71f40affc7e9cc36c101f533ef63bd2664510cdf3a136f"
+      }
     }
   ]
 }
