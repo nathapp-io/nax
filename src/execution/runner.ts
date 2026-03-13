@@ -177,6 +177,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         parallel,
         runParallelExecution: _runnerDeps.runParallelExecution ?? undefined,
         agentGetFn,
+        pidRegistry,
       },
       prd,
       pluginRegistry,

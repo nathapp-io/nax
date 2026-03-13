@@ -79,6 +79,7 @@ export async function runIteration(
     storyGitRef: storyGitRef ?? undefined,
     interaction: ctx.interactionChain ?? undefined,
     agentGetFn: ctx.agentGetFn,
+    pidRegistry: ctx.pidRegistry,
     accumulatedAttemptCost: accumulatedAttemptCost > 0 ? accumulatedAttemptCost : undefined,
   };
 

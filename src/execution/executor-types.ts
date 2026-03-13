@@ -15,6 +15,7 @@ import type { PluginRegistry } from "../plugins";
 import type { PRD, UserStory } from "../prd/types";
 import type { StoryBatch } from "./batching";
 import type { DeferredReviewResult } from "./deferred-review";
+import type { PidRegistry } from "./pid-registry";
 import type { StatusWriter } from "./status-writer";
 
 export interface SequentialExecutionContext {
@@ -36,6 +37,8 @@ export interface SequentialExecutionContext {
   interactionChain?: InteractionChain | null;
   /** Protocol-aware agent resolver (ACP wiring). Falls back to standalone getAgent when absent. */
   agentGetFn?: AgentGetFn;
+  /** PID registry for crash recovery — register child PIDs so they can be killed on SIGTERM. */
+  pidRegistry?: PidRegistry;
 }
 
 export interface SequentialExecutionResult {

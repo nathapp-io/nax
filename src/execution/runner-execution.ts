@@ -18,6 +18,7 @@ import { clearCache as clearLlmCache, routeBatch as llmRouteBatch } from "../rou
 import { precomputeBatchPlan } from "./batching";
 import { getAllReadyStories } from "./helpers";
 import type { ParallelExecutorOptions, ParallelExecutorResult } from "./parallel-executor";
+import type { PidRegistry } from "./pid-registry";
 
 /**
  * Options for the execution phase.
@@ -45,6 +46,8 @@ export interface RunnerExecutionOptions {
   runParallelExecution?: (options: ParallelExecutorOptions, prd: PRD) => Promise<ParallelExecutorResult>;
   /** Protocol-aware agent resolver — created once in runner.ts from createAgentRegistry(config) */
   agentGetFn?: AgentGetFn;
+  /** PID registry for crash recovery — passed to agent.run() to register child processes. */
+  pidRegistry?: PidRegistry;
 }
 
 /**
@@ -202,6 +205,7 @@ export async function runExecutionPhase(
       startTime: options.startTime,
       batchPlan,
       agentGetFn: options.agentGetFn,
+      pidRegistry: options.pidRegistry,
     },
     prd,
   );
