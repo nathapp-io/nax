@@ -8,6 +8,7 @@
  * See: https://github.com/openclaw/acpx
  */
 
+import { getLogger } from "../../logger";
 import { buildDecomposePrompt, parseDecomposeOutput } from "../claude-decompose";
 import type {
   AgentAdapter,
@@ -58,6 +59,7 @@ const DEFAULT_ENTRY: AgentRegistryEntry = {
 
 const MAX_RATE_LIMIT_RETRIES = 3;
 const RATE_LIMIT_BASE_DELAY_MS = 1_000;
+const logger = getLogger();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Injectable dependencies — follows the _deps pattern for testability
@@ -376,16 +378,40 @@ export class AcpAgentAdapter implements AgentAdapter {
     const startTime = Date.now();
     let lastError: Error | undefined;
 
+    logger?.debug("acp-adapter", `Starting run for ${this.name}`, {
+      model: options.modelDef.model,
+      workdir: options.workdir,
+      hasBridge: !!options.interactionBridge,
+    });
+
     for (let attempt = 0; attempt < MAX_RATE_LIMIT_RETRIES; attempt++) {
       if (attempt > 0) {
+        logger?.debug("acp-adapter", `Retry attempt ${attempt + 1} for ${this.name}`);
         await _acpAdapterDeps.sleep(RATE_LIMIT_BASE_DELAY_MS * 2 ** (attempt - 1));
       }
 
       try {
-        return await this._runOnce(options, startTime);
+        const result = await this._runOnce(options, startTime);
+        if (!result.success) {
+          logger?.warn("acp-adapter", `Run failed for ${this.name}`, {
+            exitCode: result.exitCode,
+            output: result.output?.slice(0, 200),
+            rateLimited: result.rateLimited,
+          });
+        } else {
+          logger?.debug("acp-adapter", `Run succeeded for ${this.name}`, {
+            cost: result.estimatedCost,
+            durationMs: result.durationMs,
+          });
+        }
+        return result;
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
         lastError = error;
+        logger?.error("acp-adapter", `Run error for ${this.name}: ${error.message}`, {
+          attempt: attempt + 1,
+          error: error.message,
+        });
         if (!isRateLimitError(error)) break;
       }
     }
@@ -414,6 +440,8 @@ export class AcpAgentAdapter implements AgentAdapter {
       skipPermissions: options.dangerouslySkipPermissions,
     });
 
+    logger?.debug("acp-adapter", `Spawning acpx: ${cmd.join(" ")}`, { cwd: options.workdir });
+
     // Prompt is passed via stdin with --file - (supports arbitrarily long prompts)
     const proc = _acpAdapterDeps.spawn([...cmd, "--file", "-"], {
       cwd: options.workdir,
@@ -425,6 +453,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     // Register PID for crash recovery cleanup
     if (pidRegistry) {
       await pidRegistry.register(proc.pid);
+      logger?.debug("acp-adapter", `Registered PID ${proc.pid} for ${this.name}`);
     }
 
     // Write prompt to stdin (Bun FileSink API)
@@ -456,6 +485,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       // Unregister PID on exit
       if (pidRegistry) {
         await pidRegistry.unregister(proc.pid);
+        logger?.debug("acp-adapter", `Unregistered PID ${proc.pid} for ${this.name}`, { exitCode });
       }
     }
 
