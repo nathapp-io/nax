@@ -14,6 +14,7 @@ import type { PipelineEventEmitter } from "../pipeline/events";
 import type { PluginRegistry } from "../plugins/registry";
 import { isComplete } from "../prd";
 import type { PRD } from "../prd";
+import { autoCommitIfDirty } from "../utils/git";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import { hookCtx } from "./story-context";
 
@@ -152,6 +153,9 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     options.storiesCompleted,
     durationMs,
   );
+
+  // Commit status.json and any other nax runtime files left dirty at run end
+  await autoCommitIfDirty(options.workdir, "run.complete", "run-summary", options.feature);
 
   return {
     durationMs,
