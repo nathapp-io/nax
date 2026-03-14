@@ -505,7 +505,9 @@ export class AcpAgentAdapter implements AgentAdapter {
         }
       }
 
-      if (turnCount >= MAX_TURNS) {
+      // Only warn if we exhausted turns while still receiving questions (interactive mode).
+      // In non-interactive mode (MAX_TURNS=1) the loop always completes in 1 turn — not a warning.
+      if (turnCount >= MAX_TURNS && options.interactionBridge) {
         getSafeLogger()?.warn("acp-adapter", "Reached max turns limit", { sessionName, maxTurns: MAX_TURNS });
       }
     } finally {
