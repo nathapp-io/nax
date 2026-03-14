@@ -509,8 +509,9 @@ export class AcpAgentAdapter implements AgentAdapter {
         getSafeLogger()?.warn("acp-adapter", "Reached max turns limit", { sessionName, maxTurns: MAX_TURNS });
       }
     } finally {
-      // 6. Cleanup — always close session and clear sidecar
+      // 6. Cleanup — always close session and client, then clear sidecar
       await closeAcpSession(session);
+      await client.close().catch(() => {});
       if (options.featureName && options.storyId) {
         await clearAcpSession(options.workdir, options.featureName, options.storyId);
       }
@@ -580,6 +581,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       if (session) {
         await session.close().catch(() => {});
       }
+      await client.close().catch(() => {});
     }
   }
 

@@ -1,8 +1,8 @@
 # Dead Tests Report
 
-Generated: 2026-03-14T02:55:48.049Z
+Generated: 2026-03-14T04:38:15.524Z
 
-Found **8** test file(s) with issues:
+Found **9** test file(s) with issues:
 
 ## test/unit/verification/smart-runner-discovery.test.ts
 
@@ -11,6 +11,15 @@ Found **8** test file(s) with issues:
 - `src/other/module` — module not found
 - `src/utils/helper` — module not found
 - `src/completely/different` — module not found
+
+**Recommendation:** Review this test file. 
+Either fix the imports/references, update the test, or delete it if no longer needed.
+
+## test/unit/agents/acp/adapter-session.test.ts
+
+### Dead Feature References
+
+- **worktree** — references removed feature
 
 **Recommendation:** Review this test file. 
 Either fix the imports/references, update the test, or delete it if no longer needed.
@@ -87,6 +96,6 @@ Either fix the imports/references, update the test, or delete it if no longer ne
 
 ## Summary
 
-- Total files with issues: 8
+- Total files with issues: 9
 - Dead imports: 7
-- Dead references: 5
+- Dead references: 6
