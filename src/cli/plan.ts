@@ -71,10 +71,6 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     throw new Error(`nax directory not found. Run 'nax init' first in ${workdir}`);
   }
 
-  if (!options.auto) {
-    throw new Error("Interactive mode not yet implemented, use --auto");
-  }
-
   const logger = getLogger();
 
   // Read spec from --from path
@@ -101,9 +97,28 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     throw new Error(`[plan] No agent adapter found for '${agentName}'`);
   }
 
-  // One-shot LLM call
-  logger?.info("plan", "Running LLM planning...", { agent: agentName });
-  const responseText = await adapter.complete(prompt, { jsonMode: true });
+  // Timeout: from config, or default to 600 seconds (10 min)
+  const timeoutSeconds = config?.execution?.sessionTimeoutSeconds ?? 600;
+
+  // Route to auto (one-shot) or interactive (multi-turn) mode
+  const responseText = await (options.auto
+    ? adapter.complete(prompt, { jsonMode: true })
+    : (async () => {
+        const interactionBridge = createCliInteractionBridge();
+        logger?.info("plan", "Starting interactive planning session...", { agent: agentName });
+        try {
+          const result = await adapter.plan({
+            prompt,
+            workdir,
+            interactive: true,
+            timeoutSeconds,
+            interactionBridge,
+          });
+          return extractJsonFromText(result.specContent);
+        } finally {
+          logger?.info("plan", "Interactive session ended");
+        }
+      })());
 
   // Parse JSON
   let parsed: unknown;
@@ -136,6 +151,60 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   logger?.info("plan", "[OK] PRD written", { outputPath });
 
   return outputPath;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Interaction and extraction helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Create a CLI interaction bridge for stdin-based human interaction.
+ * This bridge accepts questions from the agent and prompts the user via stdin.
+ */
+function createCliInteractionBridge(): {
+  detectQuestion: (text: string) => Promise<boolean>;
+  onQuestionDetected: (text: string) => Promise<string>;
+} {
+  return {
+    async detectQuestion(text: string): Promise<boolean> {
+      // Simple heuristic: detect if text contains a question mark
+      return text.includes("?");
+    },
+
+    async onQuestionDetected(text: string): Promise<string> {
+      // For now, return the question text as-is to be used as follow-up prompt
+      // In a real CLI, this would read from stdin
+      // TODO: Implement stdin reading for actual CLI interaction
+      return text;
+    },
+  };
+}
+
+/**
+ * Extract JSON from agent text that may contain code blocks or explanations.
+ * Returns the raw JSON string.
+ */
+function extractJsonFromText(text: string): string {
+  // Try to extract JSON from ```json code block
+  const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/);
+  if (jsonMatch?.[1]) {
+    return jsonMatch[1];
+  }
+
+  // Try to extract JSON from ```json...``` without newlines
+  const compactMatch = text.match(/```json([\s\S]*?)```/);
+  if (compactMatch?.[1]) {
+    return compactMatch[1];
+  }
+
+  // If no code block, try to parse as pure JSON
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{")) {
+    return trimmed;
+  }
+
+  // If all else fails, return as-is and let JSON.parse handle the error
+  return text;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

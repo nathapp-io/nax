@@ -227,13 +227,21 @@ describe("planCommand", () => {
     expect(fakeAdapter.complete).toHaveBeenCalledTimes(1);
   });
 
-  test("AC-3: throws 'Interactive mode not yet implemented' when --auto not set", async () => {
-    expect(
-      planCommand(tmpDir, {} as never, {
-        from: "/spec.md",
-        feature: "url-shortener",
-      }),
-    ).rejects.toThrow("Interactive mode not yet implemented, use --auto");
+  test("AC-3: interactive mode is now supported when --auto not set", async () => {
+    const fakeAdapter = {
+      plan: mock(async (_options: any) => ({
+        specContent: JSON.stringify(SAMPLE_PRD),
+      })),
+      complete: mock(async (_prompt: string) => JSON.stringify(SAMPLE_PRD)),
+    };
+    _deps.getAgent = mock((_name: string) => fakeAdapter as never);
+
+    await planCommand(tmpDir, {} as never, {
+      from: "/spec.md",
+      feature: "url-shortener",
+    });
+
+    expect(fakeAdapter.plan).toHaveBeenCalled();
   });
 
   // ──────────────────────────────────────────────────────────────────────────

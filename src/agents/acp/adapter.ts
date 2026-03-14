@@ -586,10 +586,6 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {
-    if (options.interactive) {
-      throw new Error("[acp-adapter] plan() interactive mode is not yet supported via ACP");
-    }
-
     const modelDef = options.modelDef ?? { provider: "anthropic", model: "default" };
     // Timeout: from options, or config, or fallback to 600s
     const timeoutSeconds =

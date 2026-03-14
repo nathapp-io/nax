@@ -17,10 +17,13 @@
         "AC-7: project field auto-detected from package.json or git remote",
         "AC-8: branchName defaults to feat/<feature>, overridable via -b flag"
       ],
-      "tags": ["feature", "cli"],
+      "tags": [
+        "feature",
+        "cli"
+      ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "contextFiles": [
@@ -57,8 +60,13 @@
         "AC-6: Planning session respects timeout (default 10 min)",
         "AC-7: CLI stdin interaction works for local terminal usage"
       ],
-      "tags": ["feature", "interaction"],
-      "dependencies": ["PLN-001"],
+      "tags": [
+        "feature",
+        "interaction"
+      ],
+      "dependencies": [
+        "PLN-001"
+      ],
       "status": "pending",
       "passes": false,
       "escalations": [],
@@ -97,8 +105,13 @@
         "AC-7: --from without existing file throws clear error",
         "AC-8: --plan without --from throws clear error"
       ],
-      "tags": ["feature", "cli"],
-      "dependencies": ["PLN-001"],
+      "tags": [
+        "feature",
+        "cli"
+      ],
+      "dependencies": [
+        "PLN-001"
+      ],
       "status": "pending",
       "passes": false,
       "escalations": [],
@@ -137,10 +150,13 @@
         "AC-7: Common LLM quirks (trailing commas, case-insensitive complexity) are auto-fixed",
         "AC-8: Invalid JSON throws with parse error context (line/column if available)"
       ],
-      "tags": ["feature", "validation"],
+      "tags": [
+        "feature",
+        "validation"
+      ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "contextFiles": [
@@ -172,8 +188,14 @@
         "AC-4: nax init references nax plan in scaffolding messages",
         "AC-5: nax help shows analyze as deprecated"
       ],
-      "tags": ["deprecation", "cli"],
-      "dependencies": ["PLN-001", "PLN-003"],
+      "tags": [
+        "deprecation",
+        "cli"
+      ],
+      "dependencies": [
+        "PLN-001",
+        "PLN-003"
+      ],
       "status": "pending",
       "passes": false,
       "escalations": [],
@@ -197,5 +219,6 @@
         "reasoning": "Straightforward deprecation wiring. Warning messages and help text changes. No architectural changes."
       }
     }
-  ]
+  ],
+  "updatedAt": "2026-03-14T13:25:58.740Z"
 }
