@@ -2,3 +2,4 @@
 [2026-03-14T13:25:58.295Z] PLN-001 — PASSED — Rewrite planCommand to output prd.json instead of spec.md — Cost: $0.5999
 [2026-03-14T13:34:00.577Z] PLN-002 — PASSED — Interactive planning mode via ACP session — Cost: $0.0000
 [2026-03-14T13:38:15.594Z] PLN-003 — PASSED — CLI flag wiring — nax plan and nax run --plan — Cost: $0.0000
+[2026-03-14T13:43:11.038Z] PLN-005 — PASSED — Deprecate nax analyze with migration path — Cost: $0.0000

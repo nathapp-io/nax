@@ -196,8 +196,8 @@
         "PLN-001",
         "PLN-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "contextFiles": [
@@ -220,5 +220,5 @@
       }
     }
   ],
-  "updatedAt": "2026-03-14T13:38:15.595Z"
+  "updatedAt": "2026-03-14T13:43:11.039Z"
 }
