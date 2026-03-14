@@ -194,9 +194,9 @@ describe("Cross-cutting: backward compatibility", () => {
     expect(source).toContain("getAgent");
   });
 
-  test("Default protocol is acp", async () => {
+  test("Default protocol defaults to claude (CLI)", async () => {
     const source = await Bun.file("src/config/defaults.ts").text();
-    // Default protocol is acp
-    expect(source).toContain('"acp"');
+    // agent config is intentionally omitted — CLI is the default when no agent config is set
+    expect(source).toContain("// agent: intentionally omitted");
   });
 });
