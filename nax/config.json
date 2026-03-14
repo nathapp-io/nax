@@ -45,6 +45,9 @@
       "escalateEntireBatch": false
     }
   },
+  "agent": {
+    "protocol": "acp"
+  },
   "routing": {
     "strategy": "llm",
     "llm": {
