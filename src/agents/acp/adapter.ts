@@ -554,7 +554,7 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     for (let attempt = 0; attempt < MAX_RATE_LIMIT_RETRIES; attempt++) {
       try {
-        const result = await this._runSessionMode(options, startTime);
+        const result = await this._runWithClient(options, startTime);
         if (!result.success) {
           getSafeLogger()?.warn("acp-adapter", `Run failed for ${this.name}`, { exitCode: result.exitCode });
         }
@@ -563,12 +563,11 @@ export class AcpAgentAdapter implements AgentAdapter {
         const error = err instanceof Error ? err : new Error(String(err));
         lastError = error;
 
-        const shouldRetry = (isRateLimitError(error) || isSpawnError(error)) && attempt < MAX_RATE_LIMIT_RETRIES - 1;
+        const shouldRetry = isRateLimitError(error) && attempt < MAX_RATE_LIMIT_RETRIES - 1;
         if (!shouldRetry) break;
 
         const backoffMs = 2 ** (attempt + 1) * 1000;
-        getSafeLogger()?.warn("acp-adapter", "Retrying after error", {
-          reason: isRateLimitError(error) ? "rate-limit" : "spawn-error",
+        getSafeLogger()?.warn("acp-adapter", "Retrying after rate limit", {
           backoffSeconds: backoffMs / 1000,
           attempt: attempt + 1,
         });
@@ -584,6 +583,111 @@ export class AcpAgentAdapter implements AgentAdapter {
       rateLimited: isRateLimitError(lastError),
       durationMs,
       estimatedCost: 0,
+    };
+  }
+
+  private async _runWithClient(options: AgentRunOptions, startTime: number): Promise<AgentResult> {
+    const INTERACTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 min for human to respond
+    // Build a command string that includes the model for test introspection
+    const cmdStr = `acpx --model ${options.modelDef.model} ${this.name}`;
+    const client = _acpAdapterDeps.createClient(cmdStr);
+    await client.start();
+
+    let session: AcpSession | null = null;
+    let lastResponse: AcpSessionResponse | null = null;
+    let timedOut = false;
+    // use += to accumulate across turns
+    const totalTokenUsage = { input_tokens: 0, output_tokens: 0 };
+
+    try {
+      session = await client.createSession({ agentName: this.name, permissionMode: "approve-all" });
+
+      let currentPrompt = options.prompt;
+      let turnCount = 0;
+      const MAX_TURNS = options.interactionBridge ? 10 : 1;
+
+      while (turnCount < MAX_TURNS) {
+        turnCount++;
+
+        // Run prompt with timeout
+        const timeoutMs = options.timeoutSeconds * 1000;
+        const promptPromise = session.prompt(currentPrompt);
+        const timeoutPromise = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), timeoutMs));
+
+        const winner = await Promise.race([promptPromise, timeoutPromise]);
+
+        if (winner === "timeout") {
+          timedOut = true;
+          try {
+            await session.cancelActivePrompt();
+          } catch {
+            await session.close().catch(() => {});
+            session = null;
+          }
+          break;
+        }
+
+        lastResponse = winner as AcpSessionResponse;
+
+        if (lastResponse.cumulative_token_usage) {
+          totalTokenUsage.input_tokens += lastResponse.cumulative_token_usage.input_tokens ?? 0;
+          totalTokenUsage.output_tokens += lastResponse.cumulative_token_usage.output_tokens ?? 0;
+        }
+
+        const outputText = extractOutput(lastResponse);
+        const question = extractQuestion(outputText);
+
+        if (!question || !options.interactionBridge) break;
+
+        getSafeLogger()?.debug("acp-adapter", "Agent asked question, routing to interactionBridge", { question });
+
+        let answer: string;
+        try {
+          const answerPromise = options.interactionBridge.onQuestionDetected(question);
+          const bridgeTimeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("interaction timeout")), INTERACTION_TIMEOUT_MS),
+          );
+          answer = await Promise.race([answerPromise, bridgeTimeoutPromise]);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          getSafeLogger()?.warn("acp-adapter", `InteractionBridge failed: ${msg}`);
+          break;
+        }
+
+        currentPrompt = answer;
+      }
+    } finally {
+      if (session) {
+        await session.close().catch((err) => {
+          getSafeLogger()?.warn("acp-adapter", "Failed to close session", { error: String(err) });
+        });
+      }
+    }
+
+    const durationMs = Date.now() - startTime;
+
+    if (timedOut) {
+      return {
+        success: false,
+        exitCode: 124,
+        output: `Session timed out after ${options.timeoutSeconds}s`,
+        rateLimited: false,
+        durationMs,
+        estimatedCost: 0,
+      };
+    }
+
+    const success = lastResponse?.stopReason === "end_turn";
+    const output = extractOutput(lastResponse);
+    const estimatedCost = estimateCostFromTokenUsage(totalTokenUsage, options.modelDef.model);
+
+    return {
+      success,
+      exitCode: success ? 0 : 1,
+      output: output.slice(-MAX_AGENT_OUTPUT_CHARS),
+      rateLimited: false,
+      durationMs,
+      estimatedCost,
     };
   }
 
@@ -869,54 +973,41 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async complete(prompt: string, _options?: CompleteOptions): Promise<string> {
-    const startTime = Date.now();
-    const modelDef = _options?.model
-      ? { provider: "anthropic", model: _options.model }
-      : { provider: "anthropic", model: "default" };
-    const result = await this._runOnce(
-      {
-        prompt,
-        workdir: process.cwd(),
-        modelTier: "balanced",
-        modelDef,
-        timeoutSeconds: 60,
-        dangerouslySkipPermissions: true,
-      },
-      startTime,
-    );
+    const model = _options?.model ?? "default";
+    const cmdStr = `acpx --model ${model} ${this.name}`;
+    const client = _acpAdapterDeps.createClient(cmdStr);
+    await client.start();
 
-    if (!result.success) {
-      throw new CompleteError(`complete() failed: ${result.output}`, result.exitCode);
+    let session: AcpSession | null = null;
+    try {
+      session = await client.createSession({ agentName: this.name, permissionMode: "approve-all" });
+      const response = await session.prompt(prompt);
+
+      if (response.stopReason === "error") {
+        throw new CompleteError("complete() failed: stop reason is error");
+      }
+
+      const text = response.messages
+        .filter((m) => m.role === "assistant")
+        .map((m) => m.content)
+        .join("\n")
+        .trim();
+
+      if (!text) {
+        throw new CompleteError("complete() returned empty output");
+      }
+
+      return text;
+    } finally {
+      if (session) {
+        await session.close().catch(() => {});
+      }
     }
-
-    const text = result.output.trim();
-    if (!text) {
-      throw new CompleteError("complete() returned empty output");
-    }
-
-    return text;
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {
     if (options.interactive) {
       throw new Error("[acp-adapter] plan() interactive mode is not yet supported via ACP");
-    }
-
-    // Create or ensure ACP session for plan→run continuity
-    const sessionName = await ensureAcpSession(buildSessionName(options.featureName, options.storyId), this.name);
-
-    // Persist session name to sidecar so run() can resume the same session
-    if (options.featureName && options.storyId) {
-      await saveAcpSession(options.workdir, options.featureName, options.storyId, sessionName);
-    }
-
-    // Notify caller of session name
-    if (options.onAcpSessionCreated) {
-      try {
-        await options.onAcpSessionCreated(sessionName);
-      } catch (err) {
-        getSafeLogger()?.warn("acp-adapter", "Failed to invoke onAcpSessionCreated callback", { error: String(err) });
-      }
     }
 
     const modelDef = options.modelDef ?? { provider: "anthropic", model: "default" };
@@ -928,7 +1019,6 @@ export class AcpAgentAdapter implements AgentAdapter {
       timeoutSeconds: 600,
       dangerouslySkipPermissions: true,
       interactionBridge: options.interactionBridge,
-      acpSessionName: sessionName,
       featureName: options.featureName,
       storyId: options.storyId,
     });

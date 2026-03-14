@@ -203,9 +203,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
     },
   },
   prompts: {},
-  agent: {
-    protocol: "acp",
-  },
+  // agent: intentionally omitted — cli is the default when no agent config is set
   decompose: {
     trigger: "auto",
     maxAcceptanceCriteria: 6,
