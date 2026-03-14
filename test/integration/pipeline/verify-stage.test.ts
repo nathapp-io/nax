@@ -13,6 +13,11 @@ import { initLogger, resetLogger } from "../../../src/logger";
 import { verifyStage } from "../../../src/pipeline/stages/verify";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd/types";
+import { _regressionRunnerDeps } from "../../../src/verification/runners";
+
+// Kill the 2s agent-cleanup sleep in regression() — irrelevant in unit/integration tests
+const originalRegressionSleep = _regressionRunnerDeps.sleep;
+_regressionRunnerDeps.sleep = async (_ms: number) => {};
 
 /** Helper: Create minimal test context */
 function createTestContext(overrides?: Partial<PipelineContext>): PipelineContext {

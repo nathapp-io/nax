@@ -80,14 +80,15 @@ describe("runOnce() timeout behavior", () => {
 
   test("timeout path: unregisters PID even if killProc throws", async () => {
     // Inject short-lived command directly (no shell wrapper — avoids orphaned child)
-    _runOnceDeps.buildCmd = () => ["sleep", "1"];
+    // Use 0.2s sleep: long enough for 50ms timeout to fire first, short enough to not waste time.
+    _runOnceDeps.buildCmd = () => ["sleep", "0.2"];
     // Override killProc to throw — simulates kill() failing (e.g., process already gone)
     _runOnceDeps.killProc = (_proc, _signal) => {
       throw new Error("kill failed");
     };
 
     // 50ms timeout fires first, killProc throws (process not killed),
-    // proc exits naturally at ~0.5s. The finally block must still unregister.
+    // proc exits naturally at ~0.2s. The finally block must still unregister.
     const adapter = new TestAdapter();
     const options = makeRunOptions(tempDir, 0.05); // 50ms timeout
 

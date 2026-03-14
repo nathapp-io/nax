@@ -113,8 +113,17 @@ export async function scoped(options: VerificationGateOptions): Promise<Verifica
   return runVerificationCore({ ...options, command: scopedCommand });
 }
 
+/**
+ * Injectable dependencies for regression() — allows tests to replace
+ * the 2s agent-cleanup sleep with a no-op without touching production behaviour.
+ * @internal
+ */
+export const _regressionRunnerDeps = {
+  sleep: (ms: number): Promise<void> => Bun.sleep(ms),
+};
+
 /** Quick smoke test — no asset verification, 2s delay to let agent processes terminate. */
 export async function regression(options: VerificationGateOptions): Promise<VerificationResult> {
-  await Bun.sleep(2000);
+  await _regressionRunnerDeps.sleep(2000);
   return runVerificationCore({ ...options, expectedFiles: undefined });
 }

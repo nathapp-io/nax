@@ -359,16 +359,18 @@ describe("nax logs CLI integration", () => {
       });
 
       let started = false;
-      proc.stdout.on("data", () => {
-        started = true;
+      // Wait for first data chunk (event-driven) rather than fixed 1s sleep.
+      // Falls back to 5s max so the test never hangs on unusually slow VMs.
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 5000);
+        proc.stdout.on("data", () => {
+          started = true;
+          clearTimeout(timer);
+          resolve();
+        });
       });
 
-      // Allow up to 1s for Bun process startup + log output (slow VMs need more time)
-      await Bun.sleep(1000);
-
-      // Kill the process
       proc.kill();
-
       expect(started).toBe(true);
     });
 
@@ -379,13 +381,16 @@ describe("nax logs CLI integration", () => {
       });
 
       let started = false;
-      proc.stdout.on("data", () => {
-        started = true;
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 5000);
+        proc.stdout.on("data", () => {
+          started = true;
+          clearTimeout(timer);
+          resolve();
+        });
       });
 
-      await Bun.sleep(1000);
       proc.kill();
-
       expect(started).toBe(true);
     });
   });
