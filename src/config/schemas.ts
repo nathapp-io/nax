@@ -326,6 +326,11 @@ const StorySizeGateConfigSchema = z.object({
   maxBulletPoints: z.number().int().min(1).max(100).default(8),
 });
 
+const AgentConfigSchema = z.object({
+  protocol: z.enum(["acp", "cli"]).default("acp"),
+  acpPermissionMode: z.string().optional(),
+});
+
 const PrecheckConfigSchema = z.object({
   storySizeGate: StorySizeGateConfigSchema,
 });
@@ -372,6 +377,7 @@ export const NaxConfigSchema = z
     disabledPlugins: z.array(z.string()).optional(),
     hooks: HooksConfigSchema.optional(),
     interaction: InteractionConfigSchema.optional(),
+    agent: AgentConfigSchema.optional(),
     precheck: PrecheckConfigSchema.optional(),
     prompts: PromptsConfigSchema.optional(),
     decompose: DecomposeConfigSchema.optional(),

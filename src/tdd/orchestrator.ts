@@ -28,6 +28,8 @@ export interface ThreeSessionTddOptions {
   config: NaxConfig;
   workdir: string;
   modelTier: ModelTier;
+  /** Feature name — used for ACP session naming (nax-<hash>-<feature>-<story>-<role>) */
+  featureName?: string;
   contextMarkdown?: string;
   constitution?: string;
   dryRun?: boolean;
@@ -45,6 +47,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     config,
     workdir,
     modelTier,
+    featureName,
     contextMarkdown,
     constitution,
     dryRun = false,
@@ -135,6 +138,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
       lite,
       lite,
       constitution,
+      featureName,
     );
     sessions.push(session1);
   }
@@ -240,6 +244,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     lite,
     lite,
     constitution,
+    featureName,
   );
   sessions.push(session2);
 
@@ -269,6 +274,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     contextMarkdown,
     lite,
     logger,
+    featureName,
   );
 
   // Session 3: Verifier
@@ -286,6 +292,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     false,
     false,
     constitution,
+    featureName,
   );
   sessions.push(session3);
 

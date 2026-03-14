@@ -52,4 +52,5 @@ export type {
   TddConfig,
   TestCoverageConfig,
   AdaptiveRoutingConfig,
+  AgentConfig,
 } from "./runtime-types";

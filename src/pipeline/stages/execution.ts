@@ -107,7 +107,7 @@ export const executionStage: PipelineStage = {
     const logger = getLogger();
 
     // HARD FAILURE: No agent available — cannot proceed without an agent
-    const agent = _executionDeps.getAgent(ctx.config.autoMode.defaultAgent);
+    const agent = (ctx.agentGetFn ?? _executionDeps.getAgent)(ctx.config.autoMode.defaultAgent);
     if (!agent) {
       return {
         action: "fail",
@@ -133,6 +133,7 @@ export const executionStage: PipelineStage = {
         config: ctx.config,
         workdir: ctx.workdir,
         modelTier: ctx.routing.modelTier,
+        featureName: ctx.prd.feature,
         contextMarkdown: ctx.contextMarkdown,
         constitution: ctx.constitution?.content,
         dryRun: false,
@@ -217,6 +218,37 @@ export const executionStage: PipelineStage = {
       modelDef: resolveModel(ctx.config.models[ctx.routing.modelTier]),
       timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
       dangerouslySkipPermissions: ctx.config.execution.dangerouslySkipPermissions,
+      pidRegistry: ctx.pidRegistry,
+      featureName: ctx.prd.feature,
+      storyId: ctx.story.id,
+      // No sessionRole for single-session strategies (no role suffix in session name)
+      interactionBridge: (() => {
+        const plugin = ctx.interaction?.getPrimary();
+        if (!plugin) return undefined;
+        const QUESTION_PATTERNS = [/\?/, /\bwhich\b/i, /\bshould i\b/i, /\bunclear\b/i, /\bplease clarify\b/i];
+        return {
+          detectQuestion: async (text: string) => QUESTION_PATTERNS.some((p) => p.test(text)),
+          onQuestionDetected: async (text: string) => {
+            const requestId = `ix-acp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+            await plugin.send({
+              id: requestId,
+              type: "input",
+              featureName: ctx.prd.feature,
+              storyId: ctx.story.id,
+              stage: "execution",
+              summary: text,
+              fallback: "continue",
+              createdAt: Date.now(),
+            });
+            try {
+              const response = await plugin.receive(requestId, 120_000);
+              return response.value ?? "continue";
+            } catch {
+              return "continue";
+            }
+          },
+        };
+      })(),
     });
 
     ctx.agentResult = result;

@@ -1,0 +1,279 @@
+/**
+ * Tests for AcpAgentAdapter — ACP-002
+ *
+ * Covers:
+ * - AgentAdapter interface compliance (name, binary, displayName, capabilities)
+ * - isInstalled() checks binary on PATH via _acpAdapterDeps.which
+ * - buildCommand() returns ACP command array for dry-run display
+ * - complete() works in one-shot mode and returns trimmed text
+ * - All AcpClient interactions mockable via injectable _deps pattern
+ */
+
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { AcpAgentAdapter, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
+import { CompleteError } from "../../../../src/agents/types";
+import type { AgentRunOptions } from "../../../../src/agents/types";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ACP mock types — mirror expected acpx interfaces for test isolation
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AcpSessionResponse {
+  messages: Array<{ role: string; content: string }>;
+  stopReason: "end_turn" | "cancelled" | "error" | string;
+  cumulative_token_usage?: { input_tokens: number; output_tokens: number };
+}
+
+export interface MockAcpSession {
+  prompt(text: string): Promise<AcpSessionResponse>;
+  close(): Promise<void>;
+  cancelActivePrompt(): Promise<void>;
+}
+
+export interface MockAcpClient {
+  start(): Promise<void>;
+  createSession(opts: { agentName: string; permissionMode: string }): Promise<MockAcpSession>;
+  close(): Promise<void>;
+  cancelActivePrompt(): Promise<void>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared helpers — also used by adapter-run.test.ts
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function makeSession(overrides: {
+  promptFn?: (text: string) => Promise<AcpSessionResponse>;
+  closeFn?: () => Promise<void>;
+  cancelFn?: () => Promise<void>;
+} = {}): MockAcpSession {
+  return {
+    prompt: overrides.promptFn ?? (async (_: string) => ({
+      messages: [{ role: "assistant", content: "Task completed successfully." }],
+      stopReason: "end_turn",
+      cumulative_token_usage: { input_tokens: 100, output_tokens: 50 },
+    })),
+    close: overrides.closeFn ?? (async () => {}),
+    cancelActivePrompt: overrides.cancelFn ?? (async () => {}),
+  };
+}
+
+export function makeClient(
+  session: MockAcpSession,
+  overrides: {
+    startFn?: () => Promise<void>;
+    createSessionFn?: (opts: { agentName: string; permissionMode: string }) => Promise<MockAcpSession>;
+  } = {},
+): MockAcpClient {
+  return {
+    start: overrides.startFn ?? (async () => {}),
+    createSession: overrides.createSessionFn ?? (async (_opts) => session),
+    close: async () => {},
+    cancelActivePrompt: async () => {},
+  };
+}
+
+export function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptions {
+  return {
+    workdir: "/tmp/nax-acp-test",
+    prompt: "Write a hello world function",
+    modelTier: "balanced",
+    modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
+    timeoutSeconds: 60,
+    ...overrides,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Interface compliance
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("AcpAgentAdapter interface compliance", () => {
+  let adapter: AcpAgentAdapter;
+
+  beforeEach(() => { adapter = new AcpAgentAdapter("claude"); });
+
+  test("name is set from constructor agentName", () => {
+    expect(adapter.name).toBe("claude");
+  });
+
+  test("displayName is a non-empty string", () => {
+    expect(typeof adapter.displayName).toBe("string");
+    expect(adapter.displayName.length).toBeGreaterThan(0);
+  });
+
+  test("binary is a non-empty string", () => {
+    expect(typeof adapter.binary).toBe("string");
+    expect(adapter.binary.length).toBeGreaterThan(0);
+  });
+
+  test("capabilities.supportedTiers is a non-empty array", () => {
+    expect(Array.isArray(adapter.capabilities.supportedTiers)).toBe(true);
+    expect(adapter.capabilities.supportedTiers.length).toBeGreaterThan(0);
+  });
+
+  test("capabilities.maxContextTokens is a positive number", () => {
+    expect(adapter.capabilities.maxContextTokens).toBeGreaterThan(0);
+  });
+
+  test("capabilities.features is a Set", () => {
+    expect(adapter.capabilities.features instanceof Set).toBe(true);
+  });
+
+  test.each(["isInstalled", "run", "buildCommand", "complete", "plan", "decompose"])(
+    "implements %s method",
+    (method) => {
+      expect(typeof (adapter as unknown as Record<string, unknown>)[method]).toBe("function");
+    },
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// isInstalled()
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("isInstalled()", () => {
+  const origWhich = _acpAdapterDeps.which;
+
+  afterEach(() => {
+    _acpAdapterDeps.which = origWhich;
+    mock.restore();
+  });
+
+  test("returns true when binary is found on PATH", async () => {
+    _acpAdapterDeps.which = mock((_name: string) => "/usr/local/bin/claude");
+    expect(await new AcpAgentAdapter("claude").isInstalled()).toBe(true);
+  });
+
+  test("returns false when binary is not found on PATH", async () => {
+    _acpAdapterDeps.which = mock((_name: string) => null);
+    expect(await new AcpAgentAdapter("claude").isInstalled()).toBe(false);
+  });
+
+  test("checks a binary name derived from the agent name", async () => {
+    const checked: string[] = [];
+    _acpAdapterDeps.which = mock((name: string) => { checked.push(name); return "/bin/" + name; });
+    await new AcpAgentAdapter("claude").isInstalled();
+    expect(checked.length).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildCommand()
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildCommand()", () => {
+  test("returns a non-empty string array", () => {
+    const adapter = new AcpAgentAdapter("claude");
+    const cmd = adapter.buildCommand(makeRunOptions());
+    expect(Array.isArray(cmd)).toBe(true);
+    expect(cmd.length).toBeGreaterThan(0);
+    for (const part of cmd) {
+      expect(typeof part).toBe("string");
+    }
+  });
+
+  test("first element is the resolved ACP command", () => {
+    const cmd = new AcpAgentAdapter("claude").buildCommand(makeRunOptions());
+    expect(cmd[0]).toBeTruthy();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// complete()
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("complete()", () => {
+  const origCreateClient = _acpAdapterDeps.createClient;
+  const origSleep = _acpAdapterDeps.sleep;
+
+  beforeEach(() => {
+    _acpAdapterDeps.sleep = mock(async (_ms: number) => {});
+  });
+
+  afterEach(() => {
+    _acpAdapterDeps.createClient = origCreateClient;
+    _acpAdapterDeps.sleep = origSleep;
+    mock.restore();
+  });
+
+  test("returns trimmed assistant message text", async () => {
+    const session = makeSession({
+      promptFn: async (_: string) => ({
+        messages: [{ role: "assistant", content: "  The answer is 42.  \n" }],
+        stopReason: "end_turn",
+        cumulative_token_usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    const result = await new AcpAgentAdapter("claude").complete("What is the answer?");
+    expect(result).toBe("The answer is 42.");
+  });
+
+  test("sends the provided prompt to the ACP session", async () => {
+    let received = "";
+    const session = makeSession({
+      promptFn: async (text: string) => {
+        received = text;
+        return {
+          messages: [{ role: "assistant", content: "Done." }],
+          stopReason: "end_turn",
+          cumulative_token_usage: { input_tokens: 10, output_tokens: 5 },
+        };
+      },
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    await new AcpAgentAdapter("claude").complete("Explain recursion");
+    expect(received).toBe("Explain recursion");
+  });
+
+  test("throws CompleteError when stopReason is error", async () => {
+    const session = makeSession({
+      promptFn: async (_: string) => ({ messages: [], stopReason: "error" }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    await expect(new AcpAgentAdapter("claude").complete("Hello")).rejects.toBeInstanceOf(CompleteError);
+  });
+
+  test("throws CompleteError when assistant output is blank", async () => {
+    const session = makeSession({
+      promptFn: async (_: string) => ({
+        messages: [{ role: "assistant", content: "   " }],
+        stopReason: "end_turn",
+        cumulative_token_usage: { input_tokens: 10, output_tokens: 0 },
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    await expect(new AcpAgentAdapter("claude").complete("Hello")).rejects.toBeInstanceOf(CompleteError);
+  });
+
+  test("closes the session after one-shot completion", async () => {
+    let closeCalled = false;
+    const session = makeSession({ closeFn: async () => { closeCalled = true; } });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    await new AcpAgentAdapter("claude").complete("Quick question");
+    expect(closeCalled).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _acpAdapterDeps — injectable dependency surface
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("_acpAdapterDeps", () => {
+  test("is exported from the module", () => {
+    expect(_acpAdapterDeps).toBeDefined();
+    expect(typeof _acpAdapterDeps).toBe("object");
+  });
+
+  test.each(["createClient", "which", "sleep"])(
+    "%s is a function",
+    (key) => {
+      expect(typeof (_acpAdapterDeps as unknown as Record<string, unknown>)[key]).toBe("function");
+    },
+  );
+});

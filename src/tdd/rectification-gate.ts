@@ -34,6 +34,7 @@ export async function runFullSuiteGate(
   contextMarkdown: string | undefined,
   lite: boolean,
   logger: ReturnType<typeof getLogger>,
+  featureName?: string,
 ): Promise<boolean> {
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
   if (!rectificationEnabled) return false;
@@ -67,6 +68,7 @@ export async function runFullSuiteGate(
         rectificationConfig,
         testCmd,
         fullSuiteTimeout,
+        featureName,
       );
     }
 
@@ -118,6 +120,7 @@ async function runRectificationLoop(
   rectificationConfig: NonNullable<NaxConfig["execution"]["rectification"]>,
   testCmd: string,
   fullSuiteTimeout: number,
+  featureName?: string,
 ): Promise<boolean> {
   const rectificationState: RectificationState = {
     attempt: 0,
@@ -156,6 +159,9 @@ async function runRectificationLoop(
       modelDef: resolveModel(config.models[implementerTier]),
       timeoutSeconds: config.execution.sessionTimeoutSeconds,
       dangerouslySkipPermissions: config.execution.dangerouslySkipPermissions,
+      featureName,
+      storyId: story.id,
+      sessionRole: "implementer",
     });
 
     if (!rectifyResult.success && rectifyResult.pid) {

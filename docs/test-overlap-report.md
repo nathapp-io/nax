@@ -1,6 +1,6 @@
 # Test Overlap Report
 
-Generated: 2026-03-13T02:38:26.260Z
+Generated: 2026-03-14T04:38:15.482Z
 
 ## REDUNDANT
 
@@ -22,7 +22,7 @@ Found 3 integration test(s) with partial unit test coverage:
 
 ## UNIQUE
 
-Found 66 unique integration test(s) with no unit test coverage:
+Found 67 unique integration test(s) with no unit test coverage:
 
 - test/integration/pipeline/hooks.test.ts
 - test/integration/pipeline/pipeline-events.test.ts
@@ -50,6 +50,7 @@ Found 66 unique integration test(s) with no unit test coverage:
 - test/integration/plan/plan.test.ts
 - test/integration/plan/analyze-scanner.test.ts
 - test/integration/plan/analyze-integration.test.ts
+- test/integration/agents/acp/tdd-flow.test.ts
 - test/integration/routing/plugin-routing-core.test.ts
 - test/integration/routing/routing-stage-bug-021.test.ts
 - test/integration/routing/plugin-routing-advanced.test.ts

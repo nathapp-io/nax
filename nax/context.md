@@ -58,7 +58,8 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator only]
 | `src/verification/` | Test execution, smart runner, scoped runner |
 | `src/metrics/` | StoryMetrics, aggregator, tracker |
 | `src/config/` | Config schema + layered loader (global → project) |
-| `src/agents/adapters/` | Agent integrations (Claude Code) |
+| `src/agents/adapters/` | Legacy CLI agent adapters (Claude Code, Codex, Gemini, etc.) |
+| `src/agents/acp/` | ACP protocol adapter — unified, agent-agnostic via `acpx` |
 | `src/cli/` + `src/commands/` | CLI commands — check both locations |
 | `src/prd/` | PRD types, loader, story state machine |
 | `src/hooks/` | Lifecycle hook wiring |
@@ -79,6 +80,13 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator only]
 - Global: `~/.nax/config.json` → Project: `<workdir>/nax/config.json`
 - Schema: `src/config/schema.ts` — no hardcoded flags or credentials anywhere
 
+## Agent Adapter & LLM Calls
+
+- **Two protocol modes:** CLI (`Bun.spawn`) and ACP (JSON-RPC via `acpx`), toggled by `agent.protocol` in config (default: `"acp"`)
+- **LLM fallback rule:** Any code needing LLM calls MUST use `getAgent(config.autoMode.defaultAgent)` from `src/agents/registry` — never inline stubs. Use `agent.complete(prompt, { jsonMode: true })` for one-shot calls.
+- **Forward-compatible:** `getAgent()` returns the correct adapter for the active protocol — calling code doesn't need to know which mode is active.
+- See `docs/architecture/ARCHITECTURE.md` §Adapter for full pattern.
+
 ## Workflow Protocol
 
 1. **Explore first**: use `grep`, `cat` to understand context before writing code.
@@ -88,7 +96,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator only]
 
 ## Coding Standards & Architecture Patterns
 
-**Read `docs/ARCHITECTURE.md` before writing any code.** It defines all enterprise-grade patterns:
+**Read `docs/architecture/ARCHITECTURE.md` before writing any code.** It defines all enterprise-grade patterns:
 
 - **Dependency injection** — `_deps` pattern for all external calls (spawn, fs, fetch)
 - **Error handling** — `[stage]` prefix + context + `{ cause: err }`

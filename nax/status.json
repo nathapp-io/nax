@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-13T01-19-29-932Z",
-    "feature": "ui-test-strategies",
-    "startedAt": "2026-03-13T01:19:29.932Z",
-    "status": "completed",
+    "id": "run-2026-03-13T05-10-56-633Z",
+    "feature": "acp-agent-adapter",
+    "startedAt": "2026-03-13T05:10:56.633Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 1776
+    "pid": 59110
   },
   "progress": {
-    "total": 5,
-    "passed": 5,
+    "total": 7,
+    "passed": 6,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 1
   },
   "cost": {
-    "spent": 2.24773875,
+    "spent": 1.76005325,
     "limit": 8
   },
-  "current": null,
+  "current": {
+    "storyId": "ACP-007",
+    "title": "TDD three-session flow via ACP persistent sessions",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
   "iterations": 6,
-  "updatedAt": "2026-03-13T02:30:56.606Z",
-  "durationMs": 4286674
+  "updatedAt": "2026-03-13T07:03:24.076Z",
+  "durationMs": 6747443,
+  "lastHeartbeat": "2026-03-13T07:03:24.076Z"
 }

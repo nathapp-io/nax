@@ -465,4 +465,14 @@ export interface NaxConfig {
   prompts?: PromptsConfig;
   /** Decompose settings (SD-003) */
   decompose?: DecomposeConfig;
+  /** Agent protocol settings (ACP-003) */
+  agent?: AgentConfig;
+}
+
+/** Agent protocol configuration (ACP-003) */
+export interface AgentConfig {
+  /** Protocol to use for agent communication (default: 'acp') */
+  protocol?: "acp" | "cli";
+  /** ACP permission mode (default: 'approve-all') */
+  acpPermissionMode?: string;
 }

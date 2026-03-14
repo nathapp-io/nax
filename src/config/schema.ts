@@ -48,6 +48,7 @@ export type {
   SmartTestRunnerConfig,
   DecomposeConfig,
   NaxConfig,
+  AgentConfig,
 } from "./types";
 
 export { resolveModel } from "./types";

@@ -11,9 +11,11 @@ import { fireHook } from "../hooks";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
+import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import { isComplete } from "../prd";
 import type { PRD } from "../prd";
+import { autoCommitIfDirty } from "../utils/git";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
 import { hookCtx } from "./story-context";
 
@@ -42,6 +44,10 @@ export interface RunnerCompletionOptions {
   statusWriter: any;
   pluginRegistry: PluginRegistry;
   eventEmitter?: PipelineEventEmitter;
+  /** Protocol-aware agent resolver */
+  agentGetFn?: AgentGetFn;
+  /** Path to prd.json — required for acceptance fix story writes */
+  prdPath: string;
 }
 
 /**
@@ -67,7 +73,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     const acceptanceResult = await runAcceptanceLoop({
       config: options.config,
       prd: options.prd,
-      prdPath: "", // Not needed for this extraction
+      prdPath: options.prdPath,
       workdir: options.workdir,
       featureDir: options.featureDir,
       hooks: options.hooks,
@@ -79,6 +85,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       pluginRegistry: options.pluginRegistry,
       eventEmitter: options.eventEmitter,
       statusWriter: options.statusWriter,
+      agentGetFn: options.agentGetFn,
     });
 
     Object.assign(options, {
@@ -152,6 +159,9 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     options.storiesCompleted,
     durationMs,
   );
+
+  // Commit status.json and any other nax runtime files left dirty at run end
+  await autoCommitIfDirty(options.workdir, "run.complete", "run-summary", options.feature);
 
   return {
     durationMs,

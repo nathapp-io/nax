@@ -44,7 +44,13 @@ import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from 
  * Used as the default implementation in _routingDeps.runDecompose.
  * In production, replace with an LLM-backed adapter.
  */
-async function runDecompose(story: UserStory, prd: PRD, config: NaxConfig, _workdir: string): Promise<DecomposeResult> {
+async function runDecompose(
+  story: UserStory,
+  prd: PRD,
+  config: NaxConfig,
+  _workdir: string,
+  agentGetFn?: import("../types").AgentGetFn,
+): Promise<DecomposeResult> {
   const naxDecompose = config.decompose;
   const builderConfig: BuilderDecomposeConfig = {
     maxSubStories: naxDecompose?.maxSubstories ?? 5,
@@ -52,10 +58,15 @@ async function runDecompose(story: UserStory, prd: PRD, config: NaxConfig, _work
     maxRetries: naxDecompose?.maxRetries ?? 2,
   };
 
-  // Stub adapter — replaced in tests via _routingDeps injection.
+  // Resolve the default agent adapter for LLM-backed decompose.
+  // Falls back to agent.complete() with JSON mode — works with both CLI and ACP adapters.
+  const agent = (agentGetFn ?? getAgent)(config.autoMode.defaultAgent);
+  if (!agent) {
+    throw new Error(`[decompose] Agent "${config.autoMode.defaultAgent}" not found — cannot decompose`);
+  }
   const adapter = {
-    async decompose(_prompt: string): Promise<string> {
-      throw new Error("[decompose] No LLM adapter configured for story decomposition");
+    async decompose(prompt: string): Promise<string> {
+      return agent.complete(prompt, { jsonMode: true });
     },
   };
 
@@ -71,7 +82,7 @@ export const routingStage: PipelineStage = {
 
     // Resolve agent adapter for LLM routing (shared with execution)
     const agentName = ctx.config.execution?.agent ?? "claude";
-    const adapter = _routingDeps.getAgent(agentName);
+    const adapter = (ctx.agentGetFn ?? _routingDeps.getAgent)(agentName);
 
     // Staleness detection (RRP-003):
     // - story.routing absent                   → cache miss (no prior routing)
@@ -173,7 +184,7 @@ export const routingStage: PipelineStage = {
             `Story ${ctx.story.id} is oversized (${acCount} ACs) but decompose is disabled — continuing with original`,
           );
         } else if (decomposeConfig.trigger === "auto") {
-          const result = await _routingDeps.runDecompose(ctx.story, ctx.prd, ctx.config, ctx.workdir);
+          const result = await _routingDeps.runDecompose(ctx.story, ctx.prd, ctx.config, ctx.workdir, ctx.agentGetFn);
           if (result.validation.valid) {
             _routingDeps.applyDecomposition(ctx.prd, result);
             if (ctx.prdPath) {
@@ -193,7 +204,7 @@ export const routingStage: PipelineStage = {
             ctx.interaction!,
           );
           if (action === "decompose") {
-            const result = await _routingDeps.runDecompose(ctx.story, ctx.prd, ctx.config, ctx.workdir);
+            const result = await _routingDeps.runDecompose(ctx.story, ctx.prd, ctx.config, ctx.workdir, ctx.agentGetFn);
             if (result.validation.valid) {
               _routingDeps.applyDecomposition(ctx.prd, result);
               if (ctx.prdPath) {

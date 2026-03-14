@@ -59,6 +59,21 @@ export interface AgentRunOptions {
   env?: Record<string, string>;
   /** Use --dangerously-skip-permissions flag (default: true) */
   dangerouslySkipPermissions?: boolean;
+  /** Interaction bridge for mid-session human interaction (ACP) */
+  interactionBridge?: {
+    detectQuestion: (text: string) => Promise<boolean>;
+    onQuestionDetected: (text: string) => Promise<string>;
+  };
+  /** PID registry for cleanup on crash/SIGTERM */
+  pidRegistry?: import("../execution/pid-registry").PidRegistry;
+  /** ACP session name to resume for plan→run session continuity */
+  acpSessionName?: string;
+  /** Feature name for ACP session naming and logging */
+  featureName?: string;
+  /** Story ID for ACP session naming and logging */
+  storyId?: string;
+  /** Session role for TDD isolation (e.g. "test-writer" | "implementer" | "verifier") */
+  sessionRole?: string;
 }
 
 /**
@@ -83,6 +98,8 @@ export interface CompleteOptions {
   jsonMode?: boolean;
   /** Override the model (adds --model flag) */
   model?: string;
+  /** Whether to skip permission prompts (maps to permissionMode in ACP) */
+  dangerouslySkipPermissions?: boolean;
 }
 
 /**

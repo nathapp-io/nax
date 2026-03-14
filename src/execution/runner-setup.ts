@@ -7,6 +7,7 @@
 
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
+import type { AgentGetFn } from "../pipeline/types";
 
 /**
  * Options for the setup phase.
@@ -31,6 +32,8 @@ export interface RunnerSetupOptions {
   getIterations: () => number;
   getStoriesCompleted: () => number;
   getTotalStories: () => number;
+  /** Protocol-aware agent resolver — created from createAgentRegistry(config) in runner.ts */
+  agentGetFn?: AgentGetFn;
 }
 
 /**
@@ -76,6 +79,7 @@ export async function runSetupPhase(options: RunnerSetupOptions): Promise<Runner
     // BUG-017: Pass getters for run.complete event on SIGTERM
     getStoriesCompleted: options.getStoriesCompleted,
     getTotalStories: options.getTotalStories,
+    agentGetFn: options.agentGetFn,
   });
 
   return setupResult;
