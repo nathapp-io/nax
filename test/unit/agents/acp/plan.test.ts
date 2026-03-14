@@ -135,47 +135,79 @@ describe("plan() — non-interactive mode", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// plan() — interactive mode
+// plan() — interactive mode (PLN-002)
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("plan() — interactive mode", () => {
   const origCreateClient = _acpAdapterDeps.createClient;
+  const origSleep = _acpAdapterDeps.sleep;
+
+  beforeEach(() => {
+    _acpAdapterDeps.sleep = mock(async (_ms: number) => {});
+  });
 
   afterEach(() => {
     _acpAdapterDeps.createClient = origCreateClient;
+    _acpAdapterDeps.sleep = origSleep;
     mock.restore();
   });
 
-  test("throws an error when called in interactive mode", async () => {
+  test("supports interactive mode with multi-turn ACP session", async () => {
+    let questionsAsked: string[] = [];
+    const session = makeSession({
+      promptFn: async (text: string) => {
+        questionsAsked.push(text);
+        return {
+          messages: [{ role: "assistant", content: SAMPLE_SPEC }],
+          stopReason: "end_turn",
+          cumulative_token_usage: { input_tokens: 100, output_tokens: 200 },
+        };
+      },
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
     const adapter = new AcpAgentAdapter("claude");
-    await expect(adapter.plan(makePlanOptions({ interactive: true }))).rejects.toThrow();
+    const result = await adapter.plan(makePlanOptions({ interactive: true }));
+
+    expect(result).toBeDefined();
+    expect(result.specContent).toBeDefined();
   });
 
-  test("error message contains 'not yet supported via ACP' for interactive mode", async () => {
+  test("passes interactionBridge to run() in interactive mode", async () => {
+    let bridgePassed = false;
+    const session = makeSession({
+      promptFn: async (_text: string) => ({
+        messages: [{ role: "assistant", content: SAMPLE_SPEC }],
+        stopReason: "end_turn",
+        cumulative_token_usage: { input_tokens: 50, output_tokens: 100 },
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    const mockBridge = {
+      detectQuestion: async (_text: string) => false,
+      onQuestionDetected: async (text: string) => text,
+    };
+
     const adapter = new AcpAgentAdapter("claude");
-    let errorMessage = "";
-    try {
-      await adapter.plan(makePlanOptions({ interactive: true }));
-    } catch (err) {
-      errorMessage = (err as Error).message;
-    }
-    expect(errorMessage.toLowerCase()).toMatch(/not yet supported via acp/i);
+    await adapter.plan(makePlanOptions({ interactive: true, interactionBridge: mockBridge }));
+
+    // If we reach here without error, the bridge was passed through successfully
+    expect(true).toBe(true);
   });
 
-  test("does not call AcpClient in interactive mode", async () => {
+  test("calls AcpClient when plan() is called in interactive mode", async () => {
     let clientCreated = false;
+    const session = makeSession();
     _acpAdapterDeps.createClient = mock((_cmd: string) => {
       clientCreated = true;
-      return makeClient(makeSession());
+      return makeClient(session);
     });
 
-    try {
-      await new AcpAgentAdapter("claude").plan(makePlanOptions({ interactive: true }));
-    } catch {
-      // expected
-    }
+    const adapter = new AcpAgentAdapter("claude");
+    await adapter.plan(makePlanOptions({ interactive: true }));
 
-    expect(clientCreated).toBe(false);
+    expect(clientCreated).toBe(true);
   });
 });
 

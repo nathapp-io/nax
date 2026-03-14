@@ -66,7 +66,7 @@ export async function precheckCommand(options: PrecheckOptions): Promise<void> {
   // Validate prd.json exists
   if (!existsSync(prdPath)) {
     console.error(chalk.red(`Missing prd.json for feature: ${featureName}`));
-    console.error(chalk.dim(`Run: nax analyze -f ${featureName}`));
+    console.error(chalk.dim(`Run: nax plan -f ${featureName} --from spec.md --auto`));
     process.exit(EXIT_CODES.INVALID_PRD);
   }
 
