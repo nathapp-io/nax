@@ -3,14 +3,24 @@
  * Tests for Codebase Scanner
  */
 
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import type { CodebaseScan } from "../../../src/analyze/types";
 import { scanCodebase } from "../../../src/analyze/scanner";
 
 describe("scanCodebase", () => {
+  // Shared scan result for tests that all use the same nax repo root.
+  // beforeAll runs scanCodebase once instead of once-per-test (was ~10s × 5 = 50s).
+  let rootScan: CodebaseScan;
+  const rootWorkdir = join(import.meta.dir, "../../..");
+
+  beforeAll(async () => {
+    rootScan = await scanCodebase(rootWorkdir);
+  }, 30000);
+
   test("scans project codebase successfully", async () => {
-    // Use the nax project itself as test data
+    // Use the nax test/ directory as test data (smaller scope, independent scan)
     const workdir = join(import.meta.dir, "../..");
 
     const scan = await scanCodebase(workdir);
@@ -48,85 +58,45 @@ describe("scanCodebase", () => {
     expect(scan.devDependencies).toEqual({});
   });
 
-  test(
-    "extracts dependencies from package.json",
-    async () => {
-      const workdir = join(import.meta.dir, "../../..");
+  test("extracts dependencies from package.json", () => {
+    // Should have zod dependency (from real package.json)
+    expect(rootScan.dependencies.zod).toBeTruthy();
+    expect(rootScan.dependencies.commander).toBeTruthy();
+  });
 
-      const scan = await scanCodebase(workdir);
+  test("detects test framework", () => {
+    // Should detect bun:test (no framework in package.json)
+    const hasBunTest = rootScan.testPatterns.some((p) => p.includes("bun:test"));
+    expect(hasBunTest).toBe(true);
+  });
 
-      // Should have zod dependency (from real package.json)
-      expect(scan.dependencies.zod).toBeTruthy();
-      expect(scan.dependencies.commander).toBeTruthy();
-    },
-    30000,
-  );
+  test("detects test directory", () => {
+    // Should detect test/ directory
+    const hasTestDir = rootScan.testPatterns.some((p) => p.includes("test/"));
+    expect(hasTestDir).toBe(true);
+  });
 
-  test(
-    "detects test framework",
-    async () => {
-      const workdir = join(import.meta.dir, "../../..");
+  test("file tree respects max depth", () => {
+    // File tree should not be excessively deep (max depth 3)
+    const lines = rootScan.fileTree.split("\n");
+    const maxIndent = Math.max(
+      ...lines.map((line) => {
+        const match = line.match(/^(│ {3}| {4})*/);
+        return match ? match[0].length / 4 : 0;
+      }),
+    );
 
-      const scan = await scanCodebase(workdir);
+    // Max depth 3 means max indent of 2 (0-indexed)
+    expect(maxIndent).toBeLessThanOrEqual(3);
+  });
 
-      // Should detect bun:test (no framework in package.json)
-      const hasBunTest = scan.testPatterns.some((p) => p.includes("bun:test"));
-      expect(hasBunTest).toBe(true);
-    },
-    30000,
-  );
+  test("file tree includes directories and files", () => {
+    // Should contain directories (marked with trailing /)
+    const hasDirectories = rootScan.fileTree.includes("/");
+    expect(hasDirectories).toBe(true);
 
-  test(
-    "detects test directory",
-    async () => {
-      const workdir = join(import.meta.dir, "../../..");
-
-      const scan = await scanCodebase(workdir);
-
-      // Should detect test/ directory
-      const hasTestDir = scan.testPatterns.some((p) => p.includes("test/"));
-      expect(hasTestDir).toBe(true);
-    },
-    30000,
-  );
-
-  test(
-    "file tree respects max depth",
-    async () => {
-      const workdir = join(import.meta.dir, "../../..");
-
-      const scan = await scanCodebase(workdir);
-
-      // File tree should not be excessively deep (max depth 3)
-      const lines = scan.fileTree.split("\n");
-      const maxIndent = Math.max(
-        ...lines.map((line) => {
-          const match = line.match(/^(│ {3}| {4})*/);
-          return match ? match[0].length / 4 : 0;
-        }),
-      );
-
-      // Max depth 3 means max indent of 2 (0-indexed)
-      expect(maxIndent).toBeLessThanOrEqual(3);
-    },
-    30000,
-  );
-
-  test(
-    "file tree includes directories and files",
-    async () => {
-      const workdir = join(import.meta.dir, "../../..");
-
-      const scan = await scanCodebase(workdir);
-
-      // Should contain directories (marked with trailing /)
-      const hasDirectories = scan.fileTree.includes("/");
-      expect(hasDirectories).toBe(true);
-
-      // Should contain some TypeScript files
-      const hasTsFiles = scan.fileTree.includes(".ts");
-      expect(hasTsFiles).toBe(true);
-    },
-    30000,
-  );
+    // Should contain some TypeScript files
+    const hasTsFiles = rootScan.fileTree.includes(".ts");
+    expect(hasTsFiles).toBe(true);
+  });
 });

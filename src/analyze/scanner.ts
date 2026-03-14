@@ -4,7 +4,7 @@
  * Scans the project directory to generate a summary for LLM classification.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { CodebaseScan } from "./types";
 
@@ -75,38 +75,34 @@ async function generateFileTree(dir: string, maxDepth: number, currentDepth = 0,
   const entries: string[] = [];
 
   try {
-    const dirEntries = Array.from(
-      new Bun.Glob("*").scanSync({
-        cwd: dir,
-        onlyFiles: false,
-      }),
-    );
+    // readdirSync with withFileTypes avoids a separate stat() call per entry —
+    // directory info comes from the single readdir syscall (much faster on large trees).
+    const dirEntries = readdirSync(dir, { withFileTypes: true });
 
     // Sort: directories first, then files
     dirEntries.sort((a, b) => {
-      const aIsDir = !a.includes(".");
-      const bIsDir = !b.includes(".");
-      if (aIsDir && !bIsDir) return -1;
-      if (!aIsDir && bIsDir) return 1;
-      return a.localeCompare(b);
+      if (a.isDirectory() && !b.isDirectory()) return -1;
+      if (!a.isDirectory() && b.isDirectory()) return 1;
+      return a.name.localeCompare(b.name);
     });
 
     for (let i = 0; i < dirEntries.length; i++) {
-      const entry = dirEntries[i];
-      const fullPath = join(dir, entry);
+      const dirent = dirEntries[i];
       const isLast = i === dirEntries.length - 1;
       const connector = isLast ? "└── " : "├── ";
       const childPrefix = isLast ? "    " : "│   ";
+      const isDir = dirent.isDirectory();
 
-      // Check if directory
-      const stat = await Bun.file(fullPath).stat();
-      const isDir = stat.isDirectory();
-
-      entries.push(`${prefix}${connector}${entry}${isDir ? "/" : ""}`);
+      entries.push(`${prefix}${connector}${dirent.name}${isDir ? "/" : ""}`);
 
       // Recurse into directories
       if (isDir) {
-        const subtree = await generateFileTree(fullPath, maxDepth, currentDepth + 1, prefix + childPrefix);
+        const subtree = await generateFileTree(
+          join(dir, dirent.name),
+          maxDepth,
+          currentDepth + 1,
+          prefix + childPrefix,
+        );
         if (subtree) {
           entries.push(subtree);
         }
