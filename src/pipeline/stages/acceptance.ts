@@ -149,19 +149,34 @@ export const acceptanceStage: PipelineStage = {
     const overrides = ctx.prd.acceptanceOverrides || {};
     const actualFailures = failedACs.filter((acId) => !overrides[acId]);
 
-    // If all failed ACs are overridden, treat as success
+    // If all tests passed cleanly
     if (actualFailures.length === 0 && exitCode === 0) {
       logger.info("acceptance", "All acceptance tests passed");
       return { action: "continue" };
     }
 
-    if (actualFailures.length === 0 && exitCode !== 0) {
-      // Tests failed but we couldn't parse which ACs
-      // This might be a setup/teardown error
-      logger.warn("acceptance", "Tests failed but no specific AC failures detected", {
+    // All parsed AC failures are overridden — treat as success even with non-zero exit
+    if (failedACs.length > 0 && actualFailures.length === 0) {
+      logger.info("acceptance", "All failed ACs are overridden — treating as pass");
+      return { action: "continue" };
+    }
+
+    // Non-zero exit but no AC failures parsed at all — test crashed (syntax error, import failure, etc.)
+    if (failedACs.length === 0 && exitCode !== 0) {
+      logger.error("acceptance", "Tests errored with no AC failures parsed", {
+        exitCode,
         output,
       });
-      return { action: "continue" }; // Don't block on unparseable failures
+
+      ctx.acceptanceFailures = {
+        failedACs: ["AC-ERROR"],
+        testOutput: output,
+      };
+
+      return {
+        action: "fail",
+        reason: `Acceptance tests errored (exit code ${exitCode}): syntax error, import failure, or unhandled exception`,
+      };
     }
 
     // If we have actual failures, report them

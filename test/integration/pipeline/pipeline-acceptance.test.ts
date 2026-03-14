@@ -300,4 +300,37 @@ describe("test-feature - Acceptance Tests", () => {
       expect(result.reason).toContain("AC-3");
     }
   });
+
+  test("fails when test file has syntax error (exit != 0, no AC failures parsed)", async () => {
+    const prd = createTestPRD([{ id: "US-001", status: "passed" }]);
+    const ctx = createTestContext(prd);
+
+    // Create a test file with a syntax error — bun exits non-zero but no (fail) AC-N lines
+    const testPath = path.join(featureDir, "acceptance.test.ts");
+    await Bun.write(
+      testPath,
+      `
+import { describe, test, expect } from "bun:test";
+
+describe("broken", () => {
+  test("AC-1: should work", () => {
+# This is invalid TypeScript — causes syntax error
+    expect(true).toBe(true);
+  });
+});
+`,
+    );
+
+    const result = await acceptanceStage.execute(ctx);
+
+    // Must fail — syntax errors are not a pass
+    expect(result.action).toBe("fail");
+    if (result.action === "fail") {
+      expect(result.reason).toContain("errored");
+    }
+
+    // Should populate acceptanceFailures for fix generation
+    expect(ctx.acceptanceFailures).toBeDefined();
+    expect(ctx.acceptanceFailures!.failedACs).toContain("AC-ERROR");
+  });
 });
