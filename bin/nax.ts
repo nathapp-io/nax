@@ -518,11 +518,14 @@ features
 
 // ── plan ─────────────────────────────────────────────
 program
-  .command("plan <description>")
-  .description("Interactive planning via agent plan mode")
-  .option("--from <file>", "Non-interactive mode: read from input file")
+  .command("plan")
+  .description("Generate prd.json from a spec file via LLM one-shot call")
+  .requiredOption("--from <spec-path>", "Path to spec file (required)")
+  .requiredOption("-f, --feature <name>", "Feature name (required)")
+  .option("--auto", "Run in auto (one-shot LLM) mode", false)
+  .option("-b, --branch <branch>", "Override default branch name")
   .option("-d, --dir <path>", "Project directory", process.cwd())
-  .action(async (description: string, options) => {
+  .action(async (options) => {
     // Validate directory path
     let workdir: string;
     try {
@@ -542,14 +545,16 @@ program
     const config = await loadConfig(workdir);
 
     try {
-      const specPath = await planCommand(description, workdir, config, {
-        interactive: !options.from,
+      const prdPath = await planCommand(workdir, config, {
         from: options.from,
+        feature: options.feature,
+        auto: options.auto,
+        branch: options.branch,
       });
 
-      console.log(chalk.green("\n✅ Planning complete"));
-      console.log(chalk.dim(`   Spec: ${specPath}`));
-      console.log(chalk.dim("\nNext: nax analyze -f <feature-name>"));
+      console.log(chalk.green("\n[OK] PRD generated"));
+      console.log(chalk.dim(`   PRD: ${prdPath}`));
+      console.log(chalk.dim(`\nNext: nax run -f ${options.feature}`));
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);
