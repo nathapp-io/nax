@@ -88,18 +88,18 @@ describe("ACC-003: acceptance-setup Pipeline Stage", () => {
   });
 
   test("AC-3: config has acceptance.refinement default true", async () => {
-    const { defaultConfig } = await import("../../../src/config/defaults");
-    expect(defaultConfig.acceptance.refinement).toBe(true);
+    const { DEFAULT_CONFIG } = await import("../../../src/config/defaults");
+    expect(DEFAULT_CONFIG.acceptance.refinement).toBe(true);
   });
 
   test("AC-4: config has acceptance.redGate default true", async () => {
-    const { defaultConfig } = await import("../../../src/config/defaults");
-    expect(defaultConfig.acceptance.redGate).toBe(true);
+    const { DEFAULT_CONFIG } = await import("../../../src/config/defaults");
+    expect(DEFAULT_CONFIG.acceptance.redGate).toBe(true);
   });
 
   test("AC-5: config has acceptance.model default fast", async () => {
-    const { defaultConfig } = await import("../../../src/config/defaults");
-    expect(defaultConfig.acceptance.model).toBe("fast");
+    const { DEFAULT_CONFIG } = await import("../../../src/config/defaults");
+    expect(DEFAULT_CONFIG.acceptance.model).toBe("fast");
   });
 });
 

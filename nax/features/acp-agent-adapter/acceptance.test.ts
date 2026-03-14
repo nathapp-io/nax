@@ -69,10 +69,10 @@ describe("ACP-002: AcpAgentAdapter core", () => {
     expect(source).toContain("async complete(");
   });
 
-  test("acpx is listed in package.json dependencies", async () => {
-    const pkg = await Bun.file("package.json").json();
-    const hasDep = !!(pkg.dependencies?.acpx || pkg.devDependencies?.acpx);
-    expect(hasDep).toBe(true);
+  test("SpawnAcpClient exists for CLI-based ACP", async () => {
+    // nax uses SpawnAcpClient (spawns acpx CLI) instead of acpx npm package
+    const exists = await Bun.file("src/agents/acp/spawn-client.ts").exists();
+    expect(exists).toBe(true);
   });
 });
 
