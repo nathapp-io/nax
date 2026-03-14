@@ -41,6 +41,7 @@ test:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_MESSAGE =~ /run-prerelease/ && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
     - if: '$CI_COMMIT_MESSAGE =~ /run-release/ && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_MESSAGE =~ /run-test/'
 
 # --- Stage: Release ---
 release:
@@ -116,6 +117,20 @@ notify_mr_success:
       when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
+# --- Notify: Test Pipeline Success ---
+notify_test_only:
+  stage: notify
+  image: 
+    name: registry-intl.cn-hongkong.aliyuncs.com/gkci/node:22.14.0-alpine-ci
+    pull_policy: always
+  needs: [test]
+  script:
+    - 'curl -s -X POST -H "Content-Type: application/json" -d "{\"chat_id\": \"$TELEGRAM_CHAT_ID\", \"text\": \"nax test pipeline passed: ${CI_MERGE_REQUEST_TITLE}\"}" https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage'
+  rules:
+    - if: '$TELEGRAM_BOT_TOKEN == null || $TELEGRAM_BOT_TOKEN == ""'
+      when: never
+    - if: '$CI_COMMIT_MESSAGE =~ /run-test/' 
+
 # --- Notify: Pipeline Failed ---
 notify_pipeline_failed:
   stage: notify
@@ -137,4 +152,6 @@ notify_pipeline_failed:
     - if: '$CI_COMMIT_MESSAGE =~ /run-prerelease/ && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
       when: on_failure
     - if: '$CI_COMMIT_MESSAGE =~ /run-release/ && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_failure
+    - if: '$CI_COMMIT_MESSAGE =~ /run-test/'
       when: on_failure
