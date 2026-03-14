@@ -153,6 +153,36 @@ export function detectMergeConflict(output: string): boolean {
 export async function autoCommitIfDirty(workdir: string, stage: string, role: string, storyId: string): Promise<void> {
   const logger = getSafeLogger();
   try {
+    // Guard: only auto-commit if workdir IS the git repository root.
+    // Without this, a workdir nested inside another git repo (e.g. a temp dir
+    // created inside the nax repo during tests) would cause git to walk up and
+    // commit files from the parent repo instead.
+    const topLevelProc = _gitDeps.spawn(["git", "rev-parse", "--show-toplevel"], {
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const gitRoot = (await new Response(topLevelProc.stdout).text()).trim();
+    await topLevelProc.exited;
+
+    // Normalize paths to handle symlinks (e.g. /tmp → /private/tmp on macOS)
+    const { realpathSync } = await import("node:fs");
+    const realWorkdir = (() => {
+      try {
+        return realpathSync(workdir);
+      } catch {
+        return workdir;
+      }
+    })();
+    const realGitRoot = (() => {
+      try {
+        return realpathSync(gitRoot);
+      } catch {
+        return gitRoot;
+      }
+    })();
+    if (realWorkdir !== realGitRoot) return;
+
     const statusProc = _gitDeps.spawn(["git", "status", "--porcelain"], {
       cwd: workdir,
       stdout: "pipe",

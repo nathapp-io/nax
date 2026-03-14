@@ -313,7 +313,9 @@ async function main() {
   console.log(`- Dead references: ${totalDeadRefs}`);
 }
 
-main().catch((err) => {
-  console.error(`[FAIL] ${err.message}`);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error(`[FAIL] ${err.message}`);
+    process.exit(1);
+  });
+}
