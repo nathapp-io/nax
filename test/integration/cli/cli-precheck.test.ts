@@ -1879,7 +1879,7 @@ describe("Precheck Integration with nax run", () => {
 });
 
 import type { AgentAdapter, AgentRunOptions } from "../../../src/agents";
-import { ClaudeCodeAdapter } from "../../../src/agents/claude";
+import { ClaudeCodeAdapter, _claudeAdapterDeps } from "../../../src/agents/claude";
 import { describeAgentCapabilities, validateAgentFeature, validateAgentForTier } from "../../../src/agents/validation";
 
 describe("Agent Validation and Retry Logic", () => {
@@ -1979,50 +1979,51 @@ describe("Agent Validation and Retry Logic", () => {
   });
 
   describe("ClaudeCodeAdapter retry logic", () => {
-    test(
-      "retries on rate limit with exponential backoff",
-      async () => {
-        const adapter = new ClaudeCodeAdapter();
-        const originalSpawn = Bun.spawn;
-        let attemptCount = 0;
+    test("retries on rate limit with exponential backoff", async () => {
+      const adapter = new ClaudeCodeAdapter();
+      const originalSpawn = Bun.spawn;
+      const originalSleep = _claudeAdapterDeps.sleep;
+      let attemptCount = 0;
+      const sleepCalls: number[] = [];
 
-        // Mock rate-limited response that succeeds on 3rd try
-        (Bun as any).spawn = mock(() => {
-          attemptCount++;
-          const isRateLimited = attemptCount < 3;
+      // Replace sleep with instant no-op spy — avoids real 2s+4s waits
+      _claudeAdapterDeps.sleep = async (ms: number) => {
+        sleepCalls.push(ms);
+      };
 
-          return {
-            exited: Promise.resolve(isRateLimited ? 1 : 0),
-            kill: () => {},
-            stdout: new Response(isRateLimited ? "" : "success").body,
-            stderr: new Response(isRateLimited ? "rate limit exceeded" : "").body,
-          };
-        });
+      // Mock rate-limited response that succeeds on 3rd try
+      (Bun as any).spawn = mock(() => {
+        attemptCount++;
+        const isRateLimited = attemptCount < 3;
 
-        const options: AgentRunOptions = {
-          prompt: "test",
-          workdir: "/tmp",
-          modelTier: "balanced",
-          modelDef: { provider: "anthropic", model: "claude-sonnet-4.5", env: {} },
-          timeoutSeconds: 60,
+        return {
+          exited: Promise.resolve(isRateLimited ? 1 : 0),
+          kill: () => {},
+          stdout: new Response(isRateLimited ? "" : "success").body,
+          stderr: new Response(isRateLimited ? "rate limit exceeded" : "").body,
         };
+      });
 
-        const startTime = Date.now();
-        const result = await adapter.run(options);
-        const duration = Date.now() - startTime;
+      const options: AgentRunOptions = {
+        prompt: "test",
+        workdir: "/tmp",
+        modelTier: "balanced",
+        modelDef: { provider: "anthropic", model: "claude-sonnet-4.5", env: {} },
+        timeoutSeconds: 60,
+      };
 
-        // Should succeed after retries
-        expect(result.success).toBe(true);
-        expect(attemptCount).toBe(3);
+      const result = await adapter.run(options);
 
-        // Should have backoff delays (2s + 4s = 6s, but we'll check for at least 3s)
-        // Note: In real implementation, backoff is 2^attempt * 1000 = 2s, 4s
-        expect(duration).toBeGreaterThanOrEqual(3000);
+      // Should succeed after retries
+      expect(result.success).toBe(true);
+      expect(attemptCount).toBe(3);
 
-        Bun.spawn = originalSpawn;
-      },
-      { timeout: 15000 },
-    );
+      // Should have slept with exponential backoff: 2^1*1000=2s, 2^2*1000=4s
+      expect(sleepCalls).toEqual([2000, 4000]);
+
+      Bun.spawn = originalSpawn;
+      _claudeAdapterDeps.sleep = originalSleep;
+    });
 
     test(
       "fails immediately on agent execution errors (no retry)",

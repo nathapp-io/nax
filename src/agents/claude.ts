@@ -57,6 +57,16 @@ export const _decomposeDeps = {
 export { _runOnceDeps, _completeDeps };
 
 /**
+ * Injectable dependencies for ClaudeCodeAdapter retry loop.
+ * Exported so tests can replace sleep with a no-op spy.
+ *
+ * @internal
+ */
+export const _claudeAdapterDeps = {
+  sleep: (ms: number): Promise<void> => Bun.sleep(ms),
+};
+
+/**
  * Claude Code agent adapter implementation.
  *
  * Implements the AgentAdapter interface for Claude Code CLI,
@@ -120,7 +130,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
             const backoffMs = 2 ** attempt * 1000;
             const logger = getLogger();
             logger.warn("agent", "Rate limited, retrying", { backoffSeconds: backoffMs / 1000, attempt, maxRetries });
-            await Bun.sleep(backoffMs);
+            await _claudeAdapterDeps.sleep(backoffMs);
             continue;
           }
 
@@ -138,7 +148,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
               attempt,
               maxRetries,
             });
-            await Bun.sleep(backoffMs);
+            await _claudeAdapterDeps.sleep(backoffMs);
             continue;
           }
 
