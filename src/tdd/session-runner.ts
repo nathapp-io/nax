@@ -10,8 +10,17 @@ import { resolveModel } from "../config";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { PromptBuilder } from "../prompts";
-import { autoCommitIfDirty } from "../utils/git";
+import { autoCommitIfDirty as _autoCommitIfDirtyFn } from "../utils/git";
 import { cleanupProcessTree } from "./cleanup";
+
+/**
+ * Injectable dependencies for session-runner — allows tests to mock
+ * autoCommitIfDirty without going through internal git deps.
+ * @internal
+ */
+export const _sessionRunnerDeps = {
+  autoCommitIfDirty: _autoCommitIfDirtyFn,
+};
 import { getChangedFiles, verifyImplementerIsolation, verifyTestWriterIsolation } from "./isolation";
 import type { IsolationCheck } from "./types";
 import type { TddSessionResult, TddSessionRole } from "./types";
@@ -158,7 +167,7 @@ export async function runTddSession(
   }
 
   // BUG-058: Auto-commit if agent left uncommitted changes
-  await autoCommitIfDirty(workdir, "tdd", role, story.id);
+  await _sessionRunnerDeps.autoCommitIfDirty(workdir, "tdd", role, story.id);
 
   // Check isolation based on role and skipIsolation flag.
   let isolation: IsolationCheck | undefined;
