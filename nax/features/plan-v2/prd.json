@@ -1,0 +1,201 @@
+{
+  "project": "nax",
+  "feature": "plan-v2",
+  "branchName": "feat/plan-v2",
+  "userStories": [
+    {
+      "id": "PLN-001",
+      "title": "Rewrite planCommand to output prd.json instead of spec.md",
+      "description": "Rewrite `src/cli/plan.ts` `planCommand()` to output a valid `prd.json` instead of a spec markdown file.\n\nChanges:\n\n1. Update `planCommand()` signature: accept `--from <spec-path>` (required), `--auto` flag, `-f <feature>` (required), `-b <branch>` (optional, default `feat/<feature>`).\n\n2. Remove the old `SPEC_TEMPLATE` and `buildPlanPrompt()`. Replace with `buildPlanningPrompt()` that includes:\n   - Spec content (read from `--from` path)\n   - Codebase context (from `scanCodebase()`)\n   - Output schema (exact `prd.json` JSON structure with field descriptions)\n   - Complexity classification guide (simple/medium/complex/expert definitions)\n   - Test strategy guide (test-after/tdd-lite/three-session-tdd recommendations)\n\n3. Output path changes from `config.plan.outputPath` (spec.md) to `nax/features/<feature>/prd.json`.\n\n4. In `--auto` mode: send one-shot prompt via `adapter.complete()`, parse JSON response, validate against PRD schema, write file.\n\n5. JSON validation: use the existing `UserStory` type shape — ensure all required fields present, complexity is valid enum, dependencies reference valid story IDs, status is always `\"pending\"`.\n\n6. Auto-detect `project` from `package.json` name or git remote. Auto-generate `branchName` as `feat/<feature>` unless `-b` overridden.\n\n7. Add `createdAt` and `updatedAt` ISO timestamps to output.\n\nDo NOT implement interactive mode yet (PLN-002 handles that). Throw clear error if `--auto` is not specified (\"Interactive mode not yet implemented, use --auto\").",
+      "acceptanceCriteria": [
+        "AC-1: planCommand reads spec from --from path and includes content in prompt",
+        "AC-2: Planning prompt includes codebase context, output schema, complexity guide, and test strategy guide",
+        "AC-3: In --auto mode, adapter.complete() is called with the full planning prompt",
+        "AC-4: JSON response is parsed and validated — invalid JSON or missing required fields throws clear error",
+        "AC-5: Output written to nax/features/<feature>/prd.json with correct structure",
+        "AC-6: All story statuses are forced to 'pending' regardless of LLM output",
+        "AC-7: project field auto-detected from package.json or git remote",
+        "AC-8: branchName defaults to feat/<feature>, overridable via -b flag"
+      ],
+      "tags": ["feature", "cli"],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/cli/plan.ts",
+        "src/agents/claude-plan.ts",
+        "src/agents/types-extended.ts",
+        "src/prd/types.ts",
+        "src/analyze/scanner.ts",
+        "src/config/schema.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/plan.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 3,
+      "routing": {
+        "complexity": "complex",
+        "initialComplexity": "complex",
+        "testStrategy": "tdd-lite",
+        "reasoning": "Major rewrite of planCommand with new prompt construction, JSON parsing/validation, and schema enforcement. Multiple integration points (scanner, adapter, PRD schema). Needs careful prompt engineering for reliable JSON output."
+      }
+    },
+    {
+      "id": "PLN-002",
+      "title": "Interactive planning mode via ACP session",
+      "description": "Implement the default interactive planning mode for `nax plan` using ACP persistent sessions.\n\nChanges:\n\n1. In `planCommand()`, when `--auto` is NOT specified (default), use ACP interaction bridge for a conversational planning session.\n\n2. Flow:\n   a. Read spec from `--from`\n   b. Scan codebase\n   c. Start ACP session via adapter (use `adapter.run()` with planning prompt)\n   d. Agent reads spec + codebase context, asks clarifying questions\n   e. Questions detected by interaction bridge → forwarded to human (CLI stdin or interaction plugin)\n   f. Human answers → sent as follow-up prompts to same session\n   g. Agent produces final `prd.json` JSON output\n   h. Parse, validate, write to `nax/features/<feature>/prd.json`\n\n3. Wire the existing `interactionBridge` in `PlanOptions` — it already has `detectQuestion` and `onQuestionDetected` but is only used for CLI stdin. Extend to support the ACP interaction bridge from the adapter.\n\n4. Final output extraction: agent's last message should contain a JSON code block with the PRD. Parse it using the same validation as `--auto` mode.\n\n5. Add timeout: planning session has a configurable timeout (default 10 min). If exceeded, extract whatever partial output exists and warn.\n\nDepends on PLN-001 for the prompt construction and JSON validation logic.",
+      "acceptanceCriteria": [
+        "AC-1: Default nax plan (no --auto) starts an interactive ACP session",
+        "AC-2: Agent asks clarifying questions that are forwarded to human via interaction bridge",
+        "AC-3: Human responses are sent as follow-up prompts to the same ACP session",
+        "AC-4: Final output is extracted from agent's last message as JSON",
+        "AC-5: Output validated and written to nax/features/<feature>/prd.json",
+        "AC-6: Planning session respects timeout (default 10 min)",
+        "AC-7: CLI stdin interaction works for local terminal usage"
+      ],
+      "tags": ["feature", "interaction"],
+      "dependencies": ["PLN-001"],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/cli/plan.ts",
+        "src/agents/acp/adapter.ts",
+        "src/agents/types-extended.ts",
+        "src/interaction/chain.ts",
+        "src/interaction/types.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/plan.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 3,
+      "routing": {
+        "complexity": "complex",
+        "initialComplexity": "complex",
+        "testStrategy": "tdd-lite",
+        "reasoning": "Async interaction bridge wiring with ACP sessions, question detection, timeout handling, and partial output extraction. Two async systems (ACP + interaction chain) must coordinate correctly."
+      }
+    },
+    {
+      "id": "PLN-003",
+      "title": "CLI flag wiring — nax plan and nax run --plan",
+      "description": "Wire the new CLI flags for `nax plan` and `nax run --plan` commands.\n\nChanges:\n\n1. Update `nax plan` CLI definition (likely in `src/cli/index.ts` or similar CLI router):\n   - `-f, --feature <name>` (required)\n   - `--from <spec-path>` (required)\n   - `--auto` (optional, default false)\n   - `-b, --branch <name>` (optional, default `feat/<feature>`)\n   - `-d, --dir <path>` (optional, default cwd)\n   - Remove old positional `<description>` arg — if someone passes it, print migration error: \"Positional args removed in plan v2. Use: nax plan -f <feature> --from <spec>\"\n\n2. Add `--plan` and `--from` flags to `nax run`:\n   - `--plan` (boolean, optional)\n   - `--from <spec-path>` (required when `--plan` is used)\n   - When `--plan` is set: run plan phase first, then confirmation gate, then normal run\n\n3. Confirmation gate for `nax run --plan`:\n   - After plan phase completes, display story breakdown summary\n   - Wait for user confirmation (Y/n) unless `--headless`\n   - In `--headless` mode, skip confirmation and execute immediately\n\n4. Validation: `--from` must point to an existing file. `--plan` without `--from` is an error.",
+      "acceptanceCriteria": [
+        "AC-1: nax plan -f <feature> --from <spec> --auto works end-to-end",
+        "AC-2: nax plan -f <feature> --from <spec> starts interactive mode",
+        "AC-3: nax plan <description> (old form) prints migration error",
+        "AC-4: nax run -f <feature> --plan --from <spec> runs plan then execute",
+        "AC-5: Confirmation gate displays story breakdown and waits for Y/n",
+        "AC-6: --headless skips confirmation gate",
+        "AC-7: --from without existing file throws clear error",
+        "AC-8: --plan without --from throws clear error"
+      ],
+      "tags": ["feature", "cli"],
+      "dependencies": ["PLN-001"],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/cli/plan.ts",
+        "src/cli/run.ts",
+        "src/cli/index.ts",
+        "bin/nax.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/plan.ts",
+        "src/cli/run.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 2,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "tdd-lite",
+        "reasoning": "CLI flag parsing and validation. Follows existing patterns in codebase. Main complexity is the confirmation gate UX and the plan-to-run handoff."
+      }
+    },
+    {
+      "id": "PLN-004",
+      "title": "PRD JSON validation and schema enforcement",
+      "description": "Create a robust JSON validation layer for LLM-generated PRD output.\n\nNew file: `src/prd/schema.ts`\n\nThis module validates and normalizes the JSON output from the planning LLM to ensure it conforms to the `PRD` type before writing to disk.\n\n1. `validatePlanOutput(raw: unknown, feature: string, branch: string): PRD` — main validation function:\n   - Parse if string (handle markdown code block wrapping: extract from ```json ... ```)\n   - Validate required top-level fields: `userStories` (array, non-empty)\n   - Auto-fill: `project` (from param or detect), `feature`, `branchName`, `createdAt`, `updatedAt`\n   - Per-story validation:\n     a. `id` — must be non-empty, alphanumeric with hyphens (validate via `validateStoryId`)\n     b. `title` — must be non-empty string\n     c. `description` — must be non-empty string\n     d. `acceptanceCriteria` — must be non-empty array of strings\n     e. `complexity` — must be one of: simple, medium, complex, expert\n     f. `testStrategy` — must be valid TestStrategy enum value\n     g. `dependencies` — array of story IDs, all must reference valid IDs in same PRD\n     h. Force `status: \"pending\"`, `passes: false`, `attempts: 0`, `escalations: []`\n   - Auto-fix common LLM issues:\n     a. Strip trailing commas in JSON\n     b. Normalize story ID format (e.g., `ST001` → `ST-001`)\n     c. Map close-enough complexity strings (e.g., `\"Simple\"` → `\"simple\"`)\n   - Return validated `PRD` object or throw with specific field-level errors\n\n2. `extractJsonFromMarkdown(text: string): string` — extract JSON from markdown code blocks (```json ... ``` or ``` ... ```).\n\n3. Export for use by both `--auto` and interactive modes.",
+      "acceptanceCriteria": [
+        "AC-1: Valid JSON with all required fields passes validation",
+        "AC-2: Missing required fields (id, title, description, acceptanceCriteria) throw with field name in error",
+        "AC-3: Invalid complexity values throw with valid options listed",
+        "AC-4: Dependency references to non-existent story IDs throw",
+        "AC-5: Status is always forced to 'pending' regardless of LLM output",
+        "AC-6: JSON wrapped in markdown code blocks is extracted correctly",
+        "AC-7: Common LLM quirks (trailing commas, case-insensitive complexity) are auto-fixed",
+        "AC-8: Invalid JSON throws with parse error context (line/column if available)"
+      ],
+      "tags": ["feature", "validation"],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/prd/types.ts",
+        "src/prd/validate.ts",
+        "src/config/schema-types.ts"
+      ],
+      "expectedFiles": [
+        "src/prd/schema.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 2,
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "tdd-lite",
+        "reasoning": "Pure validation logic with well-defined inputs/outputs. Multiple edge cases to handle (LLM quirks) but no external dependencies. TDD-lite is ideal — write validation tests first, then implement."
+      }
+    },
+    {
+      "id": "PLN-005",
+      "title": "Deprecate nax analyze with migration path",
+      "description": "Deprecate `nax analyze` in favor of `nax plan`, keeping backward compatibility.\n\nChanges:\n\n1. In the CLI router, keep `nax analyze` as a registered command but:\n   - Print deprecation warning: `⚠️  'nax analyze' is deprecated. Use 'nax plan -f <feature> --from <spec> --auto' instead.`\n   - Then execute the existing analyze logic (no behavior change)\n   - Warning goes to stderr so it doesn't break piped output\n\n2. Update `nax plan <description>` (old positional form):\n   - Print migration error: `❌ Positional arguments removed in plan v2. Use: nax plan -f <feature> --from <spec.md>`\n   - Exit with code 1\n\n3. Update `nax init` scaffolding messages to reference `nax plan` instead of `nax analyze`.\n\n4. Update help text for both commands.",
+      "acceptanceCriteria": [
+        "AC-1: nax analyze still works but prints deprecation warning to stderr",
+        "AC-2: nax analyze behavior is unchanged (same output, same exit codes)",
+        "AC-3: nax plan <description> (old positional form) prints migration error and exits 1",
+        "AC-4: nax init references nax plan in scaffolding messages",
+        "AC-5: nax help shows analyze as deprecated"
+      ],
+      "tags": ["deprecation", "cli"],
+      "dependencies": ["PLN-001", "PLN-003"],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/cli/index.ts",
+        "src/cli/analyze.ts",
+        "src/cli/init.ts"
+      ],
+      "expectedFiles": [
+        "src/cli/analyze.ts",
+        "src/cli/index.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "test-after",
+        "reasoning": "Straightforward deprecation wiring. Warning messages and help text changes. No architectural changes."
+      }
+    }
+  ]
+}
