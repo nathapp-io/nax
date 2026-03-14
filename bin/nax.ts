@@ -347,7 +347,7 @@ program
         const generatedPrdPath = await planCommand(workdir, config, {
           from: options.from,
           feature: options.feature,
-          auto: true, // AC-1: --auto mode for one-shot planning
+          auto: options.headless, // headless → one-shot; interactive → ACP session
           branch: undefined,
         });
 

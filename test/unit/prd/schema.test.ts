@@ -265,6 +265,24 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
     const prd = validatePlanOutput(input, "feat", "branch");
     expect(prd.userStories[0]!.routing?.complexity).toBe("complex");
   });
+
+  test("maps legacy testStrategy 'tdd-lite' alias to 'tdd-simple'", () => {
+    const input = makeInput([makeStory({ testStrategy: "tdd-lite" })]);
+    const prd = validatePlanOutput(input, "feat", "branch");
+    expect(prd.userStories[0]!.routing?.testStrategy).toBe("tdd-simple");
+  });
+
+  test("accepts valid testStrategy 'tdd-simple' as-is", () => {
+    const input = makeInput([makeStory({ testStrategy: "tdd-simple" })]);
+    const prd = validatePlanOutput(input, "feat", "branch");
+    expect(prd.userStories[0]!.routing?.testStrategy).toBe("tdd-simple");
+  });
+
+  test("falls back to tdd-simple for unknown testStrategy values", () => {
+    const input = makeInput([makeStory({ testStrategy: "unknown-strategy" })]);
+    const prd = validatePlanOutput(input, "feat", "branch");
+    expect(prd.userStories[0]!.routing?.testStrategy).toBe("tdd-simple");
+  });
 });
 
 // ---------------------------------------------------------------------------

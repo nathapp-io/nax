@@ -4,11 +4,12 @@
  * Reads a spec file (--from), builds a planning prompt with codebase context,
  * calls adapter.complete(), validates the JSON response, and writes prd.json.
  *
- * Interactive mode is not yet implemented (PLN-002).
+ * Interactive mode: uses ACP session + stdin bridge for Q&A.
  */
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import { getAgent } from "../agents/registry";
 import type { AgentAdapter } from "../agents/types";
 import { scanCodebase } from "../analyze/scanner";
@@ -153,15 +154,26 @@ function createCliInteractionBridge(): {
 } {
   return {
     async detectQuestion(text: string): Promise<boolean> {
-      // Simple heuristic: detect if text contains a question mark
       return text.includes("?");
     },
 
     async onQuestionDetected(text: string): Promise<string> {
-      // For now, return the question text as-is to be used as follow-up prompt
-      // In a real CLI, this would read from stdin
-      // TODO: Implement stdin reading for actual CLI interaction
-      return text;
+      // In non-TTY mode (headless/pipes), skip interaction and continue
+      if (!process.stdin.isTTY) {
+        return "";
+      }
+
+      // Print agent question and read one line from stdin
+      process.stdout.write(`\n🤖 Agent: ${text}\nYou: `);
+
+      return new Promise<string>((resolve) => {
+        const rl = createInterface({ input: process.stdin, terminal: false });
+        rl.once("line", (line) => {
+          rl.close();
+          resolve(line.trim());
+        });
+        rl.once("close", () => resolve(""));
+      });
     },
   };
 }
@@ -262,7 +274,7 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
       "passes": false,
       "routing": {
         "complexity": "simple | medium | complex | expert",
-        "testStrategy": "test-after | tdd-lite | three-session-tdd",
+        "testStrategy": "test-after | tdd-simple | three-session-tdd | three-session-tdd-lite",
         "reasoning": "string — brief classification rationale"
       },
       "escalations": [],
@@ -274,15 +286,16 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
 ## Complexity Classification Guide
 
 - simple: ≤50 LOC, single-file change, purely additive, no new dependencies → test-after
-- medium: 50–200 LOC, 2–5 files, standard patterns, clear requirements → tdd-lite
+- medium: 50–200 LOC, 2–5 files, standard patterns, clear requirements → tdd-simple
 - complex: 200–500 LOC, multiple modules, new abstractions or integrations → three-session-tdd
-- expert: 500+ LOC, architectural changes, cross-cutting concerns, high risk → three-session-tdd
+- expert: 500+ LOC, architectural changes, cross-cutting concerns, high risk → three-session-tdd-lite
 
 ## Test Strategy Guide
 
 - test-after: Simple changes with well-understood behavior. Write tests after implementation.
-- tdd-lite: Medium complexity. Write key tests first, implement, then fill coverage.
-- three-session-tdd: Complex/expert. Full TDD cycle with separate sessions for tests and implementation.
+- tdd-simple: Medium complexity. Write key tests first, implement, then fill coverage.
+- three-session-tdd: Complex stories. Full TDD cycle with separate test-writer and implementer sessions.
+- three-session-tdd-lite: Expert/high-risk stories. Full TDD with additional verifier session.
 
 Output ONLY the JSON object. Do not wrap in markdown code blocks.`;
 }
