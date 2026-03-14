@@ -133,6 +133,7 @@ export const executionStage: PipelineStage = {
         config: ctx.config,
         workdir: ctx.workdir,
         modelTier: ctx.routing.modelTier,
+        featureName: ctx.prd.feature,
         contextMarkdown: ctx.contextMarkdown,
         constitution: ctx.constitution?.content,
         dryRun: false,
@@ -218,6 +219,9 @@ export const executionStage: PipelineStage = {
       timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
       dangerouslySkipPermissions: ctx.config.execution.dangerouslySkipPermissions,
       pidRegistry: ctx.pidRegistry,
+      featureName: ctx.prd.feature,
+      storyId: ctx.story.id,
+      // No sessionRole for single-session strategies (no role suffix in session name)
       interactionBridge: (() => {
         const plugin = ctx.interaction?.getPrimary();
         if (!plugin) return undefined;
