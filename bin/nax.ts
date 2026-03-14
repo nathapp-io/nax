@@ -78,6 +78,50 @@ const program = new Command();
 
 program.name("nax").description("AI Coding Agent Orchestrator — loops until done").version(NAX_VERSION);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Prompt user for a yes/no confirmation via stdin.
+ * In tests or non-TTY environments, defaults to true.
+ *
+ * @param question - Confirmation question to display
+ * @returns true if user answers Y/y, false if N/n, true by default for non-TTY
+ */
+async function promptForConfirmation(question: string): Promise<boolean> {
+  // In non-TTY mode (tests, pipes), default to true
+  if (!process.stdin.isTTY) {
+    return true;
+  }
+
+  return new Promise((resolve) => {
+    process.stdout.write(chalk.bold(`${question} [Y/n] `));
+
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding("utf8");
+
+    const handler = (char: string) => {
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+      process.stdin.removeListener("data", handler);
+
+      const answer = char.toLowerCase();
+      process.stdout.write("\n");
+
+      if (answer === "n") {
+        resolve(false);
+      } else {
+        // Default to yes for Y, Enter, or any other input
+        resolve(true);
+      }
+    };
+
+    process.stdin.on("data", handler);
+  });
+}
+
 // ── init ─────────────────────────────────────────────
 program
   .command("init")
@@ -231,6 +275,8 @@ program
   .option("--no-context", "Disable context builder (skip file context in prompts)")
   .option("--no-batch", "Disable story batching (execute all stories individually)")
   .option("--parallel <n>", "Max parallel sessions (0=auto, omit=sequential)")
+  .option("--plan", "Run plan phase first before execution", false)
+  .option("--from <spec-path>", "Path to spec file (required when --plan is used)")
   .option("--headless", "Force headless mode (disable TUI, use pipe mode)", false)
   .option("--verbose", "Enable verbose logging (debug level)", false)
   .option("--quiet", "Quiet mode (warnings and errors only)", false)
@@ -245,6 +291,18 @@ program
       workdir = validateDirectory(options.dir);
     } catch (err) {
       console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+    }
+
+    // Validate --plan and --from flags (AC-8: --plan without --from is error)
+    if (options.plan && !options.from) {
+      console.error(chalk.red("Error: --plan requires --from <spec-path>"));
+      process.exit(1);
+    }
+
+    // Validate --from path exists (AC-7: --from without existing file throws error)
+    if (options.from && !existsSync(options.from)) {
+      console.error(chalk.red(`Error: File not found: ${options.from} (required with --plan)`));
       process.exit(1);
     }
 
@@ -282,6 +340,51 @@ program
     const featureDir = join(naxDir, "features", options.feature);
     const prdPath = join(featureDir, "prd.json");
 
+    // Run plan phase if --plan flag is set (AC-4: runs plan then execute)
+    if (options.plan && options.from) {
+      try {
+        console.log(chalk.dim("   [Planning phase: generating PRD from spec]"));
+        const generatedPrdPath = await planCommand(workdir, config, {
+          from: options.from,
+          feature: options.feature,
+          auto: true, // AC-1: --auto mode for one-shot planning
+          branch: undefined,
+        });
+
+        // Load the generated PRD to display confirmation gate
+        const generatedPrd = await loadPRD(generatedPrdPath);
+
+        // Display story breakdown (AC-5: confirmation gate displays story breakdown)
+        console.log(chalk.bold("\n── Planning Summary ──────────────────────────────"));
+        console.log(chalk.dim(`Feature: ${generatedPrd.feature}`));
+        console.log(chalk.dim(`Stories: ${generatedPrd.userStories.length}`));
+        console.log();
+
+        for (const story of generatedPrd.userStories) {
+          const complexity = story.routing?.complexity || "unknown";
+          console.log(chalk.dim(`  ${story.id}: ${story.title} [${complexity}]`));
+        }
+        console.log();
+
+        // Show confirmation gate unless --headless (AC-5, AC-6)
+        if (!options.headless) {
+          // Prompt for user confirmation
+          const confirmationResult = await promptForConfirmation("Proceed with execution?");
+          if (!confirmationResult) {
+            console.log(chalk.yellow("Execution cancelled."));
+            process.exit(0);
+          }
+        }
+
+        // Continue with normal run using the generated prd.json
+        // (prdPath already points to the generated file)
+      } catch (err) {
+        console.error(chalk.red(`Error during planning: ${(err as Error).message}`));
+        process.exit(1);
+      }
+    }
+
+    // Check if prd.json exists (skip if --plan already generated it)
     if (!existsSync(prdPath)) {
       console.error(chalk.red(`Feature "${options.feature}" not found or missing prd.json`));
       process.exit(1);
@@ -518,14 +621,21 @@ features
 
 // ── plan ─────────────────────────────────────────────
 program
-  .command("plan")
+  .command("plan [description]")
   .description("Generate prd.json from a spec file via LLM one-shot call")
   .requiredOption("--from <spec-path>", "Path to spec file (required)")
   .requiredOption("-f, --feature <name>", "Feature name (required)")
   .option("--auto", "Run in auto (one-shot LLM) mode", false)
   .option("-b, --branch <branch>", "Override default branch name")
   .option("-d, --dir <path>", "Project directory", process.cwd())
-  .action(async (options) => {
+  .action(async (description, options) => {
+    // AC-3: Detect and reject old positional argument form
+    if (description) {
+      console.error(
+        chalk.red("Error: Positional args removed in plan v2.\n\nUse: nax plan -f <feature> --from <spec>"),
+      );
+      process.exit(1);
+    }
     // Validate directory path
     let workdir: string;
     try {
