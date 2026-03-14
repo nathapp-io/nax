@@ -42,6 +42,11 @@ const SAMPLE_PRD: PRD = {
       passes: false,
       escalations: [],
       attempts: 0,
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "Single function, clear output",
+      },
     },
   ],
 };

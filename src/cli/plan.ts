@@ -15,7 +15,7 @@ import { scanCodebase } from "../analyze/scanner";
 import type { CodebaseScan } from "../analyze/types";
 import type { NaxConfig } from "../config";
 import { getLogger } from "../logger";
-import type { PRD, UserStory } from "../prd/types";
+import { validatePlanOutput } from "../prd/schema";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dependency injection (_deps) — override in tests
@@ -101,46 +101,32 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   const timeoutSeconds = config?.execution?.sessionTimeoutSeconds ?? 600;
 
   // Route to auto (one-shot) or interactive (multi-turn) mode
-  const responseText = await (options.auto
-    ? adapter.complete(prompt, { jsonMode: true })
-    : (async () => {
-        const interactionBridge = createCliInteractionBridge();
-        logger?.info("plan", "Starting interactive planning session...", { agent: agentName });
-        try {
-          const result = await adapter.plan({
-            prompt,
-            workdir,
-            interactive: true,
-            timeoutSeconds,
-            interactionBridge,
-          });
-          return extractJsonFromText(result.specContent);
-        } finally {
-          logger?.info("plan", "Interactive session ended");
-        }
-      })());
-
-  // Parse JSON
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(responseText);
-  } catch (err) {
-    throw new Error(`[plan] LLM returned invalid JSON: ${(err as Error).message}`, { cause: err });
+  let rawResponse: string;
+  if (options.auto) {
+    rawResponse = await adapter.complete(prompt, { jsonMode: true });
+  } else {
+    const interactionBridge = createCliInteractionBridge();
+    logger?.info("plan", "Starting interactive planning session...", { agent: agentName });
+    try {
+      const result = await adapter.plan({
+        prompt,
+        workdir,
+        interactive: true,
+        timeoutSeconds,
+        interactionBridge,
+      });
+      rawResponse = result.specContent;
+    } finally {
+      logger?.info("plan", "Interactive session ended");
+    }
   }
 
-  // Validate PRD structure
-  const prd = validatePrdResponse(parsed);
+  // Validate and normalize: handles markdown extraction, trailing commas, LLM quirks,
+  // complexity normalization, dependency cross-ref, and forces status → pending.
+  const finalPrd = validatePlanOutput(rawResponse, options.feature, branchName);
 
-  // Override metadata and force all statuses to pending
-  const now = new Date().toISOString();
-  const finalPrd: PRD = forceStatusPending({
-    ...prd,
-    project: projectName,
-    feature: options.feature,
-    branchName,
-    createdAt: prd.createdAt ?? now,
-    updatedAt: now,
-  });
+  // Override project with auto-detected name (validatePlanOutput fills feature/branchName already)
+  finalPrd.project = projectName;
 
   // Write output
   const outputDir = join(naxDir, "features", options.feature);
@@ -180,33 +166,6 @@ function createCliInteractionBridge(): {
   };
 }
 
-/**
- * Extract JSON from agent text that may contain code blocks or explanations.
- * Returns the raw JSON string.
- */
-function extractJsonFromText(text: string): string {
-  // Try to extract JSON from ```json code block
-  const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/);
-  if (jsonMatch?.[1]) {
-    return jsonMatch[1];
-  }
-
-  // Try to extract JSON from ```json...``` without newlines
-  const compactMatch = text.match(/```json([\s\S]*?)```/);
-  if (compactMatch?.[1]) {
-    return compactMatch[1];
-  }
-
-  // If no code block, try to parse as pure JSON
-  const trimmed = text.trim();
-  if (trimmed.startsWith("{")) {
-    return trimmed;
-  }
-
-  // If all else fails, return as-is and let JSON.parse handle the error
-  return text;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Private helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -227,83 +186,6 @@ function detectProjectName(workdir: string, pkg: Record<string, unknown> | null)
   }
 
   return "unknown";
-}
-
-/**
- * Validate a raw LLM response against the PRD schema.
- * Throws with a clear error message on any violation.
- */
-function validatePrdResponse(data: unknown): PRD {
-  if (!data || typeof data !== "object" || Array.isArray(data)) {
-    throw new Error("[plan] Invalid PRD structure: expected an object");
-  }
-
-  const obj = data as Record<string, unknown>;
-
-  for (const field of ["project", "feature", "branchName", "userStories"] as const) {
-    if (obj[field] === undefined || obj[field] === null) {
-      throw new Error(`[plan] Invalid PRD structure: missing required field '${field}'`);
-    }
-  }
-
-  if (typeof obj.project !== "string") throw new Error("[plan] Invalid PRD: 'project' must be a string");
-  if (typeof obj.feature !== "string") throw new Error("[plan] Invalid PRD: 'feature' must be a string");
-  if (typeof obj.branchName !== "string") throw new Error("[plan] Invalid PRD: 'branchName' must be a string");
-  if (!Array.isArray(obj.userStories)) throw new Error("[plan] Invalid PRD: 'userStories' must be an array");
-
-  const VALID_COMPLEXITY = new Set(["simple", "medium", "complex", "expert"]);
-
-  for (const rawStory of obj.userStories as unknown[]) {
-    if (!rawStory || typeof rawStory !== "object" || Array.isArray(rawStory)) {
-      throw new Error("[plan] Invalid PRD: each story must be an object");
-    }
-    const s = rawStory as Record<string, unknown>;
-
-    for (const field of ["id", "title", "description", "acceptanceCriteria", "tags", "dependencies"] as const) {
-      if (s[field] === undefined || s[field] === null) {
-        throw new Error(`[plan] Invalid PRD: story missing required field '${field}'`);
-      }
-    }
-
-    if (s.routing && typeof s.routing === "object") {
-      const routing = s.routing as Record<string, unknown>;
-      if (routing.complexity && !VALID_COMPLEXITY.has(routing.complexity as string)) {
-        throw new Error(`[plan] Invalid PRD: story '${s.id}' has invalid complexity '${routing.complexity}'`);
-      }
-    }
-  }
-
-  // Validate dependency references
-  const storyIds = new Set((obj.userStories as Array<{ id: string }>).map((s) => s.id));
-  for (const story of obj.userStories as Array<{ id: string; dependencies: unknown }>) {
-    if (Array.isArray(story.dependencies)) {
-      for (const dep of story.dependencies) {
-        if (typeof dep === "string" && dep && !storyIds.has(dep)) {
-          throw new Error(`[plan] Invalid PRD: story '${story.id}' depends on unknown story '${dep}'`);
-        }
-      }
-    }
-  }
-
-  return obj as unknown as PRD;
-}
-
-/**
- * Force all story statuses to 'pending' and reset passes/attempts/escalations.
- */
-function forceStatusPending(prd: PRD): PRD {
-  return {
-    ...prd,
-    userStories: prd.userStories.map(
-      (story): UserStory => ({
-        ...story,
-        status: "pending",
-        passes: false,
-        escalations: story.escalations ?? [],
-        attempts: story.attempts ?? 0,
-      }),
-    ),
-  };
 }
 
 /**

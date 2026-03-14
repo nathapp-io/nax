@@ -42,6 +42,11 @@ const SAMPLE_PRD: PRD = {
       passes: false,
       escalations: [],
       attempts: 0,
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "Single function, clear output",
+      },
     },
   ],
 };
@@ -256,33 +261,37 @@ describe("planCommand", () => {
         }) as never,
     );
 
-    expect(
+    await expect(
       planCommand(tmpDir, {} as never, {
         from: "/spec.md",
         feature: "url-shortener",
         auto: true,
       }),
-    ).rejects.toThrow("invalid JSON");
+    ).rejects.toThrow(/parse JSON|Failed to parse/);
   });
 
-  test("AC-4: throws when required field 'project' is missing", async () => {
-    const badPrd = { ...SAMPLE_PRD } as Partial<PRD>;
-    delete badPrd.project;
+  test("AC-4: missing project field is auto-filled with feature name", async () => {
+    // validatePlanOutput auto-fills project from feature when absent (per spec)
+    const prdWithoutProject = { ...SAMPLE_PRD } as Partial<PRD>;
+    delete prdWithoutProject.project;
 
     _deps.getAgent = mock(
       (_name: string) =>
         ({
-          complete: mock(async () => JSON.stringify(badPrd)),
+          complete: mock(async () => JSON.stringify(prdWithoutProject)),
         }) as never,
     );
 
-    expect(
-      planCommand(tmpDir, {} as never, {
-        from: "/spec.md",
-        feature: "url-shortener",
-        auto: true,
-      }),
-    ).rejects.toThrow("project");
+    await planCommand(tmpDir, {} as never, {
+      from: "/spec.md",
+      feature: "url-shortener",
+      auto: true,
+    });
+    // Verify written PRD has project auto-filled (from package.json mock → "my-project")
+    expect(capturedWriteArgs.length).toBeGreaterThan(0);
+    const written = JSON.parse(capturedWriteArgs[0]![1]);
+    expect(written.project).toBeDefined();
+    expect(typeof written.project).toBe("string");
   });
 
   test("AC-4: throws when required field 'userStories' is missing", async () => {

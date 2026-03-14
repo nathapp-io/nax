@@ -121,23 +121,26 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
     }
   }
 
-  // complexity
-  const rawComplexity = s.complexity;
+  // complexity — accept from routing.complexity (PRD format) or top-level complexity (legacy)
+  const routing = typeof s.routing === "object" && s.routing !== null ? (s.routing as Record<string, unknown>) : {};
+  const rawComplexity = routing.complexity ?? s.complexity;
   if (rawComplexity === undefined || rawComplexity === null) {
-    throw new Error(`[schema] story[${index}].complexity is required. Valid values: ${VALID_COMPLEXITY.join(", ")}`);
+    throw new Error(
+      `[schema] story[${index}] missing complexity. Set routing.complexity to one of: ${VALID_COMPLEXITY.join(", ")}`,
+    );
   }
   if (typeof rawComplexity !== "string") {
-    throw new Error(`[schema] story[${index}].complexity must be a string`);
+    throw new Error(`[schema] story[${index}].routing.complexity must be a string`);
   }
   const complexity = normalizeComplexity(rawComplexity);
   if (complexity === null) {
     throw new Error(
-      `[schema] story[${index}].complexity "${rawComplexity}" is invalid. Valid values: ${VALID_COMPLEXITY.join(", ")}`,
+      `[schema] story[${index}].routing.complexity "${rawComplexity}" is invalid. Valid values: ${VALID_COMPLEXITY.join(", ")}`,
     );
   }
 
-  // testStrategy
-  const rawTestStrategy = s.testStrategy;
+  // testStrategy — accept from routing.testStrategy or top-level testStrategy
+  const rawTestStrategy = routing.testStrategy ?? s.testStrategy;
   const testStrategy: TestStrategy =
     rawTestStrategy !== undefined && (VALID_TEST_STRATEGIES as unknown[]).includes(rawTestStrategy)
       ? (rawTestStrategy as TestStrategy)
