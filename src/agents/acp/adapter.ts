@@ -15,6 +15,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { getSafeLogger } from "../../logger";
 import { buildDecomposePrompt, parseDecomposeOutput } from "../claude-decompose";
+import { createSpawnAcpClient } from "./spawn-client";
 
 import type {
   AgentAdapter,
@@ -109,13 +110,12 @@ export const _acpAdapterDeps = {
   },
 
   /**
-   * Create an ACP client for the given agent name.
+   * Create an ACP client for the given command string.
+   * Default: spawn-based client (shells out to acpx CLI).
    * Override in tests via: _acpAdapterDeps.createClient = mock(...)
    */
-  createClient(_agentName: string): AcpClient {
-    throw new Error(
-      "[acp-adapter] createClient not configured. Use _acpAdapterDeps.createClient in tests or provide an acpx AcpClient factory.",
-    );
+  createClient(cmdStr: string, cwd?: string, timeoutSeconds?: number): AcpClient {
+    return createSpawnAcpClient(cmdStr, cwd, timeoutSeconds);
   },
 };
 
@@ -432,7 +432,7 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   private async _runWithClient(options: AgentRunOptions, startTime: number): Promise<AgentResult> {
     const cmdStr = `acpx --model ${options.modelDef.model} ${this.name}`;
-    const client = _acpAdapterDeps.createClient(cmdStr);
+    const client = _acpAdapterDeps.createClient(cmdStr, options.workdir, options.timeoutSeconds);
     await client.start();
 
     // 1. Resolve session name: explicit > sidecar > derived
