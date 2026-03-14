@@ -1,7 +1,7 @@
 {
   "name": "@nathapp/nax",
   "version": "0.42.1",
-  "description": "AI Coding Agent Orchestrator \u2014 loops until done",
+  "description": "AI Coding Agent Orchestrator — loops until done",
   "type": "module",
   "bin": {
     "nax": "./dist/nax.js"
@@ -54,5 +54,13 @@
     "bin/",
     "README.md",
     "CHANGELOG.md"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nathapp-io/nax.git"
+  },
+  "homepage": "https://github.com/nathapp-io/nax",
+  "bugs": {
+    "url": "https://github.com/nathapp-io/nax/issues"
+  }
 }
