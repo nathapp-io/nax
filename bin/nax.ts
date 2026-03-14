@@ -566,7 +566,7 @@ features
     console.log(chalk.dim("   ├── plan.md"));
     console.log(chalk.dim("   ├── tasks.md"));
     console.log(chalk.dim("   └── progress.txt"));
-    console.log(chalk.dim(`\nNext: Edit spec.md and tasks.md, then: nax analyze --feature ${name}`));
+    console.log(chalk.dim(`\nNext: Edit spec.md and tasks.md, then: nax plan -f ${name} --from spec.md --auto`));
   });
 
 features
@@ -622,7 +622,7 @@ features
 // ── plan ─────────────────────────────────────────────
 program
   .command("plan [description]")
-  .description("Generate prd.json from a spec file via LLM one-shot call")
+  .description("Generate prd.json from a spec file via LLM one-shot call (replaces deprecated 'nax analyze')")
   .requiredOption("--from <spec-path>", "Path to spec file (required)")
   .requiredOption("-f, --feature <name>", "Feature name (required)")
   .option("--auto", "Run in auto (one-shot LLM) mode", false)
@@ -674,13 +674,17 @@ program
 // ── analyze ──────────────────────────────────────────
 program
   .command("analyze")
-  .description("Parse spec.md into prd.json via agent decompose")
+  .description("(deprecated) Parse spec.md into prd.json via agent decompose — use 'nax plan' instead")
   .requiredOption("-f, --feature <name>", "Feature name")
   .option("-b, --branch <name>", "Branch name", "feat/<feature>")
   .option("--from <path>", "Explicit spec path (overrides default spec.md)")
   .option("--reclassify", "Re-classify existing prd.json without decompose", false)
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .action(async (options) => {
+    // AC-1: Print deprecation warning to stderr
+    const deprecationMsg = "⚠️  'nax analyze' is deprecated. Use 'nax plan -f <feature> --from <spec> --auto' instead.";
+    process.stderr.write(`${chalk.yellow(deprecationMsg)}\n`);
+
     // Validate directory path
     let workdir: string;
     try {
