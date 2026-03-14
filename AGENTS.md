@@ -102,7 +102,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator only]
 
 ## Agent Adapter & LLM Calls
 
-- **Two protocol modes:** CLI (`Bun.spawn`) and ACP (JSON-RPC via `acpx`), toggled by `agent.protocol` in config
+- **Two protocol modes:** CLI (`Bun.spawn`) and ACP (JSON-RPC via `acpx`), toggled by `agent.protocol` in config (default: `"acp"`)
 - **LLM fallback rule:** Any code needing LLM calls MUST use `getAgent(config.autoMode.defaultAgent)` from `src/agents/registry` — never inline stubs. Use `agent.complete(prompt, { jsonMode: true })` for one-shot calls.
 - **Forward-compatible:** `getAgent()` returns the correct adapter for the active protocol — calling code doesn't need to know which mode is active.
 - See `docs/architecture/ARCHITECTURE.md` §Adapter for full pattern.

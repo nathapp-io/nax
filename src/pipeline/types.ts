@@ -8,6 +8,7 @@ import type { AgentResult } from "../agents/types";
 import type { NaxConfig } from "../config/schema";
 import type { ConstitutionResult } from "../constitution/types";
 import type { BuiltContext } from "../context/types";
+import type { PidRegistry } from "../execution/pid-registry";
 import type { HooksConfig } from "../hooks/types";
 import type { InteractionChain } from "../interaction/chain";
 import type { StoryMetrics } from "../metrics/types";
@@ -52,6 +53,8 @@ export interface RoutingResult {
  * };
  * ```
  */
+export type AgentGetFn = (name: string) => import("../agents/types").AgentAdapter | undefined;
+
 export interface PipelineContext {
   /** Ngent configuration */
   config: NaxConfig;
@@ -73,6 +76,13 @@ export interface PipelineContext {
   hooks: HooksConfig;
   /** Plugin registry (optional, for plugin-provided extensions) */
   plugins?: PluginRegistry;
+  /**
+   * Protocol-aware agent resolver. When set (ACP mode), returns AcpAgentAdapter;
+   * falls back to standalone getAgent (CLI mode) when absent.
+   */
+  agentGetFn?: AgentGetFn;
+  /** PID registry for crash recovery — passed through to agent.run() for child process registration. */
+  pidRegistry?: PidRegistry;
   /** Interaction chain (optional, for human-in-the-loop triggers) */
   interaction?: InteractionChain;
   /** Constitution result (set by constitutionStage) */

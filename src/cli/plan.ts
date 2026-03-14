@@ -7,12 +7,33 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import { ClaudeCodeAdapter } from "../agents/claude";
 import type { PlanOptions } from "../agents/types";
 import { scanCodebase } from "../analyze/scanner";
 import type { NaxConfig } from "../config";
 import { resolveModel } from "../config/schema";
 import { getLogger } from "../logger";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Question detection helpers for ACP interaction bridge
+// ─────────────────────────────────────────────────────────────────────────────
+
+const QUESTION_PATTERNS = [/\?[\s]*$/, /\bwhich\b/i, /\bshould i\b/i, /\bdo you want\b/i, /\bwould you like\b/i];
+
+async function detectQuestion(text: string): Promise<boolean> {
+  return QUESTION_PATTERNS.some((p) => p.test(text.trim()));
+}
+
+async function askHuman(question: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(`\n[Agent asks]: ${question}\nYour answer: `, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
 
 /**
  * Template for structured specification output.
@@ -92,6 +113,8 @@ export async function planCommand(
     modelTier,
     modelDef,
     config,
+    // Wire ACP interaction bridge for mid-session Q&A (only in interactive mode)
+    interactionBridge: interactive ? { detectQuestion, onQuestionDetected: askHuman } : undefined,
   };
 
   // Run agent in plan mode

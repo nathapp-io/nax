@@ -199,7 +199,7 @@ export async function generateFixStories(
   adapter: AgentAdapter,
   options: GenerateFixStoriesOptions,
 ): Promise<FixStory[]> {
-  const { failedACs, testOutput, prd, specContent, workdir, modelDef } = options;
+  const { failedACs, testOutput, prd, specContent, modelDef } = options;
 
   const fixStories: FixStory[] = [];
 
@@ -225,41 +225,10 @@ export async function generateFixStories(
     const prompt = buildFixPrompt(failedAC, acText, testOutput, relatedStories, prd);
 
     try {
-      // Call agent to generate fix description
-      const skipPerms = options.config.quality?.dangerouslySkipPermissions ?? true;
-      const permArgs = skipPerms ? ["--dangerously-skip-permissions"] : [];
-      const cmd = [adapter.binary, "--model", modelDef.model, ...permArgs, "-p", prompt];
-
-      const proc = Bun.spawn(cmd, {
-        cwd: workdir,
-        stdout: "pipe",
-        stderr: "pipe",
-        env: {
-          ...process.env,
-          ...(modelDef.env || {}),
-        },
+      // Call adapter to generate fix description
+      const fixDescription = await adapter.complete(prompt, {
+        model: modelDef.model,
       });
-
-      const exitCode = await proc.exited;
-      const stdout = await new Response(proc.stdout).text();
-      const stderr = await new Response(proc.stderr).text();
-
-      if (exitCode !== 0) {
-        logger.warn("acceptance", "⚠ Agent fix generation failed", { failedAC, stderr });
-        // Use fallback description
-        fixStories.push({
-          id: `US-FIX-${String(i + 1).padStart(3, "0")}`,
-          title: `Fix: ${failedAC}`,
-          failedAC,
-          testOutput,
-          relatedStories,
-          description: `Fix the implementation to make ${failedAC} pass. Related stories: ${relatedStories.join(", ")}.`,
-        });
-        continue;
-      }
-
-      // Extract fix description
-      const fixDescription = stdout.trim();
 
       fixStories.push({
         id: `US-FIX-${String(i + 1).padStart(3, "0")}`,

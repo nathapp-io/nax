@@ -138,9 +138,9 @@
     "outputPath": "spec.md"
   },
   "acceptance": {
-    "enabled": false,
+    "enabled": true,
     "maxRetries": 2,
-    "generateTests": false,
+    "generateTests": true,
     "testPath": "acceptance.test.ts"
   },
   "context": {
@@ -157,5 +157,8 @@
     "storySizeGate": {
       "enabled": false
     }
+  },
+  "decompose": {
+    "trigger": "disabled"
   }
 }

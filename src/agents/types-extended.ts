@@ -30,6 +30,29 @@ export interface PlanOptions {
   modelDef?: ModelDef;
   /** Global config — used to resolve models.balanced when modelDef is absent */
   config?: Partial<NaxConfig>;
+  /**
+   * Interaction bridge for mid-session human Q&A (ACP only).
+   * If provided, the agent can pause and ask clarifying questions during planning.
+   */
+  interactionBridge?: {
+    detectQuestion: (text: string) => Promise<boolean>;
+    onQuestionDetected: (text: string) => Promise<string>;
+  };
+  /** Feature name for ACP session naming (plan→run continuity) */
+  featureName?: string;
+  /** Story ID for ACP session naming (plan→run continuity) */
+  storyId?: string;
+  /** Session role for TDD isolation (e.g. "test-writer" | "implementer" | "verifier") */
+  sessionRole?: string;
+  /** Timeout in seconds — inherited from config.execution.sessionTimeoutSeconds */
+  timeoutSeconds?: number;
+  /** Whether to skip permission prompts (maps to permissionMode in ACP) */
+  dangerouslySkipPermissions?: boolean;
+  /**
+   * Callback invoked with the ACP session name after the session is created.
+   * Used to persist the name to status.json for plan→run session continuity.
+   */
+  onAcpSessionCreated?: (sessionName: string) => Promise<void> | void;
 }
 
 /**

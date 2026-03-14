@@ -10,7 +10,6 @@
 
 import path from "node:path";
 import { type FixStory, convertFixStoryToUserStory, generateFixStories } from "../../acceptance";
-import { getAgent } from "../../agents";
 import type { NaxConfig } from "../../config";
 import { resolveModel } from "../../config/schema";
 import { type LoadedHooksConfig, fireHook } from "../../hooks";
@@ -19,6 +18,7 @@ import type { StoryMetrics } from "../../metrics";
 import type { PipelineEventEmitter } from "../../pipeline/events";
 import { runPipeline } from "../../pipeline/runner";
 import { defaultPipeline } from "../../pipeline/stages";
+import type { AgentGetFn } from "../../pipeline/types";
 import type { PipelineContext, RoutingResult } from "../../pipeline/types";
 import type { PluginRegistry } from "../../plugins";
 import { loadPRD, savePRD } from "../../prd";
@@ -42,6 +42,8 @@ export interface AcceptanceLoopContext {
   pluginRegistry: PluginRegistry;
   eventEmitter?: PipelineEventEmitter;
   statusWriter: StatusWriter;
+  /** Protocol-aware agent resolver — passed from registry at run start */
+  agentGetFn?: AgentGetFn;
 }
 
 export interface AcceptanceLoopResult {
@@ -80,7 +82,8 @@ async function generateAndAddFixStories(
   prd: PRD,
 ): Promise<FixStory[] | null> {
   const logger = getSafeLogger();
-  const agent = getAgent(ctx.config.autoMode.defaultAgent);
+  const { getAgent } = await import("../../agents");
+  const agent = (ctx.agentGetFn ?? getAgent)(ctx.config.autoMode.defaultAgent);
   if (!agent) {
     logger?.error("acceptance", "Agent not found, cannot generate fix stories");
     return null;

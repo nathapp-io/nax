@@ -43,9 +43,9 @@ export async function executeComplete(binary: string, prompt: string, options?: 
     cmd.push("--model", options.model);
   }
 
-  if (options?.maxTokens !== undefined) {
-    cmd.push("--max-tokens", String(options.maxTokens));
-  }
+  // Note: Claude Code CLI does not support --max-tokens; the option is accepted in
+  // CompleteOptions for future use or non-Claude adapters, but is intentionally not
+  // forwarded to the claude binary here.
 
   if (options?.jsonMode) {
     cmd.push("--output-format", "json");

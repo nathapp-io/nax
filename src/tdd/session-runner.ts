@@ -84,6 +84,7 @@ export async function runTddSession(
   lite = false,
   skipIsolation = false,
   constitution?: string,
+  featureName?: string,
 ): Promise<TddSessionResult> {
   const startTime = Date.now();
 
@@ -130,6 +131,9 @@ export async function runTddSession(
     modelDef: resolveModel(config.models[modelTier]),
     timeoutSeconds: config.execution.sessionTimeoutSeconds,
     dangerouslySkipPermissions: config.execution.dangerouslySkipPermissions,
+    featureName,
+    storyId: story.id,
+    sessionRole: role,
   });
 
   // BUG-21 Fix: Clean up orphaned child processes if agent failed

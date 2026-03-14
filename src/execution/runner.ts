@@ -13,6 +13,7 @@
  * - runner-completion.ts: Acceptance loop, hooks, metrics
  */
 
+import { createAgentRegistry } from "../agents/registry";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import { fireHook } from "../hooks";
@@ -116,6 +117,10 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
   const logger = getSafeLogger();
 
+  // Create protocol-aware agent registry (ACP wiring — ACP-003/registry-wiring)
+  const registry = createAgentRegistry(config);
+  const agentGetFn = registry.getAgent.bind(registry);
+
   // Declare prd before crash handler setup to avoid TDZ if SIGTERM arrives during setup
   // biome-ignore lint/suspicious/noExplicitAny: PRD type initialized during setup
   let prd: any | undefined;
@@ -137,6 +142,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     skipPrecheck,
     headless,
     formatterMode,
+    agentGetFn,
     getTotalCost: () => totalCost,
     getIterations: () => iterations,
     // BUG-017: Pass getters for run.complete event on SIGTERM
@@ -170,6 +176,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
         headless,
         parallel,
         runParallelExecution: _runnerDeps.runParallelExecution ?? undefined,
+        agentGetFn,
+        pidRegistry,
       },
       prd,
       pluginRegistry,
@@ -198,6 +206,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       hooks,
       feature,
       workdir,
+      prdPath,
       statusFile,
       logFilePath,
       runId,
@@ -214,6 +223,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       statusWriter,
       pluginRegistry,
       eventEmitter,
+      agentGetFn,
     });
 
     const { durationMs } = completionResult;

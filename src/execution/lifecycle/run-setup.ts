@@ -22,6 +22,7 @@ import type { InteractionChain } from "../../interaction";
 import { initInteractionChain } from "../../interaction";
 import { getSafeLogger } from "../../logger";
 import { pipelineEventBus } from "../../pipeline/event-bus";
+import type { AgentGetFn } from "../../pipeline/types";
 import { loadPlugins } from "../../plugins/loader";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { PRD } from "../../prd";
@@ -53,6 +54,8 @@ export interface RunSetupOptions {
   // BUG-017: Additional getters for run.complete event on SIGTERM
   getStoriesCompleted: () => number;
   getTotalStories: () => number;
+  /** Protocol-aware agent resolver — passed from runner.ts registry */
+  agentGetFn?: AgentGetFn;
 }
 
 export interface RunSetupResult {
@@ -206,6 +209,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       prdPath,
       workdir,
       dryRun,
+      agentGetFn: options.agentGetFn,
     });
     prd = initResult.prd;
     const counts = initResult.storyCounts;
