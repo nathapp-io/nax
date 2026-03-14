@@ -552,39 +552,74 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   async complete(prompt: string, _options?: CompleteOptions): Promise<string> {
     const model = _options?.model ?? "default";
-    const cmdStr = `acpx --model ${model} ${this.name}`;
-    const client = _acpAdapterDeps.createClient(cmdStr);
-    await client.start();
-
-    // complete() is one-shot — ephemeral session, no session name, no sidecar
+    const timeoutMs = _options?.timeoutMs ?? 120_000; // 2-min safety net by default
     const permissionMode = _options?.dangerouslySkipPermissions ? "approve-all" : "default";
 
-    let session: AcpSession | null = null;
-    try {
-      session = await client.createSession({ agentName: this.name, permissionMode });
-      const response = await session.prompt(prompt);
+    let lastError: Error | undefined;
 
-      if (response.stopReason === "error") {
-        throw new CompleteError("complete() failed: stop reason is error");
+    for (let attempt = 0; attempt < MAX_RATE_LIMIT_RETRIES; attempt++) {
+      const cmdStr = `acpx --model ${model} ${this.name}`;
+      const client = _acpAdapterDeps.createClient(cmdStr);
+      await client.start();
+
+      let session: AcpSession | null = null;
+      try {
+        // complete() is one-shot — ephemeral session, no session name, no sidecar
+        session = await client.createSession({ agentName: this.name, permissionMode });
+
+        // Enforce timeout via Promise.race — session.prompt() can hang indefinitely
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error(`complete() timed out after ${timeoutMs}ms`)), timeoutMs);
+        });
+        timeoutPromise.catch(() => {}); // prevent unhandled rejection if promptPromise wins
+
+        const promptPromise = session.prompt(prompt);
+
+        let response: AcpSessionResponse;
+        try {
+          response = await Promise.race([promptPromise, timeoutPromise]);
+        } finally {
+          clearTimeout(timeoutId);
+        }
+
+        if (response.stopReason === "error") {
+          throw new CompleteError("complete() failed: stop reason is error");
+        }
+
+        const text = response.messages
+          .filter((m) => m.role === "assistant")
+          .map((m) => m.content)
+          .join("\n")
+          .trim();
+
+        if (!text) {
+          throw new CompleteError("complete() returned empty output");
+        }
+
+        return text;
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        lastError = error;
+
+        const shouldRetry = isRateLimitError(error) && attempt < MAX_RATE_LIMIT_RETRIES - 1;
+        if (!shouldRetry) throw error;
+
+        const backoffMs = 2 ** (attempt + 1) * 1000;
+        getSafeLogger()?.warn("acp-adapter", "complete() rate limited, retrying", {
+          backoffSeconds: backoffMs / 1000,
+          attempt: attempt + 1,
+        });
+        await _acpAdapterDeps.sleep(backoffMs);
+      } finally {
+        if (session) {
+          await session.close().catch(() => {});
+        }
+        await client.close().catch(() => {});
       }
-
-      const text = response.messages
-        .filter((m) => m.role === "assistant")
-        .map((m) => m.content)
-        .join("\n")
-        .trim();
-
-      if (!text) {
-        throw new CompleteError("complete() returned empty output");
-      }
-
-      return text;
-    } finally {
-      if (session) {
-        await session.close().catch(() => {});
-      }
-      await client.close().catch(() => {});
     }
+
+    throw lastError ?? new CompleteError("complete() failed with unknown error");
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {

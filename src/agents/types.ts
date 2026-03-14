@@ -100,6 +100,12 @@ export interface CompleteOptions {
   model?: string;
   /** Whether to skip permission prompts (maps to permissionMode in ACP) */
   dangerouslySkipPermissions?: boolean;
+  /**
+   * Timeout for the completion call in milliseconds.
+   * Adapters that support it (e.g. ACP) will enforce this as a hard deadline.
+   * Callers may also wrap complete() in their own Promise.race for shorter timeouts.
+   */
+  timeoutMs?: number;
 }
 
 /**

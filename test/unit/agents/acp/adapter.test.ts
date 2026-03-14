@@ -258,6 +258,45 @@ describe("complete()", () => {
     await new AcpAgentAdapter("claude").complete("Quick question");
     expect(closeCalled).toBe(true);
   });
+
+  test("times out and throws if session.prompt() hangs beyond timeoutMs", async () => {
+    const session = makeSession({
+      promptFn: () => new Promise<never>(() => {}), // hangs forever
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    await expect(
+      new AcpAgentAdapter("claude").complete("Hang?", { timeoutMs: 50 }),
+    ).rejects.toThrow(/timed out/i);
+  });
+
+  test("retries on rate limit error and returns result on second attempt", async () => {
+    let calls = 0;
+    const session = makeSession({
+      promptFn: async (_: string) => {
+        calls++;
+        if (calls === 1) throw new Error("rate limit exceeded");
+        return { messages: [{ role: "assistant", content: "Retried OK." }], stopReason: "end_turn" };
+      },
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    const result = await new AcpAgentAdapter("claude").complete("Retry me");
+    expect(result).toBe("Retried OK.");
+    expect(calls).toBe(2);
+    expect(_acpAdapterDeps.sleep).toHaveBeenCalledTimes(1);
+  });
+
+  test("throws after exhausting all rate limit retries", async () => {
+    const session = makeSession({
+      promptFn: async (_: string) => { throw new Error("rate limit exceeded"); },
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    await expect(
+      new AcpAgentAdapter("claude").complete("Fail all"),
+    ).rejects.toThrow(/rate limit/i);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
