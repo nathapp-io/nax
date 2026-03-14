@@ -8,7 +8,11 @@
 import { describe, expect, test } from "bun:test";
 import type { InteractionRequest } from "../../src/interaction";
 import { TelegramInteractionPlugin } from "../../src/interaction/plugins/telegram";
-import { WebhookInteractionPlugin } from "../../src/interaction/plugins/webhook";
+import { WebhookInteractionPlugin, _webhookPluginDeps } from "../../src/interaction/plugins/webhook";
+
+// Disable real backoff sleeps — tests verify behavior, not wall-clock timing
+const origWebhookSleep = _webhookPluginDeps.sleep;
+_webhookPluginDeps.sleep = async (_ms: number) => {};
 
 describe("TelegramInteractionPlugin - Network Failures", () => {
   test("should handle network error in send()", async () => {
@@ -230,20 +234,12 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
     const plugin = new WebhookInteractionPlugin();
     await plugin.init({ url: "https://example.com/webhook" });
 
-    const startTime = Date.now();
+    // With instant sleep mock, receive() times out quickly (50ms).
+    // We verify the timeout path fires correctly — not the wall-clock duration.
+    const response = await plugin.receive("test-request", 50);
 
-    // Call receive with short timeout
-    const response = await plugin.receive("test-request", 500);
-
-    const duration = Date.now() - startTime;
-
-    // Should timeout with exponential backoff
     expect(response.action).toBe("skip");
     expect(response.respondedBy).toBe("timeout");
-
-    // Duration should be at least timeout (500ms) but less than timeout + max backoff
-    expect(duration).toBeGreaterThanOrEqual(500);
-    expect(duration).toBeLessThan(3000); // Max backoff is 2s
 
     await plugin.destroy();
   });

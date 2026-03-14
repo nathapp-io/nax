@@ -10,6 +10,15 @@ import type { Server } from "node:http";
 import { z } from "zod";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 
+/**
+ * Injectable sleep for WebhookInteractionPlugin.receive() polling loop.
+ * Replace in tests to avoid real backoff delays.
+ * @internal
+ */
+export const _webhookPluginDeps = {
+  sleep: (ms: number): Promise<void> => Bun.sleep(ms),
+};
+
 /** Webhook plugin configuration */
 interface WebhookConfig {
   /** Webhook URL to POST requests to */
@@ -119,7 +128,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
         this.pendingResponses.delete(requestId);
         return response;
       }
-      await Bun.sleep(backoffMs);
+      await _webhookPluginDeps.sleep(backoffMs);
       // Exponential backoff: double interval up to max
       backoffMs = Math.min(backoffMs * 2, maxBackoffMs);
     }

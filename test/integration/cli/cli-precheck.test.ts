@@ -413,7 +413,7 @@ async function setupValidGitEnv(testDir: string): Promise<void> {
 const createMockConfig = (cwd: string, overrides: any = {}): NaxConfig => ({
   execution: {
     maxIterations: 10,
-    iterationDelayMs: 1000,
+    iterationDelayMs: 0,
     maxCostUSD: 10,
     testCommand: "echo 'test'",
     lintCommand: "echo 'lint'",
@@ -1201,7 +1201,7 @@ const createConfig = (workdir: string): NaxConfig =>
   ({
     execution: {
       maxIterations: 10,
-      iterationDelayMs: 1000,
+      iterationDelayMs: 0,
       maxCostUSD: 10,
       testCommand: "echo test",
       lintCommand: "echo lint",
