@@ -5,6 +5,12 @@ import type { RunOptions } from "../../../src/execution/runner";
 import { initLogger, resetLogger } from "../../../src/logger";
 import type { PRD, UserStory } from "../../../src/prd";
 
+// Zero out iterationDelayMs so tests don't sleep 2s between iterations (DEFAULT_CONFIG = 2000ms)
+const TEST_CONFIG = {
+  ...DEFAULT_CONFIG,
+  execution: { ...DEFAULT_CONFIG.execution, iterationDelayMs: 0 },
+};
+
 // Sample PRD for testing
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
   project: "test-project",
@@ -56,7 +62,7 @@ describe("execution runner", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
-      config: { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, maxIterations: 2 } },
+      config: { ...TEST_CONFIG, execution: { ...TEST_CONFIG.execution, maxIterations: 2 } },
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
@@ -97,7 +103,7 @@ describe("execution runner", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
-      config: { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, maxIterations: 2 } },
+      config: { ...TEST_CONFIG, execution: { ...TEST_CONFIG.execution, maxIterations: 2 } },
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
@@ -141,11 +147,11 @@ describe("execution runner", () => {
       prdPath,
       workdir: tmpDir,
       config: {
-        ...DEFAULT_CONFIG,
+        ...TEST_CONFIG,
         autoMode: {
-          ...DEFAULT_CONFIG.autoMode,
+          ...TEST_CONFIG.autoMode,
           escalation: {
-            ...DEFAULT_CONFIG.autoMode.escalation,
+            ...TEST_CONFIG.autoMode.escalation,
             enabled: true,
           },
         },
@@ -192,9 +198,9 @@ describe("execution runner", () => {
       prdPath,
       workdir: tmpDir,
       config: {
-        ...DEFAULT_CONFIG,
+        ...TEST_CONFIG,
         execution: {
-          ...DEFAULT_CONFIG.execution,
+          ...TEST_CONFIG.execution,
           costLimit: 0.001, // Very low cost limit to trigger stop
         },
       },
@@ -232,7 +238,7 @@ describe("execution runner", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
-      config: { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, maxIterations: 2 } },
+      config: { ...TEST_CONFIG, execution: { ...TEST_CONFIG.execution, maxIterations: 2 } },
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
@@ -282,11 +288,11 @@ describe("execution runner", () => {
       prdPath,
       workdir: tmpDir,
       config: {
-        ...DEFAULT_CONFIG,
-        execution: { ...DEFAULT_CONFIG.execution, maxIterations: 2 },
+        ...TEST_CONFIG,
+        execution: { ...TEST_CONFIG.execution, maxIterations: 2 },
         // Disable acceptance loop — it runs after completion and increments iterations,
         // making the iterations === 1 assertion flaky.
-        acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: false },
+        acceptance: { ...TEST_CONFIG.acceptance, enabled: false },
       },
       hooks: { hooks: {} },
       feature: "test-feature",
@@ -357,16 +363,16 @@ describe("execution runner", () => {
       prdPath,
       workdir: tmpDir,
       config: {
-        ...DEFAULT_CONFIG,
+        ...TEST_CONFIG,
         autoMode: {
-          ...DEFAULT_CONFIG.autoMode,
+          ...TEST_CONFIG.autoMode,
           escalation: {
-            ...DEFAULT_CONFIG.autoMode.escalation,
+            ...TEST_CONFIG.autoMode.escalation,
             enabled: true,
             escalateEntireBatch: true, // Default behavior
           },
         },
-        execution: { ...DEFAULT_CONFIG.execution, maxIterations: 2 },
+        execution: { ...TEST_CONFIG.execution, maxIterations: 2 },
       },
       hooks: { hooks: {} },
       feature: "test-feature",
@@ -437,16 +443,16 @@ describe("execution runner", () => {
       prdPath,
       workdir: tmpDir,
       config: {
-        ...DEFAULT_CONFIG,
+        ...TEST_CONFIG,
         autoMode: {
-          ...DEFAULT_CONFIG.autoMode,
+          ...TEST_CONFIG.autoMode,
           escalation: {
-            ...DEFAULT_CONFIG.autoMode.escalation,
+            ...TEST_CONFIG.autoMode.escalation,
             enabled: true,
             escalateEntireBatch: false, // Individual retry mode
           },
         },
-        execution: { ...DEFAULT_CONFIG.execution, maxIterations: 2 },
+        execution: { ...TEST_CONFIG.execution, maxIterations: 2 },
       },
       hooks: { hooks: {} },
       feature: "test-feature",
@@ -502,7 +508,7 @@ describe("execution runner — lite mode routing", () => {
     const opts: RunOptions = {
       prdPath,
       workdir: tmpDir,
-      config: { ...DEFAULT_CONFIG, execution: { ...DEFAULT_CONFIG.execution, maxIterations: 2 } },
+      config: { ...TEST_CONFIG, execution: { ...TEST_CONFIG.execution, maxIterations: 2 } },
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: true,
@@ -524,8 +530,8 @@ describe("execution runner — lite mode routing", () => {
     const { routeTask } = await import("../../../src/routing");
 
     const configWithLiteStrategy = {
-      ...DEFAULT_CONFIG,
-      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "lite" as const },
+      ...TEST_CONFIG,
+      tdd: { ...TEST_CONFIG.tdd, strategy: "lite" as const },
     };
 
     const routing = routeTask(
@@ -544,8 +550,8 @@ describe("execution runner — lite mode routing", () => {
     const { routeTask } = await import("../../../src/routing");
 
     const configWithStrictStrategy = {
-      ...DEFAULT_CONFIG,
-      tdd: { ...DEFAULT_CONFIG.tdd, strategy: "strict" as const },
+      ...TEST_CONFIG,
+      tdd: { ...TEST_CONFIG.tdd, strategy: "strict" as const },
     };
 
     const routing = routeTask(
@@ -581,7 +587,7 @@ describe("execution runner — lite mode routing", () => {
         "Theme switching works without page reload",
       ],
       ["ui", "layout"],
-      DEFAULT_CONFIG, // default is strategy='auto'
+      TEST_CONFIG, // default is strategy='auto'
     );
 
     // auto + complex + ui → three-session-tdd-lite
@@ -614,9 +620,9 @@ describe("execution runner — lite mode routing", () => {
       prdPath,
       workdir: tmpDir,
       config: {
-        ...DEFAULT_CONFIG,
-        tdd: { ...DEFAULT_CONFIG.tdd, strategy: "lite" as const },
-        execution: { ...DEFAULT_CONFIG.execution, maxIterations: 2 },
+        ...TEST_CONFIG,
+        tdd: { ...TEST_CONFIG.tdd, strategy: "lite" as const },
+        execution: { ...TEST_CONFIG.execution, maxIterations: 2 },
       },
       hooks: { hooks: {} },
       feature: "test-feature",

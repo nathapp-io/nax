@@ -6,7 +6,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { buildContext, formatContextAsMarkdown } from "../../../src/context/builder";
+
 import type { ContextBudget, StoryContext } from "../../../src/context/types";
+
+// Zero out iterationDelayMs so tests don't sleep 2s between iterations (DEFAULT_CONFIG = 2000ms)
+const TEST_CONFIG = {
+  ...DEFAULT_CONFIG,
+  execution: { ...DEFAULT_CONFIG.execution, iterationDelayMs: 0 },
+};
 import { run } from "../../../src/execution/runner";
 import type { RunOptions } from "../../../src/execution/runner";
 import type { PRD, UserStory } from "../../../src/prd";
@@ -72,8 +79,8 @@ describe("Context Builder Integration", () => {
         prdPath,
         workdir: tmpDir,
         config: {
-          ...DEFAULT_CONFIG,
-          execution: { ...DEFAULT_CONFIG.execution, maxIterations: 1 },
+          ...TEST_CONFIG,
+          execution: { ...TEST_CONFIG.execution, maxIterations: 1 },
         },
         hooks: { hooks: {} },
         feature: "test-feature",
@@ -107,8 +114,8 @@ describe("Context Builder Integration", () => {
         prdPath,
         workdir: tmpDir,
         config: {
-          ...DEFAULT_CONFIG,
-          execution: { ...DEFAULT_CONFIG.execution, maxIterations: 1 },
+          ...TEST_CONFIG,
+          execution: { ...TEST_CONFIG.execution, maxIterations: 1 },
         },
         hooks: { hooks: {} },
         feature: "test-feature",
@@ -142,8 +149,8 @@ describe("Context Builder Integration", () => {
         prdPath,
         workdir: tmpDir,
         config: {
-          ...DEFAULT_CONFIG,
-          execution: { ...DEFAULT_CONFIG.execution, maxIterations: 1 },
+          ...TEST_CONFIG,
+          execution: { ...TEST_CONFIG.execution, maxIterations: 1 },
         },
         hooks: { hooks: {} },
         feature: "test-feature",
