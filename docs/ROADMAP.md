@@ -182,6 +182,31 @@ nax verifies implementation tests (agent-written) but never independently verifi
 
 ---
 
+## v0.41.0 — Slow Test Optimizations ✅ Shipped (2026-03-14)
+
+**Theme:** Eliminate artificial test delays — make the full suite run in ~2.5 minutes instead of ~4+ minutes
+**Status:** ✅ Shipped (2026-03-14) — commit `e41e076`, merged MR !44
+
+### Context
+
+Profiling via `bun test --reporter junit` revealed the top-30 slowest tests accounted for 105s of wall time, almost entirely due to real `Bun.sleep()` calls in test paths. No CPU-bound work — just artificial waiting.
+
+### Changes
+
+- **Injectable sleep deps** — replaced `Bun.sleep` in execution runner, webhook backoff, retry logic, precheck, and iterationDelay paths with injectable `_runOnceDeps.sleep`, `_completeDeps.sleep`, etc. Tests pass `mock(async () => {})` to skip waits.
+- **Shared `beforeAll` for file scanning** — `scanCodebase` was re-running `readdirSync` per test (10s per file × N tests). Fixed with a shared `beforeAll` cache.
+- **Fixed acceptance pipeline tests** — imports were using `defaultConfig` (wrong) instead of `DEFAULT_CONFIG` (correct export name).
+- **Fixed ACP adapter tests** — updated to check `src/agents/acp/spawn-client.ts` source path (not npm package), and verify "intentionally omitted" comment for default protocol.
+- **Fixed flaky CI test** — `autoCommitIfDirty` test was mocking `_gitDeps.spawn` internally, which was fragile in CI (silent try/catch inside the function). Replaced with `_sessionRunnerDeps = { autoCommitIfDirty }` injectable — mock at the call site, not inside the callee.
+
+### Stats
+
+- Top-30 test time: 105s → ~23s (78% reduction)
+- Full suite: ~4min → ~2.5min on Mac01 (4,114 tests, 0 fail)
+- Commits: `cd3d7ac` through `e41e076`
+
+---
+
 ## v0.40.1 — Acceptance UI Test Strategies (Planned)
 
 **Theme:** Extend acceptance pipeline to support UI projects (TUI, web, CLI) — not just backend/library code
