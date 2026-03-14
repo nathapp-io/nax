@@ -1429,6 +1429,12 @@ describe("US-002: Precheck orchestrator acceptance criteria", () => {
 // have restricted process/file system environments. These are end-to-end smoke tests
 // that must run in a properly configured dev environment (local, Mac01, or VPS).
 
+// Zero out iterationDelayMs — DEFAULT_CONFIG has 2000ms which adds real waits per iteration
+const PRECHECK_TEST_CONFIG = {
+  ...DEFAULT_CONFIG,
+  execution: { ...DEFAULT_CONFIG.execution, iterationDelayMs: 0 },
+};
+
 describe("Precheck Integration with nax run", () => {
   let testDir: string;
   let savedSkipPrecheck: string | undefined;
@@ -1565,9 +1571,9 @@ describe("Precheck Integration with nax run", () => {
       const statusFilePath = join(nonGitDir, "nax", "features", "skip-test", "status.json");
 
       const config: NaxConfig = {
-        ...DEFAULT_CONFIG,
+        ...PRECHECK_TEST_CONFIG,
         execution: {
-          ...DEFAULT_CONFIG.execution,
+          ...PRECHECK_TEST_CONFIG.execution,
           maxIterations: 1,
         },
       };
@@ -1613,9 +1619,9 @@ describe("Precheck Integration with nax run", () => {
     spawnSync(["git", "commit", "-m", "Add runs dir"], { cwd: testDir });
 
     const config: NaxConfig = {
-      ...DEFAULT_CONFIG,
+      ...PRECHECK_TEST_CONFIG,
       execution: {
-        ...DEFAULT_CONFIG.execution,
+        ...PRECHECK_TEST_CONFIG.execution,
         maxIterations: 1,
       },
     };
@@ -1683,9 +1689,9 @@ describe("Precheck Integration with nax run", () => {
       const statusFilePath = join(featureDir, "status.json");
 
       const config: NaxConfig = {
-        ...DEFAULT_CONFIG,
+        ...PRECHECK_TEST_CONFIG,
         execution: {
-          ...DEFAULT_CONFIG.execution,
+          ...PRECHECK_TEST_CONFIG.execution,
           maxIterations: 1,
         },
       };
@@ -1742,9 +1748,9 @@ describe("Precheck Integration with nax run", () => {
     spawnSync(["git", "commit", "-m", "Add runs dir"], { cwd: testDir });
 
     const config: NaxConfig = {
-      ...DEFAULT_CONFIG,
+      ...PRECHECK_TEST_CONFIG,
       execution: {
-        ...DEFAULT_CONFIG.execution,
+        ...PRECHECK_TEST_CONFIG.execution,
         maxIterations: 1,
       },
     };
@@ -1788,9 +1794,9 @@ describe("Precheck Integration with nax run", () => {
     spawnSync(["git", "commit", "-m", "Add runs dir"], { cwd: testDir });
 
     const config: NaxConfig = {
-      ...DEFAULT_CONFIG,
+      ...PRECHECK_TEST_CONFIG,
       execution: {
-        ...DEFAULT_CONFIG.execution,
+        ...PRECHECK_TEST_CONFIG.execution,
         maxIterations: 1,
       },
     };
@@ -1844,9 +1850,9 @@ describe("Precheck Integration with nax run", () => {
       const statusFilePath = join(featureDir, "status.json");
 
       const config: NaxConfig = {
-        ...DEFAULT_CONFIG,
+        ...PRECHECK_TEST_CONFIG,
         execution: {
-          ...DEFAULT_CONFIG.execution,
+          ...PRECHECK_TEST_CONFIG.execution,
           maxIterations: 1,
         },
       };
