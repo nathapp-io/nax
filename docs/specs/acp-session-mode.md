@@ -1,280 +1,444 @@
-# ACP Session Mode — Implementation Spec
+# ACP Session Mode — Implementation Spec (v2)
 
-**Date:** 2026-03-13  
-**Branch:** `feat/acp-agent-adapter`  
+**Date:** 2026-03-14
+**Branch:** `feat/acp-agent-adapter`
 **File:** `src/agents/acp/adapter.ts`
+**Supersedes:** v1 (2026-03-13)
 
 ---
 
-## Problem
+## Problem (v1 → v2)
 
-`AcpAgentAdapter.run()` currently shells out to `acpx exec` (one-shot mode).  
-This means:
-- The agent cannot ask questions mid-run
-- The interaction bridge is wired but never fires
-- auth-module style stories that require human confirmation/input are blocked
+v1 spec defined session mode using spawn-based CLI wrappers (`acpx sessions ensure`,
+`acpx prompt -s`, `acpx sessions close`). This was implemented as `_runSessionMode()`.
 
-## Goal
+Issues discovered during implementation:
+1. Spawn-based approach is hard to test (requires spawn mocks, env leaking, output parsing)
+2. `createClient` injectable already exists as a proper programmatic ACP API
+3. v1 had `_runSessionMode` (spawn, spec-complete) and `_runWithClient` (createClient, spec-incomplete) — confusing dual paths
+4. Session naming not passed through `_runWithClient`
+5. `--approve-all` hardcoded instead of following `dangerouslySkipPermissions`
+6. No cwd scoping in session names (cross-repo conflicts)
+7. No session role suffix for TDD isolation
+8. `plan()` hardcoded `timeoutSeconds: 600` instead of reading config
+9. `complete()`/`decompose()` switched to createClient but spec said `_runOnce` (exec)
 
-Switch `run()` from `acpx exec` to **`acpx sessions`** (persistent session mode), enabling:
-- Multi-turn agent ↔ human Q&A during story execution
-- Interaction questions routed via Telegram plugin
-- Session continuity between `plan()` and `run()` phases
-- Same `AgentResult` contract — no API changes to callers
+## Goal (v2)
 
-`complete()` and `decompose()` stay on `acpx exec` — they are one-shot LLM calls.
+**Single transport: `createClient`** for all methods. Session lifecycle functions
+(naming, persistence, ensure/close) layered on top as thin wrappers around the
+`AcpClient`/`AcpSession` interfaces.
+
+Remove all spawn-based session helpers and `_runOnce`/`_runSessionMode`.
 
 ---
 
-## acpx Session CLI Reference (confirmed)
+## Architecture
 
-```bash
-# Create a named session
-acpx claude sessions new --name <name>
-
-# Ensure a session exists (idempotent — creates or resumes)
-acpx claude sessions ensure --name <name>
-
-# Send a prompt turn using a named session (-s selects the session by name)
-# Blocks until agent finishes that turn. stdin = prompt text when --file -
-acpx --cwd <dir> --approve-all --format json --model <model> --timeout <secs> \
-  claude prompt -s <name> --file -
-
-# Without --file, prompt text is the positional argument:
-acpx --cwd <dir> --approve-all --format json --timeout <secs> \
-  claude prompt -s <name> "implement the feature"
-
-# List sessions
-acpx claude sessions list
-
-# Close session (terminates session entirely — use in finally block)
-acpx claude sessions close <name>
-
-# Cancel in-flight prompt (stops current turn, keeps session alive)
-acpx claude cancel
+```
+┌──────────────────────────────────────────────────────┐
+│  Session Lifecycle Layer                             │
+│                                                      │
+│  buildSessionName(gitRoot, feature, story, role?)    │
+│  ensureAcpSession(client, name, agent, permMode)     │
+│  runSessionPrompt(session, prompt, timeoutMs, pid?)  │
+│  closeAcpSession(session)                            │
+│  saveAcpSession() / readAcpSession() / clearAcpSession() │
+└─────────────────────┬────────────────────────────────┘
+                      │ uses
+             ┌────────▼─────────┐
+             │  AcpClient API   │
+             │  createSession() │
+             │  loadSession()   │
+             │  start() / close()│
+             └──────────────────┘
 ```
 
-Key points:
-- `prompt -s <name>` selects a named session within the current cwd scope
-- Without `-s`, acpx uses the cwd-scoped default session (shared = wrong for nax — all stories in same project would share one session)
-- `sessions close <name>` is the cleanup command — handles graceful close and implicit cancellation of any in-flight prompt
-- Default `acpx claude prompt` without `-s` exits with `NO_SESSION` if no session exists for that cwd — does NOT auto-create
+### Method → Transport Matrix
+
+| Method | Transport | Session? | Notes |
+|:--|:--|:--|:--|
+| `run()` | `createClient` via lifecycle layer | ✅ Named, persistent | Multi-turn, interaction bridge |
+| `plan()` | `createClient` via `run()` | ✅ Shared session name | Same session for plan→run continuity |
+| `complete()` | `createClient` | ❌ Ephemeral | One-shot, no session name |
+| `decompose()` | `createClient` via `complete()` | ❌ Ephemeral | One-shot LLM call |
 
 ---
 
 ## Session Naming Convention
 
-Sessions are named: **`nax-<featureName>-<storyId>`**  
-Example: `nax-string-toolkit-ST-001`
+### Format
 
-This is deterministic, unique per story execution, and human-readable in `acpx sessions list`.
+```
+nax-<gitRootHash8>-<featureName>-<storyId>[-<sessionRole>]
+```
+
+Examples:
+```
+nax-a1b2c3d4-string-toolkit-ST-001              (single-session strategies)
+nax-a1b2c3d4-string-toolkit-ST-001-test-writer   (tdd-lite / three-session)
+nax-a1b2c3d4-string-toolkit-ST-001-implementer   (tdd-lite / three-session)
+nax-a1b2c3d4-string-toolkit-ST-001-verifier      (tdd-lite / three-session)
+```
+
+### Components
+
+| Component | Source | Purpose |
+|:--|:--|:--|
+| `nax` | Constant prefix | Namespace in `acpx sessions list` |
+| `gitRootHash8` | SHA-256 of `git rev-parse --show-toplevel`, first 8 chars | Prevent cross-repo/worktree collisions |
+| `featureName` | `options.featureName` | Human-readable feature identifier |
+| `storyId` | `options.storyId` | Story-level isolation |
+| `sessionRole` | `options.sessionRole` (optional) | TDD session isolation |
+
+### Git Root Resolution
+
+Use `git rev-parse --show-toplevel` to resolve the git root. This ensures:
+- ✅ Worktrees get different sessions (different git root → different hash)
+- ✅ Subdirectories of same project get same session
+- ✅ Different projects with same feature name don't collide
+
+The git root can be passed from the caller (nax already knows it) or resolved
+inside `buildSessionName`. Prefer passing from caller to avoid async spawn.
+
+### Strategy → Session Mapping
+
+| Strategy | Sessions | Role suffixes |
+|:--|:--|:--|
+| `test-after` | 1 | (none) |
+| `tdd-simple` | 1 | (none) |
+| `single-session` | 1 | (none) |
+| `tdd-lite` | 3 | `test-writer`, `implementer`, `verifier` |
+| `three-session-tdd` | 3 | `test-writer`, `implementer`, `verifier` |
 
 ---
 
-## Session ID Persistence in status.json
+## Session Lifecycle Functions
 
-Session IDs are stored in the story's entry in `nax/features/<feature>/status.json`:
+### `buildSessionName()`
+
+```typescript
+function buildSessionName(
+  workdir: string,           // git root (or cwd — caller should resolve)
+  featureName?: string,
+  storyId?: string,
+  sessionRole?: string       // "test-writer" | "implementer" | "verifier"
+): string
+```
+
+- Hash `workdir` with SHA-256, take first 8 hex chars
+- Sanitize feature/story/role: replace non-alphanumeric with `-`, lowercase
+- Join with `-`: `nax-<hash>-<feature>-<story>[-<role>]`
+- If no feature/story provided, return `nax-<hash>` (fallback)
+
+### `ensureAcpSession()`
+
+```typescript
+async function ensureAcpSession(
+  client: AcpClient,
+  sessionName: string,
+  agentName: string,
+  permissionMode: string     // "approve-all" | "default"
+): Promise<AcpSession>
+```
+
+1. Try `client.loadSession(sessionName)` (resume existing)
+2. If `loadSession` returns null or is not available → `client.createSession({ agentName, permissionMode, sessionName })`
+3. Return the session
+
+### `runSessionPrompt()`
+
+```typescript
+async function runSessionPrompt(
+  session: AcpSession,
+  prompt: string,
+  timeoutMs: number,
+  pidRegistry?: PidRegistry
+): Promise<{ response: AcpSessionResponse | null; timedOut: boolean }>
+```
+
+1. Start prompt: `session.prompt(prompt)`
+2. Race against timeout: `Promise.race([promptPromise, timeoutPromise])`
+3. If timeout wins → `session.cancelActivePrompt()` (best-effort), return `{ response: null, timedOut: true }`
+4. If prompt wins → return `{ response, timedOut: false }`
+5. PID registry: register before prompt, unregister after (if provided)
+
+**Note:** PID registry integration depends on whether `AcpSession` exposes a PID.
+If not available via createClient API, skip PID registry (log a debug message).
+
+### `closeAcpSession()`
+
+```typescript
+async function closeAcpSession(session: AcpSession): Promise<void>
+```
+
+- Call `session.close()` wrapped in try/catch (best-effort, swallow errors)
+- Log warning on failure
+
+### Sidecar Persistence (unchanged from v1)
+
+File: `nax/features/<feature>/acp-sessions.json`
 
 ```json
 {
-  "stories": {
-    "ST-001": {
-      "status": "in-progress",
-      "acpSessionName": "nax-string-toolkit-ST-001"
+  "ST-001": "nax-a1b2c3d4-string-toolkit-ST-001"
+}
+```
+
+Functions (file I/O, transport-agnostic):
+- `saveAcpSession(workdir, featureName, storyId, sessionName)` — persist name
+- `readAcpSession(workdir, featureName, storyId)` → `string | null` — read name
+- `clearAcpSession(workdir, featureName, storyId)` — remove entry
+
+---
+
+## `_runWithClient()` — Main Session Runner
+
+```typescript
+private async _runWithClient(options: AgentRunOptions, startTime: number): Promise<AgentResult> {
+  const client = _acpAdapterDeps.createClient(cmdStr);
+  await client.start();
+
+  // 1. Resolve session name
+  let sessionName = options.acpSessionName;
+  if (!sessionName && options.featureName && options.storyId) {
+    sessionName = await readAcpSession(options.workdir, options.featureName, options.storyId) ?? undefined;
+  }
+  sessionName ??= buildSessionName(options.workdir, options.featureName, options.storyId, options.sessionRole);
+
+  // 2. Resolve permission mode from options
+  const permissionMode = options.dangerouslySkipPermissions ? "approve-all" : "default";
+
+  // 3. Ensure session (create or resume)
+  const session = await ensureAcpSession(client, sessionName, this.name, permissionMode);
+
+  // 4. Persist for plan→run continuity
+  if (options.featureName && options.storyId) {
+    await saveAcpSession(options.workdir, options.featureName, options.storyId, sessionName);
+  }
+
+  try {
+    // 5. Multi-turn loop
+    let currentPrompt = options.prompt;
+    let turnCount = 0;
+    const MAX_TURNS = options.interactionBridge ? 10 : 1;
+    let lastResponse: AcpSessionResponse | null = null;
+    let timedOut = false;
+    const totalTokenUsage = { input_tokens: 0, output_tokens: 0 };
+
+    while (turnCount < MAX_TURNS) {
+      turnCount++;
+      getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
+
+      const turnResult = await runSessionPrompt(
+        session, currentPrompt, options.timeoutSeconds * 1000, options.pidRegistry
+      );
+
+      if (turnResult.timedOut) { timedOut = true; break; }
+      lastResponse = turnResult.response;
+      if (!lastResponse) break;
+
+      // Accumulate token usage
+      if (lastResponse.cumulative_token_usage) {
+        totalTokenUsage.input_tokens += lastResponse.cumulative_token_usage.input_tokens ?? 0;
+        totalTokenUsage.output_tokens += lastResponse.cumulative_token_usage.output_tokens ?? 0;
+      }
+
+      // Check for question → route to interaction bridge
+      const outputText = extractOutput(lastResponse);
+      const question = extractQuestion(outputText);
+      if (!question || !options.interactionBridge) break;
+
+      // Route question with timeout
+      try {
+        const answer = await Promise.race([
+          options.interactionBridge.onQuestionDetected(question),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("interaction timeout")), INTERACTION_TIMEOUT_MS)
+          ),
+        ]);
+        currentPrompt = answer;
+      } catch {
+        break; // Interaction failed or timed out
+      }
+    }
+
+    // Build result
+    // ...
+  } finally {
+    // 6. Cleanup
+    await closeAcpSession(session);
+    if (options.featureName && options.storyId) {
+      await clearAcpSession(options.workdir, options.featureName, options.storyId);
     }
   }
 }
 ```
 
-On `plan()` start:
-1. `acpx claude sessions new --name nax-<feature>-<storyId>` → stores name in status.json
-2. Run planning turn
+---
 
-On `run()` start:
-1. Read `acpSessionName` from status.json (if exists)
-2. `acpx claude sessions ensure --name <name>` → resumes if alive, creates if not
-3. If `ensure` fails (session expired): create new session, update status.json
-4. Run implementation turn(s)
+## Permission Mode
 
-On story completion (pass or fail):
-1. `acpx claude sessions close <name>` (best-effort, in finally)
-2. Clear `acpSessionName` from status.json
+### Rule
+
+`permissionMode` MUST follow `options.dangerouslySkipPermissions`:
+
+| `dangerouslySkipPermissions` | `permissionMode` |
+|:--|:--|
+| `true` | `"approve-all"` |
+| `false` / undefined | `"default"` |
+
+### Affected locations
+
+| Location | v1 behavior | v2 behavior |
+|:--|:--|:--|
+| `_runWithClient()` `createSession()` | Hardcoded `"approve-all"` | Map from `options.dangerouslySkipPermissions` |
+| `complete()` `createSession()` | Hardcoded `"approve-all"` | Map from `_options?.dangerouslySkipPermissions` |
+| `plan()` calling `run()` | Hardcoded `dangerouslySkipPermissions: true` | Pass through from `options` or config |
 
 ---
 
-## New Architecture: `_runSessionMode()`
+## Timeout
 
-### Flow
+### Per-turn timeout
 
-```
-_runSessionMode(options, startTime):
-  1. Resolve session name: "nax-<feature>-<storyId>"
-  2. Ensure session: acpx sessions ensure --name <name>  (creates or resumes)
-  3. Turn loop (max MAX_SESSION_TURNS = 10):
-       a. currentPrompt = options.prompt (first turn) or human answer (subsequent)
-       b. Run: acpx --cwd <dir> --approve-all --format json --timeout <secs> claude prompt -s <sessionName> --file -
-              stdin = currentPrompt
-       c. Parse output (same JSON parsing as exec mode)
-       d. exitCode !== 0 → handle error (rate limit check, etc.), break
-       e. extractQuestion(output):
-            - If question found AND interactionBridge present:
-                → send question via interactionBridge
-                → await human answer (INTERACTION_TIMEOUT_MS = 5 min)
-                → if no answer (timeout): break loop, return partial result
-                → set currentPrompt = answer, continue loop
-            - If no question OR no bridge: break loop (done)
-  4. Finally (always):
-       acpx claude sessions close <name>  (best-effort, swallow errors)
-       unregister PID from pidRegistry
-  5. Return AgentResult (same shape as exec mode)
+Each session turn gets `options.timeoutSeconds * 1000` ms as its timeout.
+`options.timeoutSeconds` should come from the caller, ultimately from
+`config.execution.sessionTimeoutSeconds`.
+
+### `plan()` timeout
+
+`plan()` currently hardcodes `timeoutSeconds: 600`. Change to:
+```typescript
+timeoutSeconds: options.timeoutSeconds ?? config.execution.sessionTimeoutSeconds ?? 600,
 ```
 
-### Timeout Design
+### Human interaction wait
 
-**Per-turn timeout inheriting `config.execution.sessionTimeoutSeconds`.**
+Separate from agent timeout: `INTERACTION_TIMEOUT_MS = 5 * 60 * 1000` (5 min).
+Human wait time does NOT count against agent timeout.
 
-- Each `acpx claude prompt` call gets `--timeout <options.timeoutSeconds>` where `options.timeoutSeconds = config.execution.sessionTimeoutSeconds` (default: 1800s)
-- Between turns (waiting for human answer), NO subprocess is running → no timeout burns
-- Human response wait uses a separate `INTERACTION_TIMEOUT_MS` (5 min default)
-- If human never answers → break loop, close session, return partial result
+---
 
-This matches user expectation: "I set 1800s meaning the agent gets 30 min." In session mode, each turn gets that full budget. Human wait time does not count against it.
-
-```
-Turn 1: [====agent computing====] timeout=1800s  → outputs question, exits
-Wait:   [====human thinking====]  NO timeout     → human answers via Telegram
-Turn 2: [====agent computing====] timeout=1800s  → done
-```
-
-If `timedOut=true` on a turn:
-- Map to exitCode 124 (POSIX convention)
-- Close session, return result with `timedOut: true`
-- Do NOT retry — agent was stuck, not rate limited
-
-### Question Detection: `extractQuestion(output: string): string | null`
+## `complete()` — One-Shot (No Session Name)
 
 ```typescript
-function extractQuestion(output: string): string | null {
-  const text = output.trim();
-  if (!text) return null;
+async complete(prompt: string, _options?: CompleteOptions): Promise<string> {
+  const client = _acpAdapterDeps.createClient(cmdStr);
+  await client.start();
 
-  // Split into sentences, find last question
-  const sentences = text.split(/(?<=[.!?])\s+/);
-  const questionSentences = sentences.filter(s => s.trim().endsWith("?"));
-  if (questionSentences.length > 0) {
-    const q = questionSentences[questionSentences.length - 1].trim();
-    if (q.length > 10) return q;
+  const permissionMode = _options?.dangerouslySkipPermissions ? "approve-all" : "default";
+  const session = await client.createSession({
+    agentName: this.name,
+    permissionMode,
+    // No sessionName — ephemeral
+  });
+
+  try {
+    const response = await session.prompt(prompt);
+    // ... extract text, handle errors ...
+  } finally {
+    await session.close().catch(() => {});
   }
+}
+```
 
-  // Explicit question markers (even without ?)
-  const lower = text.toLowerCase();
-  const markers = ["please confirm", "please specify", "please provide", "which would you", "should i ", "do you want", "can you clarify"];
-  for (const marker of markers) {
-    if (lower.includes(marker)) {
-      // Return last 200 chars as the question
-      return text.slice(-200).trim();
-    }
-  }
+No session naming, no sidecar persistence, no multi-turn. Pure one-shot.
 
-  return null;
+---
+
+## `plan()` — Shared Session via `run()`
+
+```typescript
+async plan(options: PlanOptions): Promise<PlanResult> {
+  const result = await this.run({
+    prompt: options.prompt,
+    workdir: options.workdir,
+    modelTier: options.modelTier ?? "balanced",
+    modelDef: modelDef,
+    timeoutSeconds: options.timeoutSeconds ?? 600,
+    dangerouslySkipPermissions: options.dangerouslySkipPermissions ?? false,
+    interactionBridge: options.interactionBridge,
+    featureName: options.featureName,
+    storyId: options.storyId,
+    sessionRole: options.sessionRole,
+  });
+  // ... extract specContent ...
+}
+```
+
+The session name created during `plan()` is persisted to the sidecar file.
+When `run()` is called later for the same feature/story, it reads the sidecar
+and resumes the same session (via `ensureAcpSession` → `loadSession`).
+
+---
+
+## AgentRunOptions — Updated Fields
+
+```typescript
+// In types.ts:
+interface AgentRunOptions {
+  // ... existing fields ...
+  acpSessionName?: string;   // Explicit session name (overrides derived name)
+  featureName?: string;      // For session name: nax-<hash>-<feature>-<story>
+  storyId?: string;          // For session name: nax-<hash>-<feature>-<story>
+  sessionRole?: string;      // For TDD isolation: "test-writer" | "implementer" | "verifier"
 }
 ```
 
 ---
 
-## Implementation Details
+## What Gets Removed
 
-### New helper functions (all in `adapter.ts`)
-
-```typescript
-// Build the deterministic session name for a story
-function buildSessionName(featureName: string, storyId: string): string
-
-// Ensure session exists (create or resume), returns session name
-async function ensureAcpSession(params: {
-  agentName: string;
-  sessionName: string;
-  env: Record<string, string | undefined>;
-  cwd: string;
-}): Promise<void>
-
-// Run a single prompt turn using: acpx claude prompt -s <sessionName> --file -
-// stdin = prompt text
-async function runSessionPrompt(params: {
-  agentName: string;
-  sessionName: string;   // -s <name> flag value
-  prompt: string;        // piped via stdin (--file -)
-  env: Record<string, string | undefined>;
-  cwd: string;
-  model: string;
-  timeoutSeconds: number;
-  pidRegistry?: PidRegistry;
-}): Promise<{ output: string; parsed: AcpJsonOutput; exitCode: number; timedOut: boolean; pid?: number }>
-
-// Close session (best-effort cleanup)
-async function closeAcpSession(params: {
-  agentName: string;
-  sessionName: string;
-  env: Record<string, string | undefined>;
-  cwd: string;
-}): Promise<void>
-
-// Extract question from agent output
-function extractQuestion(output: string): string | null
-```
-
-### `run()` modification
-
-```typescript
-async run(options: AgentRunOptions): Promise<AgentResult> {
-  // ... existing retry/rate-limit loop ...
-  const result = await this._runSessionMode(options, startTime);
-  // ... same result handling ...
-}
-```
-
-### `_runOnce()` — keep intact
-
-Used by `complete()` and `decompose()`. No changes.
-
-### Cost accumulation across turns
-
-```typescript
-let totalTokenUsage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
-// Per turn:
-if (parsed.tokenUsage) {
-  totalTokenUsage.inputTokens += parsed.tokenUsage.inputTokens ?? 0;
-  totalTokenUsage.outputTokens += parsed.tokenUsage.outputTokens ?? 0;
-}
-// Final cost from totalTokenUsage
-```
-
----
-
-## AgentRunOptions — new optional fields
-
-```typescript
-// Add to AgentRunOptions in types.ts:
-acpSessionName?: string;  // If set, resume this named session instead of creating new
-featureName?: string;     // Used to build session name (nax-<featureName>-<storyId>)
-storyId?: string;         // Used to build session name
-```
-
-These are optional — if not provided, `_runSessionMode` creates an anonymous session (UUID-named).
+| Item | Reason |
+|:--|:--|
+| `_runSessionMode()` | Replaced by `_runWithClient()` with lifecycle layer |
+| `_runOnce()` | `complete()` uses createClient directly |
+| Old `ensureAcpSession()` (spawn: `acpx sessions ensure`) | Replaced by createClient-based version |
+| Old `runSessionPrompt()` (spawn: `acpx prompt -s`) | Replaced by `session.prompt()` wrapper |
+| Old `closeAcpSession()` (spawn: `acpx sessions close`) | Replaced by `session.close()` wrapper |
+| `buildAcpxExecCommand()` | No longer used (was for spawn exec mode) |
+| `buildAllowedEnv()` export | No longer needed (createClient handles env) |
+| `withProcessTimeout` import | No longer used |
+| `streamJsonRpcEvents` import | No longer used (was for _runOnce streaming) |
+| `parseAcpxJsonOutput` import | No longer used (was for spawn output parsing) |
 
 ---
 
 ## Error Handling
 
 | Scenario | Behaviour |
-|:---------|:----------|
-| `sessions ensure` fails | Throw — retry logic in `run()` handles it |
-| Turn times out | `timedOut=true`, exitCode=124, close session, return result |
-| Turn exits non-zero | Check rate limit; if rate limited → retry outer loop; else return failure |
-| Session expired between turns | `runSessionPrompt` will fail → catch `SESSION_NOT_FOUND` → return partial result with error message |
-| Max turns (10) reached | Close session, return last output as result |
+|:--|:--|
+| `loadSession` returns null | Fall back to `createSession` |
+| `createSession` fails | Throw → retry logic in `run()` handles it |
+| Turn times out | `timedOut=true`, cancel prompt, close session, return result |
+| Turn response has `stopReason: "error"` | Return `success: false` |
+| Rate limit detected | Throw → outer retry loop with exponential backoff |
+| Max turns (10) reached | Close session, return last output |
 | Human answer timeout (5 min) | Break loop, close session, return partial result |
-| `sessions close` fails | Log warn, ignore — best-effort only |
+| `session.close()` fails | Log warn, ignore — best-effort only |
+| `cancelActivePrompt()` fails | Catch, try `session.close()` instead |
+
+---
+
+## Testing
+
+Existing test file: `test/unit/agents/acp/adapter-session.test.ts`
+
+Tests mock `_acpAdapterDeps.createClient` to return a mock `AcpClient` that
+creates mock `AcpSession` objects. All lifecycle functions are exercised through
+the public API (`run()`, `plan()`, `complete()`).
+
+### New/updated test cases needed
+
+- Session name contains cwd hash, feature, story, role
+- `buildSessionName()` unit tests with various inputs
+- `loadSession` called first, fallback to `createSession`
+- `permissionMode` follows `dangerouslySkipPermissions`
+- `plan()` passes `timeoutSeconds` from options (not hardcoded 600)
+- `plan()` passes `sessionRole` through to `run()`
+- Sidecar persistence: save on session create, read on resume, clear on close
+- TDD roles produce different session names
 
 ---
 
@@ -282,69 +446,16 @@ These are optional — if not provided, `_runSessionMode` creates an anonymous s
 
 | File | Change |
 |:-----|:-------|
-| `src/agents/acp/adapter.ts` | Add `_runSessionMode()` + helper functions. Modify `run()` to call it. Keep `_runOnce()` intact. |
-| `src/agents/types.ts` | Add `acpSessionName?`, `featureName?`, `storyId?` to `AgentRunOptions` |
-
-No pipeline/runner changes needed for basic session mode. Session name threading from `plan()` is a follow-up.
-
----
-
-## Testing
-
-New file: `test/unit/agents/acp/adapter-session.test.ts`
-
-Test cases:
-- Single turn, no question → done, correct AgentResult
-- Turn with question → interactionBridge.ask() called → answer → second turn → done
-- Interaction timeout → partial result returned
-- Max turns (10) reached → returns last output
-- `sessions ensure` failure → throws (triggers outer retry)
-- Turn non-zero exit → rate limit path vs generic failure path
-- Session close failure → silently ignored, result still returned
-- `timedOut=true` on turn → exitCode=124, timedOut in result
-
----
-
-## Plan Mode + Session Continuity
-
-`plan()` and `run()` share the same session so the agent retains planning context (file reads, analysis) during implementation.
-
-### Flow
-
-```
-plan() phase:
-  1. sessions ensure --name nax-<feature>-<storyId>    (creates session)
-  2. Write acpSessionName to status.json under the story entry
-  3. Run planning turn → return plan text
-
-run() phase:
-  1. Read acpSessionName from status.json (if present)
-  2. sessions ensure --name <acpSessionName>            (resumes if alive, creates if expired)
-  3. If ensure fails (session truly gone): create new, update status.json
-  4. Run implementation turn(s) — agent has planning context in memory
-```
-
-Graceful degradation: if the session expired between plan and run (long pause), `sessions ensure` silently creates a fresh session. The implementation prompt includes the plan text, so the agent has the plan even without the session history.
-
-### status.json shape
-
-```json
-{
-  "stories": {
-    "ST-001": {
-      "status": "in-progress",
-      "acpSessionName": "nax-string-toolkit-ST-001"
-    }
-  }
-}
-```
-
-Clear `acpSessionName` on story completion (pass or fail) after `sessions close`.
+| `src/agents/acp/adapter.ts` | Rewrite lifecycle functions, remove spawn helpers, update `_runWithClient`, `complete`, `plan` |
+| `src/agents/types.ts` | Add `sessionRole?` to `AgentRunOptions` (if not already present) |
+| `test/unit/agents/acp/adapter-session.test.ts` | Add tests for new session naming, lifecycle, permission mode |
+| `docs/specs/acp-session-mode.md` | This file (v2) |
 
 ---
 
 ## Out of Scope
 
-- Session resume across nax restarts beyond status.json (future)
+- Session resume across nax restarts beyond sidecar file (future)
 - Multiple concurrent sessions per story (not needed)
 - `acpx sessions list` for orphan cleanup (future ops tooling)
+- PID registry via createClient (depends on AcpSession exposing PID — deferred)

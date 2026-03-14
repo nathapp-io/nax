@@ -74,7 +74,7 @@ describe("run() — session flow", () => {
     expect(closeCalled).toBe(true);
   });
 
-  test("uses approve-all permission mode for headless execution", async () => {
+  test("uses approve-all permission mode when dangerouslySkipPermissions is true", async () => {
     let capturedMode = "";
     const session = makeSession();
     const client = makeClient(session, {
@@ -82,8 +82,20 @@ describe("run() — session flow", () => {
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => client);
 
-    await new AcpAgentAdapter("claude").run(makeRunOptions());
+    await new AcpAgentAdapter("claude").run(makeRunOptions({ dangerouslySkipPermissions: true }));
     expect(capturedMode).toBe("approve-all");
+  });
+
+  test("uses default permission mode when dangerouslySkipPermissions is false", async () => {
+    let capturedMode = "";
+    const session = makeSession();
+    const client = makeClient(session, {
+      createSessionFn: async (opts) => { capturedMode = opts.permissionMode; return session; },
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => client);
+
+    await new AcpAgentAdapter("claude").run(makeRunOptions({ dangerouslySkipPermissions: false }));
+    expect(capturedMode).toBe("default");
   });
 
   test("durationMs is non-negative", async () => {

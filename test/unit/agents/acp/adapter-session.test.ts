@@ -8,11 +8,16 @@
  * - Max turns reached → returns last output
  * - Session close failure → silently ignored
  * - Cost accumulation across multiple turns
- * - Session naming
+ * - Session naming (cwd hash + feature + story + role)
+ * - Permission mode follows dangerouslySkipPermissions
+ * - ensureAcpSession resumes via loadSession before createSession
+ * - sessionRole suffix for TDD isolation
  */
 
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { AcpAgentAdapter, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
+import { AcpAgentAdapter, _acpAdapterDeps, buildSessionName, ensureAcpSession } from "../../../../src/agents/acp/adapter";
+import type { AcpClient, AcpSession } from "../../../../src/agents/acp/adapter";
 import type { AgentRunOptions } from "../../../../src/agents/types";
 import { makeClient, makeSession } from "./adapter.test";
 
@@ -248,6 +253,145 @@ describe("AcpAgentAdapter — session mode (run)", () => {
       await adapter.run({ ...BASE_OPTIONS, acpSessionName: "custom-session-xyz" });
 
       expect(capturedCmds.length).toBeGreaterThan(0);
+    });
+
+    test("sessionRole appended to session name for TDD isolation", async () => {
+      const capturedNames: string[] = [];
+      const session = makeSession();
+      _acpAdapterDeps.createClient = mock((_cmd: string) =>
+        makeClient(session, {
+          createSessionFn: async (opts) => { capturedNames.push(opts.sessionName ?? ""); return session; },
+        }),
+      );
+
+      await adapter.run({ ...BASE_OPTIONS, featureName: "string-toolkit", storyId: "ST-001", sessionRole: "test-writer" });
+
+      expect(capturedNames[0]).toContain("test-writer");
+      expect(capturedNames[0]).toContain("string-toolkit");
+      expect(capturedNames[0]).toContain("st-001");
+    });
+
+    test("different sessionRoles produce different session names", () => {
+      const writerName = buildSessionName("/proj/foo", "feat", "ST-001", "test-writer");
+      const implName   = buildSessionName("/proj/foo", "feat", "ST-001", "implementer");
+      const verName    = buildSessionName("/proj/foo", "feat", "ST-001", "verifier");
+      expect(writerName).not.toBe(implName);
+      expect(implName).not.toBe(verName);
+      expect(writerName).not.toBe(verName);
+    });
+
+    test("different worktrees produce different session names", () => {
+      const main      = buildSessionName("/repos/nax",     "feat", "ST-001");
+      const worktree  = buildSessionName("/repos/nax-acp", "feat", "ST-001");
+      expect(main).not.toBe(worktree);
+    });
+
+    test("same path always produces same session name (stable)", () => {
+      const a = buildSessionName("/repos/nax", "string-toolkit", "ST-001");
+      const b = buildSessionName("/repos/nax", "string-toolkit", "ST-001");
+      expect(a).toBe(b);
+    });
+
+    test("session name contains 8-char cwd hash", () => {
+      const workdir = "/repos/nax-test";
+      const hash = createHash("sha256").update(workdir).digest("hex").slice(0, 8);
+      const name = buildSessionName(workdir, "feat", "ST-001");
+      expect(name).toContain(hash);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Permission mode
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("permission mode", () => {
+    test("approve-all when dangerouslySkipPermissions is true", async () => {
+      let capturedMode = "";
+      const session = makeSession();
+      _acpAdapterDeps.createClient = mock((_cmd: string) =>
+        makeClient(session, {
+          createSessionFn: async (opts) => { capturedMode = opts.permissionMode; return session; },
+        }),
+      );
+      await adapter.run({ ...BASE_OPTIONS, dangerouslySkipPermissions: true });
+      expect(capturedMode).toBe("approve-all");
+    });
+
+    test("default when dangerouslySkipPermissions is false", async () => {
+      let capturedMode = "";
+      const session = makeSession();
+      _acpAdapterDeps.createClient = mock((_cmd: string) =>
+        makeClient(session, {
+          createSessionFn: async (opts) => { capturedMode = opts.permissionMode; return session; },
+        }),
+      );
+      await adapter.run({ ...BASE_OPTIONS, dangerouslySkipPermissions: false });
+      expect(capturedMode).toBe("default");
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ensureAcpSession — loadSession resume path
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe("ensureAcpSession", () => {
+    test("resumes existing session via loadSession before createSession", async () => {
+      const existingSession = makeSession();
+      let createCalled = false;
+      const client: AcpClient = {
+        start: async () => {},
+        close: async () => {},
+        loadSession: async (_name: string) => existingSession,
+        createSession: async () => { createCalled = true; return makeSession(); },
+      };
+
+      const session = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
+      expect(session).toBe(existingSession);
+      expect(createCalled).toBe(false);
+    });
+
+    test("creates new session when loadSession returns null", async () => {
+      const newSession = makeSession();
+      let createCalled = false;
+      const client: AcpClient = {
+        start: async () => {},
+        close: async () => {},
+        loadSession: async (_name: string) => null,
+        createSession: async () => { createCalled = true; return newSession; },
+      };
+
+      const session = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
+      expect(session).toBe(newSession);
+      expect(createCalled).toBe(true);
+    });
+
+    test("creates new session when loadSession is not available", async () => {
+      const newSession = makeSession();
+      let createCalled = false;
+      const client: AcpClient = {
+        start: async () => {},
+        close: async () => {},
+        createSession: async () => { createCalled = true; return newSession; },
+      };
+
+      const session = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "default");
+      expect(session).toBe(newSession);
+      expect(createCalled).toBe(true);
+    });
+
+    test("falls back to createSession when loadSession throws", async () => {
+      const newSession = makeSession();
+      let createCalled = false;
+      const client: AcpClient = {
+        start: async () => {},
+        close: async () => {},
+        loadSession: async () => { throw new Error("session store unavailable"); },
+        createSession: async () => { createCalled = true; return newSession; },
+      };
+
+      const session = await ensureAcpSession(client, "nax-abc-feat-ST-001", "claude", "approve-all");
+      expect(session).toBe(newSession);
+      expect(createCalled).toBe(true);
     });
   });
 });

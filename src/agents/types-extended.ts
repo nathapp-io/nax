@@ -42,6 +42,12 @@ export interface PlanOptions {
   featureName?: string;
   /** Story ID for ACP session naming (plan→run continuity) */
   storyId?: string;
+  /** Session role for TDD isolation (e.g. "test-writer" | "implementer" | "verifier") */
+  sessionRole?: string;
+  /** Timeout in seconds — inherited from config.execution.sessionTimeoutSeconds */
+  timeoutSeconds?: number;
+  /** Whether to skip permission prompts (maps to permissionMode in ACP) */
+  dangerouslySkipPermissions?: boolean;
   /**
    * Callback invoked with the ACP session name after the session is created.
    * Used to persist the name to status.json for plan→run session continuity.

@@ -72,6 +72,8 @@ export interface AgentRunOptions {
   featureName?: string;
   /** Story ID for ACP session naming and logging */
   storyId?: string;
+  /** Session role for TDD isolation (e.g. "test-writer" | "implementer" | "verifier") */
+  sessionRole?: string;
 }
 
 /**
@@ -96,6 +98,8 @@ export interface CompleteOptions {
   jsonMode?: boolean;
   /** Override the model (adds --model flag) */
   model?: string;
+  /** Whether to skip permission prompts (maps to permissionMode in ACP) */
+  dangerouslySkipPermissions?: boolean;
 }
 
 /**
