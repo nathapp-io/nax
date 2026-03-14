@@ -648,13 +648,16 @@ describe("auto-commit behavior after ACP sessions", () => {
 
     // Track git calls through _gitDeps.spawn (used by autoCommitIfDirty)
     const gitDepsCalls: string[][] = [];
+    const workdir = "/tmp/nax-acp-test";
     // @ts-ignore — mocking _gitDeps.spawn for test isolation
     _gitDeps.spawn = mock((cmd: string[], spawnOpts?: unknown) => {
       gitDepsCalls.push(cmd);
-      // Respond with "nothing to commit" for status check
+      // autoCommitIfDirty first calls rev-parse --show-toplevel to guard against
+      // committing parent-repo files. Return the workdir so the guard passes.
+      const isShowToplevel = cmd[1] === "rev-parse" && cmd.includes("--show-toplevel");
       return {
         exited: Promise.resolve(0),
-        stdout: new Response("").body, // empty = clean working tree
+        stdout: new Response(isShowToplevel ? workdir + "\n" : "").body, // empty = clean working tree
         stderr: new Response("").body,
       };
     });
