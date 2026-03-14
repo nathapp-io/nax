@@ -277,6 +277,7 @@ program
   .option("--parallel <n>", "Max parallel sessions (0=auto, omit=sequential)")
   .option("--plan", "Run plan phase first before execution", false)
   .option("--from <spec-path>", "Path to spec file (required when --plan is used)")
+  .option("--one-shot", "Skip interactive planning Q&A, use single LLM call (ACP only)", false)
   .option("--headless", "Force headless mode (disable TUI, use pipe mode)", false)
   .option("--verbose", "Enable verbose logging (debug level)", false)
   .option("--quiet", "Quiet mode (warnings and errors only)", false)
@@ -347,7 +348,7 @@ program
         const generatedPrdPath = await planCommand(workdir, config, {
           from: options.from,
           feature: options.feature,
-          auto: options.headless, // headless → one-shot; interactive → ACP session
+          auto: options.oneShot ?? false, // interactive by default; --one-shot skips Q&A
           branch: undefined,
         });
 
@@ -625,7 +626,8 @@ program
   .description("Generate prd.json from a spec file via LLM one-shot call (replaces deprecated 'nax analyze')")
   .requiredOption("--from <spec-path>", "Path to spec file (required)")
   .requiredOption("-f, --feature <name>", "Feature name (required)")
-  .option("--auto", "Run in auto (one-shot LLM) mode", false)
+  .option("--auto", "Run in one-shot LLM mode (alias: --one-shot)", false)
+  .option("--one-shot", "Run in one-shot LLM mode (alias: --auto)", false)
   .option("-b, --branch <branch>", "Override default branch name")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .action(async (description, options) => {
@@ -658,7 +660,7 @@ program
       const prdPath = await planCommand(workdir, config, {
         from: options.from,
         feature: options.feature,
-        auto: options.auto,
+        auto: options.auto || options.oneShot, // --auto and --one-shot are aliases
         branch: options.branch,
       });
 
