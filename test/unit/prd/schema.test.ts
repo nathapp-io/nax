@@ -266,10 +266,10 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
     expect(prd.userStories[0]!.routing?.complexity).toBe("complex");
   });
 
-  test("maps legacy testStrategy 'tdd-lite' alias to 'tdd-simple'", () => {
+  test("maps legacy testStrategy 'tdd-lite' alias to 'three-session-tdd-lite'", () => {
     const input = makeInput([makeStory({ testStrategy: "tdd-lite" })]);
     const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.routing?.testStrategy).toBe("tdd-simple");
+    expect(prd.userStories[0]!.routing?.testStrategy).toBe("three-session-tdd-lite");
   });
 
   test("accepts valid testStrategy 'tdd-simple' as-is", () => {

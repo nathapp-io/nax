@@ -142,7 +142,7 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
   // testStrategy — accept from routing.testStrategy or top-level testStrategy
   // Also map legacy/LLM-hallucinated aliases: tdd-lite → tdd-simple
   const rawTestStrategy = routing.testStrategy ?? s.testStrategy;
-  const STRATEGY_ALIASES: Record<string, TestStrategy> = { "tdd-lite": "tdd-simple" };
+  const STRATEGY_ALIASES: Record<string, TestStrategy> = { "tdd-lite": "three-session-tdd-lite" };
   const normalizedStrategy =
     typeof rawTestStrategy === "string" ? (STRATEGY_ALIASES[rawTestStrategy] ?? rawTestStrategy) : rawTestStrategy;
   const testStrategy: TestStrategy =
