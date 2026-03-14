@@ -17,7 +17,7 @@ import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { NaxConfig } from "../../../../src/config";
 import type { UserStory } from "../../../../src/prd";
 import { runFullSuiteGate } from "../../../../src/tdd/rectification-gate";
-import { runTddSession } from "../../../../src/tdd/session-runner";
+import { _sessionRunnerDeps, runTddSession } from "../../../../src/tdd/session-runner";
 import { _gitDeps } from "../../../../src/utils/git";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,6 +111,7 @@ let originalSpawn: typeof Bun.spawn;
 let originalCreateClient: typeof _acpAdapterDeps.createClient;
 let originalSleep: typeof _acpAdapterDeps.sleep;
 let originalGitSpawn: typeof _gitDeps.spawn;
+let originalAutoCommit: typeof _sessionRunnerDeps.autoCommitIfDirty;
 
 function mockGitSpawn(diffFileSequences: string[][] = []) {
   let revParseCount = 0;
@@ -170,6 +171,7 @@ beforeEach(() => {
   originalCreateClient = _acpAdapterDeps.createClient;
   originalSleep = _acpAdapterDeps.sleep;
   originalGitSpawn = _gitDeps.spawn;
+  originalAutoCommit = _sessionRunnerDeps.autoCommitIfDirty;
   // Disable sleep delays in tests
   _acpAdapterDeps.sleep = mock(async (_ms: number) => {});
 });
@@ -179,6 +181,7 @@ afterEach(() => {
   _acpAdapterDeps.createClient = originalCreateClient;
   _acpAdapterDeps.sleep = originalSleep;
   _gitDeps.spawn = originalGitSpawn;
+  _sessionRunnerDeps.autoCommitIfDirty = originalAutoCommit;
   mock.restore();
 });
 
@@ -641,22 +644,15 @@ describe("isolation checks after ACP sessions", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("auto-commit behavior after ACP sessions", () => {
-  test("autoCommitIfDirty is invoked after each session via _gitDeps.spawn", async () => {
+  test("autoCommitIfDirty is invoked after each session via _sessionRunnerDeps", async () => {
     const session = makeSession(makeResponse({ stopReason: "end_turn" }));
     const client = makeClient(session);
     _acpAdapterDeps.createClient = mock(() => client);
 
-    // Track git calls through _gitDeps.spawn (used by autoCommitIfDirty)
-    const gitDepsCalls: string[][] = [];
-    // @ts-ignore — mocking _gitDeps.spawn for test isolation
-    _gitDeps.spawn = mock((cmd: string[], spawnOpts?: unknown) => {
-      gitDepsCalls.push(cmd);
-      // Respond with "nothing to commit" for status check
-      return {
-        exited: Promise.resolve(0),
-        stdout: new Response("").body, // empty = clean working tree
-        stderr: new Response("").body,
-      };
+    // Track autoCommitIfDirty calls directly via injectable dep
+    const autoCommitCalls: Array<{ workdir: string; stage: string; role: string; storyId: string }> = [];
+    _sessionRunnerDeps.autoCommitIfDirty = mock(async (workdir, stage, role, storyId) => {
+      autoCommitCalls.push({ workdir, stage, role, storyId });
     });
 
     mockGitSpawn([
@@ -677,11 +673,13 @@ describe("auto-commit behavior after ACP sessions", () => {
       true,
     );
 
-    // autoCommitIfDirty checks git status --porcelain via _gitDeps.spawn
-    const statusCalls = gitDepsCalls.filter((cmd) => cmd[0] === "git" && cmd[1] === "status");
-    expect(statusCalls.length).toBeGreaterThanOrEqual(1);
-    // Verify --porcelain flag is used (machine-parseable output)
-    expect(statusCalls[0]).toContain("--porcelain");
+    // autoCommitIfDirty must be invoked once per session
+    expect(autoCommitCalls.length).toBeGreaterThanOrEqual(1);
+    // Verify it's called with correct args: workdir, stage "tdd", role, storyId
+    expect(autoCommitCalls[0].workdir).toBe("/tmp/nax-acp-test");
+    expect(autoCommitCalls[0].stage).toBe("tdd");
+    expect(autoCommitCalls[0].role).toBe("test-writer");
+    expect(autoCommitCalls[0].storyId).toBe(story.id);
   });
 });
 
