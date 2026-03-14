@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 5,
-    "passed": 2,
+    "passed": 3,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 2
   },
   "cost": {
     "spent": 0,
     "limit": 8
   },
   "current": {
-    "storyId": "PLN-002",
-    "title": "Interactive planning mode via ACP session",
-    "complexity": "complex",
+    "storyId": "PLN-003",
+    "title": "CLI flag wiring — nax plan and nax run --plan",
+    "complexity": "medium",
     "tddStrategy": "tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-03-14T13:32:58.775Z",
-  "durationMs": 925478,
-  "lastHeartbeat": "2026-03-14T13:32:58.775Z"
+  "iterations": 4,
+  "updatedAt": "2026-03-14T13:37:58.787Z",
+  "durationMs": 1225490,
+  "lastHeartbeat": "2026-03-14T13:37:58.787Z"
 }
