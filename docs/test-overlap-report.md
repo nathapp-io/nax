@@ -1,6 +1,6 @@
 # Test Overlap Report
 
-Generated: 2026-03-14T04:38:15.482Z
+Generated: 2026-03-14T14:59:22.472Z
 
 ## REDUNDANT
 
@@ -8,21 +8,24 @@ No redundant integration tests found.
 
 ## PARTIAL
 
-Found 3 integration test(s) with partial unit test coverage:
+Found 4 integration test(s) with partial unit test coverage:
 
 - **test/integration/pipeline/pipeline-acceptance.test.ts**
-  - Coverage: 71%
-  - Missing: acceptanceStage.enabled, acceptanceStage.execute
+  - Coverage: 63%
+  - Missing: acceptanceStage.enabled, acceptanceStage.execute, broken
 - **test/integration/pipeline/pipeline.test.ts**
   - Coverage: 11%
   - Missing: Pipeline Runner, runPipeline, isolation-violation, session-failure, tests-failing, verifier-rejected, no failureCategory (backward compat), retryAsLite is not set for non-isolation failures
+- **test/integration/plan/plan.test.ts**
+  - Coverage: 50%
+  - Missing: PlanOptions and PlanResult types
 - **test/integration/routing/routing-stage-greenfield.test.ts**
   - Coverage: 50%
   - Missing: Routing Stage - Greenfield Detection (BUG-010)
 
 ## UNIQUE
 
-Found 67 unique integration test(s) with no unit test coverage:
+Found 66 unique integration test(s) with no unit test coverage:
 
 - test/integration/pipeline/hooks.test.ts
 - test/integration/pipeline/pipeline-events.test.ts
@@ -47,7 +50,6 @@ Found 67 unique integration test(s) with no unit test coverage:
 - test/integration/review/review-plugin-integration.test.ts
 - test/integration/prompts/pb-004-migration.test.ts
 - test/integration/plan/logger.test.ts
-- test/integration/plan/plan.test.ts
 - test/integration/plan/analyze-scanner.test.ts
 - test/integration/plan/analyze-integration.test.ts
 - test/integration/agents/acp/tdd-flow.test.ts
