@@ -211,7 +211,7 @@ class SpawnAcpSession implements AcpSession {
  * The cmdStr is parsed to extract --model and agent name:
  *   "acpx --model claude-sonnet-4-5 claude" → model=claude-sonnet-4-5, agent=claude
  *
- * createSession() spawns: acpx <agent> sessions ensure --name <name>
+ * createSession() spawns: acpx --cwd <dir> <agent> sessions new --name <name>
  * loadSession() tries to resume an existing named session.
  */
 export class SpawnAcpClient implements AcpClient {
@@ -244,9 +244,9 @@ export class SpawnAcpClient implements AcpClient {
   }): Promise<AcpSession> {
     const sessionName = opts.sessionName || `nax-${Date.now()}`;
 
-    // Ensure session exists via CLI
-    const cmd = ["acpx", "--cwd", this.cwd, opts.agentName, "sessions", "ensure", "--name", sessionName];
-    getSafeLogger()?.debug("acp-adapter", `Ensuring session: ${sessionName}`);
+    // Create new session via CLI (sessions new = always creates; sessions ensure = lookup only)
+    const cmd = ["acpx", "--cwd", this.cwd, opts.agentName, "sessions", "new", "--name", sessionName];
+    getSafeLogger()?.debug("acp-adapter", `Creating new session: ${sessionName}`);
 
     const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
     const exitCode = await proc.exited;
