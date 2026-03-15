@@ -128,6 +128,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         interactionBridge,
         config,
         modelTier: "balanced",
+        dangerouslySkipPermissions: config?.execution?.dangerouslySkipPermissions ?? false,
+        maxInteractionTurns: config?.agent?.maxInteractionTurns,
       });
       rawResponse = result.specContent;
     } finally {

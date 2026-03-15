@@ -48,6 +48,8 @@ export interface PlanOptions {
   timeoutSeconds?: number;
   /** Whether to skip permission prompts (maps to permissionMode in ACP) */
   dangerouslySkipPermissions?: boolean;
+  /** Max interaction turns when interactionBridge is active (default: 10) */
+  maxInteractionTurns?: number;
   /**
    * Callback invoked with the ACP session name after the session is created.
    * Used to persist the name to status.json for plan→run session continuity.

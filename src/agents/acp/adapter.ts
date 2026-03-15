@@ -649,6 +649,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       timeoutSeconds,
       dangerouslySkipPermissions: options.dangerouslySkipPermissions ?? false,
       interactionBridge: options.interactionBridge,
+      maxInteractionTurns: options.maxInteractionTurns,
       featureName: options.featureName,
       storyId: options.storyId,
       sessionRole: options.sessionRole,
