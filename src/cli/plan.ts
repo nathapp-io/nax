@@ -37,6 +37,7 @@ export const _deps = {
     return { stdout: result.stdout as Buffer, exitCode: result.exitCode };
   },
   mkdirp: (path: string): Promise<void> => Bun.spawn(["mkdir", "-p", path]).exited.then(() => {}),
+  existsSync: (path: string): boolean => existsSync(path),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,9 +89,11 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   const pkg = await _deps.readPackageJson(workdir);
   const projectName = detectProjectName(workdir, pkg);
 
-  // Build prompt
+  // Compute output path early — needed for interactive file-write prompt
   const branchName = options.branch ?? `feat/${options.feature}`;
-  const prompt = buildPlanningPrompt(specContent, codebaseContext);
+  const outputDir = join(naxDir, "features", options.feature);
+  const outputPath = join(outputDir, "prd.json");
+  await _deps.mkdirp(outputDir);
 
   const agentName = config?.autoMode?.defaultAgent ?? "claude";
 
@@ -101,6 +104,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   let rawResponse: string;
   if (options.auto) {
     // One-shot: use CLI adapter directly — simple completion doesn't need ACP session overhead
+    const prompt = buildPlanningPrompt(specContent, codebaseContext);
     const cliAdapter = _deps.getAgent(agentName);
     if (!cliAdapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     rawResponse = await cliAdapter.complete(prompt, { jsonMode: true });
@@ -114,27 +118,32 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       // Not an envelope — use rawResponse as-is
     }
   } else {
-    // Interactive: use protocol-aware adapter (ACP when configured)
+    // Interactive: agent writes PRD JSON directly to outputPath (avoids output truncation)
+    const prompt = buildPlanningPrompt(specContent, codebaseContext, outputPath);
     const adapter = _deps.getAgent(agentName, config);
     if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     const interactionBridge = createCliInteractionBridge();
     logger?.info("plan", "Starting interactive planning session...", { agent: agentName });
     try {
-      const result = await adapter.plan({
+      await adapter.plan({
         prompt,
         workdir,
         interactive: true,
         timeoutSeconds,
         interactionBridge,
         config,
-        modelTier: "balanced",
+        modelTier: config?.plan?.model ?? "balanced",
         dangerouslySkipPermissions: config?.execution?.dangerouslySkipPermissions ?? false,
         maxInteractionTurns: config?.agent?.maxInteractionTurns,
       });
-      rawResponse = result.specContent;
     } finally {
       logger?.info("plan", "Interactive session ended");
     }
+    // Read back from file written by agent
+    if (!_deps.existsSync(outputPath)) {
+      throw new Error(`[plan] Agent did not write PRD to ${outputPath}. Check agent logs for errors.`);
+    }
+    rawResponse = await _deps.readFile(outputPath);
   }
 
   // Validate and normalize: handles markdown extraction, trailing commas, LLM quirks,
@@ -144,10 +153,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   // Override project with auto-detected name (validatePlanOutput fills feature/branchName already)
   finalPrd.project = projectName;
 
-  // Write output
-  const outputDir = join(naxDir, "features", options.feature);
-  const outputPath = join(outputDir, "prd.json");
-  await _deps.mkdirp(outputDir);
+  // Write normalized PRD (overwrites agent-written file with validated/normalized version)
   await _deps.writeFile(outputPath, JSON.stringify(finalPrd, null, 2));
 
   logger?.info("plan", "[OK] PRD written", { outputPath });
@@ -256,7 +262,7 @@ function buildCodebaseContext(scan: CodebaseScan): string {
  * - Complexity classification guide
  * - Test strategy guide
  */
-function buildPlanningPrompt(specContent: string, codebaseContext: string): string {
+function buildPlanningPrompt(specContent: string, codebaseContext: string, outputFilePath?: string): string {
   return `You are a senior software architect generating a product requirements document (PRD) as JSON.
 
 ## Spec
@@ -312,5 +318,9 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
 - three-session-tdd: Complex stories. Full TDD cycle with separate test-writer and implementer sessions.
 - three-session-tdd-lite: Expert/high-risk stories. Full TDD with additional verifier session.
 
-Output ONLY the JSON object. Do not wrap in markdown code blocks.`;
+${
+  outputFilePath
+    ? `Write the PRD JSON directly to this file path: ${outputFilePath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`
+    : "Output ONLY the JSON object. Do not wrap in markdown code blocks."
+}`;
 }

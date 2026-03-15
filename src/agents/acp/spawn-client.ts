@@ -121,8 +121,6 @@ class SpawnAcpSession implements AcpSession {
       "--cwd",
       this.cwd,
       ...(this.permissionMode === "approve-all" ? ["--approve-all"] : []),
-      "--format",
-      "json",
       "--model",
       this.model,
       "--timeout",

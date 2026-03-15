@@ -62,6 +62,7 @@ const origGetAgent = _deps.getAgent;
 const origReadPackageJson = _deps.readPackageJson;
 const origSpawnSync = _deps.spawnSync;
 const origMkdirp = _deps.mkdirp;
+const origExistsSync = _deps.existsSync;
 
 function makeFakeScan() {
   return {
@@ -111,7 +112,12 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     Bun.spawnSync(["mkdir", "-p", join(tmpDir, "nax")]);
 
     // Default deps — override per test as needed
-    _deps.readFile = mock(async (_path: string) => SAMPLE_SPEC);
+    // readFile: return PRD JSON when reading prd.json (agent wrote it), spec otherwise
+    _deps.readFile = mock(async (path: string) =>
+      path.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC,
+    );
+    // Simulate agent having written the PRD file (existsSync check passes by default)
+    _deps.existsSync = mock((_path: string) => true);
 
     _deps.writeFile = mock(async (path: string, content: string) => {
       capturedWriteArgs.push([path, content]);
@@ -138,6 +144,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     _deps.readPackageJson = origReadPackageJson;
     _deps.spawnSync = origSpawnSync;
     _deps.mkdirp = origMkdirp;
+    _deps.existsSync = origExistsSync;
     Bun.spawnSync(["rm", "-rf", tmpDir]);
   });
 
@@ -287,12 +294,14 @@ describe("planCommand — interactive mode (PLN-002)", () => {
 
   test("AC-4: throws on invalid JSON in agent output", async () => {
     const fakeAdapter = {
-      plan: mock(async (_planOpts: any) => ({
-        specContent: "```json\ninvalid json {{}\n```",
-      })),
+      plan: mock(async (_planOpts: any) => ({ specContent: "" })),
     };
 
     _deps.getAgent = mock((_name: string) => fakeAdapter as never);
+    // Simulate agent writing invalid JSON to the file
+    _deps.readFile = mock(async (_path: string) =>
+      _path.endsWith("prd.json") ? "```json\ninvalid json {{}\n```" : SAMPLE_SPEC,
+    );
 
     expect(
       planCommand(tmpDir, {} as never, {

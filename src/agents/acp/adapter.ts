@@ -636,14 +636,19 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {
-    // Resolve model: explicit > config.models.balanced > fallback
+    // Resolve model: explicit > config.models[tier] > config.models.balanced > fallback
     let modelDef = options.modelDef;
     if (!modelDef && options.config?.models) {
-      const { resolveBalancedModelDef } = await import("../model-resolution");
-      try {
-        modelDef = resolveBalancedModelDef(options.config as import("../../config").NaxConfig);
-      } catch {
-        // resolveBalancedModelDef can throw if models.balanced missing
+      const tier = options.modelTier ?? "balanced";
+      const { resolveModel } = await import("../../config/schema");
+      const models = options.config.models as Record<string, unknown>;
+      const entry = models[tier] ?? models.balanced;
+      if (entry) {
+        try {
+          modelDef = resolveModel(entry as Parameters<typeof resolveModel>[0]);
+        } catch {
+          // resolveModel can throw on malformed entries
+        }
       }
     }
     modelDef ??= { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };

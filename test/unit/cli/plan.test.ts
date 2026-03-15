@@ -63,6 +63,7 @@ const origGetAgent = _deps.getAgent;
 const origReadPackageJson = _deps.readPackageJson;
 const origSpawnSync = _deps.spawnSync;
 const origMkdirp = _deps.mkdirp;
+const origExistsSync = _deps.existsSync;
 
 function makeFakeAdapter(returnPrd: object = SAMPLE_PRD) {
   return {
@@ -134,6 +135,7 @@ describe("planCommand", () => {
     _deps.readPackageJson = origReadPackageJson;
     _deps.spawnSync = origSpawnSync;
     _deps.mkdirp = origMkdirp;
+    _deps.existsSync = origExistsSync;
     Bun.spawnSync(["rm", "-rf", tmpDir]);
   });
 
@@ -234,12 +236,13 @@ describe("planCommand", () => {
 
   test("AC-3: interactive mode is now supported when --auto not set", async () => {
     const fakeAdapter = {
-      plan: mock(async (_options: any) => ({
-        specContent: JSON.stringify(SAMPLE_PRD),
-      })),
+      plan: mock(async (_options: any) => ({ specContent: "" })),
       complete: mock(async (_prompt: string) => JSON.stringify(SAMPLE_PRD)),
     };
     _deps.getAgent = mock((_name: string) => fakeAdapter as never);
+    // Simulate agent having written the PRD file to disk
+    _deps.existsSync = mock((_path: string) => true);
+    _deps.readFile = mock(async (_path: string) => JSON.stringify(SAMPLE_PRD));
 
     await planCommand(tmpDir, {} as never, {
       from: "/spec.md",
