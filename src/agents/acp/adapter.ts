@@ -636,7 +636,17 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {
-    const modelDef = options.modelDef ?? { provider: "anthropic", model: "default" };
+    // Resolve model: explicit > config.models.balanced > fallback
+    let modelDef = options.modelDef;
+    if (!modelDef && options.config?.models) {
+      const { resolveBalancedModelDef } = await import("../model-resolution");
+      try {
+        modelDef = resolveBalancedModelDef(options.config as import("../../config").NaxConfig);
+      } catch {
+        // resolveBalancedModelDef can throw if models.balanced missing
+      }
+    }
+    modelDef ??= { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
     // Timeout: from options, or config, or fallback to 600s
     const timeoutSeconds =
       options.timeoutSeconds ?? (options.config?.execution?.sessionTimeoutSeconds as number | undefined) ?? 600;
