@@ -752,4 +752,198 @@ export function getSafeLogger(): Logger | null {
 
 ---
 
-*Created: 2026-03-10. Maintained by nax-dev.*
+## 12. Security Standards
+
+> Codified from code reviews on 2026-03-11 (security-review) and 2026-03-15 (deep code review).
+
+### 12.1 Path & File Security
+
+| Rule | Rationale |
+|:-----|:----------|
+| **Always `realpathSync()` before path containment checks** | Lexical `normalize()` does not follow symlinks — a symlink inside an allowed root can point anywhere (SEC-1 fix, 2026-03-15) |
+| **Use `safeRealpath()` helper for non-existent paths** | Fall back to resolving the parent directory when the target doesn't exist yet |
+| **`O_CREAT \| O_EXCL` for atomic lock creation** | Prevents TOCTOU race between check-and-create (BUG-2 fix) |
+| **Use `fs.unlink()` for file deletion, never `Bun.spawn(["rm", ...])`** | Subprocess for a single syscall is ~1000x slower and adds unnecessary complexity (BUG-3 fix) |
+
+### 12.2 Command Construction
+
+| Rule | Rationale |
+|:-----|:----------|
+| **Always use argv arrays for subprocess spawning** | String interpolation enables argument injection |
+| **Validate user-editable config values before interpolating into command strings** | Model names, paths, hook commands from config.json are user-controlled (SEC-2) |
+| **Use `buildAllowedEnv()` for all spawned processes** | Never pass full `process.env` — prevents credential leakage to agent subprocesses |
+
+### 12.3 Process & Handler Lifecycle
+
+| Rule | Rationale |
+|:-----|:----------|
+| **Store named references for all `process.on()` handlers** | `removeListener` compares by reference — anonymous arrows create a new ref each time, making cleanup a silent no-op (BUG-1 fix) |
+| **Track spawned PIDs via `PidRegistry`** | Enables cleanup on crash; register in `prompt()`, unregister on exit (v0.42.6 PidRegistry pattern) |
+| **Never hardcode permission modes in resume/reconnect paths** | Must inherit from caller's config — hardcoding `"approve-all"` silently escalates permissions (SEC-3 fix) |
+| **Kill active subprocess before graceful close** | `close()` and `cancelActivePrompt()` must kill `activeProc` first, then close the session |
+
+### 12.4 Type Safety for Security
+
+| Rule | Rationale |
+|:-----|:----------|
+| **Never `undefined as unknown as T`** | Lies to the type system — use `T \| null` and set `null` explicitly (BUG-2 fix) |
+| **Validate JSON parse results with proper null typing** | Corrupt files should produce `null`, not unsafe casts that bypass guards |
+
+---
+
+## 13. Test Performance Patterns
+
+> Codified from the slow-test optimization campaign (v0.41.0, 2026-03-14).
+> Full suite went from ~4 min → ~2.5 min (4,087+ tests) by eliminating fixed sleeps.
+
+### 13.1 Injectable Sleep Pattern
+
+**Problem:** Production code uses `Bun.sleep()` or config-driven delays. Tests pay the real wall-clock cost.
+
+**Solution:** Export `_moduleDeps.sleep` as an injectable, override with instant spy in tests.
+
+```typescript
+// ✅ Production code — injectable sleep
+export const _myModuleDeps = {
+  sleep: (ms: number) => Bun.sleep(ms),
+};
+
+async function retryWithBackoff() {
+  await _myModuleDeps.sleep(2000); // 2s in prod
+}
+
+// ✅ Test — instant spy, assert correct values
+const sleepCalls: number[] = [];
+_myModuleDeps.sleep = async (ms: number) => { sleepCalls.push(ms); };
+
+test("retries with exponential backoff", async () => {
+  await retryWithBackoff();
+  expect(sleepCalls).toEqual([2000, 4000]);  // assert timing, don't wait for it
+});
+```
+
+**Applied in:** `claude.ts` (rate-limit retry: 6138ms → 9ms), `webhook.ts` (backoff: 757ms → 10ms), `runners.ts` (regression cleanup: 2s → 10ms)
+
+### 13.2 Zero-Delay Config for Integration Tests
+
+**Problem:** `DEFAULT_CONFIG.execution.iterationDelayMs = 2000` — every test calling `run()` sleeps 2s per iteration.
+
+**Solution:** Define `TEST_CONFIG` with `iterationDelayMs: 0` at top of each integration test file.
+
+```typescript
+// ✅ Test config — zero delay
+const TEST_CONFIG = {
+  ...DEFAULT_CONFIG,
+  execution: { ...DEFAULT_CONFIG.execution, iterationDelayMs: 0 },
+};
+
+// ❌ Don't use DEFAULT_CONFIG in tests — you'll sleep 2s per iteration
+```
+
+**Applied in:** `execution.test.ts` (12 tests: ~20s → 435ms), `cli-precheck.test.ts` (~2.7s → 50ms)
+
+### 13.3 Shared `beforeAll` for Expensive Setup
+
+**Problem:** Multiple tests in the same `describe` call the same expensive function (e.g., `scanCodebase()`) independently.
+
+**Solution:** Run once in `beforeAll`, share the result across tests.
+
+```typescript
+// ✅ Shared expensive setup
+describe("scanCodebase", () => {
+  let result: ScanResult;
+  beforeAll(async () => {
+    result = await scanCodebase(workdir);  // 1 call, shared across 5 tests
+  });
+
+  test("finds TypeScript files", () => expect(result.files.length).toBeGreaterThan(0));
+  test("respects gitignore", () => expect(result.files).not.toContainEqual(expect.stringContaining("node_modules")));
+});
+
+// ❌ Each test calls scanCodebase independently (10s × 5 = 50s)
+```
+
+**Applied in:** `scanner.ts` tests (7 tests: ~53s → 43ms)
+
+### 13.4 Event-Driven Waits over Fixed Sleeps
+
+**Problem:** Tests use `Bun.sleep(1000)` to wait for async side effects.
+
+**Solution:** Wait for the actual event (first data chunk, file write, etc.) with a timeout fallback.
+
+```typescript
+// ✅ Event-driven wait
+const firstChunk = new Promise<void>((resolve) => {
+  stream.on("data", () => resolve());
+  setTimeout(() => resolve(), 5000); // fallback
+});
+await firstChunk;
+
+// ❌ Fixed sleep — wastes 1s or flakes if operation takes longer
+await Bun.sleep(1000);
+```
+
+**Applied in:** `cli-core.test.ts` `--follow` mode tests (~1s each → ~50ms each)
+
+### 13.5 Mock at Call Site, Not Inside Callee
+
+**Problem:** Mocking `_gitDeps.spawn` to verify `autoCommitIfDirty` is called is fragile — internal guards (like `rev-parse --show-toplevel`) silently early-return in CI.
+
+**Solution:** Export `_sessionRunnerDeps = { autoCommitIfDirty }` and mock the injectable directly.
+
+```typescript
+// ✅ Mock at the call site
+_sessionRunnerDeps.autoCommitIfDirty = async (dir, msg) => {
+  commitCalls.push({ dir, msg });
+};
+
+// ❌ Mock deep inside the callee's internal deps
+_gitDeps.spawn = (cmd) => { /* fragile — depends on every internal code path */ };
+```
+
+**Applied in:** `session-runner.ts` (CI-flaky mock → reliable injectable, commit `e41e076`)
+
+### 13.6 Security & Regression Test Patterns
+
+| Pattern | When | Example |
+|:--------|:-----|:--------|
+| **Listener count assertion** | Any `process.on`/`removeListener` code | `expect(process.listenerCount("unhandledRejection")).toBe(originalCount)` after cleanup |
+| **Symlink rejection test** | Any path validation code | Create temp symlink pointing outside root → assert validation rejects |
+| **Permission inheritance test** | Session resume/reconnect | Assert resumed session uses caller's permission, not hardcoded default |
+| **Null-safety parse test** | Any JSON parse with fallback | Feed corrupt input → assert `null` result, not unsafe cast |
+| **Crash-produces-failure test** | Any stage that parses external output | Feed exit code ≠ 0 with no parseable output → assert `fail`, not `continue` (v0.42.1 acceptance fix) |
+
+---
+
+## Quick Reference Card
+
+| Rule | Limit |
+|:-----|:------|
+| Source file size | ≤400 lines |
+| Test file size | ≤800 lines (split if >3 unrelated concerns) |
+| Type-only file size | ≤600 lines |
+| Function size | ≤30 lines (50 hard max) |
+| Positional params | ≤3 (use options object beyond) |
+| `any` in public API | Forbidden |
+| Magic numbers | Forbidden (use named constants) |
+| `_deps` for externals | Required |
+| Error messages | Must include `[stage]` prefix + context |
+| `realpathSync` before containment | Required (no lexical-only checks) |
+| `process.on` handlers | Must store named ref for removal |
+| Test sleep | Injectable `_deps.sleep`, never real `Bun.sleep` |
+| Integration test config | `iterationDelayMs: 0` (never DEFAULT_CONFIG) |
+
+| Pattern | When to use | Entry point |
+|:--------|:-----------|:------------|
+| Builder | Multi-step object construction | `static for()` → chain → `.build()` |
+| Adapter | Multiple backends, one contract | Interface in `types.ts`, class per backend |
+| Registry | Lookup by name/capability | Class (lifecycle) or function (pure lookup) |
+| Strategy | Pluggable algorithms | Interface + classes, selected by orchestrator |
+| Chain | Priority-ordered handlers | `.register(handler, priority)` → `.prompt()` |
+| Singleton | Global services | `initX()` once, `getX()` / `getSafeX()` everywhere |
+| Injectable sleep | Test performance | `_moduleDeps.sleep = Bun.sleep` → spy in tests |
+| PidRegistry | Subprocess lifecycle | Register on spawn, unregister on exit, `killAll()` on crash |
+
+---
+
+*Created: 2026-03-10. Last updated: 2026-03-15. Maintained by nax-dev.*
