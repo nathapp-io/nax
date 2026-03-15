@@ -92,7 +92,7 @@ export interface AcpClient {
   start(): Promise<void>;
   createSession(opts: { agentName: string; permissionMode: string; sessionName?: string }): Promise<AcpSession>;
   /** Resume an existing named session. Returns null if the session is not found. */
-  loadSession?(sessionName: string): Promise<AcpSession | null>;
+  loadSession?(sessionName: string, agentName: string): Promise<AcpSession | null>;
   close(): Promise<void>;
 }
 
@@ -180,10 +180,14 @@ export async function ensureAcpSession(
   agentName: string,
   permissionMode: string,
 ): Promise<AcpSession> {
+  if (!agentName) {
+    throw new Error("[acp-adapter] agentName is required for ensureAcpSession");
+  }
+
   // Try to resume existing session first
   if (client.loadSession) {
     try {
-      const existing = await client.loadSession(sessionName);
+      const existing = await client.loadSession(sessionName, agentName);
       if (existing) {
         getSafeLogger()?.debug("acp-adapter", `Resumed existing session: ${sessionName}`);
         return existing;

@@ -135,6 +135,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         modelTier: config?.plan?.model ?? "balanced",
         dangerouslySkipPermissions: config?.execution?.dangerouslySkipPermissions ?? false,
         maxInteractionTurns: config?.agent?.maxInteractionTurns,
+        featureName: options.feature,
       });
     } finally {
       logger?.info("plan", "Interactive session ended");
