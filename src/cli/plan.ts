@@ -125,7 +125,18 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     const interactionBridge = createCliInteractionBridge();
     const pidRegistry = new PidRegistry(workdir);
-    logger?.info("plan", "Starting interactive planning session...", { agent: agentName });
+    const dangerouslySkipPermissions = config?.execution?.dangerouslySkipPermissions ?? false;
+    const permissionMode = dangerouslySkipPermissions ? "approve-all" : "approve-reads";
+    const resolvedModel = config?.plan?.model ?? "balanced";
+    logger?.info("plan", "Starting interactive planning session", {
+      agent: agentName,
+      model: resolvedModel,
+      permission: permissionMode,
+      workdir,
+      feature: options.feature,
+      timeoutSeconds,
+    });
+    const planStartTime = Date.now();
     try {
       await adapter.plan({
         prompt,
@@ -134,15 +145,15 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         timeoutSeconds,
         interactionBridge,
         config,
-        modelTier: config?.plan?.model ?? "balanced",
-        dangerouslySkipPermissions: config?.execution?.dangerouslySkipPermissions ?? false,
+        modelTier: resolvedModel,
+        dangerouslySkipPermissions,
         maxInteractionTurns: config?.agent?.maxInteractionTurns,
         featureName: options.feature,
         pidRegistry,
       });
     } finally {
       await pidRegistry.killAll().catch(() => {});
-      logger?.info("plan", "Interactive session ended");
+      logger?.info("plan", "Interactive session ended", { durationMs: Date.now() - planStartTime });
     }
     // Read back from file written by agent
     if (!_deps.existsSync(outputPath)) {

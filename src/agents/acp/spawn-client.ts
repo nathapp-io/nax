@@ -138,6 +138,11 @@ class SpawnAcpSession implements AcpSession {
       "-",
     ];
 
+    getSafeLogger()?.info("acp-adapter", "Sending prompt", {
+      session: this.sessionName,
+      permission: this.permissionMode,
+      cmd: cmd.join(" "),
+    });
     getSafeLogger()?.debug("acp-adapter", `Sending prompt to session: ${this.sessionName}`);
 
     const proc = _spawnClientDeps.spawn(cmd, {
