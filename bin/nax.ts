@@ -656,6 +656,14 @@ program
     // Load config
     const config = await loadConfig(workdir);
 
+    // Initialize logger — writes to nax/features/<feature>/plan-<timestamp>.jsonl
+    const featureLogDir = join(naxDir, "features", options.feature);
+    mkdirSync(featureLogDir, { recursive: true });
+    const planLogId = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
+    const planLogPath = join(featureLogDir, `plan-${planLogId}.jsonl`);
+    initLogger({ level: "info", filePath: planLogPath, useChalk: false, headless: true });
+    console.log(chalk.dim(`   [Plan log: ${planLogPath}]`));
+
     try {
       const prdPath = await planCommand(workdir, config, {
         from: options.from,
@@ -666,6 +674,7 @@ program
 
       console.log(chalk.green("\n[OK] PRD generated"));
       console.log(chalk.dim(`   PRD: ${prdPath}`));
+      console.log(chalk.dim(`   Log: ${planLogPath}`));
       console.log(chalk.dim(`\nNext: nax run -f ${options.feature}`));
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
