@@ -545,6 +545,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 - [x] ~~**BUG-062:** LLM routing cache returned stale `testStrategy` from pre-route phase — `simple` stories incorrectly used `three-session-tdd-lite` instead of `tdd-simple` (TS-001 rule not applied on cache hit). Fixed: cache hit now recomputes `testStrategy` via `determineTestStrategy()` from cached `complexity`; cache is authoritative on `complexity`/`modelTier` only. `945cc8d`~~
 
 ### Features
+- [ ] **PERM-001:** Scoped Agent Permissions — Phase 1: permission resolver (`resolvePermissions(config, stage)`), remove all local `dangerouslySkipPermissions` fallbacks, add `permissionProfile` config field. Phase 2: per-stage tool allowlists (`allowedTools` with glob patterns), backend mapping to `--allowedTools` (CLI) and `--allowed-tools` (ACP). **Spec:** [`docs/specs/scoped-permissions.md`](specs/scoped-permissions.md)
 - [ ] **HOOK-001:** Fire plugin hooks on plan failure — load plugins before plan phase and emit `onRunEnd` with failure status when `nax run --plan` fails, so Telegram/reporter plugins are notified.
 - [x] ~~**ACC-001:** Acceptance Test Pipeline — shipped in v0.40.0~~
 - [x] ~~**ACP Adapter:** Multi-agent support via acpx CLI — shipped 2026-03-14~~
