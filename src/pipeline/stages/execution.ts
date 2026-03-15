@@ -218,6 +218,7 @@ export const executionStage: PipelineStage = {
       modelDef: resolveModel(ctx.config.models[ctx.routing.modelTier]),
       timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
       dangerouslySkipPermissions: ctx.config.execution.dangerouslySkipPermissions,
+      maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
       pidRegistry: ctx.pidRegistry,
       featureName: ctx.prd.feature,
       storyId: ctx.story.id,

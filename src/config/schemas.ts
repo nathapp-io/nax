@@ -328,7 +328,7 @@ const StorySizeGateConfigSchema = z.object({
 
 const AgentConfigSchema = z.object({
   protocol: z.enum(["acp", "cli"]).default("acp"),
-  acpPermissionMode: z.string().optional(),
+  maxInteractionTurns: z.number().int().min(1).max(100).default(10),
 });
 
 const PrecheckConfigSchema = z.object({

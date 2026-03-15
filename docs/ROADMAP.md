@@ -207,10 +207,10 @@ Profiling via `bun test --reporter junit` revealed the top-30 slowest tests acco
 
 ---
 
-## v0.40.1 — Acceptance UI Test Strategies (Planned)
+## v0.40.1 — Acceptance UI Test Strategies ✅ Shipped (2026-03-14)
 
 **Theme:** Extend acceptance pipeline to support UI projects (TUI, web, CLI) — not just backend/library code
-**Status:** Planned
+**Status:** ✅ Shipped (2026-03-14)
 **Depends on:** v0.40.0
 
 ### Problem
@@ -405,10 +405,10 @@ nax currently hardcodes `claude` CLI and `@anthropic-ai/sdk` in several places, 
 
 ---
 
-## v0.34.0 — Run Lifecycle Hooks & Smart Regression ✅ Shipped (2026-03-09)
+## v0.34.0 — Run Lifecycle Hooks & Smart Regression ✅ Shipped (2026-03-14)
 
 **Theme:** Fix run lifecycle ordering (BUG-060), add missing hooks, skip redundant deferred regression
-**Status:** ✅ Shipped (2026-03-09)
+**Status:** ✅ Shipped (2026-03-14)
 
 ### Hook Architecture
 
@@ -491,7 +491,10 @@ Stories classified as complex/expert with >6 acceptance criteria.
 
 | Version | Theme | Date |
 |:--------|:------|:-----|
+| v0.41.0 | Slow Test Optimizations (105s → 23s, full suite 4min → 2.5min) | 2026-03-14 |
+| v0.40.1 | Acceptance UI Test Strategies (component/cli/e2e/snapshot) | 2026-03-14 |
 | v0.40.0 | Acceptance Test Pipeline (RED→GREEN gates, PRD-based AC generation) | 2026-03-12 |
+| ACP Adapter | Multi-Agent Support (acpx CLI spawn, session naming, env filtering) | 2026-03-14 |
 | v0.39.3 | Prompt Optimization (security hardening, test command injection) | 2026-03-12 |
 | v0.39.0 | Init Enhancement (auto-detect, context generation) | 2026-03-12 |
 | v0.38.1 | Code Audit Refactor (10 fixes) | 2026-03-11 |
@@ -543,6 +546,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 
 ### Features
 - [x] ~~**ACC-001:** Acceptance Test Pipeline — shipped in v0.40.0~~
+- [x] ~~**ACP Adapter:** Multi-agent support via acpx CLI — shipped 2026-03-14~~
 - [ ] **MONO-001:** Monorepo Support — package-scoped acceptance tests, per-package test runners, cross-package AC, workspaces-aware context generation. Covers: AC scoped to specific packages, test file placement per package root, multi-package features spanning API + UI. **(To be discussed — needs design spec)**
 - [ ] **CI-001:** CI Memory Optimization — parallel test sharding to pass on 1GB runners (currently requires 8GB).
 - [ ] Cost tracking dashboard
@@ -550,7 +554,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 - [ ] `nax diagnose --ai` flag (LLM-assisted, future TBD)
 - [ ] **Auto-decompose oversized stories** — When story size gate triggers, offer via interaction chain to auto-decompose using `nax analyse`.
 - [ ] VitePress documentation site — full CLI reference, hosted as standalone docs (pre-publish requirement)
-- [ ] **Deprecate `single-session` prompt role** — no longer used by pipeline (unified into `tdd-simple`). Remove from `role-task.ts`, `isolation.ts`, `nax prompts --export`, and builder API.
+- [x] ~~**Deprecate `single-session` prompt role** — no longer used by pipeline (unified into `tdd-simple`). Remove from `role-task.ts`, `isolation.ts`, `nax prompts --export`, and builder API.~~
 - [x] ~~**Migrate batch prompt to PromptBuilder** — MR !40 merged. Batch prompts now go through PromptBuilder with security tags, test command injection, conventions, isolation rules.~~
 
 ---

@@ -95,7 +95,7 @@ describe("run() — session flow", () => {
     _acpAdapterDeps.createClient = mock((_cmd: string) => client);
 
     await new AcpAgentAdapter("claude").run(makeRunOptions({ dangerouslySkipPermissions: false }));
-    expect(capturedMode).toBe("default");
+    expect(capturedMode).toBe("approve-reads");
   });
 
   test("durationMs is non-negative", async () => {

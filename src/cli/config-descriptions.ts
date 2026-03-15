@@ -203,4 +203,10 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "decompose.maxSubstoryComplexity": "Max complexity for any generated substory (default: 'medium')",
   "decompose.maxRetries": "Max retries on decomposition validation failure (default: 2)",
   "decompose.model": "Model tier for decomposition LLM calls (default: 'balanced')",
+
+  // Agent protocol
+  agent: "Agent protocol configuration (ACP-003)",
+  "agent.protocol": "Protocol for agent communication: 'acp' | 'cli' (default: 'acp')",
+  "agent.maxInteractionTurns":
+    "Max turns in multi-turn interaction loop when interactionBridge is active (default: 10)",
 };

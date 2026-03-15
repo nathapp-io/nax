@@ -326,7 +326,7 @@ describe("AcpAgentAdapter — session mode (run)", () => {
         }),
       );
       await adapter.run({ ...BASE_OPTIONS, dangerouslySkipPermissions: false });
-      expect(capturedMode).toBe("default");
+      expect(capturedMode).toBe("approve-reads");
     });
   });
 

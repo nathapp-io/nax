@@ -461,7 +461,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       // 5. Multi-turn loop
       let currentPrompt = options.prompt;
       let turnCount = 0;
-      const MAX_TURNS = options.interactionBridge ? 10 : 1;
+      const MAX_TURNS = options.interactionBridge ? (options.maxInteractionTurns ?? 10) : 1;
 
       while (turnCount < MAX_TURNS) {
         turnCount++;

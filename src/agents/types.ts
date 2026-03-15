@@ -74,6 +74,8 @@ export interface AgentRunOptions {
   storyId?: string;
   /** Session role for TDD isolation (e.g. "test-writer" | "implementer" | "verifier") */
   sessionRole?: string;
+  /** Max turns in multi-turn interaction loop when interactionBridge is active (default: 10) */
+  maxInteractionTurns?: number;
 }
 
 /**

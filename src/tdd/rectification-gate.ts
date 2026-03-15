@@ -159,6 +159,7 @@ async function runRectificationLoop(
       modelDef: resolveModel(config.models[implementerTier]),
       timeoutSeconds: config.execution.sessionTimeoutSeconds,
       dangerouslySkipPermissions: config.execution.dangerouslySkipPermissions,
+      maxInteractionTurns: config.agent?.maxInteractionTurns,
       featureName,
       storyId: story.id,
       sessionRole: "implementer",

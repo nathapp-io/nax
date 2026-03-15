@@ -74,6 +74,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       modelDef,
       timeoutSeconds: config.execution.sessionTimeoutSeconds,
       dangerouslySkipPermissions: config.execution.dangerouslySkipPermissions,
+      maxInteractionTurns: config.agent?.maxInteractionTurns,
     });
 
     if (agentResult.success) {

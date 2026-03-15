@@ -141,8 +141,6 @@ export interface QualityConfig {
   detectOpenHandlesRetries: number;
   /** Grace period in ms after SIGTERM before sending SIGKILL (default: 5000) */
   gracePeriodMs: number;
-  /** Use --dangerously-skip-permissions for agent sessions (default: false) */
-  dangerouslySkipPermissions: boolean;
   /** Deadline in ms to drain stdout/stderr after killing process (Bun stream workaround, default: 2000) */
   drainTimeoutMs: number;
   /** Shell to use for running verification commands (default: /bin/sh) */
@@ -473,6 +471,6 @@ export interface NaxConfig {
 export interface AgentConfig {
   /** Protocol to use for agent communication (default: 'acp') */
   protocol?: "acp" | "cli";
-  /** ACP permission mode (default: 'approve-all') */
-  acpPermissionMode?: string;
+  /** Max interaction turns when interactionBridge is active (default: 10) */
+  maxInteractionTurns?: number;
 }

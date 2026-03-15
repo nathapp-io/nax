@@ -140,6 +140,7 @@ export async function runTddSession(
     modelDef: resolveModel(config.models[modelTier]),
     timeoutSeconds: config.execution.sessionTimeoutSeconds,
     dangerouslySkipPermissions: config.execution.dangerouslySkipPermissions,
+    maxInteractionTurns: config.agent?.maxInteractionTurns,
     featureName,
     storyId: story.id,
     sessionRole: role,
