@@ -92,12 +92,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   const branchName = options.branch ?? `feat/${options.feature}`;
   const prompt = buildPlanningPrompt(specContent, codebaseContext);
 
-  // Get agent adapter — use protocol-aware registry so ACP config is respected
   const agentName = config?.autoMode?.defaultAgent ?? "claude";
-  const adapter = _deps.getAgent(agentName, config);
-  if (!adapter) {
-    throw new Error(`[plan] No agent adapter found for '${agentName}'`);
-  }
 
   // Timeout: from config, or default to 600 seconds (10 min)
   const timeoutSeconds = config?.execution?.sessionTimeoutSeconds ?? 600;
@@ -105,8 +100,23 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   // Route to auto (one-shot) or interactive (multi-turn) mode
   let rawResponse: string;
   if (options.auto) {
-    rawResponse = await adapter.complete(prompt, { jsonMode: true });
+    // One-shot: use CLI adapter directly — simple completion doesn't need ACP session overhead
+    const cliAdapter = _deps.getAgent(agentName);
+    if (!cliAdapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
+    rawResponse = await cliAdapter.complete(prompt, { jsonMode: true });
+    // CLI adapter returns {"type":"result","result":"..."} envelope — unwrap it
+    try {
+      const envelope = JSON.parse(rawResponse) as Record<string, unknown>;
+      if (envelope?.type === "result" && typeof envelope?.result === "string") {
+        rawResponse = envelope.result;
+      }
+    } catch {
+      // Not an envelope — use rawResponse as-is
+    }
   } else {
+    // Interactive: use protocol-aware adapter (ACP when configured)
+    const adapter = _deps.getAgent(agentName, config);
+    if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     const interactionBridge = createCliInteractionBridge();
     logger?.info("plan", "Starting interactive planning session...", { agent: agentName });
     try {
