@@ -10,7 +10,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { getAgent } from "../agents/registry";
+import { createAgentRegistry, getAgent } from "../agents/registry";
 import type { AgentAdapter } from "../agents/types";
 import { scanCodebase } from "../analyze/scanner";
 import type { CodebaseScan } from "../analyze/types";
@@ -26,7 +26,8 @@ export const _deps = {
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
   writeFile: (path: string, content: string): Promise<void> => Bun.write(path, content).then(() => {}),
   scanCodebase: (workdir: string): Promise<CodebaseScan> => scanCodebase(workdir),
-  getAgent: (name: string): AgentAdapter | undefined => getAgent(name),
+  getAgent: (name: string, cfg?: NaxConfig): AgentAdapter | undefined =>
+    cfg ? createAgentRegistry(cfg).getAgent(name) : getAgent(name),
   readPackageJson: (workdir: string): Promise<Record<string, unknown> | null> =>
     Bun.file(join(workdir, "package.json"))
       .json()
@@ -91,9 +92,9 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   const branchName = options.branch ?? `feat/${options.feature}`;
   const prompt = buildPlanningPrompt(specContent, codebaseContext);
 
-  // Get agent adapter
+  // Get agent adapter — use protocol-aware registry so ACP config is respected
   const agentName = config?.autoMode?.defaultAgent ?? "claude";
-  const adapter = _deps.getAgent(agentName);
+  const adapter = _deps.getAgent(agentName, config);
   if (!adapter) {
     throw new Error(`[plan] No agent adapter found for '${agentName}'`);
   }
@@ -115,6 +116,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         interactive: true,
         timeoutSeconds,
         interactionBridge,
+        config,
+        modelTier: "balanced",
       });
       rawResponse = result.specContent;
     } finally {
