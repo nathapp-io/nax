@@ -547,7 +547,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 ### Features
 - [x] ~~**ACC-001:** Acceptance Test Pipeline — shipped in v0.40.0~~
 - [x] ~~**ACP Adapter:** Multi-agent support via acpx CLI — shipped 2026-03-14~~
-- [ ] **MONO-001:** Monorepo Support — package-scoped acceptance tests, per-package test runners, cross-package AC, workspaces-aware context generation. Covers: AC scoped to specific packages, test file placement per package root, multi-package features spanning API + UI. **(To be discussed — needs design spec)**
+- [x] ~~**MONO-001:** Monorepo Support (Phase 1) — delegate to monorepo orchestrators; detect turborepo/nx/pnpm-workspaces/bun-workspaces; generate correct init commands; bypass smart test runner for turbo/nx (they handle change-aware scoping natively). Shipped `fea2573`.~~ **Limitations:** (1) No per-package config overrides — single `nax/config.json` at repo root; (2) No cross-package story coordination — PRD stories are repo-wide; (3) Smart runner still active for pnpm/bun workspaces (no affected detection in those tools); (4) `testScoped` template not supported for turbo/nx (file-path syntax incompatible with filter syntax); (5) Greenfield detection scans repo root, not per-package. **Phase 2 (future):** per-package `NaxConfig` overrides, PRD `package` field, cross-package story spanning.
 - [ ] **CI-001:** CI Memory Optimization — parallel test sharding to pass on 1GB runners (currently requires 8GB).
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
