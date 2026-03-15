@@ -247,7 +247,7 @@ export class SpawnAcpClient implements AcpClient {
     const sessionName = opts.sessionName || `nax-${Date.now()}`;
 
     // Ensure session exists via CLI
-    const cmd = ["acpx", opts.agentName, "sessions", "ensure", "--name", sessionName];
+    const cmd = ["acpx", "--cwd", this.cwd, opts.agentName, "sessions", "ensure", "--name", sessionName];
     getSafeLogger()?.debug("acp-adapter", `Ensuring session: ${sessionName}`);
 
     const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
@@ -271,7 +271,7 @@ export class SpawnAcpClient implements AcpClient {
 
   async loadSession(sessionName: string): Promise<AcpSession | null> {
     // Try to ensure session exists — if it does, acpx returns success
-    const cmd = ["acpx", this.agentName, "sessions", "ensure", "--name", sessionName];
+    const cmd = ["acpx", "--cwd", this.cwd, this.agentName, "sessions", "ensure", "--name", sessionName];
 
     const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
     const exitCode = await proc.exited;
