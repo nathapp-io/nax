@@ -15,6 +15,7 @@ import type { AgentAdapter } from "../agents/types";
 import { scanCodebase } from "../analyze/scanner";
 import type { CodebaseScan } from "../analyze/types";
 import type { NaxConfig } from "../config";
+import { PidRegistry } from "../execution/pid-registry";
 import { getLogger } from "../logger";
 import { validatePlanOutput } from "../prd/schema";
 
@@ -123,6 +124,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     const adapter = _deps.getAgent(agentName, config);
     if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     const interactionBridge = createCliInteractionBridge();
+    const pidRegistry = new PidRegistry(workdir);
     logger?.info("plan", "Starting interactive planning session...", { agent: agentName });
     try {
       await adapter.plan({
@@ -136,8 +138,10 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         dangerouslySkipPermissions: config?.execution?.dangerouslySkipPermissions ?? false,
         maxInteractionTurns: config?.agent?.maxInteractionTurns,
         featureName: options.feature,
+        pidRegistry,
       });
     } finally {
+      await pidRegistry.killAll().catch(() => {});
       logger?.info("plan", "Interactive session ended");
     }
     // Read back from file written by agent

@@ -12,6 +12,7 @@
  *   acpx <agent> cancel                             → session.cancelActivePrompt()
  */
 
+import type { PidRegistry } from "../../execution/pid-registry";
 import { getSafeLogger } from "../../logger";
 import type { AcpClient, AcpSession, AcpSessionResponse } from "./adapter";
 import { parseAcpxJsonOutput } from "./parser";
@@ -96,6 +97,8 @@ class SpawnAcpSession implements AcpSession {
   private readonly timeoutSeconds: number;
   private readonly permissionMode: string;
   private readonly env: Record<string, string | undefined>;
+  private readonly pidRegistry?: PidRegistry;
+  private activeProc: { pid: number; kill(signal?: number): void } | null = null;
 
   constructor(opts: {
     agentName: string;
@@ -105,6 +108,7 @@ class SpawnAcpSession implements AcpSession {
     timeoutSeconds: number;
     permissionMode: string;
     env: Record<string, string | undefined>;
+    pidRegistry?: PidRegistry;
   }) {
     this.agentName = opts.agentName;
     this.sessionName = opts.sessionName;
@@ -113,6 +117,7 @@ class SpawnAcpSession implements AcpSession {
     this.timeoutSeconds = opts.timeoutSeconds;
     this.permissionMode = opts.permissionMode;
     this.env = opts.env;
+    this.pidRegistry = opts.pidRegistry;
   }
 
   async prompt(text: string): Promise<AcpSessionResponse> {
@@ -143,40 +148,60 @@ class SpawnAcpSession implements AcpSession {
       env: this.env,
     });
 
-    proc.stdin.write(text);
-    proc.stdin.end();
-
-    const exitCode = await proc.exited;
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
-
-    if (exitCode !== 0) {
-      getSafeLogger()?.warn("acp-adapter", `Session prompt exited with code ${exitCode}`, {
-        stderr: stderr.slice(0, 200),
-      });
-      // Return error response so the adapter can handle it
-      return {
-        messages: [{ role: "assistant", content: stderr || `Exit code ${exitCode}` }],
-        stopReason: "error",
-      };
-    }
+    this.activeProc = proc;
+    const processPid = proc.pid;
+    await this.pidRegistry?.register(processPid);
 
     try {
-      const parsed = parseAcpxJsonOutput(stdout);
-      return {
-        messages: [{ role: "assistant", content: parsed.text || "" }],
-        stopReason: "end_turn",
-        cumulative_token_usage: parsed.tokenUsage,
-      };
-    } catch (err) {
-      getSafeLogger()?.warn("acp-adapter", "Failed to parse session prompt response", {
-        stderr: stderr.slice(0, 200),
-      });
-      throw err;
+      proc.stdin.write(text);
+      proc.stdin.end();
+
+      const exitCode = await proc.exited;
+      const stdout = await new Response(proc.stdout).text();
+      const stderr = await new Response(proc.stderr).text();
+
+      if (exitCode !== 0) {
+        getSafeLogger()?.warn("acp-adapter", `Session prompt exited with code ${exitCode}`, {
+          stderr: stderr.slice(0, 200),
+        });
+        // Return error response so the adapter can handle it
+        return {
+          messages: [{ role: "assistant", content: stderr || `Exit code ${exitCode}` }],
+          stopReason: "error",
+        };
+      }
+
+      try {
+        const parsed = parseAcpxJsonOutput(stdout);
+        return {
+          messages: [{ role: "assistant", content: parsed.text || "" }],
+          stopReason: "end_turn",
+          cumulative_token_usage: parsed.tokenUsage,
+        };
+      } catch (err) {
+        getSafeLogger()?.warn("acp-adapter", "Failed to parse session prompt response", {
+          stderr: stderr.slice(0, 200),
+        });
+        throw err;
+      }
+    } finally {
+      this.activeProc = null;
+      await this.pidRegistry?.unregister(processPid);
     }
   }
 
   async close(): Promise<void> {
+    // Kill in-flight prompt process first (if any)
+    if (this.activeProc) {
+      try {
+        this.activeProc.kill(15); // SIGTERM
+        getSafeLogger()?.debug("acp-adapter", `Killed active prompt process PID ${this.activeProc.pid}`);
+      } catch {
+        // Process may have already exited
+      }
+      this.activeProc = null;
+    }
+
     const cmd = ["acpx", this.agentName, "sessions", "close", this.sessionName];
     getSafeLogger()?.debug("acp-adapter", `Closing session: ${this.sessionName}`);
 
@@ -193,6 +218,16 @@ class SpawnAcpSession implements AcpSession {
   }
 
   async cancelActivePrompt(): Promise<void> {
+    // Kill in-flight prompt process directly (faster than acpx cancel)
+    if (this.activeProc) {
+      try {
+        this.activeProc.kill(15); // SIGTERM
+        getSafeLogger()?.debug("acp-adapter", `Killed active prompt process PID ${this.activeProc.pid}`);
+      } catch {
+        // Process may have already exited
+      }
+    }
+
     const cmd = ["acpx", this.agentName, "cancel"];
     getSafeLogger()?.debug("acp-adapter", `Cancelling active prompt: ${this.sessionName}`);
 
@@ -220,8 +255,9 @@ export class SpawnAcpClient implements AcpClient {
   private readonly cwd: string;
   private readonly timeoutSeconds: number;
   private readonly env: Record<string, string | undefined>;
+  private readonly pidRegistry?: PidRegistry;
 
-  constructor(cmdStr: string, cwd?: string, timeoutSeconds?: number) {
+  constructor(cmdStr: string, cwd?: string, timeoutSeconds?: number, pidRegistry?: PidRegistry) {
     // Parse: "acpx --model <model> <agentName>"
     const parts = cmdStr.split(/\s+/);
     const modelIdx = parts.indexOf("--model");
@@ -235,6 +271,7 @@ export class SpawnAcpClient implements AcpClient {
     this.cwd = cwd || process.cwd();
     this.timeoutSeconds = timeoutSeconds || 1800;
     this.env = buildAllowedEnv();
+    this.pidRegistry = pidRegistry;
   }
 
   async start(): Promise<void> {
@@ -268,6 +305,7 @@ export class SpawnAcpClient implements AcpClient {
       timeoutSeconds: this.timeoutSeconds,
       permissionMode: opts.permissionMode,
       env: this.env,
+      pidRegistry: this.pidRegistry,
     });
   }
 
@@ -290,6 +328,7 @@ export class SpawnAcpClient implements AcpClient {
       timeoutSeconds: this.timeoutSeconds,
       permissionMode: "approve-all", // Default for resumed sessions
       env: this.env,
+      pidRegistry: this.pidRegistry,
     });
   }
 
@@ -306,6 +345,11 @@ export class SpawnAcpClient implements AcpClient {
  * Create a spawn-based ACP client. This is the default production factory.
  * The cmdStr format is: "acpx --model <model> <agentName>"
  */
-export function createSpawnAcpClient(cmdStr: string, cwd?: string, timeoutSeconds?: number): AcpClient {
-  return new SpawnAcpClient(cmdStr, cwd, timeoutSeconds);
+export function createSpawnAcpClient(
+  cmdStr: string,
+  cwd?: string,
+  timeoutSeconds?: number,
+  pidRegistry?: PidRegistry,
+): AcpClient {
+  return new SpawnAcpClient(cmdStr, cwd, timeoutSeconds, pidRegistry);
 }

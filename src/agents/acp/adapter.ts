@@ -114,8 +114,13 @@ export const _acpAdapterDeps = {
    * Default: spawn-based client (shells out to acpx CLI).
    * Override in tests via: _acpAdapterDeps.createClient = mock(...)
    */
-  createClient(cmdStr: string, cwd?: string, timeoutSeconds?: number): AcpClient {
-    return createSpawnAcpClient(cmdStr, cwd, timeoutSeconds);
+  createClient(
+    cmdStr: string,
+    cwd?: string,
+    timeoutSeconds?: number,
+    pidRegistry?: import("../../execution/pid-registry").PidRegistry,
+  ): AcpClient {
+    return createSpawnAcpClient(cmdStr, cwd, timeoutSeconds, pidRegistry);
   },
 };
 
@@ -436,7 +441,7 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   private async _runWithClient(options: AgentRunOptions, startTime: number): Promise<AgentResult> {
     const cmdStr = `acpx --model ${options.modelDef.model} ${this.name}`;
-    const client = _acpAdapterDeps.createClient(cmdStr, options.workdir, options.timeoutSeconds);
+    const client = _acpAdapterDeps.createClient(cmdStr, options.workdir, options.timeoutSeconds, options.pidRegistry);
     await client.start();
 
     // 1. Resolve session name: explicit > sidecar > derived
@@ -673,6 +678,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       featureName: options.featureName,
       storyId: options.storyId,
       sessionRole: options.sessionRole,
+      pidRegistry: options.pidRegistry,
     });
 
     if (!result.success) {
