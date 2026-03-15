@@ -593,11 +593,24 @@ export class AcpAgentAdapter implements AgentAdapter {
           .join("\n")
           .trim();
 
-        if (!text) {
+        // ACP one-shot sessions wrap the response in a result envelope:
+        // {"type":"result","subtype":"success","result":"<actual output>"}
+        // Unwrap to return the actual content.
+        let unwrapped = text;
+        try {
+          const envelope = JSON.parse(text) as Record<string, unknown>;
+          if (envelope?.type === "result" && typeof envelope?.result === "string") {
+            unwrapped = envelope.result;
+          }
+        } catch {
+          // Not an envelope — use text as-is
+        }
+
+        if (!unwrapped) {
           throw new CompleteError("complete() returned empty output");
         }
 
-        return text;
+        return unwrapped;
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
         lastError = error;
