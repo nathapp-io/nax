@@ -36,6 +36,18 @@ function buildScopedCommand(testFiles: string[], baseCommand: string, testScoped
   return _scopedDeps.buildSmartTestCommand(testFiles, baseCommand);
 }
 
+/**
+ * Returns true when the test command delegates to a monorepo orchestrator
+ * (Turborepo, Nx) that handles change-aware scoping natively.
+ *
+ * These tools use their own filter syntax (e.g. `--filter=...[HEAD~1]`,
+ * `nx affected`) — nax's smart test runner must not attempt to append
+ * file paths to such commands, as it would produce invalid syntax.
+ */
+export function isMonorepoOrchestratorCommand(command: string): boolean {
+  return /\bturbo\b/.test(command) || /\bnx\b/.test(command);
+}
+
 export class ScopedStrategy implements IVerificationStrategy {
   readonly name = "scoped" as const;
 
@@ -44,10 +56,16 @@ export class ScopedStrategy implements IVerificationStrategy {
     const smartCfg = coerceSmartRunner(ctx.smartRunnerConfig);
     const regressionMode = ctx.regressionMode ?? "deferred";
 
+    // Monorepo orchestrators (turbo, nx) handle change-aware scoping themselves.
+    // Skip nax's smart runner — appending file paths would produce invalid syntax.
+    // Also bypass deferred mode: run per-story so the orchestrator's own filter
+    // (e.g. --filter=...[HEAD~1]) can pick up the story's changes immediately.
+    const isMonorepoOrchestrator = isMonorepoOrchestratorCommand(ctx.testCommand);
+
     let effectiveCommand = ctx.testCommand;
     let isFullSuite = true;
 
-    if (smartCfg.enabled && ctx.storyGitRef) {
+    if (smartCfg.enabled && ctx.storyGitRef && !isMonorepoOrchestrator) {
       const sourceFiles = await _scopedDeps.getChangedSourceFiles(ctx.workdir, ctx.storyGitRef);
 
       const pass1Files = await _scopedDeps.mapSourceToTests(sourceFiles, ctx.workdir);
@@ -69,16 +87,22 @@ export class ScopedStrategy implements IVerificationStrategy {
       }
     }
 
-    // Defer to regression gate when no scoped tests found and mode is deferred
-    if (isFullSuite && regressionMode === "deferred") {
+    // Defer to regression gate when no scoped tests found and mode is deferred.
+    // Exception: monorepo orchestrators run per-story (they carry their own change filter).
+    if (isFullSuite && regressionMode === "deferred" && !isMonorepoOrchestrator) {
       logger.info("verify[scoped]", "No mapped tests — deferring to run-end (mode: deferred)", {
         storyId: ctx.storyId,
       });
       return makeSkippedResult(ctx.storyId, "scoped");
     }
 
-    if (isFullSuite) {
+    if (isFullSuite && !isMonorepoOrchestrator) {
       logger.info("verify[scoped]", "No mapped tests — falling back to full suite", { storyId: ctx.storyId });
+    } else if (isMonorepoOrchestrator) {
+      logger.info("verify[scoped]", "Monorepo orchestrator detected — delegating scoping to tool", {
+        storyId: ctx.storyId,
+        command: effectiveCommand,
+      });
     }
 
     const start = Date.now();

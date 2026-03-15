@@ -26,6 +26,7 @@ interface PackageJson {
   devDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
   bin?: Record<string, string> | string;
+  workspaces?: string[] | { packages: string[] };
 }
 
 function readPackageJson(projectRoot: string): PackageJson | undefined {
@@ -80,7 +81,7 @@ export type Language = "typescript" | "python" | "rust" | "go" | "unknown";
 export type Linter = "biome" | "eslint" | "ruff" | "clippy" | "golangci-lint" | "unknown";
 
 /** Detected monorepo tooling */
-export type Monorepo = "turborepo" | "none";
+export type Monorepo = "turborepo" | "nx" | "pnpm-workspaces" | "bun-workspaces" | "none";
 
 /** Full detected project stack */
 export interface ProjectStack {
@@ -137,6 +138,11 @@ function detectLinter(projectRoot: string): Linter {
 
 function detectMonorepo(projectRoot: string): Monorepo {
   if (existsSync(join(projectRoot, "turbo.json"))) return "turborepo";
+  if (existsSync(join(projectRoot, "nx.json"))) return "nx";
+  if (existsSync(join(projectRoot, "pnpm-workspace.yaml"))) return "pnpm-workspaces";
+  // Bun/npm/yarn workspaces: package.json with "workspaces" field
+  const pkg = readPackageJson(projectRoot);
+  if (pkg?.workspaces) return "bun-workspaces";
   return "none";
 }
 
@@ -159,9 +165,51 @@ function resolveLintCommand(stack: ProjectStack, fallback: string): string {
 }
 
 /**
+ * Build quality.commands for monorepo orchestrators.
+ *
+ * Turborepo and Nx support change-aware filtering natively — delegate
+ * scoping to the tool rather than nax's smart test runner.
+ * pnpm/bun workspaces have no built-in affected detection, so nax's
+ * smart runner still applies; commands run across all packages.
+ */
+function buildMonorepoQualityCommands(stack: ProjectStack): QualityCommands | null {
+  if (stack.monorepo === "turborepo") {
+    return {
+      typecheck: "turbo run typecheck --filter=...[HEAD~1]",
+      lint: "turbo run lint --filter=...[HEAD~1]",
+      test: "turbo run test --filter=...[HEAD~1]",
+    };
+  }
+  if (stack.monorepo === "nx") {
+    return {
+      typecheck: "nx affected --target=typecheck",
+      lint: "nx affected --target=lint",
+      test: "nx affected --target=test",
+    };
+  }
+  if (stack.monorepo === "pnpm-workspaces") {
+    return {
+      lint: resolveLintCommand(stack, "pnpm run --recursive lint"),
+      test: "pnpm run --recursive test",
+    };
+  }
+  if (stack.monorepo === "bun-workspaces") {
+    return {
+      lint: resolveLintCommand(stack, "bun run lint"),
+      test: "bun run --filter '*' test",
+    };
+  }
+  return null;
+}
+
+/**
  * Build quality.commands from a detected project stack.
  */
 export function buildQualityCommands(stack: ProjectStack): QualityCommands {
+  // Monorepo orchestrators: delegate to the tool's own scoping
+  const monorepoCommands = buildMonorepoQualityCommands(stack);
+  if (monorepoCommands) return monorepoCommands;
+
   if (stack.runtime === "bun" && stack.language === "typescript") {
     return {
       typecheck: "bun run tsc --noEmit",

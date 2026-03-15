@@ -205,11 +205,94 @@ describe("detectProjectStack — monorepo detection", () => {
     });
   });
 
+  test("detects nx from nx.json", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(join(dir, "nx.json"), "{}");
+      const stack = detectProjectStack(dir);
+      expect(stack.monorepo).toBe("nx");
+    });
+  });
+
+  test("detects pnpm-workspaces from pnpm-workspace.yaml", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(join(dir, "pnpm-workspace.yaml"), "packages:\n  - 'packages/*'\n");
+      const stack = detectProjectStack(dir);
+      expect(stack.monorepo).toBe("pnpm-workspaces");
+    });
+  });
+
+  test("detects bun-workspaces from package.json workspaces field", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(join(dir, "package.json"), JSON.stringify({ workspaces: ["packages/*"] }));
+      const stack = detectProjectStack(dir);
+      expect(stack.monorepo).toBe("bun-workspaces");
+    });
+  });
+
+  test("turborepo takes priority over nx when both present", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(join(dir, "turbo.json"), "{}");
+      await Bun.write(join(dir, "nx.json"), "{}");
+      const stack = detectProjectStack(dir);
+      expect(stack.monorepo).toBe("turborepo");
+    });
+  });
+
   test("returns none when no monorepo config found", async () => {
     await withTempDir(async (dir) => {
       const stack = detectProjectStack(dir);
       expect(stack.monorepo).toBe("none");
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildQualityCommands — monorepo command generation
+// ---------------------------------------------------------------------------
+
+describe("buildQualityCommands — monorepo tools", () => {
+  test("turborepo: generates turbo run commands with --filter=...[HEAD~1]", () => {
+    const commands = buildQualityCommands({
+      runtime: "node",
+      language: "typescript",
+      linter: "eslint",
+      monorepo: "turborepo",
+    });
+    expect(commands.test).toBe("turbo run test --filter=...[HEAD~1]");
+    expect(commands.lint).toBe("turbo run lint --filter=...[HEAD~1]");
+    expect(commands.typecheck).toBe("turbo run typecheck --filter=...[HEAD~1]");
+  });
+
+  test("nx: generates nx affected commands", () => {
+    const commands = buildQualityCommands({
+      runtime: "node",
+      language: "typescript",
+      linter: "eslint",
+      monorepo: "nx",
+    });
+    expect(commands.test).toBe("nx affected --target=test");
+    expect(commands.lint).toBe("nx affected --target=lint");
+    expect(commands.typecheck).toBe("nx affected --target=typecheck");
+  });
+
+  test("pnpm-workspaces: generates pnpm recursive commands", () => {
+    const commands = buildQualityCommands({
+      runtime: "node",
+      language: "typescript",
+      linter: "eslint",
+      monorepo: "pnpm-workspaces",
+    });
+    expect(commands.test).toBe("pnpm run --recursive test");
+  });
+
+  test("bun-workspaces: generates bun filter commands", () => {
+    const commands = buildQualityCommands({
+      runtime: "bun",
+      language: "typescript",
+      linter: "biome",
+      monorepo: "bun-workspaces",
+    });
+    expect(commands.test).toBe("bun run --filter '*' test");
   });
 });
 

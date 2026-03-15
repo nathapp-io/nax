@@ -103,11 +103,21 @@ function buildConstitution(stack: ProjectStack): string {
     sections.push("- Use type annotations for variables where non-obvious\n");
   }
 
-  if (stack.monorepo === "turborepo") {
+  if (stack.monorepo !== "none") {
     sections.push("## Monorepo Conventions");
     sections.push("- Respect package boundaries — do not import across packages without explicit dependency");
     sections.push("- Each package should be independently buildable and testable");
-    sections.push("- Shared utilities go in a dedicated `packages/shared` (or equivalent) package\n");
+    sections.push("- Shared utilities go in a dedicated `packages/shared` (or equivalent) package");
+    if (stack.monorepo === "turborepo") {
+      sections.push("- Use `turbo run <task> --filter=<package>` to run tasks scoped to a single package");
+    } else if (stack.monorepo === "nx") {
+      sections.push("- Use `nx run <package>:<task>` to run tasks scoped to a single package");
+    } else if (stack.monorepo === "pnpm-workspaces") {
+      sections.push("- Use `pnpm --filter <package> run <task>` to run tasks scoped to a single package");
+    } else if (stack.monorepo === "bun-workspaces") {
+      sections.push("- Use `bun run --filter <package> <task>` to run tasks scoped to a single package");
+    }
+    sections.push("");
   }
 
   sections.push("## Preferences");
