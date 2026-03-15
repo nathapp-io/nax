@@ -330,8 +330,8 @@ program
       formatterMode = "quiet";
     }
 
-    const config = await loadConfig();
     const naxDir = findProjectDir(workdir);
+    const config = await loadConfig(naxDir ?? undefined);
 
     if (!naxDir) {
       console.error(chalk.red("nax not initialized. Run: nax init"));
