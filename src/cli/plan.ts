@@ -135,7 +135,9 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         interactionBridge,
         config,
         modelTier: config?.plan?.model ?? "balanced",
-        dangerouslySkipPermissions: config?.execution?.dangerouslySkipPermissions ?? false,
+        // Plan sessions always need approve-all — the agent must write prd.json to disk
+        // (that's the entire purpose of the plan operation). User config cannot restrict this.
+        dangerouslySkipPermissions: true,
         maxInteractionTurns: config?.agent?.maxInteractionTurns,
         featureName: options.feature,
         pidRegistry,
