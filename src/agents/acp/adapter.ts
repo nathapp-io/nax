@@ -442,8 +442,8 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
     sessionName ??= buildSessionName(options.workdir, options.featureName, options.storyId, options.sessionRole);
 
-    // 2. Permission mode follows dangerouslySkipPermissions
-    const permissionMode = options.dangerouslySkipPermissions ? "approve-all" : "default";
+    // 2. Permission mode follows dangerouslySkipPermissions, default is "approve-reads". or should --deny-all be the default?
+    const permissionMode = options.dangerouslySkipPermissions ? "approve-all" : "approve-reads";
 
     // 3. Ensure session (resume existing or create new)
     const session = await ensureAcpSession(client, sessionName, this.name, permissionMode);
