@@ -103,6 +103,12 @@ export interface CompleteOptions {
   /** Whether to skip permission prompts (maps to permissionMode in ACP) */
   dangerouslySkipPermissions?: boolean;
   /**
+   * Working directory for the completion call.
+   * Used by ACP adapter to set --cwd on the spawned acpx session.
+   * CLI adapter uses this as the process cwd when spawning the agent binary.
+   */
+  workdir?: string;
+  /**
    * Timeout for the completion call in milliseconds.
    * Adapters that support it (e.g. ACP) will enforce this as a hard deadline.
    * Callers may also wrap complete() in their own Promise.race for shorter timeouts.

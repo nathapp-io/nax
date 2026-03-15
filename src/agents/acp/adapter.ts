@@ -558,12 +558,13 @@ export class AcpAgentAdapter implements AgentAdapter {
     const model = _options?.model ?? "default";
     const timeoutMs = _options?.timeoutMs ?? 120_000; // 2-min safety net by default
     const permissionMode = _options?.dangerouslySkipPermissions ? "approve-all" : "default";
+    const workdir = _options?.workdir;
 
     let lastError: Error | undefined;
 
     for (let attempt = 0; attempt < MAX_RATE_LIMIT_RETRIES; attempt++) {
       const cmdStr = `acpx --model ${model} ${this.name}`;
-      const client = _acpAdapterDeps.createClient(cmdStr);
+      const client = _acpAdapterDeps.createClient(cmdStr, workdir);
       await client.start();
 
       let session: AcpSession | null = null;

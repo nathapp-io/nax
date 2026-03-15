@@ -51,7 +51,9 @@ export async function executeComplete(binary: string, prompt: string, options?: 
     cmd.push("--output-format", "json");
   }
 
-  const proc = _completeDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
+  const spawnOpts: { stdout: "pipe"; stderr: "pipe"; cwd?: string } = { stdout: "pipe", stderr: "pipe" };
+  if (options?.workdir) spawnOpts.cwd = options.workdir;
+  const proc = _completeDeps.spawn(cmd, spawnOpts);
   const exitCode = await proc.exited;
 
   const stdout = await new Response(proc.stdout).text();

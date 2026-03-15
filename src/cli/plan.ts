@@ -107,7 +107,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     const prompt = buildPlanningPrompt(specContent, codebaseContext);
     const cliAdapter = _deps.getAgent(agentName);
     if (!cliAdapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
-    rawResponse = await cliAdapter.complete(prompt, { jsonMode: true });
+    rawResponse = await cliAdapter.complete(prompt, { jsonMode: true, workdir });
     // CLI adapter returns {"type":"result","result":"..."} envelope — unwrap it
     try {
       const envelope = JSON.parse(rawResponse) as Record<string, unknown>;
