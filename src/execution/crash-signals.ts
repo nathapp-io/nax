@@ -134,7 +134,8 @@ export function installSignalHandlers(ctx: SignalHandlerContext): () => void {
   process.on("SIGINT", sigintHandler);
   process.on("SIGHUP", sighupHandler);
   process.on("uncaughtException", uncaughtExceptionHandler);
-  process.on("unhandledRejection", (reason) => unhandledRejectionHandler(reason));
+  const rejectionWrapper = (reason: unknown) => unhandledRejectionHandler(reason);
+  process.on("unhandledRejection", rejectionWrapper);
 
   logger?.debug("crash-recovery", "Signal handlers installed");
 
@@ -143,7 +144,7 @@ export function installSignalHandlers(ctx: SignalHandlerContext): () => void {
     process.removeListener("SIGINT", sigintHandler);
     process.removeListener("SIGHUP", sighupHandler);
     process.removeListener("uncaughtException", uncaughtExceptionHandler);
-    process.removeListener("unhandledRejection", (reason) => unhandledRejectionHandler(reason));
+    process.removeListener("unhandledRejection", rejectionWrapper);
     logger?.debug("crash-recovery", "Signal handlers unregistered");
   };
 }

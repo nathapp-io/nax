@@ -5,6 +5,7 @@
  * Prevents concurrent runs in the same directory.
  */
 
+import { unlink } from "node:fs/promises";
 import path from "node:path";
 import { getLogger } from "../logger";
 
@@ -49,7 +50,7 @@ export async function acquireLock(workdir: string): Promise<boolean> {
     if (exists) {
       // Read lock data
       const lockContent = await lockFile.text();
-      let lockData: { pid: number };
+      let lockData: { pid: number } | null;
       try {
         lockData = JSON.parse(lockContent);
       } catch {
@@ -61,7 +62,7 @@ export async function acquireLock(workdir: string): Promise<boolean> {
         const fs = await import("node:fs/promises");
         await fs.unlink(lockPath).catch(() => {});
         // Fall through to create a new lock
-        lockData = undefined as unknown as { pid: number };
+        lockData = null;
       }
 
       if (lockData) {
@@ -88,6 +89,7 @@ export async function acquireLock(workdir: string): Promise<boolean> {
       pid: process.pid,
       timestamp: Date.now(),
     };
+    // NOTE: Node.js fs used intentionally — Bun.file()/Bun.write() lacks O_CREAT|O_EXCL atomic exclusive create
     const fs = await import("node:fs");
     const fd = fs.openSync(lockPath, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o644);
     fs.writeSync(fd, JSON.stringify(lockData));
@@ -114,18 +116,14 @@ export async function acquireLock(workdir: string): Promise<boolean> {
 export async function releaseLock(workdir: string): Promise<void> {
   const lockPath = path.join(workdir, "nax.lock");
   try {
-    const file = Bun.file(lockPath);
-    const exists = await file.exists();
-    if (exists) {
-      const proc = Bun.spawn(["rm", lockPath], { stdout: "pipe" });
-      await proc.exited;
-      // Wait a bit for filesystem to sync (prevents race in tests)
-      await Bun.sleep(10);
-    }
+    await unlink(lockPath);
   } catch (error) {
-    const logger = getSafeLogger();
-    logger?.warn("execution", "Failed to release lock", {
-      error: (error as Error).message,
-    });
+    // Ignore ENOENT (already gone), log others
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      const logger = getSafeLogger();
+      logger?.warn("execution", "Failed to release lock", {
+        error: (error as Error).message,
+      });
+    }
   }
 }
