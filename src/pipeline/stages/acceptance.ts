@@ -27,6 +27,7 @@
 import path from "node:path";
 import { getLogger } from "../../logger";
 import { countStories } from "../../prd";
+import { logTestOutput } from "../../utils/log-test-output";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 /**
@@ -163,10 +164,8 @@ export const acceptanceStage: PipelineStage = {
 
     // Non-zero exit but no AC failures parsed at all — test crashed (syntax error, import failure, etc.)
     if (failedACs.length === 0 && exitCode !== 0) {
-      logger.error("acceptance", "Tests errored with no AC failures parsed", {
-        exitCode,
-        output,
-      });
+      logger.error("acceptance", "Tests errored with no AC failures parsed", { exitCode });
+      logTestOutput(logger, "acceptance", output);
 
       ctx.acceptanceFailures = {
         failedACs: ["AC-ERROR"],
@@ -190,10 +189,8 @@ export const acceptanceStage: PipelineStage = {
         });
       }
 
-      logger.error("acceptance", "Acceptance tests failed", {
-        failedACs: actualFailures,
-        output,
-      });
+      logger.error("acceptance", "Acceptance tests failed", { failedACs: actualFailures });
+      logTestOutput(logger, "acceptance", output);
 
       // Store failed ACs and test output in context for fix generation
       ctx.acceptanceFailures = {
