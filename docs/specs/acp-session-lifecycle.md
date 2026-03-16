@@ -52,6 +52,10 @@ Story run completes
 
 The close decision is made **inside `_runWithClient()`** based on the `AgentResult.success` value.
 
+> **Note (Q4):** acpx defaults to `--ttl 300` (5 min idle shutdown of the subprocess). The session
+> record and history survive subprocess shutdown (Q1/Q2 confirmed). No `--ttl 0` override needed —
+> `ensureAcpSession()` already handles reconnect transparently.
+
 ### Rectification Session Inheritance
 
 `rectification-loop.ts` must pass session context so it resumes the story's existing session:
@@ -157,39 +161,67 @@ nax run starts
 
 ---
 
-## Assumptions to Validate (acpx behavior)
+## acpx Behavior Validation Results
 
-Before implementing, we must confirm how acpx actually handles sessions:
+Tested on VPS, acpx v0.3.0, 2026-03-16.
 
-### Q1: Session persistence after client close
-If we close the **client** (acpx process) but NOT the session, does the session persist?
-Can a new client `loadSession()` the same named session?
+### Q1: Session persistence after client reconnect ✅ CONFIRMED
 
-> **Test:** Create client → create named session → close client (not session) →
-> create new client → `loadSession(sameName)` → does it return the session with history?
+History persists across client reconnects. `ensure` returns `(existing)` and conversation
+history is fully available to the agent on resume.
 
-### Q2: Session state after process kill
-If the acpx process is killed (SIGTERM/SIGKILL), is the named session recoverable
-by a new client?
+```
+create session → send "remember 9472" → new client → ensure (existing) → ask for number → "9472" ✓
+```
 
-> **Test:** Create client → create named session → send a prompt → kill process →
-> create new client → `loadSession(sameName)` → does it have the conversation history?
+**Impact:** `ensureAcpSession()` correctly resumes sessions. Keeping sessions open on failure
+means the next retry will have full context of prior failed attempts.
 
-### Q3: loadSession on closed sessions
-If we explicitly `session.close()`, does `loadSession(sameName)` return null or error?
+### Q2: Session survives process kill ✅ CONFIRMED
 
-> **Test:** Create session → close session → `loadSession(sameName)` → null or error?
+After `kill -9` on all claude/acpx processes, the named session is still listed (not `[closed]`)
+and full conversation history is preserved on next prompt.
 
-### Q4: Session idle timeout
-Does acpx/the agent backend have a built-in idle timeout that closes sessions
-after N minutes of inactivity?
+```
+create session → send "remember 5813" → kill -9 PIDs → new client → prompt → "5813" ✓
+```
 
-> **Test:** Create session → wait 10+ minutes → `loadSession(sameName)` → still alive?
+**Impact:** PidRegistry.killAll() on crash does NOT destroy sessions. Startup sweep (safety net)
+is needed to close orphaned sessions on next run.
 
-### Q5: Multiple clients, same session
-Can two clients access the same named session simultaneously? (Relevant for parallel stories)
+### Q3: loadSession on closed sessions ✅ CONFIRMED (returns null / warns)
 
-> **Test:** Client A creates session "foo" → Client B `loadSession("foo")` → both prompt → conflict?
+After `sessions close <name>`, the session shows as `[closed]` in list. Prompting it returns:
+```
+⚠ No acpx session found (searched up to /tmp/nax-session-test).
+Create one: acpx claude sessions new --name <name>
+```
+`loadSession()` returns null for closed sessions — nax would create a fresh session.
+
+**Impact:** Close-on-pass works correctly — closed sessions are gone. Must NOT close on failure
+if we want retry to retain context.
+
+### Q4: Session TTL ⚠️ DEFAULT 300s (5 minutes idle)
+
+acpx has `--ttl <seconds>` (default: 300 = 5 minutes). This is the **queue owner idle TTL**
+before the acpx process shuts down. However session history is stored server-side (persists
+across process restarts per Q1/Q2) — only the live acpx subprocess shuts down.
+
+Session metadata includes `lastActivity` and `lastPrompt` timestamps for staleness detection.
+
+**Impact:** The acpx subprocess will auto-exit after 5 min idle, but the named session record
+and conversation history survive. Next `ensureAcpSession()` call will reconnect transparently.
+This is benign — no action needed.
+
+### Q5: Multiple clients, same session ✅ SAFE (queued, not conflicting)
+
+Two concurrent clients prompting the same session both succeed — responses are queued.
+Client A gets "CLIENT_A" response, Client B gets "CLIENT_B" response. No data corruption.
+The `--no-wait` flag exists for non-blocking queue behavior.
+
+**Impact:** Parallel stories using the same session name would queue prompts rather than conflict.
+However, parallel stories should still use different session names (per-story) — this is about
+safety, not permission to share sessions across stories.
 
 ---
 
