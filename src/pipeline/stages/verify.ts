@@ -11,6 +11,7 @@
 
 import type { SmartTestRunnerConfig } from "../../config/types";
 import { getLogger } from "../../logger";
+import { logTestOutput } from "../../utils/log-test-output";
 import { detectRuntimeCrash } from "../../verification/crash-detector";
 import type { VerifyStatus } from "../../verification/orchestrator-types";
 import { regression } from "../../verification/runners";
@@ -173,16 +174,10 @@ export const verifyStage: PipelineStage = {
         });
       }
 
-      // Log first few lines of output for context
-      // BUG-037: Changed from .slice(0, 10) to .slice(-20) to show failures, not prechecks
-      if (result.output && result.status !== "TIMEOUT") {
-        const outputLines = result.output.split("\n").slice(-20);
-        if (outputLines.length > 0) {
-          logger.debug("verify", "Test output preview", {
-            storyId: ctx.story.id,
-            output: outputLines.join("\n"),
-          });
-        }
+      // Log tail of output at debug level for context (ENH-001)
+      // BUG-037: Use .slice(-20) to show failures, not prechecks
+      if (result.status !== "TIMEOUT") {
+        logTestOutput(logger, "verify", result.output, { storyId: ctx.story.id });
       }
 
       return {

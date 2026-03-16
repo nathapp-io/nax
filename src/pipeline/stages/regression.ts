@@ -14,6 +14,7 @@
  */
 
 import { getLogger } from "../../logger";
+import { logTestOutput } from "../../utils/log-test-output";
 import { verificationOrchestrator } from "../../verification/orchestrator";
 import type { VerifyContext } from "../../verification/orchestrator-types";
 import { pipelineEventBus } from "../event-bus";
@@ -71,6 +72,7 @@ export const regressionStage: PipelineStage = {
       storyId: ctx.story.id,
       failCount: result.failCount,
     });
+    logTestOutput(logger, "regression", result.rawOutput, { storyId: ctx.story.id });
 
     pipelineEventBus.emit({
       type: "regression:detected",
