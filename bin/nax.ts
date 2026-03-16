@@ -69,7 +69,7 @@ import { unlockCommand } from "../src/commands/unlock";
 import { DEFAULT_CONFIG, findProjectDir, loadConfig, validateDirectory } from "../src/config";
 import { run } from "../src/execution";
 import { loadHooksConfig } from "../src/hooks";
-import { type LogLevel, initLogger } from "../src/logger";
+import { type LogLevel, initLogger, resetLogger } from "../src/logger";
 import { countStories, loadPRD } from "../src/prd";
 import { PipelineEventEmitter, type StoryDisplayState, renderTui } from "../src/tui";
 import { NAX_VERSION } from "../src/version";
@@ -344,6 +344,13 @@ program
     // Run plan phase if --plan flag is set (AC-4: runs plan then execute)
     if (options.plan && options.from) {
       try {
+        // Initialize plan logger before calling planCommand — writes to features/<feature>/plan-<ts>.jsonl
+        mkdirSync(featureDir, { recursive: true });
+        const planLogId = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
+        const planLogPath = join(featureDir, `plan-${planLogId}.jsonl`);
+        initLogger({ level: "info", filePath: planLogPath, useChalk: false, headless: true });
+        console.log(chalk.dim(`   [Plan log: ${planLogPath}]`));
+
         console.log(chalk.dim("   [Planning phase: generating PRD from spec]"));
         const generatedPrdPath = await planCommand(workdir, config, {
           from: options.from,
@@ -390,6 +397,9 @@ program
       console.error(chalk.red(`Feature "${options.feature}" not found or missing prd.json`));
       process.exit(1);
     }
+
+    // Reset plan logger (if plan phase ran) so the run logger can be initialized fresh
+    resetLogger();
 
     // Create run directory and JSONL log file path
     const runsDir = join(featureDir, "runs");
