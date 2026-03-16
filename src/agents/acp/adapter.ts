@@ -568,7 +568,7 @@ export class AcpAgentAdapter implements AgentAdapter {
   async complete(prompt: string, _options?: CompleteOptions): Promise<string> {
     const model = _options?.model ?? "default";
     const timeoutMs = _options?.timeoutMs ?? 120_000; // 2-min safety net by default
-    const permissionMode = resolvePermissions(undefined, "complete").mode;
+    const permissionMode = resolvePermissions(_options?.config, "complete").mode;
     const workdir = _options?.workdir;
 
     let lastError: Error | undefined;
@@ -710,7 +710,11 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     let output: string;
     try {
-      output = await this.complete(prompt, { model, jsonMode: true });
+      output = await this.complete(prompt, {
+        model,
+        jsonMode: true,
+        config: options.config as import("../../config").NaxConfig | undefined,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`[acp-adapter] decompose() failed: ${msg}`, { cause: err });

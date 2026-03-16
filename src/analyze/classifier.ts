@@ -120,6 +120,7 @@ async function classifyWithLLM(
     jsonMode: true,
     maxTokens: 4096,
     model: modelDef.model,
+    config,
   });
 
   // Parse JSON response

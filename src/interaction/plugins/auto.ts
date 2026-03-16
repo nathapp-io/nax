@@ -156,6 +156,7 @@ export class AutoInteractionPlugin implements InteractionPlugin {
     const output = await adapter.complete(prompt, {
       ...(modelArg && { model: modelArg }),
       jsonMode: true,
+      ...(this.config.naxConfig && { config: this.config.naxConfig }),
     });
 
     return this.parseResponse(output);

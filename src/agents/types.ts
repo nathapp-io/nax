@@ -119,6 +119,11 @@ export interface CompleteOptions {
    * Callers may also wrap complete() in their own Promise.race for shorter timeouts.
    */
   timeoutMs?: number;
+  /**
+   * Full nax config — used by resolvePermissions() to determine permission mode.
+   * Pass when available so complete() honours permissionProfile / dangerouslySkipPermissions.
+   */
+  config?: NaxConfig;
 }
 
 /**

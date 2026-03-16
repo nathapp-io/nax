@@ -229,7 +229,7 @@ async function runDecomposeDefault(
   }
   const adapter = {
     async decompose(prompt: string): Promise<string> {
-      return agent.complete(prompt, { jsonMode: true });
+      return agent.complete(prompt, { jsonMode: true, config });
     },
   };
   return DecomposeBuilder.for(story).prd(prd).config(builderConfig).decompose(adapter);
