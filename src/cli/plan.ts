@@ -15,6 +15,7 @@ import type { AgentAdapter } from "../agents/types";
 import { scanCodebase } from "../analyze/scanner";
 import type { CodebaseScan } from "../analyze/types";
 import type { NaxConfig } from "../config";
+import { resolvePermissions } from "../config/permissions";
 import { PidRegistry } from "../execution/pid-registry";
 import { getLogger } from "../logger";
 import { validatePlanOutput } from "../prd/schema";
@@ -125,13 +126,12 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     const interactionBridge = createCliInteractionBridge();
     const pidRegistry = new PidRegistry(workdir);
-    const dangerouslySkipPermissions = config?.execution?.dangerouslySkipPermissions ?? false;
-    const permissionMode = dangerouslySkipPermissions ? "approve-all" : "approve-reads";
+    const resolvedPerm = resolvePermissions(config, "plan");
     const resolvedModel = config?.plan?.model ?? "balanced";
     logger?.info("plan", "Starting interactive planning session", {
       agent: agentName,
       model: resolvedModel,
-      permission: permissionMode,
+      permission: resolvedPerm.mode,
       workdir,
       feature: options.feature,
       timeoutSeconds,
@@ -146,7 +146,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         interactionBridge,
         config,
         modelTier: resolvedModel,
-        dangerouslySkipPermissions,
+        dangerouslySkipPermissions: resolvedPerm.skipPermissions,
         maxInteractionTurns: config?.agent?.maxInteractionTurns,
         featureName: options.feature,
         pidRegistry,

@@ -2142,7 +2142,7 @@ describe("Agent Validation and Retry Logic", () => {
   });
 
   describe("ClaudeCodeAdapter command building", () => {
-    test("builds correct command with model and prompt", () => {
+    test("builds correct command with model and prompt (safe mode — no skip-permissions)", () => {
       const adapter = new ClaudeCodeAdapter();
       const options: AgentRunOptions = {
         prompt: "test prompt",
@@ -2154,14 +2154,30 @@ describe("Agent Validation and Retry Logic", () => {
 
       const cmd = adapter.buildCommand(options);
 
+      // No config → safe defaults → no --dangerously-skip-permissions flag
       expect(cmd).toEqual([
         "claude",
         "--model",
         "claude-sonnet-4.5",
-        "--dangerously-skip-permissions",
         "-p",
         "test prompt",
       ]);
+    });
+
+    test("includes --dangerously-skip-permissions when permissionProfile is unrestricted", () => {
+      const adapter = new ClaudeCodeAdapter();
+      const options: AgentRunOptions = {
+        prompt: "test prompt",
+        workdir: "/tmp",
+        modelTier: "balanced",
+        modelDef: { provider: "anthropic", model: "claude-sonnet-4.5", env: {} },
+        timeoutSeconds: 60,
+        config: { execution: { permissionProfile: "unrestricted" } } as import("../../../src/config").NaxConfig,
+      };
+
+      const cmd = adapter.buildCommand(options);
+
+      expect(cmd).toContain("--dangerously-skip-permissions");
     });
   });
 

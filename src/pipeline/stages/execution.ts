@@ -32,6 +32,7 @@
 
 import { getAgent, validateAgentForTier } from "../../agents";
 import { resolveModel } from "../../config";
+import { resolvePermissions } from "../../config/permissions";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import type { FailureCategory } from "../../tdd";
@@ -217,7 +218,9 @@ export const executionStage: PipelineStage = {
       modelTier: ctx.routing.modelTier,
       modelDef: resolveModel(ctx.config.models[ctx.routing.modelTier]),
       timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-      dangerouslySkipPermissions: ctx.config.execution.dangerouslySkipPermissions,
+      dangerouslySkipPermissions: resolvePermissions(ctx.config, "run").skipPermissions,
+      pipelineStage: "run",
+      config: ctx.config,
       maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
       pidRegistry: ctx.pidRegistry,
       featureName: ctx.prd.feature,

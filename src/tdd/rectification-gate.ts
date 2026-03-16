@@ -9,6 +9,7 @@
 import type { AgentAdapter } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config";
+import { resolvePermissions } from "../config/permissions";
 import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { autoCommitIfDirty, captureGitRef } from "../utils/git";
@@ -158,7 +159,9 @@ async function runRectificationLoop(
       modelTier: implementerTier,
       modelDef: resolveModel(config.models[implementerTier]),
       timeoutSeconds: config.execution.sessionTimeoutSeconds,
-      dangerouslySkipPermissions: config.execution.dangerouslySkipPermissions,
+      dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
+      pipelineStage: "rectification",
+      config,
       maxInteractionTurns: config.agent?.maxInteractionTurns,
       featureName,
       storyId: story.id,

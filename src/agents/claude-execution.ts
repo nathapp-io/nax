@@ -4,6 +4,7 @@
  * Handles building commands, preparing environment, and process execution.
  */
 
+import { resolvePermissions } from "../config/permissions";
 import type { PidRegistry } from "../execution/pid-registry";
 import { withProcessTimeout } from "../execution/timeout-handler";
 import { getLogger } from "../logger";
@@ -49,7 +50,7 @@ export const _runOnceDeps = {
  */
 export function buildCommand(binary: string, options: AgentRunOptions): string[] {
   const model = options.modelDef.model;
-  const skipPermissions = options.dangerouslySkipPermissions ?? true;
+  const { skipPermissions } = resolvePermissions(options.config, options.pipelineStage ?? "run");
   const permArgs = skipPermissions ? ["--dangerously-skip-permissions"] : [];
   return [binary, "--model", model, ...permArgs, "-p", options.prompt];
 }

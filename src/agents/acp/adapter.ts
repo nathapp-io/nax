@@ -13,6 +13,7 @@
 
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { resolvePermissions } from "../../config/permissions";
 import { getSafeLogger } from "../../logger";
 import { buildDecomposePrompt, parseDecomposeOutput } from "../claude-decompose";
 import { createSpawnAcpClient } from "./spawn-client";
@@ -451,12 +452,12 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
     sessionName ??= buildSessionName(options.workdir, options.featureName, options.storyId, options.sessionRole);
 
-    // 2. Permission mode follows dangerouslySkipPermissions, default is "approve-reads". or should --deny-all be the default?
-    const permissionMode = options.dangerouslySkipPermissions ? "approve-all" : "approve-reads";
+    // 2. Resolve permission mode from config via single source of truth.
+    const resolvedPerm = resolvePermissions(options.config, options.pipelineStage ?? "run");
+    const permissionMode = resolvedPerm.mode;
     getSafeLogger()?.info("acp-adapter", "Permission mode resolved", {
       permission: permissionMode,
-      dangerouslySkipPermissions: options.dangerouslySkipPermissions ?? false,
-      stage: options.featureName ? "run" : "plan",
+      stage: options.pipelineStage ?? "run",
     });
 
     // 3. Ensure session (resume existing or create new)
@@ -567,7 +568,7 @@ export class AcpAgentAdapter implements AgentAdapter {
   async complete(prompt: string, _options?: CompleteOptions): Promise<string> {
     const model = _options?.model ?? "default";
     const timeoutMs = _options?.timeoutMs ?? 120_000; // 2-min safety net by default
-    const permissionMode = _options?.dangerouslySkipPermissions ? "approve-all" : "default";
+    const permissionMode = resolvePermissions(undefined, "complete").mode;
     const workdir = _options?.workdir;
 
     let lastError: Error | undefined;
@@ -677,7 +678,12 @@ export class AcpAgentAdapter implements AgentAdapter {
       modelTier: options.modelTier ?? "balanced",
       modelDef,
       timeoutSeconds,
-      dangerouslySkipPermissions: options.dangerouslySkipPermissions ?? false,
+      dangerouslySkipPermissions: resolvePermissions(
+        options.config as import("../../config").NaxConfig | undefined,
+        "plan",
+      ).skipPermissions,
+      pipelineStage: "plan",
+      config: options.config as import("../../config").NaxConfig | undefined,
       interactionBridge: options.interactionBridge,
       maxInteractionTurns: options.maxInteractionTurns,
       featureName: options.featureName,

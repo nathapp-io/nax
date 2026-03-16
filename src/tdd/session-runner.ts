@@ -7,6 +7,7 @@
 import type { AgentAdapter } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config";
+import { resolvePermissions } from "../config/permissions";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { PromptBuilder } from "../prompts";
@@ -139,7 +140,9 @@ export async function runTddSession(
     modelTier,
     modelDef: resolveModel(config.models[modelTier]),
     timeoutSeconds: config.execution.sessionTimeoutSeconds,
-    dangerouslySkipPermissions: config.execution.dangerouslySkipPermissions,
+    dangerouslySkipPermissions: resolvePermissions(config, "run").skipPermissions,
+    pipelineStage: "run",
+    config,
     maxInteractionTurns: config.agent?.maxInteractionTurns,
     featureName,
     storyId: story.id,

@@ -74,7 +74,7 @@ describe("run() — session flow", () => {
     expect(closeCalled).toBe(true);
   });
 
-  test("uses approve-all permission mode when dangerouslySkipPermissions is true", async () => {
+  test("uses approve-all permission mode when permissionProfile is unrestricted", async () => {
     let capturedMode = "";
     const session = makeSession();
     const client = makeClient(session, {
@@ -82,7 +82,9 @@ describe("run() — session flow", () => {
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => client);
 
-    await new AcpAgentAdapter("claude").run(makeRunOptions({ dangerouslySkipPermissions: true }));
+    await new AcpAgentAdapter("claude").run(
+      makeRunOptions({ config: { execution: { permissionProfile: "unrestricted" } } as import("../../../../src/config").NaxConfig }),
+    );
     expect(capturedMode).toBe("approve-all");
   });
 

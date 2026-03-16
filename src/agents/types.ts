@@ -6,6 +6,7 @@
  * collect results from them uniformly.
  */
 
+import type { NaxConfig } from "../config";
 import type { ModelDef, ModelTier } from "../config/schema";
 
 // Re-export extended types for backward compatibility
@@ -76,6 +77,10 @@ export interface AgentRunOptions {
   sessionRole?: string;
   /** Max turns in multi-turn interaction loop when interactionBridge is active (default: 10) */
   maxInteractionTurns?: number;
+  /** Pipeline stage this run belongs to — used by resolvePermissions() (default: "run") */
+  pipelineStage?: import("../config/permissions").PipelineStage;
+  /** Full nax config — passed through so adapters can call resolvePermissions() */
+  config?: NaxConfig;
 }
 
 /**
