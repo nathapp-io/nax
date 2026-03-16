@@ -80,7 +80,14 @@ const DEFAULT_ENTRY: AgentRegistryEntry = {
 export interface AcpSessionResponse {
   messages: Array<{ role: string; content: string }>;
   stopReason: string;
-  cumulative_token_usage?: { input_tokens: number; output_tokens: number };
+  cumulative_token_usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
+  /** Exact cost in USD from acpx usage_update event. Preferred over token-based estimation. */
+  exactCostUsd?: number;
 }
 
 export interface AcpSession {
@@ -555,7 +562,13 @@ export class AcpAgentAdapter implements AgentAdapter {
     // Tracks whether the run completed successfully — used by finally to decide
     // whether to close the session (success) or keep it open for retry (failure).
     const runState = { succeeded: false };
-    const totalTokenUsage = { input_tokens: 0, output_tokens: 0 };
+    const totalTokenUsage = {
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+    };
+    let totalExactCostUsd: number | undefined;
 
     try {
       // 5. Multi-turn loop
@@ -577,10 +590,16 @@ export class AcpAgentAdapter implements AgentAdapter {
         lastResponse = turnResult.response;
         if (!lastResponse) break;
 
-        // Accumulate token usage
+        // Accumulate token usage and exact cost
         if (lastResponse.cumulative_token_usage) {
           totalTokenUsage.input_tokens += lastResponse.cumulative_token_usage.input_tokens ?? 0;
           totalTokenUsage.output_tokens += lastResponse.cumulative_token_usage.output_tokens ?? 0;
+          totalTokenUsage.cache_read_input_tokens += lastResponse.cumulative_token_usage.cache_read_input_tokens ?? 0;
+          totalTokenUsage.cache_creation_input_tokens +=
+            lastResponse.cumulative_token_usage.cache_creation_input_tokens ?? 0;
+        }
+        if (lastResponse.exactCostUsd !== undefined) {
+          totalExactCostUsd = (totalExactCostUsd ?? 0) + lastResponse.exactCostUsd;
         }
 
         // Check for agent question → route to interaction bridge
@@ -643,10 +662,12 @@ export class AcpAgentAdapter implements AgentAdapter {
     const success = lastResponse?.stopReason === "end_turn";
     const output = extractOutput(lastResponse);
 
+    // Prefer exact cost from acpx usage_update; fall back to token-based estimation
     const estimatedCost =
-      totalTokenUsage.input_tokens > 0 || totalTokenUsage.output_tokens > 0
+      totalExactCostUsd ??
+      (totalTokenUsage.input_tokens > 0 || totalTokenUsage.output_tokens > 0
         ? estimateCostFromTokenUsage(totalTokenUsage, options.modelDef.model)
-        : 0;
+        : 0);
 
     return {
       success,
@@ -717,6 +738,13 @@ export class AcpAgentAdapter implements AgentAdapter {
 
         if (!unwrapped) {
           throw new CompleteError("complete() returned empty output");
+        }
+
+        if (response.exactCostUsd !== undefined) {
+          getSafeLogger()?.info("acp-adapter", "complete() cost", {
+            costUsd: response.exactCostUsd,
+            model,
+          });
         }
 
         return unwrapped;

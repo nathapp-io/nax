@@ -180,8 +180,9 @@ class SpawnAcpSession implements AcpSession {
         const parsed = parseAcpxJsonOutput(stdout);
         return {
           messages: [{ role: "assistant", content: parsed.text || "" }],
-          stopReason: "end_turn",
+          stopReason: parsed.stopReason ?? "end_turn",
           cumulative_token_usage: parsed.tokenUsage,
+          exactCostUsd: parsed.exactCostUsd,
         };
       } catch (err) {
         getSafeLogger()?.warn("acp-adapter", "Failed to parse session prompt response", {

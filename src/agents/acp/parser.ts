@@ -15,6 +15,8 @@ import type { AgentRunOptions } from "../types";
 export interface AcpxTokenUsage {
   input_tokens: number;
   output_tokens: number;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
 }
 
 /** JSON-RPC message from acpx --format json --json-strict */
@@ -47,9 +49,10 @@ export async function streamJsonRpcEvents(
   stdout: ReadableStream<Uint8Array>,
   bridge: AgentRunOptions["interactionBridge"],
   _sessionId: string,
-): Promise<{ text: string; tokenUsage?: AcpxTokenUsage }> {
+): Promise<{ text: string; tokenUsage?: AcpxTokenUsage; exactCostUsd?: number }> {
   let accumulatedText = "";
   let tokenUsage: AcpxTokenUsage | undefined;
+  let exactCostUsd: number | undefined;
   const decoder = new TextDecoder();
   let buffer = "";
 
@@ -93,19 +96,22 @@ export async function streamJsonRpcEvents(
             }
           }
 
-          if (update.sessionUpdate === "usage_update" && update.used !== undefined) {
-            const total = update.used;
-            tokenUsage = {
-              input_tokens: Math.floor(total * 0.3),
-              output_tokens: Math.floor(total * 0.7),
-            };
+          if (update.sessionUpdate === "usage_update" && typeof update.cost?.amount === "number") {
+            exactCostUsd = update.cost.amount;
           }
         }
 
-        if (msg.result) {
+        if (msg.id !== undefined && msg.result && typeof msg.result === "object") {
           const result = msg.result as Record<string, unknown>;
-          if (typeof result === "string") {
-            accumulatedText += result;
+          if (result.usage && typeof result.usage === "object") {
+            const u = result.usage as Record<string, unknown>;
+            tokenUsage = {
+              input_tokens: (u.inputTokens as number) ?? (u.input_tokens as number) ?? 0,
+              output_tokens: (u.outputTokens as number) ?? (u.output_tokens as number) ?? 0,
+              cache_read_input_tokens: (u.cachedReadTokens as number) ?? (u.cache_read_input_tokens as number) ?? 0,
+              cache_creation_input_tokens:
+                (u.cachedWriteTokens as number) ?? (u.cache_creation_input_tokens as number) ?? 0,
+            };
           }
         }
       }
@@ -114,7 +120,7 @@ export async function streamJsonRpcEvents(
     reader.releaseLock();
   }
 
-  return { text: accumulatedText.trim(), tokenUsage };
+  return { text: accumulatedText.trim(), tokenUsage, exactCostUsd };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -122,17 +128,26 @@ export async function streamJsonRpcEvents(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Parse acpx NDJSON output for assistant text and token usage.
+ * Parse acpx NDJSON output for assistant text, token usage, and exact cost.
+ *
+ * Handles the JSON-RPC envelope format emitted by acpx:
+ * - session/update agent_message_chunk → text accumulation
+ * - session/update usage_update → exact cost (cost.amount) + context size
+ * - id/result → token breakdown (inputTokens, outputTokens, cachedWriteTokens, cachedReadTokens)
+ *
+ * Also handles legacy flat NDJSON format for backward compatibility.
  */
 export function parseAcpxJsonOutput(rawOutput: string): {
   text: string;
   tokenUsage?: AcpxTokenUsage;
+  exactCostUsd?: number;
   stopReason?: string;
   error?: string;
 } {
   const lines = rawOutput.split("\n").filter((l) => l.trim());
   let text = "";
   let tokenUsage: AcpxTokenUsage | undefined;
+  let exactCostUsd: number | undefined;
   let stopReason: string | undefined;
   let error: string | undefined;
 
@@ -140,6 +155,50 @@ export function parseAcpxJsonOutput(rawOutput: string): {
     try {
       const event = JSON.parse(line);
 
+      // ── JSON-RPC envelope format (acpx v0.3+) ──────────────────────────────
+      if (event.jsonrpc === "2.0") {
+        // session/update events
+        if (event.method === "session/update" && event.params?.update) {
+          const update = event.params.update;
+
+          // Text chunks
+          if (
+            update.sessionUpdate === "agent_message_chunk" &&
+            update.content?.type === "text" &&
+            update.content.text
+          ) {
+            text += update.content.text;
+          }
+
+          // Exact cost from usage_update
+          if (update.sessionUpdate === "usage_update" && typeof update.cost?.amount === "number") {
+            exactCostUsd = update.cost.amount;
+          }
+        }
+
+        // Final result with token breakdown (camelCase from acpx)
+        if (event.id !== undefined && event.result && typeof event.result === "object") {
+          const result = event.result as Record<string, unknown>;
+
+          if (result.stopReason) stopReason = result.stopReason as string;
+          if (result.stop_reason) stopReason = result.stop_reason as string;
+
+          if (result.usage && typeof result.usage === "object") {
+            const u = result.usage as Record<string, unknown>;
+            tokenUsage = {
+              input_tokens: (u.inputTokens as number) ?? (u.input_tokens as number) ?? 0,
+              output_tokens: (u.outputTokens as number) ?? (u.output_tokens as number) ?? 0,
+              cache_read_input_tokens: (u.cachedReadTokens as number) ?? (u.cache_read_input_tokens as number) ?? 0,
+              cache_creation_input_tokens:
+                (u.cachedWriteTokens as number) ?? (u.cache_creation_input_tokens as number) ?? 0,
+            };
+          }
+        }
+
+        continue;
+      }
+
+      // ── Legacy flat NDJSON format ───────────────────────────────────────────
       if (event.content && typeof event.content === "string") text += event.content;
       if (event.text && typeof event.text === "string") text += event.text;
       if (event.result && typeof event.result === "string") text = event.result;
@@ -162,5 +221,5 @@ export function parseAcpxJsonOutput(rawOutput: string): {
     }
   }
 
-  return { text: text.trim(), tokenUsage, stopReason, error };
+  return { text: text.trim(), tokenUsage, exactCostUsd, stopReason, error };
 }
