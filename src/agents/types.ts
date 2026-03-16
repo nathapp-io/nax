@@ -8,6 +8,7 @@
 
 import type { NaxConfig } from "../config";
 import type { ModelDef, ModelTier } from "../config/schema";
+import type { TokenUsage } from "./cost";
 
 // Re-export extended types for backward compatibility
 export type {
@@ -38,6 +39,8 @@ export interface AgentResult {
   durationMs: number;
   /** Estimated cost for this run (USD) */
   estimatedCost: number;
+  /** Token usage for this run (when available) */
+  tokenUsage?: TokenUsage;
   /** Process ID of the spawned agent (for cleanup on failure) */
   pid?: number;
 }
