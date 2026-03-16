@@ -3,7 +3,7 @@
 **Severity:** Medium
 **Component:** `src/execution/runner-execution.ts`, `src/routing/batch-route.ts`
 **Found:** 2026-03-16
-**Status:** Open — root cause unknown
+**Status:** Possible fix in v0.45.0 — monitoring
 
 ## Summary
 
@@ -86,3 +86,21 @@ await tryLlmBatchRoute(options.config, readyStories, "routing");
 US-002, US-003, US-004 fall back to keyword routing. For auth/security stories this may result in
 wrong test strategy (keyword routed US-002/003 as `tdd-simple` instead of `three-session-tdd`).
 The run still succeeds but with suboptimal routing decisions.
+
+## v0.45.0 Update (2026-03-16)
+
+The prd.json from the run that showed `storyCount: 1` was overwritten by a subsequent
+`nax run --plan --force`, so direct comparison is no longer possible.
+
+**v0.45.0 debug logging added** (`runner-execution.ts` + `story-context.ts`) shows that
+the next run correctly produced `readyCount: 3, storyCount: 3` — correct behavior.
+
+**Possible root cause (hypothesis):** The original bug may have been caused by `getAllReadyStories(prd)`
+being called twice in the same execution context — once for `precomputeBatchPlan` and once for
+`tryLlmBatchRoute`. If PRD state mutated between the two calls (e.g. a concurrent write or
+reconcileState side effect), the second call could return a different result. v0.45.0 fixes this
+by using a single `readyStories` variable for both calls.
+
+**Monitor:** If `storyCount < readyCount` appears in future debug logs, the new logging will
+capture exact story states (`id`, `status`, `passes`, `deps`) and `completedIds` to identify
+the cause. Close this bug if 5+ consecutive runs show correct counts.
