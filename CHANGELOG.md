@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.43.0] - 2026-03-16
+
+### Added
+- **PERM-001:** `src/config/permissions.ts` — `resolvePermissions(config, stage)` as the single source of truth for all permission decisions across CLI and ACP adapters.
+- **New types:** `PermissionProfile` (`"unrestricted" | "safe" | "scoped"`), `PipelineStage`, `ResolvedPermissions` interface.
+- **Schema:** `execution.permissionProfile` config field — takes precedence over legacy `dangerouslySkipPermissions` boolean. `"scoped"` is a Phase 2 stub.
+- **`pipelineStage?`** added to `AgentRunOptions` — each call site sets the appropriate stage (`"plan"`, `"run"`, `"rectification"`, etc.).
+- **`config?`** added to `CompleteOptions` — all `complete()` call sites now thread config so permissions are resolved correctly.
+
+### Fixed
+- **Hardcoded `--dangerously-skip-permissions`** in `claude-plan.ts` — now resolved from config.
+- **`?? false` fallback** in `plan.ts` — removed; replaced with `resolvePermissions()`.
+- **`?? true` fallback** in `claude-execution.ts` — removed; replaced with `resolvePermissions()`.
+- **`resolvePermissions(undefined, ...)` in ACP `complete()`** — now passes `_options?.config`.
+- All ACP adapter permission ternaries replaced with `resolvePermissions()`.
+
+### Changed
+- `nax/config.json` — explicit `"permissionProfile": "unrestricted"` (was implicit via schema default).
+
 ## [0.30.0] - 2026-03-08
 
 ### Fixed
