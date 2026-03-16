@@ -278,10 +278,10 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
     expect(prd.userStories[0]!.routing?.testStrategy).toBe("tdd-simple");
   });
 
-  test("falls back to tdd-simple for unknown testStrategy values", () => {
+  test("falls back to test-after for unknown testStrategy values", () => {
     const input = makeInput([makeStory({ testStrategy: "unknown-strategy" })]);
     const prd = validatePlanOutput(input, "feat", "branch");
-    expect(prd.userStories[0]!.routing?.testStrategy).toBe("tdd-simple");
+    expect(prd.userStories[0]!.routing?.testStrategy).toBe("test-after");
   });
 });
 
