@@ -110,7 +110,7 @@ Respond with ONLY the TypeScript test code (no markdown code fences, no explanat
 
   logger.info("acceptance", "Generating tests from PRD refined criteria", { count: refinedCriteria.length });
 
-  const testCode = await _generatorPRDDeps.adapter.complete(prompt);
+  const testCode = await _generatorPRDDeps.adapter.complete(prompt, { config: options.config });
 
   const refinedJsonContent = JSON.stringify(
     refinedCriteria.map((c, i) => ({
@@ -298,6 +298,7 @@ export async function generateAcceptanceTests(
     // Call adapter to generate tests
     const output = await adapter.complete(prompt, {
       model: options.modelDef.model,
+      config: options.config,
     });
 
     // Extract test code from output

@@ -228,6 +228,7 @@ export async function generateFixStories(
       // Call adapter to generate fix description
       const fixDescription = await adapter.complete(prompt, {
         model: modelDef.model,
+        config: options.config,
       });
 
       fixStories.push({

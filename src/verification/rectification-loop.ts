@@ -10,6 +10,7 @@
 import { getAgent } from "../agents";
 import type { NaxConfig } from "../config";
 import { resolveModel } from "../config";
+import { resolvePermissions } from "../config/permissions";
 import { parseBunTestOutput } from "../execution/test-output-parser";
 import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
@@ -73,7 +74,9 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       modelTier,
       modelDef,
       timeoutSeconds: config.execution.sessionTimeoutSeconds,
-      dangerouslySkipPermissions: config.execution.dangerouslySkipPermissions,
+      dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
+      pipelineStage: "rectification",
+      config,
       maxInteractionTurns: config.agent?.maxInteractionTurns,
     });
 

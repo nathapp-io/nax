@@ -105,7 +105,21 @@ const ExecutionConfigSchema = z.object({
     .default(2000),
   lintCommand: z.string().nullable().optional(),
   typecheckCommand: z.string().nullable().optional(),
+  // DEPRECATED — use permissionProfile instead. Kept for backward compat.
   dangerouslySkipPermissions: z.boolean().default(true),
+  // NEW — takes precedence over dangerouslySkipPermissions
+  permissionProfile: z.enum(["unrestricted", "safe", "scoped"]).optional(),
+  // Phase 2: per-stage permission overrides (only read when profile = "scoped")
+  permissions: z
+    .record(
+      z.string(),
+      z.object({
+        mode: z.enum(["approve-all", "approve-reads", "scoped"]),
+        allowedTools: z.array(z.string()).optional(),
+        inherit: z.string().optional(),
+      }),
+    )
+    .optional(),
   smartTestRunner: smartTestRunnerFieldSchema,
 });
 

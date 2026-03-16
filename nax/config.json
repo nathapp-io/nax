@@ -59,6 +59,7 @@
     }
   },
   "execution": {
+    "permissionProfile": "unrestricted",
     "maxIterations": 6,
     "iterationDelayMs": 2000,
     "costLimit": 8.0,

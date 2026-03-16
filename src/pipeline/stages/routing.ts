@@ -66,7 +66,7 @@ async function runDecompose(
   }
   const adapter = {
     async decompose(prompt: string): Promise<string> {
-      return agent.complete(prompt, { jsonMode: true });
+      return agent.complete(prompt, { jsonMode: true, config });
     },
   };
 

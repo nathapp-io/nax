@@ -97,6 +97,17 @@ export interface ExecutionConfig {
   typecheckCommand?: string | null;
   /** Use --dangerously-skip-permissions flag for agent (default: true for backward compat, SEC-1 fix) */
   dangerouslySkipPermissions?: boolean;
+  /** Permission profile — takes precedence over dangerouslySkipPermissions (Phase 1) */
+  permissionProfile?: "unrestricted" | "safe" | "scoped";
+  /** Per-stage permission overrides — only read when permissionProfile = "scoped" (Phase 2) */
+  permissions?: Record<
+    string,
+    {
+      mode: "approve-all" | "approve-reads" | "scoped";
+      allowedTools?: string[];
+      inherit?: string;
+    }
+  >;
   /** Enable smart test runner to scope test runs to changed files (default: true).
    * Accepts boolean for backward compat or a SmartTestRunnerConfig object. */
   smartTestRunner?: boolean | SmartTestRunnerConfig;

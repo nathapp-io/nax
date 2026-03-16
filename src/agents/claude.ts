@@ -4,6 +4,7 @@
  * Main adapter class coordinating execution, completion, decomposition, and interactive modes.
  */
 
+import { resolvePermissions } from "../config/permissions";
 import { PidRegistry } from "../execution/pid-registry";
 import { withProcessTimeout } from "../execution/timeout-handler";
 import { getLogger } from "../logger";
@@ -185,7 +186,11 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       modelDef = resolveBalancedModelDef(options.config);
     }
 
-    const cmd = [this.binary, "--model", modelDef.model, "--dangerously-skip-permissions", "-p", prompt];
+    const { skipPermissions } = resolvePermissions(options.config as import("../config").NaxConfig | undefined, "run");
+    const cmd = [this.binary, "--model", modelDef.model, "-p", prompt];
+    if (skipPermissions) {
+      cmd.splice(cmd.length - 2, 0, "--dangerously-skip-permissions");
+    }
 
     const pidRegistry = this.getPidRegistry(options.workdir);
 

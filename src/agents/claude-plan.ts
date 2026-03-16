@@ -7,6 +7,7 @@ import { join } from "node:path";
  * Extracted from claude.ts: plan(), buildPlanCommand()
  */
 
+import { resolvePermissions } from "../config/permissions";
 import type { PidRegistry } from "../execution/pid-registry";
 import { withProcessTimeout } from "../execution/timeout-handler";
 import { getLogger } from "../logger";
@@ -30,8 +31,11 @@ export function buildPlanCommand(binary: string, options: PlanOptions): string[]
     cmd.push("--model", modelDef.model);
   }
 
-  // Add dangerously-skip-permissions for automation
-  cmd.push("--dangerously-skip-permissions");
+  // Resolve permission mode from config
+  const { skipPermissions } = resolvePermissions(options.config as import("../config").NaxConfig | undefined, "plan");
+  if (skipPermissions) {
+    cmd.push("--dangerously-skip-permissions");
+  }
 
   // Add prompt with codebase context and input file if available
   let fullPrompt = options.prompt;

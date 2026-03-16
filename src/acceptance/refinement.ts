@@ -192,6 +192,7 @@ export async function refineAcceptanceCriteria(
       jsonMode: true,
       maxTokens: 4096,
       model: modelDef.model,
+      config,
     });
   } catch (error) {
     const reason = errorMessage(error);

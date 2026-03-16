@@ -111,7 +111,7 @@ async function callLlmOnce(
   // Prevent unhandled rejection if timer fires between race resolution and clearTimeout
   timeoutPromise.catch(() => {});
 
-  const outputPromise = adapter.complete(prompt, { model: modelArg });
+  const outputPromise = adapter.complete(prompt, { model: modelArg, config });
 
   try {
     const result = await Promise.race([outputPromise, timeoutPromise]);
