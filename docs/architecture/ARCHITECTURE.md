@@ -1050,4 +1050,39 @@ const perms = resolvePermissions(config, undefined as any);
 
 ---
 
+## §15 Test Strategy Resolution
+
+### Single Source of Truth
+
+`src/config/test-strategy.ts` defines all valid test strategies, shared prompt fragments,
+and the `resolveTestStrategy()` normalizer. This module is the ONLY place where test
+strategy values, descriptions, and classification rules are defined.
+
+### Available Strategies
+
+| Strategy | Complexity | Description |
+|:---------|:-----------|:------------|
+| `test-after` | simple | Write tests after implementation |
+| `tdd-simple` | medium | Write key tests first, then implement |
+| `three-session-tdd` | complex | Full TDD with separate test-writer and implementer |
+| `three-session-tdd-lite` | expert | Full TDD with additional verifier session |
+
+### Rules
+
+1. **resolveTestStrategy()** normalizes unknown/legacy values to valid strategies
+2. **Security override**: Security-critical stories → minimum "medium" / "tdd-simple"
+3. **No standalone test stories**: Testing is handled per-story via testStrategy
+4. Both `plan.ts` and `claude-decompose.ts` import shared prompt fragments — never inline strategy definitions
+
+### Consumers
+
+| File | Uses |
+|:-----|:-----|
+| `src/cli/plan.ts` | `COMPLEXITY_GUIDE`, `TEST_STRATEGY_GUIDE`, `GROUPING_RULES` |
+| `src/agents/claude-decompose.ts` | Same prompt fragments |
+| `src/pipeline/stages/routing.ts` | `resolveTestStrategy()` (via prd/schema.ts normalization) |
+| `src/prd/schema.ts` | `resolveTestStrategy()` for PRD validation |
+
+---
+
 *Created: 2026-03-10. Last updated: 2026-03-16. Maintained by nax-dev.*
