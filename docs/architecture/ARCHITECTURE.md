@@ -727,31 +727,6 @@ export function getSafeLogger(): Logger | null {
 
 ---
 
-## Quick Reference Card
-
-| Rule | Limit |
-|:-----|:------|
-| Source file size | ≤400 lines |
-| Test file size | ≤800 lines (split if >3 unrelated concerns) |
-| Type-only file size | ≤600 lines |
-| Function size | ≤30 lines (50 hard max) |
-| Positional params | ≤3 (use options object beyond) |
-| `any` in public API | Forbidden |
-| Magic numbers | Forbidden (use named constants) |
-| `_deps` for externals | Required |
-| Error messages | Must include `[stage]` prefix + context |
-
-| Pattern | When to use | Entry point |
-|:--------|:-----------|:------------|
-| Builder | Multi-step object construction | `static for()` → chain → `.build()` |
-| Adapter | Multiple backends, one contract | Interface in `types.ts`, class per backend |
-| Registry | Lookup by name/capability | Class (lifecycle) or function (pure lookup) |
-| Strategy | Pluggable algorithms | Interface + classes, selected by orchestrator |
-| Chain | Priority-ordered handlers | `.register(handler, priority)` → `.prompt()` |
-| Singleton | Global services | `initX()` once, `getX()` / `getSafeX()` everywhere |
-
----
-
 ## 12. Security Standards
 
 > Codified from code reviews on 2026-03-11 (security-review) and 2026-03-15 (deep code review).
@@ -779,7 +754,7 @@ export function getSafeLogger(): Logger | null {
 |:-----|:----------|
 | **Store named references for all `process.on()` handlers** | `removeListener` compares by reference — anonymous arrows create a new ref each time, making cleanup a silent no-op (BUG-1 fix) |
 | **Track spawned PIDs via `PidRegistry`** | Enables cleanup on crash; register in `prompt()`, unregister on exit (v0.42.6 PidRegistry pattern) |
-| **Never hardcode permission modes in resume/reconnect paths** | Must inherit from caller's config — hardcoding `"approve-all"` silently escalates permissions (SEC-3 fix) |
+| **Never hardcode permission modes anywhere** | All permission decisions go through `resolvePermissions(config, stage)` — see §14. No `?? true`, `?? false`, or literal `"approve-all"` (SEC-3 fix, PERM-001) |
 | **Kill active subprocess before graceful close** | `close()` and `cancelActivePrompt()` must kill `activeProc` first, then close the session |
 
 ### 12.4 Type Safety for Security
@@ -930,6 +905,9 @@ _gitDeps.spawn = (cmd) => { /* fragile — depends on every internal code path *
 | Error messages | Must include `[stage]` prefix + context |
 | `realpathSync` before containment | Required (no lexical-only checks) |
 | `process.on` handlers | Must store named ref for removal |
+| Permission resolution | `resolvePermissions(config, stage)` only — no local fallbacks |
+| Permission booleans | Never read `dangerouslySkipPermissions` directly |
+| `pipelineStage` on adapter calls | Required on all `run()`, `complete()`, `plan()`, `decompose()` |
 | Test sleep | Injectable `_deps.sleep`, never real `Bun.sleep` |
 | Integration test config | `iterationDelayMs: 0` (never DEFAULT_CONFIG) |
 
@@ -943,7 +921,133 @@ _gitDeps.spawn = (cmd) => { /* fragile — depends on every internal code path *
 | Singleton | Global services | `initX()` once, `getX()` / `getSafeX()` everywhere |
 | Injectable sleep | Test performance | `_moduleDeps.sleep = Bun.sleep` → spy in tests |
 | PidRegistry | Subprocess lifecycle | Register on spawn, unregister on exit, `killAll()` on crash |
+| Permission resolver | Agent permissions | `resolvePermissions(config, stage)` → `{ mode, skipPermissions }` |
 
 ---
 
-*Created: 2026-03-10. Last updated: 2026-03-15. Maintained by nax-dev.*
+## 14. Permission Resolution
+
+> Introduced in v0.43.0 (PERM-001). Single source of truth for all agent permission decisions.
+
+### Architecture
+
+All permission decisions flow through one function: `resolvePermissions(config, stage)` in `src/config/permissions.ts`.
+
+```
+┌─────────────┐     ┌──────────────────────┐     ┌─────────────────────┐
+│ Config       │────▶│ resolvePermissions()  │────▶│ ResolvedPermissions │
+│ • profile    │     │ src/config/           │     │ • mode              │
+│ • legacy bool│     │ permissions.ts        │     │ • skipPermissions   │
+│ • stage      │     └──────────────────────┘     │ • allowedTools?     │
+└─────────────┘                                   └─────────────────────┘
+                                                         │
+                              ┌───────────────────────────┤
+                              ▼                           ▼
+                    ┌──────────────────┐        ┌──────────────────┐
+                    │ ACP adapter      │        │ CLI adapter      │
+                    │ reads .mode      │        │ reads             │
+                    │ ("approve-all"   │        │ .skipPermissions  │
+                    │  "approve-reads")│        │ (true/false)      │
+                    └──────────────────┘        └──────────────────┘
+```
+
+### Permission Profiles
+
+| Profile | ACP mode | CLI flag | When to use |
+|:--------|:---------|:---------|:------------|
+| `unrestricted` | `approve-all` | `--dangerously-skip-permissions` | Development, trusted environments |
+| `safe` | `approve-reads` | *(no flag)* | Production, untrusted projects |
+| `scoped` | Per-stage (Phase 2) | Per-stage (Phase 2) | Fine-grained control (future) |
+
+### Config Precedence
+
+```jsonc
+// nax/config.json — execution block
+{
+  "execution": {
+    // NEW — preferred (v0.43.0+)
+    "permissionProfile": "unrestricted",
+
+    // DEPRECATED — backward compat only, ignored when permissionProfile is set
+    "dangerouslySkipPermissions": true
+  }
+}
+```
+
+Resolution order:
+1. `execution.permissionProfile` → used if present
+2. `execution.dangerouslySkipPermissions` → mapped: `true` → `"unrestricted"`, `false` → `"safe"`
+3. Neither set → defaults to `"safe"` (approve-reads)
+
+### Pipeline Stages
+
+Every call to `resolvePermissions()` includes the pipeline stage:
+
+| Stage | Used by | Typical profile |
+|:------|:--------|:----------------|
+| `plan` | `plan.ts`, `claude-plan.ts` | Same as config (plan writes prd.json) |
+| `run` | `execution.ts`, `claude.ts`, `claude-execution.ts`, `session-runner.ts` | Primary execution — most permissive |
+| `verify` | Verification strategies | Read-heavy — could be restricted in Phase 2 |
+| `rectification` | `rectification-loop.ts`, `rectification-gate.ts` | Needs write access for fixes |
+| `complete` | `claude-complete.ts`, `acp/adapter.ts` | One-shot LLM calls — varies by caller |
+| `acceptance` | Acceptance generator | Write access for test files |
+| `regression` | Regression gate | Read + test execution |
+| `review` | Code review | Read-only in Phase 2 |
+
+In Phase 1, all stages resolve to the same profile. Phase 2 (`scoped`) will enable per-stage overrides.
+
+### Rules (Mandatory)
+
+| Rule | Rationale |
+|:-----|:----------|
+| **Always call `resolvePermissions(config, stage)`** | Single source of truth — no local fallbacks |
+| **Never hardcode permission booleans** | No `?? true`, `?? false`, or literal `"approve-all"` |
+| **Never read `dangerouslySkipPermissions` directly** | Deprecated field — resolver handles backward compat |
+| **Always pass `config` and `pipelineStage` to adapters** | Required for resolver to work — both fields are on `AgentRunOptions` and `CompleteOptions` |
+| **New code must set `pipelineStage`** | Every `adapter.run()`, `.complete()`, `.plan()`, `.decompose()` call must specify the stage |
+
+### Adding New Call Sites
+
+When writing code that spawns an agent session or calls `complete()`:
+
+```typescript
+// ✅ Correct: use resolvePermissions with config and stage
+import { resolvePermissions } from "../config/permissions";
+
+const { skipPermissions, mode } = resolvePermissions(config, "run");
+
+// For CLI adapter — pass skipPermissions
+await adapter.run({
+  ...options,
+  config,
+  pipelineStage: "run",
+  dangerouslySkipPermissions: skipPermissions,
+});
+
+// For ACP adapter — pass mode
+session.setPermissionMode(mode);
+```
+
+```typescript
+// ❌ Wrong: local fallback
+const skip = config?.execution?.dangerouslySkipPermissions ?? true;
+
+// ❌ Wrong: hardcoded
+const args = ["--dangerously-skip-permissions", ...rest];
+
+// ❌ Wrong: no stage
+const perms = resolvePermissions(config, undefined as any);
+```
+
+### Reference Files
+
+- **Resolver:** `src/config/permissions.ts` — `resolvePermissions()`, types, profiles
+- **Schema:** `src/config/schemas.ts` — `permissionProfile` field definition
+- **CLI adapter:** `src/agents/claude.ts`, `claude-execution.ts`, `claude-plan.ts`, `claude-complete.ts`
+- **ACP adapter:** `src/agents/acp/adapter.ts`
+- **Call sites:** `execution.ts`, `session-runner.ts`, `rectification-loop.ts`, `rectification-gate.ts`, `plan.ts`
+- **Spec:** `docs/specs/scoped-permissions.md` — PERM-001 + PERM-002 design
+
+---
+
+*Created: 2026-03-10. Last updated: 2026-03-16. Maintained by nax-dev.*
