@@ -8,7 +8,7 @@ import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import { getSafeLogger } from "../logger";
 import type { PipelineEventEmitter } from "../pipeline/events";
-import type { PipelineContext } from "../pipeline/types";
+import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD, UserStory } from "../prd";
 import { markStoryFailed, markStoryPassed, savePRD } from "../prd";
@@ -108,6 +108,7 @@ export async function executeParallel(
   featureDir: string | undefined,
   parallel: number,
   eventEmitter?: PipelineEventEmitter,
+  agentGetFn?: AgentGetFn,
 ): Promise<{
   storiesCompleted: number;
   totalCost: number;
@@ -152,6 +153,7 @@ export async function executeParallel(
       hooks,
       plugins,
       storyStartTime: new Date().toISOString(),
+      agentGetFn,
     };
 
     // Create worktrees for all stories in batch

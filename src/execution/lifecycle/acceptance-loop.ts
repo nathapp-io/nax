@@ -143,6 +143,7 @@ async function executeFixStory(
     hooks: ctx.hooks,
     plugins: ctx.pluginRegistry,
     storyStartTime: new Date().toISOString(),
+    agentGetFn: ctx.agentGetFn,
   };
   const result = await runPipeline(defaultPipeline, fixContext, ctx.eventEmitter);
   logger?.info("acceptance", `Fix story ${story.id} ${result.success ? "passed" : "failed"}`);
@@ -189,6 +190,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       featureDir: ctx.featureDir,
       hooks: ctx.hooks,
       plugins: ctx.pluginRegistry,
+      agentGetFn: ctx.agentGetFn,
     };
 
     const { acceptanceStage } = await import("../../pipeline/stages/acceptance");

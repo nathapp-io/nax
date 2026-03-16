@@ -129,10 +129,24 @@ export async function runExecutionPhase(
   clearLlmCache();
 
   // PERF-1: Precompute batch plan once from ready stories
-  const batchPlan = options.useBatch ? precomputeBatchPlan(getAllReadyStories(prd), 4) : [];
+  const readyStories = getAllReadyStories(prd);
+
+  // BUG-068: debug log to diagnose unexpected storyCount in batch routing
+  logger?.debug("routing", "Ready stories for batch routing", {
+    readyCount: readyStories.length,
+    readyIds: readyStories.map((s) => s.id),
+    allStories: prd.userStories.map((s) => ({
+      id: s.id,
+      status: s.status,
+      passes: s.passes,
+      deps: s.dependencies,
+    })),
+  });
+
+  const batchPlan = options.useBatch ? precomputeBatchPlan(readyStories, 4) : [];
 
   if (options.useBatch) {
-    await tryLlmBatchRoute(options.config, getAllReadyStories(prd), "routing");
+    await tryLlmBatchRoute(options.config, readyStories, "routing");
   }
 
   // Parallel Execution Path (when --parallel is set)
