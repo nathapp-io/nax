@@ -17,6 +17,7 @@ import { fireHook } from "../hooks";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
+import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD } from "../prd";
 import { countStories, isComplete } from "../prd";
@@ -57,6 +58,7 @@ export interface ParallelExecutorOptions {
   pluginRegistry: PluginRegistry;
   formatterMode: "quiet" | "normal" | "verbose" | "json";
   headless: boolean;
+  agentGetFn?: AgentGetFn;
 }
 
 export interface RectificationStats {
@@ -158,6 +160,7 @@ export async function runParallelExecution(
       featureDir,
       parallelCount,
       eventEmitter,
+      options.agentGetFn,
     );
 
     const batchDurationMs = Date.now() - batchStartMs;

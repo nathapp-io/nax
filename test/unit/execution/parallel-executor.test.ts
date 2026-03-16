@@ -102,6 +102,67 @@ afterEach(() => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// BUG-067: agentGetFn is threaded through parallel execution
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("BUG-067: agentGetFn is passed from ParallelExecutorOptions to executeParallel", () => {
+  beforeEach(() => {
+    _parallelExecutorDeps.fireHook = mock(async () => {});
+  });
+
+  test("agentGetFn from options is forwarded as the 11th arg to executeParallel", async () => {
+    const initialPrd = makePrd([
+      { id: "US-001", status: "pending", passes: false, dependencies: [] },
+    ]);
+
+    const agentGetFn = mock(() => undefined);
+    let capturedAgentGetFn: unknown;
+
+    _parallelExecutorDeps.executeParallel = mock(async (...args: unknown[]) => {
+      capturedAgentGetFn = args[10]; // 11th positional arg (0-indexed)
+      return {
+        storiesCompleted: 0,
+        totalCost: 0,
+        updatedPrd: initialPrd,
+        mergeConflicts: [],
+      };
+    });
+
+    const statusWriter = makeStatusWriter();
+    const options = makeOptions(statusWriter, { agentGetFn });
+
+    await runParallelExecution(options, initialPrd);
+
+    expect(capturedAgentGetFn).toBe(agentGetFn);
+  });
+
+  test("when agentGetFn is undefined, executeParallel receives undefined as 11th arg", async () => {
+    const initialPrd = makePrd([
+      { id: "US-001", status: "pending", passes: false, dependencies: [] },
+    ]);
+
+    let capturedAgentGetFn: unknown = "not-set";
+
+    _parallelExecutorDeps.executeParallel = mock(async (...args: unknown[]) => {
+      capturedAgentGetFn = args[10];
+      return {
+        storiesCompleted: 0,
+        totalCost: 0,
+        updatedPrd: initialPrd,
+        mergeConflicts: [],
+      };
+    });
+
+    const statusWriter = makeStatusWriter();
+    const options = makeOptions(statusWriter); // no agentGetFn
+
+    await runParallelExecution(options, initialPrd);
+
+    expect(capturedAgentGetFn).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // BUG-066: storyMetrics in ParallelExecutorResult
 // ─────────────────────────────────────────────────────────────────────────────
 
