@@ -13,9 +13,13 @@
 ```
 src/
 ├── agents/           # Agent adapters (CLI + ACP protocol modes)
-│   ├── acp/          # ACP protocol adapter (unified, agent-agnostic)
-│   ├── adapters/     # Legacy CLI adapters (codex, gemini, aider, opencode)
-│   ├── claude.ts     # Claude Code CLI adapter (primary CLI mode)
+│   ├── acp/          # ACP protocol adapter — multi-file (adapter, spawn-client, parser, cost, interaction-bridge)
+│   ├── claude/       # Claude Code CLI adapter — multi-file (adapter, execution, complete, interactive, plan, cost)
+│   ├── aider/        # Aider CLI adapter (adapter.ts)
+│   ├── codex/        # Codex CLI adapter (adapter.ts)
+│   ├── gemini/       # Gemini CLI adapter (adapter.ts)
+│   ├── opencode/     # OpenCode CLI adapter (adapter.ts)
+│   ├── shared/       # Cross-adapter utilities (decompose, model-resolution, validation, version-detection, types-extended)
 │   ├── registry.ts   # Agent discovery, lookup, and protocol routing
 │   └── types.ts      # AgentAdapter interface, AgentResult, AgentRunOptions
 ├── cli/              # CLI command handlers
@@ -1079,9 +1083,62 @@ strategy values, descriptions, and classification rules are defined.
 | File | Uses |
 |:-----|:-----|
 | `src/cli/plan.ts` | `COMPLEXITY_GUIDE`, `TEST_STRATEGY_GUIDE`, `GROUPING_RULES` |
-| `src/agents/claude-decompose.ts` | Same prompt fragments |
+| `src/agents/shared/decompose.ts` | Same prompt fragments |
 | `src/pipeline/stages/routing.ts` | `resolveTestStrategy()` (via prd/schema.ts normalization) |
 | `src/prd/schema.ts` | `resolveTestStrategy()` for PRD validation |
+
+---
+
+---
+
+## §16 Agent Adapter Conventions
+
+*Added: 2026-03-16 (MR !52 — agents folder restructure)*
+
+### Folder Structure
+
+Each agent adapter lives in its own subfolder under `src/agents/`. The depth matches the adapter's complexity:
+
+| Adapter | Folder | Files |
+|:--------|:-------|:------|
+| Claude Code (CLI) | `claude/` | adapter, execution, complete, interactive, plan, cost, index |
+| ACP protocol | `acp/` | adapter, spawn-client, parser, cost, interaction-bridge, types, index |
+| Aider / Codex / Gemini / OpenCode | `aider/`, `codex/`, `gemini/`, `opencode/` | adapter only |
+
+### Rules
+
+1. **One subfolder per adapter** — never flat files at `src/agents/` root (only `index.ts`, `types.ts`, `registry.ts` live at root)
+2. **Each multi-file adapter needs `index.ts`** — re-exports everything external callers need; internal modules import directly without going through the barrel
+3. **Cross-adapter code goes in `shared/`** — if two different adapters import the same module, that module belongs in `shared/`, not inside either adapter's folder
+4. **Adapter-specific cost stays with the adapter** — `claude/cost.ts` (tier-based) and `acp/cost.ts` (model-name-based) are separate; they have different pricing strategies and callers
+
+### `shared/` Contents
+
+| File | Purpose | Used by |
+|:-----|:--------|:--------|
+| `shared/decompose.ts` | PRD decomposition prompt + parser | `claude/adapter.ts`, `acp/adapter.ts` |
+| `shared/model-resolution.ts` | Resolve ModelDef from config | `claude/plan.ts`, `claude/adapter.ts` |
+| `shared/validation.ts` | Agent capability + tier validation | `registry.ts`, pipeline stages |
+| `shared/version-detection.ts` | Binary version detection | `cli/agents.ts`, `precheck/checks-agents.ts` |
+| `shared/types-extended.ts` | Plan/decompose/interactive types | `claude/plan.ts`, `acp/adapter.ts`, `types.ts` |
+
+### ACP Cost Alignment
+
+ACP sessions emit exact USD cost via `usage_update` (`cost.amount`). The adapter prefers this over token-based estimation:
+
+```ts
+// Prefer exact cost from acpx usage_update; fall back to token-based estimation
+const estimatedCost =
+  totalExactCostUsd ??
+  (totalTokenUsage.input_tokens > 0 || totalTokenUsage.output_tokens > 0
+    ? estimateCostFromTokenUsage(totalTokenUsage, options.modelDef.model)
+    : 0);
+```
+
+Token fields from acpx are **camelCase** in the final JSON-RPC `result.usage`:
+- `inputTokens`, `outputTokens`, `cachedReadTokens`, `cachedWriteTokens`
+
+The parser (`acp/parser.ts`) handles both the JSON-RPC envelope format (acpx v0.3+) and legacy flat NDJSON for backward compatibility.
 
 ---
 
