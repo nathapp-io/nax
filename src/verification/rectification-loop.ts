@@ -7,7 +7,7 @@
  * Used by: src/pipeline/stages/rectify.ts, src/execution/lifecycle/run-regression.ts
  */
 
-import { getAgent } from "../agents";
+import { getAgent as _getAgent } from "../agents";
 import type { NaxConfig } from "../config";
 import { resolveModel } from "../config";
 import { resolvePermissions } from "../config/permissions";
@@ -16,7 +16,7 @@ import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
 import { type RectificationState, createRectificationPrompt, shouldRetryRectification } from "./rectification";
-import { fullSuite as runVerification } from "./runners";
+import { fullSuite as _fullSuite } from "./runners";
 
 export interface RectificationLoopOptions {
   config: NaxConfig;
@@ -26,11 +26,21 @@ export interface RectificationLoopOptions {
   timeoutSeconds: number;
   testOutput: string;
   promptPrefix?: string;
+  featureName?: string;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Injectable dependencies
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const _rectificationDeps = {
+  getAgent: _getAgent as (name: string) => import("../agents/types").AgentAdapter | undefined,
+  runVerification: _fullSuite as typeof _fullSuite,
+};
 
 /** Run the rectification retry loop. Returns true if all failures were fixed. */
 export async function runRectificationLoop(opts: RectificationLoopOptions): Promise<boolean> {
-  const { config, workdir, story, testCommand, timeoutSeconds, testOutput, promptPrefix } = opts;
+  const { config, workdir, story, testCommand, timeoutSeconds, testOutput, promptPrefix, featureName } = opts;
   const logger = getSafeLogger();
   const rectificationConfig = config.execution.rectification;
   const testSummary = parseBunTestOutput(testOutput);
@@ -59,7 +69,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
     let rectificationPrompt = createRectificationPrompt(testSummary.failures, story, rectificationConfig);
     if (promptPrefix) rectificationPrompt = `${promptPrefix}\n\n${rectificationPrompt}`;
 
-    const agent = getAgent(config.autoMode.defaultAgent);
+    const agent = _rectificationDeps.getAgent(config.autoMode.defaultAgent);
     if (!agent) {
       logger?.error("rectification", "Agent not found, cannot retry");
       break;
@@ -78,6 +88,9 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       pipelineStage: "rectification",
       config,
       maxInteractionTurns: config.agent?.maxInteractionTurns,
+      featureName,
+      storyId: story.id,
+      sessionRole: "implementer",
     });
 
     if (agentResult.success) {
@@ -94,7 +107,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       });
     }
 
-    const retryVerification = await runVerification({
+    const retryVerification = await _rectificationDeps.runVerification({
       workdir,
       expectedFiles: getExpectedFiles(story),
       command: testCommand,

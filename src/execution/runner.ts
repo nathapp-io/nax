@@ -13,6 +13,7 @@
  * - runner-completion.ts: Acceptance loop, hooks, metrics
  */
 
+import { sweepFeatureSessions } from "../agents/acp/adapter";
 import { createAgentRegistry } from "../agents/registry";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
@@ -240,6 +241,9 @@ export async function run(options: RunOptions): Promise<RunResult> {
     stopHeartbeat();
     // Cleanup crash handlers (MEM-1 fix)
     cleanupCrashHandlers();
+
+    // Sweep any remaining open ACP sessions for this feature
+    await sweepFeatureSessions(workdir, feature).catch(() => {});
 
     // Execute cleanup operations
     const { cleanupRun } = await import("./lifecycle/run-cleanup");

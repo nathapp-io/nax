@@ -58,10 +58,11 @@ The close decision is made **inside `_runWithClient()`** based on the `AgentResu
 
 ### Rectification Session Inheritance
 
-`rectification-loop.ts` must pass session context so it resumes the story's existing session:
+`rectification-loop.ts` must pass session context so it resumes the story's existing session.
+The caller (`runRectificationLoop`) already receives `featureName` — thread it through.
 
 ```typescript
-// Current (broken):
+// Current (broken) — in rectification-loop.ts:
 const agentResult = await agent.run({
   prompt: rectificationPrompt,
   workdir,
@@ -72,12 +73,15 @@ const agentResult = await agent.run({
 const agentResult = await agent.run({
   prompt: rectificationPrompt,
   workdir,
-  featureName,        // from caller
+  featureName,               // thread from runRectificationLoop caller
   storyId: story.id,
-  sessionRole: "implementer",  // rectification is implementation work
+  sessionRole: "implementer", // rectification is implementation work
   // ...
 });
 ```
+
+Check `runRectificationLoop` signature — add `featureName?: string` param if not already there.
+`rectification-gate.ts` already passes all three fields correctly — no change needed there.
 
 The `ensureAcpSession()` function already handles resume: it calls `loadSession()` first, falls back
 to `createSession()` if the session doesn't exist.

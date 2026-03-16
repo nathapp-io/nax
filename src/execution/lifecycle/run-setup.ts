@@ -159,6 +159,10 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     logger?.warn("precheck", "Precheck validations skipped (--skip-precheck)");
   }
 
+  // Sweep stale ACP sessions from previous crashed runs (safety net)
+  const { sweepStaleFeatureSessions } = await import("../../agents/acp/adapter");
+  await sweepStaleFeatureSessions(workdir, feature).catch(() => {});
+
   // Acquire lock to prevent concurrent execution
   const lockAcquired = await acquireLock(workdir);
   if (!lockAcquired) {
