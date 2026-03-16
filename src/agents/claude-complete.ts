@@ -4,6 +4,7 @@
  * Standalone completion endpoint for simple prompts.
  */
 
+import { resolvePermissions } from "../config/permissions";
 import type { CompleteOptions } from "./types";
 import { CompleteError } from "./types";
 
@@ -49,6 +50,11 @@ export async function executeComplete(binary: string, prompt: string, options?: 
 
   if (options?.jsonMode) {
     cmd.push("--output-format", "json");
+  }
+
+  const { skipPermissions } = resolvePermissions(options?.config, "complete");
+  if (skipPermissions) {
+    cmd.push("--dangerously-skip-permissions");
   }
 
   const spawnOpts: { stdout: "pipe"; stderr: "pipe"; cwd?: string } = { stdout: "pipe", stderr: "pipe" };
