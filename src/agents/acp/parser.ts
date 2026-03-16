@@ -2,10 +2,8 @@
  * ACP adapter — NDJSON and JSON-RPC output parsing helpers.
  *
  * Extracted from adapter.ts to keep that file within the 800-line limit.
- * Used only by _runOnce() (the spawn-based legacy path).
+ * Used by SpawnAcpSession.prompt() to parse acpx stdout.
  */
-
-import type { AgentRunOptions } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -17,110 +15,6 @@ export interface AcpxTokenUsage {
   output_tokens: number;
   cache_read_input_tokens?: number;
   cache_creation_input_tokens?: number;
-}
-
-/** JSON-RPC message from acpx --format json --json-strict */
-interface JsonRpcMessage {
-  jsonrpc: "2.0";
-  method?: string;
-  params?: {
-    sessionId: string;
-    update?: {
-      sessionUpdate: string;
-      content?: { type: string; text?: string };
-      used?: number;
-      size?: number;
-      cost?: { amount: number; currency: string };
-    };
-  };
-  id?: number | string;
-  result?: unknown;
-  error?: { code: number; message: string };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// streamJsonRpcEvents
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Stream stdout line-by-line, parse JSON-RPC, detect questions, call bridge.
- */
-export async function streamJsonRpcEvents(
-  stdout: ReadableStream<Uint8Array>,
-  bridge: AgentRunOptions["interactionBridge"],
-  _sessionId: string,
-): Promise<{ text: string; tokenUsage?: AcpxTokenUsage; exactCostUsd?: number }> {
-  let accumulatedText = "";
-  let tokenUsage: AcpxTokenUsage | undefined;
-  let exactCostUsd: number | undefined;
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  const reader = stdout.getReader();
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-
-        let msg: JsonRpcMessage;
-        try {
-          msg = JSON.parse(line);
-        } catch {
-          continue;
-        }
-
-        if (msg.method === "session/update" && msg.params?.update) {
-          const update = msg.params.update;
-
-          if (
-            update.sessionUpdate === "agent_message_chunk" &&
-            update.content?.type === "text" &&
-            update.content.text
-          ) {
-            accumulatedText += update.content.text;
-
-            if (bridge?.detectQuestion && bridge.onQuestionDetected) {
-              const isQuestion = await bridge.detectQuestion(accumulatedText);
-              if (isQuestion) {
-                const response = await bridge.onQuestionDetected(accumulatedText);
-                accumulatedText += `\n\n[Human response: ${response}]`;
-              }
-            }
-          }
-
-          if (update.sessionUpdate === "usage_update" && typeof update.cost?.amount === "number") {
-            exactCostUsd = update.cost.amount;
-          }
-        }
-
-        if (msg.id !== undefined && msg.result && typeof msg.result === "object") {
-          const result = msg.result as Record<string, unknown>;
-          if (result.usage && typeof result.usage === "object") {
-            const u = result.usage as Record<string, unknown>;
-            tokenUsage = {
-              input_tokens: (u.inputTokens as number) ?? (u.input_tokens as number) ?? 0,
-              output_tokens: (u.outputTokens as number) ?? (u.output_tokens as number) ?? 0,
-              cache_read_input_tokens: (u.cachedReadTokens as number) ?? (u.cache_read_input_tokens as number) ?? 0,
-              cache_creation_input_tokens:
-                (u.cachedWriteTokens as number) ?? (u.cache_creation_input_tokens as number) ?? 0,
-            };
-          }
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  return { text: accumulatedText.trim(), tokenUsage, exactCostUsd };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
