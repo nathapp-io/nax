@@ -29,13 +29,20 @@ export const MODEL_PRICING: Record<
   string,
   { input: number; output: number; cacheRead?: number; cacheCreation?: number }
 > = {
-  // Anthropic Claude models
+  // Anthropic Claude models (short aliases)
+  sonnet: { input: 3, output: 15 },
+  haiku: { input: 0.8, output: 4.0, cacheRead: 0.1, cacheCreation: 1.0 },
+  opus: { input: 15, output: 75 },
+
+  // Anthropic Claude models (full names)
   "claude-sonnet-4": { input: 3, output: 15 },
   "claude-sonnet-4-5": { input: 3, output: 15 },
+  "claude-sonnet-4-6": { input: 3, output: 15 },
   "claude-haiku": { input: 0.8, output: 4.0, cacheRead: 0.1, cacheCreation: 1.0 },
   "claude-haiku-4-5": { input: 0.8, output: 4.0, cacheRead: 0.1, cacheCreation: 1.0 },
   "claude-opus": { input: 15, output: 75 },
   "claude-opus-4": { input: 15, output: 75 },
+  "claude-opus-4-6": { input: 15, output: 75 },
 
   // OpenAI models
   "gpt-4.1": { input: 10, output: 30 },
