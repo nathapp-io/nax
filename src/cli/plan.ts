@@ -16,6 +16,7 @@ import { scanCodebase } from "../analyze/scanner";
 import type { CodebaseScan } from "../analyze/types";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
+import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE } from "../config/test-strategy";
 import { PidRegistry } from "../execution/pid-registry";
 import { getLogger } from "../logger";
 import { validatePlanOutput } from "../prd/schema";
@@ -320,19 +321,11 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
   ]
 }
 
-## Complexity Classification Guide
+${COMPLEXITY_GUIDE}
 
-- simple: ≤50 LOC, single-file change, purely additive, no new dependencies → test-after
-- medium: 50–200 LOC, 2–5 files, standard patterns, clear requirements → tdd-simple
-- complex: 200–500 LOC, multiple modules, new abstractions or integrations → three-session-tdd
-- expert: 500+ LOC, architectural changes, cross-cutting concerns, high risk → three-session-tdd-lite
+${TEST_STRATEGY_GUIDE}
 
-## Test Strategy Guide
-
-- test-after: Simple changes with well-understood behavior. Write tests after implementation.
-- tdd-simple: Medium complexity. Write key tests first, implement, then fill coverage.
-- three-session-tdd: Complex stories. Full TDD cycle with separate test-writer and implementer sessions.
-- three-session-tdd-lite: Expert/high-risk stories. Full TDD with additional verifier session.
+${GROUPING_RULES}
 
 ${
   outputFilePath
