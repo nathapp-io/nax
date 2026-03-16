@@ -105,6 +105,31 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator only]
 - **Forward-compatible:** `getAgent()` returns the correct adapter for the active protocol — calling code doesn't need to know which mode is active.
 - See `docs/architecture/ARCHITECTURE.md` §Adapter for full pattern.
 
+## Permission Resolution (Mandatory)
+
+All agent permission decisions go through `resolvePermissions(config, stage)` in `src/config/permissions.ts`.
+
+**Rules — no exceptions:**
+- **Always call `resolvePermissions(config, stage)`** — single source of truth
+- **Never hardcode** `?? true`, `?? false`, or literal `"approve-all"` / `"approve-reads"`
+- **Never read `dangerouslySkipPermissions` directly** — deprecated, the resolver handles it
+- **Always pass `config` and `pipelineStage`** to adapter calls (`run()`, `complete()`, `plan()`, `decompose()`)
+
+```typescript
+// ✅ Correct
+import { resolvePermissions } from "../config/permissions";
+const { skipPermissions, mode } = resolvePermissions(config, "run");
+
+// ❌ Wrong — local fallback
+const skip = config?.execution?.dangerouslySkipPermissions ?? true;
+
+// ❌ Wrong — hardcoded
+args.push("--dangerously-skip-permissions");
+```
+
+**Profiles:** `unrestricted` (approve-all), `safe` (approve-reads), `scoped` (Phase 2).
+**Full spec:** `docs/architecture/ARCHITECTURE.md` §14.
+
 ## Workflow Protocol
 
 1. **Explore first**: use `grep`, `cat` to understand context before writing code.
