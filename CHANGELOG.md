@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.0] - 2026-03-16
+
+### Fixed
+- **ACP cost metric:** Cost was always `$0` for ACP sessions. `parseAcpxJsonOutput` now handles JSON-RPC envelope format (acpx v0.3+): extracts text from `agent_message_chunk`, captures exact USD cost from `usage_update` (`cost.amount`), and reads camelCase token breakdown (`inputTokens`, `outputTokens`, `cachedReadTokens`, `cachedWriteTokens`) from `result.usage`.
+- **ACP `complete()` cost:** Now logs exact cost via `getSafeLogger()` — previously had zero cost tracking.
+- **`run()` cost:** Prefers exact `cost.amount` from acpx over token-based estimation; falls back to `estimateCostFromTokenUsage` when unavailable.
+
+### Refactored
+- **`src/agents/` folder restructure:** Each adapter now lives in its own subfolder for consistency.
+  - `claude/` — Claude Code adapter (adapter, execution, complete, interactive, plan, cost)
+  - `acp/` — ACP protocol adapter (unchanged internals)
+  - `aider/`, `codex/`, `gemini/`, `opencode/` — per-adapter subfolders
+  - `shared/` — cross-adapter utilities: `decompose` (extracted from both claude + acp), `model-resolution`, `validation`, `version-detection`, `types-extended`
+- **Dead code removal:** `streamJsonRpcEvents` (exported but never called), stale `estimateCostFromTokenUsage` re-export from `acp/index.ts`.
+
+### Docs
+- **ARCHITECTURE.md §1:** Updated `src/agents/` tree.
+- **ARCHITECTURE.md §16:** New section — agent adapter folder conventions, `shared/` rules, ACP cost alignment.
+
 ## [0.43.0] - 2026-03-16
 
 ### Added
