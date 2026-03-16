@@ -316,7 +316,7 @@ export class SpawnAcpClient implements AcpClient {
     });
   }
 
-  async loadSession(sessionName: string, agentName: string): Promise<AcpSession | null> {
+  async loadSession(sessionName: string, agentName: string, permissionMode: string): Promise<AcpSession | null> {
     // Try to ensure session exists — if it does, acpx returns success
     const cmd = ["acpx", "--cwd", this.cwd, agentName, "sessions", "ensure", "--name", sessionName];
 
@@ -333,7 +333,7 @@ export class SpawnAcpClient implements AcpClient {
       cwd: this.cwd,
       model: this.model,
       timeoutSeconds: this.timeoutSeconds,
-      permissionMode: this.permissionMode,
+      permissionMode,
       env: this.env,
       pidRegistry: this.pidRegistry,
     });
