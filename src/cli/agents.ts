@@ -5,7 +5,7 @@
  */
 
 import { ALL_AGENTS } from "../agents/registry";
-import { getAgentVersion } from "../agents/version-detection";
+import { getAgentVersion } from "../agents/shared/version-detection";
 import type { NaxConfig } from "../config/schema";
 
 /**

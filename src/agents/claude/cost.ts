@@ -5,7 +5,7 @@
  * Parses agent output for token usage and calculates costs.
  */
 
-import type { ModelTier } from "../config/schema";
+import type { ModelTier } from "../../config/schema";
 
 /** Cost rates per 1M tokens (USD) */
 export interface ModelCostRates {

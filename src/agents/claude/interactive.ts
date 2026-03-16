@@ -4,10 +4,10 @@
  * Handles terminal UI interactions with the Claude agent.
  */
 
-import type { PidRegistry } from "../execution/pid-registry";
-import { getLogger } from "../logger";
-import { buildAllowedEnv } from "./claude-execution";
-import type { AgentRunOptions, InteractiveRunOptions, PtyHandle } from "./types";
+import type { PidRegistry } from "../../execution/pid-registry";
+import { getLogger } from "../../logger";
+import type { AgentRunOptions, InteractiveRunOptions, PtyHandle } from "../types";
+import { buildAllowedEnv } from "./execution";
 
 /**
  * Run Claude agent in interactive (TTY) mode for TUI output.

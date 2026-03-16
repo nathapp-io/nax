@@ -5,7 +5,7 @@
  * and checks health status for each configured agent.
  */
 
-import { getAgentVersions } from "../agents/version-detection";
+import { getAgentVersions } from "../agents/shared/version-detection";
 import type { Check } from "./types";
 
 /**

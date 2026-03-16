@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { getAgentVersion, getAgentVersions } from "../../../src/agents/version-detection";
+import { getAgentVersion, getAgentVersions } from "../../../src/agents/shared/version-detection";
 
 describe("getAgentVersion", () => {
   test("should return version for installed agent", async () => {

@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { OpenCodeAdapter, _opencodeCompleteDeps } from "../../../../src/agents/adapters/opencode";
+import { OpenCodeAdapter, _opencodeCompleteDeps } from "../../../../src/agents/opencode/adapter";
 import { getAgent } from "../../../../src/agents/registry";
 import { CompleteError } from "../../../../src/agents/types";
 

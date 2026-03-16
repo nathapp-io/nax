@@ -7,8 +7,8 @@
  * Implementation placeholder — logic to be filled in by the implementer.
  */
 
-import { resolveModel } from "../config/schema";
-import type { ModelDef, NaxConfig } from "../config/schema";
+import { resolveModel } from "../../config/schema";
+import type { ModelDef, NaxConfig } from "../../config/schema";
 
 /**
  * Resolve the balanced model definition from config, with optional adapter default fallback.

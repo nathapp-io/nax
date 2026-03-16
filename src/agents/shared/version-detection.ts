@@ -5,8 +5,8 @@
  * by running `<agent> --version` and parsing the output.
  */
 
-import { getInstalledAgents } from "./registry";
-import type { AgentAdapter } from "./types";
+import { getInstalledAgents } from "../registry";
+import type { AgentAdapter } from "../types";
 
 /**
  * Information about an installed agent including its version
@@ -90,7 +90,7 @@ export async function getAgentVersions(): Promise<AgentVersionInfo[]> {
   const agentsByName = new Map(agents.map((a) => [a.name, a]));
 
   // Import ALL_AGENTS to include non-installed ones
-  const { ALL_AGENTS } = await import("./registry");
+  const { ALL_AGENTS } = await import("../registry");
 
   const versions = await Promise.all(
     ALL_AGENTS.map(async (agent: AgentAdapter): Promise<AgentVersionInfo> => {

@@ -11,7 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { AiderAdapter, _aiderCompleteDeps } from "../../../../src/agents/adapters/aider";
+import { AiderAdapter, _aiderCompleteDeps } from "../../../../src/agents/aider/adapter";
 import { getAgent } from "../../../../src/agents/registry";
 import { CompleteError } from "../../../../src/agents/types";
 import type { CompleteOptions } from "../../../../src/agents/types";

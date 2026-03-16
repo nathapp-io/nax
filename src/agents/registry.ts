@@ -7,11 +7,11 @@
 import type { NaxConfig } from "../config/schema";
 import { getLogger } from "../logger";
 import { AcpAgentAdapter } from "./acp/adapter";
-import { AiderAdapter } from "./adapters/aider";
-import { CodexAdapter } from "./adapters/codex";
-import { GeminiAdapter } from "./adapters/gemini";
-import { OpenCodeAdapter } from "./adapters/opencode";
-import { ClaudeCodeAdapter } from "./claude";
+import { AiderAdapter } from "./aider/adapter";
+import { ClaudeCodeAdapter } from "./claude/adapter";
+import { CodexAdapter } from "./codex/adapter";
+import { GeminiAdapter } from "./gemini/adapter";
+import { OpenCodeAdapter } from "./opencode/adapter";
 import type { AgentAdapter } from "./types";
 
 /** All known agent adapters */

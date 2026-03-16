@@ -13,7 +13,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { GeminiAdapter, _geminiCompleteDeps, _geminiRunDeps } from "../../../../src/agents/adapters/gemini";
+import { GeminiAdapter, _geminiCompleteDeps, _geminiRunDeps } from "../../../../src/agents/gemini/adapter";
 import { CompleteError } from "../../../../src/agents/types";
 import type { AgentRunOptions } from "../../../../src/agents/types";
 import { getAgent } from "../../../../src/agents/registry";

@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { CodexAdapter, _codexCompleteDeps, _codexRunDeps } from "../../../../src/agents/adapters/codex";
+import { CodexAdapter, _codexCompleteDeps, _codexRunDeps } from "../../../../src/agents/codex/adapter";
 import { CompleteError } from "../../../../src/agents/types";
 import type { AgentRunOptions, CompleteOptions } from "../../../../src/agents/types";
 import { getAgent } from "../../../../src/agents/registry";

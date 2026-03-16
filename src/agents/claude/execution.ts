@@ -4,12 +4,12 @@
  * Handles building commands, preparing environment, and process execution.
  */
 
-import { resolvePermissions } from "../config/permissions";
-import type { PidRegistry } from "../execution/pid-registry";
-import { withProcessTimeout } from "../execution/timeout-handler";
-import { getLogger } from "../logger";
+import { resolvePermissions } from "../../config/permissions";
+import type { PidRegistry } from "../../execution/pid-registry";
+import { withProcessTimeout } from "../../execution/timeout-handler";
+import { getLogger } from "../../logger";
+import type { AgentResult, AgentRunOptions } from "../types";
 import { estimateCostByDuration, estimateCostFromOutput } from "./cost";
-import type { AgentResult, AgentRunOptions } from "./types";
 
 /**
  * Maximum characters to capture from agent stdout.
