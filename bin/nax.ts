@@ -366,10 +366,11 @@ program
       }
 
       try {
-        // Initialize plan logger before calling planCommand — writes to features/<feature>/plan-<ts>.jsonl
-        mkdirSync(featureDir, { recursive: true });
+        // Initialize plan logger before calling planCommand — writes to features/<feature>/plan/<ts>.jsonl
+        const planLogDir = join(featureDir, "plan");
+        mkdirSync(planLogDir, { recursive: true });
         const planLogId = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
-        const planLogPath = join(featureDir, `plan-${planLogId}.jsonl`);
+        const planLogPath = join(planLogDir, `${planLogId}.jsonl`);
         initLogger({ level: "info", filePath: planLogPath, useChalk: false, headless: true });
         console.log(chalk.dim(`   [Plan log: ${planLogPath}]`));
 
@@ -688,11 +689,11 @@ program
     // Load config
     const config = await loadConfig(workdir);
 
-    // Initialize logger — writes to nax/features/<feature>/plan-<timestamp>.jsonl
-    const featureLogDir = join(naxDir, "features", options.feature);
+    // Initialize logger — writes to nax/features/<feature>/plan/<timestamp>.jsonl
+    const featureLogDir = join(naxDir, "features", options.feature, "plan");
     mkdirSync(featureLogDir, { recursive: true });
     const planLogId = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
-    const planLogPath = join(featureLogDir, `plan-${planLogId}.jsonl`);
+    const planLogPath = join(featureLogDir, `${planLogId}.jsonl`);
     initLogger({ level: "info", filePath: planLogPath, useChalk: false, headless: true });
     console.log(chalk.dim(`   [Plan log: ${planLogPath}]`));
 
