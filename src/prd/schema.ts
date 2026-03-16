@@ -5,6 +5,7 @@
  */
 
 import type { Complexity, TestStrategy } from "../config";
+import { resolveTestStrategy } from "../config/test-strategy";
 import type { PRD, UserStory } from "./types";
 import { validateStoryId } from "./validate";
 
@@ -13,12 +14,6 @@ import { validateStoryId } from "./validate";
 // ---------------------------------------------------------------------------
 
 const VALID_COMPLEXITY: Complexity[] = ["simple", "medium", "complex", "expert"];
-const VALID_TEST_STRATEGIES: TestStrategy[] = [
-  "test-after",
-  "tdd-simple",
-  "three-session-tdd",
-  "three-session-tdd-lite",
-];
 
 /** Pattern matching ST001 → ST-001 style IDs (prefix letters + digits, no separator) */
 const STORY_ID_NO_SEPARATOR = /^([A-Za-z]+)(\d+)$/;
@@ -140,15 +135,10 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
   }
 
   // testStrategy — accept from routing.testStrategy or top-level testStrategy
-  // Also map legacy/LLM-hallucinated aliases: tdd-lite → tdd-simple
   const rawTestStrategy = routing.testStrategy ?? s.testStrategy;
-  const STRATEGY_ALIASES: Record<string, TestStrategy> = { "tdd-lite": "three-session-tdd-lite" };
-  const normalizedStrategy =
-    typeof rawTestStrategy === "string" ? (STRATEGY_ALIASES[rawTestStrategy] ?? rawTestStrategy) : rawTestStrategy;
-  const testStrategy: TestStrategy =
-    normalizedStrategy !== undefined && (VALID_TEST_STRATEGIES as unknown[]).includes(normalizedStrategy)
-      ? (normalizedStrategy as TestStrategy)
-      : "tdd-simple";
+  const testStrategy: TestStrategy = resolveTestStrategy(
+    typeof rawTestStrategy === "string" ? rawTestStrategy : undefined,
+  );
 
   // dependencies
   const rawDeps = s.dependencies;

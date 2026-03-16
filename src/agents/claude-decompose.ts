@@ -5,6 +5,7 @@
  * parseDecomposeOutput(), validateComplexity()
  */
 
+import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE, resolveTestStrategy } from "../config/test-strategy";
 import type { DecomposeOptions, DecomposeResult, DecomposedStory } from "./types";
 
 /**
@@ -31,24 +32,13 @@ Decompose this spec into user stories. For each story, provide:
 9. reasoning: Why this complexity level
 10. estimatedLOC: Estimated lines of code to change
 11. risks: Array of implementation risks
-12. testStrategy: "three-session-tdd" | "test-after"
+12. testStrategy: "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite"
 
-testStrategy rules:
-- "three-session-tdd": ONLY for complex/expert tasks that are security-critical (auth, encryption, tokens, credentials) or define public API contracts consumers depend on
-- "test-after": for all other tasks including simple/medium complexity
-- A "simple" complexity task should almost never be "three-session-tdd"
+${COMPLEXITY_GUIDE}
 
-Complexity classification rules:
-- simple: 1-3 files, <100 LOC, straightforward implementation, existing patterns
-- medium: 3-6 files, 100-300 LOC, moderate logic, some new patterns
-- complex: 6+ files, 300-800 LOC, architectural changes, cross-cutting concerns
-- expert: Security/crypto/real-time/distributed systems, >800 LOC, new infrastructure
+${TEST_STRATEGY_GUIDE}
 
-Grouping Guidelines:
-- Combine small, related tasks (e.g., multiple utility functions, interfaces) into a single "simple" or "medium" story.
-- Do NOT create separate stories for every single file or function unless complex.
-- Aim for coherent units of value (e.g., "Implement User Authentication" vs "Create User Interface", "Create Login Service").
-- Maximum recommended stories: 10-15 per feature. Group aggressively if list grows too long.
+${GROUPING_RULES}
 
 Consider:
 1. Does infrastructure exist? (e.g., "add caching" when no cache layer exists = complex)
@@ -141,12 +131,7 @@ export function parseDecomposeOutput(output: string): DecomposedStory[] {
       reasoning: String(record.reasoning || "No reasoning provided"),
       estimatedLOC: Number(record.estimatedLOC) || 0,
       risks: Array.isArray(record.risks) ? record.risks : [],
-      testStrategy:
-        record.testStrategy === "three-session-tdd"
-          ? "three-session-tdd"
-          : record.testStrategy === "test-after"
-            ? "test-after"
-            : undefined,
+      testStrategy: resolveTestStrategy(typeof record.testStrategy === "string" ? record.testStrategy : undefined),
     };
   });
 

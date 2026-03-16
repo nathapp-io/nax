@@ -117,7 +117,7 @@ export interface DecomposedStory {
   /** Implementation risks */
   risks: string[];
   /** Test strategy recommendation from LLM */
-  testStrategy?: "three-session-tdd" | "test-after";
+  testStrategy?: import("../config/test-strategy").TestStrategy;
 }
 
 /**
