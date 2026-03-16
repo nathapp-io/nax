@@ -6,6 +6,71 @@
 
 ---
 
+## v0.45.0 — Bug Fixes: ACP Adapter Threading + Batch Routing Diagnostics 🚀 Releasing (2026-03-16)
+
+**Theme:** Fix ACP adapter not used for fix stories and parallel batch execution (BUG-067), add diagnostic logging for batch routing story count anomaly (BUG-068), and unify test strategy definitions into a single source of truth.
+
+### BUG-067: agentGetFn not threaded through fix story and parallel pipeline contexts
+- [x] `src/execution/lifecycle/acceptance-loop.ts` — add `agentGetFn: ctx.agentGetFn` to `fixContext` and `acceptanceContext`
+- [x] `src/execution/parallel-coordinator.ts` — add `agentGetFn?` param to `executeParallel()`, thread into `baseContext`
+- [x] `src/execution/parallel-executor.ts` — pass `options.agentGetFn` to `executeParallel()` call
+- [x] Tests: verify `agentGetFn` forwarded in parallel executor and acceptance loop type contract
+
+**Root cause:** `executeFixStory()` and `executeParallel()` built `PipelineContext` without `agentGetFn`. The execution stage fell back to the module-level `getAgent()` which always returns the CLI adapter, ignoring `config.agent.protocol = "acp"`. Fix stories and all parallel stories silently used CLI adapter.
+
+### BUG-068: Debug logging for batch routing storyCount anomaly (root cause unknown)
+- [x] `src/execution/runner-execution.ts` — single `readyStories` var + `debug` log before batch routing (readyCount, readyIds, full story state snapshot)
+- [x] `src/execution/story-context.ts` — log `completedIds` set inside `getAllReadyStories()`
+
+### Test Strategy SSOT (MR !49)
+- [x] `src/config/test-strategy.ts` — new single source of truth for test strategies
+- [x] `resolveTestStrategy()` — normalizer with legacy mappings
+- [x] `COMPLEXITY_GUIDE` with security override rule (auth/crypto/tokens → minimum "medium")
+- [x] `GROUPING_RULES` with anti-standalone-test-story rule
+- [x] `plan.ts` + `claude-decompose.ts` import shared fragments (was diverged: 4 vs 2 strategies)
+- [x] `prd/schema.ts` uses `resolveTestStrategy()` on load
+
+### Specs
+- `docs/specs/bug-067-068-agentgetfn-batchrouting.md`
+- `docs/specs/test-strategy-ssot.md`
+- `docs/bugs/BUG-067-fix-story-cli-adapter.md`
+- `docs/bugs/BUG-068-batch-routing-story-count.md`
+
+---
+
+## v0.44.0 — ACP Session Lifecycle + Plan/Precheck/Status Fixes ✅ Shipped (2026-03-16)
+
+**Theme:** Keep ACP sessions alive on failure (enables rectification to resume with context), sweep stale sessions on run-end, fix critical plan flow bugs.
+
+### MR !47 — Plan/Precheck/Guard/Status fixes
+- [x] `nax run --plan` logger initialized before plan (was silently dropping all logs)
+- [x] Precheck runs before plan — blocks on environment issues before any LLM calls
+- [x] `--force` flag guards prd.json overwrite on `nax run --plan`
+- [x] `nax status` no longer crashes when prd.json is missing
+
+### MR !48 — ACP Session Lifecycle
+- [x] `adapter.ts` — close session on story pass, keep open on failure
+- [x] `runner.ts` — run-end sweep closes all remaining feature sessions in `finally` block
+- [x] `run-setup.ts` — startup stale sweep prunes sidecar entries >2h old
+- [x] `rectification-loop.ts` — pass `featureName`, `storyId`, `sessionRole: "implementer"` for named session resumption
+
+---
+
+## v0.43.1 — Permission Resolution + Plan Logger ✅ Shipped (2026-03-16)
+
+**Theme:** Single source of truth for permissions (`resolvePermissions()`), fix plan logger missing in `nax run --plan` flow, document permission system in architecture.
+
+- [x] PERM-001: `src/config/permissions.ts` — `resolvePermissions(config, stage)` single source of truth
+- [x] `PermissionProfile` (`unrestricted | safe | scoped`), `PipelineStage`, `ResolvedPermissions` types
+- [x] `execution.permissionProfile` config field (takes precedence over legacy boolean)
+- [x] `config?` threaded to all 11 `complete()` call sites; `pipelineStage?` added to `AgentRunOptions`
+- [x] Removed all local `?? true` / `?? false` permission fallbacks
+- [x] Fixed hardcoded `--dangerously-skip-permissions` in `claude-plan.ts`
+- [x] Plan logger initialized in `nax run --plan` flow (was silently dropped)
+- [x] ARCHITECTURE.md §14 Permission Resolution + §15 Test Strategy Resolution
+- [x] `nax/context.md` updated with permission rules; all 7 agent configs regenerated
+
+---
 
 ## v0.38.0 — Test Health Audit ✅ Shipped (2026-03-10)
 
