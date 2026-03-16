@@ -85,6 +85,17 @@ async function loadProjectStatusFile(projectDir: string): Promise<NaxStatusFile 
 async function getFeatureSummary(featureName: string, featureDir: string): Promise<FeatureSummary> {
   const prdPath = join(featureDir, "prd.json");
 
+  // Guard: prd.json may not exist (e.g. plan failed before writing it)
+  if (!existsSync(prdPath)) {
+    return {
+      name: featureName,
+      done: 0,
+      failed: 0,
+      pending: 0,
+      total: 0,
+    };
+  }
+
   // Load PRD for story counts
   const prd = await loadPRD(prdPath);
   const counts = countStories(prd);
@@ -240,6 +251,14 @@ async function displayAllFeatures(projectDir: string): Promise<void> {
 /** Display single feature details */
 async function displayFeatureDetails(featureName: string, featureDir: string): Promise<void> {
   const prdPath = join(featureDir, "prd.json");
+
+  // Guard: prd.json may not exist (e.g. plan failed or feature just created)
+  if (!existsSync(prdPath)) {
+    console.log(chalk.bold(`\n📊 ${featureName}\n`));
+    console.log(chalk.dim(`No prd.json found. Run: nax plan -f ${featureName} --from <spec>`));
+    return;
+  }
+
   const prd = await loadPRD(prdPath);
   const counts = countStories(prd);
 
