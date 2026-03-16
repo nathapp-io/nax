@@ -278,6 +278,7 @@ program
   .option("--plan", "Run plan phase first before execution", false)
   .option("--from <spec-path>", "Path to spec file (required when --plan is used)")
   .option("--one-shot", "Skip interactive planning Q&A, use single LLM call (ACP only)", false)
+  .option("--force", "Force overwrite existing prd.json when using --plan", false)
   .option("--headless", "Force headless mode (disable TUI, use pipe mode)", false)
   .option("--verbose", "Enable verbose logging (debug level)", false)
   .option("--quiet", "Quiet mode (warnings and errors only)", false)
@@ -343,6 +344,27 @@ program
 
     // Run plan phase if --plan flag is set (AC-4: runs plan then execute)
     if (options.plan && options.from) {
+      // Guard: block overwrite of existing prd.json unless --force
+      if (existsSync(prdPath) && !options.force) {
+        console.error(chalk.red(`Error: prd.json already exists for feature "${options.feature}".`));
+        console.error(chalk.dim("   Use --force to overwrite, or run without --plan to use the existing PRD."));
+        process.exit(1);
+      }
+
+      // Run environment precheck before plan — catch blockers early (before expensive LLM calls)
+      if (!options.skipPrecheck) {
+        const { runEnvironmentPrecheck } = await import("../src/precheck");
+        console.log(chalk.dim("\n   [Pre-plan environment check]"));
+        const envResult = await runEnvironmentPrecheck(config, workdir);
+        if (!envResult.passed) {
+          console.error(chalk.red("\n❌ Environment precheck failed — cannot proceed with planning."));
+          for (const b of envResult.blockers) {
+            console.error(chalk.red(`   ${b.name}: ${b.message}`));
+          }
+          process.exit(1);
+        }
+      }
+
       try {
         // Initialize plan logger before calling planCommand — writes to features/<feature>/plan-<ts>.jsonl
         mkdirSync(featureDir, { recursive: true });
