@@ -10,8 +10,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { ClaudeCodeAdapter, _decomposeDeps } from "../../../src/agents/claude";
-import { resolveBalancedModelDef } from "../../../src/agents/model-resolution";
+import { ClaudeCodeAdapter, _decomposeDeps } from "../../../src/agents/claude/adapter";
+import { resolveBalancedModelDef } from "../../../src/agents/shared/model-resolution";
 import type { ModelDef } from "../../../src/config/schema";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -85,8 +85,8 @@ describe("resolveBalancedModelDef()", () => {
 describe("source files: no hardcoded claude-sonnet-4-5 fallbacks", () => {
   const projectRoot = join(import.meta.dir, "../../../");
   const targetFiles = [
-    "src/agents/claude.ts",
-    "src/agents/claude-plan.ts",
+    "src/agents/claude/adapter.ts",
+    "src/agents/claude/plan.ts",
     "src/acceptance/fix-generator.ts",
     "src/acceptance/generator.ts",
   ];
@@ -230,7 +230,7 @@ describe("ClaudeCodeAdapter.decompose() model resolution", () => {
 // runPlan() / buildPlanCommand — model resolved from config when modelDef absent
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { buildPlanCommand } from "../../../src/agents/claude-plan";
+import { buildPlanCommand } from "../../../src/agents/claude/plan";
 
 describe("buildPlanCommand() model resolution", () => {
   test("includes --model from config.models.balanced when modelDef is absent", () => {

@@ -7,13 +7,13 @@ import { join } from "node:path";
  * Extracted from claude.ts: plan(), buildPlanCommand()
  */
 
-import { resolvePermissions } from "../config/permissions";
-import type { PidRegistry } from "../execution/pid-registry";
-import { withProcessTimeout } from "../execution/timeout-handler";
-import { getLogger } from "../logger";
-import { resolveBalancedModelDef } from "./model-resolution";
-import type { AgentRunOptions } from "./types";
-import type { PlanOptions, PlanResult } from "./types-extended";
+import { resolvePermissions } from "../../config/permissions";
+import type { PidRegistry } from "../../execution/pid-registry";
+import { withProcessTimeout } from "../../execution/timeout-handler";
+import { getLogger } from "../../logger";
+import { resolveBalancedModelDef } from "../shared/model-resolution";
+import type { PlanOptions, PlanResult } from "../shared/types-extended";
+import type { AgentRunOptions } from "../types";
 
 /**
  * Build the CLI command for plan mode.
@@ -32,7 +32,10 @@ export function buildPlanCommand(binary: string, options: PlanOptions): string[]
   }
 
   // Resolve permission mode from config
-  const { skipPermissions } = resolvePermissions(options.config as import("../config").NaxConfig | undefined, "plan");
+  const { skipPermissions } = resolvePermissions(
+    options.config as import("../../config").NaxConfig | undefined,
+    "plan",
+  );
   if (skipPermissions) {
     cmd.push("--dangerously-skip-permissions");
   }
@@ -75,7 +78,7 @@ export async function runPlan(
   pidRegistry: PidRegistry,
   buildAllowedEnv: (options: AgentRunOptions) => Record<string, string | undefined>,
 ): Promise<PlanResult> {
-  const { resolveBalancedModelDef } = await import("./model-resolution");
+  const { resolveBalancedModelDef } = await import("../shared/model-resolution");
 
   const cmd = buildPlanCommand(binary, options);
 

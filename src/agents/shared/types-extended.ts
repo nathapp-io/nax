@@ -5,7 +5,7 @@
  * Separated from core types to keep each file under 400 lines.
  */
 
-import type { ModelDef, ModelTier, NaxConfig } from "../config/schema";
+import type { ModelDef, ModelTier, NaxConfig } from "../../config/schema";
 
 /**
  * Configuration options for running an agent in plan mode.
@@ -56,7 +56,7 @@ export interface PlanOptions {
    */
   onAcpSessionCreated?: (sessionName: string) => Promise<void> | void;
   /** PID registry for tracking spawned agent processes — cleanup on crash/SIGTERM */
-  pidRegistry?: import("../execution/pid-registry").PidRegistry;
+  pidRegistry?: import("../../execution/pid-registry").PidRegistry;
 }
 
 /**
@@ -117,7 +117,7 @@ export interface DecomposedStory {
   /** Implementation risks */
   risks: string[];
   /** Test strategy recommendation from LLM */
-  testStrategy?: import("../config/test-strategy").TestStrategy;
+  testStrategy?: import("../../config/test-strategy").TestStrategy;
 }
 
 /**
@@ -161,4 +161,4 @@ export interface InteractiveRunOptions extends AgentRunOptions {
 }
 
 // Re-import for the extends clause
-import type { AgentRunOptions } from "./types";
+import type { AgentRunOptions } from "../types";

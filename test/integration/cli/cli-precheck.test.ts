@@ -1886,7 +1886,7 @@ describe("Precheck Integration with nax run", () => {
 
 import type { AgentAdapter, AgentRunOptions } from "../../../src/agents";
 import { ClaudeCodeAdapter, _claudeAdapterDeps } from "../../../src/agents/claude";
-import { describeAgentCapabilities, validateAgentFeature, validateAgentForTier } from "../../../src/agents/validation";
+import { describeAgentCapabilities, validateAgentFeature, validateAgentForTier } from "../../../src/agents/shared/validation";
 
 describe("Agent Validation and Retry Logic", () => {
   describe("ClaudeCodeAdapter.isInstalled", () => {

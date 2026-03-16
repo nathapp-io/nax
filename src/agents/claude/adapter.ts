@@ -4,15 +4,11 @@
  * Main adapter class coordinating execution, completion, decomposition, and interactive modes.
  */
 
-import { resolvePermissions } from "../config/permissions";
-import { PidRegistry } from "../execution/pid-registry";
-import { withProcessTimeout } from "../execution/timeout-handler";
-import { getLogger } from "../logger";
-import { _completeDeps, executeComplete } from "./claude-complete";
-import { buildDecomposePrompt, parseDecomposeOutput } from "./claude-decompose";
-import { _runOnceDeps, buildAllowedEnv, buildCommand, executeOnce } from "./claude-execution";
-import { runInteractiveMode } from "./claude-interactive";
-import { runPlan } from "./claude-plan";
+import { resolvePermissions } from "../../config/permissions";
+import { PidRegistry } from "../../execution/pid-registry";
+import { withProcessTimeout } from "../../execution/timeout-handler";
+import { getLogger } from "../../logger";
+import { buildDecomposePrompt, parseDecomposeOutput } from "../shared/decompose";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -25,7 +21,11 @@ import type {
   PlanOptions,
   PlanResult,
   PtyHandle,
-} from "./types";
+} from "../types";
+import { _completeDeps, executeComplete } from "./complete";
+import { _runOnceDeps, buildAllowedEnv, buildCommand, executeOnce } from "./execution";
+import { runInteractiveMode } from "./interactive";
+import { runPlan } from "./plan";
 
 /**
  * Injectable dependencies for decompose() — allows tests to intercept
@@ -174,7 +174,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   }
 
   async decompose(options: DecomposeOptions): Promise<DecomposeResult> {
-    const { resolveBalancedModelDef } = await import("./model-resolution");
+    const { resolveBalancedModelDef } = await import("../shared/model-resolution");
 
     const prompt = buildDecomposePrompt(options);
 
@@ -186,7 +186,10 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       modelDef = resolveBalancedModelDef(options.config);
     }
 
-    const { skipPermissions } = resolvePermissions(options.config as import("../config").NaxConfig | undefined, "run");
+    const { skipPermissions } = resolvePermissions(
+      options.config as import("../../config").NaxConfig | undefined,
+      "run",
+    );
     const cmd = [this.binary, "--model", modelDef.model, "-p", prompt];
     if (skipPermissions) {
       cmd.splice(cmd.length - 2, 0, "--dangerously-skip-permissions");

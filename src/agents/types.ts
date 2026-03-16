@@ -18,7 +18,7 @@ export type {
   DecomposedStory,
   PtyHandle,
   InteractiveRunOptions,
-} from "./types-extended";
+} from "./shared/types-extended";
 
 /**
  * Agent execution result returned after running a coding agent.
@@ -165,10 +165,12 @@ export interface AgentAdapter {
   buildCommand(options: AgentRunOptions): string[];
 
   /** Run the agent in plan mode to generate a feature specification. */
-  plan(options: import("./types-extended").PlanOptions): Promise<import("./types-extended").PlanResult>;
+  plan(options: import("./shared/types-extended").PlanOptions): Promise<import("./shared/types-extended").PlanResult>;
 
   /** Run the agent in decompose mode to break spec into classified stories. */
-  decompose(options: import("./types-extended").DecomposeOptions): Promise<import("./types-extended").DecomposeResult>;
+  decompose(
+    options: import("./shared/types-extended").DecomposeOptions,
+  ): Promise<import("./shared/types-extended").DecomposeResult>;
 
   /**
    * Run a one-shot LLM call and return the plain text response.
@@ -181,5 +183,7 @@ export interface AgentAdapter {
    * This method is optional — only implemented by agents that support
    * interactive terminal sessions (e.g., Claude Code).
    */
-  runInteractive?(options: import("./types-extended").InteractiveRunOptions): import("./types-extended").PtyHandle;
+  runInteractive?(
+    options: import("./shared/types-extended").InteractiveRunOptions,
+  ): import("./shared/types-extended").PtyHandle;
 }

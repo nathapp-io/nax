@@ -4,9 +4,9 @@
  * Standalone completion endpoint for simple prompts.
  */
 
-import { resolvePermissions } from "../config/permissions";
-import type { CompleteOptions } from "./types";
-import { CompleteError } from "./types";
+import { resolvePermissions } from "../../config/permissions";
+import type { CompleteOptions } from "../types";
+import { CompleteError } from "../types";
 
 /**
  * Injectable dependencies for complete() — allows tests to intercept

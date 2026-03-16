@@ -15,7 +15,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { resolvePermissions } from "../../config/permissions";
 import { getSafeLogger } from "../../logger";
-import { buildDecomposePrompt, parseDecomposeOutput } from "../claude-decompose";
+import { buildDecomposePrompt, parseDecomposeOutput } from "../shared/decompose";
 import { createSpawnAcpClient } from "./spawn-client";
 
 import type {
