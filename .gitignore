@@ -46,6 +46,7 @@ orchestrator/
 # nax runtime
 nax.lock
 nax/features/*/runs/
+nax/features/*/plan/
 nax/features/*/status.json
 test/tmp/
 TEST_SUMMARY_*.md
