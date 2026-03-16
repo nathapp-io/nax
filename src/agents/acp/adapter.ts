@@ -308,6 +308,88 @@ export async function readAcpSession(workdir: string, featureName: string, story
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Session sweep — close open sessions at run boundaries
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MAX_SESSION_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+/**
+ * Close all open sessions tracked in the sidecar file for a feature.
+ * Called at run-end to ensure no sessions leak past the run boundary.
+ */
+export async function sweepFeatureSessions(workdir: string, featureName: string): Promise<void> {
+  const path = acpSessionsPath(workdir, featureName);
+  let sessions: Record<string, string>;
+  try {
+    const text = await Bun.file(path).text();
+    sessions = JSON.parse(text) as Record<string, string>;
+  } catch {
+    return; // No sidecar — nothing to sweep
+  }
+
+  const entries = Object.entries(sessions);
+  if (entries.length === 0) return;
+
+  const logger = getSafeLogger();
+  logger?.info("acp-adapter", `[sweep] Closing ${entries.length} open sessions for feature: ${featureName}`);
+
+  const cmdStr = "acpx claude";
+  const client = _acpAdapterDeps.createClient(cmdStr, workdir);
+  try {
+    await client.start();
+    for (const [, sessionName] of entries) {
+      try {
+        if (client.loadSession) {
+          const session = await client.loadSession(sessionName, "claude", "approve-reads");
+          if (session) {
+            await session.close().catch(() => {});
+          }
+        }
+      } catch (err) {
+        logger?.warn("acp-adapter", `[sweep] Failed to close session ${sessionName}`, { error: String(err) });
+      }
+    }
+  } finally {
+    await client.close().catch(() => {});
+  }
+
+  // Clear sidecar after sweep
+  try {
+    await Bun.write(path, JSON.stringify({}, null, 2));
+  } catch (err) {
+    logger?.warn("acp-adapter", "[sweep] Failed to clear sidecar after sweep", { error: String(err) });
+  }
+}
+
+/**
+ * Sweep stale sessions if the sidecar file is older than maxAgeMs.
+ * Called at startup as a safety net for sessions orphaned by crashes.
+ */
+export async function sweepStaleFeatureSessions(
+  workdir: string,
+  featureName: string,
+  maxAgeMs = MAX_SESSION_AGE_MS,
+): Promise<void> {
+  const path = acpSessionsPath(workdir, featureName);
+  const file = Bun.file(path);
+  if (!(await file.exists())) return;
+
+  const ageMs = Date.now() - file.lastModified;
+  if (ageMs < maxAgeMs) return; // Recent sidecar — skip
+
+  getSafeLogger()?.info(
+    "acp-adapter",
+    `[sweep] Sidecar is ${Math.round(ageMs / 60000)}m old — sweeping stale sessions`,
+    {
+      featureName,
+      ageMs,
+    },
+  );
+
+  await sweepFeatureSessions(workdir, featureName);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Output helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -470,6 +552,9 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     let lastResponse: AcpSessionResponse | null = null;
     let timedOut = false;
+    // Tracks whether the run completed successfully — used by finally to decide
+    // whether to close the session (success) or keep it open for retry (failure).
+    const runState = { succeeded: false };
     const totalTokenUsage = { input_tokens: 0, output_tokens: 0 };
 
     try {
@@ -525,13 +610,21 @@ export class AcpAgentAdapter implements AgentAdapter {
       if (turnCount >= MAX_TURNS && options.interactionBridge) {
         getSafeLogger()?.warn("acp-adapter", "Reached max turns limit", { sessionName, maxTurns: MAX_TURNS });
       }
+
+      // Compute success here so finally can use it for conditional close.
+      runState.succeeded = !timedOut && lastResponse?.stopReason === "end_turn";
     } finally {
-      // 6. Cleanup — always close session and client, then clear sidecar
-      await closeAcpSession(session);
-      await client.close().catch(() => {});
-      if (options.featureName && options.storyId) {
-        await clearAcpSession(options.workdir, options.featureName, options.storyId);
+      // 6. Cleanup — close session and clear sidecar only on success.
+      // On failure, keep session open so retry can resume with full context.
+      if (runState.succeeded) {
+        await closeAcpSession(session);
+        if (options.featureName && options.storyId) {
+          await clearAcpSession(options.workdir, options.featureName, options.storyId);
+        }
+      } else {
+        getSafeLogger()?.info("acp-adapter", "Keeping session open for retry", { sessionName });
       }
+      await client.close().catch(() => {});
     }
 
     const durationMs = Date.now() - startTime;
