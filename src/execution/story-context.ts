@@ -175,6 +175,12 @@ export async function buildStoryContextFull(
 export function getAllReadyStories(prd: PRD): UserStory[] {
   const completedIds = new Set(prd.userStories.filter((s) => s.passes || s.status === "skipped").map((s) => s.id));
 
+  const logger = getSafeLogger();
+  logger?.debug("routing", "getAllReadyStories: completed set", {
+    completedIds: [...completedIds],
+    totalStories: prd.userStories.length,
+  });
+
   return prd.userStories.filter(
     (s) =>
       !s.passes &&
