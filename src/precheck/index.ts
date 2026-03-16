@@ -90,12 +90,21 @@ export interface PrecheckResultWithCode {
 
 type CheckFn = () => Promise<Check | Check[]>;
 
-/** Environment checks — no PRD needed. Run before plan or execution. */
-function getEnvironmentBlockers(config: NaxConfig, workdir: string): CheckFn[] {
+/**
+ * Early environment checks — git repo, clean tree, stale lock.
+ * Fast checks that run first in both runEnvironmentPrecheck and runPrecheck.
+ * In runPrecheck, PRD validation is inserted after these (original order preserved).
+ */
+function getEarlyEnvironmentBlockers(workdir: string): CheckFn[] {
+  return [() => checkGitRepoExists(workdir), () => checkWorkingTreeClean(workdir), () => checkStaleLock(workdir)];
+}
+
+/**
+ * Late environment checks — agent CLI, deps, commands, git user.
+ * Run after PRD validation in runPrecheck; all included in runEnvironmentPrecheck.
+ */
+function getLateEnvironmentBlockers(config: NaxConfig, workdir: string): CheckFn[] {
   return [
-    () => checkGitRepoExists(workdir),
-    () => checkWorkingTreeClean(workdir),
-    () => checkStaleLock(workdir),
     () => checkAgentCLI(config),
     () => checkDependenciesInstalled(workdir),
     () => checkTestCommand(config),
@@ -103,6 +112,11 @@ function getEnvironmentBlockers(config: NaxConfig, workdir: string): CheckFn[] {
     () => checkTypecheckCommand(config),
     () => checkGitUserConfigured(workdir),
   ];
+}
+
+/** All environment checks — no PRD needed. Used by runEnvironmentPrecheck. */
+function getEnvironmentBlockers(config: NaxConfig, workdir: string): CheckFn[] {
+  return [...getEarlyEnvironmentBlockers(workdir), ...getLateEnvironmentBlockers(config, workdir)];
 }
 
 /** Environment warnings — no PRD needed. */
@@ -219,7 +233,14 @@ export async function runPrecheck(
   // Tier 1 Blockers — environment + project, fail-fast on first failure
   // ─────────────────────────────────────────────────────────────────────────────
 
-  const tier1Checks = [...getEnvironmentBlockers(config, workdir), ...getProjectBlockers(prd)];
+  // Original order preserved: early env → PRD valid → late env
+  // checkPRDValid at position 4 ensures test environments that lack agent CLI
+  // still get EXIT_CODES.INVALID_PRD (2) rather than a generic blocker (1)
+  const tier1Checks = [
+    ...getEarlyEnvironmentBlockers(workdir),
+    ...getProjectBlockers(prd),
+    ...getLateEnvironmentBlockers(config, workdir),
+  ];
 
   let tier1Blocked = false;
   for (const checkFn of tier1Checks) {
