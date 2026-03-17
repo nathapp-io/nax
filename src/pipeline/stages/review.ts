@@ -11,6 +11,7 @@
  */
 
 // RE-ARCH: rewrite
+import { join } from "node:path";
 import { checkSecurityReview, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { reviewOrchestrator } from "../../review/orchestrator";
@@ -25,12 +26,16 @@ export const reviewStage: PipelineStage = {
 
     logger.info("review", "Running review phase", { storyId: ctx.story.id });
 
+    // MW-010: scope review to package directory when story.workdir is set
+    const effectiveWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+
     const result = await reviewOrchestrator.review(
       ctx.config.review,
-      ctx.workdir,
+      effectiveWorkdir,
       ctx.config.execution,
       ctx.plugins,
       ctx.storyGitRef,
+      ctx.story.workdir, // MW-010: scope changed-file checks to package
     );
 
     ctx.reviewResult = result.builtIn;

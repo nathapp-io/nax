@@ -75,6 +75,7 @@ export class ReviewOrchestrator {
     executionConfig: NaxConfig["execution"],
     plugins?: PluginRegistry,
     storyGitRef?: string,
+    scopePrefix?: string,
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
@@ -95,14 +96,17 @@ export class ReviewOrchestrator {
         // Use the story's start ref if available to capture auto-committed changes
         const baseRef = storyGitRef ?? executionConfig?.storyGitRef;
         const changedFiles = await getChangedFiles(workdir, baseRef);
+        const scopedFiles = scopePrefix
+          ? changedFiles.filter((f) => f === scopePrefix || f.startsWith(`${scopePrefix}/`))
+          : changedFiles;
         const pluginResults: ReviewResult["pluginReviewers"] = [];
 
         for (const reviewer of reviewers) {
           logger?.info("review", `Running plugin reviewer: ${reviewer.name}`, {
-            changedFiles: changedFiles.length,
+            changedFiles: scopedFiles.length,
           });
           try {
-            const result = await reviewer.check(workdir, changedFiles);
+            const result = await reviewer.check(workdir, scopedFiles);
             // Always log the result so skips/passes are visible in the log
             logger?.info("review", `Plugin reviewer result: ${reviewer.name}`, {
               passed: result.passed,
