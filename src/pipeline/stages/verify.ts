@@ -9,6 +9,7 @@
  * - `escalate`: Tests failed (retry with escalation)
  */
 
+import { join } from "node:path";
 import type { SmartTestRunnerConfig } from "../../config/types";
 import { getLogger } from "../../logger";
 import { logTestOutput } from "../../utils/log-test-output";
@@ -69,6 +70,9 @@ export const verifyStage: PipelineStage = {
 
     logger.info("verify", "Running verification", { storyId: ctx.story.id });
 
+    // MW-006: resolve effective workdir for test execution
+    const effectiveWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+
     // Determine effective test command (smart runner or full suite)
     let effectiveCommand = testCommand;
     let isFullSuite = true;
@@ -76,10 +80,15 @@ export const verifyStage: PipelineStage = {
     const regressionMode = ctx.config.execution.regressionGate?.mode ?? "deferred";
 
     if (smartRunnerConfig.enabled) {
-      const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(ctx.workdir, ctx.storyGitRef);
+      // MW-006: pass packagePrefix so git diff is scoped to the package in monorepos
+      const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(
+        effectiveWorkdir,
+        ctx.storyGitRef,
+        ctx.story.workdir,
+      );
 
       // Pass 1: path convention mapping
-      const pass1Files = await _smartRunnerDeps.mapSourceToTests(sourceFiles, ctx.workdir);
+      const pass1Files = await _smartRunnerDeps.mapSourceToTests(sourceFiles, effectiveWorkdir);
       if (pass1Files.length > 0) {
         logger.info("verify", `[smart-runner] Pass 1: path convention matched ${pass1Files.length} test files`, {
           storyId: ctx.story.id,
@@ -90,7 +99,7 @@ export const verifyStage: PipelineStage = {
         // Pass 2: import-grep fallback
         const pass2Files = await _smartRunnerDeps.importGrepFallback(
           sourceFiles,
-          ctx.workdir,
+          effectiveWorkdir,
           smartRunnerConfig.testFilePatterns,
         );
         if (pass2Files.length > 0) {
@@ -126,7 +135,7 @@ export const verifyStage: PipelineStage = {
 
     // Use unified regression gate (includes 2s wait for agent process cleanup)
     const result = await _verifyDeps.regression({
-      workdir: ctx.workdir,
+      workdir: effectiveWorkdir,
       command: effectiveCommand,
       timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
       acceptOnTimeout: ctx.config.execution.regressionGate?.acceptOnTimeout ?? true,

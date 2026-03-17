@@ -194,7 +194,27 @@ export function buildSmartTestCommand(testFiles: string[], baseCommand: string):
   return newParts.join(" ");
 }
 
-export async function getChangedSourceFiles(workdir: string, baseRef?: string): Promise<string[]> {
+/**
+ * Get TypeScript source files changed since the previous commit.
+ *
+ * Runs `git diff --name-only <ref>` in the given workdir and filters
+ * results to only `.ts` files under the relevant source prefix.
+ *
+ * In a monorepo, git returns paths relative to the git root (e.g.
+ * `packages/api/src/foo.ts`). When `packagePrefix` is set to the
+ * story's workdir (e.g. `"packages/api"`), the filter is scoped to
+ * `<packagePrefix>/src/` instead of just `src/`.
+ *
+ * @param workdir       - Working directory to run git command in
+ * @param baseRef       - Git ref for diff base (default: HEAD~1)
+ * @param packagePrefix - Story workdir relative to repo root (e.g. "packages/api")
+ * @returns Array of changed .ts file paths relative to the git root
+ */
+export async function getChangedSourceFiles(
+  workdir: string,
+  baseRef?: string,
+  packagePrefix?: string,
+): Promise<string[]> {
   try {
     // FEAT-010: Use per-attempt baseRef for precise diff; fall back to HEAD~1 if not provided
     const ref = baseRef ?? "HEAD~1";
@@ -204,7 +224,9 @@ export async function getChangedSourceFiles(workdir: string, baseRef?: string): 
 
     const lines = stdout.trim().split("\n").filter(Boolean);
 
-    return lines.filter((f) => f.startsWith("src/") && f.endsWith(".ts"));
+    // MW-006: scope filter to package prefix in monorepo
+    const srcPrefix = packagePrefix ? `${packagePrefix}/src/` : "src/";
+    return lines.filter((f) => f.startsWith(srcPrefix) && f.endsWith(".ts"));
   } catch {
     return [];
   }

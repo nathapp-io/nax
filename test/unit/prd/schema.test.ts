@@ -286,6 +286,45 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// MW-001: workdir field validation
+// ---------------------------------------------------------------------------
+
+describe("validatePlanOutput — workdir validation (MW-001)", () => {
+  test("valid relative workdir is accepted and preserved", () => {
+    const input = makeInput([makeStory({ workdir: "packages/api" })]);
+    const prd = validatePlanOutput(input, "feat", "branch");
+    expect(prd.userStories[0]!.workdir).toBe("packages/api");
+  });
+
+  test("workdir is optional — omitting it leaves field undefined", () => {
+    const input = makeInput([makeStory()]);
+    const prd = validatePlanOutput(input, "feat", "branch");
+    expect(prd.userStories[0]!.workdir).toBeUndefined();
+  });
+
+  test("throws when workdir has leading slash (absolute path)", () => {
+    const input = makeInput([makeStory({ workdir: "/packages/api" })]);
+    expect(() => validatePlanOutput(input, "feat", "branch")).toThrow(/leading \//);
+  });
+
+  test("throws when workdir contains '..'", () => {
+    const input = makeInput([makeStory({ workdir: "../sibling-package" })]);
+    expect(() => validatePlanOutput(input, "feat", "branch")).toThrow(/\.\./);
+  });
+
+  test("throws when workdir is not a string", () => {
+    const input = makeInput([makeStory({ workdir: 42 })]);
+    expect(() => validatePlanOutput(input, "feat", "branch")).toThrow(/workdir.*string/);
+  });
+
+  test("nested workdir path is valid", () => {
+    const input = makeInput([makeStory({ workdir: "packages/api/src" })]);
+    const prd = validatePlanOutput(input, "feat", "branch");
+    expect(prd.userStories[0]!.workdir).toBe("packages/api/src");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AC-8: invalid JSON throws with parse error context
 // ---------------------------------------------------------------------------
 

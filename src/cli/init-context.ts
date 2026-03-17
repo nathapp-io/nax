@@ -313,6 +313,63 @@ Keep it under 2000 tokens. Use markdown formatting. Be specific to the detected 
 }
 
 /**
+ * Generate a minimal package context.md template.
+ *
+ * @param packagePath - Relative path of the package (e.g. "packages/api")
+ */
+export function generatePackageContextTemplate(packagePath: string): string {
+  const packageName = packagePath.split("/").pop() ?? packagePath;
+  return `# ${packageName} — Context
+
+<!-- Package-specific conventions. Root context.md provides shared rules. -->
+
+## Tech Stack
+
+<!-- TODO: Document this package's tech stack -->
+
+## Commands
+
+| Command | Purpose |
+|:--------|:--------|
+| \`bun test\` | Unit tests |
+
+## Development Guidelines
+
+<!-- TODO: Document package-specific guidelines -->
+`;
+}
+
+/**
+ * Initialize per-package nax/context.md scaffold.
+ *
+ * Creates \`<packageDir>/nax/context.md\` with a minimal template.
+ * Does not overwrite an existing file unless force is set.
+ *
+ * @param repoRoot - Absolute path to repo root
+ * @param packagePath - Relative path of the package (e.g. "packages/api")
+ * @param force - Overwrite existing file
+ */
+export async function initPackage(repoRoot: string, packagePath: string, force = false): Promise<void> {
+  const logger = getLogger();
+  const packageDir = join(repoRoot, packagePath);
+  const naxDir = join(packageDir, "nax");
+  const contextPath = join(naxDir, "context.md");
+
+  if (existsSync(contextPath) && !force) {
+    logger.info("init", "Package context.md already exists (use --force to overwrite)", { path: contextPath });
+    return;
+  }
+
+  if (!existsSync(naxDir)) {
+    await mkdir(naxDir, { recursive: true });
+  }
+
+  const content = generatePackageContextTemplate(packagePath);
+  await Bun.write(contextPath, content);
+  logger.info("init", "Created package context.md", { path: contextPath });
+}
+
+/**
  * Initialize context.md for a project
  */
 export async function initContext(projectRoot: string, options: InitContextOptions = {}): Promise<void> {
