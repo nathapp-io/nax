@@ -128,6 +128,7 @@ program
   .description("Initialize nax in the current project")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .option("-f, --force", "Force overwrite existing files", false)
+  .option("--package <dir>", "Scaffold per-package nax/context.md (e.g. packages/api)")
   .action(async (options) => {
     // Validate directory path
     let workdir: string;
@@ -136,6 +137,21 @@ program
     } catch (err) {
       console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
       process.exit(1);
+    }
+
+    // --package: scaffold per-package nax/context.md only
+    if (options.package) {
+      const { initPackage: initPkg } = await import("../src/cli/init-context");
+      try {
+        await initPkg(workdir, options.package, options.force);
+        console.log(chalk.green("\n[OK] Package scaffold created."));
+        console.log(chalk.dim(`  Created: ${options.package}/nax/context.md`));
+        console.log(chalk.dim(`\nNext: nax generate --package ${options.package}`));
+      } catch (err) {
+        console.error(chalk.red(`Error: ${(err as Error).message}`));
+        process.exit(1);
+      }
+      return;
     }
 
     const naxDir = join(workdir, "nax");

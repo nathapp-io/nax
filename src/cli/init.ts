@@ -9,7 +9,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { globalConfigDir, projectConfigDir } from "../config/paths";
 import { getLogger } from "../logger";
-import { initContext } from "./init-context";
+import { initContext, initPackage } from "./init-context";
 import { buildInitConfig, detectStack } from "./init-detect";
 import type { ProjectStack } from "./init-detect";
 import { promptsInitCommand } from "./prompts";
@@ -20,6 +20,11 @@ export interface InitOptions {
   global?: boolean;
   /** Project root (default: cwd) */
   projectRoot?: string;
+  /**
+   * Initialize a per-package nax/context.md scaffold.
+   * Relative path from repo root, e.g. "packages/api".
+   */
+  package?: string;
 }
 
 /** Options for initProject */
@@ -277,6 +282,14 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
 export async function initCommand(options: InitOptions = {}): Promise<void> {
   if (options.global) {
     await initGlobal();
+  } else if (options.package) {
+    const projectRoot = options.projectRoot ?? process.cwd();
+    await initPackage(projectRoot, options.package);
+    console.log("\n[OK] Package scaffold created.");
+    console.log(`  Created: ${options.package}/nax/context.md`);
+    console.log("\nNext steps:");
+    console.log(`  1. Review ${options.package}/nax/context.md and fill in TODOs`);
+    console.log(`  2. Run: nax generate --package ${options.package}`);
   } else {
     const projectRoot = options.projectRoot ?? process.cwd();
     await initProject(projectRoot);
