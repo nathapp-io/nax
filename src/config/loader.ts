@@ -5,9 +5,10 @@
  */
 
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { getLogger } from "../logger";
 import { loadJsonFile } from "../utils/json-file";
+import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
 import { MAX_DIRECTORY_DEPTH } from "./path-security";
 import { globalConfigDir } from "./paths";
@@ -107,4 +108,36 @@ export async function loadConfig(projectDir?: string, cliOverrides?: Record<stri
   }
 
   return result.data as NaxConfig;
+}
+
+/**
+ * Load config for a specific working directory (monorepo package).
+ *
+ * Resolution order:
+ * 1. Load root nax/config.json via loadConfig()
+ * 2. If packageDir is set, check <repoRoot>/<packageDir>/nax/config.json
+ * 3. If package config exists → merge quality.commands over root
+ * 4. Return merged config
+ *
+ * @param rootConfigPath - Absolute path to the root nax/config.json
+ * @param packageDir - Package directory relative to repo root (e.g. "packages/api")
+ */
+export async function loadConfigForWorkdir(rootConfigPath: string, packageDir?: string): Promise<NaxConfig> {
+  const rootNaxDir = dirname(rootConfigPath);
+  const rootConfig = await loadConfig(rootNaxDir);
+
+  if (!packageDir) {
+    return rootConfig;
+  }
+
+  const repoRoot = dirname(rootNaxDir);
+  const packageConfigPath = join(repoRoot, packageDir, "nax", "config.json");
+
+  const packageOverride = await loadJsonFile<Partial<NaxConfig>>(packageConfigPath, "config");
+
+  if (!packageOverride) {
+    return rootConfig;
+  }
+
+  return mergePackageConfig(rootConfig, packageOverride);
 }
