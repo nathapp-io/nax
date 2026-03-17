@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.2] - 2026-03-17
+
+### Fixed
+- **Review rectification:** When lint or typecheck fails in the review stage and mechanical autofix (`lintFix`, `formatFix`) cannot resolve it, nax now spawns an agent rectification session with the exact error output as context. The agent fixes the issues, commits, and re-runs review to verify. Reuses `quality.autofix.maxAttempts` (default: 2) for agent attempts.
+
+### Tests
+- 12 new tests in `test/unit/pipeline/stages/autofix.test.ts` covering agent rectification paths.
+
 ## [0.46.1] - 2026-03-17
 
 ### Fixed
