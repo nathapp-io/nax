@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.46.1] - 2026-03-17
+
+### Fixed
+- **BUG-074:** `working-tree-clean` precheck now allows 12 nax runtime files to be dirty without blocking. Includes fix for `--porcelain` trim bug that corrupted leading status chars.
+- **BUG-074:** `nax init` now adds complete gitignore entries for all nax runtime files (was missing: status.json, plan/, acp-sessions.json, interactions/, progress.txt, acceptance-refined.json, .nax-pids, .nax-wt/, ~/).
+- **BUG-074:** `checkGitignoreCoversNax` warning now checks 6 critical patterns (was only 3).
+- **BUG-075:** `acceptance-refined.json` now written to featureDir instead of workdir root.
+- **BUG-076:** HOME env is now validated before passing to spawned agents — if not an absolute path (e.g. unexpanded "~"), falls back to `os.homedir()` with a warning log. Prevents literal "~/" directory creation in repo.
+- **BUG-076:** New `checkHomeEnvValid()` precheck warning fires when HOME is unset or not absolute.
+
+### Tests
+- New tests in `test/unit/precheck/checks-git.test.ts` (188 lines) for working-tree-clean allowlist.
+- New tests in `test/unit/agents/claude/execution.test.ts` (79 lines) for HOME sanitization.
+
 ## [0.46.0] - 2026-03-16
 
 ### Fixed
