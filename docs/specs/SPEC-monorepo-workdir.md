@@ -134,9 +134,26 @@ bun test
 cd packages/api && bun test
 ```
 
+**Smart Runner — File Path Scoping Fix:**
+
+`getChangedSourceFiles()` currently filters git diff output by `f.startsWith("src/")`. In a monorepo, git always returns paths relative to the **git root** (e.g., `packages/api/src/foo.ts`), not the package workdir — so the `src/` filter misses all package changes and silently falls back to full suite.
+
+Fix: when `story.workdir` is set, scope the filter to the package:
+
+```typescript
+// Single-package (current)
+lines.filter((f) => f.startsWith("src/") && f.endsWith(".ts"))
+
+// Monorepo (when story.workdir = "packages/api")
+lines.filter((f) => f.startsWith(`${story.workdir}/src/`) && f.endsWith(".ts"))
+```
+
+`mapSourceToTests()` and `importGrepFallback()` are **not affected** — they operate on the filesystem using the resolved absolute `workdir`, so they already work correctly once `workdir` is passed.
+
 **Changes:**
+- `src/verification/smart-runner.ts` — `getChangedSourceFiles()` accepts optional `packagePrefix` (or derive from workdir) to scope the `startsWith` filter
 - `src/verification/` — pass resolved workdir as cwd to test spawner
-- `src/pipeline/stages/verify.ts` — resolve workdir before invoking test runner
+- `src/pipeline/stages/verify.ts` — resolve workdir before invoking test runner; pass `story.workdir` to smart runner
 
 ### MW-007: `nax plan` / `nax analyze` — Monorepo Awareness (Medium)
 
