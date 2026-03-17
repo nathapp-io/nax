@@ -19,20 +19,21 @@ import type { NaxConfig } from "../../../../src/config";
 
 describe("resolveStoryWorkdir (MW-002)", () => {
   test("returns repoRoot unchanged when storyWorkdir is undefined", () => {
-    expect(resolveStoryWorkdir("/repo")).toBe("/repo");
+    expect(resolveStoryWorkdir("/tmp")).toBe("/tmp");
   });
 
   test("returns repoRoot unchanged when storyWorkdir is empty string", () => {
-    expect(resolveStoryWorkdir("/repo", "")).toBe("/repo");
+    expect(resolveStoryWorkdir("/tmp", "")).toBe("/tmp");
   });
 
-  test("joins repoRoot with storyWorkdir", () => {
-    expect(resolveStoryWorkdir("/repo", "packages/api")).toBe("/repo/packages/api");
+  test("joins repoRoot with storyWorkdir when directory exists", () => {
+    // /tmp always exists — use it as the package dir
+    expect(resolveStoryWorkdir("/", "tmp")).toBe("/tmp");
   });
 
-  test("handles nested paths", () => {
-    expect(resolveStoryWorkdir("/workspace/project", "apps/backend")).toBe(
-      "/workspace/project/apps/backend",
+  test("throws when storyWorkdir does not exist on disk", () => {
+    expect(() => resolveStoryWorkdir("/tmp", "nonexistent-package-xyz")).toThrow(
+      'story.workdir "nonexistent-package-xyz" does not exist',
     );
   });
 });
@@ -131,6 +132,9 @@ test("execution stage passes resolved package workdir when story.workdir is set"
 
   _executionDeps.validateAgentForTier = () => true;
   _executionDeps.detectMergeConflict = () => false;
+  // Mock resolveStoryWorkdir to avoid filesystem check in unit test
+  _executionDeps.resolveStoryWorkdir = (root: string, pkg?: string) =>
+    pkg ? join(root, pkg) : root;
 
   const ctx = makeCtx({ workdir: "packages/api" });
   await executionStage.execute(ctx);

@@ -30,6 +30,7 @@
  * ```
  */
 
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getAgent, validateAgentForTier } from "../../agents";
 import { resolveModel } from "../../config";
@@ -45,10 +46,16 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
  * Resolve the effective working directory for a story.
  * When story.workdir is set, returns join(repoRoot, story.workdir).
  * Otherwise returns the repo root unchanged.
+ *
+ * MW-001 runtime check: throws if the resolved workdir does not exist on disk.
  */
 export function resolveStoryWorkdir(repoRoot: string, storyWorkdir?: string): string {
   if (!storyWorkdir) return repoRoot;
-  return join(repoRoot, storyWorkdir);
+  const resolved = join(repoRoot, storyWorkdir);
+  if (!existsSync(resolved)) {
+    throw new Error(`[execution] story.workdir "${storyWorkdir}" does not exist at "${resolved}"`);
+  }
+  return resolved;
 }
 
 /**
