@@ -42,6 +42,9 @@ function makeConfig(): NaxConfig {
     execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60 },
     models: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
     quality: { requireTests: false, commands: {} },
+    // Disable test coverage scanning — prevents buildContext from scanning the
+    // entire nax repo (286 test files) on every test, which was adding 4–7s each.
+    context: { testCoverage: { enabled: false } },
   } as unknown as NaxConfig;
 }
 
