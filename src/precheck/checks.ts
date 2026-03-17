@@ -28,6 +28,7 @@ export {
   checkPendingStories,
   checkOptionalCommands,
   checkGitignoreCoversNax,
+  checkHomeEnvValid,
   checkPromptOverrideFiles,
 } from "./checks-warnings";
 

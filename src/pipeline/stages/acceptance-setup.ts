@@ -106,6 +106,7 @@ export const acceptanceSetupStage: PipelineStage = {
       const result = await _acceptanceSetupDeps.generate(ctx.prd.userStories, refinedCriteria, {
         featureName: ctx.prd.feature,
         workdir: ctx.workdir,
+        featureDir: ctx.featureDir,
         codebaseContext: "",
         modelTier: ctx.config.acceptance.model ?? "fast",
         modelDef: resolveModel(ctx.config.models[ctx.config.acceptance.model ?? "fast"]),

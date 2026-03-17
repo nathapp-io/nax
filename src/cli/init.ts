@@ -33,7 +33,21 @@ export interface InitProjectOptions {
 /**
  * Gitignore entries added by nax init
  */
-const NAX_GITIGNORE_ENTRIES = [".nax-verifier-verdict.json", "nax.lock", "nax/**/runs/", "nax/metrics.json"];
+const NAX_GITIGNORE_ENTRIES = [
+  ".nax-verifier-verdict.json",
+  "nax.lock",
+  "nax/**/runs/",
+  "nax/metrics.json",
+  "nax/features/*/status.json",
+  "nax/features/*/plan/",
+  "nax/features/*/acp-sessions.json",
+  "nax/features/*/interactions/",
+  "nax/features/*/progress.txt",
+  "nax/features/*/acceptance-refined.json",
+  ".nax-pids",
+  ".nax-wt/",
+  "~/",
+];
 
 /**
  * Add nax-specific entries to .gitignore if not already present.

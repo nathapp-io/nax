@@ -183,6 +183,7 @@ function makeOptions(workdir: string, overrides?: Partial<GenerateFromPRDOptions
   return {
     featureName: "ink-counter",
     workdir,
+    featureDir: workdir,
     codebaseContext: "src/\n  Counter.tsx\n",
     modelTier: "fast",
     modelDef: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },

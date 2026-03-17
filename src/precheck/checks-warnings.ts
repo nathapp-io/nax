@@ -6,6 +6,7 @@
  */
 
 import { existsSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import type { NaxConfig } from "../config";
 import type { PRD } from "../prd/types";
 import type { Check } from "./types";
@@ -126,7 +127,7 @@ async function hasPackageScript(workdir: string, name: string): Promise<boolean>
 
 /**
  * Check if .gitignore covers nax runtime files.
- * Patterns: nax.lock, runs/, test/tmp/
+ * Patterns: nax.lock, runs/, status.json, .nax-pids, .nax-wt/
  */
 export async function checkGitignoreCoversNax(workdir: string): Promise<Check> {
   const gitignorePath = `${workdir}/.gitignore`;
@@ -143,7 +144,14 @@ export async function checkGitignoreCoversNax(workdir: string): Promise<Check> {
 
   const file = Bun.file(gitignorePath);
   const content = await file.text();
-  const patterns = ["nax.lock", "runs/", "test/tmp/"];
+  const patterns = [
+    "nax.lock",
+    "nax/**/runs/",
+    "nax/metrics.json",
+    "nax/features/*/status.json",
+    ".nax-pids",
+    ".nax-wt/",
+  ];
   const missing = patterns.filter((pattern) => !content.includes(pattern));
   const passed = missing.length === 0;
 
@@ -190,4 +198,24 @@ export async function checkPromptOverrideFiles(config: NaxConfig, workdir: strin
   }
 
   return checks;
+}
+
+/**
+ * Check if HOME env is set and is an absolute path.
+ * An unexpanded "~" in HOME causes agent spawns to create a literal ~/
+ * directory inside the repo cwd instead of resolving to the user home dir.
+ */
+export async function checkHomeEnvValid(): Promise<Check> {
+  const home = process.env.HOME ?? "";
+  const passed = home !== "" && isAbsolute(home);
+  return {
+    name: "home-env-valid",
+    tier: "warning",
+    passed,
+    message: passed
+      ? `HOME env is valid: ${home}`
+      : home === ""
+        ? "HOME env is not set — agent may write files to unexpected locations"
+        : `HOME env is not an absolute path ("${home}") — may cause literal "~" directories in repo`,
+  };
 }

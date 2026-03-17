@@ -181,10 +181,11 @@ function makeRefinedCriteria(storyId: string): RefinedCriterion[] {
   ];
 }
 
-function makeOptions(workdir: string): GenerateFromPRDOptions {
+function makeOptions(workdir: string, featureDir?: string): GenerateFromPRDOptions {
   return {
     featureName: "acceptance-pipeline",
     workdir,
+    featureDir: featureDir ?? workdir,
     codebaseContext: "File tree:\nsrc/\n  acceptance/\n    generator.ts\n",
     modelTier: "fast",
     modelDef: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
@@ -735,5 +736,43 @@ describe("_generatorPRDDeps", () => {
 
   test("has writeFile function", () => {
     expect(typeof _generatorPRDDeps.writeFile).toBe("function");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// describe: generateFromPRD — BUG-075 acceptance-refined.json written to featureDir
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("generateFromPRD — acceptance-refined.json path (BUG-075)", () => {
+  let workdir: string;
+  let featureDir: string;
+
+  beforeEach(() => {
+    workdir = mkdtempSync(join(tmpdir(), "nax-test-workdir-"));
+    featureDir = mkdtempSync(join(tmpdir(), "nax-test-featuredir-"));
+    saveDeps();
+  });
+
+  afterEach(() => {
+    restoreDeps();
+  });
+
+  test("acceptance-refined.json is written to featureDir, not workdir", async () => {
+    const story = makeUserStory();
+    const criteria = makeRefinedCriteria(story.id);
+    const options = makeOptions(workdir, featureDir);
+    const writtenPaths: string[] = [];
+
+    _generatorPRDDeps.adapter.complete = mock(async () => makeGeneratedTestCode(options.featureName, criteria));
+    _generatorPRDDeps.writeFile = mock(async (path: string) => {
+      writtenPaths.push(path);
+    });
+
+    await generateFromPRD([story], criteria, options);
+
+    const refinedJsonPath = writtenPaths.find((p) => p.endsWith("acceptance-refined.json"));
+    expect(refinedJsonPath).toBeDefined();
+    expect(refinedJsonPath).toContain(featureDir);
+    expect(refinedJsonPath).not.toContain(workdir);
   });
 });
