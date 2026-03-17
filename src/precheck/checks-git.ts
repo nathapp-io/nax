@@ -32,6 +32,25 @@ export async function checkGitRepoExists(workdir: string): Promise<Check> {
   };
 }
 
+/**
+ * nax runtime files that are allowed to be dirty without blocking the precheck.
+ * These are written during nax execution and should be gitignored by `nax init`.
+ */
+const NAX_RUNTIME_PATTERNS = [
+  /^.{2} nax\.lock$/,
+  /^.{2} nax\/metrics\.json$/,
+  /^.{2} nax\/features\/[^/]+\/status\.json$/,
+  /^.{2} nax\/features\/[^/]+\/runs\//,
+  /^.{2} nax\/features\/[^/]+\/plan\//,
+  /^.{2} nax\/features\/[^/]+\/acp-sessions\.json$/,
+  /^.{2} nax\/features\/[^/]+\/interactions\//,
+  /^.{2} nax\/features\/[^/]+\/progress\.txt$/,
+  /^.{2} nax\/features\/[^/]+\/acceptance-refined\.json$/,
+  /^.{2} \.nax-verifier-verdict\.json$/,
+  /^.{2} \.nax-pids$/,
+  /^.{2} \.nax-wt\//,
+];
+
 /** Check if working tree is clean. Uses: git status --porcelain */
 export async function checkWorkingTreeClean(workdir: string): Promise<Check> {
   const proc = Bun.spawn(["git", "status", "--porcelain"], {
@@ -42,13 +61,20 @@ export async function checkWorkingTreeClean(workdir: string): Promise<Check> {
 
   const output = await new Response(proc.stdout).text();
   const exitCode = await proc.exited;
-  const passed = exitCode === 0 && output.trim() === "";
+
+  // Split without trimming the full output — porcelain lines start with status chars
+  // including leading spaces (e.g. " M file.ts"). trim() would corrupt the first line.
+  const lines = output.trim() === "" ? [] : output.split("\n").filter(Boolean);
+  const nonNaxDirtyFiles = lines.filter((line) => !NAX_RUNTIME_PATTERNS.some((pattern) => pattern.test(line)));
+  const passed = exitCode === 0 && nonNaxDirtyFiles.length === 0;
 
   return {
     name: "working-tree-clean",
     tier: "blocker",
     passed,
-    message: passed ? "Working tree is clean" : "Uncommitted changes detected",
+    message: passed
+      ? "Working tree is clean"
+      : `Uncommitted changes detected: ${nonNaxDirtyFiles.map((l) => l.slice(3)).join(", ")}`,
   };
 }
 
