@@ -260,4 +260,42 @@ describe("getChangedSourceFiles", () => {
 
     expect(result).toEqual([]);
   });
+
+  // MW-006: package prefix scoping
+  test("filters to packagePrefix/src/ when packagePrefix is set", async () => {
+    const gitOutput = [
+      "src/index.ts",
+      "packages/api/src/auth.ts",
+      "packages/web/src/app.ts",
+    ].join("\n");
+
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedSourceFiles("/fake/repo", undefined, "packages/api");
+
+    expect(result).toEqual(["packages/api/src/auth.ts"]);
+  });
+
+  test("falls back to src/ prefix when packagePrefix is undefined", async () => {
+    const gitOutput = ["src/index.ts", "packages/api/src/auth.ts"].join("\n");
+
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedSourceFiles("/fake/repo", undefined, undefined);
+
+    expect(result).toEqual(["src/index.ts"]);
+  });
+
+  test("returns empty when packagePrefix does not match any changed files", async () => {
+    const gitOutput = ["src/index.ts", "packages/web/src/app.ts"].join("\n");
+
+    // biome-ignore lint/suspicious/noExplicitAny: mocking _gitDeps
+    _gitDeps.spawn = mock(() => makeProc(gitOutput, 0)) as unknown as typeof _gitDeps.spawn;
+
+    const result = await getChangedSourceFiles("/fake/repo", undefined, "packages/api");
+
+    expect(result).toEqual([]);
+  });
 });
