@@ -6,6 +6,122 @@
 
 ---
 
+## v0.46.1 — Runtime File Gitignore Audit + Precheck Allowlist 📋 Planned
+
+**Theme:** Full audit of nax runtime files — `working-tree-clean` precheck blocks on files nax itself writes; `nax init` adds an incomplete `.gitignore`; warning check covers only 2 of 12 runtime paths. Fix all three layers consistently.
+**Depends on:** v0.46.0
+
+### BUG-074: working-tree-clean blocks on nax runtime files
+
+**Root cause:** `checkWorkingTreeClean` uses plain `git status --porcelain` with zero exceptions. nax writes runtime files during execution — if any aren't gitignored (e.g. user didn't run `nax init`, or init entries were incomplete), the precheck fires as a blocker on re-run.
+
+**Complete runtime file inventory:**
+
+| File | Written by | Missing from init | Missing from allowlist |
+|:-----|:-----------|:-----------------:|:----------------------:|
+| `nax.lock` | `lock.ts` | — | — |
+| `nax/metrics.json` | `metrics/tracker.ts` | — | — |
+| `nax/features/*/status.json` | `status-writer.ts` | ✗ | — |
+| `nax/features/*/runs/` | `registry.ts`, logger | — | ✗ |
+| `nax/features/*/plan/` | plan stage | ✗ | — |
+| `.nax-verifier-verdict.json` | `tdd/verdict.ts` | — | — |
+| `.nax-pids` | `pid-registry.ts` | ✗ | ✗ |
+| `.nax-wt/` | `parallel-executor.ts` | ✗ | ✗ |
+| `nax/features/*/acp-sessions.json` | `acp/adapter.ts` | ✗ | ✗ |
+| `nax/features/*/interactions/` | `interaction/state.ts` | ✗ | ✗ |
+| `nax/features/*/progress.txt` | `execution/progress.ts` | ✗ | ✗ |
+| `acceptance-refined.json` | `acceptance/generator.ts` | ✗ | ✗ |
+
+- [ ] **BUG-074-1:** `src/precheck/checks-git.ts` — parse `--porcelain` output line-by-line, filter allowlisted paths before evaluating `passed`. Full allowlist:
+  ```
+  nax.lock
+  nax/metrics.json
+  nax/features/*/status.json
+  nax/features/*/runs/
+  nax/features/*/plan/
+  nax/features/*/acp-sessions.json
+  nax/features/*/interactions/
+  nax/features/*/progress.txt
+  acceptance-refined.json
+  .nax-verifier-verdict.json
+  .nax-pids
+  .nax-wt/
+  ```
+- [ ] **BUG-074-2:** `src/cli/init.ts` — complete `NAX_GITIGNORE_ENTRIES`. Add all missing entries:
+  `nax/features/*/status.json`, `nax/features/*/plan/`, `.nax-pids`, `.nax-wt/`,
+  `nax/features/*/acp-sessions.json`, `nax/features/*/interactions/`,
+  `nax/features/*/progress.txt`, `acceptance-refined.json`
+- [ ] **BUG-074-3:** `src/precheck/checks-warnings.ts` — expand `checkGitignoreCoversNax` patterns to cover the full set (currently only checks `nax.lock`, `runs/`, `test/tmp/`)
+
+### BUG-076: Literal `~` directory created in repo root when HOME is unexpanded
+
+**Root cause:** `buildAllowedEnv()` in both CLI and ACP adapters blindly passes `process.env.HOME` to spawned agents without validation. If `HOME` is set to the literal string `~` (not shell-expanded — e.g. from a misconfigured launch script), Claude Code resolves `~/.claude` relative to cwd, creating a literal `~/` directory inside the repo.
+
+**Affected files:** `src/agents/claude/execution.ts`, `src/agents/acp/spawn-client.ts` (both have their own `buildAllowedEnv`)
+
+- [ ] **BUG-076-1:** `src/agents/claude/execution.ts` — in `buildAllowedEnv`, validate `HOME` is an absolute path (starts with `/` on Unix or drive letter on Windows) before passing. If invalid, fall back to `os.homedir()` and emit a `logger.warn`
+- [ ] **BUG-076-2:** `src/agents/acp/spawn-client.ts` — same fix in its local `buildAllowedEnv`
+- [ ] **BUG-076-3:** `src/precheck/checks-warnings.ts` — add `checkHomeEnvValid()` warning: if `process.env.HOME` is missing, relative, or contains unexpanded `~`, emit warning before agent launch
+- [ ] **BUG-076-4:** `src/cli/init.ts` — add `~/` to `NAX_GITIGNORE_ENTRIES` as a safety net (prevents accidental `~` dir commits if the bug recurs)
+
+**Fix pattern for BUG-076-1/2:**
+```typescript
+import { homedir } from "node:os";
+import { isAbsolute } from "node:path";
+
+// Sanitize HOME — must be absolute. Unexpanded ~ causes literal ~/dir in cwd.
+const rawHome = process.env.HOME ?? "";
+const safeHome = rawHome && isAbsolute(rawHome) ? rawHome : homedir();
+if (rawHome !== safeHome) {
+  logger.warn("env", `HOME env invalid ("${rawHome}"), falling back to os.homedir(): ${safeHome}`);
+}
+allowed.HOME = safeHome;
+```
+
+### BUG-075: acceptance-refined.json written to workdir root instead of feature dir
+
+**Root cause:** `src/acceptance/generator.ts` writes to `join(options.workdir, "acceptance-refined.json")` — repo root instead of `nax/features/<feature>/`. This pollutes the project root and makes gitignore patterns harder to scope.
+
+- [ ] **BUG-075-1:** `src/acceptance/generator.ts` — change output path to `join(options.featureDir, "acceptance-refined.json")`
+- [ ] **BUG-075-2:** Ensure `featureDir` is threaded into `generateFromPRD()` options (currently only `workdir` is passed)
+
+---
+
+## v0.47.0 — Monorepo Workdir Support 📋 Planned
+
+**Theme:** Per-story working directory, per-package context.md/config.json, and package-aware test commands — enabling nax to orchestrate monorepo projects where each package has a different stack.
+**Depends on:** v0.45.0
+**Spec:** [`docs/specs/SPEC-monorepo-workdir.md`](specs/SPEC-monorepo-workdir.md)
+
+### Phase 1 — Per-Story Workdir + Package Context
+
+| ID | Title | Complexity | Status |
+|:---|:------|:-----------|:-------|
+| MW-001 | `UserStory.workdir` field + schema validation | Simple | [ ] |
+| MW-002 | Execution stage — workdir override (agent cwd) | Simple | [ ] |
+| MW-003 | Context stage — package-level `context.md` resolution | Medium | [ ] |
+| MW-004 | `nax generate --package` + `--all-packages` | Medium | [ ] |
+| MW-005 | `nax init --package` scaffold | Simple | [ ] |
+| MW-006 | Verify stage — workdir-scoped test execution | Medium | [ ] |
+| MW-007 | `nax plan` / `nax analyze` — monorepo-aware `workdir` emission | Medium | [ ] |
+
+### Phase 2 — Per-Package Config + Test Commands
+
+| ID | Title | Complexity | Status |
+|:---|:------|:-----------|:-------|
+| MW-008 | Per-package `nax/config.json` overrides (deep merge) | Medium | [ ] |
+| MW-009 | Verify stage — per-package test command from config | Simple | [ ] |
+| MW-010 | Review stage — package-scoped file checks | Simple | [ ] |
+
+### Design Decisions
+
+- **No story-level test command** — per-package `nax/config.json` handles this (config is the right layer, not PRD data)
+- **Test command fallback chain:** package `config.json` → root `testScoped` → root `test`
+- **Claude Code hierarchy:** per-package `CLAUDE.md` contains only package-specific content; Claude Code natively merges root + subdirectory
+- **Builds on MONO-001** (monorepo detection from `fea2573`) — adds execution support on top of existing init/detect
+
+---
+
 ## v0.45.0 — Bug Fixes: ACP Adapter Threading + Batch Routing Diagnostics 🚀 Releasing (2026-03-16)
 
 **Theme:** Fix ACP adapter not used for fix stories and parallel batch execution (BUG-067), add diagnostic logging for batch routing story count anomaly (BUG-068), and unify test strategy definitions into a single source of truth.
@@ -615,7 +731,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 - [ ] **HOOK-001:** Fire plugin hooks on plan failure — load plugins before plan phase and emit `onRunEnd` with failure status when `nax run --plan` fails, so Telegram/reporter plugins are notified.
 - [x] ~~**ACC-001:** Acceptance Test Pipeline — shipped in v0.40.0~~
 - [x] ~~**ACP Adapter:** Multi-agent support via acpx CLI — shipped 2026-03-14~~
-- [x] ~~**MONO-001:** Monorepo Support (Phase 1) — delegate to monorepo orchestrators; detect turborepo/nx/pnpm-workspaces/bun-workspaces; generate correct init commands; bypass smart test runner for turbo/nx (they handle change-aware scoping natively). Shipped `fea2573`.~~ **Limitations:** (1) No per-package config overrides — single `nax/config.json` at repo root; (2) No cross-package story coordination — PRD stories are repo-wide; (3) Smart runner still active for pnpm/bun workspaces (no affected detection in those tools); (4) `testScoped` template not supported for turbo/nx (file-path syntax incompatible with filter syntax); (5) Greenfield detection scans repo root, not per-package. **Phase 2 (future):** per-package `NaxConfig` overrides, PRD `package` field, cross-package story spanning.
+- [x] ~~**MONO-001:** Monorepo Support (Phase 1) — delegate to monorepo orchestrators; detect turborepo/nx/pnpm-workspaces/bun-workspaces; generate correct init commands; bypass smart test runner for turbo/nx (they handle change-aware scoping natively). Shipped `fea2573`.~~ **Phase 2 → v0.47.0** (per-story workdir, per-package context/config)
 - [ ] **CI-001:** CI Memory Optimization — parallel test sharding to pass on 1GB runners (currently requires 8GB).
 - [ ] Cost tracking dashboard
 - [ ] npm publish setup
