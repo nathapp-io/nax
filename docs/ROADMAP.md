@@ -6,7 +6,31 @@
 
 ---
 
-## v0.46.1 — Runtime File Gitignore Audit + Precheck Allowlist 📋 Planned
+## v0.46.2 — Review Rectification (Agent-Driven Lint/Typecheck Fix) 📋 Planned
+
+**Theme:** When lint or typecheck fails in the review stage and mechanical autofix can't resolve it, spawn an agent rectification session with the error output as context.
+**Depends on:** v0.46.1
+**Spec:** `docs/specs/SPEC-v046-2-review-rectification.md`
+
+### AUTOFIX-001: Agent rectification fallback in autofix stage
+
+Extend `src/pipeline/stages/autofix.ts`:
+1. After mechanical `lintFix`/`formatFix` fails or isn't configured, spawn agent session with review error output
+2. Agent gets exact lint/typecheck errors in prompt — fixes code, commits
+3. Re-run review to verify; repeat up to `maxAttempts`
+4. Reuses existing config: `quality.autofix.enabled`, `quality.autofix.maxAttempts`
+
+**Sub-tasks:**
+- AUTOFIX-001: Agent rectification loop in autofix stage
+- AUTOFIX-002: Review rectification prompt builder
+- AUTOFIX-003: Thread review check results (already available via `ctx.reviewResult.checks`)
+- AUTOFIX-004: Tests for all agent rectification paths
+
+**Complexity:** Simple-Medium
+
+---
+
+## v0.46.1 — Runtime File Gitignore Audit + Precheck Allowlist ✅ Released
 
 **Theme:** Full audit of nax runtime files — `working-tree-clean` precheck blocks on files nax itself writes; `nax init` adds an incomplete `.gitignore`; warning check covers only 2 of 12 runtime paths. Fix all three layers consistently.
 **Depends on:** v0.46.0

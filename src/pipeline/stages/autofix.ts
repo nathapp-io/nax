@@ -3,7 +3,11 @@
  * Autofix Stage (ADR-005, Phase 2)
  *
  * Runs after a failed review stage. Attempts to fix quality issues
- * automatically (lint, format) before escalating.
+ * automatically before escalating:
+ *
+ * Phase 1 — Mechanical fix: runs lintFix / formatFix commands (if configured)
+ * Phase 2 — Agent rectification: spawns an agent session with the review error
+ *            output as context (reuses the pattern from rectification-loop.ts)
  *
  * Language-agnostic: uses quality.commands.lintFix / formatFix from config.
  * No hardcoded tool names.
@@ -12,10 +16,15 @@
  *
  * Returns:
  * - `retry` fromStage:"review" — autofix resolved the failures
- * - `escalate`                 — max attempts exhausted or no fix commands
+ * - `escalate`                 — max attempts exhausted or agent unavailable
  */
 
+import { getAgent } from "../../agents";
+import { resolveModel } from "../../config";
+import { resolvePermissions } from "../../config/permissions";
 import { getLogger } from "../../logger";
+import type { UserStory } from "../../prd";
+import type { ReviewCheckResult } from "../../review/types";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -45,18 +54,8 @@ export const autofixStage: PipelineStage = {
     const lintFixCmd = ctx.config.quality.commands.lintFix;
     const formatFixCmd = ctx.config.quality.commands.formatFix;
 
-    if (!lintFixCmd && !formatFixCmd) {
-      logger.debug("autofix", "No fix commands configured — skipping autofix", { storyId: ctx.story.id });
-      return { action: "escalate", reason: "Review failed and no autofix commands configured" };
-    }
-
-    const maxAttempts = ctx.config.quality.autofix?.maxAttempts ?? 2;
-    let fixed = false;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      logger.info("autofix", `Autofix attempt ${attempt}/${maxAttempts}`, { storyId: ctx.story.id });
-
-      // Step 1: lint fix
+    // Phase 1: Mechanical fix (if commands are configured)
+    if (lintFixCmd || formatFixCmd) {
       if (lintFixCmd) {
         pipelineEventBus.emit({ type: "autofix:started", storyId: ctx.story.id, command: lintFixCmd });
         const lintResult = await _autofixDeps.runCommand(lintFixCmd, ctx.workdir);
@@ -69,7 +68,6 @@ export const autofixStage: PipelineStage = {
         }
       }
 
-      // Step 2: format fix
       if (formatFixCmd) {
         pipelineEventBus.emit({ type: "autofix:started", storyId: ctx.story.id, command: formatFixCmd });
         const fmtResult = await _autofixDeps.runCommand(formatFixCmd, ctx.workdir);
@@ -82,22 +80,21 @@ export const autofixStage: PipelineStage = {
         }
       }
 
-      // Re-run review to check if fixed
       const recheckPassed = await _autofixDeps.recheckReview(ctx);
       pipelineEventBus.emit({ type: "autofix:completed", storyId: ctx.story.id, fixed: recheckPassed });
 
       if (recheckPassed) {
-        // Update ctx.reviewResult so downstream stages see the corrected state
-        if (ctx.reviewResult) {
-          ctx.reviewResult = { ...ctx.reviewResult, success: true };
-        }
-        fixed = true;
-        break;
+        if (ctx.reviewResult) ctx.reviewResult = { ...ctx.reviewResult, success: true };
+        logger.info("autofix", "Mechanical autofix succeeded — retrying review", { storyId: ctx.story.id });
+        return { action: "retry", fromStage: "review" };
       }
     }
 
-    if (fixed) {
-      logger.info("autofix", "Autofix succeeded — retrying review", { storyId: ctx.story.id });
+    // Phase 2: Agent rectification — spawn agent with review error context
+    const agentFixed = await _autofixDeps.runAgentRectification(ctx);
+    if (agentFixed) {
+      if (ctx.reviewResult) ctx.reviewResult = { ...ctx.reviewResult, success: true };
+      logger.info("autofix", "Agent rectification succeeded — retrying review", { storyId: ctx.story.id });
       return { action: "retry", fromStage: "review" };
     }
 
@@ -134,7 +131,97 @@ async function recheckReview(ctx: PipelineContext): Promise<boolean> {
   return result.action === "continue";
 }
 
+function collectFailedChecks(ctx: PipelineContext): ReviewCheckResult[] {
+  return (ctx.reviewResult?.checks ?? []).filter((c) => !c.success);
+}
+
+export function buildReviewRectificationPrompt(failedChecks: ReviewCheckResult[], story: UserStory): string {
+  const errors = failedChecks
+    .map((c) => `## ${c.check} errors (exit code ${c.exitCode})\n\`\`\`\n${c.output}\n\`\`\``)
+    .join("\n\n");
+
+  return `You are fixing lint/typecheck errors from a code review.
+
+Story: ${story.title} (${story.id})
+
+The following quality checks failed after implementation:
+
+${errors}
+
+Fix ALL errors listed above. Do NOT change test files or test behavior.
+Do NOT add new features — only fix the quality check errors.
+Commit your fixes when done.`;
+}
+
+async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
+  const logger = getLogger();
+  const maxAttempts = ctx.config.quality.autofix?.maxAttempts ?? 2;
+  const failedChecks = collectFailedChecks(ctx);
+
+  if (failedChecks.length === 0) {
+    logger.debug("autofix", "No failed checks found — skipping agent rectification", { storyId: ctx.story.id });
+    return false;
+  }
+
+  logger.info("autofix", "Starting agent rectification for review failures", {
+    storyId: ctx.story.id,
+    failedChecks: failedChecks.map((c) => c.check),
+    maxAttempts,
+  });
+
+  const agentGetFn = ctx.agentGetFn ?? getAgent;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    logger.info("autofix", `Agent rectification attempt ${attempt}/${maxAttempts}`, { storyId: ctx.story.id });
+
+    const agent = agentGetFn(ctx.config.autoMode.defaultAgent);
+    if (!agent) {
+      logger.error("autofix", "Agent not found — cannot run agent rectification", { storyId: ctx.story.id });
+      return false;
+    }
+
+    const prompt = buildReviewRectificationPrompt(failedChecks, ctx.story);
+    const modelTier = ctx.story.routing?.modelTier ?? ctx.config.autoMode.escalation.tierOrder[0]?.tier ?? "balanced";
+    const modelDef = resolveModel(ctx.config.models[modelTier]);
+
+    await agent.run({
+      prompt,
+      workdir: ctx.workdir,
+      modelTier,
+      modelDef,
+      timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
+      dangerouslySkipPermissions: resolvePermissions(ctx.config, "rectification").skipPermissions,
+      pipelineStage: "rectification",
+      config: ctx.config,
+      maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
+      storyId: ctx.story.id,
+      sessionRole: "implementer",
+    });
+
+    const passed = await _autofixDeps.recheckReview(ctx);
+    if (passed) {
+      logger.info("autofix", `[OK] Agent rectification succeeded on attempt ${attempt}`, {
+        storyId: ctx.story.id,
+      });
+      return true;
+    }
+
+    // Refresh failed checks for next attempt
+    const updatedFailed = collectFailedChecks(ctx);
+    if (updatedFailed.length > 0) {
+      failedChecks.splice(0, failedChecks.length, ...updatedFailed);
+    }
+
+    logger.warn("autofix", `Agent rectification still failing after attempt ${attempt}`, {
+      storyId: ctx.story.id,
+    });
+  }
+
+  logger.warn("autofix", "Agent rectification exhausted", { storyId: ctx.story.id });
+  return false;
+}
+
 /**
  * Injectable deps for testing.
  */
-export const _autofixDeps = { runCommand, recheckReview };
+export const _autofixDeps = { runCommand, recheckReview, runAgentRectification };

@@ -1,11 +1,24 @@
 // RE-ARCH: keep
 import { describe, expect, test } from "bun:test";
-import { autofixStage, _autofixDeps } from "../../../../src/pipeline/stages/autofix";
+import { _autofixDeps, autofixStage, buildReviewRectificationPrompt } from "../../../../src/pipeline/stages/autofix";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
+import type { ReviewCheckResult } from "../../../../src/review/types";
 
 function makeReviewResult(success: boolean) {
   return { success, checks: [], summary: "" } as any;
+}
+
+function makeFailedReviewResult(checks: Partial<ReviewCheckResult>[]) {
+  const fullChecks = checks.map((c) => ({
+    check: c.check ?? "lint",
+    success: false,
+    command: c.command ?? "biome check",
+    exitCode: c.exitCode ?? 1,
+    output: c.output ?? "error output",
+    durationMs: c.durationMs ?? 100,
+  }));
+  return { success: false, checks: fullChecks, summary: "" } as any;
 }
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
@@ -52,7 +65,10 @@ describe("autofixStage", () => {
     expect(autofixStage.enabled(ctx)).toBe(false);
   });
 
-  test("escalates when no fix commands configured", async () => {
+  test("escalates when no fix commands configured and agent rectification fails", async () => {
+    const saved = { ..._autofixDeps };
+    _autofixDeps.runAgentRectification = async () => false;
+
     const ctx = makeCtx({
       reviewResult: makeReviewResult(false),
       config: {
@@ -65,6 +81,9 @@ describe("autofixStage", () => {
       } as any,
     });
     const result = await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
     expect(result.action).toBe("escalate");
   });
 
@@ -82,10 +101,11 @@ describe("autofixStage", () => {
     if (result.action === "retry") expect(result.fromStage).toBe("review");
   });
 
-  test("escalates when recheck still fails after max attempts", async () => {
+  test("escalates when recheck still fails and agent rectification also fails", async () => {
     const saved = { ..._autofixDeps };
     _autofixDeps.runCommand = async () => ({ exitCode: 1, output: "lint error" });
     _autofixDeps.recheckReview = async () => false;
+    _autofixDeps.runAgentRectification = async () => false;
 
     const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
     const result = await autofixStage.execute(ctx);
@@ -93,5 +113,120 @@ describe("autofixStage", () => {
     Object.assign(_autofixDeps, saved);
 
     expect(result.action).toBe("escalate");
+  });
+
+  // AUTOFIX-004 tests
+
+  test("agent rectification runs when no fix commands configured", async () => {
+    const saved = { ..._autofixDeps };
+    let agentRectificationCalled = false;
+    _autofixDeps.runAgentRectification = async () => {
+      agentRectificationCalled = true;
+      return false;
+    };
+
+    const ctx = makeCtx({
+      reviewResult: makeFailedReviewResult([{ check: "lint", output: "Unexpected token" }]),
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { test: "bun test" },
+          autofix: { enabled: true, maxAttempts: 2 },
+        },
+      } as any,
+    });
+    await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(agentRectificationCalled).toBe(true);
+  });
+
+  test("agent rectification runs when mechanical fix fails", async () => {
+    const saved = { ..._autofixDeps };
+    let agentRectificationCalled = false;
+    _autofixDeps.runCommand = async () => ({ exitCode: 0, output: "" });
+    _autofixDeps.recheckReview = async () => false;
+    _autofixDeps.runAgentRectification = async () => {
+      agentRectificationCalled = true;
+      return false;
+    };
+
+    const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
+    await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(agentRectificationCalled).toBe(true);
+  });
+
+  test("agent rectification succeeds → returns retry fromStage review", async () => {
+    const saved = { ..._autofixDeps };
+    _autofixDeps.runCommand = async () => ({ exitCode: 1, output: "" });
+    _autofixDeps.recheckReview = async () => false;
+    _autofixDeps.runAgentRectification = async () => true;
+
+    const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
+    const result = await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(result.action).toBe("retry");
+    if (result.action === "retry") expect(result.fromStage).toBe("review");
+  });
+
+  test("agent rectification exhausted → returns escalate", async () => {
+    const saved = { ..._autofixDeps };
+    _autofixDeps.runCommand = async () => ({ exitCode: 1, output: "" });
+    _autofixDeps.recheckReview = async () => false;
+    _autofixDeps.runAgentRectification = async () => false;
+
+    const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
+    const result = await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(result.action).toBe("escalate");
+  });
+
+  test("agent rectification skipped when review passes after mechanical fix", async () => {
+    const saved = { ..._autofixDeps };
+    let agentRectificationCalled = false;
+    _autofixDeps.runCommand = async () => ({ exitCode: 0, output: "" });
+    _autofixDeps.recheckReview = async () => true;
+    _autofixDeps.runAgentRectification = async () => {
+      agentRectificationCalled = true;
+      return true;
+    };
+
+    const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
+    const result = await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(result.action).toBe("retry");
+    expect(agentRectificationCalled).toBe(false);
+  });
+
+  test("prompt includes failed check output", async () => {
+    const errorText = "Unused variable 'fooBar' at line 42";
+    const failedChecks: ReviewCheckResult[] = [
+      {
+        check: "lint",
+        success: false,
+        command: "biome check",
+        exitCode: 1,
+        output: errorText,
+        durationMs: 50,
+      },
+    ];
+    const story = { id: "US-002", title: "Add feature" } as any;
+
+    const prompt = buildReviewRectificationPrompt(failedChecks, story);
+
+    expect(prompt).toContain(errorText);
+    expect(prompt).toContain("US-002");
+    expect(prompt).toContain("lint");
   });
 });
