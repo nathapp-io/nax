@@ -770,8 +770,11 @@ describe("checkGitignoreCoversNax (Tier 2 warning)", () => {
       `
 node_modules/
 nax.lock
-nax/features/*/runs/
-test/tmp/
+nax/**/runs/
+nax/metrics.json
+nax/features/*/status.json
+.nax-pids
+.nax-wt/
 `.trim(),
     );
 
@@ -804,7 +807,10 @@ test/tmp/
       join(testDir, ".gitignore"),
       `
 nax.lock
-test/tmp/
+nax/metrics.json
+nax/features/*/status.json
+.nax-pids
+.nax-wt/
 `.trim(),
     );
 
@@ -814,28 +820,31 @@ test/tmp/
     expect(result.message).toContain("runs");
   });
 
-  test("fails when .gitignore exists but does not cover test/tmp", async () => {
+  test("fails when .gitignore exists but does not cover .nax-pids", async () => {
     writeFileSync(
       join(testDir, ".gitignore"),
       `
 nax.lock
-nax/features/*/runs/
+nax/**/runs/
+nax/metrics.json
+nax/features/*/status.json
+.nax-wt/
 `.trim(),
     );
 
     const result = await checkGitignoreCoversNax(testDir);
 
     expect(result.passed).toBe(false);
-    expect(result.message).toContain("test/tmp");
+    expect(result.message).toContain(".nax-pids");
   });
 
-  test("checks all three nax runtime file patterns", async () => {
+  test("checks all nax runtime file patterns", async () => {
     writeFileSync(join(testDir, ".gitignore"), "# Empty");
 
     const result = await checkGitignoreCoversNax(testDir);
 
     expect(result.passed).toBe(false);
     // Message should mention missing patterns
-    expect(result.message.toLowerCase()).toMatch(/nax\.lock|runs|test\/tmp/);
+    expect(result.message.toLowerCase()).toMatch(/nax\.lock|runs|\.nax-pids/);
   });
 });
