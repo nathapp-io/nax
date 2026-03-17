@@ -80,6 +80,8 @@ export interface GenerateFromPRDOptions {
   featureName: string;
   /** Working directory for context scanning */
   workdir: string;
+  /** Feature directory where acceptance-refined.json is written */
+  featureDir: string;
   /** Codebase context (file tree, dependencies, test patterns) */
   codebaseContext: string;
   /** Model tier to use for test generation */

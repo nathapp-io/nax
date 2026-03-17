@@ -124,7 +124,7 @@ Respond with ONLY the TypeScript test code (no markdown code fences, no explanat
     2,
   );
 
-  await _generatorPRDDeps.writeFile(join(options.workdir, "acceptance-refined.json"), refinedJsonContent);
+  await _generatorPRDDeps.writeFile(join(options.featureDir, "acceptance-refined.json"), refinedJsonContent);
 
   return { testCode, criteria };
 }
