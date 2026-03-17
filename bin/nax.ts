@@ -1124,6 +1124,8 @@ program
   .option("-a, --agent <name>", "Specific agent (claude|opencode|cursor|windsurf|aider)")
   .option("--dry-run", "Preview without writing files", false)
   .option("--no-auto-inject", "Disable auto-injection of project metadata")
+  .option("--package <dir>", "Generate CLAUDE.md for a specific package (e.g. packages/api)")
+  .option("--all-packages", "Generate CLAUDE.md for all discovered packages", false)
   .action(async (options) => {
     try {
       await generateCommand({
@@ -1132,6 +1134,8 @@ program
         agent: options.agent,
         dryRun: options.dryRun,
         noAutoInject: !options.autoInject,
+        package: options.package,
+        allPackages: options.allPackages,
       });
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));

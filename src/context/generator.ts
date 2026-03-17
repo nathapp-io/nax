@@ -129,5 +129,90 @@ async function generateAll(options: GenerateOptions, config: NaxConfig): Promise
   return results;
 }
 
+/** Result from generateForPackage */
+export interface PackageGenerationResult {
+  packageDir: string;
+  outputFile: string;
+  content: string;
+  written: boolean;
+  error?: string;
+}
+
+/**
+ * Discover packages that have nax/context.md files.
+ *
+ * Scans up to 2 levels deep (one-level and two-level patterns).
+ *
+ * @param repoRoot - Absolute repo root to scan
+ * @returns Array of package directory paths (absolute)
+ */
+export async function discoverPackages(repoRoot: string): Promise<string[]> {
+  const packages: string[] = [];
+  const seen = new Set<string>();
+
+  for (const pattern of ["*/nax/context.md", "*/*/nax/context.md"]) {
+    const glob = new Bun.Glob(pattern);
+    for await (const match of glob.scan(repoRoot)) {
+      // match is e.g. "packages/api/nax/context.md" — strip trailing /nax/context.md
+      const pkgRelative = match.replace(/\/nax\/context\.md$/, "");
+      const pkgAbsolute = join(repoRoot, pkgRelative);
+      if (!seen.has(pkgAbsolute)) {
+        seen.add(pkgAbsolute);
+        packages.push(pkgAbsolute);
+      }
+    }
+  }
+
+  return packages;
+}
+
+/**
+ * Generate the claude CLAUDE.md for a specific package.
+ *
+ * Reads `<packageDir>/nax/context.md` and writes `<packageDir>/CLAUDE.md`.
+ * Per-package CLAUDE.md contains only package-specific content — Claude Code's
+ * native directory hierarchy merges root CLAUDE.md + package CLAUDE.md at runtime.
+ */
+export async function generateForPackage(
+  packageDir: string,
+  config: NaxConfig,
+  dryRun = false,
+): Promise<PackageGenerationResult> {
+  const contextPath = join(packageDir, "nax", "context.md");
+
+  if (!existsSync(contextPath)) {
+    return {
+      packageDir,
+      outputFile: "CLAUDE.md",
+      content: "",
+      written: false,
+      error: `context.md not found: ${contextPath}`,
+    };
+  }
+
+  try {
+    const options: GenerateOptions = {
+      contextPath,
+      outputDir: packageDir,
+      workdir: packageDir,
+      dryRun,
+      autoInject: true,
+    };
+
+    const result = await generateFor("claude", options, config);
+
+    return {
+      packageDir,
+      outputFile: result.outputFile,
+      content: result.content,
+      written: result.written,
+      error: result.error,
+    };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    return { packageDir, outputFile: "CLAUDE.md", content: "", written: false, error };
+  }
+}
+
 export { generateFor, generateAll };
 export type { AgentType };
