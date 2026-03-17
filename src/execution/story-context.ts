@@ -128,13 +128,32 @@ export async function buildStoryContext(prd: PRD, story: UserStory, _config: Nax
 }
 
 /**
+ * Load package-level context.md content if it exists.
+ *
+ * Reads <packageWorkdir>/nax/context.md and returns its content, or null
+ * if the file does not exist.
+ *
+ * @internal
+ */
+async function loadPackageContextMd(packageWorkdir: string): Promise<string | null> {
+  const contextPath = `${packageWorkdir}/nax/context.md`;
+  const file = Bun.file(contextPath);
+  if (!(await file.exists())) return null;
+  return file.text();
+}
+
+/**
  * Build story context returning both markdown and element-level data.
  * Used by `nax prompts` CLI for accurate frontmatter token counts.
+ *
+ * When `packageWorkdir` is provided (absolute path of story.workdir),
+ * appends the package-level nax/context.md after the root context.
  */
 export async function buildStoryContextFull(
   prd: PRD,
   story: UserStory,
   config: NaxConfig,
+  packageWorkdir?: string,
 ): Promise<{ markdown: string; builtContext: BuiltContext } | undefined> {
   try {
     const storyContext: StoryContext = {
@@ -152,11 +171,23 @@ export async function buildStoryContextFull(
 
     const built = await buildContext(storyContext, budget);
 
-    if (built.elements.length === 0) {
+    // MW-003: append package-level context.md if workdir is set
+    let packageSection = "";
+    if (packageWorkdir) {
+      const pkgContent = await loadPackageContextMd(packageWorkdir);
+      if (pkgContent) {
+        packageSection = `\n---\n\n${pkgContent.trim()}`;
+      }
+    }
+
+    if (built.elements.length === 0 && !packageSection) {
       return undefined;
     }
 
-    return { markdown: formatContextAsMarkdown(built), builtContext: built };
+    const baseMarkdown = built.elements.length > 0 ? formatContextAsMarkdown(built) : "";
+    const markdown = packageSection ? `${baseMarkdown}${packageSection}` : baseMarkdown;
+
+    return { markdown, builtContext: built };
   } catch (error) {
     const logger = getSafeLogger();
     logger?.warn("context", "Context builder failed", {

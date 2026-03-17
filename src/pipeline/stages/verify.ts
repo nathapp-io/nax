@@ -9,6 +9,8 @@
  * - `escalate`: Tests failed (retry with escalation)
  */
 
+import { join } from "node:path";
+import { loadConfigForWorkdir } from "../../config/loader";
 import type { SmartTestRunnerConfig } from "../../config/types";
 import { getLogger } from "../../logger";
 import { logTestOutput } from "../../utils/log-test-output";
@@ -53,21 +55,29 @@ export const verifyStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
+    // MW-009: resolve effective config for per-package test commands
+    const effectiveConfig = ctx.story.workdir
+      ? await _verifyDeps.loadConfigForWorkdir(join(ctx.workdir, "nax", "config.json"), ctx.story.workdir)
+      : ctx.config;
+
     // Skip verification if tests are not required
-    if (!ctx.config.quality.requireTests) {
+    if (!effectiveConfig.quality.requireTests) {
       logger.debug("verify", "Skipping verification (quality.requireTests = false)", { storyId: ctx.story.id });
       return { action: "continue" };
     }
 
     // Skip verification if no test command is configured
-    const testCommand = ctx.config.review?.commands?.test ?? ctx.config.quality.commands.test;
-    const testScopedTemplate = ctx.config.quality.commands.testScoped;
+    const testCommand = effectiveConfig.review?.commands?.test ?? effectiveConfig.quality.commands.test;
+    const testScopedTemplate = effectiveConfig.quality.commands.testScoped;
     if (!testCommand) {
       logger.debug("verify", "Skipping verification (no test command configured)", { storyId: ctx.story.id });
       return { action: "continue" };
     }
 
     logger.info("verify", "Running verification", { storyId: ctx.story.id });
+
+    // MW-006: resolve effective workdir for test execution
+    const effectiveWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
 
     // Determine effective test command (smart runner or full suite)
     let effectiveCommand = testCommand;
@@ -76,10 +86,15 @@ export const verifyStage: PipelineStage = {
     const regressionMode = ctx.config.execution.regressionGate?.mode ?? "deferred";
 
     if (smartRunnerConfig.enabled) {
-      const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(ctx.workdir, ctx.storyGitRef);
+      // MW-006: pass packagePrefix so git diff is scoped to the package in monorepos
+      const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(
+        effectiveWorkdir,
+        ctx.storyGitRef,
+        ctx.story.workdir,
+      );
 
       // Pass 1: path convention mapping
-      const pass1Files = await _smartRunnerDeps.mapSourceToTests(sourceFiles, ctx.workdir);
+      const pass1Files = await _smartRunnerDeps.mapSourceToTests(sourceFiles, effectiveWorkdir);
       if (pass1Files.length > 0) {
         logger.info("verify", `[smart-runner] Pass 1: path convention matched ${pass1Files.length} test files`, {
           storyId: ctx.story.id,
@@ -90,7 +105,7 @@ export const verifyStage: PipelineStage = {
         // Pass 2: import-grep fallback
         const pass2Files = await _smartRunnerDeps.importGrepFallback(
           sourceFiles,
-          ctx.workdir,
+          effectiveWorkdir,
           smartRunnerConfig.testFilePatterns,
         );
         if (pass2Files.length > 0) {
@@ -126,7 +141,7 @@ export const verifyStage: PipelineStage = {
 
     // Use unified regression gate (includes 2s wait for agent process cleanup)
     const result = await _verifyDeps.regression({
-      workdir: ctx.workdir,
+      workdir: effectiveWorkdir,
       command: effectiveCommand,
       timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
       acceptOnTimeout: ctx.config.execution.regressionGate?.acceptOnTimeout ?? true,
@@ -199,4 +214,5 @@ export const verifyStage: PipelineStage = {
  */
 export const _verifyDeps = {
   regression,
+  loadConfigForWorkdir,
 };

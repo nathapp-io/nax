@@ -127,6 +127,12 @@ export interface UserStory {
   failureCategory?: FailureCategory;
   /** Worktree path for parallel execution (set when --parallel is used) */
   worktreePath?: string;
+  /**
+   * Working directory for this story, relative to repo root.
+   * Overrides the global workdir for pipeline execution.
+   * @example "packages/api"
+   */
+  workdir?: string;
 }
 
 // ============================================================================

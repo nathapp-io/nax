@@ -30,6 +30,8 @@
  * ```
  */
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { getAgent, validateAgentForTier } from "../../agents";
 import { resolveModel } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
@@ -39,6 +41,22 @@ import type { FailureCategory } from "../../tdd";
 import { runThreeSessionTdd } from "../../tdd";
 import { autoCommitIfDirty, detectMergeConflict } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+
+/**
+ * Resolve the effective working directory for a story.
+ * When story.workdir is set, returns join(repoRoot, story.workdir).
+ * Otherwise returns the repo root unchanged.
+ *
+ * MW-001 runtime check: throws if the resolved workdir does not exist on disk.
+ */
+export function resolveStoryWorkdir(repoRoot: string, storyWorkdir?: string): string {
+  if (!storyWorkdir) return repoRoot;
+  const resolved = join(repoRoot, storyWorkdir);
+  if (!existsSync(resolved)) {
+    throw new Error(`[execution] story.workdir "${storyWorkdir}" does not exist at "${resolved}"`);
+  }
+  return resolved;
+}
 
 /**
  * Detect if agent output contains ambiguity signals
@@ -128,11 +146,13 @@ export const executionStage: PipelineStage = {
         lite: isLiteMode,
       });
 
+      const effectiveWorkdir = _executionDeps.resolveStoryWorkdir(ctx.workdir, ctx.story.workdir);
+
       const tddResult = await runThreeSessionTdd({
         agent,
         story: ctx.story,
         config: ctx.config,
-        workdir: ctx.workdir,
+        workdir: effectiveWorkdir,
         modelTier: ctx.routing.modelTier,
         featureName: ctx.prd.feature,
         contextMarkdown: ctx.contextMarkdown,
@@ -212,9 +232,11 @@ export const executionStage: PipelineStage = {
       });
     }
 
+    const storyWorkdir = _executionDeps.resolveStoryWorkdir(ctx.workdir, ctx.story.workdir);
+
     const result = await agent.run({
       prompt: ctx.prompt,
-      workdir: ctx.workdir,
+      workdir: storyWorkdir,
       modelTier: ctx.routing.modelTier,
       modelDef: resolveModel(ctx.config.models[ctx.routing.modelTier]),
       timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
@@ -258,7 +280,7 @@ export const executionStage: PipelineStage = {
     ctx.agentResult = result;
 
     // BUG-058: Auto-commit if agent left uncommitted changes (single-session/test-after)
-    await autoCommitIfDirty(ctx.workdir, "execution", "single-session", ctx.story.id);
+    await autoCommitIfDirty(storyWorkdir, "execution", "single-session", ctx.story.id);
 
     // merge-conflict trigger: detect CONFLICT markers in agent output
     const combinedOutput = (result.output ?? "") + (result.stderr ?? "");
@@ -327,4 +349,5 @@ export const _executionDeps = {
   checkMergeConflict,
   isAmbiguousOutput,
   checkStoryAmbiguity,
+  resolveStoryWorkdir,
 };

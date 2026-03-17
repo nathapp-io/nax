@@ -155,6 +155,22 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
   const rawTags = s.tags;
   const tags: string[] = Array.isArray(rawTags) ? (rawTags as string[]) : [];
 
+  // workdir — optional, relative path only, no traversal
+  const rawWorkdir = s.workdir;
+  let workdir: string | undefined;
+  if (rawWorkdir !== undefined && rawWorkdir !== null) {
+    if (typeof rawWorkdir !== "string") {
+      throw new Error(`[schema] story[${index}].workdir must be a string`);
+    }
+    if (rawWorkdir.startsWith("/")) {
+      throw new Error(`[schema] story[${index}].workdir must be relative (no leading /): "${rawWorkdir}"`);
+    }
+    if (rawWorkdir.includes("..")) {
+      throw new Error(`[schema] story[${index}].workdir must not contain '..': "${rawWorkdir}"`);
+    }
+    workdir = rawWorkdir;
+  }
+
   return {
     id,
     title: title.trim(),
@@ -172,6 +188,7 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
       testStrategy,
       reasoning: "validated from LLM output",
     },
+    ...(workdir !== undefined ? { workdir } : {}),
   };
 }
 

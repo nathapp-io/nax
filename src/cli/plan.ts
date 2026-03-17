@@ -17,6 +17,7 @@ import type { CodebaseScan } from "../analyze/types";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE } from "../config/test-strategy";
+import { discoverPackages } from "../context/generator";
 import { PidRegistry } from "../execution/pid-registry";
 import { getLogger } from "../logger";
 import { validatePlanOutput } from "../prd/schema";
@@ -41,6 +42,7 @@ export const _deps = {
   },
   mkdirp: (path: string): Promise<void> => Bun.spawn(["mkdir", "-p", path]).exited.then(() => {}),
   existsSync: (path: string): boolean => existsSync(path),
+  discoverPackages: (repoRoot: string): Promise<string[]> => discoverPackages(repoRoot),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -85,11 +87,17 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
 
   // Scan codebase for context
   logger?.info("plan", "Scanning codebase...");
-  const scan = await _deps.scanCodebase(workdir);
+  const [scan, discoveredPackages, pkg] = await Promise.all([
+    _deps.scanCodebase(workdir),
+    _deps.discoverPackages(workdir),
+    _deps.readPackageJson(workdir),
+  ]);
   const codebaseContext = buildCodebaseContext(scan);
 
+  // MW-007: convert absolute paths to repo-relative for prompt readability
+  const relativePackages = discoveredPackages.map((p) => p.replace(`${workdir}/`, ""));
+
   // Auto-detect project name
-  const pkg = await _deps.readPackageJson(workdir);
   const projectName = detectProjectName(workdir, pkg);
 
   // Compute output path early — needed for interactive file-write prompt
@@ -107,7 +115,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   let rawResponse: string;
   if (options.auto) {
     // One-shot: use CLI adapter directly — simple completion doesn't need ACP session overhead
-    const prompt = buildPlanningPrompt(specContent, codebaseContext);
+    const prompt = buildPlanningPrompt(specContent, codebaseContext, undefined, relativePackages);
     const cliAdapter = _deps.getAgent(agentName);
     if (!cliAdapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     rawResponse = await cliAdapter.complete(prompt, { jsonMode: true, workdir, config });
@@ -122,7 +130,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     }
   } else {
     // Interactive: agent writes PRD JSON directly to outputPath (avoids output truncation)
-    const prompt = buildPlanningPrompt(specContent, codebaseContext, outputPath);
+    const prompt = buildPlanningPrompt(specContent, codebaseContext, outputPath, relativePackages);
     const adapter = _deps.getAgent(agentName, config);
     if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     const interactionBridge = createCliInteractionBridge();
@@ -278,8 +286,23 @@ function buildCodebaseContext(scan: CodebaseScan): string {
  * - Output schema (exact prd.json JSON structure)
  * - Complexity classification guide
  * - Test strategy guide
+ * - MW-007: Monorepo hint and package list when packages are detected
  */
-function buildPlanningPrompt(specContent: string, codebaseContext: string, outputFilePath?: string): string {
+function buildPlanningPrompt(
+  specContent: string,
+  codebaseContext: string,
+  outputFilePath?: string,
+  packages?: string[],
+): string {
+  const isMonorepo = packages && packages.length > 0;
+  const monorepoHint = isMonorepo
+    ? `\n## Monorepo Context\n\nThis is a monorepo. Detected packages:\n${packages.map((p) => `- ${p}`).join("\n")}\n\nFor each user story, set the "workdir" field to the relevant package path (e.g. "packages/api"). Stories that span the root should omit "workdir".`
+    : "";
+
+  const workdirField = isMonorepo
+    ? `\n      "workdir": "string — optional, relative path to package (e.g. \\"packages/api\\"). Omit for root-level stories.",`
+    : "";
+
   return `You are a senior software architect generating a product requirements document (PRD) as JSON.
 
 ## Spec
@@ -288,7 +311,7 @@ ${specContent}
 
 ## Codebase Context
 
-${codebaseContext}
+${codebaseContext}${monorepoHint}
 
 ## Output Schema
 
@@ -307,7 +330,7 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
       "description": "string — detailed description of the story",
       "acceptanceCriteria": ["string — each AC line"],
       "tags": ["string — routing tags, e.g. feature, security, api"],
-      "dependencies": ["string — story IDs this story depends on"],
+      "dependencies": ["string — story IDs this story depends on"],${workdirField}
       "status": "pending",
       "passes": false,
       "routing": {

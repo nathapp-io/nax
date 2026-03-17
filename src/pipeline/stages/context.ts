@@ -20,6 +20,7 @@
  * ```
  */
 
+import { join } from "node:path";
 import type { ContextElement } from "../../context/types";
 import { buildStoryContextFull } from "../../execution/helpers";
 import { getLogger } from "../../logger";
@@ -33,8 +34,11 @@ export const contextStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
+    // MW-003: resolve package workdir for per-package context.md loading
+    const packageWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : undefined;
+
     // Build context from PRD with element-level tracking
-    const result = await buildStoryContextFull(ctx.prd, ctx.story, ctx.config);
+    const result = await buildStoryContextFull(ctx.prd, ctx.story, ctx.config, packageWorkdir);
 
     // SOFT FAILURE: Empty context is acceptable — agent can work without PRD context
     // This happens when no relevant stories/context is found, which is normal
