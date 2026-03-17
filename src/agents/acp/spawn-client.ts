@@ -12,6 +12,8 @@
  *   acpx <agent> cancel                             → session.cancelActivePrompt()
  */
 
+import { homedir } from "node:os";
+import { isAbsolute } from "node:path";
 import type { PidRegistry } from "../../execution/pid-registry";
 import { getSafeLogger } from "../../logger";
 import type { AcpClient, AcpSession, AcpSessionResponse } from "./adapter";
@@ -60,10 +62,18 @@ export const _spawnClientDeps = {
 function buildAllowedEnv(extraEnv?: Record<string, string | undefined>): Record<string, string | undefined> {
   const allowed: Record<string, string | undefined> = {};
 
-  const essentialVars = ["PATH", "HOME", "TMPDIR", "NODE_ENV", "USER", "LOGNAME"];
+  const essentialVars = ["PATH", "TMPDIR", "NODE_ENV", "USER", "LOGNAME"];
   for (const varName of essentialVars) {
     if (process.env[varName]) allowed[varName] = process.env[varName];
   }
+
+  // Sanitize HOME — must be absolute path. Unexpanded "~" causes literal ~/dir in cwd.
+  const rawHome = process.env.HOME ?? "";
+  const safeHome = rawHome && isAbsolute(rawHome) ? rawHome : homedir();
+  if (rawHome !== safeHome) {
+    getSafeLogger()?.warn("env", `HOME env is not absolute ("${rawHome}"), falling back to os.homedir(): ${safeHome}`);
+  }
+  allowed.HOME = safeHome;
 
   const apiKeyVars = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "CLAUDE_API_KEY"];
   for (const varName of apiKeyVars) {

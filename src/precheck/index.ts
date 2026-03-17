@@ -20,6 +20,7 @@ import {
   checkGitRepoExists,
   checkGitUserConfigured,
   checkGitignoreCoversNax,
+  checkHomeEnvValid,
   checkLintCommand,
   checkMultiAgentHealth,
   checkOptionalCommands,
@@ -126,6 +127,7 @@ function getEnvironmentWarnings(config: NaxConfig, workdir: string): CheckFn[] {
     () => checkDiskSpace(),
     () => checkOptionalCommands(config, workdir),
     () => checkGitignoreCoversNax(workdir),
+    () => checkHomeEnvValid(),
     () => checkPromptOverrideFiles(config, workdir),
     () => checkMultiAgentHealth(),
   ];
