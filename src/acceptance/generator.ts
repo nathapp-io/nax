@@ -217,7 +217,7 @@ Generate a complete acceptance.test.ts file using bun:test framework. Follow the
 1. **One test per AC**: Each acceptance criterion maps to exactly one test
 2. **Test observable behavior only**: No implementation details, only user-facing behavior
 3. **Independent tests**: No shared state between tests
-4. **Integration-level**: Tests should be runnable without mocking (use real implementations)
+4. **Real-implementation**: Tests should use real implementations without mocking (test observable behavior, not internal units)
 5. **Clear test names**: Use format "AC-N: <description>" for test names
 6. **Async where needed**: Use async/await for operations that may be asynchronous
 
