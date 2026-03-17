@@ -466,14 +466,14 @@ describe("checkDependenciesInstalled (Tier 1 blocker)", () => {
   });
 });
 
-describe("checkTestCommand (Tier 1 blocker)", () => {
+describe("checkTestCommand (Tier 2 warning)", () => {
   test("passes when test command is configured", async () => {
     const config = createMockConfig({ testCommand: "bun test" });
 
     const result = await checkTestCommand(config);
 
     expect(result.name).toBe("test-command-works");
-    expect(result.tier).toBe("blocker");
+    expect(result.tier).toBe("warning");
     expect(result.passed).toBe(true);
   });
 
@@ -483,7 +483,7 @@ describe("checkTestCommand (Tier 1 blocker)", () => {
     const result = await checkTestCommand(config);
 
     expect(result.passed).toBe(true);
-    expect(result.message).toContain("skip");
+    expect(result.message).toContain("default");
   });
 
   test("skips silently when test command is false", async () => {
@@ -492,7 +492,7 @@ describe("checkTestCommand (Tier 1 blocker)", () => {
     const result = await checkTestCommand(config);
 
     expect(result.passed).toBe(true);
-    expect(result.message).toContain("skip");
+    expect(result.message).toContain("default");
   });
 
   test("reads command from config.execution", async () => {
@@ -505,14 +505,14 @@ describe("checkTestCommand (Tier 1 blocker)", () => {
   });
 });
 
-describe("checkLintCommand (Tier 1 blocker)", () => {
+describe("checkLintCommand (Tier 2 warning)", () => {
   test("passes when lint command is configured", async () => {
     const config = createMockConfig({ lintCommand: "bun run lint" });
 
     const result = await checkLintCommand(config);
 
     expect(result.name).toBe("lint-command-works");
-    expect(result.tier).toBe("blocker");
+    expect(result.tier).toBe("warning");
     expect(result.passed).toBe(true);
   });
 
@@ -543,14 +543,14 @@ describe("checkLintCommand (Tier 1 blocker)", () => {
   });
 });
 
-describe("checkTypecheckCommand (Tier 1 blocker)", () => {
+describe("checkTypecheckCommand (Tier 2 warning)", () => {
   test("passes when typecheck command is configured", async () => {
     const config = createMockConfig({ typecheckCommand: "bun run typecheck" });
 
     const result = await checkTypecheckCommand(config);
 
     expect(result.name).toBe("typecheck-command-works");
-    expect(result.tier).toBe("blocker");
+    expect(result.tier).toBe("warning");
     expect(result.passed).toBe(true);
   });
 

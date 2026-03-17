@@ -37,127 +37,65 @@ export async function checkDependenciesInstalled(workdir: string): Promise<Check
   };
 }
 
-/** Check if test command works. Skips silently if command is null/false. */
+/** Check if test command is configured. Downgraded to warning since the verify stage will catch actual failures. */
 export async function checkTestCommand(config: NaxConfig): Promise<Check> {
   const testCommand = config.execution.testCommand || (config.quality?.commands?.test as string | undefined);
 
   if (!testCommand || testCommand === null) {
     return {
       name: "test-command-works",
-      tier: "blocker",
+      tier: "warning",
       passed: true,
-      message: "Test command not configured (skipped)",
+      message: "Test command not configured (will use default: bun test)",
     };
   }
 
-  const parts = testCommand.split(" ");
-  const [cmd, ...args] = parts;
-
-  try {
-    const proc = Bun.spawn([cmd, ...args, "--help"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-
-    const exitCode = await proc.exited;
-    const passed = exitCode === 0;
-
-    return {
-      name: "test-command-works",
-      tier: "blocker",
-      passed,
-      message: passed ? "Test command is available" : `Test command failed: ${testCommand}`,
-    };
-  } catch {
-    return {
-      name: "test-command-works",
-      tier: "blocker",
-      passed: false,
-      message: `Test command failed: ${testCommand}`,
-    };
-  }
+  return {
+    name: "test-command-works",
+    tier: "warning",
+    passed: true,
+    message: `Test command configured: ${testCommand}`,
+  };
 }
 
-/** Check if lint command works. Skips silently if command is null/false. */
+/** Check if lint command is configured. Downgraded to warning since the verify stage will catch actual failures. */
 export async function checkLintCommand(config: NaxConfig): Promise<Check> {
   const lintCommand = config.execution.lintCommand;
 
   if (!lintCommand || lintCommand === null) {
     return {
       name: "lint-command-works",
-      tier: "blocker",
+      tier: "warning",
       passed: true,
       message: "Lint command not configured (skipped)",
     };
   }
 
-  const parts = lintCommand.split(" ");
-  const [cmd, ...args] = parts;
-
-  try {
-    const proc = Bun.spawn([cmd, ...args, "--help"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-
-    const exitCode = await proc.exited;
-    const passed = exitCode === 0;
-
-    return {
-      name: "lint-command-works",
-      tier: "blocker",
-      passed,
-      message: passed ? "Lint command is available" : `Lint command failed: ${lintCommand}`,
-    };
-  } catch {
-    return {
-      name: "lint-command-works",
-      tier: "blocker",
-      passed: false,
-      message: `Lint command failed: ${lintCommand}`,
-    };
-  }
+  return {
+    name: "lint-command-works",
+    tier: "warning",
+    passed: true,
+    message: `Lint command configured: ${lintCommand}`,
+  };
 }
 
-/** Check if typecheck command works. Skips silently if command is null/false. */
+/** Check if typecheck command is configured. Downgraded to warning since the verify stage will catch actual failures. */
 export async function checkTypecheckCommand(config: NaxConfig): Promise<Check> {
   const typecheckCommand = config.execution.typecheckCommand;
 
   if (!typecheckCommand || typecheckCommand === null) {
     return {
       name: "typecheck-command-works",
-      tier: "blocker",
+      tier: "warning",
       passed: true,
       message: "Typecheck command not configured (skipped)",
     };
   }
 
-  const parts = typecheckCommand.split(" ");
-  const [cmd, ...args] = parts;
-
-  try {
-    const proc = Bun.spawn([cmd, ...args, "--help"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-
-    const exitCode = await proc.exited;
-    const passed = exitCode === 0;
-
-    return {
-      name: "typecheck-command-works",
-      tier: "blocker",
-      passed,
-      message: passed
-        ? `Typecheck command is available: ${typecheckCommand}`
-        : `Typecheck command failed: ${typecheckCommand}`,
-    };
-  } catch {
-    return {
-      name: "typecheck-command-works",
-      tier: "blocker",
-      passed: false,
-      message: `Typecheck command failed: ${typecheckCommand}`,
-    };
-  }
+  return {
+    name: "typecheck-command-works",
+    tier: "warning",
+    passed: true,
+    message: `Typecheck command configured: ${typecheckCommand}`,
+  };
 }
