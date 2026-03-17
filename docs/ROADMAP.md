@@ -111,31 +111,31 @@ allowed.HOME = safeHome;
 
 ---
 
-## v0.47.0 — Monorepo Workdir Support 📋 Planned
+## v0.47.0 — Monorepo Workdir Support ✅ Released 2026-03-17
 
 **Theme:** Per-story working directory, per-package context.md/config.json, and package-aware test commands — enabling nax to orchestrate monorepo projects where each package has a different stack.
-**Depends on:** v0.45.0
+**Depends on:** v0.46.3
 **Spec:** [`docs/specs/SPEC-monorepo-workdir.md`](specs/SPEC-monorepo-workdir.md)
 
 ### Phase 1 — Per-Story Workdir + Package Context
 
 | ID | Title | Complexity | Status |
 |:---|:------|:-----------|:-------|
-| MW-001 | `UserStory.workdir` field + schema validation | Simple | [ ] |
-| MW-002 | Execution stage — workdir override (agent cwd) | Simple | [ ] |
-| MW-003 | Context stage — package-level `context.md` resolution | Medium | [ ] |
-| MW-004 | `nax generate --package` + `--all-packages` | Medium | [ ] |
-| MW-005 | `nax init --package` scaffold | Simple | [ ] |
-| MW-006 | Verify stage — workdir-scoped test execution | Medium | [ ] |
-| MW-007 | `nax plan` / `nax analyze` — monorepo-aware `workdir` emission | Medium | [ ] |
+| MW-001 | `UserStory.workdir` field + schema validation + runtime existence check | Simple | [x] |
+| MW-002 | Execution stage — workdir override (agent cwd) | Simple | [x] |
+| MW-003 | Context stage — package-level `context.md` resolution | Medium | [x] |
+| MW-004 | `nax generate --package` + `--all-packages` | Medium | [x] |
+| MW-005 | `nax init --package` scaffold | Simple | [x] |
+| MW-006 | Verify stage — workdir-scoped test execution | Medium | [x] |
+| MW-007 | `nax plan` / `nax analyze` — monorepo-aware `workdir` emission | Medium | [x] |
 
 ### Phase 2 — Per-Package Config + Test Commands
 
 | ID | Title | Complexity | Status |
 |:---|:------|:-----------|:-------|
-| MW-008 | Per-package `nax/config.json` overrides (deep merge) | Medium | [ ] |
-| MW-009 | Verify stage — per-package test command from config | Simple | [ ] |
-| MW-010 | Review stage — package-scoped file checks | Simple | [ ] |
+| MW-008 | Per-package `nax/config.json` overrides (deep merge) | Medium | [x] |
+| MW-009 | Verify stage — per-package test command from config | Simple | [x] |
+| MW-010 | Review stage — package-scoped file checks | Simple | [x] |
 
 ### Design Decisions
 
