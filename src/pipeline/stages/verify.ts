@@ -67,7 +67,7 @@ export const verifyStage: PipelineStage = {
     }
 
     // Skip verification if no test command is configured
-    const testCommand = effectiveConfig.quality.commands.test;
+    const testCommand = effectiveConfig.review?.commands?.test ?? effectiveConfig.quality.commands.test;
     const testScopedTemplate = effectiveConfig.quality.commands.testScoped;
     if (!testCommand) {
       logger.debug("verify", "Skipping verification (no test command configured)", { storyId: ctx.story.id });
