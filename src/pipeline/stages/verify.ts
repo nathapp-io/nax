@@ -10,6 +10,7 @@
  */
 
 import { join } from "node:path";
+import { loadConfigForWorkdir } from "../../config/loader";
 import type { SmartTestRunnerConfig } from "../../config/types";
 import { getLogger } from "../../logger";
 import { logTestOutput } from "../../utils/log-test-output";
@@ -54,15 +55,20 @@ export const verifyStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
+    // MW-009: resolve effective config for per-package test commands
+    const effectiveConfig = ctx.story.workdir
+      ? await _verifyDeps.loadConfigForWorkdir(join(ctx.workdir, "nax", "config.json"), ctx.story.workdir)
+      : ctx.config;
+
     // Skip verification if tests are not required
-    if (!ctx.config.quality.requireTests) {
+    if (!effectiveConfig.quality.requireTests) {
       logger.debug("verify", "Skipping verification (quality.requireTests = false)", { storyId: ctx.story.id });
       return { action: "continue" };
     }
 
     // Skip verification if no test command is configured
-    const testCommand = ctx.config.review?.commands?.test ?? ctx.config.quality.commands.test;
-    const testScopedTemplate = ctx.config.quality.commands.testScoped;
+    const testCommand = effectiveConfig.review?.commands?.test ?? effectiveConfig.quality.commands.test;
+    const testScopedTemplate = effectiveConfig.quality.commands.testScoped;
     if (!testCommand) {
       logger.debug("verify", "Skipping verification (no test command configured)", { storyId: ctx.story.id });
       return { action: "continue" };
@@ -208,4 +214,5 @@ export const verifyStage: PipelineStage = {
  */
 export const _verifyDeps = {
   regression,
+  loadConfigForWorkdir,
 };
