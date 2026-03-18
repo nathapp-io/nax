@@ -67,11 +67,12 @@ export const reviewStage: PipelineStage = {
         return { action: "fail", reason: `Review failed: ${result.failureReason}` };
       }
 
-      logger.warn("review", "Review failed (built-in checks) — escalating for retry", {
+      logger.warn("review", "Review failed (built-in checks) — handing off to autofix", {
         reason: result.failureReason,
         storyId: ctx.story.id,
       });
-      return { action: "escalate", reason: `Review failed: ${result.failureReason}` };
+      // ctx.reviewResult is already set with success:false — autofixStage handles it next
+      return { action: "continue" };
     }
 
     logger.info("review", "Review passed", {

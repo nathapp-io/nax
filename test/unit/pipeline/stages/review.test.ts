@@ -138,7 +138,7 @@ describe("reviewStage — pluginMode deferred path", () => {
     reviewOrchestrator.review = original;
   });
 
-  test("escalates on built-in check failure even when pluginMode is deferred", async () => {
+  test("returns continue on built-in check failure (hands off to autofix) even when pluginMode is deferred", async () => {
     const reviewResult = {
       success: false,
       pluginFailed: false,
@@ -154,7 +154,8 @@ describe("reviewStage — pluginMode deferred path", () => {
     const ctx = makeCtx({ config });
     const result = await reviewStage.execute(ctx);
 
-    expect(result.action).toBe("escalate");
+    // Built-in check failures return "continue" — autofix stage handles the retry
+    expect(result.action).toBe("continue");
     reviewOrchestrator.review = original;
   });
 });
@@ -244,7 +245,7 @@ describe("reviewStage — security-review trigger via _reviewDeps", () => {
     reviewOrchestrator.review = original;
   });
 
-  test("built-in check failure still returns escalate (unchanged behavior)", async () => {
+  test("built-in check failure returns continue (hands off to autofix, security-review trigger not fired)", async () => {
     _reviewDeps.checkSecurityReview = mock(async () => false);
 
     const reviewResult = { success: false, pluginFailed: false, failureReason: "lint failed", builtIn: { totalDurationMs: 0 } };
@@ -258,7 +259,8 @@ describe("reviewStage — security-review trigger via _reviewDeps", () => {
     });
     const result = await reviewStage.execute(ctx);
 
-    expect(result.action).toBe("escalate");
+    // Built-in failures return "continue" — autofix handles it, not escalation
+    expect(result.action).toBe("continue");
     // security-review trigger should NOT fire for built-in check failures
     expect(_reviewDeps.checkSecurityReview).not.toHaveBeenCalled();
     reviewOrchestrator.review = original;

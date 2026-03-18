@@ -19,8 +19,10 @@
  * - `escalate`                 — max attempts exhausted or agent unavailable
  */
 
+import { join } from "node:path";
 import { getAgent } from "../../agents";
 import { resolveModel } from "../../config";
+import { loadConfigForWorkdir } from "../../config/loader";
 import { resolvePermissions } from "../../config/permissions";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
@@ -51,14 +53,22 @@ export const autofixStage: PipelineStage = {
       return { action: "continue" };
     }
 
-    const lintFixCmd = ctx.config.quality.commands.lintFix;
-    const formatFixCmd = ctx.config.quality.commands.formatFix;
+    // Resolve per-package config (same pattern as verify.ts)
+    const effectiveConfig = ctx.story.workdir
+      ? await _autofixDeps.loadConfigForWorkdir(join(ctx.workdir, "nax", "config.json"), ctx.story.workdir)
+      : ctx.config;
+
+    const lintFixCmd = effectiveConfig.quality.commands.lintFix;
+    const formatFixCmd = effectiveConfig.quality.commands.formatFix;
+
+    // Effective workdir for running commands (scoped to package if monorepo)
+    const effectiveWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
 
     // Phase 1: Mechanical fix (if commands are configured)
     if (lintFixCmd || formatFixCmd) {
       if (lintFixCmd) {
         pipelineEventBus.emit({ type: "autofix:started", storyId: ctx.story.id, command: lintFixCmd });
-        const lintResult = await _autofixDeps.runCommand(lintFixCmd, ctx.workdir);
+        const lintResult = await _autofixDeps.runCommand(lintFixCmd, effectiveWorkdir);
         logger.debug("autofix", `lintFix exit=${lintResult.exitCode}`, { storyId: ctx.story.id });
         if (lintResult.exitCode !== 0) {
           logger.warn("autofix", "lintFix command failed — may not have fixed all issues", {
@@ -70,7 +80,7 @@ export const autofixStage: PipelineStage = {
 
       if (formatFixCmd) {
         pipelineEventBus.emit({ type: "autofix:started", storyId: ctx.story.id, command: formatFixCmd });
-        const fmtResult = await _autofixDeps.runCommand(formatFixCmd, ctx.workdir);
+        const fmtResult = await _autofixDeps.runCommand(formatFixCmd, effectiveWorkdir);
         logger.debug("autofix", `formatFix exit=${fmtResult.exitCode}`, { storyId: ctx.story.id });
         if (fmtResult.exitCode !== 0) {
           logger.warn("autofix", "formatFix command failed — may not have fixed all issues", {
@@ -224,4 +234,4 @@ async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
 /**
  * Injectable deps for testing.
  */
-export const _autofixDeps = { runCommand, recheckReview, runAgentRectification };
+export const _autofixDeps = { runCommand, recheckReview, runAgentRectification, loadConfigForWorkdir };
