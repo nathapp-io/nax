@@ -39,6 +39,7 @@ function makeGitRepoWithNax(): string {
   writeFileSync(join(dir, "nax.lock"), "");
   writeFileSync(join(dir, "nax", "metrics.json"), "{}");
   writeFileSync(join(dir, "nax", "features", "feat-001", "status.json"), "{}");
+  writeFileSync(join(dir, "nax", "features", "feat-001", "prd.json"), "{}");
   writeFileSync(join(dir, "nax", "features", "feat-001", "progress.txt"), "");
   writeFileSync(join(dir, "nax", "features", "feat-001", "acp-sessions.json"), "{}");
   writeFileSync(join(dir, "nax", "features", "feat-001", "acceptance-refined.json"), "[]");

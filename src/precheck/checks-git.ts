@@ -40,6 +40,7 @@ const NAX_RUNTIME_PATTERNS = [
   /^.{2} nax\.lock$/,
   /^.{2} nax\/metrics\.json$/,
   /^.{2} nax\/features\/[^/]+\/status\.json$/,
+  /^.{2} nax\/features\/[^/]+\/prd\.json$/,
   /^.{2} nax\/features\/[^/]+\/runs\//,
   /^.{2} nax\/features\/[^/]+\/plan\//,
   /^.{2} nax\/features\/[^/]+\/acp-sessions\.json$/,
