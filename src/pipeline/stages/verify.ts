@@ -5,8 +5,8 @@
  * This is a lightweight verification before the full review stage.
  *
  * @returns
- * - `continue`: Tests passed
- * - `escalate`: Tests failed (retry with escalation)
+ * - `continue`: Tests passed, OR TEST_FAILURE (ctx.verifyResult.success===false → rectifyStage handles it)
+ * - `escalate`: TIMEOUT or RUNTIME_CRASH (structural — rectify can't fix these)
  */
 
 import { basename, join } from "node:path";
@@ -259,13 +259,19 @@ export const verifyStage: PipelineStage = {
         logTestOutput(logger, "verify", result.output, { storyId: ctx.story.id });
       }
 
-      return {
-        action: "escalate",
-        reason:
-          result.status === "TIMEOUT"
-            ? `Test suite TIMEOUT after ${ctx.config.execution.verificationTimeoutSeconds}s (not a code failure)`
-            : `Tests failed (exit code ${result.status ?? "non-zero"})`,
-      };
+      // RUNTIME_CRASH and TIMEOUT are structural — escalate immediately (rectify can't fix them)
+      if (result.status === "TIMEOUT" || detectRuntimeCrash(result.output)) {
+        return {
+          action: "escalate",
+          reason:
+            result.status === "TIMEOUT"
+              ? `Test suite TIMEOUT after ${ctx.config.execution.verificationTimeoutSeconds}s (not a code failure)`
+              : `Tests failed with runtime crash (exit code ${result.status ?? "non-zero"})`,
+        };
+      }
+
+      // TEST_FAILURE: ctx.verifyResult is set with success:false — rectifyStage handles it next
+      return { action: "continue" };
     }
 
     logger.info("verify", "Tests passed", { storyId: ctx.story.id });
