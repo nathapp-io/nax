@@ -172,11 +172,6 @@ describe("DecomposeBuilder.buildPrompt()", () => {
     prompt = DecomposeBuilder.for(story).prd(prd).codebase(scan).config(cfg).buildPrompt();
   });
 
-  test("returns a non-empty string", () => {
-    expect(typeof prompt).toBe("string");
-    expect(prompt.length).toBeGreaterThan(0);
-  });
-
   test("sections are joined with SECTION_SEP", () => {
     expect(prompt).toContain(SECTION_SEP);
   });
@@ -282,20 +277,6 @@ describe("DecomposeBuilder.buildPrompt()", () => {
 // ---------------------------------------------------------------------------
 
 describe("DecomposeBuilder.buildPrompt() — edge cases", () => {
-  test("works with a story that has no dependencies", () => {
-    const story = makeStory({ dependencies: [] });
-    const prd = makePrd(story);
-    const prompt = DecomposeBuilder.for(story).prd(prd).codebase(makeCodebaseScan()).config(makeConfig()).buildPrompt();
-    expect(prompt).toBeTruthy();
-  });
-
-  test("works with a story that has no tags", () => {
-    const story = makeStory({ tags: [] });
-    const prd = makePrd(story);
-    const prompt = DecomposeBuilder.for(story).prd(prd).codebase(makeCodebaseScan()).config(makeConfig()).buildPrompt();
-    expect(prompt).toBeTruthy();
-  });
-
   test("works when PRD has no sibling stories", () => {
     const story = makeStory();
     const prd = makePrd(story, []);

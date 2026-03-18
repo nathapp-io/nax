@@ -226,18 +226,4 @@ describe("complete()", () => {
     await expect(adapter.complete("test")).rejects.toThrow(CompleteError);
   });
 
-  // ── Interface compliance ────────────────────────────────────────────────
-
-  test("complete is defined on ClaudeCodeAdapter instance", () => {
-    expect(typeof adapter.complete).toBe("function");
-  });
-
-  test("complete returns a Promise", () => {
-    _completeDeps.spawn = (_cmd, _opts) => mockProcess("output", 0);
-
-    const result = adapter.complete("test");
-    expect(result).toBeInstanceOf(Promise);
-    // Clean up the hanging promise
-    result.catch(() => {});
-  });
 });

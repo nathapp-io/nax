@@ -32,18 +32,6 @@ const STORY: UserStory = {
 // ---------------------------------------------------------------------------
 
 describe("buildIsolationSection", () => {
-  test("returns a string for strict mode", () => {
-    const result = buildIsolationSection("strict");
-    expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
-  test("returns a string for lite mode", () => {
-    const result = buildIsolationSection("lite");
-    expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("strict mode does NOT contain 'MAY read'", () => {
     const result = buildIsolationSection("strict");
     expect(result).not.toContain("MAY read");
@@ -77,18 +65,6 @@ describe("buildIsolationSection", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildRoleTaskSection", () => {
-  test("returns a string for standard variant", () => {
-    const result = buildRoleTaskSection("standard");
-    expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
-  test("returns a string for lite variant", () => {
-    const result = buildRoleTaskSection("lite");
-    expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("standard contains 'Do NOT modify test files'", () => {
     const result = buildRoleTaskSection("standard");
     expect(result).toContain("Do NOT modify test files");
@@ -120,12 +96,6 @@ describe("buildRoleTaskSection", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildStorySection", () => {
-  test("returns a non-empty string", () => {
-    const result = buildStorySection(STORY);
-    expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("includes the story title", () => {
     const result = buildStorySection(STORY);
     expect(result).toContain(STORY.title);
@@ -162,12 +132,6 @@ describe("buildStorySection", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildVerdictSection", () => {
-  test("returns a non-empty string", () => {
-    const result = buildVerdictSection(STORY);
-    expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("includes the verdict file name .nax-verifier-verdict.json", () => {
     const result = buildVerdictSection(STORY);
     expect(result).toContain(".nax-verifier-verdict.json");
@@ -210,12 +174,6 @@ describe("buildVerdictSection", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildConventionsSection", () => {
-  test("returns a non-empty string", () => {
-    const result = buildConventionsSection();
-    expect(typeof result).toBe("string");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("includes code pattern guidelines", () => {
     const result = buildConventionsSection();
     expect(result).toContain("code patterns");

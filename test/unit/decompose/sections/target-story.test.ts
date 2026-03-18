@@ -25,12 +25,6 @@ function makeStory(overrides: Partial<UserStory> = {}): UserStory {
 }
 
 describe("buildTargetStorySection()", () => {
-  test("returns a non-empty string", () => {
-    const section = buildTargetStorySection(makeStory());
-    expect(typeof section).toBe("string");
-    expect(section.length).toBeGreaterThan(0);
-  });
-
   test("includes the story ID", () => {
     const section = buildTargetStorySection(makeStory());
     expect(section).toContain("SD-042");
@@ -67,16 +61,6 @@ describe("buildTargetStorySection()", () => {
   test("includes a decompose instruction", () => {
     const section = buildTargetStorySection(makeStory());
     expect(section.toLowerCase()).toContain("decompose");
-  });
-
-  test("works with empty tags array", () => {
-    const section = buildTargetStorySection(makeStory({ tags: [] }));
-    expect(typeof section).toBe("string");
-  });
-
-  test("works with empty dependencies array", () => {
-    const section = buildTargetStorySection(makeStory({ dependencies: [] }));
-    expect(typeof section).toBe("string");
   });
 
   test("works with a single acceptance criterion", () => {

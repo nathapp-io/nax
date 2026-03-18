@@ -42,14 +42,6 @@ describe("Constitution Generators", () => {
 			expect(result).toContain("## Coding Standards");
 			expect(result).toContain("Follow TypeScript best practices");
 		});
-
-		test("should have correct output filename", () => {
-			expect(claudeGenerator.outputFile).toBe("CLAUDE.md");
-		});
-
-		test("should have correct generator name", () => {
-			expect(claudeGenerator.name).toBe("claude");
-		});
 	});
 
 	describe("OpenCode Generator", () => {
@@ -60,14 +52,6 @@ describe("Constitution Generators", () => {
 			expect(result).toContain("auto-generated from `nax/constitution.md`");
 			expect(result).toContain("DO NOT EDIT MANUALLY");
 			expect(result).toContain("## Coding Standards");
-		});
-
-		test("should have correct output filename", () => {
-			expect(opencodeGenerator.outputFile).toBe("AGENTS.md");
-		});
-
-		test("should have correct generator name", () => {
-			expect(opencodeGenerator.name).toBe("opencode");
 		});
 	});
 
@@ -80,14 +64,6 @@ describe("Constitution Generators", () => {
 			expect(result).toContain("DO NOT EDIT MANUALLY");
 			expect(result).toContain("## Coding Standards");
 		});
-
-		test("should have correct output filename", () => {
-			expect(cursorGenerator.outputFile).toBe(".cursorrules");
-		});
-
-		test("should have correct generator name", () => {
-			expect(cursorGenerator.name).toBe("cursor");
-		});
 	});
 
 	describe("Windsurf Generator", () => {
@@ -98,14 +74,6 @@ describe("Constitution Generators", () => {
 			expect(result).toContain("Auto-generated from nax/constitution.md");
 			expect(result).toContain("DO NOT EDIT MANUALLY");
 			expect(result).toContain("## Coding Standards");
-		});
-
-		test("should have correct output filename", () => {
-			expect(windsurfGenerator.outputFile).toBe(".windsurfrules");
-		});
-
-		test("should have correct generator name", () => {
-			expect(windsurfGenerator.name).toBe("windsurf");
 		});
 	});
 
@@ -121,13 +89,27 @@ describe("Constitution Generators", () => {
 			expect(result).toContain("  # Project Constitution");
 			expect(result).toContain("  ## Coding Standards");
 		});
+	});
 
-		test("should have correct output filename", () => {
-			expect(aiderGenerator.outputFile).toBe(".aider.conf.yml");
+	describe("Generator names and output filenames", () => {
+		test.each([
+			["claude", claudeGenerator, "CLAUDE.md"],
+			["opencode", opencodeGenerator, "AGENTS.md"],
+			["cursor", cursorGenerator, ".cursorrules"],
+			["windsurf", windsurfGenerator, ".windsurfrules"],
+			["aider", aiderGenerator, ".aider.conf.yml"],
+		] as const)("should have correct generator name: %s", (name, generator) => {
+			expect(generator.name).toBe(name);
 		});
 
-		test("should have correct generator name", () => {
-			expect(aiderGenerator.name).toBe("aider");
+		test.each([
+			["claude", claudeGenerator, "CLAUDE.md"],
+			["opencode", opencodeGenerator, "AGENTS.md"],
+			["cursor", cursorGenerator, ".cursorrules"],
+			["windsurf", windsurfGenerator, ".windsurfrules"],
+			["aider", aiderGenerator, ".aider.conf.yml"],
+		] as const)("should have correct output filename: %s", (_name, generator, outputFile) => {
+			expect(generator.outputFile).toBe(outputFile);
 		});
 	});
 

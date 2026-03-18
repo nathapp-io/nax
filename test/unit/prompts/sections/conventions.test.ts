@@ -17,11 +17,6 @@ describe("buildConventionsSection", () => {
     expect(result).toContain("feat:");
   });
 
-  test("returns non-empty string", () => {
-    const result = buildConventionsSection();
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("is a pure function", () => {
     const result1 = buildConventionsSection();
     const result2 = buildConventionsSection();

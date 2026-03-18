@@ -56,14 +56,6 @@ describe("Context Generators", () => {
       expect(result).toContain("Microservices with Docker");
     });
 
-    test("should have correct output filename", () => {
-      expect(claudeGenerator.outputFile).toBe("CLAUDE.md");
-    });
-
-    test("should have correct generator name", () => {
-      expect(claudeGenerator.name).toBe("claude");
-    });
-
     test("should include metadata section when provided", () => {
       const result = claudeGenerator.generate(contextWithMetadata);
 
@@ -84,13 +76,6 @@ describe("Context Generators", () => {
       expect(result).toContain("## Architecture");
     });
 
-    test("should have correct output filename", () => {
-      expect(opencodeGenerator.outputFile).toBe("AGENTS.md");
-    });
-
-    test("should have correct generator name", () => {
-      expect(opencodeGenerator.name).toBe("opencode");
-    });
   });
 
   describe("Codex Generator", () => {
@@ -102,14 +87,6 @@ describe("Context Generators", () => {
       expect(result).toContain("DO NOT EDIT MANUALLY");
       expect(result).toContain("## Architecture");
       expect(result).toContain("Microservices with Docker");
-    });
-
-    test("should have correct output filename", () => {
-      expect(codexGenerator.outputFile).toBe("codex.md");
-    });
-
-    test("should have correct generator name", () => {
-      expect(codexGenerator.name).toBe("codex");
     });
 
     test("should include metadata section when provided", () => {
@@ -178,14 +155,6 @@ describe("Context Generators", () => {
       expect(result).toContain("Microservices with Docker");
     });
 
-    test("should have correct output filename", () => {
-      expect(geminiGenerator.outputFile).toBe("GEMINI.md");
-    });
-
-    test("should have correct generator name", () => {
-      expect(geminiGenerator.name).toBe("gemini");
-    });
-
     test("should include metadata section when provided", () => {
       const result = geminiGenerator.generate(contextWithMetadata);
 
@@ -247,14 +216,6 @@ describe("Context Generators", () => {
       expect(result).toContain("DO NOT EDIT MANUALLY");
       expect(result).toContain("## Architecture");
       expect(result).toContain("Microservices with Docker");
-    });
-
-    test("should have correct output filename", () => {
-      expect(aiderGenerator.outputFile).toBe(".aider.conf.yml");
-    });
-
-    test("should have correct generator name", () => {
-      expect(aiderGenerator.name).toBe("aider");
     });
 
     test("should include metadata section when provided", () => {
@@ -325,6 +286,28 @@ describe("Context Generators", () => {
           expect(result).toContain("auto-generated from `nax/context.md`");
         }
       }
+    });
+  });
+
+  describe("Generator names and output filenames", () => {
+    test.each([
+      ["claude", claudeGenerator, "CLAUDE.md"],
+      ["opencode", opencodeGenerator, "AGENTS.md"],
+      ["codex", codexGenerator, "codex.md"],
+      ["gemini", geminiGenerator, "GEMINI.md"],
+      ["aider", aiderGenerator, ".aider.conf.yml"],
+    ] as const)("should have correct generator name: %s", (name, generator) => {
+      expect(generator.name).toBe(name);
+    });
+
+    test.each([
+      ["claude", claudeGenerator, "CLAUDE.md"],
+      ["opencode", opencodeGenerator, "AGENTS.md"],
+      ["codex", codexGenerator, "codex.md"],
+      ["gemini", geminiGenerator, "GEMINI.md"],
+      ["aider", aiderGenerator, ".aider.conf.yml"],
+    ] as const)("should have correct output filename: %s", (_name, generator, outputFile) => {
+      expect(generator.outputFile).toBe(outputFile);
     });
   });
 });

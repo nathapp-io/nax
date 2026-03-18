@@ -37,15 +37,6 @@ function makePrd(stories: UserStory[]): PRD {
 }
 
 describe("buildSiblingStoriesSection()", () => {
-  test("returns a non-empty string when siblings exist", () => {
-    const target = makeStory("SD-001");
-    const sibling = makeStory("SD-002");
-    const prd = makePrd([target, sibling]);
-    const section = buildSiblingStoriesSection(target, prd);
-    expect(typeof section).toBe("string");
-    expect(section.length).toBeGreaterThan(0);
-  });
-
   test("includes sibling story ID", () => {
     const target = makeStory("SD-001");
     const sibling = makeStory("SD-002");

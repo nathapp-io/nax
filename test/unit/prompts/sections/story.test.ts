@@ -38,11 +38,6 @@ describe("buildStorySection", () => {
     expect(result).toContain("3. Criterion 3");
   });
 
-  test("returns non-empty string", () => {
-    const result = buildStorySection(mockStory);
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("formats criteria with numeric prefixes", () => {
     const result = buildStorySection(mockStory);
     const lines = result.split("\n");
@@ -68,16 +63,6 @@ describe("buildBatchStorySection", () => {
     title: "Second Batch Story",
     description: "Description for second story",
     acceptanceCriteria: ["AC 2a"],
-  });
-
-  test("returns non-empty string for a single story", () => {
-    const result = buildBatchStorySection([storyA]);
-    expect(result.length).toBeGreaterThan(0);
-  });
-
-  test("returns non-empty string for multiple stories", () => {
-    const result = buildBatchStorySection([storyA, storyB]);
-    expect(result.length).toBeGreaterThan(0);
   });
 
   test("includes USER-SUPPLIED DATA opening boundary tag", () => {

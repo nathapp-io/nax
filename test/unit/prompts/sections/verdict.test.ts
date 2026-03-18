@@ -45,11 +45,6 @@ describe("buildVerdictSection", () => {
     expect(result).toContain("poor");
   });
 
-  test("returns non-empty string", () => {
-    const result = buildVerdictSection(mockStory);
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("includes approval conditions", () => {
     const result = buildVerdictSection(mockStory);
     expect(result).toContain("Set `approved: true`");
