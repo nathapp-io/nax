@@ -243,6 +243,92 @@ describe("mergePackageConfig", () => {
 
       expect(result.review.pluginMode).toBe("deferred");
     });
+
+    describe("PKG-006: quality.commands bridged to review.commands", () => {
+      test("quality.commands.lint bridges to review.commands.lint when review.commands not set", () => {
+        const root: NaxConfig = {
+          ...makeRoot(),
+          review: { enabled: true, checks: ["lint"], commands: { lint: "bunx turbo lint" }, pluginMode: "per-story" },
+        };
+        const result = mergePackageConfig(root, {
+          quality: { commands: { lint: "bun run lint" } },
+        } as Partial<NaxConfig>);
+
+        // Per-package quality.commands.lint overrides root review.commands.lint
+        expect(result.review.commands.lint).toBe("bun run lint");
+        // quality.commands also updated
+        expect(result.quality.commands.lint).toBe("bun run lint");
+      });
+
+      test("quality.commands.typecheck bridges to review.commands.typecheck", () => {
+        const root: NaxConfig = {
+          ...makeRoot(),
+          review: {
+            enabled: true,
+            checks: ["typecheck"],
+            commands: { typecheck: "bunx turbo type-check" },
+            pluginMode: "per-story",
+          },
+        };
+        const result = mergePackageConfig(root, {
+          quality: { commands: { typecheck: "bun run type-check" } },
+        } as Partial<NaxConfig>);
+
+        expect(result.review.commands.typecheck).toBe("bun run type-check");
+      });
+
+      test("explicit review.commands takes precedence over bridged quality.commands", () => {
+        const root: NaxConfig = {
+          ...makeRoot(),
+          review: { enabled: true, checks: ["lint"], commands: { lint: "bunx turbo lint" }, pluginMode: "per-story" },
+        };
+        const result = mergePackageConfig(root, {
+          quality: { commands: { lint: "bun run lint" } },
+          review: { commands: { lint: "eslint --fix ." } } as Partial<NaxConfig["review"]>,
+        } as Partial<NaxConfig>);
+
+        // review.commands wins over quality.commands bridge
+        expect(result.review.commands.lint).toBe("eslint --fix .");
+      });
+
+      test("all three checks bridge together when quality.commands provides all", () => {
+        const root: NaxConfig = {
+          ...makeRoot(),
+          review: {
+            enabled: true,
+            checks: ["typecheck", "lint", "test"],
+            commands: { typecheck: "bunx turbo type-check", lint: "bunx turbo lint", test: "bunx turbo test" },
+            pluginMode: "per-story",
+          },
+        };
+        const result = mergePackageConfig(root, {
+          quality: { commands: { typecheck: "bun run type-check", lint: "bun run lint", test: "bun run test" } },
+        } as Partial<NaxConfig>);
+
+        expect(result.review.commands.typecheck).toBe("bun run type-check");
+        expect(result.review.commands.lint).toBe("bun run lint");
+        expect(result.review.commands.test).toBe("bun run test");
+      });
+
+      test("bridge does not affect unset quality.commands keys", () => {
+        const root: NaxConfig = {
+          ...makeRoot(),
+          review: {
+            enabled: true,
+            checks: ["typecheck", "lint"],
+            commands: { typecheck: "bunx turbo type-check", lint: "bunx turbo lint" },
+            pluginMode: "per-story",
+          },
+        };
+        // Only lint is set in quality.commands — typecheck should stay as root value
+        const result = mergePackageConfig(root, {
+          quality: { commands: { lint: "bun run lint" } },
+        } as Partial<NaxConfig>);
+
+        expect(result.review.commands.lint).toBe("bun run lint"); // bridged
+        expect(result.review.commands.typecheck).toBe("bunx turbo type-check"); // untouched
+      });
+    });
   });
 
   describe("acceptance field overrides", () => {

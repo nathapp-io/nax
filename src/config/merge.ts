@@ -55,6 +55,24 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
       ...packageOverride.review,
       commands: {
         ...root.review.commands,
+        // PKG-006: Bridge quality.commands → review.commands for per-package overrides.
+        // Users naturally put per-package commands in quality.commands (the intuitive
+        // place), but the review runner reads review.commands. Bridge them here so
+        // packages don't need to define the same commands in two places.
+        // Explicit review.commands still take precedence (applied after).
+        ...(packageOverride.quality?.commands?.lint !== undefined && {
+          lint: packageOverride.quality.commands.lint,
+        }),
+        ...(packageOverride.quality?.commands?.lintFix !== undefined && {
+          lintFix: packageOverride.quality.commands.lintFix,
+        }),
+        ...(packageOverride.quality?.commands?.typecheck !== undefined && {
+          typecheck: packageOverride.quality.commands.typecheck,
+        }),
+        ...(packageOverride.quality?.commands?.test !== undefined && {
+          test: packageOverride.quality.commands.test,
+        }),
+        // Explicit review.commands override bridged quality values
         ...packageOverride.review?.commands,
       },
     },
