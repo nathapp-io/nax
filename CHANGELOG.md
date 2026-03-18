@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.49.2] - 2026-03-18
+
+### Fixed
+- **Test strategy descriptions:** `TEST_STRATEGY_GUIDE` (used in plan and decompose prompts) had incorrect descriptions for `three-session-tdd` and `three-session-tdd-lite`. Both strategies use 3 sessions. Key distinction: `three-session-tdd` (strict) — test-writer makes no src/ changes, implementer makes no test changes; `three-session-tdd-lite` (lite) — test-writer may add minimal src/ stubs, implementer may expand coverage and replace stubs. Updated in `src/config/test-strategy.ts`, `docs/specs/test-strategy-ssot.md`, and `docs/architecture/ARCHITECTURE.md`.
+
 ## [0.49.1] - 2026-03-18
 
 ### Fixed
