@@ -43,6 +43,10 @@ export const _deps = {
   mkdirp: (path: string): Promise<void> => Bun.spawn(["mkdir", "-p", path]).exited.then(() => {}),
   existsSync: (path: string): boolean => existsSync(path),
   discoverPackages: (repoRoot: string): Promise<string[]> => discoverPackages(repoRoot),
+  createInteractionBridge: (): {
+    detectQuestion: (text: string) => Promise<boolean>;
+    onQuestionDetected: (text: string) => Promise<string>;
+  } => createCliInteractionBridge(),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -133,7 +137,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     const prompt = buildPlanningPrompt(specContent, codebaseContext, outputPath, relativePackages);
     const adapter = _deps.getAgent(agentName, config);
     if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
-    const interactionBridge = createCliInteractionBridge();
+    const interactionBridge = _deps.createInteractionBridge();
     const pidRegistry = new PidRegistry(workdir);
     const resolvedPerm = resolvePermissions(config, "plan");
     const resolvedModel = config?.plan?.model ?? "balanced";

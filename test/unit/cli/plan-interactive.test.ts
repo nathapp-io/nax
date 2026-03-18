@@ -63,6 +63,15 @@ const origReadPackageJson = _deps.readPackageJson;
 const origSpawnSync = _deps.spawnSync;
 const origMkdirp = _deps.mkdirp;
 const origExistsSync = _deps.existsSync;
+const origCreateInteractionBridge = _deps.createInteractionBridge;
+
+/** Mock bridge that auto-answers any question with "Yes" — no stdin involved. */
+function makeMockBridge(autoAnswer = "Yes") {
+  return {
+    detectQuestion: mock(async (text: string) => text.includes("?")),
+    onQuestionDetected: mock(async (_question: string) => autoAnswer),
+  };
+}
 
 function makeFakeScan() {
   return {
@@ -133,6 +142,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     }));
 
     _deps.mkdirp = mock(async (_path: string) => {});
+    _deps.createInteractionBridge = mock(() => makeMockBridge());
   });
 
   afterEach(() => {
@@ -145,6 +155,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     _deps.spawnSync = origSpawnSync;
     _deps.mkdirp = origMkdirp;
     _deps.existsSync = origExistsSync;
+    _deps.createInteractionBridge = origCreateInteractionBridge;
     Bun.spawnSync(["rm", "-rf", tmpDir]);
   });
 
