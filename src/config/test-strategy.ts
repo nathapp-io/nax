@@ -53,10 +53,10 @@ regardless of LOC count. These require at minimum "tdd-simple" test strategy.`;
 
 export const TEST_STRATEGY_GUIDE = `## Test Strategy Guide
 
-- test-after: Simple changes with well-understood behavior. Write tests after implementation.
-- tdd-simple: Medium complexity. Write key tests first, implement, then fill coverage.
-- three-session-tdd: Complex stories. Full TDD cycle with separate test-writer and implementer sessions.
-- three-session-tdd-lite: Expert/high-risk stories. Full TDD with additional verifier session.`;
+- test-after: Simple changes with well-understood behavior. Write tests after implementation in a single session.
+- tdd-simple: Medium complexity. Write failing tests first, then implement to pass them — all in one session.
+- three-session-tdd: Complex stories. 3 sessions: (1) test-writer writes failing tests — no src/ changes allowed, (2) implementer makes them pass without modifying test files, (3) verifier confirms correctness.
+- three-session-tdd-lite: Expert/high-risk stories. 3 sessions: (1) test-writer writes failing tests and may create minimal src/ stubs for imports, (2) implementer makes tests pass and may add missing coverage or replace stubs, (3) verifier confirms correctness.`;
 
 export const GROUPING_RULES = `## Grouping Rules
 

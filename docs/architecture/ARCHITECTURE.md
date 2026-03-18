@@ -1068,8 +1068,8 @@ strategy values, descriptions, and classification rules are defined.
 |:---------|:-----------|:------------|
 | `test-after` | simple | Write tests after implementation |
 | `tdd-simple` | medium | Write key tests first, then implement |
-| `three-session-tdd` | complex | Full TDD with separate test-writer and implementer |
-| `three-session-tdd-lite` | expert | Full TDD with additional verifier session |
+| `three-session-tdd` | complex | 3 sessions: test-writer (strict, no src/ changes) → implementer (no test changes) → verifier |
+| `three-session-tdd-lite` | expert | 3 sessions: test-writer (lite, may add src/ stubs) → implementer (lite, may expand coverage) → verifier |
 
 ### Rules
 
