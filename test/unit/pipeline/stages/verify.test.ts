@@ -344,18 +344,26 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
     }
   });
 
-  test("falls back to directory basename when package.json has no name", async () => {
+  test("no package.json (non-JS project) — skips testScoped template, falls to full suite", async () => {
     const { verifyStage, _verifyDeps } = await import(
       "../../../../src/pipeline/stages/verify"
+    );
+    const { _smartRunnerDeps } = await import(
+      "../../../../src/verification/smart-runner"
     );
 
     let capturedCommand: string | undefined;
     const origRegression = _verifyDeps.regression;
     const origReadPkgName = _verifyDeps.readPackageName;
     const origLoadConfig = _verifyDeps.loadConfigForWorkdir;
+    const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
+    const origMapSource = _smartRunnerDeps.mapSourceToTests;
 
+    // No package.json → readPackageName returns null
     _verifyDeps.readPackageName = mock(() => Promise.resolve(null));
     _verifyDeps.loadConfigForWorkdir = mock(async () => makeMonorepoContext(null).config);
+    _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve([]));
+    _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve([]));
     _verifyDeps.regression = mock((opts: { command: string }): Promise<VerificationResult> => {
       capturedCommand = opts.command;
       return Promise.resolve(SUCCESS_RESULT);
@@ -363,13 +371,17 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
 
     try {
       const ctx = makeMonorepoContext(null);
-      await verifyStage.execute(ctx as Parameters<typeof verifyStage.execute>[0]);
-      // Falls back to basename("apps/cli") = "cli"
-      expect(capturedCommand).toBe("bunx turbo test --filter=cli");
+      // mode is deferred by default → full suite deferred → continue without regression
+      const result = await verifyStage.execute(ctx as Parameters<typeof verifyStage.execute>[0]);
+      // No package.json → template skipped → no scoped turbo command, falls to deferred
+      expect(result.action).toBe("continue");
+      expect(capturedCommand).toBeUndefined();
     } finally {
       _verifyDeps.regression = origRegression;
       _verifyDeps.readPackageName = origReadPkgName;
       _verifyDeps.loadConfigForWorkdir = origLoadConfig;
+      _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
+      _smartRunnerDeps.mapSourceToTests = origMapSource;
     }
   });
 

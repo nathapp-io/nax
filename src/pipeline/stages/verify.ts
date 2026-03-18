@@ -65,15 +65,21 @@ async function readPackageName(dir: string): Promise<string | null> {
  * Substitute {{package}} placeholder in a testScoped template.
  *
  * Reads the npm package name from <packageDir>/package.json.
- * Falls back to the directory basename when package.json has no name.
+ * Returns null when package.json is absent or has no name field — callers
+ * should skip the template entirely in that case (non-JS/non-Node projects
+ * have no package identity to inject, so don't fall back to a dir name guess).
  *
  * @param template   - Template string (e.g. "bunx turbo test --filter={{package}}")
  * @param packageDir - Absolute path to the package directory
- * @returns Template with {{package}} replaced by the package name
+ * @returns Resolved template, or null if {{package}} cannot be resolved
  */
-async function resolvePackageTemplate(template: string, packageDir: string): Promise<string> {
+async function resolvePackageTemplate(template: string, packageDir: string): Promise<string | null> {
   if (!template.includes("{{package}}")) return template;
-  const name = (await _verifyDeps.readPackageName(packageDir)) ?? basename(packageDir);
+  const name = await _verifyDeps.readPackageName(packageDir);
+  if (name === null) {
+    // No package.json or no name field — skip template, can't resolve {{package}}
+    return null;
+  }
   return template.replaceAll("{{package}}", name);
 }
 
@@ -115,10 +121,12 @@ export const verifyStage: PipelineStage = {
     const smartRunnerConfig = coerceSmartTestRunner(ctx.config.execution.smartTestRunner);
     const regressionMode = ctx.config.execution.regressionGate?.mode ?? "deferred";
 
-    // Resolve {{package}} in testScoped template for monorepo stories
-    let resolvedTestScopedTemplate = testScopedTemplate;
+    // Resolve {{package}} in testScoped template for monorepo stories.
+    // Returns null if package.json is absent (non-JS project) — falls through to smart-runner.
+    let resolvedTestScopedTemplate: string | undefined = testScopedTemplate;
     if (testScopedTemplate && ctx.story.workdir) {
-      resolvedTestScopedTemplate = await resolvePackageTemplate(testScopedTemplate, effectiveWorkdir);
+      const resolved = await resolvePackageTemplate(testScopedTemplate, effectiveWorkdir);
+      resolvedTestScopedTemplate = resolved ?? undefined; // null → skip template
     }
 
     // Monorepo orchestrators (turbo, nx) handle change-aware scoping natively via their own
