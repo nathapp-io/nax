@@ -102,6 +102,7 @@ export async function handlePipelineSuccess(
 export interface PipelineFailureResult {
   prd: PRD;
   prdDirty: boolean;
+  costDelta: number;
 }
 
 export async function handlePipelineFailure(
@@ -111,6 +112,8 @@ export async function handlePipelineFailure(
   const logger = getSafeLogger();
   let prd = ctx.prd;
   let prdDirty = false;
+  // Always capture cost even for failed stories — agent ran and spent tokens
+  const costDelta = pipelineResult.context.agentResult?.estimatedCost || 0;
 
   switch (pipelineResult.finalAction) {
     case "pause":
@@ -185,5 +188,5 @@ export async function handlePipelineFailure(
     }
   }
 
-  return { prd, prdDirty };
+  return { prd, prdDirty, costDelta };
 }

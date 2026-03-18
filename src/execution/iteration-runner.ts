@@ -142,7 +142,7 @@ export async function runIteration(
   return {
     prd: r.prd,
     storiesCompletedDelta: 0,
-    costDelta: 0,
+    costDelta: r.costDelta,
     prdDirty: r.prdDirty,
     finalAction: pipelineResult.finalAction,
     reason: pipelineResult.reason,
