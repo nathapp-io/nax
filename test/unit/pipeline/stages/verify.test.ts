@@ -298,6 +298,7 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
     };
     return {
       config,
+      effectiveConfig: config,
       prd: makePRD(),
       story,
       stories: [story],
@@ -321,13 +322,8 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
     let capturedCommand: string | undefined;
     const origRegression = _verifyDeps.regression;
     const origReadPkgName = _verifyDeps.readPackageName;
-    const origLoadConfig = _verifyDeps.loadConfigForWorkdir;
 
     _verifyDeps.readPackageName = mock(() => Promise.resolve("@koda/cli"));
-    _verifyDeps.loadConfigForWorkdir = mock(async (_path: string, _pkg?: string) => {
-      const ctx = makeMonorepoContext();
-      return ctx.config;
-    });
     _verifyDeps.regression = mock((opts: { command: string }): Promise<VerificationResult> => {
       capturedCommand = opts.command;
       return Promise.resolve(SUCCESS_RESULT);
@@ -340,7 +336,6 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
     } finally {
       _verifyDeps.regression = origRegression;
       _verifyDeps.readPackageName = origReadPkgName;
-      _verifyDeps.loadConfigForWorkdir = origLoadConfig;
     }
   });
 
@@ -355,13 +350,11 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
     let capturedCommand: string | undefined;
     const origRegression = _verifyDeps.regression;
     const origReadPkgName = _verifyDeps.readPackageName;
-    const origLoadConfig = _verifyDeps.loadConfigForWorkdir;
     const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
     const origMapSource = _smartRunnerDeps.mapSourceToTests;
 
     // No package.json → readPackageName returns null
     _verifyDeps.readPackageName = mock(() => Promise.resolve(null));
-    _verifyDeps.loadConfigForWorkdir = mock(async () => makeMonorepoContext(null).config);
     _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve([]));
     _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve([]));
     _verifyDeps.regression = mock((opts: { command: string }): Promise<VerificationResult> => {
@@ -379,7 +372,6 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
     } finally {
       _verifyDeps.regression = origRegression;
       _verifyDeps.readPackageName = origReadPkgName;
-      _verifyDeps.loadConfigForWorkdir = origLoadConfig;
       _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
       _smartRunnerDeps.mapSourceToTests = origMapSource;
     }
@@ -425,6 +417,7 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
       };
       const ctx = {
         config,
+        effectiveConfig: config,
         prd: makePRD(),
         story,
         stories: [story],

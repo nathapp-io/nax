@@ -36,7 +36,7 @@ export const autofixStage: PipelineStage = {
   enabled(ctx: PipelineContext): boolean {
     if (!ctx.reviewResult) return false;
     if (ctx.reviewResult.success) return false;
-    const autofixEnabled = ctx.config.quality.autofix?.enabled ?? true;
+    const autofixEnabled = (ctx.effectiveConfig ?? ctx.config).quality.autofix?.enabled ?? true;
     return autofixEnabled;
   },
 
@@ -53,11 +53,8 @@ export const autofixStage: PipelineStage = {
       return { action: "continue" };
     }
 
-    // Resolve per-package config (same pattern as verify.ts)
-    const effectiveConfig = ctx.story.workdir
-      ? await _autofixDeps.loadConfigForWorkdir(join(ctx.workdir, "nax", "config.json"), ctx.story.workdir)
-      : ctx.config;
-
+    // PKG-004: use centrally resolved effective config (ctx.effectiveConfig set once per story)
+    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
     const lintFixCmd = effectiveConfig.quality.commands.lintFix;
     const formatFixCmd = effectiveConfig.quality.commands.formatFix;
 
@@ -165,7 +162,8 @@ Commit your fixes when done.`;
 
 async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
   const logger = getLogger();
-  const maxAttempts = ctx.config.quality.autofix?.maxAttempts ?? 2;
+  const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
+  const maxAttempts = effectiveConfig.quality.autofix?.maxAttempts ?? 2;
   const failedChecks = collectFailedChecks(ctx);
 
   if (failedChecks.length === 0) {

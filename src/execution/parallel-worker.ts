@@ -28,6 +28,7 @@ export async function executeStoryInWorktree(
   try {
     const pipelineContext: PipelineContext = {
       ...context,
+      effectiveConfig: context.effectiveConfig ?? context.config,
       story,
       stories: [story],
       workdir: worktreePath,

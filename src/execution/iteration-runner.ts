@@ -5,6 +5,8 @@
  * Extracted from sequential-executor.ts to slim it below 120 lines.
  */
 
+import { join } from "node:path";
+import { loadConfigForWorkdir } from "../config/loader";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import { runPipeline } from "../pipeline/runner";
@@ -64,8 +66,14 @@ export async function runIteration(
   // BUG-067: Accumulate cost from all prior failed attempts (stored in priorFailures by handleTierEscalation)
   const accumulatedAttemptCost = (story.priorFailures || []).reduce((sum, f) => sum + (f.cost || 0), 0);
 
+  // PKG-003: Resolve per-package effective config once per story (not per-stage)
+  const effectiveConfig = story.workdir
+    ? await _iterationRunnerDeps.loadConfigForWorkdir(join(ctx.workdir, "nax", "config.json"), story.workdir)
+    : ctx.config;
+
   const pipelineContext: PipelineContext = {
     config: ctx.config,
+    effectiveConfig,
     prd,
     story,
     stories: storiesToExecute,
@@ -140,3 +148,10 @@ export async function runIteration(
     reason: pipelineResult.reason,
   };
 }
+
+/**
+ * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ */
+export const _iterationRunnerDeps = {
+  loadConfigForWorkdir,
+};

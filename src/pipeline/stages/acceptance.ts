@@ -92,7 +92,8 @@ export const acceptanceStage: PipelineStage = {
     // Only run when:
     // 1. Acceptance validation is enabled
     // 2. All stories are complete
-    if (!ctx.config.acceptance.enabled) {
+    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
+    if (!effectiveConfig.acceptance.enabled) {
       return false;
     }
 
@@ -106,6 +107,9 @@ export const acceptanceStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
+    // PKG-004: use centrally resolved effective config
+    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
+
     logger.info("acceptance", "Running acceptance tests");
 
     // Build path to acceptance test file
@@ -114,7 +118,7 @@ export const acceptanceStage: PipelineStage = {
       return { action: "continue" };
     }
 
-    const testPath = path.join(ctx.featureDir, ctx.config.acceptance.testPath);
+    const testPath = path.join(ctx.featureDir, effectiveConfig.acceptance.testPath);
 
     // Check if test file exists
     const testFile = Bun.file(testPath);
