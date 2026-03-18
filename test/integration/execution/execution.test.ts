@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { run } from "../../../src/execution/runner";
 import type { RunOptions } from "../../../src/execution/runner";
@@ -54,7 +55,7 @@ describe("execution runner", () => {
     ]);
 
     // Create temporary PRD file
-    const tmpDir = "/tmp/nax-test-" + Date.now();
+    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -95,7 +96,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = "/tmp/nax-test-" + Date.now();
+    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -135,7 +136,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = "/tmp/nax-test-" + Date.now();
+    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -189,7 +190,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = "/tmp/nax-test-" + Date.now();
+    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -230,7 +231,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = "/tmp/nax-test-" + Date.now();
+    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -279,7 +280,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = "/tmp/nax-test-" + Date.now();
+    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -354,7 +355,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = "/tmp/nax-test-" + Date.now();
+    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -434,7 +435,7 @@ describe("execution runner", () => {
       },
     ]);
 
-    const tmpDir = "/tmp/nax-test-" + Date.now();
+    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -500,7 +501,7 @@ describe("execution runner — lite mode routing", () => {
       },
     ]);
 
-    const tmpDir = "/tmp/nax-test-" + Date.now();
+    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
@@ -611,7 +612,7 @@ describe("execution runner — lite mode routing", () => {
       },
     ]);
 
-    const tmpDir = "/tmp/nax-test-" + Date.now();
+    const tmpDir = `/tmp/nax-test-${randomUUID()}`;
     await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));

@@ -7,10 +7,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "../../../src/config";
 import { getLogger, initLogger, resetLogger } from "../../../src/logger";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { UserStory } from "../../../src/prd/types";
+
+const WORKDIR = `/tmp/nax-test-storyid-${randomUUID()}`;
 
 // ── Static imports (uses _deps pattern — no mock.module() needed) ────────────
 
@@ -93,7 +96,7 @@ function makeCtx(
       testStrategy: "test-after",
       reasoning: "test fixture",
     },
-    workdir: "/tmp/nax-test-storyid",
+    workdir: WORKDIR,
     prd: { feature: "test", userStories: [mockStory] },
     hooks: {} as any,
   } as PipelineContext;
@@ -199,7 +202,7 @@ describe("storyId is present in JSONL event payloads", () => {
         agent: mockAgent as any,
         story: mockStory,
         config: makeCtx().config,
-        workdir: "/tmp/nax-test-storyid",
+        workdir: WORKDIR,
         modelTier: "fast",
         dryRun: true,
       });

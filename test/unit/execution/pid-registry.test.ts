@@ -5,9 +5,10 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { PidRegistry } from "../../../src/execution/pid-registry";
 
-const TEST_WORKDIR = "/tmp/nax-pid-registry-test";
+const TEST_WORKDIR = `/tmp/nax-pid-registry-test-${randomUUID()}`;
 const PID_FILE = `${TEST_WORKDIR}/.nax-pids`;
 
 describe("PidRegistry", () => {

@@ -19,6 +19,7 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import {
@@ -29,6 +30,9 @@ import { collectStoryMetrics } from "../../../src/metrics/tracker";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { StoryRouting } from "../../../src/prd/types";
+
+const WORKDIR = `/tmp/nax-escalation-test-${randomUUID()}`;
+const PRD_PATH = `/tmp/prd-${randomUUID()}.json`;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -94,7 +98,7 @@ function makeCtx(story: UserStory, overrides: Record<string, unknown> = {}): Pip
       testStrategy: "test-after",
       reasoning: "test",
     },
-    workdir: "/tmp/nax-escalation-test",
+    workdir: WORKDIR,
     hooks: { hooks: {} },
     agentResult: {
       success: true,
@@ -426,7 +430,7 @@ describe("handleTierEscalation — priorFailures records attempt data for cross-
         },
         config: makeConfig(),
         prd: makePRD([baseStory]),
-        prdPath: "/tmp/prd.json",
+        prdPath: PRD_PATH,
         featureDir: undefined,
         hooks: { hooks: {} },
         feature: "test-feature",

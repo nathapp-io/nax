@@ -8,11 +8,14 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import { collectBatchMetrics, collectStoryMetrics } from "../../../src/metrics/tracker";
+
+const WORKDIR = `/tmp/nax-tracker-gate-test-${randomUUID()}`;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,7 +65,7 @@ function makeCtx(
       reasoning: "test",
       ...routingOverrides,
     },
-    workdir: "/tmp/nax-tracker-gate-test",
+    workdir: WORKDIR,
     hooks: { hooks: {} },
     agentResult: {
       success: true,
@@ -201,7 +204,7 @@ describe("collectBatchMetrics - fullSuiteGatePassed always false", () => {
         testStrategy: "three-session-tdd",
         reasoning: "test",
       },
-      workdir: "/tmp/nax-tracker-gate-test",
+      workdir: WORKDIR,
       hooks: { hooks: {} },
       agentResult: {
         success: true,

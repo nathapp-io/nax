@@ -11,6 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { AcpAgentAdapter, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
 import type { AcpClient, AcpSession, AcpSessionResponse } from "../../../../src/agents/acp/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
@@ -19,6 +20,8 @@ import type { UserStory } from "../../../../src/prd";
 import { runFullSuiteGate } from "../../../../src/tdd/rectification-gate";
 import { _sessionRunnerDeps, runTddSession } from "../../../../src/tdd/session-runner";
 import { _gitDeps } from "../../../../src/utils/git";
+
+const ACP_WORKDIR = `/tmp/nax-acp-test-${randomUUID()}`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock factory helpers
@@ -208,7 +211,7 @@ describe("runTddSession with AcpAgentAdapter", () => {
       adapter,
       story,
       config,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       "balanced",
       "HEAD",
       undefined,
@@ -238,7 +241,7 @@ describe("runTddSession with AcpAgentAdapter", () => {
       adapter,
       story,
       config,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       "balanced",
       "HEAD",
       undefined,
@@ -267,7 +270,7 @@ describe("runTddSession with AcpAgentAdapter", () => {
       adapter,
       story,
       config,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       "balanced",
       "HEAD",
       undefined,
@@ -292,7 +295,7 @@ describe("runTddSession with AcpAgentAdapter", () => {
       adapter,
       story,
       config,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       "balanced",
       "HEAD",
       undefined,
@@ -331,7 +334,7 @@ describe("three-session flow creates 3 independent ACP sessions", () => {
     const roles = ["test-writer", "implementer", "verifier"] as const;
 
     for (const role of roles) {
-      await runTddSession(role, adapter, story, config, "/tmp/nax-acp-test", "balanced", "HEAD", undefined, true);
+      await runTddSession(role, adapter, story, config, ACP_WORKDIR, "balanced", "HEAD", undefined, true);
     }
 
     // 3 sessions total — one per TDD role
@@ -371,7 +374,7 @@ describe("three-session flow creates 3 independent ACP sessions", () => {
       adapter,
       story,
       config,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       "balanced",
       "HEAD",
       undefined,
@@ -382,7 +385,7 @@ describe("three-session flow creates 3 independent ACP sessions", () => {
       adapter,
       story,
       config,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       "balanced",
       "HEAD",
       undefined,
@@ -393,7 +396,7 @@ describe("three-session flow creates 3 independent ACP sessions", () => {
       adapter,
       story,
       config,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       "balanced",
       "HEAD",
       undefined,
@@ -447,7 +450,7 @@ describe("cost tracking across 3 ACP sessions", () => {
         adapter,
         story,
         config,
-        "/tmp/nax-acp-test",
+        ACP_WORKDIR,
         "balanced",
         "HEAD",
         undefined,
@@ -484,7 +487,7 @@ describe("cost tracking across 3 ACP sessions", () => {
       adapter,
       story,
       config,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       "balanced",
       "HEAD",
       undefined,
@@ -509,7 +512,7 @@ describe("cost tracking across 3 ACP sessions", () => {
       adapter,
       story,
       config,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       "balanced",
       "HEAD",
       undefined,
@@ -541,7 +544,7 @@ describe("isolation checks after ACP sessions", () => {
       adapter,
       story,
       config,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       "balanced",
       "HEAD",
       undefined,
@@ -569,7 +572,7 @@ describe("isolation checks after ACP sessions", () => {
       adapter,
       story,
       config,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       "balanced",
       "HEAD",
       undefined,
@@ -597,7 +600,7 @@ describe("isolation checks after ACP sessions", () => {
       adapter,
       story,
       config,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       "balanced",
       "HEAD",
       undefined,
@@ -625,7 +628,7 @@ describe("isolation checks after ACP sessions", () => {
       adapter,
       story,
       config,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       "balanced",
       "HEAD",
       undefined,
@@ -666,7 +669,7 @@ describe("auto-commit behavior after ACP sessions", () => {
       adapter,
       story,
       config,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       "balanced",
       "HEAD",
       undefined,
@@ -676,7 +679,7 @@ describe("auto-commit behavior after ACP sessions", () => {
     // autoCommitIfDirty must be invoked once per session
     expect(autoCommitCalls.length).toBeGreaterThanOrEqual(1);
     // Verify it's called with correct args: workdir, stage "tdd", role, storyId
-    expect(autoCommitCalls[0].workdir).toBe("/tmp/nax-acp-test");
+    expect(autoCommitCalls[0].workdir).toBe(ACP_WORKDIR);
     expect(autoCommitCalls[0].stage).toBe("tdd");
     expect(autoCommitCalls[0].role).toBe("test-writer");
     expect(autoCommitCalls[0].storyId).toBe(story.id);
@@ -721,7 +724,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
     const result = await runFullSuiteGate(
       story,
       disabledConfig,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       adapter,
       "balanced",
       undefined,
@@ -756,7 +759,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
     const result = await runFullSuiteGate(
       story,
       rectificationConfig,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       adapter,
       "balanced",
       undefined,
@@ -822,7 +825,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
     const result = await runFullSuiteGate(
       story,
       rectificationConfig,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       adapter,
       "balanced",
       undefined,
@@ -877,7 +880,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
     const result = await runFullSuiteGate(
       story,
       rectificationConfig,
-      "/tmp/nax-acp-test",
+      ACP_WORKDIR,
       adapter,
       "balanced",
       undefined,

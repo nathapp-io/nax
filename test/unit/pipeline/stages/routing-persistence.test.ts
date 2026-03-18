@@ -5,11 +5,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { StoryRouting } from "../../../../src/prd/types";
+
+const WORKDIR = `/tmp/nax-routing-test-${randomUUID()}`;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -65,9 +68,9 @@ function makeCtx(story: UserStory, overrides?: Partial<PipelineContext>): Pipeli
       testStrategy: "test-after",
       reasoning: "test",
     },
-    workdir: "/tmp/nax-routing-test",
+    workdir: WORKDIR,
     hooks: { hooks: {} },
-    prdPath: "/tmp/nax-routing-test/nax/prd.json",
+    prdPath: `${WORKDIR}/nax/prd.json`,
     ...overrides,
   } as PipelineContext & { prdPath: string };
 }
@@ -138,7 +141,7 @@ describe("routingStage - first classification persists routing to prd.json", () 
     });
 
     const story = makeStory({ routing: undefined });
-    const prdPath = "/tmp/nax-routing-test/nax/prd.json";
+    const prdPath = `${WORKDIR}/nax/prd.json`;
     const ctx = makeCtx(story, { prdPath } as Partial<PipelineContext>);
 
     await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);

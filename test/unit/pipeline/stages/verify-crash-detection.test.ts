@@ -10,11 +10,14 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import type { NaxConfig } from "../../../../src/config";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
 import type { VerificationResult } from "../../../../src/verification";
+
+const WORKDIR = `/tmp/nax-test-verify-crash-${randomUUID()}`;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -81,7 +84,7 @@ function makeContext(): PipelineContext {
       testStrategy: "test-after" as const,
       reasoning: "test",
     },
-    workdir: "/tmp/nax-test-verify-crash",
+    workdir: WORKDIR,
     hooks: { hooks: {} },
     storyGitRef: "HEAD~1",
   } as PipelineContext;

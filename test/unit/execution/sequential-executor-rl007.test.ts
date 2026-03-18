@@ -12,6 +12,7 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import {
   _isHeartbeatActive,
@@ -73,11 +74,13 @@ function makePluginRegistry() {
 }
 
 const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
+const RL007_WORKDIR = `/tmp/nax-rl007-test-workdir-${randomUUID()}`;
+const RL007_PRD_PATH = `/tmp/nax-rl007-test-prd-${randomUUID()}.json`;
 
 function makeMinimalContext(): SequentialExecutionContext {
   return {
-    prdPath: "/tmp/nax-rl007-test-prd.json",
-    workdir: "/tmp/nax-rl007-test-workdir",
+    prdPath: RL007_PRD_PATH,
+    workdir: RL007_WORKDIR,
     config: {
       ...DEFAULT_CONFIG,
       execution: {

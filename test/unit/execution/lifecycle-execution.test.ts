@@ -6,6 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { PRD, UserStory } from "../../../src/prd";
@@ -15,6 +16,18 @@ import {
   runDeferredRegression,
 } from "../../../src/execution/lifecycle/run-regression";
 import type { VerificationResult } from "../../../src/verification";
+
+const WORKDIR_DISABLED = `/tmp/nax-test-disabled-${randomUUID()}`;
+const WORKDIR_PER_STORY = `/tmp/nax-test-per-story-${randomUUID()}`;
+const WORKDIR_NO_PASSED = `/tmp/nax-test-no-passed-${randomUUID()}`;
+const WORKDIR_SHAPE = `/tmp/nax-test-shape-${randomUUID()}`;
+const WORKDIR_STORY_IDS = `/tmp/nax-test-story-ids-${randomUUID()}`;
+const WORKDIR_COUNTS = `/tmp/nax-test-counts-${randomUUID()}`;
+const WORKDIR_BEHAVIORAL = `/tmp/nax-test-behavioral-${randomUUID()}`;
+const WORKDIR_TIMEOUT_ACCEPT = `/tmp/nax-test-timeout-accept-${randomUUID()}`;
+const WORKDIR_TIMEOUT_REJECT = `/tmp/nax-test-timeout-reject-${randomUUID()}`;
+const WORKDIR_NO_OUTPUT = `/tmp/nax-test-no-output-${randomUUID()}`;
+const WORKDIR_UNMAPPED = `/tmp/nax-test-unmapped-${randomUUID()}`;
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -84,7 +97,7 @@ describe("runDeferredRegression", () => {
     const result = await runDeferredRegression({
       config: makeConfig("disabled", "bun test"),
       prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: "/tmp/nax-test-disabled",
+      workdir: WORKDIR_DISABLED,
     });
 
     expect(result.success).toBe(true);
@@ -101,7 +114,7 @@ describe("runDeferredRegression", () => {
     const result = await runDeferredRegression({
       config: makeConfig("per-story", "bun test"),
       prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: "/tmp/nax-test-per-story",
+      workdir: WORKDIR_PER_STORY,
     });
 
     expect(result.success).toBe(true);
@@ -120,7 +133,7 @@ describe("runDeferredRegression", () => {
         { id: "US-001", status: "pending" },
         { id: "US-002", status: "failed" },
       ]),
-      workdir: "/tmp/nax-test-no-passed",
+      workdir: WORKDIR_NO_PASSED,
     });
 
     expect(result.success).toBe(true);
@@ -137,7 +150,7 @@ describe("runDeferredRegression", () => {
     const result = await runDeferredRegression({
       config: makeConfig("disabled", "bun test"),
       prd: makePRD([]),
-      workdir: "/tmp/nax-test-shape",
+      workdir: WORKDIR_SHAPE,
     });
 
     expect(typeof result.success).toBe("boolean");
@@ -155,7 +168,7 @@ describe("runDeferredRegression", () => {
     const result = await runDeferredRegression({
       config: makeConfig("disabled", "bun test"),
       prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: "/tmp/nax-test-story-ids",
+      workdir: WORKDIR_STORY_IDS,
     });
 
     for (const storyId of result.affectedStories) {
@@ -171,7 +184,7 @@ describe("runDeferredRegression", () => {
     const result = await runDeferredRegression({
       config: makeConfig("disabled", "bun test"),
       prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: "/tmp/nax-test-counts",
+      workdir: WORKDIR_COUNTS,
     });
 
     expect(result.passedTests).toBeGreaterThanOrEqual(0);
@@ -212,7 +225,7 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
     const result = await runDeferredRegression({
       config: makeConfig("deferred", "bun test"),
       prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: "/tmp/nax-test-behavioral",
+      workdir: WORKDIR_BEHAVIORAL,
     });
 
     expect(result.success).toBe(true);
@@ -232,7 +245,7 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
     const result = await runDeferredRegression({
       config,
       prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: "/tmp/nax-test-timeout-accept",
+      workdir: WORKDIR_TIMEOUT_ACCEPT,
     });
 
     expect(result.success).toBe(true);
@@ -263,7 +276,7 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
     const result = await runDeferredRegression({
       config,
       prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: "/tmp/nax-test-timeout-reject",
+      workdir: WORKDIR_TIMEOUT_REJECT,
     });
 
     expect(result.success).toBe(false);
@@ -280,7 +293,7 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
     const result = await runDeferredRegression({
       config: makeConfig("deferred", "bun test"),
       prd: makePRD([{ id: "US-001", status: "passed" }]),
-      workdir: "/tmp/nax-test-no-output",
+      workdir: WORKDIR_NO_OUTPUT,
     });
 
     expect(result.success).toBe(false);
@@ -322,7 +335,7 @@ describe("runDeferredRegression - behavioral tests (with mocked deps)", () => {
         { id: "US-001", status: "passed" },
         { id: "US-002", status: "passed" },
       ]),
-      workdir: "/tmp/nax-test-unmapped",
+      workdir: WORKDIR_UNMAPPED,
     });
 
     expect(result.affectedStories).toContain("US-001");

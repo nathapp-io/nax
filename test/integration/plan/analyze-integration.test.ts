@@ -6,11 +6,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { analyzeFeature } from "../../../src/cli/analyze";
 import { DEFAULT_CONFIG } from "../../../src/config";
 
 describe("analyzeFeature integration", () => {
-  const testDir = "/tmp/nax-analyze-test";
+  const testDir = `/tmp/nax-analyze-test-${randomUUID()}`;
   const featureDir = join(testDir, "nax/features/test-feature");
 
   beforeAll(() => {
@@ -183,7 +184,7 @@ Dependencies: none
   });
 
   test("throws error when spec.md missing", async () => {
-    const emptyDir = "/tmp/nax-empty-test";
+    const emptyDir = `/tmp/nax-empty-test-${randomUUID()}`;
     mkdirSync(emptyDir, { recursive: true });
 
     try {
@@ -200,7 +201,7 @@ Dependencies: none
   });
 
   test("throws error when no stories found", async () => {
-    const noStoriesDir = "/tmp/nax-no-stories-test";
+    const noStoriesDir = `/tmp/nax-no-stories-test-${randomUUID()}`;
     const featurePath = join(noStoriesDir, "nax/features/test");
     mkdirSync(featurePath, { recursive: true });
 
@@ -221,7 +222,7 @@ Dependencies: none
   });
 
   test("warns but succeeds when story count exceeds maxStoriesPerFeature limit", async () => {
-    const manyStoriesDir = "/tmp/nax-many-stories-test";
+    const manyStoriesDir = `/tmp/nax-many-stories-test-${randomUUID()}`;
     const featurePath = join(manyStoriesDir, "nax/features/test");
     mkdirSync(featurePath, { recursive: true });
 

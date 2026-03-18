@@ -8,11 +8,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { initLogger, resetLogger } from "../../../src/logger";
 import { _routingDeps, routingStage } from "../../../src/pipeline/stages/routing";
 import type { NaxConfig } from "../../../src/config";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { UserStory } from "../../../src/prd/types";
+
+const WORKDIR = `/tmp/nax-test-partial-routing-${randomUUID()}`;
 
 // ── Mock functions ────────────────────────────────────────────────────────────
 
@@ -62,7 +65,7 @@ function makeCtx(story: UserStory): PipelineContext {
     story,
     stories: [story],
     routing: {} as PipelineContext["routing"],
-    workdir: "/tmp/nax-test-partial-routing",
+    workdir: WORKDIR,
     prd: { feature: "test", userStories: [story] } as PipelineContext["prd"],
     hooks: {} as PipelineContext["hooks"],
   } as PipelineContext;

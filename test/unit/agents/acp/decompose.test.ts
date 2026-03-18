@@ -10,6 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { AcpAgentAdapter, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
 import type { DecomposeOptions } from "../../../../src/agents/types";
 import { makeClient, makeSession } from "./adapter.test";
@@ -40,10 +41,12 @@ const SAMPLE_STORIES_JSON = JSON.stringify([
   },
 ]);
 
+const DECOMPOSE_WORKDIR = `/tmp/nax-decompose-test-${randomUUID()}`;
+
 function makeDecomposeOptions(overrides: Partial<DecomposeOptions> = {}): DecomposeOptions {
   return {
     specContent: SAMPLE_SPEC,
-    workdir: "/tmp/nax-decompose-test",
+    workdir: DECOMPOSE_WORKDIR,
     codebaseContext: "TypeScript project with Express",
     modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
     ...overrides,

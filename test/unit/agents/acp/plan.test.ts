@@ -10,6 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { AcpAgentAdapter, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
 import type { PlanOptions } from "../../../../src/agents/types";
 import { makeClient, makeSession } from "./adapter.test";
@@ -23,10 +24,12 @@ This is the specification for a new feature.
 ## Overview
 Build an authentication system.`;
 
+const PLAN_WORKDIR = `/tmp/nax-plan-test-${randomUUID()}`;
+
 function makePlanOptions(overrides: Partial<PlanOptions> = {}): PlanOptions {
   return {
     prompt: "Plan an authentication system",
-    workdir: "/tmp/nax-plan-test",
+    workdir: PLAN_WORKDIR,
     interactive: false,
     codebaseContext: "TypeScript project with Express",
     modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },
