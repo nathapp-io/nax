@@ -100,15 +100,26 @@ async function generateFor(agent: AgentType, options: GenerateOptions, config: N
 }
 
 /**
- * Generate configs for all agents.
+ * Generate configs for all agents (or a filtered subset).
+ *
+ * @param agentFilter - Optional list of agent names to generate. When provided,
+ *   only those agents are written to disk. When omitted, all agents are generated.
  */
-async function generateAll(options: GenerateOptions, config: NaxConfig): Promise<GenerationResult[]> {
+async function generateAll(
+  options: GenerateOptions,
+  config: NaxConfig,
+  agentFilter?: AgentType[],
+): Promise<GenerationResult[]> {
   // Load context once and share across generators
   const context = await loadContextContent(options, config);
 
   const results: GenerationResult[] = [];
 
-  for (const [agentKey, generator] of Object.entries(GENERATORS) as [AgentType, AgentContextGenerator][]) {
+  const entries = (Object.entries(GENERATORS) as [AgentType, AgentContextGenerator][]).filter(
+    ([agentKey]) => !agentFilter || agentFilter.length === 0 || agentFilter.includes(agentKey),
+  );
+
+  for (const [agentKey, generator] of entries) {
     try {
       const content = generator.generate(context);
       const outputPath = join(options.outputDir, generator.outputFile);
@@ -262,51 +273,70 @@ export async function discoverWorkspacePackages(repoRoot: string): Promise<strin
 }
 
 /**
- * Generate the claude CLAUDE.md for a specific package.
+ * Generate agent config file(s) for a specific package.
  *
- * Reads `<packageDir>/nax/context.md` and writes `<packageDir>/CLAUDE.md`.
- * Per-package CLAUDE.md contains only package-specific content — Claude Code's
- * native directory hierarchy merges root CLAUDE.md + package CLAUDE.md at runtime.
+ * Reads `<packageDir>/nax/context.md` and writes agent files (e.g. CLAUDE.md,
+ * AGENTS.md) into the package directory. Respects `config.generate.agents` — when
+ * set, only generates for those agents; defaults to `["claude"]` when unset.
+ *
+ * Per-package files contain only package-specific content — Claude Code's native
+ * directory hierarchy merges root CLAUDE.md + package CLAUDE.md at runtime.
+ *
+ * Returns one result per generated agent.
  */
 export async function generateForPackage(
   packageDir: string,
   config: NaxConfig,
   dryRun = false,
-): Promise<PackageGenerationResult> {
+): Promise<PackageGenerationResult[]> {
   const contextPath = join(packageDir, "nax", "context.md");
 
   if (!existsSync(contextPath)) {
-    return {
-      packageDir,
-      outputFile: "CLAUDE.md",
-      content: "",
-      written: false,
-      error: `context.md not found: ${contextPath}`,
-    };
+    return [
+      {
+        packageDir,
+        outputFile: "CLAUDE.md",
+        content: "",
+        written: false,
+        error: `context.md not found: ${contextPath}`,
+      },
+    ];
   }
 
-  try {
-    const options: GenerateOptions = {
-      contextPath,
-      outputDir: packageDir,
-      workdir: packageDir,
-      dryRun,
-      autoInject: true,
-    };
+  // Respect config.generate.agents; default to ["claude"] when unset
+  const agentsToGenerate: AgentType[] =
+    config?.generate?.agents && config.generate.agents.length > 0
+      ? (config.generate.agents as AgentType[])
+      : ["claude"];
 
-    const result = await generateFor("claude", options, config);
+  const options: GenerateOptions = {
+    contextPath,
+    outputDir: packageDir,
+    workdir: packageDir,
+    dryRun,
+    autoInject: true,
+  };
 
-    return {
-      packageDir,
-      outputFile: result.outputFile,
-      content: result.content,
-      written: result.written,
-      error: result.error,
-    };
-  } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
-    return { packageDir, outputFile: "CLAUDE.md", content: "", written: false, error };
+  const results: PackageGenerationResult[] = [];
+
+  for (const agent of agentsToGenerate) {
+    try {
+      const result = await generateFor(agent, options, config);
+      results.push({
+        packageDir,
+        outputFile: result.outputFile,
+        content: result.content,
+        written: result.written,
+        error: result.error,
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      const fallbackFile = GENERATORS[agent]?.outputFile ?? `${agent}.md`;
+      results.push({ packageDir, outputFile: fallbackFile, content: "", written: false, error });
+    }
   }
+
+  return results;
 }
 
 export { generateFor, generateAll };

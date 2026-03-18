@@ -72,14 +72,16 @@ describe("generateForPackage (MW-004)", () => {
   });
 
   test("returns error when nax/context.md does not exist", async () => {
-    const result = await generateForPackage(tmpDir, makeConfig(), true);
-    expect(result.error).toContain("context.md not found");
-    expect(result.written).toBe(false);
+    const results = await generateForPackage(tmpDir, makeConfig(), true);
+    expect(results).toHaveLength(1);
+    expect(results[0].error).toContain("context.md not found");
+    expect(results[0].written).toBe(false);
   });
 
   test("dry run returns content without writing file", async () => {
     await Bun.write(join(tmpDir, "nax/context.md"), "# Package\n\nContent here.");
-    const result = await generateForPackage(tmpDir, makeConfig(), true);
+    const results = await generateForPackage(tmpDir, makeConfig(), true);
+    const result = results[0];
     expect(result.error).toBeUndefined();
     expect(result.content.length).toBeGreaterThan(0);
     expect(result.written).toBe(false);
@@ -88,20 +90,42 @@ describe("generateForPackage (MW-004)", () => {
     expect(await Bun.file(outputFile).exists()).toBe(false);
   });
 
-  test("writes CLAUDE.md when not dry run", async () => {
+  test("writes CLAUDE.md when not dry run (default agents)", async () => {
     await Bun.write(join(tmpDir, "nax/context.md"), "# Package\n\nContent here.");
-    const result = await generateForPackage(tmpDir, makeConfig(), false);
+    const results = await generateForPackage(tmpDir, makeConfig(), false);
+    expect(results).toHaveLength(1);
+    const result = results[0];
     expect(result.error).toBeUndefined();
     expect(result.written).toBe(true);
     expect(result.outputFile).toBe("CLAUDE.md");
-    const outputFile = join(tmpDir, "CLAUDE.md");
-    expect(await Bun.file(outputFile).exists()).toBe(true);
+    expect(await Bun.file(join(tmpDir, "CLAUDE.md")).exists()).toBe(true);
   });
 
   test("returns packageDir in result", async () => {
     await Bun.write(join(tmpDir, "nax/context.md"), "# Package");
-    const result = await generateForPackage(tmpDir, makeConfig(), true);
-    expect(result.packageDir).toBe(tmpDir);
+    const results = await generateForPackage(tmpDir, makeConfig(), true);
+    expect(results[0].packageDir).toBe(tmpDir);
+  });
+
+  test("generates for all config.generate.agents when set", async () => {
+    await Bun.write(join(tmpDir, "nax/context.md"), "# Package\n\nContent.");
+    const config = {
+      generate: { agents: ["claude", "codex"] },
+    } as unknown as NaxConfig;
+    const results = await generateForPackage(tmpDir, config, false);
+    expect(results).toHaveLength(2);
+    const outputFiles = results.map((r) => r.outputFile);
+    expect(outputFiles).toContain("CLAUDE.md");
+    expect(outputFiles).toContain("codex.md");
+    expect(results.every((r) => r.error === undefined)).toBe(true);
+    expect(results.every((r) => r.written === true)).toBe(true);
+  });
+
+  test("defaults to claude only when config.generate.agents is not set", async () => {
+    await Bun.write(join(tmpDir, "nax/context.md"), "# Package");
+    const results = await generateForPackage(tmpDir, makeConfig(), true);
+    expect(results).toHaveLength(1);
+    expect(results[0].outputFile).toBe("CLAUDE.md");
   });
 });
 

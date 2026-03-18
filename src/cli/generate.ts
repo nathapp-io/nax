@@ -67,17 +67,19 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
       return;
     }
 
-    console.log(chalk.blue(`→ Generating CLAUDE.md for ${packages.length} package(s)...`));
+    console.log(chalk.blue(`→ Generating agent files for ${packages.length} package(s)...`));
     let errorCount = 0;
 
     for (const pkgDir of packages) {
-      const result = await generateForPackage(pkgDir, config, dryRun);
-      if (result.error) {
-        console.error(chalk.red(`✗ ${pkgDir}: ${result.error}`));
-        errorCount++;
-      } else {
-        const suffix = dryRun ? " (dry run)" : "";
-        console.log(chalk.green(`✓ ${pkgDir}/${result.outputFile} (${result.content.length} bytes${suffix})`));
+      const results = await generateForPackage(pkgDir, config, dryRun);
+      for (const result of results) {
+        if (result.error) {
+          console.error(chalk.red(`✗ ${pkgDir}: ${result.error}`));
+          errorCount++;
+        } else {
+          const suffix = dryRun ? " (dry run)" : "";
+          console.log(chalk.green(`✓ ${pkgDir}/${result.outputFile} (${result.content.length} bytes${suffix})`));
+        }
       }
     }
 
@@ -94,14 +96,19 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
     if (dryRun) {
       console.log(chalk.yellow("⚠ Dry run — no files will be written"));
     }
-    console.log(chalk.blue(`→ Generating CLAUDE.md for package: ${options.package}`));
-    const result = await generateForPackage(packageDir, config, dryRun);
-    if (result.error) {
-      console.error(chalk.red(`✗ ${result.error}`));
-      process.exit(1);
+    console.log(chalk.blue(`→ Generating agent files for package: ${options.package}`));
+    const pkgResults = await generateForPackage(packageDir, config, dryRun);
+    let pkgHasError = false;
+    for (const result of pkgResults) {
+      if (result.error) {
+        console.error(chalk.red(`✗ ${result.error}`));
+        pkgHasError = true;
+      } else {
+        const suffix = dryRun ? " (dry run)" : "";
+        console.log(chalk.green(`✓ ${options.package}/${result.outputFile} (${result.content.length} bytes${suffix})`));
+      }
     }
-    const suffix = dryRun ? " (dry run)" : "";
-    console.log(chalk.green(`✓ ${options.package}/${result.outputFile} (${result.content.length} bytes${suffix})`));
+    if (pkgHasError) process.exit(1);
     return;
   }
 
@@ -183,8 +190,8 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
         console.log(chalk.blue("→ Generating configs for all agents..."));
       }
 
-      const allResults = await generateAll(genOptions, config);
-      const results = agentFilter ? allResults.filter((r) => agentFilter.includes(r.agent as AgentType)) : allResults;
+      // Pass agentFilter to generateAll so only matching agents are written to disk
+      const results = await generateAll(genOptions, config, agentFilter ?? undefined);
 
       let errorCount = 0;
 
@@ -205,22 +212,24 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
         process.exit(1);
       }
 
-      // Auto-generate per-package CLAUDE.md when packages with nax/context.md are discovered
+      // Auto-generate per-package agent files when packages with nax/context.md are discovered
       const packages = await discoverPackages(workdir);
       if (packages.length > 0) {
         console.log(
-          chalk.blue(`\n→ Discovered ${packages.length} package(s) with nax/context.md — generating CLAUDE.md...`),
+          chalk.blue(`\n→ Discovered ${packages.length} package(s) with nax/context.md — generating agent files...`),
         );
         let pkgErrorCount = 0;
         for (const pkgDir of packages) {
-          const result = await generateForPackage(pkgDir, config, dryRun);
-          if (result.error) {
-            console.error(chalk.red(`✗ ${pkgDir}: ${result.error}`));
-            pkgErrorCount++;
-          } else {
-            const suffix = dryRun ? " (dry run)" : "";
-            const rel = pkgDir.startsWith(workdir) ? pkgDir.slice(workdir.length + 1) : pkgDir;
-            console.log(chalk.green(`✓ ${rel}/${result.outputFile} (${result.content.length} bytes${suffix})`));
+          const pkgResults = await generateForPackage(pkgDir, config, dryRun);
+          for (const result of pkgResults) {
+            if (result.error) {
+              console.error(chalk.red(`✗ ${pkgDir}: ${result.error}`));
+              pkgErrorCount++;
+            } else {
+              const suffix = dryRun ? " (dry run)" : "";
+              const rel = pkgDir.startsWith(workdir) ? pkgDir.slice(workdir.length + 1) : pkgDir;
+              console.log(chalk.green(`✓ ${rel}/${result.outputFile} (${result.content.length} bytes${suffix})`));
+            }
           }
         }
         if (pkgErrorCount > 0) {
