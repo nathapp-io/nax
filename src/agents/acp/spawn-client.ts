@@ -218,7 +218,7 @@ class SpawnAcpSession implements AcpSession {
       this.activeProc = null;
     }
 
-    const cmd = ["acpx", this.agentName, "sessions", "close", this.sessionName];
+    const cmd = ["acpx", "--cwd", this.cwd, this.agentName, "sessions", "close", this.sessionName];
     getSafeLogger()?.debug("acp-adapter", `Closing session: ${this.sessionName}`);
 
     const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });

@@ -25,6 +25,7 @@
  * ```
  */
 
+import { join } from "node:path";
 import { getAgent } from "../../agents/registry";
 import type { NaxConfig } from "../../config";
 import { isGreenfieldStory } from "../../context/greenfield";
@@ -140,13 +141,18 @@ export const routingStage: PipelineStage = {
     }
 
     // BUG-010: Greenfield detection — force test-after if no test files exist
+    // MW-011: For monorepo stories, scan the story's package workdir (story.workdir), not the
+    // repo root. Scanning the repo root would find tests in OTHER packages and incorrectly
+    // classify the story as non-greenfield even when the target package has zero tests.
     const greenfieldDetectionEnabled = ctx.config.tdd.greenfieldDetection ?? true;
     if (greenfieldDetectionEnabled && routing.testStrategy.startsWith("three-session-tdd")) {
-      const isGreenfield = await _routingDeps.isGreenfieldStory(ctx.story, ctx.workdir);
+      const greenfieldScanDir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+      const isGreenfield = await _routingDeps.isGreenfieldStory(ctx.story, greenfieldScanDir);
       if (isGreenfield) {
         logger.info("routing", "Greenfield detected — forcing test-after strategy", {
           storyId: ctx.story.id,
           originalStrategy: routing.testStrategy,
+          scanDir: greenfieldScanDir,
         });
         routing.testStrategy = "test-after";
         routing.reasoning = `${routing.reasoning} [GREENFIELD OVERRIDE: No test files exist, using test-after instead of TDD]`;
