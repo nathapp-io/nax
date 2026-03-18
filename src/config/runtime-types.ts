@@ -476,6 +476,18 @@ export interface NaxConfig {
   decompose?: DecomposeConfig;
   /** Agent protocol settings (ACP-003) */
   agent?: AgentConfig;
+  /** Generate settings */
+  generate?: GenerateConfig;
+}
+
+/** Generate command configuration */
+export interface GenerateConfig {
+  /**
+   * Agents to generate config files for (default: all).
+   * Restricts `nax generate` to only the listed agents.
+   * @example ["claude", "opencode"]
+   */
+  agents?: Array<"claude" | "codex" | "opencode" | "cursor" | "windsurf" | "aider" | "gemini">;
 }
 
 /** Agent protocol configuration (ACP-003) */

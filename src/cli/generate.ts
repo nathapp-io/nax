@@ -142,6 +142,7 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
 
   try {
     if (options.agent) {
+      // CLI --agent flag: single specific agent (overrides config)
       const agent = options.agent as AgentType;
       console.log(chalk.blue(`→ Generating config for ${agent}...`));
 
@@ -155,9 +156,19 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
       const suffix = dryRun ? " (dry run)" : "";
       console.log(chalk.green(`✓ ${agent} → ${result.outputFile} (${result.content.length} bytes${suffix})`));
     } else {
-      console.log(chalk.blue("→ Generating configs for all agents..."));
+      // No --agent flag: use config.generate.agents filter, or generate all
+      const configAgents = config?.generate?.agents;
+      const agentFilter = configAgents && configAgents.length > 0 ? configAgents : null;
 
-      const results = await generateAll(genOptions, config);
+      if (agentFilter) {
+        console.log(chalk.blue(`→ Generating configs for: ${agentFilter.join(", ")} (from config)...`));
+      } else {
+        console.log(chalk.blue("→ Generating configs for all agents..."));
+      }
+
+      const allResults = await generateAll(genOptions, config);
+      const results = agentFilter ? allResults.filter((r) => agentFilter.includes(r.agent as AgentType)) : allResults;
+
       let errorCount = 0;
 
       for (const result of results) {
