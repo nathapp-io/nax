@@ -77,7 +77,6 @@ export function parseAcpxJsonOutput(rawOutput: string): {
           if (result.stopReason) stopReason = result.stopReason as string;
           if (result.stop_reason) stopReason = result.stop_reason as string;
 
-          // Legacy/other adapter format: result.usage (camelCase or snake_case)
           if (result.usage && typeof result.usage === "object") {
             const u = result.usage as Record<string, unknown>;
             tokenUsage = {
@@ -87,21 +86,6 @@ export function parseAcpxJsonOutput(rawOutput: string): {
               cache_creation_input_tokens:
                 (u.cachedWriteTokens as number) ?? (u.cache_creation_input_tokens as number) ?? 0,
             };
-          }
-
-          // acpx format: result.record.cumulative_token_usage (snake_case)
-          // acpx does not emit cost.amount — cost is estimated from token counts downstream.
-          if (!tokenUsage) {
-            const record = result.record as Record<string, unknown> | undefined;
-            const cumulative = record?.cumulative_token_usage as Record<string, unknown> | undefined;
-            if (cumulative && typeof cumulative === "object") {
-              tokenUsage = {
-                input_tokens: (cumulative.input_tokens as number) ?? 0,
-                output_tokens: (cumulative.output_tokens as number) ?? 0,
-                cache_read_input_tokens: (cumulative.cache_read_input_tokens as number) ?? 0,
-                cache_creation_input_tokens: (cumulative.cache_creation_input_tokens as number) ?? 0,
-              };
-            }
           }
         }
 
