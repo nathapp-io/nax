@@ -146,6 +146,20 @@ describe("nax runtime file exclusions", () => {
     expect(result.success).toBe(true);
   });
 
+  test("nax/features/*/acp-sessions.json is excluded from uncommitted check", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => ["nax/features/cli/acp-sessions.json"]);
+    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    expect(result.success).toBe(true);
+  });
+
+  test("monorepo-prefixed acp-sessions.json is excluded (apps/cli/nax/features/*/acp-sessions.json)", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => [
+      "apps/cli/nax/features/cli/acp-sessions.json",
+    ]);
+    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+    expect(result.success).toBe(true);
+  });
+
   test("agent source files are still caught by uncommitted check", async () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => [
       "nax/status.json",

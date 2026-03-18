@@ -221,11 +221,26 @@ export async function runReview(
 
   // RQ-001: Check for uncommitted tracked files before running checks
   const allUncommittedFiles = await _deps.getUncommittedFiles(workdir);
-  // Exclude nax runtime files — written by nax itself during the run, not by the agent
-  const NAX_RUNTIME_FILES = new Set(["nax/status.json", ".nax-verifier-verdict.json"]);
-  const uncommittedFiles = allUncommittedFiles.filter(
-    (f) => !NAX_RUNTIME_FILES.has(f) && !f.match(/^nax\/features\/.+\/prd\.json$/),
-  );
+  // Exclude nax runtime files — written by nax itself during the run, not by the agent.
+  // Patterns use a suffix match (no leading ^) so they work in both single-package repos
+  // (nax/features/…) and monorepos where paths are prefixed (apps/cli/nax/features/…).
+  const NAX_RUNTIME_PATTERNS = [
+    /nax\.lock$/,
+    /nax\/metrics\.json$/,
+    /nax\/status\.json$/,
+    /nax\/features\/[^/]+\/status\.json$/,
+    /nax\/features\/[^/]+\/prd\.json$/,
+    /nax\/features\/[^/]+\/runs\//,
+    /nax\/features\/[^/]+\/plan\//,
+    /nax\/features\/[^/]+\/acp-sessions\.json$/,
+    /nax\/features\/[^/]+\/interactions\//,
+    /nax\/features\/[^/]+\/progress\.txt$/,
+    /nax\/features\/[^/]+\/acceptance-refined\.json$/,
+    /\.nax-verifier-verdict\.json$/,
+    /\.nax-pids$/,
+    /\.nax-wt\//,
+  ];
+  const uncommittedFiles = allUncommittedFiles.filter((f) => !NAX_RUNTIME_PATTERNS.some((pattern) => pattern.test(f)));
   if (uncommittedFiles.length > 0) {
     const fileList = uncommittedFiles.join(", ");
     logger?.warn("review", `Uncommitted changes detected before review: ${fileList}`);
