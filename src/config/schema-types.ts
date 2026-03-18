@@ -36,18 +36,41 @@ export type RoutingStrategyName = "keyword" | "llm" | "manual" | "adaptive" | "c
 
 export type LlmRoutingMode = "one-shot" | "per-story" | "hybrid";
 
+/**
+ * Known model aliases that users sometimes put in config but are NOT valid
+ * model IDs for the underlying agent CLI. Passing these to acpx causes it
+ * to silently fall back to its default model.
+ */
+const KNOWN_ALIASES: Record<string, string> = {
+  // Anthropic
+  haiku: "claude-haiku-4-5",
+  sonnet: "claude-sonnet-4-5",
+  opus: "claude-opus-4-5",
+  // OpenAI
+  "gpt-4": "gpt-4o",
+  "gpt-4o-mini": "gpt-4o-mini",
+  // Gemini
+  "gemini-flash": "gemini-2.5-flash-preview-04-17",
+  "gemini-pro": "gemini-2.5-pro-preview-03-25",
+};
+
 /** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */
 export function resolveModel(entry: ModelEntry): ModelDef {
   if (typeof entry === "string") {
-    // Infer provider from model name
-    const provider = entry.startsWith("claude")
+    // Map known user-friendly aliases to real model IDs.
+    // Passing aliases like "sonnet" or "haiku" to acpx causes it to silently
+    // fall back to its default model — always resolve to the canonical ID.
+    const resolved = KNOWN_ALIASES[entry.toLowerCase()] ?? entry;
+
+    // Infer provider from resolved model name
+    const provider = resolved.startsWith("claude")
       ? "anthropic"
-      : entry.startsWith("gpt") || entry.startsWith("o1") || entry.startsWith("o3")
+      : resolved.startsWith("gpt") || resolved.startsWith("o1") || resolved.startsWith("o3")
         ? "openai"
-        : entry.startsWith("gemini")
+        : resolved.startsWith("gemini")
           ? "google"
           : "unknown";
-    return { provider, model: entry };
+    return { provider, model: resolved };
   }
   return entry;
 }
