@@ -6,6 +6,80 @@
 
 ---
 
+## v0.49.0 — Per-Package Config Override (Monorepo) 📋 Planned
+
+**Theme:** Complete the per-package config override system — expand what's mergeable and wire effective config into all pipeline stages.
+**Depends on:** v0.48.0
+**Spec:** `docs/specs/SPEC-per-package-config.md`
+
+### Context
+
+v0.47.0 shipped `mergePackageConfig` but only `quality.commands` is mergeable. Most pipeline stages still read from `ctx.config` (root) instead of the per-package resolved config.
+
+### Problem
+
+```json
+// packages/web/nax/config.json — these fields are IGNORED today
+{
+  "execution": {
+    "smartTestRunner": false,      // ❌ Still uses root smart-runner
+    "regressionGate": { "mode": "per-story" }  // ❌ Still uses root mode
+  },
+  "review": {
+    "checks": ["lint"],            // ❌ Still runs typecheck
+    "enabled": false               // ❌ Still runs review
+  },
+  "acceptance": {
+    "enabled": false               // ❌ Still runs acceptance
+  }
+}
+```
+
+### PKG-001: Expand `mergePackageConfig`
+
+Add mergeable fields:
+
+| Section | Fields |
+|:--------|:-------|
+| `execution` | `smartTestRunner`, `regressionGate.*`, `verificationTimeoutSeconds` |
+| `review` | `enabled`, `checks`, `commands.*`, `pluginMode` |
+| `acceptance` | `enabled`, `generateTests`, `testPath` |
+| `quality` | `requireTests`, `requireTypecheck`, `requireLint` |
+| `context` | `testCoverage.enabled` |
+
+### PKG-002: Centralize Config Resolution
+
+- Add `effectiveConfig: NaxConfig` to `PipelineContext`
+- Resolve once per story in pipeline entry (not per-stage)
+- All stages use `ctx.effectiveConfig` instead of `ctx.config`
+
+### PKG-003: Stage Updates
+
+| Stage | Updated Fields |
+|:------|:---------------|
+| verify | smartRunnerConfig, regressionGate.mode |
+| review | review.enabled, checks, commands |
+| rectify | quality.commands.test |
+| autofix | quality.commands.lintFix, formatFix |
+| prompt | quality.commands.test |
+| regression | quality.commands.test, regressionGate.* |
+| acceptance | acceptance.enabled, testPath |
+
+### Stories
+
+| ID | Title | Complexity |
+|:---|:------|:-----------|
+| PKG-001 | Expand mergePackageConfig with new fields | Medium |
+| PKG-002 | Add effectiveConfig to PipelineContext | Simple |
+| PKG-003 | Centralize config resolution in pipeline entry | Medium |
+| PKG-004 | Update verify stage to use effectiveConfig | Simple |
+| PKG-005 | Update review stage to use effectiveConfig | Simple |
+| PKG-006 | Update rectify/autofix/prompt stages | Simple |
+| PKG-007 | Update regression/acceptance stages | Simple |
+| PKG-008 | Integration tests for per-package config | Medium |
+
+---
+
 ## v0.46.2 — Review Rectification (Agent-Driven Lint/Typecheck Fix) 📋 Planned
 
 **Theme:** When lint or typecheck fails in the review stage and mechanical autofix can't resolve it, spawn an agent rectification session with the error output as context.
