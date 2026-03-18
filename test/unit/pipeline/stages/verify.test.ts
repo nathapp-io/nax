@@ -268,3 +268,166 @@ describe("verifyStage - deferred mode skips per-story regression", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Monorepo orchestrator + {{package}} substitution
+// ---------------------------------------------------------------------------
+
+describe("verifyStage — monorepo orchestrator + {{package}}", () => {
+  afterEach(() => {
+    mock.restore();
+  });
+
+  function makeMonorepoContext(packageName: string | null = "@koda/cli") {
+    const story = makeStory({ workdir: "apps/cli" });
+    const config: NaxConfig = {
+      ...DEFAULT_CONFIG,
+      quality: {
+        ...DEFAULT_CONFIG.quality,
+        requireTests: true,
+        commands: {
+          test: "bunx turbo test",
+          testScoped: "bunx turbo test --filter={{package}}",
+        },
+      },
+      execution: {
+        ...DEFAULT_CONFIG.execution,
+        verificationTimeoutSeconds: 30,
+        regressionGate: { enabled: true, mode: "deferred", timeoutSeconds: 30, acceptOnTimeout: true },
+      },
+    };
+    return {
+      config,
+      prd: makePRD(),
+      story,
+      stories: [story],
+      routing: {
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "test",
+      },
+      workdir: WORKDIR,
+      hooks: { hooks: {} },
+      _packageName: packageName,
+    };
+  }
+
+  test("substitutes {{package}} from package.json name and runs scoped turbo command", async () => {
+    const { verifyStage, _verifyDeps } = await import(
+      "../../../../src/pipeline/stages/verify"
+    );
+
+    let capturedCommand: string | undefined;
+    const origRegression = _verifyDeps.regression;
+    const origReadPkgName = _verifyDeps.readPackageName;
+    const origLoadConfig = _verifyDeps.loadConfigForWorkdir;
+
+    _verifyDeps.readPackageName = mock(() => Promise.resolve("@koda/cli"));
+    _verifyDeps.loadConfigForWorkdir = mock(async (_path: string, _pkg?: string) => {
+      const ctx = makeMonorepoContext();
+      return ctx.config;
+    });
+    _verifyDeps.regression = mock((opts: { command: string }): Promise<VerificationResult> => {
+      capturedCommand = opts.command;
+      return Promise.resolve(SUCCESS_RESULT);
+    });
+
+    try {
+      const ctx = makeMonorepoContext();
+      await verifyStage.execute(ctx as Parameters<typeof verifyStage.execute>[0]);
+      expect(capturedCommand).toBe("bunx turbo test --filter=@koda/cli");
+    } finally {
+      _verifyDeps.regression = origRegression;
+      _verifyDeps.readPackageName = origReadPkgName;
+      _verifyDeps.loadConfigForWorkdir = origLoadConfig;
+    }
+  });
+
+  test("falls back to directory basename when package.json has no name", async () => {
+    const { verifyStage, _verifyDeps } = await import(
+      "../../../../src/pipeline/stages/verify"
+    );
+
+    let capturedCommand: string | undefined;
+    const origRegression = _verifyDeps.regression;
+    const origReadPkgName = _verifyDeps.readPackageName;
+    const origLoadConfig = _verifyDeps.loadConfigForWorkdir;
+
+    _verifyDeps.readPackageName = mock(() => Promise.resolve(null));
+    _verifyDeps.loadConfigForWorkdir = mock(async () => makeMonorepoContext(null).config);
+    _verifyDeps.regression = mock((opts: { command: string }): Promise<VerificationResult> => {
+      capturedCommand = opts.command;
+      return Promise.resolve(SUCCESS_RESULT);
+    });
+
+    try {
+      const ctx = makeMonorepoContext(null);
+      await verifyStage.execute(ctx as Parameters<typeof verifyStage.execute>[0]);
+      // Falls back to basename("apps/cli") = "cli"
+      expect(capturedCommand).toBe("bunx turbo test --filter=cli");
+    } finally {
+      _verifyDeps.regression = origRegression;
+      _verifyDeps.readPackageName = origReadPkgName;
+      _verifyDeps.loadConfigForWorkdir = origLoadConfig;
+    }
+  });
+
+  test("runs full monorepo test when no story.workdir (no package context)", async () => {
+    const { verifyStage, _verifyDeps } = await import(
+      "../../../../src/pipeline/stages/verify"
+    );
+    const { _smartRunnerDeps } = await import(
+      "../../../../src/verification/smart-runner"
+    );
+
+    let capturedCommand: string | undefined;
+    const origRegression = _verifyDeps.regression;
+    const origReadPkgName = _verifyDeps.readPackageName;
+    const origGetChanged = _smartRunnerDeps.getChangedSourceFiles;
+    const origMapSource = _smartRunnerDeps.mapSourceToTests;
+
+    _verifyDeps.readPackageName = mock(() => Promise.resolve(null));
+    _smartRunnerDeps.getChangedSourceFiles = mock(() => Promise.resolve([]));
+    _smartRunnerDeps.mapSourceToTests = mock(() => Promise.resolve([]));
+    _verifyDeps.regression = mock((opts: { command: string }): Promise<VerificationResult> => {
+      capturedCommand = opts.command;
+      return Promise.resolve(SUCCESS_RESULT);
+    });
+
+    try {
+      // No workdir on story — uses root turbo test, deferred mode skips
+      const story = makeStory(); // no workdir
+      const config: NaxConfig = {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          requireTests: true,
+          commands: { test: "bunx turbo test", testScoped: "bunx turbo test --filter={{package}}" },
+        },
+        execution: {
+          ...DEFAULT_CONFIG.execution,
+          verificationTimeoutSeconds: 30,
+          regressionGate: { enabled: true, mode: "per-story", timeoutSeconds: 30, acceptOnTimeout: true },
+        },
+      };
+      const ctx = {
+        config,
+        prd: makePRD(),
+        story,
+        stories: [story],
+        routing: { complexity: "simple" as const, modelTier: "fast" as const, testStrategy: "test-after" as const, reasoning: "test" },
+        workdir: WORKDIR,
+        hooks: { hooks: {} },
+      };
+      await verifyStage.execute(ctx as Parameters<typeof verifyStage.execute>[0]);
+      // No workdir → falls to full suite path, runs "bunx turbo test"
+      expect(capturedCommand).toBe("bunx turbo test");
+    } finally {
+      _verifyDeps.regression = origRegression;
+      _verifyDeps.readPackageName = origReadPkgName;
+      _smartRunnerDeps.getChangedSourceFiles = origGetChanged;
+      _smartRunnerDeps.mapSourceToTests = origMapSource;
+    }
+  });
+});

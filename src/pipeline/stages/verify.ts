@@ -9,7 +9,7 @@
  * - `escalate`: Tests failed (retry with escalation)
  */
 
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { loadConfigForWorkdir } from "../../config/loader";
 import type { SmartTestRunnerConfig } from "../../config/types";
 import { getLogger } from "../../logger";
@@ -18,6 +18,7 @@ import { detectRuntimeCrash } from "../../verification/crash-detector";
 import type { VerifyStatus } from "../../verification/orchestrator-types";
 import { regression } from "../../verification/runners";
 import { _smartRunnerDeps } from "../../verification/smart-runner";
+import { isMonorepoOrchestratorCommand } from "../../verification/strategies/scoped";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 const DEFAULT_SMART_RUNNER_CONFIG: SmartTestRunnerConfig = {
@@ -45,6 +46,35 @@ function buildScopedCommand(testFiles: string[], baseCommand: string, testScoped
     return testScopedTemplate.replace("{{files}}", testFiles.join(" "));
   }
   return _smartRunnerDeps.buildSmartTestCommand(testFiles, baseCommand);
+}
+
+/**
+ * Read the npm package name from <dir>/package.json.
+ * Returns null if not found or file has no name field.
+ */
+async function readPackageName(dir: string): Promise<string | null> {
+  try {
+    const content = await Bun.file(join(dir, "package.json")).json();
+    return typeof content.name === "string" ? content.name : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Substitute {{package}} placeholder in a testScoped template.
+ *
+ * Reads the npm package name from <packageDir>/package.json.
+ * Falls back to the directory basename when package.json has no name.
+ *
+ * @param template   - Template string (e.g. "bunx turbo test --filter={{package}}")
+ * @param packageDir - Absolute path to the package directory
+ * @returns Template with {{package}} replaced by the package name
+ */
+async function resolvePackageTemplate(template: string, packageDir: string): Promise<string> {
+  if (!template.includes("{{package}}")) return template;
+  const name = (await _verifyDeps.readPackageName(packageDir)) ?? basename(packageDir);
+  return template.replaceAll("{{package}}", name);
 }
 
 export const verifyStage: PipelineStage = {
@@ -85,7 +115,33 @@ export const verifyStage: PipelineStage = {
     const smartRunnerConfig = coerceSmartTestRunner(ctx.config.execution.smartTestRunner);
     const regressionMode = ctx.config.execution.regressionGate?.mode ?? "deferred";
 
-    if (smartRunnerConfig.enabled) {
+    // Resolve {{package}} in testScoped template for monorepo stories
+    let resolvedTestScopedTemplate = testScopedTemplate;
+    if (testScopedTemplate && ctx.story.workdir) {
+      resolvedTestScopedTemplate = await resolvePackageTemplate(testScopedTemplate, effectiveWorkdir);
+    }
+
+    // Monorepo orchestrators (turbo, nx) handle change-aware scoping natively via their own
+    // filter syntax. Skip nax's smart runner — appending file paths would produce invalid syntax.
+    // Instead, use the testScoped template (with {{package}} resolved) to scope per-story.
+    const isMonorepoOrchestrator = isMonorepoOrchestratorCommand(testCommand);
+
+    if (isMonorepoOrchestrator) {
+      if (resolvedTestScopedTemplate && ctx.story.workdir) {
+        // Use the resolved scoped template (e.g. "bunx turbo test --filter=@koda/cli")
+        effectiveCommand = resolvedTestScopedTemplate;
+        isFullSuite = false;
+        logger.info("verify", "Monorepo orchestrator — using testScoped template", {
+          storyId: ctx.story.id,
+          command: effectiveCommand,
+        });
+      } else {
+        logger.info("verify", "Monorepo orchestrator — running full suite (no package context)", {
+          storyId: ctx.story.id,
+          command: effectiveCommand,
+        });
+      }
+    } else if (smartRunnerConfig.enabled) {
       // MW-006: pass packagePrefix so git diff is scoped to the package in monorepos
       const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(
         effectiveWorkdir,
@@ -99,7 +155,7 @@ export const verifyStage: PipelineStage = {
         logger.info("verify", `[smart-runner] Pass 1: path convention matched ${pass1Files.length} test files`, {
           storyId: ctx.story.id,
         });
-        effectiveCommand = buildScopedCommand(pass1Files, testCommand, testScopedTemplate);
+        effectiveCommand = buildScopedCommand(pass1Files, testCommand, resolvedTestScopedTemplate);
         isFullSuite = false;
       } else if (smartRunnerConfig.fallback === "import-grep") {
         // Pass 2: import-grep fallback
@@ -112,7 +168,7 @@ export const verifyStage: PipelineStage = {
           logger.info("verify", `[smart-runner] Pass 2: import-grep matched ${pass2Files.length} test files`, {
             storyId: ctx.story.id,
           });
-          effectiveCommand = buildScopedCommand(pass2Files, testCommand, testScopedTemplate);
+          effectiveCommand = buildScopedCommand(pass2Files, testCommand, resolvedTestScopedTemplate);
           isFullSuite = false;
         }
       }
@@ -215,4 +271,5 @@ export const verifyStage: PipelineStage = {
 export const _verifyDeps = {
   regression,
   loadConfigForWorkdir,
+  readPackageName,
 };
