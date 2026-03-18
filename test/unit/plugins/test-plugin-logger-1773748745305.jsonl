@@ -1,2 +1,0 @@
-{"timestamp":"2026-03-17T11:59:05.306Z","level":"info","stage":"plugin:test-plugin","message":"From test-plugin"}
-{"timestamp":"2026-03-17T11:59:05.306Z","level":"info","stage":"plugin:semgrep-security","message":"From semgrep"}
