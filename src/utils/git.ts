@@ -181,7 +181,11 @@ export async function autoCommitIfDirty(workdir: string, stage: string, role: st
         return gitRoot;
       }
     })();
-    if (realWorkdir !== realGitRoot) return;
+    // Allow: workdir IS the git root, or workdir is a subdirectory (monorepo package)
+    // Reject: workdir has no git repo at all (realGitRoot would be empty/error)
+    const isAtRoot = realWorkdir === realGitRoot;
+    const isSubdir = realGitRoot && realWorkdir.startsWith(`${realGitRoot}/`);
+    if (!isAtRoot && !isSubdir) return;
 
     const statusProc = _gitDeps.spawn(["git", "status", "--porcelain"], {
       cwd: workdir,
@@ -199,7 +203,11 @@ export async function autoCommitIfDirty(workdir: string, stage: string, role: st
       dirtyFiles: statusOutput.trim().split("\n").length,
     });
 
-    const addProc = _gitDeps.spawn(["git", "add", "-A"], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
+    // Use "git add ." when workdir is a monorepo package subdir — only stages files under
+    // that package, preventing accidental cross-package commits.
+    // Use "git add -A" at repo root to capture renames/deletions across the full tree.
+    const addArgs = isSubdir ? ["git", "add", "."] : ["git", "add", "-A"];
+    const addProc = _gitDeps.spawn(addArgs, { cwd: workdir, stdout: "pipe", stderr: "pipe" });
     await addProc.exited;
 
     const commitProc = _gitDeps.spawn(["git", "commit", "-m", `chore(${storyId}): auto-commit after ${role} session`], {

@@ -65,9 +65,28 @@ async function runDecompose(
   if (!agent) {
     throw new Error(`[decompose] Agent "${config.autoMode.defaultAgent}" not found — cannot decompose`);
   }
+
+  // Resolve decompose model: config.decompose.model tier → actual model string
+  const decomposeTier = naxDecompose?.model ?? "balanced";
+  let decomposeModel: string | undefined;
+  try {
+    const { resolveModel } = await import("../../config/schema");
+    const models = config.models as Record<string, unknown>;
+    const entry = models[decomposeTier] ?? models.balanced;
+    if (entry) decomposeModel = resolveModel(entry as Parameters<typeof resolveModel>[0]).model;
+  } catch {
+    // resolveModel can throw on malformed entries — fall through to let complete() handle it
+  }
+
+  const storySessionName = `nax-decompose-${story.id.toLowerCase()}`;
   const adapter = {
     async decompose(prompt: string): Promise<string> {
-      return agent.complete(prompt, { jsonMode: true, config });
+      return agent.complete(prompt, {
+        model: decomposeModel,
+        jsonMode: true,
+        config,
+        sessionName: storySessionName,
+      });
     },
   };
 

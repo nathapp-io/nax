@@ -127,6 +127,12 @@ export interface CompleteOptions {
    * Pass when available so complete() honours permissionProfile / dangerouslySkipPermissions.
    */
   config?: NaxConfig;
+  /**
+   * Named session to use for this completion call.
+   * If omitted, a timestamp-based ephemeral session name is generated.
+   * Pass a meaningful name (e.g. "nax-decompose-us-001") to aid debugging.
+   */
+  sessionName?: string;
 }
 
 /**

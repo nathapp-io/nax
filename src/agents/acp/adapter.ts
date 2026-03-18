@@ -694,8 +694,13 @@ export class AcpAgentAdapter implements AgentAdapter {
 
       let session: AcpSession | null = null;
       try {
-        // complete() is one-shot — ephemeral session, no session name, no sidecar
-        session = await client.createSession({ agentName: this.name, permissionMode });
+        // complete() is one-shot — ephemeral session, no sidecar
+        // Use caller-provided sessionName if available (aids tracing), otherwise timestamp-based
+        session = await client.createSession({
+          agentName: this.name,
+          permissionMode,
+          sessionName: _options?.sessionName,
+        });
 
         // Enforce timeout via Promise.race — session.prompt() can hang indefinitely
         let timeoutId: ReturnType<typeof setTimeout> | undefined;
