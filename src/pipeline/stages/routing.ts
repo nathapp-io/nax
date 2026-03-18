@@ -196,7 +196,7 @@ export const routingStage: PipelineStage = {
 
     // SD-004: Oversized story detection and decomposition
     const decomposeConfig = ctx.config.decompose;
-    if (decomposeConfig) {
+    if (decomposeConfig && ctx.story.status !== "decomposed") {
       const acCount = ctx.story.acceptanceCriteria.length;
       const complexity = ctx.routing.complexity;
       const isOversized =

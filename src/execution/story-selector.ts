@@ -39,7 +39,8 @@ export function selectNextStories(
         s.status !== "skipped" &&
         s.status !== "blocked" &&
         s.status !== "failed" &&
-        s.status !== "paused",
+        s.status !== "paused" &&
+        s.status !== "decomposed",
     );
 
     if (storiesToExecute.length === 0) {

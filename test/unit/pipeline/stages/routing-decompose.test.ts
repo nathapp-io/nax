@@ -469,3 +469,30 @@ describe("routingStage - confirm trigger mode", () => {
     }
   });
 });
+
+describe("routingStage - skips decompose when story already decomposed", () => {
+  test("does not call runDecompose when story status is 'decomposed'", async () => {
+    const { routingStage, deps, origDeps } = await getDeps();
+
+    let runDecomposeCalled = false;
+    deps.runDecompose = mock(() => { runDecomposeCalled = true; return Promise.resolve({} as any); });
+    deps.routeStory = mock(() =>
+      Promise.resolve({ complexity: "expert" as const, modelTier: "powerful" as const, testStrategy: "three-session-tdd" as const, reasoning: "r" })
+    );
+    deps.isGreenfieldStory = mock(() => Promise.resolve(false));
+    deps.computeStoryContentHash = mock(() => "hx");
+
+    try {
+      // Story already has status "decomposed" from a previous run
+      const story = { ...makeOversizedStory(), status: "decomposed" as const };
+      const ctx = makeCtx(story, makeConfig({ trigger: "auto" }));
+
+      const result = await routingStage.execute(ctx);
+
+      expect(runDecomposeCalled).toBe(false);
+      expect(result.action).toBe("continue");
+    } finally {
+      Object.assign(deps, origDeps);
+    }
+  });
+});
