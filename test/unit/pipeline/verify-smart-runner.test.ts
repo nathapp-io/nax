@@ -330,7 +330,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
       expect(result.action).toBe("continue");
     });
 
-    test("returns escalate when targeted tests fail", async () => {
+    test("returns continue when targeted tests fail (hands off to rectify)", async () => {
       mockGetChangedSourceFiles.mockImplementation(async () => ["src/foo/bar.ts"]);
       mockMapSourceToTests.mockImplementation(async () => ["/test/workdir/test/unit/foo/bar.test.ts"]);
       mockBuildSmartTestCommand.mockImplementation((_files: string[], cmd: string) => `${cmd} scoped`);
@@ -339,7 +339,7 @@ describe("Verify Stage --- Smart Runner Integration", () => {
       const ctx = makeContext({ smartTestRunner: true });
       const result = await verifyStage.execute(ctx);
 
-      expect(result.action).toBe("escalate");
+      expect(result.action).toBe("continue");
     });
   });
 });

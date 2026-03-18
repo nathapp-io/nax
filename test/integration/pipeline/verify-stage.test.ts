@@ -159,7 +159,7 @@ describe("Verify Stage", () => {
     expect(result.action).toBe("continue");
   });
 
-  test("fails when tests fail", async () => {
+  test("sets verifyResult on test failure (hands off to rectify)", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "nax-verify-test-"));
 
     const ctx = createTestContext({
@@ -187,12 +187,10 @@ describe("Verify Stage", () => {
 
     const result = await verifyStage.execute(ctx);
 
-    expect(result.action).toBe("escalate");
-    if (result.action === "escalate") {
-      expect(result.reason).toContain("Tests failed");
-      // Exit code may vary by shell - just check it mentions exit code
-      expect(result.reason).toMatch(/exit code/);
-    }
+    // TEST_FAILURE: verify returns continue, stores result in ctx.verifyResult for rectify
+    expect(result.action).toBe("continue");
+    expect(ctx.verifyResult?.success).toBe(false);
+    expect(ctx.verifyResult?.status).toBe("TEST_FAILURE");
   });
 
   test("uses default test command when not configured", async () => {

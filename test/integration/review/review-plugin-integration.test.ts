@@ -125,9 +125,9 @@ describe("Review Stage - Plugin Integration", () => {
       const result = await reviewStage.execute(ctx);
 
       expect(pluginCalled).toBe(false);
-      // BUG-030: Review lint/typecheck failures now escalate instead of hard-failing
-      expect(result.action).toBe("escalate");
-      expect(result.reason).toContain("Review failed");
+      // Built-in check failures return continue — autofix stage handles the retry
+      expect(result.action).toBe("continue");
+      expect(ctx.reviewResult?.success).toBe(false);
     });
 
     test("no plugin reviewers registered - continues normally", async () => {
@@ -207,9 +207,9 @@ describe("Review Stage - Plugin Integration", () => {
 
       const result = await reviewStage.execute(ctx);
 
-      // RQ-001: Review should fail with dirty working tree
-      expect(result.action).toBe("escalate");
-      expect(result.reason).toContain("Working tree has uncommitted changes");
+      // RQ-001: Built-in check failure returns continue (autofix handles it)
+      expect(result.action).toBe("continue");
+      expect(ctx.reviewResult?.success).toBe(false);
       // Reviewer should not be called due to dirty tree check
       expect(reviewerCalled).toBe(false);
     });
