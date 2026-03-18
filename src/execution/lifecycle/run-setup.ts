@@ -130,6 +130,11 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     emitError: (reason: string) => {
       pipelineEventBus.emit({ type: "run:errored", reason, feature: options.feature });
     },
+    // Close open ACP sessions on SIGINT/SIGTERM so acpx processes don't stay alive
+    onShutdown: async () => {
+      const { sweepFeatureSessions } = await import("../../agents/acp/adapter");
+      await sweepFeatureSessions(workdir, feature).catch(() => {});
+    },
   });
 
   // Load PRD (before try block so it's accessible in finally for onRunEnd)

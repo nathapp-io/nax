@@ -15,6 +15,8 @@ export interface SignalHandlerContext extends RunCompleteContext {
   pidRegistry?: PidRegistry;
   featureDir?: string;
   emitError?: (reason: string) => void;
+  /** Called during graceful shutdown (signal/exception) before process.exit — use to close ACP sessions etc. */
+  onShutdown?: () => Promise<void>;
 }
 
 /**
@@ -46,6 +48,11 @@ function createSignalHandler(ctx: SignalHandlerContext): (signal: NodeJS.Signals
       await ctx.pidRegistry.killAll();
     }
 
+    // Close any open ACP sessions before exiting (prevents orphaned acpx processes)
+    if (ctx.onShutdown) {
+      await ctx.onShutdown().catch(() => {});
+    }
+
     ctx.emitError?.(signal.toLowerCase());
 
     await writeFatalLog(ctx.jsonlFilePath, signal);
@@ -70,6 +77,10 @@ function createUncaughtExceptionHandler(ctx: SignalHandlerContext): (error: Erro
 
     if (ctx.pidRegistry) {
       await ctx.pidRegistry.killAll();
+    }
+
+    if (ctx.onShutdown) {
+      await ctx.onShutdown().catch(() => {});
     }
 
     ctx.emitError?.("uncaughtException");
@@ -100,6 +111,10 @@ function createUnhandledRejectionHandler(ctx: SignalHandlerContext): (reason: un
 
     if (ctx.pidRegistry) {
       await ctx.pidRegistry.killAll();
+    }
+
+    if (ctx.onShutdown) {
+      await ctx.onShutdown().catch(() => {});
     }
 
     ctx.emitError?.("unhandledRejection");

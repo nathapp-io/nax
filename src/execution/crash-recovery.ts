@@ -45,6 +45,8 @@ export interface CrashRecoveryContext {
   getTotalStories?: () => number;
   getStoriesCompleted?: () => number;
   emitError?: (reason: string) => void;
+  /** Called during graceful shutdown before process.exit — use to close ACP sessions etc. */
+  onShutdown?: () => Promise<void>;
 }
 
 let handlersInstalled = false;
