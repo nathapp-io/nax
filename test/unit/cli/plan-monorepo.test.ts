@@ -58,7 +58,7 @@ const origReadPackageJson = _deps.readPackageJson;
 const origSpawnSync = _deps.spawnSync;
 const origMkdirp = _deps.mkdirp;
 const origExistsSync = _deps.existsSync;
-const origDiscoverPackages = _deps.discoverPackages;
+const origDiscoverPackages = _deps.discoverWorkspacePackages;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
@@ -103,12 +103,12 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     _deps.spawnSync = origSpawnSync;
     _deps.mkdirp = origMkdirp;
     _deps.existsSync = origExistsSync;
-    _deps.discoverPackages = origDiscoverPackages;
+    _deps.discoverWorkspacePackages = origDiscoverPackages;
     Bun.spawnSync(["rm", "-rf", tmpDir]);
   });
 
   test("injects monorepo hint when packages are discovered", async () => {
-    _deps.discoverPackages = mock(async () => [
+    _deps.discoverWorkspacePackages = mock(async () => [
       `${tmpDir}/packages/api`,
       `${tmpDir}/packages/web`,
     ]);
@@ -126,7 +126,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   });
 
   test("includes workdir field in schema when monorepo detected", async () => {
-    _deps.discoverPackages = mock(async () => [`${tmpDir}/packages/api`]);
+    _deps.discoverWorkspacePackages = mock(async () => [`${tmpDir}/packages/api`]);
 
     await planCommand(tmpDir, {} as never, {
       from: "/spec.md",
@@ -139,7 +139,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   });
 
   test("monorepo hint includes instruction to set workdir per story", async () => {
-    _deps.discoverPackages = mock(async () => [`${tmpDir}/packages/api`]);
+    _deps.discoverWorkspacePackages = mock(async () => [`${tmpDir}/packages/api`]);
 
     await planCommand(tmpDir, {} as never, {
       from: "/spec.md",
@@ -153,7 +153,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   });
 
   test("no monorepo hint when no packages discovered", async () => {
-    _deps.discoverPackages = mock(async () => []);
+    _deps.discoverWorkspacePackages = mock(async () => []);
 
     await planCommand(tmpDir, {} as never, {
       from: "/spec.md",
@@ -166,7 +166,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   });
 
   test("no workdir field in schema when no packages discovered", async () => {
-    _deps.discoverPackages = mock(async () => []);
+    _deps.discoverWorkspacePackages = mock(async () => []);
 
     await planCommand(tmpDir, {} as never, {
       from: "/spec.md",
@@ -180,7 +180,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   });
 
   test("package paths in prompt are relative to repo root", async () => {
-    _deps.discoverPackages = mock(async () => [
+    _deps.discoverWorkspacePackages = mock(async () => [
       `${tmpDir}/packages/api`,
       `${tmpDir}/apps/web`,
     ]);

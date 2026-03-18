@@ -5,7 +5,7 @@
  * Replaces the old constitution generator.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { validateFilePath } from "../config/path-security";
@@ -164,6 +164,101 @@ export async function discoverPackages(repoRoot: string): Promise<string[]> {
   }
 
   return packages;
+}
+
+/**
+ * Discover packages from workspace manifests (turbo.json, package.json workspaces,
+ * pnpm-workspace.yaml). Used as fallback when no nax/context.md files exist yet.
+ *
+ * Returns relative paths (e.g. "packages/api") sorted alphabetically.
+ */
+export async function discoverWorkspacePackages(repoRoot: string): Promise<string[]> {
+  // 1. Prefer packages that already have nax/context.md
+  const existing = await discoverPackages(repoRoot);
+  if (existing.length > 0) {
+    return existing.map((p) => p.replace(`${repoRoot}/`, ""));
+  }
+
+  const seen = new Set<string>();
+  const results: string[] = [];
+
+  async function resolveGlobs(patterns: string[]): Promise<void> {
+    for (const pattern of patterns) {
+      if (pattern.startsWith("!")) continue; // skip negations
+      // Convert workspace pattern to package.json glob so Bun can scan files
+      // "packages/*"  → "packages/*/package.json"
+      // "packages/**" → "packages/**/package.json"
+      const base = pattern.replace(/\/+$/, ""); // strip trailing slashes
+      const pkgPattern = base.endsWith("*") ? `${base}/package.json` : `${base}/*/package.json`;
+
+      const g = new Bun.Glob(pkgPattern);
+      for await (const match of g.scan(repoRoot)) {
+        const rel = match.replace(/\/package\.json$/, "");
+        if (!seen.has(rel)) {
+          seen.add(rel);
+          results.push(rel);
+        }
+      }
+    }
+  }
+
+  // 2. turbo v2+: turbo.json top-level "packages" array
+  const turboPath = join(repoRoot, "turbo.json");
+  if (existsSync(turboPath)) {
+    try {
+      const turbo = JSON.parse(readFileSync(turboPath, "utf-8")) as Record<string, unknown>;
+      if (Array.isArray(turbo.packages)) {
+        await resolveGlobs(turbo.packages as string[]);
+      }
+    } catch {
+      // malformed turbo.json — skip
+    }
+  }
+
+  // 3. root package.json "workspaces" (npm/yarn/bun/turbo v1)
+  const pkgPath = join(repoRoot, "package.json");
+  if (existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as Record<string, unknown>;
+      const ws = pkg.workspaces;
+      const patterns: string[] = Array.isArray(ws)
+        ? (ws as string[])
+        : Array.isArray((ws as Record<string, unknown>)?.packages)
+          ? ((ws as Record<string, unknown>).packages as string[])
+          : [];
+      if (patterns.length > 0) await resolveGlobs(patterns);
+    } catch {
+      // malformed package.json — skip
+    }
+  }
+
+  // 4. pnpm-workspace.yaml
+  const pnpmPath = join(repoRoot, "pnpm-workspace.yaml");
+  if (existsSync(pnpmPath)) {
+    try {
+      const raw = readFileSync(pnpmPath, "utf-8");
+      // Simple YAML parse for "packages:\n  - 'packages/*'" without full YAML dep
+      const lines = raw.split("\n");
+      let inPackages = false;
+      const patterns: string[] = [];
+      for (const line of lines) {
+        if (/^packages\s*:/.test(line)) {
+          inPackages = true;
+          continue;
+        }
+        if (inPackages && /^\s+-\s+/.test(line)) {
+          patterns.push(line.replace(/^\s+-\s+['"]?/, "").replace(/['"]?\s*$/, ""));
+        } else if (inPackages && !/^\s/.test(line)) {
+          break;
+        }
+      }
+      if (patterns.length > 0) await resolveGlobs(patterns);
+    } catch {
+      // malformed yaml — skip
+    }
+  }
+
+  return results.sort();
 }
 
 /**

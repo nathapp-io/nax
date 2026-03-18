@@ -104,3 +104,87 @@ describe("generateForPackage (MW-004)", () => {
     expect(result.packageDir).toBe(tmpDir);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// discoverWorkspacePackages
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { discoverWorkspacePackages } from "../../../src/context/generator";
+import { mkdirSync, writeFileSync } from "node:fs";
+
+describe("discoverWorkspacePackages", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "nax-ws-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("returns empty array when no workspace manifests found", async () => {
+    const result = await discoverWorkspacePackages(tmpDir);
+    expect(result).toEqual([]);
+  });
+
+  test("discovers packages from package.json workspaces array", async () => {
+    writeFileSync(join(tmpDir, "package.json"), JSON.stringify({
+      name: "monorepo",
+      workspaces: ["packages/*"],
+    }));
+    mkdirSync(join(tmpDir, "packages", "api"), { recursive: true });
+    writeFileSync(join(tmpDir, "packages", "api", "package.json"), JSON.stringify({ name: "api" }));
+    mkdirSync(join(tmpDir, "packages", "web"), { recursive: true });
+    writeFileSync(join(tmpDir, "packages", "web", "package.json"), JSON.stringify({ name: "web" }));
+
+    const result = await discoverWorkspacePackages(tmpDir);
+    expect(result).toContain("packages/api");
+    expect(result).toContain("packages/web");
+  });
+
+  test("discovers packages from turbo.json packages field", async () => {
+    writeFileSync(join(tmpDir, "turbo.json"), JSON.stringify({
+      packages: ["apps/*"],
+    }));
+    mkdirSync(join(tmpDir, "apps", "dashboard"), { recursive: true });
+    writeFileSync(join(tmpDir, "apps", "dashboard", "package.json"), JSON.stringify({ name: "dashboard" }));
+
+    const result = await discoverWorkspacePackages(tmpDir);
+    expect(result).toContain("apps/dashboard");
+  });
+
+  test("prefers nax/context.md packages over workspace manifest when both exist", async () => {
+    // Set up nax/context.md in a package
+    mkdirSync(join(tmpDir, "packages", "sdk", "nax"), { recursive: true });
+    writeFileSync(join(tmpDir, "packages", "sdk", "nax", "context.md"), "# SDK Context");
+
+    // Also set up workspace manifest pointing elsewhere
+    writeFileSync(join(tmpDir, "package.json"), JSON.stringify({
+      workspaces: ["packages/*"],
+    }));
+    mkdirSync(join(tmpDir, "packages", "other"), { recursive: true });
+    writeFileSync(join(tmpDir, "packages", "other", "package.json"), JSON.stringify({ name: "other" }));
+
+    const result = await discoverWorkspacePackages(tmpDir);
+    // Should use nax/context.md discovery (absolute paths converted to relative)
+    expect(result.some((p) => p.includes("sdk"))).toBe(true);
+    // Should NOT fall through to workspace manifest
+    expect(result.some((p) => p.includes("other"))).toBe(false);
+  });
+
+  test("skips directories without package.json", async () => {
+    writeFileSync(join(tmpDir, "package.json"), JSON.stringify({
+      workspaces: ["packages/*"],
+    }));
+    // Create dir without package.json
+    mkdirSync(join(tmpDir, "packages", "no-pkg"), { recursive: true });
+    // Create dir with package.json
+    mkdirSync(join(tmpDir, "packages", "with-pkg"), { recursive: true });
+    writeFileSync(join(tmpDir, "packages", "with-pkg", "package.json"), JSON.stringify({ name: "with-pkg" }));
+
+    const result = await discoverWorkspacePackages(tmpDir);
+    expect(result).not.toContain("packages/no-pkg");
+    expect(result).toContain("packages/with-pkg");
+  });
+});

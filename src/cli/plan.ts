@@ -17,7 +17,7 @@ import type { CodebaseScan } from "../analyze/types";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE } from "../config/test-strategy";
-import { discoverPackages } from "../context/generator";
+import { discoverWorkspacePackages } from "../context/generator";
 import { PidRegistry } from "../execution/pid-registry";
 import { getLogger } from "../logger";
 import { validatePlanOutput } from "../prd/schema";
@@ -42,7 +42,7 @@ export const _deps = {
   },
   mkdirp: (path: string): Promise<void> => Bun.spawn(["mkdir", "-p", path]).exited.then(() => {}),
   existsSync: (path: string): boolean => existsSync(path),
-  discoverPackages: (repoRoot: string): Promise<string[]> => discoverPackages(repoRoot),
+  discoverWorkspacePackages: (repoRoot: string): Promise<string[]> => discoverWorkspacePackages(repoRoot),
   createInteractionBridge: (): {
     detectQuestion: (text: string) => Promise<boolean>;
     onQuestionDetected: (text: string) => Promise<string>;
@@ -93,13 +93,14 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   logger?.info("plan", "Scanning codebase...");
   const [scan, discoveredPackages, pkg] = await Promise.all([
     _deps.scanCodebase(workdir),
-    _deps.discoverPackages(workdir),
+    _deps.discoverWorkspacePackages(workdir),
     _deps.readPackageJson(workdir),
   ]);
   const codebaseContext = buildCodebaseContext(scan);
 
-  // MW-007: convert absolute paths to repo-relative for prompt readability
-  const relativePackages = discoveredPackages.map((p) => p.replace(`${workdir}/`, ""));
+  // Normalize to repo-relative paths (discoverWorkspacePackages returns relative,
+  // but mocks/legacy callers may return absolute — strip workdir prefix if present)
+  const relativePackages = discoveredPackages.map((p) => (p.startsWith("/") ? p.replace(`${workdir}/`, "") : p));
 
   // Auto-detect project name
   const projectName = detectProjectName(workdir, pkg);
