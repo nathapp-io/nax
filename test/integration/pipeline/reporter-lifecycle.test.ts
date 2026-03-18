@@ -93,13 +93,9 @@ describe("Reporter Lifecycle Events (US-004)", () => {
     await fs.mkdir(path.dirname(prdPath), { recursive: true });
     await fs.mkdir(pluginDir, { recursive: true });
 
-    // Initialize git repo
-    await Bun.spawn(["git", "init"], { cwd: workdir, stdout: "ignore" }).exited;
-    await Bun.spawn(["git", "config", "user.email", "test@example.com"], { cwd: workdir, stdout: "ignore" }).exited;
-    await Bun.spawn(["git", "config", "user.name", "Test User"], { cwd: workdir, stdout: "ignore" }).exited;
-    await fs.writeFile(path.join(workdir, "README.md"), "# Test");
-    await Bun.spawn(["git", "add", "."], { cwd: workdir, stdout: "ignore" }).exited;
-    await Bun.spawn(["git", "commit", "-m", "Initial commit"], { cwd: workdir, stdout: "ignore" }).exited;
+    // No git init needed: autoCommitIfDirty detects non-git workdir via
+    // `git rev-parse --show-toplevel` and returns early — safe to skip.
+    // Removing 5 git subprocess spawns × 9 tests saves ~7s suite-wide.
 
     // Reset tracking arrays
     onRunStartCalls = [];

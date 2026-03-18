@@ -166,7 +166,8 @@ function createTestContext(
   };
 }
 
-describe("Routing Stage - BUG-021: Task classified log shows final routing state", () => {
+// BUG-021
+describe("Routing Stage - Task classified log shows final routing state after all overrides", () => {
   let workdir: string;
   let capturedLogs: Array<{
     level: string;

@@ -116,7 +116,8 @@ afterEach(() => {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe("BUG-020: storyId in JSONL event payloads", () => {
+// BUG-020
+describe("storyId is present in JSONL event payloads", () => {
   // ── Verify stage ────────────────────────────────────────────────────────────
 
   describe("verify stage", () => {

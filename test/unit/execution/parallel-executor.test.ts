@@ -105,7 +105,8 @@ afterEach(() => {
 // BUG-067: agentGetFn is threaded through parallel execution
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("BUG-067: agentGetFn is passed from ParallelExecutorOptions to executeParallel", () => {
+// BUG-067
+describe("agentGetFn is forwarded from ParallelExecutorOptions to executeParallel", () => {
   beforeEach(() => {
     _parallelExecutorDeps.fireHook = mock(async () => {});
   });
@@ -166,7 +167,8 @@ describe("BUG-067: agentGetFn is passed from ParallelExecutorOptions to executeP
 // BUG-066: storyMetrics in ParallelExecutorResult
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("BUG-066: runParallelExecution returns storyMetrics", () => {
+// BUG-066
+describe("runParallelExecution returns storyMetrics for completed stories", () => {
   describe("early exit — no stories ready", () => {
     test("result has storyMetrics field (empty array) when no stories are ready", async () => {
       // All stories complete → getAllReadyStories returns [] → early exit

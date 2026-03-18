@@ -68,7 +68,8 @@ describe("getNextStory() — backward compat (no currentStoryId/maxRetries)", ()
 
 // ── Retry priority (BUG-022) ─────────────────────────────────────────────────
 
-describe("getNextStory() — retry priority (BUG-022)", () => {
+// BUG-022
+describe("getNextStory() — retry priority: failed story retried before advancing to next", () => {
   test("returns failed current story when attempts <= maxRetries", () => {
     const prd = makePrd([makeStory("US-001"), makeStory("US-002")]);
     markStoryFailed(prd, "US-001"); // attempts = 1

@@ -12,7 +12,7 @@ import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config/schema";
 
 describe("CLI deprecation (PLN-005)", () => {
-  describe("AC-1: nax analyze prints deprecation warning to stderr", () => {
+  describe("nax analyze prints deprecation warning to stderr", () => {
     test("analyze command prints deprecation warning with migration instruction", async () => {
       await withTempDir(async (tempDir) => {
         // Create a valid feature directory with spec.md
@@ -67,7 +67,7 @@ Test story description
     });
   });
 
-  describe("AC-3: nax plan <description> (old positional form) prints migration error", () => {
+  describe("nax plan with positional argument prints migration error and exits 1", () => {
     test("plan command with positional argument prints migration error and exits 1", async () => {
       await withTempDir(async (tempDir) => {
         // Create minimal nax directory
@@ -108,7 +108,7 @@ Test story description
     });
   });
 
-  describe("AC-4: nax init references nax plan in scaffolding messages", () => {
+  describe("nax init references nax plan in scaffolding messages", () => {
     test("init command prints 'nax plan' in next steps", async () => {
       await withTempDir(async (tempDir) => {
         // Import the initProject function
@@ -138,7 +138,7 @@ Test story description
     });
   });
 
-  describe("AC-5: nax help shows analyze as deprecated", () => {
+  describe("nax help shows analyze command as deprecated", () => {
     test("help text indicates analyze command is deprecated", async () => {
       // This test verifies the help text includes deprecation notice
       // The help text is embedded in the command definition

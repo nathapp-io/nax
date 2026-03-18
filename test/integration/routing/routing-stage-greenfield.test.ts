@@ -173,7 +173,8 @@ function createTestContext(
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("Routing Stage - Greenfield Detection (BUG-010)", () => {
+// BUG-010
+describe("Routing Stage - Greenfield Detection forces test-after strategy when no tests exist", () => {
   let workdir: string;
 
   beforeEach(async () => {

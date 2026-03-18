@@ -30,7 +30,8 @@ function makeMinimalOptions(): AgentRunOptions {
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("buildAllowedEnv — HOME sanitization (BUG-076)", () => {
+// BUG-076
+describe("buildAllowedEnv — HOME is sanitized to an absolute path", () => {
   let originalHome: string | undefined;
 
   beforeEach(() => {

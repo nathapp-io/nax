@@ -146,7 +146,8 @@ describe("isGreenfieldStory", () => {
 // BUG-012 Regression: pre-existing tests should not be treated as greenfield
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("BUG-012: pre-existing test files prevent false greenfield detection", () => {
+// BUG-012
+describe("pre-existing test files prevent false greenfield detection", () => {
   let workdir: string;
 
   beforeEach(async () => {

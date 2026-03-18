@@ -299,7 +299,8 @@ describe("StatusWriter.update success path", () => {
 // update — BUG-2 failure counter
 // ============================================================================
 
-describe("StatusWriter.update BUG-2 failure counter", () => {
+// BUG-002
+describe("StatusWriter.update failure counter increments on errors and resets on success", () => {
   test("write to a non-existent directory fails gracefully (non-fatal)", async () => {
     const sw = new StatusWriter("/does/not/exist/status.json", makeConfig(), makeCtx());
     sw.setPrd(makePrd());

@@ -743,7 +743,8 @@ describe("_generatorPRDDeps", () => {
 // describe: generateFromPRD — BUG-075 acceptance-refined.json written to featureDir
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("generateFromPRD — acceptance-refined.json path (BUG-075)", () => {
+// BUG-075
+describe("generateFromPRD — acceptance-refined.json is written to featureDir not workdir", () => {
   let workdir: string;
   let featureDir: string;
 

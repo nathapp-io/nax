@@ -84,7 +84,7 @@ afterEach(() => {
 // AC-1: auto.ts no longer spawns 'claude' directly
 // ---------------------------------------------------------------------------
 
-describe("AC-1: auto.ts does not spawn claude CLI directly", () => {
+describe("auto.ts does not spawn claude CLI directly", () => {
   test("decide() does not call Bun.spawn when adapter is injected", async () => {
     const spawnSpy = mock(() => {
       throw new Error("Bun.spawn must not be called — use adapter.complete() instead");
@@ -114,7 +114,7 @@ describe("AC-1: auto.ts does not spawn claude CLI directly", () => {
 // AC-2: Uses adapter.complete() for generating auto-responses
 // ---------------------------------------------------------------------------
 
-describe("AC-2: adapter.complete() is called with correct arguments", () => {
+describe("adapter.complete() is called with correct arguments", () => {
   let plugin: AutoInteractionPlugin;
 
   beforeEach(async () => {
@@ -188,7 +188,7 @@ describe("AC-2: adapter.complete() is called with correct arguments", () => {
 // AC-3: Adapter resolved via dependency injection
 // ---------------------------------------------------------------------------
 
-describe("AC-3: adapter dependency injection via _deps.adapter", () => {
+describe("adapter dependency injection via _deps.adapter", () => {
   test("_deps.adapter property exists on the exported _deps object", () => {
     expect("adapter" in _deps).toBe(true);
   });
@@ -218,7 +218,7 @@ describe("AC-3: adapter dependency injection via _deps.adapter", () => {
 // AC-4: Auto-response behaviour unchanged
 // ---------------------------------------------------------------------------
 
-describe("AC-4: auto-response behaviour preserved after adapter migration", () => {
+describe("auto-response behaviour is preserved after adapter migration", () => {
   let plugin: AutoInteractionPlugin;
 
   beforeEach(async () => {
@@ -344,7 +344,7 @@ describe("AC-4: auto-response behaviour preserved after adapter migration", () =
 // — Additional edge case: markdown-wrapped JSON is stripped before parsing
 // ---------------------------------------------------------------------------
 
-describe("AC-5: adapter.complete() response parsing handles markdown fences", () => {
+describe("adapter.complete() response parsing handles markdown-wrapped JSON", () => {
   let plugin: AutoInteractionPlugin;
 
   beforeEach(async () => {
