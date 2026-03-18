@@ -62,6 +62,14 @@ describe("routeTddFailure", () => {
     expect(ctx.retryAsLite).toBeUndefined();
   });
 
+  it("escalates on greenfield-no-tests (tier-escalation will switch to test-after)", () => {
+    const ctx: MockContext = {};
+    const result = routeTddFailure("greenfield-no-tests", false, ctx);
+
+    expect(result.action).toBe("escalate");
+    expect(ctx.retryAsLite).toBeUndefined();
+  });
+
   it("pauses on undefined failureCategory", () => {
     const ctx: MockContext = {};
     const result = routeTddFailure(undefined, false, ctx, "Unknown failure");

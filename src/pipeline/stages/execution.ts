@@ -16,6 +16,7 @@
  * - `session-failure`                   → escalate
  * - `tests-failing`                     → escalate
  * - `verifier-rejected`                 → escalate
+ * - `greenfield-no-tests`               → escalate (tier-escalation switches to test-after)
  * - no category / unknown               → pause (backward compatible)
  *
  * @example
@@ -108,6 +109,11 @@ export function routeTddFailure(
     failureCategory === "tests-failing" ||
     failureCategory === "verifier-rejected"
   ) {
+    return { action: "escalate" };
+  }
+
+  // S5: greenfield-no-tests → escalate so tier-escalation can switch to test-after
+  if (failureCategory === "greenfield-no-tests") {
     return { action: "escalate" };
   }
 
