@@ -111,6 +111,37 @@ allowed.HOME = safeHome;
 
 ---
 
+## v0.48.0 — Test Health + Monorepo Plan Improvements ✅ Released 2026-03-18
+
+**Theme:** Test suite hardening, monorepo planning fixes, and developer experience improvements.
+**Depends on:** v0.47.0
+
+### Test Suite Health
+
+| Change | Detail |
+|:-------|:-------|
+| Descriptive test names | Replaced opaque `BUG-xx`/`AC-xx` identifiers with behavior-based names + `// BUG-xxx` comments |
+| Test structure | 40 loose `test/unit/` files moved into correct subdirectories |
+| Trivial test cleanup | ~80 low-value type-check and empty-assertion tests deleted (-515 lines) |
+| Parallel collision fix | 29 test files with hardcoded `/tmp/nax-*` paths → unique `mkdtempSync`/`randomUUID` paths |
+| stdin leak fix | `createInteractionBridge` exposed via `_deps` — plan-interactive tests no longer block on real stdin |
+
+### Monorepo Planning (`nax plan`)
+
+| Change | Detail |
+|:-------|:-------|
+| Workspace discovery | `discoverWorkspacePackages()` reads `turbo.json`, `package.json` workspaces, `pnpm-workspace.yaml` as fallback when no `nax/context.md` exists — `prd.json` now gets `workdir` fields on first run |
+| Per-package tech stacks | Planning prompt includes `## Package Tech Stacks` table (framework, test runner, key deps per package) for better LLM routing |
+
+### Other Fixes
+
+| Change | Detail |
+|:-------|:-------|
+| `config.generate.agents` | New config field to restrict `nax generate` to specific agents instead of all 7 |
+| PERM-001 | Permission resolver shipped (single `resolvePermissions()` source of truth) |
+
+---
+
 ## v0.47.0 — Monorepo Workdir Support ✅ Released 2026-03-17
 
 **Theme:** Per-story working directory, per-package context.md/config.json, and package-aware test commands — enabling nax to orchestrate monorepo projects where each package has a different stack.
