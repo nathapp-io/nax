@@ -204,6 +204,30 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
         console.error(chalk.red(`\n✗ ${errorCount} generation(s) failed`));
         process.exit(1);
       }
+
+      // Auto-generate per-package CLAUDE.md when packages with nax/context.md are discovered
+      const packages = await discoverPackages(workdir);
+      if (packages.length > 0) {
+        console.log(
+          chalk.blue(`\n→ Discovered ${packages.length} package(s) with nax/context.md — generating CLAUDE.md...`),
+        );
+        let pkgErrorCount = 0;
+        for (const pkgDir of packages) {
+          const result = await generateForPackage(pkgDir, config, dryRun);
+          if (result.error) {
+            console.error(chalk.red(`✗ ${pkgDir}: ${result.error}`));
+            pkgErrorCount++;
+          } else {
+            const suffix = dryRun ? " (dry run)" : "";
+            const rel = pkgDir.startsWith(workdir) ? pkgDir.slice(workdir.length + 1) : pkgDir;
+            console.log(chalk.green(`✓ ${rel}/${result.outputFile} (${result.content.length} bytes${suffix})`));
+          }
+        }
+        if (pkgErrorCount > 0) {
+          console.error(chalk.red(`\n✗ ${pkgErrorCount} package generation(s) failed`));
+          process.exit(1);
+        }
+      }
     }
 
     if (!dryRun) {
