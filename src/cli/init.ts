@@ -44,7 +44,6 @@ const NAX_GITIGNORE_ENTRIES = [
   "nax/**/runs/",
   "nax/metrics.json",
   "nax/features/*/status.json",
-  "nax/features/*/prd.json",
   "nax/features/*/plan/",
   "nax/features/*/acp-sessions.json",
   "nax/features/*/interactions/",
