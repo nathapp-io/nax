@@ -157,7 +157,24 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
       console.log(chalk.green(`✓ ${agent} → ${result.outputFile} (${result.content.length} bytes${suffix})`));
     } else {
       // No --agent flag: use config.generate.agents filter, or generate all
-      const configAgents = config?.generate?.agents;
+      let configAgents = config?.generate?.agents;
+
+      // Detect misplaced generate config (autoMode.generate.agents) and warn
+      const misplacedAgents = (config?.autoMode as unknown as Record<string, unknown> | undefined)?.generate as
+        | { agents?: string[] }
+        | undefined;
+      if (!configAgents && misplacedAgents?.agents && misplacedAgents.agents.length > 0) {
+        console.warn(
+          chalk.yellow(
+            '⚠ Warning: "generate.agents" is nested under "autoMode" in your config — it should be at the top level.',
+          ),
+        );
+        console.warn(chalk.yellow('  Move it to: { "generate": { "agents": [...] } }'));
+        configAgents = misplacedAgents.agents as Array<
+          "claude" | "codex" | "opencode" | "cursor" | "windsurf" | "aider" | "gemini"
+        >;
+      }
+
       const agentFilter = configAgents && configAgents.length > 0 ? configAgents : null;
 
       if (agentFilter) {
