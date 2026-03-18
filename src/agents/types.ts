@@ -84,6 +84,13 @@ export interface AgentRunOptions {
   pipelineStage?: import("../config/permissions").PipelineStage;
   /** Full nax config — passed through so adapters can call resolvePermissions() */
   config?: NaxConfig;
+  /**
+   * When true, the adapter will NOT close the session after a successful run.
+   * Use this for rectification loops where the same session must persist across
+   * multiple attempts so the agent retains full conversation context.
+   * The caller is responsible for closing the session when the loop is done.
+   */
+  keepSessionOpen?: boolean;
 }
 
 /**

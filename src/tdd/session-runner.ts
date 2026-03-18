@@ -133,6 +133,12 @@ export async function runTddSession(
   const logger = getLogger();
   logger.info("tdd", `-> Session: ${role}`, { role, storyId: story.id, lite });
 
+  // When rectification is enabled, keep the implementer session open after it finishes.
+  // The rectification gate uses the same session name (buildSessionName + "implementer")
+  // and will resume it directly — so the implementer retains full context of what it built.
+  // The session sweep (or the last rectification attempt) handles final cleanup.
+  const keepSessionOpen = role === "implementer" && (config.execution.rectification?.enabled ?? false);
+
   // Run the agent
   const result = await agent.run({
     prompt,
@@ -147,6 +153,7 @@ export async function runTddSession(
     featureName,
     storyId: story.id,
     sessionRole: role,
+    keepSessionOpen,
   });
 
   // BUG-21 Fix: Clean up orphaned child processes if agent failed

@@ -7,6 +7,7 @@
  */
 
 import type { AgentAdapter } from "../agents";
+import { buildSessionName } from "../agents/acp/adapter";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config";
 import { resolvePermissions } from "../config/permissions";
@@ -135,8 +136,18 @@ async function runRectificationLoop(
     passedTests: testSummary.passed,
   });
 
+  // Build session name once so all rectification attempts share the same ACP session.
+  // This preserves full conversation context across retries (the agent knows what it already tried).
+  const rectificationSessionName = buildSessionName(workdir, featureName, story.id, "implementer");
+  logger.debug("tdd", "Rectification session name (shared across all attempts)", {
+    storyId: story.id,
+    sessionName: rectificationSessionName,
+  });
+
   while (shouldRetryRectification(rectificationState, rectificationConfig)) {
     rectificationState.attempt++;
+
+    const isLastAttempt = rectificationState.attempt >= rectificationConfig.maxRetries;
 
     logger.info(
       "tdd",
@@ -166,6 +177,12 @@ async function runRectificationLoop(
       featureName,
       storyId: story.id,
       sessionRole: "implementer",
+      // Reuse the same ACP session across all rectification attempts so the agent
+      // retains full conversation context (knows what it already tried).
+      acpSessionName: rectificationSessionName,
+      // Keep session open until the last attempt — the session sweep at run end
+      // will handle cleanup. On the last attempt, let the adapter close normally.
+      keepSessionOpen: !isLastAttempt,
     });
 
     if (!rectifyResult.success && rectifyResult.pid) {
