@@ -60,6 +60,84 @@ describe("parseAcpxJsonOutput — JSON-RPC envelope format", () => {
   });
 });
 
+describe("parseAcpxJsonOutput — acpx result.record.cumulative_token_usage format", () => {
+  test("extracts token usage from result.record.cumulative_token_usage (acpx prompt format)", () => {
+    const output = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      result: {
+        stopReason: "end_turn",
+        sessionId: "nax-test-session",
+        resumed: true,
+        permissionStats: { requested: 0, approved: 0, denied: 0, cancelled: 0 },
+        record: {
+          acpxRecordId: "r1",
+          acpSessionId: "s1",
+          agentCommand: "claude",
+          cwd: "/repo",
+          createdAt: "2026-03-18T10:00:00Z",
+          lastUsedAt: "2026-03-18T10:01:00Z",
+          messages: [],
+          updated_at: "2026-03-18T10:01:00Z",
+          lastSeq: 1,
+          eventLog: {},
+          cumulative_token_usage: {
+            input_tokens: 5432,
+            output_tokens: 987,
+            cache_read_input_tokens: 100,
+            cache_creation_input_tokens: 50,
+          },
+        },
+      },
+    });
+
+    const result = parseAcpxJsonOutput(output);
+    expect(result.tokenUsage?.input_tokens).toBe(5432);
+    expect(result.tokenUsage?.output_tokens).toBe(987);
+    expect(result.tokenUsage?.cache_read_input_tokens).toBe(100);
+    expect(result.tokenUsage?.cache_creation_input_tokens).toBe(50);
+    expect(result.stopReason).toBe("end_turn");
+    // acpx does not emit cost.amount — exactCostUsd should be undefined (estimated downstream)
+    expect(result.exactCostUsd).toBeUndefined();
+  });
+
+  test("result.usage takes precedence over result.record.cumulative_token_usage when both present", () => {
+    const output = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      result: {
+        stopReason: "end_turn",
+        usage: { inputTokens: 100, outputTokens: 50 },
+        record: {
+          cumulative_token_usage: { input_tokens: 9999, output_tokens: 9999 },
+        },
+      },
+    });
+
+    const result = parseAcpxJsonOutput(output);
+    // result.usage wins
+    expect(result.tokenUsage?.input_tokens).toBe(100);
+    expect(result.tokenUsage?.output_tokens).toBe(50);
+  });
+
+  test("falls back to result.record.cumulative_token_usage when result.usage absent", () => {
+    const output = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      result: {
+        stopReason: "end_turn",
+        record: {
+          cumulative_token_usage: { input_tokens: 200, output_tokens: 75 },
+        },
+      },
+    });
+
+    const result = parseAcpxJsonOutput(output);
+    expect(result.tokenUsage?.input_tokens).toBe(200);
+    expect(result.tokenUsage?.output_tokens).toBe(75);
+  });
+});
+
 describe("parseAcpxJsonOutput — legacy flat NDJSON format", () => {
   test("still parses legacy result string", () => {
     const output = '{"result":"legacy output"}';
