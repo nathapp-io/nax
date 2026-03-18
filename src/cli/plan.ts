@@ -138,7 +138,17 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     const prompt = buildPlanningPrompt(specContent, codebaseContext, undefined, relativePackages, packageDetails);
     const cliAdapter = _deps.getAgent(agentName);
     if (!cliAdapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
-    rawResponse = await cliAdapter.complete(prompt, { jsonMode: true, workdir, config });
+    let autoModel: string | undefined;
+    try {
+      const planTier = config?.plan?.model ?? "balanced";
+      const { resolveModel } = await import("../config/schema");
+      const models = config?.models as Record<string, unknown> | undefined;
+      const entry = models?.[planTier] ?? models?.balanced;
+      if (entry) autoModel = resolveModel(entry as Parameters<typeof resolveModel>[0]).model;
+    } catch {
+      // fall through — complete() will use its own fallback
+    }
+    rawResponse = await cliAdapter.complete(prompt, { model: autoModel, jsonMode: true, workdir, config });
     // CLI adapter returns {"type":"result","result":"..."} envelope — unwrap it
     try {
       const envelope = JSON.parse(rawResponse) as Record<string, unknown>;
