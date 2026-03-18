@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.49.1] - 2026-03-18
+
+### Fixed
+- **ACP zero cost:** `acpx prompt` was called without `--format json`, causing it to output plain text instead of JSON-RPC NDJSON. Cost and token usage were always 0. Fix: pass `--format json` as a global flag so the parser receives `usage_update` (exact cost in USD) and `result.usage` (token breakdown).
+- **Decompose session name / model:** Decompose one-shots used an auto-generated timestamp session name and passed the tier string (`"balanced"`) as the model instead of the resolved model ID. Fix: session name is now `nax-decompose-<story-id>` and model tier is resolved via `resolveModel()` before the `complete()` call.
+- **`autoCommitIfDirty` skipping monorepo subdirs:** The working-directory guard rejected any workdir that wasn't exactly the git root, silently skipping commits for monorepo package subdirs. Fix: allow subdirs (`startsWith(gitRoot + '/')`); use `git add .` for subdirs vs `git add -A` at root.
+- **`complete()` missing model in `generateFromPRD()` and `plan` auto mode:** `generator.ts` ignored `options.modelDef.model`; `plan.ts` auto path didn't call `resolveModel()`. Both now pass the correct resolved model to `adapter.complete()`.
+
 ## [0.46.2] - 2026-03-17
 
 ### Fixed
