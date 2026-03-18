@@ -94,9 +94,8 @@ ${criteriaList}
 
 ${strategyInstructions}Generate a complete acceptance.test.ts file using bun:test framework. Each AC maps to exactly one test named "AC-N: <description>".
 
-Use this structure:
+Structure example (do NOT wrap in markdown fences — output raw TypeScript only):
 
-\`\`\`typescript
 import { describe, test, expect } from "bun:test";
 
 describe("${options.featureName} - Acceptance Tests", () => {
@@ -104,13 +103,13 @@ describe("${options.featureName} - Acceptance Tests", () => {
     // Test implementation
   });
 });
-\`\`\`
 
-Respond with ONLY the TypeScript test code (no markdown code fences, no explanation).`;
+IMPORTANT: Output raw TypeScript code only. Do NOT use markdown code fences (\`\`\`typescript or \`\`\`). Start directly with the import statement.`;
 
   logger.info("acceptance", "Generating tests from PRD refined criteria", { count: refinedCriteria.length });
 
-  const testCode = await _generatorPRDDeps.adapter.complete(prompt, { config: options.config });
+  const rawOutput = await _generatorPRDDeps.adapter.complete(prompt, { config: options.config });
+  const testCode = extractTestCode(rawOutput);
 
   const refinedJsonContent = JSON.stringify(
     refinedCriteria.map((c, i) => ({
