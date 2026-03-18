@@ -305,22 +305,9 @@ export class SpawnAcpClient implements AcpClient {
   }): Promise<AcpSession> {
     const sessionName = opts.sessionName || `nax-${Date.now()}`;
 
-    // Pass --model at session creation time so the Claude Code process starts with
-    // the correct model. Passing --model only on prompt() is insufficient — acpx
-    // sets the model when the underlying claude process is spawned, not per-prompt.
-    const cmd = [
-      "acpx",
-      "--cwd",
-      this.cwd,
-      "--model",
-      this.model,
-      opts.agentName,
-      "sessions",
-      "ensure",
-      "--name",
-      sessionName,
-    ];
-    getSafeLogger()?.debug("acp-adapter", `Ensuring session: ${sessionName}`, { model: this.model });
+    // Ensure session exists via CLI
+    const cmd = ["acpx", "--cwd", this.cwd, opts.agentName, "sessions", "ensure", "--name", sessionName];
+    getSafeLogger()?.debug("acp-adapter", `Ensuring session: ${sessionName}`);
 
     const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
     const exitCode = await proc.exited;
@@ -343,21 +330,8 @@ export class SpawnAcpClient implements AcpClient {
   }
 
   async loadSession(sessionName: string, agentName: string, permissionMode: string): Promise<AcpSession | null> {
-    // Try to ensure session exists — if it does, acpx returns success.
-    // --model is included so that if the session doesn't exist yet (race condition
-    // or first-time creation via loadSession path), it starts with the right model.
-    const cmd = [
-      "acpx",
-      "--cwd",
-      this.cwd,
-      "--model",
-      this.model,
-      agentName,
-      "sessions",
-      "ensure",
-      "--name",
-      sessionName,
-    ];
+    // Try to ensure session exists — if it does, acpx returns success
+    const cmd = ["acpx", "--cwd", this.cwd, agentName, "sessions", "ensure", "--name", sessionName];
 
     const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
     const exitCode = await proc.exited;
