@@ -7,12 +7,15 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { StoryRouting } from "../../../src/prd/types";
 import { collectStoryMetrics } from "../../../src/metrics/tracker";
+
+const WORKDIR = `/tmp/nax-tracker-test-${randomUUID()}`;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,7 +65,7 @@ function makeCtx(story: UserStory, routingOverrides?: Partial<PipelineContext["r
       reasoning: "test",
       ...routingOverrides,
     },
-    workdir: "/tmp/nax-tracker-test",
+    workdir: WORKDIR,
     hooks: { hooks: {} },
     agentResult: {
       success: true,

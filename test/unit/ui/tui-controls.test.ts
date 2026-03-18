@@ -8,6 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { render } from "ink-testing-library";
 import { createElement } from "react";
 import type { UserStory } from "../../../src/prd/types";
@@ -242,7 +243,7 @@ describe("Focus mode", () => {
 });
 
 describe("Queue command writer", () => {
-  const tempQueueFile = "/tmp/nax-test-queue.txt";
+  const tempQueueFile = `/tmp/nax-test-queue-${randomUUID()}.txt`;
 
   beforeEach(async () => {
     // Clean up any existing test file

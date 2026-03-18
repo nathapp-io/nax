@@ -8,11 +8,14 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { DecomposeResult } from "../../../../src/decompose/types";
+
+const WORKDIR = `/tmp/nax-decompose-routing-test-${randomUUID()}`;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -78,9 +81,9 @@ function makeCtx(
       testStrategy: "three-session-tdd",
       reasoning: "classified",
     },
-    workdir: "/tmp/nax-decompose-routing-test",
+    workdir: WORKDIR,
     hooks: { hooks: {} },
-    prdPath: "/tmp/nax-decompose-routing-test/nax/prd.json",
+    prdPath: `${WORKDIR}/nax/prd.json`,
     ...overrides,
   } as PipelineContext & { prdPath: string };
 }

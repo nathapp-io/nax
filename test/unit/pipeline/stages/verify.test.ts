@@ -11,10 +11,13 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "../../../../src/config";
 import type { PRD, UserStory } from "../../../../src/prd";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import type { VerificationResult } from "../../../../src/verification";
+
+const WORKDIR = `/tmp/nax-test-verify-${randomUUID()}`;
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -83,7 +86,7 @@ function makeContext(regressionMode?: "deferred" | "per-story" | "disabled") {
       testStrategy: "test-after" as const,
       reasoning: "test",
     },
-    workdir: "/tmp/nax-test-verify",
+    workdir: WORKDIR,
     hooks: { hooks: {} },
   };
 }

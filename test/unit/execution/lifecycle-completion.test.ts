@@ -6,6 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { PRD, UserStory } from "../../../src/prd";
@@ -102,10 +103,13 @@ function makeStoryMetrics(storyId: string, fullSuiteGatePassed: boolean | undefi
   };
 }
 
+const COMPLETION_WORKDIR = `/tmp/nax-test-completion-${randomUUID()}`;
+const SMART_SKIP_WORKDIR = `/tmp/nax-smart-skip-test-${randomUUID()}`;
+
 function makeOpts(
   config: NaxConfig,
   prd: PRD,
-  workdir = "/tmp/nax-test-completion",
+  workdir = COMPLETION_WORKDIR,
   overrides?: Partial<RunCompletionOptions>,
 ): RunCompletionOptions {
   return {
@@ -322,7 +326,7 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
     ]);
 
     await handleRunCompletion(
-      makeOpts(makeConfig("deferred", "bun test"), prd, "/tmp/nax-smart-skip-test", {
+      makeOpts(makeConfig("deferred", "bun test"), prd, SMART_SKIP_WORKDIR, {
         allStoryMetrics: metrics,
         isSequential: true,
       }),
@@ -339,7 +343,7 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
     ]);
 
     await handleRunCompletion(
-      makeOpts(makeConfig("deferred", "bun test"), prd, "/tmp/nax-smart-skip-test", {
+      makeOpts(makeConfig("deferred", "bun test"), prd, SMART_SKIP_WORKDIR, {
         allStoryMetrics: metrics,
         isSequential: true,
       }),
@@ -356,7 +360,7 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
     ]);
 
     await handleRunCompletion(
-      makeOpts(makeConfig("deferred", "bun test"), prd, "/tmp/nax-smart-skip-test", {
+      makeOpts(makeConfig("deferred", "bun test"), prd, SMART_SKIP_WORKDIR, {
         allStoryMetrics: metrics,
         isSequential: true,
       }),
@@ -373,7 +377,7 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
     ]);
 
     await handleRunCompletion(
-      makeOpts(makeConfig("deferred", "bun test"), prd, "/tmp/nax-smart-skip-test", {
+      makeOpts(makeConfig("deferred", "bun test"), prd, SMART_SKIP_WORKDIR, {
         allStoryMetrics: metrics,
         isSequential: false,
       }),
@@ -386,7 +390,7 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
 
     await handleRunCompletion(
-      makeOpts(makeConfig("deferred", "bun test"), prd, "/tmp/nax-smart-skip-test", {
+      makeOpts(makeConfig("deferred", "bun test"), prd, SMART_SKIP_WORKDIR, {
         allStoryMetrics: [],
         isSequential: true,
       }),
@@ -400,7 +404,7 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
 
     await handleRunCompletion(
-      makeOpts(makeConfig("deferred", "bun test"), prd, "/tmp/nax-smart-skip-test", {
+      makeOpts(makeConfig("deferred", "bun test"), prd, SMART_SKIP_WORKDIR, {
         allStoryMetrics: metrics,
         isSequential: true,
       }),
@@ -414,7 +418,7 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
 
     await handleRunCompletion(
-      makeOpts(makeConfig("deferred", "bun test"), prd, "/tmp/nax-smart-skip-test", {
+      makeOpts(makeConfig("deferred", "bun test"), prd, SMART_SKIP_WORKDIR, {
         allStoryMetrics: metrics,
         isSequential: true,
       }),
@@ -430,7 +434,7 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
       { id: "US-002", status: "passed" },
     ]);
 
-    const opts = makeOpts(makeConfig("deferred", "bun test"), prd, "/tmp/nax-smart-skip-test", {
+    const opts = makeOpts(makeConfig("deferred", "bun test"), prd, SMART_SKIP_WORKDIR, {
       allStoryMetrics: metrics,
     });
     (opts as Partial<RunCompletionOptions>).isSequential = undefined;
@@ -445,7 +449,7 @@ describe("handleRunCompletion - smart-skip deferred regression (RL-006)", () => 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
 
     const result = await handleRunCompletion(
-      makeOpts(makeConfig("deferred", "bun test"), prd, "/tmp/nax-smart-skip-test", {
+      makeOpts(makeConfig("deferred", "bun test"), prd, SMART_SKIP_WORKDIR, {
         allStoryMetrics: metrics,
         isSequential: true,
       }),
@@ -476,7 +480,7 @@ describe("handleRunCompletion - deferred regression gate", () => {
 
     expect(mockRunDeferredRegression).toHaveBeenCalledTimes(1);
     const call = mockRunDeferredRegression.mock.calls[0][0] as { workdir: string };
-    expect(call.workdir).toBe("/tmp/nax-test-completion");
+    expect(call.workdir).toBe(COMPLETION_WORKDIR);
   });
 
   test("does NOT call runDeferredRegression when mode is 'per-story'", async () => {

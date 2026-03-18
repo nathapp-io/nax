@@ -12,11 +12,15 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import { collectStoryMetrics } from "../../../src/metrics/tracker";
+
+const WORKDIR = `/tmp/nax-test-metrics-${randomUUID()}`;
+const WORKDIR_BATCH = `/tmp/nax-test-metrics-batch-${randomUUID()}`;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -65,7 +69,7 @@ function makeContext(story: UserStory, overrides?: Partial<PipelineContext>): Pi
       testStrategy: "test-after",
       reasoning: "test",
     },
-    workdir: "/tmp/nax-test-metrics",
+    workdir: WORKDIR,
     hooks: { hooks: {} },
     ...overrides,
   } as PipelineContext;
@@ -187,7 +191,7 @@ describe("collectBatchMetrics - runtimeCrashes per story", () => {
         testStrategy: "test-after",
         reasoning: "test",
       },
-      workdir: "/tmp/nax-test-metrics-batch",
+      workdir: WORKDIR_BATCH,
       hooks: { hooks: {} },
       agentResult: { success: true, estimatedCost: 0.01, durationMs: 1000 },
     } as PipelineContext;

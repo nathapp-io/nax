@@ -12,10 +12,13 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "../../../../src/config";
 import { executionStage, _executionDeps } from "../../../../src/pipeline/stages/execution";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
+
+const WORKDIR = `/tmp/nax-test-exec-${randomUUID()}`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Save originals for restoration
@@ -110,7 +113,7 @@ function makeCtx(
       testStrategy,
       reasoning: "",
     },
-    workdir: "/tmp/nax-test-exec",
+    workdir: WORKDIR,
     prompt: "Your tdd-simple task: write tests first, then implement.",
     hooks: {} as PipelineContext["hooks"],
     ...overrides,

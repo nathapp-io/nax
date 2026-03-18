@@ -11,10 +11,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import type { NaxConfig } from "../../../../src/config";
 import { promptStage } from "../../../../src/pipeline/stages/prompt";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
+
+const WORKDIR = `/tmp/nax-test-prompt-${randomUUID()}`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -80,7 +83,7 @@ function makeCtx(
       testStrategy,
       reasoning: "",
     },
-    workdir: "/tmp/nax-test-prompt",
+    workdir: WORKDIR,
     hooks: {} as PipelineContext["hooks"],
     ...overrides,
   } as unknown as PipelineContext;

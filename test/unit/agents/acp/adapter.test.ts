@@ -10,6 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { AcpAgentAdapter, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
 import { CompleteError } from "../../../../src/agents/types";
 import type { AgentRunOptions } from "../../../../src/agents/types";
@@ -72,9 +73,11 @@ export function makeClient(
   };
 }
 
+const ACP_WORKDIR = `/tmp/nax-acp-test-${randomUUID()}`;
+
 export function makeRunOptions(overrides: Partial<AgentRunOptions> = {}): AgentRunOptions {
   return {
-    workdir: "/tmp/nax-acp-test",
+    workdir: ACP_WORKDIR,
     prompt: "Write a hello world function",
     modelTier: "balanced",
     modelDef: { provider: "anthropic", model: "claude-sonnet-4-5", env: {} },

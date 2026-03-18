@@ -3,9 +3,10 @@ import { loadPlugins, _setPluginErrorSink, _resetPluginErrorSink } from "../../.
 import { loadCustomStrategy } from "../../../src/routing/loader";
 import { resolve } from "node:path";
 import * as fs from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 
 describe("Loader Security (SEC-1, SEC-2)", () => {
-  const projectRoot = "/tmp/nax-sec-test-" + Date.now();
+  const projectRoot = `/tmp/nax-sec-test-${randomUUID()}`;
   const projectPluginsDir = resolve(projectRoot, "nax/plugins");
   const globalPluginsDir = resolve(projectRoot, ".nax/plugins");
   

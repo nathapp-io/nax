@@ -6,6 +6,7 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { CodebaseScan } from "../../../src/analyze/types";
 import { scanCodebase } from "../../../src/analyze/scanner";
 
@@ -45,7 +46,7 @@ describe("scanCodebase", () => {
   });
 
   test("handles missing src directory", async () => {
-    const workdir = "/tmp/nax-test-no-src";
+    const workdir = `/tmp/nax-test-no-src-${randomUUID()}`;
 
     // Create temp dir without src/
     await Bun.write(join(workdir, "package.json"), JSON.stringify({}));

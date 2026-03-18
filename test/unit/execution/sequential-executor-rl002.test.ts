@@ -10,6 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import { type SequentialExecutionContext, executeSequential } from "../../../src/execution/sequential-executor";
 import { _runCompletionDeps, handleRunCompletion } from "../../../src/execution/lifecycle/run-completion";
@@ -69,10 +70,13 @@ function makePluginRegistry() {
 
 const EMPTY_HOOKS: LoadedHooksConfig = { hooks: {} };
 
+const RL002_WORKDIR = `/tmp/nax-rl002-test-workdir-${randomUUID()}`;
+const RL002_PRD_PATH = `/tmp/nax-rl002-test-prd-${randomUUID()}.json`;
+
 function makeMinimalContext(): SequentialExecutionContext {
   return {
-    prdPath: "/tmp/nax-rl002-test-prd.json",
-    workdir: "/tmp/nax-rl002-test-workdir",
+    prdPath: RL002_PRD_PATH,
+    workdir: RL002_WORKDIR,
     config: {
       ...DEFAULT_CONFIG,
       execution: {
