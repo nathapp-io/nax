@@ -42,16 +42,6 @@ describe("buildRoleTaskSection — implementer role", () => {
     expect(result).toContain('feat: <description>');
   });
 
-  test("returns non-empty string for standard", () => {
-    const result = buildRoleTaskSection("implementer", "standard");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
-  test("returns non-empty string for lite", () => {
-    const result = buildRoleTaskSection("implementer", "lite");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("standard and lite have different content", () => {
     const standard = buildRoleTaskSection("implementer", "standard");
     const lite = buildRoleTaskSection("implementer", "lite");
@@ -66,11 +56,6 @@ describe("buildRoleTaskSection — implementer role", () => {
 });
 
 describe("buildRoleTaskSection — test-writer role", () => {
-  test("returns non-empty string", () => {
-    const result = buildRoleTaskSection("test-writer");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("mentions writing tests", () => {
     const result = buildRoleTaskSection("test-writer");
     expect(result.toLowerCase()).toMatch(/test/);
@@ -89,11 +74,6 @@ describe("buildRoleTaskSection — test-writer role", () => {
 });
 
 describe("buildRoleTaskSection — verifier role", () => {
-  test("returns non-empty string", () => {
-    const result = buildRoleTaskSection("verifier");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("mentions verification or review", () => {
     const result = buildRoleTaskSection("verifier");
     expect(result.toLowerCase()).toMatch(/verif|review|check|inspect/);
@@ -106,11 +86,6 @@ describe("buildRoleTaskSection — verifier role", () => {
 });
 
 describe("buildRoleTaskSection — single-session role", () => {
-  test("returns non-empty string", () => {
-    const result = buildRoleTaskSection("single-session");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("mentions both tests and implementation", () => {
     const result = buildRoleTaskSection("single-session");
     expect(result.toLowerCase()).toMatch(/test/);
@@ -128,11 +103,6 @@ describe("buildRoleTaskSection — single-session role", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildRoleTaskSection — batch role", () => {
-  test("returns non-empty string", () => {
-    const result = buildRoleTaskSection("batch");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("uses TDD-aligned language: instructs to write tests before implementing", () => {
     const result = buildRoleTaskSection("batch");
     // Must use TDD-aligned language, not "test-after"
@@ -188,29 +158,11 @@ describe("buildRoleTaskSection — batch role", () => {
   });
 });
 
-describe("buildRoleTaskSection — all roles return strings", () => {
-  const roles = ["implementer", "test-writer", "verifier", "single-session"] as const;
-
-  for (const role of roles) {
-    test(`${role} returns a non-empty string`, () => {
-      const result = buildRoleTaskSection(role);
-      expect(typeof result).toBe("string");
-      expect(result.length).toBeGreaterThan(0);
-    });
-  }
-});
-
 // ---------------------------------------------------------------------------
 // TS-002: tdd-simple role tests (RED phase — will fail until implemented)
 // ---------------------------------------------------------------------------
 
 describe("buildRoleTaskSection — tdd-simple role", () => {
-  test("returns non-empty string", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = buildRoleTaskSection("tdd-simple" as any);
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("instructs to write failing tests FIRST for acceptance criteria", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = buildRoleTaskSection("tdd-simple" as any);

@@ -26,16 +26,6 @@ describe("buildIsolationSection — test-writer role", () => {
     expect(liteResult).toContain("bun test");
   });
 
-  test("returns non-empty string for strict mode", () => {
-    const strict = buildIsolationSection("test-writer", "strict");
-    expect(strict.length).toBeGreaterThan(0);
-  });
-
-  test("returns non-empty string for lite mode", () => {
-    const lite = buildIsolationSection("test-writer", "lite");
-    expect(lite.length).toBeGreaterThan(0);
-  });
-
   test("defaults to strict mode when no mode provided", () => {
     const defaultResult = buildIsolationSection("test-writer");
     const strictResult = buildIsolationSection("test-writer", "strict");
@@ -44,11 +34,6 @@ describe("buildIsolationSection — test-writer role", () => {
 });
 
 describe("buildIsolationSection — implementer role", () => {
-  test("returns non-empty string", () => {
-    const result = buildIsolationSection("implementer");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("allows modification of src/ files", () => {
     const result = buildIsolationSection("implementer");
     expect(result).toContain("src/");
@@ -67,11 +52,6 @@ describe("buildIsolationSection — implementer role", () => {
 });
 
 describe("buildIsolationSection — verifier role", () => {
-  test("returns non-empty string", () => {
-    const result = buildIsolationSection("verifier");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("allows reading all files", () => {
     const result = buildIsolationSection("verifier");
     expect(result.toLowerCase()).toMatch(/read|inspect|review/);
@@ -84,11 +64,6 @@ describe("buildIsolationSection — verifier role", () => {
 });
 
 describe("buildIsolationSection — single-session role", () => {
-  test("returns non-empty string", () => {
-    const result = buildIsolationSection("single-session");
-    expect(result.length).toBeGreaterThan(0);
-  });
-
   test("allows creating files in both test/ and src/", () => {
     const result = buildIsolationSection("single-session");
     expect(result).toContain("test/");
@@ -101,29 +76,11 @@ describe("buildIsolationSection — single-session role", () => {
   });
 });
 
-describe("buildIsolationSection — all roles return strings", () => {
-  const roles = ["implementer", "test-writer", "verifier", "single-session"] as const;
-
-  for (const role of roles) {
-    test(`${role} returns a non-empty string`, () => {
-      const result = buildIsolationSection(role);
-      expect(typeof result).toBe("string");
-      expect(result.length).toBeGreaterThan(0);
-    });
-  }
-});
-
 // ---------------------------------------------------------------------------
 // TS-002: tdd-simple isolation tests (RED phase — will fail until implemented)
 // ---------------------------------------------------------------------------
 
 describe("buildIsolationSection — tdd-simple role", () => {
-  test("returns a string (empty or with a permissive note)", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = buildIsolationSection("tdd-simple" as any);
-    expect(typeof result).toBe("string");
-  });
-
   test("does NOT forbid modification of src/ files", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = buildIsolationSection("tdd-simple" as any);

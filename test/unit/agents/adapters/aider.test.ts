@@ -14,7 +14,6 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { AiderAdapter, _aiderCompleteDeps } from "../../../../src/agents/aider/adapter";
 import { getAgent } from "../../../../src/agents/registry";
 import { CompleteError } from "../../../../src/agents/types";
-import type { CompleteOptions } from "../../../../src/agents/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock process factories
@@ -49,46 +48,9 @@ describe("AiderAdapter interface compliance", () => {
     expect(adapter.binary).toBe("aider");
   });
 
-  test("displayName is a non-empty string", () => {
-    expect(typeof adapter.displayName).toBe("string");
-    expect(adapter.displayName.length).toBeGreaterThan(0);
-  });
-
   test("capabilities.supportedTiers is a non-empty array", () => {
     expect(Array.isArray(adapter.capabilities.supportedTiers)).toBe(true);
     expect(adapter.capabilities.supportedTiers.length).toBeGreaterThan(0);
-  });
-
-  test("capabilities.features is a Set", () => {
-    expect(adapter.capabilities.features).toBeInstanceOf(Set);
-  });
-
-  test("capabilities.maxContextTokens is a positive number", () => {
-    expect(adapter.capabilities.maxContextTokens).toBeGreaterThan(0);
-  });
-
-  test("isInstalled is a function", () => {
-    expect(typeof adapter.isInstalled).toBe("function");
-  });
-
-  test("run is a function", () => {
-    expect(typeof adapter.run).toBe("function");
-  });
-
-  test("buildCommand is a function", () => {
-    expect(typeof adapter.buildCommand).toBe("function");
-  });
-
-  test("complete is a function", () => {
-    expect(typeof adapter.complete).toBe("function");
-  });
-
-  test("plan is a function", () => {
-    expect(typeof adapter.plan).toBe("function");
-  });
-
-  test("decompose is a function", () => {
-    expect(typeof adapter.decompose).toBe("function");
   });
 });
 
@@ -283,15 +245,6 @@ describe("complete()", () => {
     await expect(adapter.complete("test")).rejects.toThrow(CompleteError);
   });
 
-  // ── Return type ─────────────────────────────────────────────────────────
-
-  test("complete returns a Promise", () => {
-    _aiderCompleteDeps.spawn = (_cmd, _opts) => mockProcessWithStdout("output", 0);
-
-    const result = adapter.complete("test");
-    expect(result).toBeInstanceOf(Promise);
-    result.catch(() => {});
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

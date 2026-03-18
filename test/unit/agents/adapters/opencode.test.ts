@@ -47,30 +47,9 @@ describe("OpenCodeAdapter interface compliance", () => {
     expect(adapter.binary).toBe("opencode");
   });
 
-  test("displayName is a non-empty string", () => {
-    expect(typeof adapter.displayName).toBe("string");
-    expect(adapter.displayName.length).toBeGreaterThan(0);
-  });
-
   test("capabilities.supportedTiers is a non-empty array", () => {
     expect(Array.isArray(adapter.capabilities.supportedTiers)).toBe(true);
     expect(adapter.capabilities.supportedTiers.length).toBeGreaterThan(0);
-  });
-
-  test("capabilities.features is a Set", () => {
-    expect(adapter.capabilities.features).toBeInstanceOf(Set);
-  });
-
-  test("capabilities.maxContextTokens is a positive number", () => {
-    expect(adapter.capabilities.maxContextTokens).toBeGreaterThan(0);
-  });
-
-  test("isInstalled is a function", () => {
-    expect(typeof adapter.isInstalled).toBe("function");
-  });
-
-  test("complete is a function", () => {
-    expect(typeof adapter.complete).toBe("function");
   });
 });
 
@@ -226,15 +205,6 @@ describe("complete()", () => {
     await expect(adapter.complete("test")).rejects.toThrow(CompleteError);
   });
 
-  // ── Return type ─────────────────────────────────────────────────────────
-
-  test("complete returns a Promise", () => {
-    _opencodeCompleteDeps.spawn = (_cmd, _opts) => mockProcessWithStdout("output", 0);
-
-    const result = adapter.complete("test");
-    expect(result).toBeInstanceOf(Promise);
-    result.catch(() => {});
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

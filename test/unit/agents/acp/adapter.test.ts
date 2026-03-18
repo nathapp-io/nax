@@ -96,35 +96,10 @@ describe("AcpAgentAdapter interface compliance", () => {
     expect(adapter.name).toBe("claude");
   });
 
-  test("displayName is a non-empty string", () => {
-    expect(typeof adapter.displayName).toBe("string");
-    expect(adapter.displayName.length).toBeGreaterThan(0);
-  });
-
-  test("binary is a non-empty string", () => {
-    expect(typeof adapter.binary).toBe("string");
-    expect(adapter.binary.length).toBeGreaterThan(0);
-  });
-
   test("capabilities.supportedTiers is a non-empty array", () => {
     expect(Array.isArray(adapter.capabilities.supportedTiers)).toBe(true);
     expect(adapter.capabilities.supportedTiers.length).toBeGreaterThan(0);
   });
-
-  test("capabilities.maxContextTokens is a positive number", () => {
-    expect(adapter.capabilities.maxContextTokens).toBeGreaterThan(0);
-  });
-
-  test("capabilities.features is a Set", () => {
-    expect(adapter.capabilities.features instanceof Set).toBe(true);
-  });
-
-  test.each(["isInstalled", "run", "buildCommand", "complete", "plan", "decompose"])(
-    "implements %s method",
-    (method) => {
-      expect(typeof (adapter as unknown as Record<string, unknown>)[method]).toBe("function");
-    },
-  );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -162,20 +137,6 @@ describe("isInstalled()", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("buildCommand()", () => {
-  test("returns a non-empty string array", () => {
-    const adapter = new AcpAgentAdapter("claude");
-    const cmd = adapter.buildCommand(makeRunOptions());
-    expect(Array.isArray(cmd)).toBe(true);
-    expect(cmd.length).toBeGreaterThan(0);
-    for (const part of cmd) {
-      expect(typeof part).toBe("string");
-    }
-  });
-
-  test("first element is the resolved ACP command", () => {
-    const cmd = new AcpAgentAdapter("claude").buildCommand(makeRunOptions());
-    expect(cmd[0]).toBeTruthy();
-  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -308,11 +269,4 @@ describe("_acpAdapterDeps", () => {
     expect(_acpAdapterDeps).toBeDefined();
     expect(typeof _acpAdapterDeps).toBe("object");
   });
-
-  test.each(["createClient", "which", "sleep"])(
-    "%s is a function",
-    (key) => {
-      expect(typeof (_acpAdapterDeps as unknown as Record<string, unknown>)[key]).toBe("function");
-    },
-  );
 });

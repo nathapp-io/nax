@@ -20,12 +20,6 @@ function makeConfig(overrides: Partial<DecomposeConfig> = {}): DecomposeConfig {
 }
 
 describe("buildConstraintsSection()", () => {
-  test("returns a non-empty string", () => {
-    const section = buildConstraintsSection(makeConfig());
-    expect(typeof section).toBe("string");
-    expect(section.length).toBeGreaterThan(0);
-  });
-
   test("includes maxSubStories value", () => {
     const section = buildConstraintsSection(makeConfig({ maxSubStories: 6 }));
     expect(section).toContain("6");
