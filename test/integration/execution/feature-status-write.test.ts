@@ -93,7 +93,7 @@ describe("SFC-002: Feature-level status writing — Acceptance Criteria", () => 
   });
 
   // ── AC-1: After a completed run, status is 'completed' ─────────────────
-  test("AC-1: After completed run, feature status.json has status 'completed'", async () => {
+  test("After completed run, feature status.json has status 'completed'", async () => {
     const featureDir = join(tmpDir, "nax", "features", "auth-system");
     const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
 
@@ -117,7 +117,7 @@ describe("SFC-002: Feature-level status writing — Acceptance Criteria", () => 
   });
 
   // ── AC-2: After a failed run, status is 'failed' ───────────────────────
-  test("AC-2: After failed run, feature status.json has status 'failed'", async () => {
+  test("After failed run, feature status.json has status 'failed'", async () => {
     const featureDir = join(tmpDir, "nax", "features", "auth-system");
     const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
 
@@ -142,7 +142,7 @@ describe("SFC-002: Feature-level status writing — Acceptance Criteria", () => 
   });
 
   // ── AC-3: After a crash, status is 'crashed' ───────────────────────────
-  test("AC-3: After crash, feature status.json has status 'crashed' with crash metadata", async () => {
+  test("After crash, feature status.json has status 'crashed' with crash metadata", async () => {
     const featureDir = join(tmpDir, "nax", "features", "auth-system");
     const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
 
@@ -164,7 +164,7 @@ describe("SFC-002: Feature-level status writing — Acceptance Criteria", () => 
   });
 
   // ── AC-4: Uses same NaxStatusFile schema as project-level ──────────────
-  test("AC-4: Feature status.json uses same NaxStatusFile schema as project-level", async () => {
+  test("Feature status.json uses same NaxStatusFile schema as project-level", async () => {
     const projectStatusPath = join(tmpDir, "status.json");
     const featureDir = join(tmpDir, "nax", "features", "auth-system");
 

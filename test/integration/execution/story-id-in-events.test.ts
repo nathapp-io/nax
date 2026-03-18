@@ -154,7 +154,8 @@ function createTestContext(overrides?: Partial<PipelineContext>): PipelineContex
   };
 }
 
-describe("StoryId in JSONL events (BUG-020)", () => {
+// BUG-020
+describe("StoryId is present in JSONL events emitted by pipeline stages", () => {
   let tempDir: string;
 
   beforeEach(() => {

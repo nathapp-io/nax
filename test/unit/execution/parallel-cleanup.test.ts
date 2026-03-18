@@ -27,7 +27,8 @@ async function readSrc(relativePath: string): Promise<string> {
 // BUG-068: "Parallel execution complete" must be logged exactly once
 // ---------------------------------------------------------------------------
 
-describe("BUG-068: no duplicate 'Parallel execution complete' log", () => {
+// BUG-068
+describe("'Parallel execution complete' log appears exactly once (no duplicate)", () => {
   test("the log message appears exactly once across parallel-coordinator.ts and parallel-executor.ts", async () => {
     const coordinatorSrc = await readSrc("execution/parallel-coordinator.ts");
     const executorSrc = await readSrc("execution/parallel-executor.ts");
@@ -60,7 +61,8 @@ describe("BUG-068: no duplicate 'Parallel execution complete' log", () => {
 // BUG-069: batch summary field semantics
 // ---------------------------------------------------------------------------
 
-describe("BUG-069: batch summary uses pipelinePassed, merged, mergeConflicts - not successful", () => {
+// BUG-069
+describe("batch summary uses pipelinePassed and merged fields instead of successful", () => {
   test("batch complete log uses 'pipelinePassed' field (not 'successful')", async () => {
     // Batch log is in the coordinator (executeParallel implementation)
     const src = await readSrc("execution/parallel-coordinator.ts");
@@ -141,7 +143,8 @@ describe("BUG-069: batch summary uses pipelinePassed, merged, mergeConflicts - n
 // BUG-071: story.complete duration field naming
 // ---------------------------------------------------------------------------
 
-describe("BUG-071: story.complete durationMs renamed to runElapsedMs", () => {
+// BUG-071
+describe("story.complete event uses runElapsedMs field instead of durationMs", () => {
   test("pipeline-result-handler.ts story.complete log uses runElapsedMs not durationMs", async () => {
     const src = await readSrc("execution/pipeline-result-handler.ts");
 

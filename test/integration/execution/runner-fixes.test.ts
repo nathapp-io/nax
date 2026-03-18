@@ -36,7 +36,8 @@ function createStory(
   };
 }
 
-describe("BUG-2: Queue race condition", () => {
+// BUG-002
+describe("Queue race condition: atomic rename prevents concurrent read/write conflicts", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
@@ -129,7 +130,8 @@ describe("BUG-2: Queue race condition", () => {
   });
 });
 
-describe("BUG-2: File locking", () => {
+// BUG-002
+describe("File locking: lock file prevents concurrent execution and is released after run", () => {
   let tmpDir: string;
 
   beforeEach(async () => {

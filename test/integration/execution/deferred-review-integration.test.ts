@@ -176,7 +176,7 @@ function makeCtx(registry: PluginRegistry, config: NaxConfig): SequentialExecuti
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("Deferred plugin review — integration (DR-003)", () => {
-  test("AC-2/AC-3: plugin reviewers run exactly once after all stories complete when pluginMode is deferred", async () => {
+  test("plugin reviewers run exactly once after all stories complete when pluginMode is deferred", async () => {
     writeCompletedPRD();
     const reviewer = makeReviewer("semgrep", true);
     const registry = makeRegistry([reviewer]);
@@ -190,7 +190,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     expect(result.exitReason).toBe("completed");
   });
 
-  test("AC-3: plugin reviewers are NOT called during per-story review when pluginMode is deferred", async () => {
+  test("plugin reviewers are NOT called during per-story review when pluginMode is deferred", async () => {
     // With a pre-completed PRD, the story loop exits immediately
     // The reviewer should only be called during the deferred phase, not the per-story phase
     writeCompletedPRD();
@@ -205,7 +205,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     expect(reviewer.check).toHaveBeenCalledTimes(1);
   });
 
-  test("AC-4: reviewer failure in deferred mode does NOT fail the overall run", async () => {
+  test("reviewer failure in deferred mode does NOT fail the overall run", async () => {
     writeCompletedPRD();
     const failingReviewer = makeReviewer("semgrep", false);
     const registry = makeRegistry([failingReviewer]);
@@ -221,7 +221,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     expect(result.deferredReview!.anyFailed).toBe(true);
   });
 
-  test("AC-5: deferred review result is available in SequentialExecutionResult for reporters", async () => {
+  test("deferred review result is available in SequentialExecutionResult for reporters", async () => {
     writeCompletedPRD();
     const reviewer = makeReviewer("semgrep", true);
     const registry = makeRegistry([reviewer]);
@@ -236,7 +236,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     expect(result.deferredReview!.anyFailed).toBe(false);
   });
 
-  test("AC-6: deferred review uses run-start ref as baseRef for full diff range", async () => {
+  test("deferred review uses run-start ref as baseRef for full diff range", async () => {
     writeCompletedPRD();
     const reviewer = makeReviewer("semgrep", true);
     const registry = makeRegistry([reviewer]);
@@ -254,7 +254,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     expect(diffCallWithRef).toBeDefined();
   });
 
-  test("AC-7: deferred review is silently skipped when no plugin reviewers are registered", async () => {
+  test("deferred review is silently skipped when no plugin reviewers are registered", async () => {
     writeCompletedPRD();
     const registry = makeRegistry([]); // no reviewers
     const config = makeConfig("deferred");
@@ -268,7 +268,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     expect(result.deferredReview).toBeUndefined();
   });
 
-  test("AC-3 no regression: pluginMode per-story does NOT trigger deferred review", async () => {
+  test("pluginMode per-story does NOT trigger deferred review", async () => {
     writeCompletedPRD();
     const reviewer = makeReviewer("semgrep", true);
     const registry = makeRegistry([reviewer]);
@@ -281,7 +281,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     expect(result.deferredReview).toBeUndefined();
   });
 
-  test("AC-1: run-start git ref is captured before stories execute", async () => {
+  test("run-start git ref is captured before stories execute", async () => {
     writeCompletedPRD();
     const captureOrder: string[] = [];
 

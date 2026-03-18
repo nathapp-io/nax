@@ -219,7 +219,8 @@ describe("Configurable Escalation Chain (ADR-003)", () => {
   });
 });
 
-describe("Pre-Iteration Escalation (BUG-16, BUG-17)", () => {
+// BUG-016 BUG-017
+describe("Pre-Iteration Escalation: tier budget exhaustion triggers escalation before agent spawn", () => {
   const defaultTiers = [
     { tier: "fast", attempts: 5 },
     { tier: "balanced", attempts: 3 },

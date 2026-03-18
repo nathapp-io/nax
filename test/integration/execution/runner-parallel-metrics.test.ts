@@ -131,7 +131,8 @@ function makeHooks(): LoadedHooksConfig {
 // Test setup
 // ─────────────────────────────────────────────────────────────────────────────
 
-describeIntegration("BUG-064 + BUG-065 + BUG-066: Runner parallel + sequential metric accumulation", () => {
+// BUG-064 BUG-065 BUG-066
+describeIntegration("Runner accumulates totalCost, storiesCompleted, and storyMetrics across parallel and sequential phases", () => {
   let tempDir: string;
   let prdPath: string;
   // Capture originals inside describe scope to avoid contamination from other test files
@@ -233,7 +234,8 @@ describeIntegration("BUG-064 + BUG-065 + BUG-066: Runner parallel + sequential m
   // BUG-064: totalCost accumulation
   // ───────────────────────────────────────────────────────────────────────────
 
-  describe("BUG-064: totalCost includes both parallel and sequential costs", () => {
+  // BUG-064
+  describe("totalCost includes both parallel and sequential costs", () => {
     test("run() result totalCost = parallelCost + sequentialCost", async () => {
       const result = await run({
         prdPath,
@@ -281,7 +283,8 @@ describeIntegration("BUG-064 + BUG-065 + BUG-066: Runner parallel + sequential m
   // BUG-065: storiesCompleted accumulation
   // ───────────────────────────────────────────────────────────────────────────
 
-  describe("BUG-065: storiesCompleted includes both parallel and sequential counts", () => {
+  // BUG-065
+  describe("storiesCompleted includes both parallel and sequential counts", () => {
     test("run() result storiesCompleted = parallelCount + sequentialCount", async () => {
       const result = await run({
         prdPath,
@@ -329,7 +332,8 @@ describeIntegration("BUG-064 + BUG-065 + BUG-066: Runner parallel + sequential m
   // BUG-066: storyMetrics includes parallel entries
   // ───────────────────────────────────────────────────────────────────────────
 
-  describe("BUG-066: RunResult reflects storyMetrics from both paths", () => {
+  // BUG-066
+  describe("RunResult includes storyMetrics from both parallel and sequential paths", () => {
     test("parallel executor returns storyMetrics for completed stories", async () => {
       // Test at the parallel-executor level: runParallelExecution must return storyMetrics
       const { runParallelExecution } = await import("../../../src/execution/parallel-executor");

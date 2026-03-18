@@ -51,7 +51,8 @@ afterEach(() => {
 // BUG-031: Keyword classifier stable across retries
 // ---------------------------------------------------------------------------
 
-describe("BUG-031: keyword classifier stability across retries", () => {
+// BUG-031
+describe("keyword classifier produces identical results across retries", () => {
   test("classification is identical on first attempt and retry with same story", () => {
     const story = makeStory();
     const first = keywordStrategy.route(story, ctx);
@@ -110,7 +111,8 @@ describe("BUG-031: keyword classifier stability across retries", () => {
 // BUG-033: LLM routing config — retries and timeout defaults
 // ---------------------------------------------------------------------------
 
-describe("BUG-033: LLM routing config defaults and retry fields", () => {
+// BUG-033
+describe("LLM routing config accepts retry and timeout fields with correct defaults", () => {
   test("LlmRoutingConfig accepts retries and retryDelayMs fields", () => {
     const config = {
       ...DEFAULT_CONFIG,

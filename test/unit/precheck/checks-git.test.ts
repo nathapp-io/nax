@@ -76,7 +76,8 @@ function makeGitRepo(): string {
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("checkWorkingTreeClean — NAX_RUNTIME_PATTERNS allowlist (BUG-074)", () => {
+// BUG-074
+describe("checkWorkingTreeClean — nax runtime files are excluded from dirty-tree check", () => {
   test("passes when working tree is clean", async () => {
     const dir = makeGitRepo();
     try {

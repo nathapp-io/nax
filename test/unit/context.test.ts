@@ -1488,7 +1488,8 @@ describe("Context Builder", () => {
     });
   });
 
-  describe("context auto-detection (BUG-006)", () => {
+  // BUG-006
+  describe("context auto-detection when contextFiles is empty", () => {
     test("should auto-detect files when contextFiles is empty", async () => {
       // Create temp git repo
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));

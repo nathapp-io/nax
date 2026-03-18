@@ -228,7 +228,8 @@ describe("crash-recovery", () => {
     });
   });
 
-  describe("SIGTERM run.complete event (BUG-017)", () => {
+  // BUG-017
+  describe("SIGTERM handler emits run.complete event", () => {
     test("should emit run.complete event when SIGTERM handler is invoked directly", async () => {
       // Mock process.exit to prevent the test process from actually exiting
       const originalExit = process.exit;

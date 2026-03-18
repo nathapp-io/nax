@@ -70,7 +70,8 @@ afterEach(() => {
   resetLogger();
 });
 
-describe("BUG-039/BUG-040: stream cleanup on timeout (adapter-based)", () => {
+// BUG-039 BUG-040
+describe("adapter.complete() timeout is enforced and does not cause unhandled rejections", () => {
   test("timeout via adapter.complete() rejects within timeout window", async () => {
     const mockAdapter = makeHangingAdapter();
     const config = makeConfig({ timeoutMs: 30 });

@@ -42,7 +42,8 @@ function makePrd(): PRD {
 // BUG-067: AcceptanceLoopContext accepts agentGetFn
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("BUG-067: AcceptanceLoopContext.agentGetFn type contract", () => {
+// BUG-067
+describe("AcceptanceLoopContext accepts agentGetFn as optional field", () => {
   test("AcceptanceLoopContext accepts agentGetFn as optional field", () => {
     const agentGetFn: AgentGetFn = mock(() => undefined);
 
@@ -65,7 +66,8 @@ describe("BUG-067: AcceptanceLoopContext.agentGetFn type contract", () => {
 // BUG-067: runAcceptanceLoop exits early (passes) when acceptance passes
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("BUG-067: runAcceptanceLoop passes agentGetFn in context", () => {
+// BUG-067
+describe("runAcceptanceLoop threads agentGetFn through the pipeline context", () => {
   test("runAcceptanceLoop returns success when all stories already passed (acceptance stage passes)", async () => {
     // This tests that runAcceptanceLoop with agentGetFn does not crash.
     // Since the acceptance stage is called via dynamic import with internal mocking,

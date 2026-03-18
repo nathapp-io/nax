@@ -118,7 +118,8 @@ function makeCtx(story: UserStory, overrides: Record<string, unknown> = {}): Pip
 // that a prior attempt occurred before declaring firstPassSuccess.
 // ---------------------------------------------------------------------------
 
-describe("collectStoryMetrics — firstPassSuccess with escalation (BUG-067)", () => {
+// BUG-067
+describe("collectStoryMetrics — firstPassSuccess is false when escalation occurs", () => {
   test.each([
     {
       name: "firstPassSuccess is false when story has priorFailures from haiku escalation",
@@ -211,7 +212,8 @@ describe("collectStoryMetrics — firstPassSuccess with escalation (BUG-067)", (
 // Total should be: priorFailures.length + story.attempts + 1 (current).
 // ---------------------------------------------------------------------------
 
-describe("collectStoryMetrics — attempt count with escalation (BUG-067)", () => {
+// BUG-067
+describe("collectStoryMetrics — attempt count includes all cross-tier attempts", () => {
   test.each([
     {
       name: "reports 2 attempts when haiku failed once and sonnet succeeded once",
@@ -270,7 +272,8 @@ describe("collectStoryMetrics — attempt count with escalation (BUG-067)", () =
 // when an escalation iteration produces a cost delta.
 // ---------------------------------------------------------------------------
 
-describe("collectStoryMetrics — cost accumulation across escalations (BUG-067)", () => {
+// BUG-067
+describe("collectStoryMetrics — cost accumulates across all tier escalations", () => {
   test.each([
     {
       name: "cost includes prior attempt cost when story escalated (haiku cost + sonnet cost)",
@@ -353,7 +356,8 @@ describe("collectStoryMetrics — cost accumulation across escalations (BUG-067)
 // collectStoryMetrics can reconstruct the total cross-tier attempt count.
 // ---------------------------------------------------------------------------
 
-describe("handleTierEscalation — priorFailures records attempt data (BUG-067)", () => {
+// BUG-067
+describe("handleTierEscalation — priorFailures records attempt data for cross-tier tracking", () => {
   let origSavePRD: typeof _tierEscalationDeps.savePRD;
 
   afterEach(() => {

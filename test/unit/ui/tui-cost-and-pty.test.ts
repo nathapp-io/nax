@@ -27,7 +27,8 @@ const createMockStory = (id: string): UserStory => ({
 
 // ── Cost Accumulation Tests (BUG-1) ──────────────────
 
-describe("StageResult - Cost field in types (BUG-1)", () => {
+// BUG-001
+describe("StageResult - cost field is propagated through pipeline stage results", () => {
   test("should support cost field in continue action", () => {
     const result: StageResult = { action: "continue", cost: 0.05 };
     expect(result.action).toBe("continue");
@@ -65,7 +66,8 @@ describe("StageResult - Cost field in types (BUG-1)", () => {
   });
 });
 
-describe("PipelineEventEmitter - Cost in story:complete (BUG-1)", () => {
+// BUG-001
+describe("PipelineEventEmitter - story:complete event carries cost field", () => {
   test("should emit story:complete with cost field", () => {
     const emitter = new PipelineEventEmitter();
     const story = createMockStory("US-001");

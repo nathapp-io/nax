@@ -88,7 +88,7 @@ function makeCtx(
 /** Story with 7 ACs (> default threshold of 6), classified as complex */
 function makeOversizedStory(): UserStory {
   return makeStory({
-    acceptanceCriteria: ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7"],
+    acceptanceCriteria: ["Implement login flow", "Add retry logic", "Validate user input", "Write unit tests", "Handle error states", "Add pagination", "Cache responses"],
     routing: {
       complexity: "complex",
       testStrategy: "three-session-tdd",
@@ -106,7 +106,7 @@ function makeSuccessfulDecomposeResult(): DecomposeResult {
         parentStoryId: "US-001",
         title: "Sub-story 1",
         description: "First part",
-        acceptanceCriteria: ["AC-1", "AC-2"],
+        acceptanceCriteria: ["Implement login flow", "Add retry logic"],
         tags: [],
         dependencies: [],
         complexity: "medium",
@@ -117,7 +117,7 @@ function makeSuccessfulDecomposeResult(): DecomposeResult {
         parentStoryId: "US-001",
         title: "Sub-story 2",
         description: "Second part",
-        acceptanceCriteria: ["AC-3", "AC-4"],
+        acceptanceCriteria: ["Validate user input", "Write unit tests"],
         tags: [],
         dependencies: ["US-001-1"],
         complexity: "simple",
@@ -200,7 +200,7 @@ describe("routingStage - does not decompose when below threshold", () => {
     deps.computeStoryContentHash = mock(() => "h1");
 
     try {
-      const story = makeStory({ acceptanceCriteria: ["AC-1", "AC-2", "AC-3"] }); // 3 < threshold 6
+      const story = makeStory({ acceptanceCriteria: ["Implement login flow", "Add retry logic", "Validate user input"] }); // 3 < threshold 6
       const ctx = makeCtx(story, makeConfig({ trigger: "auto", maxAcceptanceCriteria: 6 }));
 
       const result = await routingStage.execute(ctx);
@@ -226,7 +226,7 @@ describe("routingStage - does not decompose when below threshold", () => {
 
     try {
       const story = makeStory({
-        acceptanceCriteria: ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8"],
+        acceptanceCriteria: ["Implement login flow", "Add retry logic", "Validate user input", "Write unit tests", "Handle error states", "Add pagination", "Cache responses", "Add audit logging"],
       });
       const ctx = makeCtx(story, makeConfig({ trigger: "auto", maxAcceptanceCriteria: 6 }));
 

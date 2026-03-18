@@ -14,7 +14,8 @@ import { loadPRD, savePRD } from "../../src/prd";
 import type { PRD } from "../../src/prd/types";
 import { routeTask } from "../../src/routing";
 
-describe("PRD Auto-Default (BUG-004)", () => {
+// BUG-004
+describe("PRD Auto-Default — missing fields are defaulted on load", () => {
   let testDir: string;
   let prdPath: string;
 
@@ -245,7 +246,8 @@ describe("PRD Auto-Default (BUG-004)", () => {
   });
 });
 
-describe("Router Tags Defensive Fallback (BUG-004)", () => {
+// BUG-004
+describe("Router Tags Defensive Fallback — undefined and null tags handled gracefully", () => {
   test("routeTask handles undefined tags gracefully", () => {
     const result = routeTask(
       "Fix typo",
