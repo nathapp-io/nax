@@ -99,6 +99,9 @@ const SIGKILL_GRACE_PERIOD_MS = 5_000;
  */
 async function runCheck(check: ReviewCheckName, command: string, workdir: string): Promise<ReviewCheckResult> {
   const startTime = Date.now();
+  const logger = getSafeLogger();
+
+  logger?.info("review", `Running ${check} check`, { check, command, workdir });
 
   try {
     // Parse command into executable and args
@@ -151,6 +154,18 @@ async function runCheck(check: ReviewCheckName, command: string, workdir: string
     const stdout = await new Response(proc.stdout).text();
     const stderr = await new Response(proc.stderr).text();
     const output = [stdout, stderr].filter(Boolean).join("\n");
+
+    if (exitCode !== 0) {
+      logger?.warn("review", `${check} check failed`, {
+        check,
+        command,
+        workdir,
+        exitCode,
+        output: output.slice(0, 2000),
+      });
+    } else {
+      logger?.debug("review", `${check} check passed`, { check, command, durationMs: Date.now() - startTime });
+    }
 
     return {
       check,

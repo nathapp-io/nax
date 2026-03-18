@@ -92,7 +92,8 @@ describe("autofixStage", () => {
     _autofixDeps.runCommand = async () => ({ exitCode: 0, output: "" });
     _autofixDeps.recheckReview = async () => true;
 
-    const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
+    // Must have a lint failure to trigger Phase 1 (mechanical fix)
+    const ctx = makeCtx({ reviewResult: makeFailedReviewResult([{ check: "lint" }]) });
     const result = await autofixStage.execute(ctx);
 
     Object.assign(_autofixDeps, saved);
@@ -200,13 +201,37 @@ describe("autofixStage", () => {
       return true;
     };
 
-    const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
+    // Must have a lint failure to trigger Phase 1 (mechanical fix)
+    const ctx = makeCtx({ reviewResult: makeFailedReviewResult([{ check: "lint" }]) });
     const result = await autofixStage.execute(ctx);
 
     Object.assign(_autofixDeps, saved);
 
     expect(result.action).toBe("retry");
     expect(agentRectificationCalled).toBe(false);
+  });
+
+  test("typecheck failure skips mechanical fix and goes straight to agent rectification", async () => {
+    const saved = { ..._autofixDeps };
+    let runCommandCalled = false;
+    let agentRectificationCalled = false;
+    _autofixDeps.runCommand = async () => {
+      runCommandCalled = true;
+      return { exitCode: 0, output: "" };
+    };
+    _autofixDeps.runAgentRectification = async () => {
+      agentRectificationCalled = true;
+      return false;
+    };
+
+    // Only typecheck failed — no lint failure → Phase 1 (mechanical fix) should be skipped
+    const ctx = makeCtx({ reviewResult: makeFailedReviewResult([{ check: "typecheck", output: "TS2345: Type error" }]) });
+    await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(runCommandCalled).toBe(false); // lintFix/formatFix not called
+    expect(agentRectificationCalled).toBe(true); // went straight to agent
   });
 
   test("prompt includes failed check output", async () => {

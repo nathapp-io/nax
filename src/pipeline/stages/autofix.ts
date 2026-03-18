@@ -61,12 +61,22 @@ export const autofixStage: PipelineStage = {
     // Effective workdir for running commands (scoped to package if monorepo)
     const effectiveWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
 
-    // Phase 1: Mechanical fix (if commands are configured)
-    if (lintFixCmd || formatFixCmd) {
+    // Identify which checks failed
+    const failedCheckNames = new Set((reviewResult.checks ?? []).filter((c) => !c.success).map((c) => c.check));
+    const hasLintFailure = failedCheckNames.has("lint");
+
+    logger.info("autofix", "Starting autofix", {
+      storyId: ctx.story.id,
+      failedChecks: [...failedCheckNames],
+      workdir: effectiveWorkdir,
+    });
+
+    // Phase 1: Mechanical fix — only for lint failures (lintFix/formatFix cannot fix typecheck errors)
+    if (hasLintFailure && (lintFixCmd || formatFixCmd)) {
       if (lintFixCmd) {
         pipelineEventBus.emit({ type: "autofix:started", storyId: ctx.story.id, command: lintFixCmd });
         const lintResult = await _autofixDeps.runCommand(lintFixCmd, effectiveWorkdir);
-        logger.debug("autofix", `lintFix exit=${lintResult.exitCode}`, { storyId: ctx.story.id });
+        logger.debug("autofix", `lintFix exit=${lintResult.exitCode}`, { storyId: ctx.story.id, command: lintFixCmd });
         if (lintResult.exitCode !== 0) {
           logger.warn("autofix", "lintFix command failed — may not have fixed all issues", {
             storyId: ctx.story.id,
@@ -78,7 +88,10 @@ export const autofixStage: PipelineStage = {
       if (formatFixCmd) {
         pipelineEventBus.emit({ type: "autofix:started", storyId: ctx.story.id, command: formatFixCmd });
         const fmtResult = await _autofixDeps.runCommand(formatFixCmd, effectiveWorkdir);
-        logger.debug("autofix", `formatFix exit=${fmtResult.exitCode}`, { storyId: ctx.story.id });
+        logger.debug("autofix", `formatFix exit=${fmtResult.exitCode}`, {
+          storyId: ctx.story.id,
+          command: formatFixCmd,
+        });
         if (fmtResult.exitCode !== 0) {
           logger.warn("autofix", "formatFix command failed — may not have fixed all issues", {
             storyId: ctx.story.id,
@@ -91,10 +104,13 @@ export const autofixStage: PipelineStage = {
       pipelineEventBus.emit({ type: "autofix:completed", storyId: ctx.story.id, fixed: recheckPassed });
 
       if (recheckPassed) {
-        if (ctx.reviewResult) ctx.reviewResult = { ...ctx.reviewResult, success: true };
         logger.info("autofix", "Mechanical autofix succeeded — retrying review", { storyId: ctx.story.id });
         return { action: "retry", fromStage: "review" };
       }
+
+      logger.info("autofix", "Mechanical autofix did not resolve all failures — proceeding to agent rectification", {
+        storyId: ctx.story.id,
+      });
     }
 
     // Phase 2: Agent rectification — spawn agent with review error context
@@ -134,8 +150,11 @@ async function recheckReview(ctx: PipelineContext): Promise<boolean> {
   // Import reviewStage lazily to avoid circular deps
   const { reviewStage } = await import("./review");
   if (!reviewStage.enabled(ctx)) return true;
-  const result = await reviewStage.execute(ctx);
-  return result.action === "continue";
+  // reviewStage.execute updates ctx.reviewResult in place.
+  // We cannot use result.action here because review returns "continue" for BOTH
+  // pass and built-in-check-failure (to hand off to autofix). Check success directly.
+  await reviewStage.execute(ctx);
+  return ctx.reviewResult?.success === true;
 }
 
 function collectFailedChecks(ctx: PipelineContext): ReviewCheckResult[] {
