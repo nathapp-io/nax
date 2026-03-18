@@ -58,7 +58,9 @@ const origReadPackageJson = _deps.readPackageJson;
 const origSpawnSync = _deps.spawnSync;
 const origMkdirp = _deps.mkdirp;
 const origExistsSync = _deps.existsSync;
-const origDiscoverPackages = _deps.discoverWorkspacePackages;
+const origDiscoverWorkspacePackages = _deps.discoverWorkspacePackages;
+const origReadPackageJsonAt = _deps.readPackageJsonAt;
+const origCreateInteractionBridge = _deps.createInteractionBridge;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
@@ -100,10 +102,11 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     _deps.scanCodebase = origScanCodebase;
     _deps.getAgent = origGetAgent;
     _deps.readPackageJson = origReadPackageJson;
+    _deps.readPackageJsonAt = origReadPackageJsonAt;
     _deps.spawnSync = origSpawnSync;
     _deps.mkdirp = origMkdirp;
     _deps.existsSync = origExistsSync;
-    _deps.discoverWorkspacePackages = origDiscoverPackages;
+    _deps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     Bun.spawnSync(["rm", "-rf", tmpDir]);
   });
 
@@ -197,5 +200,71 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     // Should contain relative paths
     expect(prompt).toContain("packages/api");
     expect(prompt).toContain("apps/web");
+  });
+});
+
+describe("planCommand — per-package tech stack in prompt", () => {
+  let tmpDir: string;
+  let capturedPrompts: string[];
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "nax-plan-pkgstack-test-"));
+    capturedPrompts = [];
+    Bun.spawnSync(["mkdir", "-p", join(tmpDir, "nax")]);
+
+    _deps.readFile = mock(async () => "# Spec\nDo something.\n");
+    _deps.existsSync = mock(() => true);
+    _deps.writeFile = mock(async () => {});
+    _deps.scanCodebase = mock(async () => ({ fileTree: "└── src/", dependencies: {}, devDependencies: {}, testPatterns: [] }));
+    _deps.readPackageJson = mock(async () => ({ name: "monorepo-root" }));
+    _deps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
+    _deps.mkdirp = mock(async () => {});
+    _deps.createInteractionBridge = mock(() => ({ detectQuestion: mock(async () => false), onQuestionDetected: mock(async () => "") }));
+    const minimalPrd = { project: "test", feature: "test", branchName: "feat/test", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), userStories: [{ id: "US-001", title: "Test", description: "Test story", acceptanceCriteria: ["AC-1"], tags: [], dependencies: [], status: "pending", passes: false, escalations: [], attempts: 0, routing: { complexity: "simple", testStrategy: "test-after", reasoning: "simple" } }] };
+    _deps.getAgent = mock(() => ({ complete: mock(async (p: string) => { capturedPrompts.push(p); return JSON.stringify(minimalPrd); }) } as never));
+  });
+
+  afterEach(() => {
+    mock.restore();
+    _deps.readFile = origReadFile;
+    _deps.writeFile = origWriteFile;
+    _deps.scanCodebase = origScanCodebase;
+    _deps.getAgent = origGetAgent;
+    _deps.readPackageJson = origReadPackageJson;
+    _deps.spawnSync = origSpawnSync;
+    _deps.mkdirp = origMkdirp;
+    _deps.existsSync = origExistsSync;
+    _deps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
+    _deps.readPackageJsonAt = origReadPackageJsonAt;
+    _deps.createInteractionBridge = origCreateInteractionBridge;
+    Bun.spawnSync(["rm", "-rf", tmpDir]);
+  });
+
+  test("includes Package Tech Stacks table when packages have package.json", async () => {
+    _deps.discoverWorkspacePackages = mock(async () => ["packages/api", "packages/web"]);
+    _deps.readPackageJsonAt = mock(async (path: string) => {
+      if (path.includes("packages/api")) return { name: "@myapp/api", dependencies: { express: "^4.18", prisma: "^5.0" }, devDependencies: { jest: "^29" } };
+      if (path.includes("packages/web")) return { name: "@myapp/web", dependencies: { next: "^14", react: "^18", zod: "^3" }, devDependencies: { vitest: "^1" } };
+      return null;
+    });
+
+    await planCommand(tmpDir, {} as never, { from: "/spec.md", feature: "test", auto: true });
+
+    const prompt = capturedPrompts[0];
+    expect(prompt).toContain("Package Tech Stacks");
+    expect(prompt).toContain("Express");
+    expect(prompt).toContain("prisma");
+    expect(prompt).toContain("Next.js");
+    expect(prompt).toContain("vitest");
+    expect(prompt).toContain("zod");
+  });
+
+  test("omits Package Tech Stacks section for single-package repos", async () => {
+    _deps.discoverWorkspacePackages = mock(async () => []);
+
+    await planCommand(tmpDir, {} as never, { from: "/spec.md", feature: "test", auto: true });
+
+    const prompt = capturedPrompts[0];
+    expect(prompt).not.toContain("Package Tech Stacks");
   });
 });

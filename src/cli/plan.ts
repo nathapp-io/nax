@@ -43,6 +43,10 @@ export const _deps = {
   mkdirp: (path: string): Promise<void> => Bun.spawn(["mkdir", "-p", path]).exited.then(() => {}),
   existsSync: (path: string): boolean => existsSync(path),
   discoverWorkspacePackages: (repoRoot: string): Promise<string[]> => discoverWorkspacePackages(repoRoot),
+  readPackageJsonAt: (path: string): Promise<Record<string, unknown> | null> =>
+    Bun.file(path)
+      .json()
+      .catch(() => null),
   createInteractionBridge: (): {
     detectQuestion: (text: string) => Promise<boolean>;
     onQuestionDetected: (text: string) => Promise<string>;
@@ -102,6 +106,17 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   // but mocks/legacy callers may return absolute — strip workdir prefix if present)
   const relativePackages = discoveredPackages.map((p) => (p.startsWith("/") ? p.replace(`${workdir}/`, "") : p));
 
+  // Scan per-package tech stacks for richer monorepo planning context
+  const packageDetails =
+    relativePackages.length > 0
+      ? await Promise.all(
+          relativePackages.map(async (rel) => {
+            const pkgJson = await _deps.readPackageJsonAt(join(workdir, rel, "package.json"));
+            return buildPackageSummary(rel, pkgJson);
+          }),
+        )
+      : [];
+
   // Auto-detect project name
   const projectName = detectProjectName(workdir, pkg);
 
@@ -120,7 +135,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   let rawResponse: string;
   if (options.auto) {
     // One-shot: use CLI adapter directly — simple completion doesn't need ACP session overhead
-    const prompt = buildPlanningPrompt(specContent, codebaseContext, undefined, relativePackages);
+    const prompt = buildPlanningPrompt(specContent, codebaseContext, undefined, relativePackages, packageDetails);
     const cliAdapter = _deps.getAgent(agentName);
     if (!cliAdapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     rawResponse = await cliAdapter.complete(prompt, { jsonMode: true, workdir, config });
@@ -135,7 +150,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     }
   } else {
     // Interactive: agent writes PRD JSON directly to outputPath (avoids output truncation)
-    const prompt = buildPlanningPrompt(specContent, codebaseContext, outputPath, relativePackages);
+    const prompt = buildPlanningPrompt(specContent, codebaseContext, outputPath, relativePackages, packageDetails);
     const adapter = _deps.getAgent(agentName, config);
     if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     const interactionBridge = _deps.createInteractionBridge();
@@ -251,6 +266,91 @@ function detectProjectName(workdir: string, pkg: Record<string, unknown> | null)
   return "unknown";
 }
 
+/** Compact per-package summary for the planning prompt. */
+interface PackageSummary {
+  path: string;
+  name: string;
+  runtime: string;
+  framework: string;
+  testRunner: string;
+  keyDeps: string[];
+}
+
+const FRAMEWORK_PATTERNS: [RegExp, string][] = [
+  [/\bnext\b/, "Next.js"],
+  [/\bnuxt\b/, "Nuxt"],
+  [/\bremix\b/, "Remix"],
+  [/\bexpress\b/, "Express"],
+  [/\bfastify\b/, "Fastify"],
+  [/\bhono\b/, "Hono"],
+  [/\bnestjs|@nestjs\b/, "NestJS"],
+  [/\breact\b/, "React"],
+  [/\bvue\b/, "Vue"],
+  [/\bsvelte\b/, "Svelte"],
+  [/\bastro\b/, "Astro"],
+  [/\belectron\b/, "Electron"],
+];
+
+const TEST_RUNNER_PATTERNS: [RegExp, string][] = [
+  [/\bvitest\b/, "vitest"],
+  [/\bjest\b/, "jest"],
+  [/\bmocha\b/, "mocha"],
+  [/\bava\b/, "ava"],
+];
+
+const KEY_DEP_PATTERNS: [RegExp, string][] = [
+  [/\bprisma\b/, "prisma"],
+  [/\bdrizzle-orm\b/, "drizzle"],
+  [/\btypeorm\b/, "typeorm"],
+  [/\bmongoose\b/, "mongoose"],
+  [/\bsqlite\b|better-sqlite/, "sqlite"],
+  [/\bstripe\b/, "stripe"],
+  [/\bgraphql\b/, "graphql"],
+  [/\btrpc\b/, "tRPC"],
+  [/\bzod\b/, "zod"],
+  [/\btailwind\b/, "tailwind"],
+];
+
+/**
+ * Build a compact summary of a package's tech stack from its package.json.
+ */
+function buildPackageSummary(rel: string, pkg: Record<string, unknown> | null): PackageSummary {
+  const name = typeof pkg?.name === "string" ? pkg.name : rel;
+  const allDeps = { ...(pkg?.dependencies as object | undefined), ...(pkg?.devDependencies as object | undefined) };
+  const depNames = Object.keys(allDeps).join(" ");
+  const scripts = (pkg?.scripts ?? {}) as Record<string, string>;
+
+  // Detect runtime from scripts or lock files
+  const testScript = scripts.test ?? "";
+  const runtime = testScript.includes("bun ") ? "bun" : testScript.includes("node ") ? "node" : "unknown";
+
+  // Detect framework
+  const framework = FRAMEWORK_PATTERNS.find(([re]) => re.test(depNames))?.[1] ?? "";
+
+  // Detect test runner
+  const testRunner =
+    TEST_RUNNER_PATTERNS.find(([re]) => re.test(depNames))?.[1] ?? (testScript.includes("bun test") ? "bun:test" : "");
+
+  // Key deps
+  const keyDeps = KEY_DEP_PATTERNS.filter(([re]) => re.test(depNames)).map(([, label]) => label);
+
+  return { path: rel, name, runtime, framework, testRunner, keyDeps };
+}
+
+/**
+ * Render per-package summaries as a compact markdown table for the prompt.
+ */
+function buildPackageDetailsSection(details: PackageSummary[]): string {
+  if (details.length === 0) return "";
+
+  const rows = details.map((d) => {
+    const stack = [d.framework, d.testRunner, ...d.keyDeps].filter(Boolean).join(", ") || "—";
+    return `| \`${d.path}\` | ${d.name} | ${stack} |`;
+  });
+
+  return `\n## Package Tech Stacks\n\n| Path | Package | Stack |\n|:-----|:--------|:------|\n${rows.join("\n")}\n`;
+}
+
 /**
  * Build codebase context markdown from scan results.
  */
@@ -298,10 +398,13 @@ function buildPlanningPrompt(
   codebaseContext: string,
   outputFilePath?: string,
   packages?: string[],
+  packageDetails?: PackageSummary[],
 ): string {
   const isMonorepo = packages && packages.length > 0;
+  const packageDetailsSection =
+    packageDetails && packageDetails.length > 0 ? buildPackageDetailsSection(packageDetails) : "";
   const monorepoHint = isMonorepo
-    ? `\n## Monorepo Context\n\nThis is a monorepo. Detected packages:\n${packages.map((p) => `- ${p}`).join("\n")}\n\nFor each user story, set the "workdir" field to the relevant package path (e.g. "packages/api"). Stories that span the root should omit "workdir".`
+    ? `\n## Monorepo Context\n\nThis is a monorepo. Detected packages:\n${packages.map((p) => `- ${p}`).join("\n")}\n${packageDetailsSection}\nFor each user story, set the "workdir" field to the relevant package path (e.g. "packages/api"). Stories that span the root should omit "workdir".`
     : "";
 
   const workdirField = isMonorepo
