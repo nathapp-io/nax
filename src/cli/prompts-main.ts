@@ -97,6 +97,7 @@ export async function promptsCommand(options: PromptsCommandOptions): Promise<st
     // Build initial pipeline context
     const ctx: PipelineContext = {
       config,
+      effectiveConfig: config,
       prd,
       story,
       stories: [story], // Single story, not batch

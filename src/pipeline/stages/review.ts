@@ -19,10 +19,13 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const reviewStage: PipelineStage = {
   name: "review",
-  enabled: (ctx) => ctx.config.review.enabled,
+  enabled: (ctx) => (ctx.effectiveConfig ?? ctx.config).review.enabled,
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
+
+    // PKG-004: use centrally resolved effective config
+    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
 
     logger.info("review", "Running review phase", { storyId: ctx.story.id });
 
@@ -30,9 +33,9 @@ export const reviewStage: PipelineStage = {
     const effectiveWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
 
     const result = await reviewOrchestrator.review(
-      ctx.config.review,
+      effectiveConfig.review,
       effectiveWorkdir,
-      ctx.config.execution,
+      effectiveConfig.execution,
       ctx.plugins,
       ctx.storyGitRef,
       ctx.story.workdir, // MW-010: scope changed-file checks to package
@@ -49,10 +52,10 @@ export const reviewStage: PipelineStage = {
 
       if (result.pluginFailed) {
         // security-review trigger: prompt before permanently failing
-        if (ctx.interaction && isTriggerEnabled("security-review", ctx.config)) {
+        if (ctx.interaction && isTriggerEnabled("security-review", effectiveConfig)) {
           const shouldContinue = await _reviewDeps.checkSecurityReview(
             { featureName: ctx.prd.feature, storyId: ctx.story.id },
-            ctx.config,
+            effectiveConfig,
             ctx.interaction,
           );
           if (!shouldContinue) {

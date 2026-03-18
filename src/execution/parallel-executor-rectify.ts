@@ -90,6 +90,7 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
 
     const pipelineContext = {
       config,
+      effectiveConfig: config,
       prd,
       story,
       stories: [story],

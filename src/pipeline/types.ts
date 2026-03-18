@@ -58,6 +58,13 @@ export type AgentGetFn = (name: string) => import("../agents/types").AgentAdapte
 export interface PipelineContext {
   /** Ngent configuration */
   config: NaxConfig;
+  /**
+   * Resolved config for this story's package.
+   * When story.workdir is set, this is root config merged with package config.
+   * When no workdir, this equals ctx.config (root).
+   * Set once per story in the iteration runner before pipeline execution.
+   */
+  effectiveConfig: NaxConfig;
   /** Full PRD document */
   prd: PRD;
   /** Current story (or batch leader) */

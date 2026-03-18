@@ -34,6 +34,9 @@ export const promptStage: PipelineStage = {
     const logger = getLogger();
     const isBatch = ctx.stories.length > 1;
 
+    // PKG-004: use centrally resolved effective config
+    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
+
     let prompt: string;
     if (isBatch) {
       const builder = PromptBuilder.for("batch")
@@ -41,7 +44,7 @@ export const promptStage: PipelineStage = {
         .stories(ctx.stories)
         .context(ctx.contextMarkdown)
         .constitution(ctx.constitution?.content)
-        .testCommand(ctx.config.quality?.commands?.test);
+        .testCommand(effectiveConfig.quality?.commands?.test);
       prompt = await builder.build();
     } else {
       // Both test-after and tdd-simple use the tdd-simple prompt (RED/GREEN/REFACTOR)
@@ -51,7 +54,7 @@ export const promptStage: PipelineStage = {
         .story(ctx.story)
         .context(ctx.contextMarkdown)
         .constitution(ctx.constitution?.content)
-        .testCommand(ctx.config.quality?.commands?.test);
+        .testCommand(effectiveConfig.quality?.commands?.test);
       prompt = await builder.build();
     }
 
