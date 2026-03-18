@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.49.3] - 2026-03-18
+
+### Fixed
+- **Autofix `recheckReview` bug:** `reviewStage.execute()` returns `action:"continue"` for both pass AND built-in-check-failure (to hand off to autofix). Using `result.action === "continue"` always returned `true`, causing "Mechanical autofix succeeded" to log every cycle and looping until `MAX_STAGE_RETRIES` with no real fix. Fix: check `ctx.reviewResult?.success` directly after execute.
+- **Autofix selective mechanical fix:** `lintFix`/`formatFix` cannot fix typecheck errors. Phase 1 now only runs when the `lint` check actually failed. Typecheck-only failures skip straight to agent rectification (Phase 2).
+- **Review command logging:** `runner.ts` now logs the resolved command and workdir for every check at info level, and full output on failure at warn level — eliminates phantom failure mystery.
+- **Re-decompose on second run:** Batch-mode story selector was missing `"decomposed"` in its status skip list (single-story path already excluded it). Stories with `status: "decomposed"` were being picked up again, triggering unnecessary LLM decompose calls. Added `"decomposed"` to batch filter and a guard in routing SD-004 block.
+- **totalCost always 0:** `handlePipelineFailure` returned no `costDelta`; `iteration-runner` hardcoded `costDelta: 0` for failures. Agent cost for failed stories was silently dropped. Fix: extract `agentResult?.estimatedCost` in failure path same as success path.
+
 ## [0.49.2] - 2026-03-18
 
 ### Fixed
