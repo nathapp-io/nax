@@ -51,7 +51,6 @@ const NAX_GITIGNORE_ENTRIES = [
   "nax/features/*/acceptance-refined.json",
   ".nax-pids",
   ".nax-wt/",
-  "~/",
 ];
 
 /**
