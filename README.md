@@ -18,8 +18,16 @@ bun install -g @nathapp/nax
 cd your-project
 nax init
 nax features create my-feature
-# Edit nax/features/my-feature/prd.json with your user stories
+
+# Option A: write prd.json manually, then run
 nax run -f my-feature
+
+# Option B: generate prd.json from a spec file, then run
+nax plan -f my-feature --from spec.md
+nax run -f my-feature
+
+# Option C: plan + run in one command
+nax run -f my-feature --plan --from spec.md
 ```
 
 ## How It Works
@@ -54,6 +62,14 @@ nax/
 └── features/         # One folder per feature
 ```
 
+**Monorepo — scaffold a package:**
+
+```bash
+nax init --package packages/api
+```
+
+Creates `packages/api/nax/context.md` for per-package agent context.
+
 ---
 
 ### `nax features create <name>`
@@ -76,20 +92,33 @@ nax features list
 
 ---
 
-### `nax analyze -f <name>`
+### `nax plan -f <name> --from <spec>`
 
-Parse a `spec.md` file into a structured `prd.json`. Uses an LLM to decompose the spec into classified user stories.
+Generate a `prd.json` from a spec file using an LLM. Replaces the deprecated `nax analyze`.
 
 ```bash
-nax analyze -f my-feature
+nax plan -f my-feature --from spec.md
 ```
 
 **Flags:**
 
 | Flag | Description |
 |:-----|:------------|
-| `--from <path>` | Explicit spec path (overrides default `spec.md`) |
-| `--reclassify` | Re-classify existing `prd.json` without re-decomposing |
+| `-f, --feature <name>` | Feature name (required) |
+| `--from <spec-path>` | Path to spec file (required) |
+| `--auto` / `--one-shot` | Skip interactive Q&A — single LLM call, no back-and-forth |
+| `-b, --branch <branch>` | Override default branch name |
+| `-d, --dir <path>` | Project directory |
+
+**Interactive vs one-shot:**
+- Default (no flag): interactive planning session — nax asks clarifying questions, refines the plan iteratively
+- `--auto` / `--one-shot`: single LLM call, faster but less precise
+
+---
+
+### `nax analyze` *(deprecated)*
+
+> ⚠️ **Deprecated.** Use `nax plan` instead. `nax analyze` remains available for backward compatibility but will be removed in a future version.
 
 ---
 
@@ -105,10 +134,23 @@ nax run -f my-feature
 
 | Flag | Description |
 |:-----|:------------|
-| `-f, --feature <name>` | Feature name (required) |
+| `-f, --feature <name>` | Feature name |
+| `-a, --agent <name>` | Force a specific agent (`claude`, `opencode`, `codex`, etc.) |
+| `--plan` | Run plan phase first (requires `--from`) |
+| `--from <spec-path>` | Spec file for `--plan` |
+| `--one-shot` | Skip interactive Q&A during planning (ACP only) |
+| `--force` | Overwrite existing `prd.json` when using `--plan` |
+| `--parallel <n>` | Max parallel sessions (`0` = auto based on CPU cores; omit = sequential) |
 | `--dry-run` | Preview story routing without running agents |
 | `--headless` | Non-interactive output (structured logs, no TUI) |
-| `-d, --dir <path>` | Project directory (defaults to `cwd`) |
+| `--verbose` | Debug-level logging |
+| `--quiet` | Warnings and errors only |
+| `--silent` | Errors only |
+| `--json` | Raw JSONL output to stdout (for scripting) |
+| `--skip-precheck` | Skip precheck validations (advanced users only) |
+| `--no-context` | Disable context builder (skip file context in prompts) |
+| `--no-batch` | Execute all stories individually (disable batching) |
+| `-d, --dir <path>` | Working directory |
 
 **Examples:**
 
@@ -116,11 +158,23 @@ nax run -f my-feature
 # Preview what would run (no agents spawned)
 nax run -f user-auth --dry-run
 
-# Run in a different directory
-nax run -f user-auth -d /path/to/project
+# Plan from spec then run — one command
+nax run -f user-auth --plan --from spec.md
+
+# Run with parallel execution (auto concurrency)
+nax run -f user-auth --parallel 0
+
+# Run with up to 3 parallel worktree sessions
+nax run -f user-auth --parallel 3
+
+# Force a specific agent
+nax run -f user-auth --agent opencode
 
 # Run in CI/CD (structured output)
 nax run -f user-auth --headless
+
+# Raw JSONL for scripting
+nax run -f user-auth --json
 ```
 
 ---
@@ -196,6 +250,58 @@ Output sections:
 | `ENVIRONMENTAL` | Build/dep errors | Fix precheck issues before re-running |
 | `LOCK_STALE` | `nax.lock` blocking | Shown automatically with `rm nax.lock` |
 | `AUTO_RECOVERED` | nax self-healed | No action needed |
+
+---
+
+### `nax generate`
+
+Generate agent config files from `nax/context.md`. Supports Claude Code, OpenCode, Codex, Cursor, Windsurf, Aider, and Gemini.
+
+```bash
+nax generate
+```
+
+**Flags:**
+
+| Flag | Description |
+|:-----|:------------|
+| `-c, --context <path>` | Context file path (default: `nax/context.md`) |
+| `-o, --output <dir>` | Output directory (default: project root) |
+| `-a, --agent <name>` | Generate for a specific agent only (`claude`, `opencode`, `cursor`, `windsurf`, `aider`, `codex`, `gemini`) |
+| `--dry-run` | Preview without writing files |
+| `--no-auto-inject` | Disable auto-injection of project metadata |
+| `--package <dir>` | Generate for a specific monorepo package (e.g. `packages/api`) |
+| `--all-packages` | Generate for all discovered packages |
+
+**What it generates:**
+
+| Agent | File |
+|:------|:-----|
+| Claude Code | `CLAUDE.md` |
+| OpenCode | `AGENTS.md` |
+| Codex | `AGENTS.md` |
+| Cursor | `.cursorrules` |
+| Windsurf | `.windsurfrules` |
+| Aider | `.aider.md` |
+| Gemini | `GEMINI.md` |
+
+**Workflow:**
+
+1. Create `nax/context.md` — describe your project's architecture, conventions, and coding standards
+2. Run `nax generate` — writes agent config files to the project root (and per-package if configured)
+3. Commit the generated files — your agents will automatically pick them up
+
+**Monorepo (per-package):**
+
+```bash
+# Generate CLAUDE.md for a single package
+nax generate --package packages/api
+
+# Generate for all packages (auto-discovers workspace packages)
+nax generate --all-packages
+```
+
+Each package can have its own `nax/context.md` at `<package>/nax/context.md` for package-specific agent instructions.
 
 ---
 
@@ -436,6 +542,170 @@ After all stories pass their individual verification, nax can run a deferred ful
 If the regression gate detects failures, nax maps them to the responsible story via git blame and attempts automated rectification. If rectification fails, affected stories are marked as `regression-failed`.
 
 > **Smart skip (v0.34.0):** When all stories used `three-session-tdd` or `three-session-tdd-lite` in sequential mode, each story already ran the full suite gate. nax will skip the redundant deferred regression in this case.
+
+---
+
+## Parallel Execution
+
+nax can run multiple stories concurrently using git worktrees — each story gets an isolated worktree so agents don't step on each other.
+
+```bash
+# Auto concurrency (based on CPU cores)
+nax run -f my-feature --parallel 0
+
+# Fixed concurrency
+nax run -f my-feature --parallel 3
+```
+
+**How it works:**
+
+1. Stories are grouped by dependency order (dependent stories wait for their prerequisites)
+2. Each batch of independent stories gets its own git worktree
+3. Agent sessions run concurrently inside those worktrees
+4. Once a batch completes, changes are merged back in dependency order
+5. Merge conflicts are automatically rectified by re-running the conflicted story on the updated base
+
+**Config:**
+
+```json
+{
+  "execution": {
+    "maxParallelSessions": 4
+  }
+}
+```
+
+> Sequential mode (no `--parallel`) is the safe default. Use parallel for large feature sets with independent stories.
+
+---
+
+## Agents
+
+nax supports multiple coding agents. By default it uses Claude Code via the ACP protocol.
+
+```bash
+# List installed agents and their capabilities
+nax agents
+```
+
+**Supported agents:**
+
+| Agent | Protocol | Notes |
+|:------|:---------|:------|
+| `claude` | ACP (default) | Claude Code via acpx |
+| `opencode` | ACP | OpenCode via acpx |
+| `codex` | ACP | Codex via acpx |
+| `cursor` | ACP | Cursor via acpx |
+| `windsurf` | ACP | Windsurf via acpx |
+| `aider` | ACP | Aider via acpx |
+| `gemini` | ACP | Gemini CLI via acpx |
+
+**ACP protocol (default):**
+
+nax uses [acpx](https://github.com/nathapp/acpx) as the ACP transport. All agents run as persistent sessions — nax sends prompts and receives structured JSON-RPC responses including token counts and exact USD cost per session.
+
+**Configuring agents:**
+
+```json
+{
+  "execution": {
+    "defaultAgent": "claude",
+    "protocol": "acp",
+    "fallbackOrder": ["claude", "codex", "opencode", "gemini"]
+  }
+}
+```
+
+**Force a specific agent at runtime:**
+
+```bash
+nax run -f my-feature --agent opencode
+```
+
+---
+
+## Monorepo Support
+
+nax supports monorepos with workspace-level and per-package configuration.
+
+### Setup
+
+```bash
+# Initialize nax at the repo root
+nax init
+
+# Scaffold per-package context for a specific package
+nax init --package packages/api
+nax init --package packages/web
+```
+
+### Per-Package Config
+
+Each package can override specific config fields by placing a `nax/config.json` inside the package directory:
+
+```
+repo-root/
+├── nax/
+│   └── config.json          # root config
+├── packages/
+│   ├── api/
+│   │   └── nax/
+│   │       ├── config.json  # overrides for api package
+│   │       └── context.md   # agent context for api
+│   └── web/
+│       └── nax/
+│           ├── config.json  # overrides for web package
+│           └── context.md   # agent context for web
+```
+
+**Overridable fields per package:** `execution`, `review`, `acceptance`, `quality`, `context`
+
+```json
+// packages/api/nax/config.json
+{
+  "quality": {
+    "commands": {
+      "test": "turbo test --filter=@myapp/api",
+      "lint": "turbo lint --filter=@myapp/api"
+    }
+  }
+}
+```
+
+### Per-Package Stories
+
+In your `prd.json`, set `workdir` on each story to point to the package:
+
+```json
+{
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add auth endpoint",
+      "workdir": "packages/api",
+      "status": "pending"
+    }
+  ]
+}
+```
+
+nax will run the agent inside that package's directory and apply its config overrides automatically.
+
+### Workspace Detection
+
+When `nax plan` generates stories for a monorepo, it auto-discovers packages from:
+- `turbo.json` → `packages` field
+- `package.json` → `workspaces`
+- `pnpm-workspace.yaml` → `packages`
+- Existing `*/nax/context.md` files
+
+### Generate Agent Files for All Packages
+
+```bash
+nax generate --all-packages
+```
+
+Generates a `CLAUDE.md` (or agent-specific file) in each discovered package directory, using the package's own `nax/context.md` if present.
 
 ---
 
