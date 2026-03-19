@@ -1,6 +1,7 @@
 version: "3.9"
 # Mirrors the GitLab CI test stage exactly.
 # Usage: docker compose -f docker-compose.test.yml run --rm ci-test
+# Output is written to .ci-test-output.txt in the repo root (mounted volume).
 services:
   ci-test:
     image: nathapp/node-bun:22.21.0-1.3.9-alpine
@@ -14,14 +15,15 @@ services:
       - NAX_SKIP_PRECHECK=1
     command: >
       sh -c "
-        apk add --no-cache git &&
+        apk add --no-cache git 2>&1 | tee /app/.ci-test-output.txt &&
         git config --global safe.directory '*' &&
         git config --global user.name 'CI Runner' &&
         git config --global user.email 'ci@nathapp.io' &&
-        bun install --frozen-lockfile &&
-        bun run typecheck &&
-        bun run lint &&
-        bun run test
+        bun install --frozen-lockfile 2>&1 | tee -a /app/.ci-test-output.txt &&
+        bun run typecheck 2>&1 | tee -a /app/.ci-test-output.txt &&
+        bun run lint 2>&1 | tee -a /app/.ci-test-output.txt &&
+        bun run test 2>&1 | tee -a /app/.ci-test-output.txt;
+        echo EXIT_CODE=\$? | tee -a /app/.ci-test-output.txt
       "
 
 volumes:

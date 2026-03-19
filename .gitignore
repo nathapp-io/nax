@@ -61,4 +61,4 @@ nax/**/runs/
 ~/
 prompt.txt
 .nax-wt/
-tmp/
+tmp/.ci-test-output.txt
