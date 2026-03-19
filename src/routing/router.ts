@@ -152,7 +152,7 @@ const LITE_TAGS = ["ui", "layout", "cli", "integration", "polyglot"];
  * - 'auto'   → existing heuristic logic, plus:
  *              if tags include ui/layout/cli/integration/polyglot → three-session-tdd-lite
  *              if security/public-api/complex/expert → three-session-tdd
- *              simple → test-after, medium → three-session-tdd-lite (BUG-045)
+ *              simple → tdd-simple, medium → three-session-tdd-lite
  *
  * @param complexity - Pre-classified complexity level
  * @param title - Story title
