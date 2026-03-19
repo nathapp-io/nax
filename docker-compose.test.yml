@@ -4,7 +4,9 @@ version: "3.9"
 # Output is written to .ci-test-output.txt in the repo root (mounted volume).
 services:
   ci-test:
-    image: nathapp/node-bun:22.21.0-1.3.9-alpine
+    # Use official multi-arch Bun image (same Bun version as CI: 1.3.9, Alpine-based)
+    # nathapp/node-bun is private/amd64-only; oven/bun is public and supports ARM64 (Mac01)
+    image: oven/bun:1.3.9-alpine
     working_dir: /app
     volumes:
       - .:/app
