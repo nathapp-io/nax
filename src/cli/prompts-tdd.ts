@@ -9,7 +9,7 @@ import type { getLogger } from "../logger";
 import type { PipelineContext } from "../pipeline";
 import type { UserStory } from "../prd";
 import { PromptBuilder } from "../prompts";
-import { buildFrontmatter } from "./prompts-main";
+import { buildFrontmatter } from "./prompts-shared";
 
 /**
  * Handle three-session TDD prompts by building separate prompts for each role.
