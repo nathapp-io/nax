@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.50.0] - 2026-03-19
+
+### Added
+
+- **ENH-005: Context chaining** — Dependent stories automatically receive parent story's changed files as context. After a story passes, `outputFiles` are captured via `git diff storyGitRef..HEAD` (scoped to `story.workdir` in monorepos) and injected into dependent stories' context via `getParentOutputFiles()`.
+- **ENH-006: Structured plan prompt** — `nax plan` now uses a 3-step prompt (understand → analyze → generate). Analysis stored in `prd.analysis` field and injected into all story contexts. `contextFiles` populated per-story by the plan LLM. Hard ban on analysis/test-only/validation stories.
+- **ENH-007: Reconciliation review gate** — Reconciliation no longer blindly auto-passes stories that failed at review stage. Stores `failureStage` on failed stories; re-runs built-in review checks before reconciling `review`/`autofix` failures.
+- **ENH-008: Monorepo workdir scoping** — Decomposed sub-stories now inherit `workdir` from parent. Agent rectification runs in `story.workdir` (not repo root) and prompt includes scope constraint for out-of-package prevention.
+- `prd.analysis?: string` field — planning phase analysis available to all story contexts
+
+### Fixed
+
+- **BUG-071**: `COMPLEXITY_GUIDE` and `TEST_STRATEGY_GUIDE` prompt constants had inverted mappings. Corrected: `simple→tdd-simple`, `medium→three-session-tdd-lite`, `expert→three-session-tdd`. `test-after` is explicit opt-out only, never auto-assigned.
+
 ## [0.49.3] - 2026-03-18
 
 ### Fixed
