@@ -604,6 +604,8 @@ nax agents
 
 nax uses [acpx](https://github.com/nathapp/acpx) as the ACP transport. All agents run as persistent sessions — nax sends prompts and receives structured JSON-RPC responses including token counts and exact USD cost per session.
 
+> **Known issue — `acpx` ≤ 0.3.1:** The `--model` flag is not supported. Model selection via `execution.model` or per-package `model` overrides has no effect when using acpx as the ACP transport. This is a limitation in the underlying `@zed-industries/claude-agent-acp` adapter, which ignores runtime model requests and always uses the model configured in Claude Code settings. A fix is being tracked in [openclaw/acpx#49](https://github.com/openclaw/acpx/issues/49). As a workaround, set your preferred model directly in Claude Code settings before running nax.
+
 **Configuring agents:**
 
 ```json
