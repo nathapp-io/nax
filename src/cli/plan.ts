@@ -395,15 +395,18 @@ function buildCodebaseContext(scan: CodebaseScan): string {
 /**
  * Build the full planning prompt sent to the LLM.
  *
+ * Structured as 3 explicit steps (ENH-006):
+ *   Step 1: Understand the spec
+ *   Step 2: Analyze codebase (existing) or architecture decisions (greenfield)
+ *   Step 3: Generate implementation stories from analysis
+ *
  * Includes:
- * - Spec content
- * - Codebase context
- * - Output schema (exact prd.json JSON structure)
- * - Complexity classification guide
- * - Test strategy guide
+ * - Spec content + codebase context
+ * - Output schema with analysis + contextFiles fields
+ * - Complexity + test strategy guides
  * - MW-007: Monorepo hint and package list when packages are detected
  */
-function buildPlanningPrompt(
+export function buildPlanningPrompt(
   specContent: string,
   codebaseContext: string,
   outputFilePath?: string,
@@ -423,13 +426,47 @@ function buildPlanningPrompt(
 
   return `You are a senior software architect generating a product requirements document (PRD) as JSON.
 
+## Step 1: Understand the Spec
+
+Read the spec carefully. Identify the goal, scope, constraints, and what "done" looks like.
+
 ## Spec
 
 ${specContent}
 
+## Step 2: Analyze
+
+Examine the codebase context below.
+
+If the codebase has existing code (refactoring, enhancement, bug fix):
+- Which existing files need modification?
+- Which files import from or depend on them?
+- What tests cover the affected code?
+- What are the risks (breaking changes, backward compatibility)?
+- What is the migration path?
+
+If this is a greenfield project (empty or minimal codebase):
+- What is the target architecture?
+- What are the key technical decisions (framework, patterns, conventions)?
+- What should be built first (dependency order)?
+
+Record ALL findings in the "analysis" field of the output JSON. This analysis is provided to every implementation agent as context — be thorough.
+
 ## Codebase Context
 
 ${codebaseContext}${monorepoHint}
+
+## Step 3: Generate Implementation Stories
+
+Based on your Step 2 analysis, create stories that produce CODE CHANGES.
+
+${GROUPING_RULES}
+
+For each story, set "contextFiles" to the key source files the agent should read before implementing (max 5 per story). Use your Step 2 analysis to identify the most relevant files. Leave empty for greenfield stories with no existing files to reference.
+
+${COMPLEXITY_GUIDE}
+
+${TEST_STRATEGY_GUIDE}
 
 ## Output Schema
 
@@ -438,6 +475,7 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
 {
   "project": "string — project name",
   "feature": "string — feature name",
+  "analysis": "string — your Step 2 analysis: key files, impact areas, risks, architecture decisions, migration notes. All implementation agents will receive this.",
   "branchName": "string — git branch (e.g. feat/my-feature)",
   "createdAt": "ISO 8601 timestamp",
   "updatedAt": "ISO 8601 timestamp",
@@ -447,13 +485,14 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
       "title": "string — concise story title",
       "description": "string — detailed description of the story",
       "acceptanceCriteria": ["string — each AC line"],
+      "contextFiles": ["string — key source files the agent should read (max 5, relative paths)"],
       "tags": ["string — routing tags, e.g. feature, security, api"],
       "dependencies": ["string — story IDs this story depends on"],${workdirField}
       "status": "pending",
       "passes": false,
       "routing": {
         "complexity": "simple | medium | complex | expert",
-        "testStrategy": "test-after | tdd-simple | three-session-tdd | three-session-tdd-lite",
+        "testStrategy": "tdd-simple | three-session-tdd-lite | three-session-tdd | test-after",
         "reasoning": "string — brief classification rationale"
       },
       "escalations": [],
@@ -461,12 +500,6 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
     }
   ]
 }
-
-${COMPLEXITY_GUIDE}
-
-${TEST_STRATEGY_GUIDE}
-
-${GROUPING_RULES}
 
 ${
   outputFilePath

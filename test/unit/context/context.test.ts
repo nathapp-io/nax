@@ -1732,4 +1732,54 @@ describe("Context Builder", () => {
       }
     });
   });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // ENH-006: prd.analysis injection
+  // ──────────────────────────────────────────────────────────────────────────
+
+  describe("prd.analysis injection (ENH-006)", () => {
+    const budget: ContextBudget = {
+      maxTokens: 10000,
+      reservedForInstructions: 1000,
+      availableForContext: 9000,
+    };
+
+    test("injects planning-analysis element when prd.analysis is set", async () => {
+      const prd: PRD = {
+        ...createTestPRD([{ id: "US-001" }]),
+        analysis: "Current auth uses @nestjs/jwt. Key files: src/auth/auth.module.ts",
+      };
+      const context: StoryContext = { prd, currentStoryId: "US-001" };
+
+      const built = await buildContext(context, budget);
+      const analysisEl = built.elements.find((e) => e.type === "planning-analysis");
+
+      expect(analysisEl).toBeDefined();
+      expect(analysisEl?.content).toContain("Current auth uses @nestjs/jwt");
+      expect(analysisEl?.label).toBe("Planning Analysis");
+    });
+
+    test("no planning-analysis element when prd.analysis is not set", async () => {
+      const prd = createTestPRD([{ id: "US-001" }]);
+      const context: StoryContext = { prd, currentStoryId: "US-001" };
+
+      const built = await buildContext(context, budget);
+      const analysisEl = built.elements.find((e) => e.type === "planning-analysis");
+
+      expect(analysisEl).toBeUndefined();
+    });
+
+    test("planning-analysis has priority 88 (between errors:90 and story:80)", async () => {
+      const prd: PRD = {
+        ...createTestPRD([{ id: "US-001" }]),
+        analysis: "Some analysis",
+      };
+      const context: StoryContext = { prd, currentStoryId: "US-001" };
+
+      const built = await buildContext(context, budget);
+      const analysisEl = built.elements.find((e) => e.type === "planning-analysis");
+
+      expect(analysisEl?.priority).toBe(88);
+    });
+  });
 });

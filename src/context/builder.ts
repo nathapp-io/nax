@@ -115,6 +115,18 @@ export async function buildContext(storyContext: StoryContext, budget: ContextBu
   // Add current story (high priority)
   elements.push(createStoryContext(currentStory, 80));
 
+  // ENH-006: Inject planning analysis from prd.analysis (priority 88 — above story, below errors)
+  if (prd.analysis) {
+    const analysisContent = `The following analysis was performed during the planning phase. Use it to understand the codebase context before implementing:\n\n${prd.analysis}`;
+    elements.push({
+      type: "planning-analysis",
+      label: "Planning Analysis",
+      content: analysisContent,
+      priority: 88,
+      tokens: estimateTokens(analysisContent),
+    });
+  }
+
   // Add dependency stories (medium priority)
   addDependencyElements(elements, currentStory, prd);
 

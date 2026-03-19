@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { _deps, planCommand } from "../../../src/cli/plan";
+import { _deps, buildPlanningPrompt, planCommand } from "../../../src/cli/plan";
 import type { PRD } from "../../../src/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -478,5 +478,62 @@ describe("planCommand", () => {
     const written = JSON.parse(content) as PRD;
     expect(written.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(written.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// ENH-006: buildPlanningPrompt — 3-step structure + analysis + contextFiles
+// ──────────────────────────────────────────────────────────────────────────
+
+describe("buildPlanningPrompt (ENH-006)", () => {
+  const spec = "Refactor auth module to use @nathapp/nestjs-auth";
+  const ctx = "## Codebase Structure\nsrc/auth/auth.module.ts";
+
+  test("prompt has Step 1 — understand the spec", () => {
+    const prompt = buildPlanningPrompt(spec, ctx);
+    expect(prompt).toContain("Step 1");
+    expect(prompt).toContain("Understand the Spec");
+  });
+
+  test("prompt has Step 2 — analyze", () => {
+    const prompt = buildPlanningPrompt(spec, ctx);
+    expect(prompt).toContain("Step 2");
+    expect(prompt).toContain("Analyze");
+  });
+
+  test("prompt has Step 3 — generate stories", () => {
+    const prompt = buildPlanningPrompt(spec, ctx);
+    expect(prompt).toContain("Step 3");
+    expect(prompt).toContain("Generate Implementation Stories");
+  });
+
+  test("prompt handles greenfield guidance", () => {
+    const prompt = buildPlanningPrompt(spec, ctx);
+    expect(prompt).toContain("greenfield project");
+  });
+
+  test("output schema includes analysis field", () => {
+    const prompt = buildPlanningPrompt(spec, ctx);
+    expect(prompt).toContain('"analysis"');
+  });
+
+  test("output schema includes contextFiles field", () => {
+    const prompt = buildPlanningPrompt(spec, ctx);
+    expect(prompt).toContain('"contextFiles"');
+  });
+
+  test("testStrategy list is in correct order (tdd-simple first, test-after last)", () => {
+    const prompt = buildPlanningPrompt(spec, ctx);
+    expect(prompt).toContain('tdd-simple | three-session-tdd-lite | three-session-tdd | test-after');
+  });
+
+  test("monorepo: includes workdir field in schema", () => {
+    const prompt = buildPlanningPrompt(spec, ctx, undefined, ["apps/api", "apps/web"]);
+    expect(prompt).toContain('"workdir"');
+  });
+
+  test("non-monorepo: no workdir field in schema", () => {
+    const prompt = buildPlanningPrompt(spec, ctx);
+    expect(prompt).not.toContain('"workdir"');
   });
 });

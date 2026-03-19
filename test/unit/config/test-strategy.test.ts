@@ -74,8 +74,16 @@ describe("TEST_STRATEGY_GUIDE", () => {
 });
 
 describe("GROUPING_RULES", () => {
-  test("contains anti-standalone-test-story rule", () => {
-    expect(GROUPING_RULES).toContain("standalone stories purely for test coverage");
+  test("hard ban on test-only stories (ENH-006)", () => {
+    expect(GROUPING_RULES).toContain("NEVER create stories whose primary purpose is writing tests");
+  });
+
+  test("hard ban on analysis/planning stories (ENH-006)", () => {
+    expect(GROUPING_RULES).toContain("NEVER create stories for analysis, planning, documentation");
+  });
+
+  test("old integration/E2E exception removed (ENH-006)", () => {
+    expect(GROUPING_RULES).not.toContain("Only create a dedicated test story");
   });
 
   test("contains max story count guidance", () => {

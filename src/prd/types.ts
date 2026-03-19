@@ -236,6 +236,8 @@ export interface PRD {
   project: string;
   /** Feature name */
   feature: string;
+  /** Codebase analysis from planning phase — injected into all story contexts (ENH-006) */
+  analysis?: string;
   /** Git branch name */
   branchName: string;
   /** Creation timestamp */

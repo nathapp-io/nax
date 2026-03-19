@@ -57,13 +57,15 @@ export const TEST_STRATEGY_GUIDE = `## Test Strategy Guide
 - three-session-tdd: Complex/expert stories or security-critical code. 3 sessions with strict isolation: (1) test-writer writes failing tests — no src/ changes allowed, (2) implementer makes them pass without modifying test files, (3) verifier confirms correctness.
 - test-after: Only when explicitly configured (tddStrategy: "off"). Write tests after implementation. Not auto-assigned.`;
 
-export const GROUPING_RULES = `## Grouping Rules
+export const GROUPING_RULES = `## Story Rules
 
+- Every story must produce code changes verifiable by tests or review.
+- NEVER create stories for analysis, planning, documentation, or migration plans.
+  Your analysis belongs in the "analysis" field, not in a story.
+- NEVER create stories whose primary purpose is writing tests, achieving coverage
+  targets, or running validation/regression suites. Each story's testStrategy
+  handles test creation as part of implementation. Testing is a built-in pipeline
+  stage, not a user story. No exceptions.
 - Combine small, related tasks into a single "simple" or "medium" story.
-- Do NOT create separate stories for every single file or function unless complex.
-- Do NOT create standalone stories purely for test coverage or testing.
-  Each story's testStrategy already handles testing (tdd-simple writes tests first,
-  three-session-tdd uses separate test-writer session, test-after writes tests after).
-  Only create a dedicated test story for unique integration/E2E test logic that spans
-  multiple stories and cannot be covered by individual story test strategies.
+  Do NOT create separate stories for every single file or function unless complex.
 - Aim for coherent units of value. Maximum recommended stories: 10-15 per feature.`;
