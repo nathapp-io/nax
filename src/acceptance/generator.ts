@@ -114,6 +114,18 @@ IMPORTANT: Output raw TypeScript code only. Do NOT use markdown code fences (\`\
   });
   const testCode = extractTestCode(rawOutput);
 
+  if (!testCode) {
+    logger.warn("acceptance", "LLM returned non-code output for acceptance tests — falling back to skeleton", {
+      outputPreview: rawOutput.slice(0, 200),
+    });
+    const skeletonCriteria: AcceptanceCriterion[] = refinedCriteria.map((c, i) => ({
+      id: `AC-${i + 1}`,
+      text: c.refined,
+      lineNumber: i + 1,
+    }));
+    return { testCode: generateSkeletonTests(options.featureName, skeletonCriteria), criteria: skeletonCriteria };
+  }
+
   const refinedJsonContent = JSON.stringify(
     refinedCriteria.map((c, i) => ({
       acId: `AC-${i + 1}`,
@@ -306,6 +318,16 @@ export async function generateAcceptanceTests(
     // Extract test code from output
     const testCode = extractTestCode(output);
 
+    if (!testCode) {
+      logger.warn("acceptance", "LLM returned non-code output for acceptance tests — falling back to skeleton", {
+        outputPreview: output.slice(0, 200),
+      });
+      return {
+        testCode: generateSkeletonTests(options.featureName, criteria),
+        criteria,
+      };
+    }
+
     return {
       testCode,
       criteria,
@@ -328,21 +350,40 @@ export async function generateAcceptanceTests(
  * @param output - Agent stdout
  * @returns Extracted test code
  */
-function extractTestCode(output: string): string {
+function extractTestCode(output: string): string | null {
+  let code: string | undefined;
+
   // Try to extract from markdown code fence
   const fenceMatch = output.match(/```(?:typescript|ts)?\s*([\s\S]*?)\s*```/);
   if (fenceMatch) {
-    return fenceMatch[1].trim();
+    code = fenceMatch[1].trim();
   }
 
   // If no fence, try to find import statement and take everything from there
-  const importMatch = output.match(/import\s+{[\s\S]+/);
-  if (importMatch) {
-    return importMatch[0].trim();
+  if (!code) {
+    const importMatch = output.match(/import\s+{[\s\S]+/);
+    if (importMatch) {
+      code = importMatch[0].trim();
+    }
   }
 
-  // Fall back to full output
-  return output.trim();
+  // If no fence and no import, try to find describe() block
+  if (!code) {
+    const describeMatch = output.match(/describe\s*\([\s\S]+/);
+    if (describeMatch) {
+      code = describeMatch[0].trim();
+    }
+  }
+
+  if (!code) return null;
+
+  // Validate: extracted code must contain at least one test-like keyword
+  const hasTestKeyword = /\b(?:describe|test|it|expect)\s*\(/.test(code);
+  if (!hasTestKeyword) {
+    return null;
+  }
+
+  return code;
 }
 
 /**

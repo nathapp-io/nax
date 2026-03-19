@@ -777,3 +777,87 @@ describe("generateFromPRD — acceptance-refined.json is written to featureDir n
     expect(refinedJsonPath).not.toContain(workdir);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// describe: generateFromPRD — non-code output fallback (ENH-003)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("generateFromPRD — non-code LLM output falls back to skeleton", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    saveDeps();
+  });
+
+  afterEach(() => {
+    restoreDeps();
+  });
+
+  test("LLM prose output (no code) returns skeleton tests", async () => {
+    const story = makeUserStory();
+    const criteria = makeRefinedCriteria(story.id);
+    const options = makeOptions(tmpDir);
+
+    // Simulate the koda bug: LLM returns prose instead of code
+    _generatorPRDDeps.adapter.complete = mock(
+      async () =>
+        'File written to `nax/features/refactor-standard/acceptance.test.ts`. Here\'s a summary of the 43 tests and their verification strategy:\n\n**US-001 — Planning (AC-1 to AC-5):** Validates the PRD JSON exists.',
+    );
+    _generatorPRDDeps.writeFile = mock(async () => {});
+
+    const result = await generateFromPRD([story], criteria, options);
+
+    // Should fall back to skeleton with TODO placeholders
+    expect(result.testCode).toContain("describe(");
+    expect(result.testCode).toContain("expect(true).toBe(false)");
+    expect(result.testCode).toContain("AC-1:");
+  });
+
+  test("LLM returns markdown summary without code fences returns skeleton", async () => {
+    const story = makeUserStory();
+    const criteria = makeRefinedCriteria(story.id);
+    const options = makeOptions(tmpDir);
+
+    _generatorPRDDeps.adapter.complete = mock(
+      async () => "Here are the acceptance tests I would generate:\n\n1. Test that the system handles empty input\n2. Test that tokens expire correctly",
+    );
+    _generatorPRDDeps.writeFile = mock(async () => {});
+
+    const result = await generateFromPRD([story], criteria, options);
+
+    expect(result.testCode).toContain("describe(");
+    expect(result.testCode).toContain("TODO");
+  });
+
+  test("LLM returns valid code inside markdown fences — extracts correctly", async () => {
+    const story = makeUserStory();
+    const criteria = makeRefinedCriteria(story.id);
+    const options = makeOptions(tmpDir);
+
+    const codeInFences = '```typescript\nimport { describe, test, expect } from "bun:test";\n\ndescribe("test", () => {\n  test("AC-1: works", () => {\n    expect(1).toBe(1);\n  });\n});\n```';
+    _generatorPRDDeps.adapter.complete = mock(async () => codeInFences);
+    _generatorPRDDeps.writeFile = mock(async () => {});
+
+    const result = await generateFromPRD([story], criteria, options);
+
+    expect(result.testCode).toContain('import { describe, test, expect }');
+    expect(result.testCode).not.toContain("```");
+    expect(result.testCode).not.toContain("TODO");
+  });
+
+  test("LLM returns code without fences but with import — extracts correctly", async () => {
+    const story = makeUserStory();
+    const criteria = makeRefinedCriteria(story.id);
+    const options = makeOptions(tmpDir);
+
+    const rawCode = 'import { describe, test, expect } from "bun:test";\n\ndescribe("test", () => {\n  test("AC-1: works", () => {\n    expect(1).toBe(1);\n  });\n});';
+    _generatorPRDDeps.adapter.complete = mock(async () => rawCode);
+    _generatorPRDDeps.writeFile = mock(async () => {});
+
+    const result = await generateFromPRD([story], criteria, options);
+
+    expect(result.testCode).toContain("import { describe, test, expect }");
+    expect(result.testCode).not.toContain("TODO");
+  });
+});
