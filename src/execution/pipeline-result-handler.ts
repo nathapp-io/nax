@@ -17,8 +17,22 @@ import type { PluginRegistry } from "../plugins";
 import { countStories, markStoryFailed, markStoryPaused, savePRD } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
 import type { routeTask } from "../routing";
+import { captureOutputFiles } from "../utils/git";
 import { handleTierEscalation } from "./escalation";
 import { appendProgress } from "./progress";
+
+/** Filter noise from output files (test files, lock files, nax runtime files) */
+function filterOutputFiles(files: string[]): string[] {
+  const NOISE = [
+    /\.test\.(ts|js|tsx|jsx)$/,
+    /\.spec\.(ts|js|tsx|jsx)$/,
+    /package-lock\.json$/,
+    /bun\.lock(b?)$/,
+    /\.gitignore$/,
+    /^nax\//,
+  ];
+  return files.filter((f) => !NOISE.some((p) => p.test(f))).slice(0, 15);
+}
 
 export interface PipelineHandlerContext {
   config: NaxConfig;
@@ -82,6 +96,21 @@ export async function handlePipelineSuccess(
       modelTier: ctx.routing.modelTier,
       testStrategy: ctx.routing.testStrategy,
     });
+  }
+
+  // ENH-005: Capture output files for context chaining
+  if (ctx.storyGitRef) {
+    for (const completedStory of ctx.storiesToExecute) {
+      try {
+        const rawFiles = await captureOutputFiles(ctx.workdir, ctx.storyGitRef, completedStory.workdir);
+        const filtered = filterOutputFiles(rawFiles);
+        if (filtered.length > 0) {
+          completedStory.outputFiles = filtered;
+        }
+      } catch {
+        // Non-fatal — context chaining is best-effort
+      }
+    }
   }
 
   const updatedCounts = countStories(prd);

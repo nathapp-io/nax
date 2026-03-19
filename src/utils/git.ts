@@ -220,3 +220,26 @@ export async function autoCommitIfDirty(workdir: string, stage: string, role: st
     // Silently ignore — auto-commit is best-effort
   }
 }
+
+/**
+ * Capture files changed since a given git ref (for context chaining, ENH-005).
+ * Scopes to scopePrefix (story.workdir) when set — prevents cross-package bleeding in monorepos.
+ * Returns empty array if baseRef is falsy or git fails.
+ */
+export async function captureOutputFiles(
+  workdir: string,
+  baseRef: string | undefined,
+  scopePrefix?: string,
+): Promise<string[]> {
+  if (!baseRef) return [];
+  try {
+    const args = ["diff", "--name-only", `${baseRef}..HEAD`];
+    if (scopePrefix) args.push("--", `${scopePrefix}/`);
+    const proc = _gitDeps.spawn(["git", ...args], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
+    const output = await new Response(proc.stdout).text();
+    await proc.exited;
+    return output.trim().split("\n").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
