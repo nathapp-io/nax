@@ -3,7 +3,7 @@
 **Type:** Enhancement  
 **Component:** `src/execution/`, `src/context/builder.ts`, `src/prd/types.ts`  
 **Filed:** 2026-03-19  
-**Status:** Spec ready — implementation pending  
+**Status:** Done  
 **Source:** Post-mortem koda/fix/refactor-standard (ENH-002)
 
 ---

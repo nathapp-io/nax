@@ -3,7 +3,7 @@
 **Type:** Enhancement  
 **Component:** `src/execution/lifecycle/run-initialization.ts`  
 **Filed:** 2026-03-19  
-**Status:** Spec ready — implementation pending  
+**Status:** Done  
 **Source:** Post-mortem koda/fix/refactor-standard (ENH-002)
 
 ## Problem
