@@ -133,6 +133,8 @@ export interface UserStory {
    * @example "packages/api"
    */
   workdir?: string;
+  /** Files created/modified by this story (auto-captured after completion, used by dependent stories) */
+  outputFiles?: string[];
 }
 
 // ============================================================================

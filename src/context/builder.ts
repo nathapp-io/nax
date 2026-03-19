@@ -21,6 +21,7 @@ import {
   createStoryContext,
   createTestCoverageContext,
 } from "./elements";
+import { getParentOutputFiles } from "./parent-context";
 import { generateTestCoverageSummary } from "./test-scanner";
 import type { BuiltContext, ContextBudget, ContextElement, StoryContext } from "./types";
 
@@ -210,6 +211,18 @@ async function addFileElements(
   if (fileInjection !== "keyword") return;
 
   let contextFiles = getContextFiles(story);
+
+  // ENH-005: Inject parent output files for context chaining
+  const parentFiles = getParentOutputFiles(story, storyContext.prd?.userStories ?? []);
+  if (parentFiles.length > 0) {
+    const logger = getLogger();
+    logger.info("context", "Injecting parent output files for context chaining", {
+      storyId: story.id,
+      parentFiles,
+    });
+    // Merge with existing contextFiles (don't replace — parent files are supplementary)
+    contextFiles = [...new Set([...contextFiles, ...parentFiles])];
+  }
 
   // Auto-detect contextFiles if empty and enabled (BUG-006)
   if (
