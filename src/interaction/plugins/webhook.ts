@@ -11,8 +11,8 @@ import { z } from "zod";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 
 /**
- * Injectable sleep for WebhookInteractionPlugin.receive() polling loop.
- * Replace in tests to avoid real backoff delays.
+ * Injectable sleep — kept for backward compat with existing tests that override it.
+ * No longer used internally by receive() (replaced by event-driven delivery).
  * @internal
  */
 export const _webhookPluginDeps = {
@@ -56,7 +56,10 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
   private config: WebhookConfig = {};
   private server: Server | null = null;
   private serverStartPromise: Promise<void> | null = null;
+  /** Legacy map for responses that arrive before receive() is called */
   private pendingResponses = new Map<string, InteractionResponse>();
+  /** Event-driven callbacks: requestId → resolve fn (set by receive(), called by handleRequest) */
+  private receiveCallbacks = new Map<string, (response: InteractionResponse) => void>();
 
   async init(config: Record<string, unknown>): Promise<void> {
     const cfg = WebhookConfigSchema.parse(config);
@@ -117,33 +120,49 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
     // Start HTTP server to receive callback
     await this.startServer();
 
-    const startTime = Date.now();
-    let backoffMs = 100; // Initial poll interval
-    const maxBackoffMs = 2000; // Max 2 seconds between polls
-
-    // Poll for response with exponential backoff
-    while (Date.now() - startTime < timeout) {
-      const response = this.pendingResponses.get(requestId);
-      if (response) {
-        this.pendingResponses.delete(requestId);
-        return response;
-      }
-      await _webhookPluginDeps.sleep(backoffMs);
-      // Exponential backoff: double interval up to max
-      backoffMs = Math.min(backoffMs * 2, maxBackoffMs);
+    // Check if a response already arrived before receive() was called
+    const early = this.pendingResponses.get(requestId);
+    if (early) {
+      this.pendingResponses.delete(requestId);
+      return early;
     }
 
-    // Timeout
-    return {
-      requestId,
-      action: "skip",
-      respondedBy: "timeout",
-      respondedAt: Date.now(),
-    };
+    // Event-driven: resolve immediately when handleRequest delivers the response
+    return new Promise<InteractionResponse>((resolve) => {
+      const timer = setTimeout(() => {
+        this.receiveCallbacks.delete(requestId);
+        resolve({
+          requestId,
+          action: "skip",
+          respondedBy: "timeout",
+          respondedAt: Date.now(),
+        });
+      }, timeout);
+
+      this.receiveCallbacks.set(requestId, (response) => {
+        clearTimeout(timer);
+        this.receiveCallbacks.delete(requestId);
+        resolve(response);
+      });
+    });
   }
 
   async cancel(requestId: string): Promise<void> {
     this.pendingResponses.delete(requestId);
+    this.receiveCallbacks.delete(requestId);
+  }
+
+  /**
+   * Deliver a response to a waiting receive() callback, or store for later pickup.
+   */
+  private deliverResponse(requestId: string, response: InteractionResponse): void {
+    const cb = this.receiveCallbacks.get(requestId);
+    if (cb) {
+      cb(response);
+    } else {
+      // receive() hasn't been called yet — store for early-pickup path
+      this.pendingResponses.set(requestId, response);
+    }
   }
 
   /**
@@ -220,7 +239,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       try {
         const parsed = JSON.parse(body);
         const response = InteractionResponseSchema.parse(parsed);
-        this.pendingResponses.set(requestId, response);
+        this.deliverResponse(requestId, response);
       } catch {
         // Sanitize error - do not leak parse/validation details
         return new Response("Bad Request: Invalid response format", { status: 400 });
@@ -230,7 +249,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       try {
         const parsed = await req.json();
         const response = InteractionResponseSchema.parse(parsed);
-        this.pendingResponses.set(requestId, response);
+        this.deliverResponse(requestId, response);
       } catch {
         // Sanitize error - do not leak parse/validation details
         return new Response("Bad Request: Invalid response format", { status: 400 });
