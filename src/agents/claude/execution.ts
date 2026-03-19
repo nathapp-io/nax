@@ -126,6 +126,20 @@ export async function executeOnce(
   const cmd = _runOnceDeps.buildCmd(binary, options);
   const startTime = Date.now();
 
+  // Log session-related options for traceability. CLI adapter doesn't use sessions,
+  // but the pipeline passes these uniformly. Logged so future CLI session support
+  // can verify they're threaded correctly.
+  if (options.sessionRole || options.acpSessionName || options.keepSessionOpen) {
+    const logger = getLogger();
+    logger.debug("agent", "CLI mode: session options received (unused)", {
+      sessionRole: options.sessionRole,
+      acpSessionName: options.acpSessionName,
+      keepSessionOpen: options.keepSessionOpen,
+      featureName: options.featureName,
+      storyId: options.storyId,
+    });
+  }
+
   const proc = Bun.spawn(cmd, {
     cwd: options.workdir,
     stdout: "pipe",

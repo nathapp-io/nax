@@ -272,7 +272,6 @@ export class SpawnAcpClient implements AcpClient {
   private readonly model: string;
   private readonly cwd: string;
   private readonly timeoutSeconds: number;
-  private readonly permissionMode: string;
   private readonly env: Record<string, string | undefined>;
   private readonly pidRegistry?: PidRegistry;
 
@@ -289,7 +288,6 @@ export class SpawnAcpClient implements AcpClient {
     this.agentName = lastToken;
     this.cwd = cwd || process.cwd();
     this.timeoutSeconds = timeoutSeconds || 1800;
-    this.permissionMode = "approve-reads";
     this.env = buildAllowedEnv();
     this.pidRegistry = pidRegistry;
   }

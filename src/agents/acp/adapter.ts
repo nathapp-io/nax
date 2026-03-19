@@ -261,23 +261,37 @@ function acpSessionsPath(workdir: string, featureName: string): string {
   return join(workdir, "nax", "features", featureName, "acp-sessions.json");
 }
 
+/** Sidecar entry — session name + agent name for correct sweep/close. */
+type SidecarEntry = string | { sessionName: string; agentName: string };
+
+/** Extract sessionName from a sidecar entry (handles legacy string format). */
+function sidecarSessionName(entry: SidecarEntry): string {
+  return typeof entry === "string" ? entry : entry.sessionName;
+}
+
+/** Extract agentName from a sidecar entry (defaults to "claude" for legacy entries). */
+function sidecarAgentName(entry: SidecarEntry): string {
+  return typeof entry === "string" ? "claude" : entry.agentName;
+}
+
 /** Persist a session name to the sidecar file. Best-effort — errors are swallowed. */
 export async function saveAcpSession(
   workdir: string,
   featureName: string,
   storyId: string,
   sessionName: string,
+  agentName = "claude",
 ): Promise<void> {
   try {
     const path = acpSessionsPath(workdir, featureName);
-    let data: Record<string, string> = {};
+    let data: Record<string, SidecarEntry> = {};
     try {
       const existing = await Bun.file(path).text();
       data = JSON.parse(existing);
     } catch {
       // File doesn't exist yet — start fresh
     }
-    data[storyId] = sessionName;
+    data[storyId] = { sessionName, agentName };
     await Bun.write(path, JSON.stringify(data, null, 2));
   } catch (err) {
     getSafeLogger()?.warn("acp-adapter", "Failed to save session to sidecar", { error: String(err) });
@@ -307,8 +321,9 @@ export async function readAcpSession(workdir: string, featureName: string, story
   try {
     const path = acpSessionsPath(workdir, featureName);
     const existing = await Bun.file(path).text();
-    const data: Record<string, string> = JSON.parse(existing);
-    return data[storyId] ?? null;
+    const data: Record<string, SidecarEntry> = JSON.parse(existing);
+    const entry = data[storyId];
+    return entry ? sidecarSessionName(entry) : null;
   } catch {
     return null;
   }
@@ -326,10 +341,10 @@ const MAX_SESSION_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
  */
 export async function sweepFeatureSessions(workdir: string, featureName: string): Promise<void> {
   const path = acpSessionsPath(workdir, featureName);
-  let sessions: Record<string, string>;
+  let sessions: Record<string, SidecarEntry>;
   try {
     const text = await Bun.file(path).text();
-    sessions = JSON.parse(text) as Record<string, string>;
+    sessions = JSON.parse(text) as Record<string, SidecarEntry>;
   } catch {
     return; // No sidecar — nothing to sweep
   }
@@ -340,24 +355,35 @@ export async function sweepFeatureSessions(workdir: string, featureName: string)
   const logger = getSafeLogger();
   logger?.info("acp-adapter", `[sweep] Closing ${entries.length} open sessions for feature: ${featureName}`);
 
-  const cmdStr = "acpx claude";
-  const client = _acpAdapterDeps.createClient(cmdStr, workdir);
-  try {
-    await client.start();
-    for (const [, sessionName] of entries) {
-      try {
-        if (client.loadSession) {
-          const session = await client.loadSession(sessionName, "claude", "approve-reads");
-          if (session) {
-            await session.close().catch(() => {});
+  // Group sessions by agent name so we create one client per agent
+  const byAgent = new Map<string, string[]>();
+  for (const [, entry] of entries) {
+    const agent = sidecarAgentName(entry);
+    const name = sidecarSessionName(entry);
+    if (!byAgent.has(agent)) byAgent.set(agent, []);
+    byAgent.get(agent)?.push(name);
+  }
+
+  for (const [agentName, sessionNames] of byAgent) {
+    const cmdStr = `acpx ${agentName}`;
+    const client = _acpAdapterDeps.createClient(cmdStr, workdir);
+    try {
+      await client.start();
+      for (const sessionName of sessionNames) {
+        try {
+          if (client.loadSession) {
+            const session = await client.loadSession(sessionName, agentName, "approve-reads");
+            if (session) {
+              await session.close().catch(() => {});
+            }
           }
+        } catch (err) {
+          logger?.warn("acp-adapter", `[sweep] Failed to close session ${sessionName}`, { error: String(err) });
         }
-      } catch (err) {
-        logger?.warn("acp-adapter", `[sweep] Failed to close session ${sessionName}`, { error: String(err) });
       }
+    } finally {
+      await client.close().catch(() => {});
     }
-  } finally {
-    await client.close().catch(() => {});
   }
 
   // Clear sidecar after sweep
@@ -554,7 +580,7 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     // 4. Persist for plan→run continuity
     if (options.featureName && options.storyId) {
-      await saveAcpSession(options.workdir, options.featureName, options.storyId, sessionName);
+      await saveAcpSession(options.workdir, options.featureName, options.storyId, sessionName, this.name);
     }
 
     let lastResponse: AcpSessionResponse | null = null;
