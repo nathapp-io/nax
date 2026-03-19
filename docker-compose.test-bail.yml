@@ -3,7 +3,7 @@ version: "3.9"
 # Usage: docker compose -f docker-compose.test.yml run --rm ci-test
 # Output is written to .ci-test-output.txt in the repo root (mounted volume).
 services:
-  ci-test:
+  ci-test-bail:
     image: nathapp/node-bun:22.21.0-1.3.9-alpine
     working_dir: /app
     volumes:
@@ -28,7 +28,7 @@ services:
         echo "=== lint ==="
         bun run lint
         echo "=== test ==="
-        bun run test || true
+        CI=1 NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000 --bail || true
         echo "=== DONE ==="
 
 volumes:
