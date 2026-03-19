@@ -56,7 +56,7 @@ export async function handleNoTierAvailable(
 
   // Outcome is "fail"
   const failedPrd = { ...ctx.prd };
-  markStoryFailed(failedPrd, ctx.story.id, failureCategory);
+  markStoryFailed(failedPrd, ctx.story.id, failureCategory, undefined);
   await savePRD(failedPrd, ctx.prdPath);
 
   logger?.error("execution", "Story failed - execution failed", {
@@ -119,7 +119,7 @@ export async function handleMaxAttemptsReached(
 
   // Outcome is "fail"
   const failedPrd = { ...ctx.prd };
-  markStoryFailed(failedPrd, ctx.story.id, failureCategory);
+  markStoryFailed(failedPrd, ctx.story.id, failureCategory, undefined);
   await savePRD(failedPrd, ctx.prdPath);
 
   logger?.error("execution", "Story failed - max attempts reached", {

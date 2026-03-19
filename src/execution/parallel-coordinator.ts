@@ -171,7 +171,7 @@ export async function executeParallel(
           worktreePath,
         });
       } catch (error) {
-        markStoryFailed(currentPrd, story.id);
+        markStoryFailed(currentPrd, story.id, undefined, undefined);
         logger?.error("parallel", "Failed to create worktree", {
           storyId: story.id,
           error: errorMessage(error),
@@ -218,7 +218,7 @@ export async function executeParallel(
           });
         } else {
           // Merge conflict — mark story as failed
-          markStoryFailed(currentPrd, mergeResult.storyId);
+          markStoryFailed(currentPrd, mergeResult.storyId, undefined, undefined);
           batchResult.mergeConflicts.push({
             storyId: mergeResult.storyId,
             conflictFiles: mergeResult.conflictFiles || [],
@@ -241,7 +241,7 @@ export async function executeParallel(
 
     // Mark failed stories in PRD and clean up their worktrees
     for (const { story, error } of batchResult.failed) {
-      markStoryFailed(currentPrd, story.id);
+      markStoryFailed(currentPrd, story.id, undefined, undefined);
 
       logger?.error("parallel", "Cleaning up failed story worktree", {
         storyId: story.id,

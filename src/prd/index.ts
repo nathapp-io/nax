@@ -168,13 +168,21 @@ export function markStoryPassed(prd: PRD, storyId: string): void {
 }
 
 /** Mark a story as failed */
-export function markStoryFailed(prd: PRD, storyId: string, failureCategory?: FailureCategory): void {
+export function markStoryFailed(
+  prd: PRD,
+  storyId: string,
+  failureCategory?: FailureCategory,
+  failureStage?: string,
+): void {
   const story = prd.userStories.find((s) => s.id === storyId);
   if (story) {
     story.status = "failed";
     story.attempts += 1;
     if (failureCategory !== undefined) {
       story.failureCategory = failureCategory;
+    }
+    if (failureStage !== undefined) {
+      story.failureStage = failureStage;
     }
   }
 }

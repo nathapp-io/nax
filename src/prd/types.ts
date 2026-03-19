@@ -125,6 +125,8 @@ export interface UserStory {
   customContext?: string[];
   /** Category of the last failure (set when story is marked failed) */
   failureCategory?: FailureCategory;
+  /** Pipeline stage where this story last failed (set by markStoryFailed) */
+  failureStage?: string;
   /** Worktree path for parallel execution (set when --parallel is used) */
   worktreePath?: string;
   /**

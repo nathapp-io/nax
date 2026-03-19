@@ -135,7 +135,7 @@ export async function handlePipelineFailure(
       break;
 
     case "fail":
-      markStoryFailed(prd, ctx.story.id, pipelineResult.context.tddFailureCategory);
+      markStoryFailed(prd, ctx.story.id, pipelineResult.context.tddFailureCategory, pipelineResult.stoppedAtStage);
       await savePRD(prd, ctx.prdPath);
       prdDirty = true;
       logger?.error("pipeline", "Story failed", { storyId: ctx.story.id, reason: pipelineResult.reason });

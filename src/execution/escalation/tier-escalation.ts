@@ -150,7 +150,7 @@ export async function preIterationTierCheck(
   });
 
   const failedPrd = { ...prd };
-  markStoryFailed(failedPrd, story.id);
+  markStoryFailed(failedPrd, story.id, undefined, undefined);
   await savePRD(failedPrd, prdPath);
 
   if (featureDir) {

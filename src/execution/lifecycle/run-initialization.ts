@@ -8,6 +8,7 @@
  * 4. Initial PRD analysis
  */
 
+import { join } from "node:path";
 import chalk from "chalk";
 import type { NaxConfig } from "../../config";
 import { AgentNotFoundError, AgentNotInstalledError, StoryLimitExceededError } from "../../errors";
@@ -15,7 +16,19 @@ import { getSafeLogger } from "../../logger";
 import type { AgentGetFn } from "../../pipeline/types";
 import { countStories, loadPRD, markStoryPassed, savePRD } from "../../prd";
 import type { PRD } from "../../prd/types";
+import { runReview } from "../../review/runner";
+import type { ReviewConfig } from "../../review/types";
 import { hasCommitsForStory } from "../../utils/git";
+
+/**
+ * Injectable dependencies for reconcileState — allows tests to mock
+ * hasCommitsForStory and runReview without mock.module().
+ */
+export const _reconcileDeps = {
+  hasCommitsForStory: (workdir: string, storyId: string) => hasCommitsForStory(workdir, storyId),
+  runReview: (reviewConfig: ReviewConfig, workdir: string, executionConfig: NaxConfig["execution"]) =>
+    runReview(reviewConfig, workdir, executionConfig),
+};
 
 export interface InitializationContext {
   config: NaxConfig;
@@ -43,26 +56,47 @@ export interface InitializationResult {
  * Reconcile PRD state with git history
  *
  * Checks if failed stories have commits in git history and marks them as passed.
- * This handles the case where TDD failed but agent already committed code.
+ * For stories that failed at review/autofix stage, re-runs the review before
+ * reconciling to ensure the code quality issues were actually fixed.
  */
-async function reconcileState(prd: PRD, prdPath: string, workdir: string): Promise<PRD> {
+async function reconcileState(prd: PRD, prdPath: string, workdir: string, config: NaxConfig): Promise<PRD> {
   const logger = getSafeLogger();
   let reconciledCount = 0;
   let modified = false;
 
   for (const story of prd.userStories) {
-    if (story.status === "failed") {
-      const hasCommits = await hasCommitsForStory(workdir, story.id);
-      if (hasCommits) {
-        logger?.warn("reconciliation", "Failed story has commits in git history, marking as passed", {
-          storyId: story.id,
-          title: story.title,
-        });
-        markStoryPassed(prd, story.id);
-        reconciledCount++;
-        modified = true;
+    if (story.status !== "failed") continue;
+
+    const hasCommits = await _reconcileDeps.hasCommitsForStory(workdir, story.id);
+    if (!hasCommits) continue;
+
+    // Gate: re-run review for stories that failed at review/autofix stage
+    if (story.failureStage === "review" || story.failureStage === "autofix") {
+      const effectiveWorkdir = story.workdir ? join(workdir, story.workdir) : workdir;
+      try {
+        const reviewResult = await _reconcileDeps.runReview(config.review, effectiveWorkdir, config.execution);
+        if (!reviewResult.success) {
+          logger?.warn("reconciliation", "Review still fails — not reconciling story", {
+            storyId: story.id,
+            failureReason: reviewResult.failureReason,
+          });
+          continue;
+        }
+        logger?.info("reconciliation", "Review now passes — reconciling story", { storyId: story.id });
+      } catch {
+        // Non-fatal: if review check errors, skip reconciliation for this story
+        logger?.warn("reconciliation", "Review check errored — not reconciling story", { storyId: story.id });
+        continue;
       }
     }
+
+    logger?.warn("reconciliation", "Failed story has commits in git history, marking as passed", {
+      storyId: story.id,
+      title: story.title,
+    });
+    markStoryPassed(prd, story.id);
+    reconciledCount++;
+    modified = true;
   }
 
   if (reconciledCount > 0) {
@@ -137,7 +171,7 @@ export async function initializeRun(ctx: InitializationContext): Promise<Initial
 
   // Load and reconcile PRD
   let prd = await loadPRD(ctx.prdPath);
-  prd = await reconcileState(prd, ctx.prdPath, ctx.workdir);
+  prd = await reconcileState(prd, ctx.prdPath, ctx.workdir, ctx.config);
 
   // Validate story counts
   const counts = countStories(prd);
