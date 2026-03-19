@@ -21,10 +21,13 @@ export function applyDecomposition(prd: PRD, result: DecomposeResult): void {
   const originalIndex = prd.userStories.findIndex((s) => s.id === parentStoryId);
   if (originalIndex === -1) return;
 
+  const parentStory = prd.userStories[originalIndex];
+
   // Mark original story as decomposed
-  prd.userStories[originalIndex].status = "decomposed";
+  parentStory.status = "decomposed";
 
   // Convert substories to UserStory format with parentStoryId attached
+  // ENH-008: Inherit workdir from parent so sub-stories run in the same package scope
   const newStories = subStories.map((sub): UserStory & { parentStoryId: string } => ({
     id: sub.id,
     title: sub.title,
@@ -37,6 +40,7 @@ export function applyDecomposition(prd: PRD, result: DecomposeResult): void {
     escalations: [],
     attempts: 0,
     parentStoryId: sub.parentStoryId,
+    ...(parentStory.workdir !== undefined && { workdir: parentStory.workdir }),
   }));
 
   // Insert substories immediately after the original story

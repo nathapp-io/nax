@@ -166,6 +166,11 @@ export function buildReviewRectificationPrompt(failedChecks: ReviewCheckResult[]
     .map((c) => `## ${c.check} errors (exit code ${c.exitCode})\n\`\`\`\n${c.output}\n\`\`\``)
     .join("\n\n");
 
+  // ENH-008: Scope constraint for monorepo stories — prevent out-of-package changes
+  const scopeConstraint = story.workdir
+    ? `\n\nIMPORTANT: Only modify files within \`${story.workdir}/\`. Do NOT touch files outside this directory.`
+    : "";
+
   return `You are fixing lint/typecheck errors from a code review.
 
 Story: ${story.title} (${story.id})
@@ -176,7 +181,7 @@ ${errors}
 
 Fix ALL errors listed above. Do NOT change test files or test behavior.
 Do NOT add new features — only fix the quality check errors.
-Commit your fixes when done.`;
+Commit your fixes when done.${scopeConstraint}`;
 }
 
 async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
@@ -211,9 +216,12 @@ async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
     const modelTier = ctx.story.routing?.modelTier ?? ctx.config.autoMode.escalation.tierOrder[0]?.tier ?? "balanced";
     const modelDef = resolveModel(ctx.config.models[modelTier]);
 
+    // ENH-008: Scope agent to story.workdir for monorepo — prevents out-of-package changes
+    const rectificationWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+
     await agent.run({
       prompt,
-      workdir: ctx.workdir,
+      workdir: rectificationWorkdir,
       modelTier,
       modelDef,
       timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,

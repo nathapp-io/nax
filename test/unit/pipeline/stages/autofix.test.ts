@@ -254,4 +254,27 @@ describe("autofixStage", () => {
     expect(prompt).toContain("US-002");
     expect(prompt).toContain("lint");
   });
+
+  test("ENH-008: includes scope constraint when story.workdir is set", () => {
+    const failedChecks = [
+      { check: "lint", success: false, command: "biome check", exitCode: 1, output: "error", durationMs: 10 },
+    ];
+    const story = { id: "US-002", title: "Add feature", workdir: "apps/api" } as any;
+
+    const prompt = buildReviewRectificationPrompt(failedChecks, story);
+
+    expect(prompt).toContain("Only modify files within `apps/api/`");
+    expect(prompt).toContain("Do NOT touch files outside this directory");
+  });
+
+  test("ENH-008: no scope constraint when story.workdir is not set", () => {
+    const failedChecks = [
+      { check: "lint", success: false, command: "biome check", exitCode: 1, output: "error", durationMs: 10 },
+    ];
+    const story = { id: "US-002", title: "Add feature" } as any;
+
+    const prompt = buildReviewRectificationPrompt(failedChecks, story);
+
+    expect(prompt).not.toContain("Only modify files within");
+  });
 });
