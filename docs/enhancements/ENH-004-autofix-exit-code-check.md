@@ -1,9 +1,9 @@
 # ENH-004: Autofix — check exit codes before reporting success
 
-**Type:** Bug fix
-**Component:** `src/review/autofix.ts` (or equivalent)
-**Filed:** 2026-03-19
-**Status:** ✅ Verified — fix at commit `18eea738` (on master, 13/13 tests pass)
+**Type:** Bug fix  
+**Component:** `src/pipeline/stages/autofix.ts`  
+**Filed:** 2026-03-19  
+**Status:** ✅ Done — fix at commit `18eea73` (on master)  
 **Source:** Post-mortem koda/fix/refactor-standard (ENH-002)
 
 ## Problem
