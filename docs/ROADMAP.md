@@ -6,6 +6,20 @@
 
 ---
 
+## v0.49.6 ✅ Released 2026-03-19
+
+**Theme:** Test reliability + webhook fix
+
+- **fix(test):** Eliminated 38 cross-file test failures caused by `mock.module()` contamination — replaced with injectable `_deps` pattern across all TDD modules (`_rectificationGateDeps`, extended `_sessionRunnerDeps`)
+- **fix(webhook):** `receive()` polling loop replaced with event-driven Promise — eliminates race condition in slow Docker/VM environments (4218ms → 65ms)
+- **fix:** `getChangedFiles` / `getPgid` stdout read — concurrent read via `Bun.readableStreamToText()` prevents deadlock on large output
+- **fix:** Circular import `prompts-tdd` ↔ `prompts-main` broken via `prompts-shared.ts`
+- **fix(PKG-006):** `quality.commands` bridges correctly into `review.commands` during per-package merge
+- **fix:** Agent adapter session options standardized across all adapters
+- **docs:** Injectable deps pattern and `mock.module()` prohibition documented in ARCHITECTURE.md + `.claude/rules/`
+
+---
+
 ## v0.49.0 — Per-Package Config Override (Monorepo) 📋 Planned
 
 **Theme:** Complete the per-package config override system — expand what's mergeable and wire effective config into all pipeline stages.
