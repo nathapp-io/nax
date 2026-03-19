@@ -46,6 +46,41 @@ afterEach(() => {
 - Never spawn full `nax` processes in tests — prechecks fail in temp dirs.
 - Wrap `Bun.spawn()` in try/catch — throws `ENOENT` for missing binaries (not a failed exit code).
 
+### Never mutate `Bun.spawn` globally
+
+`Bun.spawn` is a **global shared reference**. Mutating it directly (`Bun.spawn = mock(...)`) leaks between test files when they run in the same process.
+
+**Use the module's injectable `_deps` object instead:**
+
+```typescript
+// ❌ WRONG — leaks to other files
+Bun.spawn = mock((cmd) => fakeResult);
+
+// ✅ CORRECT — scoped to this module only
+import { _isolationDeps } from "../../../src/tdd/isolation";
+
+let orig: typeof _isolationDeps.spawn;
+beforeEach(() => { orig = _isolationDeps.spawn; _isolationDeps.spawn = mock(...); });
+afterEach(() => { _isolationDeps.spawn = orig; });
+```
+
+**Injectable deps available in nax source:**
+
+| Module | Deps export | Covers |
+|:---|:---|:---|
+| `src/tdd/isolation.ts` | `_isolationDeps.spawn` | `git diff` in `getChangedFiles` |
+| `src/tdd/cleanup.ts` | `_cleanupDeps.spawn/sleep/kill` | `ps`, `Bun.sleep`, `process.kill` in `cleanupProcessTree` |
+| `src/tdd/session-runner.ts` | `_sessionRunnerDeps.spawn/getChangedFiles/verifyTestWriterIsolation/verifyImplementerIsolation/captureGitRef/cleanupProcessTree/buildPrompt` | All session runner dependencies |
+| `src/tdd/rectification-gate.ts` | `_rectificationGateDeps.executeWithTimeout/parseBunTestOutput/shouldRetryRectification` | Gate logic |
+| `src/utils/git.ts` | `_gitDeps.spawn` | All git commands |
+| `src/verification/executor.ts` | `_executorDeps.spawn` | Shell test command execution |
+| `src/verification/strategies/acceptance.ts` | `_acceptanceDeps.spawn` | Acceptance test runner |
+
+For orchestrator/multi-module tests, use the shared helper:
+```typescript
+import { saveDeps, restoreDeps, mockGitSpawn, mockAllSpawn } from "./_tdd-test-helpers";
+```
+
 ## Test Structure
 
 - One `describe()` block per source function or class being tested.

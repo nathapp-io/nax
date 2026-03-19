@@ -37,3 +37,28 @@ src/verification/smart-runner.ts → test/unit/verification/smart-runner.test.ts
 - Use `mkdtempSync(join(tmpdir(), "nax-test-"))` for temporary directories.
 - Clean up in `afterAll()` — never leave files in `test/tmp/`.
 - Integration tests needing git: always `git init` + `git add .` + `git commit` in the temp fixture before testing.
+
+## Process/Spawn Mocking Architecture
+
+Source modules that call `Bun.spawn`, `Bun.sleep`, or `process.kill` export an injectable `_deps` object so tests can mock at the module level without touching globals. This prevents cross-file contamination (see `03-test-writing.md`).
+
+**Pattern (in source file):**
+```typescript
+export const _myDeps = { spawn: Bun.spawn as typeof Bun.spawn };
+
+export async function myFunc() {
+  const proc = _myDeps.spawn(["git", "diff"], { ... });
+  ...
+}
+```
+
+**Pattern (in test file):**
+```typescript
+import { _myDeps } from "../../../src/my-module";
+
+let origSpawn: typeof _myDeps.spawn;
+beforeEach(() => { origSpawn = _myDeps.spawn; _myDeps.spawn = mock(...); });
+afterEach(() => { _myDeps.spawn = origSpawn; });
+```
+
+Shared TDD orchestrator tests use `test/integration/tdd/_tdd-test-helpers.ts` which wraps `saveDeps()`, `restoreDeps()`, and `mockGitSpawn()` for convenience.

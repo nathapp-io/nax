@@ -124,10 +124,41 @@ test("handles missing binary", async () => {
 | Pure computation, string manipulation | ❌ No |
 | Calling other nax modules | ❌ No (mock at boundary) |
 
+### ⚠️ Critical: Never Mutate Globals in Tests
+
+**`Bun.spawn = mock(...)` is forbidden.** Bun runs test files sequentially in the same process. Mutating `Bun.spawn` directly — even with beforeEach/afterEach save-restore — is unreliable and causes cross-file contamination. **`mock.module()` is also forbidden** — it permanently replaces the module for the entire process lifetime and `mock.restore()` does NOT undo it.
+
+```typescript
+// ❌ WRONG — contaminates other test files
+Bun.spawn = mock((cmd) => fakeResult);
+mock.module("../src/isolation", () => ({ getChangedFiles: mock(...) }));
+
+// ✅ CORRECT — scoped to the module's _deps object
+import { _isolationDeps } from "../../../src/tdd/isolation";
+let orig = _isolationDeps.spawn;
+beforeEach(() => { _isolationDeps.spawn = mock(...); });
+afterEach(() => { _isolationDeps.spawn = orig; });
+```
+
+This was the root cause of 38 test failures (March 2026) — fixed in commit `a110d6a`.
+
+### Injectable `_deps` in TDD modules
+
+| Module | Export | Covers |
+|:---|:---|:---|
+| `src/tdd/isolation.ts` | `_isolationDeps` | `git diff` → `getChangedFiles` |
+| `src/tdd/cleanup.ts` | `_cleanupDeps` | `ps`, `Bun.sleep`, `process.kill` |
+| `src/tdd/session-runner.ts` | `_sessionRunnerDeps` | isolation, git, cleanup, prompt deps |
+| `src/tdd/rectification-gate.ts` | `_rectificationGateDeps` | `executeWithTimeout`, test output parsing |
+| `src/utils/git.ts` | `_gitDeps` | All git commands |
+| `src/verification/executor.ts` | `_executorDeps` | Shell test command execution |
+| `src/verification/strategies/acceptance.ts` | `_acceptanceDeps` | Acceptance test runner |
+
 ### Reference Files
 
 - `src/pipeline/stages/routing.ts` — `_routingDeps`
 - `src/agents/adapters/gemini.ts` — `_geminiRunDeps`, `_geminiCompleteDeps`
+- `test/integration/tdd/_tdd-test-helpers.ts` — shared helper for TDD orchestrator tests
 - `src/agents/adapters/codex.ts` — `_codexCompleteDeps`
 
 ---
