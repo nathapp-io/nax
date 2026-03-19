@@ -9,6 +9,9 @@ import type { Subprocess } from "bun";
 import { errorMessage } from "../utils/errors";
 import type { TestExecutionResult } from "./types";
 
+/** Injectable deps for testability — mock _executorDeps.spawn instead of global Bun.spawn */
+export const _executorDeps = { spawn: Bun.spawn as typeof Bun.spawn };
+
 /**
  * Drain stdout+stderr from a killed Bun subprocess with a hard deadline.
  *
@@ -92,7 +95,7 @@ export async function executeWithTimeout(
   const gracePeriodMs = options?.gracePeriodMs ?? 5000;
   const drainTimeoutMs = options?.drainTimeoutMs ?? 2000;
 
-  const proc = Bun.spawn([shell, "-c", command], {
+  const proc = _executorDeps.spawn([shell, "-c", command], {
     stdout: "pipe",
     stderr: "pipe",
     env: env || normalizeEnvironment(process.env as Record<string, string | undefined>),

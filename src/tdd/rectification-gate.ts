@@ -15,14 +15,22 @@ import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { autoCommitIfDirty, captureGitRef } from "../utils/git";
 import {
+  type parseBunTestOutput as ParseBunTestOutputType,
   type RectificationState,
-  executeWithTimeout,
-  parseBunTestOutput,
-  shouldRetryRectification,
+  executeWithTimeout as _executeWithTimeout,
+  parseBunTestOutput as _parseBunTestOutput,
+  shouldRetryRectification as _shouldRetryRectification,
 } from "../verification";
 import { cleanupProcessTree } from "./cleanup";
 import { verifyImplementerIsolation } from "./isolation";
 import { buildImplementerRectificationPrompt } from "./prompts";
+
+/** Injectable deps for testability — avoids mock.module() contamination */
+export const _rectificationGateDeps = {
+  executeWithTimeout: _executeWithTimeout,
+  parseBunTestOutput: _parseBunTestOutput,
+  shouldRetryRectification: _shouldRetryRectification,
+};
 
 /**
  * Run full test suite gate before verifier session (v0.11 Rectification).
@@ -50,11 +58,13 @@ export async function runFullSuiteGate(
     timeout: fullSuiteTimeout,
   });
 
-  const fullSuiteResult = await executeWithTimeout(testCmd, fullSuiteTimeout, undefined, { cwd: workdir });
+  const fullSuiteResult = await _rectificationGateDeps.executeWithTimeout(testCmd, fullSuiteTimeout, undefined, {
+    cwd: workdir,
+  });
   const fullSuitePassed = fullSuiteResult.success && fullSuiteResult.exitCode === 0;
 
   if (!fullSuitePassed && fullSuiteResult.output) {
-    const testSummary = parseBunTestOutput(fullSuiteResult.output);
+    const testSummary = _rectificationGateDeps.parseBunTestOutput(fullSuiteResult.output);
 
     if (testSummary.failed > 0) {
       return await runRectificationLoop(
@@ -118,7 +128,7 @@ async function runRectificationLoop(
   contextMarkdown: string | undefined,
   lite: boolean,
   logger: ReturnType<typeof getLogger>,
-  testSummary: ReturnType<typeof parseBunTestOutput>,
+  testSummary: ReturnType<typeof _parseBunTestOutput>,
   rectificationConfig: NonNullable<NaxConfig["execution"]["rectification"]>,
   testCmd: string,
   fullSuiteTimeout: number,
@@ -144,7 +154,7 @@ async function runRectificationLoop(
     sessionName: rectificationSessionName,
   });
 
-  while (shouldRetryRectification(rectificationState, rectificationConfig)) {
+  while (_rectificationGateDeps.shouldRetryRectification(rectificationState, rectificationConfig)) {
     rectificationState.attempt++;
 
     const isLastAttempt = rectificationState.attempt >= rectificationConfig.maxRetries;
@@ -218,7 +228,9 @@ async function runRectificationLoop(
       break;
     }
 
-    const retryFullSuite = await executeWithTimeout(testCmd, fullSuiteTimeout, undefined, { cwd: workdir });
+    const retryFullSuite = await _rectificationGateDeps.executeWithTimeout(testCmd, fullSuiteTimeout, undefined, {
+      cwd: workdir,
+    });
     const retrySuitePassed = retryFullSuite.success && retryFullSuite.exitCode === 0;
 
     if (retrySuitePassed) {
@@ -230,7 +242,7 @@ async function runRectificationLoop(
     }
 
     if (retryFullSuite.output) {
-      const newTestSummary = parseBunTestOutput(retryFullSuite.output);
+      const newTestSummary = _rectificationGateDeps.parseBunTestOutput(retryFullSuite.output);
       rectificationState.currentFailures = newTestSummary.failed;
       testSummary.failures = newTestSummary.failures;
       testSummary.failed = newTestSummary.failed;
@@ -244,7 +256,9 @@ async function runRectificationLoop(
     });
   }
 
-  const finalFullSuite = await executeWithTimeout(testCmd, fullSuiteTimeout, undefined, { cwd: workdir });
+  const finalFullSuite = await _rectificationGateDeps.executeWithTimeout(testCmd, fullSuiteTimeout, undefined, {
+    cwd: workdir,
+  });
   const finalSuitePassed = finalFullSuite.success && finalFullSuite.exitCode === 0;
 
   if (!finalSuitePassed) {

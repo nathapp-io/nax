@@ -7,91 +7,17 @@ import { DEFAULT_CONFIG } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
 import { runThreeSessionTdd } from "../../../src/tdd/orchestrator";
 import { VERDICT_FILE } from "../../../src/tdd/verdict";
+import { type SavedDeps, createMockAgent, mockAllSpawn, mockGitSpawn, restoreDeps, saveDeps } from "./_tdd-test-helpers";
 
-let originalSpawn: typeof Bun.spawn;
+let saved: SavedDeps;
 
 beforeEach(() => {
-  originalSpawn = Bun.spawn;
+  saved = saveDeps();
 });
 
 afterEach(() => {
-  Bun.spawn = originalSpawn;
+  restoreDeps(saved);
 });
-
-/** Create a mock agent that returns sequential results */
-function createMockAgent(results: Partial<AgentResult>[]): AgentAdapter {
-  let callCount = 0;
-  return {
-    name: "mock",
-    displayName: "Mock Agent",
-    binary: "mock",
-    isInstalled: async () => true,
-    buildCommand: () => ["mock"],
-    run: mock(async () => {
-      const r = results[callCount] || {};
-      callCount++;
-      return {
-        success: r.success ?? true,
-        exitCode: r.exitCode ?? 0,
-        output: r.output ?? "",
-        rateLimited: r.rateLimited ?? false,
-        durationMs: r.durationMs ?? 100,
-        estimatedCost: r.estimatedCost ?? 0.01,
-      };
-    }),
-  };
-}
-
-/** Mock Bun.spawn to intercept git commands */
-function mockGitSpawn(opts: {
-  /** Files returned by git diff for each session (indexed by git-diff call number) */
-  diffFiles: string[][];
-  /** Optional: mock test command success (default: true) */
-  testCommandSuccess?: boolean;
-}) {
-  let revParseCount = 0;
-  let diffCount = 0;
-  const testSuccess = opts.testCommandSuccess ?? true;
-
-  // @ts-ignore — mocking global
-  Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
-    // Intercept test commands (bun test, npm test, etc.)
-    if ((cmd[0] === "/bin/sh" || cmd[0] === "/bin/bash" || cmd[0] === "/bin/zsh") && cmd[1] === "-c") {
-      return {
-        pid: 9999,
-        exited: Promise.resolve(testSuccess ? 0 : 1),
-        stdout: new Response(testSuccess ? "tests pass\n" : "tests fail\n").body,
-        stderr: new Response("").body,
-      };
-    }
-    if (cmd[0] === "git" && cmd[1] === "rev-parse") {
-      revParseCount++;
-      return {
-        exited: Promise.resolve(0),
-        stdout: new Response(`ref-${revParseCount}\n`).body,
-        stderr: new Response("").body,
-      };
-    }
-    if (cmd[0] === "git" && cmd[1] === "checkout") {
-      // Intercept git checkout (used in zero-file fallback) — silently succeed
-      return {
-        exited: Promise.resolve(0),
-        stdout: new Response("").body,
-        stderr: new Response("").body,
-      };
-    }
-    if (cmd[0] === "git" && cmd[1] === "diff") {
-      const files = opts.diffFiles[diffCount] || [];
-      diffCount++;
-      return {
-        exited: Promise.resolve(0),
-        stdout: new Response(files.join("\n") + "\n").body,
-        stderr: new Response("").body,
-      };
-    }
-    return originalSpawn(cmd, spawnOpts);
-  });
-}
 
 const story: UserStory = {
   id: "US-001",
@@ -117,7 +43,7 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
 
   afterEach(async () => {
     await rm(tmpDir, { recursive: true, force: true });
-    Bun.spawn = originalSpawn;
+    restoreDeps(saved);
   });
 
   /** Write a valid verdict file to tmpDir */
@@ -157,7 +83,7 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
   }
 
   /**
-   * Mock Bun.spawn for a full 3-session T9 run.
+   * Mock all spawn deps for a full 3-session T9 run.
    * Provides 6 git diff calls (isolation + getChangedFiles per session)
    * and optionally intercepts the post-TDD shell command (bun test).
    */
@@ -176,8 +102,8 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
     let revParseCount = 0;
     let diffCount = 0;
 
-    // @ts-ignore — mocking global
-    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+
+    mockAllSpawn(mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "/bin/sh" && cmd[2]?.includes("bun test")) {
         const r = opts.onTestCmd?.() ?? { exitCode: 0, stdout: "5 pass, 0 fail\n" };
         return {
@@ -204,8 +130,8 @@ describe("runThreeSessionTdd — T9: verdict integration", () => {
           stderr: new Response("").body,
         };
       }
-      return originalSpawn(cmd, spawnOpts);
-    });
+      return { exited: Promise.resolve(0), stdout: new Response("").body, stderr: new Response("").body };
+    }));
   }
 
   test("verdict approved=true: overall success even when verifier session failed", async () => {

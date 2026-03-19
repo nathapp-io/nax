@@ -1,10 +1,8 @@
 /**
  * Tests for session-runner.ts — keepSessionOpen for implementer role.
  *
- * Covers:
- * - implementer passes keepSessionOpen=true when rectification is enabled
- * - implementer passes keepSessionOpen=false when rectification is disabled
- * - test-writer / verifier never set keepSessionOpen regardless of config
+ * Uses injectable _sessionRunnerDeps instead of mock.module() to avoid
+ * permanent module replacement that contaminates other test files.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -64,43 +62,34 @@ function makeAgent() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Setup mocks for dependencies that session-runner calls after agent.run()
+// Save/restore injectable deps — no mock.module() needed
 // ─────────────────────────────────────────────────────────────────────────────
 
-beforeEach(() => {
-  // Mock injectable deps
-  _sessionRunnerDeps.autoCommitIfDirty = mock(async () => {});
+let origDeps: Record<string, unknown>;
 
-  mock.module("../../../src/tdd/isolation", () => ({
-    verifyTestWriterIsolation: mock(async () => ({ passed: true, violations: [] })),
-    verifyImplementerIsolation: mock(async () => ({ passed: true, violations: [] })),
-    getChangedFiles: mock(async () => []),
-  }));
-  mock.module("../../../src/tdd/cleanup", () => ({
-    cleanupProcessTree: mock(async () => {}),
-  }));
-  mock.module("../../../src/utils/git", () => ({
-    captureGitRef: mock(async () => "abc"),
-  }));
-  mock.module("../../../src/cli/prompts-tdd", () => ({
-    PromptBuilder: {
-      for: mock(() => ({
-        withLoader: mock(() => ({
-          story: mock(() => ({
-            context: mock(() => ({
-              constitution: mock(() => ({
-                testCommand: mock(() => ({ build: mock(async () => "mock prompt") })),
-              })),
-            })),
-          })),
-        })),
-      })),
-    },
-  }));
+beforeEach(() => {
+  origDeps = {
+    autoCommitIfDirty: _sessionRunnerDeps.autoCommitIfDirty,
+    getChangedFiles: _sessionRunnerDeps.getChangedFiles,
+    verifyTestWriterIsolation: _sessionRunnerDeps.verifyTestWriterIsolation,
+    verifyImplementerIsolation: _sessionRunnerDeps.verifyImplementerIsolation,
+    captureGitRef: _sessionRunnerDeps.captureGitRef,
+    cleanupProcessTree: _sessionRunnerDeps.cleanupProcessTree,
+    buildPrompt: _sessionRunnerDeps.buildPrompt,
+  };
+
+  // Mock all deps to no-ops
+  _sessionRunnerDeps.autoCommitIfDirty = mock(async () => {});
+  _sessionRunnerDeps.getChangedFiles = mock(async () => []);
+  _sessionRunnerDeps.verifyTestWriterIsolation = mock(async () => ({ passed: true, violations: [], softViolations: [], description: "" }));
+  _sessionRunnerDeps.verifyImplementerIsolation = mock(async () => ({ passed: true, violations: [], description: "" }));
+  _sessionRunnerDeps.captureGitRef = mock(async () => "abc");
+  _sessionRunnerDeps.cleanupProcessTree = mock(async () => {});
+  _sessionRunnerDeps.buildPrompt = mock(async () => "mock prompt");
 });
 
 afterEach(() => {
-  mock.restore();
+  Object.assign(_sessionRunnerDeps, origDeps);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

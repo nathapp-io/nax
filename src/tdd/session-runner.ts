@@ -12,17 +12,39 @@ import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { PromptBuilder } from "../prompts";
 import { autoCommitIfDirty as _autoCommitIfDirtyFn } from "../utils/git";
-import { cleanupProcessTree } from "./cleanup";
-
+import { captureGitRef as _captureGitRef } from "../utils/git";
+import { cleanupProcessTree as _cleanupProcessTree } from "./cleanup";
 /**
  * Injectable dependencies for session-runner — allows tests to mock
  * autoCommitIfDirty without going through internal git deps.
  * @internal
  */
+import {
+  getChangedFiles as _getChangedFiles,
+  verifyImplementerIsolation as _verifyImplementerIsolation,
+  verifyTestWriterIsolation as _verifyTestWriterIsolation,
+} from "./isolation";
+
 export const _sessionRunnerDeps = {
   autoCommitIfDirty: _autoCommitIfDirtyFn,
+  spawn: Bun.spawn as typeof Bun.spawn,
+  getChangedFiles: _getChangedFiles,
+  verifyTestWriterIsolation: _verifyTestWriterIsolation,
+  verifyImplementerIsolation: _verifyImplementerIsolation,
+  captureGitRef: _captureGitRef,
+  cleanupProcessTree: _cleanupProcessTree,
+  buildPrompt: null as
+    | null
+    | ((
+        role: TddSessionRole,
+        config: NaxConfig,
+        story: UserStory,
+        workdir: string,
+        contextMarkdown?: string,
+        lite?: boolean,
+        constitution?: string,
+      ) => Promise<string>),
 };
-import { getChangedFiles, verifyImplementerIsolation, verifyTestWriterIsolation } from "./isolation";
 import type { IsolationCheck } from "./types";
 import type { TddSessionResult, TddSessionRole } from "./types";
 
@@ -53,7 +75,7 @@ export async function rollbackToRef(workdir: string, ref: string): Promise<void>
   const logger = getLogger();
   logger.warn("tdd", "Rolling back git changes", { ref });
 
-  const resetProc = Bun.spawn(["git", "reset", "--hard", ref], {
+  const resetProc = _sessionRunnerDeps.spawn(["git", "reset", "--hard", ref], {
     cwd: workdir,
     stdout: "pipe",
     stderr: "pipe",
@@ -66,7 +88,7 @@ export async function rollbackToRef(workdir: string, ref: string): Promise<void>
     throw new Error(`Git rollback failed: ${stderr}`);
   }
 
-  const cleanProc = Bun.spawn(["git", "clean", "-fd"], {
+  const cleanProc = _sessionRunnerDeps.spawn(["git", "clean", "-fd"], {
     cwd: workdir,
     stdout: "pipe",
     stderr: "pipe",
@@ -98,36 +120,40 @@ export async function runTddSession(
 ): Promise<TddSessionResult> {
   const startTime = Date.now();
 
-  // Build prompt based on role and mode (lite vs strict)
+  // Build prompt — use injectable buildPrompt if set, otherwise default PromptBuilder
   let prompt: string;
-  switch (role) {
-    case "test-writer":
-      prompt = await PromptBuilder.for("test-writer", { isolation: lite ? "lite" : "strict" })
-        .withLoader(workdir, config)
-        .story(story)
-        .context(contextMarkdown)
-        .constitution(constitution)
-        .testCommand(config.quality?.commands?.test)
-        .build();
-      break;
-    case "implementer":
-      prompt = await PromptBuilder.for("implementer", { variant: lite ? "lite" : "standard" })
-        .withLoader(workdir, config)
-        .story(story)
-        .context(contextMarkdown)
-        .constitution(constitution)
-        .testCommand(config.quality?.commands?.test)
-        .build();
-      break;
-    case "verifier":
-      prompt = await PromptBuilder.for("verifier")
-        .withLoader(workdir, config)
-        .story(story)
-        .context(contextMarkdown)
-        .constitution(constitution)
-        .testCommand(config.quality?.commands?.test)
-        .build();
-      break;
+  if (_sessionRunnerDeps.buildPrompt) {
+    prompt = await _sessionRunnerDeps.buildPrompt(role, config, story, workdir, contextMarkdown, lite, constitution);
+  } else {
+    switch (role) {
+      case "test-writer":
+        prompt = await PromptBuilder.for("test-writer", { isolation: lite ? "lite" : "strict" })
+          .withLoader(workdir, config)
+          .story(story)
+          .context(contextMarkdown)
+          .constitution(constitution)
+          .testCommand(config.quality?.commands?.test)
+          .build();
+        break;
+      case "implementer":
+        prompt = await PromptBuilder.for("implementer", { variant: lite ? "lite" : "standard" })
+          .withLoader(workdir, config)
+          .story(story)
+          .context(contextMarkdown)
+          .constitution(constitution)
+          .testCommand(config.quality?.commands?.test)
+          .build();
+        break;
+      case "verifier":
+        prompt = await PromptBuilder.for("verifier")
+          .withLoader(workdir, config)
+          .story(story)
+          .context(contextMarkdown)
+          .constitution(constitution)
+          .testCommand(config.quality?.commands?.test)
+          .build();
+        break;
+    }
   }
 
   const logger = getLogger();
@@ -158,7 +184,7 @@ export async function runTddSession(
 
   // BUG-21 Fix: Clean up orphaned child processes if agent failed
   if (!result.success && result.pid) {
-    await cleanupProcessTree(result.pid);
+    await _sessionRunnerDeps.cleanupProcessTree(result.pid);
   }
 
   if (result.success) {
@@ -185,14 +211,14 @@ export async function runTddSession(
   if (!skipIsolation) {
     if (role === "test-writer") {
       const allowedPaths = config.tdd.testWriterAllowedPaths ?? ["src/index.ts", "src/**/index.ts"];
-      isolation = await verifyTestWriterIsolation(workdir, beforeRef, allowedPaths);
+      isolation = await _sessionRunnerDeps.verifyTestWriterIsolation(workdir, beforeRef, allowedPaths);
     } else if (role === "implementer" || role === "verifier") {
-      isolation = await verifyImplementerIsolation(workdir, beforeRef);
+      isolation = await _sessionRunnerDeps.verifyImplementerIsolation(workdir, beforeRef);
     }
   }
 
   // Get changed files
-  const filesChanged = await getChangedFiles(workdir, beforeRef);
+  const filesChanged = await _sessionRunnerDeps.getChangedFiles(workdir, beforeRef);
 
   const durationMs = Date.now() - startTime;
 

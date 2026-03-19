@@ -1,24 +1,25 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { cleanupProcessTree, getPgid } from "../../../src/tdd/cleanup";
+import { _cleanupDeps, cleanupProcessTree, getPgid } from "../../../src/tdd/cleanup";
 
-let originalSpawn: typeof Bun.spawn;
-let originalProcessKill: typeof process.kill;
+let originalSpawn: typeof _cleanupDeps.spawn;
+let originalSleep: typeof _cleanupDeps.sleep;
+let originalKill: typeof _cleanupDeps.kill;
 
 beforeEach(() => {
-  originalSpawn = Bun.spawn;
-  originalProcessKill = process.kill;
+  originalSpawn = _cleanupDeps.spawn;
+  originalSleep = _cleanupDeps.sleep;
+  originalKill = _cleanupDeps.kill;
 });
 
 afterEach(() => {
-  Bun.spawn = originalSpawn;
-  process.kill = originalProcessKill;
+  _cleanupDeps.spawn = originalSpawn;
+  _cleanupDeps.sleep = originalSleep;
+  _cleanupDeps.kill = originalKill;
 });
 
 describe("getPgid", () => {
   test("returns PGID for valid process", async () => {
-    // Mock ps command to return a PGID
-    // @ts-ignore — mocking global
-    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "ps" && cmd[1] === "-o" && cmd[2] === "pgid=") {
         return {
           exited: Promise.resolve(0),
@@ -27,16 +28,14 @@ describe("getPgid", () => {
         };
       }
       return originalSpawn(cmd, spawnOpts);
-    });
+    }) as any;
 
     const pgid = await getPgid(12345);
     expect(pgid).toBe(12345);
   });
 
   test("returns null for non-existent process", async () => {
-    // Mock ps command to fail
-    // @ts-ignore — mocking global
-    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "ps") {
         return {
           exited: Promise.resolve(1),
@@ -45,16 +44,14 @@ describe("getPgid", () => {
         };
       }
       return originalSpawn(cmd, spawnOpts);
-    });
+    }) as any;
 
     const pgid = await getPgid(99999);
     expect(pgid).toBeNull();
   });
 
   test("returns null for invalid ps output", async () => {
-    // Mock ps command to return non-numeric output
-    // @ts-ignore — mocking global
-    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "ps") {
         return {
           exited: Promise.resolve(0),
@@ -63,18 +60,16 @@ describe("getPgid", () => {
         };
       }
       return originalSpawn(cmd, spawnOpts);
-    });
+    }) as any;
 
     const pgid = await getPgid(12345);
     expect(pgid).toBeNull();
   });
 
   test("handles ps command error gracefully", async () => {
-    // Mock ps command to throw an error
-    // @ts-ignore — mocking global
-    Bun.spawn = mock(() => {
+    _cleanupDeps.spawn = mock(() => {
       throw new Error("ps command failed");
-    });
+    }) as any;
 
     const pgid = await getPgid(12345);
     expect(pgid).toBeNull();
@@ -85,9 +80,7 @@ describe("cleanupProcessTree", () => {
   test("cleans up process group with SIGTERM then SIGKILL", async () => {
     const killCalls: Array<{ pid: number; signal: string }> = [];
 
-    // Mock getPgid to return a valid PGID
-    // @ts-ignore — mocking global
-    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "ps") {
         return {
           exited: Promise.resolve(0),
@@ -96,34 +89,25 @@ describe("cleanupProcessTree", () => {
         };
       }
       return originalSpawn(cmd, spawnOpts);
-    });
+    }) as any;
 
-    // Mock process.kill to track calls
-    process.kill = mock((pid: number, signal?: string | number) => {
+    _cleanupDeps.kill = mock((pid: number, signal?: string | number) => {
       killCalls.push({ pid, signal: String(signal) });
       return true;
     }) as any;
 
-    // Mock Bun.sleep to avoid actual delays in tests
-    const originalSleep = Bun.sleep;
-    Bun.sleep = mock(async () => {}) as any;
+    _cleanupDeps.sleep = mock(async () => {}) as any;
 
-    try {
-      await cleanupProcessTree(12345);
+    await cleanupProcessTree(12345);
 
-      // Should have called kill twice: SIGTERM then SIGKILL
-      expect(killCalls.length).toBe(2);
-      expect(killCalls[0]).toEqual({ pid: -12345, signal: "SIGTERM" });
-      expect(killCalls[1]).toEqual({ pid: -12345, signal: "SIGKILL" });
-    } finally {
-      Bun.sleep = originalSleep;
-    }
+    // Should have called kill twice: SIGTERM then SIGKILL
+    expect(killCalls.length).toBe(2);
+    expect(killCalls[0]).toEqual({ pid: -12345, signal: "SIGTERM" });
+    expect(killCalls[1]).toEqual({ pid: -12345, signal: "SIGKILL" });
   });
 
   test("handles already-dead process gracefully", async () => {
-    // Mock getPgid to return null (process already dead)
-    // @ts-ignore — mocking global
-    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "ps") {
         return {
           exited: Promise.resolve(1),
@@ -132,10 +116,10 @@ describe("cleanupProcessTree", () => {
         };
       }
       return originalSpawn(cmd, spawnOpts);
-    });
+    }) as any;
 
     const killCalls: any[] = [];
-    process.kill = mock((pid: number, signal?: string | number) => {
+    _cleanupDeps.kill = mock((pid: number, signal?: string | number) => {
       killCalls.push({ pid, signal });
       return true;
     }) as any;
@@ -147,9 +131,7 @@ describe("cleanupProcessTree", () => {
   });
 
   test("handles ESRCH error when sending SIGTERM", async () => {
-    // Mock getPgid to return a valid PGID
-    // @ts-ignore — mocking global
-    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "ps") {
         return {
           exited: Promise.resolve(0),
@@ -158,11 +140,10 @@ describe("cleanupProcessTree", () => {
         };
       }
       return originalSpawn(cmd, spawnOpts);
-    });
+    }) as any;
 
-    // Mock process.kill to throw ESRCH on SIGTERM
     const killCalls: any[] = [];
-    process.kill = mock((pid: number, signal?: string | number) => {
+    _cleanupDeps.kill = mock((pid: number, signal?: string | number) => {
       killCalls.push({ pid, signal });
       const err = new Error("No such process") as NodeJS.ErrnoException;
       err.code = "ESRCH";
@@ -179,9 +160,7 @@ describe("cleanupProcessTree", () => {
   test("handles errors during SIGKILL gracefully", async () => {
     const killCalls: any[] = [];
 
-    // Mock getPgid to return a valid PGID
-    // @ts-ignore — mocking global
-    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "ps") {
         return {
           exited: Promise.resolve(0),
@@ -190,10 +169,9 @@ describe("cleanupProcessTree", () => {
         };
       }
       return originalSpawn(cmd, spawnOpts);
-    });
+    }) as any;
 
-    // Mock process.kill to succeed on SIGTERM, fail on SIGKILL
-    process.kill = mock((pid: number, signal?: string | number) => {
+    _cleanupDeps.kill = mock((pid: number, signal?: string | number) => {
       killCalls.push({ pid, signal });
       if (signal === "SIGKILL") {
         throw new Error("Process already exited");
@@ -201,26 +179,18 @@ describe("cleanupProcessTree", () => {
       return true;
     }) as any;
 
-    // Mock Bun.sleep to avoid delays
-    const originalSleep = Bun.sleep;
-    Bun.sleep = mock(async () => {}) as any;
+    _cleanupDeps.sleep = mock(async () => {}) as any;
 
-    try {
-      // Should not throw despite SIGKILL error
-      await cleanupProcessTree(12345);
+    // Should not throw despite SIGKILL error
+    await cleanupProcessTree(12345);
 
-      expect(killCalls.length).toBe(2);
-      expect(killCalls[0].signal).toBe("SIGTERM");
-      expect(killCalls[1].signal).toBe("SIGKILL");
-    } finally {
-      Bun.sleep = originalSleep;
-    }
+    expect(killCalls.length).toBe(2);
+    expect(killCalls[0].signal).toBe("SIGTERM");
+    expect(killCalls[1].signal).toBe("SIGKILL");
   });
 
   test("logs warning on unexpected cleanup error", async () => {
-    // Mock getPgid to return a valid PGID, then process.kill throws unexpected error
-    // @ts-ignore — mocking global
-    Bun.spawn = mock((cmd: string[], spawnOpts?: any) => {
+    _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "ps") {
         return {
           exited: Promise.resolve(0),
@@ -229,10 +199,9 @@ describe("cleanupProcessTree", () => {
         };
       }
       return originalSpawn(cmd, spawnOpts);
-    });
+    }) as any;
 
-    // Mock process.kill to throw unexpected error (not ESRCH)
-    process.kill = mock(() => {
+    _cleanupDeps.kill = mock(() => {
       const err = new Error("Unexpected error") as NodeJS.ErrnoException;
       err.code = "EUNKNOWN";
       throw err;

@@ -8,6 +8,9 @@
 
 import type { IsolationCheck } from "./types";
 
+/** Injectable deps for testability — mock _isolationDeps.spawn instead of global Bun.spawn */
+export const _isolationDeps = { spawn: Bun.spawn as typeof Bun.spawn };
+
 /** Common test directory patterns */
 const TEST_PATTERNS = [/^test\//, /^tests\//, /^__tests__\//, /\.spec\.\w+$/, /\.test\.\w+$/, /\.e2e-spec\.\w+$/];
 
@@ -26,7 +29,7 @@ export function isSourceFile(filePath: string): boolean {
 
 /** Get changed files from git diff */
 export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promise<string[]> {
-  const proc = Bun.spawn(["git", "diff", "--name-only", fromRef], {
+  const proc = _isolationDeps.spawn(["git", "diff", "--name-only", fromRef], {
     cwd: workdir,
     stdout: "pipe",
     stderr: "pipe",

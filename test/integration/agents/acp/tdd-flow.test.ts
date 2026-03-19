@@ -17,9 +17,11 @@ import type { AcpClient, AcpSession, AcpSessionResponse } from "../../../../src/
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { NaxConfig } from "../../../../src/config";
 import type { UserStory } from "../../../../src/prd";
+import { _isolationDeps } from "../../../../src/tdd/isolation";
 import { runFullSuiteGate } from "../../../../src/tdd/rectification-gate";
 import { _sessionRunnerDeps, runTddSession } from "../../../../src/tdd/session-runner";
 import { _gitDeps } from "../../../../src/utils/git";
+import { _executorDeps } from "../../../../src/verification/executor";
 
 const ACP_WORKDIR = `/tmp/nax-acp-test-${randomUUID()}`;
 
@@ -110,26 +112,20 @@ const config: NaxConfig = {
 // Git spawn mock — intercepts all git commands needed by runTddSession
 // ─────────────────────────────────────────────────────────────────────────────
 
-let originalSpawn: typeof Bun.spawn;
 let originalCreateClient: typeof _acpAdapterDeps.createClient;
 let originalSleep: typeof _acpAdapterDeps.sleep;
 let originalGitSpawn: typeof _gitDeps.spawn;
 let originalAutoCommit: typeof _sessionRunnerDeps.autoCommitIfDirty;
+let originalIsolationSpawn: typeof _isolationDeps.spawn;
+let originalExecutorSpawn: typeof _executorDeps.spawn;
+let originalSessionRunnerSpawn: typeof _sessionRunnerDeps.spawn;
 
 function mockGitSpawn(diffFileSequences: string[][] = []) {
   let revParseCount = 0;
   let diffCount = 0;
 
-  // @ts-ignore — mocking global for test isolation
-  Bun.spawn = mock((cmd: string[], spawnOpts?: unknown) => {
-    if (cmd[0] === "git" && cmd[1] === "rev-parse") {
-      revParseCount++;
-      return {
-        exited: Promise.resolve(0),
-        stdout: new Response(`ref-${revParseCount}\n`).body,
-        stderr: new Response("").body,
-      };
-    }
+  // Mock isolation checks (git diff)
+  _isolationDeps.spawn = mock((cmd: string[], spawnOpts?: unknown) => {
     if (cmd[0] === "git" && cmd[1] === "diff") {
       const files = diffFileSequences[diffCount] ?? [];
       diffCount++;
@@ -139,52 +135,67 @@ function mockGitSpawn(diffFileSequences: string[][] = []) {
         stderr: new Response("").body,
       };
     }
-    if (cmd[0] === "git" && cmd[1] === "status") {
+    return { exited: Promise.resolve(0), stdout: new Response("").body, stderr: new Response("").body };
+  }) as any;
+
+  // Mock git commands (rev-parse, status, commit, add, reset, clean)
+  const gitMock = mock((cmd: string[], spawnOpts?: unknown) => {
+    if (cmd[0] === "git" && cmd[1] === "rev-parse") {
+      if (cmd[2] === "--show-toplevel") {
+        return {
+          exited: Promise.resolve(0),
+          stdout: new Response(((spawnOpts as any)?.cwd ?? ACP_WORKDIR) + "\n").body,
+          stderr: new Response("").body,
+        };
+      }
+      revParseCount++;
       return {
         exited: Promise.resolve(0),
-        stdout: new Response("nothing to commit\n").body,
+        stdout: new Response(`ref-${revParseCount}\n`).body,
         stderr: new Response("").body,
       };
     }
-    if (cmd[0] === "git" && (cmd[1] === "commit" || cmd[1] === "add" || cmd[1] === "reset" || cmd[1] === "clean")) {
-      return {
-        exited: Promise.resolve(0),
-        stdout: new Response("").body,
-        stderr: new Response("").body,
-      };
-    }
-    // Shell commands (e.g., test runner in rectification gate)
-    if (
-      (cmd[0] === "/bin/sh" || cmd[0] === "/bin/bash" || cmd[0] === "/bin/zsh") &&
-      cmd[1] === "-c"
-    ) {
-      return {
-        pid: 9999,
-        exited: Promise.resolve(0),
-        stdout: new Response("1 pass, 0 fail\n").body,
-        stderr: new Response("").body,
-      };
-    }
-    return originalSpawn(cmd, spawnOpts as Parameters<typeof Bun.spawn>[1]);
-  });
+    return {
+      exited: Promise.resolve(0),
+      stdout: new Response("").body,
+      stderr: new Response("").body,
+    };
+  }) as any;
+
+  _gitDeps.spawn = gitMock;
+  _sessionRunnerDeps.spawn = gitMock;
+
+  // Mock test command execution
+  _executorDeps.spawn = mock((cmd: string[], spawnOpts?: unknown) => {
+    return {
+      pid: 9999,
+      exited: Promise.resolve(0),
+      stdout: new Response("1 pass, 0 fail\n").body,
+      stderr: new Response("").body,
+    };
+  }) as any;
 }
 
 beforeEach(() => {
-  originalSpawn = Bun.spawn;
   originalCreateClient = _acpAdapterDeps.createClient;
   originalSleep = _acpAdapterDeps.sleep;
   originalGitSpawn = _gitDeps.spawn;
   originalAutoCommit = _sessionRunnerDeps.autoCommitIfDirty;
+  originalIsolationSpawn = _isolationDeps.spawn;
+  originalExecutorSpawn = _executorDeps.spawn;
+  originalSessionRunnerSpawn = _sessionRunnerDeps.spawn;
   // Disable sleep delays in tests
   _acpAdapterDeps.sleep = mock(async (_ms: number) => {});
 });
 
 afterEach(() => {
-  Bun.spawn = originalSpawn;
   _acpAdapterDeps.createClient = originalCreateClient;
   _acpAdapterDeps.sleep = originalSleep;
   _gitDeps.spawn = originalGitSpawn;
   _sessionRunnerDeps.autoCommitIfDirty = originalAutoCommit;
+  _sessionRunnerDeps.spawn = originalSessionRunnerSpawn;
+  _isolationDeps.spawn = originalIsolationSpawn;
+  _executorDeps.spawn = originalExecutorSpawn;
   mock.restore();
 });
 
@@ -742,8 +753,8 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
     _acpAdapterDeps.createClient = mock(() => client);
 
     // Shell test command returns success
-    // @ts-ignore — mocking global
-    Bun.spawn = mock((cmd: string[], spawnOpts?: unknown) => {
+    
+    _executorDeps.spawn = mock((cmd: string[], spawnOpts?: unknown) => {
       if ((cmd[0] === "/bin/sh" || cmd[0] === "/bin/bash") && cmd[1] === "-c") {
         return {
           pid: 9999,
@@ -752,7 +763,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
           stderr: new Response("").body,
         };
       }
-      return originalSpawn(cmd, spawnOpts as Parameters<typeof Bun.spawn>[1]);
+      return { exited: Promise.resolve(0), stdout: new Response("").body, stderr: new Response("").body };
     });
 
     const adapter = new AcpAgentAdapter("claude");
@@ -780,8 +791,8 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
     });
 
     let testRunCount = 0;
-    // @ts-ignore — mocking global
-    Bun.spawn = mock((cmd: string[], spawnOpts?: unknown) => {
+    
+    _executorDeps.spawn = mock((cmd: string[], spawnOpts?: unknown) => {
       if (cmd[0] === "git" && cmd[1] === "rev-parse") {
         return {
           exited: Promise.resolve(0),
@@ -818,7 +829,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
           stderr: new Response("").body,
         };
       }
-      return originalSpawn(cmd, spawnOpts as Parameters<typeof Bun.spawn>[1]);
+      return { exited: Promise.resolve(0), stdout: new Response("").body, stderr: new Response("").body };
     });
 
     const adapter = new AcpAgentAdapter("claude");
@@ -846,8 +857,8 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
     });
 
     let testRunCount = 0;
-    // @ts-ignore — mocking global
-    Bun.spawn = mock((cmd: string[], spawnOpts?: unknown) => {
+    
+    _executorDeps.spawn = mock((cmd: string[], spawnOpts?: unknown) => {
       if (cmd[0] === "git" && cmd[1] === "rev-parse") {
         return {
           exited: Promise.resolve(0),
@@ -873,7 +884,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
           stderr: new Response("").body,
         };
       }
-      return originalSpawn(cmd, spawnOpts as Parameters<typeof Bun.spawn>[1]);
+      return { exited: Promise.resolve(0), stdout: new Response("").body, stderr: new Response("").body };
     });
 
     const adapter = new AcpAgentAdapter("claude");

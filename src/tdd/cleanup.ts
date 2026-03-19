@@ -7,6 +7,13 @@
 
 import { getLogger } from "../logger";
 
+/** Injectable deps for testability — mock _cleanupDeps instead of global Bun.spawn/process.kill */
+export const _cleanupDeps = {
+  spawn: Bun.spawn as typeof Bun.spawn,
+  sleep: Bun.sleep as typeof Bun.sleep,
+  kill: process.kill.bind(process) as typeof process.kill,
+};
+
 /**
  * Get process group ID (PGID) for a given process ID.
  *
@@ -24,7 +31,7 @@ import { getLogger } from "../logger";
 export async function getPgid(pid: number): Promise<number | null> {
   try {
     // Use ps to get PGID for the process
-    const proc = Bun.spawn(["ps", "-o", "pgid=", "-p", String(pid)], {
+    const proc = _cleanupDeps.spawn(["ps", "-o", "pgid=", "-p", String(pid)], {
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -74,7 +81,7 @@ export async function cleanupProcessTree(pid: number, gracePeriodMs = 3000): Pro
 
     // Send SIGTERM to all processes in the group (negative PGID)
     try {
-      process.kill(-pgid, "SIGTERM");
+      _cleanupDeps.kill(-pgid, "SIGTERM");
     } catch (error) {
       // ESRCH means no such process — already dead
       const err = error as NodeJS.ErrnoException;
@@ -85,7 +92,7 @@ export async function cleanupProcessTree(pid: number, gracePeriodMs = 3000): Pro
     }
 
     // Wait for graceful shutdown
-    await Bun.sleep(gracePeriodMs);
+    await _cleanupDeps.sleep(gracePeriodMs);
 
     // Re-check PGID before SIGKILL to prevent race condition
     // If the original process exited and a new process inherited its PID,
@@ -97,7 +104,7 @@ export async function cleanupProcessTree(pid: number, gracePeriodMs = 3000): Pro
     // 2. PGID hasn't changed (still the same process group)
     if (pgidAfterWait && pgidAfterWait === pgid) {
       try {
-        process.kill(-pgid, "SIGKILL");
+        _cleanupDeps.kill(-pgid, "SIGKILL");
       } catch {
         // Ignore errors — processes may have exited during the wait
       }

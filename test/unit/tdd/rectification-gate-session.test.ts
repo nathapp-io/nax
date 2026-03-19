@@ -1,17 +1,15 @@
 /**
  * Tests for rectification-gate.ts — session reuse across rectification attempts.
  *
- * Covers:
- * - All rectification attempts share the same acpSessionName
- * - keepSessionOpen=true for all attempts except the last
- * - keepSessionOpen=false (omitted) on the final attempt so the session closes
+ * Uses injectable _rectificationGateDeps instead of mock.module() to avoid
+ * permanent module replacement that contaminates other test files.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { AgentResult, AgentRunOptions } from "../../../src/agents/types";
 import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd";
-import { runFullSuiteGate } from "../../../src/tdd/rectification-gate";
+import { _rectificationGateDeps, runFullSuiteGate } from "../../../src/tdd/rectification-gate";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -68,44 +66,43 @@ function makeAgent(runResults: Partial<AgentResult>[] = []) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mock executeWithTimeout so tests don't spawn real processes
+// Mock injectable deps instead of using mock.module()
 // ─────────────────────────────────────────────────────────────────────────────
 
 let mockSuiteResults: Array<{ success: boolean; exitCode: number; output: string }> = [];
 let suiteCallCount = 0;
 
+let origDeps: typeof _rectificationGateDeps;
+
 beforeEach(() => {
   suiteCallCount = 0;
   mockSuiteResults = [];
-  mock.module("../../../src/verification", () => ({
-    executeWithTimeout: mock(async () => {
-      const r = mockSuiteResults[suiteCallCount] ?? { success: false, exitCode: 1, output: FAILING_OUTPUT };
-      suiteCallCount++;
-      return r;
-    }),
-    parseBunTestOutput: (output: string) => ({
-      failed: output.includes("34 fail") ? 34 : 0,
-      passed: 0,
-      failures: [{ file: "some.test.ts", testName: "some test", error: "Expected 1", stackTrace: [] }],
-    }),
-    shouldRetryRectification: (state: { attempt: number; currentFailures: number }, cfg: { maxRetries: number }) =>
+
+  origDeps = {
+    executeWithTimeout: _rectificationGateDeps.executeWithTimeout,
+    parseBunTestOutput: _rectificationGateDeps.parseBunTestOutput,
+    shouldRetryRectification: _rectificationGateDeps.shouldRetryRectification,
+  };
+
+  // Mock via injectable deps
+  _rectificationGateDeps.executeWithTimeout = mock(async () => {
+    const r = mockSuiteResults[suiteCallCount] ?? { success: false, exitCode: 1, output: FAILING_OUTPUT };
+    suiteCallCount++;
+    return r;
+  }) as any;
+  _rectificationGateDeps.parseBunTestOutput = mock((output: string) => ({
+    failed: output.includes("34 fail") ? 34 : 0,
+    passed: 0,
+    failures: [{ file: "some.test.ts", testName: "some test", error: "Expected 1", stackTrace: [] }],
+  })) as any;
+  _rectificationGateDeps.shouldRetryRectification = mock(
+    (state: { attempt: number; currentFailures: number }, cfg: { maxRetries: number }) =>
       state.attempt < cfg.maxRetries && state.currentFailures > 0,
-    type: "verification",
-  }));
-  mock.module("../../../src/utils/git", () => ({
-    autoCommitIfDirty: mock(async () => {}),
-    captureGitRef: mock(async () => "abc1234"),
-  }));
-  mock.module("../../../src/tdd/isolation", () => ({
-    verifyImplementerIsolation: mock(async () => ({ passed: true, violations: [] })),
-  }));
-  mock.module("../../../src/tdd/cleanup", () => ({
-    cleanupProcessTree: mock(async () => {}),
-  }));
+  ) as any;
 });
 
 afterEach(() => {
-  mock.restore();
+  Object.assign(_rectificationGateDeps, origDeps);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

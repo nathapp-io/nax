@@ -11,6 +11,9 @@ import { getLogger } from "../../logger";
 import type { IVerificationStrategy, VerifyContext, VerifyResult } from "../orchestrator-types";
 import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrator-types";
 
+/** Injectable deps for testability */
+export const _acceptanceDeps = { spawn: Bun.spawn as typeof Bun.spawn };
+
 function parseFailedACs(output: string): string[] {
   const failed: string[] = [];
   for (const line of output.split("\n")) {
@@ -51,7 +54,7 @@ export class AcceptanceStrategy implements IVerificationStrategy {
 
     const start = Date.now();
     const timeoutMs = ctx.timeoutSeconds * 1000;
-    const proc = Bun.spawn(["bun", "test", testPath], {
+    const proc = _acceptanceDeps.spawn(["bun", "test", testPath], {
       cwd: ctx.workdir,
       stdout: "pipe",
       stderr: "pipe",
