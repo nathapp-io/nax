@@ -32,11 +32,11 @@ export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promis
     stderr: "pipe",
   });
 
-  // Start reading stdout before waiting for exit to avoid deadlock or stream closure.
-  // Using Response(proc.stdout).text() is the Bun-native way to consume the stream.
-  const stdoutPromise = new Response(proc.stdout).text();
+  // Use Bun.readableStreamToText — more reliable than new Response(stream).text()
+  // with both real pipes and mocked ReadableStreams across Bun versions.
+  // Must read BEFORE awaiting proc.exited to avoid stream-closed-on-exit issues.
+  const output = await Bun.readableStreamToText(proc.stdout);
   await proc.exited;
-  const output = await stdoutPromise;
 
   return output.trim().split("\n").filter(Boolean);
 }

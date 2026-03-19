@@ -29,12 +29,14 @@ export async function getPgid(pid: number): Promise<number | null> {
       stderr: "pipe",
     });
 
+    // Read stdout BEFORE awaiting exit — stream may be closed after exit in Bun 1.3.9.
+    // Bun.readableStreamToText is more reliable than new Response(stream).text()
+    // with both real pipes and mocked streams.
+    const output = await Bun.readableStreamToText(proc.stdout);
     const exitCode = await proc.exited;
     if (exitCode !== 0) {
       return null;
     }
-
-    const output = await new Response(proc.stdout).text();
     const pgid = Number.parseInt(output.trim(), 10);
 
     return Number.isNaN(pgid) ? null : pgid;
