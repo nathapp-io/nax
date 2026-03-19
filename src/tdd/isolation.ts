@@ -32,9 +32,12 @@ export async function getChangedFiles(workdir: string, fromRef = "HEAD"): Promis
     stderr: "pipe",
   });
 
-  // Read stdout concurrently with proc.exited — sequential read after exit
-  // causes empty output in CI (stream already closed by the time we read it).
-  const [, output] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+  // Start reading stdout before waiting for exit to avoid deadlock or stream closure.
+  // Using Response(proc.stdout).text() is the Bun-native way to consume the stream.
+  const stdoutPromise = new Response(proc.stdout).text();
+  await proc.exited;
+  const output = await stdoutPromise;
+
   return output.trim().split("\n").filter(Boolean);
 }
 
