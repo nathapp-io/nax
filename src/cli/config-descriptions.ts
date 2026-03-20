@@ -209,4 +209,10 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "agent.protocol": "Protocol for agent communication: 'acp' | 'cli' (default: 'acp')",
   "agent.maxInteractionTurns":
     "Max turns in multi-turn interaction loop when interactionBridge is active (default: 10)",
+  // Testing
+  testing: "Hermetic test enforcement configuration (ENH-010)",
+  "testing.hermetic":
+    "Inject hermetic test requirement into prompts — never call real external services in tests (default: true)",
+  "testing.externalBoundaries": "Project-specific CLI tools/clients to mock (e.g. ['claude', 'acpx', 'redis'])",
+  "testing.mockGuidance": "Project-specific mocking guidance injected verbatim into the prompt",
 };

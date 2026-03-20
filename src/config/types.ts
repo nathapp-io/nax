@@ -51,6 +51,7 @@ export type {
   StorySizeGateConfig,
   TddConfig,
   TestCoverageConfig,
+  TestingConfig,
   AdaptiveRoutingConfig,
   AgentConfig,
 } from "./runtime-types";

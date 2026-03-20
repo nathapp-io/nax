@@ -44,7 +44,8 @@ export const promptStage: PipelineStage = {
         .stories(ctx.stories)
         .context(ctx.contextMarkdown)
         .constitution(ctx.constitution?.content)
-        .testCommand(effectiveConfig.quality?.commands?.test);
+        .testCommand(effectiveConfig.quality?.commands?.test)
+        .hermeticConfig(effectiveConfig.testing);
       prompt = await builder.build();
     } else {
       // Both test-after and tdd-simple use the tdd-simple prompt (RED/GREEN/REFACTOR)
@@ -54,7 +55,8 @@ export const promptStage: PipelineStage = {
         .story(ctx.story)
         .context(ctx.contextMarkdown)
         .constitution(ctx.constitution?.content)
-        .testCommand(effectiveConfig.quality?.commands?.test);
+        .testCommand(effectiveConfig.quality?.commands?.test)
+        .hermeticConfig(effectiveConfig.testing);
       prompt = await builder.build();
     }
 

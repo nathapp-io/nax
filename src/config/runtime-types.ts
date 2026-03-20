@@ -430,6 +430,25 @@ export interface DecomposeConfig {
   model: ModelTier;
 }
 
+/** Hermetic test enforcement configuration (ENH-010) */
+export interface TestingConfig {
+  /**
+   * When true (default), nax injects a hermetic test requirement into all code-writing prompts.
+   * Instructs the AI to mock all I/O boundaries and never call real external services in tests.
+   */
+  hermetic: boolean;
+  /**
+   * Project-specific external boundaries to mock (e.g. ["claude", "acpx", "redis", "grpc"]).
+   * Injected into the hermetic requirement section so the AI knows which project tools to mock.
+   */
+  externalBoundaries?: string[];
+  /**
+   * Project-specific mocking guidance injected verbatim into the prompt.
+   * E.g. "Use injectable deps for CLI spawning, ioredis-mock for Redis"
+   */
+  mockGuidance?: string;
+}
+
 /** Full nax configuration */
 export interface NaxConfig {
   /** Schema version */
@@ -476,6 +495,8 @@ export interface NaxConfig {
   decompose?: DecomposeConfig;
   /** Agent protocol settings (ACP-003) */
   agent?: AgentConfig;
+  /** Hermetic test enforcement settings (ENH-010) */
+  testing?: TestingConfig;
   /** Generate settings */
   generate?: GenerateConfig;
 }

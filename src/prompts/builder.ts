@@ -14,6 +14,7 @@
 import type { NaxConfig } from "../config/types";
 import type { UserStory } from "../prd";
 import { buildConventionsSection } from "./sections/conventions";
+import { buildHermeticSection } from "./sections/hermetic";
 import { buildIsolationSection } from "./sections/isolation";
 import { buildRoleTaskSection } from "./sections/role-task";
 import { buildBatchStorySection, buildStorySection } from "./sections/story";
@@ -33,6 +34,7 @@ export class PromptBuilder {
   private _workdir: string | undefined;
   private _loaderConfig: NaxConfig | undefined;
   private _testCommand: string | undefined;
+  private _hermeticConfig: { hermetic?: boolean; externalBoundaries?: string[]; mockGuidance?: string } | undefined;
 
   private constructor(role: PromptRole, options: PromptOptions = {}) {
     this._role = role;
@@ -79,6 +81,13 @@ export class PromptBuilder {
     return this;
   }
 
+  hermeticConfig(
+    config: { hermetic?: boolean; externalBoundaries?: string[]; mockGuidance?: string } | undefined,
+  ): PromptBuilder {
+    this._hermeticConfig = config;
+    return this;
+  }
+
   async build(): Promise<string> {
     const sections: string[] = [];
 
@@ -107,6 +116,16 @@ export class PromptBuilder {
     // (5) Isolation rules — non-overridable
     const isolation = this._options.isolation as string | undefined;
     sections.push(buildIsolationSection(this._role, isolation as "strict" | "lite" | undefined, this._testCommand));
+
+    // (5.5) Hermetic test requirement — injected when testing.hermetic = true (default)
+    if (this._hermeticConfig !== undefined && this._hermeticConfig.hermetic !== false) {
+      const hermeticSection = buildHermeticSection(
+        this._role,
+        this._hermeticConfig.externalBoundaries,
+        this._hermeticConfig.mockGuidance,
+      );
+      if (hermeticSection) sections.push(hermeticSection);
+    }
 
     // (6) Context markdown
     if (this._contextMd) {

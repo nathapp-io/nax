@@ -4,6 +4,7 @@
  * Non-overridable section builders for the PromptBuilder.
  */
 
+export { buildHermeticSection } from "./hermetic";
 export { buildIsolationSection } from "./isolation";
 export { buildRoleTaskSection } from "./role-task";
 export { buildStorySection } from "./story";

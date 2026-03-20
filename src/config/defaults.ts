@@ -211,4 +211,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
     maxRetries: 2,
     model: "balanced",
   },
+  testing: {
+    hermetic: true,
+  },
 };

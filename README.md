@@ -514,6 +514,36 @@ Isolation is verified automatically via `git diff` between sessions. Violations 
 
 ---
 
+## Hermetic Test Enforcement
+
+By default, nax instructs agents to write **hermetic tests** — tests that never invoke real external processes or connect to real services. This prevents flaky tests, unintended side effects, and accidental API calls during automated runs.
+
+The hermetic requirement is injected into all code-writing prompts (test-writer, implementer, tdd-simple, batch, single-session). It covers all I/O boundaries: HTTP/gRPC calls, CLI tool spawning (`Bun.spawn`/`exec`), database and cache clients, message queues, and file operations outside the test working directory.
+
+### Configuration
+
+```json
+{
+  "testing": {
+    "hermetic": true,
+    "externalBoundaries": ["claude", "acpx", "redis", "grpc"],
+    "mockGuidance": "Use injectable deps for CLI spawning, ioredis-mock for Redis"
+  }
+}
+```
+
+| Field | Type | Default | Description |
+|:------|:-----|:--------|:------------|
+| `hermetic` | `boolean` | `true` | Inject hermetic test requirement into prompts. Set `false` to allow real external calls. |
+| `externalBoundaries` | `string[]` | — | Project-specific CLI tools, clients, or services to mock (e.g. `["claude", "redis"]`). The AI uses this list to identify what to mock in your project. |
+| `mockGuidance` | `string` | — | Project-specific mocking instructions injected verbatim into the prompt (e.g. which mock libraries to use). |
+
+> **Tip:** `externalBoundaries` and `mockGuidance` complement `context.md`. nax provides the rule ("mock all I/O"), while `context.md` provides project-specific knowledge ("use `ioredis-mock` for Redis"). Use both for best results.
+
+> **Opt-out:** Set `testing.hermetic: false` if your project requires real integration calls (e.g. live database tests against a local dev container).
+
+---
+
 ## Story Decomposition
 
 When a story is too large (complex/expert with >6 acceptance criteria), nax can automatically decompose it into smaller sub-stories. This runs during the routing stage.
