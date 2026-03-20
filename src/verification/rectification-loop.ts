@@ -79,7 +79,11 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       break;
     }
 
-    const modelTier = story.routing?.modelTier || config.autoMode.escalation.tierOrder[0]?.tier || "balanced";
+    // story.routing.modelTier is not persisted (derived at runtime) — derive tier from
+    // persisted complexity via complexityRouting instead of falling back to tierOrder[0] (fast/haiku).
+    const complexity = story.routing?.complexity ?? "medium";
+    const modelTier =
+      config.autoMode.complexityRouting?.[complexity] || config.autoMode.escalation.tierOrder[0]?.tier || "balanced";
     const modelDef = resolveModel(config.models[modelTier]);
 
     const agentResult = await agent.run({

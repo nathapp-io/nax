@@ -37,6 +37,12 @@ function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
   return {
     autoMode: {
       defaultAgent: "claude",
+      complexityRouting: {
+        simple: "fast",
+        medium: "balanced",
+        complex: "powerful",
+        expert: "powerful",
+      },
       escalation: {
         tierOrder: [{ tier: "balanced" }],
       },
