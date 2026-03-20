@@ -121,6 +121,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     workdir: options.workdir,
     statusWriter: options.statusWriter,
     config: options.config,
+    agentGetFn: options.agentGetFn,
   });
 
   const { durationMs, runCompletedAt, finalCounts } = completionResult;

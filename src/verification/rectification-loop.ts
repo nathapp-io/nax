@@ -13,6 +13,7 @@ import { resolveModel } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { parseBunTestOutput } from "../execution/test-output-parser";
 import { getSafeLogger } from "../logger";
+import type { AgentGetFn } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
 import { type RectificationState, createRectificationPrompt, shouldRetryRectification } from "./rectification";
@@ -27,6 +28,8 @@ export interface RectificationLoopOptions {
   testOutput: string;
   promptPrefix?: string;
   featureName?: string;
+  /** Protocol-aware agent resolver (ACP wiring). Falls back to static getAgent when absent. */
+  agentGetFn?: AgentGetFn;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -40,7 +43,8 @@ export const _rectificationDeps = {
 
 /** Run the rectification retry loop. Returns true if all failures were fixed. */
 export async function runRectificationLoop(opts: RectificationLoopOptions): Promise<boolean> {
-  const { config, workdir, story, testCommand, timeoutSeconds, testOutput, promptPrefix, featureName } = opts;
+  const { config, workdir, story, testCommand, timeoutSeconds, testOutput, promptPrefix, featureName, agentGetFn } =
+    opts;
   const logger = getSafeLogger();
   const rectificationConfig = config.execution.rectification;
   const testSummary = parseBunTestOutput(testOutput);
@@ -69,7 +73,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
     let rectificationPrompt = createRectificationPrompt(testSummary.failures, story, rectificationConfig);
     if (promptPrefix) rectificationPrompt = `${promptPrefix}\n\n${rectificationPrompt}`;
 
-    const agent = _rectificationDeps.getAgent(config.autoMode.defaultAgent);
+    const agent = (agentGetFn ?? _rectificationDeps.getAgent)(config.autoMode.defaultAgent);
     if (!agent) {
       logger?.error("rectification", "Agent not found, cannot retry");
       break;

@@ -15,6 +15,7 @@ import { getSafeLogger } from "../../logger";
 import type { StoryMetrics } from "../../metrics";
 import { saveRunMetrics } from "../../metrics";
 import { pipelineEventBus } from "../../pipeline/event-bus";
+import type { AgentGetFn } from "../../pipeline/types";
 import { countStories, isComplete, isStalled } from "../../prd";
 import type { PRD } from "../../prd";
 import type { StatusWriter } from "../status-writer";
@@ -45,6 +46,8 @@ export interface RunCompletionOptions {
   hooksConfig?: HooksConfig;
   /** Whether the run used sequential (non-parallel) execution. Defaults to true. */
   isSequential?: boolean;
+  /** Protocol-aware agent resolver (ACP wiring). Falls back to static getAgent when absent. */
+  agentGetFn?: AgentGetFn;
 }
 
 export interface RunCompletionResult {
@@ -120,6 +123,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
         config,
         prd,
         workdir,
+        agentGetFn: options.agentGetFn,
       });
 
       logger?.info("regression", "Deferred regression gate completed", {

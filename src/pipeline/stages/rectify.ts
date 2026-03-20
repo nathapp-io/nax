@@ -69,6 +69,7 @@ export const rectifyStage: PipelineStage = {
       testCommand,
       timeoutSeconds: effectiveConfig.execution.verificationTimeoutSeconds,
       testOutput,
+      agentGetFn: ctx.agentGetFn,
     });
 
     pipelineEventBus.emit({

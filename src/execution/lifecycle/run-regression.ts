@@ -10,6 +10,7 @@
 
 import type { NaxConfig } from "../../config";
 import { getSafeLogger } from "../../logger";
+import type { AgentGetFn } from "../../pipeline/types";
 import type { PRD, UserStory } from "../../prd";
 import { countStories } from "../../prd";
 import { hasCommitsForStory } from "../../utils/git";
@@ -33,6 +34,8 @@ export interface DeferredRegressionOptions {
   config: NaxConfig;
   prd: PRD;
   workdir: string;
+  /** Protocol-aware agent resolver (ACP wiring). Falls back to static getAgent when absent. */
+  agentGetFn?: AgentGetFn;
 }
 
 export interface DeferredRegressionResult {
@@ -81,7 +84,7 @@ async function findResponsibleStory(
  */
 export async function runDeferredRegression(options: DeferredRegressionOptions): Promise<DeferredRegressionResult> {
   const logger = getSafeLogger();
-  const { config, prd, workdir } = options;
+  const { config, prd, workdir, agentGetFn } = options;
 
   // Check if regression gate is deferred
   const regressionMode = config.execution.regressionGate?.mode ?? "deferred";
@@ -256,6 +259,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
         timeoutSeconds,
         testOutput: fullSuiteResult.output,
         promptPrefix: `# DEFERRED REGRESSION: Full-Suite Failures\n\nYour story ${story.id} broke tests in the full suite. Fix these regressions.`,
+        agentGetFn,
       });
 
       if (fixed) {
