@@ -12,6 +12,7 @@
     "build": "bun build bin/nax.ts --outdir dist --target bun --define \"GIT_COMMIT=\\\"$(git rev-parse --short HEAD)\\\"\"",
     "typecheck": "bun x tsc --noEmit",
     "lint": "bun x biome check src/ bin/",
+    "release": "bun scripts/release.ts",
     "test": "CI=1 NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000",
     "test:watch": "CI=1 bun test --watch",
     "test:unit": "CI=1 NAX_SKIP_PRECHECK=1 bun test ./test/unit/ --timeout=60000",
