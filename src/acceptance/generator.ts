@@ -105,8 +105,7 @@ Before writing any tests, examine the project to understand:
 2. **Existing test patterns** — read 1-2 existing test files to understand import style, describe/test/it conventions, and available helpers
 3. **Project structure** — identify relevant source directories to determine correct import or load paths
 
-PROJECT FILE TREE:
-${options.codebaseContext}${frameworkOverrideLine}
+${frameworkOverrideLine}
 
 ## Step 3: Generate the Acceptance Test File
 
@@ -236,8 +235,6 @@ Before writing any tests, examine the project to understand:
 2. **Existing test patterns** — read 1-2 existing test files to understand import style, describe/test/it conventions, and available helpers
 3. **Project structure** — identify relevant source directories to determine correct import or load paths
 
-PROJECT FILE TREE:
-${codebaseContext}
 
 ## Step 3: Generate the Acceptance Test File
 

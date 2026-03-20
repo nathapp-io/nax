@@ -103,7 +103,6 @@ describe("buildAcceptanceTestPrompt", () => {
     expect(prompt).toContain("AC-1: handles empty input");
     expect(prompt).toContain("AC-2: validates email format");
     expect(prompt).toContain('"auth"');
-    expect(prompt).toContain("File tree:");
   });
 
   test("formats prompt with correct structure", () => {
@@ -111,7 +110,6 @@ describe("buildAcceptanceTestPrompt", () => {
 
     const prompt = buildAcceptanceTestPrompt(criteria, "feature", "context");
 
-    expect(prompt).toContain("PROJECT FILE TREE:");
     expect(prompt).toContain("ACCEPTANCE CRITERIA:");
     expect(prompt).toContain("One test per AC");
     expect(prompt).toContain("NEVER use placeholder assertions");

@@ -17,34 +17,6 @@ import { resolveModel } from "../../config";
 import type { UserStory } from "../../prd/types";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
-const SKIP_DIRS = new Set(["node_modules", ".git", "dist", ".next", "build", "coverage", ".turbo", ".cache"]);
-
-async function buildWorkdirFileTree(workdir: string, maxDepth = 4): Promise<string> {
-  const lines: string[] = [];
-
-  async function walk(dir: string, depth: number, prefix: string): Promise<void> {
-    if (depth > maxDepth) return;
-    const { readdir } = await import("node:fs/promises");
-    let entries: import("node:fs").Dirent[];
-    try {
-      entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    entries.sort((a, b) => a.name.localeCompare(b.name));
-    for (const entry of entries) {
-      if (SKIP_DIRS.has(entry.name)) continue;
-      lines.push(`${prefix}${entry.name}`);
-      if (entry.isDirectory()) {
-        await walk(path.join(dir, entry.name), depth + 1, `${prefix}  `);
-      }
-    }
-  }
-
-  await walk(workdir, 1, "");
-  return lines.join("\n");
-}
-
 /**
  * Injectable dependencies for acceptance-setup stage.
  * Allows tests to mock bun test execution, file I/O, and LLM calls.
@@ -113,14 +85,12 @@ export const acceptanceSetupStage: PipelineStage = {
       const { getAgent } = await import("../../agents");
       const agent = (ctx.agentGetFn ?? getAgent)(ctx.config.autoMode.defaultAgent);
 
-      const codebaseContext = await buildWorkdirFileTree(ctx.workdir);
-
       let refinedCriteria: RefinedCriterion[];
 
       if (ctx.config.acceptance.refinement) {
         refinedCriteria = await _acceptanceSetupDeps.refine(allCriteria, {
           storyId: ctx.prd.userStories[0]?.id ?? "US-001",
-          codebaseContext,
+          codebaseContext: "",
           config: ctx.config,
           testStrategy: ctx.config.acceptance.testStrategy,
           testFramework: ctx.config.acceptance.testFramework,
@@ -140,7 +110,7 @@ export const acceptanceSetupStage: PipelineStage = {
         featureName: ctx.prd.feature,
         workdir: ctx.workdir,
         featureDir: ctx.featureDir,
-        codebaseContext,
+        codebaseContext: "",
         modelTier: ctx.config.acceptance.model ?? "fast",
         modelDef: resolveModel(ctx.config.models[ctx.config.acceptance.model ?? "fast"]),
         config: ctx.config,

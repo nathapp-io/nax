@@ -346,7 +346,7 @@ describe("generateFromPRD — uses refined criterion text", () => {
     expect(capturedPrompt).toContain("Concrete refined assertion: function returns array of length 3");
   });
 
-  test("prompt sent to adapter.complete() contains codebase context", async () => {
+  test("prompt sent to adapter.complete() contains 3-step structure", async () => {
     const story = makeUserStory();
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
@@ -360,7 +360,10 @@ describe("generateFromPRD — uses refined criterion text", () => {
 
     await generateFromPRD([story], criteria, options);
 
-    expect(capturedPrompt).toContain(options.codebaseContext);
+    expect(capturedPrompt).toContain("Step 1");
+    expect(capturedPrompt).toContain("Step 2");
+    expect(capturedPrompt).toContain("Step 3");
+    expect(capturedPrompt).toContain("NEVER use placeholder assertions");
   });
 
   test("prompt sent to adapter.complete() contains feature name", async () => {
