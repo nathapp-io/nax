@@ -38,7 +38,10 @@ export async function checkGitRepoExists(workdir: string): Promise<Check> {
  */
 const NAX_RUNTIME_PATTERNS = [
   /^.{2} nax\.lock$/,
+  /^.{2} nax\/$/,
   /^.{2} nax\/metrics\.json$/,
+  /^.{2} nax\/features\/$/,
+  /^.{2} nax\/features\/[^/]+\/$/,
   /^.{2} nax\/features\/[^/]+\/status\.json$/,
   /^.{2} nax\/features\/[^/]+\/prd\.json$/,
   /^.{2} nax\/features\/[^/]+\/runs\//,
