@@ -14,7 +14,7 @@
 import { describe, expect, test } from "bun:test";
 import { applyDecomposition } from "../../../src/decompose/apply";
 import type { DecomposeResult, SubStory } from "../../../src/decompose/types";
-import { countStories, getNextStory } from "../../../src/prd";
+import { countStories, getNextStory, markStoryPassed } from "../../../src/prd";
 import type { PRD, StoryStatus, UserStory } from "../../../src/prd";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -243,5 +243,109 @@ describe("countStories — includes decomposed", () => {
     const prd = makePRD([makeStory("US-001", decomposedStatus), makeStory("US-002", "pending")]);
     const counts = countStories(prd);
     expect(counts.pending).toBe(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEP-001: Decomposed parent promotion unblocks dependents
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("DEP-001: decomposed parent promoted when all sub-stories pass", () => {
+  function makePRDWithDecomposition() {
+    // US-001 decomposed into US-001-1 and US-001-2
+    // US-006 depends on US-001
+    const prd: PRD = {
+      userStories: [
+        {
+          id: "US-001",
+          title: "Big story",
+          description: "Decomposed parent",
+          acceptanceCriteria: [],
+          tags: [],
+          dependencies: [],
+          status: "decomposed",
+          passes: false,
+          escalations: [],
+          attempts: 0,
+        },
+        {
+          id: "US-001-1",
+          title: "Sub-story 1",
+          description: "",
+          acceptanceCriteria: [],
+          tags: [],
+          dependencies: [],
+          status: "pending",
+          passes: false,
+          escalations: [],
+          attempts: 0,
+          parentStoryId: "US-001",
+        },
+        {
+          id: "US-001-2",
+          title: "Sub-story 2",
+          description: "",
+          acceptanceCriteria: [],
+          tags: [],
+          dependencies: ["US-001-1"],
+          status: "pending",
+          passes: false,
+          escalations: [],
+          attempts: 0,
+          parentStoryId: "US-001",
+        },
+        {
+          id: "US-006",
+          title: "Depends on US-001",
+          description: "",
+          acceptanceCriteria: [],
+          tags: [],
+          dependencies: ["US-001"],
+          status: "pending",
+          passes: false,
+          escalations: [],
+          attempts: 0,
+        },
+      ],
+      version: "1.0.0",
+      projectName: "test",
+      description: "test",
+      technicalContext: "",
+    };
+    return prd;
+  }
+
+  test("parent remains decomposed while only partial sub-stories have passed", () => {
+    const prd = makePRDWithDecomposition();
+    markStoryPassed(prd, "US-001-1");
+    const parent = prd.userStories.find((s) => s.id === "US-001")!;
+    expect(parent.status).toBe("decomposed");
+    expect(parent.passes).toBe(false);
+  });
+
+  test("parent promoted to passed when ALL sub-stories pass", () => {
+    const prd = makePRDWithDecomposition();
+    markStoryPassed(prd, "US-001-1");
+    markStoryPassed(prd, "US-001-2");
+    const parent = prd.userStories.find((s) => s.id === "US-001")!;
+    expect(parent.status).toBe("passed");
+    expect(parent.passes).toBe(true);
+  });
+
+  test("dependent story (US-006) becomes eligible after parent promoted", () => {
+    const prd = makePRDWithDecomposition();
+    markStoryPassed(prd, "US-001-1");
+    markStoryPassed(prd, "US-001-2");
+    // US-001 should now be passed, unblocking US-006
+    const next = getNextStory(prd);
+    expect(next?.id).toBe("US-006");
+  });
+
+  test("dependent story blocked while parent still decomposed", () => {
+    const prd = makePRDWithDecomposition();
+    markStoryPassed(prd, "US-001-1"); // only partial
+    const next = getNextStory(prd);
+    // US-001-2 has dep on US-001-1, so it should be next — NOT US-006
+    expect(next?.id).toBe("US-001-2");
   });
 });

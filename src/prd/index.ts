@@ -165,6 +165,21 @@ export function markStoryPassed(prd: PRD, storyId: string): void {
     story.passes = true;
     story.status = "passed";
   }
+
+  // If this was a sub-story, check if all siblings have passed — if so, promote the
+  // decomposed parent to 'passed' so that stories depending on it can unblock (DEP-001).
+  const parentId = story?.parentStoryId;
+  if (parentId) {
+    const parent = prd.userStories.find((s) => s.id === parentId);
+    if (parent && parent.status === "decomposed") {
+      const siblings = prd.userStories.filter((s) => s.parentStoryId === parentId);
+      const allSiblingsPassed = siblings.length > 0 && siblings.every((s) => s.passes || s.status === "passed");
+      if (allSiblingsPassed) {
+        parent.passes = true;
+        parent.status = "passed";
+      }
+    }
+  }
 }
 
 /** Mark a story as failed */
