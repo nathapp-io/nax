@@ -397,6 +397,35 @@ Config is layered — project overrides global:
 }
 ```
 
+### Shell Operators in Commands
+
+Review commands (`lint`, `typecheck`) are executed directly via `Bun.spawn` — **not** through a shell. This means shell operators like `&&`, `||`, `;`, and `|` are passed as literal arguments and will not work as expected.
+
+**❌ This will NOT work:**
+```json
+"typecheck": "bun run build && bun run typecheck"
+```
+
+**✅ Workaround — wrap in a `package.json` script:**
+```json
+// package.json
+"scripts": {
+  "build-and-check": "bun run build && bun run typecheck"
+}
+```
+```json
+// nax/config.json
+"quality": {
+  "commands": {
+    "typecheck": "bun run build-and-check"
+  }
+}
+```
+
+This limitation applies to all `quality.commands` entries (`test`, `lint`, `typecheck`, `lintFix`, `formatFix`).
+
+---
+
 ### Scoped Test Command
 
 By default, nax runs scoped tests (per-story verification) by appending discovered test files to the `test` command. This can produce incorrect commands when the base command includes a directory path (e.g. `bun test test/`), since the path is not replaced — it is appended alongside it.
