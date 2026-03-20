@@ -262,6 +262,10 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
           await acceptanceSetupStage.execute(acceptanceContext);
           const newContent = await Bun.file(testPath).text();
           if (isStubTestFile(newContent)) {
+            logger?.error(
+              "acceptance",
+              "Acceptance test generation failed after retry — manual implementation required",
+            );
             return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
           }
         }
