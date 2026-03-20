@@ -344,3 +344,54 @@ describe("validatePlanOutput — invalid JSON parse errors (AC-8)", () => {
     expect(errorMessage.toLowerCase()).toMatch(/json|parse/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// ENH-006: analysis field and contextFiles per story
+// ---------------------------------------------------------------------------
+
+describe("validatePlanOutput — ENH-006 analysis and contextFiles", () => {
+  test("preserves top-level analysis field when present", () => {
+    const input = makeInput([makeStory()]);
+    const prd = validatePlanOutput({ ...input, analysis: "Codebase analysis: auth uses passport-jwt" }, "feat", "feat/feat");
+    expect(prd.analysis).toBe("Codebase analysis: auth uses passport-jwt");
+  });
+
+  test("trims whitespace from analysis field", () => {
+    const input = makeInput([makeStory()]);
+    const prd = validatePlanOutput({ ...input, analysis: "  some analysis  " }, "feat", "feat/feat");
+    expect(prd.analysis).toBe("some analysis");
+  });
+
+  test("omits analysis field when not present", () => {
+    const prd = validatePlanOutput(makeInput(), "feat", "feat/feat");
+    expect(prd.analysis).toBeUndefined();
+  });
+
+  test("omits analysis field when empty string", () => {
+    const prd = validatePlanOutput({ ...makeInput(), analysis: "  " }, "feat", "feat/feat");
+    expect(prd.analysis).toBeUndefined();
+  });
+
+  test("preserves contextFiles on story when present", () => {
+    const story = makeStory({ contextFiles: ["src/auth/auth.module.ts", "src/auth/auth.service.ts"] });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0].contextFiles).toEqual(["src/auth/auth.module.ts", "src/auth/auth.service.ts"]);
+  });
+
+  test("filters non-string and empty entries from contextFiles", () => {
+    const story = makeStory({ contextFiles: ["src/auth.ts", "", 42, null, "src/app.module.ts"] });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0].contextFiles).toEqual(["src/auth.ts", "src/app.module.ts"]);
+  });
+
+  test("omits contextFiles when not present on story", () => {
+    const prd = validatePlanOutput(makeInput([makeStory()]), "feat", "feat/feat");
+    expect(prd.userStories[0].contextFiles).toBeUndefined();
+  });
+
+  test("omits contextFiles when empty array", () => {
+    const story = makeStory({ contextFiles: [] });
+    const prd = validatePlanOutput(makeInput([story]), "feat", "feat/feat");
+    expect(prd.userStories[0].contextFiles).toBeUndefined();
+  });
+});

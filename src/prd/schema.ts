@@ -171,6 +171,12 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
     workdir = rawWorkdir;
   }
 
+  // contextFiles — optional array of relative file paths from LLM analysis
+  const rawContextFiles = s.contextFiles;
+  const contextFiles: string[] = Array.isArray(rawContextFiles)
+    ? (rawContextFiles as unknown[]).filter((f): f is string => typeof f === "string" && f.trim() !== "")
+    : [];
+
   return {
     id,
     title: title.trim(),
@@ -189,6 +195,7 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
       reasoning: "validated from LLM output",
     },
     ...(workdir !== undefined ? { workdir } : {}),
+    ...(contextFiles.length > 0 ? { contextFiles } : {}),
   };
 }
 
@@ -256,5 +263,6 @@ export function validatePlanOutput(raw: unknown, feature: string, branch: string
     createdAt: typeof obj.createdAt === "string" ? obj.createdAt : now,
     updatedAt: now,
     userStories,
+    ...(typeof obj.analysis === "string" && obj.analysis.trim() !== "" ? { analysis: obj.analysis.trim() } : {}),
   };
 }
