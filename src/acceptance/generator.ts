@@ -108,7 +108,7 @@ IMPORTANT: Output raw TypeScript code only. Do NOT use markdown code fences (\`\
 
   logger.info("acceptance", "Generating tests from PRD refined criteria", { count: refinedCriteria.length });
 
-  const rawOutput = await _generatorPRDDeps.adapter.complete(prompt, {
+  const rawOutput = await (options.adapter ?? _generatorPRDDeps.adapter).complete(prompt, {
     model: options.modelDef.model,
     config: options.config,
   });
