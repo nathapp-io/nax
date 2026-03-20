@@ -84,7 +84,7 @@ export async function generateFromPRD(
 
   const strategyInstructions = buildStrategyInstructions(options.testStrategy, options.testFramework);
 
-  const prompt = `You are a test engineer. Generate acceptance tests for the "${options.featureName}" feature based on the refined acceptance criteria below.
+  const basePrompt = `You are a test engineer. Generate acceptance tests for the "${options.featureName}" feature based on the refined acceptance criteria below.
 
 CODEBASE CONTEXT:
 ${options.codebaseContext}
@@ -92,11 +92,11 @@ ${options.codebaseContext}
 ACCEPTANCE CRITERIA (refined):
 ${criteriaList}
 
-${strategyInstructions}Generate a complete acceptance.test.ts file using bun:test framework. Each AC maps to exactly one test named "AC-N: <description>".
+${strategyInstructions}Generate a complete acceptance.test.ts file. Each AC maps to exactly one test named "AC-N: <description>".
 
 Structure example (do NOT wrap in markdown fences — output raw TypeScript only):
 
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "<test-framework>";
 
 describe("${options.featureName} - Acceptance Tests", () => {
   test("AC-1: <description>", async () => {
@@ -106,11 +106,17 @@ describe("${options.featureName} - Acceptance Tests", () => {
 
 IMPORTANT: Output raw TypeScript code only. Do NOT use markdown code fences (\`\`\`typescript or \`\`\`). Start directly with the import statement.`;
 
+  const prompt = options.testFramework
+    ? `${basePrompt}\n[FRAMEWORK OVERRIDE: Use ${options.testFramework} as the test framework regardless of what you detect.]`
+    : basePrompt;
+
   logger.info("acceptance", "Generating tests from PRD refined criteria", { count: refinedCriteria.length });
 
   const rawOutput = await (options.adapter ?? _generatorPRDDeps.adapter).complete(prompt, {
     model: options.modelDef.model,
     config: options.config,
+    timeoutMs: options.config?.acceptance?.timeoutMs ?? 1800000,
+    workdir: options.workdir,
   });
   const testCode = extractTestCode(rawOutput);
 
@@ -313,6 +319,8 @@ export async function generateAcceptanceTests(
     const output = await adapter.complete(prompt, {
       model: options.modelDef.model,
       config: options.config,
+      timeoutMs: options.config?.acceptance?.timeoutMs ?? 1800000,
+      workdir: options.workdir,
     });
 
     // Extract test code from output

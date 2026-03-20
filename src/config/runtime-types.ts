@@ -262,6 +262,8 @@ export interface AcceptanceConfig {
   testStrategy?: AcceptanceTestStrategy;
   /** Test framework for acceptance tests (default: auto-detect) */
   testFramework?: string;
+  /** Timeout for acceptance test generation in milliseconds (default: 1800000 = 30 min) */
+  timeoutMs: number;
 }
 
 /** Optimizer config (v0.10) */
