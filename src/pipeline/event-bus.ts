@@ -135,6 +135,13 @@ export interface StoryPausedEvent {
   cost: number;
 }
 
+export interface StoryDecomposedEvent {
+  type: "story:decomposed";
+  storyId: string;
+  story: UserStory;
+  subStoryCount: number;
+}
+
 export interface RunResumedEvent {
   type: "run:resumed";
   feature: string;
@@ -163,7 +170,8 @@ export type PipelineEvent =
   | RunPausedEvent
   | StoryPausedEvent
   | RunResumedEvent
-  | RunErroredEvent;
+  | RunErroredEvent
+  | StoryDecomposedEvent;
 
 export type PipelineEventType = PipelineEvent["type"];
 

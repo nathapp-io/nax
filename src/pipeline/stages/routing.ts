@@ -216,7 +216,11 @@ export const routingStage: PipelineStage = {
               await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
             }
             logger.info("routing", `Story ${ctx.story.id} decomposed into ${result.subStories.length} substories`);
-            return { action: "skip", reason: `Decomposed into ${result.subStories.length} substories` };
+            return {
+              action: "decomposed",
+              reason: `Decomposed into ${result.subStories.length} substories`,
+              subStoryCount: result.subStories.length,
+            };
           }
           logger.warn("routing", `Story ${ctx.story.id} decompose failed after retries — continuing with original`, {
             errors: result.validation.errors,
@@ -236,7 +240,11 @@ export const routingStage: PipelineStage = {
                 await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
               }
               logger.info("routing", `Story ${ctx.story.id} decomposed into ${result.subStories.length} substories`);
-              return { action: "skip", reason: `Decomposed into ${result.subStories.length} substories` };
+              return {
+                action: "decomposed",
+                reason: `Decomposed into ${result.subStories.length} substories`,
+                subStoryCount: result.subStories.length,
+              };
             }
             logger.warn("routing", `Story ${ctx.story.id} decompose failed after retries — continuing with original`, {
               errors: result.validation.errors,

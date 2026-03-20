@@ -27,6 +27,8 @@ export interface IterationResult {
   prdDirty: boolean;
   finalAction?: string;
   reason?: string;
+  /** Set when finalAction === "decomposed" — number of sub-stories created */
+  subStoryCount?: number;
 }
 
 export async function runIteration(
@@ -146,6 +148,7 @@ export async function runIteration(
     prdDirty: r.prdDirty,
     finalAction: pipelineResult.finalAction,
     reason: pipelineResult.reason,
+    subStoryCount: pipelineResult.subStoryCount,
   };
 }
 

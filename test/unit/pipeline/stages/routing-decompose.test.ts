@@ -321,8 +321,11 @@ describe("routingStage - auto trigger mode", () => {
       // PRD must be mutated and saved
       expect(applyMock).toHaveBeenCalledWith(ctx.prd, expect.objectContaining({ subStories: expect.any(Array) }));
       expect(saveMock).toHaveBeenCalled();
-      // Signal runner to skip original story so it picks up first substory
-      expect(result.action).toBe("skip");
+      // Signal runner that story was decomposed (not a skip — doesn't consume an iteration)
+      expect(result.action).toBe("decomposed");
+      if (result.action === "decomposed") {
+        expect(result.subStoryCount).toBeGreaterThan(0);
+      }
     } finally {
       restoreDeps(deps, origDeps);
     }
@@ -431,7 +434,10 @@ describe("routingStage - confirm trigger mode", () => {
       expect(checkOversizedMock).toHaveBeenCalled();
       expect(runDecomposeMock).toHaveBeenCalled();
       expect(applyMock).toHaveBeenCalled();
-      expect(result.action).toBe("skip");
+      expect(result.action).toBe("decomposed");
+      if (result.action === "decomposed") {
+        expect(result.subStoryCount).toBeGreaterThan(0);
+      }
     } finally {
       restoreDeps(deps, origDeps);
     }

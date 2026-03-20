@@ -17,9 +17,11 @@ export interface PipelineRunResult {
   /** Whether the pipeline completed successfully (reached the end) */
   success: boolean;
   /** Final action taken */
-  finalAction: "complete" | "skip" | "fail" | "escalate" | "pause";
+  finalAction: "complete" | "skip" | "decomposed" | "fail" | "escalate" | "pause";
   /** Reason for non-complete outcomes */
   reason?: string;
+  /** Number of sub-stories created (only set when finalAction === "decomposed") */
+  subStoryCount?: number;
   /** Stage where the pipeline stopped (if not completed) */
   stoppedAtStage?: string;
   /** Updated context after pipeline execution */
@@ -81,6 +83,16 @@ export async function runPipeline(
 
       case "skip":
         return { success: false, finalAction: "skip", reason: result.reason, stoppedAtStage: stage.name, context };
+
+      case "decomposed":
+        return {
+          success: false,
+          finalAction: "decomposed",
+          reason: result.reason,
+          subStoryCount: result.subStoryCount,
+          stoppedAtStage: stage.name,
+          context,
+        };
 
       case "fail":
         return { success: false, finalAction: "fail", reason: result.reason, stoppedAtStage: stage.name, context };

@@ -149,6 +149,8 @@ export type StageAction =
   | { action: "continue"; cost?: number }
   /** Skip this story (mark as skipped, don't run further stages) */
   | { action: "skip"; reason: string; cost?: number }
+  /** Story was decomposed into sub-stories — don't consume an iteration, emit story:decomposed event */
+  | { action: "decomposed"; reason: string; subStoryCount: number; cost?: number }
   /** Mark story as failed (don't run further stages) */
   | { action: "fail"; reason: string; cost?: number }
   /** Escalate to a higher tier and retry the pipeline */

@@ -74,4 +74,6 @@ export interface HookContext {
   failedTests?: number;
   /** Stories affected by regression failure (on-final-regression-fail) */
   affectedStories?: string[];
+  /** Number of sub-stories created (on-story-complete with status "decomposed") */
+  subStoryCount?: number;
 }
