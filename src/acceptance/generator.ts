@@ -82,33 +82,46 @@ export async function generateFromPRD(
 
   const criteriaList = refinedCriteria.map((c, i) => `AC-${i + 1}: ${c.refined}`).join("\n");
 
-  const strategyInstructions = buildStrategyInstructions(options.testStrategy, options.testFramework);
+  const frameworkOverrideLine = options.testFramework
+    ? `\n[FRAMEWORK OVERRIDE: Use ${options.testFramework} as the test framework regardless of what you detect.]`
+    : "";
 
-  const basePrompt = `You are a test engineer. Generate acceptance tests for the "${options.featureName}" feature based on the refined acceptance criteria below.
+  const basePrompt = `You are a senior test engineer. Your task is to generate a complete acceptance test file for the "${options.featureName}" feature.
 
-CODEBASE CONTEXT:
-${options.codebaseContext}
+## Step 1: Understand and Classify the Acceptance Criteria
 
-ACCEPTANCE CRITERIA (refined):
+Read each AC below and classify its verification type:
+- **file-check**: Verify by reading source files (e.g. "no @nestjs/jwt imports", "file exists", "module registered", "uses registerAs pattern")
+- **runtime-check**: Load and invoke code directly, assert on return values or behavior
+- **integration-check**: Requires a running service (e.g. HTTP endpoint returns 200, 11th request returns 429, database query succeeds)
+
+ACCEPTANCE CRITERIA:
 ${criteriaList}
 
-${strategyInstructions}Generate a complete acceptance.test.ts file. Each AC maps to exactly one test named "AC-N: <description>".
+## Step 2: Explore the Project
 
-Structure example (do NOT wrap in markdown fences — output raw TypeScript only):
+Before writing any tests, examine the project to understand:
+1. **Language and test framework** — check dependency manifests (package.json, go.mod, Gemfile, pyproject.toml, Cargo.toml, build.gradle, etc.) to identify the language and test runner
+2. **Existing test patterns** — read 1-2 existing test files to understand import style, describe/test/it conventions, and available helpers
+3. **Project structure** — identify relevant source directories to determine correct import or load paths
 
-import { describe, test, expect } from "<test-framework>";
+PROJECT FILE TREE:
+${options.codebaseContext}${frameworkOverrideLine}
 
-describe("${options.featureName} - Acceptance Tests", () => {
-  test("AC-1: <description>", async () => {
-    // Test implementation
-  });
-});
+## Step 3: Generate the Acceptance Test File
 
-IMPORTANT: Output raw TypeScript code only. Do NOT use markdown code fences (\`\`\`typescript or \`\`\`). Start directly with the import statement.`;
+Write the complete acceptance test file using the framework identified in Step 2.
 
-  const prompt = options.testFramework
-    ? `${basePrompt}\n[FRAMEWORK OVERRIDE: Use ${options.testFramework} as the test framework regardless of what you detect.]`
-    : basePrompt;
+Rules:
+- **One test per AC**, named exactly "AC-N: <description>"
+- **file-check ACs** → read source files using the language's standard file I/O, assert with string or regex checks. Do not start the application.
+- **runtime-check ACs** → load or import the module directly and invoke it, assert on the return value or observable side effects
+- **integration-check ACs** → use the language's HTTP client or existing test helpers; add a clear setup block (beforeAll/setup/TestMain/etc.) explaining what must be running
+- **NEVER use placeholder assertions** — no always-passing or always-failing stubs, no TODO comments as the only content, no empty test bodies
+- Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
+- Output raw code only — no markdown fences, start directly with the language's import or package declaration`;
+
+  const prompt = basePrompt;
 
   logger.info("acceptance", "Generating tests from PRD refined criteria", { count: refinedCriteria.length });
 
@@ -147,26 +160,6 @@ IMPORTANT: Output raw TypeScript code only. Do NOT use markdown code fences (\`\
   await _generatorPRDDeps.writeFile(join(options.featureDir, "acceptance-refined.json"), refinedJsonContent);
 
   return { testCode, criteria };
-}
-
-function buildStrategyInstructions(strategy?: string, framework?: string): string {
-  switch (strategy) {
-    case "component": {
-      const fw = framework ?? "ink-testing-library";
-      if (fw === "react") {
-        return "TEST STRATEGY: component (react)\nImport render and screen from @testing-library/react. Render the component and use screen.getByText to assert on output.\n\n";
-      }
-      return "TEST STRATEGY: component (ink-testing-library)\nImport render from ink-testing-library. Render the component and use lastFrame() to assert on output.\n\n";
-    }
-    case "cli":
-      return "TEST STRATEGY: cli\nUse Bun.spawn to run the binary. Read stdout and assert on the text output.\n\n";
-    case "e2e":
-      return "TEST STRATEGY: e2e\nUse fetch() against http://localhost to call the running service. Assert on response body using response.text() or response.json().\n\n";
-    case "snapshot":
-      return "TEST STRATEGY: snapshot\nRender the component and use toMatchSnapshot() to capture and compare snapshots.\n\n";
-    default:
-      return "";
-  }
 }
 
 export function parseAcceptanceCriteria(specContent: string): AcceptanceCriterion[] {
@@ -224,46 +217,40 @@ export function buildAcceptanceTestPrompt(
 ): string {
   const criteriaList = criteria.map((ac) => `${ac.id}: ${ac.text}`).join("\n");
 
-  return `You are a test engineer. Generate acceptance tests for the "${featureName}" feature based on the acceptance criteria below.
+  return `You are a senior test engineer. Your task is to generate a complete acceptance test file for the "${featureName}" feature.
 
-CODEBASE CONTEXT:
-${codebaseContext}
+## Step 1: Understand and Classify the Acceptance Criteria
+
+Read each AC below and classify its verification type:
+- **file-check**: Verify by reading source files (e.g. "no @nestjs/jwt imports", "file exists", "module registered", "uses registerAs pattern")
+- **runtime-check**: Load and invoke code directly, assert on return values or behavior
+- **integration-check**: Requires a running service (e.g. HTTP endpoint returns 200, 11th request returns 429, database query succeeds)
 
 ACCEPTANCE CRITERIA:
 ${criteriaList}
 
-Generate a complete acceptance.test.ts file using bun:test framework. Follow these rules:
+## Step 2: Explore the Project
 
-1. **One test per AC**: Each acceptance criterion maps to exactly one test
-2. **Test observable behavior only**: No implementation details, only user-facing behavior
-3. **Independent tests**: No shared state between tests
-4. **Real-implementation**: Tests should use real implementations without mocking (test observable behavior, not internal units)
-5. **Clear test names**: Use format "AC-N: <description>" for test names
-6. **Async where needed**: Use async/await for operations that may be asynchronous
+Before writing any tests, examine the project to understand:
+1. **Language and test framework** — check dependency manifests (package.json, go.mod, Gemfile, pyproject.toml, Cargo.toml, build.gradle, etc.) to identify the language and test runner
+2. **Existing test patterns** — read 1-2 existing test files to understand import style, describe/test/it conventions, and available helpers
+3. **Project structure** — identify relevant source directories to determine correct import or load paths
 
-Use this structure:
+PROJECT FILE TREE:
+${codebaseContext}
 
-\`\`\`typescript
-import { describe, test, expect } from "bun:test";
+## Step 3: Generate the Acceptance Test File
 
-describe("${featureName} - Acceptance Tests", () => {
-  test("AC-1: <description>", async () => {
-    // Test implementation
-  });
+Write the complete acceptance test file using the framework identified in Step 2.
 
-  test("AC-2: <description>", async () => {
-    // Test implementation
-  });
-});
-\`\`\`
-
-**Important**:
-- Import the feature code being tested
-- Set up any necessary test fixtures
-- Use expect() assertions to verify behavior
-- Clean up resources if needed (close connections, delete temp files)
-
-Respond with ONLY the TypeScript test code (no markdown code fences, no explanation).`;
+Rules:
+- **One test per AC**, named exactly "AC-N: <description>"
+- **file-check ACs** → read source files using the language's standard file I/O, assert with string or regex checks. Do not start the application.
+- **runtime-check ACs** → load or import the module directly and invoke it, assert on the return value or observable side effects
+- **integration-check ACs** → use the language's HTTP client or existing test helpers; add a clear setup block (beforeAll/setup/TestMain/etc.) explaining what must be running
+- **NEVER use placeholder assertions** — no always-passing or always-failing stubs, no TODO comments as the only content, no empty test bodies
+- Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
+- Output raw code only — no markdown fences, start directly with the language's import or package declaration`;
 }
 
 /**

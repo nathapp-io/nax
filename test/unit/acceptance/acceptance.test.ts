@@ -111,10 +111,10 @@ describe("buildAcceptanceTestPrompt", () => {
 
     const prompt = buildAcceptanceTestPrompt(criteria, "feature", "context");
 
-    expect(prompt).toContain("CODEBASE CONTEXT:");
+    expect(prompt).toContain("PROJECT FILE TREE:");
     expect(prompt).toContain("ACCEPTANCE CRITERIA:");
     expect(prompt).toContain("One test per AC");
-    expect(prompt).toContain("bun:test");
+    expect(prompt).toContain("NEVER use placeholder assertions");
   });
 });
 
