@@ -160,6 +160,8 @@ export interface QualityConfig {
   stripEnvVars: string[];
   /** Divisor for environmental failure early escalation (default: 2 = half the tier budget) */
   environmentalEscalationDivisor: number;
+  /** Hermetic test enforcement settings (ENH-010). Supports per-package override. */
+  testing?: TestingConfig;
 }
 
 /** TDD config */
@@ -495,8 +497,6 @@ export interface NaxConfig {
   decompose?: DecomposeConfig;
   /** Agent protocol settings (ACP-003) */
   agent?: AgentConfig;
-  /** Hermetic test enforcement settings (ENH-010) */
-  testing?: TestingConfig;
   /** Generate settings */
   generate?: GenerateConfig;
 }

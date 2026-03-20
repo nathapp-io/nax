@@ -121,6 +121,9 @@ export const DEFAULT_CONFIG: NaxConfig = {
       "DATADOG_API_KEY",
     ],
     environmentalEscalationDivisor: 2,
+    testing: {
+      hermetic: true,
+    },
   },
   tdd: {
     maxRetries: 2,
@@ -210,8 +213,5 @@ export const DEFAULT_CONFIG: NaxConfig = {
     maxSubstoryComplexity: "medium",
     maxRetries: 2,
     model: "balanced",
-  },
-  testing: {
-    hermetic: true,
   },
 };

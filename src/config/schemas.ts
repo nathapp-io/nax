@@ -175,6 +175,29 @@ const QualityConfigSchema = z.object({
       "DATADOG_API_KEY",
     ]),
   environmentalEscalationDivisor: z.number().min(1).max(10).default(2),
+  testing: z
+    .object({
+      /**
+       * When true (default), nax injects a hermetic test requirement into all code-writing prompts.
+       * Instructs the AI to mock all I/O boundaries (HTTP, CLI spawning, databases, etc.)
+       * and never invoke real external processes or services during test execution.
+       * Set to false only if your project requires real integration calls in tests.
+       */
+      hermetic: z.boolean().default(true),
+      /**
+       * Project-specific external boundaries the AI should watch for and mock.
+       * E.g. ["claude", "acpx", "redis", "grpc"] — any CLI tools, clients, or services
+       * the project uses that should never be called from tests.
+       */
+      externalBoundaries: z.array(z.string()).optional(),
+      /**
+       * Project-specific guidance on how to mock external dependencies.
+       * Injected verbatim into the hermetic requirement section of the prompt.
+       * E.g. "Use injectable deps for CLI spawning, ioredis-mock for Redis"
+       */
+      mockGuidance: z.string().optional(),
+    })
+    .optional(),
 });
 
 const TddConfigSchema = z.object({
@@ -362,28 +385,6 @@ export const PromptsConfigSchema = z.object({
     .optional(),
 });
 
-const TestingConfigSchema = z.object({
-  /**
-   * When true (default), nax injects a hermetic test requirement into all code-writing prompts.
-   * Instructs the AI to mock all I/O boundaries (HTTP, CLI spawning, databases, etc.)
-   * and never invoke real external processes or services during test execution.
-   * Set to false only if your project requires real integration calls in tests.
-   */
-  hermetic: z.boolean().default(true),
-  /**
-   * Project-specific external boundaries the AI should watch for and mock.
-   * E.g. ["claude", "acpx", "redis", "grpc"] — any CLI tools, clients, or services
-   * the project uses that should never be called from tests.
-   */
-  externalBoundaries: z.array(z.string()).optional(),
-  /**
-   * Project-specific guidance on how to mock external dependencies.
-   * Injected verbatim into the hermetic requirement section of the prompt.
-   * E.g. "Use injectable deps for CLI spawning, ioredis-mock for Redis"
-   */
-  mockGuidance: z.string().optional(),
-});
-
 const DecomposeConfigSchema = z.object({
   trigger: z.enum(["auto", "confirm", "disabled"]).default("auto"),
   maxAcceptanceCriteria: z.number().int().min(1).default(6),
@@ -417,7 +418,6 @@ export const NaxConfigSchema = z
     precheck: PrecheckConfigSchema.optional(),
     prompts: PromptsConfigSchema.optional(),
     decompose: DecomposeConfigSchema.optional(),
-    testing: TestingConfigSchema.optional(),
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",

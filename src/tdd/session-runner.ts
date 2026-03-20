@@ -133,7 +133,7 @@ export async function runTddSession(
           .context(contextMarkdown)
           .constitution(constitution)
           .testCommand(config.quality?.commands?.test)
-          .hermeticConfig(config.testing)
+          .hermeticConfig(config.quality?.testing)
           .build();
         break;
       case "implementer":
@@ -143,7 +143,7 @@ export async function runTddSession(
           .context(contextMarkdown)
           .constitution(constitution)
           .testCommand(config.quality?.commands?.test)
-          .hermeticConfig(config.testing)
+          .hermeticConfig(config.quality?.testing)
           .build();
         break;
       case "verifier":
@@ -153,7 +153,7 @@ export async function runTddSession(
           .context(contextMarkdown)
           .constitution(constitution)
           .testCommand(config.quality?.commands?.test)
-          .hermeticConfig(config.testing)
+          .hermeticConfig(config.quality?.testing)
           .build();
         break;
     }

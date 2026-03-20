@@ -522,12 +522,16 @@ The hermetic requirement is injected into all code-writing prompts (test-writer,
 
 ### Configuration
 
+Configured under `quality.testing` — supports **per-package override** in monorepos.
+
 ```json
 {
-  "testing": {
-    "hermetic": true,
-    "externalBoundaries": ["claude", "acpx", "redis", "grpc"],
-    "mockGuidance": "Use injectable deps for CLI spawning, ioredis-mock for Redis"
+  "quality": {
+    "testing": {
+      "hermetic": true,
+      "externalBoundaries": ["claude", "acpx", "redis", "grpc"],
+      "mockGuidance": "Use injectable deps for CLI spawning, ioredis-mock for Redis"
+    }
   }
 }
 ```
@@ -540,7 +544,9 @@ The hermetic requirement is injected into all code-writing prompts (test-writer,
 
 > **Tip:** `externalBoundaries` and `mockGuidance` complement `context.md`. nax provides the rule ("mock all I/O"), while `context.md` provides project-specific knowledge ("use `ioredis-mock` for Redis"). Use both for best results.
 
-> **Opt-out:** Set `testing.hermetic: false` if your project requires real integration calls (e.g. live database tests against a local dev container).
+> **Monorepo:** Each package can override `quality.testing` in its own `packages/<name>/nax/config.json`. For example, `packages/api` can specify Redis boundaries while `packages/web` specifies HTTP-only.
+
+> **Opt-out:** Set `quality.testing.hermetic: false` if your project requires real integration calls (e.g. live database tests against a local dev container).
 
 ---
 

@@ -1,6 +1,6 @@
 # ENH-010: Hermetic Test Enforcement
 
-**Status:** Implemented (v0.50.1)  
+**Status:** Implemented (v0.50.2 — moved to quality.testing for per-package support)  
 **Component:** `src/prompts/sections/hermetic.ts`, `src/prompts/builder.ts`, `src/config/schemas.ts`  
 **Found:** 2026-03-20
 

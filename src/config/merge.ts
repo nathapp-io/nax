@@ -15,7 +15,7 @@ import type { NaxConfig } from "./schema";
  * - execution: smartTestRunner, regressionGate (deep), verificationTimeoutSeconds
  * - review: enabled, checks, commands (deep), pluginMode
  * - acceptance: enabled, generateTests, testPath
- * - quality: requireTests, requireTypecheck, requireLint, commands (deep)
+ * - quality: requireTests, requireTypecheck, requireLint, commands (deep), testing (deep)
  * - context: testCoverage (deep)
  *
  * All other sections (models, autoMode, routing, agent, generate, tdd,
@@ -89,6 +89,11 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         ...root.quality.commands,
         ...packageOverride.quality?.commands,
       },
+      // ENH-010: deep-merge testing config so per-package overrides work
+      testing:
+        packageOverride.quality?.testing !== undefined
+          ? { ...root.quality.testing, ...packageOverride.quality.testing }
+          : root.quality.testing,
     },
     context: {
       ...root.context,
