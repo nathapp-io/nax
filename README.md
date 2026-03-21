@@ -488,7 +488,7 @@ nax prompts --export test-writer # Preview a role's prompt
 nax run -f my-feature           # Uses your custom prompts
 ```
 
-**Full guide:** See [Prompt Customization Guide](docs/prompt-customization.md) for detailed instructions, role reference, and best practices.
+**Full guide:** See [Prompt Customization Guide](docs/guides/prompt-customization.md) for detailed instructions, role reference, and best practices.
 
 ---
 
