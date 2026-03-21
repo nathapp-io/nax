@@ -461,7 +461,7 @@ Use `testScoped` to define the exact scoped test command with a `{{files}}` plac
 
 If `testScoped` is not configured, nax falls back to a heuristic that replaces the last path-like token in the `test` command. **Recommended:** always configure `testScoped` explicitly to avoid surprises.
 
-**TDD strategy options:**
+**TDD strategy options:** <a name="tdd-strategy-options"></a>
 
 | Value | Behaviour |
 |:------|:----------|
@@ -513,11 +513,7 @@ Configure the default TDD behavior in `.nax/config.json`:
 }
 ```
 
-| Value | Behaviour |
-|:------|:----------|
-| `auto` | nax decides based on complexity and tags (default) |
-| `lite` | Prefer `three-session-tdd-lite` for complex stories |
-| `strict` | Always use full `three-session-tdd` for complex stories |
+See [TDD strategy options](#tdd-strategy-options) for all values.
 
 ---
 
