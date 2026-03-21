@@ -340,9 +340,9 @@ export function generatePackageContextTemplate(packagePath: string): string {
 }
 
 /**
- * Initialize per-package nax/context.md scaffold.
+ * Initialize per-package context.md scaffold.
  *
- * Creates \`<packageDir>/nax/context.md\` with a minimal template.
+ * Creates `.nax/packages/<packagePath>/context.md` under the repo root.
  * Does not overwrite an existing file unless force is set.
  *
  * @param repoRoot - Absolute path to repo root
@@ -351,8 +351,7 @@ export function generatePackageContextTemplate(packagePath: string): string {
  */
 export async function initPackage(repoRoot: string, packagePath: string, force = false): Promise<void> {
   const logger = getLogger();
-  const packageDir = join(repoRoot, packagePath);
-  const naxDir = join(packageDir, "nax");
+  const naxDir = join(repoRoot, ".nax", "packages", packagePath);
   const contextPath = join(naxDir, "context.md");
 
   if (existsSync(contextPath) && !force) {
@@ -374,7 +373,7 @@ export async function initPackage(repoRoot: string, packagePath: string, force =
  */
 export async function initContext(projectRoot: string, options: InitContextOptions = {}): Promise<void> {
   const logger = getLogger();
-  const naxDir = join(projectRoot, "nax");
+  const naxDir = join(projectRoot, ".nax");
   const contextPath = join(naxDir, "context.md");
 
   // Check if context.md already exists
@@ -401,5 +400,5 @@ export async function initContext(projectRoot: string, options: InitContextOptio
 
   // Write context.md
   await Bun.write(contextPath, content);
-  logger.info("init", "Generated nax/context.md template from project scan", { path: contextPath });
+  logger.info("init", "Generated .nax/context.md template from project scan", { path: contextPath });
 }

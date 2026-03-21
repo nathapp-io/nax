@@ -161,11 +161,11 @@ export async function discoverPackages(repoRoot: string): Promise<string[]> {
   const packages: string[] = [];
   const seen = new Set<string>();
 
-  for (const pattern of ["*/nax/context.md", "*/*/nax/context.md"]) {
+  for (const pattern of [".nax/packages/*/context.md", ".nax/packages/*/*/context.md"]) {
     const glob = new Bun.Glob(pattern);
-    for await (const match of glob.scan(repoRoot)) {
-      // match is e.g. "packages/api/nax/context.md" — strip trailing /nax/context.md
-      const pkgRelative = match.replace(/\/nax\/context\.md$/, "");
+    for await (const match of glob.scan({ cwd: repoRoot, dot: true })) {
+      // match is e.g. ".nax/packages/apps/api/context.md" — strip leading .nax/packages/ and trailing /context.md
+      const pkgRelative = match.replace(/^\.nax\/packages\//, "").replace(/\/context\.md$/, "");
       const pkgAbsolute = join(repoRoot, pkgRelative);
       if (!seen.has(pkgAbsolute)) {
         seen.add(pkgAbsolute);
@@ -289,7 +289,7 @@ export async function generateForPackage(
   config: NaxConfig,
   dryRun = false,
 ): Promise<PackageGenerationResult[]> {
-  const contextPath = join(packageDir, "nax", "context.md");
+  const contextPath = join(packageDir, ".nax", "context.md");
 
   if (!existsSync(contextPath)) {
     return [

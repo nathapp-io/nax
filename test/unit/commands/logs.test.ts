@@ -22,7 +22,7 @@ const TEST_WORKSPACE = join(import.meta.dir, "..", "..", "tmp", "logs-test");
 
 function setupTestProject(featureName: string): string {
   const projectDir = join(TEST_WORKSPACE, `project-${Date.now()}`);
-  const naxDir = join(projectDir, "nax");
+  const naxDir = join(projectDir, ".nax");
   const featureDir = join(naxDir, "features", featureName);
   const runsDir = join(featureDir, "runs");
 
@@ -123,7 +123,7 @@ describe("logsCommand", () => {
     _deps.getRunsDir = () => registryDir;
 
     // Create registry entries pointing to the test runs
-    const runsDir = join(projectDir, "nax", "features", "test-feature", "runs");
+    const runsDir = join(projectDir, ".nax", "features", "test-feature", "runs");
 
     for (const runId of ["2026-02-27T10-00-00", "2026-02-26T09-00-00"]) {
       const entryDir = join(registryDir, `testproject-test-feature-${runId}`);
@@ -135,7 +135,7 @@ describe("logsCommand", () => {
           project: "testproject",
           feature: "test-feature",
           workdir: projectDir,
-          statusPath: join(projectDir, "nax", "features", "test-feature", "status.json"),
+          statusPath: join(projectDir, ".nax", "features", "test-feature", "status.json"),
           eventsDir: runsDir,
           registeredAt: "2026-02-27T10:00:00.000Z",
         }),
@@ -179,7 +179,7 @@ describe("logsCommand", () => {
     test("displays error when no runs exist", async () => {
       // Create fresh project with no runs
       const emptyProject = setupTestProject("empty-feature");
-      const runsDir = join(emptyProject, "nax", "features", "empty-feature", "runs");
+      const runsDir = join(emptyProject, ".nax", "features", "empty-feature", "runs");
       rmSync(join(runsDir, "2026-02-27T10-00-00.jsonl"));
       rmSync(join(runsDir, "2026-02-26T09-00-00.jsonl"));
 
@@ -277,7 +277,7 @@ describe("logsCommand", () => {
 
     test("shows empty message when no runs exist", async () => {
       const emptyProject = setupTestProject("empty-feature");
-      const runsDir = join(emptyProject, "nax", "features", "empty-feature", "runs");
+      const runsDir = join(emptyProject, ".nax", "features", "empty-feature", "runs");
       rmSync(join(runsDir, "2026-02-27T10-00-00.jsonl"));
       rmSync(join(runsDir, "2026-02-26T09-00-00.jsonl"));
 
@@ -320,8 +320,8 @@ describe("logsCommand", () => {
           project: "proj",
           feature: "feat",
           workdir: "/nonexistent",
-          statusPath: "/nonexistent/nax/features/feat/status.json",
-          eventsDir: "/nonexistent/nax/features/feat/runs",
+          statusPath: "/nonexistent/.nax/features/feat/status.json",
+          eventsDir: "/nonexistent/.nax/features/feat/runs",
           registeredAt: "2026-01-01T00:00:00.000Z",
         }),
       );
@@ -446,7 +446,7 @@ describe("logsCommand", () => {
 
     test("validates nax/config.json exists", async () => {
       const invalidProject = join(TEST_WORKSPACE, "invalid");
-      mkdirSync(join(invalidProject, "nax"), { recursive: true });
+      mkdirSync(join(invalidProject, ".nax"), { recursive: true });
 
       const options: LogsOptions = { dir: invalidProject };
 

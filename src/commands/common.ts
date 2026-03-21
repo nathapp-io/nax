@@ -34,13 +34,13 @@ export interface ResolvedProject {
 /**
  * Resolves project directory using the following priority:
  * 1. Explicit -d flag path
- * 2. Current working directory (if it contains nax/ directory)
- * 3. Walk up directory tree to find nax/ (up to MAX_DIRECTORY_DEPTH)
+ * 2. Current working directory (if it contains .nax/ directory)
+ * 3. Walk up directory tree to find .nax/ (up to MAX_DIRECTORY_DEPTH)
  *
  * Validates:
- * - nax/ directory exists
- * - nax/config.json exists
- * - nax/features/<name>/ exists (if feature specified)
+ * - .nax/ directory exists
+ * - .nax/config.json exists
+ * - .nax/features/<name>/ exists (if feature specified)
  *
  * @param options - Resolution options (dir, feature)
  * @returns Resolved project paths
@@ -57,9 +57,9 @@ export function resolveProject(options: ResolveProjectOptions = {}): ResolvedPro
   if (dir) {
     // Use explicit -d flag path (resolve relative paths and symlinks)
     projectRoot = realpathSync(resolve(dir));
-    naxDir = join(projectRoot, "nax");
+    naxDir = join(projectRoot, ".nax");
 
-    // Validate nax/ directory exists
+    // Validate .nax/ directory exists
     if (!existsSync(naxDir)) {
       throw new NaxError(
         `Directory does not contain a nax project: ${projectRoot}\nExpected to find: ${naxDir}`,
@@ -68,25 +68,25 @@ export function resolveProject(options: ResolveProjectOptions = {}): ResolvedPro
       );
     }
 
-    // Validate nax/config.json exists
+    // Validate .nax/config.json exists
     configPath = join(naxDir, "config.json");
     if (!existsSync(configPath)) {
       throw new NaxError(
-        `nax directory found but config.json is missing: ${naxDir}\nExpected to find: ${configPath}`,
+        `.nax directory found but config.json is missing: ${naxDir}\nExpected to find: ${configPath}`,
         "CONFIG_NOT_FOUND",
         { naxDir, configPath },
       );
     }
   } else {
-    // Walk up from CWD to find nax/ directory with config.json
+    // Walk up from CWD to find .nax/ directory with config.json
     const found = findProjectRoot(process.cwd());
     if (!found) {
-      // Check if CWD has nax/ but missing config.json (for better error message)
-      const cwdNaxDir = join(process.cwd(), "nax");
+      // Check if CWD has .nax/ but missing config.json (for better error message)
+      const cwdNaxDir = join(process.cwd(), ".nax");
       if (existsSync(cwdNaxDir)) {
         const cwdConfigPath = join(cwdNaxDir, "config.json");
         throw new NaxError(
-          `nax directory found but config.json is missing: ${cwdNaxDir}\nExpected to find: ${cwdConfigPath}`,
+          `.nax directory found but config.json is missing: ${cwdNaxDir}\nExpected to find: ${cwdConfigPath}`,
           "CONFIG_NOT_FOUND",
           { naxDir: cwdNaxDir, configPath: cwdConfigPath },
         );
@@ -99,7 +99,7 @@ export function resolveProject(options: ResolveProjectOptions = {}): ResolvedPro
       );
     }
     projectRoot = found;
-    naxDir = join(projectRoot, "nax");
+    naxDir = join(projectRoot, ".nax");
     configPath = join(naxDir, "config.json");
   }
 
@@ -138,7 +138,7 @@ export function resolveProject(options: ResolveProjectOptions = {}): ResolvedPro
 }
 
 /**
- * Walks up directory tree to find a nax/ directory with config.json.
+ * Walks up directory tree to find a .nax/ directory with config.json.
  * Stops at filesystem root or MAX_DIRECTORY_DEPTH.
  *
  * @param startDir - Starting directory (typically CWD)
@@ -149,7 +149,7 @@ function findProjectRoot(startDir: string): string | null {
   let depth = 0;
 
   while (depth < MAX_DIRECTORY_DEPTH) {
-    const naxDir = join(current, "nax");
+    const naxDir = join(current, ".nax");
     const configPath = join(naxDir, "config.json");
 
     if (existsSync(configPath)) {

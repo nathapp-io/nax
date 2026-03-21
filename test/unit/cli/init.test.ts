@@ -26,7 +26,7 @@ describe("initProject — creates templates alongside config", () => {
     await withTempDir(async (tempDir) => {
       await initProject(tempDir);
 
-      expect(existsSync(join(tempDir, "nax", "templates"))).toBe(true);
+      expect(existsSync(join(tempDir, ".nax", "templates"))).toBe(true);
     });
   });
 
@@ -35,7 +35,7 @@ describe("initProject — creates templates alongside config", () => {
       await initProject(tempDir);
 
       for (const file of TEMPLATE_FILES) {
-        expect(existsSync(join(tempDir, "nax", "templates", file))).toBe(true);
+        expect(existsSync(join(tempDir, ".nax", "templates", file))).toBe(true);
       }
     });
   });
@@ -45,18 +45,18 @@ describe("initProject — creates templates alongside config", () => {
       await initProject(tempDir);
 
       for (const file of TEMPLATE_FILES) {
-        const filePath = join(tempDir, "nax", "templates", file);
+        const filePath = join(tempDir, ".nax", "templates", file);
         const content = await Bun.file(filePath).text();
         expect(content.length).toBeGreaterThan(0);
       }
     });
   });
 
-  test("nax/config.json does NOT contain prompts.overrides", async () => {
+  test(".nax/config.json does NOT contain prompts.overrides", async () => {
     await withTempDir(async (tempDir) => {
       await initProject(tempDir);
 
-      const configPath = join(tempDir, "nax", "config.json");
+      const configPath = join(tempDir, ".nax", "config.json");
       const configContent = JSON.parse(await Bun.file(configPath).text());
 
       // Should NOT have prompts.overrides set
@@ -68,9 +68,9 @@ describe("initProject — creates templates alongside config", () => {
     await withTempDir(async (tempDir) => {
       await initProject(tempDir);
 
-      expect(existsSync(join(tempDir, "nax", "config.json"))).toBe(true);
-      expect(existsSync(join(tempDir, "nax", "constitution.md"))).toBe(true);
-      expect(existsSync(join(tempDir, "nax", "hooks"))).toBe(true);
+      expect(existsSync(join(tempDir, ".nax", "config.json"))).toBe(true);
+      expect(existsSync(join(tempDir, ".nax", "constitution.md"))).toBe(true);
+      expect(existsSync(join(tempDir, ".nax", "hooks"))).toBe(true);
     });
   });
 });
@@ -81,7 +81,7 @@ describe("initProject — with force flag", () => {
       // First init
       await initProject(tempDir);
 
-      const testWriterPath = join(tempDir, "nax", "templates", "test-writer.md");
+      const testWriterPath = join(tempDir, ".nax", "templates", "test-writer.md");
 
       // Overwrite with marker content
       await Bun.write(testWriterPath, "MARKER_CONTENT_FOR_TESTING");
@@ -95,11 +95,11 @@ describe("initProject — with force flag", () => {
 });
 
 describe("initProject — nax/config.json preserves defaults", () => {
-  test("nax/config.json is minimal and does not reference templates", async () => {
+  test(".nax/config.json is minimal and does not reference templates", async () => {
     await withTempDir(async (tempDir) => {
       await initProject(tempDir);
 
-      const configPath = join(tempDir, "nax", "config.json");
+      const configPath = join(tempDir, ".nax", "config.json");
       const configContent = JSON.parse(await Bun.file(configPath).text());
 
       // Should be minimal config
@@ -127,7 +127,7 @@ describe("initProject — .gitignore includes new nax entries", () => {
       await initProject(tempDir);
 
       const gitignore = await Bun.file(join(tempDir, ".gitignore")).text();
-      expect(gitignore).toContain("nax/**/runs/");
+      expect(gitignore).toContain(".nax/**/runs/");
     });
   });
 
@@ -136,7 +136,7 @@ describe("initProject — .gitignore includes new nax entries", () => {
       await initProject(tempDir);
 
       const gitignore = await Bun.file(join(tempDir, ".gitignore")).text();
-      expect(gitignore).toContain("nax/metrics.json");
+      expect(gitignore).toContain(".nax/metrics.json");
     });
   });
 
@@ -162,7 +162,7 @@ describe("initProject — stack-aware constitution.md", () => {
 
       await initProject(tempDir);
 
-      const constitution = await Bun.file(join(tempDir, "nax", "constitution.md")).text();
+      const constitution = await Bun.file(join(tempDir, ".nax", "constitution.md")).text();
       // Must reference concrete Bun APIs (not just the generic "Bun-native APIs only" in the default)
       expect(constitution).toMatch(/Bun\.file\(\)|Bun\.spawn\(\)|Bun\.sleep\(\)|bun test/);
     });
@@ -174,7 +174,7 @@ describe("initProject — stack-aware constitution.md", () => {
 
       await initProject(tempDir);
 
-      const constitution = await Bun.file(join(tempDir, "nax", "constitution.md")).text();
+      const constitution = await Bun.file(join(tempDir, ".nax", "constitution.md")).text();
       expect(constitution).toMatch(/strict.*TypeScript|TypeScript.*strict/i);
     });
   });
@@ -185,7 +185,7 @@ describe("initProject — stack-aware constitution.md", () => {
 
       await initProject(tempDir);
 
-      const constitution = await Bun.file(join(tempDir, "nax", "constitution.md")).text();
+      const constitution = await Bun.file(join(tempDir, ".nax", "constitution.md")).text();
       expect(constitution).toMatch(/PEP.?8|type hint/i);
     });
   });
@@ -196,7 +196,7 @@ describe("initProject — stack-aware constitution.md", () => {
 
       await initProject(tempDir);
 
-      const constitution = await Bun.file(join(tempDir, "nax", "constitution.md")).text();
+      const constitution = await Bun.file(join(tempDir, ".nax", "constitution.md")).text();
       expect(constitution).toMatch(/monorepo|package boundar/i);
     });
   });
@@ -232,7 +232,7 @@ describe("initProject — --ai flag wired through to context generation", () => 
 
       expect(llmCallCount).toBeGreaterThan(0);
 
-      const contextContent = await Bun.file(join(tempDir, "nax", "context.md")).text();
+      const contextContent = await Bun.file(join(tempDir, ".nax", "context.md")).text();
       expect(contextContent).toContain("LLM Generated Context");
     });
   });

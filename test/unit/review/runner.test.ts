@@ -128,8 +128,8 @@ describe("nax runtime file exclusions", () => {
     _deps.getUncommittedFiles = originalGetUncommittedFiles;
   });
 
-  test("nax/status.json is excluded from uncommitted check", async () => {
-    _deps.getUncommittedFiles = mock(async (_workdir: string) => ["nax/status.json"]);
+  test(".nax/status.json is excluded from uncommitted check", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => [".nax/status.json"]);
     const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
     expect(result.success).toBe(true);
   });
@@ -140,14 +140,14 @@ describe("nax runtime file exclusions", () => {
     expect(result.success).toBe(true);
   });
 
-  test("nax/features/*/prd.json is excluded from uncommitted check", async () => {
-    _deps.getUncommittedFiles = mock(async (_workdir: string) => ["nax/features/ctx-simplify/prd.json"]);
+  test(".nax/features/*/prd.json is excluded from uncommitted check", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => [".nax/features/ctx-simplify/prd.json"]);
     const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
     expect(result.success).toBe(true);
   });
 
-  test("nax/features/*/acp-sessions.json is excluded from uncommitted check", async () => {
-    _deps.getUncommittedFiles = mock(async (_workdir: string) => ["nax/features/cli/acp-sessions.json"]);
+  test(".nax/features/*/acp-sessions.json is excluded from uncommitted check", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => [".nax/features/cli/acp-sessions.json"]);
     const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
     expect(result.success).toBe(true);
   });
@@ -162,12 +162,12 @@ describe("nax runtime file exclusions", () => {
 
   test("agent source files are still caught by uncommitted check", async () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => [
-      "nax/status.json",
+      ".nax/status.json",
       "src/config/types.ts",
     ]);
     const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
     expect(result.success).toBe(false);
     expect(result.failureReason).toContain("src/config/types.ts");
-    expect(result.failureReason).not.toContain("nax/status.json");
+    expect(result.failureReason).not.toContain(".nax/status.json");
   });
 });

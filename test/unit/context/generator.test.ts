@@ -29,30 +29,30 @@ describe("discoverPackages (MW-004)", () => {
     expect(packages).toEqual([]);
   });
 
-  test("finds packages at one level deep (*/nax/context.md)", async () => {
-    await Bun.write(join(tmpDir, "packages/api/nax/context.md"), "# API");
+  test("finds packages at one level deep (.nax/packages/*/context.md)", async () => {
+    await Bun.write(join(tmpDir, ".nax/packages/api/context.md"), "# API");
     const packages = await discoverPackages(tmpDir);
     expect(packages).toHaveLength(1);
-    expect(packages[0]).toBe(join(tmpDir, "packages/api"));
+    expect(packages[0]).toBe(join(tmpDir, "api"));
   });
 
-  test("finds packages at two levels deep (*/*/nax/context.md)", async () => {
-    await Bun.write(join(tmpDir, "apps/backend/nax/context.md"), "# Backend");
+  test("finds packages at two levels deep (.nax/packages/*/*/context.md)", async () => {
+    await Bun.write(join(tmpDir, ".nax/packages/apps/backend/context.md"), "# Backend");
     const packages = await discoverPackages(tmpDir);
     expect(packages).toHaveLength(1);
     expect(packages[0]).toBe(join(tmpDir, "apps/backend"));
   });
 
   test("finds multiple packages", async () => {
-    await Bun.write(join(tmpDir, "packages/api/nax/context.md"), "# API");
-    await Bun.write(join(tmpDir, "packages/web/nax/context.md"), "# Web");
+    await Bun.write(join(tmpDir, ".nax/packages/api/context.md"), "# API");
+    await Bun.write(join(tmpDir, ".nax/packages/web/context.md"), "# Web");
     const packages = await discoverPackages(tmpDir);
     expect(packages).toHaveLength(2);
   });
 
   test("deduplicates packages found at multiple glob depths", async () => {
-    // packages/api matches both patterns at 2 levels from root
-    await Bun.write(join(tmpDir, "packages/api/nax/context.md"), "# API");
+    // apps/api matches the two-level pattern only
+    await Bun.write(join(tmpDir, ".nax/packages/apps/api/context.md"), "# API");
     const packages = await discoverPackages(tmpDir);
     // Should only appear once
     const unique = new Set(packages);
@@ -79,7 +79,7 @@ describe("generateForPackage (MW-004)", () => {
   });
 
   test("dry run returns content without writing file", async () => {
-    await Bun.write(join(tmpDir, "nax/context.md"), "# Package\n\nContent here.");
+    await Bun.write(join(tmpDir, ".nax/context.md"), "# Package\n\nContent here.");
     const results = await generateForPackage(tmpDir, makeConfig(), true);
     const result = results[0];
     expect(result.error).toBeUndefined();
@@ -91,7 +91,7 @@ describe("generateForPackage (MW-004)", () => {
   });
 
   test("writes CLAUDE.md when not dry run (default agents)", async () => {
-    await Bun.write(join(tmpDir, "nax/context.md"), "# Package\n\nContent here.");
+    await Bun.write(join(tmpDir, ".nax/context.md"), "# Package\n\nContent here.");
     const results = await generateForPackage(tmpDir, makeConfig(), false);
     expect(results).toHaveLength(1);
     const result = results[0];
@@ -102,13 +102,13 @@ describe("generateForPackage (MW-004)", () => {
   });
 
   test("returns packageDir in result", async () => {
-    await Bun.write(join(tmpDir, "nax/context.md"), "# Package");
+    await Bun.write(join(tmpDir, ".nax/context.md"), "# Package");
     const results = await generateForPackage(tmpDir, makeConfig(), true);
     expect(results[0].packageDir).toBe(tmpDir);
   });
 
   test("generates for all config.generate.agents when set", async () => {
-    await Bun.write(join(tmpDir, "nax/context.md"), "# Package\n\nContent.");
+    await Bun.write(join(tmpDir, ".nax/context.md"), "# Package\n\nContent.");
     const config = {
       generate: { agents: ["claude", "codex"] },
     } as unknown as NaxConfig;
@@ -122,7 +122,7 @@ describe("generateForPackage (MW-004)", () => {
   });
 
   test("defaults to claude only when config.generate.agents is not set", async () => {
-    await Bun.write(join(tmpDir, "nax/context.md"), "# Package");
+    await Bun.write(join(tmpDir, ".nax/context.md"), "# Package");
     const results = await generateForPackage(tmpDir, makeConfig(), true);
     expect(results).toHaveLength(1);
     expect(results[0].outputFile).toBe("CLAUDE.md");
@@ -179,9 +179,9 @@ describe("discoverWorkspacePackages", () => {
   });
 
   test("prefers nax/context.md packages over workspace manifest when both exist", async () => {
-    // Set up nax/context.md in a package
-    mkdirSync(join(tmpDir, "packages", "sdk", "nax"), { recursive: true });
-    writeFileSync(join(tmpDir, "packages", "sdk", "nax", "context.md"), "# SDK Context");
+    // Set up .nax/packages/packages/sdk/context.md (new structure)
+    mkdirSync(join(tmpDir, ".nax", "packages", "packages", "sdk"), { recursive: true });
+    writeFileSync(join(tmpDir, ".nax", "packages", "packages", "sdk", "context.md"), "# SDK Context");
 
     // Also set up workspace manifest pointing elsewhere
     writeFileSync(join(tmpDir, "package.json"), JSON.stringify({

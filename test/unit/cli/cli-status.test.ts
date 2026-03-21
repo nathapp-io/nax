@@ -138,7 +138,7 @@ describe("displayFeatureStatus", () => {
   describe("All features table", () => {
     test("shows table with all features", async () => {
       // Setup: Create project with two features
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       mkdirSync(featuresDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
@@ -182,7 +182,7 @@ describe("displayFeatureStatus", () => {
 
     test("shows 'No runs yet' when no runs directory", async () => {
       // Setup: Create project with one feature (no runs/)
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       mkdirSync(featuresDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
@@ -202,7 +202,7 @@ describe("displayFeatureStatus", () => {
 
     test("shows last run timestamp from runs directory", async () => {
       // Setup: Create project with runs
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       mkdirSync(featuresDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
@@ -227,7 +227,7 @@ describe("displayFeatureStatus", () => {
 
     skipInCI("detects active run via PID check", async () => {
       // Setup: Create project with active status.json
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       mkdirSync(featuresDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
@@ -259,7 +259,7 @@ describe("displayFeatureStatus", () => {
 
     test("detects crashed run via dead PID", async () => {
       // Setup: Create project with crashed status.json
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       mkdirSync(featuresDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
@@ -293,7 +293,7 @@ describe("displayFeatureStatus", () => {
   describe("Single feature view", () => {
     test("shows detailed feature status with story table", async () => {
       // Setup: Create project with one feature
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       mkdirSync(featuresDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
@@ -318,7 +318,7 @@ describe("displayFeatureStatus", () => {
 
     skipInCI("shows active run details with current story", async () => {
       // Setup: Create project with active run
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       mkdirSync(featuresDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
@@ -361,7 +361,7 @@ describe("displayFeatureStatus", () => {
 
     test("shows crashed run with recovery hints", async () => {
       // Setup: Create project with crashed run
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       mkdirSync(featuresDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
@@ -397,7 +397,7 @@ describe("displayFeatureStatus", () => {
 
     test("shows 'No active run' when status.json not found", async () => {
       // Setup: Create project without status.json
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       mkdirSync(featuresDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");

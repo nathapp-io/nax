@@ -146,9 +146,9 @@ export async function checkGitignoreCoversNax(workdir: string): Promise<Check> {
   const content = await file.text();
   const patterns = [
     "nax.lock",
-    "nax/**/runs/",
-    "nax/metrics.json",
-    "nax/features/*/status.json",
+    ".nax/**/runs/",
+    ".nax/metrics.json",
+    ".nax/features/*/status.json",
     ".nax-pids",
     ".nax-wt/",
   ];

@@ -1,7 +1,7 @@
 /**
  * Aider Config Generator
  *
- * Generates .aider.conf.yml from nax/constitution.md.
+ * Generates .aider.conf.yml from .nax/constitution.md.
  * Aider uses YAML format for configuration.
  */
 
@@ -15,7 +15,7 @@ function generateAiderConfig(constitution: ConstitutionContent): string {
 
   // Build .aider.conf.yml format
   const header = `# Aider Configuration
-# Auto-generated from nax/constitution.md
+# Auto-generated from .nax/constitution.md
 # DO NOT EDIT MANUALLY
 
 # Project instructions

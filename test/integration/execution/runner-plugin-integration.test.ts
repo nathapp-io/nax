@@ -37,7 +37,7 @@ async function cleanupTempDir(dir: string): Promise<void> {
 }
 
 async function createMinimalPRD(workdir: string, feature: string): Promise<string> {
-  const featureDir = path.join(workdir, "nax", "features", feature);
+  const featureDir = path.join(workdir, ".nax", "features", feature);
   await fs.mkdir(featureDir, { recursive: true });
 
   const prdPath = path.join(featureDir, "prd.json");
@@ -224,7 +224,7 @@ describe("Runner Plugin Integration (US-001)", () => {
     const config = await createMinimalConfig();
 
     // Create a plugin
-    const projectPluginsDir = path.join(tempDir, "nax", "plugins");
+    const projectPluginsDir = path.join(tempDir, ".nax", "plugins");
     await fs.mkdir(projectPluginsDir, { recursive: true });
 
     const plugin: NaxPlugin = {
@@ -260,7 +260,7 @@ describe("Runner Plugin Integration (US-001)", () => {
     const config = await createMinimalConfig();
 
     // Create a plugin with teardown
-    const projectPluginsDir = path.join(tempDir, "nax", "plugins");
+    const projectPluginsDir = path.join(tempDir, ".nax", "plugins");
     await fs.mkdir(projectPluginsDir, { recursive: true });
 
     // Use a file to track teardown calls
@@ -309,7 +309,7 @@ export default {
     const config = await createMinimalConfig();
 
     // Create a plugin with teardown
-    const projectPluginsDir = path.join(tempDir, "nax", "plugins");
+    const projectPluginsDir = path.join(tempDir, ".nax", "plugins");
     await fs.mkdir(projectPluginsDir, { recursive: true });
 
     const teardownMarkerPath = path.join(tempDir, "teardown-called-fail.txt");
@@ -367,7 +367,7 @@ export default {
 
     // Ensure no plugins exist
     const globalPluginsDir = path.join(tempDir, ".nax", "plugins");
-    const projectPluginsDir = path.join(tempDir, "nax", "plugins");
+    const projectPluginsDir = path.join(tempDir, ".nax", "plugins");
 
     // Don't create these directories - test with non-existent plugin dirs
 
@@ -398,7 +398,7 @@ export default {
     const config = await createMinimalConfig();
 
     // Create a malformed plugin file
-    const projectPluginsDir = path.join(tempDir, "nax", "plugins");
+    const projectPluginsDir = path.join(tempDir, ".nax", "plugins");
     await fs.mkdir(projectPluginsDir, { recursive: true });
 
     const malformedPlugin = `
@@ -445,7 +445,7 @@ export default {
 
     // Create plugins in both global and project directories
     const globalPluginsDir = path.join(tempDir, ".nax", "plugins");
-    const projectPluginsDir = path.join(tempDir, "nax", "plugins");
+    const projectPluginsDir = path.join(tempDir, ".nax", "plugins");
     await fs.mkdir(globalPluginsDir, { recursive: true });
     await fs.mkdir(projectPluginsDir, { recursive: true });
 

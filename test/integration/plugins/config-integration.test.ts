@@ -47,7 +47,7 @@ describe("Plugin config integration (US-007)", () => {
     //     external-plugin.ts
     //     local-plugin.ts
 
-    const naxDir = path.join(projectRoot, "nax");
+    const naxDir = path.join(projectRoot, ".nax");
     const customPluginsDir = path.join(projectRoot, "custom-plugins");
 
     await fs.mkdir(naxDir, { recursive: true });
@@ -150,7 +150,7 @@ export default {
 
     // Load plugins as the runner would
     const globalPluginsDir = path.join(projectRoot, ".nax", "plugins");
-    const projectPluginsDir = path.join(projectRoot, "nax", "plugins");
+    const projectPluginsDir = path.join(projectRoot, ".nax", "plugins");
 
     const registry = await loadPlugins(globalPluginsDir, projectPluginsDir, configPlugins, projectRoot);
 

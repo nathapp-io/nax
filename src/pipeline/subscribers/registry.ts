@@ -55,8 +55,8 @@ export function wireRegistry(bus: PipelineEventBus, feature: string, runId: stri
           project,
           feature,
           workdir,
-          statusPath: join(workdir, "nax", "features", feature, "status.json"),
-          eventsDir: join(workdir, "nax", "features", feature, "runs"),
+          statusPath: join(workdir, ".nax", "features", feature, "status.json"),
+          eventsDir: join(workdir, ".nax", "features", feature, "runs"),
           registeredAt: new Date().toISOString(),
         };
         await writeFile(metaFile, JSON.stringify(meta, null, 2));

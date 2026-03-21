@@ -186,7 +186,7 @@ describe("sweepFeatureSessions", () => {
   });
 
   test("is no-op when sidecar is empty (no sessions)", async () => {
-    const sidecarDir = join(tmpDir, "nax", "features", "empty-feat");
+    const sidecarDir = join(tmpDir, ".nax", "features", "empty-feat");
     await Bun.write(join(sidecarDir, "acp-sessions.json"), JSON.stringify({}));
 
     let clientStartCalled = false;
@@ -203,7 +203,7 @@ describe("sweepFeatureSessions", () => {
 
   test("calls loadSession and session.close() for each entry in sidecar", async () => {
     const featureName = "sweep-feat";
-    const sidecarDir = join(tmpDir, "nax", "features", featureName);
+    const sidecarDir = join(tmpDir, ".nax", "features", featureName);
     const sidecarPath = join(sidecarDir, "acp-sessions.json");
 
     await Bun.write(
@@ -245,7 +245,7 @@ describe("sweepFeatureSessions", () => {
 
   test("clears sidecar after sweep", async () => {
     const featureName = "clear-feat";
-    const sidecarDir = join(tmpDir, "nax", "features", featureName);
+    const sidecarDir = join(tmpDir, ".nax", "features", featureName);
     const sidecarPath = join(sidecarDir, "acp-sessions.json");
 
     await Bun.write(
@@ -271,7 +271,7 @@ describe("sweepFeatureSessions", () => {
 
   test("continues sweeping remaining sessions if one loadSession fails", async () => {
     const featureName = "partial-fail-feat";
-    const sidecarDir = join(tmpDir, "nax", "features", featureName);
+    const sidecarDir = join(tmpDir, ".nax", "features", featureName);
     const sidecarPath = join(sidecarDir, "acp-sessions.json");
 
     await Bun.write(

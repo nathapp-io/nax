@@ -84,7 +84,7 @@ describe("CM-003: nax config (default view)", () => {
 
   test("AC2: header shows project config path when present", async () => {
     // Create project config
-    const naxDir = join(tempDir, "nax");
+    const naxDir = join(tempDir, ".nax");
     mkdirSync(naxDir, { recursive: true });
     writeFileSync(
       join(naxDir, "config.json"),

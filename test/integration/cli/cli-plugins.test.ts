@@ -152,8 +152,8 @@ describe("pluginsListCommand", () => {
 
         expect(capture.output.join("\n")).toContain("No plugins installed");
         expect(capture.output.join("\n")).toContain("~/.nax/plugins/");
-        expect(capture.output.join("\n")).toContain("./nax/plugins/");
-        expect(capture.output.join("\n")).toContain("nax/config.json");
+        expect(capture.output.join("\n")).toContain("./.nax/plugins/");
+        expect(capture.output.join("\n")).toContain(".nax/config.json");
       } finally {
         capture.restore();
       }
@@ -225,7 +225,7 @@ describe("pluginsListCommand", () => {
 
   describe("plugins from project directory", () => {
     test("displays project plugins", async () => {
-      const projectPluginsDir = path.join(tempDir, "nax", "plugins");
+      const projectPluginsDir = path.join(tempDir, ".nax", "plugins");
       await fs.mkdir(projectPluginsDir, { recursive: true });
 
       const plugin: NaxPlugin = {
@@ -507,7 +507,7 @@ describe("pluginsListCommand", () => {
   describe("mixed sources", () => {
     test("displays plugins from project and config sources", async () => {
       // Set up project plugin
-      const projectPluginsDir = path.join(tempDir, "nax", "plugins");
+      const projectPluginsDir = path.join(tempDir, ".nax", "plugins");
       await fs.mkdir(projectPluginsDir, { recursive: true });
 
       const projectPlugin: NaxPlugin = {

@@ -19,7 +19,7 @@ import { checkWorkingTreeClean } from "../../../src/precheck/checks-git";
 
 /**
  * Create a git repo with the nax directory structure pre-committed.
- * This ensures that individual file paths (not just "nax/") appear in git status.
+ * This ensures that individual file paths (not just ".nax/") appear in git status.
  */
 function makeGitRepoWithNax(): string {
   const dir = mkdtempSync(join(tmpdir(), "nax-git-test-"));
@@ -35,14 +35,14 @@ function makeGitRepoWithNax(): string {
   writeFileSync(join(dir, "README.md"), "# test\n");
 
   // Pre-commit the nax directory structure so individual files show in git status
-  mkdirSync(join(dir, "nax", "features", "feat-001", "runs"), { recursive: true });
+  mkdirSync(join(dir, ".nax", "features", "feat-001", "runs"), { recursive: true });
   writeFileSync(join(dir, "nax.lock"), "");
-  writeFileSync(join(dir, "nax", "metrics.json"), "{}");
-  writeFileSync(join(dir, "nax", "features", "feat-001", "status.json"), "{}");
-  writeFileSync(join(dir, "nax", "features", "feat-001", "prd.json"), "{}");
-  writeFileSync(join(dir, "nax", "features", "feat-001", "progress.txt"), "");
-  writeFileSync(join(dir, "nax", "features", "feat-001", "acp-sessions.json"), "{}");
-  writeFileSync(join(dir, "nax", "features", "feat-001", "acceptance-refined.json"), "[]");
+  writeFileSync(join(dir, ".nax", "metrics.json"), "{}");
+  writeFileSync(join(dir, ".nax", "features", "feat-001", "status.json"), "{}");
+  writeFileSync(join(dir, ".nax", "features", "feat-001", "prd.json"), "{}");
+  writeFileSync(join(dir, ".nax", "features", "feat-001", "progress.txt"), "");
+  writeFileSync(join(dir, ".nax", "features", "feat-001", "acp-sessions.json"), "{}");
+  writeFileSync(join(dir, ".nax", "features", "feat-001", "acceptance-refined.json"), "[]");
   writeFileSync(join(dir, ".nax-pids"), "");
   mkdirSync(join(dir, ".nax-wt"), { recursive: true });
   writeFileSync(join(dir, ".nax-wt", "placeholder"), "");
@@ -105,7 +105,7 @@ describe("checkWorkingTreeClean — nax runtime files are excluded from dirty-tr
     const dir = makeGitRepoWithNax();
     try {
       // Modify the tracked file to make it dirty
-      writeFileSync(join(dir, "nax", "metrics.json"), '{"updated": true}');
+      writeFileSync(join(dir, ".nax", "metrics.json"), '{"updated": true}');
       const result = await checkWorkingTreeClean(dir);
       expect(result.passed).toBe(true);
     } finally {
@@ -116,10 +116,10 @@ describe("checkWorkingTreeClean — nax runtime files are excluded from dirty-tr
   test("passes when only nax feature runtime files are dirty (modified tracked files)", async () => {
     const dir = makeGitRepoWithNax();
     try {
-      writeFileSync(join(dir, "nax", "features", "feat-001", "status.json"), '{"status":"running"}');
-      writeFileSync(join(dir, "nax", "features", "feat-001", "progress.txt"), "50%");
-      writeFileSync(join(dir, "nax", "features", "feat-001", "acp-sessions.json"), '{"session":"abc"}');
-      writeFileSync(join(dir, "nax", "features", "feat-001", "acceptance-refined.json"), '[{"ac":"1"}]');
+      writeFileSync(join(dir, ".nax", "features", "feat-001", "status.json"), '{"status":"running"}');
+      writeFileSync(join(dir, ".nax", "features", "feat-001", "progress.txt"), "50%");
+      writeFileSync(join(dir, ".nax", "features", "feat-001", "acp-sessions.json"), '{"session":"abc"}');
+      writeFileSync(join(dir, ".nax", "features", "feat-001", "acceptance-refined.json"), '[{"ac":"1"}]');
       const result = await checkWorkingTreeClean(dir);
       expect(result.passed).toBe(true);
     } finally {

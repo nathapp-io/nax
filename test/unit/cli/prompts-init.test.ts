@@ -26,7 +26,7 @@ describe("promptsInitCommand — directory creation", () => {
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-init-test-"));
     // Create nax/ directory (required by nax project structure)
-    mkdirSync(join(tempDir, "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax"), { recursive: true });
   });
 
   afterEach(() => {
@@ -36,11 +36,11 @@ describe("promptsInitCommand — directory creation", () => {
   test("creates nax/templates/ directory when it does not exist", async () => {
     await promptsInitCommand({ workdir: tempDir });
 
-    expect(existsSync(join(tempDir, "nax", "templates"))).toBe(true);
+    expect(existsSync(join(tempDir, ".nax", "templates"))).toBe(true);
   });
 
   test("succeeds when nax/templates/ already exists but is empty", async () => {
-    mkdirSync(join(tempDir, "nax", "templates"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax", "templates"), { recursive: true });
 
     await promptsInitCommand({ workdir: tempDir });
   });
@@ -51,7 +51,7 @@ describe("promptsInitCommand — writes 5 template files", () => {
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-init-test-"));
-    mkdirSync(join(tempDir, "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax"), { recursive: true });
   });
 
   afterEach(() => {
@@ -62,14 +62,14 @@ describe("promptsInitCommand — writes 5 template files", () => {
     test(`writes ${file}`, async () => {
       await promptsInitCommand({ workdir: tempDir });
 
-      expect(existsSync(join(tempDir, "nax", "templates", file))).toBe(true);
+      expect(existsSync(join(tempDir, ".nax", "templates", file))).toBe(true);
     });
   }
 
   test("writes exactly 5 template files", async () => {
     await promptsInitCommand({ workdir: tempDir });
 
-    const templatesDir = join(tempDir, "nax", "templates");
+    const templatesDir = join(tempDir, ".nax", "templates");
     const files = (await import("node:fs")).readdirSync(templatesDir);
     expect(files.length).toBe(5);
   });
@@ -80,7 +80,7 @@ describe("promptsInitCommand — template file content", () => {
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-init-test-"));
-    mkdirSync(join(tempDir, "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax"), { recursive: true });
   });
 
   afterEach(() => {
@@ -90,7 +90,7 @@ describe("promptsInitCommand — template file content", () => {
   test("test-writer.md contains buildRoleTaskSection('test-writer') output", async () => {
     await promptsInitCommand({ workdir: tempDir });
 
-    const content = await Bun.file(join(tempDir, "nax", "templates", "test-writer.md")).text();
+    const content = await Bun.file(join(tempDir, ".nax", "templates", "test-writer.md")).text();
     const expected = buildRoleTaskSection("test-writer");
     expect(content).toContain(expected);
   });
@@ -98,7 +98,7 @@ describe("promptsInitCommand — template file content", () => {
   test("implementer.md contains buildRoleTaskSection('implementer', 'standard') output", async () => {
     await promptsInitCommand({ workdir: tempDir });
 
-    const content = await Bun.file(join(tempDir, "nax", "templates", "implementer.md")).text();
+    const content = await Bun.file(join(tempDir, ".nax", "templates", "implementer.md")).text();
     const expected = buildRoleTaskSection("implementer", "standard");
     expect(content).toContain(expected);
   });
@@ -106,7 +106,7 @@ describe("promptsInitCommand — template file content", () => {
   test("verifier.md contains buildRoleTaskSection('verifier') output", async () => {
     await promptsInitCommand({ workdir: tempDir });
 
-    const content = await Bun.file(join(tempDir, "nax", "templates", "verifier.md")).text();
+    const content = await Bun.file(join(tempDir, ".nax", "templates", "verifier.md")).text();
     const expected = buildRoleTaskSection("verifier");
     expect(content).toContain(expected);
   });
@@ -114,7 +114,7 @@ describe("promptsInitCommand — template file content", () => {
   test("single-session.md contains buildRoleTaskSection('single-session') output", async () => {
     await promptsInitCommand({ workdir: tempDir });
 
-    const content = await Bun.file(join(tempDir, "nax", "templates", "single-session.md")).text();
+    const content = await Bun.file(join(tempDir, ".nax", "templates", "single-session.md")).text();
     const expected = buildRoleTaskSection("single-session");
     expect(content).toContain(expected);
   });
@@ -122,7 +122,7 @@ describe("promptsInitCommand — template file content", () => {
   test("tdd-simple.md contains buildRoleTaskSection('tdd-simple') output", async () => {
     await promptsInitCommand({ workdir: tempDir });
 
-    const content = await Bun.file(join(tempDir, "nax", "templates", "tdd-simple.md")).text();
+    const content = await Bun.file(join(tempDir, ".nax", "templates", "tdd-simple.md")).text();
     const expected = buildRoleTaskSection("tdd-simple");
     expect(content).toContain(expected);
   });
@@ -131,7 +131,7 @@ describe("promptsInitCommand — template file content", () => {
     await promptsInitCommand({ workdir: tempDir });
 
     for (const file of TEMPLATE_FILES) {
-      const content = await Bun.file(join(tempDir, "nax", "templates", file)).text();
+      const content = await Bun.file(join(tempDir, ".nax", "templates", file)).text();
       expect(content.length).toBeGreaterThan(0);
     }
   });
@@ -142,7 +142,7 @@ describe("promptsInitCommand — header comment in each template", () => {
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-init-test-"));
-    mkdirSync(join(tempDir, "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax"), { recursive: true });
   });
 
   afterEach(() => {
@@ -153,7 +153,7 @@ describe("promptsInitCommand — header comment in each template", () => {
     test(`${file} contains a header comment`, async () => {
       await promptsInitCommand({ workdir: tempDir });
 
-      const content = await Bun.file(join(tempDir, "nax", "templates", file)).text();
+      const content = await Bun.file(join(tempDir, ".nax", "templates", file)).text();
       // Header comment should be at the top (HTML comment or markdown comment)
       expect(content).toMatch(/<!--[\s\S]+?-->/);
     });
@@ -161,7 +161,7 @@ describe("promptsInitCommand — header comment in each template", () => {
     test(`${file} header mentions what the file controls`, async () => {
       await promptsInitCommand({ workdir: tempDir });
 
-      const content = await Bun.file(join(tempDir, "nax", "templates", file)).text();
+      const content = await Bun.file(join(tempDir, ".nax", "templates", file)).text();
       // Header should describe what can be overridden
       expect(content.toLowerCase()).toMatch(/override|role.?body|controls|customize/);
     });
@@ -169,7 +169,7 @@ describe("promptsInitCommand — header comment in each template", () => {
     test(`${file} header mentions non-overridable sections`, async () => {
       await promptsInitCommand({ workdir: tempDir });
 
-      const content = await Bun.file(join(tempDir, "nax", "templates", file)).text();
+      const content = await Bun.file(join(tempDir, ".nax", "templates", file)).text();
       // At least one of the non-overridable sections must be named
       const mentionsNonOverridable =
         content.toLowerCase().includes("isolation") ||
@@ -190,7 +190,7 @@ describe("promptsInitCommand — no-overwrite protection", () => {
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-init-test-"));
-    mkdirSync(join(tempDir, "nax", "templates"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax", "templates"), { recursive: true });
 
     consoleOutput = [];
     originalConsoleLog = console.log;
@@ -211,7 +211,7 @@ describe("promptsInitCommand — no-overwrite protection", () => {
 
   test("prints warning when files already exist", async () => {
     // Pre-create one of the template files
-    writeFileSync(join(tempDir, "nax", "templates", "test-writer.md"), "existing content");
+    writeFileSync(join(tempDir, ".nax", "templates", "test-writer.md"), "existing content");
 
     await promptsInitCommand({ workdir: tempDir });
 
@@ -221,11 +221,11 @@ describe("promptsInitCommand — no-overwrite protection", () => {
 
   test("does NOT overwrite existing files without --force", async () => {
     const existingContent = "existing user customization — do not overwrite";
-    writeFileSync(join(tempDir, "nax", "templates", "test-writer.md"), existingContent);
+    writeFileSync(join(tempDir, ".nax", "templates", "test-writer.md"), existingContent);
 
     await promptsInitCommand({ workdir: tempDir });
 
-    const content = await Bun.file(join(tempDir, "nax", "templates", "test-writer.md")).text();
+    const content = await Bun.file(join(tempDir, ".nax", "templates", "test-writer.md")).text();
     expect(content).toBe(existingContent);
   });
 
@@ -233,28 +233,28 @@ describe("promptsInitCommand — no-overwrite protection", () => {
     const originalContents: Record<string, string> = {};
     for (const file of TEMPLATE_FILES) {
       const content = `original content for ${file}`;
-      writeFileSync(join(tempDir, "nax", "templates", file), content);
+      writeFileSync(join(tempDir, ".nax", "templates", file), content);
       originalContents[file] = content;
     }
 
     await promptsInitCommand({ workdir: tempDir });
 
     for (const file of TEMPLATE_FILES) {
-      const content = await Bun.file(join(tempDir, "nax", "templates", file)).text();
+      const content = await Bun.file(join(tempDir, ".nax", "templates", file)).text();
       expect(content).toBe(originalContents[file]);
     }
   });
 
   test("exits without writing new files when any template already exists", async () => {
-    writeFileSync(join(tempDir, "nax", "templates", "implementer.md"), "existing content");
+    writeFileSync(join(tempDir, ".nax", "templates", "implementer.md"), "existing content");
 
     await promptsInitCommand({ workdir: tempDir });
 
     // Other files should NOT have been created
-    expect(existsSync(join(tempDir, "nax", "templates", "test-writer.md"))).toBe(false);
-    expect(existsSync(join(tempDir, "nax", "templates", "verifier.md"))).toBe(false);
-    expect(existsSync(join(tempDir, "nax", "templates", "single-session.md"))).toBe(false);
-    expect(existsSync(join(tempDir, "nax", "templates", "tdd-simple.md"))).toBe(false);
+    expect(existsSync(join(tempDir, ".nax", "templates", "test-writer.md"))).toBe(false);
+    expect(existsSync(join(tempDir, ".nax", "templates", "verifier.md"))).toBe(false);
+    expect(existsSync(join(tempDir, ".nax", "templates", "single-session.md"))).toBe(false);
+    expect(existsSync(join(tempDir, ".nax", "templates", "tdd-simple.md"))).toBe(false);
   });
 });
 
@@ -263,7 +263,7 @@ describe("promptsInitCommand — --force flag", () => {
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-init-test-"));
-    mkdirSync(join(tempDir, "nax", "templates"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax", "templates"), { recursive: true });
   });
 
   afterEach(() => {
@@ -272,24 +272,24 @@ describe("promptsInitCommand — --force flag", () => {
 
   test("overwrites existing files when force=true", async () => {
     const oldContent = "old content to be replaced";
-    writeFileSync(join(tempDir, "nax", "templates", "test-writer.md"), oldContent);
+    writeFileSync(join(tempDir, ".nax", "templates", "test-writer.md"), oldContent);
 
     await promptsInitCommand({ workdir: tempDir, force: true });
 
-    const content = await Bun.file(join(tempDir, "nax", "templates", "test-writer.md")).text();
+    const content = await Bun.file(join(tempDir, ".nax", "templates", "test-writer.md")).text();
     expect(content).not.toBe(oldContent);
     expect(content).toContain(buildRoleTaskSection("test-writer"));
   });
 
   test("writes all 5 files when force=true even if all exist", async () => {
     for (const file of TEMPLATE_FILES) {
-      writeFileSync(join(tempDir, "nax", "templates", file), "old content");
+      writeFileSync(join(tempDir, ".nax", "templates", file), "old content");
     }
 
     await promptsInitCommand({ workdir: tempDir, force: true });
 
     for (const file of TEMPLATE_FILES) {
-      const content = await Bun.file(join(tempDir, "nax", "templates", file)).text();
+      const content = await Bun.file(join(tempDir, ".nax", "templates", file)).text();
       expect(content).not.toBe("old content");
     }
   });
@@ -302,7 +302,7 @@ describe("promptsInitCommand — summary output", () => {
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-init-test-"));
-    mkdirSync(join(tempDir, "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     consoleOutput = [];
     originalConsoleLog = console.log;
@@ -346,7 +346,7 @@ describe("promptsInitCommand — return value", () => {
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-init-test-"));
-    mkdirSync(join(tempDir, "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax"), { recursive: true });
   });
 
   afterEach(() => {
@@ -369,8 +369,8 @@ describe("promptsInitCommand — return value", () => {
   });
 
   test("returns empty array when files exist and no --force", async () => {
-    mkdirSync(join(tempDir, "nax", "templates"), { recursive: true });
-    writeFileSync(join(tempDir, "nax", "templates", "test-writer.md"), "existing");
+    mkdirSync(join(tempDir, ".nax", "templates"), { recursive: true });
+    writeFileSync(join(tempDir, ".nax", "templates", "test-writer.md"), "existing");
 
     const result = await promptsInitCommand({ workdir: tempDir });
 

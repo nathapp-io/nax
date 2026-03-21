@@ -63,7 +63,7 @@ describe("wireRegistry", () => {
     expect(typeof meta.registeredAt).toBe("string");
   });
 
-  test("statusPath points to <workdir>/nax/features/<feature>/status.json", async () => {
+  test("statusPath points to <workdir>/.nax/features/<feature>/status.json", async () => {
     const bus = new PipelineEventBus();
     wireRegistry(bus, feature, runId, workdir);
 
@@ -72,10 +72,10 @@ describe("wireRegistry", () => {
     await Bun.sleep(50);
     const meta = JSON.parse(await readFile(metaFile, "utf8")) as MetaJson;
 
-    expect(meta.statusPath).toBe(join(workdir, "nax", "features", feature, "status.json"));
+    expect(meta.statusPath).toBe(join(workdir, ".nax", "features", feature, "status.json"));
   });
 
-  test("eventsDir points to <workdir>/nax/features/<feature>/runs", async () => {
+  test("eventsDir points to <workdir>/.nax/features/<feature>/runs", async () => {
     const bus = new PipelineEventBus();
     wireRegistry(bus, feature, runId, workdir);
 
@@ -84,7 +84,7 @@ describe("wireRegistry", () => {
     await Bun.sleep(50);
     const meta = JSON.parse(await readFile(metaFile, "utf8")) as MetaJson;
 
-    expect(meta.eventsDir).toBe(join(workdir, "nax", "features", feature, "runs"));
+    expect(meta.eventsDir).toBe(join(workdir, ".nax", "features", feature, "runs"));
   });
 
   test("registeredAt is valid ISO8601", async () => {
@@ -120,8 +120,8 @@ describe("wireRegistry", () => {
       project: "proj",
       feature: "feat",
       workdir: "/tmp/proj",
-      statusPath: "/tmp/proj/nax/features/feat/status.json",
-      eventsDir: "/tmp/proj/nax/features/feat/runs",
+      statusPath: "/tmp/proj/.nax/features/feat/status.json",
+      eventsDir: "/tmp/proj/.nax/features/feat/runs",
       registeredAt: new Date().toISOString(),
     };
     expect(meta.runId).toBe("r1");

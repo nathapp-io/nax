@@ -157,7 +157,7 @@ export async function interactRespondCommand(requestId: string, options: Interac
   } else {
     // Search all features
     const resolved = resolveProject({ dir: options.dir });
-    const featuresDir = join(resolved.projectDir, "nax", "features");
+    const featuresDir = join(resolved.projectDir, ".nax", "features");
     if (existsSync(featuresDir)) {
       const { readdirSync } = await import("node:fs");
       const features = readdirSync(featuresDir, { withFileTypes: true })
@@ -245,7 +245,7 @@ export async function interactCancelCommand(requestId: string, options: Interact
   } else {
     // Search all features
     const resolved = resolveProject({ dir: options.dir });
-    const featuresDir = join(resolved.projectDir, "nax", "features");
+    const featuresDir = join(resolved.projectDir, ".nax", "features");
     if (existsSync(featuresDir)) {
       const { readdirSync } = await import("node:fs");
       const features = readdirSync(featuresDir, { withFileTypes: true })

@@ -12,7 +12,7 @@ import { DEFAULT_CONFIG } from "../../../src/config";
 
 describe("analyzeFeature integration", () => {
   const testDir = `/tmp/nax-analyze-test-${randomUUID()}`;
-  const featureDir = join(testDir, "nax/features/test-feature");
+  const featureDir = join(testDir, ".nax/features/test-feature");
 
   beforeAll(() => {
     // Create test directory structure
@@ -202,7 +202,7 @@ Dependencies: none
 
   test("throws error when no stories found", async () => {
     const noStoriesDir = `/tmp/nax-no-stories-test-${randomUUID()}`;
-    const featurePath = join(noStoriesDir, "nax/features/test");
+    const featurePath = join(noStoriesDir, ".nax/features/test");
     mkdirSync(featurePath, { recursive: true });
 
     // Create empty spec.md
@@ -223,7 +223,7 @@ Dependencies: none
 
   test("warns but succeeds when story count exceeds maxStoriesPerFeature limit", async () => {
     const manyStoriesDir = `/tmp/nax-many-stories-test-${randomUUID()}`;
-    const featurePath = join(manyStoriesDir, "nax/features/test");
+    const featurePath = join(manyStoriesDir, ".nax/features/test");
     mkdirSync(featurePath, { recursive: true });
 
     // Create spec.md with 6 stories (exceeds limit of 5)

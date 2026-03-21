@@ -1,7 +1,7 @@
 /**
  * Windsurf Rules Generator
  *
- * Generates .windsurfrules from nax/constitution.md.
+ * Generates .windsurfrules from .nax/constitution.md.
  * Windsurf uses a similar format to Cursor.
  */
 
@@ -16,7 +16,7 @@ function generateWindsurfRules(constitution: ConstitutionContent): string {
   // Build .windsurfrules format
   const header = `# Windsurf Project Rules
 
-Auto-generated from nax/constitution.md
+Auto-generated from .nax/constitution.md
 DO NOT EDIT MANUALLY
 
 ---

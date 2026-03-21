@@ -26,26 +26,26 @@ describe("config/paths", () => {
   describe("projectConfigDir", () => {
     test("returns nax directory when given project root", () => {
       const projectRoot = "/path/to/project";
-      const expected = join(projectRoot, "nax");
+      const expected = join(projectRoot, ".nax");
       expect(projectConfigDir(projectRoot)).toBe(expected);
     });
 
     test("normalizes path separators", () => {
       const projectRoot = "/path/to/project";
       const result = projectConfigDir(projectRoot);
-      expect(result).toBe("/path/to/project/nax");
+      expect(result).toBe("/path/to/project/.nax");
     });
 
     test("handles paths with trailing slash", () => {
       const projectRoot = "/path/to/project/";
-      const expected = "/path/to/project/nax";
+      const expected = "/path/to/project/.nax";
       expect(projectConfigDir(projectRoot)).toBe(expected);
     });
 
     test("resolves relative paths to absolute", () => {
       const projectRoot = "./project";
       const result = projectConfigDir(projectRoot);
-      expect(result).toContain("/project/nax");
+      expect(result).toContain("/project/.nax");
       expect(result.startsWith("/")).toBe(true);
     });
   });

@@ -94,7 +94,7 @@ describe("SFC-002: Feature-level status writing — Acceptance Criteria", () => 
 
   // ── AC-1: After a completed run, status is 'completed' ─────────────────
   test("After completed run, feature status.json has status 'completed'", async () => {
-    const featureDir = join(tmpDir, "nax", "features", "auth-system");
+    const featureDir = join(tmpDir, ".nax", "features", "auth-system");
     const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
 
     // Simulate successful run: all stories completed
@@ -118,7 +118,7 @@ describe("SFC-002: Feature-level status writing — Acceptance Criteria", () => 
 
   // ── AC-2: After a failed run, status is 'failed' ───────────────────────
   test("After failed run, feature status.json has status 'failed'", async () => {
-    const featureDir = join(tmpDir, "nax", "features", "auth-system");
+    const featureDir = join(tmpDir, ".nax", "features", "auth-system");
     const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
 
     // Simulate failed run: some stories failed
@@ -143,7 +143,7 @@ describe("SFC-002: Feature-level status writing — Acceptance Criteria", () => 
 
   // ── AC-3: After a crash, status is 'crashed' ───────────────────────────
   test("After crash, feature status.json has status 'crashed' with crash metadata", async () => {
-    const featureDir = join(tmpDir, "nax", "features", "auth-system");
+    const featureDir = join(tmpDir, ".nax", "features", "auth-system");
     const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
 
     const prd = makePrd(2);
@@ -166,7 +166,7 @@ describe("SFC-002: Feature-level status writing — Acceptance Criteria", () => 
   // ── AC-4: Uses same NaxStatusFile schema as project-level ──────────────
   test("Feature status.json uses same NaxStatusFile schema as project-level", async () => {
     const projectStatusPath = join(tmpDir, "status.json");
-    const featureDir = join(tmpDir, "nax", "features", "auth-system");
+    const featureDir = join(tmpDir, ".nax", "features", "auth-system");
 
     const sw = new StatusWriter(projectStatusPath, makeConfig(), makeCtx());
     const prd = makePrd(2, "passed");
@@ -218,7 +218,7 @@ describe("Feature status writing — edge cases", () => {
   });
 
   test("creates nested feature directory if it doesn't exist", async () => {
-    const featureDir = join(tmpDir, "nax", "features", "deeply", "nested", "feature");
+    const featureDir = join(tmpDir, ".nax", "features", "deeply", "nested", "feature");
     const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
     sw.setPrd(makePrd());
     sw.setRunStatus("completed");
@@ -229,7 +229,7 @@ describe("Feature status writing — edge cases", () => {
   });
 
   test("overwrites existing feature status file on subsequent writes", async () => {
-    const featureDir = join(tmpDir, "nax", "features", "auth-system");
+    const featureDir = join(tmpDir, ".nax", "features", "auth-system");
     const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
     sw.setPrd(makePrd());
 
@@ -248,7 +248,7 @@ describe("Feature status writing — edge cases", () => {
   });
 
   test("feature status includes accurate progress counts", async () => {
-    const featureDir = join(tmpDir, "nax", "features", "auth-system");
+    const featureDir = join(tmpDir, ".nax", "features", "auth-system");
     const sw = new StatusWriter(join(tmpDir, "status.json"), makeConfig(), makeCtx());
 
     // Create PRD with mixed statuses
@@ -274,7 +274,7 @@ describe("Feature status writing — edge cases", () => {
   });
 
   test("feature status reflects cost limit from config", async () => {
-    const featureDir = join(tmpDir, "nax", "features", "auth-system");
+    const featureDir = join(tmpDir, ".nax", "features", "auth-system");
     const config = makeConfig(10.0); // $10 limit
     const sw = new StatusWriter(join(tmpDir, "status.json"), config, makeCtx());
 
@@ -288,7 +288,7 @@ describe("Feature status writing — edge cases", () => {
   });
 
   test("feature status with no cost limit shows null", async () => {
-    const featureDir = join(tmpDir, "nax", "features", "auth-system");
+    const featureDir = join(tmpDir, ".nax", "features", "auth-system");
     const config = makeConfig(Number.POSITIVE_INFINITY); // No limit
     const sw = new StatusWriter(join(tmpDir, "status.json"), config, makeCtx());
 

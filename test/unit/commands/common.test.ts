@@ -35,7 +35,7 @@ describe("resolveProject", () => {
   describe("CWD resolution", () => {
     test("returns projectDir when CWD has nax/ directory", () => {
       // Setup: Create nax/config.json in test directory
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
 
@@ -53,7 +53,7 @@ describe("resolveProject", () => {
 
     test("walks up directory tree to find nax/ directory", () => {
       // Setup: Create nax/config.json in parent directory
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
 
@@ -85,7 +85,7 @@ describe("resolveProject", () => {
   describe("explicit directory (-d flag)", () => {
     test("uses explicit directory when provided", () => {
       // Setup: Create nax/config.json in test directory
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
 
@@ -103,7 +103,7 @@ describe("resolveProject", () => {
     test("resolves relative paths to absolute", () => {
       // Setup: Create nax/config.json in test directory
       const projectDir = join(testDir, "my-project");
-      const naxDir = join(projectDir, "nax");
+      const naxDir = join(projectDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
 
@@ -119,7 +119,7 @@ describe("resolveProject", () => {
 
     test("handles absolute paths", () => {
       // Setup: Create nax/config.json in test directory
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
 
@@ -144,7 +144,7 @@ describe("resolveProject", () => {
   describe("validation", () => {
     test("throws error when nax/config.json does not exist", () => {
       // Setup: Create nax/ but no config.json
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       process.chdir(testDir);
 
@@ -157,7 +157,7 @@ describe("resolveProject", () => {
   describe("feature validation", () => {
     test("returns featureDir when feature exists", () => {
       // Setup: Create nax/features/my-feature/
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       const featureDir = join(featuresDir, "my-feature");
       mkdirSync(featureDir, { recursive: true });
@@ -173,7 +173,7 @@ describe("resolveProject", () => {
 
     test("throws error when feature does not exist", () => {
       // Setup: Create nax/ but no features
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
       process.chdir(testDir);
@@ -185,7 +185,7 @@ describe("resolveProject", () => {
 
     test("lists available features when feature not found", () => {
       // Setup: Create nax/features with multiple features
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       mkdirSync(join(featuresDir, "feature-a"), { recursive: true });
       mkdirSync(join(featuresDir, "feature-b"), { recursive: true });
@@ -209,7 +209,7 @@ describe("resolveProject", () => {
 
     test("shows helpful message when no features exist", () => {
       // Setup: Create nax/ but no features directory
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
       process.chdir(testDir);
@@ -228,7 +228,7 @@ describe("resolveProject", () => {
     test("validates feature with explicit directory", () => {
       // Setup: Create project with feature
       const projectDir = join(testDir, "project");
-      const naxDir = join(projectDir, "nax");
+      const naxDir = join(projectDir, ".nax");
       const featuresDir = join(naxDir, "features");
       const featureDir = join(featuresDir, "auth");
       mkdirSync(featureDir, { recursive: true });
@@ -281,7 +281,7 @@ describe("resolveProject", () => {
 
     test("includes helpful context in CONFIG_NOT_FOUND error", () => {
       // Setup: nax/ without config.json
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       process.chdir(testDir);
 
@@ -299,7 +299,7 @@ describe("resolveProject", () => {
 
     test("includes helpful context in FEATURE_NOT_FOUND error", () => {
       // Setup: Project with features
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       mkdirSync(join(featuresDir, "existing-feature"), { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");

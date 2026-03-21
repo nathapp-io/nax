@@ -11,7 +11,7 @@ import { loadJsonFile } from "../utils/json-file";
 import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
 import { MAX_DIRECTORY_DEPTH } from "./path-security";
-import { globalConfigDir } from "./paths";
+import { PROJECT_NAX_DIR, globalConfigDir } from "./paths";
 import { DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema } from "./schema";
 
 /** Global config path */
@@ -25,7 +25,7 @@ export function findProjectDir(startDir: string = process.cwd()): string | null 
   let depth = 0;
 
   while (depth < MAX_DIRECTORY_DEPTH) {
-    const candidate = join(dir, "nax");
+    const candidate = join(dir, PROJECT_NAX_DIR);
     if (existsSync(join(candidate, "config.json"))) {
       return candidate;
     }
@@ -119,7 +119,7 @@ export async function loadConfig(projectDir?: string, cliOverrides?: Record<stri
  * 3. If package config exists → merge quality.commands over root
  * 4. Return merged config
  *
- * @param rootConfigPath - Absolute path to the root nax/config.json
+ * @param rootConfigPath - Absolute path to the root .nax/config.json
  * @param packageDir - Package directory relative to repo root (e.g. "packages/api")
  */
 export async function loadConfigForWorkdir(rootConfigPath: string, packageDir?: string): Promise<NaxConfig> {
@@ -131,7 +131,7 @@ export async function loadConfigForWorkdir(rootConfigPath: string, packageDir?: 
   }
 
   const repoRoot = dirname(rootNaxDir);
-  const packageConfigPath = join(repoRoot, packageDir, "nax", "config.json");
+  const packageConfigPath = join(repoRoot, PROJECT_NAX_DIR, "packages", packageDir, "config.json");
 
   const packageOverride = await loadJsonFile<Partial<NaxConfig>>(packageConfigPath, "config");
 

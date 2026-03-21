@@ -26,13 +26,13 @@ export interface GenerateCommandOptions {
   noAutoInject?: boolean;
   /**
    * Generate for a specific package directory (relative to repo root).
-   * Reads <package>/nax/context.md, writes <package>/CLAUDE.md.
+   * Reads .nax/packages/{package}/context.md, writes {package}/CLAUDE.md.
    * @example "packages/api"
    */
   package?: string;
   /**
    * Generate for all discovered packages.
-   * Auto-discovers packages with nax/context.md up to 2 levels deep.
+   * Auto-discovers packages under .nax/packages/ with context.md up to 2 levels deep.
    */
   allPackages?: boolean;
 }
@@ -59,11 +59,11 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
     if (dryRun) {
       console.log(chalk.yellow("⚠ Dry run — no files will be written"));
     }
-    console.log(chalk.blue("→ Discovering packages with nax/context.md..."));
+    console.log(chalk.blue("→ Discovering packages with .nax/packages/*/context.md..."));
     const packages = await discoverPackages(workdir);
 
     if (packages.length === 0) {
-      console.log(chalk.yellow("  No packages found (no */nax/context.md or */*/nax/context.md)"));
+      console.log(chalk.yellow("  No packages found (no .nax/packages/*/context.md or .nax/packages/*/*/context.md)"));
       return;
     }
 
@@ -112,14 +112,14 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
     return;
   }
 
-  const contextPath = options.context ? join(workdir, options.context) : join(workdir, "nax/context.md");
+  const contextPath = options.context ? join(workdir, options.context) : join(workdir, ".nax/context.md");
   const outputDir = options.output ? join(workdir, options.output) : workdir;
   const autoInject = !options.noAutoInject;
 
   // Validate context file
   if (!existsSync(contextPath)) {
     console.error(chalk.red(`✗ Context file not found: ${contextPath}`));
-    console.error(chalk.yellow("  Create nax/context.md first, or run `nax init` to scaffold it."));
+    console.error(chalk.yellow("  Create .nax/context.md first, or run `nax init` to scaffold it."));
     process.exit(1);
   }
 
@@ -212,11 +212,11 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
         process.exit(1);
       }
 
-      // Auto-generate per-package agent files when packages with nax/context.md are discovered
+      // Auto-generate per-package agent files when packages with .nax/packages/*/context.md are discovered
       const packages = await discoverPackages(workdir);
       if (packages.length > 0) {
         console.log(
-          chalk.blue(`\n→ Discovered ${packages.length} package(s) with nax/context.md — generating agent files...`),
+          chalk.blue(`\n→ Discovered ${packages.length} package(s) with context.md — generating agent files...`),
         );
         let pkgErrorCount = 0;
         for (const pkgDir of packages) {

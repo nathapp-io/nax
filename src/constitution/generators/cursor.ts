@@ -1,7 +1,7 @@
 /**
  * Cursor Rules Generator
  *
- * Generates .cursorrules from nax/constitution.md.
+ * Generates .cursorrules from .nax/constitution.md.
  * Cursor uses a simple text format similar to Claude but in a dotfile.
  */
 
@@ -16,7 +16,7 @@ function generateCursorRules(constitution: ConstitutionContent): string {
   // Build .cursorrules format
   const header = `# Project Rules
 
-Auto-generated from nax/constitution.md
+Auto-generated from .nax/constitution.md
 DO NOT EDIT MANUALLY
 
 ---

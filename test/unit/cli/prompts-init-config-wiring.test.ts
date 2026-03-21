@@ -12,11 +12,11 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { promptsInitCommand } from "../../../src/cli/prompts";
 
 const EXPECTED_OVERRIDES = {
-  "test-writer": "nax/templates/test-writer.md",
-  implementer: "nax/templates/implementer.md",
-  verifier: "nax/templates/verifier.md",
-  "single-session": "nax/templates/single-session.md",
-  "tdd-simple": "nax/templates/tdd-simple.md",
+  "test-writer": ".nax/templates/test-writer.md",
+  implementer: ".nax/templates/implementer.md",
+  verifier: ".nax/templates/verifier.md",
+  "single-session": ".nax/templates/single-session.md",
+  "tdd-simple": ".nax/templates/tdd-simple.md",
 };
 
 function readConfigJson(workdir: string): Record<string, unknown> {
@@ -36,7 +36,7 @@ describe("promptsInitCommand — auto-wires prompts.overrides", () => {
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-config-test-"));
-    mkdirSync(join(tempDir, "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     consoleOutput = [];
     originalConsoleLog = console.log;
@@ -86,11 +86,11 @@ describe("promptsInitCommand — auto-wires prompts.overrides", () => {
 
     const config = readConfigJson(tempDir);
     const overrides = (config.prompts as { overrides?: Record<string, string> })?.overrides ?? {};
-    expect(overrides["test-writer"]).toBe("nax/templates/test-writer.md");
-    expect(overrides["implementer"]).toBe("nax/templates/implementer.md");
-    expect(overrides["verifier"]).toBe("nax/templates/verifier.md");
-    expect(overrides["single-session"]).toBe("nax/templates/single-session.md");
-    expect(overrides["tdd-simple"]).toBe("nax/templates/tdd-simple.md");
+    expect(overrides["test-writer"]).toBe(".nax/templates/test-writer.md");
+    expect(overrides["implementer"]).toBe(".nax/templates/implementer.md");
+    expect(overrides["verifier"]).toBe(".nax/templates/verifier.md");
+    expect(overrides["single-session"]).toBe(".nax/templates/single-session.md");
+    expect(overrides["tdd-simple"]).toBe(".nax/templates/tdd-simple.md");
   });
 
   test("preserves existing config fields when adding prompts.overrides", async () => {
@@ -127,7 +127,7 @@ describe("promptsInitCommand — does not overwrite existing prompts.overrides",
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-config-test-"));
-    mkdirSync(join(tempDir, "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     consoleOutput = [];
     originalConsoleLog = console.log;
@@ -177,7 +177,7 @@ describe("promptsInitCommand — does not overwrite existing prompts.overrides",
   test("prints a note when prompts.overrides already configured", async () => {
     writeConfigJson(tempDir, {
       version: 1,
-      prompts: { overrides: { "test-writer": "nax/templates/test-writer.md" } },
+      prompts: { overrides: { "test-writer": ".nax/templates/test-writer.md" } },
     });
 
     await promptsInitCommand({ workdir: tempDir });
@@ -200,7 +200,7 @@ describe("promptsInitCommand — handles missing nax.config.json gracefully", ()
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-config-test-"));
-    mkdirSync(join(tempDir, "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     consoleOutput = [];
     originalConsoleLog = console.log;
@@ -234,8 +234,8 @@ describe("promptsInitCommand — handles missing nax.config.json gracefully", ()
   test("still writes template files when nax.config.json is missing", async () => {
     await promptsInitCommand({ workdir: tempDir });
 
-    expect(existsSync(join(tempDir, "nax", "templates", "test-writer.md"))).toBe(true);
-    expect(existsSync(join(tempDir, "nax", "templates", "implementer.md"))).toBe(true);
+    expect(existsSync(join(tempDir, ".nax", "templates", "test-writer.md"))).toBe(true);
+    expect(existsSync(join(tempDir, ".nax", "templates", "implementer.md"))).toBe(true);
   });
 
   test("does NOT create nax.config.json when it does not exist", async () => {
@@ -266,7 +266,7 @@ describe("promptsInitCommand — headless/non-TTY mode auto-writes config", () =
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-config-test-"));
-    mkdirSync(join(tempDir, "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     originalConsoleLog = console.log;
     originalConsoleWarn = console.warn;

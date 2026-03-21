@@ -1,7 +1,7 @@
 /**
  * Constitution Generator Types
  *
- * Defines the interface for generating agent-specific config files from nax/constitution.md.
+ * Defines the interface for generating agent-specific config files from .nax/constitution.md.
  */
 
 /** Constitution content structure for generators */

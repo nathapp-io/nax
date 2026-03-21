@@ -50,7 +50,7 @@ describe("Context Generators", () => {
       const result = claudeGenerator.generate(sampleContext);
 
       expect(result).toContain("# Project Context");
-      expect(result).toContain("auto-generated from `nax/context.md`");
+      expect(result).toContain("auto-generated from `.nax/context.md`");
       expect(result).toContain("DO NOT EDIT MANUALLY");
       expect(result).toContain("## Architecture");
       expect(result).toContain("Microservices with Docker");
@@ -71,7 +71,7 @@ describe("Context Generators", () => {
       const result = opencodeGenerator.generate(sampleContext);
 
       expect(result).toContain("# Agent Instructions");
-      expect(result).toContain("auto-generated from `nax/context.md`");
+      expect(result).toContain("auto-generated from `.nax/context.md`");
       expect(result).toContain("DO NOT EDIT MANUALLY");
       expect(result).toContain("## Architecture");
     });
@@ -83,7 +83,7 @@ describe("Context Generators", () => {
       const result = codexGenerator.generate(sampleContext);
 
       expect(result).toContain("# Codex Instructions");
-      expect(result).toContain("auto-generated from `nax/context.md`");
+      expect(result).toContain("auto-generated from `.nax/context.md`");
       expect(result).toContain("DO NOT EDIT MANUALLY");
       expect(result).toContain("## Architecture");
       expect(result).toContain("Microservices with Docker");
@@ -149,7 +149,7 @@ describe("Context Generators", () => {
       const result = geminiGenerator.generate(sampleContext);
 
       expect(result).toContain("# Gemini CLI Context");
-      expect(result).toContain("auto-generated from `nax/context.md`");
+      expect(result).toContain("auto-generated from `.nax/context.md`");
       expect(result).toContain("DO NOT EDIT MANUALLY");
       expect(result).toContain("## Architecture");
       expect(result).toContain("Microservices with Docker");
@@ -212,7 +212,7 @@ describe("Context Generators", () => {
       const result = aiderGenerator.generate(sampleContext);
 
       expect(result).toContain("# Aider Configuration");
-      expect(result).toContain("Auto-generated from nax/context.md");
+      expect(result).toContain("Auto-generated from .nax/context.md");
       expect(result).toContain("DO NOT EDIT MANUALLY");
       expect(result).toContain("## Architecture");
       expect(result).toContain("Microservices with Docker");
@@ -281,9 +281,9 @@ describe("Context Generators", () => {
         expect(result).toContain("DO NOT EDIT MANUALLY");
         // Aider uses different format
         if (generator.name === "aider") {
-          expect(result).toContain("Auto-generated from nax/context.md");
+          expect(result).toContain("Auto-generated from .nax/context.md");
         } else {
-          expect(result).toContain("auto-generated from `nax/context.md`");
+          expect(result).toContain("auto-generated from `.nax/context.md`");
         }
       }
     });

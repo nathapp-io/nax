@@ -68,7 +68,7 @@ async function loadStatusFile(featureDir: string): Promise<NaxStatusFile | null>
 
 /** Load project-level status.json (if it exists) */
 async function loadProjectStatusFile(projectDir: string): Promise<NaxStatusFile | null> {
-  const statusPath = join(projectDir, "nax", "status.json");
+  const statusPath = join(projectDir, ".nax", "status.json");
   if (!existsSync(statusPath)) {
     return null;
   }
@@ -160,7 +160,7 @@ async function getFeatureSummary(featureName: string, featureDir: string): Promi
 
 /** Display all features table */
 async function displayAllFeatures(projectDir: string): Promise<void> {
-  const featuresDir = join(projectDir, "nax", "features");
+  const featuresDir = join(projectDir, ".nax", "features");
 
   if (!existsSync(featuresDir)) {
     console.log(chalk.dim("No features found."));

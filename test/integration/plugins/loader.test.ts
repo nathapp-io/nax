@@ -233,7 +233,7 @@ describe("loadPlugins", () => {
     });
 
     test("loads plugins from project directory", async () => {
-      const projectDir = path.join(tempDir, "project", "nax", "plugins");
+      const projectDir = path.join(tempDir, "project", ".nax", "plugins");
       await fs.mkdir(projectDir, { recursive: true });
 
       const plugin: NaxPlugin = {
@@ -261,7 +261,7 @@ describe("loadPlugins", () => {
 
     test("loads plugins from both global and project directories", async () => {
       const globalDir = path.join(tempDir, "global", "plugins");
-      const projectDir = path.join(tempDir, "project", "nax", "plugins");
+      const projectDir = path.join(tempDir, "project", ".nax", "plugins");
       await fs.mkdir(globalDir, { recursive: true });
       await fs.mkdir(projectDir, { recursive: true });
 
@@ -502,7 +502,7 @@ export default {
   describe("load order", () => {
     test("loads plugins in order: global → project → config", async () => {
       const globalDir = path.join(tempDir, "global", "plugins");
-      const projectDir = path.join(tempDir, "project", "nax", "plugins");
+      const projectDir = path.join(tempDir, "project", ".nax", "plugins");
       const configPluginDir = path.join(tempDir, "config-plugin");
 
       await fs.mkdir(globalDir, { recursive: true });
@@ -589,7 +589,7 @@ export default {
   describe("name collisions", () => {
     test("warns on plugin name collision", async () => {
       const globalDir = path.join(tempDir, "global", "plugins");
-      const projectDir = path.join(tempDir, "project", "nax", "plugins");
+      const projectDir = path.join(tempDir, "project", ".nax", "plugins");
 
       await fs.mkdir(globalDir, { recursive: true });
       await fs.mkdir(projectDir, { recursive: true });

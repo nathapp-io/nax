@@ -37,7 +37,7 @@ describe("Constitution Generators", () => {
 			const result = claudeGenerator.generate(sampleConstitution);
 
 			expect(result).toContain("# Project Constitution");
-			expect(result).toContain("auto-generated from `nax/constitution.md`");
+			expect(result).toContain("auto-generated from `.nax/constitution.md`");
 			expect(result).toContain("DO NOT EDIT MANUALLY");
 			expect(result).toContain("## Coding Standards");
 			expect(result).toContain("Follow TypeScript best practices");
@@ -49,7 +49,7 @@ describe("Constitution Generators", () => {
 			const result = opencodeGenerator.generate(sampleConstitution);
 
 			expect(result).toContain("# Agent Instructions");
-			expect(result).toContain("auto-generated from `nax/constitution.md`");
+			expect(result).toContain("auto-generated from `.nax/constitution.md`");
 			expect(result).toContain("DO NOT EDIT MANUALLY");
 			expect(result).toContain("## Coding Standards");
 		});
@@ -60,7 +60,7 @@ describe("Constitution Generators", () => {
 			const result = cursorGenerator.generate(sampleConstitution);
 
 			expect(result).toContain("# Project Rules");
-			expect(result).toContain("Auto-generated from nax/constitution.md");
+			expect(result).toContain("Auto-generated from .nax/constitution.md");
 			expect(result).toContain("DO NOT EDIT MANUALLY");
 			expect(result).toContain("## Coding Standards");
 		});
@@ -71,7 +71,7 @@ describe("Constitution Generators", () => {
 			const result = windsurfGenerator.generate(sampleConstitution);
 
 			expect(result).toContain("# Windsurf Project Rules");
-			expect(result).toContain("Auto-generated from nax/constitution.md");
+			expect(result).toContain("Auto-generated from .nax/constitution.md");
 			expect(result).toContain("DO NOT EDIT MANUALLY");
 			expect(result).toContain("## Coding Standards");
 		});
@@ -82,7 +82,7 @@ describe("Constitution Generators", () => {
 			const result = aiderGenerator.generate(sampleConstitution);
 
 			expect(result).toContain("# Aider Configuration");
-			expect(result).toContain("# Auto-generated from nax/constitution.md");
+			expect(result).toContain("# Auto-generated from .nax/constitution.md");
 			expect(result).toContain("# DO NOT EDIT MANUALLY");
 			expect(result).toContain("instructions: |");
 			// Check YAML indentation

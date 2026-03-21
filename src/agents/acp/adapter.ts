@@ -258,7 +258,7 @@ export async function closeAcpSession(session: AcpSession): Promise<void> {
 
 /** Path to the ACP sessions sidecar file for a feature. */
 function acpSessionsPath(workdir: string, featureName: string): string {
-  return join(workdir, "nax", "features", featureName, "acp-sessions.json");
+  return join(workdir, ".nax", "features", featureName, "acp-sessions.json");
 }
 
 /** Sidecar entry — session name + agent name for correct sweep/close. */

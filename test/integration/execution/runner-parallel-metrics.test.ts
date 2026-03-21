@@ -58,7 +58,7 @@ async function cleanupTempDir(dir: string): Promise<void> {
  * - US-002: pending, depends on US-001 (sequential picks it up after parallel)
  */
 async function createTwoStoryPrd(workdir: string, feature: string): Promise<string> {
-  const featureDir = path.join(workdir, "nax", "features", feature);
+  const featureDir = path.join(workdir, ".nax", "features", feature);
   await fs.mkdir(featureDir, { recursive: true });
 
   const prdPath = path.join(featureDir, "prd.json");

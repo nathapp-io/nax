@@ -64,7 +64,7 @@ export async function runsListCommand(options: RunsListOptions): Promise<void> {
   const logger = getLogger();
   const { feature, workdir } = options;
 
-  const runsDir = join(workdir, "nax", "features", feature, "runs");
+  const runsDir = join(workdir, ".nax", "features", feature, "runs");
 
   if (!existsSync(runsDir)) {
     logger.info("cli", "No runs found for feature", { feature, hint: `Directory not found: ${runsDir}` });
@@ -126,7 +126,7 @@ export async function runsShowCommand(options: RunsShowOptions): Promise<void> {
   const logger = getLogger();
   const { runId, feature, workdir } = options;
 
-  const logPath = join(workdir, "nax", "features", feature, "runs", `${runId}.jsonl`);
+  const logPath = join(workdir, ".nax", "features", feature, "runs", `${runId}.jsonl`);
 
   if (!existsSync(logPath)) {
     logger.error("cli", "Run not found", { runId, feature, logPath });

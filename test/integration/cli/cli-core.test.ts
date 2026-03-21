@@ -94,7 +94,7 @@ const REGISTRY_DIR = join(TEST_WORKSPACE, "registry");
 
 function setupTestProject(featureName: string): string {
   const projectDir = join(TEST_WORKSPACE, `project-${Date.now()}`);
-  const naxDir = join(projectDir, "nax");
+  const naxDir = join(projectDir, ".nax");
   const featureDir = join(naxDir, "features", featureName);
   const runsDir = join(featureDir, "runs");
 
@@ -151,7 +151,7 @@ function setupTestProject(featureName: string): string {
       project: "testproject",
       feature: featureName,
       workdir: projectDir,
-      statusPath: join(projectDir, "nax", "features", featureName, "status.json"),
+      statusPath: join(projectDir, ".nax", "features", featureName, "status.json"),
       eventsDir: runsDir,
       registeredAt: "2026-02-27T12:00:00.000Z",
     }),
@@ -629,9 +629,9 @@ describe("nax generate command", () => {
     process.chdir(tempDir);
 
     // Create nax directory with context.md
-    mkdirSync(join(tempDir, "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax"), { recursive: true });
     writeFileSync(
-      join(tempDir, "nax/context.md"),
+      join(tempDir, ".nax/context.md"),
       `# Project Context
 
 ## Architecture
@@ -706,7 +706,7 @@ describe("nax generate command", () => {
   describe("Generate command with agent option", () => {
     test("generates claude config successfully", async () => {
       await generateCommand({
-        context: "nax/context.md",
+        context: ".nax/context.md",
         output: tempDir,
         agent: "claude",
         dryRun: false,
@@ -719,7 +719,7 @@ describe("nax generate command", () => {
 
     test("generates codex config successfully", async () => {
       await generateCommand({
-        context: "nax/context.md",
+        context: ".nax/context.md",
         output: tempDir,
         agent: "codex",
         dryRun: false,
@@ -732,7 +732,7 @@ describe("nax generate command", () => {
 
     test("generates opencode config successfully", async () => {
       await generateCommand({
-        context: "nax/context.md",
+        context: ".nax/context.md",
         output: tempDir,
         agent: "opencode",
         dryRun: false,
@@ -745,7 +745,7 @@ describe("nax generate command", () => {
 
     test("generates gemini config successfully", async () => {
       await generateCommand({
-        context: "nax/context.md",
+        context: ".nax/context.md",
         output: tempDir,
         agent: "gemini",
         dryRun: false,
@@ -758,7 +758,7 @@ describe("nax generate command", () => {
 
     test("generates aider config successfully", async () => {
       await generateCommand({
-        context: "nax/context.md",
+        context: ".nax/context.md",
         output: tempDir,
         agent: "aider",
         dryRun: false,
@@ -773,7 +773,7 @@ describe("nax generate command", () => {
   describe("Generate all agents", () => {
     test("generates all agent configs when no specific agent specified", async () => {
       await generateCommand({
-        context: "nax/context.md",
+        context: ".nax/context.md",
         output: tempDir,
         dryRun: false,
       });
@@ -788,7 +788,7 @@ describe("nax generate command", () => {
 
     test("includes cursor and windsurf in comprehensive generation", async () => {
       await generateCommand({
-        context: "nax/context.md",
+        context: ".nax/context.md",
         output: tempDir,
         dryRun: false,
       });
@@ -803,7 +803,7 @@ describe("nax generate command", () => {
     test("Claude generator produces valid output", async () => {
       const config = await loadConfig(tempDir);
       const result = await generateFor("claude", {
-        contextPath: join(tempDir, "nax/context.md"),
+        contextPath: join(tempDir, ".nax/context.md"),
         outputDir: tempDir,
         workdir: tempDir,
         dryRun: false,
@@ -818,7 +818,7 @@ describe("nax generate command", () => {
     test("Aider generator produces valid output", async () => {
       const config = await loadConfig(tempDir);
       const result = await generateFor("aider", {
-        contextPath: join(tempDir, "nax/context.md"),
+        contextPath: join(tempDir, ".nax/context.md"),
         outputDir: tempDir,
         workdir: tempDir,
         dryRun: false,
@@ -832,7 +832,7 @@ describe("nax generate command", () => {
     test("All generators produce output", async () => {
       const config = await loadConfig(tempDir);
       const results = await generateAll({
-        contextPath: join(tempDir, "nax/context.md"),
+        contextPath: join(tempDir, ".nax/context.md"),
         outputDir: tempDir,
         workdir: tempDir,
         dryRun: false,
@@ -854,7 +854,7 @@ describe("nax generate command", () => {
     test("codex generator is available", async () => {
       const config = await loadConfig(tempDir);
       const result = await generateFor("codex", {
-        contextPath: join(tempDir, "nax/context.md"),
+        contextPath: join(tempDir, ".nax/context.md"),
         outputDir: tempDir,
         workdir: tempDir,
         dryRun: false,
@@ -868,7 +868,7 @@ describe("nax generate command", () => {
     test("opencode generator is available", async () => {
       const config = await loadConfig(tempDir);
       const result = await generateFor("opencode", {
-        contextPath: join(tempDir, "nax/context.md"),
+        contextPath: join(tempDir, ".nax/context.md"),
         outputDir: tempDir,
         workdir: tempDir,
         dryRun: false,
@@ -882,7 +882,7 @@ describe("nax generate command", () => {
     test("gemini generator is available", async () => {
       const config = await loadConfig(tempDir);
       const result = await generateFor("gemini", {
-        contextPath: join(tempDir, "nax/context.md"),
+        contextPath: join(tempDir, ".nax/context.md"),
         outputDir: tempDir,
         workdir: tempDir,
         dryRun: false,
@@ -904,7 +904,7 @@ describe("nax generate command", () => {
 
       try {
         await generateCommand({
-          context: "nax/context.md",
+          context: ".nax/context.md",
           output: tempDir,
           agent: "unknown",
           dryRun: false,
@@ -922,7 +922,7 @@ describe("nax generate command", () => {
   describe("Dry run mode", () => {
     test("dry run does not write files for new agents", async () => {
       await generateCommand({
-        context: "nax/context.md",
+        context: ".nax/context.md",
         output: tempDir,
         agent: "codex",
         dryRun: true,
@@ -965,7 +965,7 @@ beforeEach(() => {
   mkdirSync(testDir, { recursive: true });
 
   // Create nax directory structure
-  mkdirSync(join(testDir, "nax", "features"), { recursive: true });
+  mkdirSync(join(testDir, ".nax", "features"), { recursive: true });
 });
 
 afterEach(() => {
@@ -1039,8 +1039,8 @@ async function createStatusFile(dir: string, feature: string, overrides: Partial
   };
 
   // Ensure nax directory exists
-  mkdirSync(join(dir, "nax"), { recursive: true });
-  await Bun.write(join(dir, "nax", "status.json"), JSON.stringify(status, null, 2));
+  mkdirSync(join(dir, ".nax"), { recursive: true });
+  await Bun.write(join(dir, ".nax", "status.json"), JSON.stringify(status, null, 2));
 }
 
 /**
@@ -1063,7 +1063,7 @@ async function createLockFile(dir: string, pid: number): Promise<void> {
 describe("AC1: nax diagnose reads last run and prints all 5 sections", () => {
   test("prints Run Summary, Story Breakdown (verbose), Failure Analysis, Lock Check, Recommendations", async () => {
     const feature = "test-feature";
-    const featureDir = join(testDir, "nax", "features", feature);
+    const featureDir = join(testDir, ".nax", "features", feature);
     mkdirSync(featureDir, { recursive: true });
 
     // Create PRD with mixed stories
@@ -1145,7 +1145,7 @@ describe("AC1: nax diagnose reads last run and prints all 5 sections", () => {
 describe("AC2: Each failed story shows pattern classification", () => {
   test("classifies GREENFIELD_TDD pattern", async () => {
     const feature = "greenfield-feature";
-    const featureDir = join(testDir, "nax", "features", feature);
+    const featureDir = join(testDir, ".nax", "features", feature);
     mkdirSync(featureDir, { recursive: true });
 
     const prd = createPRD(feature, [
@@ -1179,7 +1179,7 @@ describe("AC2: Each failed story shows pattern classification", () => {
 
   test("classifies TEST_MISMATCH pattern", async () => {
     const feature = "test-mismatch-feature";
-    const featureDir = join(testDir, "nax", "features", feature);
+    const featureDir = join(testDir, ".nax", "features", feature);
     mkdirSync(featureDir, { recursive: true });
 
     const prd = createPRD(feature, [
@@ -1212,7 +1212,7 @@ describe("AC2: Each failed story shows pattern classification", () => {
 
   test("classifies AUTO_RECOVERED pattern (INFO level)", async () => {
     const feature = "auto-recovered-feature";
-    const featureDir = join(testDir, "nax", "features", feature);
+    const featureDir = join(testDir, ".nax", "features", feature);
     mkdirSync(featureDir, { recursive: true });
 
     const prd = createPRD(feature, [
@@ -1247,7 +1247,7 @@ describe("AC2: Each failed story shows pattern classification", () => {
 
   test("classifies UNKNOWN pattern when no match", async () => {
     const feature = "unknown-feature";
-    const featureDir = join(testDir, "nax", "features", feature);
+    const featureDir = join(testDir, ".nax", "features", feature);
     mkdirSync(featureDir, { recursive: true });
 
     const prd = createPRD(feature, [
@@ -1285,7 +1285,7 @@ describe("AC2: Each failed story shows pattern classification", () => {
 describe("AC3: Stale nax.lock detection", () => {
   test("detects stale lock (PID dead) and shows fix command", async () => {
     const feature = "locked-feature";
-    const featureDir = join(testDir, "nax", "features", feature);
+    const featureDir = join(testDir, ".nax", "features", feature);
     mkdirSync(featureDir, { recursive: true });
 
     const prd = createPRD(feature, [{ id: "US-001", title: "Test Story", status: "pending" }]);
@@ -1314,7 +1314,7 @@ describe("AC3: Stale nax.lock detection", () => {
 
   skipInCI("shows active lock when PID alive", async () => {
     const feature = "active-lock-feature";
-    const featureDir = join(testDir, "nax", "features", feature);
+    const featureDir = join(testDir, ".nax", "features", feature);
     mkdirSync(featureDir, { recursive: true });
 
     const prd = createPRD(feature, [{ id: "US-001", title: "Test Story", status: "pending" }]);
@@ -1349,7 +1349,7 @@ describe("AC3: Stale nax.lock detection", () => {
 describe("AC4: --json flag outputs machine-readable JSON", () => {
   test("outputs valid JSON with all report fields", async () => {
     const feature = "json-feature";
-    const featureDir = join(testDir, "nax", "features", feature);
+    const featureDir = join(testDir, ".nax", "features", feature);
     mkdirSync(featureDir, { recursive: true });
 
     const prd = createPRD(feature, [
@@ -1395,7 +1395,7 @@ describe("AC4: --json flag outputs machine-readable JSON", () => {
 describe("AC5: Works gracefully when events.jsonl missing", () => {
   test("uses PRD + git log only and prints note", async () => {
     const feature = "no-events-feature";
-    const featureDir = join(testDir, "nax", "features", feature);
+    const featureDir = join(testDir, ".nax", "features", feature);
     mkdirSync(featureDir, { recursive: true });
 
     const prd = createPRD(feature, [{ id: "US-001", title: "Test Story", status: "passed", passes: true }]);
@@ -1429,7 +1429,7 @@ describe("AC5: Works gracefully when events.jsonl missing", () => {
 describe("AC6: -f <feature> and -d <workdir> flags work", () => {
   test("diagnoses specific feature with -f flag", async () => {
     const feature = "specific-feature";
-    const featureDir = join(testDir, "nax", "features", feature);
+    const featureDir = join(testDir, ".nax", "features", feature);
     mkdirSync(featureDir, { recursive: true });
 
     const prd = createPRD(feature, [{ id: "US-001", title: "Specific Story", status: "passed", passes: true }]);
@@ -1454,7 +1454,7 @@ describe("AC6: -f <feature> and -d <workdir> flags work", () => {
 
   test("uses specified workdir with -d flag", async () => {
     const feature = "workdir-feature";
-    const featureDir = join(testDir, "nax", "features", feature);
+    const featureDir = join(testDir, ".nax", "features", feature);
     mkdirSync(featureDir, { recursive: true });
 
     const prd = createPRD(feature, [{ id: "US-001", title: "Workdir Story", status: "passed", passes: true }]);
@@ -1484,7 +1484,7 @@ describe("AC6: -f <feature> and -d <workdir> flags work", () => {
 describe("AC7: AUTO_RECOVERED stories shown as INFO", () => {
   test("displays AUTO_RECOVERED with INFO level, not ERROR", async () => {
     const feature = "recovered-feature";
-    const featureDir = join(testDir, "nax", "features", feature);
+    const featureDir = join(testDir, ".nax", "features", feature);
     mkdirSync(featureDir, { recursive: true });
 
     const prd = createPRD(feature, [
