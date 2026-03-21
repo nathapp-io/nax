@@ -366,12 +366,19 @@ nax agents
 
 ---
 
-### `nax config --explain`
+### `nax config`
 
-Display the effective merged configuration with inline explanations for every field.
+Display the effective merged configuration (global + project layers).
 
 ```bash
-nax config -f my-feature --explain
+# Show merged config
+nax config
+
+# Show with field descriptions
+nax config --explain
+
+# Show only fields where project overrides global
+nax config --diff
 ```
 
 ---
