@@ -8,7 +8,7 @@
  * - `init`: Initialize nax in a project directory
  * - `run`: Execute the orchestration loop for a feature
  * - `features create/list`: Manage feature definitions
- * - `analyze`: Parse spec.md + tasks.md into prd.json
+ * - `analyze`: Parse spec.md into prd.json (deprecated — use `nax plan`)
  * - `agents`: Check available coding agent installations
  * - `status`: Show current feature progress
  *
@@ -592,18 +592,42 @@ features
     const featureDir = join(naxDir, "features", name);
     mkdirSync(featureDir, { recursive: true });
 
-    // Create empty templates
+    // Create spec.md template
     await Bun.write(
       join(featureDir, "spec.md"),
-      `# Feature: ${name}\n\n## Overview\n\n## Requirements\n\n## Acceptance Criteria\n`,
-    );
-    await Bun.write(
-      join(featureDir, "plan.md"),
-      `# Plan: ${name}\n\n## Architecture\n\n## Phases\n\n## Dependencies\n`,
-    );
-    await Bun.write(
-      join(featureDir, "tasks.md"),
-      `# Tasks: ${name}\n\n## US-001: [Title]\n\n### Description\n\n### Acceptance Criteria\n- [ ] Criterion 1\n`,
+      `# Feature: ${name}
+
+## Overview
+
+<!-- One paragraph describing what this feature does and why it's needed. -->
+
+## Background / Context
+
+<!-- Optional: relevant background, existing behaviour, or constraints. -->
+
+## User Stories
+
+<!-- Describe what users need. Each story becomes a unit of work for nax.
+     Be specific — the more detail here, the better the generated plan. -->
+
+- As a [user], I want to [goal] so that [benefit].
+
+## Technical Requirements
+
+<!-- Optional: specific technical constraints, patterns to follow, APIs to use, etc. -->
+
+## Acceptance Criteria
+
+<!-- These are parsed by nax to generate acceptance tests.
+     Use clear, testable statements. Each criterion = one AC test. -->
+
+- [ ] [Describe observable outcome 1]
+- [ ] [Describe observable outcome 2]
+
+## Out of Scope
+
+<!-- What this feature explicitly does NOT cover. -->
+`,
     );
     await Bun.write(
       join(featureDir, "progress.txt"),
@@ -613,10 +637,8 @@ features
     console.log(chalk.green(`✅ Created feature: ${name}`));
     console.log(chalk.dim(`   ${featureDir}/`));
     console.log(chalk.dim("   ├── spec.md"));
-    console.log(chalk.dim("   ├── plan.md"));
-    console.log(chalk.dim("   ├── tasks.md"));
     console.log(chalk.dim("   └── progress.txt"));
-    console.log(chalk.dim(`\nNext: Edit spec.md and tasks.md, then: nax plan -f ${name} --from spec.md --auto`));
+    console.log(chalk.dim(`\nNext: Edit spec.md, then: nax plan -f ${name} --from spec.md --auto`));
   });
 
 features

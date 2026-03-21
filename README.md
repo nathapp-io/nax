@@ -85,7 +85,7 @@ Scaffold a new feature.
 nax features create user-auth
 ```
 
-Creates `nax/features/user-auth/prd.json` — edit this file to define your user stories.
+Creates `.nax/features/user-auth/spec.md` — fill in the overview, user stories, and acceptance criteria, then run `nax plan` to generate `prd.json`.
 
 ### `nax features list`
 
