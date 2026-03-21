@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _gitDeps } from "../../../src/utils/git";
+import { withDepsRestore } from "../../helpers/deps";
 
 // Dynamic imports used intentionally: mock.module() in verify-smart-runner.test.ts (which runs
 // before this file alphabetically) poisons the ESM registry. Static imports capture the mock
@@ -188,15 +189,9 @@ describe("mapSourceToTests", () => {
 });
 
 describe("getChangedSourceFiles", () => {
-  let originalSpawn: typeof _gitDeps.spawn;
-
-  beforeEach(() => {
-    originalSpawn = _gitDeps.spawn;
-  });
-
+  withDepsRestore(_gitDeps, ["spawn"]);
   afterEach(() => {
     mock.restore();
-    _gitDeps.spawn = originalSpawn;
   });
 
   test("returns only .ts files under src/", async () => {

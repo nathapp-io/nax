@@ -11,6 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { withDepsRestore } from "../../helpers/deps";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -215,18 +216,7 @@ ${tests}
 // Helpers for saving/restoring _generatorPRDDeps
 // ─────────────────────────────────────────────────────────────────────────────
 
-let savedComplete: typeof _generatorPRDDeps.adapter.complete;
-let savedWriteFile: typeof _generatorPRDDeps.writeFile;
-
-function saveDeps() {
-  savedComplete = _generatorPRDDeps.adapter.complete;
-  savedWriteFile = _generatorPRDDeps.writeFile;
-}
-
-function restoreDeps() {
-  _generatorPRDDeps.adapter.complete = savedComplete;
-  _generatorPRDDeps.writeFile = savedWriteFile;
-}
+withDepsRestore(_generatorPRDDeps, ["adapter", "writeFile"]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // describe: generateFromPRD — result shape
@@ -237,11 +227,6 @@ describe("generateFromPRD — result shape", () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
-    saveDeps();
-  });
-
-  afterEach(() => {
-    restoreDeps();
   });
 
   test("returns AcceptanceTestResult with testCode string", async () => {
@@ -295,11 +280,6 @@ describe("generateFromPRD — uses refined criterion text", () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
-    saveDeps();
-  });
-
-  afterEach(() => {
-    restoreDeps();
   });
 
   test("prompt sent to adapter.complete() contains refined text", async () => {
@@ -393,11 +373,6 @@ describe("generateFromPRD — AC-N naming format in generated tests", () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
-    saveDeps();
-  });
-
-  afterEach(() => {
-    restoreDeps();
   });
 
   test("generated testCode contains AC-1 test name for first criterion", async () => {
@@ -438,11 +413,6 @@ describe("generateFromPRD — bun:test import in generated file", () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
-    saveDeps();
-  });
-
-  afterEach(() => {
-    restoreDeps();
   });
 
   test("generated testCode contains bun:test import", async () => {
@@ -483,11 +453,6 @@ describe("generateFromPRD — writes acceptance-refined.json", () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
-    saveDeps();
-  });
-
-  afterEach(() => {
-    restoreDeps();
   });
 
   test("calls writeFile for acceptance-refined.json", async () => {
@@ -586,11 +551,6 @@ describe("generateFromPRD — adapter.complete() usage", () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
-    saveDeps();
-  });
-
-  afterEach(() => {
-    restoreDeps();
   });
 
   test("calls adapter.complete() exactly once per call", async () => {
@@ -754,11 +714,6 @@ describe("generateFromPRD — acceptance-refined.json is written to featureDir n
   beforeEach(() => {
     workdir = mkdtempSync(join(tmpdir(), "nax-test-workdir-"));
     featureDir = mkdtempSync(join(tmpdir(), "nax-test-featuredir-"));
-    saveDeps();
-  });
-
-  afterEach(() => {
-    restoreDeps();
   });
 
   test("acceptance-refined.json is written to featureDir, not workdir", async () => {
@@ -790,11 +745,6 @@ describe("generateFromPRD — non-code LLM output falls back to skeleton", () =>
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
-    saveDeps();
-  });
-
-  afterEach(() => {
-    restoreDeps();
   });
 
   test("LLM prose output (no code) returns skeleton tests", async () => {

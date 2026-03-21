@@ -11,6 +11,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { OpenCodeAdapter, _opencodeCompleteDeps } from "../../../../src/agents/opencode/adapter";
+import { withDepsRestore } from "../../../helpers/deps";
 import { getAgent } from "../../../../src/agents/registry";
 import { CompleteError } from "../../../../src/agents/types";
 
@@ -59,15 +60,10 @@ describe("OpenCodeAdapter interface compliance", () => {
 
 describe("isInstalled()", () => {
   let adapter: OpenCodeAdapter;
-  let originalWhich: (name: string) => string | null;
 
+  withDepsRestore(_opencodeCompleteDeps, ["which"]);
   beforeEach(() => {
     adapter = new OpenCodeAdapter();
-    originalWhich = _opencodeCompleteDeps.which;
-  });
-
-  afterEach(() => {
-    _opencodeCompleteDeps.which = originalWhich;
   });
 
   test("returns true when Bun.which finds the opencode binary", async () => {
@@ -106,24 +102,11 @@ describe("isInstalled()", () => {
 describe("complete()", () => {
   let adapter: OpenCodeAdapter;
   let capturedCmd: string[];
-  let originalSpawn: (
-    cmd: string[],
-    opts: { stdout: "pipe"; stderr: "pipe" | "inherit" },
-  ) => {
-    stdout: ReadableStream<Uint8Array>;
-    stderr: ReadableStream<Uint8Array>;
-    exited: Promise<number>;
-    pid: number;
-  };
 
+  withDepsRestore(_opencodeCompleteDeps, ["spawn"]);
   beforeEach(() => {
     adapter = new OpenCodeAdapter();
     capturedCmd = [];
-    originalSpawn = _opencodeCompleteDeps.spawn;
-  });
-
-  afterEach(() => {
-    _opencodeCompleteDeps.spawn = originalSpawn;
   });
 
   // ── Success path ────────────────────────────────────────────────────────

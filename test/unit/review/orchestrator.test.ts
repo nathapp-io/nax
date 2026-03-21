@@ -17,13 +17,14 @@ import type { IReviewPlugin } from "../../../src/plugins/extensions";
 import { ReviewOrchestrator, _orchestratorDeps } from "../../../src/review/orchestrator";
 import { _deps as _runnerDeps } from "../../../src/review/runner";
 import type { ReviewConfig } from "../../../src/review/types";
+import { withDepsRestore } from "../../helpers/deps";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-const originalGetUncommittedFiles = _runnerDeps.getUncommittedFiles;
-const originalSpawn = _orchestratorDeps.spawn;
+withDepsRestore(_runnerDeps, ["getUncommittedFiles"]);
+withDepsRestore(_orchestratorDeps, ["spawn"]);
 
 function makeReviewConfig(pluginMode?: "per-story" | "deferred"): ReviewConfig {
   // pluginMode is added by DR-001 — cast until the type is updated
@@ -73,8 +74,6 @@ beforeEach(() => {
 
 afterEach(() => {
   mock.restore();
-  _runnerDeps.getUncommittedFiles = originalGetUncommittedFiles;
-  _orchestratorDeps.spawn = originalSpawn;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

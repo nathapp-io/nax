@@ -1,24 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _cleanupDeps, cleanupProcessTree, getPgid } from "../../../src/tdd/cleanup";
+import { withDepsRestore } from "../../helpers/deps";
 
-let originalSpawn: typeof _cleanupDeps.spawn;
-let originalSleep: typeof _cleanupDeps.sleep;
-let originalKill: typeof _cleanupDeps.kill;
-
-beforeEach(() => {
-  originalSpawn = _cleanupDeps.spawn;
-  originalSleep = _cleanupDeps.sleep;
-  originalKill = _cleanupDeps.kill;
-});
-
-afterEach(() => {
-  _cleanupDeps.spawn = originalSpawn;
-  _cleanupDeps.sleep = originalSleep;
-  _cleanupDeps.kill = originalKill;
-});
+withDepsRestore(_cleanupDeps, ["spawn", "sleep", "kill"]);
 
 describe("getPgid", () => {
   test("returns PGID for valid process", async () => {
+    const realSpawn = _cleanupDeps.spawn;
     _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "ps" && cmd[1] === "-o" && cmd[2] === "pgid=") {
         return {
@@ -27,7 +15,7 @@ describe("getPgid", () => {
           stderr: new Response("").body,
         };
       }
-      return originalSpawn(cmd, spawnOpts);
+      return realSpawn(cmd, spawnOpts);
     }) as any;
 
     const pgid = await getPgid(12345);
@@ -35,6 +23,7 @@ describe("getPgid", () => {
   });
 
   test("returns null for non-existent process", async () => {
+    const realSpawn = _cleanupDeps.spawn;
     _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "ps") {
         return {
@@ -43,7 +32,7 @@ describe("getPgid", () => {
           stderr: new Response("No such process\n").body,
         };
       }
-      return originalSpawn(cmd, spawnOpts);
+      return realSpawn(cmd, spawnOpts);
     }) as any;
 
     const pgid = await getPgid(99999);
@@ -51,6 +40,7 @@ describe("getPgid", () => {
   });
 
   test("returns null for invalid ps output", async () => {
+    const realSpawn = _cleanupDeps.spawn;
     _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "ps") {
         return {
@@ -59,7 +49,7 @@ describe("getPgid", () => {
           stderr: new Response("").body,
         };
       }
-      return originalSpawn(cmd, spawnOpts);
+      return realSpawn(cmd, spawnOpts);
     }) as any;
 
     const pgid = await getPgid(12345);
@@ -79,6 +69,7 @@ describe("getPgid", () => {
 describe("cleanupProcessTree", () => {
   test("cleans up process group with SIGTERM then SIGKILL", async () => {
     const killCalls: Array<{ pid: number; signal: string }> = [];
+    const realSpawn = _cleanupDeps.spawn;
 
     _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "ps") {
@@ -88,7 +79,7 @@ describe("cleanupProcessTree", () => {
           stderr: new Response("").body,
         };
       }
-      return originalSpawn(cmd, spawnOpts);
+      return realSpawn(cmd, spawnOpts);
     }) as any;
 
     _cleanupDeps.kill = mock((pid: number, signal?: string | number) => {
@@ -107,6 +98,7 @@ describe("cleanupProcessTree", () => {
   });
 
   test("handles already-dead process gracefully", async () => {
+    const realSpawn = _cleanupDeps.spawn;
     _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "ps") {
         return {
@@ -115,7 +107,7 @@ describe("cleanupProcessTree", () => {
           stderr: new Response("No such process\n").body,
         };
       }
-      return originalSpawn(cmd, spawnOpts);
+      return realSpawn(cmd, spawnOpts);
     }) as any;
 
     const killCalls: any[] = [];
@@ -131,6 +123,7 @@ describe("cleanupProcessTree", () => {
   });
 
   test("handles ESRCH error when sending SIGTERM", async () => {
+    const realSpawn = _cleanupDeps.spawn;
     _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "ps") {
         return {
@@ -139,7 +132,7 @@ describe("cleanupProcessTree", () => {
           stderr: new Response("").body,
         };
       }
-      return originalSpawn(cmd, spawnOpts);
+      return realSpawn(cmd, spawnOpts);
     }) as any;
 
     const killCalls: any[] = [];
@@ -159,6 +152,7 @@ describe("cleanupProcessTree", () => {
 
   test("handles errors during SIGKILL gracefully", async () => {
     const killCalls: any[] = [];
+    const realSpawn = _cleanupDeps.spawn;
 
     _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "ps") {
@@ -168,7 +162,7 @@ describe("cleanupProcessTree", () => {
           stderr: new Response("").body,
         };
       }
-      return originalSpawn(cmd, spawnOpts);
+      return realSpawn(cmd, spawnOpts);
     }) as any;
 
     _cleanupDeps.kill = mock((pid: number, signal?: string | number) => {
@@ -190,6 +184,7 @@ describe("cleanupProcessTree", () => {
   });
 
   test("logs warning on unexpected cleanup error", async () => {
+    const realSpawn = _cleanupDeps.spawn;
     _cleanupDeps.spawn = mock((cmd: string[], spawnOpts?: any) => {
       if (cmd[0] === "ps") {
         return {
@@ -198,7 +193,7 @@ describe("cleanupProcessTree", () => {
           stderr: new Response("").body,
         };
       }
-      return originalSpawn(cmd, spawnOpts);
+      return realSpawn(cmd, spawnOpts);
     }) as any;
 
     _cleanupDeps.kill = mock(() => {

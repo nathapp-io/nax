@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import { withDepsRestore } from "../../helpers/deps";
 import {
   _refineDeps,
   buildRefinementPrompt,
@@ -161,18 +162,7 @@ function makeLLMResponse(criteria: string[], storyId: string, testable = true): 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers for saving/restoring _refineDeps.adapter.complete
-// ─────────────────────────────────────────────────────────────────────────────
-
-let savedComplete: typeof _refineDeps.adapter.complete;
-
-function saveComplete() {
-  savedComplete = _refineDeps.adapter.complete;
-}
-
-function restoreComplete() {
-  _refineDeps.adapter.complete = savedComplete;
-}
+withDepsRestore(_refineDeps, ["adapter"]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
@@ -312,7 +302,6 @@ describe("parseRefinementResponse", () => {
 
 describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
   test("calls adapter.complete() exactly once per call", async () => {
-    saveComplete();
     const config = makeConfig();
     let callCount = 0;
 
@@ -326,13 +315,11 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       codebaseContext: CODEBASE_CONTEXT,
       config,
     });
-    restoreComplete();
 
     expect(callCount).toBe(1);
   });
 
   test("does NOT call Bun.spawn directly — uses adapter.complete()", async () => {
-    saveComplete();
     const config = makeConfig();
     const spawnCalls: unknown[] = [];
     const originalSpawn = Bun.spawn;
@@ -354,13 +341,11 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
     });
 
     (Bun as { spawn: unknown }).spawn = originalSpawn;
-    restoreComplete();
 
     expect(spawnCalls).toHaveLength(0);
   });
 
   test("returns RefinedCriterion[] with original field matching input", async () => {
-    saveComplete();
     const config = makeConfig();
 
     _refineDeps.adapter.complete = mock(async () =>
@@ -372,7 +357,6 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       codebaseContext: CODEBASE_CONTEXT,
       config,
     });
-    restoreComplete();
 
     expect(Array.isArray(result)).toBe(true);
     expect(result).toHaveLength(SAMPLE_CRITERIA.length);
@@ -382,7 +366,6 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
   });
 
   test("returns RefinedCriterion[] with refined field from LLM response", async () => {
-    saveComplete();
     const config = makeConfig();
 
     _refineDeps.adapter.complete = mock(async () =>
@@ -394,7 +377,6 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       codebaseContext: CODEBASE_CONTEXT,
       config,
     });
-    restoreComplete();
 
     for (const item of result) {
       expect(typeof item.refined).toBe("string");
@@ -403,7 +385,6 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
   });
 
   test("passes a plain string prompt to adapter.complete() (not SDK format)", async () => {
-    saveComplete();
     const config = makeConfig();
     let capturedPrompt: unknown;
 
@@ -417,13 +398,11 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       codebaseContext: CODEBASE_CONTEXT,
       config,
     });
-    restoreComplete();
 
     expect(typeof capturedPrompt).toBe("string");
   });
 
   test("prompt passed to adapter.complete() contains all criteria", async () => {
-    saveComplete();
     const config = makeConfig();
     let capturedPrompt = "";
 
@@ -437,7 +416,6 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       codebaseContext: CODEBASE_CONTEXT,
       config,
     });
-    restoreComplete();
 
     for (const criterion of SAMPLE_CRITERIA) {
       expect(capturedPrompt).toContain(criterion);
@@ -445,7 +423,6 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
   });
 
   test("prompt passed to adapter.complete() contains codebase context", async () => {
-    saveComplete();
     const config = makeConfig();
     let capturedPrompt = "";
 
@@ -459,13 +436,11 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       codebaseContext: CODEBASE_CONTEXT,
       config,
     });
-    restoreComplete();
 
     expect(capturedPrompt).toContain(CODEBASE_CONTEXT);
   });
 
   test("preserves criteria with testable:false in the result", async () => {
-    saveComplete();
     const config = makeConfig();
 
     _refineDeps.adapter.complete = mock(async () =>
@@ -477,7 +452,6 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       codebaseContext: CODEBASE_CONTEXT,
       config,
     });
-    restoreComplete();
 
     expect(result).toHaveLength(SAMPLE_CRITERIA.length);
     for (const item of result) {
@@ -486,7 +460,6 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
   });
 
   test("assigns storyId from context to all RefinedCriterion items", async () => {
-    saveComplete();
     const config = makeConfig();
     const customStoryId = "STORY-XYZ";
 
@@ -499,7 +472,6 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       codebaseContext: CODEBASE_CONTEXT,
       config,
     });
-    restoreComplete();
 
     for (const item of result) {
       expect(item.storyId).toBe(customStoryId);
@@ -507,7 +479,6 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
   });
 
   test("handles empty criteria list without calling adapter.complete()", async () => {
-    saveComplete();
     const config = makeConfig();
     let adapterCalled = false;
 
@@ -521,14 +492,12 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       codebaseContext: CODEBASE_CONTEXT,
       config,
     });
-    restoreComplete();
 
     expect(result).toHaveLength(0);
     expect(adapterCalled).toBe(false);
   });
 
   test("falls back to original text when adapter.complete() returns malformed JSON", async () => {
-    saveComplete();
     const config = makeConfig();
 
     _refineDeps.adapter.complete = mock(async () => "not valid json at all {{{");
@@ -538,7 +507,6 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       codebaseContext: CODEBASE_CONTEXT,
       config,
     });
-    restoreComplete();
 
     expect(result).toHaveLength(SAMPLE_CRITERIA.length);
     for (let i = 0; i < SAMPLE_CRITERIA.length; i++) {
@@ -548,7 +516,6 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
   });
 
   test("falls back gracefully when adapter.complete() throws", async () => {
-    saveComplete();
     const config = makeConfig();
 
     _refineDeps.adapter.complete = mock(async () => {
@@ -560,7 +527,6 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
       codebaseContext: CODEBASE_CONTEXT,
       config,
     });
-    restoreComplete();
 
     // Should return fallback results, not throw
     expect(Array.isArray(result)).toBe(true);

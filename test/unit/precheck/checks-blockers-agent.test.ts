@@ -9,6 +9,7 @@
 import { describe, expect, mock, test, afterEach } from "bun:test";
 import type { NaxConfig } from "../../../src/config/types";
 import { checkAgentCLI, _deps } from "../../../src/precheck/checks-blockers";
+import { withDepsRestore } from "../../helpers/deps";
 
 // --- helpers ---
 
@@ -20,11 +21,7 @@ function makeConfig(agent?: string): NaxConfig {
   } as unknown as NaxConfig;
 }
 
-const originalSpawn = _deps.spawn;
-
-afterEach(() => {
-  _deps.spawn = originalSpawn;
-});
+withDepsRestore(_deps, ["spawn"]);
 
 // --- tests ---
 

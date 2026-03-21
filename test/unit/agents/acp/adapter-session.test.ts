@@ -17,6 +17,7 @@
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { AcpAgentAdapter, _acpAdapterDeps, buildSessionName, ensureAcpSession } from "../../../../src/agents/acp/adapter";
+import { withDepsRestore } from "../../../helpers/deps";
 import type { AcpClient, AcpSession } from "../../../../src/agents/acp/adapter";
 import type { AgentRunOptions } from "../../../../src/agents/types";
 import { makeClient, makeSession } from "./adapter.test";
@@ -42,19 +43,15 @@ const BASE_OPTIONS: AgentRunOptions = {
 
 describe("AcpAgentAdapter — session mode (run)", () => {
   let adapter: AcpAgentAdapter;
-  let originalCreateClient: typeof _acpAdapterDeps.createClient;
-  let originalSleep: typeof _acpAdapterDeps.sleep;
+
+  withDepsRestore(_acpAdapterDeps, ["createClient", "sleep"]);
 
   beforeEach(() => {
     adapter = new AcpAgentAdapter("claude");
-    originalCreateClient = _acpAdapterDeps.createClient;
-    originalSleep = _acpAdapterDeps.sleep;
     _acpAdapterDeps.sleep = async () => {};
   });
 
   afterEach(() => {
-    _acpAdapterDeps.createClient = originalCreateClient;
-    _acpAdapterDeps.sleep = originalSleep;
     mock.restore();
   });
 

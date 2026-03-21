@@ -6,6 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { _gitDeps, autoCommitIfDirty } from "../../../src/utils/git";
+import { withDepsRestore } from "../../helpers/deps";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -43,16 +44,11 @@ function makeProc(stdout: string, exitCode = 0): SpawnResult {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("autoCommitIfDirty", () => {
-  let originalSpawn: typeof _gitDeps.spawn;
   const commands: string[][] = [];
 
+  withDepsRestore(_gitDeps, ["spawn"]);
   beforeEach(() => {
-    originalSpawn = _gitDeps.spawn;
     commands.length = 0;
-  });
-
-  afterEach(() => {
-    _gitDeps.spawn = originalSpawn;
   });
 
   test("commits when workdir is the git root", async () => {

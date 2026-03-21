@@ -12,6 +12,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { withDepsRestore } from "../../../helpers/deps";
 import { AcpAgentAdapter, _acpAdapterDeps } from "../../../../src/agents/acp/adapter";
 import type { AcpClient, AcpSession, AcpSessionResponse } from "../../../../src/agents/acp/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
@@ -112,13 +113,11 @@ const config: NaxConfig = {
 // Git spawn mock — intercepts all git commands needed by runTddSession
 // ─────────────────────────────────────────────────────────────────────────────
 
-let originalCreateClient: typeof _acpAdapterDeps.createClient;
-let originalSleep: typeof _acpAdapterDeps.sleep;
-let originalGitSpawn: typeof _gitDeps.spawn;
-let originalAutoCommit: typeof _sessionRunnerDeps.autoCommitIfDirty;
-let originalIsolationSpawn: typeof _isolationDeps.spawn;
-let originalExecutorSpawn: typeof _executorDeps.spawn;
-let originalSessionRunnerSpawn: typeof _sessionRunnerDeps.spawn;
+withDepsRestore(_acpAdapterDeps, ["createClient", "sleep"]);
+withDepsRestore(_gitDeps, ["spawn"]);
+withDepsRestore(_sessionRunnerDeps, ["autoCommitIfDirty", "spawn"]);
+withDepsRestore(_isolationDeps, ["spawn"]);
+withDepsRestore(_executorDeps, ["spawn"]);
 
 function mockGitSpawn(diffFileSequences: string[][] = []) {
   let revParseCount = 0;
@@ -177,25 +176,11 @@ function mockGitSpawn(diffFileSequences: string[][] = []) {
 }
 
 beforeEach(() => {
-  originalCreateClient = _acpAdapterDeps.createClient;
-  originalSleep = _acpAdapterDeps.sleep;
-  originalGitSpawn = _gitDeps.spawn;
-  originalAutoCommit = _sessionRunnerDeps.autoCommitIfDirty;
-  originalIsolationSpawn = _isolationDeps.spawn;
-  originalExecutorSpawn = _executorDeps.spawn;
-  originalSessionRunnerSpawn = _sessionRunnerDeps.spawn;
   // Disable sleep delays in tests
   _acpAdapterDeps.sleep = mock(async (_ms: number) => {});
 });
 
 afterEach(() => {
-  _acpAdapterDeps.createClient = originalCreateClient;
-  _acpAdapterDeps.sleep = originalSleep;
-  _gitDeps.spawn = originalGitSpawn;
-  _sessionRunnerDeps.autoCommitIfDirty = originalAutoCommit;
-  _sessionRunnerDeps.spawn = originalSessionRunnerSpawn;
-  _isolationDeps.spawn = originalIsolationSpawn;
-  _executorDeps.spawn = originalExecutorSpawn;
   mock.restore();
 });
 

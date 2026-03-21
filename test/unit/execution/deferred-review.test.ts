@@ -20,6 +20,7 @@ import {
   captureRunStartRef,
   runDeferredReview,
 } from "../../../src/execution/deferred-review";
+import { withDepsRestore } from "../../helpers/deps";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -80,11 +81,9 @@ function makeReviewConfig(pluginMode?: "per-story" | "deferred"): ReviewConfig {
   } as unknown as ReviewConfig;
 }
 
-const originalSpawn = _deferredReviewDeps.spawn;
-
+withDepsRestore(_deferredReviewDeps, ["spawn"]);
 afterEach(() => {
   mock.restore();
-  _deferredReviewDeps.spawn = originalSpawn;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

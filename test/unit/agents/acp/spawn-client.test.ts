@@ -7,6 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { SpawnAcpClient, _spawnClientDeps } from "../../../../src/agents/acp/spawn-client";
+import { withDepsRestore } from "../../../helpers/deps";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Spawn mock helper
@@ -37,15 +38,7 @@ function makeSpawnResult(exitCode: number, stdout = ""): ReturnType<typeof _spaw
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("SpawnAcpClient — loadSession (SEC-3)", () => {
-  let originalSpawn: typeof _spawnClientDeps.spawn;
-
-  beforeEach(() => {
-    originalSpawn = _spawnClientDeps.spawn;
-  });
-
-  afterEach(() => {
-    _spawnClientDeps.spawn = originalSpawn;
-  });
+  withDepsRestore(_spawnClientDeps, ["spawn"]);
 
   test("loadSession returns a session when ensure succeeds", async () => {
     _spawnClientDeps.spawn = (_cmd, _opts) =>
