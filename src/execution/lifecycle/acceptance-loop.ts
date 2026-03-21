@@ -8,9 +8,10 @@
  * 4. Retries until max retries or all tests pass
  */
 
-import path from "node:path";
+import path, { join } from "node:path";
 import { type FixStory, convertFixStoryToUserStory, generateFixStories } from "../../acceptance";
 import type { NaxConfig } from "../../config";
+import { loadConfigForWorkdir } from "../../config/loader";
 import { resolveModel } from "../../config/schema";
 import { type LoadedHooksConfig, fireHook } from "../../hooks";
 import { getSafeLogger } from "../../logger";
@@ -137,9 +138,13 @@ async function executeFixStory(
     }),
     ctx.workdir,
   );
+  // PKG: resolve per-package effective config for fix stories (same as iteration-runner)
+  const fixEffectiveConfig = story.workdir
+    ? await loadConfigForWorkdir(join(ctx.workdir, "nax", "config.json"), story.workdir)
+    : ctx.config;
   const fixContext: PipelineContext = {
     config: ctx.config,
-    effectiveConfig: ctx.config,
+    effectiveConfig: fixEffectiveConfig,
     prd,
     story,
     stories: [story],
@@ -178,12 +183,19 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
 
   logger?.info("acceptance", "All stories complete, running acceptance validation");
 
+  // PKG: resolve per-package effective config once for the acceptance loop
+  // Use first story's workdir as representative (all stories in a feature share the same package)
+  const firstStoryWorkdir = prd.userStories[0]?.workdir;
+  const acceptanceEffectiveConfig = firstStoryWorkdir
+    ? await loadConfigForWorkdir(join(ctx.workdir, "nax", "config.json"), firstStoryWorkdir)
+    : ctx.config;
+
   while (acceptanceRetries < maxRetries) {
     // Run acceptance validation
     const firstStory = prd.userStories[0];
     const acceptanceContext: PipelineContext = {
       config: ctx.config,
-      effectiveConfig: ctx.config,
+      effectiveConfig: acceptanceEffectiveConfig,
       prd,
       story: firstStory,
       stories: [firstStory],
