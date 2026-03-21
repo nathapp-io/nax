@@ -118,7 +118,8 @@ Rules:
 - **integration-check ACs** → use the language's HTTP client or existing test helpers; add a clear setup block (beforeAll/setup/TestMain/etc.) explaining what must be running
 - **NEVER use placeholder assertions** — no always-passing or always-failing stubs, no TODO comments as the only content, no empty test bodies
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
-- Output raw code only — no markdown fences, start directly with the language's import or package declaration`;
+- Output raw code only — no markdown fences, start directly with the language's import or package declaration
+- **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/nax/features/${options.featureName}/acceptance.test.ts\`. The repo root is exactly 3 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..')\`. Never use 4 or more \`../\` — that would escape the repo entirely.`;
 
   const prompt = basePrompt;
 
@@ -247,7 +248,8 @@ Rules:
 - **integration-check ACs** → use the language's HTTP client or existing test helpers; add a clear setup block (beforeAll/setup/TestMain/etc.) explaining what must be running
 - **NEVER use placeholder assertions** — no always-passing or always-failing stubs, no TODO comments as the only content, no empty test bodies
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
-- Output raw code only — no markdown fences, start directly with the language's import or package declaration`;
+- Output raw code only — no markdown fences, start directly with the language's import or package declaration
+- **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/nax/features/${featureName}/acceptance.test.ts\`. The repo root is exactly 3 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..')\`. Never use 4 or more \`../\` — that would escape the repo entirely.`;
 }
 
 /**
