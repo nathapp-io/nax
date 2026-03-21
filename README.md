@@ -206,21 +206,28 @@ nax status -f my-feature
 
 ---
 
-### `nax logs -f <name>`
+### `nax logs`
 
-Stream logs from the current or last run.
+Stream logs from the current or last run. Run from your project directory.
 
 ```bash
-nax logs -f my-feature
+# List all recorded runs
+nax logs --list
 
-# Follow in real-time
-nax logs -f my-feature --follow
+# Follow current run in real-time
+nax logs --follow
 
 # Filter by story
-nax logs -f my-feature --story US-003
+nax logs --story US-003
 
-# Filter by level
-nax logs -f my-feature --level error
+# Filter by log level
+nax logs --level error
+
+# Select a specific run by ID
+nax logs --run <runId>
+
+# Raw JSONL output (for scripting)
+nax logs --json
 ```
 
 ---
