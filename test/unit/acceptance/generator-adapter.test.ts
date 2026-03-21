@@ -516,8 +516,10 @@ describe("generateFixStories — adapter.complete() integration", () => {
     expect(binaryAccessed).toBe(false);
   });
 
-  test("calls adapter.complete() once per failed AC", async () => {
+  test("calls adapter.complete() once per AC group (batched — D1)", async () => {
     const { adapter, completeCalls } = makeMockAdapter("Fix it.");
+
+    // All 3 ACs belong to the same story → grouped into 1 batch → 1 LLM call
     const options: GenerateFixStoriesOptions = {
       ...makeFixOptions(),
       failedACs: ["AC-1", "AC-2", "AC-3"],
@@ -534,6 +536,36 @@ describe("generateFixStories — adapter.complete() integration", () => {
 
     await generateFixStories(adapter, options);
 
-    expect(completeCalls.length).toBe(3);
+    // D1: ACs sharing the same related story are batched into 1 fix story → 1 LLM call
+    expect(completeCalls.length).toBe(1);
+  });
+
+  test("calls adapter.complete() once per distinct related-story group (D1)", async () => {
+    const { adapter, completeCalls } = makeMockAdapter("Fix it.");
+
+    // AC-1 → US-001, AC-2 → US-002 (different stories → 2 groups → 2 LLM calls)
+    const options: GenerateFixStoriesOptions = {
+      ...makeFixOptions(),
+      failedACs: ["AC-1", "AC-2"],
+      prd: {
+        ...SAMPLE_PRD,
+        userStories: [
+          {
+            ...SAMPLE_PRD.userStories[0],
+            id: "US-001",
+            acceptanceCriteria: ["AC-1: first"],
+          },
+          {
+            ...SAMPLE_PRD.userStories[0],
+            id: "US-002",
+            acceptanceCriteria: ["AC-2: second"],
+          },
+        ],
+      },
+    };
+
+    await generateFixStories(adapter, options);
+
+    expect(completeCalls.length).toBe(2);
   });
 });

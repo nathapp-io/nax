@@ -3,9 +3,10 @@
  *
  * Handles the acceptance testing retry loop after main execution completes:
  * 1. Runs acceptance validation
- * 2. Generates fix stories for failed acceptance criteria
- * 3. Executes fix stories through pipeline
- * 4. Retries until max retries or all tests pass
+ * 2. Detects test-level failures (>80% fail or crash) and regenerates test (P1-D)
+ * 3. Generates batched fix stories for implementation-level failures
+ * 4. Executes fix stories through pipeline
+ * 5. Retries until max retries or all tests pass
  */
 
 import path, { join } from "node:path";
@@ -61,6 +62,22 @@ export function isStubTestFile(content: string): boolean {
   return /expect\s*\(\s*true\s*\)\s*\.\s*toBe\s*\(\s*(?:false|true)\s*\)/.test(content);
 }
 
+/**
+ * Detect test-level failure (P1-D, D2).
+ *
+ * Returns true when the failure is likely a test bug rather than implementation gaps:
+ * - Test crashed with no ACs parsed ("AC-ERROR" sentinel)
+ * - More than 80% of total ACs failed
+ *
+ * @param failedACs - ACs that failed in this run
+ * @param totalACs - Total ACs across all non-fix stories
+ */
+export function isTestLevelFailure(failedACs: string[], totalACs: number): boolean {
+  if (failedACs.includes("AC-ERROR")) return true;
+  if (totalACs === 0) return false;
+  return failedACs.length / totalACs > 0.8;
+}
+
 /** Load spec.md content for AC text */
 async function loadSpecContent(featureDir?: string): Promise<string> {
   if (!featureDir) return "";
@@ -95,6 +112,7 @@ async function generateAndAddFixStories(
     return null;
   }
   const modelDef = resolveModel(ctx.config.models[ctx.config.analyze.model]);
+  const testFilePath = ctx.featureDir ? path.join(ctx.featureDir, "acceptance.test.ts") : undefined;
   const fixStories = await generateFixStories(agent, {
     failedACs: failures.failedACs,
     testOutput: failures.testOutput,
@@ -103,6 +121,7 @@ async function generateAndAddFixStories(
     workdir: ctx.workdir,
     modelDef,
     config: ctx.config,
+    testFilePath,
   });
   if (fixStories.length === 0) {
     logger?.error("acceptance", "Failed to generate fix stories");
@@ -163,6 +182,39 @@ async function executeFixStory(
     cost: result.context.agentResult?.estimatedCost || 0,
     metrics: result.context.storyMetrics,
   };
+}
+
+/**
+ * Back up and regenerate the acceptance test file (P1-D, D2).
+ *
+ * Steps:
+ * 1. Copy acceptance.test.ts → acceptance.test.ts.bak
+ * 2. Delete acceptance.test.ts
+ * 3. Re-run acceptance-setup to generate fresh test
+ *
+ * @returns true if regeneration succeeded, false otherwise
+ */
+async function regenerateAcceptanceTest(testPath: string, acceptanceContext: PipelineContext): Promise<boolean> {
+  const logger = getSafeLogger();
+  const bakPath = `${testPath}.bak`;
+
+  const content = await Bun.file(testPath).text();
+  await Bun.write(bakPath, content);
+  logger?.info("acceptance", `Backed up acceptance test -> ${bakPath}`);
+
+  const { unlink } = await import("node:fs/promises");
+  await unlink(testPath);
+
+  const { acceptanceSetupStage } = await import("../../pipeline/stages/acceptance-setup");
+  await acceptanceSetupStage.execute(acceptanceContext);
+
+  if (!(await Bun.file(testPath).exists())) {
+    logger?.error("acceptance", "Acceptance test regeneration failed — manual intervention required");
+    return false;
+  }
+
+  logger?.info("acceptance", "Acceptance test regenerated successfully");
+  return true;
 }
 
 /**
@@ -253,7 +305,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
     }
 
-    // Check for stub test file before generating fix stories
+    // Check for stub test file before other checks
     if (ctx.featureDir) {
       const testPath = path.join(ctx.featureDir, "acceptance.test.ts");
       const testFile = Bun.file(testPath);
@@ -273,7 +325,30 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
             );
             return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
           }
+          continue;
         }
+      }
+    }
+
+    // P1-D / D2: Detect test-level failure — regenerate instead of fixing
+    // Count total ACs from non-fix stories only
+    const totalACs = prd.userStories
+      .filter((s) => !s.id.startsWith("US-FIX-"))
+      .flatMap((s) => s.acceptanceCriteria).length;
+
+    if (ctx.featureDir && isTestLevelFailure(failures.failedACs, totalACs)) {
+      logger?.warn(
+        "acceptance",
+        `Test-level failure detected (${failures.failedACs.length}/${totalACs} ACs failed) — regenerating acceptance test`,
+      );
+      const testPath = path.join(ctx.featureDir, "acceptance.test.ts");
+      const testFile = Bun.file(testPath);
+      if (await testFile.exists()) {
+        const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext);
+        if (!regenerated) {
+          return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
+        }
+        continue; // retry with regenerated test
       }
     }
 

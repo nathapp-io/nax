@@ -9,6 +9,10 @@
  * - exit == 0 (all tests pass) → tests are not testing new behavior, warn and skip
  *
  * Stores results in ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount }.
+ *
+ * P2-A/P2-B: When a test file already exists, checks a SHA-256 fingerprint of the
+ * sorted AC strings against acceptance-meta.json. Regenerates (with .bak backup)
+ * when the fingerprint has changed or meta is missing.
  */
 
 import path from "node:path";
@@ -16,6 +20,38 @@ import type { RefinedCriterion } from "../../acceptance/types";
 import { resolveModel } from "../../config";
 import type { UserStory } from "../../prd/types";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+
+/**
+ * Metadata stored alongside the acceptance test file.
+ * Used for fingerprint-based staleness detection (P2-B).
+ */
+export interface AcceptanceMeta {
+  /** ISO timestamp when acceptance test was generated */
+  generatedAt: string;
+  /** SHA-256 fingerprint of sorted, joined AC strings */
+  acFingerprint: string;
+  /** Number of stories at generation time */
+  storyCount: number;
+  /** Total AC count at generation time */
+  acCount: number;
+  /** Generator identifier */
+  generator: string;
+}
+
+/**
+ * Compute SHA-256 fingerprint of the sorted acceptance criteria strings (P2-A).
+ *
+ * Criteria are sorted before hashing so order changes don't trigger regeneration.
+ *
+ * @param criteria - All AC strings from the PRD
+ * @returns Fingerprint string in the form "sha256:<hex>"
+ */
+export function computeACFingerprint(criteria: string[]): string {
+  const sorted = [...criteria].sort().join("\n");
+  const hasher = new Bun.CryptoHasher("sha256");
+  hasher.update(sorted);
+  return `sha256:${hasher.digest("hex")}`;
+}
 
 /**
  * Injectable dependencies for acceptance-setup stage.
@@ -29,6 +65,26 @@ export const _acceptanceSetupDeps = {
   },
   writeFile: async (filePath: string, content: string): Promise<void> => {
     await Bun.write(filePath, content);
+  },
+  copyFile: async (src: string, dest: string): Promise<void> => {
+    const content = await Bun.file(src).text();
+    await Bun.write(dest, content);
+  },
+  deleteFile: async (filePath: string): Promise<void> => {
+    const { unlink } = await import("node:fs/promises");
+    await unlink(filePath);
+  },
+  readMeta: async (metaPath: string): Promise<AcceptanceMeta | null> => {
+    const f = Bun.file(metaPath);
+    if (!(await f.exists())) return null;
+    try {
+      return JSON.parse(await f.text()) as AcceptanceMeta;
+    } catch {
+      return null;
+    }
+  },
+  writeMeta: async (metaPath: string, meta: AcceptanceMeta): Promise<void> => {
+    await Bun.write(metaPath, JSON.stringify(meta, null, 2));
   },
   runTest: async (_testPath: string, _workdir: string): Promise<{ exitCode: number; output: string }> => {
     const proc = Bun.spawn(["bun", "test", _testPath], {
@@ -73,13 +129,30 @@ export const acceptanceSetupStage: PipelineStage = {
     }
 
     const testPath = path.join(ctx.featureDir, "acceptance.test.ts");
-    const fileExists = await _acceptanceSetupDeps.fileExists(testPath);
+    const metaPath = path.join(ctx.featureDir, "acceptance-meta.json");
+
+    // All criteria from the PRD — used for fingerprint and generation
+    const allCriteria: string[] = ctx.prd.userStories.flatMap((s) => s.acceptanceCriteria);
 
     let totalCriteria = 0;
     let testableCount = 0;
 
-    if (!fileExists) {
-      const allCriteria: string[] = ctx.prd.userStories.flatMap((s) => s.acceptanceCriteria);
+    const fileExists = await _acceptanceSetupDeps.fileExists(testPath);
+
+    // P2-A: Staleness detection — check fingerprint when file already exists
+    let shouldGenerate = !fileExists;
+    if (fileExists) {
+      const fingerprint = computeACFingerprint(allCriteria);
+      const meta = await _acceptanceSetupDeps.readMeta(metaPath);
+      if (!meta || meta.acFingerprint !== fingerprint) {
+        // ACs changed (or no meta) — back up and regenerate
+        await _acceptanceSetupDeps.copyFile(testPath, `${testPath}.bak`);
+        await _acceptanceSetupDeps.deleteFile(testPath);
+        shouldGenerate = true;
+      }
+    }
+
+    if (shouldGenerate) {
       totalCriteria = allCriteria.length;
 
       const { getAgent } = await import("../../agents");
@@ -120,6 +193,16 @@ export const acceptanceSetupStage: PipelineStage = {
       });
 
       await _acceptanceSetupDeps.writeFile(testPath, result.testCode);
+
+      // P2-B: Store acceptance metadata
+      const fingerprint = computeACFingerprint(allCriteria);
+      await _acceptanceSetupDeps.writeMeta(metaPath, {
+        generatedAt: new Date().toISOString(),
+        acFingerprint: fingerprint,
+        storyCount: ctx.prd.userStories.length,
+        acCount: totalCriteria,
+        generator: "nax",
+      });
     }
 
     if (ctx.config.acceptance.redGate === false) {

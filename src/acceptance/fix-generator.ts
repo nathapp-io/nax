@@ -2,7 +2,9 @@
  * Fix Story Generator
  *
  * Generates fix stories from failed acceptance criteria.
- * Maps failed ACs to related stories and creates targeted fix descriptions.
+ * Groups related failures into batched fix stories (D1),
+ * inherits workdir from related stories (D4),
+ * and enriches descriptions with test context (P1-A).
  */
 
 import type { AgentAdapter } from "../agents/types";
@@ -10,8 +12,10 @@ import type { ModelDef, NaxConfig } from "../config/schema";
 import { getLogger } from "../logger";
 import type { PRD, UserStory } from "../prd/types";
 
+const MAX_FIX_STORIES = 8;
+
 /**
- * A fix story generated from a failed acceptance criterion.
+ * A fix story generated from one or more failed acceptance criteria.
  *
  * Fix stories are appended to the PRD and executed through the normal pipeline.
  *
@@ -19,11 +23,13 @@ import type { PRD, UserStory } from "../prd/types";
  * ```ts
  * const fixStory: FixStory = {
  *   id: "US-FIX-001",
- *   title: "Fix: AC-2 TTL expiry timing",
+ *   title: "Fix: AC-2, AC-5 — TTL expiry timing",
  *   failedAC: "AC-2",
+ *   batchedACs: ["AC-2", "AC-5"],
  *   testOutput: "Expected undefined, got 'value'",
  *   relatedStories: ["US-002"],
  *   description: "Update TTL implementation to properly expire entries...",
+ *   testFilePath: "/repo/nax/features/cache/acceptance.test.ts",
  * };
  * ```
  */
@@ -32,14 +38,20 @@ export interface FixStory {
   id: string;
   /** Story title */
   title: string;
-  /** Failed AC identifier (e.g., "AC-2") */
+  /** Primary AC (first in batch — kept for backward compat) */
   failedAC: string;
+  /** All ACs included in this fix story batch (D1) */
+  batchedACs: string[];
   /** Test output showing actual vs expected */
   testOutput: string;
   /** Original stories that built this functionality */
   relatedStories: string[];
   /** LLM-generated fix description */
   description: string;
+  /** Path to acceptance test file (P1-A) */
+  testFilePath?: string;
+  /** Workdir inherited from related story (D4) */
+  workdir?: string;
 }
 
 /**
@@ -54,6 +66,7 @@ export interface FixStory {
  *   specContent: "# Feature...",
  *   workdir: "/project",
  *   modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+ *   testFilePath: "/project/nax/features/cache/acceptance.test.ts",
  * };
  * ```
  */
@@ -72,6 +85,8 @@ export interface GenerateFixStoriesOptions {
   modelDef: ModelDef;
   /** Global config */
   config: NaxConfig;
+  /** Path to acceptance test file for agent context (P1-A) */
+  testFilePath?: string;
 }
 
 /**
@@ -79,8 +94,7 @@ export interface GenerateFixStoriesOptions {
  *
  * Uses heuristics to find which stories likely implemented the failed AC:
  * 1. Stories with matching AC in acceptanceCriteria
- * 2. Stories with similar keywords in description
- * 3. Recently completed stories (if no better match)
+ * 2. Recently completed stories (if no better match)
  *
  * @param failedAC - Failed AC identifier (e.g., "AC-2")
  * @param prd - Current PRD
@@ -118,22 +132,76 @@ export function findRelatedStories(failedAC: string, prd: PRD): string[] {
 }
 
 /**
- * Build LLM prompt for generating a fix story.
+ * Group failed ACs by their related stories (D1: batching).
  *
- * @param failedAC - Failed AC identifier
- * @param acText - Original AC text from spec
+ * ACs sharing the same related story set are merged into one fix story.
+ * Hard cap: max 8 groups — smallest groups are merged when exceeded.
+ *
+ * @param failedACs - Array of failed AC identifiers
+ * @param prd - Current PRD
+ * @returns Array of groups, each with ACs and their shared related stories
+ *
+ * @example
+ * ```ts
+ * const groups = groupACsByRelatedStories(["AC-1", "AC-2", "AC-8"], prd);
+ * // Returns: [{ acs: ["AC-1", "AC-2"], relatedStories: ["US-003"] }, ...]
+ * ```
+ */
+export function groupACsByRelatedStories(
+  failedACs: string[],
+  prd: PRD,
+): Array<{ acs: string[]; relatedStories: string[] }> {
+  // Map each AC to its related stories key (sorted, joined for grouping)
+  const groups = new Map<string, { acs: string[]; relatedStories: string[] }>();
+
+  for (const ac of failedACs) {
+    const related = findRelatedStories(ac, prd);
+    const key = [...related].sort().join(",");
+    if (!groups.has(key)) {
+      groups.set(key, { acs: [], relatedStories: related });
+    }
+    groups.get(key)?.acs.push(ac);
+  }
+
+  const result = Array.from(groups.values());
+
+  // Hard cap: merge smallest groups until at most MAX_FIX_STORIES remain
+  while (result.length > MAX_FIX_STORIES) {
+    result.sort((a, b) => a.acs.length - b.acs.length);
+    const smallest = result.shift();
+    if (!smallest) break;
+    result[0].acs.push(...smallest.acs);
+    for (const s of smallest.relatedStories) {
+      if (!result[0].relatedStories.includes(s)) {
+        result[0].relatedStories.push(s);
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Build LLM prompt for generating a batched fix story.
+ *
+ * @param batchedACs - Batch of failed AC identifiers
+ * @param acTextMap - Map of AC ID to text from spec
  * @param testOutput - Test failure output
  * @param relatedStories - Related story IDs
  * @param prd - Current PRD
+ * @param testFilePath - Path to acceptance test file (P1-A)
  * @returns Formatted prompt string
  */
 export function buildFixPrompt(
-  failedAC: string,
-  acText: string,
+  batchedACs: string[],
+  acTextMap: Record<string, string>,
   testOutput: string,
   relatedStories: string[],
   prd: PRD,
+  testFilePath?: string,
 ): string {
+  const acList = batchedACs.map((ac) => `${ac}: ${acTextMap[ac] || "No description available"}`).join("\n");
+
   const relatedStoriesText = relatedStories
     .map((id) => {
       const story = prd.userStories.find((s) => s.id === id);
@@ -143,24 +211,27 @@ export function buildFixPrompt(
     .filter(Boolean)
     .join("\n\n");
 
-  return `You are a debugging expert. A feature acceptance test has failed.
+  const testFileSection = testFilePath
+    ? `\nACCEPTANCE TEST FILE: ${testFilePath}\n(Read this file first to understand what each test expects)\n`
+    : "";
 
-FAILED ACCEPTANCE CRITERION:
-${failedAC}: ${acText}
+  return `You are a debugging expert. Feature acceptance tests have failed.${testFileSection}
+FAILED ACCEPTANCE CRITERIA (${batchedACs.length} total):
+${acList}
 
 TEST FAILURE OUTPUT:
-${testOutput}
+${testOutput.slice(0, 2000)}
 
 RELATED STORIES (implemented this functionality):
 ${relatedStoriesText}
 
-Your task: Generate a fix story description that will make the acceptance test pass.
+Your task: Generate a fix description that will make these acceptance tests pass.
 
 Requirements:
-1. Analyze the test failure to understand the root cause
-2. Identify what needs to change in the code
-3. Write a clear, actionable fix description (2-4 sentences)
-4. Focus on the specific issue, not general improvements
+1. Read the acceptance test file first to understand what each failing test expects
+2. Identify the root cause based on the test failure output
+3. Find and fix the relevant implementation code (do NOT modify the test file)
+4. Write a clear, actionable fix description (2-4 sentences)
 5. Reference the relevant story IDs if needed
 
 Respond with ONLY the fix description (no JSON, no markdown, just the description text).`;
@@ -169,11 +240,8 @@ Respond with ONLY the fix description (no JSON, no markdown, just the descriptio
 /**
  * Generate fix stories from failed acceptance criteria.
  *
- * For each failed AC:
- * 1. Find related stories
- * 2. Build LLM prompt with context
- * 3. Generate fix description
- * 4. Create FixStory object
+ * Groups ACs by related stories (D1), generates one fix story per group,
+ * and caps at MAX_FIX_STORIES to prevent runaway cost.
  *
  * @param adapter - Agent adapter for LLM calls
  * @param options - Generation options
@@ -189,43 +257,40 @@ Respond with ONLY the fix description (no JSON, no markdown, just the descriptio
  *   specContent: "...",
  *   workdir: "/project",
  *   modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
+ *   testFilePath: "/project/nax/features/cache/acceptance.test.ts",
  * });
- *
- * // Append to PRD
- * prd.userStories.push(...fixStories.map(convertToUserStory));
  * ```
  */
 export async function generateFixStories(
   adapter: AgentAdapter,
   options: GenerateFixStoriesOptions,
 ): Promise<FixStory[]> {
-  const { failedACs, testOutput, prd, specContent, modelDef } = options;
+  const { failedACs, testOutput, prd, specContent, modelDef, testFilePath } = options;
+  const logger = getLogger();
 
-  const fixStories: FixStory[] = [];
-
-  // Parse spec to get AC text
   const acTextMap = parseACTextFromSpec(specContent);
 
-  const logger = getLogger();
-  for (let i = 0; i < failedACs.length; i++) {
-    const failedAC = failedACs[i];
-    const acText = acTextMap[failedAC] || "No description available";
+  // D1: Group ACs by related stories — batch related failures into one fix story
+  const groups = groupACsByRelatedStories(failedACs, prd);
+  const fixStories: FixStory[] = [];
 
-    logger.info("acceptance", "Generating fix for failed AC", { failedAC });
-
-    // Find related stories
-    const relatedStories = findRelatedStories(failedAC, prd);
+  for (let i = 0; i < groups.length; i++) {
+    const { acs: batchedACs, relatedStories } = groups[i];
 
     if (relatedStories.length === 0) {
-      logger.warn("acceptance", "⚠ No related stories found for failed AC — skipping", { failedAC });
+      logger.warn("acceptance", "[WARN] No related stories found for AC group — skipping", { batchedACs });
       continue;
     }
 
-    // Build prompt
-    const prompt = buildFixPrompt(failedAC, acText, testOutput, relatedStories, prd);
+    logger.info("acceptance", "Generating fix for AC group", { batchedACs });
+
+    const prompt = buildFixPrompt(batchedACs, acTextMap, testOutput, relatedStories, prd, testFilePath);
+
+    // D4: inherit workdir from first related story that has one set
+    const relatedStory = prd.userStories.find((s) => relatedStories.includes(s.id) && s.workdir);
+    const workdir = relatedStory?.workdir;
 
     try {
-      // Call adapter to generate fix description
       const fixDescription = await adapter.complete(prompt, {
         model: modelDef.model,
         config: options.config,
@@ -233,27 +298,32 @@ export async function generateFixStories(
 
       fixStories.push({
         id: `US-FIX-${String(i + 1).padStart(3, "0")}`,
-        title: `Fix: ${failedAC} — ${acText.slice(0, 50)}`,
-        failedAC,
+        title: `Fix: ${batchedACs.join(", ")} — ${(acTextMap[batchedACs[0]] || "").slice(0, 40)}`,
+        failedAC: batchedACs[0],
+        batchedACs,
         testOutput,
         relatedStories,
         description: fixDescription,
+        testFilePath,
+        workdir,
       });
 
-      logger.info("acceptance", "✓ Generated fix story", { storyId: fixStories[fixStories.length - 1].id });
+      logger.info("acceptance", "[OK] Generated fix story", { storyId: fixStories[fixStories.length - 1].id });
     } catch (error) {
-      logger.warn("acceptance", "⚠ Error generating fix", {
-        failedAC,
+      logger.warn("acceptance", "[WARN] Error generating fix", {
+        batchedACs,
         error: (error as Error).message,
       });
-      // Use fallback
       fixStories.push({
         id: `US-FIX-${String(i + 1).padStart(3, "0")}`,
-        title: `Fix: ${failedAC}`,
-        failedAC,
+        title: `Fix: ${batchedACs.join(", ")}`,
+        failedAC: batchedACs[0],
+        batchedACs,
         testOutput,
         relatedStories,
-        description: `Fix the implementation to make ${failedAC} pass. Related stories: ${relatedStories.join(", ")}.`,
+        description: `Fix the implementation to make ${batchedACs.join(", ")} pass. Related stories: ${relatedStories.join(", ")}.`,
+        testFilePath,
+        workdir,
       });
     }
   }
@@ -267,7 +337,7 @@ export async function generateFixStories(
  * Extracts AC-N lines and maps them to their text descriptions.
  *
  * @param specContent - Full spec.md content
- * @returns Map of AC ID to text (e.g., { "AC-2": "set(key, value, ttl)..." })
+ * @returns Map of AC ID to text (e.g., { "AC-2": "TTL expiry" })
  *
  * @example
  * ```ts
@@ -295,22 +365,49 @@ export function parseACTextFromSpec(specContent: string): Record<string, string>
 /**
  * Convert a FixStory to a UserStory for PRD insertion.
  *
+ * Enriches the description with acceptance test context (P1-A):
+ * - Test file path
+ * - Batched AC list
+ * - Truncated failure output
+ * - Instructions to fix implementation, not the test
+ *
+ * Inherits workdir from the fix story (D4).
+ *
  * @param fixStory - Fix story to convert
  * @returns UserStory object ready for PRD
  *
  * @example
  * ```ts
- * const fixStory: FixStory = { id: "US-FIX-001", ... };
+ * const fixStory: FixStory = { id: "US-FIX-001", batchedACs: ["AC-2"], ... };
  * const userStory = convertFixStoryToUserStory(fixStory);
  * prd.userStories.push(userStory);
  * ```
  */
 export function convertFixStoryToUserStory(fixStory: FixStory): UserStory {
+  const batchedACs = fixStory.batchedACs ?? [fixStory.failedAC];
+  const acList = batchedACs.join(", ");
+  const truncatedOutput = fixStory.testOutput.slice(0, 1000);
+  const testFilePath = fixStory.testFilePath ?? "acceptance.test.ts";
+
+  const enrichedDescription = [
+    fixStory.description,
+    "",
+    `ACCEPTANCE TEST FILE: ${testFilePath}`,
+    `FAILED ACCEPTANCE CRITERIA: ${acList}`,
+    "",
+    "TEST FAILURE OUTPUT:",
+    truncatedOutput,
+    "",
+    "Instructions: Read the acceptance test file first to understand what each failing test expects.",
+    "Then find the relevant source code and fix the implementation.",
+    "Do NOT modify the test file.",
+  ].join("\n");
+
   return {
     id: fixStory.id,
     title: fixStory.title,
-    description: fixStory.description,
-    acceptanceCriteria: [`Fix ${fixStory.failedAC}`],
+    description: enrichedDescription,
+    acceptanceCriteria: batchedACs.map((ac) => `Fix ${ac}`),
     tags: ["fix", "acceptance-failure"],
     dependencies: fixStory.relatedStories,
     status: "pending",
@@ -318,5 +415,6 @@ export function convertFixStoryToUserStory(fixStory: FixStory): UserStory {
     escalations: [],
     attempts: 0,
     contextFiles: [],
+    workdir: fixStory.workdir,
   };
 }

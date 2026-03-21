@@ -17,7 +17,11 @@ import path from "node:path";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { initLogger, resetLogger } from "../../../src/logger";
 import { acceptanceStage } from "../../../src/pipeline/stages/acceptance";
-import { _acceptanceSetupDeps, acceptanceSetupStage } from "../../../src/pipeline/stages/acceptance-setup";
+import {
+  _acceptanceSetupDeps,
+  acceptanceSetupStage,
+  computeACFingerprint,
+} from "../../../src/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD } from "../../../src/prd/types";
 
@@ -235,7 +239,7 @@ describe("RED to GREEN acceptance cycle", () => {
 // ---------------------------------------------------------------------------
 
 describe("edge case: pre-existing acceptance.test.ts", () => {
-  test("skips generation when acceptance.test.ts already exists in feature dir", async () => {
+  test("skips generation when acceptance.test.ts already exists in feature dir and fingerprint matches", async () => {
     const featureDir = path.join(tmpDir, "nax/features/test-feature");
     const testPath = path.join(featureDir, "acceptance.test.ts");
 
@@ -245,10 +249,24 @@ describe("edge case: pre-existing acceptance.test.ts", () => {
     let refineCalled = false;
     let generateCalled = false;
 
+    // Compute matching fingerprint for the ACs in makeCtx
+    const matchingFingerprint = computeACFingerprint([
+      "AC-1: first feature works",
+      "AC-2: second feature works",
+      "AC-1: third feature works",
+    ]);
+
     _acceptanceSetupDeps.fileExists = async (p) => {
       const f = Bun.file(p);
       return f.exists();
     };
+    _acceptanceSetupDeps.readMeta = async () => ({
+      generatedAt: "2026-01-01T00:00:00Z",
+      acFingerprint: matchingFingerprint,
+      storyCount: 2,
+      acCount: 3,
+      generator: "nax",
+    });
     _acceptanceSetupDeps.refine = async () => {
       refineCalled = true;
       return [];
@@ -264,7 +282,7 @@ describe("edge case: pre-existing acceptance.test.ts", () => {
     const ctx = makeCtx(tmpDir);
     const result = await acceptanceSetupStage.execute(ctx);
 
-    // Generation skipped — file already exists
+    // Generation skipped — file already exists with matching fingerprint
     expect(refineCalled).toBe(false);
     expect(generateCalled).toBe(false);
 
@@ -272,18 +290,31 @@ describe("edge case: pre-existing acceptance.test.ts", () => {
     expect(result.action).toBe("continue");
   });
 
-  test("does not overwrite the pre-existing acceptance.test.ts", async () => {
+  test("does not overwrite the pre-existing acceptance.test.ts when fingerprint matches", async () => {
     const featureDir = path.join(tmpDir, "nax/features/test-feature");
     const testPath = path.join(featureDir, "acceptance.test.ts");
 
     const originalContent = "// pre-existing test content";
     await Bun.write(testPath, originalContent);
 
+    const matchingFingerprint = computeACFingerprint([
+      "AC-1: first feature works",
+      "AC-2: second feature works",
+      "AC-1: third feature works",
+    ]);
+
     let writeFileCalled = false;
     _acceptanceSetupDeps.fileExists = async (p) => {
       const f = Bun.file(p);
       return f.exists();
     };
+    _acceptanceSetupDeps.readMeta = async () => ({
+      generatedAt: "2026-01-01T00:00:00Z",
+      acFingerprint: matchingFingerprint,
+      storyCount: 2,
+      acCount: 3,
+      generator: "nax",
+    });
     _acceptanceSetupDeps.refine = async () => [];
     _acceptanceSetupDeps.generate = async () => ({ testCode: "", criteria: [] });
     _acceptanceSetupDeps.writeFile = async () => {

@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { acceptanceSetupStage, _acceptanceSetupDeps } from "../../../../src/pipeline/stages/acceptance-setup";
+import {
+  acceptanceSetupStage,
+  _acceptanceSetupDeps,
+  computeACFingerprint,
+} from "../../../../src/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import { preRunPipeline } from "../../../../src/pipeline/stages/index";
@@ -378,12 +382,25 @@ describe("acceptance-setup: RED gate — passing tests (invalid RED)", () => {
 // AC-6: Skips generation if acceptance.test.ts already exists
 // ---------------------------------------------------------------------------
 
-describe("acceptance-setup: skips generation when test file exists", () => {
-  test("does not call refine or generate when acceptance.test.ts already exists", async () => {
+describe("acceptance-setup: skips generation when test file exists and fingerprint matches", () => {
+  // Helper: compute the fingerprint that matches the default makeCtx() criteria
+  function matchingFingerprint() {
+    const criteria = ["AC-1: first criterion", "AC-2: second criterion", "AC-1: third criterion"];
+    return computeACFingerprint(criteria);
+  }
+
+  test("does not call refine or generate when acceptance.test.ts already exists and fingerprint matches", async () => {
     let refineCalled = false;
     let generateCalled = false;
 
-    _acceptanceSetupDeps.fileExists = async () => true; // file already exists
+    _acceptanceSetupDeps.fileExists = async () => true;
+    _acceptanceSetupDeps.readMeta = async () => ({
+      generatedAt: "2026-01-01T00:00:00Z",
+      acFingerprint: matchingFingerprint(),
+      storyCount: 2,
+      acCount: 3,
+      generator: "nax",
+    });
     _acceptanceSetupDeps.refine = async () => {
       refineCalled = true;
       return [];
@@ -401,10 +418,17 @@ describe("acceptance-setup: skips generation when test file exists", () => {
     expect(generateCalled).toBe(false);
   });
 
-  test("proceeds directly to RED gate when test file already exists", async () => {
+  test("proceeds directly to RED gate when test file exists and fingerprint matches", async () => {
     let testRunCalled = false;
 
     _acceptanceSetupDeps.fileExists = async () => true;
+    _acceptanceSetupDeps.readMeta = async () => ({
+      generatedAt: "2026-01-01T00:00:00Z",
+      acFingerprint: matchingFingerprint(),
+      storyCount: 2,
+      acCount: 3,
+      generator: "nax",
+    });
     _acceptanceSetupDeps.refine = async () => [];
     _acceptanceSetupDeps.generate = async () => ({ testCode: "", criteria: [] });
     _acceptanceSetupDeps.writeFile = async () => {};
@@ -420,10 +444,17 @@ describe("acceptance-setup: skips generation when test file exists", () => {
     expect(result.action).toBe("continue");
   });
 
-  test("does not overwrite existing acceptance.test.ts", async () => {
+  test("does not overwrite existing acceptance.test.ts when fingerprint matches", async () => {
     let writeFileCalled = false;
 
     _acceptanceSetupDeps.fileExists = async () => true;
+    _acceptanceSetupDeps.readMeta = async () => ({
+      generatedAt: "2026-01-01T00:00:00Z",
+      acFingerprint: matchingFingerprint(),
+      storyCount: 2,
+      acCount: 3,
+      generator: "nax",
+    });
     _acceptanceSetupDeps.refine = async () => [];
     _acceptanceSetupDeps.generate = async () => ({ testCode: "", criteria: [] });
     _acceptanceSetupDeps.writeFile = async () => {

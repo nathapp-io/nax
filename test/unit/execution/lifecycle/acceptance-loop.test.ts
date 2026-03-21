@@ -10,6 +10,7 @@ import { describe, expect, mock, test } from "bun:test";
 import {
   type AcceptanceLoopContext,
   isStubTestFile,
+  isTestLevelFailure,
 } from "../../../../src/execution/lifecycle/acceptance-loop";
 import type { AgentGetFn } from "../../../../src/pipeline/types";
 import type { PRD } from "../../../../src/prd";
@@ -85,6 +86,47 @@ test("AC-1: something", async () => {
   test("returns false for expect(false).toBe(false)", () => {
     const content = `expect(false).toBe(false);`;
     expect(isStubTestFile(content)).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-073: isTestLevelFailure — P1-D test-level failure detection
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("isTestLevelFailure", () => {
+  test("returns true for AC-ERROR sentinel (test crash)", () => {
+    expect(isTestLevelFailure(["AC-ERROR"], 10)).toBe(true);
+  });
+
+  test("returns true when >80% of ACs fail", () => {
+    // 9 of 10 = 90% > 80%
+    expect(isTestLevelFailure(["AC-1","AC-2","AC-3","AC-4","AC-5","AC-6","AC-7","AC-8","AC-9"], 10)).toBe(true);
+  });
+
+  test("returns true for exactly 28/31 case (koda scenario)", () => {
+    const failedACs = Array.from({ length: 28 }, (_, i) => `AC-${i + 1}`);
+    expect(isTestLevelFailure(failedACs, 31)).toBe(true); // 90% > 80%
+  });
+
+  test("returns false when <=80% of ACs fail", () => {
+    // 8 of 10 = 80%, threshold is >80% so this should be false
+    expect(isTestLevelFailure(["AC-1","AC-2","AC-3","AC-4","AC-5","AC-6","AC-7","AC-8"], 10)).toBe(false);
+  });
+
+  test("returns false for typical partial failure (3 of 10)", () => {
+    expect(isTestLevelFailure(["AC-1","AC-2","AC-3"], 10)).toBe(false);
+  });
+
+  test("returns false when totalACs is 0", () => {
+    expect(isTestLevelFailure(["AC-1"], 0)).toBe(false);
+  });
+
+  test("returns false for empty failedACs", () => {
+    expect(isTestLevelFailure([], 10)).toBe(false);
+  });
+
+  test("returns true when AC-ERROR is mixed with other failures", () => {
+    expect(isTestLevelFailure(["AC-1", "AC-ERROR", "AC-3"], 10)).toBe(true);
   });
 });
 
