@@ -183,19 +183,12 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
 
   logger?.info("acceptance", "All stories complete, running acceptance validation");
 
-  // PKG: resolve per-package effective config once for the acceptance loop
-  // Use first story's workdir as representative (all stories in a feature share the same package)
-  const firstStoryWorkdir = prd.userStories[0]?.workdir;
-  const acceptanceEffectiveConfig = firstStoryWorkdir
-    ? await loadConfigForWorkdir(join(ctx.workdir, "nax", "config.json"), firstStoryWorkdir)
-    : ctx.config;
-
   while (acceptanceRetries < maxRetries) {
-    // Run acceptance validation
+    // Run acceptance validation — always from repo root (covers single repo + monorepo)
     const firstStory = prd.userStories[0];
     const acceptanceContext: PipelineContext = {
       config: ctx.config,
-      effectiveConfig: acceptanceEffectiveConfig,
+      effectiveConfig: ctx.config,
       prd,
       story: firstStory,
       stories: [firstStory],

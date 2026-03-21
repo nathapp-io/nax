@@ -24,7 +24,7 @@
  * ```
  */
 
-import path, { join } from "node:path";
+import path from "node:path";
 import { getLogger } from "../../logger";
 import { countStories } from "../../prd";
 import { logTestOutput } from "../../utils/log-test-output";
@@ -131,12 +131,12 @@ export const acceptanceStage: PipelineStage = {
       return { action: "continue" };
     }
 
-    // MW-010: scope acceptance test run to package directory when story.workdir is set
-    const effectiveWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+    // Acceptance tests always run from repo root — covers both single repo and monorepo.
+    // The test file uses __dirname-based paths to navigate into packages as needed.
 
     // Run bun test on the acceptance test file
     const proc = Bun.spawn(["bun", "test", testPath], {
-      cwd: effectiveWorkdir,
+      cwd: ctx.workdir,
       stdout: "pipe",
       stderr: "pipe",
     });

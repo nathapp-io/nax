@@ -119,7 +119,7 @@ Rules:
 - **NEVER use placeholder assertions** — no always-passing or always-failing stubs, no TODO comments as the only content, no empty test bodies
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
 - Output raw code only — no markdown fences, start directly with the language's import or package declaration
-- **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/nax/features/${options.featureName}/acceptance.test.ts\`. The repo root is exactly 3 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..')\`. Never use 4 or more \`../\` — that would escape the repo entirely.`;
+- **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/nax/features/${options.featureName}/acceptance.test.ts\` and will ALWAYS run from the repo root via \`bun test <absolute-path>\`. The repo root is exactly 3 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..')\`. Never use 4 or more \`../\` — that would escape the repo. For monorepo projects, navigate into packages from root (e.g. \`join(root, 'apps/api/src')\`).`;
 
   const prompt = basePrompt;
 
@@ -249,7 +249,7 @@ Rules:
 - **NEVER use placeholder assertions** — no always-passing or always-failing stubs, no TODO comments as the only content, no empty test bodies
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
 - Output raw code only — no markdown fences, start directly with the language's import or package declaration
-- **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/nax/features/${featureName}/acceptance.test.ts\`. The repo root is exactly 3 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..')\`. Never use 4 or more \`../\` — that would escape the repo entirely.`;
+- **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/nax/features/${featureName}/acceptance.test.ts\` and will ALWAYS run from the repo root via \`bun test <absolute-path>\`. The repo root is exactly 3 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..')\`. Never use 4 or more \`../\` — that would escape the repo. For monorepo projects, navigate into packages from root (e.g. \`join(root, 'apps/api/src')\`).`;
 }
 
 /**
