@@ -140,7 +140,7 @@ nax run -f my-feature
 | Flag | Description |
 |:-----|:------------|
 | `-f, --feature <name>` | Feature name |
-| `-a, --agent <name>` | Force a specific agent (`claude`, `opencode`, `codex`, etc.) |
+| `-a, --agent <name>` | Force a specific agent (`claude`, `opencode`, `codex`, etc.). Only applies when `agent.protocol = "cli"` — ignored when using ACP protocol. |
 | `--plan` | Run plan phase first (requires `--from`) |
 | `--from <spec-path>` | Spec file for `--plan` |
 | `--one-shot` | Skip interactive Q&A during planning (ACP only) |
@@ -651,7 +651,9 @@ nax run -f my-feature --parallel 3
 
 ## Agents
 
-nax supports multiple coding agents. By default it uses Claude Code via the ACP protocol.
+nax supports multiple coding agents. **ACP protocol (via [acpx](https://github.com/nathapp/acpx)) is recommended** — it provides persistent sessions, structured cost/token reporting, and works with all supported agents.
+
+> **CLI protocol** (`agent.protocol: "cli"`) is supported for Claude Code only. Other agents in CLI mode are experimental and not recommended for production use.
 
 ```bash
 # List installed agents and their capabilities
@@ -660,19 +662,21 @@ nax agents
 
 **Supported agents:**
 
-| Agent | Protocol | Notes |
-|:------|:---------|:------|
-| `claude` | ACP (default) | Claude Code via acpx |
-| `opencode` | ACP | OpenCode via acpx |
-| `codex` | ACP | Codex via acpx |
-| `cursor` | ACP | Cursor via acpx |
-| `windsurf` | ACP | Windsurf via acpx |
-| `aider` | ACP | Aider via acpx |
-| `gemini` | ACP | Gemini CLI via acpx |
+| Agent | Status | Notes |
+|:------|:-------|:------|
+| `claude` | ✅ Stable | Claude Code via acpx (ACP) or direct CLI |
+| `opencode` | 🧪 Experimental | ACP only — CLI mode not supported |
+| `codex` | 🧪 Experimental | ACP only — CLI mode not supported |
+| `cursor` | 🧪 Experimental | ACP only — CLI mode not supported |
+| `windsurf` | 🧪 Experimental | ACP only — CLI mode not supported |
+| `aider` | 🧪 Experimental | ACP only — CLI mode not supported |
+| `gemini` | 🧪 Experimental | ACP only — CLI mode not supported |
 
-**ACP protocol (default):**
+**ACP protocol (recommended):**
 
 nax uses [acpx](https://github.com/nathapp/acpx) as the ACP transport. All agents run as persistent sessions — nax sends prompts and receives structured JSON-RPC responses including token counts and exact USD cost per session.
+
+> **Note:** When `agent.protocol` is set to `"acp"`, the `--agent` CLI flag has no effect — all execution routes through the ACP adapter regardless of agent name.
 
 > **Known issue — `acpx` ≤ 0.3.1:** The `--model` flag is not supported. Model selection via `execution.model` or per-package `model` overrides has no effect when using acpx as the ACP transport. This is a limitation in the underlying `@zed-industries/claude-agent-acp` adapter, which ignores runtime model requests and always uses the model configured in Claude Code settings. A fix is being tracked in [openclaw/acpx#49](https://github.com/openclaw/acpx/issues/49). As a workaround, set your preferred model directly in Claude Code settings before running nax.
 
@@ -688,10 +692,11 @@ nax uses [acpx](https://github.com/nathapp/acpx) as the ACP transport. All agent
 }
 ```
 
-**Force a specific agent at runtime:**
+**Force a specific agent at runtime (CLI protocol only):**
 
 ```bash
-nax run -f my-feature --agent opencode
+# Only applies when agent.protocol = "cli" (Claude Code only — other agents experimental)
+nax run -f my-feature --agent claude
 ```
 
 ---
