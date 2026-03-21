@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.51.0] - 2026-03-21
+
+### Added
+
+- **STRAT-001: `no-test` strategy** — New test strategy for stories with zero behavioral change (config, docs, CI/build files, dependency bumps, pure refactors). Requires `noTestJustification` field at every assignment point (plan prompt, LLM routing, batch routing) to prevent lazy test-skipping. `no-test` stories use an implement-only prompt (no RED/GREEN/REFACTOR), are exempt from greenfield override (BUG-010) and test-after escalation (S5), and batch separately from tested stories.
+- **DIR-001: Rename `nax/` → `.nax/`** — Project-level config directory now uses hidden dot-prefix convention (like `.git/`, `.claude/`). `PROJECT_NAX_DIR = ".nax"` SSOT constant in `src/config/paths.ts`. Package configs moved from `<pkg>/nax/config.json` to `.nax/packages/<pkg>/config.json`. 93 files updated.
+- **BUG-073: Acceptance fix story quality** — Fix stories now include acceptance test file path, truncated failure output, and "fix implementation not tests" instruction. Batched by related stories (cap 8) instead of 1-per-AC. Fix stories inherit `workdir` from related story. `>80%` AC failure triggers test regeneration instead of fix stories.
+- **BUG-073: Acceptance staleness detection** — SHA-256 fingerprint of AC set stored in `acceptance-meta.json`. Acceptance test auto-regenerates (with `.bak` backup) when stories are added/removed/modified.
+
+### Fixed
+
+- **fix(acceptance):** Correct `__dirname` depth in generator prompt — test file is exactly 3 `../` levels from root, not 4.
+- **fix(acceptance):** Acceptance tests always run from repo root — covers both single repo and monorepo. Test uses `__dirname`-based paths into packages.
+- **fix(acceptance):** Fix stories use per-package config for review/verify stages when `story.workdir` is set.
+- **fix(review):** Fallback to `quality.commands` when `review.commands` not configured — prevents routing failures in monorepo packages.
+- **fix(review):** Use optional chaining for `quality?.commands` — avoids crash when config has no quality section.
+- **fix(pkg):** Remove `src/` and `bin/` from npm `files` — only `dist/` published. 354 files / 4.7MB → 5 files / 3.1MB.
+
+### Refactored
+
+- **refactor(test):** Add `withDepsRestore` helper in `test/helpers/deps.ts` — eliminates save/restore boilerplate across 13 test files (−98 net lines).
+
+### Migration
+
+- Rename your project's `nax/` directory to `.nax/`
+- For monorepo: move `<pkg>/nax/config.json` → `.nax/packages/<pkg>/config.json`
+- Update `.gitignore` patterns: `nax/**/runs/` → `.nax/**/runs/`, etc.
+
+---
+
 ## [0.50.0] - 2026-03-19
 
 ### Added
