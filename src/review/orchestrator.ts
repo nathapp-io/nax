@@ -76,10 +76,11 @@ export class ReviewOrchestrator {
     plugins?: PluginRegistry,
     storyGitRef?: string,
     scopePrefix?: string,
+    qualityCommands?: NaxConfig["quality"]["commands"],
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
-    const builtIn = await runReview(reviewConfig, workdir, executionConfig);
+    const builtIn = await runReview(reviewConfig, workdir, executionConfig, qualityCommands);
 
     if (!builtIn.success) {
       return { builtIn, success: false, failureReason: builtIn.failureReason, pluginFailed: false };

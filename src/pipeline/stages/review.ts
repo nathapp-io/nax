@@ -39,6 +39,7 @@ export const reviewStage: PipelineStage = {
       ctx.plugins,
       ctx.storyGitRef,
       ctx.story.workdir, // MW-010: scope changed-file checks to package
+      effectiveConfig.quality.commands, // fallback for review.commands
     );
 
     ctx.reviewResult = result.builtIn;

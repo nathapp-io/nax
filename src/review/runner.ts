@@ -5,7 +5,7 @@
  */
 
 import { spawn } from "bun";
-import type { ExecutionConfig } from "../config/schema";
+import type { ExecutionConfig, QualityConfig } from "../config/schema";
 import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
@@ -52,14 +52,17 @@ function hasScript(packageJson: Record<string, unknown> | null, scriptName: stri
  * Resolve command for a check
  * Resolution order:
  * 1. Explicit executionConfig field (lintCommand/typecheckCommand) - null = disabled
- * 2. package.json has script -> use 'bun run <script>'
- * 3. Not found -> return null (skip)
+ * 2. config.review.commands[check] (explicit review config)
+ * 3. quality.commands[check] (fallback — package config without review section)
+ * 4. package.json has script -> use 'bun run <script>'
+ * 5. Not found -> return null (skip)
  */
 async function resolveCommand(
   check: ReviewCheckName,
   config: ReviewConfig,
   executionConfig: ExecutionConfig | undefined,
   workdir: string,
+  qualityCommands?: QualityConfig["commands"],
 ): Promise<string | null> {
   // 1. Check explicit config.execution commands (v0.13 story)
   if (executionConfig) {
@@ -71,18 +74,26 @@ async function resolveCommand(
     }
   }
 
-  // 2. Check config.review.commands (legacy, backwards compat)
+  // 2. Check config.review.commands (explicit review config)
   if (config.commands[check]) {
     return config.commands[check] ?? null;
   }
 
-  // 3. Check package.json
+  // 3. Fallback to quality.commands — lets package configs specify commands once
+  //    without duplicating them under review. Catches cases where story.workdir is
+  //    unset and the PKG-006 merge-time bridge hasn't run.
+  const qualityCmd = qualityCommands?.[check as keyof typeof qualityCommands];
+  if (qualityCmd) {
+    return qualityCmd;
+  }
+
+  // 4. Check package.json
   const packageJson = await loadPackageJson(workdir);
   if (hasScript(packageJson, check)) {
     return `bun run ${check}`;
   }
 
-  // 4. Not found - return null to skip
+  // 5. Not found - return null to skip
   return null;
 }
 
@@ -228,6 +239,7 @@ export async function runReview(
   config: ReviewConfig,
   workdir: string,
   executionConfig?: ExecutionConfig,
+  qualityCommands?: QualityConfig["commands"],
 ): Promise<ReviewResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -269,7 +281,7 @@ export async function runReview(
 
   for (const checkName of config.checks) {
     // Resolve command using resolution strategy
-    const command = await resolveCommand(checkName, config, executionConfig, workdir);
+    const command = await resolveCommand(checkName, config, executionConfig, workdir, qualityCommands);
 
     // Skip if explicitly disabled or not found
     if (command === null) {
