@@ -26,13 +26,13 @@ export interface GenerateCommandOptions {
   noAutoInject?: boolean;
   /**
    * Generate for a specific package directory (relative to repo root).
-   * Reads .nax/packages/{package}/context.md, writes {package}/CLAUDE.md.
+   * Reads .nax/mono/{package}/context.md, writes {package}/CLAUDE.md.
    * @example "packages/api"
    */
   package?: string;
   /**
    * Generate for all discovered packages.
-   * Auto-discovers packages under .nax/packages/ with context.md up to 2 levels deep.
+   * Auto-discovers packages under .nax/mono/ with context.md up to 2 levels deep.
    */
   allPackages?: boolean;
 }
@@ -59,11 +59,11 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
     if (dryRun) {
       console.log(chalk.yellow("⚠ Dry run — no files will be written"));
     }
-    console.log(chalk.blue("→ Discovering packages with .nax/packages/*/context.md..."));
+    console.log(chalk.blue("→ Discovering packages with .nax/mono/*/context.md..."));
     const packages = await discoverPackages(workdir);
 
     if (packages.length === 0) {
-      console.log(chalk.yellow("  No packages found (no .nax/packages/*/context.md or .nax/packages/*/*/context.md)"));
+      console.log(chalk.yellow("  No packages found (no .nax/mono/*/context.md or .nax/mono/*/*/context.md)"));
       return;
     }
 
@@ -212,7 +212,7 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
         process.exit(1);
       }
 
-      // Auto-generate per-package agent files when packages with .nax/packages/*/context.md are discovered
+      // Auto-generate per-package agent files when packages with .nax/mono/*/context.md are discovered
       const packages = await discoverPackages(workdir);
       if (packages.length > 0) {
         console.log(

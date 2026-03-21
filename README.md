@@ -33,15 +33,20 @@ nax run -f my-feature --plan --from spec.md
 ## How It Works
 
 ```
-analyze → route → execute → verify → (loop until all stories pass) → regression gate
+(plan →) acceptance setup → route → execute → verify → (escalate) → regression gate → acceptance
 ```
 
-1. **Analyze** each user story — classify complexity, select test strategy
-2. **Route** to the right model tier (cheap → standard → premium)
-3. **Execute** an agent session (Claude Code by default)
-4. **Verify** tests pass; escalate model tier on failure
-5. **Loop** until all stories are complete or a cost/iteration limit is hit
-6. **Regression gate** — deferred full-suite verification after all stories pass
+1. **Plan** *(optional)* — `nax run --plan` generates a `prd.json` from a spec file using an LLM
+2. **Acceptance setup** *(pre-run)* — generate acceptance tests and assert RED (tests must fail before implementation)
+3. **Route** — classify story complexity and select model tier (fast → balanced → powerful)
+4. **Context** — gather relevant code, tests, and project standards
+5. **Execute** — run an agent session (Claude Code, Codex, Gemini CLI, or ACP)
+6. **Verify** — run scoped tests; if failing, **rectify** before escalating
+7. **Review** — lint + typecheck; if failing, **autofix** before escalating
+8. **Escalate** — on repeated failure, retry with a higher model tier
+9. **Loop** — repeat steps 3–8 per story until all pass or a cost/iteration limit is hit
+10. **Regression gate** — deferred full-suite run after all stories pass
+11. **Acceptance** *(post-run)* — run the generated acceptance tests against the completed feature
 
 ---
 
@@ -68,7 +73,7 @@ nax/
 nax init --package packages/api
 ```
 
-Creates `packages/api/nax/context.md` for per-package agent context.
+Creates `.nax/mono/packages/api/context.md` for per-package agent context.
 
 ---
 
@@ -544,7 +549,7 @@ Configured under `quality.testing` — supports **per-package override** in mono
 
 > **Tip:** `externalBoundaries` and `mockGuidance` complement `context.md`. nax provides the rule ("mock all I/O"), while `context.md` provides project-specific knowledge ("use `ioredis-mock` for Redis"). Use both for best results.
 
-> **Monorepo:** Each package can override `quality.testing` in its own `packages/<name>/nax/config.json`. For example, `packages/api` can specify Redis boundaries while `packages/web` specifies HTTP-only.
+> **Monorepo:** Each package can override `quality.testing` in its own `.nax/mono/<package>/config.json`. For example, `packages/api` can specify Redis boundaries while `apps/web` specifies HTTP-only.
 
 > **Opt-out:** Set `quality.testing.hermetic: false` if your project requires real integration calls (e.g. live database tests against a local dev container).
 
@@ -708,27 +713,27 @@ nax init --package packages/web
 
 ### Per-Package Config
 
-Each package can override specific config fields by placing a `nax/config.json` inside the package directory:
+Each package's config and context are stored centrally under the root `.nax/mono/` directory:
 
 ```
 repo-root/
-├── nax/
-│   └── config.json          # root config
-├── packages/
-│   ├── api/
-│   │   └── nax/
-│   │       ├── config.json  # overrides for api package
-│   │       └── context.md   # agent context for api
-│   └── web/
-│       └── nax/
-│           ├── config.json  # overrides for web package
-│           └── context.md   # agent context for web
+├── .nax/
+│   ├── config.json                    # root config
+│   └── mono/
+│       ├── packages/
+│       │   └── api/
+│       │       ├── config.json        # overrides for packages/api
+│       │       └── context.md        # agent context for packages/api
+│       └── apps/
+│           └── api/
+│               ├── config.json        # overrides for apps/api
+│               └── context.md        # agent context for apps/api
 ```
 
 **Overridable fields per package:** `execution`, `review`, `acceptance`, `quality`, `context`
 
 ```json
-// packages/api/nax/config.json
+// .nax/mono/packages/api/config.json
 {
   "quality": {
     "commands": {

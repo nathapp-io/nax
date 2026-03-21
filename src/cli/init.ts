@@ -285,9 +285,9 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
     const projectRoot = options.projectRoot ?? process.cwd();
     await initPackage(projectRoot, options.package);
     console.log("\n[OK] Package scaffold created.");
-    console.log(`  Created: .nax/packages/${options.package}/context.md`);
+    console.log(`  Created: .nax/mono/${options.package}/context.md`);
     console.log("\nNext steps:");
-    console.log(`  1. Review .nax/packages/${options.package}/context.md and fill in TODOs`);
+    console.log(`  1. Review .nax/mono/${options.package}/context.md and fill in TODOs`);
     console.log(`  2. Run: nax generate --package ${options.package}`);
   } else {
     const projectRoot = options.projectRoot ?? process.cwd();

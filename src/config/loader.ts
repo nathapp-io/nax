@@ -131,7 +131,7 @@ export async function loadConfigForWorkdir(rootConfigPath: string, packageDir?: 
   }
 
   const repoRoot = dirname(rootNaxDir);
-  const packageConfigPath = join(repoRoot, PROJECT_NAX_DIR, "packages", packageDir, "config.json");
+  const packageConfigPath = join(repoRoot, PROJECT_NAX_DIR, "mono", packageDir, "config.json");
 
   const packageOverride = await loadJsonFile<Partial<NaxConfig>>(packageConfigPath, "config");
 

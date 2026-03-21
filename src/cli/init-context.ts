@@ -342,7 +342,7 @@ export function generatePackageContextTemplate(packagePath: string): string {
 /**
  * Initialize per-package context.md scaffold.
  *
- * Creates `.nax/packages/<packagePath>/context.md` under the repo root.
+ * Creates `.nax/mono/<packagePath>/context.md` under the repo root.
  * Does not overwrite an existing file unless force is set.
  *
  * @param repoRoot - Absolute path to repo root
@@ -351,7 +351,7 @@ export function generatePackageContextTemplate(packagePath: string): string {
  */
 export async function initPackage(repoRoot: string, packagePath: string, force = false): Promise<void> {
   const logger = getLogger();
-  const naxDir = join(repoRoot, ".nax", "packages", packagePath);
+  const naxDir = join(repoRoot, ".nax", "mono", packagePath);
   const contextPath = join(naxDir, "context.md");
 
   if (existsSync(contextPath) && !force) {
