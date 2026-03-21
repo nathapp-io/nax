@@ -16,7 +16,7 @@ describe("CLI deprecation (PLN-005)", () => {
     test("analyze command prints deprecation warning with migration instruction", async () => {
       await withTempDir(async (tempDir) => {
         // Create a valid feature directory with spec.md
-        const naxDir = join(tempDir, "nax");
+        const naxDir = join(tempDir, ".nax");
         const featureDir = join(naxDir, "features", "test-feature");
         await Bun.spawn(["mkdir", "-p", featureDir], { stdout: "pipe" }).exited;
 
@@ -71,7 +71,7 @@ Test story description
     test("plan command with positional argument prints migration error and exits 1", async () => {
       await withTempDir(async (tempDir) => {
         // Create minimal nax directory
-        const naxDir = join(tempDir, "nax");
+        const naxDir = join(tempDir, ".nax");
         await Bun.spawn(["mkdir", "-p", naxDir], { stdout: "pipe" }).exited;
 
         // Create nax/config.json

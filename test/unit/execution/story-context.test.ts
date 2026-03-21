@@ -69,8 +69,8 @@ describe("buildStoryContextFull — package context loading (MW-003)", () => {
   });
 
   test("appends package context.md when packageWorkdir is set and file exists", async () => {
-    // Create <tmpDir>/nax/context.md
-    await Bun.write(join(tmpDir, "nax", "context.md"), "# Package Context\n\nPackage-specific content.");
+    // Create <tmpDir>/.nax/context.md
+    await Bun.write(join(tmpDir, ".nax", "context.md"), "# Package Context\n\nPackage-specific content.");
 
     const story = makeStory();
     const prd = makePrd(story);
@@ -93,7 +93,7 @@ describe("buildStoryContextFull — package context loading (MW-003)", () => {
   });
 
   test("separates root context and package context with ---", async () => {
-    await Bun.write(join(tmpDir, "nax", "context.md"), "# Package Context\nstuff");
+    await Bun.write(join(tmpDir, ".nax", "context.md"), "# Package Context\nstuff");
 
     const story = makeStory();
     const prd = makePrd(story);

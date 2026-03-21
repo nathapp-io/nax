@@ -86,7 +86,7 @@ function isProcessAlive(pid: number): boolean {
 }
 
 async function loadStatusFile(workdir: string): Promise<NaxStatusFile | null> {
-  const statusPath = join(workdir, "nax", "status.json");
+  const statusPath = join(workdir, ".nax", "status.json");
   if (!existsSync(statusPath)) return null;
   try {
     return (await Bun.file(statusPath).json()) as NaxStatusFile;
@@ -135,7 +135,7 @@ export async function diagnoseCommand(options: DiagnoseOptions = {}): Promise<vo
 
   const naxSubdir = findProjectDir(workdir);
   let projectDir: string | null = naxSubdir ? join(naxSubdir, "..") : null;
-  if (!projectDir && existsSync(join(workdir, "nax"))) {
+  if (!projectDir && existsSync(join(workdir, ".nax"))) {
     projectDir = workdir;
   }
   if (!projectDir) throw new Error("Not in a nax project directory");
@@ -146,7 +146,7 @@ export async function diagnoseCommand(options: DiagnoseOptions = {}): Promise<vo
     if (status) {
       feature = status.run.feature;
     } else {
-      const featuresDir = join(projectDir, "nax", "features");
+      const featuresDir = join(projectDir, ".nax", "features");
       if (!existsSync(featuresDir)) throw new Error("No features found in project");
       const features = readdirSync(featuresDir, { withFileTypes: true })
         .filter((e) => e.isDirectory())
@@ -157,7 +157,7 @@ export async function diagnoseCommand(options: DiagnoseOptions = {}): Promise<vo
     }
   }
 
-  const featureDir = join(projectDir, "nax", "features", feature);
+  const featureDir = join(projectDir, ".nax", "features", feature);
   const prdPath = join(featureDir, "prd.json");
   if (!existsSync(prdPath)) throw new Error(`Feature not found: ${feature}`);
 

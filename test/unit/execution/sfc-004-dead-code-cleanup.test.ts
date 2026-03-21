@@ -22,23 +22,23 @@ describe("SFC-004: Dead code cleanup — Acceptance Criteria", () => {
       hooks: { hooks: {} },
       feature: "test-feature",
       dryRun: false,
-      statusFile: "/tmp/nax/status.json", // Required field
+      statusFile: "/tmp/.nax/status.json", // Required field
     };
 
-    expect(validRunOptions.statusFile).toBe("/tmp/nax/status.json");
+    expect(validRunOptions.statusFile).toBe("/tmp/.nax/status.json");
     expect(typeof validRunOptions.statusFile).toBe("string");
   });
 
-  test("AC-2: CLI auto-computes statusFile to <workdir>/nax/status.json", () => {
+  test("AC-2: CLI auto-computes statusFile to <workdir>/.nax/status.json", () => {
     // This is verified in bin/nax.ts line 334:
-    // const statusFilePath = join(workdir, "nax", "status.json");
+    // const statusFilePath = join(workdir, ".nax", "status.json");
     // And passed to run() on line 357
 
     const workdir = "/home/user/project";
-    const expectedStatusFile = `${workdir}/nax/status.json`;
+    const expectedStatusFile = `${workdir}/.nax/status.json`;
 
     // Simulate what bin/nax.ts does
-    const statusFilePath = `${workdir}/nax/status.json`;
+    const statusFilePath = `${workdir}/.nax/status.json`;
     expect(statusFilePath).toBe(expectedStatusFile);
   });
 
@@ -48,21 +48,21 @@ describe("SFC-004: Dead code cleanup — Acceptance Criteria", () => {
     // This test documents the change
 
     const oldPattern = ".nax-status.json";
-    const newPattern = "nax/status.json";
+    const newPattern = ".nax/status.json";
 
     // The new pattern should be used
-    expect(newPattern).toBe("nax/status.json");
+    expect(newPattern).toBe(".nax/status.json");
     expect(oldPattern).not.toBe(newPattern);
   });
 
-  test("AC-4: statusFile path structure matches <workdir>/nax/status.json", () => {
+  test("AC-4: statusFile path structure matches <workdir>/.nax/status.json", () => {
     // Verify that the status file is stored at the correct location
     const workdir = "/Users/username/project";
-    const naxDir = `${workdir}/nax`;
+    const naxDir = `${workdir}/.nax`;
     const statusFile = `${naxDir}/status.json`;
 
-    expect(statusFile).toBe("/Users/username/project/nax/status.json");
-    expect(statusFile).toContain("/nax/status.json");
+    expect(statusFile).toBe("/Users/username/project/.nax/status.json");
+    expect(statusFile).toContain("/.nax/status.json");
   });
 
   test("AC-5: RunOptions requires statusFile parameter in all run() calls", () => {
@@ -80,7 +80,7 @@ describe("SFC-004: Dead code cleanup — Acceptance Criteria", () => {
       hooks: { hooks: {} },
       feature: "test",
       dryRun: false,
-      statusFile: "/tmp/nax/status.json",
+      statusFile: "/tmp/.nax/status.json",
     };
 
     expect(opts.statusFile).toBeDefined();

@@ -35,7 +35,7 @@ const TEMPLATE_HEADER = `<!--
     - Conventions (project coding standards)
 
   To activate overrides, add to your nax/config.json:
-    { "prompts": { "overrides": { "<role>": "nax/templates/<role>.md" } } }
+    { "prompts": { "overrides": { "<role>": ".nax/templates/<role>.md" } } }
 -->
 
 `;
@@ -54,7 +54,7 @@ const TEMPLATE_HEADER = `<!--
  */
 export async function promptsInitCommand(options: PromptsInitCommandOptions): Promise<string[]> {
   const { workdir, force = false, autoWireConfig = true } = options;
-  const templatesDir = join(workdir, "nax", "templates");
+  const templatesDir = join(workdir, ".nax", "templates");
 
   mkdirSync(templatesDir, { recursive: true });
 
@@ -112,11 +112,11 @@ async function autoWirePromptsConfig(workdir: string): Promise<void> {
       {
         prompts: {
           overrides: {
-            "test-writer": "nax/templates/test-writer.md",
-            implementer: "nax/templates/implementer.md",
-            verifier: "nax/templates/verifier.md",
-            "single-session": "nax/templates/single-session.md",
-            "tdd-simple": "nax/templates/tdd-simple.md",
+            "test-writer": ".nax/templates/test-writer.md",
+            implementer: ".nax/templates/implementer.md",
+            verifier: ".nax/templates/verifier.md",
+            "single-session": ".nax/templates/single-session.md",
+            "tdd-simple": ".nax/templates/tdd-simple.md",
           },
         },
       },
@@ -143,11 +143,11 @@ async function autoWirePromptsConfig(workdir: string): Promise<void> {
 
   // Build the override paths
   const overrides = {
-    "test-writer": "nax/templates/test-writer.md",
-    implementer: "nax/templates/implementer.md",
-    verifier: "nax/templates/verifier.md",
-    "single-session": "nax/templates/single-session.md",
-    "tdd-simple": "nax/templates/tdd-simple.md",
+    "test-writer": ".nax/templates/test-writer.md",
+    implementer: ".nax/templates/implementer.md",
+    verifier: ".nax/templates/verifier.md",
+    "single-session": ".nax/templates/single-session.md",
+    "tdd-simple": ".nax/templates/tdd-simple.md",
   };
 
   // Add or update prompts section

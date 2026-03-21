@@ -20,7 +20,7 @@ describe("execution.smartTestRunner config flag", () => {
 
   beforeEach(() => {
     tempDir = join(tmpdir(), `nax-str-004-${Date.now()}`);
-    mkdirSync(join(tempDir, "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     const globalPath = globalConfigPath();
     if (existsSync(globalPath)) {
@@ -146,10 +146,10 @@ describe("execution.smartTestRunner config flag", () => {
   });
 
   test("loadConfig defaults smartTestRunner to enabled object when not in project config", async () => {
-    const configPath = join(tempDir, "nax", "config.json");
+    const configPath = join(tempDir, ".nax", "config.json");
     writeFileSync(configPath, JSON.stringify({ routing: { strategy: "keyword" } }, null, 2));
 
-    const config = await loadConfig(join(tempDir, "nax"));
+    const config = await loadConfig(join(tempDir, ".nax"));
     expect(config.execution.smartTestRunner).toEqual({
       enabled: true,
       testFilePatterns: ["test/**/*.test.ts"],
@@ -158,13 +158,13 @@ describe("execution.smartTestRunner config flag", () => {
   });
 
   test("loadConfig coerces smartTestRunner: false to disabled config object", async () => {
-    const configPath = join(tempDir, "nax", "config.json");
+    const configPath = join(tempDir, ".nax", "config.json");
     writeFileSync(
       configPath,
       JSON.stringify({ execution: { smartTestRunner: false } }, null, 2),
     );
 
-    const config = await loadConfig(join(tempDir, "nax"));
+    const config = await loadConfig(join(tempDir, ".nax"));
     expect(config.execution.smartTestRunner).toEqual({
       enabled: false,
       testFilePatterns: ["test/**/*.test.ts"],
@@ -173,11 +173,11 @@ describe("execution.smartTestRunner config flag", () => {
   });
 
   test("loadConfig normalizes to enabled object when field is absent (backward compat)", async () => {
-    const configPath = join(tempDir, "nax", "config.json");
+    const configPath = join(tempDir, ".nax", "config.json");
     // Config without smartTestRunner field at all
     writeFileSync(configPath, JSON.stringify({}, null, 2));
 
-    const config = await loadConfig(join(tempDir, "nax"));
+    const config = await loadConfig(join(tempDir, ".nax"));
     expect(config.execution.smartTestRunner).toEqual({
       enabled: true,
       testFilePatterns: ["test/**/*.test.ts"],

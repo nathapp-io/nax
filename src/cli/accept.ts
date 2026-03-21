@@ -68,7 +68,7 @@ export async function acceptCommand(options: AcceptOptions): Promise<void> {
   }
 
   // Build path to feature PRD
-  const featureDir = path.join(projectDir, "nax", "features", feature);
+  const featureDir = path.join(projectDir, ".nax", "features", feature);
   const prdPath = path.join(featureDir, "prd.json");
 
   // Check if feature exists

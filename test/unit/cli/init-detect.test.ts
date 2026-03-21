@@ -595,7 +595,7 @@ describe("initProject — uses detected stack for quality.commands", () => {
 
       await initProject(dir);
 
-      const configPath = join(dir, "nax", "config.json");
+      const configPath = join(dir, ".nax", "config.json");
       const config = JSON.parse(await Bun.file(configPath).text()) as Record<string, unknown>;
       const quality = config.quality as Record<string, unknown> | undefined;
       const commands = quality?.commands as Record<string, unknown> | undefined;
@@ -613,7 +613,7 @@ describe("initProject — uses detected stack for quality.commands", () => {
 
       await initProject(dir);
 
-      const configPath = join(dir, "nax", "config.json");
+      const configPath = join(dir, ".nax", "config.json");
       const config = JSON.parse(await Bun.file(configPath).text()) as Record<string, unknown>;
       const quality = config.quality as Record<string, unknown> | undefined;
       const commands = quality?.commands as Record<string, unknown> | undefined;
@@ -627,7 +627,7 @@ describe("initProject — uses detected stack for quality.commands", () => {
       // No stack indicators in tempDir
       await initProject(dir);
 
-      const configPath = join(dir, "nax", "config.json");
+      const configPath = join(dir, ".nax", "config.json");
       const config = JSON.parse(await Bun.file(configPath).text()) as Record<string, unknown>;
 
       expect(config.version).toBeDefined();
@@ -643,7 +643,7 @@ describe("initProject — uses detected stack for quality.commands", () => {
 
       await initProject(dir);
 
-      const configPath = join(dir, "nax", "config.json");
+      const configPath = join(dir, ".nax", "config.json");
       const config = JSON.parse(await Bun.file(configPath).text()) as Record<string, unknown>;
       const quality = config.quality as Record<string, unknown> | undefined;
       const commands = quality?.commands as Record<string, unknown> | undefined;
@@ -659,7 +659,7 @@ describe("initProject — uses detected stack for quality.commands", () => {
 
       await initProject(dir);
 
-      const configPath = join(dir, "nax", "config.json");
+      const configPath = join(dir, ".nax", "config.json");
       const config = JSON.parse(await Bun.file(configPath).text()) as Record<string, unknown>;
       const quality = config.quality as Record<string, unknown> | undefined;
       const commands = quality?.commands as Record<string, unknown> | undefined;

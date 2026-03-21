@@ -66,7 +66,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     stories,
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
     workdir: "/tmp/test-workdir",
-    featureDir: "/tmp/test-workdir/nax/features/test-feature",
+    featureDir: "/tmp/test-workdir/.nax/features/test-feature",
     hooks: {} as any,
     ...overrides,
   };

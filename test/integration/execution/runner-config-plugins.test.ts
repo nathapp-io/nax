@@ -36,7 +36,7 @@ describe("Runner config plugins integration (US-007)", () => {
 
   beforeEach(async () => {
     projectRoot = await createTempDir();
-    naxDir = path.join(projectRoot, "nax");
+    naxDir = path.join(projectRoot, ".nax");
     await fs.mkdir(naxDir, { recursive: true });
     tempGlobalPluginsDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-global-plugins-"));
   });

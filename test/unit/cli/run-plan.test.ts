@@ -18,7 +18,7 @@ describe("nax run --plan CLI flag wiring", () => {
 
   beforeEach(async () => {
     tmpDir = mkdtempSync(join(tmpdir(), "nax-run-plan-test-"));
-    naxDir = join(tmpDir, "nax");
+    naxDir = join(tmpDir, ".nax");
     specFile = join(tmpDir, "spec.md");
     featureDir = join(naxDir, "features", "test-feature");
 

@@ -23,7 +23,7 @@ describe("PromptsConfigSchema — valid roles", () => {
   test("schema accepts 'test-writer' override", () => {
     // FAILS until PT-001 is implemented
     const result = PromptsConfigSchema.safeParse({
-      overrides: { "test-writer": "nax/templates/test-writer.md" },
+      overrides: { "test-writer": ".nax/templates/test-writer.md" },
     });
     expect(result.success).toBe(true);
   });
@@ -31,7 +31,7 @@ describe("PromptsConfigSchema — valid roles", () => {
   test("schema accepts 'implementer' override", () => {
     // FAILS until PT-001 is implemented
     const result = PromptsConfigSchema.safeParse({
-      overrides: { "implementer": "nax/templates/implementer.md" },
+      overrides: { "implementer": ".nax/templates/implementer.md" },
     });
     expect(result.success).toBe(true);
   });
@@ -39,7 +39,7 @@ describe("PromptsConfigSchema — valid roles", () => {
   test("schema accepts 'verifier' override", () => {
     // FAILS until PT-001 is implemented
     const result = PromptsConfigSchema.safeParse({
-      overrides: { "verifier": "nax/templates/verifier.md" },
+      overrides: { "verifier": ".nax/templates/verifier.md" },
     });
     expect(result.success).toBe(true);
   });
@@ -47,7 +47,7 @@ describe("PromptsConfigSchema — valid roles", () => {
   test("schema accepts 'single-session' override", () => {
     // FAILS until PT-001 is implemented
     const result = PromptsConfigSchema.safeParse({
-      overrides: { "single-session": "nax/templates/single-session.md" },
+      overrides: { "single-session": ".nax/templates/single-session.md" },
     });
     expect(result.success).toBe(true);
   });
@@ -55,7 +55,7 @@ describe("PromptsConfigSchema — valid roles", () => {
   test("schema accepts 'tdd-simple' override (PT-001 fix)", () => {
     // FAILS until PT-001 adds "tdd-simple" to z.enum
     const result = PromptsConfigSchema.safeParse({
-      overrides: { "tdd-simple": "nax/templates/tdd-simple.md" },
+      overrides: { "tdd-simple": ".nax/templates/tdd-simple.md" },
     });
     expect(result.success).toBe(true);
   });
@@ -64,11 +64,11 @@ describe("PromptsConfigSchema — valid roles", () => {
     // FAILS until PT-001 is implemented
     const result = PromptsConfigSchema.safeParse({
       overrides: {
-        "test-writer": "nax/templates/test-writer.md",
-        "implementer": "nax/templates/implementer.md",
-        "verifier": "nax/templates/verifier.md",
-        "single-session": "nax/templates/single-session.md",
-        "tdd-simple": "nax/templates/tdd-simple.md",
+        "test-writer": ".nax/templates/test-writer.md",
+        "implementer": ".nax/templates/implementer.md",
+        "verifier": ".nax/templates/verifier.md",
+        "single-session": ".nax/templates/single-session.md",
+        "tdd-simple": ".nax/templates/tdd-simple.md",
       },
     });
     expect(result.success).toBe(true);
@@ -77,7 +77,7 @@ describe("PromptsConfigSchema — valid roles", () => {
   test("schema rejects unknown role", () => {
     // FAILS until PT-001 is implemented
     const result = PromptsConfigSchema.safeParse({
-      overrides: { "unknown-role": "nax/templates/unknown.md" },
+      overrides: { "unknown-role": ".nax/templates/unknown.md" },
     });
     expect(result.success).toBe(false);
   });
@@ -116,7 +116,7 @@ describe("NaxConfigSchema — prompts section with tdd-simple", () => {
       ...DEFAULT_CONFIG,
       prompts: {
         overrides: {
-          "tdd-simple": "nax/templates/tdd-simple.md",
+          "tdd-simple": ".nax/templates/tdd-simple.md",
         },
       },
     };
@@ -130,11 +130,11 @@ describe("NaxConfigSchema — prompts section with tdd-simple", () => {
       ...DEFAULT_CONFIG,
       prompts: {
         overrides: {
-          "test-writer": "nax/templates/test-writer.md",
-          "implementer": "nax/templates/implementer.md",
-          "verifier": "nax/templates/verifier.md",
-          "single-session": "nax/templates/single-session.md",
-          "tdd-simple": "nax/templates/tdd-simple.md",
+          "test-writer": ".nax/templates/test-writer.md",
+          "implementer": ".nax/templates/implementer.md",
+          "verifier": ".nax/templates/verifier.md",
+          "single-session": ".nax/templates/single-session.md",
+          "tdd-simple": ".nax/templates/tdd-simple.md",
         },
       },
     };
@@ -148,7 +148,7 @@ describe("NaxConfigSchema — prompts section with tdd-simple", () => {
       ...DEFAULT_CONFIG,
       prompts: {
         overrides: {
-          "unknown-role": "nax/templates/unknown.md",
+          "unknown-role": ".nax/templates/unknown.md",
         },
       },
     };

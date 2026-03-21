@@ -476,15 +476,15 @@ describe("initContext — creates context.md from template", () => {
     await withTempDir(async (dir) => {
       await initContext(dir, { ai: false });
 
-      expect(existsSync(join(dir, "nax", "context.md"))).toBe(true);
+      expect(existsSync(join(dir, ".nax", "context.md"))).toBe(true);
     });
   });
 
-  test("nax/context.md is non-empty", async () => {
+  test(".nax/context.md is non-empty", async () => {
     await withTempDir(async (dir) => {
       await initContext(dir, { ai: false });
 
-      const content = await Bun.file(join(dir, "nax", "context.md")).text();
+      const content = await Bun.file(join(dir, ".nax", "context.md")).text();
       expect(content.length).toBeGreaterThan(0);
     });
   });
@@ -493,13 +493,13 @@ describe("initContext — creates context.md from template", () => {
     await withTempDir(async (dir) => {
       await initContext(dir, { ai: false });
 
-      expect(existsSync(join(dir, "nax"))).toBe(true);
+      expect(existsSync(join(dir, ".nax"))).toBe(true);
     });
   });
 
   test("does not overwrite existing context.md without --force", async () => {
     await withTempDir(async (dir) => {
-      const contextPath = join(dir, "nax", "context.md");
+      const contextPath = join(dir, ".nax", "context.md");
       await Bun.write(contextPath, "EXISTING_CONTENT");
 
       await initContext(dir, { ai: false });
@@ -511,7 +511,7 @@ describe("initContext — creates context.md from template", () => {
 
   test("overwrites existing context.md with --force", async () => {
     await withTempDir(async (dir) => {
-      const contextPath = join(dir, "nax", "context.md");
+      const contextPath = join(dir, ".nax", "context.md");
       await Bun.write(contextPath, "EXISTING_CONTENT");
 
       await initContext(dir, { ai: false, force: true });
@@ -527,7 +527,7 @@ describe("initContext — creates context.md from template", () => {
 
       await initContext(dir, { ai: false });
 
-      const content = await Bun.file(join(dir, "nax", "context.md")).text();
+      const content = await Bun.file(join(dir, ".nax", "context.md")).text();
       expect(content).toContain("scan-test-proj");
     });
   });
@@ -538,7 +538,7 @@ describe("initContext — creates context.md from template", () => {
 
       await initContext(dir, { ai: false });
 
-      const content = await Bun.file(join(dir, "nax", "context.md")).text();
+      const content = await Bun.file(join(dir, ".nax", "context.md")).text();
       expect(content).toContain("src/index.ts");
     });
   });
@@ -563,9 +563,9 @@ describe("initContext — AI mode (--ai flag)", () => {
         await mod.initContext(dir, { ai: true });
 
         // Should have fallen back — context.md must still be created
-        expect(existsSync(join(dir, "nax", "context.md"))).toBe(true);
+        expect(existsSync(join(dir, ".nax", "context.md"))).toBe(true);
 
-        const content = await Bun.file(join(dir, "nax", "context.md")).text();
+        const content = await Bun.file(join(dir, ".nax", "context.md")).text();
         expect(content.length).toBeGreaterThan(0);
       } finally {
         mod._deps.callLLM = original;
@@ -601,7 +601,7 @@ describe("initContext — AI mode (--ai flag)", () => {
       try {
         await mod.initContext(dir, { ai: true });
 
-        const content = await Bun.file(join(dir, "nax", "context.md")).text();
+        const content = await Bun.file(join(dir, ".nax", "context.md")).text();
         expect(content).toContain("AI Generated");
       } finally {
         mod._deps.callLLM = original;

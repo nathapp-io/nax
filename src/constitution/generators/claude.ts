@@ -1,7 +1,7 @@
 /**
  * Claude Code Config Generator
  *
- * Generates CLAUDE.md from nax/constitution.md.
+ * Generates CLAUDE.md from .nax/constitution.md.
  */
 
 import type { AgentConfigGenerator, ConstitutionContent } from "./types";
@@ -15,7 +15,7 @@ function generateClaudeConfig(constitution: ConstitutionContent): string {
   // Build CLAUDE.md format
   const header = `# Project Constitution
 
-This file is auto-generated from \`nax/constitution.md\`.
+This file is auto-generated from \`.nax/constitution.md\`.
 DO NOT EDIT MANUALLY — changes will be overwritten.
 
 ---

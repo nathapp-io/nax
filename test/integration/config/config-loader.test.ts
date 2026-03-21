@@ -28,7 +28,7 @@ describe("Config Loader - Backward Compatibility", () => {
   beforeEach(() => {
     // Create a temporary test directory
     tempDir = join(tmpdir(), `nax-test-${Date.now()}`);
-    mkdirSync(join(tempDir, "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     // Backup existing global config if present
     const globalPath = globalConfigPath();
@@ -56,7 +56,7 @@ describe("Config Loader - Backward Compatibility", () => {
   });
 
   test("batchMode:true maps to mode:one-shot (backward compat)", async () => {
-    const configPath = join(tempDir, "nax", "config.json");
+    const configPath = join(tempDir, ".nax", "config.json");
     const testConfig = {
       routing: {
         strategy: "llm",
@@ -68,7 +68,7 @@ describe("Config Loader - Backward Compatibility", () => {
     };
     writeFileSync(configPath, JSON.stringify(testConfig, null, 2));
 
-    const config = await loadConfig(join(tempDir, "nax"));
+    const config = await loadConfig(join(tempDir, ".nax"));
 
     // applyBatchModeCompat runs on raw projConf before deepMerge with defaults,
     // so batchMode:true correctly maps to mode:"one-shot" overriding DEFAULT_CONFIG's "hybrid"
@@ -77,7 +77,7 @@ describe("Config Loader - Backward Compatibility", () => {
   });
 
   test("explicit mode takes precedence over batchMode", async () => {
-    const configPath = join(tempDir, "nax", "config.json");
+    const configPath = join(tempDir, ".nax", "config.json");
     const testConfig = {
       routing: {
         strategy: "llm",
@@ -89,7 +89,7 @@ describe("Config Loader - Backward Compatibility", () => {
     };
     writeFileSync(configPath, JSON.stringify(testConfig, null, 2));
 
-    const config = await loadConfig(join(tempDir, "nax"));
+    const config = await loadConfig(join(tempDir, ".nax"));
 
     // Explicit mode is used, batchMode is ignored
     expect(config.routing.llm?.mode).toBe("per-story");
@@ -97,7 +97,7 @@ describe("Config Loader - Backward Compatibility", () => {
   });
 
   test("rejects invalid batchMode value", async () => {
-    const configPath = join(tempDir, "nax", "config.json");
+    const configPath = join(tempDir, ".nax", "config.json");
     const testConfig = {
       routing: {
         strategy: "llm",
@@ -109,11 +109,11 @@ describe("Config Loader - Backward Compatibility", () => {
     writeFileSync(configPath, JSON.stringify(testConfig, null, 2));
 
     // Should throw validation error because Zod expects boolean
-    await expect(loadConfig(join(tempDir, "nax"))).rejects.toThrow("Invalid configuration");
+    await expect(loadConfig(join(tempDir, ".nax"))).rejects.toThrow("Invalid configuration");
   });
 
   test("uses DEFAULT_CONFIG mode when user config has no routing.llm", async () => {
-    const configPath = join(tempDir, "nax", "config.json");
+    const configPath = join(tempDir, ".nax", "config.json");
     const testConfig = {
       routing: {
         strategy: "keyword", // Different strategy, no llm config
@@ -121,7 +121,7 @@ describe("Config Loader - Backward Compatibility", () => {
     };
     writeFileSync(configPath, JSON.stringify(testConfig, null, 2));
 
-    const config = await loadConfig(join(tempDir, "nax"));
+    const config = await loadConfig(join(tempDir, ".nax"));
 
     // Should get "hybrid" from DEFAULT_CONFIG.routing.llm.mode
     expect(config.routing.llm?.mode).toBe("hybrid");
@@ -135,7 +135,7 @@ describe("Config Loader - Plugin Configuration (US-007)", () => {
   beforeEach(() => {
     // Create a temporary test directory
     tempDir = join(tmpdir(), `nax-test-plugins-${Date.now()}`);
-    mkdirSync(join(tempDir, "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     // Backup existing global config if present
     const globalPath = globalConfigPath();
@@ -163,7 +163,7 @@ describe("Config Loader - Plugin Configuration (US-007)", () => {
   });
 
   test("loads plugins[] from config.json", async () => {
-    const configPath = join(tempDir, "nax", "config.json");
+    const configPath = join(tempDir, ".nax", "config.json");
     const testConfig = {
       plugins: [
         {
@@ -183,7 +183,7 @@ describe("Config Loader - Plugin Configuration (US-007)", () => {
     };
     writeFileSync(configPath, JSON.stringify(testConfig, null, 2));
 
-    const config = await loadConfig(join(tempDir, "nax"));
+    const config = await loadConfig(join(tempDir, ".nax"));
 
     // Verify plugins array is loaded
     expect(config.plugins).toBeDefined();
@@ -200,7 +200,7 @@ describe("Config Loader - Plugin Configuration (US-007)", () => {
   });
 
   test("handles missing plugins[] array (defaults to undefined)", async () => {
-    const configPath = join(tempDir, "nax", "config.json");
+    const configPath = join(tempDir, ".nax", "config.json");
     const testConfig = {
       routing: {
         strategy: "keyword",
@@ -208,7 +208,7 @@ describe("Config Loader - Plugin Configuration (US-007)", () => {
     };
     writeFileSync(configPath, JSON.stringify(testConfig, null, 2));
 
-    const config = await loadConfig(join(tempDir, "nax"));
+    const config = await loadConfig(join(tempDir, ".nax"));
 
     // plugins[] is optional, should be undefined if not provided
     expect(config.plugins).toBeUndefined();
@@ -229,7 +229,7 @@ describe("Config Loader - Plugin Configuration (US-007)", () => {
     writeFileSync(globalPath, JSON.stringify(globalConfig, null, 2));
 
     // Create project config with plugins
-    const projectPath = join(tempDir, "nax", "config.json");
+    const projectPath = join(tempDir, ".nax", "config.json");
     const projectConfig = {
       plugins: [
         {
@@ -240,7 +240,7 @@ describe("Config Loader - Plugin Configuration (US-007)", () => {
     };
     writeFileSync(projectPath, JSON.stringify(projectConfig, null, 2));
 
-    const config = await loadConfig(join(tempDir, "nax"));
+    const config = await loadConfig(join(tempDir, ".nax"));
 
     // Verify plugins are merged (project overrides global)
     expect(config.plugins).toBeDefined();
@@ -249,7 +249,7 @@ describe("Config Loader - Plugin Configuration (US-007)", () => {
   });
 
   test("validates plugin config entries have required fields", async () => {
-    const configPath = join(tempDir, "nax", "config.json");
+    const configPath = join(tempDir, ".nax", "config.json");
     const testConfig = {
       plugins: [
         {
@@ -261,6 +261,6 @@ describe("Config Loader - Plugin Configuration (US-007)", () => {
     writeFileSync(configPath, JSON.stringify(testConfig, null, 2));
 
     // Should throw validation error
-    await expect(loadConfig(join(tempDir, "nax"))).rejects.toThrow("Invalid configuration");
+    await expect(loadConfig(join(tempDir, ".nax"))).rejects.toThrow("Invalid configuration");
   });
 });

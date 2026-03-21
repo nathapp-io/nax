@@ -95,7 +95,7 @@ describe("planCommand", () => {
     capturedCompleteArgs = [];
 
     // Create nax directory
-    Bun.spawnSync(["mkdir", "-p", join(tmpDir, "nax")]);
+    Bun.spawnSync(["mkdir", "-p", join(tmpDir, ".nax")]);
 
     // Default deps — override per test as needed
     _deps.readFile = mock(async (_path: string) => SAMPLE_SPEC);
@@ -328,7 +328,7 @@ describe("planCommand", () => {
       auto: true,
     });
 
-    const expectedPath = join(tmpDir, "nax", "features", "url-shortener", "prd.json");
+    const expectedPath = join(tmpDir, ".nax", "features", "url-shortener", "prd.json");
     expect(result).toBe(expectedPath);
     expect(capturedWriteArgs[0][0]).toBe(expectedPath);
   });
@@ -450,7 +450,7 @@ describe("planCommand", () => {
 
   test("throws when nax directory not found", async () => {
     const emptyDir = mkdtempSync(join(tmpdir(), "nax-plan-empty-"));
-    Bun.spawnSync(["rm", "-rf", join(emptyDir, "nax")]);
+    Bun.spawnSync(["rm", "-rf", join(emptyDir, ".nax")]);
 
     expect(
       planCommand(emptyDir, {} as never, {

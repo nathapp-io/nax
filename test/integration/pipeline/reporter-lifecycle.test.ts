@@ -86,8 +86,8 @@ describe("Reporter Lifecycle Events (US-004)", () => {
     // Create temp directory
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-reporter-test-"));
     workdir = tmpDir;
-    prdPath = path.join(workdir, "nax", "features", "test-feature", "prd.json");
-    pluginDir = path.join(workdir, "nax", "plugins");
+    prdPath = path.join(workdir, ".nax", "features", "test-feature", "prd.json");
+    pluginDir = path.join(workdir, ".nax", "plugins");
 
     // Ensure directories exist
     await fs.mkdir(path.dirname(prdPath), { recursive: true });

@@ -23,7 +23,7 @@ export async function pluginsListCommand(
 ): Promise<void> {
   // Load plugins from all sources
   const globalPluginsDir = overrideGlobalPluginsDir ?? path.join(os.homedir(), ".nax", "plugins");
-  const projectPluginsDir = path.join(workdir, "nax", "plugins");
+  const projectPluginsDir = path.join(workdir, ".nax", "plugins");
   const configPlugins = config.plugins || [];
   const registry = await loadPlugins(
     globalPluginsDir,
@@ -38,8 +38,8 @@ export async function pluginsListCommand(
     console.log("No plugins installed.");
     console.log("\nTo install plugins:");
     console.log("  • Add to global directory: ~/.nax/plugins/");
-    console.log("  • Add to project directory: ./nax/plugins/");
-    console.log("  • Configure in nax/config.json");
+    console.log("  • Add to project directory: ./.nax/plugins/");
+    console.log("  • Configure in .nax/config.json");
     console.log("\nSee https://github.com/nax/nax#plugins for more details.");
     return;
   }

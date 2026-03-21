@@ -58,9 +58,9 @@ export async function promptsCommand(options: PromptsCommandOptions): Promise<st
   const { feature, workdir, config, storyId, outputDir } = options;
 
   // Find nax directory
-  const naxDir = join(workdir, "nax");
+  const naxDir = join(workdir, ".nax");
   if (!existsSync(naxDir)) {
-    throw new Error(`nax directory not found. Run 'nax init' first in ${workdir}`);
+    throw new Error(`.nax directory not found. Run 'nax init' first in ${workdir}`);
   }
 
   // Load PRD

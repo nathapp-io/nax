@@ -167,7 +167,7 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
  * ```
  */
 export async function saveRunMetrics(workdir: string, runMetrics: RunMetrics): Promise<void> {
-  const metricsPath = path.join(workdir, "nax", "metrics.json");
+  const metricsPath = path.join(workdir, ".nax", "metrics.json");
 
   // Load existing metrics (returns empty array if file doesn't exist or is invalid)
   const existing = await loadJsonFile<RunMetrics[]>(metricsPath, "metrics");
@@ -193,7 +193,7 @@ export async function saveRunMetrics(workdir: string, runMetrics: RunMetrics): P
  * ```
  */
 export async function loadRunMetrics(workdir: string): Promise<RunMetrics[]> {
-  const metricsPath = path.join(workdir, "nax", "metrics.json");
+  const metricsPath = path.join(workdir, ".nax", "metrics.json");
 
   const content = await loadJsonFile<RunMetrics[]>(metricsPath, "metrics");
   return Array.isArray(content) ? content : [];

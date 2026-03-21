@@ -14,7 +14,7 @@ import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD } from "../../../src/prd/types";
 
 const testDir = `/tmp/nax-acceptance-test-${Date.now()}`;
-const featureDir = path.join(testDir, "nax/features/test-feature");
+const featureDir = path.join(testDir, ".nax/features/test-feature");
 
 beforeEach(async () => {
   // Initialize logger for tests

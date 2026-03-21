@@ -136,7 +136,7 @@ export async function buildStoryContext(prd: PRD, story: UserStory, _config: Nax
  * @internal
  */
 async function loadPackageContextMd(packageWorkdir: string): Promise<string | null> {
-  const contextPath = `${packageWorkdir}/nax/context.md`;
+  const contextPath = `${packageWorkdir}/.nax/context.md`;
   const file = Bun.file(contextPath);
   if (!(await file.exists())) return null;
   return file.text();

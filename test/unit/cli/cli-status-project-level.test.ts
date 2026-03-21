@@ -112,7 +112,7 @@ describe("displayFeatureStatus - Project-level status (nax/status.json)", () => 
   describe("AC1: Shows project-level current run info at top", () => {
     test("displays current run info when active run exists in nax/status.json", async () => {
       // Setup: Create project with feature and project-level status
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       mkdirSync(featuresDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
@@ -153,7 +153,7 @@ describe("displayFeatureStatus - Project-level status (nax/status.json)", () => 
 
     test("does not show current run info when nax/status.json missing", async () => {
       // Setup: Create project with feature but no project-level status
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       mkdirSync(featuresDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
@@ -173,7 +173,7 @@ describe("displayFeatureStatus - Project-level status (nax/status.json)", () => 
 
     test("shows crashed run detected when PID is dead", async () => {
       // Setup: Create project with feature and crashed status
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       mkdirSync(featuresDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
@@ -208,7 +208,7 @@ describe("displayFeatureStatus - Project-level status (nax/status.json)", () => 
 
     test("shows crash info when run status is 'crashed'", async () => {
       // Setup: Create project with feature and crashed status
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       mkdirSync(featuresDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");
@@ -247,7 +247,7 @@ describe("displayFeatureStatus - Project-level status (nax/status.json)", () => 
   describe("AC2: Shows per-feature historical status", () => {
     test("shows feature-level status from nax/features/<feature>/status.json", async () => {
       // Setup: Create project with feature and feature-level status
-      const naxDir = join(testDir, "nax");
+      const naxDir = join(testDir, ".nax");
       const featuresDir = join(naxDir, "features");
       mkdirSync(featuresDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), "{}");

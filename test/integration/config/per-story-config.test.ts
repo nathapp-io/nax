@@ -18,7 +18,7 @@ describe("per-story config resolution (MW-008 integration)", () => {
 
   beforeEach(() => {
     tempDir = join(tmpdir(), `nax-test-integration-${Date.now()}`);
-    mkdirSync(join(tempDir, "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     const globalPath = globalConfigPath();
     if (existsSync(globalPath)) {
@@ -44,17 +44,17 @@ describe("per-story config resolution (MW-008 integration)", () => {
   test("story with workdir uses package test command (spec example)", async () => {
     // root nax/config.json: test = "bun test"
     writeFileSync(
-      join(tempDir, "nax", "config.json"),
+      join(tempDir, ".nax", "config.json"),
       JSON.stringify({ quality: { commands: { test: "bun test" } } }),
     );
-    // packages/api/nax/config.json: test = "bun run test:unit"
-    mkdirSync(join(tempDir, "packages", "api", "nax"), { recursive: true });
+    // .nax/packages/packages/api/config.json: test = "bun run test:unit"
+    mkdirSync(join(tempDir, ".nax", "packages", "packages", "api"), { recursive: true });
     writeFileSync(
-      join(tempDir, "packages", "api", "nax", "config.json"),
+      join(tempDir, ".nax", "packages", "packages", "api", "config.json"),
       JSON.stringify({ quality: { commands: { test: "bun run test:unit" } } }),
     );
 
-    const rootConfigPath = join(tempDir, "nax", "config.json");
+    const rootConfigPath = join(tempDir, ".nax", "config.json");
 
     // Story AUTH-001 with workdir: "packages/api" → uses "bun run test:unit"
     const apiConfig = await loadConfigForWorkdir(rootConfigPath, "packages/api");
@@ -67,23 +67,23 @@ describe("per-story config resolution (MW-008 integration)", () => {
 
   test("multiple packages each get their own test command", async () => {
     writeFileSync(
-      join(tempDir, "nax", "config.json"),
+      join(tempDir, ".nax", "config.json"),
       JSON.stringify({ quality: { commands: { test: "bun test" } } }),
     );
 
-    mkdirSync(join(tempDir, "packages", "api", "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax", "packages", "packages", "api"), { recursive: true });
     writeFileSync(
-      join(tempDir, "packages", "api", "nax", "config.json"),
+      join(tempDir, ".nax", "packages", "packages", "api", "config.json"),
       JSON.stringify({ quality: { commands: { test: "bun run test:api" } } }),
     );
 
-    mkdirSync(join(tempDir, "packages", "web", "nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax", "packages", "packages", "web"), { recursive: true });
     writeFileSync(
-      join(tempDir, "packages", "web", "nax", "config.json"),
+      join(tempDir, ".nax", "packages", "packages", "web", "config.json"),
       JSON.stringify({ quality: { commands: { test: "bun run test:web", testScoped: "bun test:web -- {{files}}" } } }),
     );
 
-    const rootConfigPath = join(tempDir, "nax", "config.json");
+    const rootConfigPath = join(tempDir, ".nax", "config.json");
 
     const apiConfig = await loadConfigForWorkdir(rootConfigPath, "packages/api");
     expect(apiConfig.quality.commands.test).toBe("bun run test:api");
@@ -98,12 +98,12 @@ describe("per-story config resolution (MW-008 integration)", () => {
 
   test("package without config falls back to root", async () => {
     writeFileSync(
-      join(tempDir, "nax", "config.json"),
+      join(tempDir, ".nax", "config.json"),
       JSON.stringify({ quality: { commands: { test: "bun test" } } }),
     );
     // packages/empty has no nax/config.json
 
-    const rootConfigPath = join(tempDir, "nax", "config.json");
+    const rootConfigPath = join(tempDir, ".nax", "config.json");
     const result = await loadConfigForWorkdir(rootConfigPath, "packages/empty");
     expect(result.quality.commands.test).toBe("bun test");
   });

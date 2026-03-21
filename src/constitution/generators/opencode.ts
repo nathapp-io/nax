@@ -1,7 +1,7 @@
 /**
  * OpenCode Config Generator
  *
- * Generates AGENTS.md from nax/constitution.md.
+ * Generates AGENTS.md from .nax/constitution.md.
  * Format is similar to CLAUDE.md but with OpenCode-specific headers.
  */
 
@@ -16,7 +16,7 @@ function generateOpencodeConfig(constitution: ConstitutionContent): string {
   // Build AGENTS.md format (OpenCode/Codex format)
   const header = `# Agent Instructions
 
-This file is auto-generated from \`nax/constitution.md\`.
+This file is auto-generated from \`.nax/constitution.md\`.
 DO NOT EDIT MANUALLY — changes will be overwritten.
 
 These instructions apply to all AI coding agents in this project.

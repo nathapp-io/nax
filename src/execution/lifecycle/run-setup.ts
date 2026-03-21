@@ -181,7 +181,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   try {
     // Load plugins (before try block so it's accessible in finally)
     const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
-    const projectPluginsDir = path.join(workdir, "nax", "plugins");
+    const projectPluginsDir = path.join(workdir, ".nax", "plugins");
     const configPlugins = config.plugins || [];
     const pluginRegistry = await loadPlugins(
       globalPluginsDir,

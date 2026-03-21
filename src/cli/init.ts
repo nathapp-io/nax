@@ -41,14 +41,14 @@ export interface InitProjectOptions {
 const NAX_GITIGNORE_ENTRIES = [
   ".nax-verifier-verdict.json",
   "nax.lock",
-  "nax/**/runs/",
-  "nax/metrics.json",
-  "nax/features/*/status.json",
-  "nax/features/*/plan/",
-  "nax/features/*/acp-sessions.json",
-  "nax/features/*/interactions/",
-  "nax/features/*/progress.txt",
-  "nax/features/*/acceptance-refined.json",
+  ".nax/**/runs/",
+  ".nax/metrics.json",
+  ".nax/features/*/status.json",
+  ".nax/features/*/plan/",
+  ".nax/features/*/acp-sessions.json",
+  ".nax/features/*/interactions/",
+  ".nax/features/*/progress.txt",
+  ".nax/features/*/acceptance-refined.json",
   ".nax-pids",
   ".nax-wt/",
 ];
@@ -204,7 +204,7 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
   const logger = getLogger();
   const projectDir = projectConfigDir(projectRoot);
 
-  // Create nax/ directory if it doesn't exist
+  // Create .nax/ directory if it doesn't exist
   if (!existsSync(projectDir)) {
     await mkdir(projectDir, { recursive: true });
     logger.info("init", "Created project config directory", { path: projectDir });
@@ -220,7 +220,7 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
     monorepo: stack.monorepo,
   });
 
-  // Create nax/config.json if it doesn't exist
+  // Create .nax/config.json if it doesn't exist
   const configPath = join(projectDir, "config.json");
   if (!existsSync(configPath)) {
     await Bun.write(configPath, `${JSON.stringify(projectConfig, null, 2)}\n`);
@@ -232,7 +232,7 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
   // Generate context.md (template or LLM-enhanced with --ai flag)
   await initContext(projectRoot, { ai: options?.ai, force: options?.force });
 
-  // Create nax/constitution.md with stack-aware content
+  // Create .nax/constitution.md with stack-aware content
   const constitutionPath = join(projectDir, "constitution.md");
   if (!existsSync(constitutionPath) || options?.force) {
     await Bun.write(constitutionPath, buildConstitution(stack));
@@ -241,7 +241,7 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
     logger.info("init", "Project constitution already exists", { path: constitutionPath });
   }
 
-  // Create nax/hooks/ directory if it doesn't exist
+  // Create .nax/hooks/ directory if it doesn't exist
   const hooksDir = join(projectDir, "hooks");
   if (!existsSync(hooksDir)) {
     await mkdir(hooksDir, { recursive: true });
@@ -260,14 +260,14 @@ export async function initProject(projectRoot: string, options?: InitProjectOpti
 
   // Print summary
   console.log("\n[OK] nax init complete. Created files:");
-  console.log("  - nax/config.json");
-  console.log("  - nax/context.md");
-  console.log("  - nax/constitution.md");
-  console.log("  - nax/hooks/");
-  console.log("  - nax/templates/");
+  console.log("  - .nax/config.json");
+  console.log("  - .nax/context.md");
+  console.log("  - .nax/constitution.md");
+  console.log("  - .nax/hooks/");
+  console.log("  - .nax/templates/");
   console.log("\nNext steps:");
-  console.log("  1. Review nax/context.md and fill in TODOs");
-  console.log("  2. Review nax/config.json and adjust quality commands");
+  console.log("  1. Review .nax/context.md and fill in TODOs");
+  console.log("  2. Review .nax/config.json and adjust quality commands");
   console.log("  3. Run: nax generate");
   console.log("  4. Run: nax plan");
   console.log("  5. Run: nax run");
@@ -285,9 +285,9 @@ export async function initCommand(options: InitOptions = {}): Promise<void> {
     const projectRoot = options.projectRoot ?? process.cwd();
     await initPackage(projectRoot, options.package);
     console.log("\n[OK] Package scaffold created.");
-    console.log(`  Created: ${options.package}/nax/context.md`);
+    console.log(`  Created: .nax/packages/${options.package}/context.md`);
     console.log("\nNext steps:");
-    console.log(`  1. Review ${options.package}/nax/context.md and fill in TODOs`);
+    console.log(`  1. Review .nax/packages/${options.package}/context.md and fill in TODOs`);
     console.log(`  2. Run: nax generate --package ${options.package}`);
   } else {
     const projectRoot = options.projectRoot ?? process.cwd();

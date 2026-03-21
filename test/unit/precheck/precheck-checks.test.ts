@@ -770,9 +770,9 @@ describe("checkGitignoreCoversNax (Tier 2 warning)", () => {
       `
 node_modules/
 nax.lock
-nax/**/runs/
-nax/metrics.json
-nax/features/*/status.json
+.nax/**/runs/
+.nax/metrics.json
+.nax/features/*/status.json
 .nax-pids
 .nax-wt/
 `.trim(),

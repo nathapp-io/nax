@@ -35,7 +35,7 @@ function setupTestProject(name: string): {
   prdPath: string;
 } {
   const projectDir = join(TEMP_DIR, name);
-  const naxDir = join(projectDir, "nax");
+  const naxDir = join(projectDir, ".nax");
   const featureDir = join(naxDir, "features", "test-feature");
   const prdPath = join(featureDir, "prd.json");
 
@@ -1496,7 +1496,7 @@ describe("Precheck Integration with nax run", () => {
    * Helper to create feature directory and PRD file
    */
   async function setupFeature(feature: string): Promise<string> {
-    const naxDir = join(testDir, "nax");
+    const naxDir = join(testDir, ".nax");
     const featuresDir = join(naxDir, "features");
     const featureDir = join(featuresDir, feature);
     mkdirSync(featureDir, { recursive: true });
@@ -1567,8 +1567,8 @@ describe("Precheck Integration with nax run", () => {
 
     try {
       const prdPath = await setupFeature("skip-test");
-      const logFilePath = join(nonGitDir, "nax", "features", "skip-test", "runs", "test.jsonl");
-      const statusFilePath = join(nonGitDir, "nax", "features", "skip-test", "status.json");
+      const logFilePath = join(nonGitDir, ".nax", "features", "skip-test", "runs", "test.jsonl");
+      const statusFilePath = join(nonGitDir, ".nax", "features", "skip-test", "status.json");
 
       const config: NaxConfig = {
         ...PRECHECK_TEST_CONFIG,
@@ -1609,8 +1609,8 @@ describe("Precheck Integration with nax run", () => {
 
   skipInCI("AC1: precheck runs automatically before first story", async () => {
     const prdPath = await setupFeature("auto-test");
-    const logFilePath = join(testDir, "nax", "features", "auto-test", "runs", "test.jsonl");
-    const runsDir = join(testDir, "nax", "features", "auto-test", "runs");
+    const logFilePath = join(testDir, ".nax", "features", "auto-test", "runs", "test.jsonl");
+    const runsDir = join(testDir, ".nax", "features", "auto-test", "runs");
 
     // Pre-create and commit the runs directory to avoid uncommitted changes during test
     mkdirSync(runsDir, { recursive: true });
@@ -1669,7 +1669,7 @@ describe("Precheck Integration with nax run", () => {
       await Bun.write(join(dirtyDir, "test.txt"), "modified");
 
       // Setup feature
-      const naxDir = join(dirtyDir, "nax");
+      const naxDir = join(dirtyDir, ".nax");
       const featuresDir = join(naxDir, "features");
       const featureDir = join(featuresDir, "blocker-test");
       mkdirSync(featureDir, { recursive: true });
@@ -1738,8 +1738,8 @@ describe("Precheck Integration with nax run", () => {
   skipInCI("AC3: Tier 2 warnings don't block execution", async () => {
     // Setup feature (clean git repo should pass all Tier 1 but may have Tier 2 warnings)
     const prdPath = await setupFeature("warning-test");
-    const logFilePath = join(testDir, "nax", "features", "warning-test", "runs", "test.jsonl");
-    const runsDir = join(testDir, "nax", "features", "warning-test", "runs");
+    const logFilePath = join(testDir, ".nax", "features", "warning-test", "runs", "test.jsonl");
+    const runsDir = join(testDir, ".nax", "features", "warning-test", "runs");
 
     // Pre-create and commit the runs directory to avoid uncommitted changes during test
     mkdirSync(runsDir, { recursive: true });
@@ -1784,8 +1784,8 @@ describe("Precheck Integration with nax run", () => {
 
   skipInCI("AC5: precheck results logged to JSONL", async () => {
     const prdPath = await setupFeature("log-test");
-    const logFilePath = join(testDir, "nax", "features", "log-test", "runs", "test.jsonl");
-    const runsDir = join(testDir, "nax", "features", "log-test", "runs");
+    const logFilePath = join(testDir, ".nax", "features", "log-test", "runs", "test.jsonl");
+    const runsDir = join(testDir, ".nax", "features", "log-test", "runs");
 
     // Pre-create and commit the runs directory to avoid uncommitted changes during test
     mkdirSync(runsDir, { recursive: true });
@@ -1836,7 +1836,7 @@ describe("Precheck Integration with nax run", () => {
 
     try {
       // Setup feature (intentionally no git repo to fail precheck)
-      const naxDir = join(nonGitDir, "nax");
+      const naxDir = join(nonGitDir, ".nax");
       const featuresDir = join(naxDir, "features");
       const featureDir = join(featuresDir, "status-test");
       mkdirSync(featureDir, { recursive: true });

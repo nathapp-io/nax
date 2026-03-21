@@ -118,7 +118,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     capturedWriteArgs = [];
 
     // Create nax directory
-    Bun.spawnSync(["mkdir", "-p", join(tmpDir, "nax")]);
+    Bun.spawnSync(["mkdir", "-p", join(tmpDir, ".nax")]);
 
     // Default deps — override per test as needed
     // readFile: return PRD JSON when reading prd.json (agent wrote it), spec otherwise
@@ -340,7 +340,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
       feature: "url-shortener",
     });
 
-    const expectedPath = join(tmpDir, "nax", "features", "url-shortener", "prd.json");
+    const expectedPath = join(tmpDir, ".nax", "features", "url-shortener", "prd.json");
     expect(result).toBe(expectedPath);
     expect(capturedWriteArgs[0][0]).toBe(expectedPath);
 

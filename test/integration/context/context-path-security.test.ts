@@ -14,8 +14,8 @@ beforeAll(() => {
   // Create test directory structure
   mkdirSync(testProject, { recursive: true });
   mkdirSync(join(testProject, "src"), { recursive: true });
-  mkdirSync(join(testProject, "nax"), { recursive: true });
-  writeFileSync(join(testProject, "nax", "config.json"), "{}");
+  mkdirSync(join(testProject, ".nax"), { recursive: true });
+  writeFileSync(join(testProject, ".nax", "config.json"), "{}");
   mkdirSync(testOutside, { recursive: true });
 
   // Resolve real paths (handles macOS /private prefix)
@@ -57,7 +57,7 @@ describe("Path Security", () => {
     });
 
     test("rejects file path (not a directory)", () => {
-      const filePath = join(testProject, "nax", "config.json");
+      const filePath = join(testProject, ".nax", "config.json");
       expect(() => {
         validateDirectory(filePath);
       }).toThrow("Not a directory");
@@ -93,7 +93,7 @@ describe("Path Security", () => {
 
   describe("validateFilePath", () => {
     test("accepts file within base directory", () => {
-      const filePath = join(testProject, "nax", "config.json");
+      const filePath = join(testProject, ".nax", "config.json");
       const result = validateFilePath(filePath, testProject);
       expect(result).toBe(filePath);
     });
@@ -163,7 +163,7 @@ describe("Path Security", () => {
 
       // Should find the nax directory (5 levels up < 10 max)
       const result = findProjectDir(deepPath);
-      expect(result).toBe(join(testProject, "nax"));
+      expect(result).toBe(join(testProject, ".nax"));
     });
 
     test("MAX_DIRECTORY_DEPTH is reasonable (10)", () => {

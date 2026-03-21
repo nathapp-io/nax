@@ -159,7 +159,7 @@ async function executeFixStory(
   );
   // PKG: resolve per-package effective config for fix stories (same as iteration-runner)
   const fixEffectiveConfig = story.workdir
-    ? await loadConfigForWorkdir(join(ctx.workdir, "nax", "config.json"), story.workdir)
+    ? await loadConfigForWorkdir(join(ctx.workdir, ".nax", "config.json"), story.workdir)
     : ctx.config;
   const fixContext: PipelineContext = {
     config: ctx.config,

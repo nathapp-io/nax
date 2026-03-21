@@ -17,11 +17,17 @@ export function globalConfigDir(): string {
 }
 
 /**
- * Returns the project config directory path (projectRoot/nax).
+ * Hidden project config directory name.
+ * Single source of truth — all code uses this constant or projectConfigDir().
+ */
+export const PROJECT_NAX_DIR = ".nax";
+
+/**
+ * Returns the project config directory path (projectRoot/.nax).
  *
  * @param projectRoot - Absolute or relative path to project root
  * @returns Absolute path to project config directory
  */
 export function projectConfigDir(projectRoot: string): string {
-  return join(resolve(projectRoot), "nax");
+  return join(resolve(projectRoot), PROJECT_NAX_DIR);
 }

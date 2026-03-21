@@ -59,7 +59,7 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
 
   // Resolve project directory
   const resolved = resolveProject({ dir: options.dir });
-  const naxDir = join(resolved.projectDir, "nax");
+  const naxDir = join(resolved.projectDir, ".nax");
 
   // Read config to get feature name
   const configPath = resolved.configPath;

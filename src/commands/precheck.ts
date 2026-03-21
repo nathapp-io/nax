@@ -53,7 +53,7 @@ export async function precheckCommand(options: PrecheckOptions): Promise<void> {
   }
 
   // Get feature directory
-  const naxDir = join(resolved.projectDir, "nax");
+  const naxDir = join(resolved.projectDir, ".nax");
   const featureDir = join(naxDir, "features", featureName);
   const prdPath = join(featureDir, "prd.json");
 

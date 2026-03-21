@@ -125,7 +125,7 @@ describe("Config Command", () => {
 
     test("shows project config path when present", async () => {
       // Create project config
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(
         join(naxDir, "config.json"),
@@ -219,7 +219,7 @@ describe("Config Command", () => {
 
     test("shows project config path when present", async () => {
       // Create project config
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(
         join(naxDir, "config.json"),
@@ -476,7 +476,7 @@ describe("Config Command", () => {
   describe("Works from any directory", () => {
     test("works when run from project root", async () => {
       // Create project config
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(
         join(naxDir, "config.json"),
@@ -500,7 +500,7 @@ describe("Config Command", () => {
 
     test("works when run from subdirectory", async () => {
       // Create project config
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(
         join(naxDir, "config.json"),
@@ -552,7 +552,7 @@ describe("Config Command", () => {
 
     test("shows message when project config has no differences", async () => {
       // Create empty project config
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), JSON.stringify({}));
 
@@ -568,7 +568,7 @@ describe("Config Command", () => {
 
     test("shows differences in table format", async () => {
       // Create project config with overrides
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(
         join(naxDir, "config.json"),
@@ -604,7 +604,7 @@ describe("Config Command", () => {
 
     test("shows field descriptions for differences", async () => {
       // Create project config with overrides
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(
         join(naxDir, "config.json"),
@@ -628,7 +628,7 @@ describe("Config Command", () => {
 
     test("only shows fields that differ", async () => {
       // Create project config with overrides
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(
         join(naxDir, "config.json"),
@@ -657,7 +657,7 @@ describe("Config Command", () => {
 
     test("handles nested object differences", async () => {
       // Create project config with nested overrides
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(
         join(naxDir, "config.json"),
@@ -684,7 +684,7 @@ describe("Config Command", () => {
 
     test("handles array differences", async () => {
       // Create project config with array overrides
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(
         join(naxDir, "config.json"),
@@ -796,7 +796,7 @@ describe("Config Command --diff", () => {
 
     test("shows 'No project config found' when nax/ dir exists but config.json doesn't", async () => {
       // Create nax/ dir but no config.json
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
 
       process.chdir(tempDir);
@@ -812,7 +812,7 @@ describe("Config Command --diff", () => {
   describe("Project config exists but identical to global", () => {
     test("shows 'No differences' when project config matches global", async () => {
       // Create empty project config (should merge to same as global)
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       writeFileSync(join(naxDir, "config.json"), JSON.stringify({}));
 
@@ -829,7 +829,7 @@ describe("Config Command --diff", () => {
   describe("Project config overrides global", () => {
     test("shows table with field path, project value, and global value", async () => {
       // Create project config with a simple override
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         execution: {
@@ -870,7 +870,7 @@ describe("Config Command --diff", () => {
     });
 
     test("shows multiple differences when multiple fields override", async () => {
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         execution: {
@@ -908,7 +908,7 @@ describe("Config Command --diff", () => {
     });
 
     test("shows nested field paths correctly", async () => {
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         routing: {
@@ -933,7 +933,7 @@ describe("Config Command --diff", () => {
     });
 
     test("shows field descriptions when available", async () => {
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         execution: {
@@ -955,7 +955,7 @@ describe("Config Command --diff", () => {
     });
 
     test("handles array differences correctly", async () => {
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         quality: {
@@ -979,7 +979,7 @@ describe("Config Command --diff", () => {
     });
 
     test("handles boolean differences correctly", async () => {
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         quality: {
@@ -1001,7 +1001,7 @@ describe("Config Command --diff", () => {
     });
 
     test("handles string value differences correctly", async () => {
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         routing: {
@@ -1023,7 +1023,7 @@ describe("Config Command --diff", () => {
     });
 
     test("truncates long string values in table", async () => {
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         constitution: {
@@ -1045,7 +1045,7 @@ describe("Config Command --diff", () => {
     });
 
     test("handles object differences correctly", async () => {
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         models: {
@@ -1114,7 +1114,7 @@ describe("Config Command --diff", () => {
 
   describe("Edge cases", () => {
     test("handles null values in diff correctly", async () => {
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         execution: {
@@ -1137,7 +1137,7 @@ describe("Config Command --diff", () => {
     });
 
     test("skips fields that are only in global (not overridden)", async () => {
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         execution: {
@@ -1162,7 +1162,7 @@ describe("Config Command --diff", () => {
     });
 
     test("handles deeply nested config overrides", async () => {
-      const naxDir = join(tempDir, "nax");
+      const naxDir = join(tempDir, ".nax");
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         autoMode: {
@@ -1289,7 +1289,7 @@ describe("nax config (default view) - CLI integration", () => {
 
   test("shows project config path when present", async () => {
     // Create project config
-    const naxDir = join(tempDir, "nax");
+    const naxDir = join(tempDir, ".nax");
     mkdirSync(naxDir, { recursive: true });
     writeFileSync(
       join(naxDir, "config.json"),
@@ -1374,7 +1374,7 @@ describe("nax config (default view) - CLI integration", () => {
 
   test("works when run from project subdirectory", async () => {
     // Create project config
-    const naxDir = join(tempDir, "nax");
+    const naxDir = join(tempDir, ".nax");
     mkdirSync(naxDir, { recursive: true });
     writeFileSync(
       join(naxDir, "config.json"),
@@ -1440,7 +1440,7 @@ describe("nax config (default view) - edge cases", () => {
 
   test("handles project config with only comments (valid but empty JSON)", async () => {
     // Create project config with only {}
-    const naxDir = join(tempDir, "nax");
+    const naxDir = join(tempDir, ".nax");
     mkdirSync(naxDir, { recursive: true });
     writeFileSync(join(naxDir, "config.json"), "{}");
 
@@ -1471,7 +1471,7 @@ describe("nax config (default view) - edge cases", () => {
 
   test("handles deep nesting when walking up directory tree", async () => {
     // Create project config at root
-    const naxDir = join(tempDir, "nax");
+    const naxDir = join(tempDir, ".nax");
     mkdirSync(naxDir, { recursive: true });
     writeFileSync(
       join(naxDir, "config.json"),
@@ -1549,7 +1549,7 @@ describe("nax config (default view) - edge cases", () => {
 
   test("merges nested config overrides correctly", async () => {
     // Create project config with nested overrides
-    const naxDir = join(tempDir, "nax");
+    const naxDir = join(tempDir, ".nax");
     mkdirSync(naxDir, { recursive: true });
     writeFileSync(
       join(naxDir, "config.json"),
@@ -1594,7 +1594,7 @@ describe("nax config (default view) - edge cases", () => {
 
   test("handles project config with schema version mismatch", async () => {
     // Create project config with future schema version
-    const naxDir = join(tempDir, "nax");
+    const naxDir = join(tempDir, ".nax");
     mkdirSync(naxDir, { recursive: true });
     writeFileSync(
       join(naxDir, "config.json"),

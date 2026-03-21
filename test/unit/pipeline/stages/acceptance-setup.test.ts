@@ -59,7 +59,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     stories,
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
     workdir: "/tmp/test-workdir",
-    featureDir: "/tmp/test-workdir/nax/features/test-feature",
+    featureDir: "/tmp/test-workdir/.nax/features/test-feature",
     hooks: {} as any,
     ...overrides,
   };
@@ -236,7 +236,7 @@ describe("acceptance-setup: writes test file", () => {
 
     expect(writtenPaths.length).toBe(1);
     expect(writtenPaths[0]).toContain("acceptance.test.ts");
-    expect(writtenPaths[0]).toContain("/tmp/test-workdir/nax/features/test-feature");
+    expect(writtenPaths[0]).toContain("/tmp/test-workdir/.nax/features/test-feature");
   });
 
   test("written content matches generated testCode", async () => {

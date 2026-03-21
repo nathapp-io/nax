@@ -74,7 +74,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     tmpDir = mkdtempSync(join(tmpdir(), "nax-plan-mono-test-"));
     capturedPrompts = [];
 
-    Bun.spawnSync(["mkdir", "-p", join(tmpDir, "nax")]);
+    Bun.spawnSync(["mkdir", "-p", join(tmpDir, ".nax")]);
 
     _deps.readFile = mock(async () => "# Spec\nDo something.");
     _deps.writeFile = mock(async () => {});
@@ -210,7 +210,7 @@ describe("planCommand — per-package tech stack in prompt", () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "nax-plan-pkgstack-test-"));
     capturedPrompts = [];
-    Bun.spawnSync(["mkdir", "-p", join(tmpDir, "nax")]);
+    Bun.spawnSync(["mkdir", "-p", join(tmpDir, ".nax")]);
 
     _deps.readFile = mock(async () => "# Spec\nDo something.\n");
     _deps.existsSync = mock(() => true);

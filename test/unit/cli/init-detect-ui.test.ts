@@ -399,7 +399,7 @@ describe("initProject — acceptance.testStrategy for ink project", () => {
 
       await initProject(dir);
 
-      const configPath = join(dir, "nax", "config.json");
+      const configPath = join(dir, ".nax", "config.json");
       const config = JSON.parse(await Bun.file(configPath).text()) as Record<string, unknown>;
       const acceptance = config.acceptance as Record<string, unknown> | undefined;
       expect(acceptance?.testStrategy).toBe("component");
@@ -414,7 +414,7 @@ describe("initProject — acceptance.testStrategy for ink project", () => {
 
       await initProject(dir);
 
-      const configPath = join(dir, "nax", "config.json");
+      const configPath = join(dir, ".nax", "config.json");
       const config = JSON.parse(await Bun.file(configPath).text()) as Record<string, unknown>;
       const acceptance = config.acceptance as Record<string, unknown> | undefined;
       expect(acceptance?.testFramework).toBe("ink-testing-library");
@@ -431,7 +431,7 @@ describe("initProject — acceptance.testStrategy for bin-only project", () => {
 
       await initProject(dir);
 
-      const configPath = join(dir, "nax", "config.json");
+      const configPath = join(dir, ".nax", "config.json");
       const config = JSON.parse(await Bun.file(configPath).text()) as Record<string, unknown>;
       const acceptance = config.acceptance as Record<string, unknown> | undefined;
       expect(acceptance?.testStrategy).toBe("cli");
@@ -448,7 +448,7 @@ describe("initProject — no acceptance section for plain project", () => {
 
       await initProject(dir);
 
-      const configPath = join(dir, "nax", "config.json");
+      const configPath = join(dir, ".nax", "config.json");
       const config = JSON.parse(await Bun.file(configPath).text()) as Record<string, unknown>;
       const acceptance = config.acceptance as Record<string, unknown> | undefined;
       expect(acceptance?.testStrategy).toBeUndefined();

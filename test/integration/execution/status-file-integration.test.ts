@@ -7,7 +7,7 @@
  * - Status file always written at all 4 write points (dry-run path)
  * - Valid JSON at each stage, NaxStatusFile schema correct
  * - completed status, progress counts, null current at end
- * - CLI automatically computes statusFile to <workdir>/nax/status.json
+ * - CLI automatically computes statusFile to <workdir>/.nax/status.json
  */
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
@@ -112,7 +112,7 @@ function makePRD(feature: string, storyCount = 2): PRD {
 
 async function setupDir(feature: string, storyCount = 2) {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-sf-int-"));
-  const naxDir = path.join(tmpDir, "nax");
+  const naxDir = path.join(tmpDir, ".nax");
   const featureDir = path.join(naxDir, "features", feature);
   nodeFs.mkdirSync(path.join(featureDir, "runs"), { recursive: true });
   const prdPath = path.join(featureDir, "prd.json");
@@ -150,9 +150,9 @@ describe("RunOptions.statusFile", () => {
       hooks: { hooks: {} },
       feature: "test",
       dryRun: true,
-      statusFile: "/tmp/nax/status.json",
+      statusFile: "/tmp/.nax/status.json",
     };
-    expect(opts.statusFile).toBe("/tmp/nax/status.json");
+    expect(opts.statusFile).toBe("/tmp/.nax/status.json");
   });
 });
 
@@ -282,8 +282,8 @@ describe("CLI auto-computed status file", () => {
       hooks: { hooks: {} },
       feature: "test",
       dryRun: false,
-      statusFile: "/tmp/nax/status.json",
+      statusFile: "/tmp/.nax/status.json",
     };
-    expect(opts.statusFile).toBe("/tmp/nax/status.json");
+    expect(opts.statusFile).toBe("/tmp/.nax/status.json");
   });
 });

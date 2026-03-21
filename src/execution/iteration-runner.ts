@@ -70,7 +70,7 @@ export async function runIteration(
 
   // PKG-003: Resolve per-package effective config once per story (not per-stage)
   const effectiveConfig = story.workdir
-    ? await _iterationRunnerDeps.loadConfigForWorkdir(join(ctx.workdir, "nax", "config.json"), story.workdir)
+    ? await _iterationRunnerDeps.loadConfigForWorkdir(join(ctx.workdir, ".nax", "config.json"), story.workdir)
     : ctx.config;
 
   const pipelineContext: PipelineContext = {
