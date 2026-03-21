@@ -48,15 +48,16 @@ export const promptStage: PipelineStage = {
         .hermeticConfig(effectiveConfig.quality?.testing);
       prompt = await builder.build();
     } else {
-      // Both test-after and tdd-simple use the tdd-simple prompt (RED/GREEN/REFACTOR)
-      const role = "tdd-simple" as const;
+      // no-test uses a dedicated role; all other single-session strategies use tdd-simple
+      const role = ctx.routing.testStrategy === "no-test" ? ("no-test" as const) : ("tdd-simple" as const);
       const builder = PromptBuilder.for(role)
         .withLoader(ctx.workdir, ctx.config)
         .story(ctx.story)
         .context(ctx.contextMarkdown)
         .constitution(ctx.constitution?.content)
         .testCommand(effectiveConfig.quality?.commands?.test)
-        .hermeticConfig(effectiveConfig.quality?.testing);
+        .hermeticConfig(effectiveConfig.quality?.testing)
+        .noTestJustification(ctx.story.routing?.noTestJustification);
       prompt = await builder.build();
     }
 

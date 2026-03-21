@@ -21,6 +21,7 @@ function buildTestFilterRule(testCommand: string): string {
 
 export function buildIsolationSection(
   roleOrMode:
+    | "no-test"
     | "implementer"
     | "test-writer"
     | "verifier"
@@ -37,11 +38,22 @@ export function buildIsolationSection(
     return buildIsolationSection("test-writer", roleOrMode, testCommand);
   }
 
-  const role = roleOrMode as "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple" | "batch";
+  const role = roleOrMode as
+    | "no-test"
+    | "implementer"
+    | "test-writer"
+    | "verifier"
+    | "single-session"
+    | "tdd-simple"
+    | "batch";
   const testCmd = testCommand ?? DEFAULT_TEST_CMD;
 
   const header = "# Isolation Rules";
   const footer = `\n\n${buildTestFilterRule(testCmd)}`;
+
+  if (role === "no-test") {
+    return `${header}\n\nisolation scope: Implement changes in src/ and other non-test directories. Do NOT create or modify any files in the test/ directory.${footer}`;
+  }
 
   if (role === "test-writer") {
     const m = mode ?? "strict";

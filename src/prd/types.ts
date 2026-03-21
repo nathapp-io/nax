@@ -65,6 +65,8 @@ export interface StoryRouting {
   /** Model tier (derived at runtime from config, not persisted) */
   modelTier?: ModelTier;
   testStrategy: TestStrategy;
+  /** Required when testStrategy is "no-test" — explains why tests are unnecessary for this story */
+  noTestJustification?: string;
   reasoning: string;
   estimatedCost?: number;
   /** Estimated lines of code (from LLM classifier) */

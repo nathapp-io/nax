@@ -270,7 +270,10 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   // Can escalate — log and update stories
   for (const s of storiesToEscalate) {
     const currentTestStrategy = s.routing?.testStrategy ?? ctx.routing.testStrategy;
-    const shouldSwitchToTestAfter = escalateRetryAsTestAfter && currentTestStrategy !== "test-after";
+    // STRAT-001: no-test stories must NOT be escalated to a test strategy — if the story was
+    // correctly classified as no-test, adding tests won't help.
+    const shouldSwitchToTestAfter =
+      escalateRetryAsTestAfter && currentTestStrategy !== "test-after" && currentTestStrategy !== "no-test";
 
     if (shouldSwitchToTestAfter) {
       logger?.warn("escalation", "Switching strategy to test-after (greenfield-no-tests fallback)", {
@@ -297,8 +300,10 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
       if (!shouldEscalate) return s;
 
       // S5: Check if this is a one-time test-after switch
+      // STRAT-001: no-test stories are exempt from test-after escalation
       const currentTestStrategy = s.routing?.testStrategy ?? ctx.routing.testStrategy;
-      const shouldSwitchToTestAfter = escalateRetryAsTestAfter && currentTestStrategy !== "test-after";
+      const shouldSwitchToTestAfter =
+        escalateRetryAsTestAfter && currentTestStrategy !== "test-after" && currentTestStrategy !== "no-test";
 
       const baseRouting = s.routing ?? { ...ctx.routing };
       const updatedRouting = {

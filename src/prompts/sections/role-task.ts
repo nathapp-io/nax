@@ -31,6 +31,7 @@ function buildTestFrameworkHint(testCommand: string): string {
 
 export function buildRoleTaskSection(
   roleOrVariant:
+    | "no-test"
     | "implementer"
     | "test-writer"
     | "verifier"
@@ -42,15 +43,37 @@ export function buildRoleTaskSection(
   variant?: "standard" | "lite",
   testCommand?: string,
   isolation?: "strict" | "lite",
+  noTestJustification?: string,
 ): string {
   // Old API support: buildRoleTaskSection("standard") or buildRoleTaskSection("lite")
   if ((roleOrVariant === "standard" || roleOrVariant === "lite") && variant === undefined) {
     return buildRoleTaskSection("implementer", roleOrVariant, testCommand, isolation);
   }
 
-  const role = roleOrVariant as "implementer" | "test-writer" | "verifier" | "single-session" | "tdd-simple" | "batch";
+  const role = roleOrVariant as
+    | "no-test"
+    | "implementer"
+    | "test-writer"
+    | "verifier"
+    | "single-session"
+    | "tdd-simple"
+    | "batch";
   const testCmd = testCommand ?? DEFAULT_TEST_CMD;
   const frameworkHint = buildTestFrameworkHint(testCmd);
+
+  if (role === "no-test") {
+    const justification = noTestJustification ?? "No behavioral changes — tests not required";
+    return `# Role: Implementer (No Tests)
+
+Your task: implement the change as described. This story has no behavioral changes and does not require test modifications.
+
+Instructions:
+- Implement the change as described in the story
+- Do NOT create or modify test files
+- Justification for no tests: ${justification}
+- When done, stage and commit ALL changed files with: git commit -m 'feat: <description>'
+- Goal: change implemented, no test files created or modified, all changes committed`;
+  }
 
   if (role === "implementer") {
     const v = variant ?? "standard";

@@ -117,10 +117,18 @@ export function precomputeBatchPlan(stories: UserStory[], maxBatchSize = DEFAULT
   let currentBatch: UserStory[] = [];
 
   for (const story of stories) {
+    // STRAT-001: no-test stories must batch separately from test-after/tdd stories (different prompt role)
     const isSimple = story.routing?.complexity === "simple" && story.routing?.testStrategy === "test-after";
+    const isNoTest = story.routing?.testStrategy === "no-test";
+    const isBatchable = isSimple || isNoTest;
 
-    if (isSimple && currentBatch.length < maxBatchSize) {
-      // Add to current batch
+    if (isBatchable && currentBatch.length < maxBatchSize) {
+      // Flush batch if the batch type would change (no-test vs test-after)
+      const batchIsNoTest = currentBatch.length > 0 && currentBatch[0]?.routing?.testStrategy === "no-test";
+      if (currentBatch.length > 0 && batchIsNoTest !== isNoTest) {
+        batches.push({ stories: [...currentBatch], isBatch: currentBatch.length > 1 });
+        currentBatch = [];
+      }
       currentBatch.push(story);
     } else {
       // Flush current batch if it exists
@@ -132,14 +140,11 @@ export function precomputeBatchPlan(stories: UserStory[], maxBatchSize = DEFAULT
         currentBatch = [];
       }
 
-      // Add non-simple story as individual batch
-      if (!isSimple) {
-        batches.push({
-          stories: [story],
-          isBatch: false,
-        });
+      if (!isBatchable) {
+        // Non-batchable story executes individually
+        batches.push({ stories: [story], isBatch: false });
       } else {
-        // Start new batch with this simple story
+        // Batchable but current batch was full — start a new batch
         currentBatch.push(story);
       }
     }

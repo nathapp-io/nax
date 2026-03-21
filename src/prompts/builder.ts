@@ -35,6 +35,7 @@ export class PromptBuilder {
   private _loaderConfig: NaxConfig | undefined;
   private _testCommand: string | undefined;
   private _hermeticConfig: { hermetic?: boolean; externalBoundaries?: string[]; mockGuidance?: string } | undefined;
+  private _noTestJustification: string | undefined;
 
   private constructor(role: PromptRole, options: PromptOptions = {}) {
     this._role = role;
@@ -85,6 +86,11 @@ export class PromptBuilder {
     config: { hermetic?: boolean; externalBoundaries?: string[]; mockGuidance?: string } | undefined,
   ): PromptBuilder {
     this._hermeticConfig = config;
+    return this;
+  }
+
+  noTestJustification(justification: string | undefined): PromptBuilder {
+    this._noTestJustification = justification;
     return this;
   }
 
@@ -161,6 +167,6 @@ export class PromptBuilder {
     }
     const variant = this._options.variant as "standard" | "lite" | undefined;
     const isolation = this._options.isolation as "strict" | "lite" | undefined;
-    return buildRoleTaskSection(this._role, variant, this._testCommand, isolation);
+    return buildRoleTaskSection(this._role, variant, this._testCommand, isolation, this._noTestJustification);
   }
 }

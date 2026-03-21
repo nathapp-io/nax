@@ -14,6 +14,7 @@ export type { TestStrategy };
 // ─── Valid values ─────────────────────────────────────────────────────────────
 
 export const VALID_TEST_STRATEGIES: readonly TestStrategy[] = [
+  "no-test",
   "test-after",
   "tdd-simple",
   "three-session-tdd",
@@ -30,6 +31,7 @@ export function resolveTestStrategy(raw: string | undefined): TestStrategy {
   if (!raw) return "test-after";
   if (VALID_TEST_STRATEGIES.includes(raw as TestStrategy)) return raw as TestStrategy;
   // Map legacy/typo values
+  if (raw === "none") return "no-test";
   if (raw === "tdd") return "tdd-simple";
   if (raw === "three-session") return "three-session-tdd";
   if (raw === "tdd-lite") return "three-session-tdd-lite";
@@ -40,6 +42,9 @@ export function resolveTestStrategy(raw: string | undefined): TestStrategy {
 
 export const COMPLEXITY_GUIDE = `## Complexity Classification Guide
 
+- no-test: Config-only changes, documentation, CI/build files, dependency bumps, pure refactors
+  with NO behavioral change. MUST include noTestJustification explaining why tests are unnecessary.
+  If any user-facing behavior changes, use tdd-simple or higher.
 - simple: ≤50 LOC, single-file change, purely additive, no new dependencies → tdd-simple
 - medium: 50–200 LOC, 2–5 files, standard patterns, clear requirements → three-session-tdd-lite
 - complex: 200–500 LOC, multiple modules, new abstractions or integrations → three-session-tdd
@@ -52,6 +57,9 @@ password hashing, access control) must use three-session-tdd regardless of compl
 
 export const TEST_STRATEGY_GUIDE = `## Test Strategy Guide
 
+- no-test: Stories with zero behavioral change — config files, documentation, CI/build changes,
+  dependency bumps, pure structural refactors. REQUIRES noTestJustification field. If any runtime
+  behavior changes, use tdd-simple or higher. When in doubt, use tdd-simple.
 - tdd-simple: Simple stories (≤50 LOC). Write failing tests first, then implement to pass them — all in one session.
 - three-session-tdd-lite: Medium stories, or complex stories involving UI/CLI/integration. 3 sessions: (1) test-writer writes failing tests and may create minimal src/ stubs for imports, (2) implementer makes tests pass and may replace stubs, (3) verifier confirms correctness.
 - three-session-tdd: Complex/expert stories or security-critical code. 3 sessions with strict isolation: (1) test-writer writes failing tests — no src/ changes allowed, (2) implementer makes them pass without modifying test files, (3) verifier confirms correctness.
