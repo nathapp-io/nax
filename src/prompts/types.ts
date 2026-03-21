@@ -5,7 +5,14 @@
  */
 
 /** Role determining which default template body to use */
-export type PromptRole = "test-writer" | "implementer" | "verifier" | "single-session" | "tdd-simple" | "batch";
+export type PromptRole =
+  | "no-test"
+  | "test-writer"
+  | "implementer"
+  | "verifier"
+  | "single-session"
+  | "tdd-simple"
+  | "batch";
 
 /** A single section of a composed prompt */
 export interface PromptSection {

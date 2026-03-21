@@ -38,11 +38,12 @@ describe("resolveTestStrategy", () => {
 });
 
 describe("VALID_TEST_STRATEGIES", () => {
-  test("has exactly 4 entries", () => {
-    expect(VALID_TEST_STRATEGIES.length).toBe(4);
+  test("has exactly 5 entries", () => {
+    expect(VALID_TEST_STRATEGIES.length).toBe(5);
   });
 
   test("contains all expected strategies", () => {
+    expect(VALID_TEST_STRATEGIES).toContain("no-test");
     expect(VALID_TEST_STRATEGIES).toContain("test-after");
     expect(VALID_TEST_STRATEGIES).toContain("tdd-simple");
     expect(VALID_TEST_STRATEGIES).toContain("three-session-tdd");

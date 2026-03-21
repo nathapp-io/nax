@@ -140,6 +140,18 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
     typeof rawTestStrategy === "string" ? rawTestStrategy : undefined,
   );
 
+  // noTestJustification — required when testStrategy is "no-test"
+  const rawJustification = routing.noTestJustification ?? s.noTestJustification;
+  if (testStrategy === "no-test") {
+    if (!rawJustification || typeof rawJustification !== "string" || (rawJustification as string).trim() === "") {
+      throw new Error(
+        `[schema] story[${index}].routing.noTestJustification is required when testStrategy is "no-test"`,
+      );
+    }
+  }
+  const noTestJustification: string | undefined =
+    typeof rawJustification === "string" && rawJustification.trim() !== "" ? rawJustification.trim() : undefined;
+
   // dependencies
   const rawDeps = s.dependencies;
   const dependencies: string[] = Array.isArray(rawDeps) ? (rawDeps as string[]) : [];
@@ -193,6 +205,7 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
       complexity,
       testStrategy,
       reasoning: "validated from LLM output",
+      ...(noTestJustification !== undefined ? { noTestJustification } : {}),
     },
     ...(workdir !== undefined ? { workdir } : {}),
     ...(contextFiles.length > 0 ? { contextFiles } : {}),

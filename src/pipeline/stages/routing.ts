@@ -163,6 +163,8 @@ export const routingStage: PipelineStage = {
     // MW-011: For monorepo stories, scan the story's package workdir (story.workdir), not the
     // repo root. Scanning the repo root would find tests in OTHER packages and incorrectly
     // classify the story as non-greenfield even when the target package has zero tests.
+    // STRAT-001: no-test is exempt from greenfield override — lack of test files is irrelevant
+    // for stories that genuinely need no tests.
     const greenfieldDetectionEnabled = ctx.config.tdd.greenfieldDetection ?? true;
     if (greenfieldDetectionEnabled && routing.testStrategy.startsWith("three-session-tdd")) {
       const greenfieldScanDir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;

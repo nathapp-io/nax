@@ -6,7 +6,7 @@
  */
 
 export type Complexity = "simple" | "medium" | "complex" | "expert";
-export type TestStrategy = "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite";
+export type TestStrategy = "no-test" | "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite";
 export type TddStrategy = "auto" | "strict" | "lite" | "simple" | "off";
 
 /** Model tier names — extensible (TYPE-3 fix: preserve autocomplete for known tiers) */

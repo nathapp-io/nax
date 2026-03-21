@@ -378,9 +378,12 @@ export const PromptsConfigSchema = z.object({
     .record(
       z
         .string()
-        .refine((key) => ["test-writer", "implementer", "verifier", "single-session", "tdd-simple"].includes(key), {
-          message: "Role must be one of: test-writer, implementer, verifier, single-session, tdd-simple",
-        }),
+        .refine(
+          (key) => ["no-test", "test-writer", "implementer", "verifier", "single-session", "tdd-simple"].includes(key),
+          {
+            message: "Role must be one of: no-test, test-writer, implementer, verifier, single-session, tdd-simple",
+          },
+        ),
       z.string().min(1, "Override path must be non-empty"),
     )
     .optional(),
