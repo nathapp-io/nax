@@ -32,7 +32,8 @@ Decompose this spec into user stories. For each story, provide:
 9. reasoning: Why this complexity level
 10. estimatedLOC: Estimated lines of code to change
 11. risks: Array of implementation risks
-12. testStrategy: "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite"
+12. testStrategy: "no-test" | "test-after" | "tdd-simple" | "three-session-tdd" | "three-session-tdd-lite"
+13. noTestJustification: string (REQUIRED when testStrategy is "no-test" — explain why tests are unnecessary)
 
 ${COMPLEXITY_GUIDE}
 

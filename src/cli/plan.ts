@@ -492,7 +492,8 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
       "passes": false,
       "routing": {
         "complexity": "simple | medium | complex | expert",
-        "testStrategy": "tdd-simple | three-session-tdd-lite | three-session-tdd | test-after",
+        "testStrategy": "no-test | tdd-simple | three-session-tdd-lite | three-session-tdd | test-after",
+        "noTestJustification": "string — REQUIRED when testStrategy is no-test, explains why tests are unnecessary",
         "reasoning": "string — brief classification rationale"
       },
       "escalations": [],

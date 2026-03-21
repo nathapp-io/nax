@@ -498,7 +498,8 @@ nax selects a test strategy per story based on complexity and tags:
 
 | Strategy | Sessions | When | Description |
 |:---------|:---------|:-----|:------------|
-| `test-after` | 1 | Refactors, deletions, config, docs | Single session, no TDD discipline |
+| `no-test` | 1 | Config, docs, CI, pure refactors with no behavior change | No tests written or run — requires `noTestJustification` in prd.json |
+| `test-after` | 1 | Refactors, deletions | Single session, tests written after implementation |
 | `tdd-simple` | 1 | Simple stories | Single session with TDD prompt (red-green-refactor) |
 | `three-session-tdd-lite` | 3 | Medium stories | Three sessions, relaxed isolation rules |
 | `three-session-tdd` | 3 | Complex/security stories | Three sessions, strict file isolation |
@@ -569,33 +570,40 @@ Configured under `quality.testing` — supports **per-package override** in mono
 
 ## Story Decomposition
 
-When a story is too large (complex/expert with >6 acceptance criteria), nax can automatically decompose it into smaller sub-stories. This runs during the routing stage.
+Story decomposition is **opt-in** — disabled by default. Enable it by adding a `decompose` block to `.nax/config.json`.
 
-**Trigger:** The `story-oversized` interaction trigger fires when a story exceeds the configured thresholds. You can approve decomposition, skip the story, or continue as-is.
-
-**How it works:**
-
-1. The `DecomposeBuilder` constructs a prompt with the target story, sibling stories (to prevent overlap), and codebase context
-2. An LLM generates sub-stories with IDs, titles, descriptions, acceptance criteria, and dependency ordering
-3. Post-decompose validators check:
-   - **Overlap** — sub-stories must not duplicate scope of existing stories
-   - **Coverage** — sub-stories must cover all parent acceptance criteria
-   - **Complexity** — each sub-story must be simpler than the parent
-   - **Dependencies** — dependency graph must be acyclic with valid references
-4. The parent story is replaced in the PRD with the validated sub-stories
+When enabled, nax checks during the routing stage whether a story is oversized (complex/expert complexity with more ACs than `maxAcceptanceCriteria`). If so, an LLM breaks it into smaller sub-stories and replaces the original in the PRD.
 
 **Configuration:**
 
 ```json
 {
   "decompose": {
-    "enabled": true,
-    "maxSubStories": 5,
-    "minAcceptanceCriteria": 6,
-    "complexityThreshold": ["complex", "expert"]
+    "trigger": "auto",
+    "maxAcceptanceCriteria": 6,
+    "maxSubstories": 5,
+    "maxSubstoryComplexity": "medium",
+    "maxRetries": 2,
+    "model": "balanced"
   }
 }
 ```
+
+**Trigger modes:**
+
+| Value | Behaviour |
+|:------|:----------|
+| `auto` | Decompose automatically — no confirmation prompt |
+| `confirm` | Show interaction prompt — you approve, skip, or continue as-is |
+| `disabled` | Never decompose — log a warning if story is oversized |
+
+> **Note:** `storySizeGate` (under `precheck`) is a separate pre-run guard that warns if stories exceed size limits before execution starts. Decomposition happens during routing, mid-run.
+
+**How it works:**
+
+1. An LLM generates sub-stories with IDs, titles, descriptions, acceptance criteria, and dependency ordering
+2. Post-decompose validators check overlap, coverage, complexity, and dependency ordering
+3. The parent story is replaced in the PRD with the validated sub-stories
 
 ---
 
@@ -618,8 +626,8 @@ After all stories pass their individual verification, nax can run a deferred ful
 | Mode | Behaviour |
 |:-----|:----------|
 | `disabled` | No regression gate |
-| `per-story` | Full suite after each story (expensive) |
-| `deferred` | Full suite once after all stories pass (recommended) |
+| `per-story` | Full suite after each story — higher cost and slower if stories fail regression |
+| `deferred` | Full suite once after all stories pass (recommended) — **default** |
 
 If the regression gate detects failures, nax maps them to the responsible story via git blame and attempts automated rectification. If rectification fails, affected stories are marked as `regression-failed`.
 
@@ -663,9 +671,9 @@ nax run -f my-feature --parallel 3
 
 ## Agents
 
-nax supports multiple coding agents. **ACP protocol (via [acpx](https://github.com/nathapp/acpx)) is recommended** — it provides persistent sessions, structured cost/token reporting, and works with all supported agents.
+nax supports multiple coding agents via the [Agent Client Protocol (ACP)](https://github.com/openclaw/acpx). **ACP protocol is recommended** — it provides persistent sessions, structured cost/token reporting, and works with all supported agents.
 
-> **CLI protocol** (`agent.protocol: "cli"`) is supported for Claude Code only. Other agents in CLI mode are experimental and not recommended for production use.
+> **CLI protocol** (`agent.protocol: "cli"`) is supported for Claude Code only and is being gradually deprecated in favour of ACP. New projects should use ACP.
 
 ```bash
 # List installed agents and their capabilities
@@ -674,23 +682,16 @@ nax agents
 
 **Supported agents:**
 
-| Agent | Status | Notes |
-|:------|:-------|:------|
-| `claude` | ✅ Stable | Claude Code via acpx (ACP) or direct CLI |
-| `opencode` | 🧪 Experimental | ACP only — CLI mode not supported |
-| `codex` | 🧪 Experimental | ACP only — CLI mode not supported |
-| `cursor` | 🧪 Experimental | ACP only — CLI mode not supported |
-| `windsurf` | 🧪 Experimental | ACP only — CLI mode not supported |
-| `aider` | 🧪 Experimental | ACP only — CLI mode not supported |
-| `gemini` | 🧪 Experimental | ACP only — CLI mode not supported |
+| Agent | CLI mode |
+|:------|:---------|
+| `claude` | ✅ Stable |
+| All others (`codex`, `gemini`, `opencode`, `cursor`, `copilot`, `kilo`, `qwen`, `kimi`, `iflow`, `droid`, `kiro`, and more) | 🧪 Experimental |
 
-**ACP protocol (recommended):**
-
-nax uses [acpx](https://github.com/nathapp/acpx) as the ACP transport. All agents run as persistent sessions — nax sends prompts and receives structured JSON-RPC responses including token counts and exact USD cost per session.
+nax connects to agents via [acpx](https://github.com/openclaw/acpx). All agents run as persistent ACP sessions — nax sends prompts and receives structured JSON-RPC responses including token counts and exact USD cost per session. For the full list of supported agents and their ACP startup commands, see the [acpx agent docs](https://github.com/openclaw/acpx#agents).
 
 > **Note:** When `agent.protocol` is set to `"acp"`, the `--agent` CLI flag has no effect — all execution routes through the ACP adapter regardless of agent name.
 
-> **Known issue — `acpx` ≤ 0.3.1:** The `--model` flag is not supported. Model selection via `execution.model` or per-package `model` overrides has no effect when using acpx as the ACP transport. This is a limitation in the underlying `@zed-industries/claude-agent-acp` adapter, which ignores runtime model requests and always uses the model configured in Claude Code settings. A fix is being tracked in [openclaw/acpx#49](https://github.com/openclaw/acpx/issues/49). As a workaround, set your preferred model directly in Claude Code settings before running nax.
+> **Known issue — `acpx` ≤ 0.3.1:** The `--model` flag is not supported. Model selection via `execution.model` or per-package `model` overrides has no effect. As a temporary workaround, use the [nathapp-io/acpx](https://github.com/nathapp-io/acpx) fork which adds `--model` support. Upstream fix is tracked in [openclaw/acpx#49](https://github.com/openclaw/acpx/issues/49).
 
 **Configuring agents:**
 
@@ -905,7 +906,7 @@ nax can pause execution and prompt you for decisions at critical points. Configu
 | `max-retries` | 🟡 Yellow | `skip` | Story exhausted all retry attempts — skip and continue? |
 | `pre-merge` | 🟡 Yellow | `escalate` | Checkpoint before merging to main branch |
 | `human-review` | 🟡 Yellow | `skip` | Human review required on critical failure |
-| `story-oversized` | 🟡 Yellow | `continue` | Story too complex — decompose into sub-stories? |
+| `story-oversized` | 🟡 Yellow | `continue` | Story too complex — decompose into sub-stories? (only fires when `decompose.trigger = "confirm"`) |
 | `story-ambiguity` | 🟢 Green | `continue` | Story requirements unclear — continue with best effort? |
 | `review-gate` | 🟢 Green | `continue` | Code review checkpoint before proceeding |
 
@@ -1004,29 +1005,79 @@ nax saves progress in `.nax/features/<name>/prd.json`. Re-run with the same comm
 
 ## PRD Format
 
-User stories are defined in `.nax/features/<name>/prd.json`:
+User stories are defined in `.nax/features/<name>/prd.json`. Typically generated by `nax plan` — but you can write it by hand.
 
 ```json
 {
+  "project": "my-app",
   "feature": "user-auth",
+  "branchName": "feat/user-auth",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
   "userStories": [
     {
       "id": "US-001",
       "title": "Add login endpoint",
-      "description": "POST /auth/login with email/password",
+      "description": "POST /auth/login accepts email + password, returns signed JWT on success",
       "acceptanceCriteria": [
-        "Returns JWT on success",
-        "Returns 401 on invalid credentials"
+        "Returns 200 + JWT on valid credentials",
+        "Returns 401 on invalid credentials",
+        "Rate-limits to 5 attempts per minute"
       ],
-      "complexity": "medium",
       "tags": ["auth", "security"],
-      "status": "pending"
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "contextFiles": ["src/auth/types.ts"],
+      "expectedFiles": ["src/auth/login.ts", "test/auth/login.test.ts"]
+    },
+    {
+      "id": "US-002",
+      "title": "Update changelog",
+      "description": "Add v1.0 entry to CHANGELOG.md",
+      "acceptanceCriteria": ["CHANGELOG.md has v1.0 section"],
+      "tags": ["docs"],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "no-test",
+        "noTestJustification": "Docs-only change — no executable code",
+        "reasoning": "Pure documentation update"
+      }
     }
   ]
 }
 ```
 
-> **Note:** Use `"status": "passed"` (not `"done"`) to manually mark a story complete.
+**Key fields:**
+
+| Field | Required | Description |
+|:------|:---------|:------------|
+| `id` | ✅ | Story ID — must be unique (e.g. `US-001`) |
+| `title` | ✅ | Short story title |
+| `description` | ✅ | What needs to be built |
+| `acceptanceCriteria` | ✅ | Testable outcomes — used for acceptance tests |
+| `tags` | ✅ | Routing hints that influence complexity classification and test strategy selection. Security tags (`auth`, `security`, `jwt`, `oauth`, `rbac`, etc.) and public-API tags (`public-api`, `endpoint`, `sdk`, etc.) force `three-session-tdd`. UI/integration tags (`ui`, `layout`, `cli`, `integration`) prefer `three-session-tdd-lite`. |
+| `dependencies` | ✅ | Story IDs that must pass before this one runs |
+| `status` | ✅ | `pending` \| `in-progress` \| `passed` \| `failed` \| `skipped` \| `blocked` \| `paused` |
+| `passes` | ✅ | `true` once all ACs pass — set by nax, not manually |
+| `attempts` | ✅ | Retry counter — set by nax |
+| `escalations` | ✅ | Escalation history — set by nax |
+| `contextFiles` | optional | Files pre-loaded into agent prompt |
+| `expectedFiles` | optional | Files that must exist after execution (pre-flight gate) |
+| `workdir` | optional | Package subdirectory for monorepo stories (e.g. `packages/api`) |
+| `routing` | optional | Pre-set routing — skip LLM classification if provided |
+| `routing.testStrategy` | optional | Override test strategy (e.g. `no-test`, `tdd-simple`). Only honored when `routing.contentHash` is absent — omit `contentHash` to prevent the LLM classifier from overriding your manual value. |
+| `routing.noTestJustification` | required if `no-test` | Explain why no tests are needed |
+| `storyPoints` | optional | Estimate (default: 1) |
+
+> **Tip:** Use `"status": "passed"` to manually skip a story that's already done.
 
 ---
 
