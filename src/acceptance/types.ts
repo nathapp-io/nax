@@ -4,6 +4,7 @@
  * Types for generating acceptance tests from spec.md acceptance criteria.
  */
 
+import type { AgentAdapter } from "../agents/types";
 import type { AcceptanceTestStrategy, ModelDef, ModelTier, NaxConfig } from "../config/schema";
 
 /**
@@ -94,6 +95,8 @@ export interface GenerateFromPRDOptions {
   testStrategy?: AcceptanceTestStrategy;
   /** Test framework for component/snapshot strategies (e.g. 'ink-testing-library', 'react') */
   testFramework?: string;
+  /** Agent adapter to use for test generation — overrides _generatorPRDDeps.adapter */
+  adapter?: AgentAdapter;
 }
 
 export interface GenerateAcceptanceTestsOptions {

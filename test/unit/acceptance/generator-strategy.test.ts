@@ -610,7 +610,7 @@ describe("generateFromPRD — cli strategy selection", () => {
     restoreDeps();
   });
 
-  test("prompt contains CLI strategy instructions when testStrategy is 'cli'", async () => {
+  test("prompt uses 3-step language-agnostic structure when testStrategy is 'cli'", async () => {
     const story = makeStory();
     const criteria = makeCriteria(story.id);
     const options = makeOptions(tmpDir, { testStrategy: "cli" });
@@ -624,10 +624,10 @@ describe("generateFromPRD — cli strategy selection", () => {
 
     await generateFromPRD([story], criteria, options);
 
-    const promptLower = capturedPrompt.toLowerCase();
-    const hasCliHint =
-      promptLower.includes("bun.spawn") || promptLower.includes("spawn") || promptLower.includes("stdout");
-    expect(hasCliHint).toBe(true);
+    expect(capturedPrompt).toContain("Step 1: Understand and Classify");
+    expect(capturedPrompt).toContain("Step 2: Explore the Project");
+    expect(capturedPrompt).toContain("Step 3: Generate the Acceptance Test File");
+    expect(capturedPrompt).toContain("NEVER use placeholder assertions");
   });
 });
 
@@ -647,7 +647,7 @@ describe("generateFromPRD — e2e strategy selection", () => {
     restoreDeps();
   });
 
-  test("prompt contains E2E strategy instructions when testStrategy is 'e2e'", async () => {
+  test("prompt uses 3-step language-agnostic structure when testStrategy is 'e2e'", async () => {
     const story = makeStory();
     const criteria = makeCriteria(story.id);
     const options = makeOptions(tmpDir, { testStrategy: "e2e" });
@@ -661,10 +661,10 @@ describe("generateFromPRD — e2e strategy selection", () => {
 
     await generateFromPRD([story], criteria, options);
 
-    const promptLower = capturedPrompt.toLowerCase();
-    const hasE2eHint =
-      promptLower.includes("fetch") || promptLower.includes("localhost") || promptLower.includes("response");
-    expect(hasE2eHint).toBe(true);
+    expect(capturedPrompt).toContain("Step 1: Understand and Classify");
+    expect(capturedPrompt).toContain("Step 2: Explore the Project");
+    expect(capturedPrompt).toContain("Step 3: Generate the Acceptance Test File");
+    expect(capturedPrompt).toContain("integration-check");
   });
 });
 
@@ -684,7 +684,7 @@ describe("generateFromPRD — snapshot strategy selection", () => {
     restoreDeps();
   });
 
-  test("prompt contains snapshot strategy instructions when testStrategy is 'snapshot'", async () => {
+  test("prompt uses 3-step language-agnostic structure when testStrategy is 'snapshot'", async () => {
     const story = makeStory();
     const criteria = makeCriteria(story.id);
     const options = makeOptions(tmpDir, { testStrategy: "snapshot" });
@@ -698,11 +698,9 @@ describe("generateFromPRD — snapshot strategy selection", () => {
 
     await generateFromPRD([story], criteria, options);
 
-    const promptLower = capturedPrompt.toLowerCase();
-    const hasSnapshotHint =
-      promptLower.includes("snapshot") ||
-      promptLower.includes("tomatchsnapshot") ||
-      promptLower.includes("render");
-    expect(hasSnapshotHint).toBe(true);
+    expect(capturedPrompt).toContain("Step 1: Understand and Classify");
+    expect(capturedPrompt).toContain("Step 2: Explore the Project");
+    expect(capturedPrompt).toContain("Step 3: Generate the Acceptance Test File");
+    expect(capturedPrompt).toContain("file-check");
   });
 });

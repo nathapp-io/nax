@@ -257,6 +257,7 @@ export const AcceptanceConfigSchema = z.object({
   redGate: z.boolean().default(true),
   testStrategy: z.enum(["unit", "component", "cli", "e2e", "snapshot"]).optional(),
   testFramework: z.string().min(1, "acceptance.testFramework must be non-empty").optional(),
+  timeoutMs: z.number().int().min(30000).max(3600000).default(1800000),
 });
 
 const TestCoverageConfigSchema = z.object({

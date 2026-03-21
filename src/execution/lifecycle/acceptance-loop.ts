@@ -55,6 +55,11 @@ export interface AcceptanceLoopResult {
   prdDirty: boolean;
 }
 
+export function isStubTestFile(content: string): boolean {
+  // Detect skeleton stubs: expect(true).toBe(false) or expect(true).toBe(true) in test bodies
+  return /expect\s*\(\s*true\s*\)\s*\.\s*toBe\s*\(\s*(?:false|true)\s*\)/.test(content);
+}
+
 /** Load spec.md content for AC text */
 async function loadSpecContent(featureDir?: string): Promise<string> {
   if (!featureDir) return "";
@@ -241,6 +246,30 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         ctx.workdir,
       );
       return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
+    }
+
+    // Check for stub test file before generating fix stories
+    if (ctx.featureDir) {
+      const testPath = path.join(ctx.featureDir, "acceptance.test.ts");
+      const testFile = Bun.file(testPath);
+      if (await testFile.exists()) {
+        const testContent = await testFile.text();
+        if (isStubTestFile(testContent)) {
+          logger?.warn("acceptance", "Stub tests detected — re-generating acceptance tests");
+          const { unlink } = await import("node:fs/promises");
+          await unlink(testPath);
+          const { acceptanceSetupStage } = await import("../../pipeline/stages/acceptance-setup");
+          await acceptanceSetupStage.execute(acceptanceContext);
+          const newContent = await Bun.file(testPath).text();
+          if (isStubTestFile(newContent)) {
+            logger?.error(
+              "acceptance",
+              "Acceptance test generation failed after retry — manual implementation required",
+            );
+            return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
+          }
+        }
+      }
     }
 
     // Generate and add fix stories

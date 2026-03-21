@@ -1,12 +1,16 @@
 /**
- * Unit tests for acceptance-loop.ts — BUG-067
+ * Unit tests for acceptance-loop.ts — BUG-067, BUG-072E
  *
  * Verifies that agentGetFn is properly threaded from AcceptanceLoopContext
  * into fixContext and acceptanceContext PipelineContext objects.
+ * Also verifies isStubTestFile() stub detection helper.
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import type { AcceptanceLoopContext } from "../../../../src/execution/lifecycle/acceptance-loop";
+import {
+  type AcceptanceLoopContext,
+  isStubTestFile,
+} from "../../../../src/execution/lifecycle/acceptance-loop";
 import type { AgentGetFn } from "../../../../src/pipeline/types";
 import type { PRD } from "../../../../src/prd";
 
@@ -37,6 +41,52 @@ function makePrd(): PRD {
     ],
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG-072E: isStubTestFile detects skeleton stubs
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("isStubTestFile", () => {
+  test("returns true for expect(true).toBe(false)", () => {
+    const content = `
+import { test, expect } from "bun:test";
+test("AC-1: something", async () => {
+  expect(true).toBe(false); // Replace with actual test
+});`;
+    expect(isStubTestFile(content)).toBe(true);
+  });
+
+  test("returns true for expect(true).toBe(true)", () => {
+    const content = `
+test("AC-1: something", async () => {
+  expect(true).toBe(true);
+});`;
+    expect(isStubTestFile(content)).toBe(true);
+  });
+
+  test("returns true with extra whitespace in expression", () => {
+    const content = `expect( true ).toBe( false );`;
+    expect(isStubTestFile(content)).toBe(true);
+  });
+
+  test("returns false for real assertions", () => {
+    const content = `
+test("AC-1: something", async () => {
+  const result = add(1, 2);
+  expect(result).toBe(3);
+});`;
+    expect(isStubTestFile(content)).toBe(false);
+  });
+
+  test("returns false for empty content", () => {
+    expect(isStubTestFile("")).toBe(false);
+  });
+
+  test("returns false for expect(false).toBe(false)", () => {
+    const content = `expect(false).toBe(false);`;
+    expect(isStubTestFile(content)).toBe(false);
+  });
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BUG-067: AcceptanceLoopContext accepts agentGetFn

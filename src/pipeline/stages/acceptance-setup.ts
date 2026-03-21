@@ -82,6 +82,9 @@ export const acceptanceSetupStage: PipelineStage = {
       const allCriteria: string[] = ctx.prd.userStories.flatMap((s) => s.acceptanceCriteria);
       totalCriteria = allCriteria.length;
 
+      const { getAgent } = await import("../../agents");
+      const agent = (ctx.agentGetFn ?? getAgent)(ctx.config.autoMode.defaultAgent);
+
       let refinedCriteria: RefinedCriterion[];
 
       if (ctx.config.acceptance.refinement) {
@@ -113,6 +116,7 @@ export const acceptanceSetupStage: PipelineStage = {
         config: ctx.config,
         testStrategy: ctx.config.acceptance.testStrategy,
         testFramework: ctx.config.acceptance.testFramework,
+        adapter: agent ?? undefined,
       });
 
       await _acceptanceSetupDeps.writeFile(testPath, result.testCode);

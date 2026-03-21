@@ -168,6 +168,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
     model: "fast" as const,
     refinement: true,
     redGate: true,
+    timeoutMs: 1800000,
   },
   context: {
     fileInjection: "disabled",

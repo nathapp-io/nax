@@ -404,7 +404,7 @@ describe("CLI strategy generator — Bun.spawn usage unit test", () => {
     expect(code).toContain("exitCode");
   });
 
-  test("generateFromPRD with cli strategy includes Bun.spawn in prompt instructions", async () => {
+  test("generateFromPRD with cli strategy uses 3-step language-agnostic prompt", async () => {
     const story = makeInkStory();
     const criteria = makeInkCriteria(story.id);
     const options = makeOptions(tmpDir, { testStrategy: "cli" });
@@ -418,11 +418,9 @@ describe("CLI strategy generator — Bun.spawn usage unit test", () => {
 
     await generateFromPRD([story], criteria, options);
 
-    const promptLower = capturedPrompt.toLowerCase();
-    // Prompt should instruct LLM to use Bun.spawn for CLI testing
-    expect(promptLower.includes("bun.spawn") || promptLower.includes("spawn") || promptLower.includes("stdout")).toBe(
-      true,
-    );
+    expect(capturedPrompt).toContain("Step 1: Understand and Classify");
+    expect(capturedPrompt).toContain("Step 2: Explore the Project");
+    expect(capturedPrompt).toContain("NEVER use placeholder assertions");
   });
 });
 
