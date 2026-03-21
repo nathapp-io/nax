@@ -54,7 +54,7 @@ nax run -f my-feature --plan --from spec.md
 
 ### `nax init`
 
-Initialize nax in your project. Creates the `nax/` folder structure.
+Initialize nax in your project. Creates the `.nax/` folder structure.
 
 ```bash
 nax init
@@ -62,7 +62,7 @@ nax init
 
 Creates:
 ```
-nax/
+.nax/
 ├── config.json       # Project-level config
 └── features/         # One folder per feature
 ```
@@ -260,7 +260,7 @@ Output sections:
 
 ### `nax generate`
 
-Generate agent config files from `nax/context.md`. Supports Claude Code, OpenCode, Codex, Cursor, Windsurf, Aider, and Gemini.
+Generate agent config files from `.nax/context.md`. Supports Claude Code, OpenCode, Codex, Cursor, Windsurf, Aider, and Gemini.
 
 ```bash
 nax generate
@@ -270,7 +270,7 @@ nax generate
 
 | Flag | Description |
 |:-----|:------------|
-| `-c, --context <path>` | Context file path (default: `nax/context.md`) |
+| `-c, --context <path>` | Context file path (default: `.nax/context.md`) |
 | `-o, --output <dir>` | Output directory (default: project root) |
 | `-a, --agent <name>` | Generate for a specific agent only (`claude`, `opencode`, `cursor`, `windsurf`, `aider`, `codex`, `gemini`) |
 | `--dry-run` | Preview without writing files |
@@ -292,7 +292,7 @@ nax generate
 
 **Workflow:**
 
-1. Create `nax/context.md` — describe your project's architecture, conventions, and coding standards
+1. Create `.nax/context.md` — describe your project's architecture, conventions, and coding standards
 2. Run `nax generate` — writes agent config files to the project root (and per-package if configured)
 3. Commit the generated files — your agents will automatically pick them up
 
@@ -306,7 +306,7 @@ nax generate --package packages/api
 nax generate --all-packages
 ```
 
-Each package can have its own `nax/context.md` at `<package>/nax/context.md` for package-specific agent instructions.
+Each package can have its own context file at `.nax/mono/<package>/context.md` for package-specific agent instructions (created via `nax init --package <package>`).
 
 ---
 
@@ -322,7 +322,7 @@ nax prompts -f my-feature
 
 | Flag | Description |
 |:-----|:------------|
-| `--init` | Export default role templates to `nax/templates/` for customization |
+| `--init` | Export default role templates to `.nax/templates/` for customization |
 | `--role <role>` | Show prompt for a specific role (`implementer`, `test-writer`, `verifier`, `tdd-simple`) |
 
 After running `--init`, edit the templates and nax will use them automatically via `prompts.overrides` config.
@@ -376,7 +376,7 @@ Config is layered — project overrides global:
 | File | Scope |
 |:-----|:------|
 | `~/.nax/config.json` | Global (all projects) |
-| `nax/config.json` | Project-level override |
+| `.nax/config.json` | Project-level override |
 
 **Key options:**
 
@@ -419,7 +419,7 @@ Review commands (`lint`, `typecheck`) are executed directly via `Bun.spawn` — 
 }
 ```
 ```json
-// nax/config.json
+// .nax/config.json
 "quality": {
   "commands": {
     "typecheck": "bun run build-and-check"
@@ -467,7 +467,7 @@ Customize the instructions sent to each agent role for your project's specific n
 
 ```bash
 nax prompts --init              # Create default templates
-# Edit nax/templates/*.md
+# Edit .nax/templates/*.md
 nax prompts --export test-writer # Preview a role's prompt
 nax run -f my-feature           # Uses your custom prompts
 ```
@@ -487,7 +487,7 @@ nax selects a test strategy per story based on complexity and tags:
 | `three-session-tdd-lite` | 3 | Medium stories | Three sessions, relaxed isolation rules |
 | `three-session-tdd` | 3 | Complex/security stories | Three sessions, strict file isolation |
 
-Configure the default TDD behavior in `nax/config.json`:
+Configure the default TDD behavior in `.nax/config.json`:
 
 ```json
 {
@@ -769,7 +769,7 @@ When `nax plan` generates stories for a monorepo, it auto-discovers packages fro
 - `turbo.json` → `packages` field
 - `package.json` → `workspaces`
 - `pnpm-workspace.yaml` → `packages`
-- Existing `*/nax/context.md` files
+- Existing `.nax/mono/*/context.md` files
 
 ### Generate Agent Files for All Packages
 
@@ -777,7 +777,7 @@ When `nax plan` generates stories for a monorepo, it auto-discovers packages fro
 nax generate --all-packages
 ```
 
-Generates a `CLAUDE.md` (or agent-specific file) in each discovered package directory, using the package's own `nax/context.md` if present.
+Generates a `CLAUDE.md` (or agent-specific file) in each discovered package directory, using the package's own `.nax/mono/<package>/context.md` if present.
 
 ---
 
@@ -785,7 +785,7 @@ Generates a `CLAUDE.md` (or agent-specific file) in each discovered package dire
 
 Integrate notifications, CI triggers, or custom scripts via lifecycle hooks.
 
-**Project hooks** (`nax/hooks.json`):
+**Project hooks** (`.nax/hooks.json`):
 
 ```json
 {
@@ -918,7 +918,7 @@ nax can pause execution and prompt you for decisions at critical points. Configu
 
 Extend nax with custom reviewers, reporters, or integrations.
 
-**Project plugins** (`nax/config.json`):
+**Project plugins** (`.nax/config.json`):
 
 ```json
 {
@@ -981,13 +981,13 @@ nax precheck -f my-feature
 
 **Run stopped mid-way**
 
-nax saves progress in `nax/features/<name>/prd.json`. Re-run with the same command — completed stories are skipped automatically.
+nax saves progress in `.nax/features/<name>/prd.json`. Re-run with the same command — completed stories are skipped automatically.
 
 ---
 
 ## PRD Format
 
-User stories are defined in `nax/features/<name>/prd.json`:
+User stories are defined in `.nax/features/<name>/prd.json`:
 
 ```json
 {
