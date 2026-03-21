@@ -26,6 +26,9 @@ function createMockContext(workdir: string, plugins?: PluginRegistry): PipelineC
         checks: [],
         commands: {},
       },
+      quality: {
+        commands: {},
+      },
     } as any,
     prd: {} as any,
     story: { id: "US-003" } as any,
