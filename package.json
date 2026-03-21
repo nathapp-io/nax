@@ -51,8 +51,6 @@
   ],
   "files": [
     "dist/",
-    "src/",
-    "bin/",
     "README.md",
     "CHANGELOG.md"
   ],
