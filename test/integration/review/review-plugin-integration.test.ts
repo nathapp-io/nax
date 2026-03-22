@@ -176,7 +176,7 @@ describe("Review Stage - Plugin Integration", () => {
       expect(receivedWorkdir).toBe(tempDir);
     });
 
-    test("review fails when there are uncommitted changes (RQ-001)", async () => {
+    test("BUG-074: auto-commits dirty files before review so review proceeds (bun.lock scenario)", async () => {
       const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
 
       // Create a file first
@@ -184,9 +184,8 @@ describe("Review Stage - Plugin Integration", () => {
 
       await initGitRepo(tempDir);
 
-      // Now modify the file after git init WITHOUT committing
-      // This violates RQ-001 (dirty working tree)
-      writeFileSync(join(tempDir, "test.ts"), "// modified");
+      // Simulate agent leaving dirty files (e.g. bun add modifying bun.lock/package.json)
+      writeFileSync(join(tempDir, "test.ts"), "// modified by agent — not yet committed");
 
       let reviewerCalled = false;
       const mockReviewer: IReviewPlugin = {
@@ -210,11 +209,12 @@ describe("Review Stage - Plugin Integration", () => {
 
       const result = await reviewStage.execute(ctx);
 
-      // RQ-001: Built-in check failure returns continue (autofix handles it)
-      expect(result.action).toBe("continue");
-      expect(ctx.reviewResult?.success).toBe(false);
-      // Reviewer should not be called due to dirty tree check
-      expect(reviewerCalled).toBe(false);
+      // BUG-074: dirty files are auto-committed before the dirty-tree check,
+      // so review proceeds. The reviewer IS called (not blocked by dirty check).
+      expect(reviewerCalled).toBe(true);
+      expect(ctx.reviewResult?.success).toBe(true);
+      // Stage returns "continue" or "complete" — not blocked
+      expect(result.action).not.toBe("fail");
     });
 
     test("reviewer receives empty array when no files changed", async () => {

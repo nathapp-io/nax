@@ -80,7 +80,7 @@ export class ReviewOrchestrator {
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
-    const builtIn = await runReview(reviewConfig, workdir, executionConfig, qualityCommands);
+    const builtIn = await runReview(reviewConfig, workdir, executionConfig, qualityCommands, storyGitRef);
 
     if (!builtIn.success) {
       return { builtIn, success: false, failureReason: builtIn.failureReason, pluginFailed: false };
