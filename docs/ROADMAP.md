@@ -14,7 +14,7 @@
 - **fix(webhook):** `receive()` polling loop replaced with event-driven Promise — eliminates race condition in slow Docker/VM environments (4218ms → 65ms)
 - **fix:** `getChangedFiles` / `getPgid` stdout read — concurrent read via `Bun.readableStreamToText()` prevents deadlock on large output
 - **fix:** Circular import `prompts-tdd` ↔ `prompts-main` broken via `prompts-shared.ts`
-- **fix(PKG-006):** `quality.commands` bridges correctly into `review.commands` during per-package merge
+- **fix:** `quality.commands` bridges correctly into `review.commands` during per-package merge
 - **fix:** Agent adapter session options standardized across all adapters
 - **docs:** Injectable deps pattern and `mock.module()` prohibition documented in ARCHITECTURE.md + `.claude/rules/`
 
@@ -23,186 +23,43 @@
 ## v0.49.0 — Per-Package Config Override (Monorepo) 📋 Planned
 
 **Theme:** Complete the per-package config override system — expand what's mergeable and wire effective config into all pipeline stages.
-**Depends on:** v0.48.0
-**Spec:** `docs/specs/SPEC-per-package-config.md`
+**Spec:** [`docs/specs/SPEC-per-package-config.md`](specs/SPEC-per-package-config.md)
 
 ### Context
 
-v0.47.0 shipped `mergePackageConfig` but only `quality.commands` is mergeable. Most pipeline stages still read from `ctx.config` (root) instead of the per-package resolved config.
+v0.47.0 shipped `mergePackageConfig` but only `quality.commands` is mergeable. Most pipeline stages still read from `ctx.config` (root) instead of the per-package resolved config — so fields like `review.enabled`, `acceptance.enabled`, and `execution.regressionGate` set in a package's `nax/config.json` are silently ignored.
 
-### Problem
+### What needs to change
 
-```json
-// packages/web/nax/config.json — these fields are IGNORED today
-{
-  "execution": {
-    "smartTestRunner": false,      // ❌ Still uses root smart-runner
-    "regressionGate": { "mode": "per-story" }  // ❌ Still uses root mode
-  },
-  "review": {
-    "checks": ["lint"],            // ❌ Still runs typecheck
-    "enabled": false               // ❌ Still runs review
-  },
-  "acceptance": {
-    "enabled": false               // ❌ Still runs acceptance
-  }
-}
-```
-
-### PKG-001: Expand `mergePackageConfig`
-
-Add mergeable fields:
-
-| Section | Fields |
-|:--------|:-------|
-| `execution` | `smartTestRunner`, `regressionGate.*`, `verificationTimeoutSeconds` |
-| `review` | `enabled`, `checks`, `commands.*`, `pluginMode` |
-| `acceptance` | `enabled`, `generateTests`, `testPath` |
-| `quality` | `requireTests`, `requireTypecheck`, `requireLint` |
-| `context` | `testCoverage.enabled` |
-
-### PKG-002: Centralize Config Resolution
-
-- Add `effectiveConfig: NaxConfig` to `PipelineContext`
-- Resolve once per story in pipeline entry (not per-stage)
-- All stages use `ctx.effectiveConfig` instead of `ctx.config`
-
-### PKG-003: Stage Updates
-
-| Stage | Updated Fields |
-|:------|:---------------|
-| verify | smartRunnerConfig, regressionGate.mode |
-| review | review.enabled, checks, commands |
-| rectify | quality.commands.test |
-| autofix | quality.commands.lintFix, formatFix |
-| prompt | quality.commands.test |
-| regression | quality.commands.test, regressionGate.* |
-| acceptance | acceptance.enabled, testPath |
-
-### Stories
-
-| ID | Title | Complexity |
-|:---|:------|:-----------|
-| PKG-001 | Expand mergePackageConfig with new fields | Medium |
-| PKG-002 | Add effectiveConfig to PipelineContext | Simple |
-| PKG-003 | Centralize config resolution in pipeline entry | Medium |
-| PKG-004 | Update verify stage to use effectiveConfig | Simple |
-| PKG-005 | Update review stage to use effectiveConfig | Simple |
-| PKG-006 | Update rectify/autofix/prompt stages | Simple |
-| PKG-007 | Update regression/acceptance stages | Simple |
-| PKG-008 | Integration tests for per-package config | Medium |
+1. **Expand mergeable fields** — add `execution.smartTestRunner`, `execution.regressionGate`, `review.enabled`, `review.checks`, `acceptance.enabled`, and more to `mergePackageConfig`
+2. **Centralize config resolution** — add `effectiveConfig: NaxConfig` to `PipelineContext`, resolve once per story at pipeline entry, have all stages read from `ctx.effectiveConfig` instead of `ctx.config`
 
 ---
 
 ## v0.46.2 — Review Rectification (Agent-Driven Lint/Typecheck Fix) 📋 Planned
 
 **Theme:** When lint or typecheck fails in the review stage and mechanical autofix can't resolve it, spawn an agent rectification session with the error output as context.
-**Depends on:** v0.46.1
-**Spec:** `docs/specs/SPEC-v046-2-review-rectification.md`
+**Spec:** [`docs/specs/SPEC-v046-2-review-rectification.md`](specs/SPEC-v046-2-review-rectification.md)
 
-### AUTOFIX-001: Agent rectification fallback in autofix stage
+### What needs to change
 
-Extend `src/pipeline/stages/autofix.ts`:
-1. After mechanical `lintFix`/`formatFix` fails or isn't configured, spawn agent session with review error output
-2. Agent gets exact lint/typecheck errors in prompt — fixes code, commits
-3. Re-run review to verify; repeat up to `maxAttempts`
-4. Reuses existing config: `quality.autofix.enabled`, `quality.autofix.maxAttempts`
-
-**Sub-tasks:**
-- AUTOFIX-001: Agent rectification loop in autofix stage
-- AUTOFIX-002: Review rectification prompt builder
-- AUTOFIX-003: Thread review check results (already available via `ctx.reviewResult.checks`)
-- AUTOFIX-004: Tests for all agent rectification paths
-
-**Complexity:** Simple-Medium
+When mechanical `lintFix`/`formatFix` fails (or isn't configured), extend the autofix stage to spawn an agent session with the exact lint/typecheck errors — the agent fixes the code and commits. Re-run review to verify; repeat up to `maxAttempts`. Reuses existing `quality.autofix.enabled` and `quality.autofix.maxAttempts` config.
 
 ---
 
 ## v0.46.1 — Runtime File Gitignore Audit + Precheck Allowlist ✅ Released
 
-**Theme:** Full audit of nax runtime files — `working-tree-clean` precheck blocks on files nax itself writes; `nax init` adds an incomplete `.gitignore`; warning check covers only 2 of 12 runtime paths. Fix all three layers consistently.
-**Depends on:** v0.46.0
+**Theme:** Full audit of nax runtime files — `working-tree-clean` precheck now allows nax's own runtime files; `nax init` adds complete `.gitignore` entries; warning check covers all runtime paths.
 
-### BUG-074: working-tree-clean blocks on nax runtime files
-
-**Root cause:** `checkWorkingTreeClean` uses plain `git status --porcelain` with zero exceptions. nax writes runtime files during execution — if any aren't gitignored (e.g. user didn't run `nax init`, or init entries were incomplete), the precheck fires as a blocker on re-run.
-
-**Complete runtime file inventory:**
-
-| File | Written by | Missing from init | Missing from allowlist |
-|:-----|:-----------|:-----------------:|:----------------------:|
-| `nax.lock` | `lock.ts` | — | — |
-| `nax/metrics.json` | `metrics/tracker.ts` | — | — |
-| `nax/features/*/status.json` | `status-writer.ts` | ✗ | — |
-| `nax/features/*/runs/` | `registry.ts`, logger | — | ✗ |
-| `nax/features/*/plan/` | plan stage | ✗ | — |
-| `.nax-verifier-verdict.json` | `tdd/verdict.ts` | — | — |
-| `.nax-pids` | `pid-registry.ts` | ✗ | ✗ |
-| `.nax-wt/` | `parallel-executor.ts` | ✗ | ✗ |
-| `nax/features/*/acp-sessions.json` | `acp/adapter.ts` | ✗ | ✗ |
-| `nax/features/*/interactions/` | `interaction/state.ts` | ✗ | ✗ |
-| `nax/features/*/progress.txt` | `execution/progress.ts` | ✗ | ✗ |
-| `acceptance-refined.json` | `acceptance/generator.ts` | ✗ | ✗ |
-
-- [ ] **BUG-074-1:** `src/precheck/checks-git.ts` — parse `--porcelain` output line-by-line, filter allowlisted paths before evaluating `passed`. Full allowlist:
-  ```
-  nax.lock
-  nax/metrics.json
-  nax/features/*/status.json
-  nax/features/*/runs/
-  nax/features/*/plan/
-  nax/features/*/acp-sessions.json
-  nax/features/*/interactions/
-  nax/features/*/progress.txt
-  acceptance-refined.json
-  .nax-verifier-verdict.json
-  .nax-pids
-  .nax-wt/
-  ```
-- [ ] **BUG-074-2:** `src/cli/init.ts` — complete `NAX_GITIGNORE_ENTRIES`. Add all missing entries:
-  `nax/features/*/status.json`, `nax/features/*/plan/`, `.nax-pids`, `.nax-wt/`,
-  `nax/features/*/acp-sessions.json`, `nax/features/*/interactions/`,
-  `nax/features/*/progress.txt`, `acceptance-refined.json`
-- [ ] **BUG-074-3:** `src/precheck/checks-warnings.ts` — expand `checkGitignoreCoversNax` patterns to cover the full set (currently only checks `nax.lock`, `runs/`, `test/tmp/`)
-
-### BUG-076: Literal `~` directory created in repo root when HOME is unexpanded
-
-**Root cause:** `buildAllowedEnv()` in both CLI and ACP adapters blindly passes `process.env.HOME` to spawned agents without validation. If `HOME` is set to the literal string `~` (not shell-expanded — e.g. from a misconfigured launch script), Claude Code resolves `~/.claude` relative to cwd, creating a literal `~/` directory inside the repo.
-
-**Affected files:** `src/agents/claude/execution.ts`, `src/agents/acp/spawn-client.ts` (both have their own `buildAllowedEnv`)
-
-- [ ] **BUG-076-1:** `src/agents/claude/execution.ts` — in `buildAllowedEnv`, validate `HOME` is an absolute path (starts with `/` on Unix or drive letter on Windows) before passing. If invalid, fall back to `os.homedir()` and emit a `logger.warn`
-- [ ] **BUG-076-2:** `src/agents/acp/spawn-client.ts` — same fix in its local `buildAllowedEnv`
-- [ ] **BUG-076-3:** `src/precheck/checks-warnings.ts` — add `checkHomeEnvValid()` warning: if `process.env.HOME` is missing, relative, or contains unexpanded `~`, emit warning before agent launch
-- [ ] **BUG-076-4:** `src/cli/init.ts` — add `~/` to `NAX_GITIGNORE_ENTRIES` as a safety net (prevents accidental `~` dir commits if the bug recurs)
-
-**Fix pattern for BUG-076-1/2:**
-```typescript
-import { homedir } from "node:os";
-import { isAbsolute } from "node:path";
-
-// Sanitize HOME — must be absolute. Unexpanded ~ causes literal ~/dir in cwd.
-const rawHome = process.env.HOME ?? "";
-const safeHome = rawHome && isAbsolute(rawHome) ? rawHome : homedir();
-if (rawHome !== safeHome) {
-  logger.warn("env", `HOME env invalid ("${rawHome}"), falling back to os.homedir(): ${safeHome}`);
-}
-allowed.HOME = safeHome;
-```
-
-### BUG-075: acceptance-refined.json written to workdir root instead of feature dir
-
-**Root cause:** `src/acceptance/generator.ts` writes to `join(options.workdir, "acceptance-refined.json")` — repo root instead of `nax/features/<feature>/`. This pollutes the project root and makes gitignore patterns harder to scope.
-
-- [ ] **BUG-075-1:** `src/acceptance/generator.ts` — change output path to `join(options.featureDir, "acceptance-refined.json")`
-- [ ] **BUG-075-2:** Ensure `featureDir` is threaded into `generateFromPRD()` options (currently only `workdir` is passed)
+- **fix:** `working-tree-clean` precheck now uses an allowlist — runtime files written by nax itself (lock, metrics, runs, sessions, etc.) no longer falsely block re-runs
+- **fix:** `nax init` generates a complete `.gitignore` covering all nax runtime files
+- **fix:** Precheck warning now detects incomplete `.gitignore` coverage
 
 ---
 
 ## v0.48.0 — Test Health + Monorepo Plan Improvements ✅ Released 2026-03-18
 
 **Theme:** Test suite hardening, monorepo planning fixes, and developer experience improvements.
-**Depends on:** v0.47.0
 
 ### Test Suite Health
 
@@ -233,67 +90,43 @@ allowed.HOME = safeHome;
 ## v0.47.0 — Monorepo Workdir Support ✅ Released 2026-03-17
 
 **Theme:** Per-story working directory, per-package context.md/config.json, and package-aware test commands — enabling nax to orchestrate monorepo projects where each package has a different stack.
-**Depends on:** v0.46.3
 **Spec:** [`docs/specs/SPEC-monorepo-workdir.md`](specs/SPEC-monorepo-workdir.md)
 
 ### Phase 1 — Per-Story Workdir + Package Context
 
-| ID | Title | Complexity | Status |
-|:---|:------|:-----------|:-------|
-| MW-001 | `UserStory.workdir` field + schema validation + runtime existence check | Simple | [x] |
-| MW-002 | Execution stage — workdir override (agent cwd) | Simple | [x] |
-| MW-003 | Context stage — package-level `context.md` resolution | Medium | [x] |
-| MW-004 | `nax generate --package` + `--all-packages` | Medium | [x] |
-| MW-005 | `nax init --package` scaffold | Simple | [x] |
-| MW-006 | Verify stage — workdir-scoped test execution | Medium | [x] |
-| MW-007 | `nax plan` / `nax analyze` — monorepo-aware `workdir` emission | Medium | [x] |
+- `UserStory.workdir` field with schema validation and runtime existence check
+- Execution stage uses per-story workdir as agent `cwd`
+- Context stage resolves package-level `context.md` for each story's package
+- `nax generate --package` and `--all-packages` for generating agent context files
+- `nax init --package` scaffold for per-package setup
+- Verify stage runs tests scoped to the story's workdir
+- `nax plan` / `nax analyze` emits correct `workdir` fields in monorepos
 
 ### Phase 2 — Per-Package Config + Test Commands
 
-| ID | Title | Complexity | Status |
-|:---|:------|:-----------|:-------|
-| MW-008 | Per-package `nax/config.json` overrides (deep merge) | Medium | [x] |
-| MW-009 | Verify stage — per-package test command from config | Simple | [x] |
-| MW-010 | Review stage — package-scoped file checks | Simple | [x] |
+- Per-package `nax/config.json` overrides (deep merge of all config fields)
+- Verify stage reads per-package test command from resolved config
+- Review stage runs scoped file checks per package
 
 ### Design Decisions
 
-- **No story-level test command** — per-package `nax/config.json` handles this (config is the right layer, not PRD data)
-- **Test command fallback chain:** package `config.json` → root `testScoped` → root `test`
-- **Claude Code hierarchy:** per-package `CLAUDE.md` contains only package-specific content; Claude Code natively merges root + subdirectory
-- **Builds on MONO-001** (monorepo detection from `fea2573`) — adds execution support on top of existing init/detect
+- Per-package `nax/config.json` is the right layer for per-package settings — not story-level fields
+- Test command fallback chain: package `config.json` → root `testScoped` → root `test`
+- Per-package `CLAUDE.md` supplements root `CLAUDE.md` — Claude Code natively merges both
 
 ---
 
-## v0.45.0 — Bug Fixes: ACP Adapter Threading + Batch Routing Diagnostics 🚀 Releasing (2026-03-16)
+## v0.45.0 — ACP Adapter Threading + Batch Routing Fixes ✅ Released 2026-03-16
 
-**Theme:** Fix ACP adapter not used for fix stories and parallel batch execution (BUG-067), add diagnostic logging for batch routing story count anomaly (BUG-068), and unify test strategy definitions into a single source of truth.
+**Theme:** Fix ACP adapter not used for fix stories and parallel batch execution, add diagnostic logging for batch routing anomalies, and unify test strategy definitions into a single source of truth.
 
-### BUG-067: agentGetFn not threaded through fix story and parallel pipeline contexts
-- [x] `src/execution/lifecycle/acceptance-loop.ts` — add `agentGetFn: ctx.agentGetFn` to `fixContext` and `acceptanceContext`
-- [x] `src/execution/parallel-coordinator.ts` — add `agentGetFn?` param to `executeParallel()`, thread into `baseContext`
-- [x] `src/execution/parallel-executor.ts` — pass `options.agentGetFn` to `executeParallel()` call
-- [x] Tests: verify `agentGetFn` forwarded in parallel executor and acceptance loop type contract
+### ACP Adapter Threading
+- **fix:** `agentGetFn` now threaded through fix stories and parallel execution — previously fell back to CLI adapter, ignoring `config.agent.protocol = "acp"`
+- **fix:** Debug logging added to batch routing to track story count anomalies
 
-**Root cause:** `executeFixStory()` and `executeParallel()` built `PipelineContext` without `agentGetFn`. The execution stage fell back to the module-level `getAgent()` which always returns the CLI adapter, ignoring `config.agent.protocol = "acp"`. Fix stories and all parallel stories silently used CLI adapter.
-
-### BUG-068: Debug logging for batch routing storyCount anomaly (root cause unknown)
-- [x] `src/execution/runner-execution.ts` — single `readyStories` var + `debug` log before batch routing (readyCount, readyIds, full story state snapshot)
-- [x] `src/execution/story-context.ts` — log `completedIds` set inside `getAllReadyStories()`
-
-### Test Strategy SSOT (MR !49)
-- [x] `src/config/test-strategy.ts` — new single source of truth for test strategies
-- [x] `resolveTestStrategy()` — normalizer with legacy mappings
-- [x] `COMPLEXITY_GUIDE` with security override rule (auth/crypto/tokens → minimum "medium")
-- [x] `GROUPING_RULES` with anti-standalone-test-story rule
-- [x] `plan.ts` + `claude-decompose.ts` import shared fragments (was diverged: 4 vs 2 strategies)
-- [x] `prd/schema.ts` uses `resolveTestStrategy()` on load
-
-### Specs
-- `docs/specs/bug-067-068-agentgetfn-batchrouting.md`
-- `docs/specs/test-strategy-ssot.md`
-- `docs/bugs/BUG-067-fix-story-cli-adapter.md`
-- `docs/bugs/BUG-068-batch-routing-story-count.md`
+### Test Strategy SSOT
+- Single source of truth for test strategies — `src/config/test-strategy.ts` with `resolveTestStrategy()`, `COMPLEXITY_GUIDE` (security override: auth/crypto/tokens → minimum "medium"), and `GROUPING_RULES`
+- `plan.ts` and `claude-decompose.ts` now share the same strategy definitions
 
 ---
 
@@ -301,13 +134,13 @@ allowed.HOME = safeHome;
 
 **Theme:** Keep ACP sessions alive on failure (enables rectification to resume with context), sweep stale sessions on run-end, fix critical plan flow bugs.
 
-### MR !47 — Plan/Precheck/Guard/Status fixes
+### Plan/Precheck/Guard/Status fixes
 - [x] `nax run --plan` logger initialized before plan (was silently dropping all logs)
 - [x] Precheck runs before plan — blocks on environment issues before any LLM calls
 - [x] `--force` flag guards prd.json overwrite on `nax run --plan`
 - [x] `nax status` no longer crashes when prd.json is missing
 
-### MR !48 — ACP Session Lifecycle
+### ACP Session Lifecycle
 - [x] `adapter.ts` — close session on story pass, keep open on failure
 - [x] `runner.ts` — run-end sweep closes all remaining feature sessions in `finally` block
 - [x] `run-setup.ts` — startup stale sweep prunes sidecar entries >2h old
@@ -335,7 +168,6 @@ allowed.HOME = safeHome;
 
 **Theme:** Audit and slim down the test suite — remove redundant coverage, consolidate copy-paste tests, delete dead feature tests
 **Status:** ✅ Shipped (2026-03-10)
-**Depends on:** None (can run anytime)
 
 ### Context
 
@@ -346,11 +178,11 @@ allowed.HOME = safeHome;
 
 ### Stories
 
-- [x] **TH-001:** Automated coverage overlap report — script that cross-references integration tests against unit tests, flags tests covering identical code paths. Output: markdown report with recommended deletions
-- [x] **TH-002:** Dead test detection — identify test files importing functions/modules that no longer exist in `src/`, or testing removed features (pre-v0.22.1 verification paths, old routing, etc.)
-- [x] **TH-003:** Copy-paste consolidation — convert repeated test patterns to `test.each()` / table-driven style. Target: files with 3+ similar `describe` blocks differing by 1-2 params
-- [x] **TH-004:** Execute cleanup — delete confirmed redundant tests, apply `test.each()` conversions, verify full suite still passes with same or higher coverage
-- [x] **TH-005:** Test file size enforcement — add a precheck/lint rule that warns on test files exceeding 500 lines (soft limit) or 800 lines (hard limit)
+- [x] Automated coverage overlap report — script that cross-references integration tests against unit tests, flags tests covering identical code paths. Output: markdown report with recommended deletions
+- [x] Dead test detection — identify test files importing functions/modules that no longer exist in `src/`, or testing removed features (pre-v0.22.1 verification paths, old routing, etc.)
+- [x] Copy-paste consolidation — convert repeated test patterns to `test.each()` / table-driven style. Target: files with 3+ similar `describe` blocks differing by 1-2 params
+- [x] Execute cleanup — delete confirmed redundant tests, apply `test.each()` conversions, verify full suite still passes with same or higher coverage
+- [x] Test file size enforcement — add a precheck/lint rule that warns on test files exceeding 500 lines (soft limit) or 800 lines (hard limit)
 
 ### Outcome
 
@@ -370,8 +202,7 @@ allowed.HOME = safeHome;
 ## v0.38.1 — Code Audit Refactor ✅ Shipped (2026-03-11)
 
 **Theme:** Code audit review fixes — 10-fix campaign addressing bugs, architecture, and quality findings from the comprehensive src/ code review
-**Status:** ✅ Shipped (2026-03-11) — commit `8a59f16`, [run-release] triggered
-**Depends on:** v0.38.0
+**Status:** ✅ Shipped (2026-03-11)
 
 ### Context
 
@@ -379,16 +210,16 @@ Comprehensive code review (graded B+) identified 10 real findings across bug, ar
 
 ### Stories
 
-- [x] **FIX-001:** PID registry race — read-then-write in `register()` loses PIDs under concurrent parallel execution
-- [x] **FIX-002:** ReDoS in hook validation — greedy regex `/\$\(.*\)/` hangs on pathological input
-- [x] **FIX-003:** Timer leaks in `claude.ts` decompose/plan — same pattern fixed in v0.38.0 for `executeOnce` not applied here
-- [x] **FIX-004:** Timeout handler utility — extracted `withProcessTimeout()` from `executeOnce` into reusable module
-- [x] **FIX-005:** `runner.ts` split — 307-line function broken into modular sub-files
-- [x] **FIX-006:** `config-display.ts` split — exceeded 400-line source file limit
-- [x] **FIX-007:** `lifecycle.test.ts` split — exceeded 800-line test file limit
-- [x] **FIX-008:** Story ID validation — IDs sanitized before flowing into git branch names
-- [x] **FIX-009:** `errorMessage` utility — centralized error-to-string conversion
-- [x] **FIX-010:** PID registry Map cleanup — proper cleanup on process exit
+- [x] PID registry race — read-then-write in `register()` loses PIDs under concurrent parallel execution
+- [x] ReDoS in hook validation — greedy regex `/\$\(.*\)/` hangs on pathological input
+- [x] Timer leaks in `claude.ts` decompose/plan — same pattern fixed in v0.38.0 for `executeOnce` not applied here
+- [x] Timeout handler utility — extracted `withProcessTimeout()` from `executeOnce` into reusable module
+- [x] `runner.ts` split — 307-line function broken into modular sub-files
+- [x] `config-display.ts` split — exceeded 400-line source file limit
+- [x] `lifecycle.test.ts` split — exceeded 800-line test file limit
+- [x] Story ID validation — IDs sanitized before flowing into git branch names
+- [x] `errorMessage` utility — centralized error-to-string conversion
+- [x] PID registry Map cleanup — proper cleanup on process exit
 
 ### Hotfix (included)
 
@@ -403,8 +234,7 @@ When extracting logic into a reusable utility, always check if the original call
 ## v0.39.0 — Init Enhancement ✅ Shipped (2026-03-12)
 
 **Theme:** Enhance `nax init` with auto-detection, context.md generation, and guided onboarding
-**Status:** ✅ Shipped (2026-03-12) — commit `e6f293e`, [run-release] triggered
-**Depends on:** v0.38.1
+**Status:** ✅ Shipped (2026-03-12)
 
 ### Context
 
@@ -435,8 +265,7 @@ nax init --ai     # use LLM to generate richer context.md
 ## v0.39.3 — Prompt Optimization ✅ Shipped (2026-03-12)
 
 **Theme:** Security hardening, test command injection, prompt unification, and full prompt audit
-**Status:** ✅ Shipped (2026-03-12) — commit `8cab535`, [run-release] triggered
-**Depends on:** v0.39.2
+**Status:** ✅ Shipped (2026-03-12)
 
 ### Security Hardening
 
@@ -473,8 +302,7 @@ nax init --ai     # use LLM to generate richer context.md
 ## v0.40.0 — Acceptance Test Pipeline ✅ Shipped (2026-03-12)
 
 **Theme:** Feature-level TDD — verify built features match original requirements via acceptance tests generated from PRD acceptanceCriteria[]
-**Status:** ✅ Shipped (2026-03-12) — commit `9915529`, [run-release] triggered
-**Depends on:** v0.39.3
+**Status:** ✅ Shipped (2026-03-12)
 
 ### Context
 
@@ -509,7 +337,7 @@ nax verifies implementation tests (agent-written) but never independently verifi
 ## v0.41.0 — Slow Test Optimizations ✅ Shipped (2026-03-14)
 
 **Theme:** Eliminate artificial test delays — make the full suite run in ~2.5 minutes instead of ~4+ minutes
-**Status:** ✅ Shipped (2026-03-14) — commit `e41e076`, merged MR !44
+**Status:** ✅ Shipped (2026-03-14), 
 
 ### Context
 
@@ -535,7 +363,6 @@ Profiling via `bun test --reporter junit` revealed the top-30 slowest tests acco
 
 **Theme:** Extend acceptance pipeline to support UI projects (TUI, web, CLI) — not just backend/library code
 **Status:** ✅ Shipped (2026-03-14)
-**Depends on:** v0.40.0
 
 ### Problem
 
@@ -570,8 +397,7 @@ v0.40.0 generates acceptance tests that `import` a function and assert on return
 ## v0.37.0 — Prompt Template Export ✅ Shipped (2026-03-10)
 
 **Theme:** Complete the prompt override system — ship default templates, add CLI export, enable full user customization
-**Status:** ✅ Shipped — commit `0a7a065`, [run-release] triggered
-**Depends on:** v0.36.2 (Prompt Optimization)
+**Status:** ✅ Shipped
 
 ### Context
 
@@ -593,16 +419,15 @@ The override system exists (`config.prompts.overrides`, `loadOverride()`, `Promp
 ## v0.36.2 — Parallel Metrics & Rectification ✅ Shipped (2026-03-10)
 
 **Theme:** Fix metrics aggregation for parallel runs (BUG-064–071) and implement sequential rectification for merge conflicts
-**Status:** ✅ Shipped — commit `eb77e7d`, [run-release] triggered
-**Depends on:** v0.36.1 (Prompt Optimization)
+**Status:** ✅ Shipped
 
 ### Stories
 
-- [x] **MFX-001:** Parallel batch metrics aggregation (BUG-064/065/066)
-- [x] **MFX-002:** Escalation metrics preservation (BUG-067)
-- [x] **MFX-003:** Parallel executor cleanup — field renames, dedup log (BUG-068/069/071)
-- [x] **MFX-004:** Runtime crash vs test failure classification (BUG-070)
-- [x] **MFX-005:** Merge conflict rectification — sequential re-run of conflicted stories on updated base
+- [x] - **fix:** Parallel batch metrics aggregation
+- [x] - **fix:** Escalation metrics preservation across parallel execution
+- [x] - **fix:** Parallel executor cleanup — field renames, dedup log
+- [x] - **fix:** Runtime crash vs test failure classification
+- [x] - **fix:** Merge conflict rectification — sequential re-run of conflicted stories on updated base
 
 ---
 
@@ -610,7 +435,6 @@ The override system exists (`config.prompts.overrides`, `loadOverride()`, `Promp
 
 **Theme:** Wire constitution into TDD sessions, deduplicate prompt sections, clean dead prompt code, fix verdict coercion
 **Status:** ✅ Shipped (2026-03-10)
-**Depends on:** v0.36.0 (Multi-Agent Adapters)
 
 ### Context
 
@@ -629,12 +453,12 @@ Analysis revealed TDD 3-session agents don't receive the project constitution (o
 
 ### Stories
 
-- [x] **PO-001:** Wire constitution into TDD `session-runner.ts` for implementer + rectification sessions only (skip test-writer and verifier)
-- [x] **PO-002:** Wire verdict section into PromptBuilder for verifier role — move from hardcoded `tdd/prompts.ts` to composable section
-- [x] **PO-003:** Deduplicate test filter warning (keep only in isolation section) + convert string concatenation → template literals in all section builders
-- [x] **PO-004:** Delete dead standalone prompt functions in `tdd/prompts.ts`, clean barrel exports
-- [x] **BUG-072:** coerceVerdict recognizes VERIFIED keyword (free-form verdict handling)
-- [x] **BUG-073:** Headless human-review sends Telegram notification via interaction.send()
+- [x] **enhancement:** Wire constitution into TDD `session-runner.ts` for implementer + rectification sessions only (skip test-writer and verifier)
+- [x] **enhancement:** Wire verdict section into PromptBuilder for verifier role — move from hardcoded `tdd/prompts.ts` to composable section
+- [x] **enhancement:** Deduplicate test filter warning (keep only in isolation section) + convert string concatenation → template literals in all section builders
+- [x] **enhancement:** Delete dead standalone prompt functions in `tdd/prompts.ts`, clean barrel exports
+- [x] **fix:** coerceVerdict recognizes VERIFIED keyword (free-form verdict handling)
+- [x] **fix:** Headless human-review sends Telegram notification via interaction.send()
 
 ### Token Budget (per TDD story)
 
@@ -658,7 +482,6 @@ Analysis revealed TDD 3-session agents don't receive the project constitution (o
 
 **Theme:** Scaffold adapters for Codex, OpenCode, Gemini CLI, and Aider — enabling nax to orchestrate any major coding agent
 **Status:** ✅ Shipped (2026-03-10)
-**Depends on:** v0.35.0 (Agent Abstraction Layer)
 
 ### Key Improvements
 - **Multi-Agent Adapters:** Codex, OpenCode, Gemini CLI, Aider scaffolds.
@@ -693,13 +516,13 @@ nax currently hardcodes `claude` CLI and `@anthropic-ai/sdk` in several places, 
 
 ### Priority 1 — Drop `@anthropic-ai/sdk` dependency
 
-- [x] **AA-001:** Add `complete(prompt, options)` method to `AgentAdapter` interface — one-shot LLM call that returns text. Options: `{ maxTokens?, jsonMode?, model? }`. Implement in `ClaudeAdapter` using `claude -p` CLI
-- [x] **AA-002:** Refactor `src/analyze/classifier.ts` to use `adapter.complete()` instead of `new Anthropic()`. Remove `@anthropic-ai/sdk` from `package.json` dependencies
+- [x] Add `complete(prompt, options)` method to `AgentAdapter` interface — one-shot LLM call that returns text. Options: `{ maxTokens?, jsonMode?, model? }`. Implement in `ClaudeAdapter` using `claude -p` CLI
+- [x] Refactor `src/analyze/classifier.ts` to use `adapter.complete()` instead of `new Anthropic()`. Remove `@anthropic-ai/sdk` from `package.json` dependencies
 
 ### Priority 2 — Agent-agnostic CLI calls
 
-- [x] **AA-003:** Refactor `src/routing/strategies/llm.ts` to use `adapter.complete()` instead of hardcoded `Bun.spawn(["claude", ...])`. Resolve binary from configured agent
-- [x] **AA-004:** Refactor `src/interaction/plugins/auto.ts` to use `adapter.complete()` instead of hardcoded `Bun.spawn(["claude", ...])`
+- [x] Refactor `src/routing/strategies/llm.ts` to use `adapter.complete()` instead of hardcoded `Bun.spawn(["claude", ...])`. Resolve binary from configured agent
+- [x] Refactor `src/interaction/plugins/auto.ts` to use `adapter.complete()` instead of hardcoded `Bun.spawn(["claude", ...])`
 - [x] **AA-005:** Refactor `src/precheck/checks-blockers.ts` to check configured agent binary (not just `claude`). Support `codex`, `opencode`, `gemini`, `aider` version checks
 
 ### Priority 3 — Model name portability
@@ -708,7 +531,7 @@ nax currently hardcodes `claude` CLI and `@anthropic-ai/sdk` in several places, 
 - [x] **AA-007:** Add adapter scaffolding for at least one non-Claude agent (Codex or OpenCode) — implement `AgentAdapter` interface with `execute()`, `complete()`, and binary detection
 
 ### Also includes
-- **BUG-062:** Routing cache hit overwrote fresh `testStrategy` with stale PRD value — fixed in two passes (`945cc8d` + `4987d75`)
+- **BUG-062:** Routing cache hit overwrote fresh `testStrategy` with stale PRD value — routing cache fix applied in two passes
 - **BUG-063:** Rectification agent sessions left uncommitted changes, causing false-positive review failures — added `autoCommitIfDirty()` to rectification gate
 - **PluginLogger:** Structured write-only logger for nax plugins — `createPluginLogger(name)` wraps `getSafeLogger()` with `plugin:<name>` stage prefix
 - **TDD Strategy `simple`:** New `TddStrategy` option; `nax/config.json` switched to `auto` for heuristic routing
@@ -756,45 +579,30 @@ All stories pass individually
         "✅ story-decompose complete — $5.86"
 ```
 
-### Stories
+### What was shipped
 
-- [ ] **RL-001:** Add `on-all-stories-complete` hook — fires when all stories pass, before deferred regression gate. Payload: `{ feature, storiesCompleted, totalCost }`
-- [ ] **RL-002:** Move `on-complete` hook to fire AFTER deferred regression gate — represents "fully verified" state. Remove premature `run:completed` event from `sequential-executor.ts`
-- [ ] **RL-003:** Add `on-final-regression-fail` hook — fires when deferred regression fails after rectification exhausted. Payload: `{ feature, failedTests, affectedStories[], rectificationAttempts }`
-- [ ] **RL-004:** Handle deferred regression failure in `run-completion.ts` — mark affected stories as `regression-failed` status (new `StoryStatus`), fire hook, reflect in final run result
-
-### Smart Regression Skip
-
-- [ ] **RL-005:** Track `fullSuiteGatePassed` per story in run metrics. Only set `true` when rectification gate passes (three-session-tdd and tdd-lite only; NOT tdd-simple or test-after)
-- [ ] **RL-006:** Skip deferred regression when ALL of: (a) sequential mode, (b) every story has `fullSuiteGatePassed === true`, (c) no test-after or tdd-simple stories in run. Log skip reason
-
-### Strategy Matrix (reference)
-
-| Strategy | Sessions | Per-story full suite gate? | Deferred regression needed? |
-|:---------|:---------|:--------------------------|:---------------------------|
-| `test-after` | 1 | ❌ No | ✅ Yes |
-| `tdd-simple` | 1 | ❌ No (single session, no rectification) | ✅ Yes |
-| `three-session-tdd-lite` | 3 | ✅ Yes (rectification gate) | ❌ Skip if sequential |
-| `three-session-tdd` | 3 | ✅ Yes (rectification gate) | ❌ Skip if sequential |
-| Mixed strategies | varies | Partial | ✅ Yes |
-| Parallel mode | any | Yes but isolated | ✅ Yes (stories don't see each other) |
+- `on-all-stories-complete` hook — fires when all stories pass, before deferred regression gate
+- `on-final-regression-fail` hook — fires when deferred regression fails after rectification exhausted
+- `on-complete` hook moved to fire AFTER deferred regression gate (represents "fully verified" state)
+- Deferred regression skip when all sequential stories have passed full-suite gate
+- Strategy matrix for regression gate behavior by TDD mode
 
 ### Bugfixes
-- **BUG-060:** Duplicate exit summary + premature heartbeat stop — `sequential-executor.ts` called `stopHeartbeat()` + `writeExitSummary()` before `runner.ts` ran deferred regression
+- **fix:** Duplicate exit summary + premature heartbeat stop — `sequential-executor.ts` no longer calls `stopHeartbeat()` or `writeExitSummary()` before `runner.ts` completes deferred regression
 
 ---
 
 ## v0.33.0 — Story Decomposer ✅ Shipped (2026-03-09)
 
 **Theme:** Auto-decompose oversized stories into manageable sub-stories
-**Status:** ✅ Shipped (2026-03-09)
 **Spec:** `nax/features/story-decompose/prd.json`
 
-### Stories
-- [x] **SD-001:** DecomposeBuilder fluent API and prompt sections
-- [x] **SD-002:** Post-decompose validators (overlap, coverage, complexity, dependency)
-- [x] **SD-003:** Config schema, PRD mutation, and story-oversized trigger
-- [x] **SD-004:** Pipeline integration and CLI entry point (`nax analyse --decompose`)
+### What was shipped
+
+- DecomposeBuilder fluent API and prompt sections
+- Post-decompose validators (overlap, coverage, complexity, dependency)
+- Config schema, PRD mutation, and story-oversized trigger
+- Pipeline integration and CLI entry point (`nax analyse --decompose`)
 
 ### Trigger
 Stories classified as complex/expert with >6 acceptance criteria.
@@ -830,10 +638,10 @@ Stories classified as complex/expert with >6 acceptance criteria.
 | v0.35.0 | Agent Abstraction Layer | 2026-03-09 |
 | v0.34.0 | Run Hooks + Smart Skip | 2026-03-09 |
 | v0.33.0 | Story Decomposer | 2026-03-09 |
-| v0.32.2 | BUG-059 Fix (silent gate pass on crash) | 2026-03-09 |
+| v0.32.2 | Silent gate pass fix on crash/OOM | | 2026-03-09 |
 | v0.32.1 | Portable Hooks + Docs | 2026-03-09 |
 | v0.32.0 | TDD Simple Strategy | 2026-03-09 |
-| v0.31.1 | Bugfixes (BUG-056/057/058) | 2026-03-09 |
+| v0.31.1 | Multiple bugfixes | | 2026-03-09 |
 | v0.31.0 | Prompt Template Export | 2026-03-08 |
 | v0.30.0 | Prompt Builder Completion | 2026-03-08 |
 | v0.29.0 | Context Simplification | 2026-03-08 |
@@ -861,28 +669,18 @@ Stories classified as complex/expert with >6 acceptance criteria.
 
 ## Backlog
 
-### Bugs
-- [x] ~~BUG-015: fixed via `skipGlobal: true` in all unit tests~~
-- [x] ~~BUG-054: skip redundant verify after full-suite gate passes. Fixed in v0.27.1.~~
-- [x] ~~BUG-055: Pipeline skip messages conflate "not needed" with "disabled". Fixed in v0.27.1.~~
-- [x] ~~**BUG-061:** `story.complete` and `progress` log entries reported `durationMs`/`elapsedMs` as cumulative time since run start. Fixed: added `storyDurationMs` (per-story wall clock) to both events. `cca4ff3`~~
-- [x] ~~**BUG-062:** LLM routing cache returned stale `testStrategy` from pre-route phase — `simple` stories incorrectly used `three-session-tdd-lite` instead of `tdd-simple` (TS-001 rule not applied on cache hit). Fixed: cache hit now recomputes `testStrategy` via `determineTestStrategy()` from cached `complexity`; cache is authoritative on `complexity`/`modelTier` only. `945cc8d`~~
+### In Progress
+- **PERM-002:** Scoped Tool Allowlists — per-stage `allowedTools` with glob patterns (e.g., `Write(src/**)`), `inherit` chain between stages, backend mapping to `--allowedTools` (CLI) and `--allowed-tools` (ACP). **Spec:** [`docs/specs/scoped-permissions.md`](specs/scoped-permissions.md)
 
-### Features
-- [x] ~~**PERM-001:** Permission Resolver — remove all local `dangerouslySkipPermissions` fallbacks, add `resolvePermissions(config, stage)` as single source of truth, add `permissionProfile` config field (`unrestricted` | `safe` | `scoped`), thread `pipelineStage` through `AgentRunOptions`. No functional change for existing users. **Spec:** [`docs/specs/scoped-permissions.md`](specs/scoped-permissions.md) Phase 1~~
-- [ ] **PERM-002:** Scoped Tool Allowlists — per-stage `allowedTools` with glob patterns (e.g., `Write(src/**)`), `inherit` chain between stages, backend mapping to `--allowedTools` (CLI) and `--allowed-tools` (ACP). Depends on PERM-001. **Spec:** [`docs/specs/scoped-permissions.md`](specs/scoped-permissions.md) Phase 2
-- [ ] **HOOK-001:** Fire plugin hooks on plan failure — load plugins before plan phase and emit `onRunEnd` with failure status when `nax run --plan` fails, so Telegram/reporter plugins are notified.
-- [x] ~~**ACC-001:** Acceptance Test Pipeline — shipped in v0.40.0~~
-- [x] ~~**ACP Adapter:** Multi-agent support via acpx CLI — shipped 2026-03-14~~
-- [x] ~~**MONO-001:** Monorepo Support (Phase 1) — delegate to monorepo orchestrators; detect turborepo/nx/pnpm-workspaces/bun-workspaces; generate correct init commands; bypass smart test runner for turbo/nx (they handle change-aware scoping natively). Shipped `fea2573`.~~ **Phase 2 → v0.47.0** (per-story workdir, per-package context/config)
-- [ ] **CI-001:** CI Memory Optimization — parallel test sharding to pass on 1GB runners (currently requires 8GB).
-- [ ] Cost tracking dashboard
-- [ ] npm publish setup
-- [ ] `nax diagnose --ai` flag (LLM-assisted, future TBD)
-- [ ] **Auto-decompose oversized stories** — When story size gate triggers, offer via interaction chain to auto-decompose using `nax analyse`.
-- [ ] VitePress documentation site — full CLI reference, hosted as standalone docs (pre-publish requirement)
-- [x] ~~**Deprecate `single-session` prompt role** — no longer used by pipeline (unified into `tdd-simple`). Remove from `role-task.ts`, `isolation.ts`, `nax prompts --export`, and builder API.~~
-- [x] ~~**Migrate batch prompt to PromptBuilder** — MR !40 merged. Batch prompts now go through PromptBuilder with security tags, test command injection, conventions, isolation rules.~~
+### Planned
+- **CI Memory Optimization** — parallel test sharding to pass on 1GB runners (currently requires 8GB)
+- **Cost tracking dashboard** — visualize spend across features and agents
+- **Auto-decompose oversized stories** — when story size gate triggers, offer to auto-decompose via `nax analyse`
+- **Fire plugin hooks on plan failure** — load plugins before plan phase and emit `onRunEnd` with failure status when `nax run --plan` fails
+
+### Post-Launch
+- VitePress documentation site — full CLI reference, hosted as standalone docs
+- `nax diagnose --ai` flag — LLM-assisted diagnostics
 
 ---
 
@@ -891,5 +689,3 @@ Stories classified as complex/expert with >6 acceptance criteria.
 Sequential canary → stable: `v0.12.0-canary.0` → `canary.N` → `v0.12.0`
 Canary: `npm publish --tag canary`
 Stable: `npm publish` (latest)
-
-*Last updated: 2026-03-12 (v0.39.3 shipped — Prompt Optimization; v0.40.0 next)*

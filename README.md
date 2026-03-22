@@ -12,1077 +12,182 @@ npm install -g @nathapp/nax
 bun install -g @nathapp/nax
 ```
 
+Requires: Node 18+ or Bun 1.0+. Git must be initialized.
+
 ## Quick Start
 
 ```bash
 cd your-project
-nax init
-nax features create my-feature
+nax init                          # Create .nax/ structure
+nax features create my-feature    # Scaffold a feature
 
-# Option A: write prd.json manually, then run
-nax run -f my-feature
-
-# Option B: generate prd.json from a spec file, then run
+# Write your spec, then plan + run
 nax plan -f my-feature --from spec.md
 nax run -f my-feature
 
-# Option C: plan + run in one command
+# Or in one shot (no interactive Q&A)
 nax run -f my-feature --plan --from spec.md
 ```
+
+See [docs/](docs/) for full guides on configuration, test strategies, monorepo setup, and more.
 
 ## How It Works
 
 ```
-(plan →) acceptance setup → route → execute → verify → (escalate) → regression gate → acceptance
+(plan →) acceptance setup → route → execute → verify → review → escalate → loop → regression gate → acceptance
 ```
 
-1. **Plan** *(optional)* — `nax run --plan` generates a `prd.json` from a spec file using an LLM
-2. **Acceptance setup** *(pre-run)* — generate acceptance tests and assert RED (tests must fail before implementation)
-3. **Route** — classify story complexity and select model tier (fast → balanced → powerful)
-4. **Context** — gather relevant code, tests, and project standards
-5. **Execute** — run an agent session (Claude Code, Codex, Gemini CLI, or ACP)
-6. **Verify** — run scoped tests; if failing, **rectify** before escalating
-7. **Review** — lint + typecheck; if failing, **autofix** before escalating
-8. **Escalate** — on repeated failure, retry with a higher model tier
-9. **Loop** — repeat steps 3–8 per story until all pass or a cost/iteration limit is hit
-10. **Regression gate** — deferred full-suite run after all stories pass
-11. **Acceptance** *(post-run)* — run the generated acceptance tests against the completed feature
+1. **Plan** *(optional)* — Generate `prd.json` from a spec file using an LLM
+2. **Acceptance setup** — Generate acceptance tests; assert RED before implementation
+3. **Route** — Classify story complexity and select model tier (fast → balanced → powerful)
+4. **Context** — Gather relevant code, tests, and project standards per story
+5. **Execute** — Run agent session (Claude Code, Codex, Gemini CLI, or ACP)
+6. **Verify** — Run scoped tests; rectify on failure before escalating
+7. **Review** — Run lint + typecheck; autofix before escalating
+8. **Escalate** — On repeated failure, retry with a higher model tier
+9. **Loop** — Repeat steps 3–8 per story until all pass or a cost/iteration limit is hit
+10. **Regression gate** — Run full test suite after all stories pass
+11. **Acceptance** — Run acceptance tests against the completed feature
 
 ---
 
 ## CLI Reference
 
-### `nax init`
-
-Initialize nax in your project. Creates the `.nax/` folder structure.
-
-```bash
-nax init
-```
-
-Creates:
-```
-.nax/
-├── config.json       # Project-level config
-└── features/         # One folder per feature
-```
-
-**Monorepo — scaffold a package:**
-
-```bash
-nax init --package packages/api
-```
-
-Creates `.nax/mono/packages/api/context.md` for per-package agent context.
-
----
-
-### `nax features create <name>`
-
-Scaffold a new feature.
-
-```bash
-nax features create user-auth
-```
-
-Creates `.nax/features/user-auth/spec.md` — fill in the overview, user stories, and acceptance criteria, then run `nax plan` to generate `prd.json`.
-
-### `nax features list`
-
-List all features and their story completion status.
-
-```bash
-nax features list
-```
-
----
-
-### `nax plan -f <name> --from <spec>`
-
-Generate a `prd.json` from a spec file using an LLM. Replaces the deprecated `nax analyze`.
-
-```bash
-nax plan -f my-feature --from spec.md
-```
-
-**Flags:**
-
-| Flag | Description |
-|:-----|:------------|
-| `-f, --feature <name>` | Feature name (required) |
-| `--from <spec-path>` | Path to spec file (required) |
-| `--auto` / `--one-shot` | Skip interactive Q&A — single LLM call, no back-and-forth |
-| `-b, --branch <branch>` | Override default branch name |
-| `-d, --dir <path>` | Project directory |
-
-**Interactive vs one-shot:**
-- Default (no flag): interactive planning session — nax asks clarifying questions, refines the plan iteratively
-- `--auto` / `--one-shot`: single LLM call, faster but less precise
-
----
-
-### `nax analyze` *(deprecated)*
-
-> ⚠️ **Deprecated.** Use `nax plan` instead. `nax analyze` remains available for backward compatibility but will be removed in a future version.
-
----
-
-### `nax run -f <name>`
-
-Execute the orchestration loop for a feature.
-
-```bash
-nax run -f my-feature
-```
-
-**Flags:**
-
-| Flag | Description |
-|:-----|:------------|
-| `-f, --feature <name>` | Feature name |
-| `-a, --agent <name>` | Force a specific agent (`claude`, `opencode`, `codex`, etc.). Only applies when `agent.protocol = "cli"` — ignored when using ACP protocol. |
-| `--plan` | Run plan phase first (requires `--from`) |
-| `--from <spec-path>` | Spec file for `--plan` |
-| `--one-shot` | Skip interactive Q&A during planning (ACP only) |
-| `--force` | Overwrite existing `prd.json` when using `--plan` |
-| `--parallel <n>` | Max parallel sessions (`0` = auto based on CPU cores; omit = sequential) |
-| `--dry-run` | Preview story routing without running agents |
-| `--headless` | Non-interactive output (structured logs, no TUI) |
-| `--verbose` | Debug-level logging |
-| `--quiet` | Warnings and errors only |
-| `--silent` | Errors only |
-| `--json` | Raw JSONL output to stdout (for scripting) |
-| `--skip-precheck` | Skip precheck validations (advanced users only) |
-| `--no-context` | Disable context builder (skip file context in prompts) |
-| `--no-batch` | Execute all stories individually (disable batching) |
-| `-d, --dir <path>` | Working directory |
-
-**Examples:**
-
-```bash
-# Preview what would run (no agents spawned)
-nax run -f user-auth --dry-run
-
-# Plan from spec then run — one command
-nax run -f user-auth --plan --from spec.md
-
-# Run with parallel execution (auto concurrency)
-nax run -f user-auth --parallel 0
-
-# Run with up to 3 parallel worktree sessions
-nax run -f user-auth --parallel 3
-
-# Force a specific agent
-nax run -f user-auth --agent opencode
-
-# Run in CI/CD (structured output)
-nax run -f user-auth --headless
-
-# Raw JSONL for scripting
-nax run -f user-auth --json
-```
-
----
-
-### `nax precheck -f <name>`
-
-Validate your project is ready to run — checks git, PRD, CLI tools, deps, test/lint/typecheck scripts.
-
-```bash
-nax precheck -f my-feature
-```
-
-Run this before `nax run` to catch configuration issues early.
-
----
-
-### `nax status -f <name>`
-
-Show live run progress — stories passed, failed, current story, cost so far.
-
-```bash
-nax status -f my-feature
-```
-
----
-
-### `nax logs`
-
-Stream logs from the current or last run. Run from your project directory.
-
-```bash
-# List all recorded runs
-nax logs --list
-
-# Follow current run in real-time
-nax logs --follow
-
-# Filter by story
-nax logs --story US-003
-
-# Filter by log level
-nax logs --level error
-
-# Select a specific run by ID
-nax logs --run <runId>
-
-# Raw JSONL output (for scripting)
-nax logs --json
-```
-
----
-
-### `nax diagnose -f <name>`
-
-Analyze a failed run and suggest fixes. No LLM — pure pattern matching on PRD state, git log, and events.
-
-```bash
-nax diagnose -f my-feature
-
-# JSON output for scripting
-nax diagnose -f my-feature --json
-
-# Verbose (per-story tier/strategy detail)
-nax diagnose -f my-feature --verbose
-```
-
-Output sections:
-- **Run Summary** — status, stories passed/failed/pending, total cost
-- **Story Breakdown** — per-story pattern classification
-- **Failure Analysis** — pattern name, symptom, recommended fix
-- **Lock Check** — detects stale `nax.lock`
-- **Recommendations** — ordered next actions
-
-**Common failure patterns:**
-
-| Pattern | Symptom | Fix |
-|:--------|:--------|:----|
-| `GREENFIELD_TDD` | No source files exist yet | Use `test-after` or bootstrap files first |
-| `MAX_TIERS_EXHAUSTED` | All model tiers tried | Split story into smaller sub-stories |
-| `ENVIRONMENTAL` | Build/dep errors | Fix precheck issues before re-running |
-| `LOCK_STALE` | `nax.lock` blocking | Shown automatically with `rm nax.lock` |
-| `AUTO_RECOVERED` | nax self-healed | No action needed |
-
----
-
-### `nax generate`
-
-Generate agent config files from `.nax/context.md`. Supports Claude Code, OpenCode, Codex, Cursor, Windsurf, Aider, and Gemini.
-
-```bash
-nax generate
-```
-
-**Flags:**
-
-| Flag | Description |
-|:-----|:------------|
-| `-c, --context <path>` | Context file path (default: `.nax/context.md`) |
-| `-o, --output <dir>` | Output directory (default: project root) |
-| `-a, --agent <name>` | Generate for a specific agent only (`claude`, `opencode`, `cursor`, `windsurf`, `aider`, `codex`, `gemini`) |
-| `--dry-run` | Preview without writing files |
-| `--no-auto-inject` | Disable auto-injection of project metadata |
-| `--package <dir>` | Generate for a specific monorepo package (e.g. `packages/api`) |
-| `--all-packages` | Generate for all discovered packages |
-
-**What it generates:**
-
-| Agent | File |
-|:------|:-----|
-| Claude Code | `CLAUDE.md` |
-| OpenCode | `AGENTS.md` |
-| Codex | `AGENTS.md` |
-| Cursor | `.cursorrules` |
-| Windsurf | `.windsurfrules` |
-| Aider | `.aider.md` |
-| Gemini | `GEMINI.md` |
-
-**Workflow:**
-
-1. Create `.nax/context.md` — describe your project's architecture, conventions, and coding standards
-2. Run `nax generate` — writes agent config files to the project root (and per-package if configured)
-3. Commit the generated files — your agents will automatically pick them up
-
-**Monorepo (per-package):**
-
-```bash
-# Generate CLAUDE.md for a single package
-nax generate --package packages/api
-
-# Generate for all packages (auto-discovers workspace packages)
-nax generate --all-packages
-```
-
-Each package can have its own context file at `.nax/mono/<package>/context.md` for package-specific agent instructions (created via `nax init --package <package>`).
-
----
-
-### `nax prompts -f <name>`
-
-Assemble and display the prompt that would be sent to the agent for each story role.
-
-```bash
-nax prompts -f my-feature
-```
-
-**Flags:**
-
-| Flag | Description |
-|:-----|:------------|
-| `--init` | Export default role templates to `.nax/templates/` for customization |
-| `--role <role>` | Show prompt for a specific role (`implementer`, `test-writer`, `verifier`, `tdd-simple`) |
-
-After running `--init`, edit the templates and nax will use them automatically via `prompts.overrides` config.
-
----
-
-### `nax unlock`
-
-Release a stale `nax.lock` from a crashed process.
-
-```bash
-nax unlock -f my-feature
-```
-
----
-
-### `nax runs`
-
-Show all registered runs from the central registry (`~/.nax/runs/`).
-
-```bash
-nax runs
-```
-
----
-
-### `nax agents`
-
-List installed coding agents and which models they support.
-
-```bash
-nax agents
-```
-
----
-
-### `nax config`
-
-Display the effective merged configuration (global + project layers).
-
-```bash
-# Show merged config
-nax config
-
-# Show with field descriptions
-nax config --explain
-
-# Show only fields where project overrides global
-nax config --diff
-```
+| Command | Description |
+|:--------|:-----------|
+| [`nax init`](docs/guides/cli-reference.md#nax-init) | Initialize nax in your project |
+| [`nax features create`](docs/guides/cli-reference.md#nax-features-create-name) | Scaffold a new feature directory |
+| [`nax features list`](docs/guides/cli-reference.md#nax-features-list) | List all features and story status |
+| [`nax plan`](docs/guides/cli-reference.md#nax-plan---from-spec) | Generate `prd.json` from a spec file |
+| [`nax run`](docs/guides/cli-reference.md#nax-run) | Execute the orchestration loop |
+| [`nax precheck`](docs/guides/cli-reference.md#nax-precheck) | Validate project readiness |
+| [`nax status`](docs/guides/cli-reference.md#nax-status) | Show live run progress |
+| [`nax logs`](docs/guides/cli-reference.md#nax-logs) | Stream or query run logs |
+| [`nax diagnose`](docs/guides/cli-reference.md#nax-diagnose) | Analyze failures, suggest fixes |
+| [`nax generate`](docs/guides/cli-reference.md#nax-generate) | Generate `.nax/` files for all packages in a monorepo |
+| [`nax prompts`](docs/guides/cli-reference.md#nax-prompts) | Print prompt snapshots for debugging |
+| [`nax runs`](docs/guides/cli-reference.md#nax-runs) | List recorded run metadata |
+| [`nax config`](docs/guides/cli-reference.md#nax-config) | Show/validate configuration |
+
+For full flag details, see the [CLI Reference](docs/guides/cli-reference.md).
 
 ---
 
 ## Configuration
 
-Config is layered — project overrides global:
-
-| File | Scope |
-|:-----|:------|
-| `~/.nax/config.json` | Global (all projects) |
-| `.nax/config.json` | Project-level override |
-
-**Key options:**
+`.nax/config.json` is the project-level config. Key fields:
 
 ```json
 {
   "execution": {
-    "maxIterations": 20,
-    "costLimit": 5.0
-  },
-  "tdd": {
-    "strategy": "auto"
+    "testStrategy": "three-session-tdd",  // How to write tests (see Test Strategies)
+    "maxIterations": 5,
+    "modelTier": "balanced",               // "fast" | "balanced" | "powerful"
+    "permissionProfile": "unrestricted"    // "unrestricted" | "safe" | "scoped"
   },
   "quality": {
     "commands": {
-      "test": "bun test test/ --timeout=60000",
-      "testScoped": "bun test --timeout=60000 {{files}}",
-      "lint": "bun run lint",
-      "typecheck": "bun x tsc --noEmit",
-      "lintFix": "bun x biome check --fix src/",
-      "formatFix": "bun x biome format --write src/"
+      "test": "bun test",                   // Root test command
+      "lint": "bun lint",                  // Optional linter
+      "typecheck": "bun typecheck"          // Optional type checker
     }
+  },
+  "hooks": {
+    "onComplete": "npm run build"          // Fire after a feature completes
   }
 }
 ```
 
-### Shell Operators in Commands
-
-Review commands (`lint`, `typecheck`) are executed directly via `Bun.spawn` — **not** through a shell. This means shell operators like `&&`, `||`, `;`, and `|` are passed as literal arguments and will not work as expected.
-
-**❌ This will NOT work:**
-```json
-"typecheck": "bun run build && bun run typecheck"
-```
-
-**✅ Workaround — wrap in a `package.json` script:**
-```json
-// package.json
-"scripts": {
-  "build-and-check": "bun run build && bun run typecheck"
-}
-```
-```json
-// .nax/config.json
-"quality": {
-  "commands": {
-    "typecheck": "bun run build-and-check"
-  }
-}
-```
-
-This limitation applies to all `quality.commands` entries (`test`, `lint`, `typecheck`, `lintFix`, `formatFix`).
+See [Configuration Guide](docs/guides/configuration.md) for the full schema.
 
 ---
 
-### Scoped Test Command
+## Key Concepts
 
-By default, nax runs scoped tests (per-story verification) by appending discovered test files to the `test` command. This can produce incorrect commands when the base command includes a directory path (e.g. `bun test test/`), since the path is not replaced — it is appended alongside it.
+### Test Strategies
 
-Use `testScoped` to define the exact scoped test command with a `{{files}}` placeholder:
+nax supports four TDD strategies. Select per-feature in `config.json`:
 
-| Runner | `test` | `testScoped` |
-|:-------|:-------|:-------------|
-| Bun | `bun test test/ --timeout=60000` | `bun test --timeout=60000 {{files}}` |
-| Jest | `npx jest` | `npx jest -- {{files}}` |
-| pytest | `pytest tests/` | `pytest {{files}}` |
-| cargo | `cargo test` | `cargo test {{files}}` |
-| go | `go test ./...` | `go test {{files}}` |
+| Strategy | Sessions | When to use |
+|:---------|:---------|:------------|
+| `three-session-tdd` | 3 | Strict TDD — red/green/refactor in separate sessions |
+| `three-session-tdd-lite` | 3 | Flexible TDD — test-writer may add minimal stubs |
+| `tdd-simple` | 1 | Simple changes — single session, implementer writes tests |
+| `test-after` | 1 | Legacy / exploratory — implement first, add tests after |
+| `no-test` | 0 | Config-only, docs, CI, dependency bumps — requires justification |
 
-If `testScoped` is not configured, nax falls back to a heuristic that replaces the last path-like token in the `test` command. **Recommended:** always configure `testScoped` explicitly to avoid surprises.
+See [Test Strategies Guide](docs/guides/test-strategies.md) for details.
 
-**TDD strategy options:** <a name="tdd-strategy-options"></a>
+### Story Decomposition
 
-| Value | Behaviour |
-|:------|:----------|
-| `auto` | nax decides based on complexity and tags — simple→`tdd-simple`, security/public-api→`three-session-tdd`, else→`three-session-tdd-lite` |
-| `strict` | Always use `three-session-tdd` (strictest — all stories) |
-| `lite` | Always use `three-session-tdd-lite` |
-| `simple` | Always use `tdd-simple` (1 session) |
-| `off` | No TDD — tests written after implementation (`test-after`) |
+Stories over a complexity threshold are auto-decomposed into smaller sub-stories. Triggered by story size or `prd.json` analysis. Sub-stories run sequentially within the feature.
 
----
+See [Story Decomposition Guide](docs/guides/decomposition.md).
 
-## Customization
+### Regression Gate
 
-### Prompt Customization
+After all stories pass, nax runs the full test suite once. If it fails, it retries failed suites with a shorter timeout. If still failing after retries, the feature is marked as needing attention — nax does not block on a full-suite failure.
 
-Customize the instructions sent to each agent role for your project's specific needs. Override prompts to enforce coding style, domain knowledge, or architectural constraints.
+See [Regression Gate Guide](docs/guides/regression-gate.md).
 
-**Quick start:**
+### Parallel Execution
 
-```bash
-nax prompts --init              # Create default templates
-# Edit .nax/templates/*.md
-nax prompts --export test-writer # Preview a role's prompt
-nax run -f my-feature           # Uses your custom prompts
-```
+Stories are batched by compatibility (same model tier, similar complexity) and run in parallel within each batch. Use `--parallel <n>` to control concurrency. Sequential mode uses a deferred regression gate; parallel mode always runs regression at the end.
 
-**Full guide:** See [Prompt Customization Guide](docs/guides/prompt-customization.md) for detailed instructions, role reference, and best practices.
+See [Parallel Execution Guide](docs/guides/parallel-execution.md).
 
----
+### Monorepo Support
 
-## Test Strategies
+Per-package context files, per-package test commands, and per-story working directories are supported. Initialize with `nax init --package packages/api`. Package config files live at `.nax/mono/packages/<pkg>/config.json`.
 
-nax selects a test strategy per story based on complexity and tags:
+See [Monorepo Guide](docs/guides/monorepo.md).
 
-| Strategy | Sessions | When | Description |
-|:---------|:---------|:-----|:------------|
-| `no-test` | 1 | Config, docs, CI, pure refactors with no behavior change | No tests written or run — requires `noTestJustification` in prd.json |
-| `test-after` | 1 | Refactors, deletions | Single session, tests written after implementation |
-| `tdd-simple` | 1 | Simple stories | Single session with TDD prompt (red-green-refactor) |
-| `three-session-tdd-lite` | 3 | Medium stories | Three sessions, relaxed isolation rules |
-| `three-session-tdd` | 3 | Complex/security stories | Three sessions, strict file isolation |
+### Hooks
 
-Configure the default TDD behavior in `.nax/config.json`:
+Lifecycle hooks fire at key points (onFeatureStart, onAllStoriesComplete, onComplete, onFinalRegressionFail). Use them to trigger deployments, send notifications, or integrate with external systems.
 
-```json
-{
-  "tdd": {
-    "strategy": "auto"
-  }
-}
-```
+See [Hooks Guide](docs/guides/hooks.md).
 
-See [TDD strategy options](#tdd-strategy-options) for all values.
+### Plugins
 
----
+Extensible plugin architecture for prompt optimization, custom routing, code review, and reporting. Plugins live in `.nax/plugins/` (project) or `~/.nax/plugins/` (global).
 
-## Three-Session TDD
-
-For complex or security-critical stories, nax enforces strict role separation:
-
-| Session | Role | Allowed Files |
-|:--------|:-----|:--------------|
-| 1 | Test Writer | Test files only — no source code |
-| 2 | Implementer | Source files only — no test changes |
-| 3 | Verifier | Reviews quality, auto-approves or flags |
-
-Isolation is verified automatically via `git diff` between sessions. Violations cause an immediate failure.
-
----
-
-## Hermetic Test Enforcement
-
-By default, nax instructs agents to write **hermetic tests** — tests that never invoke real external processes or connect to real services. This prevents flaky tests, unintended side effects, and accidental API calls during automated runs.
-
-The hermetic requirement is injected into all code-writing prompts (test-writer, implementer, tdd-simple, batch, single-session). It covers all I/O boundaries: HTTP/gRPC calls, CLI tool spawning (`Bun.spawn`/`exec`), database and cache clients, message queues, and file operations outside the test working directory.
-
-### Configuration
-
-Configured under `quality.testing` — supports **per-package override** in monorepos.
-
-```json
-{
-  "quality": {
-    "testing": {
-      "hermetic": true,
-      "externalBoundaries": ["claude", "acpx", "redis", "grpc"],
-      "mockGuidance": "Use injectable deps for CLI spawning, ioredis-mock for Redis"
-    }
-  }
-}
-```
-
-| Field | Type | Default | Description |
-|:------|:-----|:--------|:------------|
-| `hermetic` | `boolean` | `true` | Inject hermetic test requirement into prompts. Set `false` to allow real external calls. |
-| `externalBoundaries` | `string[]` | — | Project-specific CLI tools, clients, or services to mock (e.g. `["claude", "redis"]`). The AI uses this list to identify what to mock in your project. |
-| `mockGuidance` | `string` | — | Project-specific mocking instructions injected verbatim into the prompt (e.g. which mock libraries to use). |
-
-> **Tip:** `externalBoundaries` and `mockGuidance` complement `context.md`. nax provides the rule ("mock all I/O"), while `context.md` provides project-specific knowledge ("use `ioredis-mock` for Redis"). Use both for best results.
-
-> **Monorepo:** Each package can override `quality.testing` in its own `.nax/mono/<package>/config.json`. For example, `packages/api` can specify Redis boundaries while `apps/web` specifies HTTP-only.
-
-> **Opt-out:** Set `quality.testing.hermetic: false` if your project requires real integration calls (e.g. live database tests against a local dev container).
-
----
-
-## Story Decomposition
-
-Story decomposition is **opt-in** — disabled by default. Enable it by adding a `decompose` block to `.nax/config.json`.
-
-When enabled, nax checks during the routing stage whether a story is oversized (complex/expert complexity with more ACs than `maxAcceptanceCriteria`). If so, an LLM breaks it into smaller sub-stories and replaces the original in the PRD.
-
-**Configuration:**
-
-```json
-{
-  "decompose": {
-    "trigger": "auto",
-    "maxAcceptanceCriteria": 6,
-    "maxSubstories": 5,
-    "maxSubstoryComplexity": "medium",
-    "maxRetries": 2,
-    "model": "balanced"
-  }
-}
-```
-
-**Trigger modes:**
-
-| Value | Behaviour |
-|:------|:----------|
-| `auto` | Decompose automatically — no confirmation prompt |
-| `confirm` | Show interaction prompt — you approve, skip, or continue as-is |
-| `disabled` | Never decompose — log a warning if story is oversized |
-
-> **Note:** `storySizeGate` (under `precheck`) is a separate pre-run guard that warns if stories exceed size limits before execution starts. Decomposition happens during routing, mid-run.
-
-**How it works:**
-
-1. An LLM generates sub-stories with IDs, titles, descriptions, acceptance criteria, and dependency ordering
-2. Post-decompose validators check overlap, coverage, complexity, and dependency ordering
-3. The parent story is replaced in the PRD with the validated sub-stories
-
----
-
-## Regression Gate
-
-After all stories pass their individual verification, nax can run a deferred full-suite regression gate to catch cross-story regressions.
-
-```json
-{
-  "execution": {
-    "regressionGate": {
-      "mode": "deferred",
-      "acceptOnTimeout": true,
-      "maxRectificationAttempts": 2
-    }
-  }
-}
-```
-
-| Mode | Behaviour |
-|:-----|:----------|
-| `disabled` | No regression gate |
-| `per-story` | Full suite after each story — higher cost and slower if stories fail regression |
-| `deferred` | Full suite once after all stories pass (recommended) — **default** |
-
-If the regression gate detects failures, nax maps them to the responsible story via git blame and attempts automated rectification. If rectification fails, affected stories are marked as `regression-failed`.
-
-> **Smart skip (v0.34.0):** When all stories used `three-session-tdd` or `three-session-tdd-lite` in sequential mode, each story already ran the full suite gate. nax will skip the redundant deferred regression in this case.
-
----
-
-## Parallel Execution
-
-nax can run multiple stories concurrently using git worktrees — each story gets an isolated worktree so agents don't step on each other.
-
-```bash
-# Auto concurrency (based on CPU cores)
-nax run -f my-feature --parallel 0
-
-# Fixed concurrency
-nax run -f my-feature --parallel 3
-```
-
-**How it works:**
-
-1. Stories are grouped by dependency order (dependent stories wait for their prerequisites)
-2. Each batch of independent stories gets its own git worktree
-3. Agent sessions run concurrently inside those worktrees
-4. Once a batch completes, changes are merged back in dependency order
-5. Merge conflicts are automatically rectified by re-running the conflicted story on the updated base
-
-**Config:**
-
-```json
-{
-  "execution": {
-    "maxParallelSessions": 4
-  }
-}
-```
-
-> Sequential mode (no `--parallel`) is the safe default. Use parallel for large feature sets with independent stories.
+See [Plugins Guide](docs/guides/agents.md#plugins).
 
 ---
 
 ## Agents
 
-nax supports multiple coding agents via the [Agent Client Protocol (ACP)](https://github.com/openclaw/acpx). **ACP protocol is recommended** — it provides persistent sessions, structured cost/token reporting, and works with all supported agents.
-
-> **CLI protocol** (`agent.protocol: "cli"`) is supported for Claude Code only and is being gradually deprecated in favour of ACP. New projects should use ACP.
-
-```bash
-# List installed agents and their capabilities
-nax agents
-```
-
-**Supported agents:**
-
-| Agent | CLI mode |
-|:------|:---------|
-| `claude` | ✅ Stable |
-| All others (`codex`, `gemini`, `opencode`, `cursor`, `copilot`, `kilo`, `qwen`, `kimi`, `iflow`, `droid`, `kiro`, and more) | 🧪 Experimental |
-
-nax connects to agents via [acpx](https://github.com/openclaw/acpx). All agents run as persistent ACP sessions — nax sends prompts and receives structured JSON-RPC responses including token counts and exact USD cost per session. For the full list of supported agents and their ACP startup commands, see the [acpx agent docs](https://github.com/openclaw/acpx#agents).
-
-> **Note:** When `agent.protocol` is set to `"acp"`, the `--agent` CLI flag has no effect — all execution routes through the ACP adapter regardless of agent name.
-
-> **Known issue — `acpx` ≤ 0.3.1:** The `--model` flag is not supported. Model selection via `execution.model` or per-package `model` overrides has no effect. As a temporary workaround, use the [nathapp-io/acpx](https://github.com/nathapp-io/acpx) fork which adds `--model` support. Upstream fix is tracked in [openclaw/acpx#49](https://github.com/openclaw/acpx/issues/49).
-
-**Configuring agents:**
-
-```json
-{
-  "execution": {
-    "defaultAgent": "claude",
-    "protocol": "acp",
-    "fallbackOrder": ["claude", "codex", "opencode", "gemini"]
-  }
-}
-```
-
-**Force a specific agent at runtime (CLI protocol only):**
-
-```bash
-# Only applies when agent.protocol = "cli" (Claude Code only — other agents experimental)
-nax run -f my-feature --agent claude
-```
-
----
-
-## Monorepo Support
-
-nax supports monorepos with workspace-level and per-package configuration.
-
-### Setup
-
-```bash
-# Initialize nax at the repo root
-nax init
-
-# Scaffold per-package context for a specific package
-nax init --package packages/api
-nax init --package packages/web
-```
-
-### Per-Package Config
-
-Each package's config and context are stored centrally under the root `.nax/mono/` directory:
-
-```
-repo-root/
-├── .nax/
-│   ├── config.json                    # root config
-│   └── mono/
-│       ├── packages/
-│       │   └── api/
-│       │       ├── config.json        # overrides for packages/api
-│       │       └── context.md        # agent context for packages/api
-│       └── apps/
-│           └── api/
-│               ├── config.json        # overrides for apps/api
-│               └── context.md        # agent context for apps/api
-```
-
-**Overridable fields per package:** `execution`, `review`, `acceptance`, `quality`, `context`
-
-```json
-// .nax/mono/packages/api/config.json
-{
-  "quality": {
-    "commands": {
-      "test": "turbo test --filter=@myapp/api",
-      "lint": "turbo lint --filter=@myapp/api"
-    }
-  }
-}
-```
-
-### Per-Package Stories
-
-In your `prd.json`, set `workdir` on each story to point to the package:
-
-```json
-{
-  "userStories": [
-    {
-      "id": "US-001",
-      "title": "Add auth endpoint",
-      "workdir": "packages/api",
-      "status": "pending"
-    }
-  ]
-}
-```
-
-nax will run the agent inside that package's directory and apply its config overrides automatically.
-
-### Workspace Detection
-
-When `nax plan` generates stories for a monorepo, it auto-discovers packages from:
-- `turbo.json` → `packages` field
-- `package.json` → `workspaces`
-- `pnpm-workspace.yaml` → `packages`
-- Existing `.nax/mono/*/context.md` files
-
-### Generate Agent Files for All Packages
-
-```bash
-nax generate --all-packages
-```
-
-Generates a `CLAUDE.md` (or agent-specific file) in each discovered package directory, using the package's own `.nax/mono/<package>/context.md` if present.
-
----
-
-## Hooks
-
-Integrate notifications, CI triggers, or custom scripts via lifecycle hooks.
-
-**Project hooks** (`.nax/hooks.json`):
-
-```json
-{
-  "hooks": {
-    "on-complete": {
-      "command": "openclaw system event --text 'Feature done!'",
-      "enabled": true
-    },
-    "on-pause": {
-      "command": "bash hooks/notify.sh",
-      "enabled": true
-    }
-  }
-}
-```
-
-**Available events:**
-
-| Event | Fires when |
-|:------|:-----------|
-| `on-start` | Run begins |
-| `on-story-start` | A story starts processing |
-| `on-story-complete` | A story passes all checks |
-| `on-story-fail` | A story exhausts all retry attempts |
-| `on-pause` | Run paused (awaiting human input) |
-| `on-resume` | Run resumed after pause |
-| `on-session-end` | An agent session ends (per-session teardown) |
-| `on-all-stories-complete` | All stories passed — regression gate pending *(v0.34.0)* |
-| `on-final-regression-fail` | Deferred regression failed after rectification *(v0.34.0)* |
-| `on-complete` | Everything finished and verified (including regression gate) |
-| `on-error` | Unhandled error terminates the run |
-
-**Hook lifecycle:**
-
-```
-on-start
-  └─ on-story-start → on-story-complete (or on-story-fail)  ← per story
-       └─ on-all-stories-complete                            ← all stories done
-            └─ deferred regression gate (if enabled)
-                 └─ on-final-regression-fail                 ← if regression fails
-       └─ on-complete                                        ← everything verified
-```
-
-Each hook receives context via `NAX_*` environment variables and full JSON on stdin.
-
-**Environment variables passed to hooks:**
-
-| Variable | Description |
-|:---------|:------------|
-| `NAX_EVENT` | Event name (e.g., `on-story-complete`) |
-| `NAX_FEATURE` | Feature name |
-| `NAX_STORY_ID` | Current story ID (if applicable) |
-| `NAX_STATUS` | Status (`pass`, `fail`, `paused`, `error`) |
-| `NAX_REASON` | Reason for pause or error |
-| `NAX_COST` | Accumulated cost in USD |
-| `NAX_MODEL` | Current model |
-| `NAX_AGENT` | Current agent |
-| `NAX_ITERATION` | Current iteration number |
-
-**Global vs project hooks:** Global hooks (`~/.nax/hooks.json`) fire alongside project hooks. Set `"skipGlobal": true` in your project `hooks.json` to disable global hooks.
-
----
-
-## Interaction Triggers
-
-nax can pause execution and prompt you for decisions at critical points. Configure triggers in `nax/config.json` (or `~/.nax/config.json` globally):
-
-```json
-{
-  "interaction": {
-    "plugin": "telegram",
-    "defaults": {
-      "timeout": 600000,
-      "fallback": "escalate"
-    },
-    "triggers": {
-      "security-review": true,
-      "cost-exceeded": true,
-      "cost-warning": true,
-      "max-retries": true,
-      "human-review": true,
-      "story-ambiguity": true,
-      "story-oversized": true,
-      "review-gate": true,
-      "pre-merge": false,
-      "merge-conflict": true
-    }
-  }
-}
-```
-
-**Available triggers:**
-
-| Trigger | Safety | Default Fallback | Description |
-|:--------|:------:|:----------------:|:------------|
-| `security-review` | 🔴 Red | `abort` | Critical security issues found during review |
-| `cost-exceeded` | 🔴 Red | `abort` | Run cost exceeded the configured limit |
-| `merge-conflict` | 🔴 Red | `abort` | Git merge conflict detected |
-| `cost-warning` | 🟡 Yellow | `escalate` | Approaching cost limit — escalate to higher model tier? |
-| `max-retries` | 🟡 Yellow | `skip` | Story exhausted all retry attempts — skip and continue? |
-| `pre-merge` | 🟡 Yellow | `escalate` | Checkpoint before merging to main branch |
-| `human-review` | 🟡 Yellow | `skip` | Human review required on critical failure |
-| `story-oversized` | 🟡 Yellow | `continue` | Story too complex — decompose into sub-stories? (only fires when `decompose.trigger = "confirm"`) |
-| `story-ambiguity` | 🟢 Green | `continue` | Story requirements unclear — continue with best effort? |
-| `review-gate` | 🟢 Green | `continue` | Code review checkpoint before proceeding |
-
-**Safety tiers:**
-- 🔴 **Red** — Critical; defaults to aborting if no response
-- 🟡 **Yellow** — Caution; defaults to escalating or skipping
-- 🟢 **Green** — Informational; defaults to continuing
-
-**Fallback behaviors** (when interaction times out):
-- `continue` — proceed as normal
-- `skip` — skip the current story
-- `escalate` — escalate to a higher model tier
-- `abort` — stop the run
-
-**Interaction plugins:**
-
-| Plugin | Description |
-|:-------|:------------|
-| `telegram` | Send prompts via Telegram bot (recommended for remote runs) |
-| `cli` | Interactive terminal prompts (for local runs) |
-| `webhook` | POST interaction requests to a webhook URL |
-| `auto` | Auto-respond based on fallback behavior (no human prompt) |
-
----
-
-## Plugins
-
-Extend nax with custom reviewers, reporters, or integrations.
-
-**Project plugins** (`.nax/config.json`):
-
-```json
-{
-  "plugins": [
-    { "name": "my-reporter", "path": "./plugins/my-reporter.ts" }
-  ]
-}
-```
-
-**Global plugin directory:** `~/.nax/plugins/` — plugins here are loaded for all projects.
-
-### Reviewer Plugins
-
-Reviewer plugins run during the review pipeline stage and return structured `ReviewFinding` objects:
-
-```typescript
-interface ReviewFinding {
-  ruleId: string;        // e.g. "javascript.express.security.audit.xss"
-  severity: "critical" | "error" | "warning" | "info" | "low";
-  file: string;
-  line: number;
-  column?: number;
-  message: string;
-  url?: string;          // Link to rule documentation
-  source: string;        // e.g. "semgrep", "eslint", "snyk"
-  category?: string;     // e.g. "security", "performance"
-}
-```
-
-Findings are threaded through the escalation pipeline — if a story fails review, the retry agent receives the exact file, line, and rule to fix.
-
-**Example:** The built-in Semgrep reviewer plugin scans for security issues using `semgrep scan --config auto` and returns structured findings.
+nax supports multiple agent backends:
+
+| Agent | Protocol | Notes |
+|:------|:---------|:------|
+| ACP (recommended) | ACP | Works with Claude Code, Codex, Gemini CLI, and more. Supports multi-turn continuity |
+| Claude Code | CLI | Direct `claude` invocation. `--agent claude` |
+| Codex | CLI | `opencode` / Codex CLI. `--agent opencode` |
+| Gemini CLI | CLI | `--agent gemini` |
+| OpenCode | CLI | `--agent opencode` |
+
+ACP is recommended — it provides structured JSON-RPC communication, token-cost tracking, and multi-session continuity.
+
+See [Agents Guide](docs/guides/agents.md).
 
 ---
 
 ## Troubleshooting
 
-**`nax.lock` blocking a new run**
+| Problem | Solution |
+|:--------|:---------|
+| "Working tree is dirty" | Commit or stash changes; nax will restore your working tree after the run |
+| HOME env warning | Set HOME to an absolute path — nax warns if it contains `~` |
+| ACP sessions leaking | Upgrade to nax v0.48+ and ensure `.nax/acp-sessions.json` is gitignored |
+| Monorepo packages misclassified | Ensure `.nax/mono/packages/<pkg>/config.json` is set up per package |
+| Acceptance tests regenerating every run | Check `acceptance-meta.json` — stale fingerprints indicate outdated story context |
 
-```bash
-# Check if nax is actually running first
-pgrep -fa nax
-
-# If nothing is running, remove the lock
-rm nax.lock
-```
-
-**Story keeps failing**
-
-```bash
-nax diagnose -f my-feature
-```
-
-**Precheck fails**
-
-```bash
-nax precheck -f my-feature
-# Fix reported issues, then re-run
-```
-
-**Run stopped mid-way**
-
-nax saves progress in `.nax/features/<name>/prd.json`. Re-run with the same command — completed stories are skipped automatically.
+See the [Troubleshooting Guide](docs/guides/troubleshooting.md) for more.
 
 ---
-
-## PRD Format
-
-User stories are defined in `.nax/features/<name>/prd.json`. Typically generated by `nax plan` — but you can write it by hand.
-
-```json
-{
-  "project": "my-app",
-  "feature": "user-auth",
-  "branchName": "feat/user-auth",
-  "createdAt": "2026-01-01T00:00:00.000Z",
-  "updatedAt": "2026-01-01T00:00:00.000Z",
-  "userStories": [
-    {
-      "id": "US-001",
-      "title": "Add login endpoint",
-      "description": "POST /auth/login accepts email + password, returns signed JWT on success",
-      "acceptanceCriteria": [
-        "Returns 200 + JWT on valid credentials",
-        "Returns 401 on invalid credentials",
-        "Rate-limits to 5 attempts per minute"
-      ],
-      "tags": ["auth", "security"],
-      "dependencies": [],
-      "status": "pending",
-      "passes": false,
-      "attempts": 0,
-      "escalations": [],
-      "contextFiles": ["src/auth/types.ts"],
-      "expectedFiles": ["src/auth/login.ts", "test/auth/login.test.ts"]
-    },
-    {
-      "id": "US-002",
-      "title": "Update changelog",
-      "description": "Add v1.0 entry to CHANGELOG.md",
-      "acceptanceCriteria": ["CHANGELOG.md has v1.0 section"],
-      "tags": ["docs"],
-      "dependencies": [],
-      "status": "pending",
-      "passes": false,
-      "attempts": 0,
-      "escalations": [],
-      "routing": {
-        "complexity": "simple",
-        "testStrategy": "no-test",
-        "noTestJustification": "Docs-only change — no executable code",
-        "reasoning": "Pure documentation update"
-      }
-    }
-  ]
-}
-```
-
-**Key fields:**
-
-| Field | Required | Description |
-|:------|:---------|:------------|
-| `id` | ✅ | Story ID — must be unique (e.g. `US-001`) |
-| `title` | ✅ | Short story title |
-| `description` | ✅ | What needs to be built |
-| `acceptanceCriteria` | ✅ | Testable outcomes — used for acceptance tests |
-| `tags` | ✅ | Routing hints that influence complexity classification and test strategy selection. Security tags (`auth`, `security`, `jwt`, `oauth`, `rbac`, etc.) and public-API tags (`public-api`, `endpoint`, `sdk`, etc.) force `three-session-tdd`. UI/integration tags (`ui`, `layout`, `cli`, `integration`) prefer `three-session-tdd-lite`. |
-| `dependencies` | ✅ | Story IDs that must pass before this one runs |
-| `status` | ✅ | `pending` \| `in-progress` \| `passed` \| `failed` \| `skipped` \| `blocked` \| `paused` |
-| `passes` | ✅ | `true` once all ACs pass — set by nax, not manually |
-| `attempts` | ✅ | Retry counter — set by nax |
-| `escalations` | ✅ | Escalation history — set by nax |
-| `contextFiles` | optional | Files pre-loaded into agent prompt |
-| `expectedFiles` | optional | Files that must exist after execution (pre-flight gate) |
-| `workdir` | optional | Package subdirectory for monorepo stories (e.g. `packages/api`) |
-| `routing` | optional | Pre-set routing — skip LLM classification if provided |
-| `routing.testStrategy` | optional | Override test strategy (e.g. `no-test`, `tdd-simple`). Only honored when `routing.contentHash` is absent — omit `contentHash` to prevent the LLM classifier from overriding your manual value. |
-| `routing.noTestJustification` | required if `no-test` | Explain why no tests are needed |
-| `storyPoints` | optional | Estimate (default: 1) |
-
-> **Tip:** Use `"status": "passed"` to manually skip a story that's already done.
-
----
-
 
 ## License
 
 MIT
-
