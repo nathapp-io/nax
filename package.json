@@ -1,7 +1,7 @@
 {
   "name": "@nathapp/nax",
   "version": "0.52.0-canary.1",
-  "description": "AI Coding Agent Orchestrator — loops until done",
+  "description": "AI Coding Agent Orchestrator \u2014 loops until done",
   "type": "module",
   "bin": {
     "nax": "./dist/nax.js"
@@ -61,5 +61,9 @@
   "homepage": "https://github.com/nathapp-io/nax",
   "bugs": {
     "url": "https://github.com/nathapp-io/nax/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }
