@@ -104,7 +104,7 @@ jobs:
           name: ${{ steps.info.outputs.tag }}
           body_path: /tmp/release-notes.md
           prerelease: ${{ steps.info.outputs.prerelease }}
-          generate_release_notes: false
+          generate_release_notes: true
 
       # Telegram notification (stable only)
       - name: Notify Telegram
