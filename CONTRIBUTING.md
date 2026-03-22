@@ -74,7 +74,7 @@ test/
 
 ### Submitting Pull Requests
 
-1. Fork the repo and create your branch from `master`
+1. Fork the repo and create your branch from `main`
 2. Write tests for any new functionality
 3. Ensure the full test suite passes: `bun test`
 4. Run type checking: `bun run typecheck`
