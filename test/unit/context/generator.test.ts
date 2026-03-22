@@ -92,7 +92,7 @@ describe("generateForPackage (MW-004)", () => {
 
   test("writes CLAUDE.md when not dry run (default agents)", async () => {
     await Bun.write(join(tmpDir, ".nax", "mono", ".", "context.md"), "# Package\n\nContent here.");
-    const results = await generateForPackage(tmpDir, makeConfig(), false, tmpDir);
+    const results = await generateForPackage(tmpDir, makeConfig(), false);
     expect(results).toHaveLength(1);
     const result = results[0];
     expect(result.error).toBeUndefined();
@@ -112,7 +112,7 @@ describe("generateForPackage (MW-004)", () => {
     const config = {
       generate: { agents: ["claude", "codex"] },
     } as unknown as NaxConfig;
-    const results = await generateForPackage(tmpDir, config, false, tmpDir);
+    const results = await generateForPackage(tmpDir, config, false);
     expect(results).toHaveLength(2);
     const outputFiles = results.map((r) => r.outputFile);
     expect(outputFiles).toContain("CLAUDE.md");

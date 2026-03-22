@@ -220,7 +220,7 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
         );
         let pkgErrorCount = 0;
         for (const pkgDir of packages) {
-          const pkgResults = await generateForPackage(pkgDir, config, dryRun);
+          const pkgResults = await generateForPackage(pkgDir, config, dryRun, workdir);
           for (const result of pkgResults) {
             if (result.error) {
               console.error(chalk.red(`✗ ${pkgDir}: ${result.error}`));
