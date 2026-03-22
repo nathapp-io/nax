@@ -174,10 +174,11 @@ describe("story.complete event uses runElapsedMs field instead of durationMs", (
     }
   });
 
-  test("pipeline-result-handler.ts emits runElapsedMs in story:completed event", async () => {
+  test("pipeline-result-handler.ts does NOT duplicate story:completed (BUG-074)", async () => {
     const src = await readSrc("execution/pipeline-result-handler.ts");
 
-    expect(src).toMatch(/story:completed[\s\S]{0,200}runElapsedMs/);
+    // BUG-074: story:completed must only be emitted by completion stage, not here
+    expect(src).not.toMatch(/pipelineEventBus\.emit\(\{[\s\S]{0,50}type:\s*"story:completed"/);
   });
 
   test("reporters.ts consumes runElapsedMs not durationMs from story:completed event", async () => {

@@ -86,16 +86,9 @@ export async function handlePipelineSuccess(
       storyDurationMs: ctx.storyStartTime ? now - ctx.storyStartTime : undefined,
     });
 
-    pipelineEventBus.emit({
-      type: "story:completed",
-      storyId: completedStory.id,
-      story: completedStory,
-      passed: true,
-      runElapsedMs: Date.now() - ctx.startTime,
-      cost: costDelta,
-      modelTier: ctx.routing.modelTier,
-      testStrategy: ctx.routing.testStrategy,
-    });
+    // BUG-074: story:completed event is already emitted by completion stage
+    // (src/pipeline/stages/completion.ts). Do NOT emit again here — it causes
+    // duplicate hook messages (on-story-complete fires twice per story).
   }
 
   // ENH-005: Capture output files for context chaining
