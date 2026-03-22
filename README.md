@@ -188,6 +188,12 @@ See the [Troubleshooting Guide](docs/guides/troubleshooting.md) for more.
 
 ---
 
+## Credits
+
+nax is inspired by [Relentless](https://github.com/ArvorCo/Relentless) — the same "keep trying until done" philosophy, applied to AI agent orchestration.
+
+ACP support is powered by [acpx](https://github.com/openclaw/acpx) from the [OpenClaw](https://github.com/openclaw/openclaw) project.
+
 ## License
 
 MIT
