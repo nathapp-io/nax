@@ -69,10 +69,10 @@ describe("loadConfigForWorkdir", () => {
       JSON.stringify({ quality: { commands: { test: "bun test", typecheck: "bun run typecheck" } } }),
     );
 
-    // Create package config at new location: .nax/packages/<packageDir>/config.json
-    mkdirSync(join(tempDir, ".nax", "packages", "packages", "api"), { recursive: true });
+    // Create package config at new location: .nax/mono/<packageDir>/config.json
+    mkdirSync(join(tempDir, ".nax", "mono", "packages", "api"), { recursive: true });
     writeFileSync(
-      join(tempDir, ".nax", "packages", "packages", "api", "config.json"),
+      join(tempDir, ".nax", "mono", "packages", "api", "config.json"),
       JSON.stringify({ quality: { commands: { test: "bun run test:unit" } } }),
     );
 
@@ -90,9 +90,9 @@ describe("loadConfigForWorkdir", () => {
       join(tempDir, ".nax", "config.json"),
       JSON.stringify({ quality: { commands: { test: "bun test" } } }),
     );
-    mkdirSync(join(tempDir, ".nax", "packages", "packages", "api"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax", "mono", "packages", "api"), { recursive: true });
     writeFileSync(
-      join(tempDir, ".nax", "packages", "packages", "api", "config.json"),
+      join(tempDir, ".nax", "mono", "packages", "api", "config.json"),
       JSON.stringify({ quality: { commands: { test: "npm test" } } }),
     );
 
@@ -107,9 +107,9 @@ describe("loadConfigForWorkdir", () => {
       join(tempDir, ".nax", "config.json"),
       JSON.stringify({ quality: { commands: { test: "bun test" } } }),
     );
-    mkdirSync(join(tempDir, ".nax", "packages", "packages", "web"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax", "mono", "packages", "web"), { recursive: true });
     writeFileSync(
-      join(tempDir, ".nax", "packages", "packages", "web", "config.json"),
+      join(tempDir, ".nax", "mono", "packages", "web", "config.json"),
       JSON.stringify({ routing: { strategy: "keyword" } }),
     );
 

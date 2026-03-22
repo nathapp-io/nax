@@ -47,10 +47,10 @@ describe("per-story config resolution (MW-008 integration)", () => {
       join(tempDir, ".nax", "config.json"),
       JSON.stringify({ quality: { commands: { test: "bun test" } } }),
     );
-    // .nax/packages/packages/api/config.json: test = "bun run test:unit"
-    mkdirSync(join(tempDir, ".nax", "packages", "packages", "api"), { recursive: true });
+    // .nax/mono/packages/api/config.json: test = "bun run test:unit"
+    mkdirSync(join(tempDir, ".nax", "mono", "packages", "api"), { recursive: true });
     writeFileSync(
-      join(tempDir, ".nax", "packages", "packages", "api", "config.json"),
+      join(tempDir, ".nax", "mono", "packages", "api", "config.json"),
       JSON.stringify({ quality: { commands: { test: "bun run test:unit" } } }),
     );
 
@@ -71,15 +71,15 @@ describe("per-story config resolution (MW-008 integration)", () => {
       JSON.stringify({ quality: { commands: { test: "bun test" } } }),
     );
 
-    mkdirSync(join(tempDir, ".nax", "packages", "packages", "api"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax", "mono", "packages", "api"), { recursive: true });
     writeFileSync(
-      join(tempDir, ".nax", "packages", "packages", "api", "config.json"),
+      join(tempDir, ".nax", "mono", "packages", "api", "config.json"),
       JSON.stringify({ quality: { commands: { test: "bun run test:api" } } }),
     );
 
-    mkdirSync(join(tempDir, ".nax", "packages", "packages", "web"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax", "mono", "packages", "web"), { recursive: true });
     writeFileSync(
-      join(tempDir, ".nax", "packages", "packages", "web", "config.json"),
+      join(tempDir, ".nax", "mono", "packages", "web", "config.json"),
       JSON.stringify({ quality: { commands: { test: "bun run test:web", testScoped: "bun test:web -- {{files}}" } } }),
     );
 

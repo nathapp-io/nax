@@ -29,30 +29,30 @@ describe("discoverPackages (MW-004)", () => {
     expect(packages).toEqual([]);
   });
 
-  test("finds packages at one level deep (.nax/packages/*/context.md)", async () => {
-    await Bun.write(join(tmpDir, ".nax/packages/api/context.md"), "# API");
+  test("finds packages at one level deep (.nax/mono/*/context.md)", async () => {
+    await Bun.write(join(tmpDir, ".nax/mono/api/context.md"), "# API");
     const packages = await discoverPackages(tmpDir);
     expect(packages).toHaveLength(1);
     expect(packages[0]).toBe(join(tmpDir, "api"));
   });
 
-  test("finds packages at two levels deep (.nax/packages/*/*/context.md)", async () => {
-    await Bun.write(join(tmpDir, ".nax/packages/apps/backend/context.md"), "# Backend");
+  test("finds packages at two levels deep (.nax/mono/*/*/context.md)", async () => {
+    await Bun.write(join(tmpDir, ".nax/mono/apps/backend/context.md"), "# Backend");
     const packages = await discoverPackages(tmpDir);
     expect(packages).toHaveLength(1);
     expect(packages[0]).toBe(join(tmpDir, "apps/backend"));
   });
 
   test("finds multiple packages", async () => {
-    await Bun.write(join(tmpDir, ".nax/packages/api/context.md"), "# API");
-    await Bun.write(join(tmpDir, ".nax/packages/web/context.md"), "# Web");
+    await Bun.write(join(tmpDir, ".nax/mono/api/context.md"), "# API");
+    await Bun.write(join(tmpDir, ".nax/mono/web/context.md"), "# Web");
     const packages = await discoverPackages(tmpDir);
     expect(packages).toHaveLength(2);
   });
 
   test("deduplicates packages found at multiple glob depths", async () => {
     // apps/api matches the two-level pattern only
-    await Bun.write(join(tmpDir, ".nax/packages/apps/api/context.md"), "# API");
+    await Bun.write(join(tmpDir, ".nax/mono/apps/api/context.md"), "# API");
     const packages = await discoverPackages(tmpDir);
     // Should only appear once
     const unique = new Set(packages);
@@ -179,9 +179,9 @@ describe("discoverWorkspacePackages", () => {
   });
 
   test("prefers nax/context.md packages over workspace manifest when both exist", async () => {
-    // Set up .nax/packages/packages/sdk/context.md (new structure)
-    mkdirSync(join(tmpDir, ".nax", "packages", "packages", "sdk"), { recursive: true });
-    writeFileSync(join(tmpDir, ".nax", "packages", "packages", "sdk", "context.md"), "# SDK Context");
+    // Set up .nax/mono/packages/sdk/context.md (new structure)
+    mkdirSync(join(tmpDir, ".nax", "mono", "packages", "sdk"), { recursive: true });
+    writeFileSync(join(tmpDir, ".nax", "mono", "packages", "sdk", "context.md"), "# SDK Context");
 
     // Also set up workspace manifest pointing elsewhere
     writeFileSync(join(tmpDir, "package.json"), JSON.stringify({

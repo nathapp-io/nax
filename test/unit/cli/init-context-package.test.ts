@@ -49,18 +49,18 @@ describe("initPackage (MW-005)", () => {
 
   test("creates nax/context.md in the package directory", async () => {
     await initPackage(tmpDir, "packages/api");
-    const contextPath = join(tmpDir, ".nax/packages/packages/api/context.md");
+    const contextPath = join(tmpDir, ".nax/mono/packages/api/context.md");
     expect(await Bun.file(contextPath).exists()).toBe(true);
   });
 
   test("content includes package name from path", async () => {
     await initPackage(tmpDir, "packages/api");
-    const content = await Bun.file(join(tmpDir, ".nax/packages/packages/api/context.md")).text();
+    const content = await Bun.file(join(tmpDir, ".nax/mono/packages/api/context.md")).text();
     expect(content).toContain("# api — Context");
   });
 
   test("does not overwrite existing file when force=false", async () => {
-    const contextPath = join(tmpDir, ".nax/packages/packages/api/context.md");
+    const contextPath = join(tmpDir, ".nax/mono/packages/api/context.md");
     await Bun.write(contextPath, "# Existing content");
     await initPackage(tmpDir, "packages/api", false);
     const content = await Bun.file(contextPath).text();
@@ -68,7 +68,7 @@ describe("initPackage (MW-005)", () => {
   });
 
   test("overwrites existing file when force=true", async () => {
-    const contextPath = join(tmpDir, ".nax/packages/packages/api/context.md");
+    const contextPath = join(tmpDir, ".nax/mono/packages/api/context.md");
     await Bun.write(contextPath, "# Existing content");
     await initPackage(tmpDir, "packages/api", true);
     const content = await Bun.file(contextPath).text();
@@ -78,7 +78,7 @@ describe("initPackage (MW-005)", () => {
 
   test("creates intermediate directories", async () => {
     await initPackage(tmpDir, "apps/backend/service");
-    const contextPath = join(tmpDir, ".nax/packages/apps/backend/service/context.md");
+    const contextPath = join(tmpDir, ".nax/mono/apps/backend/service/context.md");
     expect(await Bun.file(contextPath).exists()).toBe(true);
   });
 });
