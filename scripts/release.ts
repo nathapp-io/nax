@@ -234,7 +234,7 @@ async function bumpRelease() {
 
   try {
     const prUrl = (
-      await $`gh pr create --title ${prTitle} --body ${prBody} --base main --head ${branchName}`
+      await $`gh pr create --title ${prTitle} --body ${prBody} --base main --head ${branchName} --label skip-changelog`
     )
       .text()
       .then((t) => t.trim());
