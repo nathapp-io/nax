@@ -6,7 +6,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import type { NaxConfig } from "../config";
 import { validateFilePath } from "../config/path-security";
 import { aiderGenerator } from "./generators/aider";
@@ -288,8 +288,11 @@ export async function generateForPackage(
   packageDir: string,
   config: NaxConfig,
   dryRun = false,
+  repoRoot?: string,
 ): Promise<PackageGenerationResult[]> {
-  const contextPath = join(packageDir, ".nax", "context.md");
+  const resolvedRepoRoot = repoRoot ?? packageDir;
+  const relativePkgPath = relative(resolvedRepoRoot, packageDir);
+  const contextPath = join(resolvedRepoRoot, ".nax", "mono", relativePkgPath, "context.md");
 
   if (!existsSync(contextPath)) {
     return [

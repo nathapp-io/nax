@@ -6,6 +6,7 @@
  */
 
 import { mkdtemp, rm } from "fs/promises";
+import { mkdirSync } from "fs";
 import { join } from "path";
 
 /**
@@ -28,6 +29,7 @@ export async function withTempDir<T>(
 ): Promise<T> {
   // Create test/tmp directory if it doesn't exist
   const testTmpDir = join(process.cwd(), "test", "tmp");
+  mkdirSync(testTmpDir, { recursive: true }); // ensure test/tmp exists on clean clones
   const tempDir = await mkdtemp(join(testTmpDir, "nax-"));
 
   try {

@@ -71,7 +71,7 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
     let errorCount = 0;
 
     for (const pkgDir of packages) {
-      const results = await generateForPackage(pkgDir, config, dryRun);
+      const results = await generateForPackage(pkgDir, config, dryRun, workdir);
       for (const result of results) {
         if (result.error) {
           console.error(chalk.red(`✗ ${pkgDir}: ${result.error}`));
@@ -97,7 +97,7 @@ export async function generateCommand(options: GenerateCommandOptions): Promise<
       console.log(chalk.yellow("⚠ Dry run — no files will be written"));
     }
     console.log(chalk.blue(`→ Generating agent files for package: ${options.package}`));
-    const pkgResults = await generateForPackage(packageDir, config, dryRun);
+    const pkgResults = await generateForPackage(packageDir, config, dryRun, workdir);
     let pkgHasError = false;
     for (const result of pkgResults) {
       if (result.error) {
