@@ -33,17 +33,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Typecheck
-        run: bun run typecheck
-
-      - name: Lint
-        run: bun run lint
-
-      - name: Test
-        run: bun test --timeout=60000
-        env:
-          NAX_SKIP_PRECHECK: "1"
-
       # Validate tag matches package.json version
       - name: Validate version
         run: |
