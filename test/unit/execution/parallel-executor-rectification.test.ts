@@ -523,7 +523,7 @@ describe("MFX-005: rectification runs strictly sequentially", () => {
       const start = Date.now();
       startTimes.push(start);
       // Small delay to make timing detectable
-      await Bun.sleep(5);
+      await Promise.resolve();
       endTimes.push(Date.now());
       return { success: true, storyId: "US-002", cost: 1.0 };
     });

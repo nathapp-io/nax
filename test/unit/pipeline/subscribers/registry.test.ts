@@ -4,6 +4,7 @@ import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { PipelineEventBus } from "../../../../src/pipeline/event-bus";
 import { type MetaJson, wireRegistry } from "../../../../src/pipeline/subscribers/registry";
+import { waitForFile } from "../../../helpers/fs";
 
 describe("wireRegistry", () => {
   let workdir: string;
@@ -39,7 +40,7 @@ describe("wireRegistry", () => {
 
     bus.emit({ type: "run:started", feature, totalStories: 3, workdir });
 
-    await Bun.sleep(50);
+    await waitForFile(metaFile, 500);
     const text = await readFile(metaFile, "utf8");
     const meta = JSON.parse(text) as MetaJson;
     expect(meta).toBeDefined();
@@ -51,7 +52,7 @@ describe("wireRegistry", () => {
 
     bus.emit({ type: "run:started", feature, totalStories: 1, workdir });
 
-    await Bun.sleep(50);
+    await waitForFile(metaFile, 500);
     const meta = JSON.parse(await readFile(metaFile, "utf8")) as MetaJson;
 
     expect(meta.runId).toBe(runId);
@@ -69,7 +70,7 @@ describe("wireRegistry", () => {
 
     bus.emit({ type: "run:started", feature, totalStories: 1, workdir });
 
-    await Bun.sleep(50);
+    await waitForFile(metaFile, 500);
     const meta = JSON.parse(await readFile(metaFile, "utf8")) as MetaJson;
 
     expect(meta.statusPath).toBe(join(workdir, ".nax", "features", feature, "status.json"));
@@ -81,7 +82,7 @@ describe("wireRegistry", () => {
 
     bus.emit({ type: "run:started", feature, totalStories: 1, workdir });
 
-    await Bun.sleep(50);
+    await waitForFile(metaFile, 500);
     const meta = JSON.parse(await readFile(metaFile, "utf8")) as MetaJson;
 
     expect(meta.eventsDir).toBe(join(workdir, ".nax", "features", feature, "runs"));
@@ -93,7 +94,7 @@ describe("wireRegistry", () => {
 
     bus.emit({ type: "run:started", feature, totalStories: 1, workdir });
 
-    await Bun.sleep(50);
+    await waitForFile(metaFile, 500);
     const meta = JSON.parse(await readFile(metaFile, "utf8")) as MetaJson;
 
     expect(() => new Date(meta.registeredAt).toISOString()).not.toThrow();
@@ -109,7 +110,8 @@ describe("wireRegistry", () => {
       bus.emit({ type: "run:started", feature: "feat-err", totalStories: 0, workdir: badWorkdir });
     }).not.toThrow();
 
-    await Bun.sleep(50);
+    // Small delay to allow async error handling to complete
+    await new Promise((r) => setTimeout(r, 50));
     // No crash — test passes if we reach here
   });
 
@@ -135,7 +137,8 @@ describe("wireRegistry", () => {
 
     bus.emit({ type: "run:started", feature, totalStories: 1, workdir });
 
-    await Bun.sleep(50);
+    // Small delay to allow async operations to complete (they shouldn't due to unsubscribe)
+    await new Promise((r) => setTimeout(r, 50));
     // File should not exist since we unsubscribed before event
     let exists = false;
     try {

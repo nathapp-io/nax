@@ -157,5 +157,19 @@ Additional rules in `.claude/rules/` (loaded automatically):
 
 - `01-project-conventions.md` — Bun-native APIs, 400-line limit, barrel imports, logging, commits
 - `02-test-architecture.md` — directory mirroring, placement rules, file naming
-- `03-test-writing.md` — `_deps` injection pattern, mock discipline, CI guards
+- `03-test-writing.md` — nax-specific `_deps` table (points to full rules below)
 - `04-forbidden-patterns.md` — banned APIs and test anti-patterns with alternatives
+
+## Test Writing Rules
+
+**Full rules:** `docs/guides/testing-rules.md` — read before writing any test.
+
+Key rules (see full doc for examples):
+- No `mock.module()` — use `_deps` injection
+- No `Bun.spawn` mutations — use `_deps.spawn`
+- No `Bun.spawn` for shell utils (`mv`, `rm`, `mkdir`) — use `node:fs/promises`
+- No `Bun.sleep()` — use `waitForFile()` helper or make operations awaitable
+- No subprocess spawning — use direct function imports
+- No flaky tests — fix the design, not the timeout
+- `mock.restore()` in every `afterEach`
+- Tests must be hermetic — mock all I/O boundaries

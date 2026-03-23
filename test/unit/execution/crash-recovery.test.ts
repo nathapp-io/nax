@@ -140,7 +140,7 @@ describe("crash-recovery", () => {
 
       // Wait for one heartbeat cycle (60s in production, but we can't wait that long in tests)
       // This test just verifies no crash during startup
-      await Bun.sleep(100);
+      await Promise.resolve();
 
       stopHeartbeat();
 

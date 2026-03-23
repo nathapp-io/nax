@@ -114,7 +114,7 @@ describe("wireInteraction - max-retries trigger", () => {
     bus.emit(createStoryFailedEvent({ countsTowardEscalation: true }));
 
     // Give async handler time to execute
-    await Bun.sleep(10);
+    await Promise.resolve();
     expect(triggerCalled).toBe(true);
   });
 
@@ -136,7 +136,7 @@ describe("wireInteraction - max-retries trigger", () => {
     wireInteraction(bus, mockChain, config);
     bus.emit(createStoryFailedEvent({ countsTowardEscalation: false }));
 
-    await Bun.sleep(10);
+    await Promise.resolve();
     expect(triggerCalled).toBe(false);
   });
 
@@ -165,7 +165,7 @@ describe("wireInteraction - max-retries trigger", () => {
       }),
     );
 
-    await Bun.sleep(10);
+    await Promise.resolve();
     expect(capturedRequest?.featureName).toBe("auth-feature");
     expect(capturedRequest?.storyId).toBe("story-42");
     // Verify the request ID contains the trigger name
@@ -196,7 +196,7 @@ describe("wireInteraction - max-retries trigger", () => {
     try {
       wireInteraction(bus, mockChain, config);
       bus.emit(createStoryFailedEvent({ countsTowardEscalation: true }));
-      await Bun.sleep(10);
+      await Promise.resolve();
       // Note: actual logging behavior depends on getSafeLogger implementation
     } finally {
       console.warn = originalLogger;
@@ -221,7 +221,7 @@ describe("wireInteraction - max-retries trigger", () => {
     wireInteraction(bus, mockChain, config);
     bus.emit(createStoryFailedEvent({ countsTowardEscalation: true }));
 
-    await Bun.sleep(10);
+    await Promise.resolve();
     expect(skipCalled).toBe(true);
   });
 
@@ -243,7 +243,7 @@ describe("wireInteraction - max-retries trigger", () => {
     wireInteraction(bus, mockChain, config);
     bus.emit(createStoryFailedEvent({ countsTowardEscalation: true }));
 
-    await Bun.sleep(10);
+    await Promise.resolve();
     expect(escalateCalled).toBe(true);
   });
 
@@ -263,7 +263,7 @@ describe("wireInteraction - max-retries trigger", () => {
     wireInteraction(bus, mockChain, config);
     // Should not throw
     bus.emit(createStoryFailedEvent({ countsTowardEscalation: true }));
-    await Bun.sleep(10);
+    await Promise.resolve();
   });
 
   test("handles missing feature field", async () => {
@@ -284,7 +284,7 @@ describe("wireInteraction - max-retries trigger", () => {
     wireInteraction(bus, mockChain, config);
     bus.emit(createStoryFailedEvent({ feature: undefined, countsTowardEscalation: true }));
 
-    await Bun.sleep(10);
+    await Promise.resolve();
     expect(capturedRequest?.featureName).toBe("");
   });
 
@@ -307,7 +307,7 @@ describe("wireInteraction - max-retries trigger", () => {
     unsub();
 
     bus.emit(createStoryFailedEvent({ countsTowardEscalation: true }));
-    await Bun.sleep(10);
+    await Promise.resolve();
     expect(triggerCalled).toBe(false);
   });
 });

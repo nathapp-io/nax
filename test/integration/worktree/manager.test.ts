@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,30 +8,26 @@ describe("WorktreeManager", () => {
   let testDir: string;
   let projectRoot: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Create a temporary directory for each test
     testDir = mkdtempSync(join(tmpdir(), "worktree-test-"));
     projectRoot = join(testDir, "test-project");
     mkdirSync(projectRoot, { recursive: true });
 
-    // Initialize a git repository
-    execSync("git init", { cwd: projectRoot, stdio: "pipe" });
-    execSync('git config user.email "test@example.com"', {
-      cwd: projectRoot,
-      stdio: "pipe",
-    });
-    execSync('git config user.name "Test User"', {
-      cwd: projectRoot,
-      stdio: "pipe",
-    });
+    // Initialize a git repository using Bun.spawn (test fixture setup)
+    const initProc = Bun.spawn(["git", "init"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
+    await initProc.exited;
+    const emailProc = Bun.spawn(["git", "config", "user.email", "test@example.com"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
+    await emailProc.exited;
+    const nameProc = Bun.spawn(["git", "config", "user.name", "Test User"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
+    await nameProc.exited;
 
     // Create an initial commit (required for worktree creation)
     writeFileSync(join(projectRoot, "README.md"), "# Test Project");
-    execSync("git add README.md", { cwd: projectRoot, stdio: "pipe" });
-    execSync('git commit -m "Initial commit"', {
-      cwd: projectRoot,
-      stdio: "pipe",
-    });
+    const addProc = Bun.spawn(["git", "add", "README.md"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
+    await addProc.exited;
+    const commitProc = Bun.spawn(["git", "commit", "-m", "Initial commit"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
+    await commitProc.exited;
   });
 
   afterEach(() => {
@@ -52,12 +47,14 @@ describe("WorktreeManager", () => {
       const worktreePath = join(projectRoot, ".nax-wt", storyId);
       expect(existsSync(worktreePath)).toBe(true);
 
-      // Verify branch exists
-      const branches = execSync("git branch --list", {
+      // Verify branch exists via git branch --list
+      const branchProc = Bun.spawn(["git", "branch", "--list"], {
         cwd: projectRoot,
-        encoding: "utf-8",
+        stdout: "pipe",
+        stderr: "pipe",
       });
-      expect(branches).toContain(`nax/${storyId}`);
+      const branchOutput = await new Response(branchProc.stdout).text();
+      expect(branchOutput).toContain(`nax/${storyId}`);
     });
 
     test("symlinks node_modules from project root into worktree", async () => {
@@ -153,11 +150,13 @@ describe("WorktreeManager", () => {
       expect(existsSync(worktreePath)).toBe(false);
 
       // Verify branch is deleted
-      const branches = execSync("git branch --list", {
+      const branchProc = Bun.spawn(["git", "branch", "--list"], {
         cwd: projectRoot,
-        encoding: "utf-8",
+        stdout: "pipe",
+        stderr: "pipe",
       });
-      expect(branches).not.toContain(`nax/${storyId}`);
+      const branchOutput = await new Response(branchProc.stdout).text();
+      expect(branchOutput).not.toContain(`nax/${storyId}`);
     });
 
     test("throws descriptive error when worktree does not exist", async () => {

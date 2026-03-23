@@ -27,7 +27,7 @@ describe("wireReporters", () => {
 
     bus.emit({ type: "run:started", feature: "test", totalStories: 5, workdir: "/tmp" });
 
-    await Bun.sleep(10); // let fire-and-forget settle
+    await Promise.resolve();
     expect(reporter.calls).toContain("onRunStart");
   });
 
@@ -38,7 +38,7 @@ describe("wireReporters", () => {
 
     bus.emit({ type: "story:completed", storyId: "US-001", story: { id: "US-001" } as any, passed: true, durationMs: 100 });
 
-    await Bun.sleep(10);
+    await Promise.resolve();
     expect(reporter.calls).toContain("onStoryComplete:completed");
   });
 
@@ -49,7 +49,7 @@ describe("wireReporters", () => {
 
     bus.emit({ type: "story:failed", storyId: "US-001", story: { id: "US-001" } as any, reason: "tests failed", countsTowardEscalation: true });
 
-    await Bun.sleep(10);
+    await Promise.resolve();
     expect(reporter.calls).toContain("onStoryComplete:failed");
   });
 
@@ -60,7 +60,7 @@ describe("wireReporters", () => {
 
     bus.emit({ type: "story:paused", storyId: "US-001", reason: "needs review", cost: 0.5 });
 
-    await Bun.sleep(10);
+    await Promise.resolve();
     expect(reporter.calls).toContain("onStoryComplete:paused");
   });
 
@@ -71,7 +71,7 @@ describe("wireReporters", () => {
 
     bus.emit({ type: "run:completed", totalStories: 5, passedStories: 4, failedStories: 1, durationMs: 60000 });
 
-    await Bun.sleep(10);
+    await Promise.resolve();
     expect(reporter.calls).toContain("onRunEnd");
   });
 

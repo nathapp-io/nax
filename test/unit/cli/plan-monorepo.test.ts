@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _deps, planCommand } from "../../../src/cli/plan";
@@ -70,11 +71,11 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   let tmpDir: string;
   let capturedPrompts: string[];
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmpDir = mkdtempSync(join(tmpdir(), "nax-plan-mono-test-"));
     capturedPrompts = [];
 
-    Bun.spawnSync(["mkdir", "-p", join(tmpDir, ".nax")]);
+    await mkdir(join(tmpDir, ".nax"), { recursive: true });
 
     _deps.readFile = mock(async () => "# Spec\nDo something.");
     _deps.writeFile = mock(async () => {});
@@ -95,7 +96,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     })) as never;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     mock.restore();
     _deps.readFile = origReadFile;
     _deps.writeFile = origWriteFile;
@@ -107,7 +108,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
     _deps.mkdirp = origMkdirp;
     _deps.existsSync = origExistsSync;
     _deps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
-    Bun.spawnSync(["rm", "-rf", tmpDir]);
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("injects monorepo hint when packages are discovered", async () => {
@@ -207,10 +208,10 @@ describe("planCommand — per-package tech stack in prompt", () => {
   let tmpDir: string;
   let capturedPrompts: string[];
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmpDir = mkdtempSync(join(tmpdir(), "nax-plan-pkgstack-test-"));
     capturedPrompts = [];
-    Bun.spawnSync(["mkdir", "-p", join(tmpDir, ".nax")]);
+    await mkdir(join(tmpDir, ".nax"), { recursive: true });
 
     _deps.readFile = mock(async () => "# Spec\nDo something.\n");
     _deps.existsSync = mock(() => true);
@@ -224,7 +225,7 @@ describe("planCommand — per-package tech stack in prompt", () => {
     _deps.getAgent = mock(() => ({ complete: mock(async (p: string) => { capturedPrompts.push(p); return JSON.stringify(minimalPrd); }) } as never));
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     mock.restore();
     _deps.readFile = origReadFile;
     _deps.writeFile = origWriteFile;
@@ -237,7 +238,7 @@ describe("planCommand — per-package tech stack in prompt", () => {
     _deps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
     _deps.readPackageJsonAt = origReadPackageJsonAt;
     _deps.createInteractionBridge = origCreateInteractionBridge;
-    Bun.spawnSync(["rm", "-rf", tmpDir]);
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("includes Package Tech Stacks table when packages have package.json", async () => {

@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,30 +11,26 @@ describe("MergeEngine", () => {
   let manager: WorktreeManager;
   let engine: MergeEngine;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // Create a temporary directory for each test
     testDir = mkdtempSync(join(tmpdir(), "merge-test-"));
     projectRoot = join(testDir, "test-project");
     mkdirSync(projectRoot, { recursive: true });
 
-    // Initialize a git repository
-    execSync("git init", { cwd: projectRoot, stdio: "pipe" });
-    execSync('git config user.email "test@example.com"', {
-      cwd: projectRoot,
-      stdio: "pipe",
-    });
-    execSync('git config user.name "Test User"', {
-      cwd: projectRoot,
-      stdio: "pipe",
-    });
+    // Initialize a git repository using Bun.spawn (test fixture setup)
+    const initProc = Bun.spawn(["git", "init"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
+    await initProc.exited;
+    const emailProc = Bun.spawn(["git", "config", "user.email", "test@example.com"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
+    await emailProc.exited;
+    const nameProc = Bun.spawn(["git", "config", "user.name", "Test User"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
+    await nameProc.exited;
 
     // Create an initial commit (required for worktree creation)
     writeFileSync(join(projectRoot, "README.md"), "# Test Project");
-    execSync("git add README.md", { cwd: projectRoot, stdio: "pipe" });
-    execSync('git commit -m "Initial commit"', {
-      cwd: projectRoot,
-      stdio: "pipe",
-    });
+    const addProc = Bun.spawn(["git", "add", "README.md"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
+    await addProc.exited;
+    const commitProc = Bun.spawn(["git", "commit", "-m", "Initial commit"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
+    await commitProc.exited;
 
     manager = new WorktreeManager();
     engine = new MergeEngine(manager);
@@ -48,6 +43,13 @@ describe("MergeEngine", () => {
     }
   });
 
+  async function gitAddAndCommit(cwd: string, file: string, message: string): Promise<void> {
+    const addProc = Bun.spawn(["git", "add", file], { cwd, stdout: "pipe", stderr: "pipe" });
+    await addProc.exited;
+    const commitProc = Bun.spawn(["git", "commit", "-m", message], { cwd, stdout: "pipe", stderr: "pipe" });
+    await commitProc.exited;
+  }
+
   describe("merge", () => {
     test("performs git merge --no-ff of story branch", async () => {
       const storyId = "story-merge-1";
@@ -56,14 +58,7 @@ describe("MergeEngine", () => {
       await manager.create(projectRoot, storyId);
       const worktreePath = join(projectRoot, ".nax-wt", storyId);
       writeFileSync(join(worktreePath, "feature.txt"), "feature content");
-      execSync("git add feature.txt", {
-        cwd: worktreePath,
-        stdio: "pipe",
-      });
-      execSync('git commit -m "Add feature"', {
-        cwd: worktreePath,
-        stdio: "pipe",
-      });
+      await gitAddAndCommit(worktreePath, "feature.txt", "Add feature");
 
       // Merge the branch
       const result = await engine.merge(projectRoot, storyId);
@@ -72,10 +67,12 @@ describe("MergeEngine", () => {
       expect(result.conflictFiles).toBeUndefined();
 
       // Verify merge commit exists
-      const log = execSync("git log --oneline --graph", {
+      const logProc = Bun.spawn(["git", "log", "--oneline", "--graph"], {
         cwd: projectRoot,
-        encoding: "utf-8",
+        stdout: "pipe",
+        stderr: "pipe",
       });
+      const log = await new Response(logProc.stdout).text();
       expect(log).toContain(`Merge branch 'nax/${storyId}'`);
 
       // Verify feature file exists in main branch
@@ -89,14 +86,7 @@ describe("MergeEngine", () => {
       await manager.create(projectRoot, storyId);
       const worktreePath = join(projectRoot, ".nax-wt", storyId);
       writeFileSync(join(worktreePath, "new-file.txt"), "new content");
-      execSync("git add new-file.txt", {
-        cwd: worktreePath,
-        stdio: "pipe",
-      });
-      execSync('git commit -m "Add new file"', {
-        cwd: worktreePath,
-        stdio: "pipe",
-      });
+      await gitAddAndCommit(worktreePath, "new-file.txt", "Add new file");
 
       const result = await engine.merge(projectRoot, storyId);
 
@@ -114,25 +104,11 @@ describe("MergeEngine", () => {
       // Make conflicting changes in both branches
       // Change in main branch
       writeFileSync(join(projectRoot, "conflict.txt"), "main content");
-      execSync("git add conflict.txt", {
-        cwd: projectRoot,
-        stdio: "pipe",
-      });
-      execSync('git commit -m "Add conflict file in main"', {
-        cwd: projectRoot,
-        stdio: "pipe",
-      });
+      await gitAddAndCommit(projectRoot, "conflict.txt", "Add conflict file in main");
 
       // Change in story branch (same file, different content)
       writeFileSync(join(worktreePath, "conflict.txt"), "story content");
-      execSync("git add conflict.txt", {
-        cwd: worktreePath,
-        stdio: "pipe",
-      });
-      execSync('git commit -m "Add conflict file in story"', {
-        cwd: worktreePath,
-        stdio: "pipe",
-      });
+      await gitAddAndCommit(worktreePath, "conflict.txt", "Add conflict file in story");
 
       const result = await engine.merge(projectRoot, storyId);
 
@@ -142,10 +118,12 @@ describe("MergeEngine", () => {
       expect(result.conflictFiles).toContain("conflict.txt");
 
       // Verify merge was aborted (working tree should be clean except for .nax-wt)
-      const status = execSync("git status --short", {
+      const statusProc = Bun.spawn(["git", "status", "--short"], {
         cwd: projectRoot,
-        encoding: "utf-8",
+        stdout: "pipe",
+        stderr: "pipe",
       });
+      const status = await new Response(statusProc.stdout).text();
       const nonWorktreeStatus = status
         .split("\n")
         .filter((line) => !line.includes(".nax-wt"))
@@ -161,14 +139,7 @@ describe("MergeEngine", () => {
       await manager.create(projectRoot, storyId);
       const worktreePath = join(projectRoot, ".nax-wt", storyId);
       writeFileSync(join(worktreePath, "cleanup.txt"), "cleanup test");
-      execSync("git add cleanup.txt", {
-        cwd: worktreePath,
-        stdio: "pipe",
-      });
-      execSync('git commit -m "Add cleanup test"', {
-        cwd: worktreePath,
-        stdio: "pipe",
-      });
+      await gitAddAndCommit(worktreePath, "cleanup.txt", "Add cleanup test");
 
       // Merge and verify cleanup
       await engine.merge(projectRoot, storyId);
@@ -177,11 +148,13 @@ describe("MergeEngine", () => {
       expect(existsSync(worktreePath)).toBe(false);
 
       // Branch should be deleted
-      const branches = execSync("git branch --list", {
+      const branchProc = Bun.spawn(["git", "branch", "--list"], {
         cwd: projectRoot,
-        encoding: "utf-8",
+        stdout: "pipe",
+        stderr: "pipe",
       });
-      expect(branches).not.toContain(`nax/${storyId}`);
+      const branchOutput = await new Response(branchProc.stdout).text();
+      expect(branchOutput).not.toContain(`nax/${storyId}`);
     });
   });
 
@@ -200,14 +173,7 @@ describe("MergeEngine", () => {
         await manager.create(projectRoot, storyId);
         const worktreePath = join(projectRoot, ".nax-wt", storyId);
         writeFileSync(join(worktreePath, `${storyId}.txt`), `${storyId} content`);
-        execSync(`git add ${storyId}.txt`, {
-          cwd: worktreePath,
-          stdio: "pipe",
-        });
-        execSync(`git commit -m "Add ${storyId}"`, {
-          cwd: worktreePath,
-          stdio: "pipe",
-        });
+        await gitAddAndCommit(worktreePath, `${storyId}.txt`, `Add ${storyId}`);
       }
 
       const results = await engine.mergeAll(projectRoot, storyIds, dependencies);
@@ -233,21 +199,13 @@ describe("MergeEngine", () => {
       await manager.create(projectRoot, "story-base");
       const basePath = join(projectRoot, ".nax-wt", "story-base");
       writeFileSync(join(basePath, "shared.txt"), "base content");
-      execSync("git add shared.txt", { cwd: basePath, stdio: "pipe" });
-      execSync('git commit -m "Add shared file"', {
-        cwd: basePath,
-        stdio: "pipe",
-      });
+      await gitAddAndCommit(basePath, "shared.txt", "Add shared file");
 
       // Create conflicting story
       await manager.create(projectRoot, "story-conflict");
       const conflictPath = join(projectRoot, ".nax-wt", "story-conflict");
       writeFileSync(join(conflictPath, "shared.txt"), "conflict content");
-      execSync("git add shared.txt", { cwd: conflictPath, stdio: "pipe" });
-      execSync('git commit -m "Add conflicting shared file"', {
-        cwd: conflictPath,
-        stdio: "pipe",
-      });
+      await gitAddAndCommit(conflictPath, "shared.txt", "Add conflicting shared file");
 
       // This should handle the conflict scenario
       const results = await engine.mergeAll(projectRoot, storyIds, dependencies);
@@ -269,15 +227,13 @@ describe("MergeEngine", () => {
       await manager.create(projectRoot, "story-1");
       const path1 = join(projectRoot, ".nax-wt", "story-1");
       writeFileSync(join(path1, "conflict.txt"), "content 1");
-      execSync("git add conflict.txt", { cwd: path1, stdio: "pipe" });
-      execSync('git commit -m "Story 1"', { cwd: path1, stdio: "pipe" });
+      await gitAddAndCommit(path1, "conflict.txt", "Story 1");
 
       // Create second story with conflict
       await manager.create(projectRoot, "story-2");
       const path2 = join(projectRoot, ".nax-wt", "story-2");
       writeFileSync(join(path2, "conflict.txt"), "content 2");
-      execSync("git add conflict.txt", { cwd: path2, stdio: "pipe" });
-      execSync('git commit -m "Story 2"', { cwd: path2, stdio: "pipe" });
+      await gitAddAndCommit(path2, "conflict.txt", "Story 2");
 
       const results = await engine.mergeAll(projectRoot, storyIds, dependencies);
 
@@ -300,31 +256,19 @@ describe("MergeEngine", () => {
       await manager.create(projectRoot, "story-base");
       const pathBase = join(projectRoot, ".nax-wt", "story-base");
       writeFileSync(join(pathBase, "shared.txt"), "base content");
-      execSync("git add shared.txt", { cwd: pathBase, stdio: "pipe" });
-      execSync('git commit -m "Add shared file"', {
-        cwd: pathBase,
-        stdio: "pipe",
-      });
+      await gitAddAndCommit(pathBase, "shared.txt", "Add shared file");
 
       // Create conflicting story (modifies same file)
       await manager.create(projectRoot, "story-conflict");
       const pathConflict = join(projectRoot, ".nax-wt", "story-conflict");
       writeFileSync(join(pathConflict, "shared.txt"), "conflict content");
-      execSync("git add shared.txt", {
-        cwd: pathConflict,
-        stdio: "pipe",
-      });
-      execSync('git commit -m "Modify shared file in story-conflict"', {
-        cwd: pathConflict,
-        stdio: "pipe",
-      });
+      await gitAddAndCommit(pathConflict, "shared.txt", "Modify shared file in story-conflict");
 
       // Create third story (no conflict)
       await manager.create(projectRoot, "story-3");
       const path3 = join(projectRoot, ".nax-wt", "story-3");
       writeFileSync(join(path3, "file3.txt"), "content 3");
-      execSync("git add file3.txt", { cwd: path3, stdio: "pipe" });
-      execSync('git commit -m "Story 3"', { cwd: path3, stdio: "pipe" });
+      await gitAddAndCommit(path3, "file3.txt", "Story 3");
 
       const results = await engine.mergeAll(projectRoot, storyIds, dependencies);
 

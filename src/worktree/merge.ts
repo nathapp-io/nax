@@ -2,6 +2,11 @@ import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import type { WorktreeManager } from "./manager";
 
+/** Injectable deps for testability — mock _mergeDeps.spawn instead of global Bun.spawn */
+export const _mergeDeps = {
+  spawn: Bun.spawn as typeof Bun.spawn,
+};
+
 export interface MergeResult {
   success: boolean;
   storyId: string;
@@ -27,11 +32,14 @@ export class MergeEngine {
 
     try {
       // Perform merge with --no-ff
-      const mergeProc = Bun.spawn(["git", "merge", "--no-ff", branchName, "-m", `Merge branch '${branchName}'`], {
-        cwd: projectRoot,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
+      const mergeProc = _mergeDeps.spawn(
+        ["git", "merge", "--no-ff", branchName, "-m", `Merge branch '${branchName}'`],
+        {
+          cwd: projectRoot,
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
 
       const exitCode = await mergeProc.exited;
       const stderr = await new Response(mergeProc.stderr).text();
@@ -212,7 +220,7 @@ export class MergeEngine {
 
     try {
       // Get current branch name from main repo
-      const currentBranchProc = Bun.spawn(["git", "rev-parse", "--abbrev-ref", "HEAD"], {
+      const currentBranchProc = _mergeDeps.spawn(["git", "rev-parse", "--abbrev-ref", "HEAD"], {
         cwd: projectRoot,
         stdout: "pipe",
         stderr: "pipe",
@@ -226,7 +234,7 @@ export class MergeEngine {
       const currentBranch = (await new Response(currentBranchProc.stdout).text()).trim();
 
       // Rebase worktree branch onto current branch
-      const rebaseProc = Bun.spawn(["git", "rebase", currentBranch], {
+      const rebaseProc = _mergeDeps.spawn(["git", "rebase", currentBranch], {
         cwd: worktreePath,
         stdout: "pipe",
         stderr: "pipe",
@@ -237,11 +245,12 @@ export class MergeEngine {
         const stderr = await new Response(rebaseProc.stderr).text();
 
         // Abort rebase on failure
-        await Bun.spawn(["git", "rebase", "--abort"], {
+        const abortProc = _mergeDeps.spawn(["git", "rebase", "--abort"], {
           cwd: worktreePath,
           stdout: "pipe",
           stderr: "pipe",
-        }).exited;
+        });
+        await abortProc.exited;
 
         throw new Error(`Rebase failed: ${stderr || "unknown error"}`);
       }
@@ -258,7 +267,7 @@ export class MergeEngine {
    */
   private async getConflictFiles(projectRoot: string): Promise<string[]> {
     try {
-      const proc = Bun.spawn(["git", "diff", "--name-only", "--diff-filter=U"], {
+      const proc = _mergeDeps.spawn(["git", "diff", "--name-only", "--diff-filter=U"], {
         cwd: projectRoot,
         stdout: "pipe",
         stderr: "pipe",
@@ -284,7 +293,7 @@ export class MergeEngine {
    */
   private async abortMerge(projectRoot: string): Promise<void> {
     try {
-      const proc = Bun.spawn(["git", "merge", "--abort"], {
+      const proc = _mergeDeps.spawn(["git", "merge", "--abort"], {
         cwd: projectRoot,
         stdout: "pipe",
         stderr: "pipe",

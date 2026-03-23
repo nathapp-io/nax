@@ -7,6 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -23,7 +24,7 @@ describe("nax run --plan CLI flag wiring", () => {
     featureDir = join(naxDir, "features", "test-feature");
 
     // Create nax directory structure
-    await Bun.spawn(["mkdir", "-p", featureDir], {}).exited;
+    await mkdir(featureDir, { recursive: true });
 
     // Create sample spec file
     await Bun.write(
@@ -58,7 +59,7 @@ Test problem statement
 
   afterEach(async () => {
     if (existsSync(tmpDir)) {
-      await Bun.spawn(["rm", "-rf", tmpDir], {}).exited;
+      await rm(tmpDir, { recursive: true, force: true });
     }
   });
 

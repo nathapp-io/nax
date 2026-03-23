@@ -8,6 +8,7 @@
 import { describe, expect, test, spyOn } from "bun:test";
 import { withTempDir } from "../../helpers/temp";
 import { join } from "node:path";
+import { mkdir, rm } from "node:fs/promises";
 import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config/schema";
 
@@ -18,7 +19,7 @@ describe("CLI deprecation (PLN-005)", () => {
         // Create a valid feature directory with spec.md
         const naxDir = join(tempDir, ".nax");
         const featureDir = join(naxDir, "features", "test-feature");
-        await Bun.spawn(["mkdir", "-p", featureDir], { stdout: "pipe" }).exited;
+        await mkdir(featureDir, { recursive: true });
 
         // Create a valid spec.md
         await Bun.write(
@@ -72,7 +73,7 @@ Test story description
       await withTempDir(async (tempDir) => {
         // Create minimal nax directory
         const naxDir = join(tempDir, ".nax");
-        await Bun.spawn(["mkdir", "-p", naxDir], { stdout: "pipe" }).exited;
+        await mkdir(naxDir, { recursive: true });
 
         // Create nax/config.json
         const config: NaxConfig = {

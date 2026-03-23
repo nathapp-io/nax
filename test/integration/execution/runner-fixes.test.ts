@@ -6,6 +6,7 @@
 
 import { beforeEach, describe, expect, test } from "bun:test";
 import path from "node:path";
+import { mkdir, rename, rm } from "node:fs/promises";
 import { groupStoriesIntoBatches } from "../../../src/execution/runner";
 import type { PRD, UserStory } from "../../../src/prd";
 import { PRD_MAX_FILE_SIZE, loadPRD } from "../../../src/prd";
@@ -42,7 +43,7 @@ describe("Queue race condition: atomic rename prevents concurrent read/write con
 
   beforeEach(async () => {
     tmpDir = `/tmp/nax-race-test-${Date.now()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
   });
 
   test("atomic read-and-rename prevents race condition", async () => {
@@ -53,7 +54,7 @@ describe("Queue race condition: atomic rename prevents concurrent read/write con
     await Bun.write(queuePath, "PAUSE\n");
 
     // Simulate reader starting (rename to processing)
-    await Bun.spawn(["mv", queuePath, processingPath], { stdout: "pipe" }).exited;
+    await rename(queuePath, processingPath);
 
     // Simulate concurrent writer adding commands (should create new .queue.txt)
     await Bun.write(queuePath, "SKIP US-001\n");
@@ -71,7 +72,7 @@ describe("Queue race condition: atomic rename prevents concurrent read/write con
     expect(newContent).toBe("SKIP US-001\n");
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("processing file is deleted after reading", async () => {
@@ -82,19 +83,19 @@ describe("Queue race condition: atomic rename prevents concurrent read/write con
     await Bun.write(queuePath, "PAUSE\n");
 
     // Rename to processing
-    await Bun.spawn(["mv", queuePath, processingPath], { stdout: "pipe" }).exited;
+    await rename(queuePath, processingPath);
 
     // Verify processing file exists
     expect(await Bun.file(processingPath).exists()).toBe(true);
 
     // Simulate cleanup (delete processing file)
-    await Bun.spawn(["rm", processingPath], { stdout: "pipe" }).exited;
+    await rm(processingPath, { force: true });
 
     // Verify processing file is deleted
     expect(await Bun.file(processingPath).exists()).toBe(false);
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("concurrent writes during processing don't lose commands", async () => {
@@ -105,7 +106,7 @@ describe("Queue race condition: atomic rename prevents concurrent read/write con
     await Bun.write(queuePath, "PAUSE\nSKIP US-001\n");
 
     // Reader: rename to processing
-    await Bun.spawn(["mv", queuePath, processingPath], { stdout: "pipe" }).exited;
+    await rename(queuePath, processingPath);
 
     // Writer: add new commands (creates new .queue.txt)
     await Bun.write(queuePath, "SKIP US-002\nSKIP US-003\n");
@@ -115,7 +116,7 @@ describe("Queue race condition: atomic rename prevents concurrent read/write con
     const processedLines = processingContent.trim().split("\n");
 
     // Reader: delete processing file
-    await Bun.spawn(["rm", processingPath], { stdout: "pipe" }).exited;
+    await rm(processingPath, { force: true });
 
     // Verify original commands were processed
     expect(processedLines).toEqual(["PAUSE", "SKIP US-001"]);
@@ -126,7 +127,7 @@ describe("Queue race condition: atomic rename prevents concurrent read/write con
     expect(newLines).toEqual(["SKIP US-002", "SKIP US-003"]);
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 });
 
@@ -136,7 +137,7 @@ describe("File locking: lock file prevents concurrent execution and is released 
 
   beforeEach(async () => {
     tmpDir = `/tmp/nax-lock-test-${Date.now()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
   });
 
   test("lock file prevents concurrent execution", async () => {
@@ -160,7 +161,7 @@ describe("File locking: lock file prevents concurrent execution and is released 
     expect(parsed.timestamp).toBeGreaterThan(0);
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("stale lock is removed after 1 hour", async () => {
@@ -181,7 +182,7 @@ describe("File locking: lock file prevents concurrent execution and is released 
     expect(lockAge).toBeGreaterThan(ONE_HOUR);
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("lock is released after execution", async () => {
@@ -198,13 +199,13 @@ describe("File locking: lock file prevents concurrent execution and is released 
     expect(await Bun.file(lockPath).exists()).toBe(true);
 
     // Simulate release (delete lock)
-    await Bun.spawn(["rm", lockPath], { stdout: "pipe" }).exited;
+    await rm(lockPath, { force: true });
 
     // Verify lock is removed
     expect(await Bun.file(lockPath).exists()).toBe(false);
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 });
 
@@ -308,7 +309,7 @@ describe("PERF-2 & MEM-1: PRD file size limit and dirty-flag optimization", () =
 
   beforeEach(async () => {
     tmpDir = `/tmp/nax-prd-test-${Date.now()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
   });
 
   test("rejects PRD files exceeding size limit", async () => {
@@ -364,7 +365,7 @@ describe("PERF-2 & MEM-1: PRD file size limit and dirty-flag optimization", () =
     }
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("accepts PRD files within size limit", async () => {
@@ -393,7 +394,7 @@ describe("PERF-2 & MEM-1: PRD file size limit and dirty-flag optimization", () =
     expect(loaded.project).toBe("test-project");
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("PRD_MAX_FILE_SIZE constant is 5MB", () => {

@@ -7,6 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _deps, buildPlanningPrompt, planCommand } from "../../../src/cli/plan";
@@ -89,13 +90,13 @@ describe("planCommand", () => {
   let capturedWriteArgs: Array<[string, string]>;
   let capturedCompleteArgs: string[];
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmpDir = mkdtempSync(join(tmpdir(), "nax-plan-test-"));
     capturedWriteArgs = [];
     capturedCompleteArgs = [];
 
     // Create nax directory
-    Bun.spawnSync(["mkdir", "-p", join(tmpDir, ".nax")]);
+    await mkdir(join(tmpDir, ".nax"), { recursive: true });
 
     // Default deps — override per test as needed
     _deps.readFile = mock(async (_path: string) => SAMPLE_SPEC);
@@ -126,7 +127,7 @@ describe("planCommand", () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     mock.restore();
     _deps.readFile = origReadFile;
     _deps.writeFile = origWriteFile;
@@ -136,7 +137,7 @@ describe("planCommand", () => {
     _deps.spawnSync = origSpawnSync;
     _deps.mkdirp = origMkdirp;
     _deps.existsSync = origExistsSync;
-    Bun.spawnSync(["rm", "-rf", tmpDir]);
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -450,7 +451,7 @@ describe("planCommand", () => {
 
   test("throws when nax directory not found", async () => {
     const emptyDir = mkdtempSync(join(tmpdir(), "nax-plan-empty-"));
-    Bun.spawnSync(["rm", "-rf", join(emptyDir, ".nax")]);
+    await rm(join(emptyDir, ".nax"), { recursive: true, force: true });
 
     expect(
       planCommand(emptyDir, {} as never, {
@@ -460,7 +461,7 @@ describe("planCommand", () => {
       }),
     ).rejects.toThrow("nax directory not found");
 
-    Bun.spawnSync(["rm", "-rf", emptyDir]);
+    await rm(emptyDir, { recursive: true, force: true });
   });
 
   // ──────────────────────────────────────────────────────────────────────────

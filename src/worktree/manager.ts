@@ -5,6 +5,11 @@ import { validateStoryId } from "../prd/validate";
 import { errorMessage } from "../utils/errors";
 import type { WorktreeInfo } from "./types";
 
+/** Injectable deps for testability — mock _managerDeps.spawn instead of global Bun.spawn */
+export const _managerDeps = {
+  spawn: Bun.spawn as typeof Bun.spawn,
+};
+
 export class WorktreeManager {
   /**
    * Creates a git worktree at .nax-wt/<storyId>/ with branch nax/<storyId>
@@ -18,7 +23,7 @@ export class WorktreeManager {
 
     try {
       // Create worktree with new branch
-      const proc = Bun.spawn(["git", "worktree", "add", worktreePath, "-b", branchName], {
+      const proc = _managerDeps.spawn(["git", "worktree", "add", worktreePath, "-b", branchName], {
         cwd: projectRoot,
         stdout: "pipe",
         stderr: "pipe",
@@ -81,7 +86,7 @@ export class WorktreeManager {
 
     // Remove worktree
     try {
-      const proc = Bun.spawn(["git", "worktree", "remove", worktreePath, "--force"], {
+      const proc = _managerDeps.spawn(["git", "worktree", "remove", worktreePath, "--force"], {
         cwd: projectRoot,
         stdout: "pipe",
         stderr: "pipe",
@@ -109,7 +114,7 @@ export class WorktreeManager {
 
     // Delete branch
     try {
-      const proc = Bun.spawn(["git", "branch", "-D", branchName], {
+      const proc = _managerDeps.spawn(["git", "branch", "-D", branchName], {
         cwd: projectRoot,
         stdout: "pipe",
         stderr: "pipe",
@@ -138,7 +143,7 @@ export class WorktreeManager {
    */
   async list(projectRoot: string): Promise<WorktreeInfo[]> {
     try {
-      const proc = Bun.spawn(["git", "worktree", "list", "--porcelain"], {
+      const proc = _managerDeps.spawn(["git", "worktree", "list", "--porcelain"], {
         cwd: projectRoot,
         stdout: "pipe",
         stderr: "pipe",

@@ -1885,74 +1885,67 @@ describe("Precheck Integration with nax run", () => {
 });
 
 import type { AgentAdapter, AgentRunOptions } from "../../../src/agents";
-import { ClaudeCodeAdapter, _claudeAdapterDeps } from "../../../src/agents/claude";
+import { ClaudeCodeAdapter, _claudeAdapterDeps, _runOnceDeps } from "../../../src/agents/claude";
 import { describeAgentCapabilities, validateAgentFeature, validateAgentForTier } from "../../../src/agents/shared/validation";
+import { withDepsRestore } from "../../helpers/deps";
 
 describe("Agent Validation and Retry Logic", () => {
+  withDepsRestore(_claudeAdapterDeps, ["spawn"]);
+  withDepsRestore(_runOnceDeps, ["spawn"]);
+
   describe("ClaudeCodeAdapter.isInstalled", () => {
     test("returns true when binary exists in PATH", async () => {
       const adapter = new ClaudeCodeAdapter();
-      // Mock successful which command
-      const originalSpawn = Bun.spawn;
-      (Bun as any).spawn = mock((cmd: string[]) => {
+      // Mock successful which command via _claudeAdapterDeps.spawn
+      _claudeAdapterDeps.spawn = mock((cmd: string[]) => {
         if (cmd[0] === "which" && cmd[1] === "claude") {
           return {
             exited: Promise.resolve(0),
             stdout: { getReader: () => ({ read: () => Promise.resolve({ done: true }) }) },
             stderr: { getReader: () => ({ read: () => Promise.resolve({ done: true }) }) },
-          };
+          } as unknown as Parameters<typeof Bun.spawn>[0] extends string[] ? { exited: Promise<number>; stdout: unknown; stderr: unknown } : never;
         }
-        return originalSpawn(cmd);
+        return Bun.spawn(cmd as string[], {}) as unknown as { exited: Promise<number>; stdout: unknown; stderr: unknown };
       });
 
       const installed = await adapter.isInstalled();
       expect(installed).toBe(true);
-
-      Bun.spawn = originalSpawn;
     });
 
     test("returns false when binary does not exist", async () => {
       const adapter = new ClaudeCodeAdapter();
-      // Mock failed which command
-      const originalSpawn = Bun.spawn;
-      (Bun as any).spawn = mock((cmd: string[]) => {
+      // Mock failed which command via _claudeAdapterDeps.spawn
+      _claudeAdapterDeps.spawn = mock((cmd: string[]) => {
         if (cmd[0] === "which" && cmd[1] === "claude") {
           return {
             exited: Promise.resolve(1),
             stdout: { getReader: () => ({ read: () => Promise.resolve({ done: true }) }) },
             stderr: { getReader: () => ({ read: () => Promise.resolve({ done: true }) }) },
-          };
+          } as unknown as Parameters<typeof Bun.spawn>[0] extends string[] ? { exited: Promise<number>; stdout: unknown; stderr: unknown } : never;
         }
-        return originalSpawn(cmd);
+        return Bun.spawn(cmd as string[], {}) as unknown as { exited: Promise<number>; stdout: unknown; stderr: unknown };
       });
 
       const installed = await adapter.isInstalled();
       expect(installed).toBe(false);
-
-      Bun.spawn = originalSpawn;
     });
 
     test("returns false on exception", async () => {
       const adapter = new ClaudeCodeAdapter();
-      const originalSpawn = Bun.spawn;
-      (Bun as any).spawn = mock(() => {
+      _claudeAdapterDeps.spawn = mock(() => {
         throw new Error("Command not found");
       });
 
       const installed = await adapter.isInstalled();
       expect(installed).toBe(false);
-
-      Bun.spawn = originalSpawn;
     });
   });
 
   describe("ClaudeCodeAdapter timeout handling", () => {
     test("distinguishes timeout from normal failure", async () => {
       const adapter = new ClaudeCodeAdapter();
-      const originalSpawn = Bun.spawn;
-
-      // Mock process that times out
-      (Bun as any).spawn = mock(() => {
+      // Mock process that times out via _runOnceDeps.spawn
+      _runOnceDeps.spawn = mock((cmd: string[], opts: { cwd: string; stdout: string; stderr: string; env: Record<string, string | undefined> }) => {
         let killed = false;
         return {
           exited: new Promise((resolve) => {
@@ -1963,6 +1956,7 @@ describe("Agent Validation and Retry Logic", () => {
           },
           stdout: new Response("").body,
           stderr: new Response("").body,
+          pid: 12345,
         };
       });
 
@@ -1979,74 +1973,73 @@ describe("Agent Validation and Retry Logic", () => {
       // Should be marked as timeout (exit code 124)
       expect(result.exitCode).toBe(124);
       expect(result.success).toBe(false);
-
-      Bun.spawn = originalSpawn;
     });
   });
 
   describe("ClaudeCodeAdapter retry logic", () => {
     test("retries on rate limit with exponential backoff", async () => {
       const adapter = new ClaudeCodeAdapter();
-      const originalSpawn = Bun.spawn;
       const originalSleep = _claudeAdapterDeps.sleep;
       let attemptCount = 0;
       const sleepCalls: number[] = [];
 
-      // Replace sleep with instant no-op spy — avoids real 2s+4s waits
-      _claudeAdapterDeps.sleep = async (ms: number) => {
-        sleepCalls.push(ms);
-      };
-
-      // Mock rate-limited response that succeeds on 3rd try
-      (Bun as any).spawn = mock(() => {
-        attemptCount++;
-        const isRateLimited = attemptCount < 3;
-
-        return {
-          exited: Promise.resolve(isRateLimited ? 1 : 0),
-          kill: () => {},
-          stdout: new Response(isRateLimited ? "" : "success").body,
-          stderr: new Response(isRateLimited ? "rate limit exceeded" : "").body,
+      try {
+        // Replace sleep with instant no-op spy — avoids real 2s+4s waits
+        _claudeAdapterDeps.sleep = async (ms: number) => {
+          sleepCalls.push(ms);
         };
-      });
 
-      const options: AgentRunOptions = {
-        prompt: "test",
-        workdir: "/tmp",
-        modelTier: "balanced",
-        modelDef: { provider: "anthropic", model: "claude-sonnet-4.5", env: {} },
-        timeoutSeconds: 60,
-      };
+        // Mock rate-limited response that succeeds on 3rd try
+        _runOnceDeps.spawn = mock((cmd: string[], opts: { cwd: string; stdout: string; stderr: string; env: Record<string, string | undefined> }) => {
+          attemptCount++;
+          const isRateLimited = attemptCount < 3;
 
-      const result = await adapter.run(options);
+          return {
+            exited: Promise.resolve(isRateLimited ? 1 : 0),
+            kill: () => {},
+            stdout: new Response(isRateLimited ? "" : "success").body,
+            stderr: new Response(isRateLimited ? "rate limit exceeded" : "").body,
+            pid: 12345,
+          };
+        });
 
-      // Should succeed after retries
-      expect(result.success).toBe(true);
-      expect(attemptCount).toBe(3);
+        const options: AgentRunOptions = {
+          prompt: "test",
+          workdir: "/tmp",
+          modelTier: "balanced",
+          modelDef: { provider: "anthropic", model: "claude-sonnet-4.5", env: {} },
+          timeoutSeconds: 60,
+        };
 
-      // Should have slept with exponential backoff: 2^1*1000=2s, 2^2*1000=4s
-      expect(sleepCalls).toEqual([2000, 4000]);
+        const result = await adapter.run(options);
 
-      Bun.spawn = originalSpawn;
-      _claudeAdapterDeps.sleep = originalSleep;
+        // Should succeed after retries
+        expect(result.success).toBe(true);
+        expect(attemptCount).toBe(3);
+
+        // Should have slept with exponential backoff: 2^1*1000=2s, 2^2*1000=4s
+        expect(sleepCalls).toEqual([2000, 4000]);
+      } finally {
+        _claudeAdapterDeps.sleep = originalSleep;
+      }
     });
 
     test(
       "fails immediately on agent execution errors (no retry)",
       async () => {
         const adapter = new ClaudeCodeAdapter();
-        const originalSpawn = Bun.spawn;
         let attemptCount = 0;
 
         // Mock agent execution failure (exit code 1)
         // These are not retried because they're likely legitimate agent failures
-        (Bun as any).spawn = mock(() => {
+        _runOnceDeps.spawn = mock((cmd: string[], opts: { cwd: string; stdout: string; stderr: string; env: Record<string, string | undefined> }) => {
           attemptCount++;
           return {
             exited: Promise.resolve(1),
             kill: () => {},
             stdout: new Response("").body,
             stderr: new Response("agent error").body,
+            pid: 12345,
           };
         });
 
@@ -2063,25 +2056,23 @@ describe("Agent Validation and Retry Logic", () => {
         // Should fail after 1 attempt (no retry for agent errors)
         expect(result.success).toBe(false);
         expect(attemptCount).toBe(1);
-
-        Bun.spawn = originalSpawn;
       },
       { timeout: 15000 },
     );
 
     test("succeeds immediately on first attempt if no error", async () => {
       const adapter = new ClaudeCodeAdapter();
-      const originalSpawn = Bun.spawn;
       let attemptCount = 0;
 
       // Mock successful execution
-      (Bun as any).spawn = mock(() => {
+      _runOnceDeps.spawn = mock((cmd: string[], opts: { cwd: string; stdout: string; stderr: string; env: Record<string, string | undefined> }) => {
         attemptCount++;
         return {
           exited: Promise.resolve(0),
           kill: () => {},
           stdout: new Response("success").body,
           stderr: new Response("").body,
+          pid: 12345,
         };
       });
 
@@ -2098,17 +2089,14 @@ describe("Agent Validation and Retry Logic", () => {
       // Should succeed on first try
       expect(result.success).toBe(true);
       expect(attemptCount).toBe(1);
-
-      Bun.spawn = originalSpawn;
     });
 
     test("does not retry on timeout (exit code 124)", async () => {
       const adapter = new ClaudeCodeAdapter();
-      const originalSpawn = Bun.spawn;
       let attemptCount = 0;
 
       // Mock timeout
-      (Bun as any).spawn = mock(() => {
+      _runOnceDeps.spawn = mock((cmd: string[], opts: { cwd: string; stdout: string; stderr: string; env: Record<string, string | undefined> }) => {
         attemptCount++;
         let killed = false;
         return {
@@ -2120,6 +2108,7 @@ describe("Agent Validation and Retry Logic", () => {
           },
           stdout: new Response("").body,
           stderr: new Response("").body,
+          pid: 12345,
         };
       });
 
@@ -2136,8 +2125,6 @@ describe("Agent Validation and Retry Logic", () => {
       // Should not retry on timeout
       expect(result.exitCode).toBe(124);
       expect(attemptCount).toBe(1);
-
-      Bun.spawn = originalSpawn;
     });
   });
 

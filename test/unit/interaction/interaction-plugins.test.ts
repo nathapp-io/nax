@@ -434,7 +434,7 @@ describe("WebhookInteractionPlugin - send() and HMAC validation", () => {
     const receivePromise = plugin.receive("wh-hmac-1", 4000);
 
     // Give the server a moment to bind
-    await Bun.sleep(60);
+    await Promise.resolve();
 
     try {
       // POST without signature → 401

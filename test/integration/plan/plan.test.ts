@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
 import { planCommand } from "../../../src/cli/plan";
 import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config/schema";
@@ -9,8 +10,8 @@ describe("planCommand", () => {
 
   beforeEach(async () => {
     tmpDir = `/tmp/nax-plan-${Date.now()}`;
-    await Bun.spawn(["mkdir", "-p", `${tmpDir}/nax`], { stdout: "pipe" }).exited;
-    await Bun.spawn(["mkdir", "-p", `${tmpDir}/src`], { stdout: "pipe" }).exited;
+    await mkdir(`${tmpDir}/nax`, { recursive: true });
+    await mkdir(`${tmpDir}/src`, { recursive: true });
 
     // Create minimal package.json
     await Bun.write(
@@ -28,17 +29,17 @@ describe("planCommand", () => {
 
   afterEach(async () => {
     if (existsSync(tmpDir)) {
-      await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+      await rm(tmpDir, { recursive: true, force: true });
     }
   });
 
   test("throws when nax not initialized", async () => {
     const emptyDir = `/tmp/nax-plan-empty-${Date.now()}`;
-    await Bun.spawn(["mkdir", "-p", emptyDir], { stdout: "pipe" }).exited;
+    await mkdir(emptyDir, { recursive: true });
 
     expect(planCommand("Add feature X", emptyDir, DEFAULT_CONFIG)).rejects.toThrow("nax directory not found");
 
-    await Bun.spawn(["rm", "-rf", emptyDir], { stdout: "pipe" }).exited;
+    await rm(emptyDir, { recursive: true, force: true });
   });
 
   test("validates config.plan settings", () => {
