@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { mkdir, rm } from "node:fs/promises";
 import { analyzeFeature } from "../../../src/cli/analyze";
 import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config/schema";
@@ -6,7 +7,7 @@ import { DEFAULT_CONFIG } from "../../../src/config/schema";
 describe("analyzeFeature", () => {
   test("parses spec.md into user stories (LLM disabled, keyword fallback)", async () => {
     const tmpDir = `/tmp/nax-analyze-${Date.now()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
 
     await Bun.write(
       `${tmpDir}/spec.md`,
@@ -71,12 +72,12 @@ Dependencies: US-001
     expect(s2.acceptanceCriteria).toHaveLength(2);
     expect(s2.dependencies).toContain("US-001");
 
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("throws when spec.md is missing", async () => {
     const tmpDir = `/tmp/nax-analyze-empty-${Date.now()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
 
     await expect(
       analyzeFeature({
@@ -86,12 +87,12 @@ Dependencies: US-001
       }),
     ).rejects.toThrow("spec.md not found");
 
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("warns but does not throw when story count exceeds maxStoriesPerFeature limit", async () => {
     const tmpDir = `/tmp/nax-analyze-limit-${Date.now()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
 
     // Generate spec.md with 6 stories
     const stories = Array.from(
@@ -132,12 +133,12 @@ Description for story ${i + 1}
 
     expect(prd.userStories.length).toBe(6);
 
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("allows story count at maxStoriesPerFeature limit", async () => {
     const tmpDir = `/tmp/nax-analyze-ok-${Date.now()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
 
     // Generate spec.md with exactly 5 stories
     const stories = Array.from(
@@ -177,12 +178,12 @@ Description for story ${i + 1}
     });
     expect(prd.userStories).toHaveLength(5);
 
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("reads spec from explicit --from path", async () => {
     const tmpDir = `/tmp/nax-analyze-from-${Date.now()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
 
     const customSpecPath = `${tmpDir}/custom-spec.md`;
     await Bun.write(
@@ -219,6 +220,6 @@ A custom story from explicit path
     expect(prd.userStories[0].id).toBe("US-001");
     expect(prd.userStories[0].title).toBe("Custom story");
 
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 });

@@ -4,6 +4,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdir, rm } from "node:fs/promises";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { buildContext, formatContextAsMarkdown } from "../../../src/context/builder";
 
@@ -45,7 +46,7 @@ let tmpDirs: string[] = [];
 
 const createTmpDir = async (): Promise<string> => {
   const tmpDir = `/tmp/nax-context-test-${Date.now()}-${Math.random()}`;
-  await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+  await mkdir(tmpDir, { recursive: true });
   tmpDirs.push(tmpDir);
   return tmpDir;
 };
@@ -53,7 +54,7 @@ const createTmpDir = async (): Promise<string> => {
 afterEach(async () => {
   // Cleanup all temporary directories
   for (const tmpDir of tmpDirs) {
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   }
   tmpDirs = [];
 });

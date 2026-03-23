@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { mkdir, rm } from "node:fs/promises";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { run } from "../../../src/execution/runner";
 import type { RunOptions } from "../../../src/execution/runner";
@@ -56,7 +57,7 @@ describe("execution runner", () => {
 
     // Create temporary PRD file
     const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -76,7 +77,7 @@ describe("execution runner", () => {
     expect(result.success).toBe(true); // Dry run marks stories as passed and completes
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("chooses three-session-tdd strategy for complex tasks", async () => {
@@ -97,7 +98,7 @@ describe("execution runner", () => {
     ]);
 
     const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -116,7 +117,7 @@ describe("execution runner", () => {
     expect(result.iterations).toBeGreaterThan(0);
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("escalates model tier on failure", async () => {
@@ -137,7 +138,7 @@ describe("execution runner", () => {
     ]);
 
     const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -169,7 +170,7 @@ describe("execution runner", () => {
     expect(result.iterations).toBeGreaterThan(0);
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("stops when cost limit reached", async () => {
@@ -191,7 +192,7 @@ describe("execution runner", () => {
     ]);
 
     const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -217,7 +218,7 @@ describe("execution runner", () => {
     expect(result.totalCost).toBeLessThanOrEqual(0.001);
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("marks story as passed on success", async () => {
@@ -232,7 +233,7 @@ describe("execution runner", () => {
     ]);
 
     const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -254,7 +255,7 @@ describe("execution runner", () => {
     expect(updatedPRD.userStories).toHaveLength(1);
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   // SKIP: Flaky — acceptance loop (enabled by default) runs after sequential completes
@@ -281,7 +282,7 @@ describe("execution runner", () => {
     ]);
 
     const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -308,7 +309,7 @@ describe("execution runner", () => {
     expect(result.storiesCompleted).toBe(0); // Already completed
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("escalates entire batch when escalateEntireBatch is true (default)", async () => {
@@ -356,7 +357,7 @@ describe("execution runner", () => {
     ]);
 
     const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -388,7 +389,7 @@ describe("execution runner", () => {
     // Real integration testing would require mocking the agent adapter
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("escalates only first story when escalateEntireBatch is false", async () => {
@@ -436,7 +437,7 @@ describe("execution runner", () => {
     ]);
 
     const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -468,7 +469,7 @@ describe("execution runner", () => {
     // Real integration testing would require mocking the agent adapter
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 });
 
@@ -502,7 +503,7 @@ describe("execution runner — lite mode routing", () => {
     ]);
 
     const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -523,7 +524,7 @@ describe("execution runner — lite mode routing", () => {
     expect(result.iterations).toBeGreaterThan(0);
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   test("config tdd.strategy='lite' routes complex stories to three-session-tdd-lite", async () => {
@@ -613,7 +614,7 @@ describe("execution runner — lite mode routing", () => {
     ]);
 
     const tmpDir = `/tmp/nax-test-${randomUUID()}`;
-    await Bun.spawn(["mkdir", "-p", tmpDir], { stdout: "pipe" }).exited;
+    await mkdir(tmpDir, { recursive: true });
     const prdPath = `${tmpDir}/prd.json`;
     await Bun.write(prdPath, JSON.stringify(prd, null, 2));
 
@@ -636,6 +637,6 @@ describe("execution runner — lite mode routing", () => {
     expect(result.success).toBe(true);
 
     // Cleanup
-    await Bun.spawn(["rm", "-rf", tmpDir], { stdout: "pipe" }).exited;
+    await rm(tmpDir, { recursive: true, force: true });
   });
 });

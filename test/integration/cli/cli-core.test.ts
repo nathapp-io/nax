@@ -1406,6 +1406,7 @@ describe("AC7: AUTO_RECOVERED stories shown as INFO", () => {
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG } from "../../../src/config";
@@ -1420,7 +1421,7 @@ describe("agentsListCommand", () => {
 
   afterAll(async () => {
     // Cleanup
-    await Bun.spawn(["rm", "-rf", testDir]).exited;
+    await rm(testDir, { recursive: true, force: true });
   });
 
   test("should display agents table with headers", async () => {
