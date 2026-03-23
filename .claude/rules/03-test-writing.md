@@ -81,6 +81,56 @@ For orchestrator/multi-module tests, use the shared helper:
 import { saveDeps, restoreDeps, mockGitSpawn, mockAllSpawn } from "./_tdd-test-helpers";
 ```
 
+## File System Operations in Tests
+
+### Never use `Bun.spawn` for shell utilities — use `fs.*` directly
+
+Using `Bun.spawn(["mv", ...])`, `Bun.spawn(["rm", ...])`, or `Bun.spawn(["mkdir", ...])` in tests spawns real OS processes. Under CI load, cold-start overhead causes 15s+ timeouts and flakiness.
+
+**Use Node/Bun fs APIs instead — they are synchronous or properly awaitable:**
+
+```typescript
+// ❌ WRONG — spawns a process, timing-sensitive
+await Bun.spawn(["mv", src, dest], { stdout: "pipe" }).exited;
+await Bun.spawn(["rm", "-rf", dir], { stdout: "pipe" }).exited;
+await Bun.spawn(["mkdir", "-p", dir], { stdout: "pipe" }).exited;
+
+// ✅ CORRECT — direct fs call, no process overhead
+import { rename, rm, mkdir } from "node:fs/promises";
+await rename(src, dest);
+await rm(dir, { recursive: true, force: true });
+await mkdir(dir, { recursive: true });
+```
+
+### Never use `Bun.sleep()` in tests — use awaitable writes or polling
+
+`Bun.sleep(N)` is a fixed-duration wait. Under CI load, N ms may not be enough for async writes to complete. The right fix is to make the write awaitable or poll for the result.
+
+```typescript
+// ❌ WRONG — timing-sensitive, flaky under load
+bus.emit({ type: "run:started", ... });
+await Bun.sleep(50);
+const meta = JSON.parse(await readFile(metaFile, "utf8"));
+
+// ✅ CORRECT — poll with a cap
+import { waitForFile } from "../../helpers/fs";
+bus.emit({ type: "run:started", ... });
+await waitForFile(metaFile, 500); // polls every 10ms, up to 500ms
+const meta = JSON.parse(await readFile(metaFile, "utf8"));
+```
+
+Add `waitForFile` to `test/helpers/fs.ts` if not present:
+```typescript
+export async function waitForFile(path: string, timeoutMs = 500): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await Bun.file(path).exists()) return;
+    await new Promise(r => setTimeout(r, 10));
+  }
+  throw new Error(`waitForFile: ${path} not created within ${timeoutMs}ms`);
+}
+```
+
 ## Test Structure
 
 - One `describe()` block per source function or class being tested.
