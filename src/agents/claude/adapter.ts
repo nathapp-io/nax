@@ -65,6 +65,7 @@ export { _runOnceDeps, _completeDeps };
  */
 export const _claudeAdapterDeps = {
   sleep: (ms: number): Promise<void> => Bun.sleep(ms),
+  spawn: Bun.spawn as typeof Bun.spawn,
 };
 
 /**
@@ -99,7 +100,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
   async isInstalled(): Promise<boolean> {
     try {
-      const proc = Bun.spawn(["which", this.binary], { stdout: "pipe", stderr: "pipe" });
+      const proc = _claudeAdapterDeps.spawn(["which", this.binary], { stdout: "pipe", stderr: "pipe" });
       const code = await proc.exited;
       return code === 0;
     } catch (error) {

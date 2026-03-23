@@ -25,6 +25,7 @@ describe("withProcessTimeout", () => {
   });
 
   afterEach(() => {
+    mock.restore();
     // Clear any pending timers
     Bun.gc(true);
   });
