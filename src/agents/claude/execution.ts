@@ -41,6 +41,24 @@ export const _runOnceDeps = {
   buildCmd(binary: string, options: AgentRunOptions): string[] {
     return buildCommand(binary, options);
   },
+  spawn(
+    cmd: string[],
+    opts: { cwd: string; stdout: "pipe"; stderr: "inherit"; env: Record<string, string | undefined> },
+  ): {
+    pid: number;
+    stdout: ReadableStream<Uint8Array>;
+    stderr?: ReadableStream<Uint8Array>;
+    exited: Promise<number>;
+    kill(signal?: number | NodeJS.Signals): void;
+  } {
+    return Bun.spawn(cmd, opts) as unknown as {
+      pid: number;
+      stdout: ReadableStream<Uint8Array>;
+      stderr?: ReadableStream<Uint8Array>;
+      exited: Promise<number>;
+      kill(signal?: number | NodeJS.Signals): void;
+    };
+  },
 };
 
 /**
@@ -140,7 +158,7 @@ export async function executeOnce(
     });
   }
 
-  const proc = Bun.spawn(cmd, {
+  const proc = _runOnceDeps.spawn(cmd, {
     cwd: options.workdir,
     stdout: "pipe",
     stderr: "inherit",
