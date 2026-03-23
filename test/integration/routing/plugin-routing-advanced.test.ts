@@ -175,7 +175,7 @@ describe("Plugin router error handling", () => {
 
   test("async error in plugin router is caught", async () => {
     const asyncErrorRouter = createPluginRouter("async-error-router", async () => {
-      await Bun.sleep(10);
+      await Promise.resolve();
       throw new Error("Async plugin error");
     });
 

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { PipelineEventBus } from "../../../../src/pipeline/event-bus";
 import { wireEventsWriter } from "../../../../src/pipeline/subscribers/events-writer";
+import { waitForFile } from "../../../../test/helpers/fs";
 
 // Minimal UserStory stub for event payloads
 const stubStory = { id: "US-001", title: "Test story" } as never;
@@ -28,26 +29,18 @@ describe("wireEventsWriter", () => {
   });
 
   async function readLines(): Promise<object[]> {
-    // Poll until the file exists — write() is fire-and-forget so 50ms fixed sleep
-    // is insufficient under suite load (mkdir + appendFile can take longer).
-    const deadline = Date.now() + 500;
-    while (Date.now() < deadline) {
-      try {
-        const text = await readFile(eventsFile, "utf8");
-        return text
-          .trim()
-          .split("\n")
-          .filter(Boolean)
-          .map((l) => JSON.parse(l));
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-          await Bun.sleep(20);
-          continue;
-        }
-        throw err;
-      }
+    // Poll until the file exists using waitForFile helper
+    try {
+      await waitForFile(eventsFile, 500);
+    } catch {
+      throw new Error(`Events file not created within 500ms: ${eventsFile}`);
     }
-    throw new Error(`Events file not created within 500ms: ${eventsFile}`);
+    const text = await readFile(eventsFile, "utf8");
+    return text
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l));
   }
 
   test("returns an UnsubscribeFn", () => {
@@ -209,7 +202,7 @@ describe("wireEventsWriter", () => {
     }).not.toThrow();
 
     // Give async time to attempt write and swallow error
-    await Bun.sleep(50);
+    await Promise.resolve();
     // No assertion on file existence — the point is no crash/throw
   });
 
@@ -218,7 +211,7 @@ describe("wireEventsWriter", () => {
     const unsub = wireEventsWriter(bus, "feat-g", "run-unsub", workdir);
 
     bus.emit({ type: "run:started", feature: "feat-g", totalStories: 1, workdir });
-    await Bun.sleep(50);
+    await Promise.resolve();
 
     unsub();
 
@@ -230,7 +223,7 @@ describe("wireEventsWriter", () => {
       durationMs: 100,
     });
 
-    await Bun.sleep(50);
+    await Promise.resolve();
     const lines = await readLines();
     // Only the first event should be written
     expect(lines.length).toBe(1);

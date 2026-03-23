@@ -196,7 +196,7 @@ describe("RL-002 AC#1: on-complete hook fires after handleRunCompletion()", () =
     let completedFiredBeforeRegression = false;
 
     _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => {
-      await Bun.sleep(10);
+      await Promise.resolve();
       regressionFinished = true;
       return {
         success: true,

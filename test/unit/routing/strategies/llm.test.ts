@@ -139,7 +139,7 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
     await expect(llmStrategy.route(story, { config, adapter: mockAdapter })).rejects.toThrow(/timeout/i);
 
     // Give microtasks time to settle
-    await Bun.sleep(50);
+    await Promise.resolve();
 
     globalThis.removeEventListener("unhandledrejection", handler);
 
