@@ -346,7 +346,7 @@ describe("Config Command", () => {
 
       expect(output).toContain("routing:");
       expect(output).toContain("strategy:");
-      expect(output).toContain("adaptive:");
+      // adaptive removed in ROUTE-001
       expect(output).toContain("llm:");
     });
 

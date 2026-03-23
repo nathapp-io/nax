@@ -7,7 +7,7 @@
 
 import type { AgentAdapter } from "../agents/types";
 import type { IPromptOptimizer } from "../optimizer/types";
-import type { RoutingStrategy } from "../routing/strategy";
+import type { RoutingStrategy } from "../routing/router";
 import type { IContextProvider, IReporter, IReviewPlugin } from "./extensions";
 
 // Re-export extension types

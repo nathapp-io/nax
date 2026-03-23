@@ -1,10 +1,11 @@
 // RE-ARCH: keep
 /**
- * Tests for partial routing override in routing stage (FIX-001)
+ * Tests for routing stage behavior (BUG-032 + FIX-001)
  *
- * Verifies that story.routing fields only override LLM-classified results
- * when they are actually set. Prevents undefined values from clobbering
- * a fresh classification.
+ * BUG-032: Escalated modelTier in story.routing is preserved after re-routing.
+ * FIX-001: initialComplexity is set on first routing and not overwritten.
+ * The new routing stage always applies the full resolveRouting() decision —
+ * no partial testStrategy/complexity override from story.routing.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -19,15 +20,15 @@ const WORKDIR = `/tmp/nax-test-partial-routing-${randomUUID()}`;
 
 // ── Mock functions ────────────────────────────────────────────────────────────
 
-const mockRouteStory = mock(async () => ({
+const mockResolveRouting = mock(async () => ({
   complexity: "medium",
   modelTier: "balanced",
   testStrategy: "three-session-tdd",
   reasoning: "LLM classified as medium",
 }));
 
-const mockComplexityToModelTier = mock((_complexity: string, _config: unknown) => "balanced" as const);
 const mockIsGreenfieldStory = mock(async () => false);
+const mockSavePRD = mock(async () => {});
 
 // ── Capture originals for afterEach restoration ───────────────────────────────
 
@@ -59,7 +60,7 @@ function makeCtx(story: UserStory): PipelineContext {
     config: {
       tdd: { greenfieldDetection: false },
       autoMode: { complexityRouting: {} },
-      routing: { strategy: "complexity", llm: { mode: "per-story" } },
+      routing: { strategy: "llm", llm: { mode: "per-story" } },
       execution: { agent: "claude" },
     } as unknown as NaxConfig,
     story,
@@ -76,11 +77,10 @@ function makeCtx(story: UserStory): PipelineContext {
 beforeEach(() => {
   resetLogger();
   initLogger({ level: "error", useChalk: false });
-  _routingDeps.routeStory = mockRouteStory as typeof _routingDeps.routeStory;
-  _routingDeps.complexityToModelTier = mockComplexityToModelTier as typeof _routingDeps.complexityToModelTier;
+  _routingDeps.resolveRouting = mockResolveRouting as typeof _routingDeps.resolveRouting;
   _routingDeps.isGreenfieldStory = mockIsGreenfieldStory as typeof _routingDeps.isGreenfieldStory;
-  mockRouteStory.mockClear();
-  mockComplexityToModelTier.mockClear();
+  _routingDeps.savePRD = mockSavePRD as typeof _routingDeps.savePRD;
+  mockResolveRouting.mockClear();
   mockIsGreenfieldStory.mockClear();
 });
 
@@ -92,34 +92,41 @@ afterEach(() => {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe("routing stage — partial override (FIX-001)", () => {
-  test("(1) partial override with only testStrategy preserves LLM complexity", async () => {
-    const story = makeStory({ testStrategy: "test-after", complexity: undefined as any, reasoning: "manual" });
-    const ctx = makeCtx(story);
-
-    await routingStage.execute(ctx);
-
-    expect(ctx.routing.testStrategy).toBe("test-after");
-    expect(ctx.routing.complexity).toBe("medium");
-  });
-
-  test("(2) LLM-classified complexity is preserved when story.routing has no complexity", async () => {
-    const story = makeStory({ testStrategy: "test-after", complexity: undefined as any, reasoning: "" });
+describe("routing stage — resolveRouting integration (BUG-032 + FIX-001)", () => {
+  test("(1) routing decision from resolveRouting is applied to ctx.routing", async () => {
+    const story = makeStory();
     const ctx = makeCtx(story);
 
     await routingStage.execute(ctx);
 
     expect(ctx.routing.complexity).toBe("medium");
-    expect(ctx.routing.complexity).not.toBeUndefined();
+    expect(ctx.routing.testStrategy).toBe("three-session-tdd");
+    expect(ctx.routing.modelTier).toBe("balanced");
   });
 
-  test("(3) full override works when both complexity and testStrategy are set", async () => {
-    const story = makeStory({ complexity: "simple", testStrategy: "test-after", reasoning: "manual override" });
+  test("(2) escalated modelTier from story.routing is preserved (BUG-032)", async () => {
+    // Simulate escalation: story.routing.modelTier was bumped to "powerful"
+    const story = makeStory({ modelTier: "powerful", complexity: "medium", testStrategy: "three-session-tdd", reasoning: "escalated" });
     const ctx = makeCtx(story);
 
     await routingStage.execute(ctx);
 
-    expect(ctx.routing.complexity).toBe("simple");
-    expect(ctx.routing.testStrategy).toBe("test-after");
+    // BUG-032: escalated tier must survive re-routing
+    expect(ctx.routing.modelTier).toBe("powerful");
+    // complexity from decision is applied
+    expect(ctx.routing.complexity).toBe("medium");
+  });
+
+  test("(3) initialComplexity is set from first routing and not overwritten on retry", async () => {
+    const story = makeStory();
+    const ctx = makeCtx(story);
+
+    // First routing — no initialComplexity
+    await routingStage.execute(ctx);
+    expect(ctx.story.routing?.initialComplexity).toBe("medium");
+
+    // Second routing — initialComplexity should stay "medium"
+    await routingStage.execute(ctx);
+    expect(ctx.story.routing?.initialComplexity).toBe("medium");
   });
 });

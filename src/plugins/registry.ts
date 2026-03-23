@@ -6,7 +6,7 @@
 
 import type { AgentAdapter } from "../agents/types";
 import { getSafeLogger } from "../logger";
-import type { RoutingStrategy } from "../routing/strategy";
+import type { RoutingStrategy } from "../routing/router";
 import type { LoadedPlugin, PluginSource } from "./loader";
 import type { IContextProvider, IPromptOptimizer, IReporter, IReviewPlugin, NaxPlugin } from "./types";
 

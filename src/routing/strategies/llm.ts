@@ -1,8 +1,9 @@
 /**
- * LLM-Based Routing Strategy
+ * LLM-Based Routing
  *
- * Routes stories using an LLM to perform semantic analysis of story requirements.
- * Falls back to keyword strategy on failure. Supports batch mode for efficiency.
+ * Plain async classify functions — not a RoutingStrategy object.
+ * classifyWithLlm() is the entry point called by resolveRouting().
+ * Supports batch mode for efficiency.
  */
 
 import type { AgentAdapter } from "../../agents/types";
@@ -10,9 +11,8 @@ import type { NaxConfig } from "../../config";
 import { resolveModel } from "../../config";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd/types";
+import type { RoutingContext, RoutingDecision } from "../router";
 import { determineTestStrategy } from "../router";
-import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../strategy";
-import { keywordStrategy } from "./keyword";
 import { buildBatchRoutingPrompt, buildRoutingPrompt, parseBatchResponse, parseRoutingResponse } from "./llm-prompts";
 
 // Re-export for backward compatibility
@@ -66,7 +66,6 @@ export interface PipedProc {
 
 /**
  * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
- * Includes spawn for backward compatibility with BUG-039 tests, and adapter for new AA-003.
  */
 export const _deps = {
   spawn: (cmd: string[], opts: { stdout: "pipe"; stderr: "pipe" }): PipedProc =>
@@ -76,13 +75,6 @@ export const _deps = {
 
 /**
  * Call LLM via adapter.complete() with timeout.
- *
- * @param adapter - Agent adapter to use for completion
- * @param modelTier - Model tier to use for routing call
- * @param prompt - Prompt to send to LLM
- * @param config - nax configuration
- * @returns LLM response text
- * @throws Error on timeout or completion failure
  */
 async function callLlmOnce(
   adapter: AgentAdapter,
@@ -91,7 +83,6 @@ async function callLlmOnce(
   config: NaxConfig,
   timeoutMs: number,
 ): Promise<string> {
-  // Resolve model tier to actual model identifier
   const modelEntry = config.models[modelTier];
   if (!modelEntry) {
     throw new Error(`Model tier "${modelTier}" not found in config.models`);
@@ -100,15 +91,12 @@ async function callLlmOnce(
   const modelDef = resolveModel(modelEntry);
   const modelArg = modelDef.model;
 
-  // Race between completion and timeout, ensuring cleanup on either path
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
       reject(new Error(`LLM call timeout after ${timeoutMs}ms`));
     }, timeoutMs);
   });
-  // Prevent unhandled rejection if timer fires between race resolution and clearTimeout
   timeoutPromise.catch(() => {});
 
   const outputPromise = adapter.complete(prompt, { model: modelArg, config });
@@ -119,7 +107,6 @@ async function callLlmOnce(
     return result;
   } catch (err) {
     clearTimeout(timeoutId);
-    // Silence the floating outputPromise to prevent unhandled rejection
     outputPromise.catch(() => {});
     throw err;
   }
@@ -127,13 +114,6 @@ async function callLlmOnce(
 
 /**
  * Call LLM via adapter.complete() with timeout and retry (BUG-033).
- *
- * @param adapter - Agent adapter to use for completion
- * @param modelTier - Model tier to use for routing call
- * @param prompt - Prompt to send to LLM
- * @param config - nax configuration
- * @returns LLM response text
- * @throws Error after all retries exhausted
  */
 async function callLlm(adapter: AgentAdapter, modelTier: string, prompt: string, config: NaxConfig): Promise<string> {
   const llmConfig = config.routing.llm;
@@ -153,9 +133,7 @@ async function callLlm(adapter: AgentAdapter, modelTier: string, prompt: string,
         logger.warn(
           "routing",
           `LLM call failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${retryDelayMs}ms`,
-          {
-            error: lastError.message,
-          },
+          { error: lastError.message },
         );
         await Bun.sleep(retryDelayMs);
       }
@@ -168,12 +146,7 @@ async function callLlm(adapter: AgentAdapter, modelTier: string, prompt: string,
 /**
  * Route multiple stories in a single batch LLM call.
  *
- * This function pre-populates the cache with routing decisions for all stories.
- * Individual route() calls will then hit the cache.
- *
- * @param stories - Array of user stories to route
- * @param context - Routing context
- * @returns Map of story ID to routing decision
+ * Pre-populates the cache with routing decisions for all stories.
  */
 export async function routeBatch(stories: UserStory[], context: RoutingContext): Promise<Map<string, RoutingDecision>> {
   const config = context.config;
@@ -183,7 +156,6 @@ export async function routeBatch(stories: UserStory[], context: RoutingContext):
     throw new Error("LLM routing config not found");
   }
 
-  // Resolve adapter from context or _deps
   const adapter = context.adapter ?? _deps.adapter;
   if (!adapter) {
     throw new Error("No agent adapter available for batch routing (AA-003)");
@@ -196,12 +168,9 @@ export async function routeBatch(stories: UserStory[], context: RoutingContext):
     const output = await callLlm(adapter, modelTier, prompt, config);
     const decisions = parseBatchResponse(output, stories, config);
 
-    // Populate cache (PERF-1 fix: evict oldest if full)
     if (llmConfig.cacheDecisions) {
       for (const [storyId, decision] of decisions.entries()) {
-        if (cachedDecisions.size >= MAX_CACHE_SIZE) {
-          evictOldest();
-        }
+        if (cachedDecisions.size >= MAX_CACHE_SIZE) evictOldest();
         cachedDecisions.set(storyId, decision);
       }
     }
@@ -213,108 +182,88 @@ export async function routeBatch(stories: UserStory[], context: RoutingContext):
 }
 
 /**
- * LLM-based routing strategy.
+ * Classify a story using the LLM.
  *
- * This strategy:
- * - Checks cache first (if enabled)
- * - Calls LLM with story context to classify complexity (via adapter.complete())
- * - Parses structured JSON response
- * - Maps complexity to model tier and test strategy
- * - Falls back to null (keyword fallback) on any failure
+ * Returns a RoutingDecision on success, or null to signal keyword fallback.
+ * Called by resolveRouting() in router.ts.
+ *
+ * - Checks cache first (if cacheDecisions enabled)
+ * - One-shot mode: cache miss → return null (caller does keyword fallback)
+ * - hybrid/per-story mode: call LLM, cache result
  */
-export const llmStrategy: RoutingStrategy = {
-  name: "llm",
+export async function classifyWithLlm(
+  story: UserStory,
+  config: NaxConfig,
+  adapter: AgentAdapter,
+): Promise<RoutingDecision | null> {
+  const llmConfig = config.routing.llm;
+  if (!llmConfig) return null;
 
-  async route(story: UserStory, context: RoutingContext): Promise<RoutingDecision | null> {
-    const config = context.config;
-    const llmConfig = config.routing.llm;
+  const mode = llmConfig.mode ?? "hybrid";
 
-    if (!llmConfig) {
-      return null; // LLM routing not configured
+  // Cache hit: return cached decision with fresh testStrategy
+  if (llmConfig.cacheDecisions && cachedDecisions.has(story.id)) {
+    const cached = cachedDecisions.get(story.id);
+    if (!cached) throw new Error(`Cached decision not found for story: ${story.id}`);
+
+    const tddStrategy = config.tdd?.strategy ?? "auto";
+    const freshTestStrategy = determineTestStrategy(
+      cached.complexity,
+      story.title,
+      story.description,
+      story.tags,
+      tddStrategy,
+    );
+    const logger = getLogger();
+    logger.debug("routing", "LLM cache hit", {
+      storyId: story.id,
+      complexity: cached.complexity,
+      modelTier: cached.modelTier,
+      testStrategy: freshTestStrategy,
+    });
+    return { ...cached, testStrategy: freshTestStrategy };
+  }
+
+  // One-shot mode: cache miss → defer to keyword (return null)
+  if (mode === "one-shot") {
+    const logger = getLogger();
+    logger.info("routing", "One-shot mode cache miss, falling back to keyword", { storyId: story.id });
+    return null;
+  }
+
+  // Call the LLM
+  const effectiveAdapter = adapter ?? _deps.adapter;
+  if (!effectiveAdapter) {
+    throw new Error("No agent adapter available for LLM routing (AA-003)");
+  }
+
+  const modelTier = llmConfig.model ?? "fast";
+  const prompt = buildRoutingPrompt(story, config);
+
+  let decision: RoutingDecision;
+  try {
+    const output = await callLlm(effectiveAdapter, modelTier, prompt, config);
+    decision = parseRoutingResponse(output, story, config);
+  } catch (err) {
+    if (llmConfig.fallbackToKeywords) {
+      return null;
     }
+    throw err;
+  }
 
-    const mode = llmConfig.mode ?? "hybrid";
+  if (llmConfig.cacheDecisions) {
+    if (cachedDecisions.size >= MAX_CACHE_SIZE) evictOldest();
+    cachedDecisions.set(story.id, decision);
+  }
 
-    // Check cache first
-    if (llmConfig.cacheDecisions && cachedDecisions.has(story.id)) {
-      const cached = cachedDecisions.get(story.id);
-      if (!cached) {
-        throw new Error(`Cached decision not found for story: ${story.id}`);
-      }
-      // Recompute testStrategy from complexity — cache is authoritative on complexity/modelTier
-      // only. testStrategy must always reflect the current determineTestStrategy() rules
-      // (e.g. TS-001: simple → tdd-simple) even if the cache was populated under older rules.
-      const tddStrategy = config.tdd?.strategy ?? "auto";
-      const freshTestStrategy = determineTestStrategy(
-        cached.complexity,
-        story.title,
-        story.description,
-        story.tags,
-        tddStrategy,
-      );
-      const logger = getLogger();
-      logger.debug("routing", "LLM cache hit", {
-        storyId: story.id,
-        complexity: cached.complexity,
-        modelTier: cached.modelTier,
-        testStrategy: freshTestStrategy,
-      });
-      return { ...cached, testStrategy: freshTestStrategy };
-    }
+  const logger = getLogger();
+  logger.info("routing", "LLM classified story", {
+    storyId: story.id,
+    complexity: decision.complexity,
+    modelTier: decision.modelTier,
+    testStrategy: decision.testStrategy,
+    reasoning: decision.reasoning,
+  });
 
-    // One-shot mode: cache miss -> keyword fallback without new LLM call
-    if (mode === "one-shot") {
-      const logger = getLogger();
-      logger.info("routing", "One-shot mode cache miss, falling back to keyword", {
-        storyId: story.id,
-      });
-      return keywordStrategy.route(story, context);
-    }
-
-    try {
-      // Resolve adapter from context or _deps (AA-003)
-      const adapter = context.adapter ?? _deps.adapter;
-      if (!adapter) {
-        throw new Error("No agent adapter available for LLM routing (AA-003)");
-      }
-
-      const modelTier = llmConfig.model ?? "fast";
-      const prompt = buildRoutingPrompt(story, config);
-      const output = await callLlm(adapter, modelTier, prompt, config);
-      const decision = parseRoutingResponse(output, story, config);
-
-      // Cache decision (PERF-1 fix: evict oldest if full)
-      if (llmConfig.cacheDecisions) {
-        if (cachedDecisions.size >= MAX_CACHE_SIZE) {
-          evictOldest();
-        }
-        cachedDecisions.set(story.id, decision);
-      }
-
-      // Log decision
-      const logger = getLogger();
-      logger.info("routing", "LLM classified story", {
-        storyId: story.id,
-        complexity: decision.complexity,
-        modelTier: decision.modelTier,
-        testStrategy: decision.testStrategy,
-        reasoning: decision.reasoning,
-      });
-
-      return decision;
-    } catch (err) {
-      const logger = getLogger();
-      const errorMsg = (err as Error).message;
-      logger.warn("routing", "LLM routing failed", { storyId: story.id, error: errorMsg });
-
-      // Fall back to keyword strategy if configured
-      if (llmConfig.fallbackToKeywords) {
-        logger.info("routing", "Falling back to keyword strategy", { storyId: story.id });
-        return null; // Delegate to next strategy (keyword)
-      }
-
-      // Re-throw if no fallback
-      throw err;
-    }
-  },
-};
+  return decision;
+}

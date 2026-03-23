@@ -8,7 +8,7 @@
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../../config";
 import type { UserStory } from "../../prd/types";
 import { determineTestStrategy } from "../router";
-import type { RoutingDecision } from "../strategy";
+import type { RoutingDecision } from "../router";
 
 /**
  * Build the routing prompt for a single story.

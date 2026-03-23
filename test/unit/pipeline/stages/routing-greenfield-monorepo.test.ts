@@ -43,6 +43,7 @@ function makeStory(workdir?: string): UserStory {
 function makeCtx(story: UserStory, repoRoot: string): PipelineContext {
   return {
     config: {
+      routing: { strategy: "llm" },
       tdd: { greenfieldDetection: true },
       autoMode: {
         defaultAgent: "claude",
@@ -83,7 +84,7 @@ describe("MW-011: greenfield detection scopes to story package workdir", () => {
     );
 
     // Mock routing to always return three-session-tdd for simple stories
-    _routingDeps.routeStory = mock(async () => ({
+    _routingDeps.resolveRouting = mock(async () => ({
       complexity: "simple",
       modelTier: "fast",
       testStrategy: "three-session-tdd",
@@ -92,7 +93,7 @@ describe("MW-011: greenfield detection scopes to story package workdir", () => {
     _routingDeps.complexityToModelTier = mock(() => "fast" as const);
     _routingDeps.savePRD = mock(async () => {});
     _routingDeps.computeStoryContentHash = mock(() => "hash1");
-    _routingDeps.routeBatch = _origDeps.routeBatch;
+    _routingDeps.routeBatch = undefined /* routeBatch deleted ROUTE-001 */;
   });
 
   afterEach(async () => {

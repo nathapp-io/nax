@@ -224,11 +224,12 @@ describe("Routing Stage - Task classified log shows final routing state after al
 
     expect(result.action).toBe("continue");
 
-    // Verify final state has greenfield override applied to cached TDD strategy
+    // Verify final state: resolveRouting() classifies fresh (complex/powerful for security/auth story)
+    // then greenfield override sets test-after
     expect(ctx.routing).toBeDefined();
     expect(ctx.routing?.testStrategy).toBe("test-after");
-    expect(ctx.routing?.complexity).toBe("medium");
-    expect(ctx.routing?.modelTier).toBe("balanced");
+    expect(ctx.routing?.complexity).toBe("complex");
+    expect(ctx.routing?.modelTier).toBe("powerful");
     expect(ctx.routing?.reasoning).toContain("GREENFIELD OVERRIDE");
   });
 
@@ -266,11 +267,11 @@ describe("Routing Stage - Task classified log shows final routing state after al
     expect(result.action).toBe("continue");
 
     // After routing stage completes, ctx.routing should reflect:
-    // 1. Cached complexity: "simple"
-    // 2. Fresh modelTier: derived from config
+    // 1. Fresh complexity from resolveRouting() (security/auth story → complex)
+    // 2. Fresh modelTier: complex → powerful
     // 3. Greenfield override: test-after instead of TDD
-    expect(ctx.routing?.complexity).toBe("simple");
+    expect(ctx.routing?.complexity).toBe("complex");
     expect(ctx.routing?.testStrategy).toBe("test-after");
-    expect(ctx.routing?.modelTier).toBe("fast"); // simple -> fast
+    expect(ctx.routing?.modelTier).toBe("powerful");
   });
 });

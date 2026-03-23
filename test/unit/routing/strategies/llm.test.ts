@@ -76,7 +76,7 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
     const mockAdapter = makeHangingAdapter();
     const config = makeConfig({ timeoutMs: 30 });
 
-    const { llmStrategy, clearCache } = await import("../../../../src/routing/strategies/llm");
+    const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
     const story = {
@@ -94,7 +94,7 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
 
     const startTime = Date.now();
 
-    await expect(llmStrategy.route(story, { config, adapter: mockAdapter })).rejects.toThrow(/timeout/i);
+    await expect(classifyWithLlm(story, config, mockAdapter)).rejects.toThrow(/timeout/i);
 
     const elapsed = Date.now() - startTime;
 
@@ -104,11 +104,6 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
   });
 
   test("no unhandled rejection when adapter.complete() times out", async () => {
-    // Simulate timeout scenario:
-    // 1. Adapter.complete() promise never resolves
-    // 2. Timeout fires and rejects
-    // 3. No unhandled rejection should occur
-
     const unhandledRejections: Error[] = [];
     const handler = (event: PromiseRejectionEvent) => {
       unhandledRejections.push(event.reason as Error);
@@ -120,7 +115,7 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
     const mockAdapter = makeHangingAdapter();
     const config = makeConfig({ timeoutMs: 20, retries: 0 });
 
-    const { llmStrategy, clearCache } = await import("../../../../src/routing/strategies/llm");
+    const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
     const story = {
@@ -136,7 +131,7 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
       attempts: 0,
     };
 
-    await expect(llmStrategy.route(story, { config, adapter: mockAdapter })).rejects.toThrow(/timeout/i);
+    await expect(classifyWithLlm(story, config, mockAdapter)).rejects.toThrow(/timeout/i);
 
     // Give microtasks time to settle
     await Promise.resolve();
@@ -150,7 +145,6 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
   test("adapter.complete() resolves on success path (no timeout)", async () => {
     const config = makeConfig({ timeoutMs: 5000 });
 
-    // Adapter that resolves with valid JSON response
     const successAdapter = {
       name: "success-mock",
       displayName: "Success Mock",
@@ -177,7 +171,7 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
       ),
     } as AgentAdapter;
 
-    const { llmStrategy, clearCache } = await import("../../../../src/routing/strategies/llm");
+    const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
     const story = {
@@ -193,7 +187,7 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
       attempts: 0,
     };
 
-    const result = await llmStrategy.route(story, { config, adapter: successAdapter });
+    const result = await classifyWithLlm(story, config, successAdapter);
 
     expect(result).not.toBeNull();
     expect(result?.complexity).toBe("simple");
@@ -206,7 +200,7 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
     const mockAdapter = makeHangingAdapter();
     const config = makeConfig({ timeoutMs: 50, retries: 0 });
 
-    const { llmStrategy, clearCache } = await import("../../../../src/routing/strategies/llm");
+    const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
     const story = {
@@ -223,7 +217,7 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
     };
 
     const before = Date.now();
-    await expect(llmStrategy.route(story, { config, adapter: mockAdapter })).rejects.toThrow();
+    await expect(classifyWithLlm(story, config, mockAdapter)).rejects.toThrow();
     const after = Date.now();
 
     // Should complete well under 2s even though adapter.complete() never resolves
@@ -237,12 +231,10 @@ describe("adapter.complete() timeout is enforced and does not cause unhandled re
 
 describe("LLM cache hit: testStrategy recomputed from complexity", () => {
   test("cache hit for simple story returns tdd-simple, not stale three-session-tdd-lite", async () => {
-    const { llmStrategy, clearCache, injectCacheEntry } = await import(
+    const { classifyWithLlm, clearCache, injectCacheEntry } = await import(
       "../../../../src/routing/strategies/llm"
     );
     clearCache();
-
-    const config = makeConfig();
 
     const story = {
       id: "CACHE-SIMPLE-001",
@@ -265,7 +257,8 @@ describe("LLM cache hit: testStrategy recomputed from complexity", () => {
       reasoning: "stale cached result",
     });
 
-    const result = await llmStrategy.route(story, { config: makeConfig({ cacheDecisions: true }) });
+    // Cache hit: adapter not needed since result comes from cache
+    const result = await classifyWithLlm(story, makeConfig({ cacheDecisions: true }), undefined as unknown as AgentAdapter);
 
     // Must recompute: simple → tdd-simple (TS-001)
     expect(result?.complexity).toBe("simple");
@@ -275,12 +268,10 @@ describe("LLM cache hit: testStrategy recomputed from complexity", () => {
   });
 
   test("cache hit for medium story returns three-session-tdd-lite", async () => {
-    const { llmStrategy, clearCache, injectCacheEntry } = await import(
+    const { classifyWithLlm, clearCache, injectCacheEntry } = await import(
       "../../../../src/routing/strategies/llm"
     );
     clearCache();
-
-    const config = makeConfig();
 
     const story = {
       id: "CACHE-MEDIUM-001",
@@ -302,7 +293,8 @@ describe("LLM cache hit: testStrategy recomputed from complexity", () => {
       reasoning: "cached medium result",
     });
 
-    const result = await llmStrategy.route(story, { config: makeConfig({ cacheDecisions: true }) });
+    // Cache hit: adapter not needed since result comes from cache
+    const result = await classifyWithLlm(story, makeConfig({ cacheDecisions: true }), undefined as unknown as AgentAdapter);
 
     expect(result?.complexity).toBe("medium");
     expect(result?.testStrategy).toBe("three-session-tdd-lite");
