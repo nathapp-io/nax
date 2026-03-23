@@ -101,11 +101,16 @@ chore: bump biome to v1.9
 
 ## Testing Conventions
 
+Full rules: **[`docs/guides/testing-rules.md`](docs/guides/testing-rules.md)** — read before writing any test.
+
+Summary:
 - Every change needs tests
 - Use `describe`/`test`/`expect` from `bun:test`
-- Mock external dependencies — tests should never call real APIs
-- No `Bun.sleep()` in tests — use injectable `_deps.sleep` pattern
-- No flaky tests — if a test is timing-sensitive, fix the design
+- Mock external dependencies — tests must never call real APIs or spawn real processes
+- No `Bun.sleep()` — use `waitForFile()` or make operations awaitable
+- No `Bun.spawn` for shell utilities — use `node:fs/promises` directly
+- No flaky tests — fix the design, not the timeout
+- `mock.restore()` in every `afterEach`
 
 ## License
 
