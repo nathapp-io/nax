@@ -4,6 +4,16 @@
 
 Give it a spec. It writes tests, implements code, verifies quality, and retries until everything passes.
 
+## Why nax
+
+nax is an **orchestrator, not an agent** — it doesn't write code itself. It drives whatever coding agent you choose through a disciplined loop until your tests pass.
+
+- **Agent-agnostic** — use Claude Code, Codex, Gemini CLI, or any ACP-compatible agent
+- **TDD-enforced** — acceptance tests must fail before implementation starts
+- **Loop until done** — verify, retry, escalate, and regression-check automatically
+- **Monorepo-ready** — per-package config and per-story working directories
+- **Extensible** — plugin system for routing, review, and reporting
+
 ## Install
 
 ```bash
