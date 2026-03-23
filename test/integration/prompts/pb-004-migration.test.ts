@@ -9,6 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import type { NaxConfig } from "../../../src/config/types";
@@ -118,10 +119,10 @@ beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), "nax-pb004-test-"));
 });
 
-afterEach(() => {
+afterEach(async () => {
   try {
     // best-effort cleanup
-    Bun.spawnSync(["rm", "-rf", tmpDir]);
+    await rm(tmpDir, { recursive: true, force: true });
   } catch {
     // ignore
   }

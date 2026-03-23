@@ -7,6 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _deps, planCommand } from "../../../src/cli/plan";
@@ -113,12 +114,12 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   let tmpDir: string;
   let capturedWriteArgs: Array<[string, string]>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmpDir = mkdtempSync(join(tmpdir(), "nax-plan-interactive-test-"));
     capturedWriteArgs = [];
 
     // Create nax directory
-    Bun.spawnSync(["mkdir", "-p", join(tmpDir, ".nax")]);
+    await mkdir(join(tmpDir, ".nax"), { recursive: true });
 
     // Default deps — override per test as needed
     // readFile: return PRD JSON when reading prd.json (agent wrote it), spec otherwise
@@ -145,7 +146,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     _deps.createInteractionBridge = mock(() => makeMockBridge());
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     mock.restore();
     _deps.readFile = origReadFile;
     _deps.writeFile = origWriteFile;
@@ -156,7 +157,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     _deps.mkdirp = origMkdirp;
     _deps.existsSync = origExistsSync;
     _deps.createInteractionBridge = origCreateInteractionBridge;
-    Bun.spawnSync(["rm", "-rf", tmpDir]);
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
   // ──────────────────────────────────────────────────────────────────────────
