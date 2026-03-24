@@ -11,19 +11,19 @@
  */
 
 import { readdir } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import chalk from "chalk";
 import type { NaxStatusFile } from "../execution/status-file";
 import type { MetaJson } from "../pipeline/subscribers/registry";
+import { getRunsDir } from "../utils/paths";
 
 const DEFAULT_LIMIT = 20;
 
 /**
  * Swappable dependencies for testing (project convention: _deps over mock.module).
  */
-export const _deps = {
-  getRunsDir: () => join(homedir(), ".nax", "runs"),
+export const _runsCmdDeps = {
+  getRunsDir,
 };
 
 export interface RunsOptions {
@@ -109,7 +109,7 @@ function pad(str: string, width: number): string {
  * @param options - Filter and limit options
  */
 export async function runsCommand(options: RunsOptions = {}): Promise<void> {
-  const runsDir = _deps.getRunsDir();
+  const runsDir = _runsCmdDeps.getRunsDir();
 
   let entries: string[];
   try {

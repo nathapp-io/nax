@@ -5,6 +5,7 @@
  * by running `<agent> --version` and parsing the output.
  */
 
+import { typedSpawn } from "../../utils/bun-deps";
 import { getInstalledAgents } from "../registry";
 import type { AgentAdapter } from "../types";
 
@@ -26,20 +27,7 @@ export interface AgentVersionInfo {
  * Dependency injection for testability
  */
 export const _versionDetectionDeps = {
-  spawn(
-    cmd: string[],
-    opts: { stdout: "pipe"; stderr: "pipe" },
-  ): {
-    stdout: ReadableStream<Uint8Array>;
-    stderr: ReadableStream<Uint8Array>;
-    exited: Promise<number>;
-  } {
-    return Bun.spawn(cmd, opts) as unknown as {
-      stdout: ReadableStream<Uint8Array>;
-      stderr: ReadableStream<Uint8Array>;
-      exited: Promise<number>;
-    };
-  },
+  spawn: typedSpawn,
 };
 
 /**

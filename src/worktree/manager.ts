@@ -2,12 +2,13 @@ import { existsSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { getSafeLogger } from "../logger";
 import { validateStoryId } from "../prd/validate";
+import { spawn } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
 import type { WorktreeInfo } from "./types";
 
 /** Injectable deps for testability — mock _managerDeps.spawn instead of global Bun.spawn */
 export const _managerDeps = {
-  spawn: Bun.spawn as typeof Bun.spawn,
+  spawn,
 };
 
 export class WorktreeManager {

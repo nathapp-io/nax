@@ -8,11 +8,12 @@
 
 import path from "node:path";
 import { getLogger } from "../../logger";
+import { spawn } from "../../utils/bun-deps";
 import type { IVerificationStrategy, VerifyContext, VerifyResult } from "../orchestrator-types";
 import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrator-types";
 
 /** Injectable deps for testability */
-export const _acceptanceDeps = { spawn: Bun.spawn as typeof Bun.spawn };
+export const _acceptanceDeps = { spawn };
 
 function parseFailedACs(output: string): string[] {
   const failed: string[] = [];

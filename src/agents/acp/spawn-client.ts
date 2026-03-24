@@ -16,6 +16,7 @@ import { homedir } from "node:os";
 import { isAbsolute } from "node:path";
 import type { PidRegistry } from "../../execution/pid-registry";
 import { getSafeLogger } from "../../logger";
+import { typedSpawn } from "../../utils/bun-deps";
 import type { AcpClient, AcpSession, AcpSessionResponse } from "./adapter";
 import { parseAcpxJsonOutput } from "./parser";
 
@@ -30,25 +31,7 @@ const ACPX_WATCHDOG_BUFFER_MS = 30_000;
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const _spawnClientDeps = {
-  spawn(
-    cmd: string[],
-    opts: {
-      cwd?: string;
-      stdin?: "pipe" | "inherit";
-      stdout: "pipe";
-      stderr: "pipe";
-      env?: Record<string, string | undefined>;
-    },
-  ): {
-    stdout: ReadableStream<Uint8Array>;
-    stderr: ReadableStream<Uint8Array>;
-    stdin: { write(data: string | Uint8Array): number; end(): void; flush(): void };
-    exited: Promise<number>;
-    pid: number;
-    kill(signal?: number): void;
-  } {
-    return Bun.spawn(cmd, opts) as unknown as ReturnType<typeof _spawnClientDeps.spawn>;
-  },
+  spawn: typedSpawn,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -170,8 +153,8 @@ class SpawnAcpSession implements AcpSession {
     await this.pidRegistry?.register(processPid);
 
     try {
-      proc.stdin.write(text);
-      proc.stdin.end();
+      proc.stdin?.write(text);
+      proc.stdin?.end();
 
       const exitCode = await proc.exited;
       const stdout = await new Response(proc.stdout).text();

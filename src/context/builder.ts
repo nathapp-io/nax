@@ -26,7 +26,7 @@ import { generateTestCoverageSummary } from "./test-scanner";
 import type { BuiltContext, ContextBudget, ContextElement, StoryContext } from "./types";
 
 // Dependency injection for testability
-export const _deps = {
+export const _contextBuilderDeps = {
   autoDetectContextFiles,
 };
 
@@ -232,7 +232,7 @@ async function addFileElements(
   ) {
     const autoDetectConfig = storyContext.config?.context?.autoDetect;
     try {
-      const detected = await _deps.autoDetectContextFiles({
+      const detected = await _contextBuilderDeps.autoDetectContextFiles({
         workdir: storyContext.workdir,
         storyTitle: story.title,
         maxFiles: autoDetectConfig?.maxFiles ?? 5,

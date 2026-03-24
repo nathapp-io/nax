@@ -1,10 +1,11 @@
 import { getSafeLogger } from "../logger";
+import { spawn } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
 import type { WorktreeManager } from "./manager";
 
 /** Injectable deps for testability — mock _mergeDeps.spawn instead of global Bun.spawn */
 export const _mergeDeps = {
-  spawn: Bun.spawn as typeof Bun.spawn,
+  spawn,
 };
 
 export interface MergeResult {

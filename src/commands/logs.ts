@@ -15,7 +15,7 @@ import { displayLogs, displayRunsList, followLogs } from "./logs-formatter";
 import { resolveRunFileFromRegistry, selectRunFile } from "./logs-reader";
 
 // Re-exports for backward compatibility
-export { _deps } from "./logs-reader";
+export { _logsReaderDeps as _deps } from "./logs-reader";
 export { extractRunSummary, resolveRunFileFromRegistry, selectRunFile } from "./logs-reader";
 export { displayLogs, displayRunsList, followLogs, formatDuration } from "./logs-formatter";
 

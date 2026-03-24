@@ -8,6 +8,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Server } from "node:http";
 import { z } from "zod";
+import { sleep } from "../../utils/bun-deps";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 
 /**
@@ -16,7 +17,7 @@ import type { InteractionPlugin, InteractionRequest, InteractionResponse } from 
  * @internal
  */
 export const _webhookPluginDeps = {
-  sleep: (ms: number): Promise<void> => Bun.sleep(ms),
+  sleep,
 };
 
 /** Webhook plugin configuration */

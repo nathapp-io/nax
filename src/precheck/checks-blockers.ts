@@ -13,7 +13,7 @@ export {
 
 export { checkStaleLock, checkPRDValid } from "./checks-config";
 
-export { checkClaudeCLI, checkAgentCLI, _deps } from "./checks-cli";
+export { checkClaudeCLI, checkAgentCLI, _checkCliDeps as _deps } from "./checks-cli";
 
 export {
   checkDependenciesInstalled,

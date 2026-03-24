@@ -11,9 +11,9 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-// NOTE: _deps is not yet exported from builder.ts — mock-based tests below
-// will fail until the _deps injection pattern is added to src/context/builder.ts
-import { _deps, buildContext } from "../../../src/context/builder";
+// NOTE: _contextBuilderDeps is exported from builder.ts — mock-based tests below
+// use this injection pattern for testing
+import { _contextBuilderDeps, buildContext } from "../../../src/context/builder";
 import type { ContextBudget, StoryContext } from "../../../src/context/types";
 import type { PRD, UserStory } from "../../../src/prd";
 
@@ -357,30 +357,30 @@ describe("context.fileInjection config flag (CTX-001)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Mock-based tests using _deps injection
+// Mock-based tests using _contextBuilderDeps injection
 //
 // These tests verify call/no-call of autoDetectContextFiles without spawning
-// real git processes. They require _deps to be exported from builder.ts.
+// real git processes. They require _contextBuilderDeps to be exported from builder.ts.
 // ---------------------------------------------------------------------------
 
 describe("fileInjection modes — mock-based (CTX-003)", () => {
-  let originalAutoDetect: typeof _deps.autoDetectContextFiles;
+  let originalAutoDetect: typeof _contextBuilderDeps.autoDetectContextFiles;
   let tempDir: string;
 
   beforeEach(async () => {
-    originalAutoDetect = _deps.autoDetectContextFiles;
+    originalAutoDetect = _contextBuilderDeps.autoDetectContextFiles;
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-fi-mock-test-"));
   });
 
   afterEach(async () => {
     mock.restore();
-    _deps.autoDetectContextFiles = originalAutoDetect;
+    _contextBuilderDeps.autoDetectContextFiles = originalAutoDetect;
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
   test("fileInjection 'disabled' — autoDetectContextFiles is never called", async () => {
     const spy = mock(async () => ["src/some-file.ts"]);
-    _deps.autoDetectContextFiles = spy;
+    _contextBuilderDeps.autoDetectContextFiles = spy;
 
     const prd = createTestPRD([
       {
@@ -413,7 +413,7 @@ describe("fileInjection modes — mock-based (CTX-003)", () => {
   test("fileInjection 'keyword' with no contextFiles — autoDetectContextFiles is called", async () => {
     await fs.writeFile(path.join(tempDir, "context-builder.ts"), 'export const x = "injected";');
     const spy = mock(async () => ["context-builder.ts"]);
-    _deps.autoDetectContextFiles = spy;
+    _contextBuilderDeps.autoDetectContextFiles = spy;
 
     const prd = createTestPRD([
       {
@@ -449,7 +449,7 @@ describe("fileInjection modes — mock-based (CTX-003)", () => {
   test("fileInjection 'keyword' + autoDetect.enabled false — autoDetectContextFiles not called, explicit files injected", async () => {
     await fs.writeFile(path.join(tempDir, "explicit.ts"), "export const explicit = true;");
     const spy = mock(async () => ["src/should-not-appear.ts"]);
-    _deps.autoDetectContextFiles = spy;
+    _contextBuilderDeps.autoDetectContextFiles = spy;
 
     const prd = createTestPRD([
       {
@@ -484,7 +484,7 @@ describe("fileInjection modes — mock-based (CTX-003)", () => {
 
   test("fileInjection undefined — autoDetectContextFiles is never called", async () => {
     const spy = mock(async () => ["src/some-file.ts"]);
-    _deps.autoDetectContextFiles = spy;
+    _contextBuilderDeps.autoDetectContextFiles = spy;
 
     const prd = createTestPRD([
       {
@@ -517,7 +517,7 @@ describe("fileInjection modes — mock-based (CTX-003)", () => {
   test("fileInjection 'disabled' with explicit contextFiles — autoDetectContextFiles not called, no files injected", async () => {
     await fs.writeFile(path.join(tempDir, "should-not-appear.ts"), "export const x = 1;");
     const spy = mock(async () => []);
-    _deps.autoDetectContextFiles = spy;
+    _contextBuilderDeps.autoDetectContextFiles = spy;
 
     const prd = createTestPRD([
       {

@@ -43,9 +43,9 @@ interface DecisionResponse {
  * Module-level deps for testability (_deps pattern).
  * Override adapter in tests to mock adapter.complete() without spawning the claude CLI.
  *
- * For backward compatibility, also supports _deps.callLlm (deprecated).
+ * For backward compatibility, also supports _autoPluginDeps.callLlm (deprecated).
  */
-export const _deps = {
+export const _autoPluginDeps = {
   adapter: null as AgentAdapter | null,
   callLlm: null as ((request: InteractionRequest) => Promise<DecisionResponse>) | null,
 };
@@ -93,8 +93,8 @@ export class AutoInteractionPlugin implements InteractionPlugin {
 
     try {
       // Use deprecated callLlm if provided (backward compatibility)
-      if (_deps.callLlm) {
-        const decision = await _deps.callLlm(request);
+      if (_autoPluginDeps.callLlm) {
+        const decision = await _autoPluginDeps.callLlm(request);
         if (decision.confidence < (this.config.confidenceThreshold ?? 0.7)) {
           return undefined;
         }
@@ -135,9 +135,9 @@ export class AutoInteractionPlugin implements InteractionPlugin {
     const prompt = this.buildPrompt(request);
 
     // Get adapter from dependency injection or throw
-    const adapter = _deps.adapter;
+    const adapter = _autoPluginDeps.adapter;
     if (!adapter) {
-      throw new Error("Auto plugin requires adapter to be injected via _deps.adapter");
+      throw new Error("Auto plugin requires adapter to be injected via _autoPluginDeps.adapter");
     }
 
     // Resolve model option if naxConfig is available

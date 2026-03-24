@@ -8,6 +8,7 @@ import { resolvePermissions } from "../../config/permissions";
 import { PidRegistry } from "../../execution/pid-registry";
 import { withProcessTimeout } from "../../execution/timeout-handler";
 import { getLogger } from "../../logger";
+import { sleep, typedSpawn } from "../../utils/bun-deps";
 import { buildDecomposePrompt, parseDecomposeOutput } from "../shared/decompose";
 import type {
   AgentAdapter,
@@ -34,24 +35,7 @@ import { runPlan } from "./plan";
  * @internal
  */
 export const _decomposeDeps = {
-  spawn(
-    cmd: string[],
-    opts: { cwd?: string; stdout: "pipe"; stderr: "inherit" | "pipe"; env?: Record<string, string | undefined> },
-  ): {
-    stdout: ReadableStream<Uint8Array>;
-    stderr?: ReadableStream<Uint8Array>;
-    exited: Promise<number>;
-    pid: number;
-    kill(signal?: NodeJS.Signals | number): void;
-  } {
-    return Bun.spawn(cmd, opts) as unknown as {
-      stdout: ReadableStream<Uint8Array>;
-      stderr?: ReadableStream<Uint8Array>;
-      exited: Promise<number>;
-      pid: number;
-      kill(signal?: NodeJS.Signals | number): void;
-    };
-  },
+  spawn: typedSpawn,
 };
 
 // Re-export deps for testing
@@ -64,8 +48,8 @@ export { _runOnceDeps, _completeDeps };
  * @internal
  */
 export const _claudeAdapterDeps = {
-  sleep: (ms: number): Promise<void> => Bun.sleep(ms),
-  spawn: Bun.spawn as typeof Bun.spawn,
+  sleep,
+  spawn: typedSpawn,
 };
 
 /**

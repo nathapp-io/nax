@@ -3,6 +3,7 @@
  */
 
 import { getSafeLogger } from "../logger";
+import { spawn } from "./bun-deps";
 
 /**
  * Injectable dependencies for git subprocess calls — allows tests to intercept
@@ -10,7 +11,7 @@ import { getSafeLogger } from "../logger";
  *
  * @internal
  */
-export const _gitDeps = { spawn: Bun.spawn };
+export const _gitDeps = { spawn };
 
 /**
  * Default timeout for git subprocess calls.

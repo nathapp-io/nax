@@ -11,6 +11,7 @@ import type { NaxConfig } from "../../config";
 import { resolveModel } from "../../config";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd/types";
+import { typedSpawn } from "../../utils/bun-deps";
 import type { RoutingContext, RoutingDecision } from "../router";
 import { determineTestStrategy } from "../router";
 import { buildBatchRoutingPrompt, buildRoutingPrompt, parseBatchResponse, parseRoutingResponse } from "./llm-prompts";
@@ -67,9 +68,8 @@ export interface PipedProc {
 /**
  * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
  */
-export const _deps = {
-  spawn: (cmd: string[], opts: { stdout: "pipe"; stderr: "pipe" }): PipedProc =>
-    Bun.spawn(cmd, opts) as unknown as PipedProc,
+export const _llmStrategyDeps = {
+  spawn: typedSpawn,
   adapter: undefined as AgentAdapter | undefined,
 };
 
@@ -156,7 +156,7 @@ export async function routeBatch(stories: UserStory[], context: RoutingContext):
     throw new Error("LLM routing config not found");
   }
 
-  const adapter = context.adapter ?? _deps.adapter;
+  const adapter = context.adapter ?? _llmStrategyDeps.adapter;
   if (!adapter) {
     throw new Error("No agent adapter available for batch routing (AA-003)");
   }
@@ -232,7 +232,7 @@ export async function classifyWithLlm(
   }
 
   // Call the LLM
-  const effectiveAdapter = adapter ?? _deps.adapter;
+  const effectiveAdapter = adapter ?? _llmStrategyDeps.adapter;
   if (!effectiveAdapter) {
     throw new Error("No agent adapter available for LLM routing (AA-003)");
   }

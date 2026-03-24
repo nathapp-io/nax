@@ -5,6 +5,7 @@
  */
 
 import { resolvePermissions } from "../../config/permissions";
+import { typedSpawn } from "../../utils/bun-deps";
 import type { CompleteOptions } from "../types";
 import { CompleteError } from "../types";
 
@@ -15,17 +16,7 @@ import { CompleteError } from "../types";
  * @internal
  */
 export const _completeDeps = {
-  spawn(
-    cmd: string[],
-    opts: { stdout: "pipe"; stderr: "pipe" | "inherit" },
-  ): { stdout: ReadableStream<Uint8Array>; stderr: ReadableStream<Uint8Array>; exited: Promise<number>; pid: number } {
-    return Bun.spawn(cmd, opts) as unknown as {
-      stdout: ReadableStream<Uint8Array>;
-      stderr: ReadableStream<Uint8Array>;
-      exited: Promise<number>;
-      pid: number;
-    };
-  },
+  spawn: typedSpawn,
 };
 
 /**

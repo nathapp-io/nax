@@ -10,7 +10,7 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { _deps, buildPlanningPrompt, planCommand } from "../../../src/cli/plan";
+import { _planDeps, buildPlanningPrompt, planCommand } from "../../../src/cli/plan";
 import type { PRD } from "../../../src/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -57,14 +57,14 @@ const SAMPLE_PRD: PRD = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Capture originals before any test overrides */
-const origReadFile = _deps.readFile;
-const origWriteFile = _deps.writeFile;
-const origScanCodebase = _deps.scanCodebase;
-const origGetAgent = _deps.getAgent;
-const origReadPackageJson = _deps.readPackageJson;
-const origSpawnSync = _deps.spawnSync;
-const origMkdirp = _deps.mkdirp;
-const origExistsSync = _deps.existsSync;
+const origReadFile = _planDeps.readFile;
+const origWriteFile = _planDeps.writeFile;
+const origScanCodebase = _planDeps.scanCodebase;
+const origGetAgent = _planDeps.getAgent;
+const origReadPackageJson = _planDeps.readPackageJson;
+const origSpawnSync = _planDeps.spawnSync;
+const origMkdirp = _planDeps.mkdirp;
+const origExistsSync = _planDeps.existsSync;
 
 function makeFakeAdapter(returnPrd: object = SAMPLE_PRD) {
   return {
@@ -99,24 +99,24 @@ describe("planCommand", () => {
     await mkdir(join(tmpDir, ".nax"), { recursive: true });
 
     // Default deps — override per test as needed
-    _deps.readFile = mock(async (_path: string) => SAMPLE_SPEC);
+    _planDeps.readFile = mock(async (_path: string) => SAMPLE_SPEC);
 
-    _deps.writeFile = mock(async (path: string, content: string) => {
+    _planDeps.writeFile = mock(async (path: string, content: string) => {
       capturedWriteArgs.push([path, content]);
     });
 
-    _deps.scanCodebase = mock(async (_workdir: string) => makeFakeScan());
+    _planDeps.scanCodebase = mock(async (_workdir: string) => makeFakeScan());
 
-    _deps.readPackageJson = mock(async (_workdir: string) => ({ name: "my-project" }));
+    _planDeps.readPackageJson = mock(async (_workdir: string) => ({ name: "my-project" }));
 
-    _deps.spawnSync = mock((_cmd: string[], _opts?: object) => ({
+    _planDeps.spawnSync = mock((_cmd: string[], _opts?: object) => ({
       stdout: Buffer.from(""),
       exitCode: 1,
     }));
 
-    _deps.mkdirp = mock(async (_path: string) => {});
+    _planDeps.mkdirp = mock(async (_path: string) => {});
 
-    _deps.getAgent = mock((_name: string) => {
+    _planDeps.getAgent = mock((_name: string) => {
       const adapter = makeFakeAdapter();
       capturedCompleteArgs = [];
       adapter.complete = mock(async (prompt: string) => {
@@ -129,14 +129,14 @@ describe("planCommand", () => {
 
   afterEach(async () => {
     mock.restore();
-    _deps.readFile = origReadFile;
-    _deps.writeFile = origWriteFile;
-    _deps.scanCodebase = origScanCodebase;
-    _deps.getAgent = origGetAgent;
-    _deps.readPackageJson = origReadPackageJson;
-    _deps.spawnSync = origSpawnSync;
-    _deps.mkdirp = origMkdirp;
-    _deps.existsSync = origExistsSync;
+    _planDeps.readFile = origReadFile;
+    _planDeps.writeFile = origWriteFile;
+    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.getAgent = origGetAgent;
+    _planDeps.readPackageJson = origReadPackageJson;
+    _planDeps.spawnSync = origSpawnSync;
+    _planDeps.mkdirp = origMkdirp;
+    _planDeps.existsSync = origExistsSync;
     await rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -146,7 +146,7 @@ describe("planCommand", () => {
 
   test("AC-1: reads spec from --from path and includes content in planning prompt", async () => {
     const specPath = join(tmpDir, "spec.md");
-    _deps.readFile = mock(async (path: string) => {
+    _planDeps.readFile = mock(async (path: string) => {
       if (path === specPath) return SAMPLE_SPEC;
       throw new Error(`Unexpected readFile call: ${path}`);
     });
@@ -157,7 +157,7 @@ describe("planCommand", () => {
       auto: true,
     });
 
-    expect(_deps.readFile).toHaveBeenCalledWith(specPath);
+    expect(_planDeps.readFile).toHaveBeenCalledWith(specPath);
     expect(capturedCompleteArgs[0]).toContain("URL Shortener");
   });
 
@@ -224,7 +224,7 @@ describe("planCommand", () => {
 
   test("AC-3: adapter.complete() is called in --auto mode", async () => {
     const fakeAdapter = makeFakeAdapter();
-    _deps.getAgent = mock((_name: string) => fakeAdapter as never);
+    _planDeps.getAgent = mock((_name: string) => fakeAdapter as never);
 
     await planCommand(tmpDir, {} as never, {
       from: "/spec.md",
@@ -240,10 +240,10 @@ describe("planCommand", () => {
       plan: mock(async (_options: any) => ({ specContent: "" })),
       complete: mock(async (_prompt: string) => JSON.stringify(SAMPLE_PRD)),
     };
-    _deps.getAgent = mock((_name: string) => fakeAdapter as never);
+    _planDeps.getAgent = mock((_name: string) => fakeAdapter as never);
     // Simulate agent having written the PRD file to disk
-    _deps.existsSync = mock((_path: string) => true);
-    _deps.readFile = mock(async (_path: string) => JSON.stringify(SAMPLE_PRD));
+    _planDeps.existsSync = mock((_path: string) => true);
+    _planDeps.readFile = mock(async (_path: string) => JSON.stringify(SAMPLE_PRD));
 
     await planCommand(tmpDir, {} as never, {
       from: "/spec.md",
@@ -258,7 +258,7 @@ describe("planCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-4: throws on invalid JSON response from adapter", async () => {
-    _deps.getAgent = mock(
+    _planDeps.getAgent = mock(
       (_name: string) =>
         ({
           complete: mock(async () => "not valid json {{"),
@@ -279,7 +279,7 @@ describe("planCommand", () => {
     const prdWithoutProject = { ...SAMPLE_PRD } as Partial<PRD>;
     delete prdWithoutProject.project;
 
-    _deps.getAgent = mock(
+    _planDeps.getAgent = mock(
       (_name: string) =>
         ({
           complete: mock(async () => JSON.stringify(prdWithoutProject)),
@@ -302,7 +302,7 @@ describe("planCommand", () => {
     const badPrd = { ...SAMPLE_PRD } as Partial<PRD>;
     delete badPrd.userStories;
 
-    _deps.getAgent = mock(
+    _planDeps.getAgent = mock(
       (_name: string) =>
         ({
           complete: mock(async () => JSON.stringify(badPrd)),
@@ -360,7 +360,7 @@ describe("planCommand", () => {
       ],
     };
 
-    _deps.getAgent = mock(
+    _planDeps.getAgent = mock(
       (_name: string) =>
         ({
           complete: mock(async () => JSON.stringify(prdWithBadStatuses)),
@@ -385,7 +385,7 @@ describe("planCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-7: project field comes from package.json name", async () => {
-    _deps.readPackageJson = mock(async (_workdir: string) => ({ name: "my-awesome-pkg" }));
+    _planDeps.readPackageJson = mock(async (_workdir: string) => ({ name: "my-awesome-pkg" }));
 
     await planCommand(tmpDir, {} as never, {
       from: "/spec.md",
@@ -399,8 +399,8 @@ describe("planCommand", () => {
   });
 
   test("AC-7: falls back to git remote when package.json has no name", async () => {
-    _deps.readPackageJson = mock(async (_workdir: string) => ({}));
-    _deps.spawnSync = mock((_cmd: string[], _opts?: object) => ({
+    _planDeps.readPackageJson = mock(async (_workdir: string) => ({}));
+    _planDeps.spawnSync = mock((_cmd: string[], _opts?: object) => ({
       stdout: Buffer.from("https://github.com/org/repo-name.git\n"),
       exitCode: 0,
     }));

@@ -6,11 +6,12 @@
  */
 
 import type { Subprocess } from "bun";
+import { spawn } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
 import type { TestExecutionResult } from "./types";
 
 /** Injectable deps for testability — mock _executorDeps.spawn instead of global Bun.spawn */
-export const _executorDeps = { spawn: Bun.spawn as typeof Bun.spawn };
+export const _executorDeps = { spawn };
 
 /**
  * Drain stdout+stderr from a killed Bun subprocess with a hard deadline.
