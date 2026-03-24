@@ -1,10 +1,10 @@
 /**
  * Unit tests for run-initialization.ts — ENH-007
  *
- * Verifies reconcileState review gate behavior:
- * - Backward compat: no failureStage => reconcile as before
- * - review/autofix failureStage => re-run review before reconciling
- * - other failureStage => trust commits, no review re-run
+ * Verifies reconcileState behavior:
+ * - Only review/autofix failures are reconcilable (re-runs review gate)
+ * - All other failure stages (execution, verify, etc.) are NOT reconciled
+ * - No failureStage => NOT reconciled (unknown failure = not safe)
  */
 
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -98,15 +98,14 @@ describe("reconcileState", () => {
     }
   });
 
-  test("backward compat: no failureStage + commits => reconciles as passed", async () => {
+  test("no failureStage + commits => NOT reconciled (unknown failure stage)", async () => {
     _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(true));
     _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
 
     const prd = makePrd({ status: "failed" }); // no failureStage
     const result = await runReconcile(prd, "-1");
 
-    expect(result.userStories[0].status).toBe("passed");
-    // Review must NOT be called for non-review-stage failures
+    expect(result.userStories[0].status).toBe("failed");
     expect(_reconcileDeps.runReview).not.toHaveBeenCalled();
   });
 
@@ -143,14 +142,36 @@ describe("reconcileState", () => {
     expect(_reconcileDeps.runReview).toHaveBeenCalledTimes(1);
   });
 
-  test("failureStage=coding + commits => reconciles without calling review", async () => {
+  test("failureStage=execution + commits => NOT reconciled", async () => {
     _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(true));
     _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
 
-    const prd = makePrd({ status: "failed", failureStage: "coding" });
+    const prd = makePrd({ status: "failed", failureStage: "execution" });
     const result = await runReconcile(prd, "-5");
 
-    expect(result.userStories[0].status).toBe("passed");
+    expect(result.userStories[0].status).toBe("failed");
+    expect(_reconcileDeps.runReview).not.toHaveBeenCalled();
+  });
+
+  test("failureStage=verify + commits => NOT reconciled", async () => {
+    _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(true));
+    _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
+
+    const prd = makePrd({ status: "failed", failureStage: "verify" });
+    const result = await runReconcile(prd, "-8");
+
+    expect(result.userStories[0].status).toBe("failed");
+    expect(_reconcileDeps.runReview).not.toHaveBeenCalled();
+  });
+
+  test("failureStage=regression + commits => NOT reconciled", async () => {
+    _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(true));
+    _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
+
+    const prd = makePrd({ status: "failed", failureStage: "regression" });
+    const result = await runReconcile(prd, "-9");
+
+    expect(result.userStories[0].status).toBe("failed");
     expect(_reconcileDeps.runReview).not.toHaveBeenCalled();
   });
 
