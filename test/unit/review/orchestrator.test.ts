@@ -15,7 +15,7 @@ import type { NaxConfig } from "../../../src/config";
 import type { PluginRegistry } from "../../../src/plugins";
 import type { IReviewPlugin } from "../../../src/plugins/extensions";
 import { ReviewOrchestrator, _orchestratorDeps } from "../../../src/review/orchestrator";
-import { _deps as _runnerDeps } from "../../../src/review/runner";
+import { _reviewGitDeps as _runnerDeps } from "../../../src/review/runner";
 import type { ReviewConfig } from "../../../src/review/types";
 import { withDepsRestore } from "../../helpers/deps";
 

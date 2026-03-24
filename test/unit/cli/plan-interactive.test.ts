@@ -10,7 +10,7 @@ import { mkdtempSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { _deps, planCommand } from "../../../src/cli/plan";
+import { _planDeps as _deps, planCommand } from "../../../src/cli/plan";
 import type { PRD } from "../../../src/prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────

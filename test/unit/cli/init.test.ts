@@ -9,7 +9,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { _deps as contextDeps } from "../../../src/cli/init-context";
+import { _initContextDeps as contextDeps } from "../../../src/cli/init-context";
 import { initProject } from "../../../src/cli/init";
 import { withTempDir } from "../../helpers/temp";
 

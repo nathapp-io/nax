@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _deps, runReview } from "../../../src/review/runner";
+import { _reviewGitDeps as _deps, runReview } from "../../../src/review/runner";
 import type { ReviewConfig } from "../../../src/review/types";
 
 /** Minimal ReviewConfig with typecheck enabled but command set to disable via executionConfig */

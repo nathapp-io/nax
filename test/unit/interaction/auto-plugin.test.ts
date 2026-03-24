@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _deps, AutoInteractionPlugin } from "../../../src/interaction/plugins/auto";
+import { _autoPluginDeps as _deps, AutoInteractionPlugin } from "../../../src/interaction/plugins/auto";
 import type { InteractionRequest } from "../../../src/interaction/types";
 
 // Save original so we can restore in afterEach

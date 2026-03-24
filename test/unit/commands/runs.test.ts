@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { _deps, runsCommand } from "../../../src/commands/runs";
+import { _runsCmdDeps as _deps, runsCommand } from "../../../src/commands/runs";
 import type { MetaJson } from "../../../src/pipeline/subscribers/registry";
 import type { NaxStatusFile } from "../../../src/execution/status-file";
 
