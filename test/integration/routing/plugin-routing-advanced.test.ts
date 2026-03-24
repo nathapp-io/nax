@@ -18,9 +18,8 @@ import * as loggerModule from "../../../src/logger";
 import { PluginRegistry } from "../../../src/plugins/registry";
 import type { NaxPlugin } from "../../../src/plugins/types";
 import type { UserStory } from "../../../src/prd/types";
-import { buildStrategyChain } from "../../../src/routing/builder";
 import { routeStory } from "../../../src/routing/router";
-import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../../../src/routing/strategy";
+import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../../../src/routing";
 
 // ============================================================================
 // Test Helpers
@@ -102,13 +101,13 @@ describe("Plugin router error handling", () => {
   test("error in plugin router is logged", async () => {
     const loggedErrors: Array<{ category: string; message: string; data?: unknown }> = [];
 
-    // Mock logger to capture error logs
+    // Mock logger to capture warn logs (resolveRouting logs plugin errors as warn)
     const mockLogger = {
-      error: (category: string, message: string, data?: unknown) => {
+      error: () => {},
+      info: () => {},
+      warn: (category: string, message: string, data?: unknown) => {
         loggedErrors.push({ category, message, data });
       },
-      info: () => {},
-      warn: () => {},
       debug: () => {},
     };
 
@@ -227,11 +226,11 @@ describe("Plugin router error handling", () => {
     const loggedErrors: Array<{ category: string; message: string; data?: unknown }> = [];
 
     const mockLogger = {
-      error: (category: string, message: string, data?: unknown) => {
+      error: () => {},
+      info: () => {},
+      warn: (category: string, message: string, data?: unknown) => {
         loggedErrors.push({ category, message, data });
       },
-      info: () => {},
-      warn: () => {},
       debug: () => {},
     };
 

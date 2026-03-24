@@ -1,20 +1,14 @@
-// Core types and interfaces
-export type { RoutingDecision } from "./router";
-export type { RoutingStrategy, RoutingContext, AggregateMetrics } from "./strategy";
+// Core types
+export type { RoutingDecision, RoutingStrategy, RoutingContext } from "./router";
 
 // Main routing functions
-export { routeStory, routeTask, classifyComplexity, determineTestStrategy, complexityToModelTier } from "./router";
-
-// Strategy chain
-export { StrategyChain } from "./chain";
-export { buildStrategyChain } from "./builder";
-
-// Built-in strategies
-export { keywordStrategy, llmStrategy, manualStrategy } from "./strategies";
-
-// Custom strategy loader
-export { loadCustomStrategy } from "./loader";
-export { tryLlmBatchRoute } from "./batch-route";
-
-// Content hash for staleness detection (RRP-003)
-export { computeStoryContentHash } from "./content-hash";
+export {
+  resolveRouting,
+  routeStory,
+  routeTask,
+  classifyComplexity,
+  determineTestStrategy,
+  complexityToModelTier,
+  tryLlmBatchRoute,
+  _tryLlmBatchRouteDeps,
+} from "./router";

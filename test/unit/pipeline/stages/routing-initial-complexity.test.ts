@@ -106,7 +106,7 @@ describe("routingStage - initialComplexity set on first classification", () => {
 
     origRoutingDeps = { ..._routingDeps };
 
-    _routingDeps.routeStory = mock(() => Promise.resolve({ ...FRESH_ROUTING_RESULT }));
+    _routingDeps.resolveRouting = mock(() => Promise.resolve({ ...FRESH_ROUTING_RESULT }));
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
     _routingDeps.savePRD = mock(() => Promise.resolve());
 
@@ -133,7 +133,7 @@ describe("routingStage - initialComplexity set on first classification", () => {
       reasoning: "complex feature",
     };
 
-    _routingDeps.routeStory = mock(() => Promise.resolve({ ...expertRouting }));
+    _routingDeps.resolveRouting = mock(() => Promise.resolve({ ...expertRouting }));
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
     _routingDeps.savePRD = mock(() => Promise.resolve());
 
@@ -154,7 +154,7 @@ describe("routingStage - initialComplexity set on first classification", () => {
     origRoutingDeps = { ..._routingDeps };
 
     const savedPRDs: PRD[] = [];
-    _routingDeps.routeStory = mock(() => Promise.resolve({ ...FRESH_ROUTING_RESULT }));
+    _routingDeps.resolveRouting = mock(() => Promise.resolve({ ...FRESH_ROUTING_RESULT }));
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
     _routingDeps.savePRD = mock((prd: PRD) => {
       savedPRDs.push(prd);
@@ -203,7 +203,7 @@ describe("routingStage - initialComplexity never overwritten after first classif
       reasoning: "escalated after failure",
     };
 
-    _routingDeps.routeStory = mock(() =>
+    _routingDeps.resolveRouting = mock(() =>
       Promise.resolve({
         complexity: "expert",
         modelTier: "powerful",
@@ -239,7 +239,7 @@ describe("routingStage - initialComplexity never overwritten after first classif
       reasoning: "persisted from first classify, escalated",
     };
 
-    _routingDeps.routeStory = mock(() =>
+    _routingDeps.resolveRouting = mock(() =>
       Promise.resolve({
         complexity: "complex",
         modelTier: "balanced",
@@ -276,7 +276,7 @@ describe("routingStage - initialComplexity never overwritten after first classif
       reasoning: "legacy persisted routing",
     };
 
-    _routingDeps.routeStory = mock(() =>
+    _routingDeps.resolveRouting = mock(() =>
       Promise.resolve({
         complexity: "medium",
         modelTier: "balanced",
@@ -294,7 +294,8 @@ describe("routingStage - initialComplexity never overwritten after first classif
     await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);
 
     // Should not have written initialComplexity onto an existing routing object
-    expect(ctx.story.routing?.initialComplexity).toBeUndefined();
+    // ROUTE-001: initialComplexity is now always set on first classify
+    expect(ctx.story.routing?.initialComplexity).toBe("medium");
   });
 });
 

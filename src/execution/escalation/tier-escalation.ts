@@ -12,7 +12,7 @@ import { type LoadedHooksConfig, fireHook } from "../../hooks";
 import { getSafeLogger } from "../../logger";
 import type { PRD, StructuredFailure, UserStory } from "../../prd";
 import { markStoryFailed, savePRD } from "../../prd";
-import { tryLlmBatchRoute } from "../../routing/batch-route";
+import { tryLlmBatchRoute } from "../../routing";
 import { clearCacheForStory } from "../../routing/strategies/llm";
 import type { FailureCategory } from "../../tdd/types";
 import { calculateMaxIterations, escalateTier, getTierConfig } from "../escalation";

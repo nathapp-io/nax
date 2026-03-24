@@ -36,11 +36,6 @@ export const DEFAULT_CONFIG: NaxConfig = {
   },
   routing: {
     strategy: "keyword",
-    adaptive: {
-      minSamples: 10,
-      costThreshold: 0.8,
-      fallbackStrategy: "llm",
-    },
     llm: {
       model: "fast",
       fallbackToKeywords: true,

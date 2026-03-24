@@ -19,6 +19,18 @@ import { windsurfGenerator } from "./generators/windsurf";
 import { buildProjectMetadata } from "./injector";
 import type { AgentContextGenerator, AgentType, ContextContent, GeneratorMap } from "./types";
 
+/**
+ * Swappable I/O dependencies for testing.
+ * Unit tests mock these to avoid real filesystem access.
+ */
+export const _generatorDeps = {
+  existsSync: (p: string) => existsSync(p),
+  readFileSync: (p: string, enc: BufferEncoding) => readFileSync(p, enc),
+  readTextFile: (p: string) => Bun.file(p).text(),
+  writeFile: (p: string, content: string) => Bun.write(p, content),
+  buildProjectMetadata,
+};
+
 /** Generator registry */
 const GENERATORS: GeneratorMap = {
   claude: claudeGenerator,
@@ -59,15 +71,14 @@ export interface GenerateOptions {
  * Load context content and optionally inject project metadata.
  */
 async function loadContextContent(options: GenerateOptions, config: NaxConfig): Promise<ContextContent> {
-  if (!existsSync(options.contextPath)) {
+  if (!_generatorDeps.existsSync(options.contextPath)) {
     throw new Error(`Context file not found: ${options.contextPath}`);
   }
 
-  const file = Bun.file(options.contextPath);
-  const markdown = await file.text();
+  const markdown = await _generatorDeps.readTextFile(options.contextPath);
 
   const autoInject = options.autoInject ?? true;
-  const metadata = autoInject ? await buildProjectMetadata(options.workdir, config) : undefined;
+  const metadata = autoInject ? await _generatorDeps.buildProjectMetadata(options.workdir, config) : undefined;
 
   return { markdown, metadata };
 }
@@ -89,7 +100,7 @@ async function generateFor(agent: AgentType, options: GenerateOptions, config: N
     validateFilePath(outputPath, options.outputDir);
 
     if (!options.dryRun) {
-      await Bun.write(outputPath, content);
+      await _generatorDeps.writeFile(outputPath, content);
     }
 
     return { agent, outputFile: generator.outputFile, content, written: !options.dryRun };
@@ -127,7 +138,7 @@ async function generateAll(
       validateFilePath(outputPath, options.outputDir);
 
       if (!options.dryRun) {
-        await Bun.write(outputPath, content);
+        await _generatorDeps.writeFile(outputPath, content);
       }
 
       results.push({ agent: agentKey, outputFile: generator.outputFile, content, written: !options.dryRun });
@@ -215,9 +226,9 @@ export async function discoverWorkspacePackages(repoRoot: string): Promise<strin
 
   // 2. turbo v2+: turbo.json top-level "packages" array
   const turboPath = join(repoRoot, "turbo.json");
-  if (existsSync(turboPath)) {
+  if (_generatorDeps.existsSync(turboPath)) {
     try {
-      const turbo = JSON.parse(readFileSync(turboPath, "utf-8")) as Record<string, unknown>;
+      const turbo = JSON.parse(_generatorDeps.readFileSync(turboPath, "utf-8")) as Record<string, unknown>;
       if (Array.isArray(turbo.packages)) {
         await resolveGlobs(turbo.packages as string[]);
       }
@@ -228,9 +239,9 @@ export async function discoverWorkspacePackages(repoRoot: string): Promise<strin
 
   // 3. root package.json "workspaces" (npm/yarn/bun/turbo v1)
   const pkgPath = join(repoRoot, "package.json");
-  if (existsSync(pkgPath)) {
+  if (_generatorDeps.existsSync(pkgPath)) {
     try {
-      const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as Record<string, unknown>;
+      const pkg = JSON.parse(_generatorDeps.readFileSync(pkgPath, "utf-8")) as Record<string, unknown>;
       const ws = pkg.workspaces;
       const patterns: string[] = Array.isArray(ws)
         ? (ws as string[])
@@ -245,9 +256,9 @@ export async function discoverWorkspacePackages(repoRoot: string): Promise<strin
 
   // 4. pnpm-workspace.yaml
   const pnpmPath = join(repoRoot, "pnpm-workspace.yaml");
-  if (existsSync(pnpmPath)) {
+  if (_generatorDeps.existsSync(pnpmPath)) {
     try {
-      const raw = readFileSync(pnpmPath, "utf-8");
+      const raw = _generatorDeps.readFileSync(pnpmPath, "utf-8");
       // Simple YAML parse for "packages:\n  - 'packages/*'" without full YAML dep
       const lines = raw.split("\n");
       let inPackages = false;
@@ -294,7 +305,7 @@ export async function generateForPackage(
   const relativePkgPath = relative(resolvedRepoRoot, packageDir);
   const contextPath = join(resolvedRepoRoot, ".nax", "mono", relativePkgPath, "context.md");
 
-  if (!existsSync(contextPath)) {
+  if (!_generatorDeps.existsSync(contextPath)) {
     return [
       {
         packageDir,

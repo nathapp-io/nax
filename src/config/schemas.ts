@@ -281,12 +281,6 @@ const ContextConfigSchema = z.object({
   fileInjection: z.enum(["keyword", "disabled"]).default("disabled"),
 });
 
-const AdaptiveRoutingConfigSchema = z.object({
-  minSamples: z.number().int().positive({ message: "adaptive.minSamples must be > 0" }),
-  costThreshold: z.number().min(0).max(1, { message: "adaptive.costThreshold must be 0-1" }),
-  fallbackStrategy: z.enum(["keyword", "llm", "manual"]),
-});
-
 const LlmRoutingConfigSchema = z.object({
   model: z.string().optional(),
   fallbackToKeywords: z.boolean().optional(),
@@ -298,26 +292,10 @@ const LlmRoutingConfigSchema = z.object({
   retryDelayMs: z.number().int().min(0, { message: "llm.retryDelayMs must be >= 0" }).optional(),
 });
 
-const RoutingConfigSchema = z
-  .object({
-    strategy: z.enum(["keyword", "llm", "manual", "adaptive", "custom"]),
-    customStrategyPath: z.string().optional(),
-    adaptive: AdaptiveRoutingConfigSchema.optional(),
-    llm: LlmRoutingConfigSchema.optional(),
-  })
-  .refine(
-    (data) => {
-      // If strategy is "custom", customStrategyPath is required
-      if (data.strategy === "custom" && !data.customStrategyPath) {
-        return false;
-      }
-      return true;
-    },
-    {
-      message: "routing.customStrategyPath is required when strategy is 'custom'",
-      path: ["customStrategyPath"],
-    },
-  );
+const RoutingConfigSchema = z.object({
+  strategy: z.enum(["keyword", "llm"]),
+  llm: LlmRoutingConfigSchema.optional(),
+});
 
 const OptimizerConfigSchema = z.object({
   enabled: z.boolean(),

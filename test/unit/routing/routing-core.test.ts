@@ -4,36 +4,14 @@
  *
  * Consolidated test suite for routing system including:
  * - Core routing logic (classifyComplexity, determineTestStrategy, routeTask)
- * - Routing strategies (keyword, llm, manual, adaptive)
- * - Strategy chain execution
- * - Async support and chain delegation
+ * - Tier escalation logic
  */
 
-import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import type { NaxConfig } from "../../../src/config";
 import { escalateTier } from "../../../src/execution/runner";
-import type { AggregateMetrics } from "../../../src/metrics/types";
-import type { UserStory } from "../../../src/prd/types";
 import { classifyComplexity, determineTestStrategy, routeTask } from "../../../src/routing";
-import { buildStrategyChain } from "../../../src/routing/builder";
-import { StrategyChain } from "../../../src/routing/chain";
-import { keywordStrategy, llmStrategy, manualStrategy } from "../../../src/routing/strategies";
-import { adaptiveStrategy } from "../../../src/routing/strategies/adaptive";
-import {
-  buildBatchPrompt,
-  buildRoutingPrompt,
-  clearCache,
-  clearCacheForStory,
-  getCacheSize,
-  llmStrategy as llmStrategyFull,
-  parseRoutingResponse,
-  routeBatch,
-  stripCodeFences,
-  validateRoutingDecision,
-} from "../../../src/routing/strategies/llm";
-import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../../../src/routing/strategy";
-
 
 describe("classifyComplexity", () => {
   test("simple: few criteria, no keywords", () => {
@@ -304,38 +282,5 @@ describe("escalateTier", () => {
 
     tier = escalateTier(tier!, defaultTiers);
     expect(tier).toBeNull();
-  });
-});
-
-describe("buildStrategyChain", () => {
-  test("builds keyword-only chain by default", async () => {
-    const chain = await buildStrategyChain(DEFAULT_CONFIG, "/tmp");
-    expect(chain.getStrategyNames()).toEqual(["keyword"]);
-  });
-
-  test("builds manual + keyword chain when strategy=manual", async () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      routing: { strategy: "manual" as const },
-    };
-    const chain = await buildStrategyChain(config, "/tmp");
-    expect(chain.getStrategyNames()).toEqual(["manual", "keyword"]);
-  });
-
-  test("builds llm + keyword chain when strategy=llm", async () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      routing: { strategy: "llm" as const },
-    };
-    const chain = await buildStrategyChain(config, "/tmp");
-    expect(chain.getStrategyNames()).toEqual(["llm", "keyword"]);
-  });
-
-  test("throws error when custom strategy without path", async () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      routing: { strategy: "custom" as const },
-    };
-    await expect(buildStrategyChain(config, "/tmp")).rejects.toThrow("routing.customStrategyPath is required");
   });
 });

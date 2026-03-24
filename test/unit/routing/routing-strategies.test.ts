@@ -1,39 +1,24 @@
 // RE-ARCH: keep
 /**
- * Routing Tests
+ * LLM Routing Strategy Tests
  *
- * Consolidated test suite for routing system including:
- * - Core routing logic (classifyComplexity, determineTestStrategy, routeTask)
- * - Routing strategies (keyword, llm, manual, adaptive)
- * - Strategy chain execution
- * - Async support and chain delegation
+ * Tests for LLM routing utilities:
+ * - Prompt building (buildRoutingPrompt, buildBatchPrompt)
+ * - Response parsing (parseRoutingResponse)
+ * - Code fence handling (stripCodeFences)
+ * - Decision validation (validateRoutingDecision)
  */
 
-import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config";
-import type { NaxConfig } from "../../../src/config";
-import { escalateTier } from "../../../src/execution/runner";
-import type { AggregateMetrics } from "../../../src/metrics/types";
 import type { UserStory } from "../../../src/prd/types";
-import { classifyComplexity, determineTestStrategy, routeTask } from "../../../src/routing";
-import { buildStrategyChain } from "../../../src/routing/builder";
-import { StrategyChain } from "../../../src/routing/chain";
-import { keywordStrategy, llmStrategy, manualStrategy } from "../../../src/routing/strategies";
-import { adaptiveStrategy } from "../../../src/routing/strategies/adaptive";
 import {
   buildBatchPrompt,
   buildRoutingPrompt,
-  clearCache,
-  clearCacheForStory,
-  getCacheSize,
-  llmStrategy as llmStrategyFull,
   parseRoutingResponse,
-  routeBatch,
   stripCodeFences,
   validateRoutingDecision,
 } from "../../../src/routing/strategies/llm";
-import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../../../src/routing/strategy";
-
 
 const simpleStory: UserStory = {
   id: "US-001",
@@ -44,6 +29,8 @@ const simpleStory: UserStory = {
   dependencies: [],
   status: "pending",
   passes: false,
+  escalations: [],
+  attempts: 0,
 };
 
 const complexStory: UserStory = {
@@ -55,291 +42,9 @@ const complexStory: UserStory = {
   dependencies: [],
   status: "pending",
   passes: false,
+  escalations: [],
+  attempts: 0,
 };
-
-const testContext: RoutingContext = {
-  config: DEFAULT_CONFIG,
-};
-
-describe("StrategyChain", () => {
-  test("uses first strategy that returns non-null", async () => {
-    const alwaysNullStrategy: RoutingStrategy = {
-      name: "always-null",
-      route: () => null,
-    };
-
-    const alwaysReturnStrategy: RoutingStrategy = {
-      name: "always-return",
-      route: () => ({
-        complexity: "simple",
-        modelTier: "fast",
-        testStrategy: "test-after",
-        reasoning: "Always return strategy",
-      }),
-    };
-
-    const chain = new StrategyChain([alwaysNullStrategy, alwaysReturnStrategy]);
-
-    const story: UserStory = {
-      id: "US-001",
-      title: "Test story",
-      description: "Test",
-      acceptanceCriteria: [],
-      tags: [],
-      dependencies: [],
-      status: "pending",
-      passes: false,
-      escalations: [],
-      attempts: 0,
-    };
-
-    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
-    const context: RoutingContext = { config: configWithoutLlm };
-    const decision = await chain.route(story, context);
-
-    expect(decision.reasoning).toBe("Always return strategy");
-  });
-
-  test("throws error if all strategies return null", async () => {
-    const alwaysNullStrategy: RoutingStrategy = {
-      name: "always-null",
-      route: () => null,
-    };
-
-    const chain = new StrategyChain([alwaysNullStrategy]);
-
-    const story: UserStory = {
-      id: "US-001",
-      title: "Test story",
-      description: "Test",
-      acceptanceCriteria: [],
-      tags: [],
-      dependencies: [],
-      status: "pending",
-      passes: false,
-      escalations: [],
-      attempts: 0,
-    };
-
-    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
-    const context: RoutingContext = { config: configWithoutLlm };
-
-    await expect(chain.route(story, context)).rejects.toThrow("No routing strategy returned a decision");
-  });
-
-  test("getStrategyNames returns strategy names", () => {
-    const chain = new StrategyChain([keywordStrategy, llmStrategy]);
-    expect(chain.getStrategyNames()).toEqual(["keyword", "llm"]);
-  });
-
-  describe("async support", () => {
-    test("handles async strategy that returns decision", async () => {
-      const asyncStrategy: RoutingStrategy = {
-        name: "async-test",
-        route: async () => {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-          return {
-            complexity: "medium",
-            modelTier: "balanced",
-            testStrategy: "test-after",
-            reasoning: "Async strategy result",
-          };
-        },
-      };
-
-      const chain = new StrategyChain([asyncStrategy]);
-
-      const story: UserStory = {
-        id: "US-001",
-        title: "Test async story",
-        description: "Test async routing",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "pending",
-        passes: false,
-        escalations: [],
-        attempts: 0,
-      };
-
-      const context: RoutingContext = { config: DEFAULT_CONFIG };
-      const decision = await chain.route(story, context);
-
-      expect(decision.reasoning).toBe("Async strategy result");
-      expect(decision.complexity).toBe("medium");
-      expect(decision.modelTier).toBe("balanced");
-    });
-
-    test("handles mixed sync and async strategies", async () => {
-      const syncStrategy: RoutingStrategy = {
-        name: "sync-first",
-        route: () => null,
-      };
-
-      const asyncStrategy: RoutingStrategy = {
-        name: "async-second",
-        route: async () => {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-          return {
-            complexity: "complex",
-            modelTier: "powerful",
-            testStrategy: "three-session-tdd",
-            reasoning: "Mixed chain result",
-          };
-        },
-      };
-
-      const chain = new StrategyChain([syncStrategy, asyncStrategy]);
-
-      const story: UserStory = {
-        id: "US-003",
-        title: "Test mixed",
-        description: "Test mixed sync/async",
-        acceptanceCriteria: [],
-        tags: [],
-        dependencies: [],
-        status: "pending",
-        passes: false,
-        escalations: [],
-        attempts: 0,
-      };
-
-      const context: RoutingContext = { config: DEFAULT_CONFIG };
-      const decision = await chain.route(story, context);
-
-      expect(decision.reasoning).toBe("Mixed chain result");
-      expect(decision.testStrategy).toBe("three-session-tdd");
-    });
-  });
-});
-
-describe("keywordStrategy", () => {
-  test("classifies simple story correctly", () => {
-    const story: UserStory = {
-      id: "US-001",
-      title: "Update button color",
-      description: "Change button to blue",
-      acceptanceCriteria: ["Button is blue"],
-      tags: [],
-      dependencies: [],
-      status: "pending",
-      passes: false,
-      escalations: [],
-      attempts: 0,
-    };
-
-    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
-    const context: RoutingContext = { config: configWithoutLlm };
-    const decision = keywordStrategy.route(story, context);
-
-    expect(decision).not.toBeNull();
-    expect(decision!.complexity).toBe("simple");
-    expect(decision!.modelTier).toBe("fast");
-    expect(decision!.testStrategy).toBe("tdd-simple");
-  });
-
-  test("classifies complex story with security keywords", () => {
-    const story: UserStory = {
-      id: "US-002",
-      title: "Add JWT authentication",
-      description: "Implement JWT auth with refresh tokens",
-      acceptanceCriteria: ["Token storage", "Refresh logic", "Expiry"],
-      tags: ["security", "auth"],
-      dependencies: [],
-      status: "pending",
-      passes: false,
-      escalations: [],
-      attempts: 0,
-    };
-
-    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
-    const context: RoutingContext = { config: configWithoutLlm };
-    const decision = keywordStrategy.route(story, context);
-
-    expect(decision).not.toBeNull();
-    expect(decision!.complexity).toBe("complex");
-    expect(decision!.modelTier).toBe("powerful");
-    expect(decision!.testStrategy).toBe("three-session-tdd");
-    expect(decision!.reasoning).toContain("security-critical");
-  });
-
-  test("uses three-session-tdd for public API", () => {
-    const story: UserStory = {
-      id: "US-005",
-      title: "Add public API endpoint",
-      description: "Create external API for consumers",
-      acceptanceCriteria: ["Endpoint returns JSON"],
-      tags: ["public api"],
-      dependencies: [],
-      status: "pending",
-      passes: false,
-      escalations: [],
-      attempts: 0,
-    };
-
-    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
-    const context: RoutingContext = { config: configWithoutLlm };
-    const decision = keywordStrategy.route(story, context);
-
-    expect(decision).not.toBeNull();
-    expect(decision!.testStrategy).toBe("three-session-tdd");
-    expect(decision!.reasoning).toContain("public-api");
-  });
-});
-
-describe("manualStrategy", () => {
-  test("returns decision from story.routing metadata", () => {
-    const story: UserStory = {
-      id: "US-006",
-      title: "Manual override test",
-      description: "Story with manual routing",
-      acceptanceCriteria: [],
-      tags: [],
-      dependencies: [],
-      status: "pending",
-      passes: false,
-      escalations: [],
-      attempts: 0,
-      routing: {
-        complexity: "expert",
-        modelTier: "powerful",
-        testStrategy: "three-session-tdd",
-        reasoning: "Manual override for critical task",
-      },
-    };
-
-    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
-    const context: RoutingContext = { config: configWithoutLlm };
-    const decision = manualStrategy.route(story, context);
-
-    expect(decision).not.toBeNull();
-    expect(decision!.complexity).toBe("expert");
-    expect(decision!.modelTier).toBe("powerful");
-    expect(decision!.testStrategy).toBe("three-session-tdd");
-    expect(decision!.reasoning).toBe("Manual override for critical task");
-  });
-
-  test("returns null when no routing metadata", () => {
-    const story: UserStory = {
-      id: "US-007",
-      title: "No manual routing",
-      description: "Story without routing metadata",
-      acceptanceCriteria: [],
-      tags: [],
-      dependencies: [],
-      status: "pending",
-      passes: false,
-      escalations: [],
-      attempts: 0,
-    };
-
-    const configWithoutLlm = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
-    const context: RoutingContext = { config: configWithoutLlm };
-    const decision = manualStrategy.route(story, context);
-
-    expect(decision).toBeNull();
-  });
-});
 
 describe("LLM Routing Strategy - Prompt Building", () => {
   test("buildRoutingPrompt formats story correctly", () => {

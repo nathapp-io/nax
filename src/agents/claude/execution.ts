@@ -41,6 +41,7 @@ export const _runOnceDeps = {
   buildCmd(binary: string, options: AgentRunOptions): string[] {
     return buildCommand(binary, options);
   },
+  withProcessTimeout: withProcessTimeout as typeof withProcessTimeout,
   spawn(
     cmd: string[],
     opts: { cwd: string; stdout: "pipe"; stderr: "inherit"; env: Record<string, string | undefined> },
@@ -171,7 +172,7 @@ export async function executeOnce(
   let timedOut = false;
   let exitCode: number;
   try {
-    const timeoutResult = await withProcessTimeout(proc, options.timeoutSeconds * 1000, {
+    const timeoutResult = await _runOnceDeps.withProcessTimeout(proc, options.timeoutSeconds * 1000, {
       graceMs: SIGKILL_GRACE_PERIOD_MS,
       onTimeout: () => {
         timedOut = true;

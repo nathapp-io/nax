@@ -5,6 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { fullTest } from "../../helpers/env";
 import { chmodSync, mkdirSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -258,7 +259,8 @@ describe("loadOverride — file exists", () => {
 // ---------------------------------------------------------------------------
 
 describe("loadOverride — permission error", () => {
-  const skipOnCI = process.env.CI ? test.skip : test;
+  // Requires file permission manipulation — skipped by default, run with FULL=1.
+  const skipOnCI = fullTest;
 
   skipOnCI("throws a descriptive error when file is not readable", async () => {
     const content = "SECRET";

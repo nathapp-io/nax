@@ -195,7 +195,7 @@ describe("routingStage - does not decompose when below threshold", () => {
 
     const applyMock = mock(() => {});
     deps.applyDecomposition = applyMock;
-    deps.routeStory = mock(() =>
+    deps.resolveRouting = mock(() =>
       Promise.resolve({ complexity: "complex" as const, modelTier: "powerful" as const, testStrategy: "three-session-tdd" as const, reasoning: "r" })
     );
     deps.isGreenfieldStory = mock(() => Promise.resolve(false));
@@ -220,7 +220,7 @@ describe("routingStage - does not decompose when below threshold", () => {
 
     const runDecomposeMock = mock(() => Promise.resolve(makeSuccessfulDecomposeResult()));
     deps.runDecompose = runDecomposeMock;
-    deps.routeStory = mock(() =>
+    deps.resolveRouting = mock(() =>
       Promise.resolve({ complexity: "simple" as const, modelTier: "fast" as const, testStrategy: "test-after" as const, reasoning: "r" })
     );
     deps.isGreenfieldStory = mock(() => Promise.resolve(false));
@@ -259,7 +259,7 @@ describe("routingStage - disabled trigger mode", () => {
     const runDecomposeMock = mock(() => Promise.resolve(makeSuccessfulDecomposeResult()));
     deps.applyDecomposition = applyMock;
     deps.runDecompose = runDecomposeMock;
-    deps.routeStory = mock(() =>
+    deps.resolveRouting = mock(() =>
       Promise.resolve({ complexity: "complex" as const, modelTier: "powerful" as const, testStrategy: "three-session-tdd" as const, reasoning: "r" })
     );
     deps.isGreenfieldStory = mock(() => Promise.resolve(false));
@@ -302,7 +302,7 @@ describe("routingStage - auto trigger mode", () => {
     deps.savePRD = saveMock;
     deps.runDecompose = runDecomposeMock;
     deps.checkStoryOversized = checkOversizedMock;
-    deps.routeStory = mock(() =>
+    deps.resolveRouting = mock(() =>
       Promise.resolve({ complexity: "complex" as const, modelTier: "powerful" as const, testStrategy: "three-session-tdd" as const, reasoning: "r" })
     );
     deps.isGreenfieldStory = mock(() => Promise.resolve(false));
@@ -339,7 +339,7 @@ describe("routingStage - auto trigger mode", () => {
 
     deps.applyDecomposition = applyMock;
     deps.runDecompose = runDecomposeMock;
-    deps.routeStory = mock(() =>
+    deps.resolveRouting = mock(() =>
       Promise.resolve({ complexity: "expert" as const, modelTier: "powerful" as const, testStrategy: "three-session-tdd" as const, reasoning: "r" })
     );
     deps.isGreenfieldStory = mock(() => Promise.resolve(false));
@@ -375,7 +375,7 @@ describe("routingStage - auto trigger mode", () => {
     });
     deps.runDecompose = mock(() => Promise.resolve(decomposeResult));
     deps.savePRD = mock(() => Promise.resolve());
-    deps.routeStory = mock(() =>
+    deps.resolveRouting = mock(() =>
       Promise.resolve({ complexity: "complex" as const, modelTier: "powerful" as const, testStrategy: "three-session-tdd" as const, reasoning: "r" })
     );
     deps.isGreenfieldStory = mock(() => Promise.resolve(false));
@@ -415,7 +415,7 @@ describe("routingStage - confirm trigger mode", () => {
     deps.applyDecomposition = applyMock;
     deps.runDecompose = runDecomposeMock;
     deps.savePRD = mock(() => Promise.resolve());
-    deps.routeStory = mock(() =>
+    deps.resolveRouting = mock(() =>
       Promise.resolve({ complexity: "complex" as const, modelTier: "powerful" as const, testStrategy: "three-session-tdd" as const, reasoning: "r" })
     );
     deps.isGreenfieldStory = mock(() => Promise.resolve(false));
@@ -454,7 +454,7 @@ describe("routingStage - confirm trigger mode", () => {
     deps.applyDecomposition = applyMock;
     deps.runDecompose = runDecomposeMock;
     deps.savePRD = mock(() => Promise.resolve());
-    deps.routeStory = mock(() =>
+    deps.resolveRouting = mock(() =>
       Promise.resolve({ complexity: "expert" as const, modelTier: "powerful" as const, testStrategy: "three-session-tdd" as const, reasoning: "r" })
     );
     deps.isGreenfieldStory = mock(() => Promise.resolve(false));
@@ -482,7 +482,7 @@ describe("routingStage - skips decompose when story already decomposed", () => {
 
     let runDecomposeCalled = false;
     deps.runDecompose = mock(() => { runDecomposeCalled = true; return Promise.resolve({} as any); });
-    deps.routeStory = mock(() =>
+    deps.resolveRouting = mock(() =>
       Promise.resolve({ complexity: "expert" as const, modelTier: "powerful" as const, testStrategy: "three-session-tdd" as const, reasoning: "r" })
     );
     deps.isGreenfieldStory = mock(() => Promise.resolve(false));

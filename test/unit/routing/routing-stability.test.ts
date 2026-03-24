@@ -7,11 +7,22 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { keywordStrategy } from "../../../src/routing/strategies/keyword";
-import type { RoutingContext } from "../../../src/routing/strategy";
-import type { UserStory } from "../../../src/prd/types";
+import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import { initLogger, resetLogger } from "../../../src/logger";
+import type { UserStory } from "../../../src/prd/types";
+import { classifyComplexity, complexityToModelTier, determineTestStrategy } from "../../../src/routing";
+
+/** Minimal keyword-route helper replacing the deleted keywordStrategy object. */
+function keywordRoute(story: UserStory, config: NaxConfig) {
+  const tddStrategy = config.tdd?.strategy ?? "auto";
+  const complexity = classifyComplexity(story.title, story.description, story.acceptanceCriteria, story.tags ?? []);
+  const modelTier = complexityToModelTier(complexity, config);
+  const testStrategy = determineTestStrategy(complexity, story.title, story.description, story.tags ?? [], tddStrategy);
+  return { complexity, modelTier, testStrategy };
+}
+
+const routeCtxConfig: NaxConfig = { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } };
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -33,10 +44,6 @@ function makeStory(overrides: Partial<UserStory> = {}): UserStory {
   };
 }
 
-const ctx: RoutingContext = {
-  config: { ...DEFAULT_CONFIG, routing: { ...DEFAULT_CONFIG.routing, llm: undefined } },
-};
-
 beforeEach(() => {
   resetLogger();
   initLogger({ level: "error", useChalk: false });
@@ -55,12 +62,12 @@ afterEach(() => {
 describe("keyword classifier produces identical results across retries", () => {
   test("classification is identical on first attempt and retry with same story", () => {
     const story = makeStory();
-    const first = keywordStrategy.route(story, ctx);
-    const retry = keywordStrategy.route(story, ctx);
+    const first = keywordRoute(story, routeCtxConfig);
+    const retry = keywordRoute(story, routeCtxConfig);
 
-    expect(first!.complexity).toBe(retry!.complexity);
-    expect(first!.testStrategy).toBe(retry!.testStrategy);
-    expect(first!.modelTier).toBe(retry!.modelTier);
+    expect(first.complexity).toBe(retry.complexity);
+    expect(first.testStrategy).toBe(retry.testStrategy);
+    expect(first.modelTier).toBe(retry.modelTier);
   });
 
   test("description containing security/auth error text does NOT shift classification", () => {
@@ -70,13 +77,13 @@ describe("keyword classifier produces identical results across retries", () => {
       description: "Simple UI change\n\nPrior errors:\n- auth token expired\n- security check failed\n- refactor needed",
     });
 
-    const cleanResult = keywordStrategy.route(clean, ctx);
-    const errorResult = keywordStrategy.route(withErrors, ctx);
+    const cleanResult = keywordRoute(clean, routeCtxConfig);
+    const errorResult = keywordRoute(withErrors, routeCtxConfig);
 
     // BUG-031 fix: description excluded from classification — results must be identical
-    expect(cleanResult!.complexity).toBe(errorResult!.complexity);
-    expect(cleanResult!.testStrategy).toBe(errorResult!.testStrategy);
-    expect(cleanResult!.modelTier).toBe(errorResult!.modelTier);
+    expect(cleanResult.complexity).toBe(errorResult.complexity);
+    expect(cleanResult.testStrategy).toBe(errorResult.testStrategy);
+    expect(cleanResult.modelTier).toBe(errorResult.modelTier);
   });
 
   test("description with complex keywords does NOT upgrade complexity", () => {
@@ -87,10 +94,10 @@ describe("keyword classifier produces identical results across retries", () => {
       acceptanceCriteria: ["Label is correct"],
     });
 
-    const result = keywordStrategy.route(story, ctx);
-    expect(result!.complexity).toBe("simple");
+    const result = keywordRoute(story, routeCtxConfig);
+    expect(result.complexity).toBe("simple");
     // TS-001: simple → tdd-simple (not test-after)
-    expect(result!.testStrategy as string).toBe("tdd-simple");
+    expect(result.testStrategy as string).toBe("tdd-simple");
   });
 
   test("complexity is driven by title and tags only (not description)", () => {
@@ -102,8 +109,8 @@ describe("keyword classifier produces identical results across retries", () => {
       acceptanceCriteria: ["Token issued", "Expiry set", "Refresh works"],
     });
 
-    expect(keywordStrategy.route(simple, ctx)!.complexity).toBe("simple");
-    expect(keywordStrategy.route(complex, ctx)!.testStrategy).toBe("three-session-tdd");
+    expect(keywordRoute(simple, routeCtxConfig).complexity).toBe("simple");
+    expect(keywordRoute(complex, routeCtxConfig).testStrategy).toBe("three-session-tdd");
   });
 });
 
@@ -138,7 +145,7 @@ describe("LLM routing config accepts retry and timeout fields with correct defau
       ...DEFAULT_CONFIG,
       routing: {
         ...DEFAULT_CONFIG.routing,
-        llm: { mode: "per-story" as const, fallbackToKeywords: true, cacheDecisions: true },
+        llm: { mode: "per-story" as const, fallbackToKeywords: true, cacheDecisions: true } as NaxConfig["routing"]["llm"],
       },
     };
 
@@ -150,7 +157,7 @@ describe("LLM routing config accepts retry and timeout fields with correct defau
       ...DEFAULT_CONFIG,
       routing: {
         ...DEFAULT_CONFIG.routing,
-        llm: { mode: "per-story" as const, fallbackToKeywords: true, cacheDecisions: true },
+        llm: { mode: "per-story" as const, fallbackToKeywords: true, cacheDecisions: true } as NaxConfig["routing"]["llm"],
       },
     };
 

@@ -1,9 +1,8 @@
 /**
  * AA-003: LLM Routing Strategy — adapter.complete() integration tests
  *
- * Tests that llmStrategy and routeBatch use adapter.complete() instead of
- * Bun.spawn(['claude', ...]) directly. These tests are RED-phase: they FAIL
- * until the implementation refactors llm.ts to use the adapter.
+ * Tests that classifyWithLlm and routeBatch use adapter.complete() instead of
+ * Bun.spawn(['claude', ...]) directly.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -11,7 +10,6 @@ import type { AgentAdapter, CompleteOptions } from "../../../../src/agents/types
 import type { NaxConfig } from "../../../../src/config";
 import { DEFAULT_CONFIG } from "../../../../src/config/defaults";
 import { initLogger, resetLogger } from "../../../../src/logger";
-import type { RoutingContext } from "../../../../src/routing/strategy";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -106,16 +104,15 @@ afterEach(() => {
 // Per-story routing via adapter
 // ---------------------------------------------------------------------------
 
-describe("AA-003: llmStrategy.route() uses adapter.complete()", () => {
-  test("calls adapter.complete() when adapter is provided in context", async () => {
-    const { llmStrategy, clearCache } = await import("../../../../src/routing/strategies/llm");
+describe("AA-003: classifyWithLlm() uses adapter.complete()", () => {
+  test("calls adapter.complete() when adapter is provided", async () => {
+    const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
     const mockAdapter = makeMockAdapter(VALID_ROUTING_RESPONSE);
     const config = makeConfig();
-    const context: RoutingContext = { config, adapter: mockAdapter };
 
-    const result = await llmStrategy.route(makeStory(), context);
+    const result = await classifyWithLlm(makeStory(), config, mockAdapter);
 
     expect(result).not.toBeNull();
     expect(mockAdapter.complete).toHaveBeenCalledTimes(1);
@@ -126,7 +123,7 @@ describe("AA-003: llmStrategy.route() uses adapter.complete()", () => {
   });
 
   test("does NOT call _deps.spawn when adapter is provided", async () => {
-    const { llmStrategy, clearCache, _deps } = await import("../../../../src/routing/strategies/llm");
+    const { classifyWithLlm, clearCache, _deps } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
     // Poison spawn so that any invocation fails the test
@@ -137,9 +134,8 @@ describe("AA-003: llmStrategy.route() uses adapter.complete()", () => {
     (_deps as Record<string, unknown>).spawn = spawnSpy;
 
     const mockAdapter = makeMockAdapter(VALID_ROUTING_RESPONSE);
-    const context: RoutingContext = { config: makeConfig(), adapter: mockAdapter };
 
-    const result = await llmStrategy.route(makeStory("NO-SPAWN"), context);
+    const result = await classifyWithLlm(makeStory("NO-SPAWN"), makeConfig(), mockAdapter);
 
     expect(result).not.toBeNull();
     expect(spawnSpy).not.toHaveBeenCalled();
@@ -148,14 +144,13 @@ describe("AA-003: llmStrategy.route() uses adapter.complete()", () => {
   });
 
   test("passes the resolved model identifier to adapter.complete()", async () => {
-    const { llmStrategy, clearCache } = await import("../../../../src/routing/strategies/llm");
+    const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
     const mockAdapter = makeMockAdapter(VALID_ROUTING_RESPONSE);
     const config = makeConfig({ model: "balanced" });
-    const context: RoutingContext = { config, adapter: mockAdapter };
 
-    await llmStrategy.route(makeStory("MODEL-TEST"), context);
+    await classifyWithLlm(makeStory("MODEL-TEST"), config, mockAdapter);
 
     expect(mockAdapter.complete).toHaveBeenCalledTimes(1);
     const [_prompt, opts] = mockAdapter.complete.mock.calls[0] as [string, CompleteOptions?];
@@ -165,44 +160,39 @@ describe("AA-003: llmStrategy.route() uses adapter.complete()", () => {
   });
 
   test("propagates error from adapter.complete() when fallbackToKeywords is false", async () => {
-    const { llmStrategy, clearCache } = await import("../../../../src/routing/strategies/llm");
+    const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
     const failingAdapter = makeMockAdapter("");
     failingAdapter.complete = mock(() => Promise.reject(new Error("adapter.complete failed")));
 
-    const context: RoutingContext = {
-      config: makeConfig({ fallbackToKeywords: false }),
-      adapter: failingAdapter,
-    };
-
-    await expect(llmStrategy.route(makeStory("FAIL-TEST"), context)).rejects.toThrow("adapter.complete failed");
+    await expect(
+      classifyWithLlm(makeStory("FAIL-TEST"), makeConfig({ fallbackToKeywords: false }), failingAdapter),
+    ).rejects.toThrow("adapter.complete failed");
   });
 
   test("returns null (keyword fallback) when adapter.complete() fails and fallbackToKeywords is true", async () => {
-    const { llmStrategy, clearCache } = await import("../../../../src/routing/strategies/llm");
+    const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
     const failingAdapter = makeMockAdapter("");
     failingAdapter.complete = mock(() => Promise.reject(new Error("LLM unavailable")));
 
-    const context: RoutingContext = {
-      config: makeConfig({ fallbackToKeywords: true }),
-      adapter: failingAdapter,
-    };
-
-    const result = await llmStrategy.route(makeStory("FALLBACK-TEST"), context);
+    const result = await classifyWithLlm(
+      makeStory("FALLBACK-TEST"),
+      makeConfig({ fallbackToKeywords: true }),
+      failingAdapter,
+    );
     expect(result).toBeNull();
   });
 
   test("returns complex routing decision from adapter response", async () => {
-    const { llmStrategy, clearCache } = await import("../../../../src/routing/strategies/llm");
+    const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
     const mockAdapter = makeMockAdapter(COMPLEX_ROUTING_RESPONSE);
-    const context: RoutingContext = { config: makeConfig(), adapter: mockAdapter };
 
-    const result = await llmStrategy.route(makeStory("COMPLEX"), context);
+    const result = await classifyWithLlm(makeStory("COMPLEX"), makeConfig(), mockAdapter);
 
     expect(result).not.toBeNull();
     expect(result?.complexity).toBe("complex");
@@ -211,36 +201,31 @@ describe("AA-003: llmStrategy.route() uses adapter.complete()", () => {
   });
 
   test("caches decision on second call when cacheDecisions is true", async () => {
-    const { llmStrategy, clearCache } = await import("../../../../src/routing/strategies/llm");
+    const { classifyWithLlm, clearCache } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
     const mockAdapter = makeMockAdapter(VALID_ROUTING_RESPONSE);
-    const context: RoutingContext = {
-      config: makeConfig({ cacheDecisions: true }),
-      adapter: mockAdapter,
-    };
+    const config = makeConfig({ cacheDecisions: true });
 
     const story = makeStory("CACHE-TEST");
-    const result1 = await llmStrategy.route(story, context);
-    const result2 = await llmStrategy.route(story, context);
+    const result1 = await classifyWithLlm(story, config, mockAdapter);
+    const result2 = await classifyWithLlm(story, config, mockAdapter);
 
     // Second call must use the cache — adapter invoked only once
     expect(mockAdapter.complete).toHaveBeenCalledTimes(1);
     expect(result1).toEqual(result2);
   });
 
-  test("adapter resolved via _deps.adapter when not provided in context", async () => {
-    const { llmStrategy, clearCache, _deps } = await import("../../../../src/routing/strategies/llm");
+  test("adapter resolved via _deps.adapter when not provided", async () => {
+    const { classifyWithLlm, clearCache, _deps } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
     const mockAdapter = makeMockAdapter(VALID_ROUTING_RESPONSE);
     const originalAdapter = (_deps as Record<string, unknown>).adapter;
     (_deps as Record<string, unknown>).adapter = mockAdapter;
 
-    // No adapter in context — must fall back to _deps.adapter
-    const context: RoutingContext = { config: makeConfig() };
-
-    const result = await llmStrategy.route(makeStory("DEPS-TEST"), context);
+    // Pass undefined adapter — must fall back to _deps.adapter
+    const result = await classifyWithLlm(makeStory("DEPS-TEST"), makeConfig(), undefined);
 
     expect(result).not.toBeNull();
     expect(mockAdapter.complete).toHaveBeenCalledTimes(1);
@@ -270,10 +255,10 @@ describe("AA-003: routeBatch uses adapter.complete()", () => {
     clearCache();
 
     const mockAdapter = makeMockAdapter(BATCH_RESPONSE);
-    const context: RoutingContext = { config: makeConfig({ cacheDecisions: false }), adapter: mockAdapter };
+    const config = makeConfig({ cacheDecisions: false });
 
     const stories = [makeStory("BATCH-001"), makeStory("BATCH-002")];
-    const decisions = await routeBatch(stories, context);
+    const decisions = await routeBatch(stories, { config, adapter: mockAdapter });
 
     expect(mockAdapter.complete).toHaveBeenCalledTimes(1);
     expect(decisions.size).toBeGreaterThan(0);
@@ -290,9 +275,9 @@ describe("AA-003: routeBatch uses adapter.complete()", () => {
     (_deps as Record<string, unknown>).spawn = spawnSpy;
 
     const mockAdapter = makeMockAdapter(BATCH_RESPONSE);
-    const context: RoutingContext = { config: makeConfig({ cacheDecisions: false }), adapter: mockAdapter };
+    const config = makeConfig({ cacheDecisions: false });
 
-    await routeBatch([makeStory("BATCH-001"), makeStory("BATCH-002")], context);
+    await routeBatch([makeStory("BATCH-001"), makeStory("BATCH-002")], { config, adapter: mockAdapter });
 
     expect(spawnSpy).not.toHaveBeenCalled();
 
@@ -304,9 +289,9 @@ describe("AA-003: routeBatch uses adapter.complete()", () => {
     clearCache();
 
     const mockAdapter = makeMockAdapter(BATCH_RESPONSE);
-    const context: RoutingContext = { config: makeConfig({ cacheDecisions: false }), adapter: mockAdapter };
+    const config = makeConfig({ cacheDecisions: false });
 
-    await routeBatch([makeStory("BATCH-001"), makeStory("BATCH-002")], context);
+    await routeBatch([makeStory("BATCH-001"), makeStory("BATCH-002")], { config, adapter: mockAdapter });
 
     const [prompt] = mockAdapter.complete.mock.calls[0] as [string, CompleteOptions?];
     expect(typeof prompt).toBe("string");

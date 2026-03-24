@@ -2,25 +2,24 @@
 /**
  * Plugin Routing Integration Tests
  *
- * Tests for US-005: Plugin routing strategies integrate into router chain
+ * Tests for US-005: Plugin routing strategies integrate into resolveRouting()
  *
  * Acceptance Criteria:
  * 1. Plugin routers are tried before the built-in routing strategy
  * 2. First plugin router that returns a non-null result wins
  * 3. If all plugin routers return null, built-in strategy is used as fallback
- * 4. Plugin routers receive the same story context as built-in routers
+ * 4. Plugin routers receive the story and a RoutingContext with config
  * 5. Router errors are caught and logged; fallback to next router in chain
  */
 
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import * as loggerModule from "../../../src/logger";
 import { PluginRegistry } from "../../../src/plugins/registry";
 import type { NaxPlugin } from "../../../src/plugins/types";
 import type { UserStory } from "../../../src/prd/types";
-import { buildStrategyChain } from "../../../src/routing/builder";
-import { routeStory } from "../../../src/routing/router";
-import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../../../src/routing/strategy";
+import { resolveRouting, routeStory } from "../../../src/routing/router";
+import type { RoutingContext, RoutingDecision, RoutingStrategy } from "../../../src/routing";
 
 // ============================================================================
 // Test Helpers
@@ -38,13 +37,6 @@ function createTestStory(overrides?: Partial<UserStory>): UserStory {
     passes: false,
     escalations: [],
     attempts: 0,
-    ...overrides,
-  };
-}
-
-function createTestContext(overrides?: Partial<RoutingContext>): RoutingContext {
-  return {
-    config: DEFAULT_CONFIG,
     ...overrides,
   };
 }
@@ -84,12 +76,9 @@ describe("Plugin routers chain order", () => {
     const plugin = createMockPlugin("test-plugin", pluginRouter);
     const registry = new PluginRegistry([plugin]);
 
-    // Spy on keyword strategy by tracking when it would be called
     const story = createTestStory({ title: "Simple task" });
-    const context = createTestContext();
 
-    const chain = await buildStrategyChain(DEFAULT_CONFIG, "/tmp", registry);
-    await chain.route(story, context);
+    await resolveRouting(story, DEFAULT_CONFIG, registry);
 
     // Plugin router should be called first
     expect(executionOrder[0]).toBe("plugin");
@@ -113,68 +102,18 @@ describe("Plugin routers chain order", () => {
       return null;
     });
 
-    const plugin1 = createMockPlugin("plugin-1", router1);
-    const plugin2 = createMockPlugin("plugin-2", router2);
-    const plugin3 = createMockPlugin("plugin-3", router3);
-
-    const registry = new PluginRegistry([plugin1, plugin2, plugin3]);
+    const registry = new PluginRegistry([
+      createMockPlugin("plugin-1", router1),
+      createMockPlugin("plugin-2", router2),
+      createMockPlugin("plugin-3", router3),
+    ]);
 
     const story = createTestStory();
-    const context = createTestContext();
 
-    const chain = await buildStrategyChain(DEFAULT_CONFIG, "/tmp", registry);
-    await chain.route(story, context);
+    await resolveRouting(story, DEFAULT_CONFIG, registry);
 
     // Verify order: plugin-1 → plugin-2 → plugin-3
     expect(executionOrder).toEqual(["plugin-1", "plugin-2", "plugin-3"]);
-  });
-
-  test("plugin routers are inserted before manual strategy", async () => {
-    const executionOrder: string[] = [];
-
-    const pluginRouter = createPluginRouter("plugin-router", () => {
-      executionOrder.push("plugin");
-      return null;
-    });
-
-    const plugin = createMockPlugin("test-plugin", pluginRouter);
-    const registry = new PluginRegistry([plugin]);
-
-    const config = {
-      ...DEFAULT_CONFIG,
-      routing: { strategy: "manual" as const },
-    };
-
-    // Story without manual routing metadata will cause manual strategy to return null
-    const story = createTestStory();
-    const context = createTestContext({ config });
-
-    const chain = await buildStrategyChain(config, "/tmp", registry);
-    const strategyNames = chain.getStrategyNames();
-
-    // Verify: plugin-router → manual → keyword
-    expect(strategyNames[0]).toBe("plugin-router");
-    expect(strategyNames[1]).toBe("manual");
-    expect(strategyNames[2]).toBe("keyword");
-  });
-
-  test("plugin routers are inserted before llm strategy", async () => {
-    const pluginRouter = createPluginRouter("plugin-router", () => null);
-    const plugin = createMockPlugin("test-plugin", pluginRouter);
-    const registry = new PluginRegistry([plugin]);
-
-    const config = {
-      ...DEFAULT_CONFIG,
-      routing: { strategy: "llm" as const },
-    };
-
-    const chain = await buildStrategyChain(config, "/tmp", registry);
-    const strategyNames = chain.getStrategyNames();
-
-    // Verify: plugin-router → llm → keyword
-    expect(strategyNames[0]).toBe("plugin-router");
-    expect(strategyNames[1]).toBe("llm");
-    expect(strategyNames[2]).toBe("keyword");
   });
 });
 
@@ -198,12 +137,13 @@ describe("Plugin router precedence", () => {
       reasoning: "Plugin 2 decision (should not be used)",
     }));
 
-    const plugin1 = createMockPlugin("plugin-1", router1);
-    const plugin2 = createMockPlugin("plugin-2", router2);
-    const registry = new PluginRegistry([plugin1, plugin2]);
+    const registry = new PluginRegistry([
+      createMockPlugin("plugin-1", router1),
+      createMockPlugin("plugin-2", router2),
+    ]);
 
     const story = createTestStory();
-    const context = createTestContext();
+    const context: RoutingContext = { config: DEFAULT_CONFIG };
 
     const decision = await routeStory(story, context, "/tmp", registry);
 
@@ -222,12 +162,13 @@ describe("Plugin router precedence", () => {
       reasoning: "Plugin 2 decision",
     }));
 
-    const plugin1 = createMockPlugin("plugin-1", router1);
-    const plugin2 = createMockPlugin("plugin-2", router2);
-    const registry = new PluginRegistry([plugin1, plugin2]);
+    const registry = new PluginRegistry([
+      createMockPlugin("plugin-1", router1),
+      createMockPlugin("plugin-2", router2),
+    ]);
 
     const story = createTestStory();
-    const context = createTestContext();
+    const context: RoutingContext = { config: DEFAULT_CONFIG };
 
     const decision = await routeStory(story, context, "/tmp", registry);
 
@@ -236,7 +177,7 @@ describe("Plugin router precedence", () => {
   });
 
   test("plugin router overrides built-in keyword strategy", async () => {
-    const pluginRouter = createPluginRouter("security-router", (story, context) => {
+    const pluginRouter = createPluginRouter("security-router", (story) => {
       if (story.tags.includes("security")) {
         return {
           complexity: "expert",
@@ -248,8 +189,7 @@ describe("Plugin router precedence", () => {
       return null;
     });
 
-    const plugin = createMockPlugin("security-plugin", pluginRouter);
-    const registry = new PluginRegistry([plugin]);
+    const registry = new PluginRegistry([createMockPlugin("security-plugin", pluginRouter)]);
 
     // Story that keyword strategy would classify as "simple"
     const story = createTestStory({
@@ -259,7 +199,7 @@ describe("Plugin router precedence", () => {
       tags: ["security"],
     });
 
-    const context = createTestContext();
+    const context: RoutingContext = { config: DEFAULT_CONFIG };
     const decision = await routeStory(story, context, "/tmp", registry);
 
     // Plugin decision wins over keyword strategy
@@ -285,7 +225,7 @@ describe("Plugin router precedence", () => {
     ]);
 
     const story = createTestStory();
-    const context = createTestContext();
+    const context: RoutingContext = { config: DEFAULT_CONFIG };
 
     const decision = await routeStory(story, context, "/tmp", registry);
 
@@ -302,7 +242,10 @@ describe("Plugin router fallback to built-in strategy", () => {
     const router1 = createPluginRouter("plugin-router-1", () => null);
     const router2 = createPluginRouter("plugin-router-2", () => null);
 
-    const registry = new PluginRegistry([createMockPlugin("plugin-1", router1), createMockPlugin("plugin-2", router2)]);
+    const registry = new PluginRegistry([
+      createMockPlugin("plugin-1", router1),
+      createMockPlugin("plugin-2", router2),
+    ]);
 
     // Simple story that keyword strategy would classify as "simple"
     const story = createTestStory({
@@ -312,7 +255,7 @@ describe("Plugin router fallback to built-in strategy", () => {
       tags: [],
     });
 
-    const context = createTestContext();
+    const context: RoutingContext = { config: DEFAULT_CONFIG };
     const decision = await routeStory(story, context, "/tmp", registry);
 
     // Keyword strategy decision (not from plugin)
@@ -333,7 +276,7 @@ describe("Plugin router fallback to built-in strategy", () => {
       tags: ["security", "auth"],
     });
 
-    const context = createTestContext();
+    const context: RoutingContext = { config: DEFAULT_CONFIG };
     const decision = await routeStory(story, context, "/tmp", registry);
 
     // Keyword strategy should classify as complex
@@ -341,32 +284,6 @@ describe("Plugin router fallback to built-in strategy", () => {
     expect(decision.modelTier).toBe("powerful");
     expect(decision.testStrategy).toBe("three-session-tdd");
     expect(decision.reasoning).toContain("security-critical");
-  });
-
-  test("manual strategy is used as fallback when plugins return null", async () => {
-    const pluginRouter = createPluginRouter("plugin-router", () => null);
-    const registry = new PluginRegistry([createMockPlugin("test-plugin", pluginRouter)]);
-
-    const config = {
-      ...DEFAULT_CONFIG,
-      routing: { strategy: "manual" as const },
-    };
-
-    const story = createTestStory({
-      routing: {
-        complexity: "expert",
-        modelTier: "powerful",
-        testStrategy: "three-session-tdd",
-        reasoning: "Manual override",
-      },
-    });
-
-    const context = createTestContext({ config });
-    const decision = await routeStory(story, context, "/tmp", registry);
-
-    // Manual strategy decision
-    expect(decision.complexity).toBe("expert");
-    expect(decision.reasoning).toBe("Manual override");
   });
 
   test("empty plugin registry falls back to keyword strategy", async () => {
@@ -379,7 +296,7 @@ describe("Plugin router fallback to built-in strategy", () => {
       tags: [],
     });
 
-    const context = createTestContext();
+    const context: RoutingContext = { config: DEFAULT_CONFIG };
     const decision = await routeStory(story, context, "/tmp", registry);
 
     // Keyword strategy decision
@@ -401,8 +318,7 @@ describe("Plugin router context", () => {
       return null;
     });
 
-    const plugin = createMockPlugin("test-plugin", pluginRouter);
-    const registry = new PluginRegistry([plugin]);
+    const registry = new PluginRegistry([createMockPlugin("test-plugin", pluginRouter)]);
 
     const story = createTestStory({
       id: "US-123",
@@ -412,7 +328,7 @@ describe("Plugin router context", () => {
       tags: ["ui", "security"],
     });
 
-    const context = createTestContext();
+    const context: RoutingContext = { config: DEFAULT_CONFIG };
     await routeStory(story, context, "/tmp", registry);
 
     // Verify plugin received the story
@@ -431,11 +347,10 @@ describe("Plugin router context", () => {
       return null;
     });
 
-    const plugin = createMockPlugin("test-plugin", pluginRouter);
-    const registry = new PluginRegistry([plugin]);
+    const registry = new PluginRegistry([createMockPlugin("test-plugin", pluginRouter)]);
 
     const story = createTestStory();
-    const context = createTestContext();
+    const context: RoutingContext = { config: DEFAULT_CONFIG };
 
     await routeStory(story, context, "/tmp", registry);
 
@@ -445,59 +360,7 @@ describe("Plugin router context", () => {
     expect(receivedContext?.config.autoMode).toBeDefined();
   });
 
-  test("plugin router receives codebase context when available", async () => {
-    let receivedContext: RoutingContext | null = null;
-
-    const pluginRouter = createPluginRouter("plugin-router", (story, context) => {
-      receivedContext = context;
-      return null;
-    });
-
-    const plugin = createMockPlugin("test-plugin", pluginRouter);
-    const registry = new PluginRegistry([plugin]);
-
-    const story = createTestStory();
-    const context = createTestContext({
-      codebaseContext: "TypeScript project with React frontend",
-    });
-
-    await routeStory(story, context, "/tmp", registry);
-
-    expect(receivedContext?.codebaseContext).toBe("TypeScript project with React frontend");
-  });
-
-  test("plugin router receives metrics when available", async () => {
-    let receivedContext: RoutingContext | null = null;
-
-    const pluginRouter = createPluginRouter("plugin-router", (story, context) => {
-      receivedContext = context;
-      return null;
-    });
-
-    const plugin = createMockPlugin("test-plugin", pluginRouter);
-    const registry = new PluginRegistry([plugin]);
-
-    const mockMetrics = {
-      totalRuns: 100,
-      totalCost: 50.0,
-      totalStories: 500,
-      firstPassRate: 0.85,
-      escalationRate: 0.15,
-      avgCostPerStory: 0.1,
-      avgCostPerFeature: 1.0,
-      modelEfficiency: {},
-      complexityAccuracy: {},
-    };
-
-    const story = createTestStory();
-    const context = createTestContext({ metrics: mockMetrics });
-
-    await routeStory(story, context, "/tmp", registry);
-
-    expect(receivedContext?.metrics).toEqual(mockMetrics);
-  });
-
-  test("multiple plugin routers receive same context", async () => {
+  test("multiple plugin routers receive same config in context", async () => {
     const contexts: RoutingContext[] = [];
 
     const router1 = createPluginRouter("plugin-router-1", (story, context) => {
@@ -510,18 +373,76 @@ describe("Plugin router context", () => {
       return null;
     });
 
-    const registry = new PluginRegistry([createMockPlugin("plugin-1", router1), createMockPlugin("plugin-2", router2)]);
+    const registry = new PluginRegistry([
+      createMockPlugin("plugin-1", router1),
+      createMockPlugin("plugin-2", router2),
+    ]);
 
     const story = createTestStory();
-    const context = createTestContext({
-      codebaseContext: "Shared context",
-    });
+    const context: RoutingContext = { config: DEFAULT_CONFIG };
 
     await routeStory(story, context, "/tmp", registry);
 
-    // Both plugins should receive the same context
+    // Both plugins should receive the same config
     expect(contexts).toHaveLength(2);
     expect(contexts[0].config).toEqual(contexts[1].config);
-    expect(contexts[0].codebaseContext).toBe(contexts[1].codebaseContext);
+  });
+});
+
+// ============================================================================
+// AC5: Router errors are caught; fallback to next router
+// ============================================================================
+
+describe("Plugin router error handling", () => {
+  test("error in plugin router falls back to next router", async () => {
+    const throwingRouter = createPluginRouter("throwing-router", () => {
+      throw new Error("Plugin router crashed");
+    });
+
+    const fallbackRouter = createPluginRouter("fallback-router", () => ({
+      complexity: "simple",
+      modelTier: "fast",
+      testStrategy: "tdd-simple",
+      reasoning: "Fallback router decision",
+    }));
+
+    const registry = new PluginRegistry([
+      createMockPlugin("throwing-plugin", throwingRouter),
+      createMockPlugin("fallback-plugin", fallbackRouter),
+    ]);
+
+    const story = createTestStory();
+    const context: RoutingContext = { config: DEFAULT_CONFIG };
+
+    const decision = await routeStory(story, context, "/tmp", registry);
+
+    expect(decision.reasoning).toBe("Fallback router decision");
+  });
+
+  test("error in all plugin routers falls back to keyword strategy", async () => {
+    const throwingRouter1 = createPluginRouter("throwing-router-1", () => {
+      throw new Error("Plugin 1 crashed");
+    });
+
+    const throwingRouter2 = createPluginRouter("throwing-router-2", () => {
+      throw new Error("Plugin 2 crashed");
+    });
+
+    const registry = new PluginRegistry([
+      createMockPlugin("throwing-plugin-1", throwingRouter1),
+      createMockPlugin("throwing-plugin-2", throwingRouter2),
+    ]);
+
+    const story = createTestStory({
+      title: "Fix typo",
+      acceptanceCriteria: ["Typo fixed"],
+      tags: [],
+    });
+
+    const context: RoutingContext = { config: DEFAULT_CONFIG };
+    const decision = await routeStory(story, context, "/tmp", registry);
+
+    // Should fall back to keyword strategy
+    expect(decision.complexity).toBe("simple");
   });
 });

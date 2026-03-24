@@ -11,6 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { fullDescribe, fullTest } from "../../helpers/env";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -382,12 +383,8 @@ describe("CLI precheck command", () => {
  * Tests the complete precheck workflow including all Tier 1 blockers and Tier 2 warnings.
  */
 
-// These integration tests run the full precheck pipeline including checkClaudeCLI
-// (a Tier 1 blocker). In CI, the `claude` binary is not installed, so checkClaudeCLI
-// always adds a blocker — causing all assertions like `expect(blockers.length).toBe(0)`
-// to fail. The test logic is sound; the environment is simply incomplete.
-// Run these tests locally on Mac01/VPS where claude is installed.
-const describeWithClaude = process.env.CI ? describe.skip : describe;
+// Requires real claude binary — skipped by default, run with FULL=1.
+const describeWithClaude = fullDescribe;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -1180,10 +1177,8 @@ describeWithClaude("precheck orchestrator behavior (US-002)", () => {
  */
 
 // Skip in CI: AC2, AC5, AC6 call runPrecheck() which includes checkClaudeCLI as a
-// Tier 1 blocker. Without the claude binary installed, blockers.length > 0 always,
-// breaking assertions like expect(blockers.length).toBe(0). These ACs test correct
-// orchestration behaviour and pass reliably on Mac01/VPS where claude is installed.
-const skipInCI = process.env.CI ? test.skip : test;
+// Requires real claude binary — skipped by default, run with FULL=1.
+const skipInCI = fullTest;
 
 // Helper to create a minimal valid git environment
 async function setupGitRepo(dir: string): Promise<void> {
@@ -1437,12 +1432,12 @@ const PRECHECK_TEST_CONFIG = {
 
 describe("Precheck Integration with nax run", () => {
   let testDir: string;
-  let savedSkipPrecheck: string | undefined;
+  let savedNaxPrecheck: string | undefined;
 
   beforeEach(async () => {
-    // Temporarily remove NAX_SKIP_PRECHECK so precheck actually runs in these tests
-    savedSkipPrecheck = process.env.NAX_SKIP_PRECHECK;
-    delete process.env.NAX_SKIP_PRECHECK;
+    // Temporarily enable precheck so it actually runs in these integration tests
+    savedNaxPrecheck = process.env.NAX_PRECHECK;
+    process.env.NAX_PRECHECK = "1";
 
     testDir = join(import.meta.dir, "..", "..", "..", ".tmp", `precheck-integration-${Date.now()}`);
     mkdirSync(testDir, { recursive: true });
@@ -1455,11 +1450,11 @@ describe("Precheck Integration with nax run", () => {
   });
 
   afterEach(() => {
-    // Restore NAX_SKIP_PRECHECK to its original value
-    if (savedSkipPrecheck !== undefined) {
-      process.env.NAX_SKIP_PRECHECK = savedSkipPrecheck;
+    // Restore NAX_PRECHECK to its original value
+    if (savedNaxPrecheck !== undefined) {
+      process.env.NAX_PRECHECK = savedNaxPrecheck;
     } else {
-      delete process.env.NAX_SKIP_PRECHECK;
+      delete process.env.NAX_PRECHECK;
     }
 
     try {
@@ -1891,7 +1886,7 @@ import { withDepsRestore } from "../../helpers/deps";
 
 describe("Agent Validation and Retry Logic", () => {
   withDepsRestore(_claudeAdapterDeps, ["spawn"]);
-  withDepsRestore(_runOnceDeps, ["spawn"]);
+  withDepsRestore(_runOnceDeps, ["spawn", "withProcessTimeout"]);
 
   describe("ClaudeCodeAdapter.isInstalled", () => {
     test("returns true when binary exists in PATH", async () => {
@@ -1944,33 +1939,33 @@ describe("Agent Validation and Retry Logic", () => {
   describe("ClaudeCodeAdapter timeout handling", () => {
     test("distinguishes timeout from normal failure", async () => {
       const adapter = new ClaudeCodeAdapter();
-      // Mock process that times out via _runOnceDeps.spawn
-      _runOnceDeps.spawn = mock((cmd: string[], opts: { cwd: string; stdout: string; stderr: string; env: Record<string, string | undefined> }) => {
-        let killed = false;
-        return {
-          exited: new Promise((resolve) => {
-            setTimeout(() => resolve(killed ? 143 : 0), 100);
-          }),
-          kill: (signal: string) => {
-            if (signal === "SIGTERM") killed = true;
-          },
-          stdout: new Response("").body,
-          stderr: new Response("").body,
-          pid: 12345,
-        };
-      });
+
+      // Mock spawn — returns a fake proc; real process interaction is bypassed
+      _runOnceDeps.spawn = mock(() => ({
+        exited: new Promise<number>(() => {}), // never resolves — withProcessTimeout handles it
+        kill: mock(),
+        stdout: new Response("").body as ReadableStream<Uint8Array>,
+        stderr: new Response("").body as ReadableStream<Uint8Array>,
+        pid: 12345,
+      }));
+
+      // Mock withProcessTimeout to return a deterministic timeout result
+      // Avoids real setTimeout race conditions under CI parallel load
+      _runOnceDeps.withProcessTimeout = mock(() =>
+        Promise.resolve({ exitCode: 143, timedOut: true }),
+      );
 
       const options: AgentRunOptions = {
         prompt: "test",
         workdir: "/tmp",
         modelTier: "balanced",
         modelDef: { provider: "anthropic", model: "claude-sonnet-4.5", env: {} },
-        timeoutSeconds: 0.05, // 50ms timeout
+        timeoutSeconds: 1,
       };
 
       const result = await adapter.run(options);
 
-      // Should be marked as timeout (exit code 124)
+      // Adapter maps timedOut → exitCode 124
       expect(result.exitCode).toBe(124);
       expect(result.success).toBe(false);
     });

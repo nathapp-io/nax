@@ -1,28 +1,58 @@
 /**
  * Task Router
  *
- * Routes stories using pluggable strategy system.
- * Falls back to keyword-based classification for backward compatibility.
+ * Core routing logic: classifyComplexity, determineTestStrategy, complexityToModelTier.
+ * resolveRouting() is the single entry point for all routing decisions:
+ *   plugin routers > LLM fallback > keyword fallback
  */
 
+import { getAgent } from "../agents/registry";
+import type { AgentAdapter } from "../agents/types";
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../config";
+import { getSafeLogger } from "../logger";
+import type { PluginRegistry } from "../plugins/registry";
 import type { UserStory } from "../prd/types";
-import { buildStrategyChain } from "./builder";
-import type { RoutingContext } from "./strategy";
+
+// ---------------------------------------------------------------------------
+// Interfaces (moved here from deleted strategy.ts)
+// ---------------------------------------------------------------------------
+
+/** Context passed to plugin routing strategies */
+export interface RoutingContext {
+  /** Full configuration */
+  config: NaxConfig;
+  /** Optional codebase context summary */
+  codebaseContext?: string;
+  /** Optional agent adapter for LLM-based routing */
+  adapter?: AgentAdapter;
+}
+
+/**
+ * Routing strategy interface for plugins.
+ *
+ * Return a RoutingDecision to claim the story, or null to delegate.
+ */
+export interface RoutingStrategy {
+  readonly name: string;
+  route(story: UserStory, context: RoutingContext): RoutingDecision | null | Promise<RoutingDecision | null>;
+}
+
+// ---------------------------------------------------------------------------
+// Routing decision
+// ---------------------------------------------------------------------------
 
 /** Routing decision for a story */
 export interface RoutingDecision {
-  /** Classified complexity */
   complexity: Complexity;
-  /** Model tier to use */
   modelTier: ModelTier;
-  /** Test strategy to apply */
   testStrategy: TestStrategy;
-  /** Reasoning for the classification */
   reasoning: string;
 }
 
-/** Keywords that indicate higher complexity */
+// ---------------------------------------------------------------------------
+// Keyword lists
+// ---------------------------------------------------------------------------
+
 const COMPLEX_KEYWORDS = [
   "refactor",
   "redesign",
@@ -79,68 +109,32 @@ const PUBLIC_API_KEYWORDS = [
   "endpoint",
 ];
 
+/** Tags that indicate a lite-mode story */
+const LITE_TAGS = ["ui", "layout", "cli", "integration", "polyglot"];
+
+// ---------------------------------------------------------------------------
+// Core classification functions
+// ---------------------------------------------------------------------------
+
 /**
  * Classify a story's complexity based on keywords and acceptance criteria count.
  *
- * Classification rules:
- * - expert: matches expert keywords (cryptography, distributed consensus, real-time)
- * - complex: matches complex keywords or >8 acceptance criteria
- * - medium: >4 acceptance criteria
- * - simple: default
- *
- * @param title - Story title
- * @param description - Story description
- * @param acceptanceCriteria - Array of acceptance criteria
- * @param tags - Optional story tags
- * @returns Classified complexity level
- *
- * @example
- * ```ts
- * classifyComplexity(
- *   "Add JWT authentication",
- *   "Implement JWT auth with refresh tokens",
- *   ["Secure token storage", "Token refresh", "Expiry handling"],
- *   ["security", "auth"]
- * );
- * // "complex" (matches security keywords)
- *
- * classifyComplexity(
- *   "Fix typo in README",
- *   "Correct spelling mistake",
- *   ["Update README.md"],
- *   []
- * );
- * // "simple"
- * ```
+ * BUG-031: description excluded — it accumulates priorErrors across retries and
+ * causes classification drift. Only stable, immutable fields are used.
  */
 export function classifyComplexity(
   title: string,
-  description: string,
+  _description: string,
   acceptanceCriteria: string[],
   tags: string[] = [],
 ): Complexity {
-  const text = [title, description, ...(acceptanceCriteria ?? []), ...(tags ?? [])].join(" ").toLowerCase();
+  const text = [title, ...(acceptanceCriteria ?? []), ...(tags ?? [])].join(" ").toLowerCase();
 
-  // Expert: matches expert keywords
-  if (EXPERT_KEYWORDS.some((kw) => text.includes(kw))) {
-    return "expert";
-  }
-
-  // Complex: matches complex keywords or has many criteria
-  if (COMPLEX_KEYWORDS.some((kw) => text.includes(kw)) || acceptanceCriteria.length > 8) {
-    return "complex";
-  }
-
-  // Medium: moderate criteria or some structural keywords
-  if (acceptanceCriteria.length > 4) {
-    return "medium";
-  }
-
+  if (EXPERT_KEYWORDS.some((kw) => text.includes(kw))) return "expert";
+  if (COMPLEX_KEYWORDS.some((kw) => text.includes(kw)) || acceptanceCriteria.length > 8) return "complex";
+  if (acceptanceCriteria.length > 4) return "medium";
   return "simple";
 }
-
-/** Tags that indicate a lite-mode story (UI, layout, CLI, integration, polyglot) */
-const LITE_TAGS = ["ui", "layout", "cli", "integration", "polyglot"];
 
 /**
  * Determine test strategy using decision tree logic.
@@ -149,60 +143,35 @@ const LITE_TAGS = ["ui", "layout", "cli", "integration", "polyglot"];
  * - 'strict' → always three-session-tdd
  * - 'lite'   → always three-session-tdd-lite
  * - 'off'    → always test-after
- * - 'auto'   → existing heuristic logic, plus:
- *              if tags include ui/layout/cli/integration/polyglot → three-session-tdd-lite
- *              if security/public-api/complex/expert → three-session-tdd
- *              simple → tdd-simple, medium → three-session-tdd-lite
- *
- * @param complexity - Pre-classified complexity level
- * @param title - Story title
- * @param description - Story description
- * @param tags - Optional story tags
- * @param tddStrategy - TDD strategy override from config (default: 'auto')
- * @returns Test strategy
- *
- * @example
- * ```ts
- * determineTestStrategy("complex", "Add OAuth", "Implement OAuth 2.0", ["security", "auth"], "strict");
- * // "three-session-tdd"
- *
- * determineTestStrategy("simple", "Update button", "Change primary button", ["ui"], "auto");
- * // "three-session-tdd-lite"
- * ```
+ * - 'auto'   → heuristic logic
  */
-
 export function determineTestStrategy(
   complexity: Complexity,
   title: string,
-  description: string,
+  _description: string,
   tags: string[] = [],
   tddStrategy: TddStrategy = "auto",
 ): TestStrategy {
-  // Explicit overrides — ignore all heuristics
   if (tddStrategy === "strict") return "three-session-tdd";
   if (tddStrategy === "lite") return "three-session-tdd-lite";
   if (tddStrategy === "simple") return "tdd-simple";
   if (tddStrategy === "off") return "test-after";
 
   // auto mode: apply heuristics
-  const text = [title, description, ...(tags ?? [])].join(" ").toLowerCase();
+  // BUG-031: exclude description — only use stable, immutable story fields
+  const text = [title, ...(tags ?? [])].join(" ").toLowerCase();
 
-  // Public API or security → three-session-tdd (strict)
   const isSecurityCritical = SECURITY_KEYWORDS.some((kw) => text.includes(kw));
   const isPublicApi = PUBLIC_API_KEYWORDS.some((kw) => text.includes(kw));
 
-  if (isSecurityCritical || isPublicApi) {
-    return "three-session-tdd";
-  }
+  if (isSecurityCritical || isPublicApi) return "three-session-tdd";
 
-  // Complex/expert heuristic
   if (complexity === "complex" || complexity === "expert") {
     const normalizedTags = (tags ?? []).map((t) => t.toLowerCase());
     const hasLiteTag = LITE_TAGS.some((tag) => normalizedTags.includes(tag));
     return hasLiteTag ? "three-session-tdd-lite" : "three-session-tdd";
   }
 
-  // TS-001: simple → tdd-simple (TDD discipline, 1 session), medium → tdd-lite (3 sessions)
   if (complexity === "simple") return "tdd-simple";
   return "three-session-tdd-lite";
 }
@@ -213,55 +182,129 @@ export function complexityToModelTier(complexity: Complexity, config: NaxConfig)
   return (mapping[complexity] ?? "balanced") as ModelTier;
 }
 
+// ---------------------------------------------------------------------------
+// Keyword fallback (internal)
+// ---------------------------------------------------------------------------
+
+function keywordRoute(story: UserStory, config: NaxConfig): RoutingDecision {
+  const { title, description, acceptanceCriteria, tags } = story;
+  const tddStrategy: TddStrategy = config.tdd?.strategy ?? "auto";
+  const complexity = classifyComplexity(title, description, acceptanceCriteria, tags);
+  const modelTier = complexityToModelTier(complexity, config);
+  const testStrategy = determineTestStrategy(complexity, title, description, tags, tddStrategy);
+
+  const reasons: string[] = [];
+  const text = [title, ...(tags ?? [])].join(" ").toLowerCase();
+  if (SECURITY_KEYWORDS.some((kw) => text.includes(kw))) reasons.push("security-critical");
+  if (PUBLIC_API_KEYWORDS.some((kw) => text.includes(kw))) reasons.push("public-api");
+  if ((complexity === "complex" || complexity === "expert") && reasons.length === 0) {
+    reasons.push(`complexity:${complexity}`);
+  }
+
+  const prefix = testStrategy;
+  const reasoning = reasons.length > 0 ? `${prefix}: ${reasons.join(", ")}` : `${prefix}: ${complexity} task`;
+
+  return { complexity, modelTier, testStrategy, reasoning };
+}
+
+// ---------------------------------------------------------------------------
+// resolveRouting — main entry point
+// ---------------------------------------------------------------------------
+
 /**
- * Route a story using the pluggable strategy system.
+ * Route a story using the simplified priority chain:
+ *   1. Plugin routers (plugins.getRouters()) — first win
+ *   2. LLM fallback (if routing.strategy === "llm" and adapter available)
+ *   3. Keyword fallback (always available)
  *
- * This is the new main entry point for the routing system. It:
- * 1. Builds the strategy chain based on config
- * 2. Routes the story through the chain
- * 3. Returns the first non-null decision
+ * Greenfield detection and escalation overrides are handled by the caller
+ * (pipeline routing stage), not here.
  *
  * @param story - User story to route
- * @param context - Routing context (config, codebase, metrics)
- * @param workdir - Working directory for resolving custom strategy paths
+ * @param config - nax configuration
  * @param plugins - Optional plugin registry for plugin-provided routers
- * @returns Routing decision from the strategy chain
- *
- * @example
- * ```ts
- * const decision = await routeStory(story, { config }, "/path/to/project", plugins);
- * // {
- * //   complexity: "complex",
- * //   modelTier: "balanced",
- * //   testStrategy: "three-session-tdd",
- * //   reasoning: "three-session-tdd: security-critical, complexity:complex"
- * // }
- * ```
+ * @param adapter - Optional agent adapter for LLM routing
+ * @returns Routing decision
+ */
+export async function resolveRouting(
+  story: UserStory,
+  config: NaxConfig,
+  plugins?: PluginRegistry,
+  adapter?: AgentAdapter,
+): Promise<RoutingDecision> {
+  const logger = getSafeLogger();
+
+  // 0. PRD wins — if story already has routing values set (either manually by the user
+  //    or persisted from a previous run), use them directly. This ensures retries use
+  //    the same routing as the original run, and manual PRD overrides are respected.
+  //    modelTier is always re-derived from complexity + config (never persisted).
+  if (story.routing?.complexity && story.routing?.testStrategy) {
+    const modelTier = complexityToModelTier(story.routing.complexity, config);
+    return {
+      complexity: story.routing.complexity,
+      modelTier,
+      testStrategy: story.routing.testStrategy,
+      reasoning: story.routing.reasoning ?? "(from PRD)",
+    };
+  }
+
+  // 1. Plugin routers — highest priority
+  if (plugins) {
+    for (const pluginRouter of plugins.getRouters()) {
+      try {
+        const decision = await pluginRouter.route(story, { config, adapter });
+        if (decision !== null) return decision;
+      } catch (err) {
+        logger?.warn("routing", `Plugin router "${pluginRouter.name}" failed`, {
+          storyId: story.id,
+          error: (err as Error).message,
+        });
+      }
+    }
+  }
+
+  // 2. LLM fallback (if configured and adapter available)
+  if (config.routing.strategy === "llm" && adapter) {
+    try {
+      const { classifyWithLlm } = await import("./strategies/llm");
+      const decision = await classifyWithLlm(story, config, adapter);
+      if (decision !== null) return decision;
+    } catch (err) {
+      logger?.warn("routing", "LLM routing failed, falling back to keyword", {
+        storyId: story.id,
+        error: (err as Error).message,
+      });
+    }
+  }
+
+  // 3. Keyword fallback — always available
+  return keywordRoute(story, config);
+}
+
+// ---------------------------------------------------------------------------
+// routeStory — backward compat wrapper (deprecated)
+// ---------------------------------------------------------------------------
+
+/**
+ * @deprecated Use resolveRouting() instead.
  */
 export async function routeStory(
   story: UserStory,
   context: RoutingContext,
-  workdir: string,
-  plugins?: import("../plugins/registry").PluginRegistry,
+  _workdir: string,
+  plugins?: PluginRegistry,
 ): Promise<RoutingDecision> {
-  const chain = await buildStrategyChain(context.config, workdir, plugins);
-  return await chain.route(story, context);
+  return resolveRouting(story, context.config, plugins, context.adapter);
 }
 
+// ---------------------------------------------------------------------------
+// routeTask — sync keyword-only wrapper (deprecated)
+// ---------------------------------------------------------------------------
+
 /**
- * Route a task through complexity classification, model tier selection, and test strategy.
+ * Route a task synchronously using keyword classification only.
  *
- * DEPRECATED: Use routeStory() instead. This function is kept for backward compatibility
- * and uses only the keyword strategy.
- *
- * @param title - Story title
- * @param description - Story description
- * @param acceptanceCriteria - Array of acceptance criteria
- * @param tags - Story tags
- * @param config - nax configuration with complexity routing mappings
- * @returns Routing decision with complexity, model tier, test strategy, and reasoning
- *
- * @deprecated Use routeStory() with a UserStory object instead
+ * @deprecated Use resolveRouting() for full routing with LLM and plugin support.
  */
 export function routeTask(
   title: string,
@@ -276,18 +319,15 @@ export function routeTask(
   const testStrategy = determineTestStrategy(complexity, title, description, tags, tddStrategy);
 
   const reasons: string[] = [];
-  const text = [title, description, ...(tags ?? [])].join(" ").toLowerCase();
+  const text = [title, ...(tags ?? [])].join(" ").toLowerCase();
   const normalizedTags = (tags ?? []).map((t) => t.toLowerCase());
   const hasLiteTag = LITE_TAGS.some((tag) => normalizedTags.includes(tag));
 
   if (SECURITY_KEYWORDS.some((kw) => text.includes(kw))) reasons.push("security-critical");
   if (PUBLIC_API_KEYWORDS.some((kw) => text.includes(kw))) reasons.push("public-api");
 
-  // Only add complexity reason if it's the primary reason for strict/lite TDD
-  if (complexity === "complex" || complexity === "expert") {
-    if (reasons.length === 0) {
-      reasons.push(`complexity:${complexity}`);
-    }
+  if ((complexity === "complex" || complexity === "expert") && reasons.length === 0) {
+    reasons.push(`complexity:${complexity}`);
   }
 
   if (tddStrategy !== "auto") reasons.push(`strategy:${tddStrategy}`);
@@ -302,4 +342,41 @@ export function routeTask(
     testStrategy,
     reasoning: reasons.length > 0 ? `${prefix}: ${reasons.join(", ")}` : `test-after: simple task (${complexity})`,
   };
+}
+
+// ---------------------------------------------------------------------------
+// tryLlmBatchRoute — pre-populates LLM routing cache for a batch of stories
+// ---------------------------------------------------------------------------
+
+/**
+ * Attempt to pre-route a batch of stories using LLM to optimize cost and consistency.
+ * Populates the LLM routing cache; individual resolveRouting() calls will then hit cache.
+ *
+ * No-ops if routing.strategy is not "llm" or mode is "per-story" or stories is empty.
+ */
+export const _tryLlmBatchRouteDeps = { getAgent };
+
+export async function tryLlmBatchRoute(
+  config: NaxConfig,
+  stories: UserStory[],
+  label = "routing",
+  _deps = _tryLlmBatchRouteDeps,
+): Promise<void> {
+  const mode = config.routing.llm?.mode ?? "hybrid";
+  if (config.routing.strategy !== "llm" || mode === "per-story" || stories.length === 0) return;
+  const resolvedAdapter = _deps.getAgent(config.execution?.agent ?? "claude");
+  if (!resolvedAdapter) return;
+
+  const logger = getSafeLogger();
+  try {
+    logger?.debug("routing", `LLM batch routing: ${label}`, { storyCount: stories.length, mode });
+    const { routeBatch } = await import("./strategies/llm");
+    await routeBatch(stories, { config, adapter: resolvedAdapter });
+    logger?.debug("routing", "LLM batch routing complete", { label });
+  } catch (err) {
+    logger?.warn("routing", "LLM batch routing failed, falling back to individual routing", {
+      error: (err as Error).message,
+      label,
+    });
+  }
 }

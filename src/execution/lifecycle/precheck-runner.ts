@@ -35,9 +35,10 @@ export interface PrecheckContext {
 export async function runPrecheckValidation(ctx: PrecheckContext): Promise<void> {
   const logger = getSafeLogger();
 
-  // Allow tests to skip precheck entirely (git-repo-exists, working-tree-clean, etc. fail in temp dirs)
-  if (process.env.NAX_SKIP_PRECHECK === "1") {
-    logger?.info("precheck", "Skipping precheck validations (NAX_SKIP_PRECHECK=1)");
+  // Precheck is opt-in. Skip unless explicitly enabled (NAX_PRECHECK=1).
+  // Tests and local dev skip precheck by default; production runners set NAX_PRECHECK=1.
+  if (process.env.NAX_PRECHECK !== "1") {
+    logger?.info("precheck", "Skipping precheck validations (set NAX_PRECHECK=1 to enable)");
     return;
   }
 

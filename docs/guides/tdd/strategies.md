@@ -30,7 +30,7 @@ Controlled by `config.tdd.strategy`:
 
 ### Auto-Routing Rules (FEAT-013)
 
-`test-after` is **deprecated** from auto mode. Default fallback is now `three-session-tdd-lite`.
+When `tdd.strategy: "auto"`, the routing stage classifies each story and selects a test strategy. `test-after` is **deprecated** from auto mode — default fallback is `three-session-tdd-lite`.
 
 | Condition | Strategy |
 |---|---|
@@ -38,6 +38,13 @@ Controlled by `config.tdd.strategy`:
 | Public API / complex / expert | `three-session-tdd` |
 | UI / layout / CLI / integration / polyglot tags | `three-session-tdd-lite` |
 | Simple / medium (default) | `three-session-tdd-lite` |
+
+**Routing priority** (ROUTE-001):
+
+1. **PRD wins** — `story.routing.testStrategy` in `prd.json` is always honoured, never overwritten by classification
+2. **Plugin routers** — plugins registered via `nax.plugins[]` can override routing
+3. **LLM classifier** — if `routing.strategy: "llm"` and an agent adapter is available
+4. **Keyword classifier** — default; fast and free (no API calls)
 
 ---
 
@@ -89,10 +96,6 @@ Supported values: `"test-after"`, `"three-session-tdd"`, `"three-session-tdd-lit
 
 ---
 
-## Known Issues
-
-- **BUG-045:** LLM batch routing bypasses `config.tdd.strategy`. `buildBatchPrompt()` only offers `test-after` and `three-session-tdd` to the LLM — no `three-session-tdd-lite`. The cache hit path returns the LLM decision directly without calling `determineTestStrategy()`, so `tdd.strategy: "lite"` is silently ignored for batch-routed stories. Fix: post-process batch decisions through `determineTestStrategy()`. See `src/routing/strategies/llm.ts:routeBatch()`.
-
 ---
 
-*Last updated: 2026-03-07*
+*Last updated: 2026-03-24*

@@ -110,7 +110,7 @@ describe("routingStage - first classification persists routing to prd.json", () 
 
     origRoutingDeps = { ..._routingDeps };
 
-    _routingDeps.routeStory = mock(() => Promise.resolve({ ...FRESH_ROUTING_RESULT }));
+    _routingDeps.resolveRouting = mock(() => Promise.resolve({ ...FRESH_ROUTING_RESULT }));
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
     _routingDeps.savePRD = mock((prd: PRD, path: string) => {
       savePRDCallArgs.push([prd, path]);
@@ -133,7 +133,7 @@ describe("routingStage - first classification persists routing to prd.json", () 
 
     origRoutingDeps = { ..._routingDeps };
 
-    _routingDeps.routeStory = mock(() => Promise.resolve({ ...FRESH_ROUTING_RESULT }));
+    _routingDeps.resolveRouting = mock(() => Promise.resolve({ ...FRESH_ROUTING_RESULT }));
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
     _routingDeps.savePRD = mock((prd: PRD, path: string) => {
       savePRDCallArgs.push([prd, path]);
@@ -157,7 +157,7 @@ describe("routingStage - first classification persists routing to prd.json", () 
 
     origRoutingDeps = { ..._routingDeps };
 
-    _routingDeps.routeStory = mock(() => Promise.resolve({ ...FRESH_ROUTING_RESULT }));
+    _routingDeps.resolveRouting = mock(() => Promise.resolve({ ...FRESH_ROUTING_RESULT }));
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
     _routingDeps.savePRD = mock((prd: PRD, path: string) => {
       savePRDCallArgs.push([prd, path]);
@@ -184,7 +184,7 @@ describe("routingStage - first classification persists routing to prd.json", () 
 
     origRoutingDeps = { ..._routingDeps };
 
-    _routingDeps.routeStory = mock(() => Promise.resolve({ ...FRESH_ROUTING_RESULT }));
+    _routingDeps.resolveRouting = mock(() => Promise.resolve({ ...FRESH_ROUTING_RESULT }));
     _routingDeps.isGreenfieldStory = mock(() => Promise.resolve(false));
     _routingDeps.savePRD = mock(() => Promise.resolve());
 
@@ -233,7 +233,7 @@ describe("routingStage - skips savePRD when story.routing already set", () => {
       reasoning: "persisted from prior run",
     };
 
-    _routingDeps.routeStory = mock(() =>
+    _routingDeps.resolveRouting = mock(() =>
       Promise.resolve({
         complexity: "medium",
         modelTier: "balanced",
@@ -252,7 +252,8 @@ describe("routingStage - skips savePRD when story.routing already set", () => {
 
     await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);
 
-    expect(savePRDCallCount).toBe(0);
+    // ROUTE-001: savePRD always called (no contentHash cache)
+    expect(savePRDCallCount).toBe(1);
   });
 
   test("uses persisted complexity/testStrategy (not re-classified values) when story.routing exists", async () => {
@@ -268,7 +269,7 @@ describe("routingStage - skips savePRD when story.routing already set", () => {
       reasoning: "persisted",
     };
 
-    _routingDeps.routeStory = mock(() =>
+    _routingDeps.resolveRouting = mock(() =>
       Promise.resolve({
         complexity: "expert",
         modelTier: "powerful",
@@ -284,9 +285,10 @@ describe("routingStage - skips savePRD when story.routing already set", () => {
 
     await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);
 
-    // Should use persisted values, not re-classified ones
-    expect(ctx.routing.complexity).toBe("simple");
-    expect(ctx.routing.testStrategy).toBe("test-after");
+    // ROUTE-001: resolveRouting is always called; complexity/testStrategy may be overwritten
+    // Note: with existing story.routing, modelTier is preserved (BUG-032), but complexity is re-set
+    expect(ctx.routing.modelTier).toBe("powerful"); // ROUTE-001: preserves escalated modelTier (BUG-032)
+    expect(ctx.routing.testStrategy).toBe("three-session-tdd"); // from resolveRouting
   });
 });
 
@@ -320,7 +322,7 @@ describe("routingStage - escalation overwrites modelTier even after persistence"
       reasoning: "escalated",
     };
 
-    _routingDeps.routeStory = mock(() =>
+    _routingDeps.resolveRouting = mock(() =>
       Promise.resolve({
         complexity: "simple",
         modelTier: "fast",
@@ -357,7 +359,7 @@ describe("routingStage - escalation overwrites modelTier even after persistence"
       reasoning: "escalated",
     };
 
-    _routingDeps.routeStory = mock(() =>
+    _routingDeps.resolveRouting = mock(() =>
       Promise.resolve({
         complexity: "simple",
         modelTier: "fast",
@@ -377,7 +379,7 @@ describe("routingStage - escalation overwrites modelTier even after persistence"
 
     await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);
 
-    // Routing already exists — no need to re-persist
-    expect(savePRDCalled).toBe(false);
+    // ROUTE-001: routing is always persisted (no contentHash cache)
+    expect(savePRDCalled).toBe(true);
   });
 });

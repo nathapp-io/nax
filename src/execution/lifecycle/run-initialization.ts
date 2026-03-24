@@ -10,6 +10,7 @@
 
 import { join } from "node:path";
 import chalk from "chalk";
+import { getAgent } from "../../agents/registry";
 import type { NaxConfig } from "../../config";
 import { AgentNotFoundError, AgentNotInstalledError, StoryLimitExceededError } from "../../errors";
 import { getSafeLogger } from "../../logger";
@@ -25,6 +26,7 @@ import { hasCommitsForStory } from "../../utils/git";
  * hasCommitsForStory and runReview without mock.module().
  */
 export const _reconcileDeps = {
+  getAgent,
   hasCommitsForStory: (workdir: string, storyId: string) => hasCommitsForStory(workdir, storyId),
   runReview: (reviewConfig: ReviewConfig, workdir: string, executionConfig: NaxConfig["execution"]) =>
     runReview(reviewConfig, workdir, executionConfig),
@@ -115,7 +117,7 @@ async function checkAgentInstalled(config: NaxConfig, dryRun: boolean, agentGetF
 
   const logger = getSafeLogger();
   const { getAgent } = await import("../../agents");
-  const agent = (agentGetFn ?? getAgent)(config.autoMode.defaultAgent);
+  const agent = (agentGetFn ?? _reconcileDeps.getAgent)(config.autoMode.defaultAgent);
 
   if (!agent) {
     logger?.error("execution", "Agent not found", {

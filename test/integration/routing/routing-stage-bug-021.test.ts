@@ -224,11 +224,12 @@ describe("Routing Stage - Task classified log shows final routing state after al
 
     expect(result.action).toBe("continue");
 
-    // Verify final state has greenfield override applied to cached TDD strategy
+    // PRD wins: story.routing had complexity=medium/testStrategy=three-session-tdd.
+    // resolveRouting() returns PRD values; greenfield detection then overrides testStrategy to test-after.
     expect(ctx.routing).toBeDefined();
     expect(ctx.routing?.testStrategy).toBe("test-after");
-    expect(ctx.routing?.complexity).toBe("medium");
-    expect(ctx.routing?.modelTier).toBe("balanced");
+    expect(ctx.routing?.complexity).toBe("medium"); // from PRD, not re-classified
+    expect(ctx.routing?.modelTier).toBe("balanced"); // derived from complexity=medium
     expect(ctx.routing?.reasoning).toContain("GREENFIELD OVERRIDE");
   });
 
@@ -265,12 +266,13 @@ describe("Routing Stage - Task classified log shows final routing state after al
 
     expect(result.action).toBe("continue");
 
-    // After routing stage completes, ctx.routing should reflect:
-    // 1. Cached complexity: "simple"
-    // 2. Fresh modelTier: derived from config
-    // 3. Greenfield override: test-after instead of TDD
+    // PRD wins: story.routing had complexity=simple/testStrategy=three-session-tdd-lite.
+    // resolveRouting() returns PRD values; greenfield detection then overrides testStrategy.
+    // 1. Complexity from PRD: simple (not re-classified)
+    // 2. modelTier derived from complexity=simple: fast
+    // 3. Greenfield override: test-after instead of TDD-lite
     expect(ctx.routing?.complexity).toBe("simple");
     expect(ctx.routing?.testStrategy).toBe("test-after");
-    expect(ctx.routing?.modelTier).toBe("fast"); // simple -> fast
+    expect(ctx.routing?.modelTier).toBe("fast");
   });
 });

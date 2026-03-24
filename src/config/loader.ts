@@ -38,6 +38,27 @@ export function findProjectDir(startDir: string = process.cwd()): string | null 
   return null;
 }
 
+/** @internal Map removed routing strategies to 'keyword' with a deprecation warning.
+ * Strategies removed in ROUTE-001: manual, adaptive, custom → mapped to 'keyword'.
+ * Returns a new object (immutable -- does not mutate the input). */
+function applyRemovedStrategyCompat(conf: Record<string, unknown>): Record<string, unknown> {
+  const routing = conf.routing as Record<string, unknown> | undefined;
+  const strategy = routing?.strategy;
+  const REMOVED_STRATEGIES = ["manual", "adaptive", "custom"];
+  if (typeof strategy === "string" && REMOVED_STRATEGIES.includes(strategy)) {
+    try {
+      getLogger().warn(
+        "config",
+        `routing.strategy="${strategy}" was removed in ROUTE-001 and is no longer supported. Falling back to "keyword". Update your config to use "keyword" or "llm".`,
+      );
+    } catch {
+      /* logger may not be init yet */
+    }
+    return { ...conf, routing: { ...routing, strategy: "keyword" } };
+  }
+  return conf;
+}
+
 /** @internal Backward compat: map deprecated routing.llm.batchMode to routing.llm.mode.
  * Returns a new object (immutable -- does not mutate the input). */
 function applyBatchModeCompat(conf: Record<string, unknown>): Record<string, unknown> {
@@ -75,8 +96,8 @@ export async function loadConfig(projectDir?: string, cliOverrides?: Record<stri
   // Layer 1: Global config (~/.nax/config.json)
   const globalConfRaw = await loadJsonFile<Record<string, unknown>>(globalConfigPath(), "config");
   if (globalConfRaw) {
-    // Backward compatibility: apply batchMode->mode shim before merge so defaults don't shadow it
-    const globalConf = applyBatchModeCompat(globalConfRaw);
+    // Backward compatibility: apply compat shims before merge so defaults don't shadow them
+    const globalConf = applyBatchModeCompat(applyRemovedStrategyCompat(globalConfRaw));
     rawConfig = deepMergeConfig(rawConfig, globalConf);
   }
 
@@ -85,9 +106,8 @@ export async function loadConfig(projectDir?: string, cliOverrides?: Record<stri
   if (projDir) {
     const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"), "config");
     if (projConf) {
-      // Backward compatibility: map deprecated batchMode -> mode on raw user config
-      // MUST run before deepMergeConfig so defaults don't shadow the check.
-      const resolvedProjConf = applyBatchModeCompat(projConf);
+      // Backward compatibility: apply compat shims before merge so defaults don't shadow them
+      const resolvedProjConf = applyBatchModeCompat(applyRemovedStrategyCompat(projConf));
       rawConfig = deepMergeConfig(rawConfig, resolvedProjConf);
     }
   }
