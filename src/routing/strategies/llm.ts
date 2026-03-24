@@ -194,7 +194,7 @@ export async function routeBatch(stories: UserStory[], context: RoutingContext):
 export async function classifyWithLlm(
   story: UserStory,
   config: NaxConfig,
-  adapter: AgentAdapter,
+  adapter?: AgentAdapter,
 ): Promise<RoutingDecision | null> {
   const llmConfig = config.routing.llm;
   if (!llmConfig) return null;

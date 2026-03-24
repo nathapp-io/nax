@@ -258,7 +258,7 @@ describe("LLM cache hit: testStrategy recomputed from complexity", () => {
     });
 
     // Cache hit: adapter not needed since result comes from cache
-    const result = await classifyWithLlm(story, makeConfig({ cacheDecisions: true }), undefined as unknown as AgentAdapter);
+    const result = await classifyWithLlm(story, makeConfig({ cacheDecisions: true }), undefined);
 
     // Must recompute: simple → tdd-simple (TS-001)
     expect(result?.complexity).toBe("simple");
@@ -294,7 +294,7 @@ describe("LLM cache hit: testStrategy recomputed from complexity", () => {
     });
 
     // Cache hit: adapter not needed since result comes from cache
-    const result = await classifyWithLlm(story, makeConfig({ cacheDecisions: true }), undefined as unknown as AgentAdapter);
+    const result = await classifyWithLlm(story, makeConfig({ cacheDecisions: true }), undefined);
 
     expect(result?.complexity).toBe("medium");
     expect(result?.testStrategy).toBe("three-session-tdd-lite");

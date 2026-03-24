@@ -225,7 +225,7 @@ describe("AA-003: classifyWithLlm() uses adapter.complete()", () => {
     (_deps as Record<string, unknown>).adapter = mockAdapter;
 
     // Pass undefined adapter — must fall back to _deps.adapter
-    const result = await classifyWithLlm(makeStory("DEPS-TEST"), makeConfig(), undefined as unknown as AgentAdapter);
+    const result = await classifyWithLlm(makeStory("DEPS-TEST"), makeConfig(), undefined);
 
     expect(result).not.toBeNull();
     expect(mockAdapter.complete).toHaveBeenCalledTimes(1);
