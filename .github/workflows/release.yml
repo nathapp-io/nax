@@ -78,34 +78,39 @@ jobs:
         env:
           NPM_CONFIG_PROVENANCE: "true"
 
-      # Extract release notes from CHANGELOG.md
+      # Extract release notes from CHANGELOG.md (optional — falls back to GitHub auto-generate)
       - name: Extract release notes
         id: notes
         run: |
           VERSION="${{ steps.info.outputs.version }}"
           # Extract section between ## [$VERSION] and next ## [
-          NOTES=$(awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" CHANGELOG.md)
+          NOTES=$(awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" CHANGELOG.md 2>/dev/null || true)
 
-          if [ -z "$NOTES" ]; then
-            # Fallback: generate from git log
-            PREV_TAG=$(git describe --tags --abbrev=0 ${{ steps.info.outputs.tag }}^ 2>/dev/null || echo "")
-            if [ -n "$PREV_TAG" ]; then
-              NOTES=$(git log --oneline "$PREV_TAG..${{ steps.info.outputs.tag }}" | head -20)
-            else
-              NOTES="Release ${{ steps.info.outputs.tag }}"
-            fi
+          if [ -n "$NOTES" ]; then
+            echo "$NOTES" > /tmp/release-notes.md
+            echo "has_notes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_notes=false" >> "$GITHUB_OUTPUT"
           fi
 
-          # Write to file (handles multiline)
-          echo "$NOTES" > /tmp/release-notes.md
-
       # Create GitHub Release
-      - name: Create GitHub Release
+      # When CHANGELOG has an entry: use it as the body.
+      # When no entry: omit body_path so generate_release_notes auto-builds from PR titles.
+      - name: Create GitHub Release (with changelog notes)
+        if: steps.notes.outputs.has_notes == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.info.outputs.tag }}
           name: ${{ steps.info.outputs.tag }}
           body_path: /tmp/release-notes.md
+          prerelease: ${{ steps.info.outputs.prerelease }}
+
+      - name: Create GitHub Release (auto-generated notes)
+        if: steps.notes.outputs.has_notes != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.info.outputs.tag }}
+          name: ${{ steps.info.outputs.tag }}
           prerelease: ${{ steps.info.outputs.prerelease }}
           generate_release_notes: true
 
