@@ -68,6 +68,15 @@ export async function executeSequential(
   );
 
   try {
+    // Early exit: skip pre-run pipeline when all stories are already complete.
+    // Avoids unnecessary acceptance test regeneration (LLM cost) on re-runs
+    // where everything already passed.
+    if (isComplete(prd)) {
+      logger?.info("execution", "All stories already complete — skipping pre-run pipeline");
+      deferredReview = await runDeferredReview(ctx.workdir, ctx.config.review, ctx.pluginRegistry, runStartRef);
+      return buildResult("completed");
+    }
+
     // Pre-run pipeline (acceptance test setup with RED gate)
     logger?.info("execution", "Running pre-run pipeline (acceptance test setup)");
     const preRunCtx: PipelineContext = {
