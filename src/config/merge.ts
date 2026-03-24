@@ -72,6 +72,9 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         ...(packageOverride.quality?.commands?.test !== undefined && {
           test: packageOverride.quality.commands.test,
         }),
+        ...(packageOverride.quality?.commands?.build !== undefined && {
+          build: packageOverride.quality.commands.build,
+        }),
         // Explicit review.commands override bridged quality values
         ...packageOverride.review?.commands,
       },
@@ -85,6 +88,7 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
       requireTests: packageOverride.quality?.requireTests ?? root.quality.requireTests,
       requireTypecheck: packageOverride.quality?.requireTypecheck ?? root.quality.requireTypecheck,
       requireLint: packageOverride.quality?.requireLint ?? root.quality.requireLint,
+      requireBuild: packageOverride.quality?.requireBuild ?? root.quality.requireBuild,
       commands: {
         ...root.quality.commands,
         ...packageOverride.quality?.commands,

@@ -68,3 +68,83 @@ describe("schema backwards compatibility: 'test' remains a valid review check", 
     expect(result.success).toBe(false);
   });
 });
+
+describe("schema: 'build' is a valid review check (BUILD-001)", () => {
+  test("schema accepts review.checks containing 'build'", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      review: {
+        ...DEFAULT_CONFIG.review,
+        checks: ["typecheck", "lint", "build"],
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  test("schema accepts review.checks with only 'build'", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      review: {
+        ...DEFAULT_CONFIG.review,
+        checks: ["build"],
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  test("schema accepts review.commands.build", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      review: {
+        ...DEFAULT_CONFIG.review,
+        checks: ["build"],
+        commands: { build: "bun run build" },
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.review.commands.build).toBe("bun run build");
+    }
+  });
+});
+
+describe("quality.requireBuild default (BUILD-001)", () => {
+  test("quality.requireBuild defaults to false", () => {
+    expect(DEFAULT_CONFIG.quality.requireBuild).toBe(false);
+  });
+
+  test("schema accepts quality.requireBuild set to true", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      quality: {
+        ...DEFAULT_CONFIG.quality,
+        requireBuild: true,
+        commands: {},
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.quality.requireBuild).toBe(true);
+    }
+  });
+
+  test("schema accepts quality.requireBuild set to false", () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      quality: {
+        ...DEFAULT_CONFIG.quality,
+        requireBuild: false,
+        commands: {},
+      },
+    };
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.quality.requireBuild).toBe(false);
+    }
+  });
+});

@@ -24,6 +24,7 @@ const DEFAULT_COMMANDS: Record<ReviewCheckName, string> = {
   typecheck: "bun run typecheck",
   lint: "bun run lint",
   test: "bun test",
+  build: "bun run build",
 };
 
 /**

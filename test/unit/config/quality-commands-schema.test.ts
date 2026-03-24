@@ -69,4 +69,16 @@ describe("quality.commands schema", () => {
     expect(result.quality.commands.lintFix).toBe("bun run lint --fix");
     expect(result.quality.commands.formatFix).toBe("bun run format --write");
   });
+
+  test("build is preserved after schema parse", () => {
+    const input = buildConfigWithCommands({ build: "bun run build" });
+    const result = NaxConfigSchema.parse(input);
+    expect(result.quality.commands.build).toBe("bun run build");
+  });
+
+  test("build is optional — absent when not provided", () => {
+    const input = buildConfigWithCommands({});
+    const result = NaxConfigSchema.parse(input);
+    expect(result.quality.commands.build).toBeUndefined();
+  });
 });

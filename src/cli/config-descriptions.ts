@@ -80,10 +80,12 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "quality.requireTypecheck": "Require typecheck to pass",
   "quality.requireLint": "Require lint to pass",
   "quality.requireTests": "Require tests to pass",
+  "quality.requireBuild": "Require build to pass",
   "quality.commands": "Custom quality commands",
   "quality.commands.typecheck": "Custom typecheck command",
   "quality.commands.lint": "Custom lint command",
   "quality.commands.test": "Custom test command",
+  "quality.commands.build": "Custom build command",
   "quality.forceExit": "Append --forceExit to test command (prevents hangs)",
   "quality.detectOpenHandles": "Append --detectOpenHandles on timeout",
   "quality.detectOpenHandlesRetries": "Max retries with --detectOpenHandles",
@@ -128,6 +130,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "review.commands.typecheck": "Custom typecheck command for review",
   "review.commands.lint": "Custom lint command for review",
   "review.commands.test": "Custom test command for review",
+  "review.commands.build": "Custom build command for review",
 
   // Plan
   plan: "Planning phase configuration",
