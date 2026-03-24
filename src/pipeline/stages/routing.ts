@@ -82,12 +82,15 @@ export const routingStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
-    const agentName = ctx.config.execution?.agent ?? "claude";
+    // Use effectiveConfig for per-package overrides (monorepo), fall back to base config
+    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
+
+    const agentName = effectiveConfig.execution?.agent ?? "claude";
     // Only use adapter when explicitly provided via agentGetFn — prevents real LLM calls in tests
     const adapter = ctx.agentGetFn ? ctx.agentGetFn(agentName) : undefined;
 
     // Classify story via resolveRouting() (plugin routers > LLM > keyword)
-    const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, adapter);
+    const decision = await _routingDeps.resolveRouting(ctx.story, effectiveConfig, ctx.plugins, adapter);
 
     // BUG-032: Preserve escalated modelTier if explicitly set by handleTierEscalation
     const modelTier = ctx.story.routing?.modelTier ?? decision.modelTier;
@@ -110,7 +113,7 @@ export const routingStage: PipelineStage = {
     // BUG-010: Greenfield detection — force test-after if no test files exist
     // MW-011: Scan story.workdir for monorepo, not repo root
     // STRAT-001: no-test is exempt from greenfield override
-    const greenfieldDetectionEnabled = ctx.config.tdd.greenfieldDetection ?? true;
+    const greenfieldDetectionEnabled = effectiveConfig.tdd.greenfieldDetection ?? true;
     if (greenfieldDetectionEnabled && routing.testStrategy.startsWith("three-session-tdd")) {
       const greenfieldScanDir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
       const isGreenfield = await _routingDeps.isGreenfieldStory(ctx.story, greenfieldScanDir);
@@ -139,7 +142,7 @@ export const routingStage: PipelineStage = {
     }
 
     // SD-004: Oversized story detection and decomposition
-    const decomposeConfig = ctx.config.decompose;
+    const decomposeConfig = effectiveConfig.decompose;
     if (decomposeConfig && ctx.story.status !== "decomposed") {
       const acCount = ctx.story.acceptanceCriteria.length;
       const complexity = ctx.routing.complexity;
@@ -153,7 +156,13 @@ export const routingStage: PipelineStage = {
             `Story ${ctx.story.id} is oversized (${acCount} ACs) but decompose is disabled — continuing with original`,
           );
         } else if (decomposeConfig.trigger === "auto") {
-          const result = await _routingDeps.runDecompose(ctx.story, ctx.prd, ctx.config, ctx.workdir, ctx.agentGetFn);
+          const result = await _routingDeps.runDecompose(
+            ctx.story,
+            ctx.prd,
+            effectiveConfig,
+            ctx.workdir,
+            ctx.agentGetFn,
+          );
           if (result.validation.valid) {
             _routingDeps.applyDecomposition(ctx.prd, result);
             if (ctx.prdPath) await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
@@ -170,12 +179,18 @@ export const routingStage: PipelineStage = {
         } else if (decomposeConfig.trigger === "confirm") {
           const action = await _routingDeps.checkStoryOversized(
             { featureName: ctx.prd.feature, storyId: ctx.story.id, criteriaCount: acCount },
-            ctx.config,
+            effectiveConfig,
             // biome-ignore lint/style/noNonNullAssertion: confirm mode is only reached when interaction chain is present in production; tests mock checkStoryOversized directly
             ctx.interaction!,
           );
           if (action === "decompose") {
-            const result = await _routingDeps.runDecompose(ctx.story, ctx.prd, ctx.config, ctx.workdir, ctx.agentGetFn);
+            const result = await _routingDeps.runDecompose(
+              ctx.story,
+              ctx.prd,
+              effectiveConfig,
+              ctx.workdir,
+              ctx.agentGetFn,
+            );
             if (result.validation.valid) {
               _routingDeps.applyDecomposition(ctx.prd, result);
               if (ctx.prdPath) await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
