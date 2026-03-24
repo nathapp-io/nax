@@ -247,6 +247,33 @@ describe("runReview — build check (BUILD-001)", () => {
     expect(result.checks).toHaveLength(0);
   });
 
+  test("build check is skipped when neither review.commands.build nor quality.commands.build is set (no package.json fallback)", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => []);
+    let spawnCalled = false;
+    _runnerDeps.spawn = mock((_args: unknown) => {
+      spawnCalled = true;
+      return {
+        exited: Promise.resolve(0),
+        stdout: { text: () => Promise.resolve("") },
+        stderr: { text: () => Promise.resolve("") },
+        kill: () => {},
+      } as unknown as ReturnType<typeof Bun.spawn>;
+    });
+
+    // build in checks, but no command in review.commands or quality.commands
+    const configNoBuildCmd: ReviewConfig = {
+      enabled: true,
+      checks: ["build"],
+      commands: {},
+    };
+
+    const result = await runReview(configNoBuildCmd, "/tmp/fake-workdir", undefined, {});
+
+    expect(result.success).toBe(true);
+    expect(result.checks).toHaveLength(0); // skipped — no command configured
+    expect(spawnCalled).toBe(false);
+  });
+
   test("build check uses quality.commands.build when review.commands.build not set", async () => {
     _deps.getUncommittedFiles = mock(async (_workdir: string) => []);
 
