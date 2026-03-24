@@ -133,8 +133,12 @@ export const acceptanceSetupStage: PipelineStage = {
     const testPath = path.join(ctx.featureDir, "acceptance.test.ts");
     const metaPath = path.join(ctx.featureDir, "acceptance-meta.json");
 
-    // All criteria from the PRD — used for fingerprint and generation
-    const allCriteria: string[] = ctx.prd.userStories.flatMap((s) => s.acceptanceCriteria);
+    // All criteria from original stories only — fix stories (US-FIX-*) are excluded
+    // so that the fingerprint remains stable when fix stories are added during the
+    // acceptance loop. This prevents unnecessary test regeneration on re-runs.
+    const allCriteria: string[] = ctx.prd.userStories
+      .filter((s) => !s.id.startsWith("US-FIX-"))
+      .flatMap((s) => s.acceptanceCriteria);
 
     let totalCriteria = 0;
     let testableCount = 0;

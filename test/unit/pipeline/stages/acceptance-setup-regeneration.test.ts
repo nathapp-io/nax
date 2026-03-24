@@ -285,6 +285,45 @@ describe("acceptance-setup: regenerates when fingerprint is stale (P2-A)", () =>
 });
 
 // ---------------------------------------------------------------------------
+// Fix-story exclusion: US-FIX-* stories don't affect fingerprint
+// ---------------------------------------------------------------------------
+
+describe("acceptance-setup: US-FIX-* stories excluded from fingerprint", () => {
+  test("adding fix stories does NOT trigger regeneration", async () => {
+    const storedFingerprint = computeACFingerprint(DEFAULT_CRITERIA);
+    let generateCalled = false;
+
+    _acceptanceSetupDeps.fileExists = async () => true;
+    _acceptanceSetupDeps.readMeta = async () => ({
+      generatedAt: "2026-01-01T00:00:00Z",
+      acFingerprint: storedFingerprint,
+      storyCount: 2,
+      acCount: 3,
+      generator: "nax",
+    });
+    _acceptanceSetupDeps.refine = async () => [];
+    _acceptanceSetupDeps.generate = async () => {
+      generateCalled = true;
+      return { testCode: "", criteria: [] };
+    };
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    // PRD with original stories + a fix story added by acceptance loop
+    const stories = [
+      makeStory("US-001", ["AC-1: first criterion", "AC-2: second criterion"]),
+      makeStory("US-002", ["AC-3: third criterion"]),
+      makeStory("US-FIX-001", ["Fix the broken validation logic"]),
+    ];
+    const ctx = makeCtx({ prd: makePrd(stories) as any });
+
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(generateCalled).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // P2-A: No regeneration when fingerprint matches (idempotent, AC-16)
 // ---------------------------------------------------------------------------
 
