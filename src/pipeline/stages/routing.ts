@@ -83,7 +83,8 @@ export const routingStage: PipelineStage = {
     const logger = getLogger();
 
     const agentName = ctx.config.execution?.agent ?? "claude";
-    const adapter = (ctx.agentGetFn ?? _routingDeps.getAgent)(agentName);
+    // Only use adapter when explicitly provided via agentGetFn — prevents real LLM calls in tests
+    const adapter = ctx.agentGetFn ? ctx.agentGetFn(agentName) : undefined;
 
     // Classify story via resolveRouting() (plugin routers > LLM > keyword)
     const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, adapter);
