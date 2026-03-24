@@ -17,6 +17,7 @@
 
 import path from "node:path";
 import type { RefinedCriterion } from "../../acceptance/types";
+import { getAgent } from "../../agents/registry";
 import { resolveModel } from "../../config";
 import type { UserStory } from "../../prd/types";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -59,6 +60,7 @@ export function computeACFingerprint(criteria: string[]): string {
  * @internal
  */
 export const _acceptanceSetupDeps = {
+  getAgent,
   fileExists: async (_path: string): Promise<boolean> => {
     const f = Bun.file(_path);
     return f.exists();
@@ -156,7 +158,7 @@ export const acceptanceSetupStage: PipelineStage = {
       totalCriteria = allCriteria.length;
 
       const { getAgent } = await import("../../agents");
-      const agent = (ctx.agentGetFn ?? getAgent)(ctx.config.autoMode.defaultAgent);
+      const agent = (ctx.agentGetFn ?? _acceptanceSetupDeps.getAgent)(ctx.config.autoMode.defaultAgent);
 
       let refinedCriteria: RefinedCriterion[];
 

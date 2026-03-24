@@ -201,7 +201,7 @@ async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
     maxAttempts,
   });
 
-  const agentGetFn = ctx.agentGetFn ?? getAgent;
+  const agentGetFn = ctx.agentGetFn ?? _autofixDeps.getAgent;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     logger.info("autofix", `Agent rectification attempt ${attempt}/${maxAttempts}`, { storyId: ctx.story.id });
@@ -259,4 +259,10 @@ async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
 /**
  * Injectable deps for testing.
  */
-export const _autofixDeps = { runCommand, recheckReview, runAgentRectification, loadConfigForWorkdir };
+export const _autofixDeps = {
+  getAgent,
+  runCommand,
+  recheckReview,
+  runAgentRectification,
+  loadConfigForWorkdir,
+};

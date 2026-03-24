@@ -11,6 +11,7 @@
 
 import path, { join } from "node:path";
 import { type FixStory, convertFixStoryToUserStory, generateFixStories } from "../../acceptance";
+import { getAgent } from "../../agents/registry";
 import type { NaxConfig } from "../../config";
 import { loadConfigForWorkdir } from "../../config/loader";
 import { resolveModel } from "../../config/schema";
@@ -98,6 +99,8 @@ function buildResult(
   return { success, prd, totalCost, iterations, storiesCompleted, prdDirty };
 }
 
+export const _acceptanceLoopDeps = { getAgent };
+
 /** Generate and add fix stories to PRD */
 async function generateAndAddFixStories(
   ctx: AcceptanceLoopContext,
@@ -105,8 +108,7 @@ async function generateAndAddFixStories(
   prd: PRD,
 ): Promise<FixStory[] | null> {
   const logger = getSafeLogger();
-  const { getAgent } = await import("../../agents");
-  const agent = (ctx.agentGetFn ?? getAgent)(ctx.config.autoMode.defaultAgent);
+  const agent = (ctx.agentGetFn ?? _acceptanceLoopDeps.getAgent)(ctx.config.autoMode.defaultAgent);
   if (!agent) {
     logger?.error("acceptance", "Agent not found, cannot generate fix stories");
     return null;
