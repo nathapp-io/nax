@@ -5,7 +5,7 @@
  */
 
 /** Review check name */
-export type ReviewCheckName = "typecheck" | "lint" | "test";
+export type ReviewCheckName = "typecheck" | "lint" | "test" | "build";
 
 /** Review check result */
 export interface ReviewCheckResult {
@@ -64,6 +64,7 @@ export interface ReviewConfig {
     typecheck?: string;
     lint?: string;
     test?: string;
+    build?: string;
   };
   /** When to run plugin reviewers: per-story (default) or deferred (skip per-story, run once at end) */
   pluginMode?: "per-story" | "deferred";

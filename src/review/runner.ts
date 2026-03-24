@@ -19,13 +19,6 @@ import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } f
  */
 export const _reviewRunnerDeps = { spawn, file: Bun.file };
 
-/** Default commands for each check type */
-const DEFAULT_COMMANDS: Record<ReviewCheckName, string> = {
-  typecheck: "bun run typecheck",
-  lint: "bun run lint",
-  test: "bun test",
-};
-
 /**
  * Load package.json from workdir
  */
@@ -88,10 +81,13 @@ async function resolveCommand(
     return qualityCmd;
   }
 
-  // 4. Check package.json
-  const packageJson = await loadPackageJson(workdir);
-  if (hasScript(packageJson, check)) {
-    return `bun run ${check}`;
+  // 4. Check package.json — only for built-in checks (typecheck/lint/test), not build.
+  // build must be explicitly configured in review.commands or quality.commands.
+  if (check !== "build") {
+    const packageJson = await loadPackageJson(workdir);
+    if (hasScript(packageJson, check)) {
+      return `bun run ${check}`;
+    }
   }
 
   // 5. Not found - return null to skip

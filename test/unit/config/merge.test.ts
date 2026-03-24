@@ -328,6 +328,24 @@ describe("mergePackageConfig", () => {
         expect(result.review.commands.lint).toBe("bun run lint"); // bridged
         expect(result.review.commands.typecheck).toBe("bunx turbo type-check"); // untouched
       });
+
+      test("quality.commands.build bridges to review.commands.build (BUILD-001)", () => {
+        const root: NaxConfig = {
+          ...makeRoot(),
+          review: {
+            enabled: true,
+            checks: ["build"],
+            commands: {},
+            pluginMode: "per-story",
+          },
+        };
+        const result = mergePackageConfig(root, {
+          quality: { commands: { build: "bun run build" } },
+        } as Partial<NaxConfig>);
+
+        expect(result.review.commands.build).toBe("bun run build");
+        expect(result.quality.commands.build).toBe("bun run build");
+      });
     });
   });
 
@@ -404,6 +422,18 @@ describe("mergePackageConfig", () => {
       } as Partial<NaxConfig>);
 
       expect(result.quality.requireLint).toBe(false);
+    });
+
+    test("overrides quality.requireBuild per package (BUILD-001)", () => {
+      const root: NaxConfig = {
+        ...makeRoot(),
+        quality: { ...DEFAULT_CONFIG.quality, requireBuild: false, commands: {} },
+      };
+      const result = mergePackageConfig(root, {
+        quality: { requireBuild: true } as Partial<NaxConfig["quality"]>,
+      } as Partial<NaxConfig>);
+
+      expect(result.quality.requireBuild).toBe(true);
     });
   });
 

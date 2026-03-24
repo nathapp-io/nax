@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { _reviewGitDeps as _deps, runReview } from "../../../src/review/runner";
+import { _reviewGitDeps as _deps, _reviewRunnerDeps as _runnerDeps, runReview } from "../../../src/review/runner";
 import type { ReviewConfig } from "../../../src/review/types";
 
 /** Minimal ReviewConfig with typecheck enabled but command set to disable via executionConfig */
@@ -22,6 +22,13 @@ const noChecksConfig: ReviewConfig = {
   enabled: true,
   checks: [],
   commands: {},
+};
+
+/** Build check config with explicit command */
+const buildConfig: ReviewConfig = {
+  enabled: true,
+  checks: ["build"],
+  commands: { build: "echo 'build passed'" },
 };
 
 describe("runReview — dirty working tree guard (RQ-001)", () => {
@@ -169,5 +176,159 @@ describe("nax runtime file exclusions", () => {
     expect(result.success).toBe(false);
     expect(result.failureReason).toContain("src/config/types.ts");
     expect(result.failureReason).not.toContain(".nax/status.json");
+  });
+});
+
+describe("runReview — build check (BUILD-001)", () => {
+  let originalGetUncommittedFiles: typeof _deps.getUncommittedFiles;
+  let originalSpawn: typeof _runnerDeps.spawn;
+
+  beforeEach(() => {
+    originalGetUncommittedFiles = _deps.getUncommittedFiles;
+    originalSpawn = _runnerDeps.spawn;
+  });
+
+  afterEach(() => {
+    mock.restore();
+    _deps.getUncommittedFiles = originalGetUncommittedFiles;
+    _runnerDeps.spawn = originalSpawn;
+  });
+
+  test("build check runs and passes when command succeeds", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => []);
+
+    // Mock spawn to simulate successful build
+    _runnerDeps.spawn = mock((_args: unknown) => {
+      return {
+        exited: Promise.resolve(0),
+        stdout: { text: () => Promise.resolve("build output") },
+        stderr: { text: () => Promise.resolve("") },
+        kill: () => {},
+      } as unknown as ReturnType<typeof Bun.spawn>;
+    });
+
+    const result = await runReview(buildConfig, "/tmp/fake-workdir");
+
+    expect(result.success).toBe(true);
+    expect(result.checks).toHaveLength(1);
+    expect(result.checks[0].check).toBe("build");
+    expect(result.checks[0].success).toBe(true);
+    expect(result.checks[0].command).toBe("echo 'build passed'");
+  });
+
+  test("build check runs and fails when command fails", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => []);
+
+    // Mock spawn to simulate failed build
+    _runnerDeps.spawn = mock((_args: unknown) => {
+      return {
+        exited: Promise.resolve(1),
+        stdout: { text: () => Promise.resolve("") },
+        stderr: { text: () => Promise.resolve("Build failed") },
+        kill: () => {},
+      } as unknown as ReturnType<typeof Bun.spawn>;
+    });
+
+    const result = await runReview(buildConfig, "/tmp/fake-workdir");
+
+    expect(result.success).toBe(false);
+    expect(result.checks).toHaveLength(1);
+    expect(result.checks[0].check).toBe("build");
+    expect(result.checks[0].success).toBe(false);
+    expect(result.checks[0].exitCode).toBe(1);
+  });
+
+  test("build check is skipped when build is not in checks array", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => []);
+
+    const result = await runReview(noChecksConfig, "/tmp/fake-workdir");
+
+    expect(result.success).toBe(true);
+    expect(result.checks).toHaveLength(0);
+  });
+
+  test("build check is skipped when neither review.commands.build nor quality.commands.build is set (no package.json fallback)", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => []);
+    let spawnCalled = false;
+    _runnerDeps.spawn = mock((_args: unknown) => {
+      spawnCalled = true;
+      return {
+        exited: Promise.resolve(0),
+        stdout: { text: () => Promise.resolve("") },
+        stderr: { text: () => Promise.resolve("") },
+        kill: () => {},
+      } as unknown as ReturnType<typeof Bun.spawn>;
+    });
+
+    // build in checks, but no command in review.commands or quality.commands
+    const configNoBuildCmd: ReviewConfig = {
+      enabled: true,
+      checks: ["build"],
+      commands: {},
+    };
+
+    const result = await runReview(configNoBuildCmd, "/tmp/fake-workdir", undefined, {});
+
+    expect(result.success).toBe(true);
+    expect(result.checks).toHaveLength(0); // skipped — no command configured
+    expect(spawnCalled).toBe(false);
+  });
+
+  test("build check uses quality.commands.build when review.commands.build not set", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => []);
+
+    // Mock spawn to simulate successful build
+    _runnerDeps.spawn = mock((_args: unknown) => {
+      return {
+        exited: Promise.resolve(0),
+        stdout: { text: () => Promise.resolve("build output") },
+        stderr: { text: () => Promise.resolve("") },
+        kill: () => {},
+      } as unknown as ReturnType<typeof Bun.spawn>;
+    });
+
+    // Config with build in checks but no explicit command - should use quality.commands.build
+    const configWithQualityBuild: ReviewConfig = {
+      enabled: true,
+      checks: ["build"],
+      commands: {},
+    };
+    const qualityCommands = { build: "bun run build" };
+
+    const result = await runReview(configWithQualityBuild, "/tmp/fake-workdir", undefined, qualityCommands);
+
+    expect(result.success).toBe(true);
+    expect(result.checks).toHaveLength(1);
+    expect(result.checks[0].check).toBe("build");
+    expect(result.checks[0].command).toBe("bun run build");
+  });
+
+  test("build check respects fail-fast — stops on first failure", async () => {
+    _deps.getUncommittedFiles = mock(async (_workdir: string) => []);
+
+    // Mock spawn: first call fails, second would succeed but should not be reached
+    let callCount = 0;
+    _runnerDeps.spawn = mock((_args: unknown) => {
+      callCount++;
+      return {
+        exited: Promise.resolve(1),
+        stdout: { text: () => Promise.resolve("") },
+        stderr: { text: () => Promise.resolve("Build failed") },
+        kill: () => {},
+      } as unknown as ReturnType<typeof Bun.spawn>;
+    });
+
+    const configWithMultipleChecks: ReviewConfig = {
+      enabled: true,
+      checks: ["build", "lint"],
+      commands: { build: "echo build", lint: "echo lint" },
+    };
+
+    const result = await runReview(configWithMultipleChecks, "/tmp/fake-workdir");
+
+    expect(result.success).toBe(false);
+    expect(result.checks).toHaveLength(1);
+    expect(result.checks[0].check).toBe("build");
+    expect(callCount).toBe(1); // Should only run build, not lint
   });
 });

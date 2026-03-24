@@ -125,6 +125,8 @@ export interface QualityConfig {
   requireLint: boolean;
   /** Require tests to pass */
   requireTests: boolean;
+  /** Require build to pass */
+  requireBuild: boolean;
   /** Custom quality commands */
   commands: {
     typecheck?: string;
@@ -136,6 +138,8 @@ export interface QualityConfig {
     lintFix?: string;
     /** Auto-fix formatting (e.g., "biome format --write") */
     formatFix?: string;
+    /** Build command (e.g., "bun run build") */
+    build?: string;
   };
   /** Auto-fix configuration (Phase 2) */
   autofix?: {
@@ -218,12 +222,13 @@ export interface ReviewConfig {
   /** Enable review phase */
   enabled: boolean;
   /** List of checks to run */
-  checks: Array<"typecheck" | "lint" | "test">;
+  checks: Array<"typecheck" | "lint" | "test" | "build">;
   /** Custom commands per check */
   commands: {
     typecheck?: string;
     lint?: string;
     test?: string;
+    build?: string;
   };
   /** Plugin reviewer mode: "per-story" (run after each story) or "deferred" (run once at end of run, default: "per-story") */
   pluginMode?: "per-story" | "deferred";
