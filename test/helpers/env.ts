@@ -11,7 +11,7 @@
 import { describe, test } from "bun:test";
 
 /** Use instead of `test` for environment-sensitive tests. Skips unless FULL=1. */
-export const fullTest = process.env.FULL ? test : test.skip;
+export const fullTest = process.env.FULL === "1" ? test : test.skip;
 
 /** Use instead of `describe` for environment-sensitive describe blocks. Skips unless FULL=1. */
-export const fullDescribe = process.env.FULL ? describe : describe.skip;
+export const fullDescribe = process.env.FULL === "1" ? describe : describe.skip;
