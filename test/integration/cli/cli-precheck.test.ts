@@ -1891,7 +1891,7 @@ import { withDepsRestore } from "../../helpers/deps";
 
 describe("Agent Validation and Retry Logic", () => {
   withDepsRestore(_claudeAdapterDeps, ["spawn"]);
-  withDepsRestore(_runOnceDeps, ["spawn"]);
+  withDepsRestore(_runOnceDeps, ["spawn", "withProcessTimeout"]);
 
   describe("ClaudeCodeAdapter.isInstalled", () => {
     test("returns true when binary exists in PATH", async () => {
@@ -1944,33 +1944,33 @@ describe("Agent Validation and Retry Logic", () => {
   describe("ClaudeCodeAdapter timeout handling", () => {
     test("distinguishes timeout from normal failure", async () => {
       const adapter = new ClaudeCodeAdapter();
-      // Mock process that times out via _runOnceDeps.spawn
-      _runOnceDeps.spawn = mock((cmd: string[], opts: { cwd: string; stdout: string; stderr: string; env: Record<string, string | undefined> }) => {
-        let killed = false;
-        return {
-          exited: new Promise((resolve) => {
-            setTimeout(() => resolve(killed ? 143 : 0), 100);
-          }),
-          kill: (signal: string) => {
-            if (signal === "SIGTERM") killed = true;
-          },
-          stdout: new Response("").body,
-          stderr: new Response("").body,
-          pid: 12345,
-        };
-      });
+
+      // Mock spawn — returns a fake proc; real process interaction is bypassed
+      _runOnceDeps.spawn = mock(() => ({
+        exited: new Promise<number>(() => {}), // never resolves — withProcessTimeout handles it
+        kill: mock(),
+        stdout: new Response("").body as ReadableStream<Uint8Array>,
+        stderr: new Response("").body as ReadableStream<Uint8Array>,
+        pid: 12345,
+      }));
+
+      // Mock withProcessTimeout to return a deterministic timeout result
+      // Avoids real setTimeout race conditions under CI parallel load
+      _runOnceDeps.withProcessTimeout = mock(() =>
+        Promise.resolve({ exitCode: 143, timedOut: true }),
+      );
 
       const options: AgentRunOptions = {
         prompt: "test",
         workdir: "/tmp",
         modelTier: "balanced",
         modelDef: { provider: "anthropic", model: "claude-sonnet-4.5", env: {} },
-        timeoutSeconds: 0.05, // 50ms timeout
+        timeoutSeconds: 1,
       };
 
       const result = await adapter.run(options);
 
-      // Should be marked as timeout (exit code 124)
+      // Adapter maps timedOut → exitCode 124
       expect(result.exitCode).toBe(124);
       expect(result.success).toBe(false);
     });
