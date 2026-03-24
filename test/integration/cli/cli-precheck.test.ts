@@ -2090,16 +2090,21 @@ describe("Agent Validation and Retry Logic", () => {
       const adapter = new ClaudeCodeAdapter();
       let attemptCount = 0;
 
-      // Mock timeout
+      // Mock a process that hangs until killed — resolves only on SIGTERM/SIGKILL.
+      // Using a long-running promise (never resolves naturally) avoids the race
+      // between the 50ms JS timeout and a short setTimeout mock, which caused
+      // intermittent failures on slow CI machines.
       _runOnceDeps.spawn = mock((cmd: string[], opts: { cwd: string; stdout: string; stderr: string; env: Record<string, string | undefined> }) => {
         attemptCount++;
-        let killed = false;
+        let resolveExited: (code: number) => void;
+        const exitedPromise = new Promise<number>((resolve) => {
+          resolveExited = resolve;
+        });
         return {
-          exited: new Promise((resolve) => {
-            setTimeout(() => resolve(killed ? 143 : 0), 100);
-          }),
+          exited: exitedPromise,
           kill: (signal: string) => {
-            if (signal === "SIGTERM") killed = true;
+            if (signal === "SIGTERM") resolveExited(143);
+            else if (signal === "SIGKILL") resolveExited(137);
           },
           stdout: new Response("").body,
           stderr: new Response("").body,
