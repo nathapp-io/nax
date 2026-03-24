@@ -1,6 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { loadPlugins, _setPluginErrorSink, _resetPluginErrorSink } from "../../../src/plugins/loader";
-import { loadCustomStrategy } from "../../../src/routing/loader";
 import { resolve } from "node:path";
 import * as fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -72,13 +71,5 @@ describe("Loader Security (SEC-1, SEC-2)", () => {
     expect(registry.plugins[0].name).toBe("test-plugin");
   });
 
-  test("SEC-2: Blocks custom routing strategy from outside project root", async () => {
-    // Attempt to load from /etc/passwd (outside project root)
-    try {
-      await loadCustomStrategy("/etc/passwd", projectRoot);
-      throw new Error("Should have failed");
-    } catch (error) {
-      expect(error.message).toContain("Security: Path \"/etc/passwd\" is outside allowed roots");
-    }
-  });
+  // SEC-2 (loadCustomStrategy) removed — custom routing strategies deleted in ROUTE-001
 });
