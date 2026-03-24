@@ -251,7 +251,6 @@ describe("Config Validation", () => {
         drainTimeoutMs: 5000,
         shell: "/bin/bash",
         stripEnvVars: ["CLAUDECODE", "CUSTOM_VAR"],
-        environmentalEscalationDivisor: 3,
       },
     };
     const result = NaxConfigSchema.safeParse(config);

@@ -75,7 +75,7 @@ export interface AgentRegistry {
  * AcpAgentAdapter instances are cached per agent name for the lifetime of the registry.
  */
 export function createAgentRegistry(config: NaxConfig): AgentRegistry {
-  const protocol: "acp" | "cli" = config.agent?.protocol ?? "cli";
+  const protocol: "acp" | "cli" = config.agent?.protocol ?? "acp";
   const logger = getLogger();
   const acpCache = new Map<string, AcpAgentAdapter>();
 

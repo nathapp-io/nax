@@ -98,7 +98,7 @@ export interface ExecutionConfig {
   /** Use --dangerously-skip-permissions flag for agent (default: true for backward compat, SEC-1 fix) */
   dangerouslySkipPermissions?: boolean;
   /** Permission profile — takes precedence over dangerouslySkipPermissions (Phase 1) */
-  permissionProfile?: "unrestricted" | "safe" | "scoped";
+  permissionProfile?: "unrestricted" | "safe" | "scoped"; // default: "unrestricted"
   /** Per-stage permission overrides — only read when permissionProfile = "scoped" (Phase 2) */
   permissions?: Record<
     string,
@@ -158,8 +158,6 @@ export interface QualityConfig {
   shell: string;
   /** Environment variables to strip during verification (prevents AI-optimized output) */
   stripEnvVars: string[];
-  /** Divisor for environmental failure early escalation (default: 2 = half the tier budget) */
-  environmentalEscalationDivisor: number;
   /** Hermetic test enforcement settings (ENH-010). Supports per-package override. */
   testing?: TestingConfig;
 }

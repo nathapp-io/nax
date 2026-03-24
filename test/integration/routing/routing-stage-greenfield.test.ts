@@ -111,7 +111,6 @@ function createTestContext(
       drainTimeoutMs: 2000,
       shell: "/bin/sh",
       stripEnvVars: [],
-      environmentalEscalationDivisor: 2,
     },
     tdd: {
       maxRetries: 3,

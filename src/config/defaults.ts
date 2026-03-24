@@ -17,7 +17,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
   autoMode: {
     enabled: true,
     defaultAgent: "claude",
-    fallbackOrder: ["claude", "codex", "opencode", "gemini"],
+    fallbackOrder: ["claude"],
     complexityRouting: {
       simple: "fast",
       medium: "balanced",
@@ -41,26 +41,26 @@ export const DEFAULT_CONFIG: NaxConfig = {
       fallbackToKeywords: true,
       cacheDecisions: true,
       mode: "hybrid",
-      timeoutMs: 15000,
+      timeoutMs: 30000,
     },
   },
   execution: {
     maxIterations: 10, // auto-calculated: sum of tier attempts (5+3+2=10)
     iterationDelayMs: 2000,
-    costLimit: 5.0,
-    sessionTimeoutSeconds: 600, // 10 minutes
-    verificationTimeoutSeconds: 300, // 5 minutes
+    costLimit: 30.0,
+    sessionTimeoutSeconds: 3600, // 1 hour
+    verificationTimeoutSeconds: 600, // 10 minutes
     maxStoriesPerFeature: 500,
     rectification: {
       enabled: true,
       maxRetries: 2,
-      fullSuiteTimeoutSeconds: 120,
+      fullSuiteTimeoutSeconds: 300,
       maxFailureSummaryChars: 2000,
       abortOnIncreasingFailures: true,
     },
     regressionGate: {
       enabled: true,
-      timeoutSeconds: 120,
+      timeoutSeconds: 300,
       acceptOnTimeout: true,
       maxRectificationAttempts: 2,
     },
@@ -115,7 +115,6 @@ export const DEFAULT_CONFIG: NaxConfig = {
       "SENTRY_AUTH_TOKEN",
       "DATADOG_API_KEY",
     ],
-    environmentalEscalationDivisor: 2,
     testing: {
       hermetic: true,
     },
@@ -201,7 +200,9 @@ export const DEFAULT_CONFIG: NaxConfig = {
     },
   },
   prompts: {},
-  // agent: intentionally omitted — cli is the default when no agent config is set
+  agent: {
+    protocol: "acp",
+  },
   decompose: {
     trigger: "auto",
     maxAcceptanceCriteria: 6,

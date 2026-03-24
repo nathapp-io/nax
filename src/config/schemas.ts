@@ -108,7 +108,7 @@ const ExecutionConfigSchema = z.object({
   // DEPRECATED — use permissionProfile instead. Kept for backward compat.
   dangerouslySkipPermissions: z.boolean().default(true),
   // NEW — takes precedence over dangerouslySkipPermissions
-  permissionProfile: z.enum(["unrestricted", "safe", "scoped"]).optional(),
+  permissionProfile: z.enum(["unrestricted", "safe", "scoped"]).default("unrestricted"),
   // Phase 2: per-stage permission overrides (only read when profile = "scoped")
   permissions: z
     .record(
@@ -174,7 +174,7 @@ const QualityConfigSchema = z.object({
       "SENTRY_AUTH_TOKEN",
       "DATADOG_API_KEY",
     ]),
-  environmentalEscalationDivisor: z.number().min(1).max(10).default(2),
+
   testing: z
     .object({
       /**

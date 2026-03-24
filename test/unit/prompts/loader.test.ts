@@ -64,7 +64,6 @@ function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
       drainTimeoutMs: 2000,
       shell: "/bin/sh",
       stripEnvVars: [],
-      environmentalEscalationDivisor: 2,
     },
     tdd: {
       maxRetries: 2,

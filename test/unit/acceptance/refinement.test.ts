@@ -95,7 +95,6 @@ function makeConfig(acceptanceOverride?: Partial<NaxConfig["acceptance"]>): NaxC
       drainTimeoutMs: 0,
       shell: "/bin/sh",
       stripEnvVars: [],
-      environmentalEscalationDivisor: 2,
     },
     tdd: {
       maxRetries: 1,
