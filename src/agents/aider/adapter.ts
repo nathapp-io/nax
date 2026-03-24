@@ -5,6 +5,7 @@
  * supporting one-shot completions in headless mode.
  */
 
+import { typedSpawn, which } from "../../utils/bun-deps";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -24,25 +25,8 @@ import { CompleteError } from "../types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const _aiderCompleteDeps = {
-  which(name: string): string | null {
-    return Bun.which(name);
-  },
-  spawn(
-    cmd: string[],
-    opts: { stdout: "pipe"; stderr: "pipe" | "inherit" },
-  ): {
-    stdout: ReadableStream<Uint8Array>;
-    stderr: ReadableStream<Uint8Array>;
-    exited: Promise<number>;
-    pid: number;
-  } {
-    return Bun.spawn(cmd, opts) as unknown as {
-      stdout: ReadableStream<Uint8Array>;
-      stderr: ReadableStream<Uint8Array>;
-      exited: Promise<number>;
-      pid: number;
-    };
-  },
+  which,
+  spawn: typedSpawn,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -122,16 +122,16 @@ describe("AA-003: classifyWithLlm() uses adapter.complete()", () => {
     expect(result?.testStrategy).toBe("tdd-simple");
   });
 
-  test("does NOT call _deps.spawn when adapter is provided", async () => {
-    const { classifyWithLlm, clearCache, _deps } = await import("../../../../src/routing/strategies/llm");
+  test("does NOT call _llmStrategyDeps.spawn when adapter is provided", async () => {
+    const { classifyWithLlm, clearCache, _llmStrategyDeps } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
     // Poison spawn so that any invocation fails the test
     const spawnSpy = mock(() => {
-      throw new Error("_deps.spawn must not be called when adapter is in context");
+      throw new Error("_llmStrategyDeps.spawn must not be called when adapter is in context");
     });
-    const originalSpawn = (_deps as Record<string, unknown>).spawn;
-    (_deps as Record<string, unknown>).spawn = spawnSpy;
+    const originalSpawn = (_llmStrategyDeps as Record<string, unknown>).spawn;
+    (_llmStrategyDeps as Record<string, unknown>).spawn = spawnSpy;
 
     const mockAdapter = makeMockAdapter(VALID_ROUTING_RESPONSE);
 
@@ -140,7 +140,7 @@ describe("AA-003: classifyWithLlm() uses adapter.complete()", () => {
     expect(result).not.toBeNull();
     expect(spawnSpy).not.toHaveBeenCalled();
 
-    (_deps as Record<string, unknown>).spawn = originalSpawn;
+    (_llmStrategyDeps as Record<string, unknown>).spawn = originalSpawn;
   });
 
   test("passes the resolved model identifier to adapter.complete()", async () => {
@@ -216,21 +216,21 @@ describe("AA-003: classifyWithLlm() uses adapter.complete()", () => {
     expect(result1).toEqual(result2);
   });
 
-  test("adapter resolved via _deps.adapter when not provided", async () => {
-    const { classifyWithLlm, clearCache, _deps } = await import("../../../../src/routing/strategies/llm");
+  test("adapter resolved via _llmStrategyDeps.adapter when not provided", async () => {
+    const { classifyWithLlm, clearCache, _llmStrategyDeps } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
     const mockAdapter = makeMockAdapter(VALID_ROUTING_RESPONSE);
-    const originalAdapter = (_deps as Record<string, unknown>).adapter;
-    (_deps as Record<string, unknown>).adapter = mockAdapter;
+    const originalAdapter = (_llmStrategyDeps as Record<string, unknown>).adapter;
+    (_llmStrategyDeps as Record<string, unknown>).adapter = mockAdapter;
 
-    // Pass undefined adapter — must fall back to _deps.adapter
+    // Pass undefined adapter — must fall back to _llmStrategyDeps.adapter
     const result = await classifyWithLlm(makeStory("DEPS-TEST"), makeConfig(), undefined);
 
     expect(result).not.toBeNull();
     expect(mockAdapter.complete).toHaveBeenCalledTimes(1);
 
-    (_deps as Record<string, unknown>).adapter = originalAdapter;
+    (_llmStrategyDeps as Record<string, unknown>).adapter = originalAdapter;
   });
 });
 
@@ -264,15 +264,15 @@ describe("AA-003: routeBatch uses adapter.complete()", () => {
     expect(decisions.size).toBeGreaterThan(0);
   });
 
-  test("does NOT call _deps.spawn in routeBatch", async () => {
-    const { routeBatch, clearCache, _deps } = await import("../../../../src/routing/strategies/llm");
+  test("does NOT call _llmStrategyDeps.spawn in routeBatch", async () => {
+    const { routeBatch, clearCache, _llmStrategyDeps } = await import("../../../../src/routing/strategies/llm");
     clearCache();
 
     const spawnSpy = mock(() => {
-      throw new Error("_deps.spawn must not be called in routeBatch");
+      throw new Error("_llmStrategyDeps.spawn must not be called in routeBatch");
     });
-    const originalSpawn = (_deps as Record<string, unknown>).spawn;
-    (_deps as Record<string, unknown>).spawn = spawnSpy;
+    const originalSpawn = (_llmStrategyDeps as Record<string, unknown>).spawn;
+    (_llmStrategyDeps as Record<string, unknown>).spawn = spawnSpy;
 
     const mockAdapter = makeMockAdapter(BATCH_RESPONSE);
     const config = makeConfig({ cacheDecisions: false });
@@ -281,7 +281,7 @@ describe("AA-003: routeBatch uses adapter.complete()", () => {
 
     expect(spawnSpy).not.toHaveBeenCalled();
 
-    (_deps as Record<string, unknown>).spawn = originalSpawn;
+    (_llmStrategyDeps as Record<string, unknown>).spawn = originalSpawn;
   });
 
   test("passes a prompt string as the first argument to adapter.complete()", async () => {

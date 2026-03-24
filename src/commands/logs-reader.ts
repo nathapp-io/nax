@@ -4,23 +4,23 @@
 
 import { existsSync, readdirSync } from "node:fs";
 import { readdir } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import type { LogEntry } from "../logger/types";
 import type { MetaJson } from "../pipeline/subscribers/registry";
+import { getRunsDir } from "../utils/paths";
 
 /**
  * Swappable dependencies for testing
  */
-export const _deps = {
-  getRunsDir: () => process.env.NAX_RUNS_DIR ?? join(homedir(), ".nax", "runs"),
+export const _logsReaderDeps = {
+  getRunsDir,
 };
 
 /**
  * Resolve log file path for a runId from the central registry
  */
 export async function resolveRunFileFromRegistry(runId: string): Promise<string | null> {
-  const runsDir = _deps.getRunsDir();
+  const runsDir = _logsReaderDeps.getRunsDir();
 
   let entries: string[];
   try {

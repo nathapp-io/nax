@@ -41,7 +41,7 @@ export interface InitContextOptions {
 }
 
 /** Dependency injection for testing */
-export const _deps = {
+export const _initContextDeps = {
   callLLM: async (_prompt: string): Promise<string> => {
     // Placeholder implementation
     // In production, this would call the nax LLM infrastructure
@@ -300,7 +300,7 @@ Keep it under 2000 tokens. Use markdown formatting. Be specific to the detected 
 `;
 
   try {
-    const result = await _deps.callLLM(prompt);
+    const result = await _initContextDeps.callLLM(prompt);
     logger.info("init", "Generated context.md with LLM");
     return result;
   } catch (err) {

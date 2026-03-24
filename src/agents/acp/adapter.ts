@@ -15,6 +15,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { resolvePermissions } from "../../config/permissions";
 import { getSafeLogger } from "../../logger";
+import { sleep, which } from "../../utils/bun-deps";
 import { buildDecomposePrompt, parseDecomposeOutput } from "../shared/decompose";
 import { createSpawnAcpClient } from "./spawn-client";
 
@@ -109,13 +110,9 @@ export interface AcpClient {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const _acpAdapterDeps = {
-  which(name: string): string | null {
-    return Bun.which(name);
-  },
+  which,
 
-  async sleep(ms: number): Promise<void> {
-    await Bun.sleep(ms);
-  },
+  sleep,
 
   /**
    * Create an ACP client for the given command string.

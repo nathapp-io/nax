@@ -553,9 +553,9 @@ describe("initContext — AI mode (--ai flag)", () => {
     await withTempDir(async (dir) => {
       // Import _deps after withTempDir is called to allow overriding
       const mod = await import("../../../src/cli/init-context");
-      const original = mod._deps.callLLM;
+      const original = mod._initContextDeps.callLLM;
 
-      mod._deps.callLLM = mock(async () => {
+      mod._initContextDeps.callLLM = mock(async () => {
         throw new Error("LLM unavailable");
       });
 
@@ -568,7 +568,7 @@ describe("initContext — AI mode (--ai flag)", () => {
         const content = await Bun.file(join(dir, ".nax", "context.md")).text();
         expect(content.length).toBeGreaterThan(0);
       } finally {
-        mod._deps.callLLM = original;
+        mod._initContextDeps.callLLM = original;
       }
     });
   });
@@ -576,17 +576,17 @@ describe("initContext — AI mode (--ai flag)", () => {
   test("calls LLM when --ai flag is set", async () => {
     await withTempDir(async (dir) => {
       const mod = await import("../../../src/cli/init-context");
-      const original = mod._deps.callLLM;
+      const original = mod._initContextDeps.callLLM;
 
       const callLLMMock = mock(async (_prompt: string) => "# AI Generated Context\n\nContent here.");
-      mod._deps.callLLM = callLLMMock;
+      mod._initContextDeps.callLLM = callLLMMock;
 
       try {
         await mod.initContext(dir, { ai: true });
 
         expect(callLLMMock).toHaveBeenCalledTimes(1);
       } finally {
-        mod._deps.callLLM = original;
+        mod._initContextDeps.callLLM = original;
       }
     });
   });
@@ -594,9 +594,9 @@ describe("initContext — AI mode (--ai flag)", () => {
   test("uses LLM output as context.md content when LLM succeeds", async () => {
     await withTempDir(async (dir) => {
       const mod = await import("../../../src/cli/init-context");
-      const original = mod._deps.callLLM;
+      const original = mod._initContextDeps.callLLM;
 
-      mod._deps.callLLM = mock(async () => "# AI Generated\n\nRich narrative content.");
+      mod._initContextDeps.callLLM = mock(async () => "# AI Generated\n\nRich narrative content.");
 
       try {
         await mod.initContext(dir, { ai: true });
@@ -604,7 +604,7 @@ describe("initContext — AI mode (--ai flag)", () => {
         const content = await Bun.file(join(dir, ".nax", "context.md")).text();
         expect(content).toContain("AI Generated");
       } finally {
-        mod._deps.callLLM = original;
+        mod._initContextDeps.callLLM = original;
       }
     });
   });
@@ -612,17 +612,17 @@ describe("initContext — AI mode (--ai flag)", () => {
   test("does not call LLM when --ai flag is not set", async () => {
     await withTempDir(async (dir) => {
       const mod = await import("../../../src/cli/init-context");
-      const original = mod._deps.callLLM;
+      const original = mod._initContextDeps.callLLM;
 
       const callLLMMock = mock(async () => "# AI output");
-      mod._deps.callLLM = callLLMMock;
+      mod._initContextDeps.callLLM = callLLMMock;
 
       try {
         await mod.initContext(dir, { ai: false });
 
         expect(callLLMMock).not.toHaveBeenCalled();
       } finally {
-        mod._deps.callLLM = original;
+        mod._initContextDeps.callLLM = original;
       }
     });
   });
@@ -632,10 +632,10 @@ describe("initContext — AI mode (--ai flag)", () => {
       await Bun.write(join(dir, "package.json"), JSON.stringify({ name: "llm-test-proj" }));
 
       const mod = await import("../../../src/cli/init-context");
-      const original = mod._deps.callLLM;
+      const original = mod._initContextDeps.callLLM;
 
       let capturedPrompt = "";
-      mod._deps.callLLM = mock(async (prompt: string) => {
+      mod._initContextDeps.callLLM = mock(async (prompt: string) => {
         capturedPrompt = prompt;
         return "# Generated";
       });
@@ -645,7 +645,7 @@ describe("initContext — AI mode (--ai flag)", () => {
 
         expect(capturedPrompt).toContain("llm-test-proj");
       } finally {
-        mod._deps.callLLM = original;
+        mod._initContextDeps.callLLM = original;
       }
     });
   });

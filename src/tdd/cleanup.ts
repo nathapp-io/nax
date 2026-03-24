@@ -6,11 +6,12 @@
  */
 
 import { getLogger } from "../logger";
+import { sleep, spawn } from "../utils/bun-deps";
 
 /** Injectable deps for testability — mock _cleanupDeps instead of global Bun.spawn/process.kill */
 export const _cleanupDeps = {
-  spawn: Bun.spawn as typeof Bun.spawn,
-  sleep: Bun.sleep as typeof Bun.sleep,
+  spawn,
+  sleep,
   kill: process.kill.bind(process) as typeof process.kill,
 };
 

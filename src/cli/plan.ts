@@ -23,10 +23,10 @@ import { getLogger } from "../logger";
 import { validatePlanOutput } from "../prd/schema";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dependency injection (_deps) — override in tests
+// Dependency injection (_planDeps) — override in tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const _deps = {
+export const _planDeps = {
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
   writeFile: (path: string, content: string): Promise<void> => Bun.write(path, content).then(() => {}),
   scanCodebase: (workdir: string): Promise<CodebaseScan> => scanCodebase(workdir),
@@ -91,14 +91,14 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
 
   // Read spec from --from path
   logger?.info("plan", "Reading spec", { from: options.from });
-  const specContent = await _deps.readFile(options.from);
+  const specContent = await _planDeps.readFile(options.from);
 
   // Scan codebase for context
   logger?.info("plan", "Scanning codebase...");
   const [scan, discoveredPackages, pkg] = await Promise.all([
-    _deps.scanCodebase(workdir),
-    _deps.discoverWorkspacePackages(workdir),
-    _deps.readPackageJson(workdir),
+    _planDeps.scanCodebase(workdir),
+    _planDeps.discoverWorkspacePackages(workdir),
+    _planDeps.readPackageJson(workdir),
   ]);
   const codebaseContext = buildCodebaseContext(scan);
 
@@ -111,7 +111,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     relativePackages.length > 0
       ? await Promise.all(
           relativePackages.map(async (rel) => {
-            const pkgJson = await _deps.readPackageJsonAt(join(workdir, rel, "package.json"));
+            const pkgJson = await _planDeps.readPackageJsonAt(join(workdir, rel, "package.json"));
             return buildPackageSummary(rel, pkgJson);
           }),
         )
@@ -124,7 +124,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   const branchName = options.branch ?? `feat/${options.feature}`;
   const outputDir = join(naxDir, "features", options.feature);
   const outputPath = join(outputDir, "prd.json");
-  await _deps.mkdirp(outputDir);
+  await _planDeps.mkdirp(outputDir);
 
   const agentName = config?.autoMode?.defaultAgent ?? "claude";
 
@@ -136,7 +136,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   if (options.auto) {
     // One-shot: use CLI adapter directly — simple completion doesn't need ACP session overhead
     const prompt = buildPlanningPrompt(specContent, codebaseContext, undefined, relativePackages, packageDetails);
-    const cliAdapter = _deps.getAgent(agentName);
+    const cliAdapter = _planDeps.getAgent(agentName);
     if (!cliAdapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     let autoModel: string | undefined;
     try {
@@ -161,9 +161,9 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   } else {
     // Interactive: agent writes PRD JSON directly to outputPath (avoids output truncation)
     const prompt = buildPlanningPrompt(specContent, codebaseContext, outputPath, relativePackages, packageDetails);
-    const adapter = _deps.getAgent(agentName, config);
+    const adapter = _planDeps.getAgent(agentName, config);
     if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
-    const interactionBridge = _deps.createInteractionBridge();
+    const interactionBridge = _planDeps.createInteractionBridge();
     const pidRegistry = new PidRegistry(workdir);
     const resolvedPerm = resolvePermissions(config, "plan");
     const resolvedModel = config?.plan?.model ?? "balanced";
@@ -195,10 +195,10 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       logger?.info("plan", "Interactive session ended", { durationMs: Date.now() - planStartTime });
     }
     // Read back from file written by agent
-    if (!_deps.existsSync(outputPath)) {
+    if (!_planDeps.existsSync(outputPath)) {
       throw new Error(`[plan] Agent did not write PRD to ${outputPath}. Check agent logs for errors.`);
     }
-    rawResponse = await _deps.readFile(outputPath);
+    rawResponse = await _planDeps.readFile(outputPath);
   }
 
   // Validate and normalize: handles markdown extraction, trailing commas, LLM quirks,
@@ -209,7 +209,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   finalPrd.project = projectName;
 
   // Write normalized PRD (overwrites agent-written file with validated/normalized version)
-  await _deps.writeFile(outputPath, JSON.stringify(finalPrd, null, 2));
+  await _planDeps.writeFile(outputPath, JSON.stringify(finalPrd, null, 2));
 
   logger?.info("plan", "[OK] PRD written", { outputPath });
 
@@ -266,7 +266,7 @@ function detectProjectName(workdir: string, pkg: Record<string, unknown> | null)
     return pkg.name;
   }
 
-  const result = _deps.spawnSync(["git", "remote", "get-url", "origin"], { cwd: workdir });
+  const result = _planDeps.spawnSync(["git", "remote", "get-url", "origin"], { cwd: workdir });
   if (result.exitCode === 0) {
     const url = result.stdout.toString().trim();
     const match = url.match(/\/([^/]+?)(?:\.git)?$/);

@@ -7,6 +7,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { sleep } from "../utils/bun-deps";
 import { buildTestCommand, executeWithTimeout, normalizeEnvironment } from "./executor";
 import { parseTestOutput } from "./parser";
 import type { AssetVerificationResult, VerificationGateOptions, VerificationResult } from "./types";
@@ -119,7 +120,7 @@ export async function scoped(options: VerificationGateOptions): Promise<Verifica
  * @internal
  */
 export const _regressionRunnerDeps = {
-  sleep: (ms: number): Promise<void> => Bun.sleep(ms),
+  sleep,
 };
 
 /** Quick smoke test — no asset verification, 2s delay to let agent processes terminate. */

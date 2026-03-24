@@ -85,7 +85,7 @@ describe("CLI --parallel flag parsing", () => {
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { logsCommand } from "../../../src/commands/logs";
-import { _deps as logsReaderDeps } from "../../../src/commands/logs-reader";
+import { _logsReaderDeps as logsReaderDeps } from "../../../src/commands/logs-reader";
 
 const TEST_WORKSPACE = join(import.meta.dir, "../../..", "tmp", "cli-logs-test");
 const REGISTRY_DIR = join(TEST_WORKSPACE, "registry");

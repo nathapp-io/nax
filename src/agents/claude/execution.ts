@@ -10,6 +10,7 @@ import { resolvePermissions } from "../../config/permissions";
 import type { PidRegistry } from "../../execution/pid-registry";
 import { withProcessTimeout } from "../../execution/timeout-handler";
 import { getLogger } from "../../logger";
+import { typedSpawn } from "../../utils/bun-deps";
 import type { AgentResult, AgentRunOptions } from "../types";
 import { estimateCostByDuration, estimateCostFromOutput } from "./cost";
 
@@ -42,24 +43,7 @@ export const _runOnceDeps = {
     return buildCommand(binary, options);
   },
   withProcessTimeout: withProcessTimeout as typeof withProcessTimeout,
-  spawn(
-    cmd: string[],
-    opts: { cwd: string; stdout: "pipe"; stderr: "inherit"; env: Record<string, string | undefined> },
-  ): {
-    pid: number;
-    stdout: ReadableStream<Uint8Array>;
-    stderr?: ReadableStream<Uint8Array>;
-    exited: Promise<number>;
-    kill(signal?: number | NodeJS.Signals): void;
-  } {
-    return Bun.spawn(cmd, opts) as unknown as {
-      pid: number;
-      stdout: ReadableStream<Uint8Array>;
-      stderr?: ReadableStream<Uint8Array>;
-      exited: Promise<number>;
-      kill(signal?: number | NodeJS.Signals): void;
-    };
-  },
+  spawn: typedSpawn,
 };
 
 /**

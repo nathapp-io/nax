@@ -3,17 +3,18 @@
  */
 
 import type { NaxConfig } from "../config";
+import { spawn } from "../utils/bun-deps";
 import type { Check } from "./types";
 
 /** Dependency injection for testability */
-export const _deps = {
-  spawn: Bun.spawn,
+export const _checkCliDeps = {
+  spawn,
 };
 
 /** Check if Claude CLI is available. Uses: claude --version */
 export async function checkClaudeCLI(): Promise<Check> {
   try {
-    const proc = _deps.spawn(["claude", "--version"], {
+    const proc = _checkCliDeps.spawn(["claude", "--version"], {
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -43,7 +44,7 @@ export async function checkAgentCLI(config: NaxConfig): Promise<Check> {
   const agent = config.execution?.agent || "claude";
 
   try {
-    const proc = _deps.spawn([agent, "--version"], {
+    const proc = _checkCliDeps.spawn([agent, "--version"], {
       stdout: "pipe",
       stderr: "pipe",
     });

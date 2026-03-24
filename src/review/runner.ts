@@ -228,7 +228,7 @@ async function getUncommittedFilesImpl(workdir: string): Promise<string[]> {
  * Swappable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
  * RQ-001: getUncommittedFiles enables mocking of the git dirty-tree check.
  */
-export const _deps = {
+export const _reviewGitDeps = {
   /** Returns tracked files with uncommitted changes (git diff --name-only HEAD). */
   getUncommittedFiles: getUncommittedFilesImpl,
 };
@@ -253,7 +253,7 @@ export async function runReview(
   await autoCommitIfDirty(workdir, "review", "agent", storyId ?? "review");
 
   // RQ-001: Check for uncommitted tracked files before running checks
-  const allUncommittedFiles = await _deps.getUncommittedFiles(workdir);
+  const allUncommittedFiles = await _reviewGitDeps.getUncommittedFiles(workdir);
   // Exclude nax runtime files — written by nax itself during the run, not by the agent.
   // Patterns use a suffix match (no leading ^) so they work in both single-package repos
   // (nax/features/…) and monorepos where paths are prefixed (apps/cli/nax/features/…).

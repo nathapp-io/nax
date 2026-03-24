@@ -5,6 +5,7 @@
  * supporting one-shot completions and headless execution.
  */
 
+import { typedSpawn, which } from "../../utils/bun-deps";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -24,46 +25,12 @@ import { CompleteError } from "../types";
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const _codexRunDeps = {
-  which(name: string): string | null {
-    return Bun.which(name);
-  },
-  spawn(
-    cmd: string[],
-    opts: { cwd?: string; stdout: "pipe"; stderr: "pipe" | "inherit"; env?: Record<string, string | undefined> },
-  ): {
-    stdout: ReadableStream<Uint8Array>;
-    stderr: ReadableStream<Uint8Array>;
-    exited: Promise<number>;
-    pid: number;
-    kill(signal?: number | NodeJS.Signals): void;
-  } {
-    return Bun.spawn(cmd, opts) as unknown as {
-      stdout: ReadableStream<Uint8Array>;
-      stderr: ReadableStream<Uint8Array>;
-      exited: Promise<number>;
-      pid: number;
-      kill(signal?: number | NodeJS.Signals): void;
-    };
-  },
+  which,
+  spawn: typedSpawn,
 };
 
 export const _codexCompleteDeps = {
-  spawn(
-    cmd: string[],
-    opts: { stdout: "pipe"; stderr: "pipe" | "inherit" },
-  ): {
-    stdout: ReadableStream<Uint8Array>;
-    stderr: ReadableStream<Uint8Array>;
-    exited: Promise<number>;
-    pid: number;
-  } {
-    return Bun.spawn(cmd, opts) as unknown as {
-      stdout: ReadableStream<Uint8Array>;
-      stderr: ReadableStream<Uint8Array>;
-      exited: Promise<number>;
-      pid: number;
-    };
-  },
+  spawn: typedSpawn,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

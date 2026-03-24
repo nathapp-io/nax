@@ -6,10 +6,11 @@
  * - Session 2 (implementer): no test/ files modified
  */
 
+import { spawn } from "../utils/bun-deps";
 import type { IsolationCheck } from "./types";
 
 /** Injectable deps for testability — mock _isolationDeps.spawn instead of global Bun.spawn */
-export const _isolationDeps = { spawn: Bun.spawn as typeof Bun.spawn };
+export const _isolationDeps = { spawn };
 
 /** Common test directory patterns */
 const TEST_PATTERNS = [/^test\//, /^tests\//, /^__tests__\//, /\.spec\.\w+$/, /\.test\.\w+$/, /\.e2e-spec\.\w+$/];
