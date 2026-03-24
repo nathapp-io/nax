@@ -35,7 +35,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
     },
   },
   routing: {
-    strategy: "llm",
+    strategy: "keyword",
     llm: {
       model: "fast",
       fallbackToKeywords: true,
