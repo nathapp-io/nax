@@ -81,6 +81,9 @@ afterAll(() => {
 function createTestConfig(): NaxConfig {
   return {
     ...DEFAULT_CONFIG,
+    // Use cli protocol so the mock agent in ALL_AGENTS is used directly
+    // (acp protocol wraps agents as AcpAgentAdapter, bypassing our mock)
+    agent: { protocol: "cli" },
     autoMode: { ...DEFAULT_CONFIG.autoMode, defaultAgent: "mock" },
     execution: { ...DEFAULT_CONFIG.execution, maxIterations: 20, maxStoriesPerFeature: 500, iterationDelayMs: 0 },
     review: { ...DEFAULT_CONFIG.review, enabled: false },

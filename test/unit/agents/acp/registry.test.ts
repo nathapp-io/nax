@@ -65,10 +65,10 @@ describe("createAgentRegistry — protocol selection", () => {
     expect(agent).toBeInstanceOf(ClaudeCodeAdapter);
   });
 
-  test("returns ClaudeCodeAdapter for 'claude' when agent config is unset (default cli)", () => {
+  test("returns AcpAgentAdapter for 'claude' when agent config is unset (default acp)", () => {
     const registry = createAgentRegistry(makeConfig(undefined));
     const agent = registry.getAgent("claude");
-    expect(agent).toBeInstanceOf(ClaudeCodeAdapter);
+    expect(agent).toBeInstanceOf(AcpAgentAdapter);
   });
 
   test("returns undefined for unknown agent name regardless of protocol", () => {
@@ -84,7 +84,7 @@ describe("createAgentRegistry — protocol selection", () => {
     const defaultRegistry = createAgentRegistry(makeConfig());
     expect(acpRegistry.protocol).toBe("acp");
     expect(cliRegistry.protocol).toBe("cli");
-    expect(defaultRegistry.protocol).toBe("cli");
+    expect(defaultRegistry.protocol).toBe("acp");
   });
 });
 
@@ -143,8 +143,8 @@ describe("Config schema — AgentConfig", () => {
     expect(agentConfig.acpPermissionMode).toBe("approve-all");
   });
 
-  test("DEFAULT_CONFIG does not have agent field (cli is default without explicit config)", () => {
-    expect(DEFAULT_CONFIG.agent).toBeUndefined();
+  test("DEFAULT_CONFIG has agent.protocol set to 'acp'", () => {
+    expect(DEFAULT_CONFIG.agent?.protocol).toBe("acp");
   });
 });
 

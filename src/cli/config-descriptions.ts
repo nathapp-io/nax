@@ -91,7 +91,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "quality.drainTimeoutMs": "Deadline in ms to drain stdout/stderr after kill",
   "quality.shell": "Shell to use for verification commands",
   "quality.stripEnvVars": "Environment variables to strip during verification",
-  "quality.environmentalEscalationDivisor": "Divisor for environmental failure early escalation",
 
   // TDD
   tdd: "Test-driven development configuration",

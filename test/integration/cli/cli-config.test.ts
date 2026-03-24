@@ -599,7 +599,7 @@ describe("Config Command", () => {
         JSON.stringify({
           routing: {
             llm: {
-              timeoutMs: 30000,
+              timeoutMs: 60000,
             },
           },
         }),
@@ -614,7 +614,7 @@ describe("Config Command", () => {
 
       // Should show nested field path
       expect(output).toContain("routing.llm.timeoutMs");
-      expect(output).toContain("30000");
+      expect(output).toContain("60000");
     });
 
     test("handles array differences", async () => {
@@ -848,7 +848,7 @@ describe("Config Command --diff", () => {
       const projectConfig = {
         routing: {
           llm: {
-            timeoutMs: 30000, // Different from default (15000)
+            timeoutMs: 60000, // Different from default (30000)
           },
         },
       };
@@ -863,8 +863,8 @@ describe("Config Command --diff", () => {
 
       // Should show nested path
       expect(output).toContain("routing.llm.timeoutMs");
+      expect(output).toContain("60000");
       expect(output).toContain("30000");
-      expect(output).toContain("15000");
     });
 
     test("shows field descriptions when available", async () => {

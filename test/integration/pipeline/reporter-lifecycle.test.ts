@@ -163,6 +163,9 @@ describe("Reporter Lifecycle Events (US-004)", () => {
 
     // Create minimal config
     config = {
+      // Use cli protocol so the mock agent in ALL_AGENTS is used directly
+      // (acp protocol wraps agents as AcpAgentAdapter, bypassing our mock)
+      agent: { protocol: "cli" },
       agents: {
         mock: { enabled: true },
       },

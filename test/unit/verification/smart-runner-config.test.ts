@@ -56,7 +56,6 @@ describe("SmartTestRunner config coercion", () => {
         drainTimeoutMs: 0,
         shell: "/bin/sh",
         stripEnvVars: [],
-        environmentalEscalationDivisor: 2,
       },
       tdd: { maxRetries: 0, autoVerifyIsolation: false, autoApproveVerifier: false },
       constitution: { enabled: false, path: "constitution.md", maxTokens: 100 },
