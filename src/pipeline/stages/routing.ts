@@ -92,8 +92,15 @@ export const routingStage: PipelineStage = {
     // Classify story via resolveRouting() (plugin routers > LLM > keyword)
     const decision = await _routingDeps.resolveRouting(ctx.story, effectiveConfig, ctx.plugins, adapter);
 
-    // BUG-032: Preserve escalated modelTier if explicitly set by handleTierEscalation
-    const modelTier = ctx.story.routing?.modelTier ?? decision.modelTier;
+    // BUG-032: Only preserve a previously-stored modelTier when it represents an escalation
+    // (i.e., a higher tier than what routing freshly derives). This prevents stale tiers
+    // from sticking when complexity changes between runs, while still honoring explicit
+    // escalations set by handleTierEscalation.
+    const TIER_RANK: Record<string, number> = { fast: 0, balanced: 1, powerful: 2 };
+    const derivedTier = decision.modelTier;
+    const previousTier = ctx.story.routing?.modelTier;
+    const isEscalated = previousTier !== undefined && (TIER_RANK[previousTier] ?? 0) > (TIER_RANK[derivedTier] ?? 0);
+    const modelTier = isEscalated ? previousTier : derivedTier;
 
     const routing = { ...decision, modelTier };
 
