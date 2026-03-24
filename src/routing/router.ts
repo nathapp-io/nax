@@ -234,6 +234,20 @@ export async function resolveRouting(
 ): Promise<RoutingDecision> {
   const logger = getSafeLogger();
 
+  // 0. PRD wins — if story already has routing values set (either manually by the user
+  //    or persisted from a previous run), use them directly. This ensures retries use
+  //    the same routing as the original run, and manual PRD overrides are respected.
+  //    modelTier is always re-derived from complexity + config (never persisted).
+  if (story.routing?.complexity && story.routing?.testStrategy) {
+    const modelTier = complexityToModelTier(story.routing.complexity, config);
+    return {
+      complexity: story.routing.complexity,
+      modelTier,
+      testStrategy: story.routing.testStrategy,
+      reasoning: story.routing.reasoning ?? "(from PRD)",
+    };
+  }
+
   // 1. Plugin routers — highest priority
   if (plugins) {
     for (const pluginRouter of plugins.getRouters()) {

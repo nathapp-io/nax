@@ -224,12 +224,12 @@ describe("Routing Stage - Task classified log shows final routing state after al
 
     expect(result.action).toBe("continue");
 
-    // Verify final state: resolveRouting() classifies fresh (complex/powerful for security/auth story)
-    // then greenfield override sets test-after
+    // PRD wins: story.routing had complexity=medium/testStrategy=three-session-tdd.
+    // resolveRouting() returns PRD values; greenfield detection then overrides testStrategy to test-after.
     expect(ctx.routing).toBeDefined();
     expect(ctx.routing?.testStrategy).toBe("test-after");
-    expect(ctx.routing?.complexity).toBe("complex");
-    expect(ctx.routing?.modelTier).toBe("powerful");
+    expect(ctx.routing?.complexity).toBe("medium"); // from PRD, not re-classified
+    expect(ctx.routing?.modelTier).toBe("balanced"); // derived from complexity=medium
     expect(ctx.routing?.reasoning).toContain("GREENFIELD OVERRIDE");
   });
 
@@ -266,12 +266,13 @@ describe("Routing Stage - Task classified log shows final routing state after al
 
     expect(result.action).toBe("continue");
 
-    // After routing stage completes, ctx.routing should reflect:
-    // 1. Fresh complexity from resolveRouting() (security/auth story → complex)
-    // 2. Fresh modelTier: complex → powerful
-    // 3. Greenfield override: test-after instead of TDD
-    expect(ctx.routing?.complexity).toBe("complex");
+    // PRD wins: story.routing had complexity=simple/testStrategy=three-session-tdd-lite.
+    // resolveRouting() returns PRD values; greenfield detection then overrides testStrategy.
+    // 1. Complexity from PRD: simple (not re-classified)
+    // 2. modelTier derived from complexity=simple: fast
+    // 3. Greenfield override: test-after instead of TDD-lite
+    expect(ctx.routing?.complexity).toBe("simple");
     expect(ctx.routing?.testStrategy).toBe("test-after");
-    expect(ctx.routing?.modelTier).toBe("powerful");
+    expect(ctx.routing?.modelTier).toBe("fast");
   });
 });
