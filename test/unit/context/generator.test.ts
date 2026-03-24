@@ -2,11 +2,11 @@
  * Unit tests for generateForPackage and discoverPackages (MW-004)
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { discoverPackages, generateForPackage } from "../../../src/context/generator";
+import { _generatorDeps, discoverPackages, generateForPackage } from "../../../src/context/generator";
 import type { NaxConfig } from "../../../src/config";
 
 function makeConfig(): NaxConfig {
@@ -61,69 +61,91 @@ describe("discoverPackages (MW-004)", () => {
 });
 
 describe("generateForPackage (MW-004)", () => {
-  let tmpDir: string;
+  // Uses _generatorDeps mocks — no real file I/O, parallel-safe.
+  let origDeps: typeof _generatorDeps;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    origDeps = { ..._generatorDeps };
+    // Default: context.md not found, no metadata, no writes
+    _generatorDeps.existsSync = mock(() => false);
+    _generatorDeps.readTextFile = mock(() => Promise.resolve(""));
+    _generatorDeps.writeFile = mock(() => Promise.resolve(0));
+    _generatorDeps.buildProjectMetadata = mock(() => Promise.resolve(undefined as never));
   });
 
   afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
+    Object.assign(_generatorDeps, origDeps);
+    mock.restore();
   });
 
-  test("returns error when nax/context.md does not exist", async () => {
-    const results = await generateForPackage(tmpDir, makeConfig(), true, tmpDir);
+  test("returns error when context.md does not exist", async () => {
+    // existsSync already mocked to return false in beforeEach
+    const results = await generateForPackage("/fake/dir", makeConfig(), true, "/fake/dir");
     expect(results).toHaveLength(1);
     expect(results[0].error).toContain("context.md not found");
     expect(results[0].written).toBe(false);
   });
 
   test("dry run returns content without writing file", async () => {
-    await Bun.write(join(tmpDir, ".nax", "mono", ".", "context.md"), "# Package\n\nContent here.");
-    const results = await generateForPackage(tmpDir, makeConfig(), true, tmpDir);
+    _generatorDeps.existsSync = mock(() => true);
+    _generatorDeps.readTextFile = mock(() => Promise.resolve("# Package\n\nContent here."));
+    const writeMock = mock(() => Promise.resolve(0));
+    _generatorDeps.writeFile = writeMock;
+
+    const results = await generateForPackage("/fake/dir", makeConfig(), true, "/fake/dir");
     const result = results[0];
     expect(result.error).toBeUndefined();
     expect(result.content.length).toBeGreaterThan(0);
     expect(result.written).toBe(false);
-    // File should NOT exist since dry run
-    const outputFile = join(tmpDir, result.outputFile);
-    expect(await Bun.file(outputFile).exists()).toBe(false);
+    expect(writeMock).not.toHaveBeenCalled();
   });
 
   test("writes CLAUDE.md when not dry run (default agents)", async () => {
-    await Bun.write(join(tmpDir, ".nax", "mono", ".", "context.md"), "# Package\n\nContent here.");
-    const results = await generateForPackage(tmpDir, makeConfig(), false);
+    _generatorDeps.existsSync = mock(() => true);
+    _generatorDeps.readTextFile = mock(() => Promise.resolve("# Package\n\nContent here."));
+    const writeMock = mock(() => Promise.resolve(0));
+    _generatorDeps.writeFile = writeMock;
+
+    const results = await generateForPackage("/fake/dir", makeConfig(), false);
     expect(results).toHaveLength(1);
-    const result = results[0];
-    expect(result.error).toBeUndefined();
-    expect(result.written).toBe(true);
-    expect(result.outputFile).toBe("CLAUDE.md");
-    expect(await Bun.file(join(tmpDir, "CLAUDE.md")).exists()).toBe(true);
+    expect(results[0].error).toBeUndefined();
+    expect(results[0].written).toBe(true);
+    expect(results[0].outputFile).toBe("CLAUDE.md");
+    expect(writeMock).toHaveBeenCalledTimes(1);
   });
 
   test("returns packageDir in result", async () => {
-    await Bun.write(join(tmpDir, ".nax", "mono", ".", "context.md"), "# Package");
-    const results = await generateForPackage(tmpDir, makeConfig(), true, tmpDir);
-    expect(results[0].packageDir).toBe(tmpDir);
+    _generatorDeps.existsSync = mock(() => true);
+    _generatorDeps.readTextFile = mock(() => Promise.resolve("# Package"));
+    _generatorDeps.writeFile = mock(() => Promise.resolve(0));
+
+    const results = await generateForPackage("/fake/dir", makeConfig(), true, "/fake/dir");
+    expect(results[0].packageDir).toBe("/fake/dir");
   });
 
   test("generates for all config.generate.agents when set", async () => {
-    await Bun.write(join(tmpDir, ".nax", "mono", ".", "context.md"), "# Package\n\nContent.");
-    const config = {
-      generate: { agents: ["claude", "codex"] },
-    } as unknown as NaxConfig;
-    const results = await generateForPackage(tmpDir, config, false);
+    _generatorDeps.existsSync = mock(() => true);
+    _generatorDeps.readTextFile = mock(() => Promise.resolve("# Package\n\nContent."));
+    const writeMock = mock(() => Promise.resolve(0));
+    _generatorDeps.writeFile = writeMock;
+
+    const config = { generate: { agents: ["claude", "codex"] } } as unknown as NaxConfig;
+    const results = await generateForPackage("/fake/dir", config, false);
     expect(results).toHaveLength(2);
     const outputFiles = results.map((r) => r.outputFile);
     expect(outputFiles).toContain("CLAUDE.md");
     expect(outputFiles).toContain("codex.md");
     expect(results.every((r) => r.error === undefined)).toBe(true);
     expect(results.every((r) => r.written === true)).toBe(true);
+    expect(writeMock).toHaveBeenCalledTimes(2);
   });
 
   test("defaults to claude only when config.generate.agents is not set", async () => {
-    await Bun.write(join(tmpDir, ".nax", "mono", ".", "context.md"), "# Package");
-    const results = await generateForPackage(tmpDir, makeConfig(), true, tmpDir);
+    _generatorDeps.existsSync = mock(() => true);
+    _generatorDeps.readTextFile = mock(() => Promise.resolve("# Package"));
+    _generatorDeps.writeFile = mock(() => Promise.resolve(0));
+
+    const results = await generateForPackage("/fake/dir", makeConfig(), true, "/fake/dir");
     expect(results).toHaveLength(1);
     expect(results[0].outputFile).toBe("CLAUDE.md");
   });
