@@ -1,7 +1,7 @@
 {
   "name": "@nathapp/nax",
   "version": "0.52.0",
-  "description": "AI Coding Agent Orchestrator — loops until done",
+  "description": "AI Coding Agent Orchestrator \u2014 loops until done",
   "type": "module",
   "bin": {
     "nax": "./dist/nax.js"
@@ -13,16 +13,16 @@
     "typecheck": "bun x tsc --noEmit",
     "lint": "bun x biome check src/ bin/",
     "release": "bun scripts/release.ts",
-    "test": "CI=1 NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000",
-    "test:watch": "CI=1 bun test --watch",
-    "test:unit": "CI=1 NAX_SKIP_PRECHECK=1 bun test ./test/unit/ --timeout=60000",
-    "test:integration": "CI=1 NAX_SKIP_PRECHECK=1 bun test ./test/integration/ --timeout=60000",
-    "test:ui": "CI=1 bun test ./test/ui/ --timeout=60000",
-    "test:real": "NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000",
+    "test": "bun test test/ --timeout=60000",
+    "test:watch": "bun test --watch",
+    "test:unit": "bun test ./test/unit/ --timeout=60000",
+    "test:integration": "bun test ./test/integration/ --timeout=60000",
+    "test:ui": "bun test ./test/ui/ --timeout=60000",
     "check-test-overlap": "bun run scripts/check-test-overlap.ts",
     "check-dead-tests": "bun run scripts/check-dead-tests.ts",
     "check:test-sizes": "bun run scripts/check-test-sizes.ts",
-    "prepublishOnly": "bun run build"
+    "prepublishOnly": "bun run build",
+    "test:full": "FULL=1 NAX_PRECHECK=1 bun test test/ --timeout=60000"
   },
   "dependencies": {
     "@types/react": "^19.2.14",

@@ -5,6 +5,7 @@
  */
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { fullTest } from "../../helpers/env";
 import type { RunOptions } from "../../../src/execution/runner";
 
 describe("CLI --parallel flag parsing", () => {
@@ -812,9 +813,8 @@ describe("nax generate command", () => {
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 // Skip PID-sensitive tests in CI: container PIDs are ephemeral and low-numbered
-// (e.g. PID 1 or 52 may already be dead or reused), so "is PID alive" checks
-// produce inconsistent results. These tests are reliable in local dev/VPS/Mac01.
-const skipInCI = process.env.CI ? test.skip : test;
+// Requires real PID checks — skipped by default, run with FULL=1.
+const skipInCI = fullTest;
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

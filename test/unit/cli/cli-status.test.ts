@@ -5,10 +5,8 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
-// Skip PID-sensitive tests in CI: container PIDs are ephemeral and may not match
-// the expected "alive" state. process.kill(pid, 0) behaves differently in containers
-// where PID namespaces are isolated. These tests are reliable in local dev environments.
-const skipInCI = process.env.CI ? test.skip : test;
+// Requires real PID checks — skipped by default, run with FULL=1.
+import { fullTest as skipInCI } from "../../helpers/env";
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

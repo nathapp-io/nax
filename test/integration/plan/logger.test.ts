@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { fullTest } from "../../helpers/env";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { Logger, getLogger, initLogger, resetLogger } from "../../../src/logger";
@@ -426,10 +427,8 @@ describe("Logger", () => {
   });
 
   describe("error handling", () => {
-    // Skip in CI: writing to /invalid/path/ may not trigger EACCES in all CI environments
-    // (some runners run as root and CAN write to /invalid/path). The error-handling logic
-    // is tested sufficiently by other unit tests for the Logger class itself.
-    const skipInCI = process.env.CI ? test.skip : test;
+    // Requires non-root env for EACCES — skipped by default, run with FULL=1.
+    const skipInCI = fullTest;
     skipInCI("handles file write errors gracefully", () => {
       // Create logger with invalid path
       const originalError = console.error;

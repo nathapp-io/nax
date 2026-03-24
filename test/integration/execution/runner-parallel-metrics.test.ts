@@ -17,11 +17,8 @@
  * sequential totals.
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test, describe as describeBase } from "bun:test";
-
-// These integration tests run the full runner pipeline and require a real agent
-// environment. Skip in CI where Claude CLI is not installed.
-const describeIntegration = process.env.CI ? describeBase.skip : describeBase;
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { fullDescribe as describeIntegration } from "../../helpers/env";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";

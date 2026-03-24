@@ -11,6 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { fullDescribe, fullTest } from "../../helpers/env";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -382,12 +383,8 @@ describe("CLI precheck command", () => {
  * Tests the complete precheck workflow including all Tier 1 blockers and Tier 2 warnings.
  */
 
-// These integration tests run the full precheck pipeline including checkClaudeCLI
-// (a Tier 1 blocker). In CI, the `claude` binary is not installed, so checkClaudeCLI
-// always adds a blocker — causing all assertions like `expect(blockers.length).toBe(0)`
-// to fail. The test logic is sound; the environment is simply incomplete.
-// Run these tests locally on Mac01/VPS where claude is installed.
-const describeWithClaude = process.env.CI ? describe.skip : describe;
+// Requires real claude binary — skipped by default, run with FULL=1.
+const describeWithClaude = fullDescribe;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -1180,10 +1177,8 @@ describeWithClaude("precheck orchestrator behavior (US-002)", () => {
  */
 
 // Skip in CI: AC2, AC5, AC6 call runPrecheck() which includes checkClaudeCLI as a
-// Tier 1 blocker. Without the claude binary installed, blockers.length > 0 always,
-// breaking assertions like expect(blockers.length).toBe(0). These ACs test correct
-// orchestration behaviour and pass reliably on Mac01/VPS where claude is installed.
-const skipInCI = process.env.CI ? test.skip : test;
+// Requires real claude binary — skipped by default, run with FULL=1.
+const skipInCI = fullTest;
 
 // Helper to create a minimal valid git environment
 async function setupGitRepo(dir: string): Promise<void> {
@@ -1437,12 +1432,12 @@ const PRECHECK_TEST_CONFIG = {
 
 describe("Precheck Integration with nax run", () => {
   let testDir: string;
-  let savedSkipPrecheck: string | undefined;
+  let savedNaxPrecheck: string | undefined;
 
   beforeEach(async () => {
-    // Temporarily remove NAX_SKIP_PRECHECK so precheck actually runs in these tests
-    savedSkipPrecheck = process.env.NAX_SKIP_PRECHECK;
-    delete process.env.NAX_SKIP_PRECHECK;
+    // Temporarily enable precheck so it actually runs in these integration tests
+    savedNaxPrecheck = process.env.NAX_PRECHECK;
+    process.env.NAX_PRECHECK = "1";
 
     testDir = join(import.meta.dir, "..", "..", "..", ".tmp", `precheck-integration-${Date.now()}`);
     mkdirSync(testDir, { recursive: true });
@@ -1455,11 +1450,11 @@ describe("Precheck Integration with nax run", () => {
   });
 
   afterEach(() => {
-    // Restore NAX_SKIP_PRECHECK to its original value
-    if (savedSkipPrecheck !== undefined) {
-      process.env.NAX_SKIP_PRECHECK = savedSkipPrecheck;
+    // Restore NAX_PRECHECK to its original value
+    if (savedNaxPrecheck !== undefined) {
+      process.env.NAX_PRECHECK = savedNaxPrecheck;
     } else {
-      delete process.env.NAX_SKIP_PRECHECK;
+      delete process.env.NAX_PRECHECK;
     }
 
     try {
