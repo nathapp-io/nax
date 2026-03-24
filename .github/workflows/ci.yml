@@ -3,6 +3,13 @@ name: CI
 on:
   push:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'test/**'
+      - 'bin/**'
+      - 'scripts/**'
+      - 'bun.lock'
+      - '.github/workflows/**'
   pull_request:
     branches: [main]
 
