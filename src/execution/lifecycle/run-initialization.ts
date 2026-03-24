@@ -72,24 +72,34 @@ async function reconcileState(prd: PRD, prdPath: string, workdir: string, config
     const hasCommits = await _reconcileDeps.hasCommitsForStory(workdir, story.id);
     if (!hasCommits) continue;
 
-    // Gate: re-run review for stories that failed at review/autofix stage
-    if (story.failureStage === "review" || story.failureStage === "autofix") {
-      const effectiveWorkdir = story.workdir ? join(workdir, story.workdir) : workdir;
-      try {
-        const reviewResult = await _reconcileDeps.runReview(config.review, effectiveWorkdir, config.execution);
-        if (!reviewResult.success) {
-          logger?.warn("reconciliation", "Review still fails — not reconciling story", {
-            storyId: story.id,
-            failureReason: reviewResult.failureReason,
-          });
-          continue;
-        }
-        logger?.info("reconciliation", "Review now passes — reconciling story", { storyId: story.id });
-      } catch {
-        // Non-fatal: if review check errors, skip reconciliation for this story
-        logger?.warn("reconciliation", "Review check errored — not reconciling story", { storyId: story.id });
+    // Only reconcile stories that failed at review/autofix stage — these have
+    // completed code that just failed quality checks. All other failure stages
+    // (execution, verify, regression, etc.) may have incomplete work despite
+    // having commits in git history (e.g. rate limit mid-execution).
+    if (story.failureStage !== "review" && story.failureStage !== "autofix") {
+      logger?.debug("reconciliation", "Skipping non-review/autofix failure — not reconcilable", {
+        storyId: story.id,
+        failureStage: story.failureStage,
+      });
+      continue;
+    }
+
+    // Re-run review to confirm the quality issues were actually fixed
+    const effectiveWorkdir = story.workdir ? join(workdir, story.workdir) : workdir;
+    try {
+      const reviewResult = await _reconcileDeps.runReview(config.review, effectiveWorkdir, config.execution);
+      if (!reviewResult.success) {
+        logger?.warn("reconciliation", "Review still fails — not reconciling story", {
+          storyId: story.id,
+          failureReason: reviewResult.failureReason,
+        });
         continue;
       }
+      logger?.info("reconciliation", "Review now passes — reconciling story", { storyId: story.id });
+    } catch {
+      // Non-fatal: if review check errors, skip reconciliation for this story
+      logger?.warn("reconciliation", "Review check errored — not reconciling story", { storyId: story.id });
+      continue;
     }
 
     logger?.warn("reconciliation", "Failed story has commits in git history, marking as passed", {
