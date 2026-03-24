@@ -88,8 +88,21 @@ export const _acceptanceSetupDeps = {
   writeMeta: async (metaPath: string, meta: AcceptanceMeta): Promise<void> => {
     await Bun.write(metaPath, JSON.stringify(meta, null, 2));
   },
-  runTest: async (_testPath: string, _workdir: string): Promise<{ exitCode: number; output: string }> => {
-    const proc = Bun.spawn(["bun", "test", _testPath], {
+  runTest: async (
+    _testPath: string,
+    _workdir: string,
+    _testCmd?: string,
+  ): Promise<{ exitCode: number; output: string }> => {
+    // Use configured test command when available; fall back to bun test
+    let cmd: string[];
+    if (_testCmd) {
+      // Split the configured test command and append the test path
+      const parts = _testCmd.trim().split(/\s+/);
+      cmd = [...parts, _testPath];
+    } else {
+      cmd = ["bun", "test", _testPath];
+    }
+    const proc = Bun.spawn(cmd, {
       cwd: _workdir,
       stdout: "pipe",
       stderr: "pipe",
@@ -216,7 +229,8 @@ export const acceptanceSetupStage: PipelineStage = {
       return { action: "continue" };
     }
 
-    const { exitCode } = await _acceptanceSetupDeps.runTest(testPath, ctx.workdir);
+    const testCmd = ctx.config.quality?.commands?.test;
+    const { exitCode } = await _acceptanceSetupDeps.runTest(testPath, ctx.workdir, testCmd);
 
     if (exitCode === 0) {
       ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount: 0 };

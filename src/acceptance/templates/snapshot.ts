@@ -20,8 +20,16 @@ export interface SnapshotTemplateOptions {
  * @param options - Feature name, criteria, and optional test framework
  * @returns TypeScript test code string
  */
+function buildTestImportLine(testFramework?: string): string {
+  const fw = testFramework?.toLowerCase() ?? "";
+  if (fw === "jest" || fw === "@jest/globals") return `import { describe, expect, test } from "@jest/globals";`;
+  if (fw === "vitest") return `import { describe, expect, test } from "vitest";`;
+  return `import { describe, expect, test } from "bun:test";`;
+}
+
 export function buildSnapshotTemplate(options: SnapshotTemplateOptions): string {
-  const { featureName, criteria } = options;
+  const { featureName, criteria, testFramework } = options;
+  const importLine = buildTestImportLine(testFramework);
 
   const tests = criteria
     .map(
@@ -32,7 +40,7 @@ export function buildSnapshotTemplate(options: SnapshotTemplateOptions): string 
     )
     .join("\n\n");
 
-  return `import { describe, expect, test } from "bun:test";
+  return `${importLine}
 import { render } from "ink-testing-library";
 import { ${toPascalCase(featureName)} } from "../src/${featureName}";
 

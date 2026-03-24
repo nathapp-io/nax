@@ -19,6 +19,25 @@ import type {
 } from "./types";
 
 /**
+ * Build the test framework import line for skeleton/fallback tests.
+ *
+ * Returns the appropriate import statement based on the detected framework,
+ * or defaults to `bun:test` when none is specified.
+ */
+function skeletonImportLine(testFramework?: string): string {
+  if (!testFramework) return `import { describe, test, expect } from "bun:test";`;
+  const fw = testFramework.toLowerCase();
+  if (fw === "jest" || fw === "@jest/globals") {
+    return `import { describe, test, expect } from "@jest/globals";`;
+  }
+  if (fw === "vitest") {
+    return `import { describe, test, expect } from "vitest";`;
+  }
+  // For other frameworks (e.g. "@testing-library/react"), keep bun:test base
+  return `import { describe, test, expect } from "bun:test";`;
+}
+
+/**
  * Parse acceptance criteria from spec.md content.
  *
  * Extracts lines matching "AC-N: description" or "- AC-N: description" patterns.
@@ -119,7 +138,7 @@ Rules:
 - **NEVER use placeholder assertions** — no always-passing or always-failing stubs, no TODO comments as the only content, no empty test bodies
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
 - Output raw code only — no markdown fences, start directly with the language's import or package declaration
-- **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/nax/features/${options.featureName}/acceptance.test.ts\` and will ALWAYS run from the repo root via \`bun test <absolute-path>\`. The repo root is exactly 3 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..')\`. Never use 4 or more \`../\` — that would escape the repo. For monorepo projects, navigate into packages from root (e.g. \`join(root, 'apps/api/src')\`).`;
+- **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/.nax/features/${options.featureName}/acceptance.test.ts\` and will ALWAYS run from the repo root. The repo root is exactly 4 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..', '..')\`. For monorepo projects, navigate into packages from root (e.g. \`join(root, 'apps/api/src')\`).`;
 
   const prompt = basePrompt;
 
@@ -131,7 +150,24 @@ Rules:
     timeoutMs: options.config?.acceptance?.timeoutMs ?? 1800000,
     workdir: options.workdir,
   });
-  const testCode = extractTestCode(rawOutput);
+  let testCode = extractTestCode(rawOutput);
+
+  // BUG-076: ACP adapters write files to disk directly and return a conversational
+  // summary rather than raw code. If extractTestCode() fails on the response text,
+  // check whether the adapter already wrote the file to the feature directory.
+  if (!testCode) {
+    const targetPath = join(options.featureDir, "acceptance.test.ts");
+    try {
+      const existing = await Bun.file(targetPath).text();
+      const recovered = extractTestCode(existing);
+      if (recovered) {
+        logger.info("acceptance", "Recovered acceptance test written to disk by ACP adapter", { targetPath });
+        testCode = recovered;
+      }
+    } catch {
+      // File doesn't exist — fall through to skeleton
+    }
+  }
 
   if (!testCode) {
     logger.warn("acceptance", "LLM returned non-code output for acceptance tests — falling back to skeleton", {
@@ -142,7 +178,10 @@ Rules:
       text: c.refined,
       lineNumber: i + 1,
     }));
-    return { testCode: generateSkeletonTests(options.featureName, skeletonCriteria), criteria: skeletonCriteria };
+    return {
+      testCode: generateSkeletonTests(options.featureName, skeletonCriteria, options.testFramework),
+      criteria: skeletonCriteria,
+    };
   }
 
   const refinedJsonContent = JSON.stringify(
@@ -249,7 +288,7 @@ Rules:
 - **NEVER use placeholder assertions** — no always-passing or always-failing stubs, no TODO comments as the only content, no empty test bodies
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
 - Output raw code only — no markdown fences, start directly with the language's import or package declaration
-- **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/nax/features/${featureName}/acceptance.test.ts\` and will ALWAYS run from the repo root via \`bun test <absolute-path>\`. The repo root is exactly 3 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..')\`. Never use 4 or more \`../\` — that would escape the repo. For monorepo projects, navigate into packages from root (e.g. \`join(root, 'apps/api/src')\`).`;
+- **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/.nax/features/${featureName}/acceptance.test.ts\` and will ALWAYS run from the repo root. The repo root is exactly 4 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..', '..')\`. For monorepo projects, navigate into packages from root (e.g. \`join(root, 'apps/api/src')\`).`;
 }
 
 /**
@@ -290,7 +329,7 @@ export async function generateAcceptanceTests(
     // No AC found — generate empty skeleton
     logger.warn("acceptance", "⚠ No acceptance criteria found in spec.md");
     return {
-      testCode: generateSkeletonTests(options.featureName, []),
+      testCode: generateSkeletonTests(options.featureName, [], options.testFramework),
       criteria: [],
     };
   }
@@ -317,7 +356,7 @@ export async function generateAcceptanceTests(
         outputPreview: output.slice(0, 200),
       });
       return {
-        testCode: generateSkeletonTests(options.featureName, criteria),
+        testCode: generateSkeletonTests(options.featureName, criteria, options.testFramework),
         criteria,
       };
     }
@@ -330,7 +369,7 @@ export async function generateAcceptanceTests(
     logger.warn("acceptance", "⚠ Agent test generation error", { error: (error as Error).message });
     // Fall back to skeleton
     return {
-      testCode: generateSkeletonTests(options.featureName, criteria),
+      testCode: generateSkeletonTests(options.featureName, criteria, options.testFramework),
       criteria,
     };
   }
@@ -397,7 +436,11 @@ function extractTestCode(output: string): string | null {
  * // Generates test with TODO comment
  * ```
  */
-export function generateSkeletonTests(featureName: string, criteria: AcceptanceCriterion[]): string {
+export function generateSkeletonTests(
+  featureName: string,
+  criteria: AcceptanceCriterion[],
+  testFramework?: string,
+): string {
   const tests = criteria
     .map((ac) => {
       return `  test("${ac.id}: ${ac.text}", async () => {
@@ -408,7 +451,7 @@ export function generateSkeletonTests(featureName: string, criteria: AcceptanceC
     })
     .join("\n\n");
 
-  return `import { describe, test, expect } from "bun:test";
+  return `${skeletonImportLine(testFramework)}
 
 describe("${featureName} - Acceptance Tests", () => {
 ${tests || "  // No acceptance criteria found"}

@@ -25,6 +25,95 @@ import type { TestFailure, TestOutputAnalysis, TestSummary } from "./types";
  * ```
  */
 export function parseBunTestOutput(output: string): TestSummary {
+  // Detect Jest/Vitest output by the presence of their summary line format.
+  // Jest:   "Tests:       41 failed, 38 passed, 79 total"
+  // Vitest: "Test Files  1 failed | 2 passed (3)"
+  if (isJestLikeOutput(output)) {
+    return parseJestOutput(output);
+  }
+  return parseBunOutput(output);
+}
+
+/**
+ * Detect whether the output comes from Jest or Vitest rather than Bun.
+ * Looks for the Jest summary line format or Vitest's "Test Files" line.
+ */
+function isJestLikeOutput(output: string): boolean {
+  return /^\s*Tests:\s+\d+/m.test(output) || /^\s*Test Files\s+\d+/m.test(output);
+}
+
+/**
+ * Parse Jest / Vitest test output into a TestSummary.
+ *
+ * Jest summary line examples:
+ *   "Tests:       41 failed, 38 passed, 79 total"
+ *   "Tests:       38 passed, 38 total"
+ *
+ * Jest failure block example:
+ *   "  ● describe block > test name"
+ *   "    Expected: ..."
+ */
+function parseJestOutput(output: string): TestSummary {
+  const failures: TestFailure[] = [];
+  let passed = 0;
+  let failed = 0;
+
+  // Extract counts from the "Tests:" summary line (use the last occurrence)
+  const summaryMatches = Array.from(output.matchAll(/^\s*Tests:\s+(.*)/gm));
+  if (summaryMatches.length > 0) {
+    const summaryLine = summaryMatches[summaryMatches.length - 1][1];
+
+    const failedMatch = summaryLine.match(/(\d+)\s+failed/);
+    const passedMatch = summaryLine.match(/(\d+)\s+passed/);
+    if (failedMatch) failed = Number.parseInt(failedMatch[1], 10);
+    if (passedMatch) passed = Number.parseInt(passedMatch[1], 10);
+  }
+
+  // Extract failure test names from "  ● describe > test name" lines
+  // Jest marks failures with a bullet "●" character
+  let currentFile = "unknown";
+  const lines = output.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Track FAIL/PASS file headers: "FAIL hooks/usePositionSizer.spec.ts"
+    const fileMatch = line.match(/^\s*(?:FAIL|PASS)\s+(\S+\.[jt]sx?)/);
+    if (fileMatch) {
+      currentFile = fileMatch[1];
+      continue;
+    }
+
+    // Jest failure marker: "  ● test suite name > test name"
+    const bulletMatch = line.match(/^\s+●\s+(.+)$/);
+    if (bulletMatch) {
+      const testName = bulletMatch[1].trim();
+      // Skip bullet-summary headers that end with a block title (no ">" separator)
+      // and collect the error from the next non-blank line
+      let error = "";
+      for (let j = i + 1; j < lines.length && j < i + 10; j++) {
+        const next = lines[j].trim();
+        if (!next) continue;
+        // Stop at next bullet or PASS/FAIL header
+        if (next.startsWith("●") || /^(?:FAIL|PASS)\s/.test(next)) break;
+        error = next;
+        break;
+      }
+      failures.push({
+        file: currentFile,
+        testName,
+        error: error || "Unknown error",
+        stackTrace: [],
+      });
+    }
+  }
+
+  return { passed, failed, failures };
+}
+
+/**
+ * Original Bun test output parser (unchanged logic).
+ */
+function parseBunOutput(output: string): TestSummary {
   const lines = output.split("\n");
   const failures: TestFailure[] = [];
   let passed = 0;
