@@ -52,8 +52,11 @@ ngent/
 │   │   ├── types.ts          # QueueItem, QueueStats
 │   │   ├── manager.ts        # Priority queue with retry support
 │   │   └── index.ts
-│   ├── routing/              # Task routing
-│   │   ├── router.ts         # classifyComplexity + determineTestStrategy
+│   ├── routing/              # Task routing (ROUTE-001: simplified)
+│   │   ├── router.ts         # resolveRouting() — PRD wins > plugin > LLM > keyword
+│   │   ├── strategies/
+│   │   │   ├── llm.ts        # LLM-based classifier (opt-in via routing.strategy: "llm")
+│   │   │   └── llm-prompts.ts
 │   │   └── index.ts
 │   └── tdd/                  # Three-session TDD
 │       ├── types.ts          # TddSessionRole, IsolationCheck, ThreeSessionTddResult

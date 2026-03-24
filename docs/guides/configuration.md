@@ -23,6 +23,9 @@ Config is layered — project overrides global:
   "tdd": {
     "strategy": "auto"
   },
+  "routing": {
+    "strategy": "keyword"
+  },
   "quality": {
     "commands": {
       "test": "bun test test/ --timeout=60000",
@@ -90,3 +93,65 @@ If `testScoped` is not configured, nax falls back to a heuristic that replaces t
 | `lite` | Always use `three-session-tdd-lite` |
 | `simple` | Always use `tdd-simple` (1 session) |
 | `off` | No TDD — tests written after implementation (`test-after`) |
+
+---
+
+### Routing
+
+Controls how nax classifies story complexity and selects model tier + test strategy.
+
+```json
+{
+  "routing": {
+    "strategy": "keyword"
+  }
+}
+```
+
+**Routing strategy options:** <a name="routing-strategy-options"></a>
+
+| Value | Behaviour |
+|:------|:----------|
+| `"keyword"` | **Default.** Fast, free, deterministic — classifies by keywords in title/description/tags. No API calls. |
+| `"llm"` | Uses the configured LLM to classify complexity. Better accuracy for ambiguous stories. Requires an agent to be configured. |
+
+**Priority order (regardless of strategy):**
+
+1. **PRD explicit** — if a story has `routing.testStrategy` set in `prd.json`, it always wins
+2. **Plugin routers** — registered plugins can override routing per-story
+3. **Strategy fallback** — keyword or LLM depending on `routing.strategy`
+
+**Opting into LLM routing:**
+
+```json
+{
+  "routing": {
+    "strategy": "llm",
+    "llm": {
+      "model": "fast",
+      "fallbackToKeywords": true,
+      "mode": "hybrid"
+    }
+  }
+}
+```
+
+> **Note:** LLM routing requires an agent (e.g. `claude`) to be installed and configured. It makes real API calls, which incur cost and latency. For CI or contributor environments, prefer `"keyword"`.
+
+**Per-story override in PRD:**
+
+```json
+{
+  "userStories": [
+    {
+      "id": "US-001",
+      "routing": {
+        "testStrategy": "three-session-tdd",
+        "complexity": "complex"
+      }
+    }
+  ]
+}
+```
+
+Story-level routing always takes priority over `routing.strategy`.
