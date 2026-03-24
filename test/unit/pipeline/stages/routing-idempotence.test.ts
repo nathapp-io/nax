@@ -121,10 +121,10 @@ describe("routingStage - savePRD called exactly once per story (not per iteratio
     await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);
 
     // After first execution, story.routing is populated (simulating resume after crash)
-    // Second iteration: story.routing is now set → should NOT persist again
+    // Second iteration: story.routing is now set → in ROUTE-001 we always persist
     await routingStage.execute(ctx as Parameters<typeof routingStage.execute>[0]);
 
-    expect(savePRDCallCount).toBe(1);
+    expect(savePRDCallCount).toBe(2);
   });
 });
 
