@@ -114,6 +114,8 @@ export interface GenerateAcceptanceTestsOptions {
   modelDef: ModelDef;
   /** Global config for quality settings */
   config: NaxConfig;
+  /** Test framework for skeleton generation (e.g. "jest", "vitest") */
+  testFramework?: string;
 }
 
 /**

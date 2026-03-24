@@ -134,8 +134,13 @@ export const acceptanceStage: PipelineStage = {
     // Acceptance tests always run from repo root — covers both single repo and monorepo.
     // The test file uses __dirname-based paths to navigate into packages as needed.
 
-    // Run bun test on the acceptance test file
-    const proc = Bun.spawn(["bun", "test", testPath], {
+    // Run acceptance tests using the configured test command (respects Jest/Vitest/etc.)
+    // Fall back to `bun test` when no command is configured.
+    const configuredTestCmd = ctx.config.quality?.commands?.test;
+    const testCmdParts = configuredTestCmd
+      ? [...configuredTestCmd.trim().split(/\s+/), testPath]
+      : ["bun", "test", testPath];
+    const proc = Bun.spawn(testCmdParts, {
       cwd: ctx.workdir,
       stdout: "pipe",
       stderr: "pipe",

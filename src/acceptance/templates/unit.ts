@@ -7,9 +7,18 @@
 
 import type { AcceptanceCriterion } from "../types";
 
+function buildTestImportLine(testFramework?: string): string {
+  const fw = testFramework?.toLowerCase() ?? "";
+  if (fw === "jest" || fw === "@jest/globals") return `import { describe, expect, test } from "@jest/globals";`;
+  if (fw === "vitest") return `import { describe, expect, test } from "vitest";`;
+  return `import { describe, expect, test } from "bun:test";`;
+}
+
 export interface UnitTemplateOptions {
   featureName: string;
   criteria: AcceptanceCriterion[];
+  /** Optional test framework override (e.g. "jest", "vitest") */
+  testFramework?: string;
 }
 
 /**
@@ -19,7 +28,8 @@ export interface UnitTemplateOptions {
  * @returns TypeScript test code string
  */
 export function buildUnitTemplate(options: UnitTemplateOptions): string {
-  const { featureName, criteria } = options;
+  const { featureName, criteria, testFramework } = options;
+  const importLine = buildTestImportLine(testFramework);
 
   const tests = criteria
     .map(
@@ -30,7 +40,7 @@ export function buildUnitTemplate(options: UnitTemplateOptions): string {
     )
     .join("\n\n");
 
-  return `import { describe, expect, test } from "bun:test";
+  return `${importLine}
 import { ${toCamelCase(featureName)} } from "../src/${toKebabCase(featureName)}";
 
 describe("${featureName} - Acceptance Tests", () => {

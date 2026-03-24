@@ -7,9 +7,18 @@
 
 import type { AcceptanceCriterion } from "../types";
 
+function buildTestImportLine(testFramework?: string): string {
+  const fw = testFramework?.toLowerCase() ?? "";
+  if (fw === "jest" || fw === "@jest/globals") return `import { describe, expect, test } from "@jest/globals";`;
+  if (fw === "vitest") return `import { describe, expect, test } from "vitest";`;
+  return `import { describe, expect, test } from "bun:test";`;
+}
+
 export interface E2eTemplateOptions {
   featureName: string;
   criteria: AcceptanceCriterion[];
+  /** Optional test framework override (e.g. "jest", "vitest") */
+  testFramework?: string;
 }
 
 const DEFAULT_PORT = 3000;
@@ -21,7 +30,8 @@ const DEFAULT_PORT = 3000;
  * @returns TypeScript test code string
  */
 export function buildE2eTemplate(options: E2eTemplateOptions): string {
-  const { featureName, criteria } = options;
+  const { featureName, criteria, testFramework } = options;
+  const importLine = buildTestImportLine(testFramework);
 
   const tests = criteria
     .map(
@@ -34,7 +44,7 @@ export function buildE2eTemplate(options: E2eTemplateOptions): string {
     )
     .join("\n\n");
 
-  return `import { describe, expect, test } from "bun:test";
+  return `${importLine}
 
 describe("${featureName} - Acceptance Tests", () => {
 ${tests}
