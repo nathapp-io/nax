@@ -24,18 +24,20 @@ export interface PathValidationResult {
  * @param allowedRoots - Array of absolute paths that are allowed as roots
  * @returns Validation result
  */
-/** Resolve symlinks for a path that may not exist yet (fall back to parent dir). */
-function safeRealpath(p: string): string {
+
+/**
+ * Recursively resolve symlinks by walking up to the deepest existing ancestor.
+ * Returns the real path for comparison purposes only — callers must use the
+ * un-resolved path as the user-visible absolutePath return value.
+ */
+function safeRealpathForComparison(p: string): string {
   try {
     return realpathSync(p);
   } catch {
-    // Path doesn't exist — resolve the parent directory instead
-    try {
-      const parent = realpathSync(dirname(p));
-      return join(parent, p.split("/").pop() ?? "");
-    } catch {
-      return p;
-    }
+    const parent = dirname(p);
+    if (parent === p) return normalize(p); // filesystem root
+    const resolvedParent = safeRealpathForComparison(parent);
+    return join(resolvedParent, p.split("/").pop() ?? "");
   }
 }
 
@@ -44,24 +46,26 @@ export function validateModulePath(modulePath: string, allowedRoots: string[]): 
     return { valid: false, error: "Module path is empty" };
   }
 
-  // Resolve symlinks in each root
-  const normalizedRoots = allowedRoots.map((r) => safeRealpath(resolve(r)));
+  // Resolve symlinks in each root for security comparison
+  const resolvedRoots = allowedRoots.map((r) => safeRealpathForComparison(resolve(r)));
 
-  // If absolute, just check against roots
+  // If absolute, compare resolved paths but return the un-resolved normalized path
   if (isAbsolute(modulePath)) {
-    const absoluteTarget = safeRealpath(normalize(modulePath));
-    const isWithin = normalizedRoots.some((root) => {
-      return absoluteTarget.startsWith(`${root}/`) || absoluteTarget === root;
-    });
+    const normalized = normalize(modulePath);
+    const resolved = safeRealpathForComparison(normalized);
+    const isWithin = resolvedRoots.some((root) => resolved.startsWith(`${root}/`) || resolved === root);
     if (isWithin) {
-      return { valid: true, absolutePath: absoluteTarget };
+      return { valid: true, absolutePath: normalized };
     }
   } else {
-    // If relative, check if it's within any root when resolved relative to that root
-    for (const root of normalizedRoots) {
-      const absoluteTarget = safeRealpath(resolve(join(root, modulePath)));
-      if (absoluteTarget.startsWith(`${root}/`) || absoluteTarget === root) {
-        return { valid: true, absolutePath: absoluteTarget };
+    // If relative, resolve relative to each original (non-symlinked) root
+    for (let i = 0; i < allowedRoots.length; i++) {
+      const originalRoot = resolve(allowedRoots[i]);
+      const absoluteInput = resolve(join(originalRoot, modulePath));
+      const resolved = safeRealpathForComparison(absoluteInput);
+      const resolvedRoot = resolvedRoots[i];
+      if (resolved.startsWith(`${resolvedRoot}/`) || resolved === resolvedRoot) {
+        return { valid: true, absolutePath: absoluteInput };
       }
     }
   }

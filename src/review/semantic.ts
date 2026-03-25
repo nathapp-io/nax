@@ -8,6 +8,7 @@ import { spawn } from "bun";
 import type { AgentAdapter } from "../agents/types";
 import type { ModelTier } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
+import type { ReviewFinding } from "../plugins/types";
 import type { ReviewCheckResult, SemanticReviewConfig } from "./types";
 
 /** Story fields required for semantic review */
@@ -168,6 +169,25 @@ function formatFindings(findings: LLMFinding[]): string {
     .join("\n");
 }
 
+/** Normalize LLM severity values to ReviewFinding severity union. */
+function normalizeSeverity(sev: string): ReviewFinding["severity"] {
+  if (sev === "warn") return "warning";
+  if (sev === "critical" || sev === "error" || sev === "warning" || sev === "info" || sev === "low") return sev;
+  return "info";
+}
+
+/** Convert LLMFinding[] to ReviewFinding[] with semantic-review metadata. */
+function toReviewFindings(findings: LLMFinding[]): ReviewFinding[] {
+  return findings.map((f) => ({
+    ruleId: "semantic",
+    severity: normalizeSeverity(f.severity),
+    file: f.file,
+    line: f.line,
+    message: f.issue,
+    source: "semantic-review",
+  }));
+}
+
 /**
  * Run a semantic review using an LLM against the story diff.
  */
@@ -248,7 +268,7 @@ export async function runSemanticReview(
     };
   }
 
-  // AC-7: Format findings
+  // AC-7: Format findings and populate structured ReviewFinding[] (US-003 AC-2)
   if (!parsed.passed && parsed.findings.length > 0) {
     const output = `Semantic review failed:\n\n${formatFindings(parsed.findings)}`;
     return {
@@ -258,6 +278,7 @@ export async function runSemanticReview(
       exitCode: 1,
       output,
       durationMs: Date.now() - startTime,
+      findings: toReviewFindings(parsed.findings),
     };
   }
 
