@@ -139,6 +139,8 @@ export interface UserStory {
   workdir?: string;
   /** Files created/modified by this story (auto-captured after completion, used by dependent stories) */
   outputFiles?: string[];
+  /** Git diff stat summary of changes made by this story (auto-captured after completion) */
+  diffSummary?: string;
   /**
    * Parent story ID — set on sub-stories when a story is decomposed.
    * Used to promote the parent from 'decomposed' → 'passed' once all sub-stories complete.

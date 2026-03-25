@@ -16,7 +16,7 @@ import { scanCodebase } from "../analyze/scanner";
 import type { CodebaseScan } from "../analyze/types";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
-import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE } from "../config/test-strategy";
+import { AC_QUALITY_RULES, COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE } from "../config/test-strategy";
 import { discoverWorkspacePackages } from "../context/generator";
 import { PidRegistry } from "../execution/pid-registry";
 import { getLogger } from "../logger";
@@ -462,6 +462,8 @@ Based on your Step 2 analysis, create stories that produce CODE CHANGES.
 
 ${GROUPING_RULES}
 
+${AC_QUALITY_RULES}
+
 For each story, set "contextFiles" to the key source files the agent should read before implementing (max 5 per story). Use your Step 2 analysis to identify the most relevant files. Leave empty for greenfield stories with no existing files to reference.
 
 ${COMPLEXITY_GUIDE}
@@ -484,7 +486,7 @@ Generate a JSON object with this exact structure (no markdown, no explanation �
       "id": "string — e.g. US-001",
       "title": "string — concise story title",
       "description": "string — detailed description of the story",
-      "acceptanceCriteria": ["string — each AC line"],
+      "acceptanceCriteria": ["string — behavioral, testable criteria. Format: 'When [X], then [Y]'. One assertion per AC. Never include quality gates."],
       "contextFiles": ["string — key source files the agent should read (max 5, relative paths)"],
       "tags": ["string — routing tags, e.g. feature, security, api"],
       "dependencies": ["string — story IDs this story depends on"],${workdirField}

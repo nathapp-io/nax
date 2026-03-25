@@ -17,7 +17,7 @@ import type { PluginRegistry } from "../plugins";
 import { countStories, markStoryFailed, markStoryPaused, savePRD } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
 import type { routeTask } from "../routing";
-import { captureOutputFiles } from "../utils/git";
+import { captureDiffSummary, captureOutputFiles } from "../utils/git";
 import { handleTierEscalation } from "./escalation";
 import { appendProgress } from "./progress";
 
@@ -91,7 +91,7 @@ export async function handlePipelineSuccess(
     // duplicate hook messages (on-story-complete fires twice per story).
   }
 
-  // ENH-005: Capture output files for context chaining
+  // ENH-005: Capture output files + diff summary for context chaining
   if (ctx.storyGitRef) {
     for (const completedStory of ctx.storiesToExecute) {
       try {
@@ -99,6 +99,11 @@ export async function handlePipelineSuccess(
         const filtered = filterOutputFiles(rawFiles);
         if (filtered.length > 0) {
           completedStory.outputFiles = filtered;
+        }
+        // Capture diff stat summary for dependency context injection
+        const diffSummary = await captureDiffSummary(ctx.workdir, ctx.storyGitRef, completedStory.workdir);
+        if (diffSummary) {
+          completedStory.diffSummary = diffSummary;
         }
       } catch {
         // Non-fatal — context chaining is best-effort

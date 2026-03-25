@@ -15,9 +15,13 @@ export function createStoryContext(story: UserStory, priority: number): ContextE
   return { type: "story", storyId: story.id, content, priority, tokens: estimateTokens(content) };
 }
 
-/** Create context element from dependency story */
+/** Create context element from dependency story, including diff summary if available */
 export function createDependencyContext(story: UserStory, priority: number): ContextElement {
-  const content = formatStoryAsText(story);
+  let content = formatStoryAsText(story);
+  // Inject diff summary so the agent knows what the dependency actually changed
+  if (story.diffSummary) {
+    content += `\n\n**Changes made by this story:**\n\`\`\`\n${story.diffSummary}\n\`\`\``;
+  }
   return { type: "dependency", storyId: story.id, content, priority, tokens: estimateTokens(content) };
 }
 

@@ -244,3 +244,37 @@ export async function captureOutputFiles(
     return [];
   }
 }
+
+/**
+ * Capture a concise git diff stat summary for a completed story.
+ *
+ * Returns a formatted string like:
+ *   src/plugins/extensions.ts | 120 +
+ *   src/plugins/types.ts     |  24 +-
+ *   2 files changed, 130 insertions(+), 14 deletions(-)
+ *
+ * Returns empty string on failure or when no baseRef is available.
+ * Limited to ~30 lines to keep context token-friendly.
+ */
+export async function captureDiffSummary(
+  workdir: string,
+  baseRef: string | undefined,
+  scopePrefix?: string,
+): Promise<string> {
+  if (!baseRef) return "";
+  try {
+    const args = ["diff", "--stat", `${baseRef}..HEAD`];
+    if (scopePrefix) args.push("--", `${scopePrefix}/`);
+    const proc = _gitDeps.spawn(["git", ...args], { cwd: workdir, stdout: "pipe", stderr: "pipe" });
+    const output = await new Response(proc.stdout).text();
+    await proc.exited;
+    const lines = output.trim().split("\n").filter(Boolean);
+    // Cap at 30 lines to stay token-friendly
+    if (lines.length > 30) {
+      return [...lines.slice(0, 28), `... (${lines.length - 29} more files)`, lines[lines.length - 1]].join("\n");
+    }
+    return lines.join("\n");
+  } catch {
+    return "";
+  }
+}
