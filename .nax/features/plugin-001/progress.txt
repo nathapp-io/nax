@@ -5,3 +5,4 @@ Created: 2026-03-25T03:12:47.455Z
 ---
 [2026-03-25T03:23:03.024Z] US-001 — PASSED — IPostRunAction types + PluginType registration — Cost: $0.3331
 [2026-03-25T03:25:24.765Z] US-002 — PASSED — Registry getPostRunActions() + validator support for post-run-action — Cost: $0.2806
+[2026-03-25T03:59:04.173Z] US-003 — PASSED — Runner integration — buildPostRunContext() + action execution loop — Cost: $5.6583

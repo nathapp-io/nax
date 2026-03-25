@@ -3,7 +3,7 @@
   "feature": "plugin-001",
   "branchName": "feat/plugin-001",
   "createdAt": "2026-03-25T00:00:00.000Z",
-  "updatedAt": "2026-03-25T03:25:26.803Z",
+  "updatedAt": "2026-03-25T03:59:04.177Z",
   "userStories": [
     {
       "id": "US-001",
@@ -118,8 +118,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

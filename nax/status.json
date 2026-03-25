@@ -4,33 +4,24 @@
     "id": "run-2026-03-25T03-15-27-421Z",
     "feature": "plugin-001",
     "startedAt": "2026-03-25T03:15:27.421Z",
-    "status": "running",
+    "status": "completed",
     "dryRun": false,
     "pid": 9893
   },
   "progress": {
     "total": 3,
-    "passed": 2,
+    "passed": 3,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 0
   },
   "cost": {
-    "spent": 0.6137129000000001,
+    "spent": 6.271987500000001,
     "limit": 8
   },
-  "current": {
-    "storyId": "US-003",
-    "title": "Runner integration — buildPostRunContext() + action execution loop",
-    "complexity": "medium",
-    "tddStrategy": "three-session-tdd-lite",
-    "model": "balanced",
-    "attempt": 1,
-    "phase": "routing"
-  },
-  "iterations": 3,
-  "updatedAt": "2026-03-25T03:58:37.469Z",
-  "durationMs": 2590048,
-  "lastHeartbeat": "2026-03-25T03:58:37.469Z"
+  "current": null,
+  "iterations": 4,
+  "updatedAt": "2026-03-25T04:12:06.761Z",
+  "durationMs": 3399340
 }
