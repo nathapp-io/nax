@@ -78,4 +78,6 @@ export interface ReviewConfig {
   };
   /** When to run plugin reviewers: per-story (default) or deferred (skip per-story, run once at end) */
   pluginMode?: "per-story" | "deferred";
+  /** Semantic review configuration (when 'semantic' is in checks) */
+  semantic?: SemanticReviewConfig;
 }

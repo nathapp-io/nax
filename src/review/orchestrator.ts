@@ -9,11 +9,14 @@
  */
 
 import { spawn } from "bun";
+import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
+import type { ModelTier } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
 import type { PluginRegistry } from "../plugins";
 import { errorMessage } from "../utils/errors";
 import { runReview } from "./runner";
+import type { SemanticStory } from "./semantic";
 import type { ReviewConfig, ReviewResult } from "./types";
 
 /**
@@ -77,10 +80,22 @@ export class ReviewOrchestrator {
     storyGitRef?: string,
     scopePrefix?: string,
     qualityCommands?: NaxConfig["quality"]["commands"],
+    storyId?: string,
+    story?: SemanticStory,
+    modelResolver?: (tier: ModelTier) => AgentAdapter | null | undefined,
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
-    const builtIn = await runReview(reviewConfig, workdir, executionConfig, qualityCommands, storyGitRef);
+    const builtIn = await runReview(
+      reviewConfig,
+      workdir,
+      executionConfig,
+      qualityCommands,
+      storyId,
+      storyGitRef,
+      story,
+      modelResolver,
+    );
 
     if (!builtIn.success) {
       return { builtIn, success: false, failureReason: builtIn.failureReason, pluginFailed: false };

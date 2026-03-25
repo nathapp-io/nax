@@ -5,11 +5,14 @@
  */
 
 import { spawn } from "bun";
+import type { AgentAdapter } from "../agents/types";
 import type { ExecutionConfig, QualityConfig } from "../config/schema";
+import type { ModelTier } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty } from "../utils/git";
 import { runSemanticReview as _runSemanticReviewImpl } from "./semantic";
+import type { SemanticStory } from "./semantic";
 import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
 
 /**
@@ -255,6 +258,9 @@ export async function runReview(
   executionConfig?: ExecutionConfig,
   qualityCommands?: QualityConfig["commands"],
   storyId?: string,
+  storyGitRef?: string,
+  story?: SemanticStory,
+  modelResolver?: (tier: ModelTier) => AgentAdapter | null | undefined,
 ): Promise<ReviewResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -301,14 +307,19 @@ export async function runReview(
   for (const checkName of config.checks) {
     // Semantic check: delegate to LLM-based runner instead of shell command
     if (checkName === "semantic") {
-      const semanticStory = { id: storyId ?? "", title: "", description: "", acceptanceCriteria: [] };
-      const semanticCfg = { modelTier: "balanced" as const, rules: [] as string[] };
+      const semanticStory: SemanticStory = {
+        id: storyId ?? "",
+        title: story?.title ?? "",
+        description: story?.description ?? "",
+        acceptanceCriteria: story?.acceptanceCriteria ?? [],
+      };
+      const semanticCfg = config.semantic ?? { modelTier: "balanced" as const, rules: [] as string[] };
       const result = await _reviewSemanticDeps.runSemanticReview(
         workdir,
-        undefined,
+        storyGitRef,
         semanticStory,
         semanticCfg,
-        () => null,
+        modelResolver ?? (() => null),
       );
       checks.push(result);
       if (!result.success && !firstFailure) {

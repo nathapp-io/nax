@@ -449,4 +449,69 @@ describe("runReview — semantic check integration (AC-9)", () => {
 
     expect(result.success).toBe(false);
   });
+
+  test("passes storyGitRef, story, and modelResolver to runSemanticReview", async () => {
+    _deps.getUncommittedFiles = mock(async () => []);
+
+    const mockSemanticResult = {
+      check: "semantic" as const,
+      success: true,
+      command: "",
+      exitCode: 0,
+      output: "passed",
+      durationMs: 5,
+    };
+    _semanticDeps.runSemanticReview = mock(async () => mockSemanticResult);
+
+    const story = { id: "US-001", title: "My story", description: "Does something", acceptanceCriteria: ["AC1"] };
+    const mockResolver = () => null;
+
+    await runReview(
+      semanticConfig,
+      "/tmp/fake-workdir",
+      undefined,
+      undefined,
+      "US-001",
+      "abc1234",
+      story,
+      mockResolver,
+    );
+
+    expect(_semanticDeps.runSemanticReview).toHaveBeenCalledWith(
+      "/tmp/fake-workdir",
+      "abc1234",
+      expect.objectContaining({ id: "US-001", title: "My story", acceptanceCriteria: ["AC1"] }),
+      expect.any(Object),
+      mockResolver,
+    );
+  });
+
+  test("passes config.semantic to runSemanticReview when set", async () => {
+    _deps.getUncommittedFiles = mock(async () => []);
+
+    const mockSemanticResult = {
+      check: "semantic" as const,
+      success: true,
+      command: "",
+      exitCode: 0,
+      output: "passed",
+      durationMs: 5,
+    };
+    _semanticDeps.runSemanticReview = mock(async () => mockSemanticResult);
+
+    const configWithSemantic: ReviewConfig = {
+      ...semanticConfig,
+      semantic: { modelTier: "powerful", rules: ["no stubs"] },
+    };
+
+    await runReview(configWithSemantic, "/tmp/fake-workdir");
+
+    expect(_semanticDeps.runSemanticReview).toHaveBeenCalledWith(
+      "/tmp/fake-workdir",
+      undefined,
+      expect.any(Object),
+      { modelTier: "powerful", rules: ["no stubs"] },
+      expect.any(Function),
+    );
+  });
 });

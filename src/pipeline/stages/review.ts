@@ -12,6 +12,7 @@
 
 // RE-ARCH: rewrite
 import { join } from "node:path";
+import { getAgent } from "../../agents";
 import { checkSecurityReview, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { reviewOrchestrator } from "../../review/orchestrator";
@@ -32,6 +33,13 @@ export const reviewStage: PipelineStage = {
     // MW-010: scope review to package directory when story.workdir is set
     const effectiveWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
 
+    // Build model resolver for semantic review — returns the default agent adapter.
+    // The tier param from SemanticReviewConfig is informational (selects model cost tier)
+    // but AgentAdapter.complete() always uses the agent's own configured model.
+    const agentResolver = ctx.agentGetFn ?? getAgent;
+    const agentName = effectiveConfig.autoMode?.defaultAgent;
+    const modelResolver = (_tier: string) => (agentName ? (agentResolver(agentName) ?? null) : null);
+
     const result = await reviewOrchestrator.review(
       effectiveConfig.review,
       effectiveWorkdir,
@@ -40,6 +48,14 @@ export const reviewStage: PipelineStage = {
       ctx.storyGitRef,
       ctx.story.workdir, // MW-010: scope changed-file checks to package
       effectiveConfig.quality?.commands, // fallback for review.commands
+      ctx.story.id,
+      {
+        id: ctx.story.id,
+        title: ctx.story.title,
+        description: ctx.story.description,
+        acceptanceCriteria: ctx.story.acceptanceCriteria,
+      },
+      modelResolver,
     );
 
     ctx.reviewResult = result.builtIn;
