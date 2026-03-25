@@ -26,6 +26,7 @@ const VALID_PLUGIN_TYPES: readonly PluginType[] = [
   "reviewer",
   "context-provider",
   "reporter",
+  "post-run-action",
 ] as const;
 
 /**
@@ -134,6 +135,8 @@ function validateExtension(pluginName: string, type: PluginType, extensions: Rec
       return validateContextProvider(pluginName, extensions.contextProvider);
     case "reporter":
       return validateReporter(pluginName, extensions.reporter);
+    case "post-run-action":
+      return validatePostRunAction(pluginName, extensions.postRunAction);
     default:
       getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: unknown extension type '${type}'`);
       return false;
@@ -346,6 +349,52 @@ function validateReporter(pluginName: string, reporter: unknown): boolean {
       );
       return false;
     }
+  }
+
+  return true;
+}
+
+/**
+ * Validate post-run-action extension.
+ */
+function validatePostRunAction(pluginName: string, action: unknown): boolean {
+  if (typeof action !== "object" || action === null) {
+    getSafeLogger()?.warn(
+      "plugins",
+      `Plugin '${pluginName}' validation failed: postRunAction extension must be an object`,
+    );
+    return false;
+  }
+
+  const pra = action as Record<string, unknown>;
+
+  if (typeof pra.name !== "string") {
+    getSafeLogger()?.warn("plugins", `Plugin '${pluginName}' validation failed: postRunAction.name must be a string`);
+    return false;
+  }
+
+  if (typeof pra.description !== "string") {
+    getSafeLogger()?.warn(
+      "plugins",
+      `Plugin '${pluginName}' validation failed: postRunAction.description must be a string`,
+    );
+    return false;
+  }
+
+  if (typeof pra.shouldRun !== "function") {
+    getSafeLogger()?.warn(
+      "plugins",
+      `Plugin '${pluginName}' validation failed: postRunAction.shouldRun must be a function`,
+    );
+    return false;
+  }
+
+  if (typeof pra.execute !== "function") {
+    getSafeLogger()?.warn(
+      "plugins",
+      `Plugin '${pluginName}' validation failed: postRunAction.execute must be a function`,
+    );
+    return false;
   }
 
   return true;
