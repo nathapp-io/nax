@@ -46,7 +46,12 @@ export const reviewStage: PipelineStage = {
 
     if (!result.success) {
       // Collect structured findings from plugin reviewers for escalation context
-      const allFindings = result.builtIn.pluginReviewers?.flatMap((pr) => pr.findings ?? []) ?? [];
+      const pluginFindings = result.builtIn.pluginReviewers?.flatMap((pr) => pr.findings ?? []) ?? [];
+      // Collect semantic findings from built-in checks (AC-1/AC-2/AC-3)
+      const semanticFindings = (result.builtIn.checks ?? [])
+        .filter((c) => c.check === "semantic" && !c.success && c.findings?.length)
+        .flatMap((c) => c.findings ?? []);
+      const allFindings = [...pluginFindings, ...semanticFindings];
       if (allFindings.length > 0) {
         ctx.reviewFindings = allFindings;
       }
