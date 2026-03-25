@@ -111,40 +111,4 @@ describe("schema: 'build' is a valid review check (BUILD-001)", () => {
   });
 });
 
-describe("quality.requireBuild default (BUILD-001)", () => {
-  test("quality.requireBuild defaults to false", () => {
-    expect(DEFAULT_CONFIG.quality.requireBuild).toBe(false);
-  });
 
-  test("schema accepts quality.requireBuild set to true", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      quality: {
-        ...DEFAULT_CONFIG.quality,
-        requireBuild: true,
-        commands: {},
-      },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.quality.requireBuild).toBe(true);
-    }
-  });
-
-  test("schema accepts quality.requireBuild set to false", () => {
-    const config = {
-      ...DEFAULT_CONFIG,
-      quality: {
-        ...DEFAULT_CONFIG.quality,
-        requireBuild: false,
-        commands: {},
-      },
-    };
-    const result = NaxConfigSchema.safeParse(config);
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.quality.requireBuild).toBe(false);
-    }
-  });
-});

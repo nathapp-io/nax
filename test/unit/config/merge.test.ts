@@ -424,17 +424,6 @@ describe("mergePackageConfig", () => {
       expect(result.quality.requireLint).toBe(false);
     });
 
-    test("overrides quality.requireBuild per package (BUILD-001)", () => {
-      const root: NaxConfig = {
-        ...makeRoot(),
-        quality: { ...DEFAULT_CONFIG.quality, requireBuild: false, commands: {} },
-      };
-      const result = mergePackageConfig(root, {
-        quality: { requireBuild: true } as Partial<NaxConfig["quality"]>,
-      } as Partial<NaxConfig>);
-
-      expect(result.quality.requireBuild).toBe(true);
-    });
   });
 
   describe("context.testCoverage deep merge", () => {

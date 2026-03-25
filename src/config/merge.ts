@@ -88,7 +88,6 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
       requireTests: packageOverride.quality?.requireTests ?? root.quality.requireTests,
       requireTypecheck: packageOverride.quality?.requireTypecheck ?? root.quality.requireTypecheck,
       requireLint: packageOverride.quality?.requireLint ?? root.quality.requireLint,
-      requireBuild: packageOverride.quality?.requireBuild ?? root.quality.requireBuild,
       commands: {
         ...root.quality.commands,
         ...packageOverride.quality?.commands,

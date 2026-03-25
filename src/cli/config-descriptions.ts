@@ -80,7 +80,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "quality.requireTypecheck": "Require typecheck to pass",
   "quality.requireLint": "Require lint to pass",
   "quality.requireTests": "Require tests to pass",
-  "quality.requireBuild": "Require build to pass",
   "quality.commands": "Custom quality commands",
   "quality.commands.typecheck": "Custom typecheck command",
   "quality.commands.lint": "Custom lint command",
@@ -125,7 +124,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   // Review
   review: "Review phase configuration",
   "review.enabled": "Enable review phase",
-  "review.checks": "List of checks to run (typecheck, lint, test)",
+  "review.checks": "List of checks to run (typecheck, lint, test, build)",
   "review.commands": "Custom commands per check",
   "review.commands.typecheck": "Custom typecheck command for review",
   "review.commands.lint": "Custom lint command for review",

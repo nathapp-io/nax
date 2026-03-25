@@ -127,7 +127,6 @@ const QualityConfigSchema = z.object({
   requireTypecheck: z.boolean(),
   requireLint: z.boolean(),
   requireTests: z.boolean(),
-  requireBuild: z.boolean().default(false),
   commands: z.object({
     typecheck: z.string().optional(),
     lint: z.string().optional(),
