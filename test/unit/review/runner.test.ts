@@ -345,16 +345,19 @@ describe("runReview — build check (BUILD-001)", () => {
 describe("runReview — semantic check integration (AC-9)", () => {
   let originalGetUncommittedFiles: typeof _deps.getUncommittedFiles;
   let originalRunSemanticReview: typeof _semanticDeps.runSemanticReview;
+  let originalSpawn: typeof _runnerDeps.spawn;
 
   beforeEach(() => {
     originalGetUncommittedFiles = _deps.getUncommittedFiles;
     originalRunSemanticReview = _semanticDeps.runSemanticReview;
+    originalSpawn = _runnerDeps.spawn;
   });
 
   afterEach(() => {
     mock.restore();
     _deps.getUncommittedFiles = originalGetUncommittedFiles;
     _semanticDeps.runSemanticReview = originalRunSemanticReview;
+    _runnerDeps.spawn = originalSpawn;
   });
 
   const semanticConfig: ReviewConfig = {

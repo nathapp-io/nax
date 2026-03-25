@@ -154,7 +154,7 @@ program
       return;
     }
 
-    const naxDir = join(workdir, "nax");
+    const naxDir = join(workdir, ".nax");
 
     if (existsSync(naxDir) && !options.force) {
       console.log(chalk.yellow("nax already initialized. Use --force to overwrite."));
@@ -503,8 +503,8 @@ program
       console.log(chalk.dim("   [Headless mode — pipe output]"));
     }
 
-    // Compute status file path: <workdir>/nax/status.json
-    const statusFilePath = join(workdir, "nax", "status.json");
+    // Compute status file path: <workdir>/.nax/status.json
+    const statusFilePath = join(workdir, ".nax", "status.json");
 
     // Parse --parallel option
     let parallel: number | undefined;
