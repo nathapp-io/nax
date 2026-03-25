@@ -12,6 +12,15 @@ on:
       - '.github/workflows/**'
   pull_request:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'test/**'
+      - 'bin/**'
+      - 'scripts/**'
+      - 'bun.lock'
+      - 'package.json'
+      - 'tsconfig*.json'
+      - '.github/workflows/**'
 
 jobs:
   test:
