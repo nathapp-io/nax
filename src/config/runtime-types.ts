@@ -262,6 +262,9 @@ export interface AcceptanceConfig {
   refinement: boolean;
   /** Whether to run RED gate check after generating acceptance tests (default: true) */
   redGate: boolean;
+  /** Override command to run acceptance tests. Use {{FILE}} as placeholder for the test file path.
+   *  Default: "bun test {{FILE}} --timeout=60000" */
+  command?: string;
   /** Test strategy for acceptance tests (default: auto-detect) */
   testStrategy?: AcceptanceTestStrategy;
   /** Test framework for acceptance tests (default: auto-detect) */

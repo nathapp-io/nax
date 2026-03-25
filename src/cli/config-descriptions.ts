@@ -145,6 +145,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "acceptance.maxRetries": "Max retry loops for fix stories",
   "acceptance.generateTests": "Generate acceptance tests during analyze",
   "acceptance.testPath": "Path to acceptance test file (relative to feature dir)",
+  "acceptance.command":
+    "Override command to run acceptance tests. Use {{FILE}} as placeholder for the test file path (default: 'bun test {{FILE}} --timeout=60000')",
   "acceptance.timeoutMs": "Timeout for acceptance test generation in milliseconds (default: 1800000 = 30 min)",
 
   // Context

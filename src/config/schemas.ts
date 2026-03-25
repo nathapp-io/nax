@@ -260,6 +260,7 @@ export const AcceptanceConfigSchema = z.object({
   maxRetries: z.number().int().nonnegative(),
   generateTests: z.boolean(),
   testPath: z.string().min(1, "acceptance.testPath must be non-empty"),
+  command: z.string().optional(),
   model: z.enum(["fast", "balanced", "powerful"]).default("fast"),
   refinement: z.boolean().default(true),
   redGate: z.boolean().default(true),
