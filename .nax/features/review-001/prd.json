@@ -1,0 +1,92 @@
+{
+  "project": "nax",
+  "feature": "review-001",
+  "branchName": "feat/review-001-semantic",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add semantic to review check types and config",
+      "description": "Extend ReviewCheckName type to include 'semantic'. Add SemanticReviewConfig interface with modelTier (default: 'balanced') and rules (default: []). Add semantic?: SemanticReviewConfig to ReviewConfig in runtime-types, schemas, defaults, merge, and config-descriptions.",
+      "acceptanceCriteria": [
+        "ReviewCheckName type in src/review/types.ts accepts 'semantic' as a valid value alongside 'typecheck', 'lint', 'test', 'build'",
+        "SemanticReviewConfig interface in src/config/runtime-types.ts has modelTier field typed as ModelTier and rules field typed as string[]",
+        "ReviewConfig in src/config/runtime-types.ts has optional semantic field typed as SemanticReviewConfig",
+        "ReviewConfigSchema in src/config/schemas.ts validates semantic as optional object with modelTier defaulting to 'balanced' and rules defaulting to empty array",
+        "When review.checks includes 'semantic' and review.semantic is omitted from user config, parsed config has semantic.modelTier === 'balanced' and semantic.rules === []",
+        "config-descriptions.ts has entries for review.semantic.modelTier and review.semantic.rules with descriptive text",
+        "DEFAULT_CONFIG.review.semantic equals { modelTier: 'balanced', rules: [] }"
+      ],
+      "tags": ["config", "types"],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/review/types.ts",
+        "src/config/runtime-types.ts",
+        "src/config/schemas.ts",
+        "src/config/defaults.ts",
+        "src/config/merge.ts",
+        "src/cli/config-descriptions.ts"
+      ],
+      "expectedFiles": []
+    },
+    {
+      "id": "US-002",
+      "title": "Implement semantic review runner",
+      "description": "Create src/review/semantic.ts with runSemanticReview() that collects git diff, builds an LLM prompt with story context and rules, calls the model via the routing adapter, and parses structured JSON response. Wire it into runReview() in src/review/runner.ts so it runs when 'semantic' is in the checks list — instead of spawning a shell command, it calls runSemanticReview() directly. The LLM prompt should include the story description, acceptance criteria, 5 default review rules (stubs/noops, placeholder values, unrelated changes, missing wiring, silent error swallowing), any custom rules from config, and the git diff. Response is JSON: { passed: boolean, findings: [...] }. Fail-open on parse errors (return passing result with warning log). Cap diff at 12KB to stay within token budget.",
+      "acceptanceCriteria": [
+        "runSemanticReview() in src/review/semantic.ts accepts workdir, storyGitRef, story (with id/title/description/acceptanceCriteria), semanticConfig, and a model resolver function as parameters",
+        "runSemanticReview() calls git diff --unified=3 <storyGitRef>..HEAD to collect the diff content",
+        "When the diff output exceeds 12288 bytes, runSemanticReview() truncates it and appends '... (truncated, showing first N files)' marker",
+        "When storyGitRef is undefined or empty string, runSemanticReview() returns ReviewCheckResult with success=true and output containing 'skipped: no git ref'",
+        "The LLM prompt built by runSemanticReview() includes the story title, description, all acceptance criteria as a numbered list, 5 default rules, any custom rules from semanticConfig.rules, and the diff in a code block",
+        "runSemanticReview() parses the LLM JSON response expecting { passed: boolean, findings: [{ severity, file, line, issue, suggestion }] }",
+        "When the LLM returns passed=false with findings, ReviewCheckResult.success is false and output contains each finding's file, line, severity, issue, and suggestion formatted as readable text",
+        "When the LLM response is not valid JSON, runSemanticReview() logs a warning and returns ReviewCheckResult with success=true (fail-open behavior)",
+        "runReview() in src/review/runner.ts calls runSemanticReview() when the check name is 'semantic' instead of running a shell command via runCheck()"
+      ],
+      "tags": ["review", "llm"],
+      "dependencies": ["US-001"],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/review/runner.ts",
+        "src/review/types.ts",
+        "src/review/orchestrator.ts",
+        "src/utils/git.ts",
+        "src/config/runtime-types.ts"
+      ],
+      "expectedFiles": [
+        "src/review/semantic.ts"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Wire semantic findings into autofix context",
+      "description": "When semantic review fails, convert its findings to ReviewFinding[] format and attach to ctx.reviewFindings in the review stage. This lets the autofix stage pass structured findings to the agent as retry context. Each semantic finding maps to ReviewFinding with source='semantic-review', the finding's severity/file/line/message fields, and ruleId='semantic'. When semantic review passes, no findings should be added.",
+      "acceptanceCriteria": [
+        "When runSemanticReview() returns success=false, the review stage in src/pipeline/stages/review.ts populates ctx.reviewFindings with findings converted to ReviewFinding[] format",
+        "Each semantic finding maps to ReviewFinding with source set to 'semantic-review', severity from the finding, file from the finding, line from the finding, message from the finding's issue field, and ruleId set to 'semantic'",
+        "When the agent retries after semantic review failure, the priorFailures context includes entries with stage='review' containing the semantic finding details",
+        "When semantic review passes (success=true), ctx.reviewFindings is not modified by the review stage"
+      ],
+      "tags": ["pipeline", "context"],
+      "dependencies": ["US-002"],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "contextFiles": [
+        "src/pipeline/stages/review.ts",
+        "src/review/types.ts",
+        "src/plugins/types.ts",
+        "src/context/elements.ts"
+      ],
+      "expectedFiles": []
+    }
+  ]
+}
