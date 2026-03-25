@@ -145,7 +145,7 @@ export const routingStage: PipelineStage = {
     });
 
     if (ctx.stories.length === 1) {
-      logger.debug("routing", ctx.routing.reasoning);
+      logger.debug("routing", "Routing reasoning", { reasoning: ctx.routing.reasoning, storyId: ctx.story.id });
     }
 
     // SD-004: Oversized story detection and decomposition

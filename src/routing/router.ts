@@ -364,14 +364,22 @@ export async function tryLlmBatchRoute(
 ): Promise<void> {
   const mode = config.routing.llm?.mode ?? "hybrid";
   if (config.routing.strategy !== "llm" || mode === "per-story" || stories.length === 0) return;
+
+  // PRD wins: skip stories that already have routing set (from plan or previous run)
+  const needsRouting = stories.filter((s) => !(s.routing?.complexity && s.routing?.testStrategy));
+  if (needsRouting.length === 0) return;
   const resolvedAdapter = _deps.getAgent(config.execution?.agent ?? "claude");
   if (!resolvedAdapter) return;
 
   const logger = getSafeLogger();
   try {
-    logger?.debug("routing", `LLM batch routing: ${label}`, { storyCount: stories.length, mode });
+    logger?.debug("routing", `LLM batch routing: ${label}`, {
+      storyCount: needsRouting.length,
+      skipped: stories.length - needsRouting.length,
+      mode,
+    });
     const { routeBatch } = await import("./strategies/llm");
-    await routeBatch(stories, { config, adapter: resolvedAdapter });
+    await routeBatch(needsRouting, { config, adapter: resolvedAdapter });
     logger?.debug("routing", "LLM batch routing complete", { label });
   } catch (err) {
     logger?.warn("routing", "LLM batch routing failed, falling back to individual routing", {
