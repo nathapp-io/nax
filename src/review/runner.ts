@@ -299,6 +299,27 @@ export async function runReview(
   }
 
   for (const checkName of config.checks) {
+    // Semantic check: delegate to LLM-based runner instead of shell command
+    if (checkName === "semantic") {
+      const semanticStory = { id: storyId ?? "", title: "", description: "", acceptanceCriteria: [] };
+      const semanticCfg = { modelTier: "balanced" as const, rules: [] as string[] };
+      const result = await _reviewSemanticDeps.runSemanticReview(
+        workdir,
+        undefined,
+        semanticStory,
+        semanticCfg,
+        () => null,
+      );
+      checks.push(result);
+      if (!result.success && !firstFailure) {
+        firstFailure = `${checkName} failed`;
+      }
+      if (!result.success) {
+        break;
+      }
+      continue;
+    }
+
     // Resolve command using resolution strategy
     const command = await resolveCommand(checkName, config, executionConfig, workdir, qualityCommands);
 
