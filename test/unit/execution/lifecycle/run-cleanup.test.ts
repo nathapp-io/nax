@@ -10,9 +10,10 @@
  * - Execution order guarantees
  */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { IPostRunAction, PostRunActionResult, PostRunContext } from "../../../../src/plugins/extensions";
 import type { RunCleanupOptions } from "../../../../src/execution/lifecycle/run-cleanup";
+import * as loggerModule from "../../../../src/logger";
 
 // ============================================================================
 // Helpers
@@ -269,12 +270,8 @@ describe("cleanupRun — action result logging", () => {
   let logInfoCalls: Array<[string, string, unknown]> = [];
   let logWarnCalls: Array<[string, string, unknown]> = [];
   let logDebugCalls: Array<[string, string, unknown]> = [];
-
-  beforeEach(() => {
-    logInfoCalls = [];
-    logWarnCalls = [];
-    logDebugCalls = [];
-  });
+  // biome-ignore lint/suspicious/noExplicitAny: spy type varies
+  let loggerSpy: any;
 
   function makeLogger() {
     return {
@@ -284,6 +281,18 @@ describe("cleanupRun — action result logging", () => {
       error: mock(() => {}),
     };
   }
+
+  beforeEach(() => {
+    logInfoCalls = [];
+    logWarnCalls = [];
+    logDebugCalls = [];
+    // Wire the local mock logger into getSafeLogger so cleanupRun's internal logging is captured
+    loggerSpy = spyOn(loggerModule, "getSafeLogger").mockReturnValue(makeLogger() as any);
+  });
+
+  afterEach(() => {
+    loggerSpy?.mockRestore();
+  });
 
   test("successful execute() with url logs at info level with url", async () => {
     const { cleanupRun } = await import("../../../../src/execution/lifecycle/run-cleanup");
