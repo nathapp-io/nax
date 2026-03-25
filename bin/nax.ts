@@ -154,7 +154,7 @@ program
       return;
     }
 
-    const naxDir = join(workdir, "nax");
+    const naxDir = join(workdir, ".nax");
 
     if (existsSync(naxDir) && !options.force) {
       console.log(chalk.yellow("nax already initialized. Use --force to overwrite."));
