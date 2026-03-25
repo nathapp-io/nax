@@ -1,6 +1,6 @@
 # ROUTE-001: Routing Simplification
 
-**Status:** Draft
+**Status:** Implemented — keyword routing strategy shipped, `routing.strategy: "keyword"` is the default
 **Date:** 2026-03-23
 **Fixes:** BUG-075 (PRD testStrategy not honored)
 
