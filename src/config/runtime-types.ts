@@ -125,8 +125,6 @@ export interface QualityConfig {
   requireLint: boolean;
   /** Require tests to pass */
   requireTests: boolean;
-  /** Require build to pass */
-  requireBuild: boolean;
   /** Custom quality commands */
   commands: {
     typecheck?: string;

@@ -71,7 +71,6 @@ export const DEFAULT_CONFIG: NaxConfig = {
     requireTypecheck: true,
     requireLint: true,
     requireTests: true,
-    requireBuild: false,
     commands: {},
     forceExit: false,
     detectOpenHandles: true,
