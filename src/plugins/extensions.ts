@@ -5,6 +5,7 @@
  */
 
 import type { UserStory } from "../prd/types";
+import type { PluginLogger } from "./types";
 
 // ============================================================================
 // Review Extension
@@ -141,6 +142,125 @@ export interface IContextProvider {
    * @returns Markdown content to inject into the agent prompt
    */
   getContext(story: UserStory): Promise<ContextProviderResult>;
+}
+
+// ============================================================================
+// Post-Run Action Extension
+// ============================================================================
+
+/**
+ * Result from a post-run action.
+ */
+export interface PostRunActionResult {
+  /** Whether the action succeeded */
+  success: boolean;
+
+  /** Human-readable message about the result */
+  message: string;
+
+  /** Optional URL for result details or reports */
+  url?: string;
+
+  /** Whether the action was skipped */
+  skipped?: boolean;
+
+  /** Reason for skipping or failure */
+  reason?: string;
+}
+
+/**
+ * Context provided to post-run actions with run metadata.
+ */
+export interface PostRunContext {
+  /** Unique run identifier */
+  runId: string;
+
+  /** Feature name being worked on */
+  feature: string;
+
+  /** Working directory path */
+  workdir: string;
+
+  /** Path to the PRD file */
+  prdPath: string;
+
+  /** Git branch name */
+  branch: string;
+
+  /** Total run duration in milliseconds */
+  totalDurationMs: number;
+
+  /** Total cost of the run */
+  totalCost: number;
+
+  /** Summary of story completion status */
+  storySummary: {
+    completed: number;
+    failed: number;
+    skipped: number;
+    paused: number;
+  };
+
+  /** All stories that were executed */
+  stories: UserStory[];
+
+  /** Version of nax or the feature */
+  version: string;
+
+  /** Plugin-specific configuration */
+  pluginConfig: Record<string, unknown>;
+
+  /** Write-only logger scoped to this plugin */
+  logger: PluginLogger;
+}
+
+/**
+ * Post-run action interface.
+ *
+ * Post-run actions execute after a run completes (success or failure),
+ * allowing plugins to emit results to external systems (dashboards, webhooks, etc.).
+ *
+ * @example
+ * ```ts
+ * const postAction: IPostRunAction = {
+ *   name: "webhook-reporter",
+ *   description: "Sends run results to external webhook",
+ *   async shouldRun(context) {
+ *     return context.storySummary.completed > 0;
+ *   },
+ *   async execute(context) {
+ *     await webhook.send({
+ *       status: context.storySummary.failed > 0 ? "partial" : "success",
+ *       completed: context.storySummary.completed,
+ *       results_url: "..."
+ *     });
+ *     return { success: true, message: "Webhook sent" };
+ *   }
+ * };
+ * ```
+ */
+export interface IPostRunAction {
+  /** Action name (e.g., "webhook-reporter", "slack-notifier") */
+  name: string;
+
+  /** Human-readable description */
+  description: string;
+
+  /**
+   * Determine whether this action should execute for the given run context.
+   *
+   * @param context - Run context with metadata
+   * @returns True if the action should execute, false to skip
+   */
+  shouldRun(context: PostRunContext): Promise<boolean>;
+
+  /**
+   * Execute the post-run action.
+   *
+   * @param context - Run context with all necessary metadata
+   * @returns Result of the action execution
+   */
+  execute(context: PostRunContext): Promise<PostRunActionResult>;
 }
 
 // ============================================================================

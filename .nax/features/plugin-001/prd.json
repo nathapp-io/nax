@@ -1,0 +1,145 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "plugin-001",
+  "branchName": "feat/plugin-001",
+  "createdAt": "2026-03-25T00:00:00.000Z",
+  "updatedAt": "2026-03-25T03:59:04.177Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "IPostRunAction types + PluginType registration",
+      "description": "Define the IPostRunAction, PostRunContext, and PostRunActionResult interfaces in src/plugins/extensions.ts. Add 'post-run-action' to the PluginType union in src/plugins/types.ts, add postRunAction?: IPostRunAction to PluginExtensions, and re-export all three new types from the types.ts and index.ts barrels.",
+      "acceptanceCriteria": [
+        "IPostRunAction interface defined in src/plugins/extensions.ts with name, description, shouldRun(context), and execute(context) methods",
+        "PostRunContext interface defined with all required fields: runId, feature, workdir, prdPath, branch, totalDurationMs, totalCost, storySummary, stories, version, pluginConfig, logger",
+        "PostRunActionResult interface defined with success, message, url?, skipped?, reason? fields",
+        "'post-run-action' added to PluginType union in src/plugins/types.ts",
+        "postRunAction?: IPostRunAction added to PluginExtensions interface",
+        "All three new types exported from src/plugins/types.ts (re-exported from extensions.ts)",
+        "All three new types exported from src/plugins/index.ts barrel",
+        "TypeScript strict mode compiles with no errors (bun run typecheck passes)"
+      ],
+      "tags": [
+        "feature",
+        "types",
+        "plugin"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
+      },
+      "contextFiles": [
+        "src/plugins/extensions.ts",
+        "src/plugins/types.ts",
+        "src/plugins/index.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-002",
+      "title": "Registry getPostRunActions() + validator support for post-run-action",
+      "description": "Add getPostRunActions(): IPostRunAction[] method to PluginRegistry in src/plugins/registry.ts, following the same pattern as getReporters(). Add 'post-run-action' to VALID_PLUGIN_TYPES in src/plugins/validator.ts, add a validatePostRunAction() private function, and wire it into the validateExtension() switch. New tests go in the existing test/unit/plugins/registry.test.ts and test/unit/plugins/validator.test.ts (create validator test file if it does not exist).",
+      "acceptanceCriteria": [
+        "getPostRunActions() method added to PluginRegistry, returning IPostRunAction[] from plugins that provide 'post-run-action'",
+        "getPostRunActions() returns empty array when no post-run-action plugins registered",
+        "getPostRunActions() returns multiple actions in registration order",
+        "getPostRunActions() filters out plugins where extensions.postRunAction is undefined",
+        "'post-run-action' added to VALID_PLUGIN_TYPES const in validator.ts",
+        "validateExtension() switch handles 'post-run-action' case calling validatePostRunAction()",
+        "validatePostRunAction() rejects if postRunAction missing name (string), shouldRun (function), or execute (function)",
+        "validatePlugin() returns null for a plugin declaring provides: ['post-run-action'] with missing execute",
+        "Tests in test/unit/plugins/registry.test.ts cover getPostRunActions() happy path and empty array case",
+        "bun run typecheck and bun run lint pass"
+      ],
+      "tags": [
+        "feature",
+        "plugin",
+        "registry",
+        "validation"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
+      },
+      "contextFiles": [
+        "src/plugins/registry.ts",
+        "src/plugins/validator.ts",
+        "src/plugins/types.ts",
+        "test/unit/plugins/registry.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-003",
+      "title": "Runner integration — buildPostRunContext() + action execution loop",
+      "description": "Integrate post-run action execution into the run lifecycle. Extend RunCleanupOptions in src/execution/lifecycle/run-cleanup.ts with feature, prdPath, branch, and version fields. Add a buildPostRunContext() helper and the sequential action execution loop (shouldRun → execute, with error-tolerant try/catch) after reporters.onRunEnd() fires. Thread the new fields from runner.ts (finally block) and runner-completion.ts into the cleanupRun() call. Resolve git branch at runtime using _gitDeps from src/utils/git.ts.",
+      "acceptanceCriteria": [
+        "RunCleanupOptions extended with feature: string, prdPath: string, branch: string, version: string fields",
+        "buildPostRunContext() constructs PostRunContext from RunCleanupOptions + prd counts",
+        "Post-run actions execute sequentially after reporters.onRunEnd() and before teardownAll()",
+        "shouldRun() called before execute(); if false, debug log emitted and execute() skipped",
+        "Successful execute() with url logs at info level: '[post-run] {name}: {message}' with url",
+        "Skipped result logs at info level: '[post-run] {name}: skipped — {reason}'",
+        "Failed result (success=false) logs at warn level: '[post-run] {name}: failed — {message}'",
+        "Error thrown in shouldRun() or execute() is caught, logs warn, and does NOT block run completion",
+        "Multiple post-run actions run in registration order",
+        "runner.ts finally block passes feature, prdPath, branch, version to cleanupRun()",
+        "runner-completion.ts does not call post-run actions (they are cleanupRun responsibility)",
+        "bun run typecheck and bun run lint pass"
+      ],
+      "tags": [
+        "feature",
+        "plugin",
+        "runner",
+        "execution"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/lifecycle/run-cleanup.ts",
+        "src/execution/runner.ts",
+        "src/plugins/registry.ts",
+        "src/utils/errors.ts",
+        "src/utils/git.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    }
+  ],
+  "analysis": "The nax plugin system currently exposes 6 extension points: optimizer, router, agent, reviewer, context-provider, and reporter. All are defined across 4 files: src/plugins/extensions.ts (interface definitions), src/plugins/types.ts (PluginType union + PluginExtensions + NaxPlugin), src/plugins/registry.ts (PluginRegistry class with typed getters), and src/plugins/validator.ts (runtime validation with VALID_PLUGIN_TYPES array + validateExtension switch).\n\nThe reporter fire-and-forget lifecycle fires in src/execution/lifecycle/run-cleanup.ts inside cleanupRun(), after all stories complete. Post-run actions must fire AFTER reporters.onRunEnd() and BEFORE teardownAll(). The cleanupRun() function is the right insertion point — it already has pluginRegistry, prd, totalCost, and runId. The missing fields for PostRunContext (feature, workdir, prdPath, branch, version, storySummary.paused) must be threaded in via RunCleanupOptions.\n\nKey risks: (1) RunCleanupOptions in run-cleanup.ts must be extended with feature, workdir (already present), prdPath, and branch — runner.ts (finally block calls cleanupRun) and runner-completion.ts both pass these. (2) Branch must be resolved at runtime via Bun.spawn git rev-parse — use src/utils/git.ts _gitDeps pattern. (3) Post-run actions must never throw into the run — wrap each in try/catch like reporters. (4) The VALID_PLUGIN_TYPES const in validator.ts must add 'post-run-action' or validation rejects the plugin. (5) PluginExtensions.postRunAction field key follows camelCase convention (contextProvider, not context-provider). (6) Tests for registry.test.ts already test all getters in the same file — add getPostRunActions() tests there per project rules (no standalone bug-fix test files).\n\nDependency order: US-001 (types) → US-002 (registry + validator) → US-003 (runner integration). Each story is independently verifiable. The existing test in test/unit/plugins/registry.test.ts is the target file for new registry getter tests."
+}

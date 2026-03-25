@@ -21,6 +21,8 @@ import { fireHook } from "../hooks";
 import { getSafeLogger } from "../logger";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import { countStories, isComplete } from "../prd";
+import { gitWithTimeout } from "../utils/git";
+import { NAX_VERSION } from "../version";
 import { stopHeartbeat } from "./crash-recovery";
 import type { ParallelExecutorOptions, ParallelExecutorResult } from "./parallel-executor";
 import { type RunnerCompletionOptions, runCompletionPhase } from "./runner-completion";
@@ -245,6 +247,15 @@ export async function run(options: RunOptions): Promise<RunResult> {
     // Sweep any remaining open ACP sessions for this feature
     await sweepFeatureSessions(workdir, feature).catch(() => {});
 
+    // Resolve current branch at runtime
+    let branch = "";
+    try {
+      const { stdout, exitCode } = await gitWithTimeout(["branch", "--show-current"], workdir);
+      if (exitCode === 0) branch = stdout.trim();
+    } catch {
+      // Branch resolution is non-critical
+    }
+
     // Execute cleanup operations
     const { cleanupRun } = await import("./lifecycle/run-cleanup");
     await cleanupRun({
@@ -256,6 +267,10 @@ export async function run(options: RunOptions): Promise<RunResult> {
       pluginRegistry,
       workdir,
       interactionChain,
+      feature,
+      prdPath,
+      branch,
+      version: NAX_VERSION,
     });
   }
 }

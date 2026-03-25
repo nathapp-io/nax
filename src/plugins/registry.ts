@@ -8,7 +8,7 @@ import type { AgentAdapter } from "../agents/types";
 import { getSafeLogger } from "../logger";
 import type { RoutingStrategy } from "../routing/router";
 import type { LoadedPlugin, PluginSource } from "./loader";
-import type { IContextProvider, IPromptOptimizer, IReporter, IReviewPlugin, NaxPlugin } from "./types";
+import type { IContextProvider, IPostRunAction, IPromptOptimizer, IReporter, IReviewPlugin, NaxPlugin } from "./types";
 
 /**
  * Plugin registry with typed getters for each extension type.
@@ -143,6 +143,22 @@ export class PluginRegistry {
       .filter((p) => p.provides.includes("reporter"))
       .map((p) => p.extensions.reporter)
       .filter((reporter): reporter is IReporter => reporter !== undefined);
+  }
+
+  /**
+   * Get all post-run actions.
+   *
+   * Post-run actions execute after a run completes (success or failure),
+   * allowing plugins to emit results to external systems.
+   * All post-run actions are additive and execute in registration order.
+   *
+   * @returns Array of post-run action implementations
+   */
+  getPostRunActions(): IPostRunAction[] {
+    return this.plugins
+      .filter((p) => p.provides.includes("post-run-action"))
+      .map((p) => p.extensions.postRunAction)
+      .filter((action): action is IPostRunAction => action !== undefined);
   }
 
   /**

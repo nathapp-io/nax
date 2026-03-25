@@ -223,6 +223,65 @@ describe("PluginRegistry.getReporters", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PluginRegistry.getPostRunActions
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("PluginRegistry.getPostRunActions", () => {
+  it("returns empty array when no post-run-action plugins", () => {
+    const registry = new PluginRegistry([createMockPlugin("agent-plugin", ["agent"])]);
+
+    const actions = registry.getPostRunActions();
+    expect(actions.length).toBe(0);
+  });
+
+  it("returns all post-run-action plugins", () => {
+    const action1 = { name: "action1", description: "desc1" } as any;
+    const action2 = { name: "action2", description: "desc2" } as any;
+
+    const registry = new PluginRegistry([
+      createMockPlugin("pra-1", ["post-run-action"], { postRunAction: action1 }),
+      createMockPlugin("pra-2", ["post-run-action"], { postRunAction: action2 }),
+    ]);
+
+    const actions = registry.getPostRunActions();
+    expect(actions.length).toBe(2);
+    expect(actions).toContain(action1);
+    expect(actions).toContain(action2);
+  });
+
+  it("returns post-run-action plugins in registration order", () => {
+    const action1 = { name: "action1" } as any;
+    const action2 = { name: "action2" } as any;
+    const action3 = { name: "action3" } as any;
+
+    const registry = new PluginRegistry([
+      createMockPlugin("pra-1", ["post-run-action"], { postRunAction: action1 }),
+      createMockPlugin("pra-2", ["post-run-action"], { postRunAction: action2 }),
+      createMockPlugin("pra-3", ["post-run-action"], { postRunAction: action3 }),
+    ]);
+
+    const actions = registry.getPostRunActions();
+    expect(actions.length).toBe(3);
+    expect(actions[0]).toBe(action1);
+    expect(actions[1]).toBe(action2);
+    expect(actions[2]).toBe(action3);
+  });
+
+  it("filters out plugins where extensions.postRunAction is undefined", () => {
+    const action1 = { name: "action1" } as any;
+
+    const registry = new PluginRegistry([
+      createMockPlugin("pra-1", ["post-run-action"], { postRunAction: action1 }),
+      createMockPlugin("pra-2", ["post-run-action"], {}),
+    ]);
+
+    const actions = registry.getPostRunActions();
+    expect(actions.length).toBe(1);
+    expect(actions[0]).toBe(action1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PluginRegistry.teardownAll
 // ─────────────────────────────────────────────────────────────────────────────
 

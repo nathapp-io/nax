@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-03-25T03-15-27-421Z",
+    "feature": "plugin-001",
+    "startedAt": "2026-03-25T03:15:27.421Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 9893
+  },
+  "progress": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 6.271987500000001,
+    "limit": 8
+  },
+  "current": null,
+  "iterations": 4,
+  "updatedAt": "2026-03-25T04:12:06.761Z",
+  "durationMs": 3399340
+}

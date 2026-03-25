@@ -1,0 +1,212 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "IPostRunAction interface defined in src/plugins/extensions.ts with name, description, shouldRun(context), and execute(context) methods",
+    "refined": "IPostRunAction interface defined in src/plugins/extensions.ts with name, description, shouldRun(context), and execute(context) methods",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "PostRunContext interface defined with all required fields: runId, feature, workdir, prdPath, branch, totalDurationMs, totalCost, storySummary, stories, version, pluginConfig, logger",
+    "refined": "PostRunContext interface defined with all required fields: runId, feature, workdir, prdPath, branch, totalDurationMs, totalCost, storySummary, stories, version, pluginConfig, logger",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "PostRunActionResult interface defined with success, message, url?, skipped?, reason? fields",
+    "refined": "PostRunActionResult interface defined with success, message, url?, skipped?, reason? fields",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "'post-run-action' added to PluginType union in src/plugins/types.ts",
+    "refined": "'post-run-action' added to PluginType union in src/plugins/types.ts",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "postRunAction?: IPostRunAction added to PluginExtensions interface",
+    "refined": "postRunAction?: IPostRunAction added to PluginExtensions interface",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "All three new types exported from src/plugins/types.ts (re-exported from extensions.ts)",
+    "refined": "All three new types exported from src/plugins/types.ts (re-exported from extensions.ts)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "All three new types exported from src/plugins/index.ts barrel",
+    "refined": "All three new types exported from src/plugins/index.ts barrel",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "TypeScript strict mode compiles with no errors (bun run typecheck passes)",
+    "refined": "TypeScript strict mode compiles with no errors (bun run typecheck passes)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "getPostRunActions() method added to PluginRegistry, returning IPostRunAction[] from plugins that provide 'post-run-action'",
+    "refined": "getPostRunActions() method added to PluginRegistry, returning IPostRunAction[] from plugins that provide 'post-run-action'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "getPostRunActions() returns empty array when no post-run-action plugins registered",
+    "refined": "getPostRunActions() returns empty array when no post-run-action plugins registered",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "getPostRunActions() returns multiple actions in registration order",
+    "refined": "getPostRunActions() returns multiple actions in registration order",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "getPostRunActions() filters out plugins where extensions.postRunAction is undefined",
+    "refined": "getPostRunActions() filters out plugins where extensions.postRunAction is undefined",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "'post-run-action' added to VALID_PLUGIN_TYPES const in validator.ts",
+    "refined": "'post-run-action' added to VALID_PLUGIN_TYPES const in validator.ts",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "validateExtension() switch handles 'post-run-action' case calling validatePostRunAction()",
+    "refined": "validateExtension() switch handles 'post-run-action' case calling validatePostRunAction()",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-15",
+    "original": "validatePostRunAction() rejects if postRunAction missing name (string), shouldRun (function), or execute (function)",
+    "refined": "validatePostRunAction() rejects if postRunAction missing name (string), shouldRun (function), or execute (function)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-16",
+    "original": "validatePlugin() returns null for a plugin declaring provides: ['post-run-action'] with missing execute",
+    "refined": "validatePlugin() returns null for a plugin declaring provides: ['post-run-action'] with missing execute",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-17",
+    "original": "Tests in test/unit/plugins/registry.test.ts cover getPostRunActions() happy path and empty array case",
+    "refined": "Tests in test/unit/plugins/registry.test.ts cover getPostRunActions() happy path and empty array case",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-18",
+    "original": "bun run typecheck and bun run lint pass",
+    "refined": "bun run typecheck and bun run lint pass",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-19",
+    "original": "RunCleanupOptions extended with feature: string, prdPath: string, branch: string, version: string fields",
+    "refined": "RunCleanupOptions extended with feature: string, prdPath: string, branch: string, version: string fields",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-20",
+    "original": "buildPostRunContext() constructs PostRunContext from RunCleanupOptions + prd counts",
+    "refined": "buildPostRunContext() constructs PostRunContext from RunCleanupOptions + prd counts",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-21",
+    "original": "Post-run actions execute sequentially after reporters.onRunEnd() and before teardownAll()",
+    "refined": "Post-run actions execute sequentially after reporters.onRunEnd() and before teardownAll()",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-22",
+    "original": "shouldRun() called before execute(); if false, debug log emitted and execute() skipped",
+    "refined": "shouldRun() called before execute(); if false, debug log emitted and execute() skipped",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-23",
+    "original": "Successful execute() with url logs at info level: '[post-run] {name}: {message}' with url",
+    "refined": "Successful execute() with url logs at info level: '[post-run] {name}: {message}' with url",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-24",
+    "original": "Skipped result logs at info level: '[post-run] {name}: skipped — {reason}'",
+    "refined": "Skipped result logs at info level: '[post-run] {name}: skipped — {reason}'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-25",
+    "original": "Failed result (success=false) logs at warn level: '[post-run] {name}: failed — {message}'",
+    "refined": "Failed result (success=false) logs at warn level: '[post-run] {name}: failed — {message}'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-26",
+    "original": "Error thrown in shouldRun() or execute() is caught, logs warn, and does NOT block run completion",
+    "refined": "Error thrown in shouldRun() or execute() is caught, logs warn, and does NOT block run completion",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Multiple post-run actions run in registration order",
+    "refined": "Multiple post-run actions run in registration order",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-28",
+    "original": "runner.ts finally block passes feature, prdPath, branch, version to cleanupRun()",
+    "refined": "runner.ts finally block passes feature, prdPath, branch, version to cleanupRun()",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-29",
+    "original": "runner-completion.ts does not call post-run actions (they are cleanupRun responsibility)",
+    "refined": "runner-completion.ts does not call post-run actions (they are cleanupRun responsibility)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-30",
+    "original": "bun run typecheck and bun run lint pass",
+    "refined": "bun run typecheck and bun run lint pass",
+    "testable": true,
+    "storyId": "US-001"
+  }
+]
