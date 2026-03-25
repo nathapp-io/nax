@@ -161,7 +161,7 @@ Rules:
       const existing = await Bun.file(targetPath).text();
       const recovered = extractTestCode(existing);
       if (recovered) {
-        logger.info("acceptance", "Recovered acceptance test written to disk by ACP adapter", { targetPath });
+        logger.info("acceptance", "Acceptance test written directly by agent — using existing file", { targetPath });
         testCode = recovered;
       }
     } catch {
