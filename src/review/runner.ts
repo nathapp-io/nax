@@ -9,7 +9,18 @@ import type { ExecutionConfig, QualityConfig } from "../config/schema";
 import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty } from "../utils/git";
+import { runSemanticReview as _runSemanticReviewImpl } from "./semantic";
 import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
+
+/**
+ * Injectable dependency for the semantic review call — allows tests to
+ * intercept runSemanticReview() without mock.module() (BUG-035 pattern).
+ *
+ * @internal
+ */
+export const _reviewSemanticDeps = {
+  runSemanticReview: _runSemanticReviewImpl,
+};
 
 /**
  * Injectable dependencies for runner internals — allows tests to intercept
