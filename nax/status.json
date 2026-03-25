@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-03-25T03-15-27-421Z",
+    "feature": "plugin-001",
+    "startedAt": "2026-03-25T03:15:27.421Z",
+    "status": "running",
+    "dryRun": false,
+    "pid": 9893
+  },
+  "progress": {
+    "total": 3,
+    "passed": 0,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 3
+  },
+  "cost": {
+    "spent": 0,
+    "limit": 8
+  },
+  "current": {
+    "storyId": "US-001",
+    "title": "IPostRunAction types + PluginType registration",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 1,
+  "updatedAt": "2026-03-25T03:21:37.533Z",
+  "durationMs": 370112,
+  "lastHeartbeat": "2026-03-25T03:21:37.533Z"
+}

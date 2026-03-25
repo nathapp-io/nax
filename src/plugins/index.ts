@@ -18,6 +18,9 @@ export type {
   RunStartEvent,
   StoryCompleteEvent,
   RunEndEvent,
+  IPostRunAction,
+  PostRunContext,
+  PostRunActionResult,
 } from "./types";
 
 // Re-export optimizer types from optimizer module (via types.ts)

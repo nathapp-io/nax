@@ -8,14 +8,24 @@
 import type { AgentAdapter } from "../agents/types";
 import type { IPromptOptimizer } from "../optimizer/types";
 import type { RoutingStrategy } from "../routing/router";
-import type { IContextProvider, IReporter, IReviewPlugin } from "./extensions";
+import type {
+  IContextProvider,
+  IPostRunAction,
+  IReporter,
+  IReviewPlugin,
+  PostRunActionResult,
+  PostRunContext,
+} from "./extensions";
 
 // Re-export extension types
 export type {
   ContextProviderResult,
   IContextProvider,
+  IPostRunAction,
   IReporter,
   IReviewPlugin,
+  PostRunActionResult,
+  PostRunContext,
   ReviewCheckResult,
   ReviewFinding,
   RunEndEvent,
@@ -26,7 +36,14 @@ export type {
 /**
  * Extension point types that plugins can provide.
  */
-export type PluginType = "optimizer" | "router" | "agent" | "reviewer" | "context-provider" | "reporter";
+export type PluginType =
+  | "optimizer"
+  | "router"
+  | "agent"
+  | "reviewer"
+  | "context-provider"
+  | "reporter"
+  | "post-run-action";
 
 /**
  * A nax plugin module.
@@ -113,6 +130,9 @@ export interface PluginExtensions {
 
   /** Custom reporter (receives run events for dashboards, CI, etc.) */
   reporter?: IReporter;
+
+  /** Custom post-run action (executes after run completes) */
+  postRunAction?: IPostRunAction;
 }
 
 // ============================================================================
