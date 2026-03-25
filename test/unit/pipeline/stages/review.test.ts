@@ -1,5 +1,6 @@
 /**
  * Unit tests for security-review trigger wiring in review stage (TC-003)
+ * and semantic findings wiring into ctx.reviewFindings (US-003)
  *
  * Covers:
  * - Plugin reviewer failure with no trigger → always fail
@@ -15,6 +16,7 @@ import type { InteractionPlugin, InteractionResponse } from "../../../../src/int
 import { _reviewDeps, reviewStage } from "../../../../src/pipeline/stages/review";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
+import type { ReviewFinding } from "../../../../src/plugins/extensions";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -263,6 +265,228 @@ describe("reviewStage — security-review trigger via _reviewDeps", () => {
     expect(result.action).toBe("continue");
     // security-review trigger should NOT fire for built-in check failures
     expect(_reviewDeps.checkSecurityReview).not.toHaveBeenCalled();
+    reviewOrchestrator.review = original;
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Semantic findings wired into ctx.reviewFindings (US-003)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("reviewStage — semantic findings wired into ctx.reviewFindings (US-003)", () => {
+  // AC-1: ctx.reviewFindings is populated when semantic check fails with findings
+
+  test("populates ctx.reviewFindings when semantic check returns success=false with findings", async () => {
+    const semanticFindings: ReviewFinding[] = [
+      {
+        ruleId: "semantic",
+        severity: "error",
+        file: "src/review/runner.ts",
+        line: 42,
+        message: "Missing wiring",
+        source: "semantic-review",
+      },
+    ];
+
+    const reviewResult = {
+      success: false,
+      pluginFailed: false,
+      failureReason: "semantic failed",
+      builtIn: {
+        success: false,
+        totalDurationMs: 0,
+        checks: [
+          {
+            check: "semantic",
+            success: false,
+            command: "",
+            exitCode: 1,
+            output: "Semantic review failed",
+            durationMs: 100,
+            findings: semanticFindings,
+          },
+        ],
+      },
+    };
+
+    const { reviewOrchestrator } = await import("../../../../src/review/orchestrator");
+    const original = reviewOrchestrator.review;
+    reviewOrchestrator.review = mock(async () => reviewResult) as typeof reviewOrchestrator.review;
+
+    const ctx = makeCtx({});
+    await reviewStage.execute(ctx);
+
+    expect(ctx.reviewFindings).toBeDefined();
+    expect(ctx.reviewFindings!.length).toBe(1);
+    reviewOrchestrator.review = original;
+  });
+
+  // AC-2: correct field mapping verified at stage level
+  test("ctx.reviewFindings contains findings with source='semantic-review' and ruleId='semantic'", async () => {
+    const semanticFindings: ReviewFinding[] = [
+      {
+        ruleId: "semantic",
+        severity: "error",
+        file: "src/foo.ts",
+        line: 10,
+        message: "Stub left in code",
+        source: "semantic-review",
+      },
+      {
+        ruleId: "semantic",
+        severity: "warning",
+        file: "src/bar.ts",
+        line: 25,
+        message: "TODO not addressed",
+        source: "semantic-review",
+      },
+    ];
+
+    const reviewResult = {
+      success: false,
+      pluginFailed: false,
+      failureReason: "semantic failed",
+      builtIn: {
+        success: false,
+        totalDurationMs: 0,
+        checks: [
+          { check: "semantic", success: false, command: "", exitCode: 1, output: "", durationMs: 50, findings: semanticFindings },
+        ],
+      },
+    };
+
+    const { reviewOrchestrator } = await import("../../../../src/review/orchestrator");
+    const original = reviewOrchestrator.review;
+    reviewOrchestrator.review = mock(async () => reviewResult) as typeof reviewOrchestrator.review;
+
+    const ctx = makeCtx({});
+    await reviewStage.execute(ctx);
+
+    expect(ctx.reviewFindings).toHaveLength(2);
+    for (const f of ctx.reviewFindings!) {
+      expect(f.source).toBe("semantic-review");
+      expect(f.ruleId).toBe("semantic");
+    }
+    expect(ctx.reviewFindings![0].file).toBe("src/foo.ts");
+    expect(ctx.reviewFindings![0].line).toBe(10);
+    expect(ctx.reviewFindings![0].message).toBe("Stub left in code");
+    reviewOrchestrator.review = original;
+  });
+
+  // AC-3: findings structured for priorFailures context (source/ruleId match context renderer expectations)
+  test("ctx.reviewFindings has source='semantic-review' so context renderer includes tool source in retry context", async () => {
+    const semanticFindings: ReviewFinding[] = [
+      { ruleId: "semantic", severity: "error", file: "src/a.ts", line: 1, message: "Critical issue", source: "semantic-review" },
+    ];
+
+    const reviewResult = {
+      success: false,
+      pluginFailed: false,
+      failureReason: "semantic failed",
+      builtIn: {
+        success: false,
+        totalDurationMs: 0,
+        checks: [
+          { check: "semantic", success: false, command: "", exitCode: 1, output: "", durationMs: 10, findings: semanticFindings },
+        ],
+      },
+    };
+
+    const { reviewOrchestrator } = await import("../../../../src/review/orchestrator");
+    const original = reviewOrchestrator.review;
+    reviewOrchestrator.review = mock(async () => reviewResult) as typeof reviewOrchestrator.review;
+
+    const ctx = makeCtx({});
+    await reviewStage.execute(ctx);
+
+    // Findings must be present and have the correct shape so that
+    // handleTierEscalation can attach them to priorFailures for retry context.
+    expect(ctx.reviewFindings).toBeDefined();
+    expect(ctx.reviewFindings![0].source).toBe("semantic-review");
+    expect(ctx.reviewFindings![0].ruleId).toBe("semantic");
+    expect(typeof ctx.reviewFindings![0].message).toBe("string");
+    expect(ctx.reviewFindings![0].message.length).toBeGreaterThan(0);
+    reviewOrchestrator.review = original;
+  });
+
+  // AC-4: ctx.reviewFindings NOT modified when semantic passes
+
+  test("does not modify ctx.reviewFindings when semantic check passes (success=true)", async () => {
+    const reviewResult = {
+      success: true,
+      pluginFailed: false,
+      builtIn: {
+        success: true,
+        totalDurationMs: 0,
+        checks: [
+          { check: "semantic", success: true, command: "", exitCode: 0, output: "Semantic review passed", durationMs: 50 },
+        ],
+      },
+    };
+
+    const { reviewOrchestrator } = await import("../../../../src/review/orchestrator");
+    const original = reviewOrchestrator.review;
+    reviewOrchestrator.review = mock(async () => reviewResult) as typeof reviewOrchestrator.review;
+
+    const ctx = makeCtx({});
+    await reviewStage.execute(ctx);
+
+    expect(ctx.reviewFindings).toBeUndefined();
+    reviewOrchestrator.review = original;
+  });
+
+  test("does not modify ctx.reviewFindings when semantic check fails but has no findings", async () => {
+    const reviewResult = {
+      success: false,
+      pluginFailed: false,
+      failureReason: "semantic failed",
+      builtIn: {
+        success: false,
+        totalDurationMs: 0,
+        checks: [
+          { check: "semantic", success: false, command: "", exitCode: 1, output: "failed (no findings)", durationMs: 10 },
+        ],
+      },
+    };
+
+    const { reviewOrchestrator } = await import("../../../../src/review/orchestrator");
+    const original = reviewOrchestrator.review;
+    reviewOrchestrator.review = mock(async () => reviewResult) as typeof reviewOrchestrator.review;
+
+    const ctx = makeCtx({});
+    await reviewStage.execute(ctx);
+
+    // No findings → reviewFindings stays undefined (not empty array)
+    expect(!ctx.reviewFindings || ctx.reviewFindings.length === 0).toBe(true);
+    reviewOrchestrator.review = original;
+  });
+
+  test("returns continue when semantic check fails with findings (autofix handles it)", async () => {
+    const semanticFindings: ReviewFinding[] = [
+      { ruleId: "semantic", severity: "error", file: "src/a.ts", line: 1, message: "Issue", source: "semantic-review" },
+    ];
+
+    const reviewResult = {
+      success: false,
+      pluginFailed: false,
+      failureReason: "semantic failed",
+      builtIn: {
+        success: false,
+        totalDurationMs: 0,
+        checks: [
+          { check: "semantic", success: false, command: "", exitCode: 1, output: "", durationMs: 10, findings: semanticFindings },
+        ],
+      },
+    };
+
+    const { reviewOrchestrator } = await import("../../../../src/review/orchestrator");
+    const original = reviewOrchestrator.review;
+    reviewOrchestrator.review = mock(async () => reviewResult) as typeof reviewOrchestrator.review;
+
+    const ctx = makeCtx({});
+    const result = await reviewStage.execute(ctx);
+
+    expect(result.action).toBe("continue");
     reviewOrchestrator.review = original;
   });
 });

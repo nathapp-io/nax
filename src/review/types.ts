@@ -29,6 +29,8 @@ export interface ReviewCheckResult {
   output: string;
   /** Duration in milliseconds */
   durationMs: number;
+  /** Structured findings (populated by semantic review when LLM returns findings) */
+  findings?: import("../plugins/types").ReviewFinding[];
 }
 
 /** Plugin reviewer result */
