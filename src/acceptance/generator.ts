@@ -109,10 +109,10 @@ export async function generateFromPRD(
 
 ## Step 1: Understand and Classify the Acceptance Criteria
 
-Read each AC below and classify its verification type:
-- **file-check**: Verify by reading source files (e.g. "no @nestjs/jwt imports", "file exists", "module registered", "uses registerAs pattern")
-- **runtime-check**: Load and invoke code directly, assert on return values or behavior
-- **integration-check**: Requires a running service (e.g. HTTP endpoint returns 200, 11th request returns 429, database query succeeds)
+Read each AC below and classify its verification type (prefer runtime-check):
+- **runtime-check** (PREFERRED): Import the module, call the function, assert on return values, thrown errors, or observable side effects. This is the strongest verification — use it whenever possible.
+- **integration-check**: Requires a running service (e.g. HTTP endpoint returns 200, database query succeeds). Use setup blocks.
+- **file-check** (LAST RESORT): Only for ACs that genuinely cannot be verified at runtime (e.g. "no banned imports in file X", "config file exists"). Never use file-check when a runtime import + assertion would work.
 
 ACCEPTANCE CRITERIA:
 ${criteriaList}
@@ -132,11 +132,12 @@ Write the complete acceptance test file using the framework identified in Step 2
 
 Rules:
 - **One test per AC**, named exactly "AC-N: <description>"
-- **file-check ACs** → read source files using the language's standard file I/O, assert with string or regex checks. Do not start the application.
-- **runtime-check ACs** → load or import the module directly and invoke it, assert on the return value or observable side effects
+- **runtime-check ACs** (default) → import the module directly, call functions with test inputs, assert on return values or observable side effects (log calls, thrown errors, state changes)
 - **integration-check ACs** → use the language's HTTP client or existing test helpers; add a clear setup block (beforeAll/setup/TestMain/etc.) explaining what must be running
+- **file-check ACs** (last resort only) → read source files using the language's standard file I/O, assert with string or regex checks. Only use when the AC explicitly asks about file contents or imports — never use file-check to verify behavior that can be tested by calling the function
 - **NEVER use placeholder assertions** — no always-passing or always-failing stubs, no TODO comments as the only content, no empty test bodies
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
+- **Prefer behavioral tests** — import functions and call them rather than reading source files. For example, to verify "getPostRunActions() returns empty array", import PluginRegistry and call getPostRunActions(), don't grep the source file for the method name.
 - Output raw code only — no markdown fences, start directly with the language's import or package declaration
 - **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/.nax/features/${options.featureName}/acceptance.test.ts\` and will ALWAYS run from the repo root. The repo root is exactly 4 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..', '..')\`. For monorepo projects, navigate into packages from root (e.g. \`join(root, 'apps/api/src')\`).`;
 
@@ -260,10 +261,10 @@ export function buildAcceptanceTestPrompt(
 
 ## Step 1: Understand and Classify the Acceptance Criteria
 
-Read each AC below and classify its verification type:
-- **file-check**: Verify by reading source files (e.g. "no @nestjs/jwt imports", "file exists", "module registered", "uses registerAs pattern")
-- **runtime-check**: Load and invoke code directly, assert on return values or behavior
-- **integration-check**: Requires a running service (e.g. HTTP endpoint returns 200, 11th request returns 429, database query succeeds)
+Read each AC below and classify its verification type (prefer runtime-check):
+- **runtime-check** (PREFERRED): Import the module, call the function, assert on return values, thrown errors, or observable side effects. This is the strongest verification — use it whenever possible.
+- **integration-check**: Requires a running service (e.g. HTTP endpoint returns 200, database query succeeds). Use setup blocks.
+- **file-check** (LAST RESORT): Only for ACs that genuinely cannot be verified at runtime (e.g. "no banned imports in file X", "config file exists"). Never use file-check when a runtime import + assertion would work.
 
 ACCEPTANCE CRITERIA:
 ${criteriaList}
@@ -282,11 +283,12 @@ Write the complete acceptance test file using the framework identified in Step 2
 
 Rules:
 - **One test per AC**, named exactly "AC-N: <description>"
-- **file-check ACs** → read source files using the language's standard file I/O, assert with string or regex checks. Do not start the application.
-- **runtime-check ACs** → load or import the module directly and invoke it, assert on the return value or observable side effects
+- **runtime-check ACs** (default) → import the module directly, call functions with test inputs, assert on return values or observable side effects (log calls, thrown errors, state changes)
 - **integration-check ACs** → use the language's HTTP client or existing test helpers; add a clear setup block (beforeAll/setup/TestMain/etc.) explaining what must be running
+- **file-check ACs** (last resort only) → read source files using the language's standard file I/O, assert with string or regex checks. Only use when the AC explicitly asks about file contents or imports — never use file-check to verify behavior that can be tested by calling the function
 - **NEVER use placeholder assertions** — no always-passing or always-failing stubs, no TODO comments as the only content, no empty test bodies
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
+- **Prefer behavioral tests** — import functions and call them rather than reading source files. For example, to verify "getPostRunActions() returns empty array", import PluginRegistry and call getPostRunActions(), don't grep the source file for the method name.
 - Output raw code only — no markdown fences, start directly with the language's import or package declaration
 - **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/.nax/features/${featureName}/acceptance.test.ts\` and will ALWAYS run from the repo root. The repo root is exactly 4 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..', '..')\`. For monorepo projects, navigate into packages from root (e.g. \`join(root, 'apps/api/src')\`).`;
 }
