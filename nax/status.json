@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 3,
-    "passed": 1,
+    "passed": 2,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 0.6914062499999999,
+    "spent": 2.3915897999999998,
     "limit": 8
   },
   "current": {
-    "storyId": "US-002",
-    "title": "Implement semantic review runner",
+    "storyId": "US-003",
+    "title": "Wire semantic findings into autofix context",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-03-25T09:44:36.815Z",
-  "durationMs": 1874816,
-  "lastHeartbeat": "2026-03-25T09:44:36.815Z"
+  "iterations": 3,
+  "updatedAt": "2026-03-25T09:55:36.820Z",
+  "durationMs": 2534821,
+  "lastHeartbeat": "2026-03-25T09:55:36.820Z"
 }
