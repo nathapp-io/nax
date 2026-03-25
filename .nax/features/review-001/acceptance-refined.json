@@ -1,0 +1,142 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "ReviewCheckName type in src/review/types.ts accepts 'semantic' as a valid value alongside 'typecheck', 'lint', 'test', 'build'",
+    "refined": "ReviewCheckName type in src/review/types.ts accepts 'semantic' as a valid value alongside 'typecheck', 'lint', 'test', 'build'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "SemanticReviewConfig interface in src/config/runtime-types.ts has modelTier field typed as ModelTier and rules field typed as string[]",
+    "refined": "SemanticReviewConfig interface in src/config/runtime-types.ts has modelTier field typed as ModelTier and rules field typed as string[]",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "ReviewConfig in src/config/runtime-types.ts has optional semantic field typed as SemanticReviewConfig",
+    "refined": "ReviewConfig in src/config/runtime-types.ts has optional semantic field typed as SemanticReviewConfig",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "ReviewConfigSchema in src/config/schemas.ts validates semantic as optional object with modelTier defaulting to 'balanced' and rules defaulting to empty array",
+    "refined": "ReviewConfigSchema in src/config/schemas.ts validates semantic as optional object with modelTier defaulting to 'balanced' and rules defaulting to empty array",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When review.checks includes 'semantic' and review.semantic is omitted from user config, parsed config has semantic.modelTier === 'balanced' and semantic.rules === []",
+    "refined": "When review.checks includes 'semantic' and review.semantic is omitted from user config, parsed config has semantic.modelTier === 'balanced' and semantic.rules === []",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "config-descriptions.ts has entries for review.semantic.modelTier and review.semantic.rules with descriptive text",
+    "refined": "config-descriptions.ts has entries for review.semantic.modelTier and review.semantic.rules with descriptive text",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "DEFAULT_CONFIG.review.semantic equals { modelTier: 'balanced', rules: [] }",
+    "refined": "DEFAULT_CONFIG.review.semantic equals { modelTier: 'balanced', rules: [] }",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "runSemanticReview() in src/review/semantic.ts accepts workdir, storyGitRef, story (with id/title/description/acceptanceCriteria), semanticConfig, and a model resolver function as parameters",
+    "refined": "runSemanticReview() in src/review/semantic.ts accepts workdir, storyGitRef, story (with id/title/description/acceptanceCriteria), semanticConfig, and a model resolver function as parameters",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "runSemanticReview() calls git diff --unified=3 <storyGitRef>..HEAD to collect the diff content",
+    "refined": "runSemanticReview() calls git diff --unified=3 <storyGitRef>..HEAD to collect the diff content",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When the diff output exceeds 12288 bytes, runSemanticReview() truncates it and appends '... (truncated, showing first N files)' marker",
+    "refined": "When the diff output exceeds 12288 bytes, runSemanticReview() truncates it and appends '... (truncated, showing first N files)' marker",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When storyGitRef is undefined or empty string, runSemanticReview() returns ReviewCheckResult with success=true and output containing 'skipped: no git ref'",
+    "refined": "When storyGitRef is undefined or empty string, runSemanticReview() returns ReviewCheckResult with success=true and output containing 'skipped: no git ref'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "The LLM prompt built by runSemanticReview() includes the story title, description, all acceptance criteria as a numbered list, 5 default rules, any custom rules from semanticConfig.rules, and the diff in a code block",
+    "refined": "The LLM prompt built by runSemanticReview() includes the story title, description, all acceptance criteria as a numbered list, 5 default rules, any custom rules from semanticConfig.rules, and the diff in a code block",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "runSemanticReview() parses the LLM JSON response expecting { passed: boolean, findings: [{ severity, file, line, issue, suggestion }] }",
+    "refined": "runSemanticReview() parses the LLM JSON response expecting { passed: boolean, findings: [{ severity, file, line, issue, suggestion }] }",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When the LLM returns passed=false with findings, ReviewCheckResult.success is false and output contains each finding's file, line, severity, issue, and suggestion formatted as readable text",
+    "refined": "When the LLM returns passed=false with findings, ReviewCheckResult.success is false and output contains each finding's file, line, severity, issue, and suggestion formatted as readable text",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When the LLM response is not valid JSON, runSemanticReview() logs a warning and returns ReviewCheckResult with success=true (fail-open behavior)",
+    "refined": "When the LLM response is not valid JSON, runSemanticReview() logs a warning and returns ReviewCheckResult with success=true (fail-open behavior)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-16",
+    "original": "runReview() in src/review/runner.ts calls runSemanticReview() when the check name is 'semantic' instead of running a shell command via runCheck()",
+    "refined": "runReview() in src/review/runner.ts calls runSemanticReview() when the check name is 'semantic' instead of running a shell command via runCheck()",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-17",
+    "original": "When runSemanticReview() returns success=false, the review stage in src/pipeline/stages/review.ts populates ctx.reviewFindings with findings converted to ReviewFinding[] format",
+    "refined": "When runSemanticReview() returns success=false, the review stage in src/pipeline/stages/review.ts populates ctx.reviewFindings with findings converted to ReviewFinding[] format",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Each semantic finding maps to ReviewFinding with source set to 'semantic-review', severity from the finding, file from the finding, line from the finding, message from the finding's issue field, and ruleId set to 'semantic'",
+    "refined": "Each semantic finding maps to ReviewFinding with source set to 'semantic-review', severity from the finding, file from the finding, line from the finding, message from the finding's issue field, and ruleId set to 'semantic'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When the agent retries after semantic review failure, the priorFailures context includes entries with stage='review' containing the semantic finding details",
+    "refined": "When the agent retries after semantic review failure, the priorFailures context includes entries with stage='review' containing the semantic finding details",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When semantic review passes (success=true), ctx.reviewFindings is not modified by the review stage",
+    "refined": "When semantic review passes (success=true), ctx.reviewFindings is not modified by the review stage",
+    "testable": true,
+    "storyId": "US-001"
+  }
+]

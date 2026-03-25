@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-25T03-15-27-421Z",
-    "feature": "plugin-001",
-    "startedAt": "2026-03-25T03:15:27.421Z",
-    "status": "completed",
+    "id": "run-2026-03-25T09-13-21-999Z",
+    "feature": "review-001",
+    "startedAt": "2026-03-25T09:13:21.999Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 9893
+    "pid": 57611
   },
   "progress": {
     "total": 3,
-    "passed": 3,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 3
   },
   "cost": {
-    "spent": 6.271987500000001,
+    "spent": 0,
     "limit": 8
   },
-  "current": null,
-  "iterations": 4,
-  "updatedAt": "2026-03-25T04:12:06.761Z",
-  "durationMs": 3399340
+  "current": {
+    "storyId": "US-001",
+    "title": "Add semantic to review check types and config",
+    "complexity": "medium",
+    "tddStrategy": "test-after",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 1,
+  "updatedAt": "2026-03-25T09:20:36.770Z",
+  "durationMs": 434771,
+  "lastHeartbeat": "2026-03-25T09:20:36.770Z"
 }

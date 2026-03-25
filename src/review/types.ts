@@ -5,7 +5,15 @@
  */
 
 /** Review check name */
-export type ReviewCheckName = "typecheck" | "lint" | "test" | "build";
+export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semantic";
+
+/** Semantic review configuration */
+export interface SemanticReviewConfig {
+  /** Model tier for semantic review (default: 'balanced') */
+  modelTier: import("../config/schema-types").ModelTier;
+  /** Custom semantic review rules */
+  rules: string[];
+}
 
 /** Review check result */
 export interface ReviewCheckResult {

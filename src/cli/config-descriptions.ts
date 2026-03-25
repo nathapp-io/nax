@@ -124,12 +124,15 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   // Review
   review: "Review phase configuration",
   "review.enabled": "Enable review phase",
-  "review.checks": "List of checks to run (typecheck, lint, test, build)",
+  "review.checks": "List of checks to run (typecheck, lint, test, build, semantic)",
   "review.commands": "Custom commands per check",
   "review.commands.typecheck": "Custom typecheck command for review",
   "review.commands.lint": "Custom lint command for review",
   "review.commands.test": "Custom test command for review",
   "review.commands.build": "Custom build command for review",
+  "review.semantic": "Semantic review configuration (code quality analysis)",
+  "review.semantic.modelTier": "Model tier for semantic review (default: balanced)",
+  "review.semantic.rules": "Custom semantic review rules to enforce",
 
   // Plan
   plan: "Planning phase configuration",

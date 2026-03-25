@@ -16,7 +16,10 @@
         "config-descriptions.ts has entries for review.semantic.modelTier and review.semantic.rules with descriptive text",
         "DEFAULT_CONFIG.review.semantic equals { modelTier: 'balanced', rules: [] }"
       ],
-      "tags": ["config", "types"],
+      "tags": [
+        "config",
+        "types"
+      ],
       "dependencies": [],
       "status": "pending",
       "passes": false,
@@ -30,7 +33,17 @@
         "src/config/merge.ts",
         "src/cli/config-descriptions.ts"
       ],
-      "expectedFiles": []
+      "expectedFiles": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure type/interface/schema extension following established patterns with no new logic or behavior.",
+        "modelTier": "fast"
+      }
     },
     {
       "id": "US-002",
@@ -47,8 +60,13 @@
         "When the LLM response is not valid JSON, runSemanticReview() logs a warning and returns ReviewCheckResult with success=true (fail-open behavior)",
         "runReview() in src/review/runner.ts calls runSemanticReview() when the check name is 'semantic' instead of running a shell command via runCheck()"
       ],
-      "tags": ["review", "llm"],
-      "dependencies": ["US-001"],
+      "tags": [
+        "review",
+        "llm"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
       "status": "pending",
       "passes": false,
       "escalations": [],
@@ -62,7 +80,10 @@
       ],
       "expectedFiles": [
         "src/review/semantic.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -74,8 +95,13 @@
         "When the agent retries after semantic review failure, the priorFailures context includes entries with stage='review' containing the semantic finding details",
         "When semantic review passes (success=true), ctx.reviewFindings is not modified by the review stage"
       ],
-      "tags": ["pipeline", "context"],
-      "dependencies": ["US-002"],
+      "tags": [
+        "pipeline",
+        "context"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
       "status": "pending",
       "passes": false,
       "escalations": [],
@@ -86,7 +112,11 @@
         "src/plugins/types.ts",
         "src/context/elements.ts"
       ],
-      "expectedFiles": []
+      "expectedFiles": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
-  ]
+  ],
+  "updatedAt": "2026-03-25T09:18:16.894Z"
 }

@@ -244,6 +244,48 @@ describe("mergePackageConfig", () => {
       expect(result.review.pluginMode).toBe("deferred");
     });
 
+    test("deep merges review.semantic per package", () => {
+      const root: NaxConfig = {
+        ...makeRoot(),
+        review: {
+          enabled: true,
+          checks: ["typecheck", "semantic"],
+          commands: {},
+          pluginMode: "per-story",
+          semantic: { modelTier: "balanced", rules: ["rule1"] },
+        },
+      };
+      const result = mergePackageConfig(root, {
+        review: { semantic: { rules: ["rule1", "rule2"] } } as Partial<
+          NaxConfig["review"]
+        >,
+      } as Partial<NaxConfig>);
+
+      expect(result.review.semantic?.modelTier).toBe("balanced");
+      expect(result.review.semantic?.rules).toEqual(["rule1", "rule2"]);
+    });
+
+    test("overrides review.semantic.modelTier per package", () => {
+      const root: NaxConfig = {
+        ...makeRoot(),
+        review: {
+          enabled: true,
+          checks: ["semantic"],
+          commands: {},
+          pluginMode: "per-story",
+          semantic: { modelTier: "balanced", rules: [] },
+        },
+      };
+      const result = mergePackageConfig(root, {
+        review: { semantic: { modelTier: "powerful" } } as Partial<
+          NaxConfig["review"]
+        >,
+      } as Partial<NaxConfig>);
+
+      expect(result.review.semantic?.modelTier).toBe("powerful");
+      expect(result.review.semantic?.rules).toEqual([]);
+    });
+
     describe("PKG-006: quality.commands bridged to review.commands", () => {
       test("quality.commands.lint bridges to review.commands.lint when review.commands not set", () => {
         const root: NaxConfig = {

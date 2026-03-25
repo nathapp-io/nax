@@ -5,6 +5,7 @@
  * including execution limits, quality gates, and feature settings.
  */
 
+import type { SemanticReviewConfig } from "../review/types";
 import type { Complexity, LlmRoutingMode, ModelMap, ModelTier, RoutingStrategyName, TddStrategy } from "./schema-types";
 
 export interface EscalationEntry {
@@ -220,7 +221,7 @@ export interface ReviewConfig {
   /** Enable review phase */
   enabled: boolean;
   /** List of checks to run */
-  checks: Array<"typecheck" | "lint" | "test" | "build">;
+  checks: Array<"typecheck" | "lint" | "test" | "build" | "semantic">;
   /** Custom commands per check */
   commands: {
     typecheck?: string;
@@ -230,6 +231,8 @@ export interface ReviewConfig {
   };
   /** Plugin reviewer mode: "per-story" (run after each story) or "deferred" (run once at end of run, default: "per-story") */
   pluginMode?: "per-story" | "deferred";
+  /** Semantic review configuration (when 'semantic' is in checks) */
+  semantic?: SemanticReviewConfig;
 }
 
 /** Plan config */

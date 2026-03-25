@@ -58,6 +58,11 @@ async function resolveCommand(
   workdir: string,
   qualityCommands?: QualityConfig["commands"],
 ): Promise<string | null> {
+  // Semantic checks don't have CLI commands — they're handled separately by the review orchestrator
+  if (check === "semantic") {
+    return null;
+  }
+
   // 1. Check explicit config.execution commands (v0.13 story)
   if (executionConfig) {
     if (check === "lint" && executionConfig.lintCommand !== undefined) {
@@ -69,8 +74,9 @@ async function resolveCommand(
   }
 
   // 2. Check config.review.commands (explicit review config)
-  if (config.commands[check]) {
-    return config.commands[check] ?? null;
+  const cmd = config.commands[check as keyof typeof config.commands];
+  if (cmd) {
+    return cmd ?? null;
   }
 
   // 3. Fallback to quality.commands — lets package configs specify commands once

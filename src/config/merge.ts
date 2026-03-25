@@ -13,7 +13,7 @@ import type { NaxConfig } from "./schema";
  *
  * Mergeable sections:
  * - execution: smartTestRunner, regressionGate (deep), verificationTimeoutSeconds
- * - review: enabled, checks, commands (deep), pluginMode
+ * - review: enabled, checks, commands (deep), pluginMode, semantic (deep)
  * - acceptance: enabled, generateTests, testPath
  * - quality: requireTests, requireTypecheck, requireLint, commands (deep), testing (deep)
  * - context: testCoverage (deep)
@@ -78,6 +78,11 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         // Explicit review.commands override bridged quality values
         ...packageOverride.review?.commands,
       },
+      // Deep merge semantic config for per-package overrides
+      semantic:
+        packageOverride.review?.semantic !== undefined
+          ? { ...root.review.semantic, ...packageOverride.review.semantic }
+          : root.review.semantic,
     },
     acceptance: {
       ...root.acceptance,
