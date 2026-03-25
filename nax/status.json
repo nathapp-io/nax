@@ -4,33 +4,24 @@
     "id": "run-2026-03-25T09-13-21-999Z",
     "feature": "review-001",
     "startedAt": "2026-03-25T09:13:21.999Z",
-    "status": "running",
+    "status": "completed",
     "dryRun": false,
     "pid": 57611
   },
   "progress": {
     "total": 3,
-    "passed": 2,
+    "passed": 3,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 0
   },
   "cost": {
-    "spent": 2.3915897999999998,
+    "spent": 4.85195225,
     "limit": 8
   },
-  "current": {
-    "storyId": "US-003",
-    "title": "Wire semantic findings into autofix context",
-    "complexity": "medium",
-    "tddStrategy": "test-after",
-    "model": "balanced",
-    "attempt": 1,
-    "phase": "routing"
-  },
-  "iterations": 3,
-  "updatedAt": "2026-03-25T10:19:36.833Z",
-  "durationMs": 3974834,
-  "lastHeartbeat": "2026-03-25T10:19:36.833Z"
+  "current": null,
+  "iterations": 4,
+  "updatedAt": "2026-03-25T11:07:26.900Z",
+  "durationMs": 6844901
 }
