@@ -134,12 +134,18 @@ export const acceptanceStage: PipelineStage = {
     // Acceptance tests always run from repo root — covers both single repo and monorepo.
     // The test file uses __dirname-based paths to navigate into packages as needed.
 
-    // Run acceptance tests using the configured test command (respects Jest/Vitest/etc.)
-    // Fall back to `bun test` when no command is configured.
-    const configuredTestCmd = ctx.config.quality?.commands?.test;
-    const testCmdParts = configuredTestCmd
-      ? [...configuredTestCmd.trim().split(/\s+/), testPath]
-      : ["bun", "test", testPath];
+    // BUG-083: Run ONLY the acceptance test file, not the full project test suite.
+    // The full suite is covered by the regression gate; acceptance is a separate concern.
+    // Resolution order: acceptance.command override → default "bun test <file> --timeout=60000"
+    const acceptanceCmd = effectiveConfig.acceptance.command;
+    let testCmdParts: string[];
+    if (acceptanceCmd) {
+      // Support {{FILE}} placeholder or verbatim command
+      const resolved = acceptanceCmd.includes("{{FILE}}") ? acceptanceCmd.replace("{{FILE}}", testPath) : acceptanceCmd;
+      testCmdParts = resolved.trim().split(/\s+/);
+    } else {
+      testCmdParts = ["bun", "test", testPath, "--timeout=60000"];
+    }
     const proc = Bun.spawn(testCmdParts, {
       cwd: ctx.workdir,
       stdout: "pipe",
