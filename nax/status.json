@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 3,
-    "passed": 1,
+    "passed": 2,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 0.3331197,
+    "spent": 0.6137129000000001,
     "limit": 8
   },
   "current": {
-    "storyId": "US-002",
-    "title": "Registry getPostRunActions() + validator support for post-run-action",
-    "complexity": "simple",
-    "tddStrategy": "tdd-simple",
+    "storyId": "US-003",
+    "title": "Runner integration — buildPostRunContext() + action execution loop",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-03-25T03:24:37.572Z",
-  "durationMs": 550151,
-  "lastHeartbeat": "2026-03-25T03:24:37.572Z"
+  "iterations": 3,
+  "updatedAt": "2026-03-25T03:28:37.546Z",
+  "durationMs": 790125,
+  "lastHeartbeat": "2026-03-25T03:28:37.545Z"
 }
