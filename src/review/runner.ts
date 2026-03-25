@@ -5,11 +5,25 @@
  */
 
 import { spawn } from "bun";
+import type { AgentAdapter } from "../agents/types";
 import type { ExecutionConfig, QualityConfig } from "../config/schema";
+import type { ModelTier } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty } from "../utils/git";
+import { runSemanticReview as _runSemanticReviewImpl } from "./semantic";
+import type { SemanticStory } from "./semantic";
 import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
+
+/**
+ * Injectable dependency for the semantic review call — allows tests to
+ * intercept runSemanticReview() without mock.module() (BUG-035 pattern).
+ *
+ * @internal
+ */
+export const _reviewSemanticDeps = {
+  runSemanticReview: _runSemanticReviewImpl,
+};
 
 /**
  * Injectable dependencies for runner internals — allows tests to intercept
@@ -58,6 +72,11 @@ async function resolveCommand(
   workdir: string,
   qualityCommands?: QualityConfig["commands"],
 ): Promise<string | null> {
+  // Semantic checks don't have CLI commands — they're handled separately by the review orchestrator
+  if (check === "semantic") {
+    return null;
+  }
+
   // 1. Check explicit config.execution commands (v0.13 story)
   if (executionConfig) {
     if (check === "lint" && executionConfig.lintCommand !== undefined) {
@@ -69,8 +88,9 @@ async function resolveCommand(
   }
 
   // 2. Check config.review.commands (explicit review config)
-  if (config.commands[check]) {
-    return config.commands[check] ?? null;
+  const cmd = config.commands[check as keyof typeof config.commands];
+  if (cmd) {
+    return cmd ?? null;
   }
 
   // 3. Fallback to quality.commands — lets package configs specify commands once
@@ -238,6 +258,9 @@ export async function runReview(
   executionConfig?: ExecutionConfig,
   qualityCommands?: QualityConfig["commands"],
   storyId?: string,
+  storyGitRef?: string,
+  story?: SemanticStory,
+  modelResolver?: (tier: ModelTier) => AgentAdapter | null | undefined,
 ): Promise<ReviewResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -282,6 +305,32 @@ export async function runReview(
   }
 
   for (const checkName of config.checks) {
+    // Semantic check: delegate to LLM-based runner instead of shell command
+    if (checkName === "semantic") {
+      const semanticStory: SemanticStory = {
+        id: storyId ?? "",
+        title: story?.title ?? "",
+        description: story?.description ?? "",
+        acceptanceCriteria: story?.acceptanceCriteria ?? [],
+      };
+      const semanticCfg = config.semantic ?? { modelTier: "balanced" as const, rules: [] as string[] };
+      const result = await _reviewSemanticDeps.runSemanticReview(
+        workdir,
+        storyGitRef,
+        semanticStory,
+        semanticCfg,
+        modelResolver ?? (() => null),
+      );
+      checks.push(result);
+      if (!result.success && !firstFailure) {
+        firstFailure = `${checkName} failed`;
+      }
+      if (!result.success) {
+        break;
+      }
+      continue;
+    }
+
     // Resolve command using resolution strategy
     const command = await resolveCommand(checkName, config, executionConfig, workdir, qualityCommands);
 

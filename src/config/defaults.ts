@@ -149,6 +149,10 @@ export const DEFAULT_CONFIG: NaxConfig = {
     checks: ["typecheck", "lint"],
     commands: {},
     pluginMode: "per-story",
+    semantic: {
+      modelTier: "balanced",
+      rules: [],
+    },
   },
   plan: {
     model: "balanced",

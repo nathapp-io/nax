@@ -1,12 +1,12 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-25T03-15-27-421Z",
-    "feature": "plugin-001",
-    "startedAt": "2026-03-25T03:15:27.421Z",
+    "id": "run-2026-03-25T09-13-21-999Z",
+    "feature": "review-001",
+    "startedAt": "2026-03-25T09:13:21.999Z",
     "status": "completed",
     "dryRun": false,
-    "pid": 9893
+    "pid": 57611
   },
   "progress": {
     "total": 3,
@@ -17,11 +17,11 @@
     "pending": 0
   },
   "cost": {
-    "spent": 6.271987500000001,
+    "spent": 4.85195225,
     "limit": 8
   },
   "current": null,
   "iterations": 4,
-  "updatedAt": "2026-03-25T04:12:06.761Z",
-  "durationMs": 3399340
+  "updatedAt": "2026-03-25T11:07:26.900Z",
+  "durationMs": 6844901
 }

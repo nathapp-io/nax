@@ -232,9 +232,14 @@ const AnalyzeConfigSchema = z.object({
   maxCodebaseSummaryTokens: z.number().int().positive(),
 });
 
+const SemanticReviewConfigSchema = z.object({
+  modelTier: ModelTierSchema.default("balanced"),
+  rules: z.array(z.string()).default([]),
+});
+
 const ReviewConfigSchema = z.object({
   enabled: z.boolean(),
-  checks: z.array(z.enum(["typecheck", "lint", "test", "build"])),
+  checks: z.array(z.enum(["typecheck", "lint", "test", "build", "semantic"])),
   commands: z.object({
     typecheck: z.string().optional(),
     lint: z.string().optional(),
@@ -242,6 +247,7 @@ const ReviewConfigSchema = z.object({
     build: z.string().optional(),
   }),
   pluginMode: z.enum(["per-story", "deferred"]).default("per-story"),
+  semantic: SemanticReviewConfigSchema.optional(),
 });
 
 const PlanConfigSchema = z.object({

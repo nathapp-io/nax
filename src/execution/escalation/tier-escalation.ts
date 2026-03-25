@@ -27,10 +27,14 @@ function buildEscalationFailure(
   reviewFindings?: import("../../plugins/types").ReviewFinding[],
   cost?: number,
 ): StructuredFailure {
+  // AC-3: Use stage='review' when there are semantic review findings
+  const stage: import("../../prd/types").VerificationStage =
+    reviewFindings && reviewFindings.length > 0 ? "review" : "escalation";
+
   return {
     attempt: (story.attempts ?? 0) + 1,
     modelTier: currentTier,
-    stage: "escalation" as const,
+    stage,
     summary: `Failed with tier ${currentTier}, escalating to next tier`,
     reviewFindings: reviewFindings && reviewFindings.length > 0 ? reviewFindings : undefined,
     cost: cost ?? 0,

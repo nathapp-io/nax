@@ -5,7 +5,15 @@
  */
 
 /** Review check name */
-export type ReviewCheckName = "typecheck" | "lint" | "test" | "build";
+export type ReviewCheckName = "typecheck" | "lint" | "test" | "build" | "semantic";
+
+/** Semantic review configuration */
+export interface SemanticReviewConfig {
+  /** Model tier for semantic review (default: 'balanced') */
+  modelTier: import("../config/schema-types").ModelTier;
+  /** Custom semantic review rules */
+  rules: string[];
+}
 
 /** Review check result */
 export interface ReviewCheckResult {
@@ -21,6 +29,8 @@ export interface ReviewCheckResult {
   output: string;
   /** Duration in milliseconds */
   durationMs: number;
+  /** Structured findings (populated by semantic review when LLM returns findings) */
+  findings?: import("../plugins/types").ReviewFinding[];
 }
 
 /** Plugin reviewer result */
@@ -68,4 +78,6 @@ export interface ReviewConfig {
   };
   /** When to run plugin reviewers: per-story (default) or deferred (skip per-story, run once at end) */
   pluginMode?: "per-story" | "deferred";
+  /** Semantic review configuration (when 'semantic' is in checks) */
+  semantic?: SemanticReviewConfig;
 }
