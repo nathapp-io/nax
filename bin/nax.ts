@@ -503,8 +503,8 @@ program
       console.log(chalk.dim("   [Headless mode — pipe output]"));
     }
 
-    // Compute status file path: <workdir>/nax/status.json
-    const statusFilePath = join(workdir, "nax", "status.json");
+    // Compute status file path: <workdir>/.nax/status.json
+    const statusFilePath = join(workdir, ".nax", "status.json");
 
     // Parse --parallel option
     let parallel: number | undefined;
