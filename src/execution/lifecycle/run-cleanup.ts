@@ -96,13 +96,13 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
 
   // Execute post-run actions sequentially after reporters.onRunEnd()
   const actions = pluginRegistry.getPostRunActions();
-  const noopLogger: PluginLogger = {
-    debug: () => {},
-    info: () => {},
-    warn: () => {},
-    error: () => {},
+  const pluginLogger: PluginLogger = {
+    debug: (msg: string) => logger?.debug("post-run", msg),
+    info: (msg: string) => logger?.info("post-run", msg),
+    warn: (msg: string) => logger?.warn("post-run", msg),
+    error: (msg: string) => logger?.error("post-run", msg),
   };
-  const ctx = buildPostRunContext(options, durationMs, noopLogger);
+  const ctx = buildPostRunContext(options, durationMs, pluginLogger);
 
   for (const action of actions) {
     try {

@@ -22,6 +22,7 @@ import { getSafeLogger } from "../logger";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import { countStories, isComplete } from "../prd";
 import { gitWithTimeout } from "../utils/git";
+import { NAX_VERSION } from "../version";
 import { stopHeartbeat } from "./crash-recovery";
 import type { ParallelExecutorOptions, ParallelExecutorResult } from "./parallel-executor";
 import { type RunnerCompletionOptions, runCompletionPhase } from "./runner-completion";
@@ -269,7 +270,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       feature,
       prdPath,
       branch,
-      version: "",
+      version: NAX_VERSION,
     });
   }
 }
