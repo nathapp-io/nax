@@ -510,6 +510,17 @@ describe("detectProjectProfile — respects existing overrides", () => {
       expect(profile.lintTool).toBeDefined();
     });
   });
+
+  test("(AC-3) returns exact fields: language=go, type=cli with auto-detected testFramework and lintTool", async () => {
+    await withTempDir(async (dir) => {
+      await Bun.write(join(dir, "go.mod"), "module example.com/myapp\n\ngo 1.21\n");
+      const profile = await detectProjectProfile(dir, { language: "go", type: "cli" });
+      expect(profile.language).toBe("go");
+      expect(profile.type).toBe("cli");
+      expect(profile.testFramework).toBe("go-test");
+      expect(profile.lintTool).toBe("golangci-lint");
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
