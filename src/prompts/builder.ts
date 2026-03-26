@@ -18,6 +18,7 @@ import { buildHermeticSection } from "./sections/hermetic";
 import { buildIsolationSection } from "./sections/isolation";
 import { buildRoleTaskSection } from "./sections/role-task";
 import { buildBatchStorySection, buildStorySection } from "./sections/story";
+import { buildTddLanguageSection } from "./sections/tdd-conventions";
 import { buildVerdictSection } from "./sections/verdict";
 import type { PromptOptions, PromptRole } from "./types";
 
@@ -123,7 +124,11 @@ export class PromptBuilder {
     const isolation = this._options.isolation as string | undefined;
     sections.push(buildIsolationSection(this._role, isolation as "strict" | "lite" | undefined, this._testCommand));
 
-    // (5.5) Hermetic test requirement — injected when testing.hermetic = true (default)
+    // (5.5) Language-aware TDD convention — injected when config.project.language is set
+    const tddLanguageSection = buildTddLanguageSection(this._loaderConfig?.project?.language);
+    if (tddLanguageSection) sections.push(tddLanguageSection);
+
+    // (5.6) Hermetic test requirement — injected when testing.hermetic = true (default)
     if (this._hermeticConfig !== undefined && this._hermeticConfig.hermetic !== false) {
       const hermeticSection = buildHermeticSection(
         this._role,
