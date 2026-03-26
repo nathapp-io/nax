@@ -1,6 +1,6 @@
 # SPEC: Monorepo Workdir Support (v0.47.0)
 
-**Status:** Draft
+**Status:** Not Planned
 **Created:** 2026-03-17
 **Author:** Nax Dev (with William)
 
