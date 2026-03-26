@@ -4,3 +4,4 @@
 [2026-03-26T04:34:06.791Z] US-004 — PASSED — Language-aware command fallback in review runner — Cost: $1.9544
 [2026-03-26T04:38:08.799Z] US-005 — PASSED — Precheck warns when detected language tools are missing — Cost: $0.5238
 [2026-03-26T04:46:14.350Z] US-006 — PASSED — Language and project-type aware AC quality rules — Cost: $1.6829
+[2026-03-26T04:57:17.266Z] US-007 — PASSED — Language-aware acceptance test generation — Cost: $1.6573
