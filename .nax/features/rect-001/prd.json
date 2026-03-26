@@ -3,7 +3,7 @@
   "feature": "rect-001",
   "branchName": "feat/rect-001",
   "createdAt": "2026-03-26T00:00:00.000Z",
-  "updatedAt": "2026-03-26T02:33:52.422Z",
+  "updatedAt": "2026-03-26T02:45:55.098Z",
   "userStories": [
     {
       "id": "US-001",
@@ -58,8 +58,8 @@
         "observability"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -105,7 +105,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/verification/rectification-loop.ts",
