@@ -1,0 +1,336 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "quality-002",
+  "branchName": "feat/quality-002",
+  "createdAt": "2026-03-26T00:00:00.000Z",
+  "updatedAt": "2026-03-26T03:52:48.274Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "ProjectProfile type, config schema, and merge support",
+      "description": "Add the ProjectProfile interface to runtime-types.ts with optional fields for language, type, testFramework, and lintTool. Add project?: ProjectProfile to NaxConfig. Add a Zod schema for ProjectProfile to NaxConfigSchema. Extend mergePackageConfig() to include project as a mergeable section so monorepo packages can declare different languages and types. Export ProjectProfile from the config barrel. No default values needed — all fields undefined means auto-detect (handled in US-002).",
+      "acceptanceCriteria": [
+        "ProjectProfile interface exposes language as a union of 'typescript' | 'javascript' | 'go' | 'rust' | 'python' | 'ruby' | 'java' | 'kotlin' | 'php' and all four fields (language, type, testFramework, lintTool) are optional",
+        "NaxConfig has a project field typed as ProjectProfile | undefined",
+        "NaxConfigSchema.parse({ version: 1, ..., project: { language: 'go', type: 'cli' } }) succeeds without throwing for a complete valid config",
+        "NaxConfigSchema.parse({ version: 1, ..., project: { language: 'cobol' } }) throws a ZodError (unsupported language value rejected by schema)",
+        "mergePackageConfig(root, { project: { type: 'api' } }) returns a config where project.type equals 'api' and root.project.language is preserved unchanged",
+        "mergePackageConfig(root, { quality: { requireTests: false } }) returns unchanged root.project when packageOverride has no project field"
+      ],
+      "tags": [
+        "feature",
+        "config"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/config/runtime-types.ts",
+        "src/config/schemas.ts",
+        "src/config/merge.ts",
+        "src/config/schema.ts",
+        "src/config/defaults.ts"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Language and project-type auto-detection module",
+      "description": "Create src/project/detector.ts with a detectProjectProfile(workdir: string, existing: Partial<ProjectProfile>): Promise<ProjectProfile> function. Detection runs for each field not already set in existing (respects explicit overrides). Language detection priority: Go (go.mod) > Rust (Cargo.toml) > Python (pyproject.toml / requirements.txt) > PHP > Ruby > JVM > Node/Bun. Type detection from manifest signals: workspaces field → monorepo; react/next/vue/nuxt dep → web; express/fastify/hono dep → api; bin field → cli; ink dep → tui. testFramework inferred from language (go-test, cargo-test, pytest) or from dep inspection (jest, vitest). lintTool inferred from language (golangci-lint, clippy, ruff) or from config files (biome.json → biome, .eslintrc → eslint). Create src/project/index.ts barrel exporting detectProjectProfile. Wire detection once at run start in src/execution/lifecycle/run-setup.ts: call detectProjectProfile(workdir, config.project ?? {}), merge result into config.project. Reuse Bun-native manifest readers from src/context/injector.ts and type-detection helpers from src/cli/init-detect.ts (extract or adapt to Bun-native APIs per project rule 04-forbidden-patterns.md).",
+      "acceptanceCriteria": [
+        "detectProjectProfile(workdir, {}) returns an object with language: 'go' when go.mod exists in workdir and no Cargo.toml or package.json is present",
+        "detectProjectProfile(workdir, {}) returns language: 'typescript' when package.json contains typescript in dependencies or devDependencies and no go.mod or Cargo.toml exists",
+        "detectProjectProfile(workdir, {}) returns type: 'web' when package.json deps include react, next, vue, or nuxt",
+        "detectProjectProfile(workdir, {}) returns type: 'cli' when package.json has a bin field and no web framework deps",
+        "detectProjectProfile(workdir, {}) returns type: 'monorepo' when package.json has a workspaces field",
+        "detectProjectProfile(workdir, {}) returns testFramework: 'go-test' and lintTool: 'golangci-lint' when language resolves to 'go'",
+        "detectProjectProfile(workdir, {}) returns testFramework: 'pytest' and lintTool: 'ruff' when language resolves to 'python'",
+        "After run-setup wiring, config.project contains the detected values and all downstream code reading config.project?.language receives the auto-detected language without additional params"
+      ],
+      "tags": [
+        "feature",
+        "detection"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/context/injector.ts",
+        "src/cli/init-detect.ts",
+        "src/config/runtime-types.ts",
+        "src/execution/lifecycle/run-setup.ts",
+        "src/execution/runner-setup.ts"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Explicit config overrides suppress auto-detection and log detected profile",
+      "description": "Extend detectProjectProfile() to respect explicit fields already set in the config: when config.project.language is set, do not overwrite it with detected language; same for type, testFramework, and lintTool. Any field not set in the incoming existing object is still auto-detected. After detection and merge back into config.project in run-setup, emit a structured log at info level at stage 'project' that reports what was detected vs what came from config (e.g. 'Detected: typescript/web (vitest, biome)' or 'Using explicit config: language=go, type=cli; detected: testFramework=go-test'). This makes the detection observable and debuggable from run logs.",
+      "acceptanceCriteria": [
+        "detectProjectProfile(workdir, { language: 'typescript' }) returns language: 'typescript' even when go.mod exists in workdir (explicit value is not overwritten)",
+        "detectProjectProfile(workdir, { type: 'api' }) returns type: 'api' even when no API framework dep is detected",
+        "detectProjectProfile(workdir, { language: 'go', type: 'cli' }) returns exactly { language: 'go', type: 'cli', testFramework: 'go-test', lintTool: 'golangci-lint' } — auto-detection fills only unset fields",
+        "When config.project.language is set in the user's config file, the run-start log message at stage 'project' distinguishes which fields came from config vs which were auto-detected"
+      ],
+      "tags": [
+        "feature",
+        "detection"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/project/detector.ts",
+        "src/execution/lifecycle/run-setup.ts",
+        "src/config/runtime-types.ts",
+        "src/logger/index.ts"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Language-aware command fallback in review runner",
+      "description": "Replace the JS-only bun run ${check} fallback (step 4 in resolveCommand()) in src/review/runner.ts with a language-aware lookup table. Add a resolveLanguageCommand(language: string, check: ReviewCheckName): string | null function that returns the idiomatic command per language and check type, using the table from the spec (Go: go test ./..., golangci-lint run, go vet ./...; Rust: cargo test, cargo clippy -- -D warnings; Python: pytest, ruff check ., mypy .; etc.). Before returning a command, check that the required binary is accessible using Bun.which(). Return null if the binary is not found so the check is skipped rather than erroring. The existing package.json script fallback (bun run ${check}) is preserved as an intermediate step for TypeScript/JavaScript projects. Resolution order becomes: explicit executionConfig → review.commands → quality.commands → language-aware fallback (binary check) → package.json script → null.",
+      "acceptanceCriteria": [
+        "resolveCommand('test', config, executionConfig, workdir, qualityCommands, { language: 'go' }) returns 'go test ./...' when no explicit command is configured and go binary is available",
+        "resolveCommand('lint', config, executionConfig, workdir, qualityCommands, { language: 'go' }) returns null when golangci-lint binary is not found via Bun.which()",
+        "resolveCommand('test', config, executionConfig, workdir, qualityCommands, { language: 'rust' }) returns 'cargo test' when cargo binary is available",
+        "resolveCommand('test', config, executionConfig, workdir, qualityCommands, { language: 'python' }) returns 'pytest' when pytest binary is available",
+        "resolveCommand('typecheck', config, executionConfig, workdir, qualityCommands, { language: 'go' }) returns 'go vet ./...' when go binary is available",
+        "An explicit config.review.commands.test value takes precedence over the language-aware fallback regardless of detected language",
+        "resolveCommand returns the package.json bun run fallback for TypeScript projects when no language command is found and package.json has the script"
+      ],
+      "tags": [
+        "feature",
+        "review"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/review/runner.ts",
+        "src/config/runtime-types.ts",
+        "src/review/types.ts",
+        "src/review/orchestrator.ts",
+        "src/cli/init-detect.ts"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Precheck warns when detected language tools are missing",
+      "description": "Add a checkLanguageTools(profile: ProjectProfile | undefined, workdir: string): Promise<Check> function to src/precheck/checks-warnings.ts. When profile.language is a known value, check for the expected tool binaries using Bun.which() and return a tier-warning Check with passed: false and a helpful message including the suggested install command when any required binary is missing. Language→required tools mapping: go → [go, golangci-lint]; rust → [cargo, rustfmt]; python → [python3 or python, pytest, ruff]; ruby → [ruby, rubocop]; java → [java, mvn or gradle]. When profile is undefined or language is unknown/unsupported, return passed: true (no warning). Wire the new check into the precheck pipeline so it runs as part of the tier-2 warnings phase and appears in precheck output.",
+      "acceptanceCriteria": [
+        "checkLanguageTools({ language: 'go' }, workdir) returns a Check with passed: false and a message containing 'golangci-lint' and an install hint when golangci-lint is not in PATH",
+        "checkLanguageTools({ language: 'python' }, workdir) returns a Check with passed: false when pytest binary is not found",
+        "checkLanguageTools({ language: 'go' }, workdir) returns a Check with passed: true when both go and golangci-lint binaries are found via Bun.which()",
+        "checkLanguageTools(undefined, workdir) returns a Check with passed: true without spawning any processes",
+        "The new check is exported from src/precheck/checks.ts barrel and executes as a tier-2 warning during precheck runs"
+      ],
+      "tags": [
+        "feature",
+        "precheck"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/precheck/checks-warnings.ts",
+        "src/precheck/checks.ts",
+        "src/precheck/types.ts",
+        "src/config/runtime-types.ts",
+        "src/precheck/index.ts"
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "Language and project-type aware AC quality rules",
+      "description": "Convert the AC_QUALITY_RULES string constant in src/config/test-strategy.ts into a getAcQualityRules(profile?: ProjectProfile): string function that returns language- and type-specific AC pattern examples. Language-specific patterns per the spec: Go (returns (value, error) tuple), Rust (Result<Ok, Err> enum), Python (raises ExceptionType). Type-specific patterns: web (When user clicks/renders), api (POST /endpoint returns status), cli (exit code assertions), tui (key press → state transition). When both language and type are set, include both sections. When profile is undefined or language/type are unknown, return the existing TypeScript default rules unchanged. Export AC_QUALITY_RULES as a backward-compat constant equal to getAcQualityRules(undefined). Update src/cli/plan.ts to call getAcQualityRules(config.project) instead of referencing the constant directly.",
+      "acceptanceCriteria": [
+        "getAcQualityRules({ language: 'go' }) returns a string containing the Go AC pattern '[function] returns (value, error) where error is [specific error type]'",
+        "getAcQualityRules({ language: 'python' }) returns a string containing the Python pattern 'raises [ExceptionType] with message containing'",
+        "getAcQualityRules({ language: 'rust' }) returns a string containing the Rust pattern 'Result<[Ok type], [Err type]>'",
+        "getAcQualityRules({ type: 'web' }) returns a string containing the web AC pattern 'When user clicks [element], component renders'",
+        "getAcQualityRules({ type: 'api' }) returns a string containing the API pattern 'POST /[endpoint] with [body] returns [status code]'",
+        "getAcQualityRules({ type: 'cli' }) returns a string containing the CLI pattern 'exit code is [0/1] and stdout contains'",
+        "getAcQualityRules(undefined) returns the same content as the original AC_QUALITY_RULES constant",
+        "AC_QUALITY_RULES exported constant equals getAcQualityRules(undefined) so no callers break"
+      ],
+      "tags": [
+        "feature",
+        "prompts"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/config/test-strategy.ts",
+        "src/cli/plan.ts",
+        "src/config/runtime-types.ts"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Language-aware acceptance test generation",
+      "description": "Extend src/acceptance/generator.ts to produce language-appropriate acceptance test files for Go, Rust, and Python in addition to the existing TypeScript output. Three areas of change: (1) extractTestCode() currently only recognizes TypeScript patterns (import {, describe(), etc.); extend it to also match Go (package declaration + func Test), Python (def test_), and Rust (#[cfg(test)] or fn test_). (2) generateSkeletonTests() always emits bun:test TypeScript; add an optional language parameter and emit Go (package acceptance_test + import testing + func Test), Python (import pytest + def test_), or Rust (#[cfg(test)] mod tests) when specified. (3) generateFromPRD() path anchor in prompt hardcodes acceptance.test.ts; change it to use the correct filename per language (Go: acceptance_test.go in workdir; Python: test_acceptance.py; Rust: tests/acceptance.rs). Add language?: string to GenerateFromPRDOptions in src/acceptance/types.ts and thread it through the call from the pipeline stage.",
+      "acceptanceCriteria": [
+        "generateSkeletonTests(featureName, criteria, undefined, 'go') returns a string starting with 'package acceptance_test' and containing 'import \"testing\"' with func Test functions for each criterion",
+        "generateSkeletonTests(featureName, criteria, undefined, 'python') returns a string containing 'import pytest' and def test_ functions for each criterion",
+        "generateSkeletonTests(featureName, criteria, undefined, 'rust') returns a string containing '#[cfg(test)]' and '#[test]' attribute on each test function",
+        "extractTestCode(goOutput) returns non-null when goOutput contains a Go 'package' declaration followed by a 'func Test' function",
+        "extractTestCode(pythonOutput) returns non-null when pythonOutput contains a 'def test_' function definition",
+        "generateFromPRD() with language: 'go' in options includes 'acceptance_test.go' file naming in the prompt text instead of 'acceptance.test.ts'",
+        "generateFromPRD() with language: 'python' includes 'test_acceptance.py' in the prompt text"
+      ],
+      "tags": [
+        "feature",
+        "acceptance"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/acceptance/generator.ts",
+        "src/acceptance/types.ts",
+        "src/config/runtime-types.ts",
+        "src/pipeline/stages/acceptance-setup.ts",
+        "src/pipeline/stages/acceptance.ts"
+      ]
+    },
+    {
+      "id": "US-008",
+      "title": "Language-aware TDD file convention in prompts",
+      "description": "Add language-specific test file naming and placement conventions to the TDD test-writer prompt so agents produce correctly structured test files for non-TypeScript languages. Create src/prompts/sections/tdd-conventions.ts with a buildTddLanguageSection(language: string | undefined): string function that returns a language-specific convention block (empty string for TypeScript/undefined = existing behavior preserved). Go: 'Test files are named <filename>_test.go and placed in the same package directory as the source file.' Rust: 'Tests go in an inline #[cfg(test)] module at the bottom of the source file, or in tests/<filename>.rs for integration tests.' Python: 'Test files are named test_<source_filename>.py under the tests/ directory.' Wire buildTddLanguageSection into PromptBuilder (src/prompts/builder.ts) alongside the existing hermetic section, reading config.project?.language. Export from src/prompts/sections/index.ts.",
+      "acceptanceCriteria": [
+        "buildTddLanguageSection('go') returns a non-empty string containing the convention that test files are named '<filename>_test.go' and placed in the same directory",
+        "buildTddLanguageSection('rust') returns a non-empty string containing '#[cfg(test)]' and the inline module convention",
+        "buildTddLanguageSection('python') returns a non-empty string containing 'test_<source_filename>.py' and 'tests/' directory convention",
+        "buildTddLanguageSection('typescript') returns an empty string (TypeScript convention is already embedded in existing role prompts)",
+        "buildTddLanguageSection(undefined) returns an empty string (no-op when language unknown)",
+        "When config.project.language is 'go', the built prompt returned by PromptBuilder.build() contains the Go TDD convention text"
+      ],
+      "tags": [
+        "feature",
+        "prompts",
+        "tdd"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/prompts/builder.ts",
+        "src/prompts/sections/hermetic.ts",
+        "src/prompts/sections/index.ts",
+        "src/config/runtime-types.ts",
+        "src/prompts/types.ts"
+      ]
+    },
+    {
+      "id": "US-009",
+      "title": "Language-aware hermetic test guidance",
+      "description": "Extend buildHermeticSection() in src/prompts/sections/hermetic.ts to accept an optional profile?: ProjectProfile parameter and derive language-specific mocking guidance when mockGuidance is not explicitly configured. Language-specific guidance per spec: Go → 'Define interfaces for external dependencies. Use constructor injection. Test with interface mocks — no real I/O in tests.'; Rust → 'Use trait objects or generics for external deps. Mock with the mockall crate. Use #[cfg(test)] modules.'; Python → 'Use dependency injection or unittest.mock.patch. Mock external calls with pytest-mock fixtures. Never import side-effectful modules in test scope.'; TypeScript → existing guidance preserved as fallback. Explicit mockGuidance in config takes precedence over language-derived guidance. Update PromptBuilder in src/prompts/builder.ts to pass config.project when calling buildHermeticSection. Update src/prompts/sections/index.ts export signature.",
+      "acceptanceCriteria": [
+        "buildHermeticSection('test-writer', undefined, undefined, { language: 'go' }) returns a string containing 'Define interfaces for external dependencies' and 'constructor injection'",
+        "buildHermeticSection('test-writer', undefined, undefined, { language: 'rust' }) returns a string containing 'mockall'",
+        "buildHermeticSection('test-writer', undefined, undefined, { language: 'python' }) returns a string containing 'unittest.mock.patch' and 'pytest-mock'",
+        "buildHermeticSection('test-writer', undefined, 'Use ioredis-mock', { language: 'go' }) returns a string containing 'Use ioredis-mock' — explicit mockGuidance overrides language-derived guidance",
+        "buildHermeticSection('verifier', undefined, undefined, { language: 'go' }) returns an empty string — verifier role exclusion applies regardless of language",
+        "buildHermeticSection('test-writer', undefined, undefined, undefined) returns the existing TypeScript default hermetic guidance unchanged"
+      ],
+      "tags": [
+        "feature",
+        "prompts"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/prompts/sections/hermetic.ts",
+        "src/prompts/builder.ts",
+        "src/prompts/sections/index.ts",
+        "src/config/runtime-types.ts"
+      ]
+    }
+  ],
+  "analysis": "The codebase already has two partial detection systems that must be unified, not duplicated: (1) src/context/injector.ts — buildProjectMetadata() detects 7+ languages (Go/Rust/Python/PHP/Ruby/JVM/Node) by reading manifests and returns ProjectMetadata for agent config injection. Its per-language detector functions (detectGo, detectRust, detectPython, detectNode, etc.) are async and read manifests via Bun.file(). (2) src/cli/init-detect.ts — detectProjectStack() detects language (typescript/python/rust/go/unknown), linter, monorepo type, and has detectUIFramework() + detectHasBin() helpers; buildQualityCommands() already produces language-aware commands for nax init. This file uses sync fs.readFileSync (Node.js APIs) rather than Bun-native. The new src/project/detector.ts should extract manifest-reading helpers from context/injector.ts (Bun-native) and type-detection logic from init-detect.ts, combining them into a single detectProjectProfile(workdir, existingProfile) function.\n\nNaxConfig in src/config/runtime-types.ts (line 466) has no project field yet. ProjectProfile must be added there. The Zod NaxConfigSchema in src/config/schemas.ts (line 389) has no project entry. mergePackageConfig() in src/config/merge.ts checks 5 mergeable fields; project must be added as a 6th. The schema.ts barrel (re-exports from ./types) must also export ProjectProfile.\n\nThe critical flow for profile availability: detectProjectProfile() is called once at run start in src/execution/lifecycle/run-setup.ts (called by runSetupPhase in runner-setup.ts). Detection result is merged back into config.project (respecting explicit overrides) so all downstream code that already receives config can read config.project?.language without new parameters.\n\nCommand resolution (US-004): src/review/runner.ts resolveCommand() step 4 fallback (line 107-110) does hasScript(packageJson, check) → bun run ${check}. This must be replaced with a language-aware lookup table. The projectProfile should come from config.project (already available since runner passes config down). Binary existence check: use Bun.which() (Bun-native, no Node.js which equivalent needed).\n\nAC quality rules (US-006): AC_QUALITY_RULES is a string constant in src/config/test-strategy.ts consumed in src/cli/plan.ts at line 465. Must become getAcQualityRules(profile?: ProjectProfile): string while keeping AC_QUALITY_RULES as a backward-compat export equal to getAcQualityRules(undefined).\n\nAcceptance test generation (US-007): src/acceptance/generator.ts extractTestCode() (line 388) only matches TypeScript patterns (import {, describe(). generateSkeletonTests() (line 441) always emits bun:test TS. Path anchor in generateFromPRD() prompt (line 142) hardcodes acceptance.test.ts. All three need multi-language extension. The language info will flow via GenerateFromPRDOptions (src/acceptance/types.ts) — add optional language field.\n\nHermetic guidance (US-009): buildHermeticSection() in src/prompts/sections/hermetic.ts takes (role, boundaries, mockGuidance). Add optional profile?: ProjectProfile parameter. Caller in src/prompts/builder.ts (line 128) passes this._hermeticConfig fields — add config.project to the builder so it can pass profile through.\n\nTDD conventions (US-008): No existing TDD file convention section exists in prompts. Needs a new buildTddLanguageSection(language) helper injected into PromptBuilder, similar to buildHermeticSection. Likely place: src/prompts/sections/ new file tdd-conventions.ts, wired in src/prompts/builder.ts.\n\nPrecheck (US-005): New checkLanguageTools() function in src/precheck/checks-warnings.ts or a new checks-language.ts. Use Bun.which() for binary detection. Must be added to the precheck checks.ts barrel and wired into the precheck run.\n\nMigration: All changes are purely additive. project field is optional in NaxConfig — existing configs without it parse and validate identically. Detection is additive; existing TS/Bun projects continue to work. The language-aware command fallback only fires when config.project?.language is set; the existing bun run ${check} path is preserved when undefined. No breaking interface changes anywhere.\n\nKey risk: NaxConfigSchema currently does NOT include a generate field (present in runtime-types.ts but absent from NaxConfigSchema Zod object) — confirm generate is intentionally excluded before adding project to avoid precedent issues. Also confirm that types.ts (the barrel for schema.ts re-exports) re-exports from runtime-types.ts so adding ProjectProfile there makes it available."
+}
