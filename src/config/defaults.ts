@@ -153,6 +153,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
     semantic: {
       modelTier: "balanced",
       rules: [],
+      timeoutMs: 600_000,
     },
   },
   plan: {

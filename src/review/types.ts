@@ -13,6 +13,8 @@ export interface SemanticReviewConfig {
   modelTier: import("../config/schema-types").ModelTier;
   /** Custom semantic review rules */
   rules: string[];
+  /** Timeout in milliseconds for the LLM call (default: 600_000) */
+  timeoutMs: number;
 }
 
 /** Review check result */

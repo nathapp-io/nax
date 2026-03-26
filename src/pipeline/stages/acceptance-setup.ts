@@ -179,21 +179,29 @@ export const acceptanceSetupStage: PipelineStage = {
 
       let refinedCriteria: RefinedCriterion[];
 
+      const nonFixStories = ctx.prd.userStories.filter((s) => !s.id.startsWith("US-FIX-"));
+
       if (ctx.config.acceptance.refinement) {
-        refinedCriteria = await _acceptanceSetupDeps.refine(allCriteria, {
-          storyId: ctx.prd.userStories[0]?.id ?? "US-001",
-          codebaseContext: "",
-          config: ctx.config,
-          testStrategy: ctx.config.acceptance.testStrategy,
-          testFramework: ctx.config.acceptance.testFramework,
-        });
+        refinedCriteria = [];
+        for (const story of nonFixStories) {
+          const storyRefined = await _acceptanceSetupDeps.refine(story.acceptanceCriteria, {
+            storyId: story.id,
+            codebaseContext: "",
+            config: ctx.config,
+            testStrategy: ctx.config.acceptance.testStrategy,
+            testFramework: ctx.config.acceptance.testFramework,
+          });
+          refinedCriteria = refinedCriteria.concat(storyRefined);
+        }
       } else {
-        refinedCriteria = allCriteria.map((c) => ({
-          original: c,
-          refined: c,
-          testable: true,
-          storyId: ctx.prd.userStories[0]?.id ?? "US-001",
-        }));
+        refinedCriteria = nonFixStories.flatMap((story) =>
+          story.acceptanceCriteria.map((c) => ({
+            original: c,
+            refined: c,
+            testable: true,
+            storyId: story.id,
+          })),
+        );
       }
 
       testableCount = refinedCriteria.filter((r) => r.testable).length;
