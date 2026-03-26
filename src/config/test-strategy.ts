@@ -5,6 +5,7 @@
  * fragments used by plan.ts and claude-decompose.ts.
  */
 
+import type { ProjectProfile } from "./runtime-types";
 import type { TestStrategy } from "./schema-types";
 
 // ─── Re-export type ───────────────────────────────────────────────────────────
@@ -101,6 +102,14 @@ GOOD (write ACs like these):
 - "cleanupRun() calls action.execute() only when action.shouldRun() resolves to true"
 - "When action.execute() throws, cleanupRun() logs at warn level and continues to the next action"
 - "resolveRouting() short-circuits and returns story.routing values when both complexity and testStrategy are already set"`;
+
+/**
+ * Returns language- and project-type-aware AC quality rules.
+ * Stub — implementation pending (returns default for all inputs until US-006 is implemented).
+ */
+export function getAcQualityRules(_profile?: ProjectProfile): string {
+  return AC_QUALITY_RULES;
+}
 
 export const GROUPING_RULES = `## Story Rules
 
