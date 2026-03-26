@@ -89,6 +89,7 @@
       "test": "bun run test",
       "typecheck": "bun run typecheck",
       "lint": "bun run lint",
+      "build": "bun run build",
       "testScoped": "CI=1 bun test --timeout=60000 {{files}}"
     },
     "forceExit": false,
@@ -128,13 +129,19 @@
     "enabled": true,
     "checks": [
       "typecheck",
-      "lint"
+      "lint",
+      "semantic"
     ],
     "commands": {
       "typecheck": "bun run typecheck",
-      "lint": "bun run lint"
+      "lint": "bun run lint",
+      "build": "bun run build"
     },
-    "pluginMode": "deferred"
+    "pluginMode": "deferred",
+    "semantic": {
+      "modelTier": "fast",
+      "rules": []
+    }
   },
   "plan": {
     "model": "balanced",
