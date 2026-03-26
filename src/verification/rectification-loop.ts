@@ -147,11 +147,21 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       testSummary.passed = newTestSummary.passed;
     }
 
-    logger?.warn("rectification", `${label} still failing after attempt`, {
+    const failingTests = testSummary.failures.slice(0, 10).map((f) => f.testName);
+    const logData: Record<string, unknown> = {
       storyId: story.id,
       attempt: rectificationState.attempt,
       remainingFailures: rectificationState.currentFailures,
-    });
+      failingTests,
+    };
+
+    // Include totalFailingTests if we have more than 10 structured failures
+    // OR if no structured failures exist but there are still failures reported
+    if (testSummary.failures.length > 10 || (testSummary.failures.length === 0 && testSummary.failed > 0)) {
+      logData.totalFailingTests = testSummary.failed;
+    }
+
+    logger?.warn("rectification", `${label} still failing after attempt`, logData);
   }
 
   if (rectificationState.attempt >= rectificationConfig.maxRetries) {
