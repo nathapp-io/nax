@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 4,
-    "passed": 2,
+    "passed": 3,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 0.8281111999999999,
+    "spent": 3.1950631500000006,
     "limit": 8
   },
   "current": {
-    "storyId": "US-002",
-    "title": "Implement rectification model escalation",
-    "complexity": "medium",
-    "tddStrategy": "three-session-tdd-lite",
+    "storyId": "US-003",
+    "title": "Include prior attempt context in escalated prompt",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-03-26T02:56:42.516Z",
-  "durationMs": 1861085,
-  "lastHeartbeat": "2026-03-26T02:56:42.516Z"
+  "iterations": 4,
+  "updatedAt": "2026-03-26T03:04:42.531Z",
+  "durationMs": 2341100,
+  "lastHeartbeat": "2026-03-26T03:04:42.531Z"
 }
