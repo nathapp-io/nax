@@ -25,6 +25,7 @@
  */
 
 import path from "node:path";
+import { buildAcceptanceRunCommand } from "../../acceptance/generator";
 import { getLogger } from "../../logger";
 import { countStories } from "../../prd";
 import { logTestOutput } from "../../utils/log-test-output";
@@ -134,18 +135,13 @@ export const acceptanceStage: PipelineStage = {
     // Acceptance tests always run from repo root — covers both single repo and monorepo.
     // The test file uses __dirname-based paths to navigate into packages as needed.
 
-    // BUG-083: Run ONLY the acceptance test file, not the full project test suite.
-    // The full suite is covered by the regression gate; acceptance is a separate concern.
-    // Resolution order: acceptance.command override → default "bun test <file> --timeout=60000"
-    const acceptanceCmd = effectiveConfig.acceptance.command;
-    let testCmdParts: string[];
-    if (acceptanceCmd) {
-      // Support {{FILE}} placeholder or verbatim command
-      const resolved = acceptanceCmd.includes("{{FILE}}") ? acceptanceCmd.replace("{{FILE}}", testPath) : acceptanceCmd;
-      testCmdParts = resolved.trim().split(/\s+/);
-    } else {
-      testCmdParts = ["bun", "test", testPath, "--timeout=60000"];
-    }
+    // BUG-083/BUG-084: Run ONLY the acceptance test file, not the full project test suite.
+    // Resolution order: acceptance.command override → testFramework-aware command → bun test fallback
+    const testCmdParts = buildAcceptanceRunCommand(
+      testPath,
+      effectiveConfig.project?.testFramework,
+      effectiveConfig.acceptance.command,
+    );
     const proc = Bun.spawn(testCmdParts, {
       cwd: ctx.workdir,
       stdout: "pipe",

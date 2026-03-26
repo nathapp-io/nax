@@ -9,6 +9,7 @@
 
 import { describe, expect, mock, test } from "bun:test";
 import {
+  buildAcceptanceRunCommand,
   extractTestCode,
   generateFromPRD,
   generateSkeletonTests,
@@ -297,5 +298,50 @@ describe("generateFromPRD — no language defaults to acceptance.test.ts", () =>
     } as any);
 
     expect(capturedPrompt).toContain("acceptance.test.ts");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildAcceptanceRunCommand (BUG-084)
+// ---------------------------------------------------------------------------
+
+describe("buildAcceptanceRunCommand", () => {
+  const FILE = ".nax/features/my-feat/acceptance.test.ts";
+
+  test("defaults to bun test when no testFramework", () => {
+    expect(buildAcceptanceRunCommand(FILE)).toEqual(["bun", "test", FILE, "--timeout=60000"]);
+  });
+
+  test("uses vitest for vitest testFramework", () => {
+    expect(buildAcceptanceRunCommand(FILE, "vitest")).toEqual(["npx", "vitest", "run", FILE]);
+  });
+
+  test("uses jest for jest testFramework", () => {
+    expect(buildAcceptanceRunCommand(FILE, "jest")).toEqual(["npx", "jest", FILE]);
+  });
+
+  test("uses pytest for python testFramework", () => {
+    expect(buildAcceptanceRunCommand(FILE, "pytest")).toEqual(["pytest", FILE]);
+  });
+
+  test("uses go test for go-test testFramework", () => {
+    expect(buildAcceptanceRunCommand(FILE, "go-test")).toEqual(["go", "test", FILE]);
+  });
+
+  test("uses cargo test for cargo-test testFramework", () => {
+    expect(buildAcceptanceRunCommand(FILE, "cargo-test")).toEqual(["cargo", "test", "--test", "acceptance"]);
+  });
+
+  test("commandOverride with {{FILE}} placeholder takes priority over testFramework", () => {
+    expect(buildAcceptanceRunCommand(FILE, "vitest", "bun test {{FILE}} --timeout=120000")).toEqual([
+      "bun",
+      "test",
+      FILE,
+      "--timeout=120000",
+    ]);
+  });
+
+  test("commandOverride without {{FILE}} is used verbatim", () => {
+    expect(buildAcceptanceRunCommand(FILE, "vitest", "go test ./...")).toEqual(["go", "test", "./..."]);
   });
 });

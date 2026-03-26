@@ -16,7 +16,7 @@
  */
 
 import path from "node:path";
-import { acceptanceTestFilename } from "../../acceptance/generator";
+import { acceptanceTestFilename, buildAcceptanceRunCommand } from "../../acceptance/generator";
 import type { RefinedCriterion } from "../../acceptance/types";
 import { getAgent } from "../../agents/registry";
 import { resolveModel } from "../../config";
@@ -92,17 +92,9 @@ export const _acceptanceSetupDeps = {
   runTest: async (
     _testPath: string,
     _workdir: string,
-    _testCmd?: string,
+    _cmd: string[],
   ): Promise<{ exitCode: number; output: string }> => {
-    // Use configured test command when available; fall back to bun test
-    let cmd: string[];
-    if (_testCmd) {
-      // Split the configured test command and append the test path
-      const parts = _testCmd.trim().split(/\s+/);
-      cmd = [...parts, _testPath];
-    } else {
-      cmd = ["bun", "test", _testPath];
-    }
+    const cmd = _cmd;
     const proc = Bun.spawn(cmd, {
       cwd: _workdir,
       stdout: "pipe",
@@ -231,8 +223,14 @@ export const acceptanceSetupStage: PipelineStage = {
       return { action: "continue" };
     }
 
-    const testCmd = ctx.config.quality?.commands?.test;
-    const { exitCode } = await _acceptanceSetupDeps.runTest(testPath, ctx.workdir, testCmd);
+    // BUG-084: Use testFramework-aware single-file command (not quality.commands.test which runs full suite)
+    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
+    const runCmd = buildAcceptanceRunCommand(
+      testPath,
+      effectiveConfig.project?.testFramework,
+      effectiveConfig.acceptance.command,
+    );
+    const { exitCode } = await _acceptanceSetupDeps.runTest(testPath, ctx.workdir, runCmd);
 
     if (exitCode === 0) {
       ctx.acceptanceSetup = { totalCriteria, testableCount, redFailCount: 0 };

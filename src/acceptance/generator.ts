@@ -89,6 +89,45 @@ export function acceptanceTestFilename(language?: string): string {
 }
 
 /**
+ * Build the command to run a single acceptance test file.
+ *
+ * Priority:
+ * 1. `acceptance.command` override (with optional {{FILE}} placeholder)
+ * 2. testFramework-aware single-file command (from QUALITY-002 profile)
+ * 3. Fallback: `bun test <file> --timeout=60000`
+ *
+ * This is shared by both acceptance-setup (RED gate) and acceptance (post-run)
+ * to ensure consistent behavior across both stages.
+ */
+export function buildAcceptanceRunCommand(
+  testPath: string,
+  testFramework?: string,
+  commandOverride?: string,
+): string[] {
+  if (commandOverride) {
+    const resolved = commandOverride.includes("{{FILE}}")
+      ? commandOverride.replace("{{FILE}}", testPath)
+      : commandOverride;
+    return resolved.trim().split(/\s+/);
+  }
+
+  switch (testFramework?.toLowerCase()) {
+    case "vitest":
+      return ["npx", "vitest", "run", testPath];
+    case "jest":
+      return ["npx", "jest", testPath];
+    case "pytest":
+      return ["pytest", testPath];
+    case "go-test":
+      return ["go", "test", testPath];
+    case "cargo-test":
+      return ["cargo", "test", "--test", "acceptance"];
+    default:
+      return ["bun", "test", testPath, "--timeout=60000"];
+  }
+}
+
+/**
  * Generate acceptance tests from PRD UserStory[] and RefinedCriterion[].
  *
  * This is a stub — implementation is provided by the implementer session.
