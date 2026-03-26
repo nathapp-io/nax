@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 9,
-    "passed": 4,
+    "passed": 5,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 5
+    "pending": 4
   },
   "cost": {
-    "spent": 5.9417425,
+    "spent": 6.4654982500000004,
     "limit": 8
   },
   "current": {
-    "storyId": "US-005",
-    "title": "Precheck warns when detected language tools are missing",
-    "complexity": "simple",
-    "tddStrategy": "tdd-simple",
+    "storyId": "US-006",
+    "title": "Language and project-type aware AC quality rules",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 5,
-  "updatedAt": "2026-03-26T04:37:11.160Z",
-  "durationMs": 2401027,
-  "lastHeartbeat": "2026-03-26T04:37:11.160Z"
+  "iterations": 6,
+  "updatedAt": "2026-03-26T04:39:11.159Z",
+  "durationMs": 2521026,
+  "lastHeartbeat": "2026-03-26T04:39:11.159Z"
 }
