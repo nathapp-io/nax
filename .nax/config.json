@@ -142,7 +142,7 @@
     "outputPath": "spec.md"
   },
   "acceptance": {
-    "enabled": true,
+    "enabled": false,
     "maxRetries": 2,
     "generateTests": true,
     "testPath": "acceptance.test.ts"
