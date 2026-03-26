@@ -10,3 +10,4 @@ export { buildRoleTaskSection } from "./role-task";
 export { buildStorySection } from "./story";
 export { buildVerdictSection } from "./verdict";
 export { buildConventionsSection } from "./conventions";
+export { buildTddLanguageSection } from "./tdd-conventions";
