@@ -13,6 +13,7 @@ export type {
   TddConfig,
   TierConfig,
   RectificationConfig,
+  ProjectProfile,
 } from "./schema";
 export { DEFAULT_CONFIG, resolveModel, NaxConfigSchema, AcceptanceConfigSchema } from "./schema";
 export { loadConfig, findProjectDir, globalConfigPath } from "./loader";
