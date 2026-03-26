@@ -10,7 +10,7 @@ import { join } from "node:path";
 import chalk from "chalk";
 import { loadConfig } from "../config";
 import { loadPRD } from "../prd";
-import { EXIT_CODES, runPrecheck } from "../precheck";
+import { EXIT_CODES, runEnvironmentPrecheck, runPrecheck } from "../precheck";
 import { resolveProject } from "./common";
 
 /**
@@ -23,6 +23,8 @@ export interface PrecheckOptions {
   dir?: string;
   /** Output JSON format (from --json flag) */
   json?: boolean;
+  /** Light mode — environment checks only, no PRD required (use before nax plan) */
+  light?: boolean;
 }
 
 /**
@@ -32,11 +34,20 @@ export interface PrecheckOptions {
  * Exits with code 0 (pass), 1 (blocker), or 2 (invalid PRD).
  */
 export async function precheckCommand(options: PrecheckOptions): Promise<void> {
-  // Resolve project directory and feature
+  // Resolve project directory
   const resolved = resolveProject({
     dir: options.dir,
     feature: options.feature,
   });
+
+  const format = options.json ? "json" : "human";
+
+  // --light: environment-only check, no PRD required (use before nax plan)
+  if (options.light) {
+    const config = await loadConfig(resolved.projectDir);
+    const result = await runEnvironmentPrecheck(config, resolved.projectDir, { format });
+    process.exit(result.passed ? EXIT_CODES.SUCCESS : EXIT_CODES.BLOCKER);
+  }
 
   // Determine feature name (from flag or config)
   let featureName = options.feature;
@@ -74,8 +85,7 @@ export async function precheckCommand(options: PrecheckOptions): Promise<void> {
   const config = await loadConfig(resolved.projectDir);
   const prd = await loadPRD(prdPath);
 
-  // Run precheck
-  const format = options.json ? "json" : "human";
+  // Run full precheck
   const result = await runPrecheck(config, prd, {
     workdir: resolved.projectDir,
     format,
