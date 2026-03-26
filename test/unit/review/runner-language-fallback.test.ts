@@ -27,105 +27,98 @@ const emptyConfig: ReviewConfig = {
 // ---------------------------------------------------------------------------
 
 describe("resolveLanguageCommand — language command table", () => {
-  let originalWhich: typeof _reviewRunnerDeps.which;
-
-  beforeEach(() => {
-    originalWhich = _reviewRunnerDeps.which;
-  });
-
   afterEach(() => {
-    _reviewRunnerDeps.which = originalWhich;
     mock.restore();
   });
 
   describe("Go language", () => {
     test("returns 'go test ./...' for 'test' check when go binary is available", () => {
-      _reviewRunnerDeps.which = mock((_name: string) => "/usr/local/bin/go");
-      const result = resolveLanguageCommand("go", "test");
+      const mockWhich = mock((_name: string) => "/usr/local/bin/go");
+      const result = resolveLanguageCommand("go", "test", mockWhich);
       expect(result).toBe("go test ./...");
     });
 
     test("returns 'golangci-lint run' for 'lint' check when golangci-lint is available", () => {
-      _reviewRunnerDeps.which = mock((_name: string) => "/usr/local/bin/golangci-lint");
-      const result = resolveLanguageCommand("go", "lint");
+      const mockWhich = mock((_name: string) => "/usr/local/bin/golangci-lint");
+      const result = resolveLanguageCommand("go", "lint", mockWhich);
       expect(result).toBe("golangci-lint run");
     });
 
     test("returns 'go vet ./...' for 'typecheck' check when go binary is available", () => {
-      _reviewRunnerDeps.which = mock((_name: string) => "/usr/local/bin/go");
-      const result = resolveLanguageCommand("go", "typecheck");
+      const mockWhich = mock((_name: string) => "/usr/local/bin/go");
+      const result = resolveLanguageCommand("go", "typecheck", mockWhich);
       expect(result).toBe("go vet ./...");
     });
 
     test("returns null for 'lint' check when golangci-lint binary is not found", () => {
-      _reviewRunnerDeps.which = mock((_name: string) => null);
-      const result = resolveLanguageCommand("go", "lint");
+      const mockWhich = mock((_name: string) => null);
+      const result = resolveLanguageCommand("go", "lint", mockWhich);
       expect(result).toBeNull();
     });
 
     test("returns null for 'test' check when go binary is not found", () => {
-      _reviewRunnerDeps.which = mock((_name: string) => null);
-      const result = resolveLanguageCommand("go", "test");
+      const mockWhich = mock((_name: string) => null);
+      const result = resolveLanguageCommand("go", "test", mockWhich);
       expect(result).toBeNull();
     });
   });
 
   describe("Rust language", () => {
     test("returns 'cargo test' for 'test' check when cargo binary is available", () => {
-      _reviewRunnerDeps.which = mock((_name: string) => "/usr/local/bin/cargo");
-      const result = resolveLanguageCommand("rust", "test");
+      const mockWhich = mock((_name: string) => "/usr/local/bin/cargo");
+      const result = resolveLanguageCommand("rust", "test", mockWhich);
       expect(result).toBe("cargo test");
     });
 
     test("returns 'cargo clippy -- -D warnings' for 'lint' check when cargo is available", () => {
-      _reviewRunnerDeps.which = mock((_name: string) => "/usr/local/bin/cargo");
-      const result = resolveLanguageCommand("rust", "lint");
+      const mockWhich = mock((_name: string) => "/usr/local/bin/cargo");
+      const result = resolveLanguageCommand("rust", "lint", mockWhich);
       expect(result).toBe("cargo clippy -- -D warnings");
     });
 
     test("returns null for 'test' check when cargo binary is not found", () => {
-      _reviewRunnerDeps.which = mock((_name: string) => null);
-      const result = resolveLanguageCommand("rust", "test");
+      const mockWhich = mock((_name: string) => null);
+      const result = resolveLanguageCommand("rust", "test", mockWhich);
       expect(result).toBeNull();
     });
   });
 
   describe("Python language", () => {
     test("returns 'pytest' for 'test' check when pytest binary is available", () => {
-      _reviewRunnerDeps.which = mock((_name: string) => "/usr/local/bin/pytest");
-      const result = resolveLanguageCommand("python", "test");
+      const mockWhich = mock((_name: string) => "/usr/local/bin/pytest");
+      const result = resolveLanguageCommand("python", "test", mockWhich);
       expect(result).toBe("pytest");
     });
 
     test("returns 'ruff check .' for 'lint' check when ruff binary is available", () => {
-      _reviewRunnerDeps.which = mock((_name: string) => "/usr/local/bin/ruff");
-      const result = resolveLanguageCommand("python", "lint");
+      const mockWhich = mock((_name: string) => "/usr/local/bin/ruff");
+      const result = resolveLanguageCommand("python", "lint", mockWhich);
       expect(result).toBe("ruff check .");
     });
 
     test("returns 'mypy .' for 'typecheck' check when mypy binary is available", () => {
-      _reviewRunnerDeps.which = mock((_name: string) => "/usr/local/bin/mypy");
-      const result = resolveLanguageCommand("python", "typecheck");
+      const mockWhich = mock((_name: string) => "/usr/local/bin/mypy");
+      const result = resolveLanguageCommand("python", "typecheck", mockWhich);
       expect(result).toBe("mypy .");
     });
 
     test("returns null for 'lint' check when ruff binary is not found", () => {
-      _reviewRunnerDeps.which = mock((_name: string) => null);
-      const result = resolveLanguageCommand("python", "lint");
+      const mockWhich = mock((_name: string) => null);
+      const result = resolveLanguageCommand("python", "lint", mockWhich);
       expect(result).toBeNull();
     });
   });
 
   describe("unsupported language", () => {
     test("returns null for unsupported language (ruby)", () => {
-      _reviewRunnerDeps.which = mock((_name: string) => "/usr/bin/ruby");
-      const result = resolveLanguageCommand("ruby", "test");
+      const mockWhich = mock((_name: string) => "/usr/bin/ruby");
+      const result = resolveLanguageCommand("ruby", "test", mockWhich);
       expect(result).toBeNull();
     });
 
     test("returns null for empty language string", () => {
-      _reviewRunnerDeps.which = mock((_name: string) => "/usr/bin/something");
-      const result = resolveLanguageCommand("", "test");
+      const mockWhich = mock((_name: string) => "/usr/bin/something");
+      const result = resolveLanguageCommand("", "test", mockWhich);
       expect(result).toBeNull();
     });
   });

@@ -11,9 +11,13 @@ import type { ModelTier } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty } from "../utils/git";
+import { resolveLanguageCommand } from "./language-commands";
 import { runSemanticReview as _runSemanticReviewImpl } from "./semantic";
 import type { SemanticStory } from "./semantic";
 import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
+
+// Re-export for test compatibility
+export { resolveLanguageCommand };
 
 /**
  * Injectable dependency for the semantic review call — allows tests to
@@ -27,7 +31,7 @@ export const _reviewSemanticDeps = {
 
 /**
  * Injectable dependencies for runner internals — allows tests to intercept
- * Bun.file, spawn, and Bun.which calls without mock.module().
+ * Bun.file and spawn calls without mock.module().
  *
  * @internal
  */
@@ -58,44 +62,6 @@ function hasScript(packageJson: Record<string, unknown> | null, scriptName: stri
   const scripts = packageJson.scripts;
   if (typeof scripts !== "object" || scripts === null) return false;
   return scriptName in scripts;
-}
-
-/** Entry in the language command table: required binary + command string */
-type LanguageCommandEntry = { binary: string; command: string };
-
-/** Language-aware command lookup table */
-const LANGUAGE_COMMANDS: Record<string, Partial<Record<ReviewCheckName, LanguageCommandEntry>>> = {
-  go: {
-    test: { binary: "go", command: "go test ./..." },
-    lint: { binary: "golangci-lint", command: "golangci-lint run" },
-    typecheck: { binary: "go", command: "go vet ./..." },
-  },
-  rust: {
-    test: { binary: "cargo", command: "cargo test" },
-    lint: { binary: "cargo", command: "cargo clippy -- -D warnings" },
-  },
-  python: {
-    test: { binary: "pytest", command: "pytest" },
-    lint: { binary: "ruff", command: "ruff check ." },
-    typecheck: { binary: "mypy", command: "mypy ." },
-  },
-};
-
-/**
- * Returns the idiomatic command for a given language and check type.
- * Uses _reviewRunnerDeps.which() to verify the required binary is available.
- * Returns null if the binary is not found or the language/check combo is unsupported.
- *
- * @internal
- */
-export function resolveLanguageCommand(language: string, check: ReviewCheckName): string | null {
-  const languageTable = LANGUAGE_COMMANDS[language];
-  if (!languageTable) return null;
-  const entry = languageTable[check];
-  if (!entry) return null;
-  const binaryPath = _reviewRunnerDeps.which(entry.binary);
-  if (!binaryPath) return null;
-  return entry.command;
 }
 
 /**
@@ -147,7 +113,7 @@ export async function resolveCommand(
 
   // 4. Language-aware fallback — binary availability checked via Bun.which()
   if (profile?.language) {
-    const langCmd = resolveLanguageCommand(profile.language, check);
+    const langCmd = resolveLanguageCommand(profile.language, check, _reviewRunnerDeps.which);
     if (langCmd !== null) {
       return langCmd;
     }
