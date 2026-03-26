@@ -103,12 +103,53 @@ GOOD (write ACs like these):
 - "When action.execute() throws, cleanupRun() logs at warn level and continues to the next action"
 - "resolveRouting() short-circuits and returns story.routing values when both complexity and testStrategy are already set"`;
 
+const LANGUAGE_PATTERNS: Partial<Record<string, string>> = {
+  go: `### Go-Specific AC Patterns
+
+- "[function] returns (value, error) where error is [specific error type]"
+- "[function] returns (nil, [ErrorType]) when [condition]"`,
+  python: `### Python-Specific AC Patterns
+
+- "[function] raises [ExceptionType] with message containing [text] when [condition]"
+- "[function] returns [value] when [condition]"`,
+  rust: `### Rust-Specific AC Patterns
+
+- "[function] returns Result<[Ok type], [Err type]> where Err is [specific variant] when [condition]"
+- "[function] returns Ok([value]) when [condition]"`,
+};
+
+const TYPE_PATTERNS: Partial<Record<string, string>> = {
+  web: `### Web AC Patterns
+
+- "When user clicks [element], component renders [expected output]"
+- "When [event] occurs, component renders [expected state]"`,
+  api: `### API AC Patterns
+
+- "POST /[endpoint] with [body] returns [status code] and [response body]"
+- "GET /[endpoint] with [params] returns [status code] and [response body]"`,
+  cli: `### CLI AC Patterns
+
+- "exit code is [0/1] and stdout contains [expected text] when [condition]"
+- "[command] with [args] exits with code [0/1] and stderr contains [text]"`,
+  tui: `### TUI AC Patterns
+
+- "pressing [key] transitions state from [before] to [after]"
+- "when [key] is pressed, screen renders [expected output]"`,
+};
+
 /**
  * Returns language- and project-type-aware AC quality rules.
- * Stub — implementation pending (returns default for all inputs until US-006 is implemented).
+ * When language or type are known, appends specific pattern examples.
+ * Falls back to the default TypeScript rules for unknown/undefined inputs.
  */
-export function getAcQualityRules(_profile?: ProjectProfile): string {
-  return AC_QUALITY_RULES;
+export function getAcQualityRules(profile?: ProjectProfile): string {
+  const langSection = profile?.language ? LANGUAGE_PATTERNS[profile.language] : undefined;
+  const typeSection = profile?.type ? TYPE_PATTERNS[profile.type] : undefined;
+
+  if (!langSection && !typeSection) return AC_QUALITY_RULES;
+
+  const extras = [langSection, typeSection].filter(Boolean).join("\n\n");
+  return `${AC_QUALITY_RULES}\n\n${extras}`;
 }
 
 export const GROUPING_RULES = `## Story Rules
