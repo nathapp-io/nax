@@ -1,6 +1,6 @@
 # SPEC: Acceptance Test Scoping (BUG-083)
 
-**Status:** Draft  
+**Status:** Implemented  
 **Priority:** High  
 **Author:** Nax Dev  
 **Date:** 2026-03-25  

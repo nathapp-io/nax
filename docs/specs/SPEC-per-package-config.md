@@ -1,6 +1,6 @@
 # SPEC: Per-Package Config Override for Monorepo (v0.49.0)
 
-**Status:** Draft
+**Status:** Implemented
 **Created:** 2026-03-18
 **Author:** Nax Dev (with William)
 **Depends on:** v0.48.0

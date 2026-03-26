@@ -1,6 +1,6 @@
 # SPEC: Post-Run Actions Extension Point
 
-**Status:** Draft
+**Status:** Implemented
 **Date:** 2026-03-25
 **Author:** Nax Dev
 **Workitem:** PLUGIN-001
