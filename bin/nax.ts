@@ -971,12 +971,14 @@ program
   .option("-f, --feature <name>", "Feature name")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .option("--json", "Output machine-readable JSON", false)
+  .option("--light", "Environment-only check — skips PRD validation (use before nax plan)", false)
   .action(async (options) => {
     try {
       await precheckCommand({
         feature: options.feature,
         dir: options.dir,
         json: options.json,
+        light: options.light,
       });
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
