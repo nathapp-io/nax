@@ -10,27 +10,18 @@
   },
   "progress": {
     "total": 9,
-    "passed": 5,
+    "passed": 6,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 6.4654982500000004,
+    "spent": 8.1484469,
     "limit": 8
   },
-  "current": {
-    "storyId": "US-006",
-    "title": "Language and project-type aware AC quality rules",
-    "complexity": "medium",
-    "tddStrategy": "three-session-tdd-lite",
-    "model": "balanced",
-    "attempt": 1,
-    "phase": "routing"
-  },
-  "iterations": 6,
-  "updatedAt": "2026-03-26T04:45:11.165Z",
-  "durationMs": 2881032,
-  "lastHeartbeat": "2026-03-26T04:45:11.165Z"
+  "current": null,
+  "iterations": 7,
+  "updatedAt": "2026-03-26T04:48:56.985Z",
+  "durationMs": 3106852
 }
