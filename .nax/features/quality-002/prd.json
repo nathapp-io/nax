@@ -3,7 +3,7 @@
   "feature": "quality-002",
   "branchName": "feat/quality-002",
   "createdAt": "2026-03-26T00:00:00.000Z",
-  "updatedAt": "2026-03-26T04:16:31.238Z",
+  "updatedAt": "2026-03-26T04:21:56.971Z",
   "userStories": [
     {
       "id": "US-001",
@@ -104,8 +104,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -153,7 +153,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/review/runner.ts",
