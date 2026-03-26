@@ -62,7 +62,7 @@
     "permissionProfile": "unrestricted",
     "maxIterations": 6,
     "iterationDelayMs": 2000,
-    "costLimit": 25.0,
+    "costLimit": 30.0,
     "sessionTimeoutSeconds": 7200,
     "verificationTimeoutSeconds": 600,
     "maxStoriesPerFeature": 15,
@@ -89,6 +89,7 @@
       "test": "bun run test",
       "typecheck": "bun run typecheck",
       "lint": "bun run lint",
+      "build": "bun run build",
       "testScoped": "CI=1 bun test --timeout=60000 {{files}}"
     },
     "forceExit": false,
@@ -102,7 +103,6 @@
       "REPL_ID",
       "AGENT"
     ],
-    "environmentalEscalationDivisor": 2
   },
   "tdd": {
     "maxRetries": 2,
@@ -129,20 +129,26 @@
     "enabled": true,
     "checks": [
       "typecheck",
-      "lint"
+      "lint",
+      "semantic"
     ],
     "commands": {
       "typecheck": "bun run typecheck",
-      "lint": "bun run lint"
+      "lint": "bun run lint",
+      "build": "bun run build"
     },
-    "pluginMode": "deferred"
+    "pluginMode": "deferred",
+    "semantic": {
+      "modelTier": "fast",
+      "rules": []
+    }
   },
   "plan": {
     "model": "balanced",
     "outputPath": "spec.md"
   },
   "acceptance": {
-    "enabled": false,
+    "enabled": true,
     "maxRetries": 2,
     "generateTests": true,
     "testPath": "acceptance.test.ts"

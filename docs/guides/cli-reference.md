@@ -147,6 +147,16 @@ nax precheck -f my-feature
 
 Run this before `nax run` to catch configuration issues early.
 
+### `nax precheck --light`
+
+Environment-only check — validates git, CLI tools, and deps without requiring a PRD or feature directory.
+
+```bash
+nax precheck --light
+```
+
+Use this **before `nax plan`** to catch blockers (missing tools, git not initialized, etc.) before spending tokens on planning. Equivalent to running precheck with an empty PRD.
+
 ---
 
 ### `nax status -f <name>`

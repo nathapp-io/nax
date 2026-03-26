@@ -155,3 +155,83 @@ Controls how nax classifies story complexity and selects model tier + test strat
 ```
 
 Story-level routing always takes priority over `routing.strategy`.
+
+---
+
+### Project Language & Type
+
+Auto-detects your project's language, type, test framework, and lint tool from manifest files. All fields are optional — omit a field to let nax detect it.
+
+```json
+{
+  "project": {
+    "language": "typescript",
+    "type": "api",
+    "testFramework": "vitest",
+    "lintTool": "biome"
+  }
+}
+```
+
+| Field | Auto-detected from | Values |
+|:------|:-------------------|:-------|
+| `language` | `go.mod`, `Cargo.toml`, `pyproject.toml`, `package.json` | `typescript`, `javascript`, `go`, `rust`, `python` |
+| `type` | `package.json` `workspaces`, deps, `bin` field | `monorepo`, `web`, `api`, `cli`, `tui` |
+| `testFramework` | Language + dev dependencies | `go-test`, `cargo-test`, `pytest`, `vitest`, `jest` |
+| `lintTool` | Language + config files | `golangci-lint`, `clippy`, `ruff`, `biome`, `eslint` |
+
+**Explicit config overrides auto-detection.** Only the fields you set are locked; others are still auto-detected.
+
+See [Language & Project-Type Awareness](language-awareness.md) for full details.
+
+---
+
+### Rectification Escalation
+
+When rectification retries are exhausted at the current model tier, nax can escalate to the next tier for one additional attempt before escalating the story.
+
+```json
+{
+  "execution": {
+    "rectification": {
+      "escalateOnExhaustion": true
+    }
+  }
+}
+```
+
+| Value | Behaviour |
+|:-------|:----------|
+| `true` | After `maxRetries` at the current tier, retry once at the next tier (fast→balanced→powerful). Last resort before escalating the story. |
+| `false` | Escalate the story immediately after `maxRetries` at current tier. |
+
+**Requires `autoMode.escalation.enabled: true`.**
+
+---
+
+### Build Command
+
+The `build` command is used by the review stage to catch compilation or build errors that typecheck alone might miss.
+
+```json
+{
+  "quality": {
+    "commands": {
+      "build": "bun run build"
+    }
+  }
+}
+```
+
+Add `"build"` to `review.checks` to include it in the review pipeline:
+
+```json
+{
+  "review": {
+    "checks": ["typecheck", "lint", "build"]
+  }
+}
+```
+
+See [Semantic Review](semantic-review.md) for the behavioral review check.
+
