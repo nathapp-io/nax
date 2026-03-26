@@ -27,11 +27,17 @@ import { loadPlugins } from "../../plugins/loader";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { PRD } from "../../prd";
 import { loadPRD } from "../../prd";
+import { detectProjectProfile } from "../../project";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "../../version";
 import { installCrashHandlers } from "../crash-recovery";
 import { acquireLock, hookCtx, releaseLock } from "../helpers";
 import { PidRegistry } from "../pid-registry";
 import { StatusWriter } from "../status-writer";
+
+/** Injectable deps for run-setup (enables testing without heavy side-effects) */
+export const _runSetupDeps = {
+  detectProjectProfile,
+};
 
 export interface RunSetupOptions {
   prdPath: string;
@@ -179,6 +185,33 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
   // Everything after lock acquisition is wrapped in try-catch to ensure
   // the lock is released if any setup step fails (FIX-H16)
   try {
+    // ── Detect project profile (US-003) and log explicit vs auto-detected values ──
+    const existingProjectConfig = config.project ?? {};
+    const detectedProfile = await _runSetupDeps.detectProjectProfile(workdir, existingProjectConfig);
+    config.project = detectedProfile;
+
+    // Distinguish explicit config from auto-detected values (AC-4)
+    const explicitFields = Object.keys(existingProjectConfig) as Array<keyof typeof existingProjectConfig>;
+    const autodetectedFields = Object.keys(detectedProfile).filter(
+      (key) => !explicitFields.includes(key as keyof typeof existingProjectConfig),
+    ) as Array<keyof typeof detectedProfile>;
+
+    let projectLogMessage = "";
+    if (explicitFields.length > 0) {
+      const explicitValues = explicitFields.map((field) => `${field}=${existingProjectConfig[field]}`).join(", ");
+      const detectedValues =
+        autodetectedFields.length > 0
+          ? `detected: ${autodetectedFields.map((field) => `${field}=${detectedProfile[field]}`).join(", ")}`
+          : "";
+      projectLogMessage = `Using explicit config: ${explicitValues}${detectedValues ? `; ${detectedValues}` : ""}`;
+    } else {
+      projectLogMessage = `Detected: ${detectedProfile.language ?? "unknown"}/${detectedProfile.type ?? "unknown"} (${detectedProfile.testFramework ?? "none"}, ${detectedProfile.lintTool ?? "none"})`;
+    }
+    logger?.info("project", projectLogMessage, {
+      explicit: Object.fromEntries(explicitFields.map((f) => [f, existingProjectConfig[f]])),
+      detected: Object.fromEntries(autodetectedFields.map((f) => [f, detectedProfile[f]])),
+    });
+
     // Load plugins (before try block so it's accessible in finally)
     const globalPluginsDir = path.join(os.homedir(), ".nax", "plugins");
     const projectPluginsDir = path.join(workdir, ".nax", "plugins");

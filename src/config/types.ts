@@ -54,4 +54,5 @@ export type {
   TestingConfig,
   AdaptiveRoutingConfig,
   AgentConfig,
+  ProjectProfile,
 } from "./runtime-types";

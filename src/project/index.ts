@@ -1,0 +1,1 @@
+export { detectProjectProfile } from "./detector";

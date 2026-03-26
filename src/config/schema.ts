@@ -49,6 +49,7 @@ export type {
   DecomposeConfig,
   NaxConfig,
   AgentConfig,
+  ProjectProfile,
 } from "./types";
 
 export { resolveModel } from "./types";

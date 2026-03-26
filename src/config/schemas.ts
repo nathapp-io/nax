@@ -386,6 +386,13 @@ const DecomposeConfigSchema = z.object({
   model: z.string().min(1).default("balanced"),
 });
 
+const ProjectProfileSchema = z.object({
+  language: z.enum(["typescript", "javascript", "go", "rust", "python", "ruby", "java", "kotlin", "php"]).optional(),
+  type: z.string().optional(),
+  testFramework: z.string().optional(),
+  lintTool: z.string().optional(),
+});
+
 export const NaxConfigSchema = z
   .object({
     version: z.number(),
@@ -410,6 +417,7 @@ export const NaxConfigSchema = z
     precheck: PrecheckConfigSchema.optional(),
     prompts: PromptsConfigSchema.optional(),
     decompose: DecomposeConfigSchema.optional(),
+    project: ProjectProfileSchema.optional(),
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",

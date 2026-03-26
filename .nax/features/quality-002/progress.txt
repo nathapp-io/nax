@@ -1,0 +1,9 @@
+[2026-03-26T04:06:43.638Z] US-001 — PASSED — ProjectProfile type, config schema, and merge support — Cost: $1.9524
+[2026-03-26T04:16:29.177Z] US-002 — PASSED — Language and project-type auto-detection module — Cost: $1.7335
+[2026-03-26T04:21:54.910Z] US-003 — PASSED — Explicit config overrides suppress auto-detection and log detected profile — Cost: $0.3014
+[2026-03-26T04:34:06.791Z] US-004 — PASSED — Language-aware command fallback in review runner — Cost: $1.9544
+[2026-03-26T04:38:08.799Z] US-005 — PASSED — Precheck warns when detected language tools are missing — Cost: $0.5238
+[2026-03-26T04:46:14.350Z] US-006 — PASSED — Language and project-type aware AC quality rules — Cost: $1.6829
+[2026-03-26T04:57:17.266Z] US-007 — PASSED — Language-aware acceptance test generation — Cost: $1.6573
+[2026-03-26T05:03:15.861Z] US-008 — PASSED — Language-aware TDD file convention in prompts — Cost: $0.8577
+[2026-03-26T05:05:13.451Z] US-009 — PASSED — Language-aware hermetic test guidance — Cost: $0.2232

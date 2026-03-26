@@ -31,7 +31,8 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
     packageOverride.review !== undefined ||
     packageOverride.acceptance !== undefined ||
     packageOverride.quality !== undefined ||
-    packageOverride.context !== undefined;
+    packageOverride.context !== undefined ||
+    packageOverride.project !== undefined;
 
   if (!hasAnyMergeableField) {
     return root;
@@ -110,5 +111,6 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
         ...packageOverride.context?.testCoverage,
       },
     },
+    project: packageOverride.project !== undefined ? { ...root.project, ...packageOverride.project } : root.project,
   };
 }

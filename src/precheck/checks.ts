@@ -30,6 +30,7 @@ export {
   checkGitignoreCoversNax,
   checkHomeEnvValid,
   checkPromptOverrideFiles,
+  checkLanguageTools,
 } from "./checks-warnings";
 
 // Agent checks

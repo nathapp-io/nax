@@ -11,9 +11,13 @@ import type { ModelTier } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import { autoCommitIfDirty } from "../utils/git";
+import { resolveLanguageCommand } from "./language-commands";
 import { runSemanticReview as _runSemanticReviewImpl } from "./semantic";
 import type { SemanticStory } from "./semantic";
 import type { ReviewCheckName, ReviewCheckResult, ReviewConfig, ReviewResult } from "./types";
+
+// Re-export for test compatibility
+export { resolveLanguageCommand };
 
 /**
  * Injectable dependency for the semantic review call — allows tests to
@@ -31,7 +35,11 @@ export const _reviewSemanticDeps = {
  *
  * @internal
  */
-export const _reviewRunnerDeps = { spawn, file: Bun.file };
+export const _reviewRunnerDeps = {
+  spawn,
+  file: Bun.file,
+  which: Bun.which as (command: string) => string | null,
+};
 
 /**
  * Load package.json from workdir
@@ -62,15 +70,17 @@ function hasScript(packageJson: Record<string, unknown> | null, scriptName: stri
  * 1. Explicit executionConfig field (lintCommand/typecheckCommand) - null = disabled
  * 2. config.review.commands[check] (explicit review config)
  * 3. quality.commands[check] (fallback — package config without review section)
- * 4. package.json has script -> use 'bun run <script>'
- * 5. Not found -> return null (skip)
+ * 4. Language-aware fallback (binary check via Bun.which) — US-004
+ * 5. package.json has script -> use 'bun run <script>'
+ * 6. Not found -> return null (skip)
  */
-async function resolveCommand(
+export async function resolveCommand(
   check: ReviewCheckName,
   config: ReviewConfig,
   executionConfig: ExecutionConfig | undefined,
   workdir: string,
   qualityCommands?: QualityConfig["commands"],
+  profile?: { language?: string },
 ): Promise<string | null> {
   // Semantic checks don't have CLI commands — they're handled separately by the review orchestrator
   if (check === "semantic") {
@@ -101,7 +111,15 @@ async function resolveCommand(
     return qualityCmd;
   }
 
-  // 4. Check package.json — only for built-in checks (typecheck/lint/test), not build.
+  // 4. Language-aware fallback — binary availability checked via Bun.which()
+  if (profile?.language) {
+    const langCmd = resolveLanguageCommand(profile.language, check, _reviewRunnerDeps.which);
+    if (langCmd !== null) {
+      return langCmd;
+    }
+  }
+
+  // 5. Check package.json — only for built-in checks (typecheck/lint/test), not build.
   // build must be explicitly configured in review.commands or quality.commands.
   if (check !== "build") {
     const packageJson = await loadPackageJson(workdir);
@@ -110,7 +128,7 @@ async function resolveCommand(
     }
   }
 
-  // 5. Not found - return null to skip
+  // 6. Not found - return null to skip
   return null;
 }
 

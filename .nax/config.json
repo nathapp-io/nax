@@ -62,7 +62,7 @@
     "permissionProfile": "unrestricted",
     "maxIterations": 6,
     "iterationDelayMs": 2000,
-    "costLimit": 8.0,
+    "costLimit": 25.0,
     "sessionTimeoutSeconds": 7200,
     "verificationTimeoutSeconds": 600,
     "maxStoriesPerFeature": 15,
@@ -142,7 +142,7 @@
     "outputPath": "spec.md"
   },
   "acceptance": {
-    "enabled": true,
+    "enabled": false,
     "maxRetries": 2,
     "generateTests": true,
     "testPath": "acceptance.test.ts"

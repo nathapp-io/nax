@@ -16,7 +16,8 @@ import { scanCodebase } from "../analyze/scanner";
 import type { CodebaseScan } from "../analyze/types";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
-import { AC_QUALITY_RULES, COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE } from "../config/test-strategy";
+import type { ProjectProfile } from "../config/runtime-types";
+import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE, getAcQualityRules } from "../config/test-strategy";
 import { discoverWorkspacePackages } from "../context/generator";
 import { PidRegistry } from "../execution/pid-registry";
 import { getLogger } from "../logger";
@@ -135,7 +136,14 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   let rawResponse: string;
   if (options.auto) {
     // One-shot: use CLI adapter directly — simple completion doesn't need ACP session overhead
-    const prompt = buildPlanningPrompt(specContent, codebaseContext, undefined, relativePackages, packageDetails);
+    const prompt = buildPlanningPrompt(
+      specContent,
+      codebaseContext,
+      undefined,
+      relativePackages,
+      packageDetails,
+      config?.project,
+    );
     const cliAdapter = _planDeps.getAgent(agentName);
     if (!cliAdapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     let autoModel: string | undefined;
@@ -160,7 +168,14 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     }
   } else {
     // Interactive: agent writes PRD JSON directly to outputPath (avoids output truncation)
-    const prompt = buildPlanningPrompt(specContent, codebaseContext, outputPath, relativePackages, packageDetails);
+    const prompt = buildPlanningPrompt(
+      specContent,
+      codebaseContext,
+      outputPath,
+      relativePackages,
+      packageDetails,
+      config?.project,
+    );
     const adapter = _planDeps.getAgent(agentName, config);
     if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
     const interactionBridge = _planDeps.createInteractionBridge();
@@ -412,6 +427,7 @@ export function buildPlanningPrompt(
   outputFilePath?: string,
   packages?: string[],
   packageDetails?: PackageSummary[],
+  projectProfile?: ProjectProfile,
 ): string {
   const isMonorepo = packages && packages.length > 0;
   const packageDetailsSection =
@@ -462,7 +478,7 @@ Based on your Step 2 analysis, create stories that produce CODE CHANGES.
 
 ${GROUPING_RULES}
 
-${AC_QUALITY_RULES}
+${getAcQualityRules(projectProfile)}
 
 For each story, set "contextFiles" to the key source files the agent should read before implementing (max 5 per story). Use your Step 2 analysis to identify the most relevant files. Leave empty for greenfield stories with no existing files to reference.
 

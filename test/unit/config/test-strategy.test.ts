@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
+  AC_QUALITY_RULES,
   COMPLEXITY_GUIDE,
   GROUPING_RULES,
   TEST_STRATEGY_GUIDE,
   VALID_TEST_STRATEGIES,
+  getAcQualityRules,
   resolveTestStrategy,
 } from "../../../src/config/test-strategy";
 
@@ -71,6 +73,89 @@ describe("TEST_STRATEGY_GUIDE", () => {
     expect(TEST_STRATEGY_GUIDE).toContain("tdd-simple");
     expect(TEST_STRATEGY_GUIDE).toContain("three-session-tdd");
     expect(TEST_STRATEGY_GUIDE).toContain("three-session-tdd-lite");
+  });
+});
+
+describe("getAcQualityRules", () => {
+  describe("language-specific patterns", () => {
+    test("returns Go AC pattern when language is 'go'", () => {
+      const result = getAcQualityRules({ language: "go" });
+      expect(result).toContain("[function] returns (value, error) where error is [specific error type]");
+    });
+
+    test("returns Python AC pattern when language is 'python'", () => {
+      const result = getAcQualityRules({ language: "python" });
+      expect(result).toContain("raises [ExceptionType] with message containing");
+    });
+
+    test("returns Rust AC pattern when language is 'rust'", () => {
+      const result = getAcQualityRules({ language: "rust" });
+      expect(result).toContain("Result<[Ok type], [Err type]>");
+    });
+
+    test("returns default rules unchanged when language is 'typescript'", () => {
+      const result = getAcQualityRules({ language: "typescript" });
+      expect(result).toBe(AC_QUALITY_RULES);
+    });
+
+    test("returns default rules when language is unknown/unsupported", () => {
+      const result = getAcQualityRules({ language: "javascript" });
+      expect(result).toBe(AC_QUALITY_RULES);
+    });
+  });
+
+  describe("type-specific patterns", () => {
+    test("returns web AC pattern when type is 'web'", () => {
+      const result = getAcQualityRules({ type: "web" });
+      expect(result).toContain("When user clicks [element], component renders");
+    });
+
+    test("returns API AC pattern when type is 'api'", () => {
+      const result = getAcQualityRules({ type: "api" });
+      expect(result).toContain("POST /[endpoint] with [body] returns [status code]");
+    });
+
+    test("returns CLI AC pattern when type is 'cli'", () => {
+      const result = getAcQualityRules({ type: "cli" });
+      expect(result).toContain("exit code is [0/1] and stdout contains");
+    });
+
+    test("returns default rules when type is unknown", () => {
+      const result = getAcQualityRules({ type: "unknown-type" });
+      expect(result).toBe(AC_QUALITY_RULES);
+    });
+  });
+
+  describe("combined language + type", () => {
+    test("includes both language and type sections when both are set", () => {
+      const result = getAcQualityRules({ language: "go", type: "cli" });
+      expect(result).toContain("[function] returns (value, error) where error is [specific error type]");
+      expect(result).toContain("exit code is [0/1] and stdout contains");
+    });
+
+    test("includes Go and api sections when language=go and type=api", () => {
+      const result = getAcQualityRules({ language: "go", type: "api" });
+      expect(result).toContain("[function] returns (value, error) where error is [specific error type]");
+      expect(result).toContain("POST /[endpoint] with [body] returns [status code]");
+    });
+  });
+
+  describe("undefined / backward compatibility", () => {
+    test("returns the same content as AC_QUALITY_RULES when called with undefined", () => {
+      expect(getAcQualityRules(undefined)).toBe(AC_QUALITY_RULES);
+    });
+
+    test("returns the same content as AC_QUALITY_RULES when called with no argument", () => {
+      expect(getAcQualityRules()).toBe(AC_QUALITY_RULES);
+    });
+
+    test("AC_QUALITY_RULES exported constant equals getAcQualityRules(undefined)", () => {
+      expect(AC_QUALITY_RULES).toBe(getAcQualityRules(undefined));
+    });
+
+    test("returns default rules when profile is empty object", () => {
+      expect(getAcQualityRules({})).toBe(AC_QUALITY_RULES);
+    });
   });
 });
 

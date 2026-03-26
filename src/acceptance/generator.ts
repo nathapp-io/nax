@@ -73,6 +73,22 @@ export const _generatorPRDDeps = {
 };
 
 /**
+ * Return the acceptance test filename for a given language.
+ */
+export function acceptanceTestFilename(language?: string): string {
+  switch (language?.toLowerCase()) {
+    case "go":
+      return "acceptance_test.go";
+    case "python":
+      return "test_acceptance.py";
+    case "rust":
+      return "tests/acceptance.rs";
+    default:
+      return "acceptance.test.ts";
+  }
+}
+
+/**
  * Generate acceptance tests from PRD UserStory[] and RefinedCriterion[].
  *
  * This is a stub — implementation is provided by the implementer session.
@@ -139,7 +155,7 @@ Rules:
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
 - **Prefer behavioral tests** — import functions and call them rather than reading source files. For example, to verify "getPostRunActions() returns empty array", import PluginRegistry and call getPostRunActions(), don't grep the source file for the method name.
 - Output raw code only — no markdown fences, start directly with the language's import or package declaration
-- **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/.nax/features/${options.featureName}/acceptance.test.ts\` and will ALWAYS run from the repo root. The repo root is exactly 4 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..', '..')\`. For monorepo projects, navigate into packages from root (e.g. \`join(root, 'apps/api/src')\`).`;
+- **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/.nax/features/${options.featureName}/${acceptanceTestFilename(options.language)}\` and will ALWAYS run from the repo root. The repo root is exactly 4 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..', '..')\`. For monorepo projects, navigate into packages from root (e.g. \`join(root, 'apps/api/src')\`).`;
 
   const prompt = basePrompt;
 
@@ -180,7 +196,7 @@ Rules:
       lineNumber: i + 1,
     }));
     return {
-      testCode: generateSkeletonTests(options.featureName, skeletonCriteria, options.testFramework),
+      testCode: generateSkeletonTests(options.featureName, skeletonCriteria, options.testFramework, options.language),
       criteria: skeletonCriteria,
     };
   }
@@ -378,23 +394,40 @@ export async function generateAcceptanceTests(
 }
 
 /**
- * Extract TypeScript test code from agent output.
+ * Extract test code from agent output, supporting TypeScript, Go, Python, and Rust.
  *
  * Handles markdown code fences and extracts clean test code.
  *
  * @param output - Agent stdout
  * @returns Extracted test code
  */
-function extractTestCode(output: string): string | null {
+export function extractTestCode(output: string): string | null {
   let code: string | undefined;
 
-  // Try to extract from markdown code fence
-  const fenceMatch = output.match(/```(?:typescript|ts)?\s*([\s\S]*?)\s*```/);
+  // Try to extract from markdown code fence (any language tag)
+  const fenceMatch = output.match(/```(?:\w+)?\s*([\s\S]*?)\s*```/);
   if (fenceMatch) {
     code = fenceMatch[1].trim();
   }
 
-  // If no fence, try to find import statement and take everything from there
+  // Go: package declaration followed by func Test
+  if (!code) {
+    const goMatch = output.match(/package\s+\w+[\s\S]*?func\s+Test\w+\s*\(/);
+    if (goMatch) {
+      const startIdx = output.indexOf(goMatch[0]);
+      code = output.slice(startIdx).trim();
+    }
+  }
+
+  // Python: def test_ function
+  if (!code) {
+    const pythonMatch = output.match(/(?:^|\n)((?:import\s+\w+[\s\S]*?)?def\s+test_\w+[\s\S]+)/);
+    if (pythonMatch) {
+      code = pythonMatch[1].trim();
+    }
+  }
+
+  // TypeScript: import statement
   if (!code) {
     const importMatch = output.match(/import\s+{[\s\S]+/);
     if (importMatch) {
@@ -402,7 +435,7 @@ function extractTestCode(output: string): string | null {
     }
   }
 
-  // If no fence and no import, try to find describe() block
+  // TypeScript: describe() block
   if (!code) {
     const describeMatch = output.match(/describe\s*\([\s\S]+/);
     if (describeMatch) {
@@ -412,8 +445,13 @@ function extractTestCode(output: string): string | null {
 
   if (!code) return null;
 
-  // Validate: extracted code must contain at least one test-like keyword
-  const hasTestKeyword = /\b(?:describe|test|it|expect)\s*\(/.test(code);
+  // Validate: must contain at least one test-like keyword across all languages
+  const hasTestKeyword =
+    /\b(?:describe|test|it|expect)\s*\(/.test(code) || // TypeScript/JS
+    /func\s+Test\w+\s*\(/.test(code) || // Go
+    /def\s+test_\w+/.test(code) || // Python
+    /#\[test\]/.test(code); // Rust
+
   if (!hasTestKeyword) {
     return null;
   }
@@ -442,7 +480,22 @@ export function generateSkeletonTests(
   featureName: string,
   criteria: AcceptanceCriterion[],
   testFramework?: string,
+  language?: string,
 ): string {
+  const lang = language?.toLowerCase();
+
+  if (lang === "go") {
+    return generateGoSkeletonTests(featureName, criteria);
+  }
+
+  if (lang === "python") {
+    return generatePythonSkeletonTests(featureName, criteria);
+  }
+
+  if (lang === "rust") {
+    return generateRustSkeletonTests(featureName, criteria);
+  }
+
   const tests = criteria
     .map((ac) => {
       return `  test("${ac.id}: ${ac.text}", async () => {
@@ -458,5 +511,71 @@ export function generateSkeletonTests(
 describe("${featureName} - Acceptance Tests", () => {
 ${tests || "  // No acceptance criteria found"}
 });
+`;
+}
+
+function generateGoSkeletonTests(featureName: string, criteria: AcceptanceCriterion[]): string {
+  const sanitize = (text: string) =>
+    text
+      .replace(/[^a-zA-Z0-9 ]/g, "")
+      .split(" ")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join("");
+
+  const tests = criteria
+    .map((ac) => {
+      const funcName = `Test${sanitize(ac.text) || ac.id.replace("-", "")}`;
+      return `func ${funcName}(t *testing.T) {\n\t// TODO: ${ac.id}: ${ac.text}\n\tt.Fatal("not implemented")\n}`;
+    })
+    .join("\n\n");
+
+  return `package acceptance_test
+
+import "testing"
+
+${tests || "// No acceptance criteria found"}
+`;
+}
+
+function generatePythonSkeletonTests(_featureName: string, criteria: AcceptanceCriterion[]): string {
+  const sanitize = (text: string) =>
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, "")
+      .trim()
+      .replace(/\s+/g, "_");
+
+  const tests = criteria
+    .map((ac) => {
+      const funcName = `test_${sanitize(ac.text) || ac.id.toLowerCase().replace("-", "_")}`;
+      return `def ${funcName}():\n    # TODO: ${ac.id}: ${ac.text}\n    pytest.fail("not implemented")`;
+    })
+    .join("\n\n");
+
+  return `import pytest
+
+${tests || "# No acceptance criteria found"}
+`;
+}
+
+function generateRustSkeletonTests(_featureName: string, criteria: AcceptanceCriterion[]): string {
+  const sanitize = (text: string) =>
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, "")
+      .trim()
+      .replace(/\s+/g, "_");
+
+  const tests = criteria
+    .map((ac) => {
+      const funcName = sanitize(ac.text) || ac.id.toLowerCase().replace("-", "_");
+      return `    #[test]\n    fn ${funcName}() {\n        // TODO: ${ac.id}: ${ac.text}\n        panic!("not implemented");\n    }`;
+    })
+    .join("\n\n");
+
+  return `#[cfg(test)]
+mod tests {
+${tests || "    // No acceptance criteria found"}
+}
 `;
 }

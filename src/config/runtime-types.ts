@@ -462,6 +462,14 @@ export interface TestingConfig {
   mockGuidance?: string;
 }
 
+/** Project profile — language and tooling metadata for language-aware features (US-001) */
+export interface ProjectProfile {
+  language?: "typescript" | "javascript" | "go" | "rust" | "python" | "ruby" | "java" | "kotlin" | "php";
+  type?: string;
+  testFramework?: string;
+  lintTool?: string;
+}
+
 /** Full nax configuration */
 export interface NaxConfig {
   /** Schema version */
@@ -510,6 +518,8 @@ export interface NaxConfig {
   agent?: AgentConfig;
   /** Generate settings */
   generate?: GenerateConfig;
+  /** Project profile — language and tooling metadata (US-001) */
+  project?: ProjectProfile;
 }
 
 /** Generate command configuration */
