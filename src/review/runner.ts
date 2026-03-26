@@ -60,17 +60,42 @@ function hasScript(packageJson: Record<string, unknown> | null, scriptName: stri
   return scriptName in scripts;
 }
 
+/** Entry in the language command table: required binary + command string */
+type LanguageCommandEntry = { binary: string; command: string };
+
+/** Language-aware command lookup table */
+const LANGUAGE_COMMANDS: Record<string, Partial<Record<ReviewCheckName, LanguageCommandEntry>>> = {
+  go: {
+    test: { binary: "go", command: "go test ./..." },
+    lint: { binary: "golangci-lint", command: "golangci-lint run" },
+    typecheck: { binary: "go", command: "go vet ./..." },
+  },
+  rust: {
+    test: { binary: "cargo", command: "cargo test" },
+    lint: { binary: "cargo", command: "cargo clippy -- -D warnings" },
+  },
+  python: {
+    test: { binary: "pytest", command: "pytest" },
+    lint: { binary: "ruff", command: "ruff check ." },
+    typecheck: { binary: "mypy", command: "mypy ." },
+  },
+};
+
 /**
- * Stub: Returns the idiomatic command for a given language and check type.
+ * Returns the idiomatic command for a given language and check type.
  * Uses _reviewRunnerDeps.which() to verify the required binary is available.
  * Returns null if the binary is not found or the language/check combo is unsupported.
  *
- * NOTE: This is a stub — real implementation added in US-004.
- *
  * @internal
  */
-export function resolveLanguageCommand(_language: string, _check: ReviewCheckName): string | null {
-  return null;
+export function resolveLanguageCommand(language: string, check: ReviewCheckName): string | null {
+  const languageTable = LANGUAGE_COMMANDS[language];
+  if (!languageTable) return null;
+  const entry = languageTable[check];
+  if (!entry) return null;
+  const binaryPath = _reviewRunnerDeps.which(entry.binary);
+  if (!binaryPath) return null;
+  return entry.command;
 }
 
 /**
@@ -120,7 +145,15 @@ export async function resolveCommand(
     return qualityCmd;
   }
 
-  // 4. Check package.json — only for built-in checks (typecheck/lint/test), not build.
+  // 4. Language-aware fallback — binary availability checked via Bun.which()
+  if (profile?.language) {
+    const langCmd = resolveLanguageCommand(profile.language, check);
+    if (langCmd !== null) {
+      return langCmd;
+    }
+  }
+
+  // 5. Check package.json — only for built-in checks (typecheck/lint/test), not build.
   // build must be explicitly configured in review.commands or quality.commands.
   if (check !== "build") {
     const packageJson = await loadPackageJson(workdir);
@@ -129,7 +162,7 @@ export async function resolveCommand(
     }
   }
 
-  // 5. Not found - return null to skip
+  // 6. Not found - return null to skip
   return null;
 }
 
