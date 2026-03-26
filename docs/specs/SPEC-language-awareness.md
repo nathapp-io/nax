@@ -1,6 +1,6 @@
 # SPEC: Language & Project-Type Awareness (QUALITY-002)
 
-**Status:** Draft
+**Status:** Implemented
 **Author:** Nax Dev
 **Date:** 2026-03-25
 **Priority:** High — currently nax is JS/TS-only downstream of context injection
