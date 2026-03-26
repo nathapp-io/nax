@@ -57,6 +57,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
       fullSuiteTimeoutSeconds: 300,
       maxFailureSummaryChars: 2000,
       abortOnIncreasingFailures: true,
+      escalateOnExhaustion: true,
     },
     regressionGate: {
       enabled: true,
