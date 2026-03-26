@@ -97,6 +97,8 @@ export interface GenerateFromPRDOptions {
   testFramework?: string;
   /** Agent adapter to use for test generation — overrides _generatorPRDDeps.adapter */
   adapter?: AgentAdapter;
+  /** Target language for test generation (e.g. 'go', 'python', 'rust') — defaults to TypeScript */
+  language?: string;
 }
 
 export interface GenerateAcceptanceTestsOptions {
