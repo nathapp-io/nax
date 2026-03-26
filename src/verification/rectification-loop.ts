@@ -215,7 +215,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       );
       if (promptPrefix) escalationPrompt = `${promptPrefix}\n\n${escalationPrompt}`;
 
-      await agent.run({
+      const escalationResult = await agent.run({
         prompt: escalationPrompt,
         workdir,
         modelTier: escalatedTier,
@@ -228,6 +228,12 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
         featureName,
         storyId: story.id,
         sessionRole: "implementer",
+      });
+
+      logger?.info("rectification", "escalated rectification attempt cost", {
+        storyId: story.id,
+        escalatedTier,
+        cost: escalationResult.estimatedCost,
       });
 
       const escalationVerification = await _rectificationDeps.runVerification({
