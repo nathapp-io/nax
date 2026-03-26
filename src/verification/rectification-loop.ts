@@ -17,7 +17,12 @@ import { getSafeLogger } from "../logger";
 import type { AgentGetFn } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
-import { type RectificationState, createRectificationPrompt, shouldRetryRectification } from "./rectification";
+import {
+  type RectificationState,
+  createEscalatedRectificationPrompt,
+  createRectificationPrompt,
+  shouldRetryRectification,
+} from "./rectification";
 import { fullSuite as _fullSuite } from "./runners";
 
 export interface RectificationLoopOptions {
@@ -200,7 +205,14 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       }
 
       const escalatedModelDef = resolveModel(config.models[escalatedTier]);
-      let escalationPrompt = createRectificationPrompt(testSummary.failures, story, rectificationConfig);
+      let escalationPrompt = createEscalatedRectificationPrompt(
+        testSummary.failures,
+        story,
+        rectificationState.attempt,
+        currentTier,
+        escalatedTier,
+        rectificationConfig,
+      );
       if (promptPrefix) escalationPrompt = `${promptPrefix}\n\n${escalationPrompt}`;
 
       await agent.run({
