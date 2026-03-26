@@ -3,7 +3,7 @@
   "feature": "quality-002",
   "branchName": "feat/quality-002",
   "createdAt": "2026-03-26T00:00:00.000Z",
-  "updatedAt": "2026-03-26T03:52:48.274Z",
+  "updatedAt": "2026-03-26T03:57:11.121Z",
   "userStories": [
     {
       "id": "US-001",
@@ -29,7 +29,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/config/runtime-types.ts",
@@ -37,7 +39,10 @@
         "src/config/merge.ts",
         "src/config/schema.ts",
         "src/config/defaults.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-002",
@@ -75,7 +80,10 @@
         "src/config/runtime-types.ts",
         "src/execution/lifecycle/run-setup.ts",
         "src/execution/runner-setup.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -108,7 +116,10 @@
         "src/execution/lifecycle/run-setup.ts",
         "src/config/runtime-types.ts",
         "src/logger/index.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -146,7 +157,10 @@
         "src/review/types.ts",
         "src/review/orchestrator.ts",
         "src/cli/init-detect.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -182,7 +196,10 @@
         "src/precheck/types.ts",
         "src/config/runtime-types.ts",
         "src/precheck/index.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-006",
@@ -218,7 +235,10 @@
         "src/config/test-strategy.ts",
         "src/cli/plan.ts",
         "src/config/runtime-types.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-007",
@@ -256,7 +276,10 @@
         "src/config/runtime-types.ts",
         "src/pipeline/stages/acceptance-setup.ts",
         "src/pipeline/stages/acceptance.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-008",
@@ -294,7 +317,10 @@
         "src/prompts/sections/index.ts",
         "src/config/runtime-types.ts",
         "src/prompts/types.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-009",
@@ -329,7 +355,10 @@
         "src/prompts/builder.ts",
         "src/prompts/sections/index.ts",
         "src/config/runtime-types.ts"
-      ]
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     }
   ],
   "analysis": "The codebase already has two partial detection systems that must be unified, not duplicated: (1) src/context/injector.ts — buildProjectMetadata() detects 7+ languages (Go/Rust/Python/PHP/Ruby/JVM/Node) by reading manifests and returns ProjectMetadata for agent config injection. Its per-language detector functions (detectGo, detectRust, detectPython, detectNode, etc.) are async and read manifests via Bun.file(). (2) src/cli/init-detect.ts — detectProjectStack() detects language (typescript/python/rust/go/unknown), linter, monorepo type, and has detectUIFramework() + detectHasBin() helpers; buildQualityCommands() already produces language-aware commands for nax init. This file uses sync fs.readFileSync (Node.js APIs) rather than Bun-native. The new src/project/detector.ts should extract manifest-reading helpers from context/injector.ts (Bun-native) and type-detection logic from init-detect.ts, combining them into a single detectProjectProfile(workdir, existingProfile) function.\n\nNaxConfig in src/config/runtime-types.ts (line 466) has no project field yet. ProjectProfile must be added there. The Zod NaxConfigSchema in src/config/schemas.ts (line 389) has no project entry. mergePackageConfig() in src/config/merge.ts checks 5 mergeable fields; project must be added as a 6th. The schema.ts barrel (re-exports from ./types) must also export ProjectProfile.\n\nThe critical flow for profile availability: detectProjectProfile() is called once at run start in src/execution/lifecycle/run-setup.ts (called by runSetupPhase in runner-setup.ts). Detection result is merged back into config.project (respecting explicit overrides) so all downstream code that already receives config can read config.project?.language without new parameters.\n\nCommand resolution (US-004): src/review/runner.ts resolveCommand() step 4 fallback (line 107-110) does hasScript(packageJson, check) → bun run ${check}. This must be replaced with a language-aware lookup table. The projectProfile should come from config.project (already available since runner passes config down). Binary existence check: use Bun.which() (Bun-native, no Node.js which equivalent needed).\n\nAC quality rules (US-006): AC_QUALITY_RULES is a string constant in src/config/test-strategy.ts consumed in src/cli/plan.ts at line 465. Must become getAcQualityRules(profile?: ProjectProfile): string while keeping AC_QUALITY_RULES as a backward-compat export equal to getAcQualityRules(undefined).\n\nAcceptance test generation (US-007): src/acceptance/generator.ts extractTestCode() (line 388) only matches TypeScript patterns (import {, describe(). generateSkeletonTests() (line 441) always emits bun:test TS. Path anchor in generateFromPRD() prompt (line 142) hardcodes acceptance.test.ts. All three need multi-language extension. The language info will flow via GenerateFromPRDOptions (src/acceptance/types.ts) — add optional language field.\n\nHermetic guidance (US-009): buildHermeticSection() in src/prompts/sections/hermetic.ts takes (role, boundaries, mockGuidance). Add optional profile?: ProjectProfile parameter. Caller in src/prompts/builder.ts (line 128) passes this._hermeticConfig fields — add config.project to the builder so it can pass profile through.\n\nTDD conventions (US-008): No existing TDD file convention section exists in prompts. Needs a new buildTddLanguageSection(language) helper injected into PromptBuilder, similar to buildHermeticSection. Likely place: src/prompts/sections/ new file tdd-conventions.ts, wired in src/prompts/builder.ts.\n\nPrecheck (US-005): New checkLanguageTools() function in src/precheck/checks-warnings.ts or a new checks-language.ts. Use Bun.which() for binary detection. Must be added to the precheck checks.ts barrel and wired into the precheck run.\n\nMigration: All changes are purely additive. project field is optional in NaxConfig — existing configs without it parse and validate identically. Detection is additive; existing TS/Bun projects continue to work. The language-aware command fallback only fires when config.project?.language is set; the existing bun run ${check} path is preserved when undefined. No breaking interface changes anywhere.\n\nKey risk: NaxConfigSchema currently does NOT include a generate field (present in runtime-types.ts but absent from NaxConfigSchema Zod object) — confirm generate is intentionally excluded before adding project to avoid precedent issues. Also confirm that types.ts (the barrel for schema.ts re-exports) re-exports from runtime-types.ts so adding ProjectProfile there makes it available."
