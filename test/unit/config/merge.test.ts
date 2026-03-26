@@ -540,3 +540,63 @@ describe("mergePackageConfig", () => {
     });
   });
 });
+
+// ── US-001: project field merge ───────────────────────────────────────────────
+
+describe("mergePackageConfig — project field (US-001)", () => {
+  /** Root config with a project profile pre-set */
+  function makeRootWithProject(): NaxConfig {
+    return {
+      ...makeRoot(),
+      project: { language: "typescript", type: "library" },
+    };
+  }
+
+  // AC-5: merging project.type from package override
+  test("AC-5: merges project.type from packageOverride while preserving root.project.language", () => {
+    const root = makeRootWithProject();
+    const result = mergePackageConfig(root, {
+      project: { type: "api" },
+    } as Partial<NaxConfig>);
+
+    expect(result.project?.type).toBe("api");
+    expect(result.project?.language).toBe("typescript");
+  });
+
+  test("AC-5: merges project.testFramework without losing other project fields", () => {
+    const root = makeRootWithProject();
+    const result = mergePackageConfig(root, {
+      project: { testFramework: "vitest" },
+    } as Partial<NaxConfig>);
+
+    expect(result.project?.testFramework).toBe("vitest");
+    expect(result.project?.language).toBe("typescript");
+    expect(result.project?.type).toBe("library");
+  });
+
+  // AC-6: no project in packageOverride → root.project unchanged
+  test("AC-6: returns unchanged root.project when packageOverride has no project field", () => {
+    const root = makeRootWithProject();
+    const result = mergePackageConfig(root, {
+      quality: { requireTests: false } as Partial<NaxConfig["quality"]>,
+    } as Partial<NaxConfig>);
+
+    expect(result.project).toEqual(root.project);
+  });
+
+  test("AC-6: root.project is undefined when neither root nor override defines it", () => {
+    const root = makeRoot(); // no project field
+    const result = mergePackageConfig(root, {
+      quality: { requireTests: false } as Partial<NaxConfig["quality"]>,
+    } as Partial<NaxConfig>);
+
+    expect(result.project).toBeUndefined();
+  });
+
+  test("does not mutate root.project", () => {
+    const root = makeRootWithProject();
+    const origLang = root.project?.language;
+    mergePackageConfig(root, { project: { language: "go" } } as Partial<NaxConfig>);
+    expect(root.project?.language).toBe(origLang);
+  });
+});
