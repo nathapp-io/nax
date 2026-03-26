@@ -3,7 +3,7 @@
   "feature": "quality-002",
   "branchName": "feat/quality-002",
   "createdAt": "2026-03-26T00:00:00.000Z",
-  "updatedAt": "2026-03-26T04:06:45.702Z",
+  "updatedAt": "2026-03-26T04:16:31.238Z",
   "userStories": [
     {
       "id": "US-001",
@@ -65,8 +65,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -111,7 +111,9 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "src/project/detector.ts",

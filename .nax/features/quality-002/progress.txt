@@ -1,1 +1,2 @@
 [2026-03-26T04:06:43.638Z] US-001 — PASSED — ProjectProfile type, config schema, and merge support — Cost: $1.9524
+[2026-03-26T04:16:29.177Z] US-002 — PASSED — Language and project-type auto-detection module — Cost: $1.7335
