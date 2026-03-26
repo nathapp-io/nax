@@ -8,17 +8,30 @@
  * Roles that do NOT: verifier (read-only, writes no test code).
  */
 
+import type { ProjectProfile } from "../../config/runtime-types";
+
 const HERMETIC_ROLES = new Set(["test-writer", "implementer", "tdd-simple", "batch", "single-session"]);
+
+// Language-specific mocking guidance
+const LANGUAGE_GUIDANCE: Record<string, string> = {
+  go: "Define interfaces for external dependencies. Use constructor injection. Test with interface mocks — no real I/O in tests.",
+  rust: "Use trait objects or generics for external deps. Mock with the mockall crate. Use #[cfg(test)] modules.",
+  python:
+    "Use dependency injection or unittest.mock.patch. Mock external calls with pytest-mock fixtures. " +
+    "Never import side-effectful modules in test scope.",
+};
 
 /**
  * Builds the hermetic test requirement section for the prompt.
  *
+ * @param profile Optional project profile to derive language-specific mocking guidance
  * @returns Empty string if the role does not write test/source code.
  */
 export function buildHermeticSection(
   role: string,
   boundaries: string[] | undefined,
   mockGuidance: string | undefined,
+  profile?: ProjectProfile,
 ): string {
   if (!HERMETIC_ROLES.has(role)) return "";
 
@@ -33,8 +46,12 @@ export function buildHermeticSection(
     body += `\n\nProject-specific boundaries to mock: ${list}.`;
   }
 
+  // Explicit mockGuidance takes precedence over language-derived guidance
   if (mockGuidance) {
     body += `\n\nMocking guidance for this project: ${mockGuidance}`;
+  } else if (profile?.language && profile.language in LANGUAGE_GUIDANCE) {
+    // Derive language-specific guidance when no explicit guidance provided
+    body += `\n\nMocking guidance for this project: ${LANGUAGE_GUIDANCE[profile.language]}`;
   }
 
   return `# Hermetic Test Requirement\n\n${body}`;

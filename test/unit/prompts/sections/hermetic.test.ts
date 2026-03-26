@@ -102,6 +102,75 @@ describe("buildHermeticSection", () => {
     });
   });
 
+  describe("language-aware guidance (US-009)", () => {
+    test("Go language derives interface-based mocking guidance", () => {
+      const result = buildHermeticSection("test-writer", undefined, undefined, { language: "go" });
+      expect(result).toContain("Define interfaces for external dependencies");
+      expect(result).toContain("constructor injection");
+    });
+
+    test("Rust language derives mockall-based guidance", () => {
+      const result = buildHermeticSection("test-writer", undefined, undefined, { language: "rust" });
+      expect(result).toContain("mockall");
+    });
+
+    test("Python language derives unittest.mock and pytest-mock guidance", () => {
+      const result = buildHermeticSection("test-writer", undefined, undefined, { language: "python" });
+      expect(result).toContain("unittest.mock.patch");
+      expect(result).toContain("pytest-mock");
+    });
+
+    test("TypeScript language preserves existing guidance when no profile or profile lacks language", () => {
+      const result = buildHermeticSection("test-writer", undefined, undefined, { language: "typescript" });
+      expect(result).toContain("injectable deps");
+    });
+
+    test("explicit mockGuidance overrides language-derived guidance", () => {
+      const result = buildHermeticSection(
+        "test-writer",
+        undefined,
+        "Use ioredis-mock",
+        { language: "go" }
+      );
+      expect(result).toContain("Use ioredis-mock");
+      expect(result).not.toContain("Define interfaces for external dependencies");
+    });
+
+    test("undefined profile does not break existing behavior", () => {
+      const result = buildHermeticSection("test-writer", undefined, undefined, undefined);
+      expect(result).toContain("injectable deps");
+    });
+
+    test("verifier role returns empty string regardless of language", () => {
+      const result = buildHermeticSection("verifier", undefined, undefined, { language: "go" });
+      expect(result).toBe("");
+    });
+
+    test("language-aware guidance preserves base content", () => {
+      const result = buildHermeticSection("test-writer", undefined, undefined, { language: "go" });
+      expect(result).toContain("hermetic");
+      expect(result).toContain("Mock all I/O boundaries");
+      expect(result).toContain("CLI tool spawning");
+    });
+
+    test("language-aware guidance combines with externalBoundaries", () => {
+      const result = buildHermeticSection(
+        "test-writer",
+        ["redis", "claude"],
+        undefined,
+        { language: "go" }
+      );
+      expect(result).toContain("Define interfaces for external dependencies");
+      expect(result).toContain("`redis`");
+      expect(result).toContain("`claude`");
+    });
+
+    test("unsupported language falls back to default TypeScript guidance", () => {
+      const result = buildHermeticSection("test-writer", undefined, undefined, { language: "ruby" as any });
+      expect(result).toContain("injectable deps");
+    });
+  });
+
   describe("combined fields", () => {
     test("includes both boundaries and guidance when both provided", () => {
       const result = buildHermeticSection(

@@ -134,6 +134,7 @@ export class PromptBuilder {
         this._role,
         this._hermeticConfig.externalBoundaries,
         this._hermeticConfig.mockGuidance,
+        this._loaderConfig?.project,
       );
       if (hermeticSection) sections.push(hermeticSection);
     }
