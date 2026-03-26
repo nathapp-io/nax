@@ -4,33 +4,24 @@
     "id": "run-2026-03-26T02-25-41-431Z",
     "feature": "rect-001",
     "startedAt": "2026-03-26T02:25:41.431Z",
-    "status": "running",
+    "status": "completed",
     "dryRun": false,
     "pid": 4276
   },
   "progress": {
     "total": 4,
-    "passed": 3,
+    "passed": 4,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 0
   },
   "cost": {
-    "spent": 3.1950631500000006,
+    "spent": 3.7364374000000007,
     "limit": 8
   },
-  "current": {
-    "storyId": "US-003",
-    "title": "Include prior attempt context in escalated prompt",
-    "complexity": "simple",
-    "tddStrategy": "tdd-simple",
-    "model": "balanced",
-    "attempt": 1,
-    "phase": "routing"
-  },
-  "iterations": 4,
-  "updatedAt": "2026-03-26T03:04:42.531Z",
-  "durationMs": 2341100,
-  "lastHeartbeat": "2026-03-26T03:04:42.531Z"
+  "current": null,
+  "iterations": 5,
+  "updatedAt": "2026-03-26T03:10:37.061Z",
+  "durationMs": 2695630
 }

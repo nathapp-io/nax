@@ -1,3 +1,4 @@
 [2026-03-26T02:33:50.359Z] US-001 — PASSED — Add escalateOnExhaustion config field — Cost: $0.3526
 [2026-03-26T02:45:53.039Z] US-004 — PASSED — Log failing test names in rectification — Cost: $0.4756
 [2026-03-26T02:57:32.023Z] US-002 — PASSED — Implement rectification model escalation — Cost: $2.3670
+[2026-03-26T03:04:55.737Z] US-003 — PASSED — Include prior attempt context in escalated prompt — Cost: $0.5414

@@ -3,7 +3,7 @@
   "feature": "rect-001",
   "branchName": "feat/rect-001",
   "createdAt": "2026-03-26T00:00:00.000Z",
-  "updatedAt": "2026-03-26T02:57:34.083Z",
+  "updatedAt": "2026-03-26T03:04:55.739Z",
   "userStories": [
     {
       "id": "US-001",
@@ -139,8 +139,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
