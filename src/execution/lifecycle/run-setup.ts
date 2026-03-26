@@ -27,11 +27,17 @@ import { loadPlugins } from "../../plugins/loader";
 import type { PluginRegistry } from "../../plugins/registry";
 import type { PRD } from "../../prd";
 import { loadPRD } from "../../prd";
+import { detectProjectProfile } from "../../project";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "../../version";
 import { installCrashHandlers } from "../crash-recovery";
 import { acquireLock, hookCtx, releaseLock } from "../helpers";
 import { PidRegistry } from "../pid-registry";
 import { StatusWriter } from "../status-writer";
+
+/** Injectable deps for run-setup (enables testing without heavy side-effects) */
+export const _runSetupDeps = {
+  detectProjectProfile,
+};
 
 export interface RunSetupOptions {
   prdPath: string;
