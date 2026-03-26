@@ -1,0 +1,165 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "rect-001",
+  "branchName": "feat/rect-001",
+  "createdAt": "2026-03-26T00:00:00.000Z",
+  "updatedAt": "2026-03-26T03:04:55.739Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add escalateOnExhaustion config field",
+      "description": "Add the `escalateOnExhaustion` boolean field to `RectificationConfig` and wire it through the config schema, defaults, and CLI descriptions. This field controls whether the rectification loop escalates to a higher model tier after exhausting `maxRetries`. It defaults to `true` so existing users get the benefit without opt-in. The Zod schema must accept the field as optional (absent = true). The config-descriptions entry must explain that this triggers a one-step model tier escalation (e.g., balanced → powerful) when all retries are exhausted with remaining failures.",
+      "acceptanceCriteria": [
+        "RectificationConfig in src/config/runtime-types.ts has a field `escalateOnExhaustion` typed as `boolean`",
+        "RectificationConfigSchema in src/config/schemas.ts includes `escalateOnExhaustion: z.boolean().optional().default(true)` so omitting the field in project config parses as `true`",
+        "DEFAULT_CONFIG.execution.rectification.escalateOnExhaustion equals `true` in src/config/defaults.ts",
+        "FIELD_DESCRIPTIONS in src/cli/config-descriptions.ts has a key `execution.rectification.escalateOnExhaustion` whose value contains the phrase 'model tier escalation'",
+        "When a project config sets `execution.rectification.escalateOnExhaustion` to `false` and is parsed through the config loader, the resulting NaxConfig has `execution.rectification.escalateOnExhaustion === false`"
+      ],
+      "tags": [
+        "feature",
+        "config"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
+      },
+      "contextFiles": [
+        "src/config/runtime-types.ts",
+        "src/config/schemas.ts",
+        "src/config/defaults.ts",
+        "src/cli/config-descriptions.ts",
+        "src/config/merge.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-004",
+      "title": "Log failing test names in rectification",
+      "description": "Enhance the structured log entry emitted when rectification detects remaining failures after an attempt to include the names of the failing tests. The `failingTests` field should hold up to 10 test name strings (format: `testName` from `TestFailure`). When more than 10 tests fail, cap `failingTests` at 10 and add a `totalFailingTests` field with the full count. When the parser returns no structured failures (only a count), `failingTests` should be an empty array and `totalFailingTests` should reflect `testSummary.failed`. This change is confined to the existing `logger?.warn` call at the end of each retry iteration inside `runRectificationLoop`.",
+      "acceptanceCriteria": [
+        "When rectification detects remaining failures after an attempt and there are 10 or fewer structured TestFailure entries, the log entry at warn level includes a `failingTests` field containing an array of all their `testName` strings",
+        "When rectification detects more than 10 structured TestFailure entries, the log entry includes `failingTests` with only the first 10 testName strings and `totalFailingTests` equal to the full `testSummary.failed` count",
+        "When parseBunTestOutput returns an empty `failures` array but `failed > 0`, the log entry includes `failingTests: []` and `totalFailingTests` equal to `testSummary.failed`",
+        "When there are 10 or fewer failures, `totalFailingTests` is not present in the log entry (or equals `failingTests.length` — consistent with not being a truncation indicator)"
+      ],
+      "tags": [
+        "feature",
+        "observability"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/verification/rectification-loop.ts",
+        "src/verification/types.ts",
+        "src/verification/parser.ts",
+        "src/execution/test-output-parser.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-002",
+      "title": "Implement rectification model escalation",
+      "description": "After the rectification retry loop exhausts `maxRetries` with failures still remaining, and when `rectification.escalateOnExhaustion` is `true` and `autoMode.escalation.enabled` is `true`, invoke the agent one additional time using the next tier from `autoMode.escalation.tierOrder`. The escalated attempt uses the same `runVerification` path as normal retries. If the escalated attempt passes verification, `runRectificationLoop` returns `true`. If it fails, the function returns `false` and logs a warning. When the current tier is already the last entry in `tierOrder`, no escalation fires. When `escalateOnExhaustion` is `false`, the existing behavior is unchanged. The `_rectificationDeps` object must have `escalateTier` added so tests can stub it. The escalated attempt must count as exactly one additional agent invocation (total = `maxRetries + 1`).",
+      "acceptanceCriteria": [
+        "When `rectification.escalateOnExhaustion` is `true`, `autoMode.escalation.enabled` is `true`, and the while loop exits with `rectificationState.attempt >= maxRetries` and `rectificationState.currentFailures > 0`, `runRectificationLoop` invokes the agent once more with the tier returned by `escalateTier(currentTier, tierOrder)`",
+        "When the current model tier is `'balanced'` and `tierOrder` is `[{tier:'fast',...},{tier:'balanced',...},{tier:'powerful',...}]`, the escalated agent.run call receives `modelTier: 'powerful'`",
+        "When the current model tier is the last entry in `tierOrder` (escalateTier returns null), no additional agent.run call is made and `runRectificationLoop` returns `false`",
+        "When the escalated agent.run succeeds and the subsequent `runVerification` call returns `success: true`, `runRectificationLoop` returns `true` and logs an info-level message containing both the original tier name and the escalated tier name",
+        "When the escalated agent.run succeeds but the subsequent `runVerification` call returns `success: false`, `runRectificationLoop` returns `false` and logs a warn-level message containing the phrase 'escalated rectification also failed'",
+        "When `rectification.escalateOnExhaustion` is `false`, `runRectificationLoop` does not invoke the agent after the while loop exits and returns `false` as before",
+        "When the while loop exits early due to `abortOnIncreasingFailures` (attempt < maxRetries), no escalation fires because the attempt count guard `attempt >= maxRetries` is false",
+        "The total number of agent.run invocations across the while loop and escalation path when escalation triggers equals `maxRetries + 1`"
+      ],
+      "tags": [
+        "feature",
+        "escalation"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/verification/rectification-loop.ts",
+        "src/verification/rectification.ts",
+        "src/execution/escalation/escalation.ts",
+        "src/config/runtime-types.ts",
+        "src/execution/escalation/index.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-003",
+      "title": "Include prior attempt context in escalated prompt",
+      "description": "When the escalated rectification attempt runs, the prompt sent to the agent must include a 'Previous Rectification Attempts' section that tells the agent how many prior attempts were made, what tier they used, and which specific tests are still failing. This gives the higher-tier model context to try a different approach rather than repeating the same surface-level patch. Add a new exported function `createEscalatedRectificationPrompt` in `src/verification/rectification.ts` that builds this prompt. When there are more than 10 failing test names, include only the first 10 followed by a line of the form 'and N more'. The prompt must also include a line indicating the model was escalated (e.g., 'escalated from balanced to powerful').",
+      "acceptanceCriteria": [
+        "When `createEscalatedRectificationPrompt` is called, the returned string contains a section header matching 'Previous Rectification Attempts'",
+        "The returned prompt includes the count of prior attempts and the original model tier name in the prior-attempts section",
+        "When the `failures` array has 10 or fewer entries, the prompt includes each entry's `testName` in a list under the failing tests section",
+        "When the `failures` array has more than 10 entries, the prompt includes the first 10 test names and a line of the form 'and N more' where N is the remaining count",
+        "The returned prompt contains a line indicating escalation direction with both the source tier and target tier (e.g., containing both 'balanced' and 'powerful' when escalating between those tiers)",
+        "The escalated prompt produced by `createEscalatedRectificationPrompt` is used by `runRectificationLoop` as the prompt for the escalated agent.run call (not the standard `createRectificationPrompt` output)"
+      ],
+      "tags": [
+        "feature",
+        "prompt"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
+      },
+      "contextFiles": [
+        "src/verification/rectification.ts",
+        "src/verification/rectification-loop.ts",
+        "src/verification/types.ts",
+        "src/verification/parser.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    }
+  ],
+  "analysis": "## Codebase Analysis\n\n### Key Files\n\n**Config layer (US-001):**\n- `src/config/runtime-types.ts` (lines 36-47): `RectificationConfig` interface is missing `escalateOnExhaustion: boolean`. Add it after `abortOnIncreasingFailures`.\n- `src/config/schemas.ts` (lines 54-60): `RectificationConfigSchema` Zod object needs `escalateOnExhaustion: z.boolean().optional().default(true)` added.\n- `src/config/defaults.ts` (lines 54-59): `DEFAULT_CONFIG.execution.rectification` object needs `escalateOnExhaustion: true`.\n- `src/cli/config-descriptions.ts` (line 73): Existing entry for `abortOnIncreasingFailures` — add sibling entry for `execution.rectification.escalateOnExhaustion` with text describing model tier escalation on retry exhaustion.\n- `src/config/merge.ts`: Uses spread `...packageOverride.execution` which picks up nested rectification fields automatically — no change needed.\n\n**Escalation utilities (already exist, reuse directly):**\n- `src/execution/escalation/escalation.ts`: exports `escalateTier(currentTier, tierOrder)` which returns the next tier string or null — exactly what US-002 needs. Import via barrel `src/execution/escalation`.\n- Tier derivation in `rectification-loop.ts` lines 84-86 uses `config.autoMode.complexityRouting?.[complexity]` — same logic must be used in escalation path to derive `currentTier`.\n\n**Core loop (US-002, US-003, US-004):**\n- `src/verification/rectification-loop.ts`: Main target. The `while` loop (line 65) exhausts `maxRetries`. After the loop body (lines 157-171), returns `false`. Escalation must be inserted between the existing post-loop log and the final `return false`. The `_rectificationDeps` injectable object (lines 39-42) provides `getAgent` and `runVerification` — add `escalateTier` here for testability. The `agentGetFn ?? _rectificationDeps.getAgent` pattern at line 76 must be reused for the escalated attempt.\n- `src/verification/rectification.ts`: `createRectificationPrompt()` (lines 54-105) — US-003 needs a new exported function `createEscalatedRectificationPrompt()` here that accepts prior attempt count, original tier, escalated tier, and failing test names, producing the augmented prompt.\n- `src/verification/types.ts`: `TestFailure` has `file`, `testName`, `error`, `stackTrace`. For US-004 logging and US-003 prompt, extract `testName` from the failures array. No changes to this file.\n- `src/execution/test-output-parser.ts`: Is a re-export shim pointing to `src/verification/parser.ts` — no changes needed.\n\n### Architecture Decisions\n\n1. **Where escalation lives:** After the `while` loop in `runRectificationLoop`, gated by `rectificationConfig.escalateOnExhaustion && config.autoMode.escalation.enabled && rectificationState.currentFailures > 0`. Must NOT fire when abortOnIncreasingFailures triggered early exit (check attempt count equals maxRetries).\n2. **Tier derivation:** Reuse the same 3-line pattern at lines 84-86 of rectification-loop.ts to get `currentTier`, then call `escalateTier()` from the escalation barrel.\n3. **Injectable deps:** Add `escalateTier` to `_rectificationDeps` so tests can stub it without touching globals. Also add the escalated attempt's agent.run call path through `agentGetFn ?? _rectificationDeps.getAgent`.\n4. **Cost:** `agentResult.estimatedCost` is already logged — no accumulation needed since the function returns `boolean`. The log line satisfies AC-7 (cost not leaked/silent).\n5. **Total invocations:** maxRetries attempts in the while loop + 1 escalated attempt = maxRetries + 1 total. The while loop guard `state.attempt >= config.maxRetries` already ensures the loop stops at maxRetries.\n6. **Escalated prompt:** New function in `src/verification/rectification.ts` accepting `(failures: TestFailure[], story: UserStory, config: RectificationConfig, priorAttempts: number, fromTier: string, toTier: string)` — builds the base prompt then appends the 'Previous Rectification Attempts' section.\n7. **US-004 log enhancement:** In the existing `logger?.warn('rectification', '${label} still failing after attempt', {...})` call at line 150-154, add `failingTests: testSummary.failures.slice(0, 10).map(f => f.testName)` and `totalFailingTests: testSummary.failed` to the structured log object.\n\n### Risks\n- `rectification-loop.ts` is touched by both US-002 and US-004. Stories must be sequenced: US-004 first or merged. Recommended: run US-004 before US-002 to avoid merge conflicts.\n- The escalation path duplicates the agent.run call from inside the while loop. Keep the duplication explicit (no premature abstraction) — the escalated call has different prompt and modelTier.\n- `abortOnIncreasingFailures` may cause the while loop to exit before reaching `maxRetries`. The escalation guard must check `rectificationState.attempt >= rectificationConfig.maxRetries` (not just `currentFailures > 0`) to avoid firing on early-exit scenarios. Actually re-reading: when abortOnIncreasingFailures fires, `attempt < maxRetries`, so the guard `attempt >= maxRetries` correctly prevents escalation on regression-spiral exit.\n- `mergePackageConfig` deep-spreads `execution.rectification` via `...packageOverride.execution` which only does a shallow merge of `rectification`. The nested `rectification` object is fully replaced if present in packageOverride — this is existing behavior and `escalateOnExhaustion` inherits it without change."
+}

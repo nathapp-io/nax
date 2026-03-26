@@ -11,12 +11,18 @@ import { getAgent as _getAgent } from "../agents";
 import type { NaxConfig } from "../config";
 import { resolveModel } from "../config";
 import { resolvePermissions } from "../config/permissions";
+import { escalateTier as _escalateTier } from "../execution/escalation/escalation";
 import { parseBunTestOutput } from "../execution/test-output-parser";
 import { getSafeLogger } from "../logger";
 import type { AgentGetFn } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
-import { type RectificationState, createRectificationPrompt, shouldRetryRectification } from "./rectification";
+import {
+  type RectificationState,
+  createEscalatedRectificationPrompt,
+  createRectificationPrompt,
+  shouldRetryRectification,
+} from "./rectification";
 import { fullSuite as _fullSuite } from "./runners";
 
 export interface RectificationLoopOptions {
@@ -39,6 +45,7 @@ export interface RectificationLoopOptions {
 export const _rectificationDeps = {
   getAgent: _getAgent as (name: string) => import("../agents/types").AgentAdapter | undefined,
   runVerification: _fullSuite as typeof _fullSuite,
+  escalateTier: _escalateTier,
 };
 
 /** Run the rectification retry loop. Returns true if all failures were fixed. */
@@ -147,11 +154,21 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       testSummary.passed = newTestSummary.passed;
     }
 
-    logger?.warn("rectification", `${label} still failing after attempt`, {
+    const failingTests = testSummary.failures.slice(0, 10).map((f) => f.testName);
+    const logData: Record<string, unknown> = {
       storyId: story.id,
       attempt: rectificationState.attempt,
       remainingFailures: rectificationState.currentFailures,
-    });
+      failingTests,
+    };
+
+    // Include totalFailingTests if we have more than 10 structured failures
+    // OR if no structured failures exist but there are still failures reported
+    if (testSummary.failures.length > 10 || (testSummary.failures.length === 0 && testSummary.failed > 0)) {
+      logData.totalFailingTests = testSummary.failed;
+    }
+
+    logger?.warn("rectification", `${label} still failing after attempt`, logData);
   }
 
   if (rectificationState.attempt >= rectificationConfig.maxRetries) {
@@ -166,6 +183,85 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       initialFailures: rectificationState.initialFailures,
       currentFailures: rectificationState.currentFailures,
     });
+  }
+
+  const shouldEscalate =
+    rectificationConfig.escalateOnExhaustion !== false &&
+    config.autoMode?.escalation?.enabled === true &&
+    rectificationState.attempt >= rectificationConfig.maxRetries &&
+    rectificationState.currentFailures > 0;
+
+  if (shouldEscalate) {
+    const complexity = story.routing?.complexity ?? "medium";
+    const currentTier =
+      config.autoMode.complexityRouting?.[complexity] || config.autoMode.escalation.tierOrder[0]?.tier || "balanced";
+    const tierOrder = config.autoMode.escalation.tierOrder;
+    const escalatedTier = _rectificationDeps.escalateTier(currentTier, tierOrder);
+
+    if (escalatedTier !== null) {
+      const agent = (agentGetFn ?? _rectificationDeps.getAgent)(config.autoMode.defaultAgent);
+      if (!agent) {
+        return false;
+      }
+
+      const escalatedModelDef = resolveModel(config.models[escalatedTier]);
+      let escalationPrompt = createEscalatedRectificationPrompt(
+        testSummary.failures,
+        story,
+        rectificationState.attempt,
+        currentTier,
+        escalatedTier,
+        rectificationConfig,
+      );
+      if (promptPrefix) escalationPrompt = `${promptPrefix}\n\n${escalationPrompt}`;
+
+      const escalationResult = await agent.run({
+        prompt: escalationPrompt,
+        workdir,
+        modelTier: escalatedTier,
+        modelDef: escalatedModelDef,
+        timeoutSeconds: config.execution.sessionTimeoutSeconds,
+        dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
+        pipelineStage: "rectification",
+        config,
+        maxInteractionTurns: config.agent?.maxInteractionTurns,
+        featureName,
+        storyId: story.id,
+        sessionRole: "implementer",
+      });
+
+      logger?.info("rectification", "escalated rectification attempt cost", {
+        storyId: story.id,
+        escalatedTier,
+        cost: escalationResult.estimatedCost,
+      });
+
+      const escalationVerification = await _rectificationDeps.runVerification({
+        workdir,
+        expectedFiles: getExpectedFiles(story),
+        command: testCommand,
+        timeoutSeconds,
+        forceExit: config.quality.forceExit,
+        detectOpenHandles: config.quality.detectOpenHandles,
+        detectOpenHandlesRetries: config.quality.detectOpenHandlesRetries,
+        timeoutRetryCount: 0,
+        gracePeriodMs: config.quality.gracePeriodMs,
+        drainTimeoutMs: config.quality.drainTimeoutMs,
+        shell: config.quality.shell,
+        stripEnvVars: config.quality.stripEnvVars,
+      });
+
+      if (escalationVerification.success) {
+        logger?.info("rectification", `${label} escalated from ${currentTier} to ${escalatedTier} and succeeded`, {
+          storyId: story.id,
+          currentTier,
+          escalatedTier,
+        });
+        return true;
+      }
+
+      logger?.warn("rectification", "escalated rectification also failed", { storyId: story.id, escalatedTier });
+    }
   }
 
   return false;

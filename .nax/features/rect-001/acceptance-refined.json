@@ -1,0 +1,163 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "RectificationConfig in src/config/runtime-types.ts has a field `escalateOnExhaustion` typed as `boolean`",
+    "refined": "RectificationConfig in src/config/runtime-types.ts has a field `escalateOnExhaustion` typed as `boolean`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "RectificationConfigSchema in src/config/schemas.ts includes `escalateOnExhaustion: z.boolean().optional().default(true)` so omitting the field in project config parses as `true`",
+    "refined": "RectificationConfigSchema in src/config/schemas.ts includes `escalateOnExhaustion: z.boolean().optional().default(true)` so omitting the field in project config parses as `true`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "DEFAULT_CONFIG.execution.rectification.escalateOnExhaustion equals `true` in src/config/defaults.ts",
+    "refined": "DEFAULT_CONFIG.execution.rectification.escalateOnExhaustion equals `true` in src/config/defaults.ts",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "FIELD_DESCRIPTIONS in src/cli/config-descriptions.ts has a key `execution.rectification.escalateOnExhaustion` whose value contains the phrase 'model tier escalation'",
+    "refined": "FIELD_DESCRIPTIONS in src/cli/config-descriptions.ts has a key `execution.rectification.escalateOnExhaustion` whose value contains the phrase 'model tier escalation'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When a project config sets `execution.rectification.escalateOnExhaustion` to `false` and is parsed through the config loader, the resulting NaxConfig has `execution.rectification.escalateOnExhaustion === false`",
+    "refined": "When a project config sets `execution.rectification.escalateOnExhaustion` to `false` and is parsed through the config loader, the resulting NaxConfig has `execution.rectification.escalateOnExhaustion === false`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When rectification detects remaining failures after an attempt and there are 10 or fewer structured TestFailure entries, the log entry at warn level includes a `failingTests` field containing an array of all their `testName` strings",
+    "refined": "When rectification detects remaining failures after an attempt and there are 10 or fewer structured TestFailure entries, the log entry at warn level includes a `failingTests` field containing an array of all their `testName` strings",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When rectification detects more than 10 structured TestFailure entries, the log entry includes `failingTests` with only the first 10 testName strings and `totalFailingTests` equal to the full `testSummary.failed` count",
+    "refined": "When rectification detects more than 10 structured TestFailure entries, the log entry includes `failingTests` with only the first 10 testName strings and `totalFailingTests` equal to the full `testSummary.failed` count",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When parseBunTestOutput returns an empty `failures` array but `failed > 0`, the log entry includes `failingTests: []` and `totalFailingTests` equal to `testSummary.failed`",
+    "refined": "When parseBunTestOutput returns an empty `failures` array but `failed > 0`, the log entry includes `failingTests: []` and `totalFailingTests` equal to `testSummary.failed`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When there are 10 or fewer failures, `totalFailingTests` is not present in the log entry (or equals `failingTests.length` — consistent with not being a truncation indicator)",
+    "refined": "When there are 10 or fewer failures, `totalFailingTests` is not present in the log entry (or equals `failingTests.length` — consistent with not being a truncation indicator)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When `rectification.escalateOnExhaustion` is `true`, `autoMode.escalation.enabled` is `true`, and the while loop exits with `rectificationState.attempt >= maxRetries` and `rectificationState.currentFailures > 0`, `runRectificationLoop` invokes the agent once more with the tier returned by `escalateTier(currentTier, tierOrder)`",
+    "refined": "When `rectification.escalateOnExhaustion` is `true`, `autoMode.escalation.enabled` is `true`, and the while loop exits with `rectificationState.attempt >= maxRetries` and `rectificationState.currentFailures > 0`, `runRectificationLoop` invokes the agent once more with the tier returned by `escalateTier(currentTier, tierOrder)`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When the current model tier is `'balanced'` and `tierOrder` is `[{tier:'fast',...},{tier:'balanced',...},{tier:'powerful',...}]`, the escalated agent.run call receives `modelTier: 'powerful'`",
+    "refined": "When the current model tier is `'balanced'` and `tierOrder` is `[{tier:'fast',...},{tier:'balanced',...},{tier:'powerful',...}]`, the escalated agent.run call receives `modelTier: 'powerful'`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When the current model tier is the last entry in `tierOrder` (escalateTier returns null), no additional agent.run call is made and `runRectificationLoop` returns `false`",
+    "refined": "When the current model tier is the last entry in `tierOrder` (escalateTier returns null), no additional agent.run call is made and `runRectificationLoop` returns `false`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When the escalated agent.run succeeds and the subsequent `runVerification` call returns `success: true`, `runRectificationLoop` returns `true` and logs an info-level message containing both the original tier name and the escalated tier name",
+    "refined": "When the escalated agent.run succeeds and the subsequent `runVerification` call returns `success: true`, `runRectificationLoop` returns `true` and logs an info-level message containing both the original tier name and the escalated tier name",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "When the escalated agent.run succeeds but the subsequent `runVerification` call returns `success: false`, `runRectificationLoop` returns `false` and logs a warn-level message containing the phrase 'escalated rectification also failed'",
+    "refined": "When the escalated agent.run succeeds but the subsequent `runVerification` call returns `success: false`, `runRectificationLoop` returns `false` and logs a warn-level message containing the phrase 'escalated rectification also failed'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When `rectification.escalateOnExhaustion` is `false`, `runRectificationLoop` does not invoke the agent after the while loop exits and returns `false` as before",
+    "refined": "When `rectification.escalateOnExhaustion` is `false`, `runRectificationLoop` does not invoke the agent after the while loop exits and returns `false` as before",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When the while loop exits early due to `abortOnIncreasingFailures` (attempt < maxRetries), no escalation fires because the attempt count guard `attempt >= maxRetries` is false",
+    "refined": "When the while loop exits early due to `abortOnIncreasingFailures` (attempt < maxRetries), no escalation fires because the attempt count guard `attempt >= maxRetries` is false",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-17",
+    "original": "The total number of agent.run invocations across the while loop and escalation path when escalation triggers equals `maxRetries + 1`",
+    "refined": "The total number of agent.run invocations across the while loop and escalation path when escalation triggers equals `maxRetries + 1`",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When `createEscalatedRectificationPrompt` is called, the returned string contains a section header matching 'Previous Rectification Attempts'",
+    "refined": "When `createEscalatedRectificationPrompt` is called, the returned string contains a section header matching 'Previous Rectification Attempts'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-19",
+    "original": "The returned prompt includes the count of prior attempts and the original model tier name in the prior-attempts section",
+    "refined": "The returned prompt includes the count of prior attempts and the original model tier name in the prior-attempts section",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When the `failures` array has 10 or fewer entries, the prompt includes each entry's `testName` in a list under the failing tests section",
+    "refined": "When the `failures` array has 10 or fewer entries, the prompt includes each entry's `testName` in a list under the failing tests section",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When the `failures` array has more than 10 entries, the prompt includes the first 10 test names and a line of the form 'and N more' where N is the remaining count",
+    "refined": "When the `failures` array has more than 10 entries, the prompt includes the first 10 test names and a line of the form 'and N more' where N is the remaining count",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-22",
+    "original": "The returned prompt contains a line indicating escalation direction with both the source tier and target tier (e.g., containing both 'balanced' and 'powerful' when escalating between those tiers)",
+    "refined": "The returned prompt contains a line indicating escalation direction with both the source tier and target tier (e.g., containing both 'balanced' and 'powerful' when escalating between those tiers)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-23",
+    "original": "The escalated prompt produced by `createEscalatedRectificationPrompt` is used by `runRectificationLoop` as the prompt for the escalated agent.run call (not the standard `createRectificationPrompt` output)",
+    "refined": "The escalated prompt produced by `createEscalatedRectificationPrompt` is used by `runRectificationLoop` as the prompt for the escalated agent.run call (not the standard `createRectificationPrompt` output)",
+    "testable": true,
+    "storyId": "US-001"
+  }
+]

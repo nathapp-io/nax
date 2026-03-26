@@ -8,6 +8,7 @@ import type { RectificationConfig } from "../../../src/config";
 import {
   type RectificationState,
   createRectificationPrompt,
+  createEscalatedRectificationPrompt,
   shouldRetryRectification,
 } from "../../../src/verification/rectification";
 import type { TestFailure } from "../../../src/execution/test-output-parser";
@@ -281,5 +282,233 @@ describe("createRectificationPrompt", () => {
     const prompt = createRectificationPrompt(mockFailures, mockStory);
     expect(prompt).toContain("run ONLY the failing test files shown above");
     expect(prompt).toContain("NEVER run `bun test` without a file filter");
+  });
+});
+
+describe("createEscalatedRectificationPrompt", () => {
+  const mockStory: UserStory = {
+    id: "US-001",
+    title: "Add user authentication",
+    description: "Implement JWT-based authentication for API endpoints",
+    acceptanceCriteria: [
+      "Users can log in with email/password",
+      "JWT tokens are issued on successful login",
+      "Protected endpoints validate JWT tokens",
+    ],
+    tags: ["security"],
+    dependencies: [],
+    status: "in-progress",
+    passes: false,
+    escalations: [],
+    attempts: 1,
+  };
+
+  const mockFailures: TestFailure[] = [
+    {
+      file: "test/auth.test.ts",
+      testName: "login > should return JWT on valid credentials",
+      error: "Expected status 200, got 401",
+      stackTrace: ["at test/auth.test.ts:15:20"],
+    },
+    {
+      file: "test/middleware.test.ts",
+      testName: "JWT middleware > should reject invalid tokens",
+      error: "Expected 403, got 200",
+      stackTrace: ["at test/middleware.test.ts:25:10"],
+    },
+  ];
+
+  const baseConfig: RectificationConfig = {
+    enabled: true,
+    maxRetries: 2,
+    fullSuiteTimeoutSeconds: 120,
+    maxFailureSummaryChars: 2000,
+    abortOnIncreasingFailures: true,
+  };
+
+  test("should include 'Previous Rectification Attempts' section header", () => {
+    const prompt = createEscalatedRectificationPrompt(
+      mockFailures,
+      mockStory,
+      2,
+      "balanced",
+      "powerful",
+      baseConfig,
+    );
+    expect(prompt).toContain("Previous Rectification Attempts");
+  });
+
+  test("should include prior attempt count and original tier in the section", () => {
+    const prompt = createEscalatedRectificationPrompt(
+      mockFailures,
+      mockStory,
+      2,
+      "balanced",
+      "powerful",
+      baseConfig,
+    );
+    expect(prompt).toMatch(/(?:prior|previous).*:.*2/i);
+    expect(prompt).toContain("balanced");
+  });
+
+  test("should list all test names when failures <= 10", () => {
+    const prompt = createEscalatedRectificationPrompt(
+      mockFailures,
+      mockStory,
+      1,
+      "fast",
+      "balanced",
+      baseConfig,
+    );
+    expect(prompt).toContain("login > should return JWT on valid credentials");
+    expect(prompt).toContain("JWT middleware > should reject invalid tokens");
+  });
+
+  test("should include first 10 test names and 'and N more' when failures > 10", () => {
+    const manyFailures: TestFailure[] = Array.from({ length: 15 }, (_, i) => ({
+      file: `test/file${i}.test.ts`,
+      testName: `test ${i}`,
+      error: `Error ${i}`,
+      stackTrace: [],
+    }));
+
+    const prompt = createEscalatedRectificationPrompt(
+      manyFailures,
+      mockStory,
+      2,
+      "balanced",
+      "powerful",
+      baseConfig,
+    );
+
+    // Should include first 10 test names
+    for (let i = 0; i < 10; i++) {
+      expect(prompt).toContain(`test ${i}`);
+    }
+
+    // Should include "and 5 more" (15 - 10 = 5)
+    expect(prompt).toContain("and 5 more");
+  });
+
+  test("should include escalation direction with both source and target tiers", () => {
+    const prompt = createEscalatedRectificationPrompt(
+      mockFailures,
+      mockStory,
+      2,
+      "balanced",
+      "powerful",
+      baseConfig,
+    );
+    expect(prompt).toContain("balanced");
+    expect(prompt).toContain("powerful");
+    // Should have some indication of escalation/direction
+    expect(prompt.toLowerCase()).toMatch(/escalat/);
+  });
+
+  test("should handle escalation from fast to balanced", () => {
+    const prompt = createEscalatedRectificationPrompt(
+      mockFailures,
+      mockStory,
+      1,
+      "fast",
+      "balanced",
+      baseConfig,
+    );
+    expect(prompt).toContain("fast");
+    expect(prompt).toContain("balanced");
+  });
+
+  test("should include story context (title, description, acceptance criteria)", () => {
+    const prompt = createEscalatedRectificationPrompt(
+      mockFailures,
+      mockStory,
+      1,
+      "balanced",
+      "powerful",
+      baseConfig,
+    );
+    expect(prompt).toContain("Add user authentication");
+    expect(prompt).toContain("Implement JWT-based authentication for API endpoints");
+    expect(prompt).toContain("Users can log in with email/password");
+  });
+
+  test("should include failure summary", () => {
+    const prompt = createEscalatedRectificationPrompt(
+      mockFailures,
+      mockStory,
+      1,
+      "balanced",
+      "powerful",
+      baseConfig,
+    );
+    expect(prompt).toContain("test/auth.test.ts");
+    expect(prompt).toContain("Expected status 200, got 401");
+  });
+
+  test("should respect maxFailureSummaryChars config", () => {
+    const smallConfig: RectificationConfig = {
+      enabled: true,
+      maxRetries: 2,
+      fullSuiteTimeoutSeconds: 120,
+      maxFailureSummaryChars: 100,
+      abortOnIncreasingFailures: true,
+    };
+
+    const manyFailures: TestFailure[] = Array.from({ length: 10 }, (_, i) => ({
+      file: `test/file${i}.test.ts`,
+      testName: `test ${i}`,
+      error: `Error ${i}: Some long error message that takes up space`,
+      stackTrace: [],
+    }));
+
+    const prompt = createEscalatedRectificationPrompt(
+      manyFailures,
+      mockStory,
+      1,
+      "balanced",
+      "powerful",
+      smallConfig,
+    );
+
+    expect(prompt).toMatch(/truncated/i);
+  });
+
+  test("should handle exactly 10 failures without 'and N more'", () => {
+    const tenFailures: TestFailure[] = Array.from({ length: 10 }, (_, i) => ({
+      file: `test/file${i}.test.ts`,
+      testName: `test ${i}`,
+      error: `Error ${i}`,
+      stackTrace: [],
+    }));
+
+    const prompt = createEscalatedRectificationPrompt(
+      tenFailures,
+      mockStory,
+      1,
+      "balanced",
+      "powerful",
+      baseConfig,
+    );
+
+    // Should include all 10 test names
+    for (let i = 0; i < 10; i++) {
+      expect(prompt).toContain(`test ${i}`);
+    }
+
+    // Should NOT include "and N more" when exactly 10
+    expect(prompt).not.toMatch(/and \d+ more/);
+  });
+
+  test("should include instructions for the agent", () => {
+    const prompt = createEscalatedRectificationPrompt(
+      mockFailures,
+      mockStory,
+      1,
+      "balanced",
+      "powerful",
+      baseConfig,
+    );
+    // Should have some guidance for the escalated attempt
+    expect(prompt.toLowerCase()).toMatch(/fix|implement|correct/);
   });
 });

@@ -44,6 +44,8 @@ export interface RectificationConfig {
   maxFailureSummaryChars: number;
   /** Abort rectification if failure count increases (default: true) */
   abortOnIncreasingFailures: boolean;
+  /** Escalate to higher model tier after exhausting maxRetries (default: true) */
+  escalateOnExhaustion: boolean;
 }
 
 /** Regression gate config (BUG-009, BUG-026) */

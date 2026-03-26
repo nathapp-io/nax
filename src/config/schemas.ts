@@ -57,6 +57,7 @@ const RectificationConfigSchema = z.object({
   fullSuiteTimeoutSeconds: z.number().int().min(10).max(600).default(120),
   maxFailureSummaryChars: z.number().int().min(500).max(10000).default(2000),
   abortOnIncreasingFailures: z.boolean().default(true),
+  escalateOnExhaustion: z.boolean().optional().default(true),
 });
 
 const RegressionGateConfigSchema = z.object({

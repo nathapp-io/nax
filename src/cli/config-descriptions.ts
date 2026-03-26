@@ -71,6 +71,8 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.rectification.fullSuiteTimeoutSeconds": "Timeout for full test suite run in seconds",
   "execution.rectification.maxFailureSummaryChars": "Max characters in failure summary",
   "execution.rectification.abortOnIncreasingFailures": "Abort if failure count increases",
+  "execution.rectification.escalateOnExhaustion":
+    "Enable model tier escalation when retries are exhausted with remaining failures",
   "execution.regressionGate": "Regression gate settings (full suite after scoped tests)",
   "execution.regressionGate.enabled": "Enable full-suite regression gate",
   "execution.regressionGate.timeoutSeconds": "Timeout for regression run in seconds",
