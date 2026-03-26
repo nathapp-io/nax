@@ -332,7 +332,20 @@ describe("buildAcceptanceRunCommand", () => {
     expect(buildAcceptanceRunCommand(FILE, "cargo-test")).toEqual(["cargo", "test", "--test", "acceptance"]);
   });
 
-  test("commandOverride with {{FILE}} placeholder takes priority over testFramework", () => {
+  test("commandOverride with {{files}} placeholder (nax convention) takes priority over testFramework", () => {
+    expect(buildAcceptanceRunCommand(FILE, "vitest", "bun test {{files}} --timeout=120000")).toEqual([
+      "bun",
+      "test",
+      FILE,
+      "--timeout=120000",
+    ]);
+  });
+
+  test("commandOverride with {{file}} placeholder", () => {
+    expect(buildAcceptanceRunCommand(FILE, "jest", "npx jest {{file}}")).toEqual(["npx", "jest", FILE]);
+  });
+
+  test("commandOverride with {{FILE}} placeholder (legacy uppercase)", () => {
     expect(buildAcceptanceRunCommand(FILE, "vitest", "bun test {{FILE}} --timeout=120000")).toEqual([
       "bun",
       "test",

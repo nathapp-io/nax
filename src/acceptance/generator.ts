@@ -105,9 +105,11 @@ export function buildAcceptanceRunCommand(
   commandOverride?: string,
 ): string[] {
   if (commandOverride) {
-    const resolved = commandOverride.includes("{{FILE}}")
-      ? commandOverride.replace("{{FILE}}", testPath)
-      : commandOverride;
+    // Support {{files}}, {{file}}, {{FILE}} — all resolve to the single acceptance test path
+    const resolved = commandOverride
+      .replace(/\{\{files\}\}/g, testPath)
+      .replace(/\{\{file\}\}/g, testPath)
+      .replace(/\{\{FILE\}\}/g, testPath);
     return resolved.trim().split(/\s+/);
   }
 
