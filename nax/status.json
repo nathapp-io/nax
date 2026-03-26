@@ -1,12 +1,12 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-26T03-57-10-133Z",
+    "id": "run-2026-03-26T04-49-14-440Z",
     "feature": "quality-002",
-    "startedAt": "2026-03-26T03:57:10.133Z",
+    "startedAt": "2026-03-26T04:49:14.440Z",
     "status": "running",
     "dryRun": false,
-    "pid": 31665
+    "pid": 56851
   },
   "progress": {
     "total": 9,
@@ -17,11 +17,20 @@
     "pending": 3
   },
   "cost": {
-    "spent": 8.1484469,
-    "limit": 8
+    "spent": 0,
+    "limit": 25
   },
-  "current": null,
-  "iterations": 7,
-  "updatedAt": "2026-03-26T04:48:56.985Z",
-  "durationMs": 3106852
+  "current": {
+    "storyId": "US-007",
+    "title": "Language-aware acceptance test generation",
+    "complexity": "complex",
+    "tddStrategy": "three-session-tdd",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 1,
+  "updatedAt": "2026-03-26T04:50:15.251Z",
+  "durationMs": 60811,
+  "lastHeartbeat": "2026-03-26T04:50:15.251Z"
 }
