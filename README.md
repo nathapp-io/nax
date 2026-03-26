@@ -12,7 +12,9 @@ nax is an **orchestrator, not an agent** — it doesn't write code itself. It dr
 - **TDD-enforced** — acceptance tests must fail before implementation starts
 - **Loop until done** — verify, retry, escalate, and regression-check automatically
 - **Monorepo-ready** — per-package config and per-story working directories
-- **Extensible** — plugin system for routing, review, and reporting
+- **Extensible** — plugin system for routing, review, reporting, and post-run actions
+- **Language-aware** — auto-detects Go, Rust, Python, TypeScript from manifest files; adapts commands, test structure, and mocking patterns per language
+- **Semantic review** — LLM-based behavioral review against story acceptance criteria; catches stubs, placeholders, and out-of-scope changes
 
 ## Install
 
@@ -160,7 +162,7 @@ See [Hooks Guide](docs/guides/hooks.md).
 
 ### Plugins
 
-Extensible plugin architecture for prompt optimization, custom routing, code review, and reporting. Plugins live in `.nax/plugins/` (project) or `~/.nax/plugins/` (global).
+Extensible plugin architecture for prompt optimization, custom routing, code review, and reporting. Plugins live in `.nax/plugins/` (project) or `~/.nax/plugins/` (global). Post-run action plugins (e.g. auto-PR creation) can implement `IPostRunAction` for results-aware post-completion workflows.
 
 See [Plugins Guide](docs/guides/agents.md#plugins).
 
