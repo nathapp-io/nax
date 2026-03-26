@@ -142,6 +142,7 @@ export const acceptanceStage: PipelineStage = {
       effectiveConfig.project?.testFramework,
       effectiveConfig.acceptance.command,
     );
+    logger.info("acceptance", "Running acceptance command", { cmd: testCmdParts.join(" ") });
     const proc = Bun.spawn(testCmdParts, {
       cwd: ctx.workdir,
       stdout: "pipe",

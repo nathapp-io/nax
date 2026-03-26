@@ -20,6 +20,7 @@ import { acceptanceTestFilename, buildAcceptanceRunCommand } from "../../accepta
 import type { RefinedCriterion } from "../../acceptance/types";
 import { getAgent } from "../../agents/registry";
 import { resolveModel } from "../../config";
+import { getSafeLogger } from "../../logger";
 import type { UserStory } from "../../prd/types";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -230,6 +231,7 @@ export const acceptanceSetupStage: PipelineStage = {
       effectiveConfig.project?.testFramework,
       effectiveConfig.acceptance.command,
     );
+    getSafeLogger()?.info("acceptance-setup", "Running acceptance RED gate command", { cmd: runCmd.join(" ") });
     const { exitCode } = await _acceptanceSetupDeps.runTest(testPath, ctx.workdir, runCmd);
 
     if (exitCode === 0) {
