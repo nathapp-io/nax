@@ -27,11 +27,15 @@ export const _reviewSemanticDeps = {
 
 /**
  * Injectable dependencies for runner internals — allows tests to intercept
- * Bun.file and spawn calls without mock.module().
+ * Bun.file, spawn, and Bun.which calls without mock.module().
  *
  * @internal
  */
-export const _reviewRunnerDeps = { spawn, file: Bun.file };
+export const _reviewRunnerDeps = {
+  spawn,
+  file: Bun.file,
+  which: Bun.which as (command: string) => string | null,
+};
 
 /**
  * Load package.json from workdir
@@ -57,20 +61,35 @@ function hasScript(packageJson: Record<string, unknown> | null, scriptName: stri
 }
 
 /**
+ * Stub: Returns the idiomatic command for a given language and check type.
+ * Uses _reviewRunnerDeps.which() to verify the required binary is available.
+ * Returns null if the binary is not found or the language/check combo is unsupported.
+ *
+ * NOTE: This is a stub — real implementation added in US-004.
+ *
+ * @internal
+ */
+export function resolveLanguageCommand(_language: string, _check: ReviewCheckName): string | null {
+  return null;
+}
+
+/**
  * Resolve command for a check
  * Resolution order:
  * 1. Explicit executionConfig field (lintCommand/typecheckCommand) - null = disabled
  * 2. config.review.commands[check] (explicit review config)
  * 3. quality.commands[check] (fallback — package config without review section)
- * 4. package.json has script -> use 'bun run <script>'
- * 5. Not found -> return null (skip)
+ * 4. Language-aware fallback (binary check via Bun.which) — US-004
+ * 5. package.json has script -> use 'bun run <script>'
+ * 6. Not found -> return null (skip)
  */
-async function resolveCommand(
+export async function resolveCommand(
   check: ReviewCheckName,
   config: ReviewConfig,
   executionConfig: ExecutionConfig | undefined,
   workdir: string,
   qualityCommands?: QualityConfig["commands"],
+  profile?: { language?: string },
 ): Promise<string | null> {
   // Semantic checks don't have CLI commands — they're handled separately by the review orchestrator
   if (check === "semantic") {
