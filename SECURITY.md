@@ -13,7 +13,9 @@ We only support the latest released version. Please upgrade before reporting iss
 
 **Do not open a public issue for security vulnerabilities.**
 
-Instead, please email **security@nathapp.com** with:
+Please use [GitHub Private Vulnerability Reporting](https://github.com/nathapp-io/nax/security/advisories/new) to submit a report. This keeps the disclosure private until a fix is released.
+
+Include:
 
 - Description of the vulnerability
 - Steps to reproduce
