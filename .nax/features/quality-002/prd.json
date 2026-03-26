@@ -3,7 +3,7 @@
   "feature": "quality-002",
   "branchName": "feat/quality-002",
   "createdAt": "2026-03-26T00:00:00.000Z",
-  "updatedAt": "2026-03-26T04:21:56.971Z",
+  "updatedAt": "2026-03-26T04:34:08.853Z",
   "userStories": [
     {
       "id": "US-001",
@@ -146,8 +146,8 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -194,7 +194,9 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "src/precheck/checks-warnings.ts",
