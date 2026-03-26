@@ -16,6 +16,7 @@
  */
 
 import path from "node:path";
+import { acceptanceTestFilename } from "../../acceptance/generator";
 import type { RefinedCriterion } from "../../acceptance/types";
 import { getAgent } from "../../agents/registry";
 import { resolveModel } from "../../config";
@@ -143,7 +144,8 @@ export const acceptanceSetupStage: PipelineStage = {
       return { action: "fail", reason: "[acceptance-setup] featureDir is not set" };
     }
 
-    const testPath = path.join(ctx.featureDir, "acceptance.test.ts");
+    const language = (ctx.effectiveConfig ?? ctx.config).project?.language;
+    const testPath = path.join(ctx.featureDir, acceptanceTestFilename(language));
     const metaPath = path.join(ctx.featureDir, "acceptance-meta.json");
 
     // All criteria from original stories only — fix stories (US-FIX-*) are excluded

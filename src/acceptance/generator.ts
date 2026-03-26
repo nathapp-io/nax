@@ -75,7 +75,7 @@ export const _generatorPRDDeps = {
 /**
  * Return the acceptance test filename for a given language.
  */
-function acceptanceTestFilename(language?: string): string {
+export function acceptanceTestFilename(language?: string): string {
   switch (language?.toLowerCase()) {
     case "go":
       return "acceptance_test.go";
