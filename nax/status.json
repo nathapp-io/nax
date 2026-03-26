@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 9,
-    "passed": 0,
+    "passed": 1,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 9
+    "pending": 8
   },
   "cost": {
-    "spent": 0,
+    "spent": 1.9524346000000001,
     "limit": 8
   },
   "current": {
-    "storyId": "US-001",
-    "title": "ProjectProfile type, config schema, and merge support",
-    "complexity": "medium",
-    "tddStrategy": "three-session-tdd-lite",
+    "storyId": "US-002",
+    "title": "Language and project-type auto-detection module",
+    "complexity": "complex",
+    "tddStrategy": "three-session-tdd",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 1,
-  "updatedAt": "2026-03-26T04:06:11.123Z",
-  "durationMs": 540990,
-  "lastHeartbeat": "2026-03-26T04:06:11.123Z"
+  "iterations": 2,
+  "updatedAt": "2026-03-26T04:09:11.121Z",
+  "durationMs": 720988,
+  "lastHeartbeat": "2026-03-26T04:09:11.120Z"
 }

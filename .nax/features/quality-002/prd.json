@@ -3,7 +3,7 @@
   "feature": "quality-002",
   "branchName": "feat/quality-002",
   "createdAt": "2026-03-26T00:00:00.000Z",
-  "updatedAt": "2026-03-26T03:57:11.121Z",
+  "updatedAt": "2026-03-26T04:06:45.702Z",
   "userStories": [
     {
       "id": "US-001",
@@ -22,8 +22,8 @@
         "config"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -72,7 +72,9 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/context/injector.ts",
