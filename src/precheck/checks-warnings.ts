@@ -8,8 +8,18 @@
 import { existsSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { NaxConfig } from "../config";
+import type { ProjectProfile } from "../config/runtime-types";
 import type { PRD } from "../prd/types";
 import type { Check } from "./types";
+
+/** Injectable Bun.which for testability */
+export const _languageToolsDeps = {
+  which: (name: string): Promise<string | null> => {
+    // Bun.which is synchronous, so we wrap it to match test expectations
+    const result = Bun.which(name);
+    return Promise.resolve(result);
+  },
+};
 
 /**
  * Check if CLAUDE.md exists.
@@ -217,5 +227,165 @@ export async function checkHomeEnvValid(): Promise<Check> {
       : home === ""
         ? "HOME env is not set — agent may write files to unexpected locations"
         : `HOME env is not an absolute path ("${home}") — may cause literal "~" directories in repo`,
+  };
+}
+
+/**
+ * Tool configuration for a language
+ */
+type ToolConfig =
+  | {
+      type: "standard" | "python" | "java";
+      required: string[];
+      installHint: string;
+      pythonBinaries?: never;
+      buildTools?: never;
+    }
+  | {
+      type: "python";
+      required: string[];
+      installHint: string;
+      pythonBinaries: string[];
+      buildTools?: never;
+    }
+  | {
+      type: "java";
+      required: string[];
+      installHint: string;
+      buildTools: string[];
+      pythonBinaries?: never;
+    };
+
+/**
+ * Check if language-specific tool binaries are available in PATH.
+ * Returns a warning (non-blocking) when tools required for the detected
+ * language are missing. When profile is undefined or language is unsupported,
+ * returns passed: true (no warning).
+ *
+ * Language→tools mapping:
+ * - go: [go, golangci-lint]
+ * - rust: [cargo, rustfmt]
+ * - python: [python3 or python, pytest, ruff]
+ * - ruby: [ruby, rubocop]
+ * - java: [java, mvn or gradle]
+ */
+export async function checkLanguageTools(profile: ProjectProfile | undefined, workdir: string): Promise<Check> {
+  // Skip check if no profile or language not set
+  if (!profile || !profile.language) {
+    return {
+      name: "language-tools-available",
+      tier: "warning",
+      passed: true,
+      message: "No language specified in profile",
+    };
+  }
+
+  const { language } = profile;
+
+  // Define required tools per language
+  const toolsByLanguage: Record<string, ToolConfig> = {
+    go: {
+      type: "standard",
+      required: ["go", "golangci-lint"],
+      installHint:
+        "Install Go: https://golang.org/doc/install (brew install go && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)",
+    },
+    rust: {
+      type: "standard",
+      required: ["cargo", "rustfmt"],
+      installHint: "Install Rust: https://rustup.rs/ (curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh)",
+    },
+    python: {
+      type: "python",
+      required: ["pytest", "ruff"],
+      pythonBinaries: ["python3", "python"],
+      installHint:
+        "Install Python 3: https://www.python.org/downloads/ (brew install python3 && pip install pytest ruff)",
+    },
+    ruby: {
+      type: "standard",
+      required: ["ruby", "rubocop"],
+      installHint: "Install Ruby: https://www.ruby-lang.org/en/downloads/ (brew install ruby && gem install rubocop)",
+    },
+    java: {
+      type: "java",
+      required: ["java"],
+      buildTools: ["mvn", "gradle"],
+      installHint:
+        "Install Java: https://www.oracle.com/java/technologies/downloads/ (brew install openjdk && brew install maven)",
+    },
+  };
+
+  // Check if language is supported
+  const toolConfig = toolsByLanguage[language];
+  if (!toolConfig) {
+    return {
+      name: "language-tools-available",
+      tier: "warning",
+      passed: true,
+      message: `Language '${language}' not checked (language not checked for tool availability)`,
+    };
+  }
+
+  const missing: string[] = [];
+
+  // Check for Python binary (python3 or python)
+  if (toolConfig.type === "python" && toolConfig.pythonBinaries) {
+    const pythonFound = await Promise.all(toolConfig.pythonBinaries.map((bin) => _languageToolsDeps.which(bin))).then(
+      (results) => results.some((r) => r !== null),
+    );
+
+    if (!pythonFound) {
+      missing.push("python3 or python");
+    }
+
+    // Check other required tools (pytest, ruff)
+    const otherTools = toolConfig.required.filter((t) => !toolConfig.pythonBinaries.includes(t));
+    for (const tool of otherTools) {
+      const found = await _languageToolsDeps.which(tool);
+      if (!found) {
+        missing.push(tool);
+      }
+    }
+  } else if (toolConfig.type === "java" && toolConfig.buildTools) {
+    // Java case: check java + (mvn or gradle)
+    for (const tool of toolConfig.required) {
+      const found = await _languageToolsDeps.which(tool);
+      if (!found) {
+        missing.push(tool);
+      }
+    }
+
+    const buildToolFound = await Promise.all(toolConfig.buildTools.map((bin) => _languageToolsDeps.which(bin))).then(
+      (results) => results.some((r) => r !== null),
+    );
+
+    if (!buildToolFound) {
+      missing.push(`${toolConfig.buildTools.join(" or ")}`);
+    }
+  } else {
+    // Standard check: all required tools must be present
+    for (const tool of toolConfig.required) {
+      const found = await _languageToolsDeps.which(tool);
+      if (!found) {
+        missing.push(tool);
+      }
+    }
+  }
+
+  if (missing.length === 0) {
+    return {
+      name: "language-tools-available",
+      tier: "warning",
+      passed: true,
+      message: `${language} tools available (${toolConfig.required.join(", ")})`,
+    };
+  }
+
+  return {
+    name: "language-tools-available",
+    tier: "warning",
+    passed: false,
+    message: `Missing ${language} tools: ${missing.join(", ")}. ${toolConfig.installHint}`,
   };
 }
