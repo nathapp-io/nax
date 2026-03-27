@@ -285,6 +285,16 @@ export async function runSemanticReview(
       storyId: story.id,
       durationMs,
     });
+    logger?.debug("review", "Semantic review findings", {
+      storyId: story.id,
+      findings: parsed.findings.map((f) => ({
+        severity: f.severity,
+        file: f.file,
+        line: f.line,
+        issue: f.issue,
+        suggestion: f.suggestion,
+      })),
+    });
     const output = `Semantic review failed:\n\n${formatFindings(parsed.findings)}`;
     return {
       check: "semantic",
