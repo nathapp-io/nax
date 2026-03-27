@@ -8,6 +8,9 @@
 import { z } from "zod";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 
+/** Telegram message length limit (4096 max, keep buffer) */
+const MAX_MESSAGE_CHARS = 4000;
+
 /** Telegram plugin configuration */
 interface TelegramConfig {
   /** Bot token (or env var NAX_TELEGRAM_TOKEN) */
@@ -27,6 +30,7 @@ interface TelegramMessage {
   message_id: number;
   chat: { id: number };
   text?: string;
+  reply_to_message?: TelegramMessage;
 }
 
 interface TelegramUpdate {
@@ -46,7 +50,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   name = "telegram";
   private botToken: string | null = null;
   private chatId: string | null = null;
-  private pendingMessages = new Map<string, number>(); // requestId -> messageId
+  private pendingMessages = new Map<string, number[]>(); // requestId -> messageId[]
   private lastUpdateId = 0;
   private backoffMs = 1000; // Exponential backoff for getUpdates (starts at 1s)
   private readonly maxBackoffMs = 30000; // Max 30 seconds between retries
@@ -73,33 +77,47 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       throw new Error("Telegram plugin not initialized");
     }
 
-    const text = this.formatMessage(request);
+    const header = this.buildHeader(request);
     const keyboard = this.buildKeyboard(request);
+    const body = this.buildBody(request);
+
+    // Split body into chunks that fit within Telegram's 4000-char limit.
+    // Header is prepended to the first chunk; subsequent chunks get a part label.
+    const chunks = this.splitText(body, MAX_MESSAGE_CHARS - header.length - 10); // 10 = buffer for part label
 
     try {
-      const response = await fetch(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: this.chatId,
-          text,
-          reply_markup: keyboard ? { inline_keyboard: keyboard } : undefined,
-          parse_mode: "Markdown",
-        }),
-      });
+      const sentIds: number[] = [];
+      for (let i = 0; i < chunks.length; i++) {
+        const isLast = i === chunks.length - 1;
+        const partLabel = chunks.length > 1 ? `[${i + 1}/${chunks.length}] ` : "";
+        const text = `${header}\n${partLabel}${chunks[i]}`;
 
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => "");
-        throw new Error(`Telegram API error (${response.status}): ${errorBody || response.statusText}`);
+        const response = await fetch(`https://api.telegram.org/bot${this.botToken}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: this.chatId,
+            text,
+            reply_markup: isLast && keyboard ? { inline_keyboard: keyboard } : undefined,
+            parse_mode: "Markdown",
+          }),
+        });
+
+        if (!response.ok) {
+          const errorBody = await response.text().catch(() => "");
+          throw new Error(`Telegram API error (${response.status}): ${errorBody || response.statusText}`);
+        }
+
+        const data = (await response.json()) as { ok: boolean; result: TelegramMessage };
+        if (!data.ok) {
+          throw new Error(`Telegram API returned ok=false: ${JSON.stringify(data)}`);
+        }
+
+        sentIds.push(data.result.message_id);
       }
 
-      const data = (await response.json()) as { ok: boolean; result: TelegramMessage };
-      if (!data.ok) {
-        throw new Error(`Telegram API returned ok=false: ${JSON.stringify(data)}`);
-      }
-
-      // Store message ID for later updates
-      this.pendingMessages.set(request.id, data.result.message_id);
+      // Store ALL message IDs so we can match user replies to any of them
+      this.pendingMessages.set(request.id, sentIds);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`Failed to send Telegram message: ${msg}`);
@@ -150,26 +168,39 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
   }
 
   /**
-   * Format interaction request as Telegram message
+   * Build the fixed header portion of an interaction message (stage, feature, story).
+   * Uses Markdown bold for visual clarity; safe characters only.
+   * This is prepended to the first chunk when splitting long content.
    */
-  private formatMessage(request: InteractionRequest): string {
+  private buildHeader(request: InteractionRequest): string {
     const emoji = this.getStageEmoji(request.stage);
-    let text = `${emoji} *${request.stage.toUpperCase()}*\n\n`;
+    let text = `${emoji} *${request.stage.toUpperCase()}*\n`;
     text += `*Feature:* ${request.featureName}\n`;
     if (request.storyId) {
       text += `*Story:* ${request.storyId}\n`;
     }
-    text += `\n${request.summary}\n`;
+    text += "\n";
+    return text;
+  }
+
+  /**
+   * Build the variable body portion (summary, detail, options, timeout).
+   * Content is sanitized to prevent Telegram Markdown parser errors from
+   * unclosed/ambiguous formatting characters in agent-generated output.
+   * This is the part that gets split when content exceeds the Telegram limit.
+   */
+  private buildBody(request: InteractionRequest): string {
+    let text = `${this.sanitizeMarkdown(request.summary)}\n`;
 
     if (request.detail) {
-      text += `\n${request.detail}\n`;
+      text += `\n${this.sanitizeMarkdown(request.detail)}\n`;
     }
 
     if (request.options && request.options.length > 0) {
       text += "\n*Options:*\n";
       for (const opt of request.options) {
-        const desc = opt.description ? ` — ${opt.description}` : "";
-        text += `  • ${opt.label}${desc}\n`;
+        const desc = opt.description ? ` - ${this.sanitizeMarkdown(opt.description)}` : "";
+        text += `  - ${opt.label}${desc}\n`;
       }
     }
 
@@ -179,6 +210,53 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     }
 
     return text;
+  }
+
+  /**
+   * Escape Telegram Markdown special characters that would cause "can't parse entities" errors.
+   * Telegram's Markdown parser is strict: unclosed `_`, `` ` ``, `*`, `[`, `\` all cause parse failures.
+   * We escape the opening delimiter of ambiguous pairs so Telegram displays them literally.
+   * Already-balanced pairs like `__bold__` are left intact (both delimiters are escaped harmlessly).
+   */
+  private sanitizeMarkdown(text: string): string {
+    // Order matters: escape backslashes first (they're escape chars), then other delimiters.
+    // We escape the LEADING delimiter of Markdown pairs: Telegram will display \_, \`, \* literally.
+    // Safe pairs: the escape is redundant but harmless; unbalanced: the escape prevents parse error.
+    return text
+      .replace(/\\(?=[_*`\[])/g, "\\\\") // escape existing backslashes before these chars
+      .replace(/_/g, "\\_") // escape underscores (used for italic in Telegram Markdown)
+      .replace(/`/g, "\\`") // escape backticks (code fences / inline code)
+      .replace(/\*/g, "\\*") // escape asterisks (bold)
+      .replace(/\[/g, "\\["); // escape brackets (links)
+  }
+
+  /**
+   * Split text into chunks that fit within maxChars, preferring line breaks as split points.
+   */
+  private splitText(text: string, maxChars: number): string[] {
+    if (text.length <= maxChars) return [text];
+
+    const chunks: string[] = [];
+    let remaining = text;
+
+    while (remaining.length > maxChars) {
+      // Try to split at a newline near the limit
+      const slice = remaining.slice(0, maxChars);
+      const lastNewline = slice.lastIndexOf("\n");
+
+      if (lastNewline > maxChars * 0.5) {
+        // Good split point found — break at newline
+        chunks.push(remaining.slice(0, lastNewline));
+        remaining = remaining.slice(lastNewline + 1);
+      } else {
+        // No good newline — hard break at maxChars
+        chunks.push(slice);
+        remaining = remaining.slice(maxChars);
+      }
+    }
+
+    if (remaining.length > 0) chunks.push(remaining);
+    return chunks;
   }
 
   /**
@@ -315,13 +393,16 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
       };
     }
 
-    // Check text message (for input type)
+    // Check text message (for input type) — match any of our sent message IDs
     if (update.message?.text) {
-      const messageId = this.pendingMessages.get(requestId);
-      if (!messageId) return null;
+      const messageIds = this.pendingMessages.get(requestId);
+      if (!messageIds) return null;
 
-      // Simple heuristic: if message is reply to our message
-      // For now, accept any message as input
+      const replyToId = update.message.reply_to_message?.message_id;
+      // Accept if user replied directly to one of our messages, OR if it's the first text response
+      // (handles case where user sends a plain message without explicit reply)
+      if (replyToId !== undefined && !messageIds.includes(replyToId)) return null;
+
       return {
         requestId,
         action: "input",
@@ -357,22 +438,22 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
    * Edit message to show timeout/expired
    */
   private async sendTimeoutMessage(requestId: string): Promise<void> {
-    const messageId = this.pendingMessages.get(requestId);
-    if (!messageId || !this.botToken || !this.chatId) {
-      // Still cleanup even if we can't send timeout message
+    const messageIds = this.pendingMessages.get(requestId);
+    if (!messageIds || !this.botToken || !this.chatId) {
       this.pendingMessages.delete(requestId);
       return;
     }
 
+    // Edit only the last message to avoid redundant notifications
+    const lastId = messageIds[messageIds.length - 1];
     try {
       await fetch(`https://api.telegram.org/bot${this.botToken}/editMessageText`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: this.chatId,
-          message_id: messageId,
-          text: "⏱ *EXPIRED* — Interaction timed out",
-          parse_mode: "Markdown",
+          message_id: lastId,
+          text: "⏱ EXPIRED — Interaction timed out",
         }),
       });
     } catch {
