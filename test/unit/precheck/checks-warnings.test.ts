@@ -112,3 +112,51 @@ describe("checkPromptOverrideFiles", () => {
     expect(checks[0].name).toContain("verifier");
   });
 });
+
+// BUG-092: build command configured but not in review.checks
+// ---------------------------------------------------------------------------
+
+import { checkBuildCommandInReviewChecks } from "../../../src/precheck/checks-warnings";
+
+function makeBugConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
+  return {
+    review: { checks: ["typecheck", "lint"], commands: {}, semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000 } },
+    quality: { commands: {} },
+    ...overrides,
+  } as unknown as NaxConfig;
+}
+
+describe("checkBuildCommandInReviewChecks (BUG-092)", () => {
+  test("passes when no build command configured", () => {
+    const result = checkBuildCommandInReviewChecks(makeBugConfig());
+    expect(result.passed).toBe(true);
+  });
+
+  test("warns when quality.commands.build set but build not in review.checks", () => {
+    const result = checkBuildCommandInReviewChecks(
+      makeBugConfig({ quality: { commands: { build: "bun run build" } } } as Partial<NaxConfig>),
+    );
+    expect(result.passed).toBe(false);
+    expect(result.tier).toBe("warning");
+    expect(result.message).toContain("build");
+    expect(result.message).toContain("review.checks");
+  });
+
+  test("warns when review.commands.build set but build not in review.checks", () => {
+    const result = checkBuildCommandInReviewChecks(
+      makeBugConfig({ review: { checks: ["typecheck", "lint"], commands: { build: "bun run build" }, semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000 } } } as Partial<NaxConfig>),
+    );
+    expect(result.passed).toBe(false);
+    expect(result.message).toContain("review.checks");
+  });
+
+  test("passes when build command set AND build is in review.checks", () => {
+    const result = checkBuildCommandInReviewChecks(
+      makeBugConfig({
+        quality: { commands: { build: "bun run build" } } as Partial<NaxConfig["quality"]>,
+        review: { checks: ["typecheck", "lint", "build"], commands: {}, semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000 } },
+      } as Partial<NaxConfig>),
+    );
+    expect(result.passed).toBe(true);
+  });
+});

@@ -14,6 +14,7 @@ import type { NaxConfig } from "../config";
 import type { PRD } from "../prd/types";
 import {
   checkAgentCLI,
+  checkBuildCommandInReviewChecks,
   checkClaudeMdExists,
   checkDependenciesInstalled,
   checkDiskSpace,
@@ -132,6 +133,7 @@ function getEnvironmentWarnings(config: NaxConfig, workdir: string): CheckFn[] {
     () => checkPromptOverrideFiles(config, workdir),
     () => checkLanguageTools(config.project, workdir),
     () => checkMultiAgentHealth(),
+    () => Promise.resolve(checkBuildCommandInReviewChecks(config)),
   ];
 }
 

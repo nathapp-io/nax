@@ -4,13 +4,12 @@
  * Handles building commands, preparing environment, and process execution.
  */
 
-import { homedir } from "node:os";
-import { isAbsolute } from "node:path";
 import { resolvePermissions } from "../../config/permissions";
 import type { PidRegistry } from "../../execution/pid-registry";
 import { withProcessTimeout } from "../../execution/timeout-handler";
 import { getLogger } from "../../logger";
 import { typedSpawn } from "../../utils/bun-deps";
+import { buildAllowedEnv } from "../shared/env";
 import type { AgentResult, AgentRunOptions } from "../types";
 import { estimateCostByDuration, estimateCostFromOutput } from "./cost";
 
@@ -67,49 +66,11 @@ export function buildCommand(binary: string, options: AgentRunOptions): string[]
  * @param options - Agent run options
  * @returns Filtered environment variables
  */
-export function buildAllowedEnv(options: AgentRunOptions): Record<string, string | undefined> {
-  const allowed: Record<string, string | undefined> = {};
-
-  const essentialVars = ["PATH", "TMPDIR", "NODE_ENV", "USER", "LOGNAME"];
-  for (const varName of essentialVars) {
-    if (process.env[varName]) {
-      allowed[varName] = process.env[varName];
-    }
-  }
-
-  // Sanitize HOME — must be absolute path. Unexpanded "~" causes literal ~/dir in cwd.
-  const rawHome = process.env.HOME ?? "";
-  const safeHome = rawHome && isAbsolute(rawHome) ? rawHome : homedir();
-  if (rawHome !== safeHome) {
-    const logger = getLogger();
-    logger.warn("env", `HOME env is not absolute ("${rawHome}"), falling back to os.homedir(): ${safeHome}`);
-  }
-  allowed.HOME = safeHome;
-
-  const apiKeyVars = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"];
-  for (const varName of apiKeyVars) {
-    if (process.env[varName]) {
-      allowed[varName] = process.env[varName];
-    }
-  }
-
-  const allowedPrefixes = ["CLAUDE_", "NAX_", "CLAW_", "TURBO_", "ANTHROPIC_"];
-  for (const [key, value] of Object.entries(process.env)) {
-    if (allowedPrefixes.some((prefix) => key.startsWith(prefix))) {
-      allowed[key] = value;
-    }
-  }
-
-  if (options.modelDef.env) {
-    Object.assign(allowed, options.modelDef.env);
-  }
-
-  if (options.env) {
-    Object.assign(allowed, options.env);
-  }
-
-  return allowed;
-}
+/**
+ * @deprecated Use `buildAllowedEnv` from `../shared/env` directly.
+ * Re-exported here for backward compatibility with existing tests.
+ */
+export { buildAllowedEnv } from "../shared/env";
 
 /**
  * Execute agent process once with timeout and signal handling.
@@ -147,7 +108,7 @@ export async function executeOnce(
     cwd: options.workdir,
     stdout: "pipe",
     stderr: "inherit",
-    env: buildAllowedEnv(options),
+    env: buildAllowedEnv({ env: options.env, modelEnv: options.modelDef.env }),
   });
 
   const processPid = proc.pid;

@@ -517,3 +517,54 @@ describe("runSemanticReview — fail-open on invalid JSON", () => {
     expect(result.check).toBe("semantic");
   });
 });
+
+// BUG-090: Markdown fence stripping
+// ---------------------------------------------------------------------------
+
+describe("runSemanticReview — markdown fence stripping (BUG-090)", () => {
+  let origSpawn: typeof _semanticDeps.spawn;
+
+  beforeEach(() => {
+    origSpawn = _semanticDeps.spawn;
+  });
+
+  afterEach(() => {
+    _semanticDeps.spawn = origSpawn;
+  });
+
+  test("parses JSON wrapped in ```json fences", async () => {
+    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    const fencedResponse = "```json\n" + JSON.stringify({ passed: true, findings: [] }) + "\n```";
+    const agent = makeMockAgent(fencedResponse);
+
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(result.success).toBe(true);
+    expect(result.output).not.toContain("could not parse");
+  });
+
+  test("parses JSON wrapped in plain ``` fences", async () => {
+    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    const fencedResponse = "```\n" + JSON.stringify({ passed: true, findings: [] }) + "\n```";
+    const agent = makeMockAgent(fencedResponse);
+
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(result.success).toBe(true);
+    expect(result.output).not.toContain("could not parse");
+  });
+
+  test("parses fenced JSON with findings and returns success=false", async () => {
+    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    const payload = {
+      passed: false,
+      findings: [{ severity: "error", file: "src/foo.ts", line: 1, issue: "bad code", suggestion: "fix it" }],
+    };
+    const fencedResponse = "```json\n" + JSON.stringify(payload) + "\n```";
+    const agent = makeMockAgent(fencedResponse);
+
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(result.success).toBe(false);
+  });
+});

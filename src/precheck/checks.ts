@@ -31,6 +31,7 @@ export {
   checkHomeEnvValid,
   checkPromptOverrideFiles,
   checkLanguageTools,
+  checkBuildCommandInReviewChecks,
 } from "./checks-warnings";
 
 // Agent checks

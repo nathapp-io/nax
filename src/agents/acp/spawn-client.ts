@@ -12,11 +12,10 @@
  *   acpx <agent> cancel                             → session.cancelActivePrompt()
  */
 
-import { homedir } from "node:os";
-import { isAbsolute } from "node:path";
 import type { PidRegistry } from "../../execution/pid-registry";
 import { getSafeLogger } from "../../logger";
 import { typedSpawn } from "../../utils/bun-deps";
+import { buildAllowedEnv } from "../shared/env";
 import type { AcpClient, AcpSession, AcpSessionResponse } from "./adapter";
 import { parseAcpxJsonOutput } from "./parser";
 
@@ -38,41 +37,7 @@ export const _spawnClientDeps = {
 // Env builder
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Build allowed environment variables for spawned acpx processes.
- * SEC-4: Only pass essential env vars to prevent leaking sensitive data.
- */
-function buildAllowedEnv(extraEnv?: Record<string, string | undefined>): Record<string, string | undefined> {
-  const allowed: Record<string, string | undefined> = {};
-
-  const essentialVars = ["PATH", "TMPDIR", "NODE_ENV", "USER", "LOGNAME"];
-  for (const varName of essentialVars) {
-    if (process.env[varName]) allowed[varName] = process.env[varName];
-  }
-
-  // Sanitize HOME — must be absolute path. Unexpanded "~" causes literal ~/dir in cwd.
-  const rawHome = process.env.HOME ?? "";
-  const safeHome = rawHome && isAbsolute(rawHome) ? rawHome : homedir();
-  if (rawHome !== safeHome) {
-    getSafeLogger()?.warn("env", `HOME env is not absolute ("${rawHome}"), falling back to os.homedir(): ${safeHome}`);
-  }
-  allowed.HOME = safeHome;
-
-  const apiKeyVars = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "CLAUDE_API_KEY"];
-  for (const varName of apiKeyVars) {
-    if (process.env[varName]) allowed[varName] = process.env[varName];
-  }
-
-  const allowedPrefixes = ["CLAUDE_", "NAX_", "CLAW_", "TURBO_", "ACPX_", "CODEX_", "GEMINI_", "ANTHROPIC_"];
-  for (const [key, value] of Object.entries(process.env)) {
-    if (allowedPrefixes.some((prefix) => key.startsWith(prefix))) {
-      allowed[key] = value;
-    }
-  }
-
-  if (extraEnv) Object.assign(allowed, extraEnv);
-  return allowed;
-}
+// buildAllowedEnv imported from ../shared/env — single canonical implementation
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SpawnAcpSession
