@@ -33,7 +33,7 @@ export type {
   DecomposeConfig,
   EscalationEntry,
   ExecutionConfig,
-  HooksConfig,
+  RawHooksConfig,
   InteractionConfig,
   LlmRoutingConfig,
   NaxConfig,

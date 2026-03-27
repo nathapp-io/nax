@@ -15,7 +15,7 @@ import { buildCodebaseSection } from "./sections/codebase";
 import { buildConstraintsSection } from "./sections/constraints";
 import { buildSiblingStoriesSection } from "./sections/sibling-stories";
 import { buildTargetStorySection } from "./sections/target-story";
-import type { DecomposeAdapter, DecomposeConfig, DecomposeResult, SubStory } from "./types";
+import type { DecomposeAdapter, DecomposeAgentConfig, DecomposeResult, SubStory } from "./types";
 import { runAllValidators } from "./validators/index";
 
 export const SECTION_SEP = "\n\n---\n\n";
@@ -24,7 +24,7 @@ export class DecomposeBuilder {
   private _story: UserStory;
   private _prd: PRD | undefined;
   private _scan: CodebaseScan | undefined;
-  private _cfg: DecomposeConfig | undefined;
+  private _cfg: DecomposeAgentConfig | undefined;
 
   private constructor(story: UserStory) {
     this._story = story;
@@ -44,7 +44,7 @@ export class DecomposeBuilder {
     return this;
   }
 
-  config(cfg: DecomposeConfig): this {
+  config(cfg: DecomposeAgentConfig): this {
     this._cfg = cfg;
     return this;
   }
@@ -95,7 +95,7 @@ export class DecomposeBuilder {
       }
 
       // Run post-parse validators
-      const config: DecomposeConfig = cfg ?? { maxSubStories: 5, maxComplexity: "medium" };
+      const config: DecomposeAgentConfig = cfg ?? { maxSubStories: 5, maxComplexity: "medium" };
       const validation = runAllValidators(this._story, parsed.subStories, existingStories, config);
 
       if (!validation.valid) {

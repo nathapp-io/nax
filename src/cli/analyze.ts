@@ -14,7 +14,7 @@ import type { NaxConfig } from "../config";
 import { resolveModel } from "../config/schema";
 import { applyDecomposition } from "../decompose/apply";
 import { DecomposeBuilder } from "../decompose/builder";
-import type { DecomposeConfig as BuilderDecomposeConfig, DecomposeResult, SubStory } from "../decompose/types";
+import type { DecomposeAgentConfig as BuilderDecomposeConfig, DecomposeResult, SubStory } from "../decompose/types";
 import { getLogger } from "../logger";
 import { loadPRD, savePRD } from "../prd";
 import type { PRD, UserStory } from "../prd";

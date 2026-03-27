@@ -6,7 +6,8 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import chalk from "chalk";
 import type { LogEntry, LogLevel } from "../logger/types";
-import { formatLogEntry, formatRunSummary } from "../logging/formatter";
+import { formatDuration, formatLogEntry, formatRunSummary } from "../logging/formatter";
+export { formatDuration };
 import type { VerbosityMode } from "../logging/types";
 import { extractRunSummary } from "./logs-reader";
 
@@ -183,19 +184,4 @@ function shouldDisplayEntry(entry: LogEntry, options: { json?: boolean; story?: 
   }
 
   return true;
-}
-
-/**
- * Format duration in milliseconds
- */
-export function formatDuration(ms: number): string {
-  if (ms < 1000) {
-    return `${ms}ms`;
-  }
-  if (ms < 60000) {
-    return `${(ms / 1000).toFixed(1)}s`;
-  }
-  const minutes = Math.floor(ms / 60000);
-  const seconds = Math.floor((ms % 60000) / 1000);
-  return `${minutes}m${seconds}s`;
 }

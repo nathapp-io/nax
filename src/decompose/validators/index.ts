@@ -5,7 +5,7 @@
  */
 
 import type { UserStory } from "../../prd";
-import type { DecomposeConfig, SubStory, ValidationResult } from "../types";
+import type { DecomposeAgentConfig, SubStory, ValidationResult } from "../types";
 import type { ComplexityLevel } from "./complexity";
 import { validateComplexity } from "./complexity";
 import { validateCoverage } from "./coverage";
@@ -16,7 +16,7 @@ export function runAllValidators(
   originalStory: UserStory,
   substories: SubStory[],
   existingStories: UserStory[],
-  config: DecomposeConfig,
+  config: DecomposeAgentConfig,
 ): ValidationResult {
   const existingIds = existingStories.map((s) => s.id);
   const maxComplexity = (config.maxComplexity ?? "medium") as ComplexityLevel;
