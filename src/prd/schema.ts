@@ -213,15 +213,52 @@ function validateStory(raw: unknown, index: number, allIds: Set<string>): UserSt
 }
 
 /**
- * Parse raw string input, handling markdown wrapping and trailing commas.
+ * Remove invalid escape sequences that LLMs commonly generate.
+ *
+ * JSON.parse only accepts:
+ *   \"  \\  \/  \b  \f  \n  \r  \t  \uXXXX
+ *
+ * LLMs often produce:
+ *   \xNN  → should be \u00NN
+ *   \xN   → should be \u000N
+ *   \x    → invalid, strip the backslash
+ *   \uXXX → missing one digit, pad to \u0XXX
+ *   \uXX  → missing two digits, pad to \u00XX
+ *   \uX   → missing three digits, pad to \u000X
+ *   \u    → no digits, strip the backslash
+ *   \N    → any other backslash + non-special char, strip backslash
+ */
+function sanitizeInvalidEscapes(text: string): string {
+  // \xNN or \xN: convert to \u00NN / \u000N
+  // The first replace catches \x followed by 1–2 hex digits (possibly with non-hex following).
+  // e.g. "\xAg" (invalid hex "g") → "\u00Ag" (still invalid but closer; JSON.parse throws)
+  // e.g. "\xAxyz" → "\u000Axyz"
+  let result = text.replace(/\\x([0-9a-fA-F]{1,2})/g, (_, hex) => `\\u00${hex.padStart(2, "0")}`);
+
+  // \uXXXX (4 hex digits): valid, keep as-is
+  // \uXXX / \uXX / \uX: pad with leading zeros when followed by non-hex or end-of-string
+  result = result.replace(/\\u([0-9a-fA-F]{1,3})(?![0-9a-fA-F])/g, (_, digits) => `\\u${digits.padStart(4, "0")}`);
+  result = result.replace(/\\u(?![0-9a-fA-F])/g, "\\");
+
+  // Remove backslash before any character that is NOT a valid JSON escape char
+  // Valid: " \ / b f n r t u
+  result = result.replace(/\\([^"\\\/bfnrtu])/g, "$1");
+
+  return result;
+}
+
+/**
+ * Parse raw string input, handling markdown wrapping, trailing commas,
+ * and common LLM-generated invalid escape sequences.
  * Throws with parse error context on failure.
  */
 function parseRawString(text: string): unknown {
   const extracted = extractJsonFromMarkdown(text);
   const cleaned = stripTrailingCommas(extracted);
+  const sanitized = sanitizeInvalidEscapes(cleaned);
 
   try {
-    return JSON.parse(cleaned);
+    return JSON.parse(sanitized);
   } catch (err) {
     const parseErr = err as SyntaxError;
     throw new Error(`[schema] Failed to parse JSON: ${parseErr.message}`, { cause: parseErr });
