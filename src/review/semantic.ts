@@ -149,7 +149,11 @@ interface LLMResponse {
  */
 function parseLLMResponse(raw: string): LLMResponse | null {
   try {
-    const parsed = JSON.parse(raw) as unknown;
+    // Strip markdown fences if present — LLMs frequently wrap JSON in ```json ... ``` despite instructions
+    let cleaned = raw.trim();
+    const fenceMatch = cleaned.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
+    if (fenceMatch) cleaned = fenceMatch[1].trim();
+    const parsed = JSON.parse(cleaned) as unknown;
     if (typeof parsed !== "object" || parsed === null) return null;
     const obj = parsed as Record<string, unknown>;
     if (typeof obj.passed !== "boolean") return null;

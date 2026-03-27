@@ -389,3 +389,29 @@ export async function checkLanguageTools(profile: ProjectProfile | undefined, wo
     message: `Missing ${language} tools: ${missing.join(", ")}. ${toolConfig.installHint}`,
   };
 }
+
+/**
+ * Warn when a build command is configured but "build" is not in review.checks.
+ * The build command will never run during review unless explicitly added.
+ */
+export function checkBuildCommandInReviewChecks(config: NaxConfig): Check {
+  const hasBuildCmd = !!(config.review?.commands?.build || config.quality?.commands?.build);
+  const buildInChecks = config.review?.checks?.includes("build") ?? false;
+
+  if (hasBuildCmd && !buildInChecks) {
+    return {
+      name: "build-command-in-review-checks",
+      tier: "warning",
+      passed: false,
+      message:
+        'A build command is configured but "build" is not in review.checks — the build step will never run. Add "build" to review.checks to enable it.',
+    };
+  }
+
+  return {
+    name: "build-command-in-review-checks",
+    tier: "warning",
+    passed: true,
+    message: "build command check OK",
+  };
+}
