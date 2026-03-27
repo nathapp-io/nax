@@ -218,7 +218,7 @@ describe("acceptance-setup: calls refinement and generation", () => {
 // ---------------------------------------------------------------------------
 
 describe("acceptance-setup: writes test file", () => {
-  test("writes acceptance.test.ts to ctx.featureDir", async () => {
+  test("writes .nax-acceptance.test.ts to package root (not featureDir)", async () => {
     const writtenPaths: string[] = [];
     const testCode = 'import { test } from "bun:test"; test("AC-1", () => { throw new Error("red") })';
 
@@ -235,8 +235,10 @@ describe("acceptance-setup: writes test file", () => {
     await acceptanceSetupStage.execute(ctx);
 
     expect(writtenPaths.length).toBe(1);
-    expect(writtenPaths[0]).toContain("acceptance.test.ts");
-    expect(writtenPaths[0]).toContain("/tmp/test-workdir/.nax/features/test-feature");
+    // US-001: file is at package root, not inside featureDir
+    expect(writtenPaths[0]).toContain(".nax-acceptance.test.ts");
+    expect(writtenPaths[0]).toContain("/tmp/test-workdir");
+    expect(writtenPaths[0]).not.toContain("features/test-feature");
   });
 
   test("written content matches generated testCode", async () => {
@@ -705,5 +707,171 @@ describe("US-004: fingerprint reuse logging (staleness detection)", () => {
 
     expect(copyFileCalled).toBe(true);
     expect(deleteFileCalled).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-001: Per-package acceptance test generation (ACC-002)
+// ---------------------------------------------------------------------------
+
+describe("US-001: per-package test file generation by workdir", () => {
+  function makeStoryWithWorkdir(id: string, workdir: string, criteria: string[]) {
+    return {
+      id,
+      title: `Story ${id}`,
+      description: "desc",
+      acceptanceCriteria: criteria,
+      workdir,
+      tags: [],
+      dependencies: [],
+      status: "pending" as const,
+      passes: false,
+      escalations: [],
+      attempts: 0,
+    };
+  }
+
+  test("AC-1: generates two test files for two-package monorepo", async () => {
+    const writtenPaths: string[] = [];
+
+    const stories = [
+      makeStoryWithWorkdir("US-001", "apps/api", ["AC-1: api criterion"]),
+      makeStoryWithWorkdir("US-002", "apps/cli", ["AC-1: cli criterion"]),
+    ];
+    const ctx = makeCtx({
+      prd: {
+        project: "test-project",
+        feature: "test-feature",
+        branchName: "feat/test",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userStories: stories,
+      },
+      story: stories[0],
+      stories,
+    });
+
+    _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.refine = async (criteria, context) =>
+      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
+    _acceptanceSetupDeps.generate = async () => ({
+      testCode: 'test("AC-1", () => { throw new Error("red") })',
+      criteria: [],
+    });
+    _acceptanceSetupDeps.writeFile = async (p) => {
+      writtenPaths.push(p);
+    };
+    _acceptanceSetupDeps.writeMeta = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(writtenPaths.length).toBe(2);
+    expect(writtenPaths.some((p) => p.includes("apps/api") && p.includes(".nax-acceptance.test.ts"))).toBe(true);
+    expect(writtenPaths.some((p) => p.includes("apps/cli") && p.includes(".nax-acceptance.test.ts"))).toBe(true);
+  });
+
+  test("AC-2: single-package project generates one file at repo root", async () => {
+    const writtenPaths: string[] = [];
+
+    _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.refine = async (criteria, context) =>
+      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
+    _acceptanceSetupDeps.generate = async () => ({
+      testCode: 'test("AC-1", () => { throw new Error("red") })',
+      criteria: [],
+    });
+    _acceptanceSetupDeps.writeFile = async (p) => {
+      writtenPaths.push(p);
+    };
+    _acceptanceSetupDeps.writeMeta = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    const ctx = makeCtx(); // default makeCtx has stories with no workdir
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(writtenPaths.length).toBe(1);
+    expect(writtenPaths[0]).toContain("/tmp/test-workdir/.nax-acceptance.test.ts");
+    expect(writtenPaths[0]).not.toContain("features");
+  });
+
+  test("AC-4: RED gate runs each file from its package directory", async () => {
+    const runTestCalls: Array<{ testPath: string; packageDir: string }> = [];
+
+    const stories = [
+      makeStoryWithWorkdir("US-001", "apps/api", ["AC-1: criterion"]),
+      makeStoryWithWorkdir("US-002", "apps/cli", ["AC-1: criterion"]),
+    ];
+    const ctx = makeCtx({
+      prd: {
+        project: "test-project",
+        feature: "test-feature",
+        branchName: "feat/test",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userStories: stories,
+      },
+      story: stories[0],
+      stories,
+    });
+
+    _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.refine = async (criteria, context) =>
+      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
+    _acceptanceSetupDeps.generate = async () => ({
+      testCode: 'test("AC-1", () => { throw new Error("red") })',
+      criteria: [],
+    });
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
+    _acceptanceSetupDeps.runTest = async (testPath, packageDir, _cmd) => {
+      runTestCalls.push({ testPath, packageDir });
+      return { exitCode: 1, output: "1 fail" };
+    };
+
+    await acceptanceSetupStage.execute(ctx);
+
+    // Each test file must be run from its package directory
+    expect(runTestCalls.length).toBe(2);
+    expect(runTestCalls.some((c) => c.packageDir.endsWith("apps/api"))).toBe(true);
+    expect(runTestCalls.some((c) => c.packageDir.endsWith("apps/cli"))).toBe(true);
+  });
+
+  test("stores ctx.acceptanceTestPaths with testPath and packageDir for each group", async () => {
+    const stories = [
+      makeStoryWithWorkdir("US-001", "apps/api", ["AC-1: criterion"]),
+      makeStoryWithWorkdir("US-002", "apps/cli", ["AC-1: criterion"]),
+    ];
+    const ctx = makeCtx({
+      prd: {
+        project: "test-project",
+        feature: "test-feature",
+        branchName: "feat/test",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userStories: stories,
+      },
+      story: stories[0],
+      stories,
+    });
+
+    _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.refine = async (criteria, context) =>
+      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
+    _acceptanceSetupDeps.generate = async () => ({
+      testCode: 'test("AC-1", () => { throw new Error("red") })',
+      criteria: [],
+    });
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(ctx.acceptanceTestPaths).toBeDefined();
+    expect(ctx.acceptanceTestPaths!.length).toBe(2);
+    expect(ctx.acceptanceTestPaths!.every((p) => p.testPath && p.packageDir)).toBe(true);
+    expect(ctx.acceptanceTestPaths!.some((p) => p.packageDir.endsWith("apps/api"))).toBe(true);
+    expect(ctx.acceptanceTestPaths!.some((p) => p.packageDir.endsWith("apps/cli"))).toBe(true);
   });
 });
