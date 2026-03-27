@@ -191,7 +191,7 @@ class SpawnAcpSession implements AcpSession {
     }
   }
 
-  async close(): Promise<void> {
+  async close(options?: { forceTerminate?: boolean }): Promise<void> {
     // Kill in-flight prompt process first (if any)
     if (this.activeProc) {
       try {
@@ -215,6 +215,15 @@ class SpawnAcpSession implements AcpSession {
         sessionName: this.sessionName,
         stderr: stderr.slice(0, 200),
       });
+    }
+
+    if (options?.forceTerminate) {
+      try {
+        const stopProc = _spawnClientDeps.spawn(["acpx", this.agentName, "stop"], { stdout: "pipe", stderr: "pipe" });
+        await stopProc.exited;
+      } catch (err) {
+        getSafeLogger()?.debug("acp-adapter", "acpx stop failed (swallowed)", { cause: String(err) });
+      }
     }
   }
 

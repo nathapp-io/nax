@@ -51,6 +51,7 @@ describe("SemanticReviewConfig", () => {
     const config: SemanticReviewConfig = {
       modelTier: "balanced",
       rules: [],
+      timeoutMs: 600_000,
     };
     expect(config.modelTier).toBe("balanced");
     expect(typeof config.modelTier).toBe("string");
@@ -60,6 +61,7 @@ describe("SemanticReviewConfig", () => {
     const config: SemanticReviewConfig = {
       modelTier: "balanced",
       rules: ["rule1", "rule2"],
+      timeoutMs: 600_000,
     };
     expect(Array.isArray(config.rules)).toBe(true);
     expect(config.rules.every((r) => typeof r === "string")).toBe(true);
@@ -76,6 +78,7 @@ describe("SemanticReviewConfig", () => {
       const config: SemanticReviewConfig = {
         modelTier: tier,
         rules: [],
+        timeoutMs: 600_000,
       };
       expect(config.modelTier).toBe(tier);
     });
@@ -100,6 +103,7 @@ describe("ReviewConfig semantic field", () => {
       expect(result.data.review.semantic).toEqual({
         modelTier: "balanced",
         rules: [],
+        timeoutMs: 600_000,
       });
     }
   });
@@ -208,10 +212,11 @@ describe("DEFAULT_CONFIG.review.semantic", () => {
     expect(DEFAULT_CONFIG.review.semantic?.rules).toEqual([]);
   });
 
-  test("DEFAULT_CONFIG.review.semantic equals { modelTier: 'balanced', rules: [] }", () => {
+  test("DEFAULT_CONFIG.review.semantic equals { modelTier: 'balanced', rules: [], timeoutMs: 600_000 }", () => {
     expect(DEFAULT_CONFIG.review.semantic).toEqual({
       modelTier: "balanced",
       rules: [],
+      timeoutMs: 600_000,
     });
   });
 });

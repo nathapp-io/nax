@@ -578,12 +578,13 @@ describe("acceptanceSetupStage.enabled()", () => {
 describe("acceptanceSetup context: testableCount", () => {
   test("testableCount counts only testable criteria", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
-    _acceptanceSetupDeps.refine = async (criteria) =>
-      criteria.map((c, i) => ({
+    // With per-story calls: US-001 has 2 testable criteria, US-002 has 1 non-testable
+    _acceptanceSetupDeps.refine = async (criteria, context) =>
+      criteria.map((c) => ({
         original: c,
         refined: c,
-        testable: i < 2, // first 2 are testable, last is not
-        storyId: "US-001",
+        testable: context.storyId === "US-001",
+        storyId: context.storyId,
       }));
     _acceptanceSetupDeps.generate = async () => ({
       testCode: 'test("AC-1", () => { throw new Error("red") })',

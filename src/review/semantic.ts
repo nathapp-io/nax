@@ -213,6 +213,8 @@ export async function runSemanticReview(
     };
   }
 
+  logger?.info("review", "Running semantic check", { storyId: story.id, modelTier: semanticConfig.modelTier });
+
   // AC-2: Collect git diff
   const rawDiff = await collectDiff(workdir, storyGitRef);
 
@@ -241,7 +243,11 @@ export async function runSemanticReview(
   // Call LLM
   let rawResponse: string;
   try {
-    rawResponse = await agent.complete(prompt);
+    rawResponse = await agent.complete(prompt, {
+      sessionName: `nax-semantic-${story.id}`,
+      workdir,
+      timeoutMs: semanticConfig.timeoutMs,
+    });
   } catch (err) {
     logger?.warn("semantic", "LLM call failed — fail-open", { cause: String(err) });
     return {
@@ -270,6 +276,11 @@ export async function runSemanticReview(
 
   // AC-7: Format findings and populate structured ReviewFinding[] (US-003 AC-2)
   if (!parsed.passed && parsed.findings.length > 0) {
+    const durationMs = Date.now() - startTime;
+    logger?.warn("review", `Semantic review failed: ${parsed.findings.length} findings`, {
+      storyId: story.id,
+      durationMs,
+    });
     const output = `Semantic review failed:\n\n${formatFindings(parsed.findings)}`;
     return {
       check: "semantic",
@@ -277,17 +288,21 @@ export async function runSemanticReview(
       command: "",
       exitCode: 1,
       output,
-      durationMs: Date.now() - startTime,
+      durationMs,
       findings: toReviewFindings(parsed.findings),
     };
   }
 
+  const durationMs = Date.now() - startTime;
+  if (parsed.passed) {
+    logger?.info("review", "Semantic review passed", { storyId: story.id, durationMs });
+  }
   return {
     check: "semantic",
     success: parsed.passed,
     command: "",
     exitCode: parsed.passed ? 0 : 1,
     output: parsed.passed ? "Semantic review passed" : "Semantic review failed (no findings)",
-    durationMs: Date.now() - startTime,
+    durationMs,
   };
 }

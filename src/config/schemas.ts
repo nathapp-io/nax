@@ -236,6 +236,7 @@ const AnalyzeConfigSchema = z.object({
 const SemanticReviewConfigSchema = z.object({
   modelTier: ModelTierSchema.default("balanced"),
   rules: z.array(z.string()).default([]),
+  timeoutMs: z.number().int().positive().default(600_000),
 });
 
 const ReviewConfigSchema = z.object({

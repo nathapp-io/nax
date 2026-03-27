@@ -331,7 +331,11 @@ export async function runReview(
         description: story?.description ?? "",
         acceptanceCriteria: story?.acceptanceCriteria ?? [],
       };
-      const semanticCfg = config.semantic ?? { modelTier: "balanced" as const, rules: [] as string[] };
+      const semanticCfg = config.semantic ?? {
+        modelTier: "balanced" as const,
+        rules: [] as string[],
+        timeoutMs: 600_000,
+      };
       const result = await _reviewSemanticDeps.runSemanticReview(
         workdir,
         storyGitRef,

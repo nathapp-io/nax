@@ -93,7 +93,7 @@ export interface AcpSessionResponse {
 
 export interface AcpSession {
   prompt(text: string): Promise<AcpSessionResponse>;
-  close(): Promise<void>;
+  close(options?: { forceTerminate?: boolean }): Promise<void>;
   cancelActivePrompt(): Promise<void>;
 }
 
@@ -720,6 +720,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       await client.start();
 
       let session: AcpSession | null = null;
+      let hadError = false;
       try {
         // complete() is one-shot — ephemeral session, no sidecar
         // Use caller-provided sessionName if available (aids tracing), otherwise timestamp-based
@@ -781,6 +782,7 @@ export class AcpAgentAdapter implements AgentAdapter {
 
         return unwrapped;
       } catch (err) {
+        hadError = true;
         const error = err instanceof Error ? err : new Error(String(err));
         lastError = error;
 
@@ -795,7 +797,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         await _acpAdapterDeps.sleep(backoffMs);
       } finally {
         if (session) {
-          await session.close().catch(() => {});
+          await session.close({ forceTerminate: hadError }).catch(() => {});
         }
         await client.close().catch(() => {});
       }
