@@ -102,7 +102,7 @@
       "CLAUDECODE",
       "REPL_ID",
       "AGENT"
-    ],
+    ]
   },
   "tdd": {
     "maxRetries": 2,
@@ -128,6 +128,7 @@
   "review": {
     "enabled": true,
     "checks": [
+      "build",
       "typecheck",
       "lint",
       "semantic"
@@ -135,7 +136,9 @@
     "commands": {
       "typecheck": "bun run typecheck",
       "lint": "bun run lint",
-      "build": "bun run build"
+      "build": "bun run build",
+      "lintFix": "bun run lint:fix",
+      "formatFix": "bun run lint:fix"
     },
     "pluginMode": "deferred",
     "semantic": {
