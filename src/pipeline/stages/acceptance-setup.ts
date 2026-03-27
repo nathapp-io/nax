@@ -158,11 +158,20 @@ export const acceptanceSetupStage: PipelineStage = {
     if (fileExists) {
       const fingerprint = computeACFingerprint(allCriteria);
       const meta = await _acceptanceSetupDeps.readMeta(metaPath);
+      getSafeLogger()?.debug("acceptance-setup", "Fingerprint check", {
+        currentFingerprint: fingerprint,
+        storedFingerprint: meta?.acFingerprint ?? "none",
+        match: meta?.acFingerprint === fingerprint,
+      });
       if (!meta || meta.acFingerprint !== fingerprint) {
-        // ACs changed (or no meta) — back up and regenerate
+        getSafeLogger()?.info("acceptance-setup", "ACs changed — regenerating acceptance tests", {
+          reason: !meta ? "no meta file" : "fingerprint mismatch",
+        });
         await _acceptanceSetupDeps.copyFile(testPath, `${testPath}.bak`);
         await _acceptanceSetupDeps.deleteFile(testPath);
         shouldGenerate = true;
+      } else {
+        getSafeLogger()?.info("acceptance-setup", "Reusing existing acceptance tests (fingerprint match)");
       }
     }
 

@@ -600,3 +600,110 @@ describe("acceptanceSetup context: testableCount", () => {
     expect((ctx as any).acceptanceSetup.testableCount).toBe(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// US-004: agentGetFn from ctx is used over _acceptanceSetupDeps.getAgent
+// ---------------------------------------------------------------------------
+
+describe("US-004: agentGetFn from ctx overrides _acceptanceSetupDeps.getAgent", () => {
+  test("ctx.agentGetFn is called when set, not _acceptanceSetupDeps.getAgent", async () => {
+    let ctxAgentGetFnCalled = false;
+    let depsGetAgentCalled = false;
+
+    _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.getAgent = (_name: string) => {
+      depsGetAgentCalled = true;
+      return undefined;
+    };
+    _acceptanceSetupDeps.refine = async (criteria) =>
+      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
+    _acceptanceSetupDeps.generate = async () => ({
+      testCode: 'test("AC-1", () => { throw new Error("red") })',
+      criteria: [],
+    });
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    const ctx = makeCtx({
+      agentGetFn: (name: string) => {
+        ctxAgentGetFnCalled = true;
+        return undefined;
+      },
+    } as any);
+
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(ctxAgentGetFnCalled).toBe(true);
+    expect(depsGetAgentCalled).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-004: fingerprint reuse logging
+// ---------------------------------------------------------------------------
+
+describe("US-004: fingerprint reuse logging (staleness detection)", () => {
+  function matchingFingerprint() {
+    const criteria = ["AC-1: first criterion", "AC-2: second criterion", "AC-1: third criterion"];
+    return computeACFingerprint(criteria);
+  }
+
+  test("does not regenerate when fingerprint matches — reuse path taken", async () => {
+    let refineCalled = false;
+
+    _acceptanceSetupDeps.fileExists = async () => true;
+    _acceptanceSetupDeps.readMeta = async () => ({
+      generatedAt: "2026-01-01T00:00:00Z",
+      acFingerprint: matchingFingerprint(),
+      storyCount: 2,
+      acCount: 3,
+      generator: "nax",
+    });
+    _acceptanceSetupDeps.refine = async () => {
+      refineCalled = true;
+      return [];
+    };
+    _acceptanceSetupDeps.generate = async () => ({ testCode: "", criteria: [] });
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    await acceptanceSetupStage.execute(makeCtx());
+
+    expect(refineCalled).toBe(false);
+  });
+
+  test("regenerates and backs up when fingerprint mismatches", async () => {
+    let copyFileCalled = false;
+    let deleteFileCalled = false;
+
+    _acceptanceSetupDeps.fileExists = async () => true;
+    _acceptanceSetupDeps.readMeta = async () => ({
+      generatedAt: "2026-01-01T00:00:00Z",
+      acFingerprint: "sha256:outdated",
+      storyCount: 2,
+      acCount: 3,
+      generator: "nax",
+    });
+    _acceptanceSetupDeps.copyFile = async () => {
+      copyFileCalled = true;
+    };
+    _acceptanceSetupDeps.deleteFile = async () => {
+      deleteFileCalled = true;
+    };
+    _acceptanceSetupDeps.refine = async (criteria) =>
+      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
+    _acceptanceSetupDeps.generate = async () => ({
+      testCode: 'test("AC-1", () => { throw new Error("red") })',
+      criteria: [],
+    });
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    await acceptanceSetupStage.execute(makeCtx());
+
+    expect(copyFileCalled).toBe(true);
+    expect(deleteFileCalled).toBe(true);
+  });
+});
