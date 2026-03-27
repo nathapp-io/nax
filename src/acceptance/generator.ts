@@ -74,17 +74,18 @@ export const _generatorPRDDeps = {
 
 /**
  * Return the acceptance test filename for a given language.
+ * Files are dot-prefixed and placed at the package root (not inside .nax/).
  */
 export function acceptanceTestFilename(language?: string): string {
   switch (language?.toLowerCase()) {
     case "go":
-      return "acceptance_test.go";
+      return ".nax-acceptance_test.go";
     case "python":
-      return "test_acceptance.py";
+      return ".nax-acceptance.test.py";
     case "rust":
-      return "tests/acceptance.rs";
+      return ".nax-acceptance.rs";
     default:
-      return "acceptance.test.ts";
+      return ".nax-acceptance.test.ts";
   }
 }
 
@@ -196,7 +197,7 @@ Rules:
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
 - **Prefer behavioral tests** — import functions and call them rather than reading source files. For example, to verify "getPostRunActions() returns empty array", import PluginRegistry and call getPostRunActions(), don't grep the source file for the method name.
 - Output raw code only — no markdown fences, start directly with the language's import or package declaration
-- **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/.nax/features/${options.featureName}/${acceptanceTestFilename(options.language)}\` and will ALWAYS run from the repo root. The repo root is exactly 4 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..', '..')\`. For monorepo projects, navigate into packages from root (e.g. \`join(root, 'apps/api/src')\`).`;
+- **Path anchor (CRITICAL)**: This test file lives at \`<package-root>/${acceptanceTestFilename(options.language)}\` and runs from the package root. Import from package sources using relative paths like \`./src/...\`. No deep \`../../../../\` traversal needed.`;
 
   const prompt = basePrompt;
 
@@ -214,7 +215,7 @@ Rules:
   // summary rather than raw code. If extractTestCode() fails on the response text,
   // check whether the adapter already wrote the file to the feature directory.
   if (!testCode) {
-    const targetPath = join(options.featureDir, "acceptance.test.ts");
+    const targetPath = join(options.featureDir, acceptanceTestFilename(options.language));
     try {
       const existing = await Bun.file(targetPath).text();
       const recovered = extractTestCode(existing);

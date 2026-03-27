@@ -1,5 +1,6 @@
 /**
  * Unit tests for cost trigger wiring in sequential-executor.ts (TC-001)
+ * and US-004: agentGetFn passthrough to preRunCtx.
  *
  * Covers: checkCostExceeded abort/skip/continue, checkCostWarning at 80%/100%
  * threshold, and isTriggerEnabled guard (no interaction plugin = today behavior).
@@ -110,6 +111,21 @@ describe("checkCostExceeded — abort response exits with cost-limit", () => {
     const result = await checkCostExceeded(context, config, chain);
     // Trigger disabled: checkCostExceeded returns true (caller decides to exit)
     expect(result).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-004: agentGetFn passed to preRunCtx (structural verification)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("US-004: sequential-executor passes agentGetFn to preRunCtx", () => {
+  test("sequential-executor.ts source includes agentGetFn: ctx.agentGetFn in preRunCtx", async () => {
+    // Structural test: verify the source file wires agentGetFn into preRunCtx.
+    // This prevents regressions where agentGetFn is removed from the context build.
+    const source = await Bun.file(
+      new URL("../../../src/execution/sequential-executor.ts", import.meta.url).pathname,
+    ).text();
+    expect(source).toContain("agentGetFn: ctx.agentGetFn");
   });
 });
 

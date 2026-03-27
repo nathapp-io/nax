@@ -89,6 +89,7 @@ export async function executeSequential(
       stories: prd.userStories,
       routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
       hooks: ctx.hooks,
+      agentGetFn: ctx.agentGetFn,
     };
     await runPipeline(preRunPipeline, preRunCtx, ctx.eventEmitter);
 

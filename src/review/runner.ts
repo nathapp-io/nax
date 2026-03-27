@@ -309,6 +309,7 @@ export async function runReview(
     /\.nax-verifier-verdict\.json$/,
     /\.nax-pids$/,
     /\.nax-wt\//,
+    /\.nax-acceptance[^/]*$/,
   ];
   const uncommittedFiles = allUncommittedFiles.filter((f) => !NAX_RUNTIME_PATTERNS.some((pattern) => pattern.test(f)));
   if (uncommittedFiles.length > 0) {

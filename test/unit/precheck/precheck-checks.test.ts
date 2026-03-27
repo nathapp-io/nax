@@ -772,6 +772,7 @@ nax.lock
 .nax/features/*/status.json
 .nax-pids
 .nax-wt/
+**/.nax-acceptance*
 `.trim(),
     );
 

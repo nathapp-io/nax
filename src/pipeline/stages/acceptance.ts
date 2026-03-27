@@ -8,6 +8,10 @@
  * - All stories in the PRD are complete (status: passed/failed/skipped, not pending/in-progress)
  * - Acceptance validation is enabled in config
  *
+ * US-002 (ACC-002): reads ctx.acceptanceTestPaths (set by acceptance-setup) and runs
+ * each per-package test file from its own package directory. Falls back to the original
+ * single-file behavior when acceptanceTestPaths is not set (backward compatible).
+ *
  * @returns
  * - `continue`: All acceptance tests pass
  * - `fail`: One or more acceptance tests failed
@@ -113,90 +117,69 @@ export const acceptanceStage: PipelineStage = {
 
     logger.info("acceptance", "Running acceptance tests");
 
-    // Build path to acceptance test file
     if (!ctx.featureDir) {
       logger.warn("acceptance", "No feature directory — skipping acceptance tests");
       return { action: "continue" };
     }
 
-    const testPath = path.join(ctx.featureDir, effectiveConfig.acceptance.testPath);
+    // US-002: Use per-package test paths from acceptance-setup when available.
+    // Fall back to single-file behavior (pre-ACC-002 or disabled acceptance-setup).
+    const testGroups: Array<{ testPath: string; packageDir: string }> = ctx.acceptanceTestPaths ?? [
+      {
+        testPath: path.join(ctx.featureDir, effectiveConfig.acceptance.testPath),
+        packageDir: ctx.workdir,
+      },
+    ];
 
-    // Check if test file exists
-    const testFile = Bun.file(testPath);
-    const exists = await testFile.exists();
+    // Collect combined results across all packages
+    const allFailedACs: string[] = [];
+    const allOutputParts: string[] = [];
+    let anyError = false;
+    let errorExitCode = 0;
 
-    if (!exists) {
-      logger.warn("acceptance", "Acceptance test file not found — skipping", {
+    for (const { testPath, packageDir } of testGroups) {
+      // Check if test file exists
+      const testFile = Bun.file(testPath);
+      const exists = await testFile.exists();
+
+      if (!exists) {
+        logger.warn("acceptance", "Acceptance test file not found — skipping", { testPath });
+        continue;
+      }
+
+      // BUG-083/BUG-084: Run ONLY the acceptance test file, not the full project test suite.
+      // Resolution order: acceptance.command override → testFramework-aware command → bun test fallback
+      const testCmdParts = buildAcceptanceRunCommand(
         testPath,
+        effectiveConfig.project?.testFramework,
+        effectiveConfig.acceptance.command,
+      );
+      logger.info("acceptance", "Running acceptance command", {
+        cmd: testCmdParts.join(" "),
+        packageDir,
       });
-      return { action: "continue" };
-    }
+      const proc = Bun.spawn(testCmdParts, {
+        cwd: packageDir,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
 
-    // Acceptance tests always run from repo root — covers both single repo and monorepo.
-    // The test file uses __dirname-based paths to navigate into packages as needed.
+      const [exitCode, stdout, stderr] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
 
-    // BUG-083/BUG-084: Run ONLY the acceptance test file, not the full project test suite.
-    // Resolution order: acceptance.command override → testFramework-aware command → bun test fallback
-    const testCmdParts = buildAcceptanceRunCommand(
-      testPath,
-      effectiveConfig.project?.testFramework,
-      effectiveConfig.acceptance.command,
-    );
-    logger.info("acceptance", "Running acceptance command", { cmd: testCmdParts.join(" ") });
-    const proc = Bun.spawn(testCmdParts, {
-      cwd: ctx.workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+      const output = `${stdout}\n${stderr}`;
+      allOutputParts.push(output);
 
-    const [exitCode, stdout, stderr] = await Promise.all([
-      proc.exited,
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
+      const failedACs = parseTestFailures(output);
 
-    // Combine stdout and stderr for parsing
-    const output = `${stdout}\n${stderr}`;
-
-    // Parse test results
-    const failedACs = parseTestFailures(output);
-
-    // Check for overridden ACs (skip those)
-    const overrides = ctx.prd.acceptanceOverrides || {};
-    const actualFailures = failedACs.filter((acId) => !overrides[acId]);
-
-    // If all tests passed cleanly
-    if (actualFailures.length === 0 && exitCode === 0) {
-      logger.info("acceptance", "All acceptance tests passed");
-      return { action: "continue" };
-    }
-
-    // All parsed AC failures are overridden — treat as success even with non-zero exit
-    if (failedACs.length > 0 && actualFailures.length === 0) {
-      logger.info("acceptance", "All failed ACs are overridden — treating as pass");
-      return { action: "continue" };
-    }
-
-    // Non-zero exit but no AC failures parsed at all — test crashed (syntax error, import failure, etc.)
-    if (failedACs.length === 0 && exitCode !== 0) {
-      logger.error("acceptance", "Tests errored with no AC failures parsed", { exitCode });
-      logTestOutput(logger, "acceptance", output);
-
-      ctx.acceptanceFailures = {
-        failedACs: ["AC-ERROR"],
-        testOutput: output,
-      };
-
-      return {
-        action: "fail",
-        reason: `Acceptance tests errored (exit code ${exitCode}): syntax error, import failure, or unhandled exception`,
-      };
-    }
-
-    // If we have actual failures, report them
-    if (actualFailures.length > 0) {
-      // Log overridden failures (if any)
+      // Check for overridden ACs (skip those)
+      const overrides = ctx.prd.acceptanceOverrides ?? {};
+      const actualFailures = failedACs.filter((acId) => !overrides[acId]);
       const overriddenFailures = failedACs.filter((acId) => overrides[acId]);
+
       if (overriddenFailures.length > 0) {
         logger.warn("acceptance", "Skipped failures (overridden)", {
           overriddenFailures,
@@ -204,23 +187,60 @@ export const acceptanceStage: PipelineStage = {
         });
       }
 
-      logger.error("acceptance", "Acceptance tests failed", { failedACs: actualFailures });
-      logTestOutput(logger, "acceptance", output);
+      // Non-zero exit but no AC failures parsed — test crashed
+      if (failedACs.length === 0 && exitCode !== 0) {
+        logger.error("acceptance", "Tests errored with no AC failures parsed", {
+          exitCode,
+          packageDir,
+        });
+        logTestOutput(logger, "acceptance", output);
+        anyError = true;
+        errorExitCode = exitCode;
+        allFailedACs.push("AC-ERROR");
+        continue;
+      }
 
-      // Store failed ACs and test output in context for fix generation
-      ctx.acceptanceFailures = {
-        failedACs: actualFailures,
-        testOutput: output,
-      };
+      for (const acId of actualFailures) {
+        if (!allFailedACs.includes(acId)) {
+          allFailedACs.push(acId);
+        }
+      }
 
+      if (actualFailures.length > 0) {
+        logger.error("acceptance", "Acceptance tests failed", {
+          failedACs: actualFailures,
+          packageDir,
+        });
+        logTestOutput(logger, "acceptance", output);
+      } else if (exitCode === 0) {
+        logger.info("acceptance", "Package acceptance tests passed", { packageDir });
+      }
+    }
+
+    const combinedOutput = allOutputParts.join("\n");
+
+    // All packages passed
+    if (allFailedACs.length === 0) {
+      logger.info("acceptance", "All acceptance tests passed");
+      return { action: "continue" };
+    }
+
+    // Store failures for fix generation
+    ctx.acceptanceFailures = {
+      failedACs: allFailedACs,
+      testOutput: combinedOutput,
+    };
+
+    if (anyError) {
       return {
         action: "fail",
-        reason: `Acceptance tests failed: ${actualFailures.join(", ")}`,
+        reason: `Acceptance tests errored (exit code ${errorExitCode}): syntax error, import failure, or unhandled exception`,
       };
     }
 
-    // All tests passed
-    logger.info("acceptance", "All acceptance tests passed");
-    return { action: "continue" };
+    return {
+      action: "fail",
+      reason: `Acceptance tests failed: ${allFailedACs.join(", ")}`,
+    };
   },
 };

@@ -235,3 +235,28 @@ Add `"build"` to `review.checks` to include it in the review pipeline:
 
 See [Semantic Review](semantic-review.md) for the behavioral review check.
 
+---
+
+### Monorepo Acceptance Test Exclusion
+
+nax generates per-package acceptance test files at `<package-root>/.nax-acceptance.test.ts`. These files are meant to be run by nax only — **not** by your regular test suite.
+
+**Add to `.gitignore`:**
+
+```
+**/.nax-acceptance*
+```
+
+**Exclude from jest/vitest per-package config:**
+
+For monorepo projects using jest or vitest, add to each package's test config to prevent `.nax-acceptance.test.ts` from running during `npm test` / `npx turbo test`:
+
+```js
+// jest.config.js or vitest.config.ts
+testPathIgnorePatterns: [".nax-acceptance"]
+// or for vitest:
+exclude: ["**/.nax-acceptance*"]
+```
+
+**Why this matters:** the acceptance test files import production code with relative paths (e.g. `./src/utils/detect-provider.ts`). They run correctly from their package directory under nax control, but should be excluded from the normal test pipeline to avoid unexpected failures or duplicate runs.
+

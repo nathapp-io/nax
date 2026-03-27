@@ -209,8 +209,8 @@ def test_ac_one():
 // generateFromPRD — language option affects prompt filename
 // ---------------------------------------------------------------------------
 
-describe("generateFromPRD — Go language uses acceptance_test.go in prompt", () => {
-  test("prompt contains 'acceptance_test.go' when language is 'go'", async () => {
+describe("generateFromPRD — Go language uses .nax-acceptance_test.go in prompt", () => {
+  test("prompt contains '.nax-acceptance_test.go' when language is 'go'", async () => {
     let capturedPrompt = "";
     const mockAdapter: AgentAdapter = {
       complete: mock(async (prompt: string) => {
@@ -236,13 +236,13 @@ describe("generateFromPRD — Go language uses acceptance_test.go in prompt", ()
       language: "go",
     } as any);
 
-    expect(capturedPrompt).toContain("acceptance_test.go");
-    expect(capturedPrompt).not.toContain("acceptance.test.ts");
+    expect(capturedPrompt).toContain(".nax-acceptance_test.go");
+    expect(capturedPrompt).not.toContain(".nax-acceptance.test.ts");
   });
 });
 
-describe("generateFromPRD — Python language uses test_acceptance.py in prompt", () => {
-  test("prompt contains 'test_acceptance.py' when language is 'python'", async () => {
+describe("generateFromPRD — Python language uses .nax-acceptance.test.py in prompt", () => {
+  test("prompt contains '.nax-acceptance.test.py' when language is 'python'", async () => {
     let capturedPrompt = "";
     const mockAdapter: AgentAdapter = {
       complete: mock(async (prompt: string) => {
@@ -267,13 +267,13 @@ describe("generateFromPRD — Python language uses test_acceptance.py in prompt"
       language: "python",
     } as any);
 
-    expect(capturedPrompt).toContain("test_acceptance.py");
-    expect(capturedPrompt).not.toContain("acceptance.test.ts");
+    expect(capturedPrompt).toContain(".nax-acceptance.test.py");
+    expect(capturedPrompt).not.toContain(".nax-acceptance.test.ts");
   });
 });
 
-describe("generateFromPRD — no language defaults to acceptance.test.ts", () => {
-  test("prompt contains 'acceptance.test.ts' when language is omitted", async () => {
+describe("generateFromPRD — no language defaults to .nax-acceptance.test.ts", () => {
+  test("prompt contains '.nax-acceptance.test.ts' when language is omitted", async () => {
     let capturedPrompt = "";
     const mockAdapter: AgentAdapter = {
       complete: mock(async (prompt: string) => {
@@ -297,7 +297,7 @@ describe("generateFromPRD — no language defaults to acceptance.test.ts", () =>
       adapter: mockAdapter,
     } as any);
 
-    expect(capturedPrompt).toContain("acceptance.test.ts");
+    expect(capturedPrompt).toContain(".nax-acceptance.test.ts");
   });
 });
 

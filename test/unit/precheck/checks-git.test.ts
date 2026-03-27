@@ -187,4 +187,38 @@ describe("checkWorkingTreeClean — nax runtime files are excluded from dirty-tr
       rmSync(dir, { recursive: true });
     }
   });
+
+  // US-003 (ACC-002): .nax-acceptance* files are nax runtime files
+  test("US-003: passes when only .nax-acceptance.test.ts is dirty (root level)", async () => {
+    const dir = makeGitRepo();
+    try {
+      writeFileSync(join(dir, ".nax-acceptance.test.ts"), 'test("AC-1", () => {});\n');
+      const result = await checkWorkingTreeClean(dir);
+      expect(result.passed).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  test("US-003: passes when .nax-acceptance.test.ts in a tracked package subdir is dirty", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nax-git-test-"));
+    const git = (args: string[]) =>
+      Bun.spawnSync(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+    try {
+      git(["init"]);
+      git(["config", "user.email", "test@test.com"]);
+      git(["config", "user.name", "Test"]);
+      // Commit a file inside apps/api/ so the directory is tracked
+      mkdirSync(join(dir, "apps", "api"), { recursive: true });
+      writeFileSync(join(dir, "apps", "api", "index.ts"), "export {};\n");
+      git(["add", "."]);
+      git(["commit", "-m", "init"]);
+      // Now add the nax acceptance file as untracked in a tracked directory
+      writeFileSync(join(dir, "apps", "api", ".nax-acceptance.test.ts"), 'test("AC-1", () => {});\n');
+      const result = await checkWorkingTreeClean(dir);
+      expect(result.passed).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
 });

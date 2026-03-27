@@ -53,6 +53,7 @@ const NAX_RUNTIME_PATTERNS = [
   /^.{2} \.nax-verifier-verdict\.json$/,
   /^.{2} \.nax-pids$/,
   /^.{2} \.nax-wt\//,
+  /^.{2} .*\.nax-acceptance[^/]*$/,
 ];
 
 /** Check if working tree is clean. Uses: git status --porcelain */
