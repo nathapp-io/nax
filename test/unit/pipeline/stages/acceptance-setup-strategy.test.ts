@@ -92,6 +92,7 @@ describe("acceptance-setup: reads testStrategy from config.acceptance.testStrate
     let capturedContext: RefinementContext | null = null;
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (_criteria, context) => {
       capturedContext = context;
       return _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
@@ -114,6 +115,7 @@ describe("acceptance-setup: reads testStrategy from config.acceptance.testStrate
     let capturedContext: RefinementContext | null = null;
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (_criteria, context) => {
       capturedContext = context;
       return _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
@@ -136,6 +138,7 @@ describe("acceptance-setup: reads testStrategy from config.acceptance.testStrate
     let capturedContext: RefinementContext | null = null;
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (_criteria, context) => {
       capturedContext = context;
       return _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
@@ -164,6 +167,7 @@ describe("acceptance-setup: passes testStrategy to generator", () => {
     let capturedOptions: GenerateFromPRDOptions | null = null;
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (_criteria) =>
       _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
     _acceptanceSetupDeps.generate = async (_stories, _refined, options) => {
@@ -187,6 +191,7 @@ describe("acceptance-setup: passes testStrategy to generator", () => {
     let capturedOptions: GenerateFromPRDOptions | null = null;
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (_criteria) =>
       _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
     _acceptanceSetupDeps.generate = async (_stories, _refined, options) => {
@@ -210,6 +215,7 @@ describe("acceptance-setup: passes testStrategy to generator", () => {
     let capturedOptions: GenerateFromPRDOptions | null = null;
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (_criteria) =>
       _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
     _acceptanceSetupDeps.generate = async (_stories, _refined, options) => {
@@ -233,6 +239,7 @@ describe("acceptance-setup: passes testStrategy to generator", () => {
     let capturedOptions: GenerateFromPRDOptions | null = null;
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (_criteria) =>
       _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
     _acceptanceSetupDeps.generate = async (_stories, _refined, options) => {
@@ -257,6 +264,7 @@ describe("acceptance-setup: passes testStrategy to generator", () => {
     let generateStrategy: string | undefined = "not-called";
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (_criteria, context) => {
       refineStrategy = context.testStrategy;
       return _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
@@ -284,6 +292,7 @@ describe("acceptance-setup: passes testStrategy to generator", () => {
     let generateFramework: string | undefined = "not-called";
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (_criteria, context) => {
       refineFramework = context.testFramework;
       return _criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
