@@ -43,7 +43,7 @@ export async function runRectificationPass(
   rectificationMetrics: ParallelStoryMetrics[];
 }> {
   const logger = getSafeLogger();
-  const { workdir, config, hooks, pluginRegistry, eventEmitter } = options;
+  const { workdir, config, hooks, pluginRegistry, eventEmitter, agentGetFn } = options;
 
   // Use provided function or import default
   const rectify =
@@ -73,6 +73,7 @@ export async function runRectificationPass(
       pluginRegistry,
       prd,
       eventEmitter,
+      agentGetFn,
     });
 
     additionalCost += result.cost;

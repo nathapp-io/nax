@@ -10,6 +10,7 @@ import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import { getSafeLogger } from "../logger";
 import type { PipelineEventEmitter } from "../pipeline/events";
+import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD } from "../prd";
 import { errorMessage } from "../utils/errors";
@@ -41,6 +42,8 @@ export interface RectifyConflictedStoryOptions extends ConflictedStoryInfo {
   pluginRegistry: PluginRegistry;
   prd: PRD;
   eventEmitter?: PipelineEventEmitter;
+  /** Protocol-aware agent resolver. When set (ACP mode), resolves AcpAgentAdapter; falls back to getAgent (CLI) when absent. */
+  agentGetFn?: AgentGetFn;
 }
 
 /**
@@ -54,7 +57,7 @@ export interface RectifyConflictedStoryOptions extends ConflictedStoryInfo {
  * 5. Return success/finalConflict
  */
 export async function rectifyConflictedStory(options: RectifyConflictedStoryOptions): Promise<RectificationResult> {
-  const { storyId, workdir, config, hooks, pluginRegistry, prd, eventEmitter } = options;
+  const { storyId, workdir, config, hooks, pluginRegistry, prd, eventEmitter, agentGetFn } = options;
   const logger = getSafeLogger();
 
   logger?.info("parallel", "Rectifying story on updated base", { storyId, attempt: "rectification" });
@@ -100,6 +103,7 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
       plugins: pluginRegistry,
       storyStartTime: new Date().toISOString(),
       routing: routing as import("../pipeline/types").RoutingResult,
+      agentGetFn,
     };
 
     const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, eventEmitter);
