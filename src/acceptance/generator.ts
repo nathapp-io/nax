@@ -208,6 +208,8 @@ Rules:
     config: options.config,
     timeoutMs: options.config?.acceptance?.timeoutMs ?? 1800000,
     workdir: options.workdir,
+    featureName: options.featureName,
+    sessionRole: "acceptance-gen",
   });
   let testCode = extractTestCode(rawOutput);
 
@@ -406,6 +408,8 @@ export async function generateAcceptanceTests(
       config: options.config,
       timeoutMs: options.config?.acceptance?.timeoutMs ?? 1800000,
       workdir: options.workdir,
+      featureName: options.featureName,
+      sessionRole: "acceptance-gen",
     });
 
     // Extract test code from output

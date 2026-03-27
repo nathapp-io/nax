@@ -27,6 +27,10 @@ export interface RefinedCriterion {
 export interface RefinementContext {
   /** Story ID for attribution on each RefinedCriterion */
   storyId: string;
+  /** Feature name for ACP session naming */
+  featureName?: string;
+  /** Working directory for ACP session naming */
+  workdir?: string;
   /** Codebase context string (file tree, dependencies, etc.) */
   codebaseContext: string;
   /** Global config — model tier resolved from config.acceptance.model */

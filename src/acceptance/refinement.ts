@@ -172,7 +172,7 @@ export async function refineAcceptanceCriteria(
     return [];
   }
 
-  const { storyId, codebaseContext, config, testStrategy, testFramework } = context;
+  const { storyId, featureName, workdir, codebaseContext, config, testStrategy, testFramework } = context;
   const logger = getLogger();
 
   const modelTier = config.acceptance?.model ?? "fast";
@@ -193,6 +193,10 @@ export async function refineAcceptanceCriteria(
       maxTokens: 4096,
       model: modelDef.model,
       config,
+      featureName,
+      storyId,
+      workdir,
+      sessionRole: "refine",
     });
   } catch (error) {
     const reason = errorMessage(error);

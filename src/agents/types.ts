@@ -140,6 +140,12 @@ export interface CompleteOptions {
    * Pass a meaningful name (e.g. "nax-decompose-us-001") to aid debugging.
    */
   sessionName?: string;
+  /** Feature name for ACP session naming — produces meaningful session IDs for debugging */
+  featureName?: string;
+  /** Story ID for ACP session naming — combined with featureName to form session key */
+  storyId?: string;
+  /** Session role for disambiguation when the same story has multiple concurrent sessions */
+  sessionRole?: string;
 }
 
 /**

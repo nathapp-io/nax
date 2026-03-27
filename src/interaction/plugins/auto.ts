@@ -157,6 +157,9 @@ export class AutoInteractionPlugin implements InteractionPlugin {
       ...(modelArg && { model: modelArg }),
       jsonMode: true,
       ...(this.config.naxConfig && { config: this.config.naxConfig }),
+      featureName: request.featureName,
+      storyId: request.storyId,
+      sessionRole: "auto",
     });
 
     return this.parseResponse(output);
