@@ -185,34 +185,42 @@ export const acceptanceSetupStage: PipelineStage = {
     let totalCriteria = 0;
     let testableCount = 0;
 
-    // P2-A: Staleness detection — regenerate if any per-package file is missing or fingerprint changed
-    const existsResults = await Promise.all(testPaths.map(({ testPath }) => _acceptanceSetupDeps.fileExists(testPath)));
-    const anyFileMissing = existsResults.some((exists) => !exists);
+    // P2-A: Staleness detection — regenerate if fingerprint changed or meta missing.
+    // Fingerprint is the source of truth for AC stability; file existence is secondary.
+    // If fingerprint matches the stored meta, reuse existing tests even if the file
+    // was lost (e.g., after a crash). If fingerprint mismatches, regenerate with .bak backup.
+    const fingerprint = computeACFingerprint(allCriteria);
+    const meta = await _acceptanceSetupDeps.readMeta(metaPath);
+    getSafeLogger()?.debug("acceptance-setup", "Fingerprint check", {
+      currentFingerprint: fingerprint,
+      storedFingerprint: meta?.acFingerprint ?? "none",
+      match: meta?.acFingerprint === fingerprint,
+    });
 
-    let shouldGenerate = anyFileMissing;
-    if (!anyFileMissing) {
-      const fingerprint = computeACFingerprint(allCriteria);
-      const meta = await _acceptanceSetupDeps.readMeta(metaPath);
-      getSafeLogger()?.debug("acceptance-setup", "Fingerprint check", {
-        currentFingerprint: fingerprint,
-        storedFingerprint: meta?.acFingerprint ?? "none",
-        match: meta?.acFingerprint === fingerprint,
-      });
-      if (!meta || meta.acFingerprint !== fingerprint) {
-        getSafeLogger()?.info("acceptance-setup", "ACs changed — regenerating acceptance tests", {
-          reason: !meta ? "no meta file" : "fingerprint mismatch",
-        });
-        // Back up and delete all existing per-package test files
-        for (const { testPath } of testPaths) {
-          if (await _acceptanceSetupDeps.fileExists(testPath)) {
-            await _acceptanceSetupDeps.copyFile(testPath, `${testPath}.bak`);
-            await _acceptanceSetupDeps.deleteFile(testPath);
-          }
-        }
-        shouldGenerate = true;
+    let shouldGenerate = false;
+    if (!meta || meta.acFingerprint !== fingerprint) {
+      if (!meta) {
+        getSafeLogger()?.info("acceptance-setup", "No acceptance meta — generating acceptance tests");
       } else {
-        getSafeLogger()?.info("acceptance-setup", "Reusing existing acceptance tests (fingerprint match)");
+        getSafeLogger()?.info("acceptance-setup", "ACs changed — regenerating acceptance tests", {
+          reason: "fingerprint mismatch",
+          currentFingerprint: fingerprint,
+          storedFingerprint: meta.acFingerprint,
+        });
       }
+      // Back up and delete all existing per-package test files
+      for (const { testPath } of testPaths) {
+        if (await _acceptanceSetupDeps.fileExists(testPath)) {
+          await _acceptanceSetupDeps.copyFile(testPath, `${testPath}.bak`);
+          await _acceptanceSetupDeps.deleteFile(testPath);
+        }
+      }
+      shouldGenerate = true;
+    } else {
+      // Fingerprint matches — reuse existing tests. If the file is missing (e.g.,
+      // overwritten by TDD cycle then deleted in a crash), the existing tests are
+      // still valid: skip generation and let the RED gate decide whether to run.
+      getSafeLogger()?.info("acceptance-setup", "Reusing existing acceptance tests (fingerprint match)");
     }
 
     if (shouldGenerate) {

@@ -89,6 +89,7 @@ describe("acceptance-setup: criteria collection", () => {
     const collectedCriteria: string[] = [];
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (criteria, _ctx) => {
       collectedCriteria.push(...criteria);
       return criteria.map((c, i) => ({
@@ -117,6 +118,7 @@ describe("acceptance-setup: criteria collection", () => {
 
   test("stores totalCriteria count in ctx.acceptanceSetup", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (criteria) =>
       criteria.map((c, i) => ({ original: c, refined: c, testable: true, storyId: `US-00${i + 1}` }));
     _acceptanceSetupDeps.generate = async () => ({
@@ -143,6 +145,7 @@ describe("acceptance-setup: calls refinement and generation", () => {
     let refineCalled = false;
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (criteria) => {
       refineCalled = true;
       return criteria.map((c) => ({ original: c, refined: `refined: ${c}`, testable: true, storyId: "US-001" }));
@@ -164,6 +167,7 @@ describe("acceptance-setup: calls refinement and generation", () => {
     let generateCalled = false;
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (criteria) => {
       refineCalled = true;
       return criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
@@ -193,6 +197,7 @@ describe("acceptance-setup: calls refinement and generation", () => {
     let generateArgs: { stories: unknown[]; refined: unknown[] } | null = null;
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (criteria) =>
       criteria.map((c) => ({ original: c, refined: `R:${c}`, testable: true, storyId: "US-001" }));
     _acceptanceSetupDeps.generate = async (stories, refined) => {
@@ -223,6 +228,7 @@ describe("acceptance-setup: writes test file", () => {
     const testCode = 'import { test } from "bun:test"; test("AC-1", () => { throw new Error("red") })';
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (criteria) =>
       criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
     _acceptanceSetupDeps.generate = async () => ({ testCode, criteria: [] });
@@ -246,6 +252,7 @@ describe("acceptance-setup: writes test file", () => {
     const testCode = 'test("AC-1: first criterion", () => { throw new Error("NOT_IMPLEMENTED") })';
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (criteria) =>
       criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
     _acceptanceSetupDeps.generate = async () => ({ testCode, criteria: [] });
@@ -273,6 +280,7 @@ describe("acceptance-setup: writes test file", () => {
 describe("acceptance-setup: RED gate — failing tests", () => {
   test("returns continue when bun test exits with code 1", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (criteria) =>
       criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
     _acceptanceSetupDeps.generate = async () => ({
@@ -290,6 +298,7 @@ describe("acceptance-setup: RED gate — failing tests", () => {
 
   test("stores redFailCount in ctx.acceptanceSetup when tests fail", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (criteria) =>
       criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
     _acceptanceSetupDeps.generate = async () => ({
@@ -310,6 +319,7 @@ describe("acceptance-setup: RED gate — failing tests", () => {
     let testRunCalled = false;
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (criteria) =>
       criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
     _acceptanceSetupDeps.generate = async () => ({
@@ -342,6 +352,7 @@ describe("acceptance-setup: RED gate — failing tests", () => {
 describe("acceptance-setup: RED gate — passing tests (invalid RED)", () => {
   test("returns skip when bun test exits with code 0", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (criteria) =>
       criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
     _acceptanceSetupDeps.generate = async () => ({
@@ -360,6 +371,7 @@ describe("acceptance-setup: RED gate — passing tests (invalid RED)", () => {
 
   test("skip result includes a human-readable reason", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (criteria) =>
       criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
     _acceptanceSetupDeps.generate = async () => ({
@@ -580,6 +592,7 @@ describe("acceptanceSetupStage.enabled()", () => {
 describe("acceptanceSetup context: testableCount", () => {
   test("testableCount counts only testable criteria", async () => {
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     // With per-story calls: US-001 has 2 testable criteria, US-002 has 1 non-testable
     _acceptanceSetupDeps.refine = async (criteria, context) =>
       criteria.map((c) => ({
@@ -613,6 +626,7 @@ describe("US-004: agentGetFn from ctx overrides _acceptanceSetupDeps.getAgent", 
     let depsGetAgentCalled = false;
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.getAgent = (_name: string) => {
       depsGetAgentCalled = true;
       return undefined;
@@ -752,6 +766,7 @@ describe("US-001: per-package test file generation by workdir", () => {
     });
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (criteria, context) =>
       criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
     _acceptanceSetupDeps.generate = async () => ({
@@ -775,6 +790,7 @@ describe("US-001: per-package test file generation by workdir", () => {
     const writtenPaths: string[] = [];
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (criteria, context) =>
       criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
     _acceptanceSetupDeps.generate = async () => ({
@@ -816,6 +832,7 @@ describe("US-001: per-package test file generation by workdir", () => {
     });
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (criteria, context) =>
       criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
     _acceptanceSetupDeps.generate = async () => ({
@@ -856,6 +873,7 @@ describe("US-001: per-package test file generation by workdir", () => {
     });
 
     _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
     _acceptanceSetupDeps.refine = async (criteria, context) =>
       criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
     _acceptanceSetupDeps.generate = async () => ({
