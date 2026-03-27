@@ -53,8 +53,8 @@ export function wireEventsWriter(
   const eventsFile = join(eventsDir, "events.jsonl");
   let dirReady = false;
 
-  const write = (line: EventLine): void => {
-    (async () => {
+  const write = (line: EventLine): Promise<void> => {
+    return (async () => {
       try {
         if (!dirReady) {
           await mkdir(eventsDir, { recursive: true });
@@ -74,25 +74,39 @@ export function wireEventsWriter(
 
   unsubs.push(
     bus.on("run:started", (_ev) => {
-      write({ ts: new Date().toISOString(), event: "run:started", runId, feature, project });
+      return write({ ts: new Date().toISOString(), event: "run:started", runId, feature, project });
     }),
   );
 
   unsubs.push(
     bus.on("story:started", (ev) => {
-      write({ ts: new Date().toISOString(), event: "story:started", runId, feature, project, storyId: ev.storyId });
+      return write({
+        ts: new Date().toISOString(),
+        event: "story:started",
+        runId,
+        feature,
+        project,
+        storyId: ev.storyId,
+      });
     }),
   );
 
   unsubs.push(
     bus.on("story:completed", (ev) => {
-      write({ ts: new Date().toISOString(), event: "story:completed", runId, feature, project, storyId: ev.storyId });
+      return write({
+        ts: new Date().toISOString(),
+        event: "story:completed",
+        runId,
+        feature,
+        project,
+        storyId: ev.storyId,
+      });
     }),
   );
 
   unsubs.push(
     bus.on("story:decomposed", (ev) => {
-      write({
+      return write({
         ts: new Date().toISOString(),
         event: "story:decomposed",
         runId,
@@ -106,19 +120,26 @@ export function wireEventsWriter(
 
   unsubs.push(
     bus.on("story:failed", (ev) => {
-      write({ ts: new Date().toISOString(), event: "story:failed", runId, feature, project, storyId: ev.storyId });
+      return write({
+        ts: new Date().toISOString(),
+        event: "story:failed",
+        runId,
+        feature,
+        project,
+        storyId: ev.storyId,
+      });
     }),
   );
 
   unsubs.push(
     bus.on("run:completed", (_ev) => {
-      write({ ts: new Date().toISOString(), event: "on-complete", runId, feature, project });
+      return write({ ts: new Date().toISOString(), event: "on-complete", runId, feature, project });
     }),
   );
 
   unsubs.push(
     bus.on("run:paused", (ev) => {
-      write({
+      return write({
         ts: new Date().toISOString(),
         event: "run:paused",
         runId,

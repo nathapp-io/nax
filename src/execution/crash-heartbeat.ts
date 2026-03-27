@@ -21,37 +21,33 @@ export function startHeartbeat(
 
   stopHeartbeat();
 
-  heartbeatTimer = setInterval(async () => {
-    logger?.debug("crash-recovery", "Heartbeat");
-
-    if (jsonlFilePath) {
+  heartbeatTimer = setInterval(() => {
+    (async () => {
       try {
-        const heartbeatEntry = {
-          timestamp: new Date().toISOString(),
-          level: "debug",
-          stage: "heartbeat",
-          message: "Process alive",
-          data: {
-            pid: process.pid,
-            memoryUsageMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-          },
-        };
-        const line = `${JSON.stringify(heartbeatEntry)}\n`;
-        appendFileSync(jsonlFilePath, line);
-      } catch (err) {
-        logger?.warn("crash-recovery", "Failed to write heartbeat", { error: (err as Error).message });
-      }
-    }
+        logger?.debug("crash-recovery", "Heartbeat");
 
-    try {
-      await statusWriter.update(getTotalCost(), getIterations(), {
-        lastHeartbeat: new Date().toISOString(),
-      });
-    } catch (err) {
-      logger?.warn("crash-recovery", "Failed to update status during heartbeat", {
-        error: (err as Error).message,
-      });
-    }
+        if (jsonlFilePath) {
+          const heartbeatEntry = {
+            timestamp: new Date().toISOString(),
+            level: "debug",
+            stage: "heartbeat",
+            message: "Process alive",
+            data: {
+              pid: process.pid,
+              memoryUsageMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+            },
+          };
+          const line = `${JSON.stringify(heartbeatEntry)}\n`;
+          appendFileSync(jsonlFilePath, line);
+        }
+
+        await statusWriter.update(getTotalCost(), getIterations(), {
+          lastHeartbeat: new Date().toISOString(),
+        });
+      } catch (err) {
+        logger?.warn("crash-recovery", "Failed during heartbeat", { error: (err as Error).message });
+      }
+    })().catch(() => {});
   }, 60_000);
 
   logger?.debug("crash-recovery", "Heartbeat started (60s interval)");
