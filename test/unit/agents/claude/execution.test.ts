@@ -78,3 +78,57 @@ describe("buildAllowedEnv — HOME is sanitized to an absolute path", () => {
     expect(env.HOME!.startsWith("/")).toBe(true);
   });
 });
+
+describe("buildAllowedEnv — ANTHROPIC_ prefix passthrough", () => {
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    originalEnv = { ...process.env };
+  });
+
+  afterEach(() => {
+    // Restore original env (remove any test-only vars)
+    for (const key of Object.keys(process.env)) {
+      if (!originalEnv[key]) delete process.env[key];
+    }
+    for (const [key, val] of Object.entries(originalEnv)) {
+      process.env[key] = val;
+    }
+  });
+
+  test("passes ANTHROPIC_AUTH_TOKEN through when set", () => {
+    process.env.ANTHROPIC_AUTH_TOKEN = "minimax-test-key";
+    const env = buildAllowedEnv(makeMinimalOptions());
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBe("minimax-test-key");
+  });
+
+  test("passes ANTHROPIC_BASE_URL through when set", () => {
+    process.env.ANTHROPIC_BASE_URL = "https://api.minimax.io/anthropic";
+    const env = buildAllowedEnv(makeMinimalOptions());
+    expect(env.ANTHROPIC_BASE_URL).toBe("https://api.minimax.io/anthropic");
+  });
+
+  test("passes all ANTHROPIC_* vars through via prefix match", () => {
+    process.env.ANTHROPIC_AUTH_TOKEN = "key1";
+    process.env.ANTHROPIC_BASE_URL = "https://api.minimax.io/anthropic";
+    process.env.ANTHROPIC_MODEL = "MiniMax-M2.7";
+    process.env.ANTHROPIC_DEFAULT_SONNET_MODEL = "MiniMax-M2.7";
+    process.env.ANTHROPIC_SMALL_FAST_MODEL = "MiniMax-M2.7";
+    process.env.ANTHROPIC_API_KEY = "should-also-pass";
+    const env = buildAllowedEnv(makeMinimalOptions());
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBe("key1");
+    expect(env.ANTHROPIC_BASE_URL).toBe("https://api.minimax.io/anthropic");
+    expect(env.ANTHROPIC_MODEL).toBe("MiniMax-M2.7");
+    expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("MiniMax-M2.7");
+    expect(env.ANTHROPIC_SMALL_FAST_MODEL).toBe("MiniMax-M2.7");
+    expect(env.ANTHROPIC_API_KEY).toBe("should-also-pass");
+  });
+
+  test("does not pass unrelated vars", () => {
+    process.env.SOME_random_VAR = "should-not-pass";
+    process.env.MY_CUSTOM_KEY = "also-no";
+    const env = buildAllowedEnv(makeMinimalOptions());
+    expect(env.SOME_random_VAR).toBeUndefined();
+    expect(env.MY_CUSTOM_KEY).toBeUndefined();
+  });
+});

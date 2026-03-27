@@ -93,7 +93,7 @@ export function buildAllowedEnv(options: AgentRunOptions): Record<string, string
     }
   }
 
-  const allowedPrefixes = ["CLAUDE_", "NAX_", "CLAW_", "TURBO_"];
+  const allowedPrefixes = ["CLAUDE_", "NAX_", "CLAW_", "TURBO_", "ANTHROPIC_"];
   for (const [key, value] of Object.entries(process.env)) {
     if (allowedPrefixes.some((prefix) => key.startsWith(prefix))) {
       allowed[key] = value;

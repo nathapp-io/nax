@@ -63,7 +63,7 @@ function buildAllowedEnv(extraEnv?: Record<string, string | undefined>): Record<
     if (process.env[varName]) allowed[varName] = process.env[varName];
   }
 
-  const allowedPrefixes = ["CLAUDE_", "NAX_", "CLAW_", "TURBO_", "ACPX_", "CODEX_", "GEMINI_"];
+  const allowedPrefixes = ["CLAUDE_", "NAX_", "CLAW_", "TURBO_", "ACPX_", "CODEX_", "GEMINI_", "ANTHROPIC_"];
   for (const [key, value] of Object.entries(process.env)) {
     if (allowedPrefixes.some((prefix) => key.startsWith(prefix))) {
       allowed[key] = value;
