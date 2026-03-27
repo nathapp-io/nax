@@ -21,7 +21,7 @@ import type { NaxConfig } from "../../config";
 import { isGreenfieldStory } from "../../context/greenfield";
 import { applyDecomposition } from "../../decompose/apply";
 import { DecomposeBuilder } from "../../decompose/builder";
-import type { DecomposeConfig as BuilderDecomposeConfig, DecomposeResult } from "../../decompose/types";
+import type { DecomposeAgentConfig as BuilderDecomposeConfig, DecomposeResult } from "../../decompose/types";
 import { checkStoryOversized } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { savePRD } from "../../prd";

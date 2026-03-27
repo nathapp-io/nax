@@ -5,7 +5,8 @@
  * including execution limits, quality gates, and feature settings.
  */
 
-import type { SemanticReviewConfig } from "../review/types";
+import type { ConstitutionConfig } from "../constitution/types";
+import type { ReviewConfig, SemanticReviewConfig } from "../review/types";
 import type { Complexity, LlmRoutingMode, ModelMap, ModelTier, RoutingStrategyName, TddStrategy } from "./schema-types";
 
 export interface EscalationEntry {
@@ -194,17 +195,8 @@ export interface TddConfig {
   greenfieldDetection?: boolean;
 }
 
-/** Constitution config */
-export interface ConstitutionConfig {
-  /** Enable constitution loading and injection */
-  enabled: boolean;
-  /** Path to constitution file relative to nax/ directory */
-  path: string;
-  /** Maximum tokens allowed for constitution content */
-  maxTokens: number;
-  /** Skip loading global constitution (default: false) */
-  skipGlobal?: boolean;
-}
+// Re-exported from constitution/types.ts to maintain single source of truth
+export type { ConstitutionConfig } from "../constitution/types";
 
 /** Analyze config */
 export interface AnalyzeConfig {
@@ -218,24 +210,8 @@ export interface AnalyzeConfig {
   maxCodebaseSummaryTokens: number;
 }
 
-/** Review config */
-export interface ReviewConfig {
-  /** Enable review phase */
-  enabled: boolean;
-  /** List of checks to run */
-  checks: Array<"typecheck" | "lint" | "test" | "build" | "semantic">;
-  /** Custom commands per check */
-  commands: {
-    typecheck?: string;
-    lint?: string;
-    test?: string;
-    build?: string;
-  };
-  /** Plugin reviewer mode: "per-story" (run after each story) or "deferred" (run once at end of run, default: "per-story") */
-  pluginMode?: "per-story" | "deferred";
-  /** Semantic review configuration (when 'semantic' is in checks) */
-  semantic?: SemanticReviewConfig;
-}
+// Re-exported from review/types.ts to maintain single source of truth
+export type { ReviewConfig } from "../review/types";
 
 /** Plan config */
 export interface PlanConfig {
@@ -307,7 +283,8 @@ export interface PluginConfigEntry {
   enabled?: boolean;
 }
 
-export interface HooksConfig {
+/** Raw hooks config as stored in the config file (unvalidated). Use HooksConfig from hooks/types for typed hook definitions. */
+export interface RawHooksConfig {
   skipGlobal?: boolean;
   hooks: Record<string, unknown>;
 }
@@ -505,7 +482,7 @@ export interface NaxConfig {
   /** Disabled plugin names (v0.38.2) */
   disabledPlugins?: string[];
   /** Hooks configuration (v0.10) */
-  hooks?: HooksConfig;
+  hooks?: RawHooksConfig;
   /** Interaction settings (v0.15.0) */
   interaction?: InteractionConfig;
   /** Precheck settings (v0.16.0) */

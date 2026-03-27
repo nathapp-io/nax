@@ -33,7 +33,7 @@ export type {
   AcceptanceTestStrategy,
   OptimizerConfig,
   PluginConfigEntry,
-  HooksConfig,
+  RawHooksConfig,
   InteractionConfig,
   TestCoverageConfig,
   ContextAutoDetectConfig,

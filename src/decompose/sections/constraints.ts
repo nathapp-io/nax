@@ -5,9 +5,9 @@
  * max substories, max complexity, output JSON schema, nonOverlapJustification requirement.
  */
 
-import type { DecomposeConfig } from "../types";
+import type { DecomposeAgentConfig } from "../types";
 
-export function buildConstraintsSection(config: DecomposeConfig): string {
+export function buildConstraintsSection(config: DecomposeAgentConfig): string {
   return [
     "# Decomposition Constraints",
     "",

@@ -1,11 +1,11 @@
 /**
  * Decompose module types.
  *
- * DecomposeConfig, SubStory, DecomposeResult, ValidationResult.
+ * DecomposeAgentConfig, SubStory, DecomposeResult, ValidationResult.
  */
 
-/** Configuration for story decomposition */
-export interface DecomposeConfig {
+/** Configuration for the decompose agent (runtime input). Use DecomposeConfig from config/runtime-types for the full NaxConfig schema. */
+export interface DecomposeAgentConfig {
   /** Maximum number of sub-stories to generate */
   maxSubStories: number;
   /** Maximum allowed complexity for any sub-story */
