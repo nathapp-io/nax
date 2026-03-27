@@ -723,11 +723,14 @@ export class AcpAgentAdapter implements AgentAdapter {
       let hadError = false;
       try {
         // complete() is one-shot — ephemeral session, no sidecar
-        // Use caller-provided sessionName if available (aids tracing), otherwise timestamp-based
+        // Use caller-provided sessionName if available; otherwise build from featureName/storyId/sessionRole
+        const completeSessionName =
+          _options?.sessionName ??
+          buildSessionName(workdir ?? process.cwd(), _options?.featureName, _options?.storyId, _options?.sessionRole);
         session = await client.createSession({
           agentName: this.name,
           permissionMode,
-          sessionName: _options?.sessionName,
+          sessionName: completeSessionName,
         });
 
         // Enforce timeout via Promise.race — session.prompt() can hang indefinitely
@@ -869,6 +872,8 @@ export class AcpAgentAdapter implements AgentAdapter {
         model,
         jsonMode: true,
         config: options.config as import("../../config").NaxConfig | undefined,
+        workdir: options.workdir,
+        sessionRole: "decompose",
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

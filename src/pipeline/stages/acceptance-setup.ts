@@ -237,6 +237,8 @@ export const acceptanceSetupStage: PipelineStage = {
         for (const story of nonFixStories) {
           const storyRefined = await _acceptanceSetupDeps.refine(story.acceptanceCriteria, {
             storyId: story.id,
+            featureName: ctx.prd.feature,
+            workdir: ctx.workdir,
             codebaseContext: "",
             config: ctx.config,
             testStrategy: ctx.config.acceptance.testStrategy,

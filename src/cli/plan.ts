@@ -156,7 +156,14 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     } catch {
       // fall through — complete() will use its own fallback
     }
-    rawResponse = await cliAdapter.complete(prompt, { model: autoModel, jsonMode: true, workdir, config });
+    rawResponse = await cliAdapter.complete(prompt, {
+      model: autoModel,
+      jsonMode: true,
+      workdir,
+      config,
+      featureName: options.feature,
+      sessionRole: "plan",
+    });
     // CLI adapter returns {"type":"result","result":"..."} envelope — unwrap it
     try {
       const envelope = JSON.parse(rawResponse) as Record<string, unknown>;

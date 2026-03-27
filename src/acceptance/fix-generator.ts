@@ -294,6 +294,9 @@ export async function generateFixStories(
       const fixDescription = await adapter.complete(prompt, {
         model: modelDef.model,
         config: options.config,
+        featureName: options.prd.feature,
+        workdir: options.workdir,
+        sessionRole: "fix-gen",
       });
 
       fixStories.push({
