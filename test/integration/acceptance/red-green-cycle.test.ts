@@ -120,8 +120,7 @@ afterEach(async () => {
 
 describe("RED to GREEN acceptance cycle", () => {
   test("acceptance-setup writes test file and RED gate detects failures", async () => {
-    const featureDir = path.join(tmpDir, ".nax/features/test-feature");
-    const testPath = path.join(featureDir, "acceptance.test.ts");
+    const testPath = path.join(tmpDir, ".nax-acceptance.test.ts");
 
     const generatedTestCode = [
       'import { test } from "bun:test";',
@@ -161,8 +160,7 @@ describe("RED to GREEN acceptance cycle", () => {
   });
 
   test("GREEN gate passes after implementation stubs are written", async () => {
-    const featureDir = path.join(tmpDir, ".nax/features/test-feature");
-    const testPath = path.join(featureDir, "acceptance.test.ts");
+    const testPath = path.join(tmpDir, ".nax-acceptance.test.ts");
 
     // Write a real passing acceptance test file (simulating post-implementation state)
     const passingTestCode = [
@@ -182,6 +180,7 @@ describe("RED to GREEN acceptance cycle", () => {
       prd: makePrd(completedStories) as unknown as PRD,
       story: completedStories[0],
       stories: completedStories,
+      acceptanceTestPaths: [{ testPath, packageDir: tmpDir }],
     });
 
     expect(acceptanceStage.enabled(greenCtx)).toBe(true);
@@ -192,8 +191,7 @@ describe("RED to GREEN acceptance cycle", () => {
   });
 
   test("full RED then GREEN: setup stage continues on RED, acceptance stage continues on GREEN", async () => {
-    const featureDir = path.join(tmpDir, ".nax/features/test-feature");
-    const testPath = path.join(featureDir, "acceptance.test.ts");
+    const testPath = path.join(tmpDir, ".nax-acceptance.test.ts");
 
     // --- RED phase ---
     _acceptanceSetupDeps.fileExists = async () => false;
@@ -227,6 +225,7 @@ describe("RED to GREEN acceptance cycle", () => {
       prd: makePrd(completedStories) as unknown as PRD,
       story: completedStories[0],
       stories: completedStories,
+      acceptanceTestPaths: [{ testPath, packageDir: tmpDir }],
     });
 
     const greenResult = await acceptanceStage.execute(greenCtx);
@@ -238,10 +237,9 @@ describe("RED to GREEN acceptance cycle", () => {
 // AC-4: Edge case — acceptance.test.ts already exists → skip generation
 // ---------------------------------------------------------------------------
 
-describe("edge case: pre-existing acceptance.test.ts", () => {
-  test("skips generation when acceptance.test.ts already exists in feature dir and fingerprint matches", async () => {
-    const featureDir = path.join(tmpDir, ".nax/features/test-feature");
-    const testPath = path.join(featureDir, "acceptance.test.ts");
+describe("edge case: pre-existing .nax-acceptance.test.ts", () => {
+  test("skips generation when .nax-acceptance.test.ts already exists at package root and fingerprint matches", async () => {
+    const testPath = path.join(tmpDir, ".nax-acceptance.test.ts");
 
     // Pre-write a test file as if from a previous nax analyze run
     await Bun.write(testPath, 'import { test } from "bun:test"; test("existing", () => {});');
@@ -290,9 +288,8 @@ describe("edge case: pre-existing acceptance.test.ts", () => {
     expect(result.action).toBe("continue");
   });
 
-  test("does not overwrite the pre-existing acceptance.test.ts when fingerprint matches", async () => {
-    const featureDir = path.join(tmpDir, ".nax/features/test-feature");
-    const testPath = path.join(featureDir, "acceptance.test.ts");
+  test("does not overwrite the pre-existing .nax-acceptance.test.ts when fingerprint matches", async () => {
+    const testPath = path.join(tmpDir, ".nax-acceptance.test.ts");
 
     const originalContent = "// pre-existing test content";
     await Bun.write(testPath, originalContent);
