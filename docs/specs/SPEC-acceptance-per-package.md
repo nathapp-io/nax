@@ -272,13 +272,86 @@ No behavioral change. Stories have no `workdir` (or `workdir: ""`), so there's o
 
 ---
 
+### US-004: Pass agentGetFn to preRunCtx and fix acceptance reuse on rerun (BUG-091)
+
+#### Problem
+
+Two issues with acceptance-setup on rerun:
+
+1. **Wrong agent protocol**: `sequential-executor.ts` builds `preRunCtx` without `agentGetFn`. The acceptance-setup stage falls back to the raw `getAgent()` from `src/agents/registry.ts`, which returns CLI adapters (`ClaudeCodeAdapter`) — ignoring the protocol-aware `AgentRegistry` created in `runner.ts`. Acceptance test generation always uses `claude -p` (CLI mode) even when `agent.protocol: "acp"` is configured.
+
+2. **Always regenerates**: On every `nax run`/`nax rerun`, acceptance tests are regenerated instead of reusing the existing file when ACs haven't changed. The fingerprint-based staleness detection exists but may not be working correctly on rerun paths.
+
+#### Changes
+
+**`src/execution/sequential-executor.ts`:**
+
+1. Pass `agentGetFn` from the execution context to `preRunCtx`:
+   ```ts
+   const preRunCtx: PipelineContext = {
+     config: ctx.config,
+     effectiveConfig: ctx.config,
+     prd,
+     workdir: ctx.workdir,
+     featureDir: ctx.featureDir,
+     story: prd.userStories[0],
+     stories: prd.userStories,
+     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+     hooks: ctx.hooks,
+     agentGetFn: ctx.agentGetFn,  // <-- FIX: use protocol-aware registry
+   };
+   ```
+
+**`src/pipeline/stages/acceptance-setup.ts`:**
+
+2. Add debug logging around the fingerprint check so rerun staleness decisions are visible:
+   ```ts
+   if (fileExists) {
+     const fingerprint = computeACFingerprint(allCriteria);
+     const meta = await _acceptanceSetupDeps.readMeta(metaPath);
+     logger?.debug("acceptance-setup", "Fingerprint check", {
+       currentFingerprint: fingerprint,
+       storedFingerprint: meta?.acFingerprint ?? "none",
+       match: meta?.acFingerprint === fingerprint,
+     });
+     if (!meta || meta.acFingerprint !== fingerprint) {
+       logger?.info("acceptance-setup", "ACs changed — regenerating acceptance tests", {
+         reason: !meta ? "no meta file" : "fingerprint mismatch",
+       });
+       await _acceptanceSetupDeps.copyFile(testPath, `${testPath}.bak`);
+       await _acceptanceSetupDeps.deleteFile(testPath);
+       shouldGenerate = true;
+     } else {
+       logger?.info("acceptance-setup", "Reusing existing acceptance tests (fingerprint match)");
+     }
+   }
+   ```
+
+3. Verify the fingerprint path uses the same `testPath` derivation as the file check (no path mismatch between setup and runner).
+
+#### Acceptance Criteria
+
+1. Given `agent.protocol: "acp"` in config, when acceptance-setup generates tests on rerun, then it uses `AcpAgentAdapter` (not `ClaudeCodeAdapter`)
+2. Given an existing acceptance test file with matching `acceptance-meta.json` fingerprint, when `nax run` reruns with unchanged ACs, then the test file is NOT regenerated (log shows "Reusing existing acceptance tests")
+3. Given an existing acceptance test file with a CHANGED AC in `prd.json`, when `nax run` reruns, then the test file IS regenerated (log shows "ACs changed — regenerating")
+4. Given `preRunCtx` is constructed in `sequential-executor.ts`, then `agentGetFn` is passed through from the execution context
+
+#### Files
+
+- `src/execution/sequential-executor.ts` — pass `agentGetFn` to `preRunCtx`
+- `src/pipeline/stages/acceptance-setup.ts` — debug/info logging around fingerprint check
+- `test/unit/execution/sequential-executor.test.ts`
+- `test/unit/pipeline/stages/acceptance-setup.test.ts`
+
+---
+
 ## Implementation Order
 
 ```
-US-001 (setup + generation) → US-002 (runner) → US-003 (gitignore + exclusion)
+US-004 (BUG-091 fix) → US-001 (setup + generation) → US-002 (runner) → US-003 (gitignore + exclusion)
 ```
 
-US-001 and US-002 are sequential (runner needs the new context fields). US-003 is independent but best done last.
+US-004 first — fixes the rerun/agent bugs on the current single-file path before US-001 refactors it to per-package. US-001 and US-002 are sequential (runner needs the new context fields). US-003 is independent but best done last.
 
 ## Migration / Backward Compatibility
 
@@ -289,4 +362,4 @@ US-001 and US-002 are sequential (runner needs the new context fields). US-003 i
 ## Status
 
 - **Spec:** Draft
-- **GitHub Issue:** #49
+- **GitHub Issues:** #49 (BUG-088 per-package), #55 (BUG-091 agentGetFn + reuse)
