@@ -47,7 +47,7 @@ export function wireRegistry(bus: PipelineEventBus, feature: string, runId: stri
   const metaFile = join(runDir, "meta.json");
 
   const unsub = bus.on("run:started", (_ev) => {
-    (async () => {
+    return (async () => {
       try {
         await mkdir(runDir, { recursive: true });
         const meta: MetaJson = {

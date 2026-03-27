@@ -69,6 +69,7 @@ function createSignalHandler(ctx: SignalHandlerContext): (signal: NodeJS.Signals
  */
 function createUncaughtExceptionHandler(ctx: SignalHandlerContext): (error: Error) => Promise<void> {
   return async (error: Error) => {
+    process.stderr.write(`\n[nax crash] Uncaught exception: ${error.message}\n${error.stack ?? ""}\n`);
     const logger = getSafeLogger();
     logger?.error("crash-recovery", "Uncaught exception", {
       error: error.message,
@@ -103,6 +104,7 @@ function createUncaughtExceptionHandler(ctx: SignalHandlerContext): (error: Erro
 function createUnhandledRejectionHandler(ctx: SignalHandlerContext): (reason: unknown) => Promise<void> {
   return async (reason: unknown) => {
     const error = reason instanceof Error ? reason : new Error(String(reason));
+    process.stderr.write(`\n[nax crash] Unhandled rejection: ${error.message}\n${error.stack ?? ""}\n`);
     const logger = getSafeLogger();
     logger?.error("crash-recovery", "Unhandled promise rejection", {
       error: error.message,

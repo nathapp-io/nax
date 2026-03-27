@@ -7,6 +7,7 @@
 
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
+import type { InteractionChain } from "../interaction/chain";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
@@ -48,6 +49,8 @@ export interface RunnerExecutionOptions {
   agentGetFn?: AgentGetFn;
   /** PID registry for crash recovery — passed to agent.run() to register child processes. */
   pidRegistry?: PidRegistry;
+  /** Interaction chain for cost/pre-merge triggers during sequential execution. */
+  interactionChain?: InteractionChain | null;
 }
 
 /**
@@ -220,6 +223,7 @@ export async function runExecutionPhase(
       batchPlan,
       agentGetFn: options.agentGetFn,
       pidRegistry: options.pidRegistry,
+      interactionChain: options.interactionChain,
     },
     prd,
   );

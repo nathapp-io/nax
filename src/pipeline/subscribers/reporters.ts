@@ -33,8 +33,10 @@ export function wireReporters(
 ): UnsubscribeFn {
   const logger = getSafeLogger();
 
-  const safe = (name: string, fn: () => Promise<void>) => {
-    fn().catch((err) => logger?.warn("reporters-subscriber", `Reporter "${name}" error`, { error: String(err) }));
+  const safe = (name: string, fn: () => Promise<void>): Promise<void> => {
+    return fn()
+      .catch((err) => logger?.warn("reporters-subscriber", `Reporter "${name}" error`, { error: String(err) }))
+      .catch(() => {});
   };
 
   const unsubs: UnsubscribeFn[] = [];
@@ -42,7 +44,7 @@ export function wireReporters(
   // run:started → reporter.onRunStart
   unsubs.push(
     bus.on("run:started", (ev) => {
-      safe("onRunStart", async () => {
+      return safe("onRunStart", async () => {
         const reporters = pluginRegistry.getReporters();
         for (const r of reporters) {
           if (r.onRunStart) {
@@ -65,7 +67,7 @@ export function wireReporters(
   // story:completed → reporter.onStoryComplete(status: "completed")
   unsubs.push(
     bus.on("story:completed", (ev) => {
-      safe("onStoryComplete(completed)", async () => {
+      return safe("onStoryComplete(completed)", async () => {
         const reporters = pluginRegistry.getReporters();
         for (const r of reporters) {
           if (r.onStoryComplete) {
@@ -91,7 +93,7 @@ export function wireReporters(
   // story:failed → reporter.onStoryComplete(status: "failed")
   unsubs.push(
     bus.on("story:failed", (ev) => {
-      safe("onStoryComplete(failed)", async () => {
+      return safe("onStoryComplete(failed)", async () => {
         const reporters = pluginRegistry.getReporters();
         for (const r of reporters) {
           if (r.onStoryComplete) {
@@ -117,7 +119,7 @@ export function wireReporters(
   // story:paused → reporter.onStoryComplete(status: "paused")
   unsubs.push(
     bus.on("story:paused", (ev) => {
-      safe("onStoryComplete(paused)", async () => {
+      return safe("onStoryComplete(paused)", async () => {
         const reporters = pluginRegistry.getReporters();
         for (const r of reporters) {
           if (r.onStoryComplete) {
@@ -143,7 +145,7 @@ export function wireReporters(
   // run:completed → reporter.onRunEnd
   unsubs.push(
     bus.on("run:completed", (ev) => {
-      safe("onRunEnd", async () => {
+      return safe("onRunEnd", async () => {
         const reporters = pluginRegistry.getReporters();
         for (const r of reporters) {
           if (r.onRunEnd) {
