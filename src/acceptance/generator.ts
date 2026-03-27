@@ -196,8 +196,8 @@ Rules:
 - **NEVER use placeholder assertions** — no always-passing or always-failing stubs, no TODO comments as the only content, no empty test bodies
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
 - **Prefer behavioral tests** — import functions and call them rather than reading source files. For example, to verify "getPostRunActions() returns empty array", import PluginRegistry and call getPostRunActions(), don't grep the source file for the method name.
-- Output raw code only — no markdown fences, start directly with the language's import or package declaration
-- **Path anchor (CRITICAL)**: This test file lives at \`<package-root>/${acceptanceTestFilename(options.language)}\` and runs from the package root. Import from package sources using relative paths like \`./src/...\`. No deep \`../../../../\` traversal needed.`;
+- **File output (REQUIRED)**: Write the acceptance test file DIRECTLY to the path shown below. Do NOT output the test code in your response. After writing the file, reply with a brief confirmation.
+- **Path anchor (CRITICAL)**: Write the test file to this exact path: \`${options.featureDir}/${acceptanceTestFilename(options.language)}\`. Import from package sources using relative paths like \`./src/...\`. No deep \`../../../../\` traversal needed.`;
 
   const prompt = basePrompt;
 
@@ -211,20 +211,63 @@ Rules:
   });
   let testCode = extractTestCode(rawOutput);
 
+  logger.debug("acceptance", "Received raw output from LLM", {
+    hasCode: testCode !== null,
+    outputLength: rawOutput.length,
+    outputPreview: rawOutput.slice(0, 300),
+  });
+
   // BUG-076: ACP adapters write files to disk directly and return a conversational
   // summary rather than raw code. If extractTestCode() fails on the response text,
   // check whether the adapter already wrote the file to the feature directory.
   if (!testCode) {
     const targetPath = join(options.featureDir, acceptanceTestFilename(options.language));
+    let recoveryFailed = false;
+
+    logger.debug("acceptance", "BUG-076 recovery: checking for agent-written file", { targetPath });
+
     try {
       const existing = await Bun.file(targetPath).text();
       const recovered = extractTestCode(existing);
+
+      logger.debug("acceptance", "BUG-076 recovery: file check result", {
+        fileSize: existing.length,
+        extractedCode: recovered !== null,
+        filePreview: existing.slice(0, 300),
+      });
+
       if (recovered) {
         logger.info("acceptance", "Acceptance test written directly by agent — using existing file", { targetPath });
         testCode = recovered;
+      } else {
+        // File exists but contains no extractable code
+        recoveryFailed = true;
+        logger.error(
+          "acceptance",
+          "BUG-076: ACP adapter wrote file but no code extractable — falling back to skeleton",
+          {
+            targetPath,
+            filePreview: existing.slice(0, 300),
+          },
+        );
       }
     } catch {
-      // File doesn't exist — fall through to skeleton
+      // File doesn't exist — recovery not possible
+      recoveryFailed = true;
+      logger.debug("acceptance", "BUG-076 recovery: no file written by agent, falling back to skeleton", {
+        targetPath,
+        rawOutputPreview: rawOutput.slice(0, 500),
+      });
+    }
+
+    if (recoveryFailed) {
+      logger.error(
+        "acceptance",
+        "BUG-076: LLM returned non-code output and no file was written by agent — falling back to skeleton",
+        {
+          rawOutputPreview: rawOutput.slice(0, 500),
+        },
+      );
     }
   }
 
