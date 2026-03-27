@@ -177,6 +177,7 @@ export async function runExecutionPhase(
         pluginRegistry,
         formatterMode: options.formatterMode,
         headless: options.headless,
+        agentGetFn: options.agentGetFn,
       },
       prd,
     );
