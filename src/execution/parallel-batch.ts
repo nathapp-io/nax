@@ -8,12 +8,12 @@
  * - Runs a rectification pass for conflicts
  * - Returns RunParallelBatchResult with per-story costs from storyCosts Map
  *
- * Stub — implementation is NOT yet provided (RED phase).
  */
 
 import path from "node:path";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
+import { getSafeLogger } from "../logger";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import type { PipelineRunResult } from "../pipeline/runner";
 import type { AgentGetFn, PipelineContext } from "../pipeline/types";
@@ -135,12 +135,12 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
   // 4. Failed = stories whose pipeline did not pass
   const failed: RunParallelBatchResult["failed"] = workerResult.failed.map((f) => ({
     story: f.story,
-    pipelineResult: {
+    pipelineResult: f.pipelineResult ?? {
       success: false,
       finalAction: "fail" as const,
       reason: f.error,
-      context: {} as PipelineContext,
-    } as PipelineRunResult,
+      context: { ...pipelineContext, story: f.story, stories: [f.story], workdir } as PipelineContext,
+    },
   }));
 
   // 5. Rectify merge conflicts sequentially
@@ -161,7 +161,12 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
         agentGetFn,
       });
       mergeConflicts.push({ story, rectified: rectResult.success, cost: rectResult.cost });
-    } catch {
+    } catch (err) {
+      const logger = getSafeLogger();
+      logger?.warn("[parallel-batch]", "rectification failed for story", {
+        storyId: story.id,
+        error: (err as Error).message,
+      });
       mergeConflicts.push({ story, rectified: false, cost: 0 });
     }
   }
