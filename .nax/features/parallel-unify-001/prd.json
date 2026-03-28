@@ -3,7 +3,7 @@
   "feature": "parallel-unify-001",
   "branchName": "feat/parallel-unify-001",
   "createdAt": "2026-03-28T00:00:00.000Z",
-  "updatedAt": "2026-03-28T14:07:57.120Z",
+  "updatedAt": "2026-03-28T15:07:39.811Z",
   "userStories": [
     {
       "id": "US-001",
@@ -35,7 +35,7 @@
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "validated from LLM output",
         "initialComplexity": "medium",
-        "modelTier": "balanced"
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/execution/parallel-executor.ts",
@@ -44,8 +44,53 @@
         "src/execution/parallel-executor-rectification-pass.ts",
         "src/execution/parallel-worker.ts"
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Autofix exhausted: review still failing after fix attempts"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "review",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "reviewFindings": [
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": ".nax/features/parallel-unify-001/.nax-acceptance.test.ts",
+              "line": 1,
+              "message": "The diff is truncated to only show the acceptance test file. The story requires creating src/execution/parallel-batch.ts, renaming parallel-executor-rectify.ts to merge-conflict-rectify.ts, deleting parallel-executor-rectification-pass.ts, and updating all import sites. None of these implementation changes are visible in the diff. ACs 4, 8, 9, and 10 cannot be verified.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "warning",
+              "file": ".nax/features/parallel-unify-001/.nax-acceptance.test.ts",
+              "line": 129,
+              "message": "Uses Bun.spawnSync([\"rm\", \"-rf\", tmpDir]) for test cleanup. Rule 04-forbidden-patterns.md explicitly bans rm -rf in test cleanup due to accidental deletion risk.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "warning",
+              "file": ".nax/features/parallel-unify-001/.nax-acceptance.test.ts",
+              "line": 126,
+              "message": "tmpDir is created with Bun.spawnSync([\"mkdir\", \"-p\", tmpDir]) rather than mkdtempSync. mkdtempSync atomically creates a unique temp directory and returns its path, avoiding a TOCTOU race between path generation and directory creation.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "info",
+              "file": ".nax/features/parallel-unify-001/.nax-acceptance.test.ts",
+              "line": 106,
+              "message": "The BatchOverrides.failed type is { story: UserStory; error: string }[] but AC-2 asserts result.failed[0].pipelineResult is defined with success: false. This means runParallelBatch must synthesize a PipelineRunResult from the raw error string. This mapping logic is reasonable but must be present in the (invisible) parallel-batch.ts implementation.",
+              "source": "semantic-review"
+            }
+          ],
+          "cost": 2.2736438999999997,
+          "timestamp": "2026-03-28T15:07:37.791Z"
+        }
+      ],
       "storyPoints": 1
     },
     {

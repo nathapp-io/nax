@@ -17,20 +17,20 @@
     "pending": 4
   },
   "cost": {
-    "spent": 0,
+    "spent": 2.2736438999999997,
     "limit": 30
   },
   "current": {
-    "storyId": "US-001",
-    "title": "Add parallel-batch.ts and rename rectify file",
-    "complexity": "medium",
-    "tddStrategy": "three-session-tdd-lite",
+    "storyId": "US-002",
+    "title": "Add selectIndependentBatch() to story-selector and parallelCount to ExecutionContext",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 1,
-  "updatedAt": "2026-03-28T15:06:02.210Z",
-  "durationMs": 3661169,
-  "lastHeartbeat": "2026-03-28T15:06:02.210Z"
+  "iterations": 2,
+  "updatedAt": "2026-03-28T15:09:02.213Z",
+  "durationMs": 3841172,
+  "lastHeartbeat": "2026-03-28T15:09:02.213Z"
 }
