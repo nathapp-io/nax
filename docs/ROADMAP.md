@@ -20,30 +20,25 @@
 
 ---
 
-## v0.49.0 — Per-Package Config Override (Monorepo) 📋 Planned
+## v0.49.0 — Per-Package Config Override (Monorepo) ✅ Released
 
 **Theme:** Complete the per-package config override system — expand what's mergeable and wire effective config into all pipeline stages.
 **Spec:** [`docs/specs/SPEC-per-package-config.md`](specs/SPEC-per-package-config.md)
 
-### Context
-
-v0.47.0 shipped `mergePackageConfig` but only `quality.commands` is mergeable. Most pipeline stages still read from `ctx.config` (root) instead of the per-package resolved config — so fields like `review.enabled`, `acceptance.enabled`, and `execution.regressionGate` set in a package's `nax/config.json` are silently ignored.
-
-### What needs to change
-
-1. **Expand mergeable fields** — add `execution.smartTestRunner`, `execution.regressionGate`, `review.enabled`, `review.checks`, `acceptance.enabled`, and more to `mergePackageConfig`
-2. **Centralize config resolution** — add `effectiveConfig: NaxConfig` to `PipelineContext`, resolve once per story at pipeline entry, have all stages read from `ctx.effectiveConfig` instead of `ctx.config`
+- **feat(config):** Expanded `mergePackageConfig` — `execution.smartTestRunner`, `execution.regressionGate`, `review.enabled`, `review.checks`, `acceptance.enabled`, and more now mergeable from per-package `nax/config.json`
+- **feat(pipeline):** `effectiveConfig: NaxConfig` added to `PipelineContext` — resolved once per story at pipeline entry; all stages read from `ctx.effectiveConfig`
+- **fix(acceptance):** Strip markdown fences from `generateFromPRD` output
+- **fix(verify):** `TEST_FAILURE` hands off to rectify stage instead of escalating; `TIMEOUT`/`CRASH` still escalate
+- **fix(autofix):** Review hands off to autofix stage instead of escalating; uses per-package `lintFix`/`formatFix` command
 
 ---
 
-## v0.46.2 — Review Rectification (Agent-Driven Lint/Typecheck Fix) 📋 Planned
+## v0.46.2 — Review Rectification (Agent-Driven Lint/Typecheck Fix) ✅ Released
 
 **Theme:** When lint or typecheck fails in the review stage and mechanical autofix can't resolve it, spawn an agent rectification session with the error output as context.
 **Spec:** [`docs/specs/SPEC-v046-2-review-rectification.md`](specs/SPEC-v046-2-review-rectification.md)
 
-### What needs to change
-
-When mechanical `lintFix`/`formatFix` fails (or isn't configured), extend the autofix stage to spawn an agent session with the exact lint/typecheck errors — the agent fixes the code and commits. Re-run review to verify; repeat up to `maxAttempts`. Reuses existing `quality.autofix.enabled` and `quality.autofix.maxAttempts` config.
+- **fix(autofix):** Agent rectification fallback for lint/typecheck failures — spawns agent session with exact error output, re-runs review to verify, up to `maxAttempts`. Reuses `quality.autofix.enabled` and `quality.autofix.maxAttempts` config (AUTOFIX-001–004)
 
 ---
 
@@ -623,6 +618,8 @@ Stories classified as complex/expert with >6 acceptance criteria.
 
 | Version | Theme | Date |
 |:--------|:------|:-----|
+| v0.49.0 | Per-Package Config Override (expand mergeable fields, effectiveConfig in PipelineContext) | 2026-03-xx |
+| v0.46.2 | Review Rectification (agent-driven lint/typecheck fix fallback) | 2026-03-xx |
 | v0.41.0 | Slow Test Optimizations (105s → 23s, full suite 4min → 2.5min) | 2026-03-14 |
 | v0.40.1 | Acceptance UI Test Strategies (component/cli/e2e/snapshot) | 2026-03-14 |
 | v0.40.0 | Acceptance Test Pipeline (RED→GREEN gates, PRD-based AC generation) | 2026-03-12 |
