@@ -21,12 +21,16 @@ import type { PipelineEventEmitter } from "../pipeline/events";
 import type { AgentGetFn } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins/registry";
 import type { PRD } from "../prd";
-import { countStories, isComplete } from "../prd";
+import { countStories, isComplete, markStoryPassed } from "../prd";
 import { errorMessage } from "../utils/errors";
 import { getAllReadyStories, hookCtx } from "./helpers";
 import { executeParallel } from "./parallel";
-import { type ParallelStoryMetrics, runRectificationPass } from "./parallel-executor-rectification-pass";
-import { type ConflictedStoryInfo, rectifyConflictedStory } from "./parallel-executor-rectify";
+import {
+  type ConflictedStoryInfo,
+  type RectificationResult,
+  type RectifyConflictedStoryOptions,
+  rectifyConflictedStory,
+} from "./parallel-executor-rectify";
 import type { PidRegistry } from "./pid-registry";
 import type { StatusWriter } from "./status-writer";
 
@@ -65,9 +69,100 @@ export interface ParallelExecutorOptions {
   interactionChain?: InteractionChain | null;
 }
 
+/** Metrics for stories completed via rectification */
+export interface ParallelStoryMetrics extends StoryMetrics {
+  source: "parallel" | "sequential" | "rectification";
+  rectifiedFromConflict?: boolean;
+  originalCost?: number;
+  rectificationCost?: number;
+}
+
 export interface RectificationStats {
   rectified: number;
   stillConflicting: number;
+}
+
+async function runRectificationPass(
+  conflictedStories: ConflictedStoryInfo[],
+  options: ParallelExecutorOptions,
+  prd: PRD,
+  rectifyFn?: (opts: RectifyConflictedStoryOptions) => Promise<RectificationResult>,
+): Promise<{
+  rectifiedCount: number;
+  stillConflictingCount: number;
+  additionalCost: number;
+  updatedPrd: PRD;
+  rectificationMetrics: ParallelStoryMetrics[];
+}> {
+  const logger = getSafeLogger();
+  const { workdir, config, hooks, pluginRegistry, eventEmitter, agentGetFn } = options;
+
+  const rectify =
+    rectifyFn ||
+    (async (opts: RectifyConflictedStoryOptions) => {
+      const { rectifyConflictedStory: importedRectify } = await import("./parallel-executor-rectify");
+      return importedRectify(opts);
+    });
+
+  const rectificationMetrics: ParallelStoryMetrics[] = [];
+  let rectifiedCount = 0;
+  let stillConflictingCount = 0;
+  let additionalCost = 0;
+
+  logger?.info("parallel", "Starting merge conflict rectification", {
+    stories: conflictedStories.map((s) => s.storyId),
+    totalConflicts: conflictedStories.length,
+  });
+
+  for (const conflictInfo of conflictedStories) {
+    const result = await rectify({
+      ...conflictInfo,
+      workdir,
+      config,
+      hooks,
+      pluginRegistry,
+      prd,
+      eventEmitter,
+      agentGetFn,
+    });
+
+    additionalCost += result.cost;
+
+    if (result.success) {
+      markStoryPassed(prd, result.storyId);
+      rectifiedCount++;
+
+      rectificationMetrics.push({
+        storyId: result.storyId,
+        complexity: "unknown",
+        modelTier: "parallel",
+        modelUsed: "parallel",
+        attempts: 1,
+        finalTier: "parallel",
+        success: true,
+        cost: result.cost,
+        durationMs: 0,
+        firstPassSuccess: false,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        source: "rectification" as const,
+        rectifiedFromConflict: true,
+        originalCost: conflictInfo.originalCost,
+        rectificationCost: result.cost,
+      });
+    } else {
+      if (result.finalConflict === true) {
+        stillConflictingCount++;
+      }
+    }
+  }
+
+  logger?.info("parallel", "Rectification complete", {
+    rectified: rectifiedCount,
+    stillConflicting: stillConflictingCount,
+  });
+
+  return { rectifiedCount, stillConflictingCount, additionalCost, updatedPrd: prd, rectificationMetrics };
 }
 
 export interface ParallelExecutorResult {
@@ -333,4 +428,3 @@ export type {
   RectificationResult,
   RectifyConflictedStoryOptions,
 } from "./parallel-executor-rectify";
-export type { ParallelStoryMetrics } from "./parallel-executor-rectification-pass";

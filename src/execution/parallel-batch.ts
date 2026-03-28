@@ -11,6 +11,7 @@
  * Stub — implementation is NOT yet provided (RED phase).
  */
 
+import path from "node:path";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import type { PipelineEventEmitter } from "../pipeline/events";
@@ -104,9 +105,70 @@ export const _parallelBatchDeps = {
 
 /**
  * Run a batch of parallel stories: create worktrees, execute, merge, rectify conflicts.
- *
- * NOT YET IMPLEMENTED — stub only.
  */
-export async function runParallelBatch(_options: RunParallelBatchOptions): Promise<RunParallelBatchResult> {
-  throw new Error("[parallel-batch] runParallelBatch: not yet implemented");
+export async function runParallelBatch(options: RunParallelBatchOptions): Promise<RunParallelBatchResult> {
+  const { stories, ctx, prd } = options;
+  const { workdir, config, maxConcurrency, pipelineContext, eventEmitter, agentGetFn, hooks, pluginRegistry } = ctx;
+
+  // 1. Create worktree manager and worktrees for each story
+  const worktreeManager = await _parallelBatchDeps.createWorktreeManager();
+  const worktreePaths = new Map<string, string>();
+  for (const story of stories) {
+    await worktreeManager.create(workdir, story.id);
+    worktreePaths.set(story.id, path.join(workdir, ".nax-wt", story.id));
+  }
+
+  // 2. Execute all stories in parallel
+  const workerResult = await _parallelBatchDeps.executeParallelBatch(
+    stories,
+    workdir,
+    config,
+    pipelineContext,
+    worktreePaths,
+    maxConcurrency,
+    eventEmitter,
+  );
+
+  // 3. Completed = stories merged to base
+  const completed: UserStory[] = workerResult.merged;
+
+  // 4. Failed = stories whose pipeline did not pass
+  const failed: RunParallelBatchResult["failed"] = workerResult.failed.map((f) => ({
+    story: f.story,
+    pipelineResult: {
+      success: false,
+      finalAction: "fail" as const,
+      reason: f.error,
+      context: {} as PipelineContext,
+    } as PipelineRunResult,
+  }));
+
+  // 5. Rectify merge conflicts sequentially
+  const mergeConflicts: RunParallelBatchResult["mergeConflicts"] = [];
+  for (const conflict of workerResult.mergeConflicts) {
+    const story = stories.find((s) => s.id === conflict.storyId);
+    if (!story) continue;
+
+    try {
+      const rectResult = await _parallelBatchDeps.rectifyConflictedStory({
+        ...conflict,
+        workdir,
+        config,
+        hooks,
+        pluginRegistry,
+        prd,
+        eventEmitter,
+        agentGetFn,
+      });
+      mergeConflicts.push({ story, rectified: rectResult.success, cost: rectResult.cost });
+    } catch {
+      mergeConflicts.push({ story, rectified: false, cost: 0 });
+    }
+  }
+
+  // 6. Costs from worker (not even-split)
+  const storyCosts = workerResult.storyCosts;
+  const totalCost = [...storyCosts.values()].reduce((sum, c) => sum + c, 0);
+
+  return { completed, failed, mergeConflicts, storyCosts, totalCost };
 }
