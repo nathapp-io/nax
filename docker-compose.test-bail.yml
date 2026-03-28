@@ -32,8 +32,12 @@ services:
         bun run typecheck
         echo "=== lint ==="
         bun run lint
-        echo "=== test ==="
-        CI=1 NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000 --bail
+        echo "=== test (unit) ==="
+        bun test test/unit/ --timeout=60000 --bail
+        echo "=== test (integration) ==="
+        bun test test/integration/ --timeout=60000 --bail
+        echo "=== test (ui) ==="
+        bun test test/ui/ --timeout=60000 --bail
         echo "=== DONE ==="
 
 volumes:
