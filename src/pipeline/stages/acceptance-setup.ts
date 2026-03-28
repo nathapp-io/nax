@@ -174,11 +174,13 @@ export const acceptanceSetupStage: PipelineStage = {
       workdirGroups.set("", { stories: [], criteria: [] });
     }
 
-    // Build test paths for each workdir group
+    // Build test paths for each workdir group — tests go under packageDir/.nax/features/<feature>/
+    // to avoid collisions between features targeting the same package.
+    const featureName = ctx.prd.feature;
     const testPaths: Array<{ testPath: string; packageDir: string }> = [];
     for (const [workdir] of workdirGroups) {
       const packageDir = workdir ? path.join(ctx.workdir, workdir) : ctx.workdir;
-      const testPath = path.join(packageDir, acceptanceTestFilename(language));
+      const testPath = path.join(packageDir, ".nax", "features", featureName, acceptanceTestFilename(language));
       testPaths.push({ testPath, packageDir });
     }
 
