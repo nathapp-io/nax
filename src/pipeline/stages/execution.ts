@@ -36,6 +36,7 @@ import { join } from "node:path";
 import { getAgent, validateAgentForTier } from "../../agents";
 import { resolveModel } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
+import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import type { FailureCategory } from "../../tdd";
@@ -165,6 +166,7 @@ export const executionStage: PipelineStage = {
         constitution: ctx.constitution?.content,
         dryRun: false,
         lite: isLiteMode,
+        interactionChain: ctx.interaction,
       });
 
       ctx.agentResult = {
@@ -254,33 +256,11 @@ export const executionStage: PipelineStage = {
       featureName: ctx.prd.feature,
       storyId: ctx.story.id,
       // No sessionRole for single-session strategies (no role suffix in session name)
-      interactionBridge: (() => {
-        const plugin = ctx.interaction?.getPrimary();
-        if (!plugin) return undefined;
-        const QUESTION_PATTERNS = [/\?/, /\bwhich\b/i, /\bshould i\b/i, /\bunclear\b/i, /\bplease clarify\b/i];
-        return {
-          detectQuestion: async (text: string) => QUESTION_PATTERNS.some((p) => p.test(text)),
-          onQuestionDetected: async (text: string) => {
-            const requestId = `ix-acp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-            await plugin.send({
-              id: requestId,
-              type: "input",
-              featureName: ctx.prd.feature,
-              storyId: ctx.story.id,
-              stage: "execution",
-              summary: text,
-              fallback: "continue",
-              createdAt: Date.now(),
-            });
-            try {
-              const response = await plugin.receive(requestId, 120_000);
-              return response.value ?? "continue";
-            } catch {
-              return "continue";
-            }
-          },
-        };
-      })(),
+      interactionBridge: buildInteractionBridge(ctx.interaction, {
+        featureName: ctx.prd.feature,
+        storyId: ctx.story.id,
+        stage: "execution",
+      }),
     });
 
     ctx.agentResult = result;

@@ -59,3 +59,5 @@ export type { TriggerContext } from "./triggers";
 
 // Initialization
 export { initInteractionChain } from "./init";
+export { buildInteractionBridge } from "./bridge-builder";
+export type { InteractionBridge, BridgeContext } from "./bridge-builder";
