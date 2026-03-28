@@ -2,5 +2,9 @@
   "US-001:test-writer": {
     "sessionName": "nax-bfff486f-parallel-unify-001-us-001-test-writer",
     "agentName": "claude"
+  },
+  "US-001:implementer": {
+    "sessionName": "nax-bfff486f-parallel-unify-001-us-001-implementer",
+    "agentName": "claude"
   }
 }
