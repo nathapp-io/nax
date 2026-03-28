@@ -773,6 +773,7 @@ nax.lock
 .nax-pids
 .nax-wt/
 **/.nax-acceptance*
+**/.nax/features/*/
 `.trim(),
     );
 

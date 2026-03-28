@@ -197,7 +197,7 @@ Rules:
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
 - **Prefer behavioral tests** — import functions and call them rather than reading source files. For example, to verify "getPostRunActions() returns empty array", import PluginRegistry and call getPostRunActions(), don't grep the source file for the method name.
 - **File output (REQUIRED)**: Write the acceptance test file DIRECTLY to the path shown below. Do NOT output the test code in your response. After writing the file, reply with a brief confirmation.
-- **Path anchor (CRITICAL)**: Write the test file to this exact path: \`${options.featureDir}/${acceptanceTestFilename(options.language)}\`. Import from package sources using relative paths like \`./src/...\`. No deep \`../../../../\` traversal needed.`;
+- **Path anchor (CRITICAL)**: Write the test file to this exact path: \`${join(options.workdir, ".nax", "features", options.featureName, acceptanceTestFilename(options.language))}\`. Import from package sources using relative paths like \`../../../src/...\` (3 levels up from \`.nax/features/<name>/\` to the package root).`;
 
   const prompt = basePrompt;
 
@@ -221,9 +221,15 @@ Rules:
 
   // BUG-076: ACP adapters write files to disk directly and return a conversational
   // summary rather than raw code. If extractTestCode() fails on the response text,
-  // check whether the adapter already wrote the file to the feature directory.
+  // check whether the adapter already wrote the file to the package-local feature directory.
   if (!testCode) {
-    const targetPath = join(options.featureDir, acceptanceTestFilename(options.language));
+    const targetPath = join(
+      options.workdir,
+      ".nax",
+      "features",
+      options.featureName,
+      acceptanceTestFilename(options.language),
+    );
     let recoveryFailed = false;
 
     logger.debug("acceptance", "BUG-076 recovery: checking for agent-written file", { targetPath });
