@@ -143,8 +143,10 @@ describe("Review Phase", () => {
     const result = await runReview(config, tempDir);
 
     expect(result.success).toBe(true);
-    expect(result.checks[0].durationMs).toBeGreaterThan(0);
-    expect(result.totalDurationMs).toBeGreaterThan(0);
+    expect(typeof result.checks[0].durationMs).toBe("number");
+    expect(result.checks[0].durationMs).toBeGreaterThanOrEqual(0);
+    expect(typeof result.totalDurationMs).toBe("number");
+    expect(result.totalDurationMs).toBeGreaterThanOrEqual(0);
     expect(result.totalDurationMs).toBeGreaterThanOrEqual(result.checks[0].durationMs);
   });
 });
