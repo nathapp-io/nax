@@ -71,6 +71,8 @@ export interface VerifyResult {
   rawOutput?: string;
   durationMs: number;
   countsTowardEscalation: boolean;
+  /** #89: Exit code from the test command (to distinguish passing from infra failure) */
+  exitCode?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +114,7 @@ export function makeFailResult(
     failCount?: number;
     durationMs?: number;
     countsTowardEscalation?: boolean;
+    exitCode?: number;
   } = {},
 ): VerifyResult {
   return {
@@ -126,6 +129,7 @@ export function makeFailResult(
     rawOutput: opts.rawOutput,
     durationMs: opts.durationMs ?? 0,
     countsTowardEscalation: opts.countsTowardEscalation ?? true,
+    exitCode: opts.exitCode,
   };
 }
 

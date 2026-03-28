@@ -11,7 +11,7 @@
  */
 
 import { getLogger } from "../../logger";
-import type { IVerificationStrategy, VerifyContext, VerifyResult } from "../orchestrator-types";
+import type { IVerificationStrategy, StructuredTestFailure, VerifyContext, VerifyResult } from "../orchestrator-types";
 import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrator-types";
 import { parseBunTestOutput } from "../parser";
 import { regression } from "../runners";
@@ -136,8 +136,10 @@ export class ScopedStrategy implements IVerificationStrategy {
       rawOutput: result.output,
       passCount: parsed.passed,
       failCount: parsed.failed,
-      failures: parsed.failures,
+      failures: parsed.failures as StructuredTestFailure[],
       durationMs,
+      // #89: Pass through exit code to detect unparseable infra failures
+      exitCode: result.status === "TEST_FAILURE" ? 1 : undefined,
     });
   }
 }

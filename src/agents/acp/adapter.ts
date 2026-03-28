@@ -296,7 +296,12 @@ export async function saveAcpSession(
 }
 
 /** Clear a session name from the sidecar file. Best-effort — errors are swallowed. */
-export async function clearAcpSession(workdir: string, featureName: string, storyId: string): Promise<void> {
+export async function clearAcpSession(
+  workdir: string,
+  featureName: string,
+  storyId: string,
+  sessionRole?: string,
+): Promise<void> {
   try {
     const path = acpSessionsPath(workdir, featureName);
     let data: Record<string, string> = {};
@@ -306,7 +311,8 @@ export async function clearAcpSession(workdir: string, featureName: string, stor
     } catch {
       return; // File doesn't exist — nothing to clear
     }
-    delete data[storyId];
+    const sidecarKey = sessionRole ? `${storyId}:${sessionRole}` : storyId;
+    delete data[sidecarKey];
     await Bun.write(path, JSON.stringify(data, null, 2));
   } catch (err) {
     getSafeLogger()?.warn("acp-adapter", "Failed to clear session from sidecar", { error: String(err) });
@@ -560,7 +566,9 @@ export class AcpAgentAdapter implements AgentAdapter {
     // 1. Resolve session name: explicit > sidecar > derived
     let sessionName = options.acpSessionName;
     if (!sessionName && options.featureName && options.storyId) {
-      sessionName = (await readAcpSession(options.workdir, options.featureName, options.storyId)) ?? undefined;
+      // #90: Key sidecar by storyId:role to prevent verifier resuming implementer's session
+      const sidecarKey = options.sessionRole ? `${options.storyId}:${options.sessionRole}` : options.storyId;
+      sessionName = (await readAcpSession(options.workdir, options.featureName, sidecarKey)) ?? undefined;
     }
     sessionName ??= buildSessionName(options.workdir, options.featureName, options.storyId, options.sessionRole);
 
@@ -577,7 +585,8 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     // 4. Persist for plan→run continuity
     if (options.featureName && options.storyId) {
-      await saveAcpSession(options.workdir, options.featureName, options.storyId, sessionName, this.name);
+      const sidecarKey = options.sessionRole ? `${options.storyId}:${options.sessionRole}` : options.storyId;
+      await saveAcpSession(options.workdir, options.featureName, sidecarKey, sessionName, this.name);
     }
 
     let lastResponse: AcpSessionResponse | null = null;

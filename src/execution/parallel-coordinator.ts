@@ -2,9 +2,11 @@
  * Parallel coordinator — Orchestrates parallel story execution
  */
 
+import { existsSync, symlinkSync } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
+import { loadConfigForWorkdir } from "../config/loader";
 import type { LoadedHooksConfig } from "../hooks";
 import type { InteractionChain } from "../interaction/chain";
 import { getSafeLogger } from "../logger";
@@ -166,6 +168,9 @@ export async function executeParallel(
     // Create worktrees for all stories in batch
     const worktreePaths = new Map<string, string>();
 
+    // #93: Pre-resolve per-story effective config (PKG-003) — parallel was always using root config
+    const storyEffectiveConfigs = new Map<string, NaxConfig>();
+
     for (const story of batch) {
       const worktreePath = join(projectRoot, ".nax-wt", story.id);
       try {
@@ -176,6 +181,32 @@ export async function executeParallel(
           storyId: story.id,
           worktreePath,
         });
+
+        // #88: Symlink workspace package node_modules so per-package test runners (jest, vitest) resolve correctly.
+        // Root node_modules is already symlinked by WorktreeManager; this covers sub-package node_modules.
+        if (story.workdir) {
+          const pkgNodeModulesSrc = join(projectRoot, story.workdir, "node_modules");
+          const pkgNodeModulesDst = join(worktreePath, story.workdir, "node_modules");
+          if (existsSync(pkgNodeModulesSrc) && !existsSync(pkgNodeModulesDst)) {
+            try {
+              symlinkSync(pkgNodeModulesSrc, pkgNodeModulesDst, "dir");
+              logger?.debug("parallel", "Symlinked package node_modules", {
+                storyId: story.id,
+                src: pkgNodeModulesSrc,
+              });
+            } catch (symlinkError) {
+              logger?.warn("parallel", "Failed to symlink package node_modules — test runner may not find deps", {
+                storyId: story.id,
+                error: errorMessage(symlinkError),
+              });
+            }
+          }
+        }
+
+        // #93: Resolve per-package effective config so testScoped/test overrides apply (same as iteration-runner PKG-003)
+        const rootConfigPath = join(projectRoot, ".nax", "config.json");
+        const effectiveConfig = story.workdir ? await loadConfigForWorkdir(rootConfigPath, story.workdir) : config;
+        storyEffectiveConfigs.set(story.id, effectiveConfig);
       } catch (error) {
         markStoryFailed(currentPrd, story.id, undefined, undefined);
         logger?.error("parallel", "Failed to create worktree", {
@@ -194,6 +225,7 @@ export async function executeParallel(
       worktreePaths,
       maxConcurrency,
       eventEmitter,
+      storyEffectiveConfigs,
     );
 
     totalCost += batchResult.totalCost;

@@ -29,7 +29,13 @@ export function shouldRetryRectification(state: RectificationState, config: Rect
     return false;
   }
 
-  // Stop if all tests passing
+  // #89: Handle unparseable failures (non-zero exit but 0 parsed failures).
+  // Treat as infrastructure failure and retry until maxRetries reached.
+  if (state.lastExitCode !== undefined && state.lastExitCode !== 0 && state.currentFailures === 0) {
+    return true;
+  }
+
+  // Stop if all tests passing (and exit code was 0)
   if (state.currentFailures === 0) {
     return false;
   }
