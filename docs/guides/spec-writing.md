@@ -4,7 +4,7 @@ How to write specs that produce high-quality PRDs and successful nax runs.
 
 ## Structure
 
-A good spec has 5 sections:
+A good spec has 5 sections. **All are required.**
 
 ```markdown
 # SPEC: [Feature Name]
@@ -18,10 +18,12 @@ What problem does this solve? What's broken or missing today?
 ## Design
 Key interfaces, data flow, or architecture decisions.
 Include TypeScript signatures when defining new APIs.
+For CLI tools: specify exit codes, stdout/stderr behavior, and file formats precisely.
 
 ## Stories
 Break the feature into implementation units.
 Each story should be independently testable.
+Include context files and dependency markers (see below).
 
 ## Acceptance Criteria
 Per-story behavioral criteria (see format below).
@@ -47,6 +49,8 @@ Every AC must be **behavioral and independently testable**.
 4. **Never list quality gates.** Typecheck, lint, and build are run automatically — don't waste ACs on them.
 5. **Never use vague verbs.** "works correctly", "handles properly", "is valid" are untestable.
 6. **Never write ACs about tests.** "Tests pass" or "test file exists" are meta-criteria, not behavior.
+7. **Stay in scope.** Only write ACs for behavior described in the spec. Don't invent features not in the requirements.
+8. **Be consistent.** If the spec says "url", don't use "uri" in interfaces. Match terminology exactly.
 
 ### Examples
 
@@ -75,9 +79,15 @@ Every AC must be **behavioral and independently testable**.
 - Story touches more than 5 files
 - Story has both "add new feature" and "refactor existing code"
 
-## Context Hints
+**Merge if:**
+- Two stories share the same module and have <4 ACs each
+- A story only makes sense as part of another (e.g., "parse schema" is not useful without "validate against schema")
 
-Help the agent by listing relevant files:
+**Target 3-5 stories per spec.** More than 5 usually means stories are too granular — each story should deliver a user-visible capability, not a single function.
+
+## Context Hints (Required)
+
+Every story **must** list relevant context files. Without them, the agent guesses which patterns to follow.
 
 ```markdown
 ### Context Files
@@ -87,6 +97,14 @@ Help the agent by listing relevant files:
 ```
 
 The plan phase uses these to populate `contextFiles` in the PRD, which the agent reads before coding.
+
+For new projects with no existing code, list the files the story will **create** and their purpose:
+
+```markdown
+### Context Files
+- `src/validator.ts` — core validation logic (to be created)
+- `src/types.ts` — all interfaces defined in Design section (to be created)
+```
 
 ## Dependencies
 
@@ -101,6 +119,91 @@ Mark story dependencies explicitly:
 
 nax executes stories in dependency order. Independent stories can run in parallel.
 
+## CLI Tools
+
+When speccing a CLI tool, the Design section **must** include:
+
+1. **Exit codes** — what code means success, what means failure, any special codes
+2. **stdout vs stderr** — what goes where (e.g., results to stdout, errors/warnings to stderr)
+3. **Output format** — exact shape of output (JSON schema, line format, etc.)
+
+```markdown
+### CLI Behavior
+- Exit 0: all validations pass
+- Exit 1: one or more validation errors
+- stdout: validation results (human-readable by default, JSON with `--format json`)
+- stderr: warnings (e.g., unknown variables) and fatal errors (e.g., file not found)
+```
+
+Without this, the agent invents its own I/O contract and it rarely matches what you expect.
+
+## File Formats
+
+When a feature introduces a new file format (config, schema, data), **specify the exact format** in the Design section. Use a concrete example with every supported field.
+
+❌ **Bad:** "The schema file defines variable types and constraints"
+
+✅ **Good:**
+```json
+{
+  "variables": {
+    "PORT": { "type": "number", "required": true, "default": "3000" },
+    "DEBUG": { "type": "boolean", "required": false }
+  }
+}
+```
+
+Ambiguous formats → the agent guesses → the tests assert the wrong shape → rectification loop.
+
+**Prefer JSON or YAML** for new file formats. Custom line-based formats (e.g., `KEY=type,modifier`) require the agent to write a parser from scratch — more code, more bugs, more ACs. JSON/YAML parsing is free with standard libraries.
+
+## Extending an Existing System
+
+When a feature extends existing code (not greenfield), the Design section **must** include:
+
+1. **Existing types to extend** — name the exact types, interfaces, or unions the agent must modify. Don't assume the agent knows the codebase.
+2. **Integration point** — where does new code plug in? Name the function, stage, or hook.
+3. **Existing patterns to follow** — point to a similar feature already implemented as a reference.
+4. **First story = types + config** — when adding a new capability to an existing system, the first story should extend the type system and config schema. Implementation stories depend on it.
+
+```markdown
+### Integration
+- Extend `ReviewCheckName` union in `src/review/types.ts` to include `"semantic"`
+- Wire into `runReview()` in `src/review/runner.ts` (same pattern as `"lint"` check)
+- Add `SemanticReviewConfig` to `ReviewConfig` in `src/config/runtime-types.ts`
+- Follow the same `ReviewCheckResult` return shape as existing checks
+```
+
+Without this, the agent invents its own types and wiring — which won't compile against the existing code.
+
+## Implementation Approach
+
+The Design section must state **how** the feature works — not just what it does. If the agent has to guess the approach, it will guess wrong.
+
+```markdown
+### Approach
+This uses an LLM call (not AST analysis) to review the diff.
+```
+
+This is especially critical for features that could be implemented multiple ways (LLM vs regex vs AST, polling vs webhook, sync vs async).
+
+## Failure Modes
+
+Every spec should state what happens when things go wrong:
+
+- **Fail-open vs fail-closed** — does a failure block the pipeline or get logged and skipped?
+- **Retry behavior** — does the system retry? How many times? What context does the retry get?
+- **Error output** — what does the user see on failure?
+
+```markdown
+### Failure Handling
+- If LLM response is not valid JSON → fail-open (log warning, treat as passed)
+- If review fails → autofix stage retries with findings as context
+- If autofix exhausted → escalate (same as lint/typecheck exhaustion)
+```
+
+Without this, the agent either ignores errors entirely or adds overly defensive error handling that blocks on non-critical failures.
+
 ## Anti-Patterns
 
 | Pattern | Problem | Fix |
@@ -111,6 +214,15 @@ nax executes stories in dependency order. Independent stories can run in paralle
 | Doc-only story | Not code | Put in analysis field or skip |
 | Quality gate AC | Already automatic | Remove from ACs |
 | Vague description | Agent guesses wrong | Include function signatures, types |
+| Scope creep in ACs | Agent builds unrequested features | ACs must trace back to a requirement in Summary/Design |
+| Ambiguous file format | Agent invents wrong schema shape | Show exact example with all fields in Design |
+| Missing CLI contract | Agent guesses exit codes/output | Specify exit codes, stdout/stderr, output format |
+| No integration context | Agent invents types that don't fit existing code | List exact types/interfaces to extend in Design |
+| Missing implementation approach | Agent guesses wrong method (AST vs LLM vs regex) | State the approach explicitly in Design |
+| No failure modes | Agent ignores errors or over-blocks | Specify fail-open/closed, retry, error output |
+| Too many stories | Overhead per story; tiny stories are fragile | Target 3-5 stories; merge if <4 ACs each |
+| Integration-only story | Duplicates ACs from earlier stories | Integration behavior belongs in the story that implements it |
+| Custom file format | Agent writes a fragile parser | Use JSON/YAML unless there's a strong reason not to |
 
 ## Real Example
 
