@@ -138,17 +138,21 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   // Route to auto (one-shot) or interactive (multi-turn) mode
   let rawResponse: string;
   if (options.auto) {
-    // One-shot: use CLI adapter directly — simple completion doesn't need ACP session overhead
+    // #91: Respect agent.protocol — ACP protocol uses adapter.plan() (session-based),
+    // CLI protocol uses adapter.complete() (one-shot). This matches how the run path works.
+    const isAcp = config?.agent?.protocol === "acp";
     const prompt = buildPlanningPrompt(
       specContent,
       codebaseContext,
-      undefined,
+      isAcp ? outputPath : undefined, // ACP writes directly to file; CLI returns inline
       relativePackages,
       packageDetails,
       config?.project,
     );
-    const cliAdapter = _planDeps.getAgent(agentName);
-    if (!cliAdapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
+
+    const adapter = _planDeps.getAgent(agentName, config);
+    if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
+
     let autoModel: string | undefined;
     try {
       const planTier = config?.plan?.model ?? "balanced";
@@ -157,24 +161,59 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       const entry = models?.[planTier] ?? models?.balanced;
       if (entry) autoModel = resolveModel(entry as Parameters<typeof resolveModel>[0]).model;
     } catch {
-      // fall through — complete() will use its own fallback
+      // fall through — adapter will use its own fallback
     }
-    rawResponse = await cliAdapter.complete(prompt, {
-      model: autoModel,
-      jsonMode: true,
-      workdir,
-      config,
-      featureName: options.feature,
-      sessionRole: "plan",
-    });
-    // CLI adapter returns {"type":"result","result":"..."} envelope — unwrap it
-    try {
-      const envelope = JSON.parse(rawResponse) as Record<string, unknown>;
-      if (envelope?.type === "result" && typeof envelope?.result === "string") {
-        rawResponse = envelope.result;
+
+    if (isAcp) {
+      // ACP: run as a non-interactive session (no interactionBridge) — agent writes PRD to outputPath
+      logger?.info("plan", "Starting ACP auto planning session", {
+        agent: agentName,
+        model: autoModel ?? config?.plan?.model ?? "balanced",
+        workdir,
+        feature: options.feature,
+        timeoutSeconds,
+      });
+      const pidRegistry = new PidRegistry(workdir);
+      try {
+        await adapter.plan({
+          prompt,
+          workdir,
+          interactive: false,
+          timeoutSeconds,
+          config,
+          modelTier: config?.plan?.model ?? "balanced",
+          dangerouslySkipPermissions: resolvePermissions(config, "plan").skipPermissions,
+          maxInteractionTurns: config?.agent?.maxInteractionTurns,
+          featureName: options.feature,
+          pidRegistry,
+          sessionRole: "plan",
+        });
+      } finally {
+        await pidRegistry.killAll().catch(() => {});
       }
-    } catch {
-      // Not an envelope — use rawResponse as-is
+      if (!_planDeps.existsSync(outputPath)) {
+        throw new Error(`[plan] ACP agent did not write PRD to ${outputPath}. Check agent logs for errors.`);
+      }
+      rawResponse = await _planDeps.readFile(outputPath);
+    } else {
+      // CLI: one-shot complete() — simple and fast, no session overhead
+      rawResponse = await adapter.complete(prompt, {
+        model: autoModel,
+        jsonMode: true,
+        workdir,
+        config,
+        featureName: options.feature,
+        sessionRole: "plan",
+      });
+      // CLI adapter returns {"type":"result","result":"..."} envelope — unwrap it
+      try {
+        const envelope = JSON.parse(rawResponse) as Record<string, unknown>;
+        if (envelope?.type === "result" && typeof envelope?.result === "string") {
+          rawResponse = envelope.result;
+        }
+      } catch {
+        // Not an envelope — use rawResponse as-is
+      }
     }
   } else {
     // Interactive: agent writes PRD JSON directly to outputPath (avoids output truncation)
