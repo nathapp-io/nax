@@ -27,8 +27,8 @@ export const _semanticDeps = {
   spawn: spawn as typeof spawn,
 };
 
-/** Maximum diff size in bytes before truncation */
-const DIFF_CAP_BYTES = 12_288;
+/** Maximum diff size in bytes before truncation (100KB — ~25K tokens, well within LLM context) */
+const DIFF_CAP_BYTES = 102_400;
 
 /** Default review rules applied to every semantic check */
 const DEFAULT_RULES = [
@@ -64,17 +64,46 @@ async function collectDiff(workdir: string, storyGitRef: string): Promise<string
 }
 
 /**
- * Truncate diff to stay within token budget.
+ * Collect git diff --stat summary (file names + line counts).
+ * Used as a preamble when the full diff is truncated so the reviewer
+ * always knows which files changed even if the content is cut off.
  */
-function truncateDiff(diff: string): string {
+async function collectDiffStat(workdir: string, storyGitRef: string): Promise<string> {
+  const proc = _semanticDeps.spawn({
+    cmd: ["git", "diff", "--stat", `${storyGitRef}..HEAD`],
+    cwd: workdir,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const [exitCode, stdout] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+
+  return exitCode === 0 ? stdout.trim() : "";
+}
+
+/**
+ * Truncate diff to stay within token budget.
+ * When truncated, prepends a --stat summary so the reviewer knows all changed files.
+ */
+function truncateDiff(diff: string, stat?: string): string {
   if (diff.length <= DIFF_CAP_BYTES) {
     return diff;
   }
 
   const truncated = diff.slice(0, DIFF_CAP_BYTES);
-  // Count approximate file count from diff headers
-  const fileCount = (truncated.match(/^diff --git/gm) ?? []).length;
-  return `${truncated}\n... (truncated, showing first ${fileCount} files)`;
+  // Count files visible vs total
+  const visibleFiles = (truncated.match(/^diff --git/gm) ?? []).length;
+  const totalFiles = (diff.match(/^diff --git/gm) ?? []).length;
+
+  const statPreamble = stat
+    ? `## File Summary (all changed files)\n${stat}\n\n## Diff (truncated — ${visibleFiles}/${totalFiles} files shown)\n`
+    : "";
+
+  return `${statPreamble}${truncated}\n... (truncated at ${DIFF_CAP_BYTES} bytes, showing ${visibleFiles}/${totalFiles} files)`;
 }
 
 /**
@@ -222,8 +251,10 @@ export async function runSemanticReview(
   // AC-2: Collect git diff
   const rawDiff = await collectDiff(workdir, storyGitRef);
 
-  // AC-3: Truncate if over cap
-  const diff = truncateDiff(rawDiff);
+  // AC-3: Truncate if over cap — collect stat summary when truncation needed
+  const needsTruncation = rawDiff.length > DIFF_CAP_BYTES;
+  const stat = needsTruncation ? await collectDiffStat(workdir, storyGitRef) : undefined;
+  const diff = truncateDiff(rawDiff, stat);
 
   // Resolve agent
   const agent = modelResolver(semanticConfig.modelTier);
@@ -264,9 +295,28 @@ export async function runSemanticReview(
     };
   }
 
-  // AC-6 + AC-8: Parse response, fail-open on invalid JSON
+  // AC-6 + AC-8: Parse response — fail-closed when LLM clearly intended to fail,
+  // fail-open only when response is truly unparseable with no signal.
   const parsed = parseLLMResponse(rawResponse);
   if (!parsed) {
+    // Check if truncated response contains "passed": false — LLM intended to fail the review
+    // but output was cut off mid-response. Treating this as a pass is incorrect (#105).
+    const looksLikeFail = /"passed"\s*:\s*false/.test(rawResponse);
+    if (looksLikeFail) {
+      logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
+        rawResponse: rawResponse.slice(0, 200),
+      });
+      return {
+        check: "semantic",
+        success: false,
+        command: "",
+        exitCode: 1,
+        output:
+          "semantic review: LLM response truncated but indicated failure (passed:false found in partial response)",
+        durationMs: Date.now() - startTime,
+      };
+    }
+
     logger?.warn("semantic", "LLM returned invalid JSON — fail-open", { rawResponse: rawResponse.slice(0, 200) });
     return {
       check: "semantic",
