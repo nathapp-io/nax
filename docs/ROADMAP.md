@@ -670,7 +670,7 @@ Stories classified as complex/expert with >6 acceptance criteria.
 - **PERM-002:** Scoped Tool Allowlists — per-stage `allowedTools` with glob patterns (e.g., `Write(src/**)`), `inherit` chain between stages, backend mapping to `--allowedTools` (CLI) and `--allowed-tools` (ACP). **Spec:** [`docs/specs/scoped-permissions.md`](specs/scoped-permissions.md)
 
 ### Planned
-- **CI Memory Optimization** — parallel test sharding to pass on 1GB runners (currently requires 8GB)
+- **CI Speed** — bun install cache + parallel jobs (checks/test run concurrently); target: 3-4 min → ~2.5 min
 - **Cost tracking dashboard** — visualize spend across features and agents
 - **Auto-decompose oversized stories** — when story size gate triggers, offer to auto-decompose via `nax analyse`
 - **Fire plugin hooks on plan failure** — load plugins before plan phase and emit `onRunEnd` with failure status when `nax run --plan` fails
