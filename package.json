@@ -13,7 +13,7 @@
     "typecheck": "bun x tsc --noEmit",
     "lint": "bun x biome check src/ bin/",
     "release": "bun scripts/release.ts",
-    "test": "bun test test/ --timeout=60000",
+    "test": "bun test test/unit/ --timeout=60000 && bun test test/integration/ --timeout=60000 && bun test test/ui/ --timeout=60000",
     "test:watch": "bun test --watch",
     "test:unit": "bun test ./test/unit/ --timeout=60000",
     "test:integration": "bun test ./test/integration/ --timeout=60000",
