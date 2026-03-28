@@ -129,10 +129,16 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
     eventEmitter,
   );
 
-  // 3. Completed = stories merged to base
+  // 3. Completed = stories merged to base.
+  // Note: we use workerResult.merged (stories that were actually merged to the base branch),
+  // NOT workerResult.pipelinePassed (stories that passed tests but may not have merged yet).
   const completed: UserStory[] = workerResult.merged;
 
-  // 4. Failed = stories whose pipeline did not pass
+  // 4. Failed = stories whose pipeline did not pass.
+  // executeParallelBatch returns failed items as { story, error, pipelineResult? }.
+  // We always ensure pipelineResult is defined so downstream consumers (e.g. reporter)
+  // can rely on it unconditionally. When pipelineResult is absent from the worker result,
+  // we synthesize a minimal PipelineRunResult with success=false and the error message.
   const failed: RunParallelBatchResult["failed"] = workerResult.failed.map((f) => ({
     story: f.story,
     pipelineResult: f.pipelineResult ?? {

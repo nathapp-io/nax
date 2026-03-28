@@ -24,7 +24,6 @@ import { countStories, isComplete } from "../prd";
 import { gitWithTimeout } from "../utils/git";
 import { NAX_VERSION } from "../version";
 import { stopHeartbeat } from "./crash-recovery";
-import type { ParallelExecutorOptions, ParallelExecutorResult } from "./parallel-executor";
 import { type RunnerCompletionOptions, runCompletionPhase } from "./runner-completion";
 import { type RunnerExecutionOptions, runExecutionPhase } from "./runner-execution";
 import { type RunnerSetupOptions, runSetupPhase } from "./runner-setup";
@@ -35,10 +34,6 @@ import { type RunnerSetupOptions, runSetupPhase } from "./runner-setup";
  */
 export const _runnerDeps = {
   fireHook,
-  // Injectable for tests — avoids dynamic-import module-cache issues in bun test (bun 1.3.9+)
-  runParallelExecution: null as
-    | null
-    | ((options: ParallelExecutorOptions, prd: import("../prd").PRD) => Promise<ParallelExecutorResult>),
 };
 
 // Re-export for backward compatibility
@@ -178,7 +173,6 @@ export async function run(options: RunOptions): Promise<RunResult> {
         formatterMode,
         headless,
         parallel,
-        runParallelExecution: _runnerDeps.runParallelExecution ?? undefined,
         agentGetFn,
         pidRegistry,
         interactionChain,

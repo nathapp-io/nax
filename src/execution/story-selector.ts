@@ -5,6 +5,7 @@
  */
 
 import type { NaxConfig } from "../config";
+import { getSafeLogger } from "../logger";
 import type { RoutingResult } from "../pipeline/types";
 import { getNextStory } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
@@ -73,4 +74,68 @@ export function selectNextStories(
     },
     nextBatchIndex: currentBatchIndex,
   };
+}
+
+/**
+ * Select up to maxCount pending stories whose dependencies are all fulfilled.
+ * A dependency is fulfilled if its story has passes=true, or status is "passed"/"completed",
+ * or the dependency does not appear in the stories list.
+ */
+export function selectIndependentBatch(stories: UserStory[], maxCount: number): UserStory[] {
+  const storyMap = new Map(stories.map((s) => [s.id, s]));
+  const result: UserStory[] = [];
+
+  for (const story of stories) {
+    if (result.length >= maxCount) break;
+    if (
+      story.passes ||
+      story.status === "passed" ||
+      story.status === "skipped" ||
+      story.status === "failed" ||
+      story.status === "paused" ||
+      story.status === "decomposed"
+    )
+      continue;
+    const allDepsFulfilled = story.dependencies.every((depId) => {
+      const dep = storyMap.get(depId);
+      if (!dep) return true;
+      return dep.passes || dep.status === "passed";
+    });
+    if (allDepsFulfilled) {
+      result.push(story);
+    }
+  }
+  return result;
+}
+
+/**
+ * Group stories into dependency-ordered batches.
+ * Stories in each batch can run in parallel (all their deps are in prior batches).
+ * Moved here from parallel-coordinator.ts for shared access.
+ */
+export function groupStoriesByDependencies(stories: UserStory[]): UserStory[][] {
+  const batches: UserStory[][] = [];
+  const processed = new Set<string>();
+  const storyMap = new Map(stories.map((s) => [s.id, s]));
+
+  while (processed.size < stories.length) {
+    const batch: UserStory[] = [];
+    for (const story of stories) {
+      if (processed.has(story.id)) continue;
+      const depsCompleted = story.dependencies.every((dep) => processed.has(dep) || !storyMap.has(dep));
+      if (depsCompleted) {
+        batch.push(story);
+      }
+    }
+    if (batch.length === 0) {
+      const logger = getSafeLogger();
+      logger?.error("parallel", "Cannot resolve story dependencies", {
+        remainingStories: stories.filter((s) => !processed.has(s.id)).map((s) => s.id),
+      });
+      throw new Error("Circular dependency or missing dependency detected");
+    }
+    for (const story of batch) processed.add(story.id);
+    batches.push(batch);
+  }
+  return batches;
 }

@@ -1,7 +1,7 @@
 /**
  * Runner Execution Phase
  *
- * Handles parallel and sequential story execution paths.
+ * Handles story execution via unified executor (parallel or sequential).
  * Extracted from runner.ts for better code organization.
  */
 
@@ -18,7 +18,6 @@ import { tryLlmBatchRoute } from "../routing";
 import { clearCache as clearLlmCache } from "../routing/strategies/llm";
 import { precomputeBatchPlan } from "./batching";
 import { getAllReadyStories } from "./helpers";
-import type { ParallelExecutorOptions, ParallelExecutorResult } from "./parallel-executor";
 import type { PidRegistry } from "./pid-registry";
 
 /**
@@ -44,7 +43,6 @@ export interface RunnerExecutionOptions {
   formatterMode: "quiet" | "normal" | "verbose" | "json";
   headless: boolean;
   parallel?: number;
-  runParallelExecution?: (options: ParallelExecutorOptions, prd: PRD) => Promise<ParallelExecutorResult>;
   /** Protocol-aware agent resolver — created once in runner.ts from createAgentRegistry(config) */
   agentGetFn?: AgentGetFn;
   /** PID registry for crash recovery — passed to agent.run() to register child processes. */
@@ -67,7 +65,7 @@ export interface RunnerExecutionResult {
 }
 
 /**
- * Execute the main execution phase (parallel and/or sequential paths).
+ * Execute the main execution phase via unified executor.
  *
  * @param options - Execution options
  * @param prd - Product requirements document
@@ -152,62 +150,8 @@ export async function runExecutionPhase(
     await tryLlmBatchRoute(options.config, readyStories, "routing");
   }
 
-  // Parallel Execution Path (when --parallel is set)
-  if (options.parallel !== undefined) {
-    const runParallelExecution =
-      options.runParallelExecution ?? (await import("./parallel-executor")).runParallelExecution;
-    const parallelResult = await runParallelExecution(
-      {
-        prdPath: options.prdPath,
-        workdir: options.workdir,
-        config: options.config,
-        hooks: options.hooks,
-        feature: options.feature,
-        featureDir: options.featureDir,
-        parallelCount: options.parallel,
-        eventEmitter: options.eventEmitter,
-        statusWriter: options.statusWriter,
-        runId: options.runId,
-        startedAt: options.startedAt,
-        startTime: options.startTime,
-        totalCost,
-        iterations,
-        storiesCompleted,
-        allStoryMetrics,
-        pluginRegistry,
-        formatterMode: options.formatterMode,
-        headless: options.headless,
-        agentGetFn: options.agentGetFn,
-        pidRegistry: options.pidRegistry,
-        interactionChain: options.interactionChain,
-      },
-      prd,
-    );
-
-    // biome-ignore lint/style/noParameterAssign: Update prd state through pipeline
-    prd = parallelResult.prd;
-    totalCost = parallelResult.totalCost;
-    storiesCompleted = parallelResult.storiesCompleted;
-    // BUG-066: merge parallel story metrics into the running accumulator
-    allStoryMetrics.push(...parallelResult.storyMetrics);
-
-    // If parallel execution completed everything, return early
-    if (parallelResult.completed && parallelResult.durationMs !== undefined) {
-      return {
-        prd,
-        iterations,
-        storiesCompleted,
-        totalCost,
-        allStoryMetrics,
-        completedEarly: true,
-        durationMs: parallelResult.durationMs,
-      };
-    }
-  }
-
-  // Sequential Execution Path (default)
-  const { executeSequential } = await import("./sequential-executor");
-  const sequentialResult = await executeSequential(
+  const { executeUnified } = await import("./unified-executor");
+  const unifiedResult = await executeUnified(
     {
       prdPath: options.prdPath,
       workdir: options.workdir,
@@ -220,31 +164,44 @@ export async function runExecutionPhase(
       pluginRegistry,
       eventEmitter: options.eventEmitter,
       statusWriter: options.statusWriter,
+      statusFile: options.statusFile,
       logFilePath: options.logFilePath,
       runId: options.runId,
+      startedAt: options.startedAt,
       startTime: options.startTime,
-      batchPlan,
+      formatterMode: options.formatterMode,
+      headless: options.headless,
+      parallelCount: options.parallel,
       agentGetFn: options.agentGetFn,
       pidRegistry: options.pidRegistry,
       interactionChain: options.interactionChain,
+      batchPlan,
+      totalCost,
+      iterations,
+      storiesCompleted,
+      allStoryMetrics,
     },
     prd,
   );
 
   // biome-ignore lint/style/noParameterAssign: Update prd state through pipeline
-  prd = sequentialResult.prd;
-  iterations = sequentialResult.iterations;
-  // BUG-064: accumulate (not overwrite) totalCost from sequential path
-  totalCost += sequentialResult.totalCost;
-  // BUG-065: accumulate (not overwrite) storiesCompleted from sequential path
-  storiesCompleted += sequentialResult.storiesCompleted;
-  allStoryMetrics.push(...sequentialResult.allStoryMetrics);
+  prd = unifiedResult.prd;
+  iterations = unifiedResult.iterations;
+  storiesCompleted = unifiedResult.storiesCompleted;
+  totalCost = unifiedResult.totalCost;
+  allStoryMetrics.push(...unifiedResult.allStoryMetrics);
 
-  return {
-    prd,
-    iterations,
-    storiesCompleted,
-    totalCost,
-    allStoryMetrics,
-  };
+  if (unifiedResult.completedEarly && unifiedResult.durationMs !== undefined) {
+    return {
+      prd,
+      iterations,
+      storiesCompleted,
+      totalCost,
+      allStoryMetrics,
+      completedEarly: true,
+      durationMs: unifiedResult.durationMs,
+    };
+  }
+
+  return { prd, iterations, storiesCompleted, totalCost, allStoryMetrics };
 }

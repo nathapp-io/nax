@@ -20,50 +20,7 @@ import { WorktreeManager } from "../worktree/manager";
 import { MergeEngine, type StoryDependencies } from "../worktree/merge";
 import { executeParallelBatch } from "./parallel-worker";
 import type { PidRegistry } from "./pid-registry";
-
-/**
- * Group stories into dependency batches; stories in each batch can run in parallel.
- */
-function groupStoriesByDependencies(stories: UserStory[]): UserStory[][] {
-  const batches: UserStory[][] = [];
-  const processed = new Set<string>();
-  const storyMap = new Map(stories.map((s) => [s.id, s]));
-
-  // Keep processing until all stories are batched
-  while (processed.size < stories.length) {
-    const batch: UserStory[] = [];
-
-    for (const story of stories) {
-      if (processed.has(story.id)) continue;
-
-      // Check if all dependencies are satisfied
-      const depsCompleted = story.dependencies.every((dep) => processed.has(dep) || !storyMap.has(dep));
-
-      if (depsCompleted) {
-        batch.push(story);
-      }
-    }
-
-    if (batch.length === 0) {
-      // No stories ready — circular dependency or missing dep
-      const remaining = stories.filter((s) => !processed.has(s.id));
-      const logger = getSafeLogger();
-      logger?.error("parallel", "Cannot resolve story dependencies", {
-        remainingStories: remaining.map((s) => s.id),
-      });
-      throw new Error("Circular dependency or missing dependency detected");
-    }
-
-    // Mark batch stories as processed
-    for (const story of batch) {
-      processed.add(story.id);
-    }
-
-    batches.push(batch);
-  }
-
-  return batches;
-}
+import { groupStoriesByDependencies } from "./story-selector";
 
 /**
  * Build dependency map for merge engine
