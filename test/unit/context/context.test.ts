@@ -20,6 +20,7 @@ import {
 } from "../../../src/context";
 import type { ContextBudget, ContextElement, StoryContext } from "../../../src/context/types";
 import type { PRD, UserStory } from "../../../src/prd";
+import { makeTempDir } from "../../helpers/temp";
 
 // Helper to create test PRD
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
@@ -451,9 +452,9 @@ describe("Context Builder", () => {
 
       const progressElement = built.elements.find((e) => e.type === "progress");
       expect(progressElement).toBeDefined();
-      expect(progressElement!.content).toContain("3/4 stories complete");
-      expect(progressElement!.content).toContain("2 passed");
-      expect(progressElement!.content).toContain("1 failed");
+      expect(progressElement?.content).toContain("3/4 stories complete");
+      expect(progressElement?.content).toContain("2 passed");
+      expect(progressElement?.content).toContain("1 failed");
     });
 
     test("should truncate when exceeding budget", async () => {
@@ -510,7 +511,7 @@ describe("Context Builder", () => {
 
     test("should load files from contextFiles when present", async () => {
       // Create temp directory and files
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+      const tempDir = makeTempDir("nax-test-");
       const testFile1 = path.join(tempDir, "helper.ts");
       const testFile2 = path.join(tempDir, "utils.ts");
 
@@ -558,7 +559,7 @@ describe("Context Builder", () => {
 
     test("should fall back to relevantFiles for file loading when contextFiles not present", async () => {
       // Create temp directory and files
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+      const tempDir = makeTempDir("nax-test-");
       const testFile = path.join(tempDir, "legacy.ts");
 
       await fs.writeFile(testFile, 'export function legacy() { return "old"; }');
@@ -600,7 +601,7 @@ describe("Context Builder", () => {
 
     test("should prefer contextFiles over relevantFiles for file loading", async () => {
       // Create temp directory and files
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+      const tempDir = makeTempDir("nax-test-");
       const newFile = path.join(tempDir, "new.ts");
       const oldFile = path.join(tempDir, "old.ts");
 
@@ -646,7 +647,7 @@ describe("Context Builder", () => {
     });
 
     test("should respect max 5 files limit", async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+      const tempDir = makeTempDir("nax-test-");
 
       try {
         // Create 10 test files
@@ -690,7 +691,7 @@ describe("Context Builder", () => {
     });
 
     test("should add path-only element for files larger than 10KB", async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+      const tempDir = makeTempDir("nax-test-");
 
       try {
         const smallFile = path.join(tempDir, "small.ts");
@@ -737,14 +738,14 @@ describe("Context Builder", () => {
         // Large file gets path-only hint (FEAT-011)
         const largeElement = fileElements.find((e) => e.filePath === "large.ts");
         expect(largeElement).toBeDefined();
-        expect(largeElement!.content).toContain("File too large to inline");
+        expect(largeElement?.content).toContain("File too large to inline");
       } finally {
         await fs.rm(tempDir, { recursive: true, force: true });
       }
     });
 
     test("should warn on missing files", async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+      const tempDir = makeTempDir("nax-test-");
 
       try {
         const prd = createTestPRD([
@@ -808,7 +809,7 @@ describe("Context Builder", () => {
     });
 
     test("should respect token budget when loading files", async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+      const tempDir = makeTempDir("nax-test-");
 
       try {
         // Create files with substantial content
@@ -944,7 +945,7 @@ describe("Context Builder", () => {
     });
 
     test("should format context with file elements", async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+      const tempDir = makeTempDir("nax-test-");
 
       try {
         await fs.writeFile(path.join(tempDir, "helper.ts"), "export function helper() {}");
@@ -1098,7 +1099,7 @@ describe("Context Builder", () => {
 
   describe("test coverage scoping", () => {
     test("should scope test coverage to story contextFiles", async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+      const tempDir = makeTempDir("nax-test-");
 
       try {
         // Create test directory and files
@@ -1165,7 +1166,7 @@ describe("Context Builder", () => {
     });
 
     test("should scan all tests when scopeToStory=false", async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+      const tempDir = makeTempDir("nax-test-");
 
       try {
         const testDir = path.join(tempDir, "test");
@@ -1219,7 +1220,7 @@ describe("Context Builder", () => {
     });
 
     test("should fall back to full scan when no contextFiles provided", async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+      const tempDir = makeTempDir("nax-test-");
 
       try {
         const testDir = path.join(tempDir, "test");
@@ -1402,12 +1403,12 @@ describe("Context Builder", () => {
 
       expect(progressElement).toBeDefined();
       // Progress shows counts only
-      expect(progressElement!.content).toContain("2/3");
+      expect(progressElement?.content).toContain("2/3");
       // Does NOT contain other story titles
-      expect(progressElement!.content).not.toContain("Secret Story Alpha");
-      expect(progressElement!.content).not.toContain("Secret Story Beta");
-      expect(progressElement!.content).not.toContain("US-001");
-      expect(progressElement!.content).not.toContain("US-002");
+      expect(progressElement?.content).not.toContain("Secret Story Alpha");
+      expect(progressElement?.content).not.toContain("Secret Story Beta");
+      expect(progressElement?.content).not.toContain("US-001");
+      expect(progressElement?.content).not.toContain("US-002");
     });
 
     test("prior errors from other stories do not leak into current story context", async () => {
@@ -1492,7 +1493,7 @@ describe("Context Builder", () => {
   describe("context auto-detection when contextFiles is empty", () => {
     test("should auto-detect files when contextFiles is empty", async () => {
       // Create temp git repo
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+      const tempDir = makeTempDir("nax-test-");
 
       try {
         // Initialize git
@@ -1561,7 +1562,7 @@ describe("Context Builder", () => {
     });
 
     test("should skip auto-detection when contextFiles is provided", async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+      const tempDir = makeTempDir("nax-test-");
 
       try {
         await Bun.spawn(["git", "init"], { cwd: tempDir }).exited;
@@ -1622,7 +1623,7 @@ describe("Context Builder", () => {
     });
 
     test("should skip auto-detection when disabled in config", async () => {
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+      const tempDir = makeTempDir("nax-test-");
 
       try {
         await Bun.spawn(["git", "init"], { cwd: tempDir }).exited;
@@ -1681,7 +1682,7 @@ describe("Context Builder", () => {
 
     test("should handle auto-detection failure gracefully", async () => {
       // Non-git directory - git grep will fail
-      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+      const tempDir = makeTempDir("nax-test-");
 
       try {
         await fs.mkdir(path.join(tempDir, "src"), { recursive: true });

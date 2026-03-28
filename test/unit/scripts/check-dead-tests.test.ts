@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { makeTempDir } from "../../helpers/temp";
 import {
   parseTestFile,
   findDeadImports,
@@ -64,7 +64,7 @@ describe("findDeadImports", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tempDir = makeTempDir("nax-test-");
     // Create src structure
     mkdirSync(join(tempDir, "src", "config"), { recursive: true });
     mkdirSync(join(tempDir, "src", "pipeline", "stages"), { recursive: true });
@@ -161,7 +161,7 @@ describe("scanTestDirectory", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tempDir = makeTempDir("nax-test-");
     // Create test structure with a good test
     mkdirSync(join(tempDir, "test", "unit"), { recursive: true });
     mkdirSync(join(tempDir, "src", "config"), { recursive: true });
@@ -229,7 +229,7 @@ describe("scanTestDirectory", () => {
     const oldFile = result.find((t) => t.path.includes("old.test.ts"));
     expect(oldFile).toBeDefined();
     if (oldFile) {
-      expect(oldFile.deadReferences && oldFile.deadReferences.length).toBeGreaterThan(0);
+      expect(oldFile.deadReferences?.length).toBeGreaterThan(0);
     }
   });
 });

@@ -3,27 +3,40 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { verifyTestWriterIsolation } from "../../../src/tdd";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("verifyTestWriterIsolation", () => {
   let testDir: string;
 
   beforeEach(async () => {
     // Create a temporary git repository for testing
-    testDir = mkdtempSync(join(tmpdir(), "nax-isolation-test-"));
+    testDir = makeTempDir("nax-isolation-test-");
 
     // Initialize git repo using Bun.spawn (test fixture setup)
     const initProc = Bun.spawn(["git", "init"], { cwd: testDir, stdout: "pipe", stderr: "pipe" });
     await initProc.exited;
-    const emailProc = Bun.spawn(["git", "config", "user.email", "test@test.com"], { cwd: testDir, stdout: "pipe", stderr: "pipe" });
+    const emailProc = Bun.spawn(["git", "config", "user.email", "test@test.com"], {
+      cwd: testDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     await emailProc.exited;
-    const nameProc = Bun.spawn(["git", "config", "user.name", "Test"], { cwd: testDir, stdout: "pipe", stderr: "pipe" });
+    const nameProc = Bun.spawn(["git", "config", "user.name", "Test"], {
+      cwd: testDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     await nameProc.exited;
 
     // Create initial commit using Bun.write and Bun.spawn
     writeFileSync(join(testDir, "README.md"), "# Test");
     const addProc = Bun.spawn(["git", "add", "."], { cwd: testDir, stdout: "pipe", stderr: "pipe" });
     await addProc.exited;
-    const commitProc = Bun.spawn(["git", "commit", "-m", "Initial commit"], { cwd: testDir, stdout: "pipe", stderr: "pipe" });
+    const commitProc = Bun.spawn(["git", "commit", "-m", "Initial commit"], {
+      cwd: testDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     await commitProc.exited;
   });
 

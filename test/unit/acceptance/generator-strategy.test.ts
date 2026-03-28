@@ -26,6 +26,7 @@ import {
 import type { AcceptanceCriterion, GenerateFromPRDOptions, RefinedCriterion } from "../../../src/acceptance/types";
 import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd/types";
+import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -505,7 +506,7 @@ describe("generateFromPRD — defaults to unit behavior when testStrategy is omi
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tmpDir = makeTempDir("nax-test-");
     saveDeps();
   });
 
@@ -539,7 +540,8 @@ describe("generateFromPRD — defaults to unit behavior when testStrategy is omi
     const options = makeOptions(tmpDir);
 
     _generatorPRDDeps.adapter.complete = mock(
-      async () => `import { describe, test, expect } from "bun:test";\ndescribe("my-feature - Acceptance Tests", () => {\n  test("AC-1: Component renders correctly", async () => {\n    expect(true).toBe(true);\n  });\n});\n`,
+      async () =>
+        `import { describe, test, expect } from "bun:test";\ndescribe("my-feature - Acceptance Tests", () => {\n  test("AC-1: Component renders correctly", async () => {\n    expect(true).toBe(true);\n  });\n});\n`,
     );
     _generatorPRDDeps.writeFile = mock(async () => {});
 
@@ -557,7 +559,7 @@ describe("generateFromPRD — component strategy selection", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tmpDir = makeTempDir("nax-test-");
     saveDeps();
   });
 
@@ -601,7 +603,7 @@ describe("generateFromPRD — cli strategy selection", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tmpDir = makeTempDir("nax-test-");
     saveDeps();
   });
 
@@ -638,7 +640,7 @@ describe("generateFromPRD — e2e strategy selection", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tmpDir = makeTempDir("nax-test-");
     saveDeps();
   });
 
@@ -675,7 +677,7 @@ describe("generateFromPRD — snapshot strategy selection", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tmpDir = makeTempDir("nax-test-");
     saveDeps();
   });
 

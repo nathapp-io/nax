@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configCommand } from "../../../src/cli/config";
 import { loadConfig } from "../../../src/config/loader";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("config --explain: prompts section", () => {
   let tempDir: string;
@@ -19,7 +20,7 @@ describe("config --explain: prompts section", () => {
   let originalConsoleLog: typeof console.log;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-config-prompts-test-"));
+    tempDir = makeTempDir("nax-config-prompts-test-");
     originalCwd = process.cwd();
 
     consoleOutput = [];
@@ -78,7 +79,7 @@ describe("config --explain: context.fileInjection section", () => {
   let originalConsoleLog: typeof console.log;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-config-ctx-explain-test-"));
+    tempDir = makeTempDir("nax-config-ctx-explain-test-");
     originalCwd = process.cwd();
 
     consoleOutput = [];
@@ -167,7 +168,7 @@ describe("config --explain: autoMode multi-agent section", () => {
   let originalConsoleLog: typeof console.log;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-config-agents-test-"));
+    tempDir = makeTempDir("nax-config-agents-test-");
     originalCwd = process.cwd();
 
     consoleOutput = [];

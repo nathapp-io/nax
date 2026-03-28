@@ -6,8 +6,9 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { _generatorDeps, discoverPackages, generateForPackage } from "../../../src/context/generator";
 import type { NaxConfig } from "../../../src/config";
+import { _generatorDeps, discoverPackages, generateForPackage } from "../../../src/context/generator";
+import { makeTempDir } from "../../helpers/temp";
 
 function makeConfig(): NaxConfig {
   return {} as unknown as NaxConfig;
@@ -17,7 +18,7 @@ describe("discoverPackages (MW-004)", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tmpDir = makeTempDir("nax-test-");
   });
 
   afterEach(() => {
@@ -155,14 +156,14 @@ describe("generateForPackage (MW-004)", () => {
 // discoverWorkspacePackages
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { discoverWorkspacePackages } from "../../../src/context/generator";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { discoverWorkspacePackages } from "../../../src/context/generator";
 
 describe("discoverWorkspacePackages", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-ws-test-"));
+    tmpDir = makeTempDir("nax-ws-test-");
   });
 
   afterEach(() => {
@@ -175,10 +176,13 @@ describe("discoverWorkspacePackages", () => {
   });
 
   test("discovers packages from package.json workspaces array", async () => {
-    writeFileSync(join(tmpDir, "package.json"), JSON.stringify({
-      name: "monorepo",
-      workspaces: ["packages/*"],
-    }));
+    writeFileSync(
+      join(tmpDir, "package.json"),
+      JSON.stringify({
+        name: "monorepo",
+        workspaces: ["packages/*"],
+      }),
+    );
     mkdirSync(join(tmpDir, "packages", "api"), { recursive: true });
     writeFileSync(join(tmpDir, "packages", "api", "package.json"), JSON.stringify({ name: "api" }));
     mkdirSync(join(tmpDir, "packages", "web"), { recursive: true });
@@ -190,9 +194,12 @@ describe("discoverWorkspacePackages", () => {
   });
 
   test("discovers packages from turbo.json packages field", async () => {
-    writeFileSync(join(tmpDir, "turbo.json"), JSON.stringify({
-      packages: ["apps/*"],
-    }));
+    writeFileSync(
+      join(tmpDir, "turbo.json"),
+      JSON.stringify({
+        packages: ["apps/*"],
+      }),
+    );
     mkdirSync(join(tmpDir, "apps", "dashboard"), { recursive: true });
     writeFileSync(join(tmpDir, "apps", "dashboard", "package.json"), JSON.stringify({ name: "dashboard" }));
 
@@ -206,9 +213,12 @@ describe("discoverWorkspacePackages", () => {
     writeFileSync(join(tmpDir, ".nax", "mono", "packages", "sdk", "context.md"), "# SDK Context");
 
     // Also set up workspace manifest pointing elsewhere
-    writeFileSync(join(tmpDir, "package.json"), JSON.stringify({
-      workspaces: ["packages/*"],
-    }));
+    writeFileSync(
+      join(tmpDir, "package.json"),
+      JSON.stringify({
+        workspaces: ["packages/*"],
+      }),
+    );
     mkdirSync(join(tmpDir, "packages", "other"), { recursive: true });
     writeFileSync(join(tmpDir, "packages", "other", "package.json"), JSON.stringify({ name: "other" }));
 
@@ -220,9 +230,12 @@ describe("discoverWorkspacePackages", () => {
   });
 
   test("skips directories without package.json", async () => {
-    writeFileSync(join(tmpDir, "package.json"), JSON.stringify({
-      workspaces: ["packages/*"],
-    }));
+    writeFileSync(
+      join(tmpDir, "package.json"),
+      JSON.stringify({
+        workspaces: ["packages/*"],
+      }),
+    );
     // Create dir without package.json
     mkdirSync(join(tmpDir, "packages", "no-pkg"), { recursive: true });
     // Create dir with package.json

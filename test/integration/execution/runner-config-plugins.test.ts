@@ -14,10 +14,11 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { loadConfig } from "../../../src/config/loader";
-import { loadPlugins, _setPluginErrorSink, _resetPluginErrorSink } from "../../../src/plugins/loader";
+import { _resetPluginErrorSink, _setPluginErrorSink, loadPlugins } from "../../../src/plugins/loader";
+import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
 async function createTempDir(): Promise<string> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-runner-config-plugins-"));
+  const tmpDir = makeTempDir("nax-runner-config-plugins-");
   return tmpDir;
 }
 
@@ -38,7 +39,7 @@ describe("Runner config plugins integration (US-007)", () => {
     projectRoot = await createTempDir();
     naxDir = path.join(projectRoot, ".nax");
     await fs.mkdir(naxDir, { recursive: true });
-    tempGlobalPluginsDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-global-plugins-"));
+    tempGlobalPluginsDir = makeTempDir("nax-test-global-plugins-");
   });
 
   afterEach(async () => {

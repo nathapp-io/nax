@@ -12,11 +12,12 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { NaxConfig } from "../../../../src/config";
 import { initLogger, resetLogger } from "../../../../src/logger";
 import { _routingDeps, routingStage } from "../../../../src/pipeline/stages/routing";
-import type { NaxConfig } from "../../../../src/config";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { UserStory } from "../../../../src/prd/types";
+import { makeTempDir } from "../../../helpers/temp";
 
 // ── Capture originals ─────────────────────────────────────────────────────────
 
@@ -67,7 +68,7 @@ describe("MW-011: greenfield detection scopes to story package workdir", () => {
 
   beforeEach(async () => {
     initLogger({ level: "silent", format: "jsonl", logFilePath: undefined });
-    repoRoot = await mkdtemp(join(tmpdir(), "nax-mw011-"));
+    repoRoot = makeTempDir("nax-mw011-");
 
     // Set up monorepo structure
     await mkdir(join(repoRoot, "apps", "server", "src"), { recursive: true });
@@ -78,10 +79,7 @@ describe("MW-011: greenfield detection scopes to story package workdir", () => {
       join(repoRoot, "apps", "server", "src", "server.test.ts"),
       "import { describe, it } from 'bun:test'; describe('server', () => { it('works', () => {}); });",
     );
-    await writeFile(
-      join(repoRoot, "apps", "cli", "src", "index.ts"),
-      "export function run() {}",
-    );
+    await writeFile(join(repoRoot, "apps", "cli", "src", "index.ts"), "export function run() {}");
 
     // Mock routing to always return three-session-tdd for simple stories
     _routingDeps.resolveRouting = mock(async () => ({

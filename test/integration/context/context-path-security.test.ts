@@ -4,9 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAX_DIRECTORY_DEPTH, isWithinDirectory, validateDirectory, validateFilePath } from "../../../src/config";
 import { findProjectDir } from "../../../src/config/loader";
+import { makeTempDir } from "../../helpers/temp";
 
 // Create a temporary test directory
-const testRoot = join(tmpdir(), `nax-path-test-${Date.now()}`);
+const testRoot = makeTempDir("nax-path-test-");
 let testProject = join(testRoot, "project");
 let testOutside = join(testRoot, "outside");
 

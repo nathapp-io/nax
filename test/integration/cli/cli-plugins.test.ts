@@ -12,10 +12,11 @@ import * as path from "node:path";
 import { pluginsListCommand } from "../../../src/cli/plugins";
 import type { NaxConfig } from "../../../src/config/schema";
 import type { NaxPlugin } from "../../../src/plugins/types";
+import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
 // Test fixture helpers
 async function createTempDir(): Promise<string> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-cli-plugin-test-"));
+  const tmpDir = makeTempDir("nax-cli-plugin-test-");
   return tmpDir;
 }
 
@@ -118,7 +119,7 @@ describe("pluginsListCommand", () => {
 
   beforeEach(async () => {
     tempDir = await createTempDir();
-    tempGlobalPluginsDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-global-plugins-"));
+    tempGlobalPluginsDir = makeTempDir("nax-test-global-plugins-");
   });
 
   afterEach(async () => {

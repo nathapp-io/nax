@@ -11,10 +11,11 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { dirname, join } from "node:path";
 import type { NaxConfig } from "../../../src/config/types";
-import { PromptBuilder } from "../../../src/prompts/builder";
 import type { UserStory } from "../../../src/prd";
+import { PromptBuilder } from "../../../src/prompts/builder";
+import { makeTempDir } from "../../helpers/temp";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -115,7 +116,7 @@ function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
 let tmpDir: string;
 
 beforeEach(() => {
-  tmpDir = mkdtempSync(join(tmpdir(), "nax-pb004-test-"));
+  tmpDir = makeTempDir("nax-pb004-test-");
 });
 
 afterEach(async () => {
@@ -143,10 +144,7 @@ describe("PromptBuilder.withLoader(workdir, config)", () => {
     const config = makeConfig(); // no prompts.overrides
     const story = makeStory();
     // FAILS: withLoader does not exist on PromptBuilder
-    const prompt = await (PromptBuilder.for("test-writer") as any)
-      .withLoader(tmpDir, config)
-      .story(story)
-      .build();
+    const prompt = await (PromptBuilder.for("test-writer") as any).withLoader(tmpDir, config).story(story).build();
     expect(prompt).toContain(story.title);
   });
 
@@ -161,10 +159,7 @@ describe("PromptBuilder.withLoader(workdir, config)", () => {
     const story = makeStory();
 
     // FAILS: withLoader does not exist on PromptBuilder
-    const prompt = await (PromptBuilder.for("test-writer") as any)
-      .withLoader(tmpDir, config)
-      .story(story)
-      .build();
+    const prompt = await (PromptBuilder.for("test-writer") as any).withLoader(tmpDir, config).story(story).build();
 
     expect(prompt).toContain("CUSTOM_TEST_WRITER_OVERRIDE");
     // Story context (non-overridable) must still appear
@@ -178,10 +173,7 @@ describe("PromptBuilder.withLoader(workdir, config)", () => {
     const story = makeStory({ title: "FALLBACK_STORY_TITLE" });
 
     // FAILS: withLoader does not exist on PromptBuilder
-    const prompt = await (PromptBuilder.for("test-writer") as any)
-      .withLoader(tmpDir, config)
-      .story(story)
-      .build();
+    const prompt = await (PromptBuilder.for("test-writer") as any).withLoader(tmpDir, config).story(story).build();
 
     expect(prompt).toContain("FALLBACK_STORY_TITLE");
   });
@@ -279,10 +271,7 @@ describe("Integration: 6 roles with no override — story title and AC present",
       .build();
 
     const lower = prompt.toLowerCase();
-    const hasImplInstruction =
-      lower.includes("implement") ||
-      lower.includes("make") ||
-      lower.includes("pass");
+    const hasImplInstruction = lower.includes("implement") || lower.includes("make") || lower.includes("pass");
     expect(hasImplInstruction).toBe(true);
   });
 
@@ -315,10 +304,7 @@ describe("Integration: 6 roles with no override — story title and AC present",
   test("verifier contains story title and acceptance criteria", async () => {
     const config = makeConfig();
     // FAILS: withLoader does not exist
-    const prompt = await (PromptBuilder.for("verifier") as any)
-      .withLoader(tmpDir, config)
-      .story(story)
-      .build();
+    const prompt = await (PromptBuilder.for("verifier") as any).withLoader(tmpDir, config).story(story).build();
 
     expect(prompt).toContain("ROLE_INTEGRATION_TEST_STORY");
     expect(prompt).toContain("CRITERIA_ONE");
@@ -328,10 +314,7 @@ describe("Integration: 6 roles with no override — story title and AC present",
   test("verifier includes verification instructions", async () => {
     const config = makeConfig();
     // FAILS: withLoader does not exist
-    const prompt = await (PromptBuilder.for("verifier") as any)
-      .withLoader(tmpDir, config)
-      .story(story)
-      .build();
+    const prompt = await (PromptBuilder.for("verifier") as any).withLoader(tmpDir, config).story(story).build();
 
     const lower = prompt.toLowerCase();
     const hasVerifyInstruction = lower.includes("verify") || lower.includes("check") || lower.includes("ensure");
@@ -341,10 +324,7 @@ describe("Integration: 6 roles with no override — story title and AC present",
   test("single-session contains story title and acceptance criteria", async () => {
     const config = makeConfig();
     // FAILS: withLoader does not exist
-    const prompt = await (PromptBuilder.for("single-session") as any)
-      .withLoader(tmpDir, config)
-      .story(story)
-      .build();
+    const prompt = await (PromptBuilder.for("single-session") as any).withLoader(tmpDir, config).story(story).build();
 
     expect(prompt).toContain("ROLE_INTEGRATION_TEST_STORY");
     expect(prompt).toContain("CRITERIA_ONE");
@@ -354,10 +334,7 @@ describe("Integration: 6 roles with no override — story title and AC present",
   test("single-session includes both test and implementation instructions", async () => {
     const config = makeConfig();
     // FAILS: withLoader does not exist
-    const prompt = await (PromptBuilder.for("single-session") as any)
-      .withLoader(tmpDir, config)
-      .story(story)
-      .build();
+    const prompt = await (PromptBuilder.for("single-session") as any).withLoader(tmpDir, config).story(story).build();
 
     const lower = prompt.toLowerCase();
     const hasTests = lower.includes("test");
@@ -373,9 +350,7 @@ describe("Integration: 6 roles with no override — story title and AC present",
 
 describe("Structural: call sites migrated away from old prompt functions", () => {
   test("src/tdd/session-runner.ts does not import buildTestWriterPrompt from ./prompts", async () => {
-    const source = await Bun.file(
-      new URL("../../../src/tdd/session-runner.ts", import.meta.url).pathname,
-    ).text();
+    const source = await Bun.file(new URL("../../../src/tdd/session-runner.ts", import.meta.url).pathname).text();
 
     // After migration, session-runner should NOT import these old functions
     expect(source).not.toContain("buildTestWriterPrompt");
@@ -386,18 +361,14 @@ describe("Structural: call sites migrated away from old prompt functions", () =>
   });
 
   test("src/tdd/session-runner.ts imports PromptBuilder after migration", async () => {
-    const source = await Bun.file(
-      new URL("../../../src/tdd/session-runner.ts", import.meta.url).pathname,
-    ).text();
+    const source = await Bun.file(new URL("../../../src/tdd/session-runner.ts", import.meta.url).pathname).text();
 
     // After migration, session-runner should use PromptBuilder
     expect(source).toContain("PromptBuilder");
   });
 
   test("src/pipeline/stages/prompt.ts does not import buildSingleSessionPrompt or buildBatchPrompt after migration", async () => {
-    const source = await Bun.file(
-      new URL("../../../src/pipeline/stages/prompt.ts", import.meta.url).pathname,
-    ).text();
+    const source = await Bun.file(new URL("../../../src/pipeline/stages/prompt.ts", import.meta.url).pathname).text();
 
     // After migration, prompt stage should NOT use the old functions
     expect(source).not.toContain("buildSingleSessionPrompt");
@@ -405,18 +376,14 @@ describe("Structural: call sites migrated away from old prompt functions", () =>
   });
 
   test("src/pipeline/stages/prompt.ts imports PromptBuilder after migration", async () => {
-    const source = await Bun.file(
-      new URL("../../../src/pipeline/stages/prompt.ts", import.meta.url).pathname,
-    ).text();
+    const source = await Bun.file(new URL("../../../src/pipeline/stages/prompt.ts", import.meta.url).pathname).text();
 
     // After migration, prompt stage should use PromptBuilder
     expect(source).toContain("PromptBuilder");
   });
 
   test("src/cli/prompts.ts does not dynamically import buildTestWriterPrompt after migration", async () => {
-    const source = await Bun.file(
-      new URL("../../../src/cli/prompts.ts", import.meta.url).pathname,
-    ).text();
+    const source = await Bun.file(new URL("../../../src/cli/prompts.ts", import.meta.url).pathname).text();
 
     // cli/prompts.ts has a dynamic import of tdd/prompts — after migration it should use PromptBuilder
     expect(source).not.toContain("buildTestWriterPrompt");
@@ -500,10 +467,7 @@ describe("PromptBuilder.withLoader override content integration", () => {
     const story = makeStory({ title: "VERIFIER_OVERRIDE_TITLE" });
 
     // FAILS: withLoader does not exist
-    const prompt = await (PromptBuilder.for("verifier") as any)
-      .withLoader(tmpDir, config)
-      .story(story)
-      .build();
+    const prompt = await (PromptBuilder.for("verifier") as any).withLoader(tmpDir, config).story(story).build();
 
     expect(prompt).toContain(overrideBody);
     expect(prompt).toContain("VERIFIER_OVERRIDE_TITLE");
@@ -520,10 +484,7 @@ describe("PromptBuilder.withLoader override content integration", () => {
     const story = makeStory({ title: "SINGLE_SESSION_OVERRIDE_TITLE" });
 
     // FAILS: withLoader does not exist
-    const prompt = await (PromptBuilder.for("single-session") as any)
-      .withLoader(tmpDir, config)
-      .story(story)
-      .build();
+    const prompt = await (PromptBuilder.for("single-session") as any).withLoader(tmpDir, config).story(story).build();
 
     expect(prompt).toContain(overrideBody);
     expect(prompt).toContain("SINGLE_SESSION_OVERRIDE_TITLE");

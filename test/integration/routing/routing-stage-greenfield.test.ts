@@ -15,6 +15,7 @@ import { routingStage } from "../../../src/pipeline/stages/routing";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import { PluginRegistry } from "../../../src/plugins/registry";
 import type { PRD, UserStory } from "../../../src/prd/types";
+import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Helpers
@@ -177,7 +178,7 @@ describe("Routing Stage - Greenfield Detection forces test-after strategy when n
   let workdir: string;
 
   beforeEach(async () => {
-    workdir = await mkdtemp(join(tmpdir(), "nax-routing-greenfield-test-"));
+    workdir = makeTempDir("nax-routing-greenfield-test-");
     await initLogger({ level: "silent" });
   });
 

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { makeTempDir } from "../../helpers/temp";
 import {
   countFileLines,
   findOversizedTestFiles,
@@ -13,7 +13,7 @@ describe("countFileLines", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tempDir = makeTempDir("nax-test-");
   });
 
   afterEach(() => {
@@ -46,7 +46,7 @@ describe("findOversizedTestFiles", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tempDir = makeTempDir("nax-test-");
     mkdirSync(join(tempDir, "test", "unit"), { recursive: true });
   });
 

@@ -14,6 +14,7 @@ import { verifyStage } from "../../../src/pipeline/stages/verify";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import { _regressionRunnerDeps } from "../../../src/verification/runners";
+import { makeTempDir } from "../../helpers/temp";
 
 // Kill the 2s agent-cleanup sleep in regression() — irrelevant in unit/integration tests
 const originalRegressionSleep = _regressionRunnerDeps.sleep;
@@ -138,7 +139,7 @@ describe("Verify Stage", () => {
   });
 
   test("passes when tests succeed", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-verify-test-"));
+    const tempDir = makeTempDir("nax-verify-test-");
 
     const ctx = createTestContext({
       workdir: tempDir,
@@ -160,7 +161,7 @@ describe("Verify Stage", () => {
   });
 
   test("sets verifyResult on test failure (hands off to rectify)", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-verify-test-"));
+    const tempDir = makeTempDir("nax-verify-test-");
 
     const ctx = createTestContext({
       workdir: tempDir,
@@ -194,7 +195,7 @@ describe("Verify Stage", () => {
   });
 
   test("uses default test command when not configured", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-verify-test-"));
+    const tempDir = makeTempDir("nax-verify-test-");
 
     // Create a simple package.json to make bun test work
     await Bun.write(join(tempDir, "package.json"), JSON.stringify({ name: "test" }));
@@ -219,7 +220,7 @@ describe("Verify Stage", () => {
   });
 
   test("uses custom test command from config", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-verify-test-"));
+    const tempDir = makeTempDir("nax-verify-test-");
 
     const ctx = createTestContext({
       workdir: tempDir,
@@ -241,7 +242,7 @@ describe("Verify Stage", () => {
   });
 
   test("handles test command with arguments", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-verify-test-"));
+    const tempDir = makeTempDir("nax-verify-test-");
 
     const ctx = createTestContext({
       workdir: tempDir,
@@ -263,7 +264,7 @@ describe("Verify Stage", () => {
   });
 
   test.skip("handles test command that throws error — hangs on nonexistent-command (TODO: fix timeout handling)", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-verify-test-"));
+    const tempDir = makeTempDir("nax-verify-test-");
 
     const ctx = createTestContext({
       workdir: tempDir,

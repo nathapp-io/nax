@@ -21,10 +21,11 @@ import type { NaxConfig } from "../../../src/config/schema";
 import { run } from "../../../src/execution/runner";
 import type { LoadedHooksConfig } from "../../../src/hooks";
 import type { NaxPlugin } from "../../../src/plugins/types";
+import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
 // Test fixture helpers
 async function createTempDir(): Promise<string> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-runner-plugin-test-"));
+  const tmpDir = makeTempDir("nax-runner-plugin-test-");
   return tmpDir;
 }
 

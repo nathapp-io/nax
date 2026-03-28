@@ -7,18 +7,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
-import {
-  parseTestFile,
-  analyzeOverlap,
-  generateReport,
-} from "../../../scripts/check-test-overlap";
+import { makeTempDir } from "../../helpers/temp";
+import { analyzeOverlap, generateReport, parseTestFile } from "../../../scripts/check-test-overlap";
 
 describe("check-test-overlap", () => {
   let testDir: string;
 
   beforeEach(() => {
-    testDir = join(tmpdir(), `nax-test-overlap-${Date.now()}`);
+    testDir = makeTempDir("nax-test-overlap-");
     mkdirSync(join(testDir, "test", "unit"), { recursive: true });
     mkdirSync(join(testDir, "test", "integration"), { recursive: true });
   });

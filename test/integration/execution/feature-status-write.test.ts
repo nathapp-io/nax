@@ -17,6 +17,7 @@ import type { NaxConfig } from "../../../src/config";
 import type { NaxStatusFile } from "../../../src/execution/status-file";
 import { StatusWriter, type StatusWriterContext } from "../../../src/execution/status-writer";
 import type { PRD, UserStory } from "../../../src/prd";
+import { makeTempDir } from "../../helpers/temp";
 
 // ============================================================================
 // Helpers
@@ -85,7 +86,7 @@ describe("SFC-002: Feature-level status writing — Acceptance Criteria", () => 
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "sfc-002-test-"));
+    tmpDir = makeTempDir("sfc-002-test-");
   });
 
   afterEach(async () => {
@@ -210,7 +211,7 @@ describe("Feature status writing — edge cases", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "sfc-002-edge-"));
+    tmpDir = makeTempDir("sfc-002-edge-");
   });
 
   afterEach(async () => {

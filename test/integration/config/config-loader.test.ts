@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { globalConfigPath, loadConfig } from "../../../src/config/loader";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("Config Loader - Backward Compatibility", () => {
   let tempDir: string;
@@ -27,7 +28,7 @@ describe("Config Loader - Backward Compatibility", () => {
 
   beforeEach(() => {
     // Create a temporary test directory
-    tempDir = join(tmpdir(), `nax-test-${Date.now()}`);
+    tempDir = makeTempDir("nax-test-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     // Backup existing global config if present
@@ -134,7 +135,7 @@ describe("Config Loader - Plugin Configuration (US-007)", () => {
 
   beforeEach(() => {
     // Create a temporary test directory
-    tempDir = join(tmpdir(), `nax-test-plugins-${Date.now()}`);
+    tempDir = makeTempDir("nax-test-plugins-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     // Backup existing global config if present

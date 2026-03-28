@@ -10,11 +10,12 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fireHook } from "../../../src/hooks/runner";
 import { HOOK_EVENTS } from "../../../src/hooks/types";
 import type { HooksConfig } from "../../../src/hooks/types";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("HookEvent: on-all-stories-complete type registration", () => {
   test("on-all-stories-complete is in the HOOK_EVENTS registry", () => {
@@ -38,7 +39,7 @@ describe("on-all-stories-complete hook payload (env vars + stdin)", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-hook-asc-test-"));
+    tmpDir = makeTempDir("nax-hook-asc-test-");
   });
 
   afterEach(() => {
@@ -53,10 +54,7 @@ describe("on-all-stories-complete hook payload (env vars + stdin)", () => {
     const outputFile = join(tmpDir, "event.txt");
     const scriptFile = join(tmpDir, "capture-event.ts");
 
-    await Bun.write(
-      scriptFile,
-      `await Bun.write(${JSON.stringify(outputFile)}, process.env.NAX_EVENT ?? "");`,
-    );
+    await Bun.write(scriptFile, `await Bun.write(${JSON.stringify(outputFile)}, process.env.NAX_EVENT ?? "");`);
 
     const config: HooksConfig = {
       hooks: {
@@ -91,10 +89,7 @@ describe("on-all-stories-complete hook payload (env vars + stdin)", () => {
     const outputFile = join(tmpDir, "feature.txt");
     const scriptFile = join(tmpDir, "capture-feature.ts");
 
-    await Bun.write(
-      scriptFile,
-      `await Bun.write(${JSON.stringify(outputFile)}, process.env.NAX_FEATURE ?? "");`,
-    );
+    await Bun.write(scriptFile, `await Bun.write(${JSON.stringify(outputFile)}, process.env.NAX_FEATURE ?? "");`);
 
     const config: HooksConfig = {
       hooks: {
@@ -128,10 +123,7 @@ describe("on-all-stories-complete hook payload (env vars + stdin)", () => {
     const outputFile = join(tmpDir, "status.txt");
     const scriptFile = join(tmpDir, "capture-status.ts");
 
-    await Bun.write(
-      scriptFile,
-      `await Bun.write(${JSON.stringify(outputFile)}, process.env.NAX_STATUS ?? "");`,
-    );
+    await Bun.write(scriptFile, `await Bun.write(${JSON.stringify(outputFile)}, process.env.NAX_STATUS ?? "");`);
 
     const config: HooksConfig = {
       hooks: {
@@ -166,10 +158,7 @@ describe("on-all-stories-complete hook payload (env vars + stdin)", () => {
     const outputFile = join(tmpDir, "cost.txt");
     const scriptFile = join(tmpDir, "capture-cost.ts");
 
-    await Bun.write(
-      scriptFile,
-      `await Bun.write(${JSON.stringify(outputFile)}, process.env.NAX_COST ?? "");`,
-    );
+    await Bun.write(scriptFile, `await Bun.write(${JSON.stringify(outputFile)}, process.env.NAX_COST ?? "");`);
 
     const config: HooksConfig = {
       hooks: {

@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isGreenfieldStory } from "../../../src/context/greenfield";
 import type { UserStory } from "../../../src/prd/types";
+import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Helpers
@@ -43,7 +44,7 @@ describe("isGreenfieldStory", () => {
   let workdir: string;
 
   beforeEach(async () => {
-    workdir = await mkdtemp(join(tmpdir(), "nax-greenfield-test-"));
+    workdir = makeTempDir("nax-greenfield-test-");
   });
 
   afterEach(async () => {
@@ -151,7 +152,7 @@ describe("pre-existing test files prevent false greenfield detection", () => {
   let workdir: string;
 
   beforeEach(async () => {
-    workdir = await mkdtemp(join(tmpdir(), "nax-greenfield-bug012-"));
+    workdir = makeTempDir("nax-greenfield-bug012-");
   });
 
   afterEach(async () => {
@@ -160,7 +161,11 @@ describe("pre-existing test files prevent false greenfield detection", () => {
 
   it("returns false (not greenfield) when test file was committed before test-writer ran", async () => {
     // Simulate: developer pre-wrote tests and committed them (dogfood scenario)
-    await createTestFile(workdir, "test/unit/commands/unlock.test.ts", "import { describe, it, expect } from 'bun:test'; describe('unlock', () => { it('works', () => { expect(true).toBe(true); }); });");
+    await createTestFile(
+      workdir,
+      "test/unit/commands/unlock.test.ts",
+      "import { describe, it, expect } from 'bun:test'; describe('unlock', () => { it('works', () => { expect(true).toBe(true); }); });",
+    );
 
     const story = createMockStory("US-001");
     const result = await isGreenfieldStory(story, workdir);

@@ -1,10 +1,11 @@
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { PipelineEventBus } from "../../../../src/pipeline/event-bus";
 import { wireEventsWriter } from "../../../../src/pipeline/subscribers/events-writer";
 import { waitForFile } from "../../../../test/helpers/fs";
+import { makeTempDir } from "../../../helpers/temp";
 
 // Minimal UserStory stub for event payloads
 const stubStory = { id: "US-001", title: "Test story" } as never;
@@ -15,7 +16,7 @@ describe("wireEventsWriter", () => {
 
   beforeEach(() => {
     // Use a temp workdir with a known basename so we can locate the events file
-    workdir = join(tmpdir(), `nax-evtest-${Date.now()}`);
+    workdir = makeTempDir("nax-evtest-");
     const project = workdir.split("/").pop()!;
     eventsFile = join(process.env.HOME ?? tmpdir(), ".nax", "events", project, "events.jsonl");
   });
@@ -188,7 +189,7 @@ describe("wireEventsWriter", () => {
     // by pointing to an invalid path — we patch mkdir to throw
     const originalMkdir = (await import("node:fs/promises")).mkdir;
 
-    let callCount = 0;
+    const callCount = 0;
     const _fsMod = await import("node:fs/promises");
     // Inject a failing write by pointing to a path that won't be writable
     // We rely on the subscriber catching the error gracefully

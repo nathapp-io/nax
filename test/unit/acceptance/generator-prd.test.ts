@@ -11,7 +11,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { withDepsRestore } from "../../helpers/deps";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,6 +19,8 @@ import type { GenerateFromPRDOptions, RefinedCriterion } from "../../../src/acce
 import type { AgentAdapter } from "../../../src/agents/types";
 import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd/types";
+import { withDepsRestore } from "../../helpers/deps";
+import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -225,7 +226,7 @@ describe("generateFromPRD — result shape", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tmpDir = makeTempDir("nax-test-");
   });
 
   test("returns AcceptanceTestResult with testCode string", async () => {
@@ -278,7 +279,7 @@ describe("generateFromPRD — uses refined criterion text", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tmpDir = makeTempDir("nax-test-");
   });
 
   test("prompt sent to adapter.complete() contains refined text", async () => {
@@ -371,7 +372,7 @@ describe("generateFromPRD — AC-N naming format in generated tests", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tmpDir = makeTempDir("nax-test-");
   });
 
   test("generated testCode contains AC-1 test name for first criterion", async () => {
@@ -411,7 +412,7 @@ describe("generateFromPRD — bun:test import in generated file", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tmpDir = makeTempDir("nax-test-");
   });
 
   test("generated testCode contains bun:test import", async () => {
@@ -451,7 +452,7 @@ describe("generateFromPRD — writes acceptance-refined.json", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tmpDir = makeTempDir("nax-test-");
   });
 
   test("calls writeFile for acceptance-refined.json", async () => {
@@ -549,7 +550,7 @@ describe("generateFromPRD — adapter.complete() usage", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tmpDir = makeTempDir("nax-test-");
   });
 
   test("calls adapter.complete() exactly once per call", async () => {
@@ -711,8 +712,8 @@ describe("generateFromPRD — acceptance-refined.json is written to featureDir n
   let featureDir: string;
 
   beforeEach(() => {
-    workdir = mkdtempSync(join(tmpdir(), "nax-test-workdir-"));
-    featureDir = mkdtempSync(join(tmpdir(), "nax-test-featuredir-"));
+    workdir = makeTempDir("nax-test-workdir-");
+    featureDir = makeTempDir("nax-test-featuredir-");
   });
 
   test("acceptance-refined.json is written to featureDir, not workdir", async () => {
@@ -743,7 +744,7 @@ describe("generateFromPRD — non-code LLM output falls back to skeleton", () =>
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tmpDir = makeTempDir("nax-test-");
   });
 
   test("LLM prose output (no code) returns skeleton tests", async () => {
@@ -754,7 +755,7 @@ describe("generateFromPRD — non-code LLM output falls back to skeleton", () =>
     // Simulate the koda bug: LLM returns prose instead of code
     _generatorPRDDeps.adapter.complete = mock(
       async () =>
-        'File written to `nax/features/refactor-standard/acceptance.test.ts`. Here\'s a summary of the 43 tests and their verification strategy:\n\n**US-001 — Planning (AC-1 to AC-5):** Validates the PRD JSON exists.',
+        "File written to `nax/features/refactor-standard/acceptance.test.ts`. Here's a summary of the 43 tests and their verification strategy:\n\n**US-001 — Planning (AC-1 to AC-5):** Validates the PRD JSON exists.",
     );
     _generatorPRDDeps.writeFile = mock(async () => {});
 
@@ -772,7 +773,8 @@ describe("generateFromPRD — non-code LLM output falls back to skeleton", () =>
     const options = makeOptions(tmpDir);
 
     _generatorPRDDeps.adapter.complete = mock(
-      async () => "Here are the acceptance tests I would generate:\n\n1. Test that the system handles empty input\n2. Test that tokens expire correctly",
+      async () =>
+        "Here are the acceptance tests I would generate:\n\n1. Test that the system handles empty input\n2. Test that tokens expire correctly",
     );
     _generatorPRDDeps.writeFile = mock(async () => {});
 
@@ -787,13 +789,14 @@ describe("generateFromPRD — non-code LLM output falls back to skeleton", () =>
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    const codeInFences = '```typescript\nimport { describe, test, expect } from "bun:test";\n\ndescribe("test", () => {\n  test("AC-1: works", () => {\n    expect(1).toBe(1);\n  });\n});\n```';
+    const codeInFences =
+      '```typescript\nimport { describe, test, expect } from "bun:test";\n\ndescribe("test", () => {\n  test("AC-1: works", () => {\n    expect(1).toBe(1);\n  });\n});\n```';
     _generatorPRDDeps.adapter.complete = mock(async () => codeInFences);
     _generatorPRDDeps.writeFile = mock(async () => {});
 
     const result = await generateFromPRD([story], criteria, options);
 
-    expect(result.testCode).toContain('import { describe, test, expect }');
+    expect(result.testCode).toContain("import { describe, test, expect }");
     expect(result.testCode).not.toContain("```");
     expect(result.testCode).not.toContain("TODO");
   });
@@ -803,7 +806,8 @@ describe("generateFromPRD — non-code LLM output falls back to skeleton", () =>
     const criteria = makeRefinedCriteria(story.id);
     const options = makeOptions(tmpDir);
 
-    const rawCode = 'import { describe, test, expect } from "bun:test";\n\ndescribe("test", () => {\n  test("AC-1: works", () => {\n    expect(1).toBe(1);\n  });\n});';
+    const rawCode =
+      'import { describe, test, expect } from "bun:test";\n\ndescribe("test", () => {\n  test("AC-1: works", () => {\n    expect(1).toBe(1);\n  });\n});';
     _generatorPRDDeps.adapter.complete = mock(async () => rawCode);
     _generatorPRDDeps.writeFile = mock(async () => {});
 

@@ -20,14 +20,12 @@ import { routingStage } from "../../../src/pipeline/stages/routing";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import { PluginRegistry } from "../../../src/plugins/registry";
 import type { PRD, UserStory } from "../../../src/prd/types";
+import { makeTempDir } from "../../helpers/temp";
 
 /**
  * Helper: Create minimal test context
  */
-function createTestContext(
-  workdir: string,
-  overrides?: Partial<PipelineContext>,
-): PipelineContext {
+function createTestContext(workdir: string, overrides?: Partial<PipelineContext>): PipelineContext {
   const story: UserStory = {
     id: "BUG-021-test",
     title: "Add user authentication",
@@ -176,7 +174,7 @@ describe("Routing Stage - Task classified log shows final routing state after al
   }>;
 
   beforeEach(async () => {
-    workdir = await mkdtemp(join(tmpdir(), "nax-bug-021-test-"));
+    workdir = makeTempDir("nax-bug-021-test-");
     capturedLogs = [];
 
     // Initialize logger with debug level to capture all logs

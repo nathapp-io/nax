@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _planDeps, buildPlanningPrompt, planCommand } from "../../../src/cli/plan";
 import type { PRD } from "../../../src/prd/types";
+import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -91,7 +92,7 @@ describe("planCommand", () => {
   let capturedCompleteArgs: string[];
 
   beforeEach(async () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-plan-test-"));
+    tmpDir = makeTempDir("nax-plan-test-");
     capturedWriteArgs = [];
     capturedCompleteArgs = [];
 
@@ -277,7 +278,7 @@ describe("planCommand", () => {
   test("AC-4: missing project field is auto-filled with feature name", async () => {
     // validatePlanOutput auto-fills project from feature when absent (per spec)
     const prdWithoutProject = { ...SAMPLE_PRD } as Partial<PRD>;
-    delete prdWithoutProject.project;
+    prdWithoutProject.project = undefined;
 
     _planDeps.getAgent = mock(
       (_name: string) =>
@@ -293,14 +294,14 @@ describe("planCommand", () => {
     });
     // Verify written PRD has project auto-filled (from package.json mock → "my-project")
     expect(capturedWriteArgs.length).toBeGreaterThan(0);
-    const written = JSON.parse(capturedWriteArgs[0]![1]);
+    const written = JSON.parse(capturedWriteArgs[0]?.[1]);
     expect(written.project).toBeDefined();
     expect(typeof written.project).toBe("string");
   });
 
   test("AC-4: throws when required field 'userStories' is missing", async () => {
     const badPrd = { ...SAMPLE_PRD } as Partial<PRD>;
-    delete badPrd.userStories;
+    badPrd.userStories = undefined;
 
     _planDeps.getAgent = mock(
       (_name: string) =>
@@ -450,7 +451,7 @@ describe("planCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("throws when nax directory not found", async () => {
-    const emptyDir = mkdtempSync(join(tmpdir(), "nax-plan-empty-"));
+    const emptyDir = makeTempDir("nax-plan-empty-");
     await rm(join(emptyDir, ".nax"), { recursive: true, force: true });
 
     expect(
@@ -525,7 +526,7 @@ describe("buildPlanningPrompt (ENH-006)", () => {
 
   test("testStrategy list is in correct order (tdd-simple first, test-after last)", () => {
     const prompt = buildPlanningPrompt(spec, ctx);
-    expect(prompt).toContain('tdd-simple | three-session-tdd-lite | three-session-tdd | test-after');
+    expect(prompt).toContain("tdd-simple | three-session-tdd-lite | three-session-tdd | test-after");
   });
 
   test("monorepo: includes workdir field in schema", () => {

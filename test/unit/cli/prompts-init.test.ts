@@ -5,12 +5,13 @@
  * templates to nax/templates/ directory.
  */
 
-import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { promptsInitCommand } from "../../../src/cli/prompts";
 import { buildRoleTaskSection } from "../../../src/prompts/sections/role-task";
+import { makeTempDir } from "../../helpers/temp";
 
 const TEMPLATE_FILES = [
   "test-writer.md",
@@ -24,7 +25,7 @@ describe("promptsInitCommand — directory creation", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-init-test-"));
+    tempDir = makeTempDir("nax-prompts-init-test-");
     // Create nax/ directory (required by nax project structure)
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
   });
@@ -50,7 +51,7 @@ describe("promptsInitCommand — writes 5 template files", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-init-test-"));
+    tempDir = makeTempDir("nax-prompts-init-test-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
   });
 
@@ -79,7 +80,7 @@ describe("promptsInitCommand — template file content", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-init-test-"));
+    tempDir = makeTempDir("nax-prompts-init-test-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
   });
 
@@ -141,7 +142,7 @@ describe("promptsInitCommand — header comment in each template", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-init-test-"));
+    tempDir = makeTempDir("nax-prompts-init-test-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
   });
 
@@ -189,7 +190,7 @@ describe("promptsInitCommand — no-overwrite protection", () => {
   let originalConsoleWarn: typeof console.warn;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-init-test-"));
+    tempDir = makeTempDir("nax-prompts-init-test-");
     mkdirSync(join(tempDir, ".nax", "templates"), { recursive: true });
 
     consoleOutput = [];
@@ -262,7 +263,7 @@ describe("promptsInitCommand — --force flag", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-init-test-"));
+    tempDir = makeTempDir("nax-prompts-init-test-");
     mkdirSync(join(tempDir, ".nax", "templates"), { recursive: true });
   });
 
@@ -301,7 +302,7 @@ describe("promptsInitCommand — summary output", () => {
   let originalConsoleLog: typeof console.log;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-init-test-"));
+    tempDir = makeTempDir("nax-prompts-init-test-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     consoleOutput = [];
@@ -345,7 +346,7 @@ describe("promptsInitCommand — return value", () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-prompts-init-test-"));
+    tempDir = makeTempDir("nax-prompts-init-test-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
   });
 

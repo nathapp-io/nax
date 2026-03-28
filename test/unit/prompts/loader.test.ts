@@ -5,13 +5,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { fullTest } from "../../helpers/env";
 import { chmodSync, mkdirSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { NaxConfig } from "../../../src/config/types";
 import { loadOverride } from "../../../src/prompts/loader";
 import type { PromptRole } from "../../../src/prompts/types";
+import { fullTest } from "../../helpers/env";
+import { makeTempDir } from "../../helpers/temp";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -98,7 +99,7 @@ let tmpDir: string;
 let createdFiles: string[] = [];
 
 beforeEach(() => {
-  tmpDir = mkdtempSync(join(tmpdir(), "nax-loader-test-"));
+  tmpDir = makeTempDir("nax-loader-test-");
   createdFiles = [];
 });
 

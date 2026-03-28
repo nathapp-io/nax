@@ -6,9 +6,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildStoryContextFull } from "../../../src/execution/story-context";
 import type { NaxConfig } from "../../../src/config";
+import { buildStoryContextFull } from "../../../src/execution/story-context";
 import type { PRD, UserStory } from "../../../src/prd";
+import { makeTempDir } from "../../helpers/temp";
 
 function makeStory(id = "US-001"): UserStory {
   return {
@@ -52,7 +53,7 @@ describe("buildStoryContextFull — package context loading (MW-003)", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tmpDir = makeTempDir("nax-test-");
   });
 
   afterEach(() => {

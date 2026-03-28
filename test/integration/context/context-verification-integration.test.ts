@@ -12,6 +12,7 @@ import { buildContext } from "../../../src/context/builder";
 import type { ContextBudget, StoryContext } from "../../../src/context/types";
 import { getContextFiles, getExpectedFiles } from "../../../src/prd";
 import type { PRD, UserStory } from "../../../src/prd";
+import { makeTempDir } from "../../helpers/temp";
 
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
   project: "test-project",
@@ -38,7 +39,7 @@ const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
 
 describe("Context and Verification Integration", () => {
   test("story with contextFiles uses them for context injection", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+    const tempDir = makeTempDir("nax-test-");
 
     try {
       // Create test files
@@ -90,7 +91,7 @@ describe("Context and Verification Integration", () => {
   });
 
   test("story with relevantFiles uses them for context, not verification", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+    const tempDir = makeTempDir("nax-test-");
 
     try {
       await fs.writeFile(path.join(tempDir, "legacy.ts"), 'export const legacy = "old";');
@@ -158,7 +159,7 @@ describe("Context and Verification Integration", () => {
   });
 
   test("story with contextFiles but no expectedFiles should skip verification", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+    const tempDir = makeTempDir("nax-test-");
 
     try {
       await fs.writeFile(path.join(tempDir, "helper.ts"), 'export const helper = "util";');
@@ -203,7 +204,7 @@ describe("Context and Verification Integration", () => {
   });
 
   test("story with both contextFiles and expectedFiles should use each correctly", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+    const tempDir = makeTempDir("nax-test-");
 
     try {
       await fs.writeFile(path.join(tempDir, "input.ts"), 'export const input = "in";');
@@ -254,7 +255,7 @@ describe("Context and Verification Integration", () => {
   });
 
   test("migration path: story with relevantFiles + new contextFiles should prefer contextFiles", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-"));
+    const tempDir = makeTempDir("nax-test-");
 
     try {
       await fs.writeFile(path.join(tempDir, "new.ts"), 'export const newFile = "new";');

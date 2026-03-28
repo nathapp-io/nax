@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configCommand } from "../../../src/cli/config";
 import { loadConfig } from "../../../src/config/loader";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("Config Command", () => {
   let tempDir: string;
@@ -20,7 +21,7 @@ describe("Config Command", () => {
 
   beforeEach(() => {
     // Create temp directory
-    tempDir = mkdtempSync(join(tmpdir(), "nax-config-test-"));
+    tempDir = makeTempDir("nax-config-test-");
     originalCwd = process.cwd();
 
     // Capture console output
@@ -687,7 +688,7 @@ describe("Config Command --diff", () => {
 
   beforeEach(() => {
     // Create temp directory
-    tempDir = mkdtempSync(join(tmpdir(), "nax-config-diff-test-"));
+    tempDir = makeTempDir("nax-config-diff-test-");
     originalCwd = process.cwd();
 
     // Capture console output
@@ -1161,7 +1162,7 @@ describe("nax config (default view) - CLI integration", () => {
   let originalCwd: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-config-cli-test-"));
+    tempDir = makeTempDir("nax-config-cli-test-");
     originalCwd = process.cwd();
   });
 
@@ -1283,7 +1284,7 @@ describe("nax config (default view) - edge cases", () => {
   let originalCwd: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-config-edge-test-"));
+    tempDir = makeTempDir("nax-config-edge-test-");
     originalCwd = process.cwd();
   });
 

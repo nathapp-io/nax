@@ -5,15 +5,16 @@
  * override file path does not exist. Non-blocking: run continues regardless.
  */
 
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { NaxConfig } from "../../../src/config/types";
 import { checkPromptOverrideFiles } from "../../../src/precheck/checks-warnings";
+import { makeTempDir } from "../../helpers/temp";
 
 function makeTmpDir(): string {
-  return mkdtempSync(join(tmpdir(), "nax-test-"));
+  return makeTempDir("nax-test-");
 }
 
 function makeMinimalConfig(overrides?: Record<string, string>): NaxConfig {
@@ -70,7 +71,7 @@ describe("checkPromptOverrideFiles", () => {
 
   test("warning message contains resolved absolute path", async () => {
     const config = makeMinimalConfig({
-      "implementer": ".nax/prompts/implementer.md",
+      implementer: ".nax/prompts/implementer.md",
     });
     const checks = await checkPromptOverrideFiles(config, workdir);
 
@@ -80,7 +81,7 @@ describe("checkPromptOverrideFiles", () => {
   test("emits one warning per missing role", async () => {
     const config = makeMinimalConfig({
       "test-writer": ".nax/prompts/test-writer.md",
-      "implementer": ".nax/prompts/implementer.md",
+      implementer: ".nax/prompts/implementer.md",
     });
     const checks = await checkPromptOverrideFiles(config, workdir);
 
@@ -94,7 +95,7 @@ describe("checkPromptOverrideFiles", () => {
 
     const config = makeMinimalConfig({
       "test-writer": ".nax/prompts/test-writer.md",
-      "implementer": ".nax/prompts/implementer.md", // does not exist
+      implementer: ".nax/prompts/implementer.md", // does not exist
     });
     const checks = await checkPromptOverrideFiles(config, workdir);
 
@@ -104,7 +105,7 @@ describe("checkPromptOverrideFiles", () => {
 
   test("warning check name identifies the role", async () => {
     const config = makeMinimalConfig({
-      "verifier": ".nax/prompts/verifier.md",
+      verifier: ".nax/prompts/verifier.md",
     });
     const checks = await checkPromptOverrideFiles(config, workdir);
 
@@ -120,7 +121,11 @@ import { checkBuildCommandInReviewChecks } from "../../../src/precheck/checks-wa
 
 function makeBugConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
   return {
-    review: { checks: ["typecheck", "lint"], commands: {}, semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000 } },
+    review: {
+      checks: ["typecheck", "lint"],
+      commands: {},
+      semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000 },
+    },
     quality: { commands: {} },
     ...overrides,
   } as unknown as NaxConfig;
@@ -144,7 +149,13 @@ describe("checkBuildCommandInReviewChecks (BUG-092)", () => {
 
   test("warns when review.commands.build set but build not in review.checks", () => {
     const result = checkBuildCommandInReviewChecks(
-      makeBugConfig({ review: { checks: ["typecheck", "lint"], commands: { build: "bun run build" }, semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000 } } } as Partial<NaxConfig>),
+      makeBugConfig({
+        review: {
+          checks: ["typecheck", "lint"],
+          commands: { build: "bun run build" },
+          semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000 },
+        },
+      } as Partial<NaxConfig>),
     );
     expect(result.passed).toBe(false);
     expect(result.message).toContain("review.checks");
@@ -154,7 +165,11 @@ describe("checkBuildCommandInReviewChecks (BUG-092)", () => {
     const result = checkBuildCommandInReviewChecks(
       makeBugConfig({
         quality: { commands: { build: "bun run build" } } as Partial<NaxConfig["quality"]>,
-        review: { checks: ["typecheck", "lint", "build"], commands: {}, semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000 } },
+        review: {
+          checks: ["typecheck", "lint", "build"],
+          commands: {},
+          semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000 },
+        },
       } as Partial<NaxConfig>),
     );
     expect(result.passed).toBe(true);

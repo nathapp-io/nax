@@ -18,6 +18,7 @@ import {
   releaseLock,
 } from "../../../src/execution/helpers";
 import type { PRD, UserStory } from "../../../src/prd";
+import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -167,8 +168,7 @@ describe("acquireLock / releaseLock", () => {
 
   beforeEach(() => {
     // Create a temporary directory for lock tests
-    testDir = path.join(os.tmpdir(), `nax-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    fs.mkdirSync(testDir, { recursive: true });
+    testDir = makeTempDir("nax-test-");
   });
 
   afterEach(async () => {

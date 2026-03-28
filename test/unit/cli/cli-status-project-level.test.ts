@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { displayFeatureStatus } from "../../../src/cli/status";
 import type { NaxStatusFile } from "../../../src/execution/status-file";
 import type { PRD } from "../../../src/prd";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("displayFeatureStatus - Project-level status (nax/status.json)", () => {
   let testDir: string;
@@ -20,8 +21,7 @@ describe("displayFeatureStatus - Project-level status (nax/status.json)", () => 
 
   beforeEach(() => {
     // Create temp directory for test
-    const rawTestDir = join(tmpdir(), `nax-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    mkdirSync(rawTestDir, { recursive: true });
+    const rawTestDir = makeTempDir("nax-test-");
     testDir = realpathSync(rawTestDir);
     originalCwd = process.cwd();
 
@@ -279,5 +279,4 @@ describe("displayFeatureStatus - Project-level status (nax/status.json)", () => 
       expect(output).toContain("test-feature");
     });
   });
-
 });

@@ -16,6 +16,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { ALL_AGENTS } from "../../../src/agents/registry";
+import { makeTempDir } from "../../helpers/temp";
 import type {
   AgentAdapter,
   AgentCapabilities,
@@ -102,7 +103,7 @@ function makePRD(feature: string, storyCount = 2): PRD {
       id: `US-${String(i + 1).padStart(3, "0")}`,
       title: `Story ${i + 1}`,
       description: `Desc ${i + 1}`,
-      acceptanceCriteria: [`AC: works`],
+      acceptanceCriteria: ["AC: works"],
       tags: [],
       dependencies: [],
       status: "pending" as const,
@@ -114,7 +115,7 @@ function makePRD(feature: string, storyCount = 2): PRD {
 }
 
 async function setupDir(feature: string, storyCount = 2) {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-sf-int-"));
+  const tmpDir = makeTempDir("nax-sf-int-");
   const naxDir = path.join(tmpDir, ".nax");
   const featureDir = path.join(naxDir, "features", feature);
   nodeFs.mkdirSync(path.join(featureDir, "runs"), { recursive: true });

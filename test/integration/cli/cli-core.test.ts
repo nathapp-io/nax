@@ -5,8 +5,9 @@
  */
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { fullTest } from "../../helpers/env";
 import type { RunOptions } from "../../../src/execution/runner";
+import { fullTest } from "../../helpers/env";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("CLI --parallel flag parsing", () => {
   test("parses --parallel 4 correctly", () => {
@@ -92,10 +93,37 @@ const REGISTRY_DIR = join(TEST_WORKSPACE, "registry");
 const RUN_ID = "2026-02-27T12-00-00";
 
 const SAMPLE_LOGS = [
-  { timestamp: "2026-02-27T12:00:00.000Z", level: "info",  stage: "run.start",   message: "Starting",    data: { runId: "run-001" } },
-  { timestamp: "2026-02-27T12:00:01.000Z", level: "info",  stage: "story.start", storyId: "US-001", message: "Story start", data: { storyId: "US-001", title: "Test" } },
-  { timestamp: "2026-02-27T12:00:02.000Z", level: "debug", stage: "routing",     storyId: "US-001", message: "Routing",     data: { tier: "haiku" } },
-  { timestamp: "2026-02-27T12:00:03.000Z", level: "error", stage: "story.start", storyId: "US-002", message: "Error",       data: {} },
+  {
+    timestamp: "2026-02-27T12:00:00.000Z",
+    level: "info",
+    stage: "run.start",
+    message: "Starting",
+    data: { runId: "run-001" },
+  },
+  {
+    timestamp: "2026-02-27T12:00:01.000Z",
+    level: "info",
+    stage: "story.start",
+    storyId: "US-001",
+    message: "Story start",
+    data: { storyId: "US-001", title: "Test" },
+  },
+  {
+    timestamp: "2026-02-27T12:00:02.000Z",
+    level: "debug",
+    stage: "routing",
+    storyId: "US-001",
+    message: "Routing",
+    data: { tier: "haiku" },
+  },
+  {
+    timestamp: "2026-02-27T12:00:03.000Z",
+    level: "error",
+    stage: "story.start",
+    storyId: "US-002",
+    message: "Error",
+    data: {},
+  },
 ];
 
 function setupTestProject(featureName: string): string {
@@ -134,7 +162,9 @@ function cleanup(dir: string) {
 }
 
 /** Capture console.log output while running logsCommand */
-async function captureLogsCommand(options: Parameters<typeof logsCommand>[0]): Promise<{ stdout: string; error?: Error }> {
+async function captureLogsCommand(
+  options: Parameters<typeof logsCommand>[0],
+): Promise<{ stdout: string; error?: Error }> {
   const lines: string[] = [];
   const orig = console.log;
   console.log = (...args: unknown[]) => lines.push(args.map(String).join(" "));
@@ -158,7 +188,7 @@ describe("nax logs CLI integration", () => {
 
   afterAll(() => {
     cleanup(TEST_WORKSPACE);
-    if (origRunsDir === undefined) delete process.env.NAX_RUNS_DIR;
+    if (origRunsDir === undefined) process.env.NAX_RUNS_DIR = undefined;
     else process.env.NAX_RUNS_DIR = origRunsDir;
   });
 
@@ -274,7 +304,12 @@ describe("nax logs CLI integration", () => {
 
   describe("combined flags", () => {
     test("--story + --level + --json", async () => {
-      const { stdout, error } = await captureLogsCommand({ dir: projectDir, story: "US-001", level: "debug", json: true });
+      const { stdout, error } = await captureLogsCommand({
+        dir: projectDir,
+        story: "US-001",
+        level: "debug",
+        json: true,
+      });
       expect(error).toBeUndefined();
       const lines = stdout.trim().split("\n").filter(Boolean);
       for (const line of lines) {
@@ -473,14 +508,14 @@ describe("Headless mode formatter integration", () => {
  * Verifies AgentType union includes new agents and generators work correctly.
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateCommand } from "../../../src/cli/generate";
-import type { AgentType } from "../../../src/context/types";
-import { generateFor, generateAll } from "../../../src/context/generator";
 import { loadConfig } from "../../../src/config/loader";
+import { generateAll, generateFor } from "../../../src/context/generator";
+import type { AgentType } from "../../../src/context/types";
 
 describe("nax generate command", () => {
   let tempDir: string;
@@ -492,7 +527,7 @@ describe("nax generate command", () => {
 
   beforeEach(() => {
     // Create temp directory
-    tempDir = mkdtempSync(join(tmpdir(), "nax-generate-test-"));
+    tempDir = makeTempDir("nax-generate-test-");
     originalCwd = process.cwd();
     process.chdir(tempDir);
 
@@ -670,12 +705,16 @@ describe("nax generate command", () => {
   describe("Existing generators still work", () => {
     test("Claude generator produces valid output", async () => {
       const config = await loadConfig(tempDir);
-      const result = await generateFor("claude", {
-        contextPath: join(tempDir, ".nax/context.md"),
-        outputDir: tempDir,
-        workdir: tempDir,
-        dryRun: false,
-      }, config);
+      const result = await generateFor(
+        "claude",
+        {
+          contextPath: join(tempDir, ".nax/context.md"),
+          outputDir: tempDir,
+          workdir: tempDir,
+          dryRun: false,
+        },
+        config,
+      );
 
       expect(result.agent).toBe("claude");
       expect(result.error).toBeUndefined();
@@ -685,12 +724,16 @@ describe("nax generate command", () => {
 
     test("Aider generator produces valid output", async () => {
       const config = await loadConfig(tempDir);
-      const result = await generateFor("aider", {
-        contextPath: join(tempDir, ".nax/context.md"),
-        outputDir: tempDir,
-        workdir: tempDir,
-        dryRun: false,
-      }, config);
+      const result = await generateFor(
+        "aider",
+        {
+          contextPath: join(tempDir, ".nax/context.md"),
+          outputDir: tempDir,
+          workdir: tempDir,
+          dryRun: false,
+        },
+        config,
+      );
 
       expect(result.agent).toBe("aider");
       expect(result.error).toBeUndefined();
@@ -699,12 +742,15 @@ describe("nax generate command", () => {
 
     test("All generators produce output", async () => {
       const config = await loadConfig(tempDir);
-      const results = await generateAll({
-        contextPath: join(tempDir, ".nax/context.md"),
-        outputDir: tempDir,
-        workdir: tempDir,
-        dryRun: false,
-      }, config);
+      const results = await generateAll(
+        {
+          contextPath: join(tempDir, ".nax/context.md"),
+          outputDir: tempDir,
+          workdir: tempDir,
+          dryRun: false,
+        },
+        config,
+      );
 
       expect(results.length).toBeGreaterThan(0);
 
@@ -721,12 +767,16 @@ describe("nax generate command", () => {
   describe("New generators included in manifest", () => {
     test("codex generator is available", async () => {
       const config = await loadConfig(tempDir);
-      const result = await generateFor("codex", {
-        contextPath: join(tempDir, ".nax/context.md"),
-        outputDir: tempDir,
-        workdir: tempDir,
-        dryRun: false,
-      }, config);
+      const result = await generateFor(
+        "codex",
+        {
+          contextPath: join(tempDir, ".nax/context.md"),
+          outputDir: tempDir,
+          workdir: tempDir,
+          dryRun: false,
+        },
+        config,
+      );
 
       expect(result.agent).toBe("codex");
       expect(result.error).toBeUndefined();
@@ -735,12 +785,16 @@ describe("nax generate command", () => {
 
     test("opencode generator is available", async () => {
       const config = await loadConfig(tempDir);
-      const result = await generateFor("opencode", {
-        contextPath: join(tempDir, ".nax/context.md"),
-        outputDir: tempDir,
-        workdir: tempDir,
-        dryRun: false,
-      }, config);
+      const result = await generateFor(
+        "opencode",
+        {
+          contextPath: join(tempDir, ".nax/context.md"),
+          outputDir: tempDir,
+          workdir: tempDir,
+          dryRun: false,
+        },
+        config,
+      );
 
       expect(result.agent).toBe("opencode");
       expect(result.error).toBeUndefined();
@@ -749,12 +803,16 @@ describe("nax generate command", () => {
 
     test("gemini generator is available", async () => {
       const config = await loadConfig(tempDir);
-      const result = await generateFor("gemini", {
-        contextPath: join(tempDir, ".nax/context.md"),
-        outputDir: tempDir,
-        workdir: tempDir,
-        dryRun: false,
-      }, config);
+      const result = await generateFor(
+        "gemini",
+        {
+          contextPath: join(tempDir, ".nax/context.md"),
+          outputDir: tempDir,
+          workdir: tempDir,
+          dryRun: false,
+        },
+        config,
+      );
 
       expect(result.agent).toBe("gemini");
       expect(result.error).toBeUndefined();
@@ -828,8 +886,7 @@ let testDir: string;
 
 beforeEach(() => {
   // Create unique test directory
-  testDir = join(tmpdir(), `nax-diagnose-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  mkdirSync(testDir, { recursive: true });
+  testDir = makeTempDir("nax-diagnose-test-");
 
   // Create nax directory structure
   mkdirSync(join(testDir, ".nax", "features"), { recursive: true });
@@ -977,7 +1034,7 @@ describe("AC1: nax diagnose reads last run and prints all 5 sections", () => {
     let output = "";
     const originalLog = console.log;
     console.log = (...args: unknown[]) => {
-      output += args.join(" ") + "\n";
+      output += `${args.join(" ")}\n`;
     };
 
     try {
@@ -1031,7 +1088,7 @@ describe("AC2: Each failed story shows pattern classification", () => {
     let output = "";
     const originalLog = console.log;
     console.log = (...args: unknown[]) => {
-      output += args.join(" ") + "\n";
+      output += `${args.join(" ")}\n`;
     };
 
     try {
@@ -1064,7 +1121,7 @@ describe("AC2: Each failed story shows pattern classification", () => {
     let output = "";
     const originalLog = console.log;
     console.log = (...args: unknown[]) => {
-      output += args.join(" ") + "\n";
+      output += `${args.join(" ")}\n`;
     };
 
     try {
@@ -1098,7 +1155,7 @@ describe("AC2: Each failed story shows pattern classification", () => {
     let output = "";
     const originalLog = console.log;
     console.log = (...args: unknown[]) => {
-      output += args.join(" ") + "\n";
+      output += `${args.join(" ")}\n`;
     };
 
     try {
@@ -1132,7 +1189,7 @@ describe("AC2: Each failed story shows pattern classification", () => {
     let output = "";
     const originalLog = console.log;
     console.log = (...args: unknown[]) => {
-      output += args.join(" ") + "\n";
+      output += `${args.join(" ")}\n`;
     };
 
     try {
@@ -1165,7 +1222,7 @@ describe("AC3: Stale nax.lock detection", () => {
     let output = "";
     const originalLog = console.log;
     console.log = (...args: unknown[]) => {
-      output += args.join(" ") + "\n";
+      output += `${args.join(" ")}\n`;
     };
 
     try {
@@ -1194,7 +1251,7 @@ describe("AC3: Stale nax.lock detection", () => {
     let output = "";
     const originalLog = console.log;
     console.log = (...args: unknown[]) => {
-      output += args.join(" ") + "\n";
+      output += `${args.join(" ")}\n`;
     };
 
     try {
@@ -1229,7 +1286,7 @@ describe("AC4: --json flag outputs machine-readable JSON", () => {
     let output = "";
     const originalLog = console.log;
     console.log = (...args: unknown[]) => {
-      output += args.join(" ") + "\n";
+      output += `${args.join(" ")}\n`;
     };
 
     try {
@@ -1274,7 +1331,7 @@ describe("AC5: Works gracefully when events.jsonl missing", () => {
     let output = "";
     const originalLog = console.log;
     console.log = (...args: unknown[]) => {
-      output += args.join(" ") + "\n";
+      output += `${args.join(" ")}\n`;
     };
 
     try {
@@ -1306,7 +1363,7 @@ describe("AC6: -f <feature> and -d <workdir> flags work", () => {
     let output = "";
     const originalLog = console.log;
     console.log = (...args: unknown[]) => {
-      output += args.join(" ") + "\n";
+      output += `${args.join(" ")}\n`;
     };
 
     try {
@@ -1331,7 +1388,7 @@ describe("AC6: -f <feature> and -d <workdir> flags work", () => {
     let output = "";
     const originalLog = console.log;
     console.log = (...args: unknown[]) => {
-      output += args.join(" ") + "\n";
+      output += `${args.join(" ")}\n`;
     };
 
     try {
@@ -1370,7 +1427,7 @@ describe("AC7: AUTO_RECOVERED stories shown as INFO", () => {
     let output = "";
     const originalLog = console.log;
     console.log = (...args: unknown[]) => {
-      output += args.join(" ") + "\n";
+      output += `${args.join(" ")}\n`;
     };
 
     try {
@@ -1409,14 +1466,14 @@ import { mkdtempSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_CONFIG } from "../../../src/config";
 import { agentsListCommand } from "../../../src/cli/agents";
+import { DEFAULT_CONFIG } from "../../../src/config";
 
 describe("agentsListCommand", () => {
   let testDir: string;
 
   beforeAll(() => {
-    testDir = mkdtempSync(join(tmpdir(), "nax-agents-test-"));
+    testDir = makeTempDir("nax-agents-test-");
   });
 
   afterAll(async () => {
@@ -1428,7 +1485,7 @@ describe("agentsListCommand", () => {
     const originalLog = console.log;
     let output = "";
     console.log = (message: string) => {
-      output += message + "\n";
+      output += `${message}\n`;
     };
 
     try {
@@ -1448,7 +1505,7 @@ describe("agentsListCommand", () => {
     const originalLog = console.log;
     let output = "";
     console.log = (message: string) => {
-      output += message + "\n";
+      output += `${message}\n`;
     };
 
     try {
@@ -1465,7 +1522,7 @@ describe("agentsListCommand", () => {
     const originalLog = console.log;
     let output = "";
     console.log = (message: string) => {
-      output += message + "\n";
+      output += `${message}\n`;
     };
 
     try {
@@ -1482,7 +1539,7 @@ describe("agentsListCommand", () => {
     const originalLog = console.log;
     let output = "";
     console.log = (message: string) => {
-      output += message + "\n";
+      output += `${message}\n`;
     };
 
     try {
@@ -1499,7 +1556,7 @@ describe("agentsListCommand", () => {
     const originalLog = console.log;
     let output = "";
     console.log = (message: string) => {
-      output += message + "\n";
+      output += `${message}\n`;
     };
 
     try {
@@ -1512,4 +1569,3 @@ describe("agentsListCommand", () => {
     }
   });
 });
-

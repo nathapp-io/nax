@@ -4,7 +4,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import {
@@ -16,17 +17,16 @@ import {
   writeExitSummary,
 } from "../../../src/execution/crash-recovery";
 import { StatusWriter } from "../../../src/execution/status-writer";
+import { makeTempDir } from "../../helpers/temp";
 
-const TEST_DIR = join(import.meta.dir, "..", ".tmp-crash-recovery");
-const TEST_JSONL = join(TEST_DIR, "test.jsonl");
-const TEST_STATUS_FILE = join(TEST_DIR, "status.json");
+let TEST_DIR: string;
+let TEST_JSONL: string;
+let TEST_STATUS_FILE: string;
 
 beforeEach(() => {
-  // Create test directory
-  if (existsSync(TEST_DIR)) {
-    rmSync(TEST_DIR, { recursive: true, force: true });
-  }
-  mkdirSync(TEST_DIR, { recursive: true });
+  TEST_DIR = makeTempDir("nax-crash-recovery-");
+  TEST_JSONL = join(TEST_DIR, "test.jsonl");
+  TEST_STATUS_FILE = join(TEST_DIR, "status.json");
 
   // Reset crash handlers before each test
   resetCrashHandlers();

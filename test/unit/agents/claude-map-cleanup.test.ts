@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ClaudeCodeAdapter, _runOnceDeps } from "../../../src/agents/claude";
 import type { AgentRunOptions } from "../../../src/agents/types";
+import { makeTempDir } from "../../helpers/temp";
 
 class TestAdapter extends ClaudeCodeAdapter {}
 
@@ -28,7 +29,7 @@ describe("FIX-010: pidRegistries Map cleanup", () => {
   const origBuildCmd = _runOnceDeps.buildCmd;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-fix010-test-"));
+    tempDir = makeTempDir("nax-fix010-test-");
   });
 
   afterEach(() => {
@@ -83,7 +84,7 @@ describe("FIX-010: pidRegistries Map cleanup", () => {
     // Create multiple temp directories and run in each
     const dirs: string[] = [];
     for (let i = 0; i < 3; i++) {
-      const dir = mkdtempSync(join(tmpdir(), `nax-cleanup-${i}-`));
+      const dir = makeTempDir(`nax-cleanup-${i}-`);
       dirs.push(dir);
       await adapter.run(makeRunOptions(dir));
     }

@@ -5,11 +5,12 @@
  * for a given role to stdout or a file, using a stub story and empty context.
  */
 
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { exportPromptCommand } from "../../../src/cli/prompts";
+import { makeTempDir } from "../../helpers/temp";
 
 const VALID_ROLES = ["test-writer", "implementer", "verifier", "single-session", "tdd-simple"] as const;
 
@@ -130,7 +131,7 @@ describe("exportPromptCommand — file output mode (--out)", () => {
   let originalProcessExit: typeof process.exit;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-export-test-"));
+    tempDir = makeTempDir("nax-export-test-");
     consoleOutput = [];
     originalConsoleLog = console.log;
     originalProcessExit = process.exit;

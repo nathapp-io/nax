@@ -18,6 +18,7 @@ import type { NaxConfig } from "../../../src/config";
 import type { NaxStatusFile } from "../../../src/execution/status-file";
 import { StatusWriter, type StatusWriterContext } from "../../../src/execution/status-writer";
 import type { PRD, UserStory } from "../../../src/prd";
+import { makeTempDir } from "../../helpers/temp";
 
 // ============================================================================
 // Helpers
@@ -82,7 +83,7 @@ describe("StatusWriter construction", () => {
   });
 
   test("costLimit Infinity → stored as null in snapshot", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "sw-test-"));
+    const dir = makeTempDir("sw-test-");
     const path = join(dir, "status.json");
     const sw = new StatusWriter(path, makeConfig(Number.POSITIVE_INFINITY), makeCtx());
     sw.setPrd(makePrd());
@@ -99,7 +100,7 @@ describe("StatusWriter construction", () => {
 
 describe("StatusWriter setters", () => {
   test("setRunStatus changes run status in snapshot", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "sw-test-"));
+    const dir = makeTempDir("sw-test-");
     const path = join(dir, "status.json");
     const sw = new StatusWriter(path, makeConfig(), makeCtx());
     sw.setPrd(makePrd());
@@ -111,7 +112,7 @@ describe("StatusWriter setters", () => {
   });
 
   test("setPrd enables writes (no-op without prd)", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "sw-test-"));
+    const dir = makeTempDir("sw-test-");
     const path = join(dir, "status.json");
     const sw = new StatusWriter(path, makeConfig(), makeCtx());
     // Without setPrd, update should be a no-op
@@ -125,7 +126,7 @@ describe("StatusWriter setters", () => {
   });
 
   test("setCurrentStory sets active story in snapshot", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "sw-test-"));
+    const dir = makeTempDir("sw-test-");
     const path = join(dir, "status.json");
     const sw = new StatusWriter(path, makeConfig(), makeCtx());
     sw.setPrd(makePrd());
@@ -146,7 +147,7 @@ describe("StatusWriter setters", () => {
   });
 
   test("setCurrentStory(null) clears active story", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "sw-test-"));
+    const dir = makeTempDir("sw-test-");
     const path = join(dir, "status.json");
     const sw = new StatusWriter(path, makeConfig(), makeCtx());
     sw.setPrd(makePrd());
@@ -211,7 +212,7 @@ describe("StatusWriter.getSnapshot", () => {
 
 describe("StatusWriter.update no-op guards", () => {
   test("no-op when prd not yet set", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "sw-test-"));
+    const dir = makeTempDir("sw-test-");
     const path = join(dir, "status.json");
     const sw = new StatusWriter(path, makeConfig(), makeCtx());
     await sw.update(0, 0);
@@ -228,7 +229,7 @@ describe("StatusWriter.update success path", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "sw-test-"));
+    tmpDir = makeTempDir("sw-test-");
   });
 
   afterEach(async () => {
@@ -322,7 +323,7 @@ describe("StatusWriter.update failure counter increments on errors and resets on
   });
 
   test("counter resets to 0 after successful write following failures", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "sw-test-"));
+    const dir = makeTempDir("sw-test-");
     const validPath = join(dir, "status.json");
     const sw = new StatusWriter(validPath, makeConfig(), makeCtx());
     sw.setPrd(makePrd());
@@ -343,7 +344,7 @@ describe("StatusWriter.writeFeatureStatus", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "sw-feature-test-"));
+    tmpDir = makeTempDir("sw-feature-test-");
   });
 
   afterEach(async () => {

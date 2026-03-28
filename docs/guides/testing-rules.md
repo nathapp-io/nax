@@ -212,3 +212,58 @@ Tests calling `git commit` in temp dirs need global git config. Set up in `befor
 execSync('git config user.name "Test"', { cwd: tmpDir });
 execSync('git config user.email "test@test.com"', { cwd: tmpDir });
 ```
+
+## 9. Temporary Directory Pattern
+
+All tests that need a temporary directory **must** use the standardized helper from `test/helpers/temp.ts`. Never create temp directories manually or use `import.meta.dir`-relative paths.
+
+### Use `makeTempDir()` + `cleanupTempDir()` (sync, for `beforeEach`/`afterEach`)
+
+```typescript
+import { cleanupTempDir, makeTempDir } from "../helpers/temp";
+
+let tempDir: string;
+
+beforeEach(() => {
+  tempDir = makeTempDir("nax-my-test-");
+  // mkdirSync(join(tempDir, ".nax"), { recursive: true }); // if needed
+});
+
+afterEach(() => {
+  cleanupTempDir(tempDir);
+});
+```
+
+### Use `withTempDir()` (async, for inline callback)
+
+```typescript
+import { withTempDir } from "../helpers/temp";
+
+test("writes output file", async () => {
+  await withTempDir(async (dir) => {
+    await Bun.write(join(dir, "file.txt"), "content");
+    expect(existsSync(join(dir, "file.txt"))).toBe(true);
+  });
+  // auto-cleaned up
+});
+```
+
+### Why not `os.tmpdir()` directly?
+
+- Direct `mkdtempSync(join(tmpdir(), "nax-test-"))` in every test scatters temp dirs and makes cleanup easy to forget
+- `import.meta.dir`-relative `.tmp/` paths break on machines where the repo parent is not writable (EACCES)
+- The helper centralizes cleanup and guarantees `os.tmpdir()` portability across all environments
+
+### Never hard-code `.nax` subdirectory creation
+
+If your test writes to `<tempDir>/.nax/config.json`, you **must** explicitly create the `.nax` subdirectory:
+
+```typescript
+// ✅ CORRECT — explicit subdirectory
+tempDir = makeTempDir("nax-config-test-");
+mkdirSync(join(tempDir, ".nax"), { recursive: true });
+
+// ❌ WRONG — makeTempDir only creates the root temp directory
+tempDir = makeTempDir("nax-config-test-");
+// .nax/ does NOT exist — writeFileSync to .nax/config.json will ENOENT
+```
