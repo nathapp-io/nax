@@ -141,6 +141,31 @@ describe("AcpAgentAdapter — session mode (run)", () => {
       expect(result.output).toContain("GitHub OAuth");
     });
 
+    test("skips question detection when stopReason is max_tokens (not end_turn)", async () => {
+      let promptCallCount = 0;
+      const bridge = {
+        onQuestionDetected: async (_q: string) => "answer",
+      };
+
+      const session = makeSession({
+        promptFn: async (_: string) => {
+          promptCallCount++;
+          return {
+            messages: [{ role: "assistant", content: "Which OAuth provider should I use?" }],
+            stopReason: "max_tokens",
+            cumulative_token_usage: { input_tokens: 100, output_tokens: 50 },
+          };
+        },
+      });
+      _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+      const result = await adapter.run({ ...BASE_OPTIONS, interactionBridge: bridge });
+
+      // Question text present but stopReason is max_tokens → no Q&A routing, loop exits
+      expect(promptCallCount).toBe(1);
+      expect(result.success).toBe(false); // max_tokens is not end_turn → success=false
+    });
+
     test("stops loop when interactionBridge throws (interaction timeout)", async () => {
       let promptCallCount = 0;
 

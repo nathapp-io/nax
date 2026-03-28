@@ -634,9 +634,13 @@ export class AcpAgentAdapter implements AgentAdapter {
           totalExactCostUsd = (totalExactCostUsd ?? 0) + lastResponse.exactCostUsd;
         }
 
-        // Check for agent question → route to interaction bridge
+        // Check for agent question → route to interaction bridge.
+        // Only attempt question detection when stopReason === "end_turn": the agent
+        // intentionally stopped and may be waiting for input. For max_tokens (truncated
+        // output) or tool_use (mid-tool-call), skip detection to avoid false positives.
         const outputText = extractOutput(lastResponse);
-        const question = extractQuestion(outputText);
+        const isEndTurn = lastResponse.stopReason === "end_turn";
+        const question = isEndTurn ? extractQuestion(outputText) : null;
         if (!question || !options.interactionBridge) break;
 
         getSafeLogger()?.debug("acp-adapter", "Agent asked question, routing to interactionBridge", { question });
