@@ -11,6 +11,8 @@ import type { AgentAdapter } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config";
 import { isGreenfieldStory } from "../context/greenfield";
+import { buildInteractionBridge } from "../interaction/bridge-builder";
+import type { InteractionChain } from "../interaction/chain";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { errorMessage } from "../utils/errors";
@@ -35,6 +37,8 @@ export interface ThreeSessionTddOptions {
   dryRun?: boolean;
   lite?: boolean;
   _recursionDepth?: number;
+  /** Interaction chain for multi-turn Q&A during test-writer and implementer sessions */
+  interactionChain?: InteractionChain | null;
 }
 
 /**
@@ -53,6 +57,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     dryRun = false,
     lite = false,
     _recursionDepth = 0,
+    interactionChain,
   } = options;
   const logger = getLogger();
 
@@ -139,6 +144,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
       lite,
       constitution,
       featureName,
+      buildInteractionBridge(interactionChain, { featureName, storyId: story.id, stage: "execution" }),
     );
     sessions.push(session1);
   }
@@ -245,6 +251,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     lite,
     constitution,
     featureName,
+    buildInteractionBridge(interactionChain, { featureName, storyId: story.id, stage: "execution" }),
   );
   sessions.push(session2);
 

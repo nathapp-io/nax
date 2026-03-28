@@ -8,6 +8,7 @@ import type { AgentAdapter } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
 import { resolveModel } from "../config";
 import { resolvePermissions } from "../config/permissions";
+import type { InteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { PromptBuilder } from "../prompts";
@@ -117,6 +118,7 @@ export async function runTddSession(
   skipIsolation = false,
   constitution?: string,
   featureName?: string,
+  interactionBridge?: InteractionBridge,
 ): Promise<TddSessionResult> {
   const startTime = Date.now();
 
@@ -183,6 +185,7 @@ export async function runTddSession(
     storyId: story.id,
     sessionRole: role,
     keepSessionOpen,
+    interactionBridge,
   });
 
   // BUG-21 Fix: Clean up orphaned child processes if agent failed

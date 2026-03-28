@@ -20,6 +20,8 @@ import type { ProjectProfile } from "../config/runtime-types";
 import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE, getAcQualityRules } from "../config/test-strategy";
 import { discoverWorkspacePackages } from "../context/generator";
 import { PidRegistry } from "../execution/pid-registry";
+import { buildInteractionBridge } from "../interaction/bridge-builder";
+import { initInteractionChain } from "../interaction/init";
 import { getLogger } from "../logger";
 import { validatePlanOutput } from "../prd/schema";
 
@@ -52,6 +54,7 @@ export const _planDeps = {
     detectQuestion: (text: string) => Promise<boolean>;
     onQuestionDetected: (text: string) => Promise<string>;
   } => createCliInteractionBridge(),
+  initInteractionChain: (cfg: NaxConfig, headless: boolean) => initInteractionChain(cfg, headless),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,7 +188,17 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     );
     const adapter = _planDeps.getAgent(agentName, config);
     if (!adapter) throw new Error(`[plan] No agent adapter found for '${agentName}'`);
-    const interactionBridge = _planDeps.createInteractionBridge();
+    // Use configured interaction plugin (telegram/webhook/auto) if available;
+    // fall back to hardcoded stdin bridge when no interaction config is set.
+    const headless = !process.stdin.isTTY;
+    const interactionChain = config ? await _planDeps.initInteractionChain(config, headless) : null;
+    const configuredBridge = interactionChain
+      ? buildInteractionBridge(interactionChain, {
+          featureName: options.feature,
+          stage: "pre-flight",
+        })
+      : undefined;
+    const interactionBridge = configuredBridge ?? _planDeps.createInteractionBridge();
     const pidRegistry = new PidRegistry(workdir);
     const resolvedPerm = resolvePermissions(config, "plan");
     const resolvedModel = config?.plan?.model ?? "balanced";
@@ -214,6 +227,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       });
     } finally {
       await pidRegistry.killAll().catch(() => {});
+      if (interactionChain) await interactionChain.destroy().catch(() => {});
       logger?.info("plan", "Interactive session ended", { durationMs: Date.now() - planStartTime });
     }
     // Read back from file written by agent
