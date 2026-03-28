@@ -4,18 +4,16 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { estimateTokens, loadConstitution, truncateToTokens } from "../../../src/constitution";
 import type { ConstitutionConfig } from "../../../src/constitution";
 
-const TEST_DIR = join(import.meta.dir, ".tmp-constitution-test");
+let TEST_DIR: string;
 
 beforeEach(() => {
-  if (existsSync(TEST_DIR)) {
-    rmSync(TEST_DIR, { recursive: true, force: true });
-  }
-  mkdirSync(TEST_DIR, { recursive: true });
+  TEST_DIR = mkdtempSync(join(tmpdir(), "nax-constitution-test-"));
 });
 
 afterEach(() => {

@@ -1439,8 +1439,7 @@ describe("Precheck Integration with nax run", () => {
     savedNaxPrecheck = process.env.NAX_PRECHECK;
     process.env.NAX_PRECHECK = "1";
 
-    testDir = join(import.meta.dir, "..", "..", "..", ".tmp", `precheck-integration-${Date.now()}`);
-    mkdirSync(testDir, { recursive: true });
+    testDir = mkdtempSync(join(tmpdir(), "nax-precheck-integration-"));
 
     // Initialize as git repo to pass git checks
     const { spawnSync } = await import("bun");
@@ -1557,8 +1556,7 @@ describe("Precheck Integration with nax run", () => {
 
   test("AC4: --skip-precheck bypasses precheck validations", async () => {
     // Create non-git temp directory (will fail precheck)
-    const nonGitDir = join(import.meta.dir, "..", "..", "..", ".tmp", `non-git-${Date.now()}`);
-    mkdirSync(nonGitDir, { recursive: true });
+    const nonGitDir = mkdtempSync(join(tmpdir(), "nax-precheck-non-git-"));
 
     try {
       const prdPath = await setupFeature("skip-test");
@@ -1647,8 +1645,7 @@ describe("Precheck Integration with nax run", () => {
 
   test("AC2: Tier 1 blocker aborts run with descriptive error", async () => {
     // Create directory with uncommitted changes (will fail working-tree-clean check)
-    const dirtyDir = join(import.meta.dir, "..", "..", "..", ".tmp", `dirty-${Date.now()}`);
-    mkdirSync(dirtyDir, { recursive: true });
+    const dirtyDir = mkdtempSync(join(tmpdir(), "nax-precheck-dirty-"));
 
     try {
       // Initialize git and create a dirty state
@@ -1826,8 +1823,7 @@ describe("Precheck Integration with nax run", () => {
 
   test("AC6: failed precheck updates status.json", async () => {
     // Create non-git directory (will fail precheck)
-    const nonGitDir = join(import.meta.dir, "..", "..", "..", ".tmp", `non-git-status-${Date.now()}`);
-    mkdirSync(nonGitDir, { recursive: true });
+    const nonGitDir = mkdtempSync(join(tmpdir(), "nax-precheck-non-git-status-"));
 
     try {
       // Setup feature (intentionally no git repo to fail precheck)
