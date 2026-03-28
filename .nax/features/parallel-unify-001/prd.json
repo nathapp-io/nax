@@ -3,7 +3,7 @@
   "feature": "parallel-unify-001",
   "branchName": "feat/parallel-unify-001",
   "createdAt": "2026-03-28T00:00:00.000Z",
-  "updatedAt": "2026-03-28T15:07:39.811Z",
+  "updatedAt": "2026-03-28T15:19:15.759Z",
   "userStories": [
     {
       "id": "US-001",
@@ -117,7 +117,8 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/story-selector.ts",
@@ -126,8 +127,53 @@
         "src/prd/types.ts",
         "src/prd/schema.ts"
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast: Autofix exhausted: review still failing after fix attempts"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "fast",
+          "stage": "review",
+          "summary": "Failed with tier fast, escalating to next tier",
+          "reviewFindings": [
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/story-selector.ts",
+              "line": 1,
+              "message": "Implementation file src/execution/story-selector.ts is not present in the diff. The test file imports selectIndependentBatch and groupStoriesByDependencies from this module, but no creation or modification of this source file is visible. ACs 1-5 and 7 cannot be verified.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/executor-types.ts",
+              "line": 1,
+              "message": "AC 6 requires adding parallelCount?: number to SequentialExecutionContext in src/execution/executor-types.ts, but no changes to this file are present in the diff.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/parallel-coordinator.ts",
+              "line": 1,
+              "message": "AC 7 requires parallel-coordinator.ts to import groupStoriesByDependencies from story-selector.ts rather than defining its own copy, but no changes to this file are visible in the diff. Cannot verify the deduplication/re-export requirement.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "warning",
+              "file": "test/unit/execution/story-selector.test.ts",
+              "line": 95,
+              "message": "AC 4 specifies dependencies must be in status 'completed', but the test uses status 'passed' (via createCompletedStory which sets status: \"passed\"). If the canonical terminal status in the UserStory type is 'passed', the AC wording and test description on line 95 disagree with each other — one of them is incorrect.",
+              "source": "semantic-review"
+            }
+          ],
+          "cost": 0.24027750000000003,
+          "timestamp": "2026-03-28T15:19:13.740Z"
+        }
+      ],
       "storyPoints": 1
     },
     {
