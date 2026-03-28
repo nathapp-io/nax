@@ -14,13 +14,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { loadPlugins, _setPluginErrorSink, _resetPluginErrorSink } from "../../../src/plugins/loader";
+import { _resetPluginErrorSink, _setPluginErrorSink, loadPlugins } from "../../../src/plugins/loader";
 import type { PluginConfigEntry } from "../../../src/plugins/types";
 import type { NaxPlugin } from "../../../src/plugins/types";
+import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
 // Test fixture helpers
 async function createTempDir(): Promise<string> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-plugin-config-test-"));
+  const tmpDir = makeTempDir("nax-plugin-config-test-");
   return tmpDir;
 }
 

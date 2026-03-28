@@ -1,8 +1,9 @@
+import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterAll, describe, expect, test } from "bun:test";
 import { validateModulePath } from "../../../src/utils/path-security";
+import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Temp directory for symlink tests
@@ -12,16 +13,24 @@ let tmpAllowed: string;
 let tmpOutside: string;
 
 try {
-  tmpAllowed = mkdtempSync(join(tmpdir(), "nax-sec1-allowed-"));
-  tmpOutside = mkdtempSync(join(tmpdir(), "nax-sec1-outside-"));
+  tmpAllowed = makeTempDir("nax-sec1-allowed-");
+  tmpOutside = makeTempDir("nax-sec1-outside-");
 } catch {
   tmpAllowed = "";
   tmpOutside = "";
 }
 
 afterAll(() => {
-  try { rmSync(tmpAllowed, { recursive: true, force: true }); } catch { /* ignore */ }
-  try { rmSync(tmpOutside, { recursive: true, force: true }); } catch { /* ignore */ }
+  try {
+    rmSync(tmpAllowed, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
+  try {
+    rmSync(tmpOutside, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

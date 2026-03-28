@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExecutionConfig, NaxConfig } from "../../../src/config";
 import type { PRD, UserStory } from "../../../src/prd/types";
+import { makeTempDir } from "../../helpers/temp";
 import {
   checkClaudeCLI,
   checkClaudeMdExists,
@@ -112,7 +113,7 @@ describe("checkGitRepoExists (Tier 1 blocker)", () => {
   let testDir: string;
 
   beforeEach(() => {
-    testDir = mkdtempSync(join(tmpdir(), "nax-test-precheck-"));
+    testDir = makeTempDir("nax-test-precheck-");
   });
 
   afterEach(() => {
@@ -156,7 +157,7 @@ describe("checkWorkingTreeClean (Tier 1 blocker)", () => {
   let testDir: string;
 
   beforeEach(() => {
-    testDir = mkdtempSync(join(tmpdir(), "nax-test-precheck-"));
+    testDir = makeTempDir("nax-test-precheck-");
     // Initialize git repo
     mkdirSync(join(testDir, ".git"));
   });
@@ -192,7 +193,7 @@ describe("checkStaleLock (Tier 1 blocker)", () => {
   let testDir: string;
 
   beforeEach(() => {
-    testDir = mkdtempSync(join(tmpdir(), "nax-test-precheck-"));
+    testDir = makeTempDir("nax-test-precheck-");
   });
 
   afterEach(() => {
@@ -399,7 +400,7 @@ describe("checkDependenciesInstalled (Tier 1 blocker)", () => {
   let testDir: string;
 
   beforeEach(() => {
-    testDir = mkdtempSync(join(tmpdir(), "nax-test-precheck-"));
+    testDir = makeTempDir("nax-test-precheck-");
   });
 
   afterEach(() => {
@@ -609,7 +610,7 @@ describe("checkClaudeMdExists (Tier 2 warning)", () => {
   let testDir: string;
 
   beforeEach(() => {
-    testDir = mkdtempSync(join(tmpdir(), "nax-test-precheck-"));
+    testDir = makeTempDir("nax-test-precheck-");
   });
 
   afterEach(() => {
@@ -754,7 +755,7 @@ describe("checkGitignoreCoversNax (Tier 2 warning)", () => {
   let testDir: string;
 
   beforeEach(() => {
-    testDir = mkdtempSync(join(tmpdir(), "nax-test-precheck-"));
+    testDir = makeTempDir("nax-test-precheck-");
   });
 
   afterEach(() => {

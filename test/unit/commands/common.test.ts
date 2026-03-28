@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveProject } from "../../../src/commands/common";
 import { NaxError } from "../../../src/errors";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("resolveProject", () => {
   let testDir: string;
@@ -16,8 +17,7 @@ describe("resolveProject", () => {
 
   beforeEach(() => {
     // Create temp directory for test (resolve symlinks for consistent paths)
-    const rawTestDir = join(tmpdir(), `nax-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    mkdirSync(rawTestDir, { recursive: true });
+    const rawTestDir = makeTempDir("nax-test-");
     testDir = realpathSync(rawTestDir);
     originalCwd = process.cwd();
   });

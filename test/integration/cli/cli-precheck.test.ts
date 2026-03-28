@@ -11,7 +11,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { fullDescribe, fullTest } from "../../helpers/env";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,10 +18,12 @@ import { precheckCommand } from "../../../src/commands/precheck";
 import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { run } from "../../../src/execution";
-import type { PRD, UserStory } from "../../../src/prd/types";
 import { loadPRD } from "../../../src/prd";
+import type { PRD, UserStory } from "../../../src/prd/types";
 import { EXIT_CODES, runPrecheck } from "../../../src/precheck";
 import type { PrecheckResult } from "../../../src/precheck/types";
+import { fullDescribe, fullTest } from "../../helpers/env";
+import { makeTempDir } from "../../helpers/temp";
 
 const TEMP_DIR = join(import.meta.dir, "tmp-precheck-cli");
 
@@ -486,7 +487,7 @@ describeWithClaude("runPrecheck integration", () => {
   let testDir: string;
 
   beforeEach(() => {
-    testDir = mkdtempSync(join(tmpdir(), "nax-test-precheck-"));
+    testDir = makeTempDir("nax-test-precheck-");
   });
 
   afterEach(() => {
@@ -778,7 +779,7 @@ describeWithClaude("precheck with stale lock detection", () => {
   let testDir: string;
 
   beforeEach(() => {
-    testDir = mkdtempSync(join(tmpdir(), "nax-test-precheck-"));
+    testDir = makeTempDir("nax-test-precheck-");
     mkdirSync(join(testDir, ".git"));
     mkdirSync(join(testDir, "node_modules"));
   });
@@ -832,7 +833,7 @@ describeWithClaude("precheck with .gitignore validation", () => {
   let testDir: string;
 
   beforeEach(() => {
-    testDir = mkdtempSync(join(tmpdir(), "nax-test-precheck-"));
+    testDir = makeTempDir("nax-test-precheck-");
     mkdirSync(join(testDir, ".git"));
     mkdirSync(join(testDir, "node_modules"));
   });
@@ -937,7 +938,7 @@ describeWithClaude("precheck orchestrator behavior (US-002)", () => {
   let testDir: string;
 
   beforeEach(() => {
-    testDir = mkdtempSync(join(tmpdir(), "nax-test-precheck-orch-"));
+    testDir = makeTempDir("nax-test-precheck-orch-");
   });
 
   afterEach(() => {
@@ -1251,7 +1252,7 @@ describe("US-002: Precheck orchestrator acceptance criteria", () => {
   let testDir: string;
 
   beforeEach(() => {
-    testDir = mkdtempSync(join(tmpdir(), "nax-test-us002-"));
+    testDir = makeTempDir("nax-test-us002-");
   });
 
   afterEach(() => {
@@ -1361,14 +1362,14 @@ describe("US-002: Precheck orchestrator acceptance criteria", () => {
     expect(result.exitCode).toBe(EXIT_CODES.SUCCESS);
 
     // Test exit code 1 (blocker)
-    const testDir2 = mkdtempSync(join(tmpdir(), "nax-test-blocker-"));
+    const testDir2 = makeTempDir("nax-test-blocker-");
     config = createConfig(testDir2);
     result = await runPrecheck(config, prd, { workdir: testDir2, format: "json", silent: true });
     expect(result.exitCode).toBe(EXIT_CODES.BLOCKER);
     rmSync(testDir2, { recursive: true, force: true });
 
     // Test exit code 2 (invalid PRD)
-    const testDir3 = mkdtempSync(join(tmpdir(), "nax-test-invalid-prd-"));
+    const testDir3 = makeTempDir("nax-test-invalid-prd-");
     await setupGitRepo(testDir3);
     mkdirSync(join(testDir3, "node_modules"));
     config = createConfig(testDir3);
@@ -1439,7 +1440,7 @@ describe("Precheck Integration with nax run", () => {
     savedNaxPrecheck = process.env.NAX_PRECHECK;
     process.env.NAX_PRECHECK = "1";
 
-    testDir = mkdtempSync(join(tmpdir(), "nax-precheck-integration-"));
+    testDir = makeTempDir("nax-precheck-integration-");
 
     // Initialize as git repo to pass git checks
     const { spawnSync } = await import("bun");
@@ -1453,7 +1454,7 @@ describe("Precheck Integration with nax run", () => {
     if (savedNaxPrecheck !== undefined) {
       process.env.NAX_PRECHECK = savedNaxPrecheck;
     } else {
-      delete process.env.NAX_PRECHECK;
+      process.env.NAX_PRECHECK = undefined;
     }
 
     try {
@@ -1556,7 +1557,7 @@ describe("Precheck Integration with nax run", () => {
 
   test("AC4: --skip-precheck bypasses precheck validations", async () => {
     // Create non-git temp directory (will fail precheck)
-    const nonGitDir = mkdtempSync(join(tmpdir(), "nax-precheck-non-git-"));
+    const nonGitDir = makeTempDir("nax-precheck-non-git-");
 
     try {
       const prdPath = await setupFeature("skip-test");
@@ -1589,7 +1590,7 @@ describe("Precheck Integration with nax run", () => {
 
       // Verify precheck was NOT logged to JSONL
       console.log(`[DEBUG] TEST READING FROM: ${logFilePath}`);
-    const precheckLog = await readPrecheckLog(logFilePath);
+      const precheckLog = await readPrecheckLog(logFilePath);
       expect(precheckLog).toBeNull();
     } finally {
       rmSync(nonGitDir, { recursive: true, force: true });
@@ -1645,7 +1646,7 @@ describe("Precheck Integration with nax run", () => {
 
   test("AC2: Tier 1 blocker aborts run with descriptive error", async () => {
     // Create directory with uncommitted changes (will fail working-tree-clean check)
-    const dirtyDir = mkdtempSync(join(tmpdir(), "nax-precheck-dirty-"));
+    const dirtyDir = makeTempDir("nax-precheck-dirty-");
 
     try {
       // Initialize git and create a dirty state
@@ -1709,7 +1710,7 @@ describe("Precheck Integration with nax run", () => {
 
       // Verify precheck failure was logged (AC5)
       console.log(`[DEBUG] TEST READING FROM: ${logFilePath}`);
-    const precheckLog = await readPrecheckLog(logFilePath);
+      const precheckLog = await readPrecheckLog(logFilePath);
       expect(precheckLog).not.toBeNull();
       expect(precheckLog.passed).toBe(false);
       expect(precheckLog.blockers.length).toBeGreaterThan(0);
@@ -1823,7 +1824,7 @@ describe("Precheck Integration with nax run", () => {
 
   test("AC6: failed precheck updates status.json", async () => {
     // Create non-git directory (will fail precheck)
-    const nonGitDir = mkdtempSync(join(tmpdir(), "nax-precheck-non-git-status-"));
+    const nonGitDir = makeTempDir("nax-precheck-non-git-status-");
 
     try {
       // Setup feature (intentionally no git repo to fail precheck)
@@ -1877,7 +1878,11 @@ describe("Precheck Integration with nax run", () => {
 
 import type { AgentAdapter, AgentRunOptions } from "../../../src/agents";
 import { ClaudeCodeAdapter, _claudeAdapterDeps, _runOnceDeps } from "../../../src/agents/claude";
-import { describeAgentCapabilities, validateAgentFeature, validateAgentForTier } from "../../../src/agents/shared/validation";
+import {
+  describeAgentCapabilities,
+  validateAgentFeature,
+  validateAgentForTier,
+} from "../../../src/agents/shared/validation";
 import { withDepsRestore } from "../../helpers/deps";
 
 describe("Agent Validation and Retry Logic", () => {
@@ -1894,9 +1899,15 @@ describe("Agent Validation and Retry Logic", () => {
             exited: Promise.resolve(0),
             stdout: { getReader: () => ({ read: () => Promise.resolve({ done: true }) }) },
             stderr: { getReader: () => ({ read: () => Promise.resolve({ done: true }) }) },
-          } as unknown as Parameters<typeof Bun.spawn>[0] extends string[] ? { exited: Promise<number>; stdout: unknown; stderr: unknown } : never;
+          } as unknown as Parameters<typeof Bun.spawn>[0] extends string[]
+            ? { exited: Promise<number>; stdout: unknown; stderr: unknown }
+            : never;
         }
-        return Bun.spawn(cmd as string[], {}) as unknown as { exited: Promise<number>; stdout: unknown; stderr: unknown };
+        return Bun.spawn(cmd as string[], {}) as unknown as {
+          exited: Promise<number>;
+          stdout: unknown;
+          stderr: unknown;
+        };
       });
 
       const installed = await adapter.isInstalled();
@@ -1912,9 +1923,15 @@ describe("Agent Validation and Retry Logic", () => {
             exited: Promise.resolve(1),
             stdout: { getReader: () => ({ read: () => Promise.resolve({ done: true }) }) },
             stderr: { getReader: () => ({ read: () => Promise.resolve({ done: true }) }) },
-          } as unknown as Parameters<typeof Bun.spawn>[0] extends string[] ? { exited: Promise<number>; stdout: unknown; stderr: unknown } : never;
+          } as unknown as Parameters<typeof Bun.spawn>[0] extends string[]
+            ? { exited: Promise<number>; stdout: unknown; stderr: unknown }
+            : never;
         }
-        return Bun.spawn(cmd as string[], {}) as unknown as { exited: Promise<number>; stdout: unknown; stderr: unknown };
+        return Bun.spawn(cmd as string[], {}) as unknown as {
+          exited: Promise<number>;
+          stdout: unknown;
+          stderr: unknown;
+        };
       });
 
       const installed = await adapter.isInstalled();
@@ -1947,9 +1964,7 @@ describe("Agent Validation and Retry Logic", () => {
 
       // Mock withProcessTimeout to return a deterministic timeout result
       // Avoids real setTimeout race conditions under CI parallel load
-      _runOnceDeps.withProcessTimeout = mock(() =>
-        Promise.resolve({ exitCode: 143, timedOut: true }),
-      );
+      _runOnceDeps.withProcessTimeout = mock(() => Promise.resolve({ exitCode: 143, timedOut: true }));
 
       const options: AgentRunOptions = {
         prompt: "test",
@@ -1981,18 +1996,23 @@ describe("Agent Validation and Retry Logic", () => {
         };
 
         // Mock rate-limited response that succeeds on 3rd try
-        _runOnceDeps.spawn = mock((cmd: string[], opts: { cwd: string; stdout: string; stderr: string; env: Record<string, string | undefined> }) => {
-          attemptCount++;
-          const isRateLimited = attemptCount < 3;
+        _runOnceDeps.spawn = mock(
+          (
+            cmd: string[],
+            opts: { cwd: string; stdout: string; stderr: string; env: Record<string, string | undefined> },
+          ) => {
+            attemptCount++;
+            const isRateLimited = attemptCount < 3;
 
-          return {
-            exited: Promise.resolve(isRateLimited ? 1 : 0),
-            kill: () => {},
-            stdout: new Response(isRateLimited ? "" : "success").body,
-            stderr: new Response(isRateLimited ? "rate limit exceeded" : "").body,
-            pid: 12345,
-          };
-        });
+            return {
+              exited: Promise.resolve(isRateLimited ? 1 : 0),
+              kill: () => {},
+              stdout: new Response(isRateLimited ? "" : "success").body,
+              stderr: new Response(isRateLimited ? "rate limit exceeded" : "").body,
+              pid: 12345,
+            };
+          },
+        );
 
         const options: AgentRunOptions = {
           prompt: "test",
@@ -2023,16 +2043,21 @@ describe("Agent Validation and Retry Logic", () => {
 
         // Mock agent execution failure (exit code 1)
         // These are not retried because they're likely legitimate agent failures
-        _runOnceDeps.spawn = mock((cmd: string[], opts: { cwd: string; stdout: string; stderr: string; env: Record<string, string | undefined> }) => {
-          attemptCount++;
-          return {
-            exited: Promise.resolve(1),
-            kill: () => {},
-            stdout: new Response("").body,
-            stderr: new Response("agent error").body,
-            pid: 12345,
-          };
-        });
+        _runOnceDeps.spawn = mock(
+          (
+            cmd: string[],
+            opts: { cwd: string; stdout: string; stderr: string; env: Record<string, string | undefined> },
+          ) => {
+            attemptCount++;
+            return {
+              exited: Promise.resolve(1),
+              kill: () => {},
+              stdout: new Response("").body,
+              stderr: new Response("agent error").body,
+              pid: 12345,
+            };
+          },
+        );
 
         const options: AgentRunOptions = {
           prompt: "test",
@@ -2056,16 +2081,21 @@ describe("Agent Validation and Retry Logic", () => {
       let attemptCount = 0;
 
       // Mock successful execution
-      _runOnceDeps.spawn = mock((cmd: string[], opts: { cwd: string; stdout: string; stderr: string; env: Record<string, string | undefined> }) => {
-        attemptCount++;
-        return {
-          exited: Promise.resolve(0),
-          kill: () => {},
-          stdout: new Response("success").body,
-          stderr: new Response("").body,
-          pid: 12345,
-        };
-      });
+      _runOnceDeps.spawn = mock(
+        (
+          cmd: string[],
+          opts: { cwd: string; stdout: string; stderr: string; env: Record<string, string | undefined> },
+        ) => {
+          attemptCount++;
+          return {
+            exited: Promise.resolve(0),
+            kill: () => {},
+            stdout: new Response("success").body,
+            stderr: new Response("").body,
+            pid: 12345,
+          };
+        },
+      );
 
       const options: AgentRunOptions = {
         prompt: "test",
@@ -2090,23 +2120,28 @@ describe("Agent Validation and Retry Logic", () => {
       // Using a long-running promise (never resolves naturally) avoids the race
       // between the 50ms JS timeout and a short setTimeout mock, which caused
       // intermittent failures on slow CI machines.
-      _runOnceDeps.spawn = mock((cmd: string[], opts: { cwd: string; stdout: string; stderr: string; env: Record<string, string | undefined> }) => {
-        attemptCount++;
-        let resolveExited: (code: number) => void;
-        const exitedPromise = new Promise<number>((resolve) => {
-          resolveExited = resolve;
-        });
-        return {
-          exited: exitedPromise,
-          kill: (signal: string) => {
-            if (signal === "SIGTERM") resolveExited(143);
-            else if (signal === "SIGKILL") resolveExited(137);
-          },
-          stdout: new Response("").body,
-          stderr: new Response("").body,
-          pid: 12345,
-        };
-      });
+      _runOnceDeps.spawn = mock(
+        (
+          cmd: string[],
+          opts: { cwd: string; stdout: string; stderr: string; env: Record<string, string | undefined> },
+        ) => {
+          attemptCount++;
+          let resolveExited: (code: number) => void;
+          const exitedPromise = new Promise<number>((resolve) => {
+            resolveExited = resolve;
+          });
+          return {
+            exited: exitedPromise,
+            kill: (signal: string) => {
+              if (signal === "SIGTERM") resolveExited(143);
+              else if (signal === "SIGKILL") resolveExited(137);
+            },
+            stdout: new Response("").body,
+            stderr: new Response("").body,
+            pid: 12345,
+          };
+        },
+      );
 
       const options: AgentRunOptions = {
         prompt: "test",
@@ -2138,13 +2173,7 @@ describe("Agent Validation and Retry Logic", () => {
       const cmd = adapter.buildCommand(options);
 
       // No config → safe defaults → no --dangerously-skip-permissions flag
-      expect(cmd).toEqual([
-        "claude",
-        "--model",
-        "claude-sonnet-4.5",
-        "-p",
-        "test prompt",
-      ]);
+      expect(cmd).toEqual(["claude", "--model", "claude-sonnet-4.5", "-p", "test prompt"]);
     });
 
     test("includes --dangerously-skip-permissions when permissionProfile is unrestricted", () => {
@@ -2322,4 +2351,3 @@ describe("Agent Validation and Retry Logic", () => {
     });
   });
 });
-

@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ClaudeCodeAdapter, _runOnceDeps } from "../../../src/agents/claude";
 import type { AgentRunOptions } from "../../../src/agents/types";
+import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test adapter — injects command via _runOnceDeps.buildCmd to avoid spawning
@@ -46,7 +47,7 @@ describe("runOnce() timeout behavior", () => {
   const origBuildCmd = _runOnceDeps.buildCmd;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-claude-test-"));
+    tempDir = makeTempDir("nax-claude-test-");
   });
 
   afterEach(() => {
@@ -109,7 +110,7 @@ describe("run() pidRegistries cleanup", () => {
   const origBuildCmd = _runOnceDeps.buildCmd;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-claude-cleanup-test-"));
+    tempDir = makeTempDir("nax-claude-cleanup-test-");
   });
 
   afterEach(() => {

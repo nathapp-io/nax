@@ -19,6 +19,7 @@ import { buildCliTemplate, buildComponentTemplate } from "../../../src/acceptanc
 import type { AcceptanceCriterion, GenerateFromPRDOptions, RefinedCriterion } from "../../../src/acceptance/types";
 import type { NaxConfig } from "../../../src/config";
 import type { UserStory } from "../../../src/prd/types";
+import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -141,10 +142,7 @@ function makeInkStory(): UserStory {
     id: "INK-001",
     title: "Ink counter component",
     description: "A simple Ink component that displays a counter",
-    acceptanceCriteria: [
-      "Component renders initial count of 0",
-      "Component displays count in output",
-    ],
+    acceptanceCriteria: ["Component renders initial count of 0", "Component displays count in output"],
     tags: [],
     dependencies: [],
     status: "pending",
@@ -213,7 +211,7 @@ describe("component strategy integration — ink project fixture", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-ink-"));
+    tmpDir = makeTempDir("nax-test-ink-");
     saveDeps();
   });
 
@@ -334,7 +332,9 @@ describe("ink-counter - Acceptance Tests", () => {
 
     const promptLower = capturedPrompt.toLowerCase();
     expect(
-      promptLower.includes("ink-testing-library") || promptLower.includes("lastframe") || promptLower.includes("render"),
+      promptLower.includes("ink-testing-library") ||
+        promptLower.includes("lastframe") ||
+        promptLower.includes("render"),
     ).toBe(true);
   });
 
@@ -365,7 +365,7 @@ describe("CLI strategy generator — Bun.spawn usage unit test", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-cli-"));
+    tmpDir = makeTempDir("nax-test-cli-");
     saveDeps();
   });
 
@@ -431,7 +431,7 @@ describe("default strategy — import-and-call pattern when testStrategy is unse
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-default-"));
+    tmpDir = makeTempDir("nax-test-default-");
     saveDeps();
   });
 

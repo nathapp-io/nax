@@ -11,10 +11,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { loadPlugins } from "../../../src/plugins/loader";
 import type { NaxPlugin, PluginConfigEntry } from "../../../src/plugins/types";
+import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
 // Test fixture helpers
 async function createTempDir(): Promise<string> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-plugin-test-"));
+  const tmpDir = makeTempDir("nax-plugin-test-");
   return tmpDir;
 }
 

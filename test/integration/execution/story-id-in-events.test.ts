@@ -18,6 +18,7 @@ import { executionStage } from "../../../src/pipeline/stages/execution";
 import { verifyStage } from "../../../src/pipeline/stages/verify";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd/types";
+import { makeTempDir } from "../../helpers/temp";
 
 /** Captured log entries */
 let capturedLogs: LogEntry[] = [];
@@ -159,7 +160,7 @@ describe("StoryId is present in JSONL events emitted by pipeline stages", () => 
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-storyid-test-"));
+    tempDir = makeTempDir("nax-storyid-test-");
     initLogger({ level: "debug", useChalk: false });
     captureLogger();
   });

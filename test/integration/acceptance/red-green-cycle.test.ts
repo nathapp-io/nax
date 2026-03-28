@@ -24,6 +24,7 @@ import {
 } from "../../../src/pipeline/stages/acceptance-setup";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD } from "../../../src/prd/types";
+import { makeTempDir } from "../../helpers/temp";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -101,7 +102,7 @@ let savedDeps: typeof _acceptanceSetupDeps;
 
 beforeEach(async () => {
   initLogger({ level: "error", useChalk: false });
-  tmpDir = mkdtempSync(path.join(tmpdir(), "nax-acc-cycle-"));
+  tmpDir = makeTempDir("nax-acc-cycle-");
   const featureDir = path.join(tmpDir, ".nax/features/test-feature");
   await fs.mkdir(featureDir, { recursive: true });
   savedDeps = { ..._acceptanceSetupDeps };

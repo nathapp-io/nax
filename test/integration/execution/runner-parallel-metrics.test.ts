@@ -18,16 +18,17 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { fullDescribe as describeIntegration } from "../../helpers/env";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config/types";
+import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 import { _parallelExecutorDeps } from "../../../src/execution/parallel-executor";
-import { _executionDeps } from "../../../src/pipeline/stages/execution";
 import { _runnerDeps, run } from "../../../src/execution/runner";
 import type { LoadedHooksConfig } from "../../../src/hooks";
+import { _executionDeps } from "../../../src/pipeline/stages/execution";
+import { fullDescribe as describeIntegration } from "../../helpers/env";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -38,7 +39,7 @@ const PARALLEL_STORIES_COMPLETED = 1;
 const SEQUENTIAL_AGENT_COST = 1.5;
 
 async function createTempDir(): Promise<string> {
-  return fs.mkdtemp(path.join(os.tmpdir(), "nax-runner-parallel-metrics-"));
+  return makeTempDir("nax-runner-parallel-metrics-");
 }
 
 async function cleanupTempDir(dir: string): Promise<void> {
@@ -129,265 +130,278 @@ function makeHooks(): LoadedHooksConfig {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // BUG-064 BUG-065 BUG-066
-describeIntegration("Runner accumulates totalCost, storiesCompleted, and storyMetrics across parallel and sequential phases", () => {
-  let tempDir: string;
-  let prdPath: string;
-  // Capture originals inside describe scope to avoid contamination from other test files
-  let originalExecuteParallel: typeof _parallelExecutorDeps.executeParallel;
-  let originalGetAgent: typeof _executionDeps.getAgent;
-  let statusFile: string;
+describeIntegration(
+  "Runner accumulates totalCost, storiesCompleted, and storyMetrics across parallel and sequential phases",
+  () => {
+    let tempDir: string;
+    let prdPath: string;
+    // Capture originals inside describe scope to avoid contamination from other test files
+    let originalExecuteParallel: typeof _parallelExecutorDeps.executeParallel;
+    let originalGetAgent: typeof _executionDeps.getAgent;
+    let statusFile: string;
 
-  beforeEach(async () => {
-    // Capture originals here (not at module level) to avoid contamination from other test files
-    originalExecuteParallel = _parallelExecutorDeps.executeParallel;
-    originalGetAgent = _executionDeps.getAgent;
+    beforeEach(async () => {
+      // Capture originals here (not at module level) to avoid contamination from other test files
+      originalExecuteParallel = _parallelExecutorDeps.executeParallel;
+      originalGetAgent = _executionDeps.getAgent;
 
-    tempDir = await createTempDir();
-    prdPath = await createTwoStoryPrd(tempDir, "test-parallel-metrics");
-    statusFile = path.join(tempDir, "status.json");
+      tempDir = await createTempDir();
+      prdPath = await createTwoStoryPrd(tempDir, "test-parallel-metrics");
+      statusFile = path.join(tempDir, "status.json");
 
-    // Mock agent via _executionDeps (injectable, avoids mock.module)
-    _executionDeps.getAgent = mock((_agentName: string) => ({
-      name: "claude-code",
-      binary: "claude",
-      displayName: "Claude Code",
-      capabilities: {
-        costTracking: true,
-        streaming: false,
-        supportedTiers: ["fast", "balanced", "powerful"],
-        supportedFeatures: ["tdd", "review", "refactor", "batch"],
-      },
-      isInstalled: async () => true,
-      run: mock(async () => ({
-        success: true,
-        estimatedCost: SEQUENTIAL_AGENT_COST,
-        transcript: "done",
-        output: "Story completed successfully",
-        exitCode: 0,
-        durationMs: 100,
-      })),
-      plan: mock(async () => ({ success: true, plan: "", estimatedCost: 0, exitCode: 0 })),
-      decompose: mock(async () => ({ success: true, output: "", estimatedCost: 0, exitCode: 0 })),
-      complete: mock(async () => ({ success: true, output: "", estimatedCost: 0, exitCode: 0 })),
-      buildCommand: () => ["claude", "--test"],
-    } as unknown as ReturnType<typeof _executionDeps.getAgent>));
+      // Mock agent via _executionDeps (injectable, avoids mock.module)
+      _executionDeps.getAgent = mock(
+        (_agentName: string) =>
+          ({
+            name: "claude-code",
+            binary: "claude",
+            displayName: "Claude Code",
+            capabilities: {
+              costTracking: true,
+              streaming: false,
+              supportedTiers: ["fast", "balanced", "powerful"],
+              supportedFeatures: ["tdd", "review", "refactor", "batch"],
+            },
+            isInstalled: async () => true,
+            run: mock(async () => ({
+              success: true,
+              estimatedCost: SEQUENTIAL_AGENT_COST,
+              transcript: "done",
+              output: "Story completed successfully",
+              exitCode: 0,
+              durationMs: 100,
+            })),
+            plan: mock(async () => ({ success: true, plan: "", estimatedCost: 0, exitCode: 0 })),
+            decompose: mock(async () => ({ success: true, output: "", estimatedCost: 0, exitCode: 0 })),
+            complete: mock(async () => ({ success: true, output: "", estimatedCost: 0, exitCode: 0 })),
+            buildCommand: () => ["claude", "--test"],
+          }) as unknown as ReturnType<typeof _executionDeps.getAgent>,
+      );
 
-    // Also mock _parallelExecutorDeps.executeParallel for BUG-066 test which calls
-    // runParallelExecution directly (not through run())
-    _parallelExecutorDeps.executeParallel = mock(async (
-      _stories: unknown,
-      _prdPath: unknown,
-      _workdir: unknown,
-      _config: unknown,
-      _hooks: unknown,
-      _plugins: unknown,
-      prd: unknown,
-    ) => {
-      const typedPrd = prd as { userStories: Array<{ id: string; status?: string; passes?: boolean }> };
-      const updatedPrd = {
-        ...typedPrd,
-        userStories: typedPrd.userStories.map((s) =>
-          s.id === "US-001" ? { ...s, status: "passed", passes: true } : s,
-        ),
-      };
-      await Bun.write(_prdPath as string, JSON.stringify(updatedPrd, null, 2));
-      return { storiesCompleted: PARALLEL_STORIES_COMPLETED, totalCost: PARALLEL_BATCH_COST, updatedPrd, mergeConflicts: [] };
+      // Also mock _parallelExecutorDeps.executeParallel for BUG-066 test which calls
+      // runParallelExecution directly (not through run())
+      _parallelExecutorDeps.executeParallel = mock(
+        async (
+          _stories: unknown,
+          _prdPath: unknown,
+          _workdir: unknown,
+          _config: unknown,
+          _hooks: unknown,
+          _plugins: unknown,
+          prd: unknown,
+        ) => {
+          const typedPrd = prd as { userStories: Array<{ id: string; status?: string; passes?: boolean }> };
+          const updatedPrd = {
+            ...typedPrd,
+            userStories: typedPrd.userStories.map((s) =>
+              s.id === "US-001" ? { ...s, status: "passed", passes: true } : s,
+            ),
+          };
+          await Bun.write(_prdPath as string, JSON.stringify(updatedPrd, null, 2));
+          return {
+            storiesCompleted: PARALLEL_STORIES_COMPLETED,
+            totalCost: PARALLEL_BATCH_COST,
+            updatedPrd,
+            mergeConflicts: [],
+          };
+        },
+      );
+
+      // Mock runParallelExecution at the runner level to avoid bun dynamic-import
+      // module-cache isolation issues (bun 1.3.9 may give fresh instances per dynamic import)
+      _runnerDeps.runParallelExecution = mock(async (_options: unknown, prd: unknown) => {
+        const typedPrd = prd as { userStories: Array<{ id: string; status?: string; passes?: boolean }> };
+        // Build updated PRD with US-001 marked as passed
+        const updatedPrd = {
+          ...typedPrd,
+          userStories: typedPrd.userStories.map((s) =>
+            s.id === "US-001" ? { ...s, status: "passed", passes: true } : s,
+          ),
+        };
+        // Write updated PRD to file so sequential executor's loadPRD sees it
+        const options = _options as { prdPath: string };
+        await Bun.write(options.prdPath, JSON.stringify(updatedPrd, null, 2));
+        return {
+          prd: updatedPrd,
+          totalCost: PARALLEL_BATCH_COST,
+          storiesCompleted: PARALLEL_STORIES_COMPLETED,
+          completed: false,
+          storyMetrics: [],
+          rectificationStats: { rectified: 0, stillConflicting: 0 },
+        };
+      }) as typeof _runnerDeps.runParallelExecution;
     });
 
-    // Mock runParallelExecution at the runner level to avoid bun dynamic-import
-    // module-cache isolation issues (bun 1.3.9 may give fresh instances per dynamic import)
-    _runnerDeps.runParallelExecution = mock(async (_options: unknown, prd: unknown) => {
-      const typedPrd = prd as { userStories: Array<{ id: string; status?: string; passes?: boolean }> };
-      // Build updated PRD with US-001 marked as passed
-      const updatedPrd = {
-        ...typedPrd,
-        userStories: typedPrd.userStories.map((s) =>
-          s.id === "US-001" ? { ...s, status: "passed", passes: true } : s,
-        ),
-      };
-      // Write updated PRD to file so sequential executor's loadPRD sees it
-      const options = _options as { prdPath: string };
-      await Bun.write(options.prdPath, JSON.stringify(updatedPrd, null, 2));
-      return {
-        prd: updatedPrd,
-        totalCost: PARALLEL_BATCH_COST,
-        storiesCompleted: PARALLEL_STORIES_COMPLETED,
-        completed: false,
-        storyMetrics: [],
-        rectificationStats: { rectified: 0, stillConflicting: 0 },
-      };
-    }) as typeof _runnerDeps.runParallelExecution;
-  });
-
-  afterEach(async () => {
-    await cleanupTempDir(tempDir);
-    mock.restore();
-    _runnerDeps.runParallelExecution = null;
-    _parallelExecutorDeps.executeParallel = originalExecuteParallel;
-    _executionDeps.getAgent = originalGetAgent;
-  });
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // BUG-064: totalCost accumulation
-  // ───────────────────────────────────────────────────────────────────────────
-
-  // BUG-064
-  describe("totalCost includes both parallel and sequential costs", () => {
-    test("run() result totalCost = parallelCost + sequentialCost", async () => {
-      const result = await run({
-        prdPath,
-        workdir: tempDir,
-        config: makeConfig(),
-        hooks: makeHooks(),
-        feature: "test-parallel-metrics",
-        featureDir: path.dirname(prdPath),
-        dryRun: false,
-        useBatch: false,
-        parallel: 2,
-        skipPrecheck: true,
-        statusFile,
-      });
-
-      // BUG-064: runner overwrites totalCost with sequential cost.
-      // Currently: totalCost = SEQUENTIAL_AGENT_COST (lost parallel cost!)
-      // Expected: totalCost = PARALLEL_BATCH_COST + SEQUENTIAL_AGENT_COST
-      const expectedTotalCost = PARALLEL_BATCH_COST + SEQUENTIAL_AGENT_COST;
-      expect(result.totalCost).toBe(expectedTotalCost);
+    afterEach(async () => {
+      await cleanupTempDir(tempDir);
+      mock.restore();
+      _runnerDeps.runParallelExecution = null;
+      _parallelExecutorDeps.executeParallel = originalExecuteParallel;
+      _executionDeps.getAgent = originalGetAgent;
     });
 
-    test("run() result totalCost is greater than parallel cost alone", async () => {
-      const result = await run({
-        prdPath,
-        workdir: tempDir,
-        config: makeConfig(),
-        hooks: makeHooks(),
-        feature: "test-parallel-metrics",
-        featureDir: path.dirname(prdPath),
-        dryRun: false,
-        useBatch: false,
-        parallel: 2,
-        skipPrecheck: true,
-        statusFile,
-      });
+    // ───────────────────────────────────────────────────────────────────────────
+    // BUG-064: totalCost accumulation
+    // ───────────────────────────────────────────────────────────────────────────
 
-      // BUG-064: the combined cost must exceed the parallel batch cost.
-      // If the bug is present, totalCost = sequentialCost (< parallelCost).
-      expect(result.totalCost).toBeGreaterThan(PARALLEL_BATCH_COST);
-    });
-  });
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // BUG-065: storiesCompleted accumulation
-  // ───────────────────────────────────────────────────────────────────────────
-
-  // BUG-065
-  describe("storiesCompleted includes both parallel and sequential counts", () => {
-    test("run() result storiesCompleted = parallelCount + sequentialCount", async () => {
-      const result = await run({
-        prdPath,
-        workdir: tempDir,
-        config: makeConfig(),
-        hooks: makeHooks(),
-        feature: "test-parallel-metrics",
-        featureDir: path.dirname(prdPath),
-        dryRun: false,
-        useBatch: false,
-        parallel: 2,
-        skipPrecheck: true,
-        statusFile,
-      });
-
-      // BUG-065: runner overwrites storiesCompleted with sequential count.
-      // Currently: storiesCompleted = 1 (sequential only, lost parallel 1!)
-      // Expected: storiesCompleted = 2 (1 parallel + 1 sequential)
-      const SEQUENTIAL_STORIES_COMPLETED = 1; // US-002 processed by sequential
-      const expectedTotal = PARALLEL_STORIES_COMPLETED + SEQUENTIAL_STORIES_COMPLETED;
-      expect(result.storiesCompleted).toBe(expectedTotal);
-    });
-
-    test("run() success is true when all stories completed via both paths", async () => {
-      const result = await run({
-        prdPath,
-        workdir: tempDir,
-        config: makeConfig(),
-        hooks: makeHooks(),
-        feature: "test-parallel-metrics",
-        featureDir: path.dirname(prdPath),
-        dryRun: false,
-        useBatch: false,
-        parallel: 2,
-        skipPrecheck: true,
-        statusFile,
-      });
-
-      // Both US-001 (parallel) and US-002 (sequential) should be complete
-      expect(result.success).toBe(true);
-    });
-  });
-
-  // ───────────────────────────────────────────────────────────────────────────
-  // BUG-066: storyMetrics includes parallel entries
-  // ───────────────────────────────────────────────────────────────────────────
-
-  // BUG-066
-  describe("RunResult includes storyMetrics from both parallel and sequential paths", () => {
-    test("parallel executor returns storyMetrics for completed stories", async () => {
-      // Test at the parallel-executor level: runParallelExecution must return storyMetrics
-      const { runParallelExecution } = await import("../../../src/execution/parallel-executor");
-      const { loadPRD } = await import("../../../src/prd");
-
-      const prd = await loadPRD(prdPath);
-      const statusWriter = {
-        setPrd: mock(() => {}),
-        setCurrentStory: mock(() => {}),
-        setRunStatus: mock(() => {}),
-        update: mock(async () => {}),
-        writeFeatureStatus: mock(async () => {}),
-      };
-
-      const result = await runParallelExecution(
-        {
+    // BUG-064
+    describe("totalCost includes both parallel and sequential costs", () => {
+      test("run() result totalCost = parallelCost + sequentialCost", async () => {
+        const result = await run({
           prdPath,
           workdir: tempDir,
           config: makeConfig(),
           hooks: makeHooks(),
           feature: "test-parallel-metrics",
-          parallelCount: 2,
-          statusWriter: statusWriter as never,
-          runId: "test-run-001",
-          startedAt: new Date().toISOString(),
-          startTime: Date.now(),
-          totalCost: 0,
-          iterations: 0,
-          storiesCompleted: 0,
-          allStoryMetrics: [],
-          pluginRegistry: {
-            getReporters: () => [],
-            getContextProviders: () => [],
-            getReviewers: () => [],
-            getRoutingStrategies: () => [],
-            teardownAll: async () => {},
-          } as never,
-          formatterMode: "normal",
-          headless: false,
-        },
-        prd,
-      );
+          featureDir: path.dirname(prdPath),
+          dryRun: false,
+          useBatch: false,
+          parallel: 2,
+          skipPrecheck: true,
+          statusFile,
+        });
 
-      // BUG-066: storyMetrics must be present in the result — this FAILS
-      expect(result).toHaveProperty("storyMetrics");
+        // BUG-064: runner overwrites totalCost with sequential cost.
+        // Currently: totalCost = SEQUENTIAL_AGENT_COST (lost parallel cost!)
+        // Expected: totalCost = PARALLEL_BATCH_COST + SEQUENTIAL_AGENT_COST
+        const expectedTotalCost = PARALLEL_BATCH_COST + SEQUENTIAL_AGENT_COST;
+        expect(result.totalCost).toBe(expectedTotalCost);
+      });
 
-      const storyMetrics = (result as typeof result & { storyMetrics: unknown[] }).storyMetrics;
-      expect(Array.isArray(storyMetrics)).toBe(true);
-      expect(storyMetrics.length).toBeGreaterThan(0);
+      test("run() result totalCost is greater than parallel cost alone", async () => {
+        const result = await run({
+          prdPath,
+          workdir: tempDir,
+          config: makeConfig(),
+          hooks: makeHooks(),
+          feature: "test-parallel-metrics",
+          featureDir: path.dirname(prdPath),
+          dryRun: false,
+          useBatch: false,
+          parallel: 2,
+          skipPrecheck: true,
+          statusFile,
+        });
 
-      const entry = storyMetrics[0] as Record<string, unknown>;
-      expect(entry.source).toBe("parallel");
-      expect(entry.storyId).toBeDefined();
-      expect(typeof entry.cost).toBe("number");
+        // BUG-064: the combined cost must exceed the parallel batch cost.
+        // If the bug is present, totalCost = sequentialCost (< parallelCost).
+        expect(result.totalCost).toBeGreaterThan(PARALLEL_BATCH_COST);
+      });
     });
-  });
-});
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // BUG-065: storiesCompleted accumulation
+    // ───────────────────────────────────────────────────────────────────────────
+
+    // BUG-065
+    describe("storiesCompleted includes both parallel and sequential counts", () => {
+      test("run() result storiesCompleted = parallelCount + sequentialCount", async () => {
+        const result = await run({
+          prdPath,
+          workdir: tempDir,
+          config: makeConfig(),
+          hooks: makeHooks(),
+          feature: "test-parallel-metrics",
+          featureDir: path.dirname(prdPath),
+          dryRun: false,
+          useBatch: false,
+          parallel: 2,
+          skipPrecheck: true,
+          statusFile,
+        });
+
+        // BUG-065: runner overwrites storiesCompleted with sequential count.
+        // Currently: storiesCompleted = 1 (sequential only, lost parallel 1!)
+        // Expected: storiesCompleted = 2 (1 parallel + 1 sequential)
+        const SEQUENTIAL_STORIES_COMPLETED = 1; // US-002 processed by sequential
+        const expectedTotal = PARALLEL_STORIES_COMPLETED + SEQUENTIAL_STORIES_COMPLETED;
+        expect(result.storiesCompleted).toBe(expectedTotal);
+      });
+
+      test("run() success is true when all stories completed via both paths", async () => {
+        const result = await run({
+          prdPath,
+          workdir: tempDir,
+          config: makeConfig(),
+          hooks: makeHooks(),
+          feature: "test-parallel-metrics",
+          featureDir: path.dirname(prdPath),
+          dryRun: false,
+          useBatch: false,
+          parallel: 2,
+          skipPrecheck: true,
+          statusFile,
+        });
+
+        // Both US-001 (parallel) and US-002 (sequential) should be complete
+        expect(result.success).toBe(true);
+      });
+    });
+
+    // ───────────────────────────────────────────────────────────────────────────
+    // BUG-066: storyMetrics includes parallel entries
+    // ───────────────────────────────────────────────────────────────────────────
+
+    // BUG-066
+    describe("RunResult includes storyMetrics from both parallel and sequential paths", () => {
+      test("parallel executor returns storyMetrics for completed stories", async () => {
+        // Test at the parallel-executor level: runParallelExecution must return storyMetrics
+        const { runParallelExecution } = await import("../../../src/execution/parallel-executor");
+        const { loadPRD } = await import("../../../src/prd");
+
+        const prd = await loadPRD(prdPath);
+        const statusWriter = {
+          setPrd: mock(() => {}),
+          setCurrentStory: mock(() => {}),
+          setRunStatus: mock(() => {}),
+          update: mock(async () => {}),
+          writeFeatureStatus: mock(async () => {}),
+        };
+
+        const result = await runParallelExecution(
+          {
+            prdPath,
+            workdir: tempDir,
+            config: makeConfig(),
+            hooks: makeHooks(),
+            feature: "test-parallel-metrics",
+            parallelCount: 2,
+            statusWriter: statusWriter as never,
+            runId: "test-run-001",
+            startedAt: new Date().toISOString(),
+            startTime: Date.now(),
+            totalCost: 0,
+            iterations: 0,
+            storiesCompleted: 0,
+            allStoryMetrics: [],
+            pluginRegistry: {
+              getReporters: () => [],
+              getContextProviders: () => [],
+              getReviewers: () => [],
+              getRoutingStrategies: () => [],
+              teardownAll: async () => {},
+            } as never,
+            formatterMode: "normal",
+            headless: false,
+          },
+          prd,
+        );
+
+        // BUG-066: storyMetrics must be present in the result — this FAILS
+        expect(result).toHaveProperty("storyMetrics");
+
+        const storyMetrics = (result as typeof result & { storyMetrics: unknown[] }).storyMetrics;
+        expect(Array.isArray(storyMetrics)).toBe(true);
+        expect(storyMetrics.length).toBeGreaterThan(0);
+
+        const entry = storyMetrics[0] as Record<string, unknown>;
+        expect(entry.source).toBe("parallel");
+        expect(entry.storyId).toBeDefined();
+        expect(typeof entry.cost).toBe("number");
+      });
+    });
+  },
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pure unit: accumulation math specification

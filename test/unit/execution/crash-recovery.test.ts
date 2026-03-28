@@ -17,13 +17,14 @@ import {
   writeExitSummary,
 } from "../../../src/execution/crash-recovery";
 import { StatusWriter } from "../../../src/execution/status-writer";
+import { makeTempDir } from "../../helpers/temp";
 
 let TEST_DIR: string;
 let TEST_JSONL: string;
 let TEST_STATUS_FILE: string;
 
 beforeEach(() => {
-  TEST_DIR = mkdtempSync(join(tmpdir(), "nax-crash-recovery-"));
+  TEST_DIR = makeTempDir("nax-crash-recovery-");
   TEST_JSONL = join(TEST_DIR, "test.jsonl");
   TEST_STATUS_FILE = join(TEST_DIR, "status.json");
 

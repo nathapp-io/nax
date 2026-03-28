@@ -8,10 +8,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { checkWorkingTreeClean } from "../../../src/precheck/checks-git";
+import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -22,10 +23,9 @@ import { checkWorkingTreeClean } from "../../../src/precheck/checks-git";
  * This ensures that individual file paths (not just ".nax/") appear in git status.
  */
 function makeGitRepoWithNax(): string {
-  const dir = mkdtempSync(join(tmpdir(), "nax-git-test-"));
+  const dir = makeTempDir("nax-git-test-");
 
-  const git = (args: string[]) =>
-    Bun.spawnSync(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+  const git = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
 
   git(["init"]);
   git(["config", "user.email", "test@test.com"]);
@@ -58,10 +58,9 @@ function makeGitRepoWithNax(): string {
  * Create a minimal git repo with only README committed.
  */
 function makeGitRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), "nax-git-test-"));
+  const dir = makeTempDir("nax-git-test-");
 
-  const git = (args: string[]) =>
-    Bun.spawnSync(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+  const git = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
 
   git(["init"]);
   git(["config", "user.email", "test@test.com"]);
@@ -201,9 +200,8 @@ describe("checkWorkingTreeClean — nax runtime files are excluded from dirty-tr
   });
 
   test("US-003: passes when .nax-acceptance.test.ts in a tracked package subdir is dirty", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "nax-git-test-"));
-    const git = (args: string[]) =>
-      Bun.spawnSync(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+    const dir = makeTempDir("nax-git-test-");
+    const git = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" });
     try {
       git(["init"]);
       git(["config", "user.email", "test@test.com"]);

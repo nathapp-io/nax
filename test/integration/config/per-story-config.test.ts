@@ -11,13 +11,14 @@ import { existsSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { globalConfigPath, loadConfigForWorkdir } from "../../../src/config/loader";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("per-story config resolution (MW-008 integration)", () => {
   let tempDir: string;
   let globalBackup: string | null = null;
 
   beforeEach(() => {
-    tempDir = join(tmpdir(), `nax-test-integration-${Date.now()}`);
+    tempDir = makeTempDir("nax-test-integration-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     const globalPath = globalConfigPath();

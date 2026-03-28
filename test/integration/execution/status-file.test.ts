@@ -23,6 +23,7 @@ import {
   writeStatusFile,
 } from "../../../src/execution/status-file";
 import type { PRD, UserStory } from "../../../src/prd";
+import { makeTempDir } from "../../helpers/temp";
 
 // ============================================================================
 // Helpers
@@ -288,7 +289,7 @@ describe("writeStatusFile", () => {
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), "nax-status-test-"));
+    tmpDir = makeTempDir("nax-status-test-");
   });
 
   afterEach(async () => {

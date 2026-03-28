@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _planDeps as _deps, planCommand } from "../../../src/cli/plan";
 import type { PRD } from "../../../src/prd/types";
+import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -115,7 +116,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   let capturedWriteArgs: Array<[string, string]>;
 
   beforeEach(async () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-plan-interactive-test-"));
+    tmpDir = makeTempDir("nax-plan-interactive-test-");
     capturedWriteArgs = [];
 
     // Create nax directory
@@ -182,7 +183,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-2: agent questions are forwarded via interaction bridge", async () => {
-    let questionsAsked: string[] = [];
+    const questionsAsked: string[] = [];
     const fakeAdapter = {
       run: mock(async (runOpts: any) => {
         if (runOpts.interactionBridge) {
@@ -233,7 +234,7 @@ describe("planCommand — interactive mode (PLN-002)", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-3: human answers sent as follow-up prompts to session", async () => {
-    let prompts: string[] = [];
+    const prompts: string[] = [];
     const fakeAdapter = {
       run: mock(async (runOpts: any) => {
         if (runOpts.interactionBridge) {
@@ -426,8 +427,8 @@ describe("planCommand — interactive mode (PLN-002)", () => {
     const fakeAdapter = {
       plan: mock(async (planOpts: any) => {
         const bridge = planOpts.interactionBridge;
-        bridgeHasRequiredMethods = typeof bridge?.detectQuestion === "function" &&
-                                   typeof bridge?.onQuestionDetected === "function";
+        bridgeHasRequiredMethods =
+          typeof bridge?.detectQuestion === "function" && typeof bridge?.onQuestionDetected === "function";
         return { specContent: JSON.stringify(SAMPLE_PRD) };
       }),
     };

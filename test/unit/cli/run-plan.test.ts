@@ -10,6 +10,7 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("nax run --plan CLI flag wiring", () => {
   let tmpDir: string;
@@ -18,7 +19,7 @@ describe("nax run --plan CLI flag wiring", () => {
   let featureDir: string;
 
   beforeEach(async () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-run-plan-test-"));
+    tmpDir = makeTempDir("nax-run-plan-test-");
     naxDir = join(tmpDir, ".nax");
     specFile = join(tmpDir, "spec.md");
     featureDir = join(naxDir, "features", "test-feature");
@@ -34,7 +35,7 @@ describe("nax run --plan CLI flag wiring", () => {
 Test problem statement
 ## Acceptance Criteria
 - AC-1: Test AC
-`
+`,
     );
 
     // Create package.json
@@ -44,7 +45,7 @@ Test problem statement
         name: "test-project",
         dependencies: {},
         devDependencies: {},
-      })
+      }),
     );
 
     // Create nax config
@@ -53,7 +54,7 @@ Test problem statement
       JSON.stringify({
         autoMode: { defaultAgent: "claude" },
         execution: { maxIterations: 20, sessionTimeoutSeconds: 600 },
-      })
+      }),
     );
   });
 

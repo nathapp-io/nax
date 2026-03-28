@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { unlockCommand } from "../../../src/commands/unlock";
+import { makeTempDir } from "../../helpers/temp";
 
 // ---------------------------------------------------------------------------
 // Custom error to intercept process.exit without terminating the test runner
@@ -52,8 +53,7 @@ describe("unlockCommand", () => {
   const originalExit = process.exit;
 
   beforeEach(() => {
-    const raw = join(tmpdir(), `nax-unlock-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    mkdirSync(raw, { recursive: true });
+    const raw = makeTempDir("nax-unlock-test-");
     testDir = realpathSync(raw);
 
     capturedOutput = [];
@@ -242,7 +242,7 @@ describe("unlockCommand", () => {
     test("reads lock from the specified directory, not cwd", async () => {
       const altDir = realpathSync(
         (() => {
-          const d = join(tmpdir(), `nax-unlock-alt-${Date.now()}`);
+          const d = makeTempDir("nax-unlock-alt-");
           mkdirSync(d, { recursive: true });
           return d;
         })(),
@@ -268,7 +268,7 @@ describe("unlockCommand", () => {
       // Put a lock ONLY in altDir; cwd (testDir) has no lock
       const altDir = realpathSync(
         (() => {
-          const d = join(tmpdir(), `nax-unlock-alt2-${Date.now()}`);
+          const d = makeTempDir("nax-unlock-alt2-");
           mkdirSync(d, { recursive: true });
           return d;
         })(),

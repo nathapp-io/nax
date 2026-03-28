@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WorktreeManager } from "../../../src/worktree/manager";
 import { MergeEngine } from "../../../src/worktree/merge";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("MergeEngine", () => {
   let testDir: string;
@@ -13,23 +14,35 @@ describe("MergeEngine", () => {
 
   beforeEach(async () => {
     // Create a temporary directory for each test
-    testDir = mkdtempSync(join(tmpdir(), "merge-test-"));
+    testDir = makeTempDir("merge-test-");
     projectRoot = join(testDir, "test-project");
     mkdirSync(projectRoot, { recursive: true });
 
     // Initialize a git repository using Bun.spawn (test fixture setup)
     const initProc = Bun.spawn(["git", "init"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
     await initProc.exited;
-    const emailProc = Bun.spawn(["git", "config", "user.email", "test@example.com"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
+    const emailProc = Bun.spawn(["git", "config", "user.email", "test@example.com"], {
+      cwd: projectRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     await emailProc.exited;
-    const nameProc = Bun.spawn(["git", "config", "user.name", "Test User"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
+    const nameProc = Bun.spawn(["git", "config", "user.name", "Test User"], {
+      cwd: projectRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     await nameProc.exited;
 
     // Create an initial commit (required for worktree creation)
     writeFileSync(join(projectRoot, "README.md"), "# Test Project");
     const addProc = Bun.spawn(["git", "add", "README.md"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
     await addProc.exited;
-    const commitProc = Bun.spawn(["git", "commit", "-m", "Initial commit"], { cwd: projectRoot, stdout: "pipe", stderr: "pipe" });
+    const commitProc = Bun.spawn(["git", "commit", "-m", "Initial commit"], {
+      cwd: projectRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     await commitProc.exited;
 
     manager = new WorktreeManager();

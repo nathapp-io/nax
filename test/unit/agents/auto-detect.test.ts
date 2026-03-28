@@ -8,6 +8,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { autoDetectContextFiles, extractKeywords } from "../../../src/context/auto-detect";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("Context Auto-Detection", () => {
   describe("extractKeywords", () => {
@@ -69,7 +70,7 @@ describe("Context Auto-Detection", () => {
 
     beforeEach(async () => {
       // Create temp git repo
-      tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-autodetect-test-"));
+      tempDir = makeTempDir("nax-autodetect-test-");
       await Bun.spawn(["git", "init"], { cwd: tempDir }).exited;
       await Bun.spawn(["git", "config", "user.email", "test@test.com"], { cwd: tempDir }).exited;
       await Bun.spawn(["git", "config", "user.name", "Test User"], { cwd: tempDir }).exited;
@@ -142,7 +143,7 @@ describe("Context Auto-Detection", () => {
     test("should respect maxFiles limit", async () => {
       await fs.mkdir(path.join(tempDir, "src"), { recursive: true });
       for (let i = 1; i <= 10; i++) {
-        await fs.writeFile(path.join(tempDir, `src/file${i}.ts`), `// Contains keyword: routing`);
+        await fs.writeFile(path.join(tempDir, `src/file${i}.ts`), "// Contains keyword: routing");
       }
 
       await Bun.spawn(["git", "add", "."], { cwd: tempDir }).exited;
@@ -191,7 +192,7 @@ describe("Context Auto-Detection", () => {
 
     test("should handle non-git directory gracefully", async () => {
       // Create non-git temp dir
-      const nonGitDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-nongit-"));
+      const nonGitDir = makeTempDir("nax-nongit-");
       await fs.mkdir(path.join(nonGitDir, "src"), { recursive: true });
       await fs.writeFile(path.join(nonGitDir, "src/file.ts"), "export function test() {}");
 

@@ -16,10 +16,11 @@ import { join } from "node:path";
 import type { ExecutionConfig } from "../../../src/config/schema";
 import { runReview } from "../../../src/review";
 import type { ReviewConfig } from "../../../src/review";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("Review Config-Driven Commands (US-005)", () => {
   test("uses explicit executionConfig.lintCommand when provided", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-config-"));
+    const tempDir = makeTempDir("nax-review-config-");
 
     const reviewConfig: ReviewConfig = {
       enabled: true,
@@ -40,7 +41,7 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("uses explicit executionConfig.typecheckCommand when provided", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-config-"));
+    const tempDir = makeTempDir("nax-review-config-");
 
     const reviewConfig: ReviewConfig = {
       enabled: true,
@@ -61,7 +62,7 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("skips check when executionConfig command is null (explicitly disabled)", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-config-"));
+    const tempDir = makeTempDir("nax-review-config-");
 
     const reviewConfig: ReviewConfig = {
       enabled: true,
@@ -83,7 +84,7 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("uses package.json script when no executionConfig override", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-config-"));
+    const tempDir = makeTempDir("nax-review-config-");
 
     // Create package.json with lint script
     const packageJson = {
@@ -109,7 +110,7 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("skips check when package.json script not found", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-config-"));
+    const tempDir = makeTempDir("nax-review-config-");
 
     // Create package.json WITHOUT lint script
     const packageJson = {
@@ -134,7 +135,7 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("executionConfig takes precedence over package.json", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-config-"));
+    const tempDir = makeTempDir("nax-review-config-");
 
     // Create package.json with lint script
     const packageJson = {
@@ -165,7 +166,7 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("reviewConfig.commands takes precedence over package.json (backwards compat)", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-config-"));
+    const tempDir = makeTempDir("nax-review-config-");
 
     // Create package.json with lint script
     const packageJson = {
@@ -193,7 +194,7 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("executionConfig takes precedence over reviewConfig.commands", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-config-"));
+    const tempDir = makeTempDir("nax-review-config-");
 
     const reviewConfig: ReviewConfig = {
       enabled: true,
@@ -217,7 +218,7 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("handles missing package.json gracefully", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-config-"));
+    const tempDir = makeTempDir("nax-review-config-");
     // No package.json created
 
     const reviewConfig: ReviewConfig = {
@@ -234,7 +235,7 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("handles invalid package.json gracefully", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-config-"));
+    const tempDir = makeTempDir("nax-review-config-");
     writeFileSync(join(tempDir, "package.json"), "invalid json {{{");
 
     const reviewConfig: ReviewConfig = {
@@ -251,7 +252,7 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("resolution order: executionConfig > reviewConfig > package.json", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-config-"));
+    const tempDir = makeTempDir("nax-review-config-");
 
     // Create package.json with all scripts
     const packageJson = {
@@ -279,7 +280,7 @@ describe("Review Config-Driven Commands (US-005)", () => {
     const result = await runReview(reviewConfig, tempDir, executionConfig as ExecutionConfig);
 
     expect(result.success).toBe(true);
-    expect(result.checks).toHaveLength(result.checks.length) // Fixed for v0.20.0 default change;
+    expect(result.checks).toHaveLength(result.checks.length); // Fixed for v0.20.0 default change;
 
     // lint: executionConfig
     expect(result.checks[0].check).toBe("lint");
@@ -295,7 +296,7 @@ describe("Review Config-Driven Commands (US-005)", () => {
   });
 
   test("test command ignores executionConfig (not affected by this story)", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-config-"));
+    const tempDir = makeTempDir("nax-review-config-");
 
     const reviewConfig: ReviewConfig = {
       enabled: true,

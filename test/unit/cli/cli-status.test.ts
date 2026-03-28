@@ -5,14 +5,15 @@
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
-// Requires real PID checks — skipped by default, run with FULL=1.
-import { fullTest as skipInCI } from "../../helpers/env";
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { displayFeatureStatus } from "../../../src/cli/status";
 import type { NaxStatusFile } from "../../../src/execution/status-file";
 import type { PRD } from "../../../src/prd";
+// Requires real PID checks — skipped by default, run with FULL=1.
+import { fullTest as skipInCI } from "../../helpers/env";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("displayFeatureStatus", () => {
   let testDir: string;
@@ -22,8 +23,7 @@ describe("displayFeatureStatus", () => {
 
   beforeEach(() => {
     // Create temp directory for test (resolve symlinks for consistent paths)
-    const rawTestDir = join(tmpdir(), `nax-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    mkdirSync(rawTestDir, { recursive: true });
+    const rawTestDir = makeTempDir("nax-test-");
     testDir = realpathSync(rawTestDir);
     originalCwd = process.cwd();
 

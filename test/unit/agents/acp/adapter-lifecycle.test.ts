@@ -9,15 +9,12 @@
  * - sweepFeatureSessions is no-op when sidecar is missing
  */
 
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import {
-  AcpAgentAdapter,
-  _acpAdapterDeps,
-  sweepFeatureSessions,
-} from "../../../../src/agents/acp/adapter";
+import { AcpAgentAdapter, _acpAdapterDeps, sweepFeatureSessions } from "../../../../src/agents/acp/adapter";
+import { makeTempDir } from "../../../helpers/temp";
 import { makeClient, makeSession } from "./adapter.test";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,7 +28,7 @@ describe("_runWithClient — conditional session close", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-lifecycle-test-"));
+    tmpDir = makeTempDir("nax-lifecycle-test-");
     _acpAdapterDeps.sleep = mock(async (_ms: number) => {});
   });
 
@@ -163,7 +160,7 @@ describe("sweepFeatureSessions", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-sweep-test-"));
+    tmpDir = makeTempDir("nax-sweep-test-");
   });
 
   afterEach(() => {
@@ -228,8 +225,7 @@ describe("sweepFeatureSessions", () => {
     const client = {
       start: async () => {},
       close: async () => {},
-      createSession: async (_opts: { agentName: string; permissionMode: string }) =>
-        makeLoadableSession("new"),
+      createSession: async (_opts: { agentName: string; permissionMode: string }) => makeLoadableSession("new"),
       loadSession: async (name: string, _agent: string, _perm: string) => {
         loadedSessions.push(name);
         return makeLoadableSession(name);
@@ -248,16 +244,12 @@ describe("sweepFeatureSessions", () => {
     const sidecarDir = join(tmpDir, ".nax", "features", featureName);
     const sidecarPath = join(sidecarDir, "acp-sessions.json");
 
-    await Bun.write(
-      sidecarPath,
-      JSON.stringify({ "story-001": "nax-abc-clear-feat-story-001" }),
-    );
+    await Bun.write(sidecarPath, JSON.stringify({ "story-001": "nax-abc-clear-feat-story-001" }));
 
     const client = {
       start: async () => {},
       close: async () => {},
-      createSession: async (_opts: { agentName: string; permissionMode: string }) =>
-        makeSession(),
+      createSession: async (_opts: { agentName: string; permissionMode: string }) => makeSession(),
       loadSession: async (_name: string, _agent: string, _perm: string) => makeSession(),
     };
     _acpAdapterDeps.createClient = mock((_cmd: string) => client);
@@ -288,8 +280,7 @@ describe("sweepFeatureSessions", () => {
     const client = {
       start: async () => {},
       close: async () => {},
-      createSession: async (_opts: { agentName: string; permissionMode: string }) =>
-        makeSession(),
+      createSession: async (_opts: { agentName: string; permissionMode: string }) => makeSession(),
       loadSession: async (name: string, _agent: string, _perm: string) => {
         callCount++;
         if (callCount === 1) throw new Error("session not found");

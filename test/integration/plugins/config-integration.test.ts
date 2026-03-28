@@ -13,9 +13,10 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { loadPlugins } from "../../../src/plugins/loader";
+import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
 async function createTempDir(): Promise<string> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-integration-test-"));
+  const tmpDir = makeTempDir("nax-integration-test-");
   return tmpDir;
 }
 

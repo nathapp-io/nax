@@ -14,6 +14,7 @@ import { reviewStage } from "../../../src/pipeline/stages/review";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import { PluginRegistry } from "../../../src/plugins/registry";
 import type { IReviewPlugin, NaxPlugin } from "../../../src/plugins/types";
+import { makeTempDir } from "../../helpers/temp";
 
 /**
  * Create a mock pipeline context with minimal required fields
@@ -69,7 +70,7 @@ async function initGitRepo(workdir: string) {
 describe("Review Stage - Plugin Integration", () => {
   describe("AC1: Plugin reviewers run after built-in checks pass", () => {
     test("plugin reviewers execute when built-in checks pass", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       let pluginCalled = false;
@@ -99,7 +100,7 @@ describe("Review Stage - Plugin Integration", () => {
     });
 
     test("plugin reviewers do not run if built-in checks fail", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       let pluginCalled = false;
@@ -134,7 +135,7 @@ describe("Review Stage - Plugin Integration", () => {
     });
 
     test("no plugin reviewers registered - continues normally", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       const registry = new PluginRegistry([]);
@@ -148,7 +149,7 @@ describe("Review Stage - Plugin Integration", () => {
 
   describe("AC2: Each reviewer receives workdir and changed files", () => {
     test("reviewer receives correct workdir", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       let receivedWorkdir: string | undefined;
@@ -177,7 +178,7 @@ describe("Review Stage - Plugin Integration", () => {
     });
 
     test("BUG-074: auto-commits dirty files before review so review proceeds (bun.lock scenario)", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
 
       // Create a file first
       writeFileSync(join(tempDir, "test.ts"), "// initial");
@@ -218,7 +219,7 @@ describe("Review Stage - Plugin Integration", () => {
     });
 
     test("reviewer receives empty array when no files changed", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       let receivedFiles: string[] | undefined;
@@ -249,7 +250,7 @@ describe("Review Stage - Plugin Integration", () => {
 
   describe("AC3: Reviewer failure triggers retry/escalation", () => {
     test("failing reviewer returns fail action", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       const mockReviewer: IReviewPlugin = {
@@ -278,7 +279,7 @@ describe("Review Stage - Plugin Integration", () => {
     });
 
     test("reviewer failure includes plugin name in reason", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       const mockReviewer: IReviewPlugin = {
@@ -308,7 +309,7 @@ describe("Review Stage - Plugin Integration", () => {
 
   describe("AC4: Reviewer output included in story result", () => {
     test("passing reviewer output is captured", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       const mockReviewer: IReviewPlugin = {
@@ -341,7 +342,7 @@ describe("Review Stage - Plugin Integration", () => {
     });
 
     test("failing reviewer output is captured", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       const mockReviewer: IReviewPlugin = {
@@ -379,7 +380,7 @@ describe("Review Stage - Plugin Integration", () => {
 
   describe("AC5: Exceptions count as failures", () => {
     test("reviewer throwing exception counts as failure", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       const mockReviewer: IReviewPlugin = {
@@ -408,7 +409,7 @@ describe("Review Stage - Plugin Integration", () => {
     });
 
     test("exception message captured in output", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       const mockReviewer: IReviewPlugin = {
@@ -438,7 +439,7 @@ describe("Review Stage - Plugin Integration", () => {
     });
 
     test("non-Error exception converted to string", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       const mockReviewer: IReviewPlugin = {
@@ -467,7 +468,7 @@ describe("Review Stage - Plugin Integration", () => {
 
   describe("AC6: Multiple reviewers run sequentially with short-circuiting", () => {
     test("multiple reviewers run in order when all pass", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       const callOrder: string[] = [];
@@ -531,7 +532,7 @@ describe("Review Stage - Plugin Integration", () => {
     });
 
     test("first failure short-circuits remaining reviewers", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       const callOrder: string[] = [];
@@ -596,7 +597,7 @@ describe("Review Stage - Plugin Integration", () => {
     });
 
     test("exception short-circuits remaining reviewers", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       const callOrder: string[] = [];
@@ -663,7 +664,7 @@ describe("Review Stage - Plugin Integration", () => {
 
   describe("Edge Cases", () => {
     test("no plugins context - continues normally", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       const ctx = createMockContext(tempDir, undefined);
@@ -674,7 +675,7 @@ describe("Review Stage - Plugin Integration", () => {
     });
 
     test("reviewer returns empty output", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       const mockReviewer: IReviewPlugin = {
@@ -702,7 +703,7 @@ describe("Review Stage - Plugin Integration", () => {
     });
 
     test("reviewer without exitCode works", async () => {
-      const tempDir = mkdtempSync(join(tmpdir(), "nax-review-plugin-"));
+      const tempDir = makeTempDir("nax-review-plugin-");
       await initGitRepo(tempDir);
 
       const mockReviewer: IReviewPlugin = {

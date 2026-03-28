@@ -8,13 +8,14 @@ import { existsSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { globalConfigPath, loadConfigForWorkdir } from "../../../src/config/loader";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("loadConfigForWorkdir", () => {
   let tempDir: string;
   let globalBackup: string | null = null;
 
   beforeEach(() => {
-    tempDir = join(tmpdir(), `nax-test-workdir-${Date.now()}`);
+    tempDir = makeTempDir("nax-test-workdir-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     // Backup global config if present to isolate tests

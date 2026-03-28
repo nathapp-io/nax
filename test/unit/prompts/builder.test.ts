@@ -12,6 +12,7 @@ import { join } from "node:path";
 import type { UserStory } from "../../../src/prd";
 import { PromptBuilder } from "../../../src/prompts/builder";
 import type { PromptRole } from "../../../src/prompts/types";
+import { makeTempDir } from "../../helpers/temp";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -158,7 +159,7 @@ describe("PromptBuilder section order", () => {
 
 describe("PromptBuilder non-overridable sections", () => {
   test("story context always included even when override is set", async () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), "nax-pb-test-"));
+    const tmpDir = makeTempDir("nax-pb-test-");
     const overridePath = join(tmpDir, "override.md");
     writeFileSync(overridePath, "# Custom override body\nThis replaces the template.");
 
@@ -169,7 +170,7 @@ describe("PromptBuilder non-overridable sections", () => {
   });
 
   test("conventions footer always last even when override is set", async () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), "nax-pb-test-"));
+    const tmpDir = makeTempDir("nax-pb-test-");
     const overridePath = join(tmpDir, "override.md");
     writeFileSync(overridePath, "# Custom override body");
 
@@ -182,7 +183,7 @@ describe("PromptBuilder non-overridable sections", () => {
   });
 
   test("isolation rules always present even when override is set", async () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), "nax-pb-test-"));
+    const tmpDir = makeTempDir("nax-pb-test-");
     const overridePath = join(tmpDir, "override.md");
     writeFileSync(overridePath, "# My custom template");
 
@@ -195,7 +196,7 @@ describe("PromptBuilder non-overridable sections", () => {
   });
 
   test("story context not removable via override for each role", async () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), "nax-pb-test-"));
+    const tmpDir = makeTempDir("nax-pb-test-");
     const overridePath = join(tmpDir, "override.md");
     writeFileSync(overridePath, "Override that attempts to hide story context.");
 
@@ -235,7 +236,7 @@ describe("PromptBuilder override fallthrough", () => {
   });
 
   test("valid override file replaces default template body", async () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), "nax-pb-test-"));
+    const tmpDir = makeTempDir("nax-pb-test-");
     const overridePath = join(tmpDir, "override.md");
     const overrideBody = "UNIQUE_OVERRIDE_BODY_CONTENT";
     writeFileSync(overridePath, overrideBody);
@@ -271,26 +272,34 @@ describe("PromptBuilder — tdd-simple role", () => {
 
   test(".build() resolves to a non-empty string for tdd-simple", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any).story(makeStory()).build();
+    const prompt = await PromptBuilder.for("tdd-simple" as any)
+      .story(makeStory())
+      .build();
     expect(typeof prompt).toBe("string");
     expect(prompt.length).toBeGreaterThan(0);
   });
 
   test("tdd-simple prompt contains TDD red-green-refactor instructions", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any).story(makeStory()).build();
+    const prompt = await PromptBuilder.for("tdd-simple" as any)
+      .story(makeStory())
+      .build();
     expect(prompt).toContain("Write failing tests FIRST");
   });
 
   test("tdd-simple prompt includes git commit instruction", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any).story(makeStory()).build();
+    const prompt = await PromptBuilder.for("tdd-simple" as any)
+      .story(makeStory())
+      .build();
     expect(prompt).toContain("git commit -m");
   });
 
   test("tdd-simple prompt isolation section does not forbid src/ modification", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any).story(makeStory()).build();
+    const prompt = await PromptBuilder.for("tdd-simple" as any)
+      .story(makeStory())
+      .build();
     expect(prompt).not.toContain("Only create or modify files in the test/ directory");
     expect(prompt).not.toContain("Do not modify test files");
   });
@@ -298,13 +307,17 @@ describe("PromptBuilder — tdd-simple role", () => {
   test("tdd-simple prompt includes story context", async () => {
     const story = makeStory({ title: "TDD_SIMPLE_STORY_MARKER" });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any).story(story).build();
+    const prompt = await PromptBuilder.for("tdd-simple" as any)
+      .story(story)
+      .build();
     expect(prompt).toContain("TDD_SIMPLE_STORY_MARKER");
   });
 
   test("tdd-simple prompt includes conventions footer", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const prompt = await PromptBuilder.for("tdd-simple" as any).story(makeStory()).build();
+    const prompt = await PromptBuilder.for("tdd-simple" as any)
+      .story(makeStory())
+      .build();
     expect(prompt.toLowerCase()).toContain("conventions");
   });
 
@@ -425,14 +438,7 @@ describe("PromptBuilder — batch role: build()", () => {
 
 describe("src/prompts/types exports — batch", () => {
   test("PromptRole type includes 'batch' (6 roles total)", () => {
-    const roles: PromptRole[] = [
-      "test-writer",
-      "implementer",
-      "verifier",
-      "single-session",
-      "tdd-simple",
-      "batch",
-    ];
+    const roles: PromptRole[] = ["test-writer", "implementer", "verifier", "single-session", "tdd-simple", "batch"];
     expect(roles).toContain("batch");
     expect(roles).toHaveLength(6);
   });

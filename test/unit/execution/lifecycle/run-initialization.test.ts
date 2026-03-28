@@ -9,12 +9,13 @@
 
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import { _reconcileDeps, initializeRun } from "../../../../src/execution/lifecycle/run-initialization";
 import type { PRD } from "../../../../src/prd/types";
 import type { ReviewResult } from "../../../../src/review/types";
+import { makeTempDir } from "../../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -57,7 +58,7 @@ function makePrd(overrides: Partial<PRD["userStories"][number]> = {}): PRD {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-const tmpDir = mkdtempSync(join(tmpdir(), "nax-test-reconcile-"));
+const tmpDir = makeTempDir("nax-test-reconcile-");
 
 async function runReconcile(prd: PRD, suffix = ""): Promise<PRD> {
   const prdPath = join(tmpDir, `prd${suffix}.json`);

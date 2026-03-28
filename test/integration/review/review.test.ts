@@ -9,10 +9,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runReview } from "../../../src/review";
 import type { ReviewConfig } from "../../../src/review";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("Review Phase", () => {
   test("runReview - all checks pass", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-test-"));
+    const tempDir = makeTempDir("nax-review-test-");
 
     const config: ReviewConfig = {
       enabled: true,
@@ -33,7 +34,7 @@ describe("Review Phase", () => {
   });
 
   test("runReview - check fails", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-test-"));
+    const tempDir = makeTempDir("nax-review-test-");
 
     const config: ReviewConfig = {
       enabled: true,
@@ -54,7 +55,7 @@ describe("Review Phase", () => {
   });
 
   test("runReview - multiple checks, stop on first failure", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-test-"));
+    const tempDir = makeTempDir("nax-review-test-");
 
     const config: ReviewConfig = {
       enabled: true,
@@ -79,7 +80,7 @@ describe("Review Phase", () => {
   });
 
   test("runReview - uses review config commands when specified", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-test-"));
+    const tempDir = makeTempDir("nax-review-test-");
 
     const config: ReviewConfig = {
       enabled: true,
@@ -96,7 +97,7 @@ describe("Review Phase", () => {
   });
 
   test("runReview - empty checks array", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-test-"));
+    const tempDir = makeTempDir("nax-review-test-");
 
     const config: ReviewConfig = {
       enabled: true,
@@ -112,7 +113,7 @@ describe("Review Phase", () => {
   });
 
   test("runReview - captures command output", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-test-"));
+    const tempDir = makeTempDir("nax-review-test-");
 
     const config: ReviewConfig = {
       enabled: true,
@@ -130,7 +131,7 @@ describe("Review Phase", () => {
   });
 
   test("runReview - records duration", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "nax-review-test-"));
+    const tempDir = makeTempDir("nax-review-test-");
 
     const config: ReviewConfig = {
       enabled: true,

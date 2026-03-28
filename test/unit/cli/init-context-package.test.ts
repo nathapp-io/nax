@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generatePackageContextTemplate, initPackage } from "../../../src/cli/init-context";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("generatePackageContextTemplate (MW-005)", () => {
   test("uses the last path segment as package name", () => {
@@ -40,7 +41,7 @@ describe("initPackage (MW-005)", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-test-"));
+    tmpDir = makeTempDir("nax-test-");
   });
 
   afterEach(() => {

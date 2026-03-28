@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { makeTempDir } from "../../helpers/temp";
 import {
   type TestFileInfo,
   deriveTestPatterns,
@@ -59,7 +60,7 @@ test("standalone test 2", () => {});
   });
 
   test("returns empty for file with no tests", () => {
-    const source = `export function helper() { return 42; }`;
+    const source = "export function helper() { return 42; }";
     const result = extractTestStructure(source);
     expect(result.testCount).toBe(0);
     expect(result.describes).toHaveLength(0);
@@ -225,7 +226,7 @@ describe("deriveTestPatterns", () => {
 
 describe("scanTestFiles with scoping", () => {
   test("scopes test files to contextFiles when scopeToStory=true", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-scanner-"));
+    const tempDir = makeTempDir("nax-test-scanner-");
 
     try {
       // Create test directory structure
@@ -263,7 +264,7 @@ describe("scanTestFiles with scoping", () => {
   });
 
   test("scans all test files when scopeToStory=false", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-scanner-"));
+    const tempDir = makeTempDir("nax-test-scanner-");
 
     try {
       const testDir = path.join(tempDir, "test");
@@ -293,7 +294,7 @@ describe("scanTestFiles with scoping", () => {
   });
 
   test("falls back to full scan when no contextFiles provided", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-scanner-"));
+    const tempDir = makeTempDir("nax-test-scanner-");
 
     try {
       const testDir = path.join(tempDir, "test");
@@ -318,7 +319,7 @@ describe("scanTestFiles with scoping", () => {
 
 describe("generateTestCoverageSummary with scoping", () => {
   test("generates scoped summary when contextFiles provided", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-scanner-"));
+    const tempDir = makeTempDir("nax-test-scanner-");
 
     try {
       const testDir = path.join(tempDir, "test");
@@ -353,7 +354,7 @@ describe("generateTestCoverageSummary with scoping", () => {
   });
 
   test("falls back to full scan when scopeToStory=true but no contextFiles", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-scanner-"));
+    const tempDir = makeTempDir("nax-test-scanner-");
 
     try {
       const testDir = path.join(tempDir, "test");
@@ -379,7 +380,7 @@ describe("generateTestCoverageSummary with scoping", () => {
   });
 
   test("returns empty result when no test files found", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-scanner-"));
+    const tempDir = makeTempDir("nax-test-scanner-");
 
     try {
       const testDir = path.join(tempDir, "test");

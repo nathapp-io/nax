@@ -9,11 +9,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { estimateTokens, loadConstitution, truncateToTokens } from "../../../src/constitution";
 import type { ConstitutionConfig } from "../../../src/constitution";
+import { makeTempDir } from "../../helpers/temp";
 
 let TEST_DIR: string;
 
 beforeEach(() => {
-  TEST_DIR = mkdtempSync(join(tmpdir(), "nax-constitution-test-"));
+  TEST_DIR = makeTempDir("nax-constitution-test-");
 });
 
 afterEach(() => {

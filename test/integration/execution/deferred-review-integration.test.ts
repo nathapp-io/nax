@@ -16,12 +16,13 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { NaxConfig } from "../../../src/config";
-import { executeSequential } from "../../../src/execution/sequential-executor";
-import type { SequentialExecutionContext } from "../../../src/execution/executor-types";
 import { _deferredReviewDeps } from "../../../src/execution/deferred-review";
-import type { IReviewPlugin } from "../../../src/plugins/extensions";
+import type { SequentialExecutionContext } from "../../../src/execution/executor-types";
+import { executeSequential } from "../../../src/execution/sequential-executor";
 import type { PluginRegistry } from "../../../src/plugins";
+import type { IReviewPlugin } from "../../../src/plugins/extensions";
 import type { PRD } from "../../../src/prd/types";
+import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -119,7 +120,7 @@ let prdPath: string;
 const originalDeferredSpawn = _deferredReviewDeps.spawn;
 
 beforeEach(() => {
-  workdir = mkdtempSync(join(tmpdir(), "nax-deferred-review-integration-"));
+  workdir = makeTempDir("nax-deferred-review-integration-");
   prdPath = join(workdir, "prd.json");
 
   // Default: spawn always returns the HEAD ref for git rev-parse, and diff files for getChangedFiles
@@ -134,7 +135,11 @@ beforeEach(() => {
           c.close();
         },
       }),
-      stderr: new ReadableStream({ start(c) { c.close(); } }),
+      stderr: new ReadableStream({
+        start(c) {
+          c.close();
+        },
+      }),
     };
   }) as unknown as typeof _deferredReviewDeps.spawn;
 });
@@ -218,7 +223,7 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     expect(result.exitReason).toBe("completed");
     // deferredReview result records the failure
     expect(result.deferredReview).toBeDefined();
-    expect(result.deferredReview!.anyFailed).toBe(true);
+    expect(result.deferredReview?.anyFailed).toBe(true);
   });
 
   test("deferred review result is available in SequentialExecutionResult for reporters", async () => {
@@ -231,9 +236,9 @@ describe("Deferred plugin review — integration (DR-003)", () => {
     const result = await executeSequential(ctx, makeCompletedPRD());
 
     expect(result.deferredReview).toBeDefined();
-    expect(result.deferredReview!.reviewerResults).toHaveLength(1);
-    expect(result.deferredReview!.reviewerResults[0].name).toBe("semgrep");
-    expect(result.deferredReview!.anyFailed).toBe(false);
+    expect(result.deferredReview?.reviewerResults).toHaveLength(1);
+    expect(result.deferredReview?.reviewerResults[0].name).toBe("semgrep");
+    expect(result.deferredReview?.anyFailed).toBe(false);
   });
 
   test("deferred review uses run-start ref as baseRef for full diff range", async () => {
@@ -301,7 +306,11 @@ describe("Deferred plugin review — integration (DR-003)", () => {
             c.close();
           },
         }),
-        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        stderr: new ReadableStream({
+          start(c) {
+            c.close();
+          },
+        }),
       };
     }) as unknown as typeof _deferredReviewDeps.spawn;
 

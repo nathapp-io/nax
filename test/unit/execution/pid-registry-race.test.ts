@@ -2,25 +2,26 @@
  * Concurrent PID registry test — ensure register() doesn't lose PIDs on concurrent calls
  */
 
+import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, test, expect, afterEach } from "bun:test";
+import { join } from "node:path";
 import { PidRegistry } from "../../../src/execution/pid-registry";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("PidRegistry - Concurrent Operations", () => {
   let tempDir: string;
   let registry: PidRegistry;
 
   afterEach(() => {
-    if (tempDir && tempDir.startsWith(tmpdir())) {
+    if (tempDir?.startsWith(tmpdir())) {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
 
   test("concurrent register() calls do not lose PIDs", async () => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-pid-race-test-"));
+    tempDir = makeTempDir("nax-pid-race-test-");
     registry = new PidRegistry(tempDir);
 
     // Register 50 PIDs concurrently
@@ -51,7 +52,7 @@ describe("PidRegistry - Concurrent Operations", () => {
   });
 
   test("register() handles rapid sequential calls correctly", async () => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-pid-seq-test-"));
+    tempDir = makeTempDir("nax-pid-seq-test-");
     registry = new PidRegistry(tempDir);
 
     // Register PIDs sequentially
@@ -73,7 +74,7 @@ describe("PidRegistry - Concurrent Operations", () => {
   });
 
   test("unregister removes only specified PID", async () => {
-    tempDir = mkdtempSync(join(tmpdir(), "nax-pid-unregister-test-"));
+    tempDir = makeTempDir("nax-pid-unregister-test-");
     registry = new PidRegistry(tempDir);
 
     await registry.register(3000);

@@ -10,16 +10,17 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { globalConfigPath, loadConfig } from "../../../src/config/loader";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { globalConfigPath, loadConfig } from "../../../src/config/loader";
 import { NaxConfigSchema } from "../../../src/config/schemas";
+import { makeTempDir } from "../../helpers/temp";
 
 describe("execution.smartTestRunner config flag", () => {
   let tempDir: string;
   let globalBackup: string | null = null;
 
   beforeEach(() => {
-    tempDir = join(tmpdir(), `nax-str-004-${Date.now()}`);
+    tempDir = makeTempDir("nax-str-004-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
     const globalPath = globalConfigPath();
@@ -98,7 +99,13 @@ describe("execution.smartTestRunner config flag", () => {
       plan: { model: "balanced", outputPath: "spec.md" },
       acceptance: { enabled: false, maxRetries: 0, generateTests: false, testPath: "acceptance.test.ts" },
       context: {
-        testCoverage: { enabled: false, detail: "names-only", maxTokens: 50, testPattern: "**/*.test.ts", scopeToStory: false },
+        testCoverage: {
+          enabled: false,
+          detail: "names-only",
+          maxTokens: 50,
+          testPattern: "**/*.test.ts",
+          scopeToStory: false,
+        },
         autoDetect: { enabled: false, maxFiles: 1, traceImports: false },
       },
     };
@@ -158,10 +165,7 @@ describe("execution.smartTestRunner config flag", () => {
 
   test("loadConfig coerces smartTestRunner: false to disabled config object", async () => {
     const configPath = join(tempDir, ".nax", "config.json");
-    writeFileSync(
-      configPath,
-      JSON.stringify({ execution: { smartTestRunner: false } }, null, 2),
-    );
+    writeFileSync(configPath, JSON.stringify({ execution: { smartTestRunner: false } }, null, 2));
 
     const config = await loadConfig(join(tempDir, ".nax"));
     expect(config.execution.smartTestRunner).toEqual({
@@ -241,7 +245,13 @@ function buildMinimalConfig() {
     plan: { model: "balanced", outputPath: "spec.md" },
     acceptance: { enabled: false, maxRetries: 0, generateTests: false, testPath: "acceptance.test.ts" },
     context: {
-      testCoverage: { enabled: false, detail: "names-only" as const, maxTokens: 50, testPattern: "**/*.test.ts", scopeToStory: false },
+      testCoverage: {
+        enabled: false,
+        detail: "names-only" as const,
+        maxTokens: 50,
+        testPattern: "**/*.test.ts",
+        scopeToStory: false,
+      },
       autoDetect: { enabled: false, maxFiles: 1, traceImports: false },
     },
   };

@@ -27,6 +27,7 @@ import { run } from "../../../src/execution/runner";
 import { loadHooksConfig } from "../../../src/hooks";
 import type { IReporter, NaxPlugin, RunEndEvent, RunStartEvent, StoryCompleteEvent } from "../../../src/plugins/types";
 import { loadPRD, savePRD } from "../../../src/prd";
+import { makeTempDir } from "../../helpers/temp";
 
 // ============================================================================
 // Mock agent (satisfies agent installation check in runner)
@@ -84,7 +85,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
 
   beforeEach(async () => {
     // Create temp directory
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-reporter-test-"));
+    tmpDir = makeTempDir("nax-reporter-test-");
     workdir = tmpDir;
     prdPath = path.join(workdir, ".nax", "features", "test-feature", "prd.json");
     pluginDir = path.join(workdir, ".nax", "plugins");

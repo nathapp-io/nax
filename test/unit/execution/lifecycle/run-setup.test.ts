@@ -7,16 +7,16 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { join } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { _runSetupDeps } from "../../../../src/execution/lifecycle/run-setup";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-const tmpDir = mkdtempSync(join(tmpdir(), "nax-test-runsetup-"));
+const tmpDir = makeTempDir("nax-test-runsetup-");
 
 afterEach(() => {
   // restore original deps after each test
@@ -25,6 +25,7 @@ afterEach(() => {
 
 // biome-ignore lint/style/noNamespaceImport: cleanup after all tests
 import { afterAll } from "bun:test";
+import { makeTempDir } from "../../../helpers/temp";
 afterAll(() => {
   rmSync(tmpDir, { recursive: true, force: true });
 });

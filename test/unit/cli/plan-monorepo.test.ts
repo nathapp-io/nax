@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _planDeps, planCommand } from "../../../src/cli/plan";
 import type { PRD } from "../../../src/prd/types";
+import { makeTempDir } from "../../helpers/temp";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures
@@ -72,7 +73,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   let capturedPrompts: string[];
 
   beforeEach(async () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-plan-mono-test-"));
+    tmpDir = makeTempDir("nax-plan-mono-test-");
     capturedPrompts = [];
 
     await mkdir(join(tmpDir, ".nax"), { recursive: true });
@@ -112,10 +113,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   });
 
   test("injects monorepo hint when packages are discovered", async () => {
-    _planDeps.discoverWorkspacePackages = mock(async () => [
-      `${tmpDir}/packages/api`,
-      `${tmpDir}/packages/web`,
-    ]);
+    _planDeps.discoverWorkspacePackages = mock(async () => [`${tmpDir}/packages/api`, `${tmpDir}/packages/web`]);
 
     await planCommand(tmpDir, {} as never, {
       from: "/spec.md",
@@ -184,10 +182,7 @@ describe("planCommand — MW-007 monorepo awareness", () => {
   });
 
   test("package paths in prompt are relative to repo root", async () => {
-    _planDeps.discoverWorkspacePackages = mock(async () => [
-      `${tmpDir}/packages/api`,
-      `${tmpDir}/apps/web`,
-    ]);
+    _planDeps.discoverWorkspacePackages = mock(async () => [`${tmpDir}/packages/api`, `${tmpDir}/apps/web`]);
 
     await planCommand(tmpDir, {} as never, {
       from: "/spec.md",
@@ -209,20 +204,57 @@ describe("planCommand — per-package tech stack in prompt", () => {
   let capturedPrompts: string[];
 
   beforeEach(async () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "nax-plan-pkgstack-test-"));
+    tmpDir = makeTempDir("nax-plan-pkgstack-test-");
     capturedPrompts = [];
     await mkdir(join(tmpDir, ".nax"), { recursive: true });
 
     _planDeps.readFile = mock(async () => "# Spec\nDo something.\n");
     _planDeps.existsSync = mock(() => true);
     _planDeps.writeFile = mock(async () => {});
-    _planDeps.scanCodebase = mock(async () => ({ fileTree: "└── src/", dependencies: {}, devDependencies: {}, testPatterns: [] }));
+    _planDeps.scanCodebase = mock(async () => ({
+      fileTree: "└── src/",
+      dependencies: {},
+      devDependencies: {},
+      testPatterns: [],
+    }));
     _planDeps.readPackageJson = mock(async () => ({ name: "monorepo-root" }));
     _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
     _planDeps.mkdirp = mock(async () => {});
-    _planDeps.createInteractionBridge = mock(() => ({ detectQuestion: mock(async () => false), onQuestionDetected: mock(async () => "") }));
-    const minimalPrd = { project: "test", feature: "test", branchName: "feat/test", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), userStories: [{ id: "US-001", title: "Test", description: "Test story", acceptanceCriteria: ["AC-1"], tags: [], dependencies: [], status: "pending", passes: false, escalations: [], attempts: 0, routing: { complexity: "simple", testStrategy: "test-after", reasoning: "simple" } }] };
-    _planDeps.getAgent = mock(() => ({ complete: mock(async (p: string) => { capturedPrompts.push(p); return JSON.stringify(minimalPrd); }) } as never));
+    _planDeps.createInteractionBridge = mock(() => ({
+      detectQuestion: mock(async () => false),
+      onQuestionDetected: mock(async () => ""),
+    }));
+    const minimalPrd = {
+      project: "test",
+      feature: "test",
+      branchName: "feat/test",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userStories: [
+        {
+          id: "US-001",
+          title: "Test",
+          description: "Test story",
+          acceptanceCriteria: ["AC-1"],
+          tags: [],
+          dependencies: [],
+          status: "pending",
+          passes: false,
+          escalations: [],
+          attempts: 0,
+          routing: { complexity: "simple", testStrategy: "test-after", reasoning: "simple" },
+        },
+      ],
+    };
+    _planDeps.getAgent = mock(
+      () =>
+        ({
+          complete: mock(async (p: string) => {
+            capturedPrompts.push(p);
+            return JSON.stringify(minimalPrd);
+          }),
+        }) as never,
+    );
   });
 
   afterEach(async () => {
@@ -244,8 +276,18 @@ describe("planCommand — per-package tech stack in prompt", () => {
   test("includes Package Tech Stacks table when packages have package.json", async () => {
     _planDeps.discoverWorkspacePackages = mock(async () => ["packages/api", "packages/web"]);
     _planDeps.readPackageJsonAt = mock(async (path: string) => {
-      if (path.includes("packages/api")) return { name: "@myapp/api", dependencies: { express: "^4.18", prisma: "^5.0" }, devDependencies: { jest: "^29" } };
-      if (path.includes("packages/web")) return { name: "@myapp/web", dependencies: { next: "^14", react: "^18", zod: "^3" }, devDependencies: { vitest: "^1" } };
+      if (path.includes("packages/api"))
+        return {
+          name: "@myapp/api",
+          dependencies: { express: "^4.18", prisma: "^5.0" },
+          devDependencies: { jest: "^29" },
+        };
+      if (path.includes("packages/web"))
+        return {
+          name: "@myapp/web",
+          dependencies: { next: "^14", react: "^18", zod: "^3" },
+          devDependencies: { vitest: "^1" },
+        };
       return null;
     });
 

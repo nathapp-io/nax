@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 import {
   VERDICT_FILE,
   type VerifierVerdict,
@@ -56,15 +57,12 @@ async function writeVerdictFile(workdir: string, content: unknown): Promise<void
 
 let tmpDir: string;
 
-beforeEach(async () => {
-  tmpDir = await Bun.file(os.tmpdir())
-    .exists()
-    .then(() => `${os.tmpdir()}/nax-verdict-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  await mkdir(tmpDir, { recursive: true });
+beforeEach(() => {
+  tmpDir = makeTempDir("nax-verdict-test-");
 });
 
-afterEach(async () => {
-  await rm(tmpDir, { recursive: true, force: true });
+afterEach(() => {
+  cleanupTempDir(tmpDir);
 });
 
 // ---------------------------------------------------------------------------
@@ -78,12 +76,12 @@ describe("readVerdict", () => {
 
     const result = await readVerdict(tmpDir);
     expect(result).not.toBeNull();
-    expect(result!.version).toBe(1);
-    expect(result!.approved).toBe(true);
-    expect(result!.tests.allPassing).toBe(true);
-    expect(result!.tests.passCount).toBe(10);
-    expect(result!.tests.failCount).toBe(0);
-    expect(result!.reasoning).toBe("All good.");
+    expect(result?.version).toBe(1);
+    expect(result?.approved).toBe(true);
+    expect(result?.tests.allPassing).toBe(true);
+    expect(result?.tests.passCount).toBe(10);
+    expect(result?.tests.failCount).toBe(0);
+    expect(result?.reasoning).toBe("All good.");
   });
 
   test("returns null when verdict file does not exist (no throw)", async () => {
@@ -119,68 +117,68 @@ describe("readVerdict", () => {
 
     const result = await readVerdict(tmpDir);
     expect(result).not.toBeNull();
-    expect(result!.version).toBe(1); // coerced
-    expect(result!.approved).toBe(true);
+    expect(result?.version).toBe(1); // coerced
+    expect(result?.approved).toBe(true);
   });
 
   test("coerces when approved field is missing (defaults to false)", async () => {
     const data = makeVerdict() as any;
-    delete data.approved;
+    data.approved = undefined;
     await writeVerdictFile(tmpDir, data);
 
     const result = await readVerdict(tmpDir);
     expect(result).not.toBeNull();
-    expect(result!.approved).toBe(false); // no verdict/approved → defaults false
+    expect(result?.approved).toBe(false); // no verdict/approved → defaults false
   });
 
   test("coerces when tests field is missing", async () => {
     const data = makeVerdict() as any;
-    delete data.tests;
+    data.tests = undefined;
     await writeVerdictFile(tmpDir, data);
 
     const result = await readVerdict(tmpDir);
     expect(result).not.toBeNull();
-    expect(result!.tests.passCount).toBe(0);
+    expect(result?.tests.passCount).toBe(0);
   });
 
   test("coerces when tests.allPassing is missing", async () => {
     const data = makeVerdict() as any;
-    delete data.tests.allPassing;
+    data.tests.allPassing = undefined;
     await writeVerdictFile(tmpDir, data);
 
     const result = await readVerdict(tmpDir);
     expect(result).not.toBeNull();
-    expect(result!.tests.passCount).toBe(10); // from partial tests object
+    expect(result?.tests.passCount).toBe(10); // from partial tests object
   });
 
   test("coerces when testModifications field is missing", async () => {
     const data = makeVerdict() as any;
-    delete data.testModifications;
+    data.testModifications = undefined;
     await writeVerdictFile(tmpDir, data);
 
     const result = await readVerdict(tmpDir);
     expect(result).not.toBeNull();
-    expect(result!.testModifications.detected).toBe(false);
+    expect(result?.testModifications.detected).toBe(false);
   });
 
   test("coerces when acceptanceCriteria field is missing", async () => {
     const data = makeVerdict() as any;
-    delete data.acceptanceCriteria;
+    data.acceptanceCriteria = undefined;
     await writeVerdictFile(tmpDir, data);
 
     const result = await readVerdict(tmpDir);
     expect(result).not.toBeNull();
-    expect(result!.acceptanceCriteria.criteria).toEqual([]);
+    expect(result?.acceptanceCriteria.criteria).toEqual([]);
   });
 
   test("coerces when quality field is missing", async () => {
     const data = makeVerdict() as any;
-    delete data.quality;
+    data.quality = undefined;
     await writeVerdictFile(tmpDir, data);
 
     const result = await readVerdict(tmpDir);
     expect(result).not.toBeNull();
-    expect(result!.quality.rating).toBe("acceptable"); // default
+    expect(result?.quality.rating).toBe("acceptable"); // default
   });
 
   test("coerces when quality.rating is invalid", async () => {
@@ -190,27 +188,27 @@ describe("readVerdict", () => {
 
     const result = await readVerdict(tmpDir);
     expect(result).not.toBeNull();
-    expect(result!.quality.rating).toBe("acceptable"); // coerced to default
+    expect(result?.quality.rating).toBe("acceptable"); // coerced to default
   });
 
   test("coerces when fixes is missing", async () => {
     const data = makeVerdict() as any;
-    delete data.fixes;
+    data.fixes = undefined;
     await writeVerdictFile(tmpDir, data);
 
     const result = await readVerdict(tmpDir);
     expect(result).not.toBeNull();
-    expect(result!.fixes).toEqual([]);
+    expect(result?.fixes).toEqual([]);
   });
 
   test("coerces when reasoning is missing", async () => {
     const data = makeVerdict() as any;
-    delete data.reasoning;
+    data.reasoning = undefined;
     await writeVerdictFile(tmpDir, data);
 
     const result = await readVerdict(tmpDir);
     expect(result).not.toBeNull();
-    expect(result!.version).toBe(1);
+    expect(result?.version).toBe(1);
   });
 
   test("parses verdict with approved=false correctly", async () => {
@@ -223,8 +221,8 @@ describe("readVerdict", () => {
 
     const result = await readVerdict(tmpDir);
     expect(result).not.toBeNull();
-    expect(result!.approved).toBe(false);
-    expect(result!.tests.failCount).toBe(3);
+    expect(result?.approved).toBe(false);
+    expect(result?.tests.failCount).toBe(3);
   });
 
   test("parses verdict with all quality ratings", async () => {
@@ -234,7 +232,7 @@ describe("readVerdict", () => {
 
       const result = await readVerdict(tmpDir);
       expect(result).not.toBeNull();
-      expect(result!.quality.rating).toBe(rating);
+      expect(result?.quality.rating).toBe(rating);
     }
   });
 });
@@ -263,14 +261,14 @@ describe("coerceVerdict", () => {
 
     const result = coerceVerdict(freeForm);
     expect(result).not.toBeNull();
-    expect(result!.version).toBe(1);
-    expect(result!.approved).toBe(true);
-    expect(result!.tests.allPassing).toBe(true);
-    expect(result!.tests.passCount).toBe(45);
-    expect(result!.tests.failCount).toBe(0);
-    expect(result!.acceptanceCriteria.allMet).toBe(true);
-    expect(result!.acceptanceCriteria.criteria).toHaveLength(2);
-    expect(result!.quality.rating).toBe("good"); // HIGH → good
+    expect(result?.version).toBe(1);
+    expect(result?.approved).toBe(true);
+    expect(result?.tests.allPassing).toBe(true);
+    expect(result?.tests.passCount).toBe(45);
+    expect(result?.tests.failCount).toBe(0);
+    expect(result?.acceptanceCriteria.allMet).toBe(true);
+    expect(result?.acceptanceCriteria.criteria).toHaveLength(2);
+    expect(result?.quality.rating).toBe("good"); // HIGH → good
   });
 
   test("coerces free-form verdict with 'verdict: FAIL'", () => {
@@ -285,12 +283,12 @@ describe("coerceVerdict", () => {
 
     const result = coerceVerdict(freeForm);
     expect(result).not.toBeNull();
-    expect(result!.approved).toBe(false);
-    expect(result!.tests.passCount).toBe(38);
-    expect(result!.tests.failCount).toBe(7);
-    expect(result!.tests.allPassing).toBe(false);
-    expect(result!.acceptanceCriteria.allMet).toBe(false);
-    expect(result!.quality.rating).toBe("poor"); // LOW → poor
+    expect(result?.approved).toBe(false);
+    expect(result?.tests.passCount).toBe(38);
+    expect(result?.tests.failCount).toBe(7);
+    expect(result?.tests.allPassing).toBe(false);
+    expect(result?.acceptanceCriteria.allMet).toBe(false);
+    expect(result?.quality.rating).toBe("poor"); // LOW → poor
   });
 
   test("preserves partial tests object fields", () => {
@@ -301,18 +299,18 @@ describe("coerceVerdict", () => {
 
     const result = coerceVerdict(partial);
     expect(result).not.toBeNull();
-    expect(result!.tests.passCount).toBe(10);
-    expect(result!.tests.failCount).toBe(2);
+    expect(result?.tests.passCount).toBe(10);
+    expect(result?.tests.failCount).toBe(2);
   });
 
   test("provides defaults for completely empty object", () => {
     const result = coerceVerdict({});
     expect(result).not.toBeNull();
-    expect(result!.approved).toBe(false);
-    expect(result!.tests.passCount).toBe(0);
-    expect(result!.tests.failCount).toBe(0);
-    expect(result!.testModifications.detected).toBe(false);
-    expect(result!.quality.rating).toBe("acceptable");
+    expect(result?.approved).toBe(false);
+    expect(result?.tests.passCount).toBe(0);
+    expect(result?.tests.failCount).toBe(0);
+    expect(result?.testModifications.detected).toBe(false);
+    expect(result?.quality.rating).toBe("acceptable");
   });
 
   test("handles acceptance_criteria_review with UNSATISFIED criteria", () => {
@@ -325,9 +323,9 @@ describe("coerceVerdict", () => {
     };
 
     const result = coerceVerdict(freeForm);
-    expect(result!.acceptanceCriteria.allMet).toBe(false);
-    expect(result!.acceptanceCriteria.criteria[0].met).toBe(true);
-    expect(result!.acceptanceCriteria.criteria[1].met).toBe(false);
+    expect(result?.acceptanceCriteria.allMet).toBe(false);
+    expect(result?.acceptanceCriteria.criteria[0].met).toBe(true);
+    expect(result?.acceptanceCriteria.criteria[1].met).toBe(false);
   });
 });
 

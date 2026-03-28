@@ -13,6 +13,7 @@ import { DEFAULT_CONFIG } from "../../../src/config";
 import { loadPRD, savePRD } from "../../../src/prd";
 import type { PRD } from "../../../src/prd/types";
 import { routeTask } from "../../../src/routing";
+import { makeTempDir } from "../../helpers/temp";
 
 // BUG-004
 describe("PRD Auto-Default — missing fields are defaulted on load", () => {
@@ -20,7 +21,7 @@ describe("PRD Auto-Default — missing fields are defaulted on load", () => {
   let prdPath: string;
 
   beforeEach(() => {
-    testDir = mkdtempSync(join(tmpdir(), "nax-test-prd-"));
+    testDir = makeTempDir("nax-test-prd-");
     prdPath = join(testDir, "test-prd.json");
   });
 

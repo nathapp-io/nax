@@ -16,6 +16,7 @@ import path from "node:path";
 import { _contextBuilderDeps, buildContext } from "../../../src/context/builder";
 import type { ContextBudget, StoryContext } from "../../../src/context/types";
 import type { PRD, UserStory } from "../../../src/prd";
+import { makeTempDir } from "../../helpers/temp";
 
 // Helper to create a minimal test PRD
 const createTestPRD = (stories: Partial<UserStory>[]): PRD => ({
@@ -52,7 +53,7 @@ const BUDGET: ContextBudget = {
 
 /** Set up a temp git repo with a src file, returns tempDir */
 async function setupGitRepo(srcFiles: Record<string, string>): Promise<string> {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-test-injection-"));
+  const tempDir = makeTempDir("nax-test-injection-");
   await Bun.spawn(["git", "init"], { cwd: tempDir }).exited;
   await Bun.spawn(["git", "config", "user.email", "test@test.com"], { cwd: tempDir }).exited;
   await Bun.spawn(["git", "config", "user.name", "Test User"], { cwd: tempDir }).exited;
@@ -369,7 +370,7 @@ describe("fileInjection modes — mock-based (CTX-003)", () => {
 
   beforeEach(async () => {
     originalAutoDetect = _contextBuilderDeps.autoDetectContextFiles;
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "nax-fi-mock-test-"));
+    tempDir = makeTempDir("nax-fi-mock-test-");
   });
 
   afterEach(async () => {

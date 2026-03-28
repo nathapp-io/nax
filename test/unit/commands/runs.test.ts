@@ -15,13 +15,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _runsCmdDeps as _deps, runsCommand } from "../../../src/commands/runs";
-import type { MetaJson } from "../../../src/pipeline/subscribers/registry";
 import type { NaxStatusFile } from "../../../src/execution/status-file";
+import type { MetaJson } from "../../../src/pipeline/subscribers/registry";
+import { makeTempDir } from "../../helpers/temp";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeTmpRunsDir(): string {
-  return mkdtempSync(join(tmpdir(), "nax-runs-test-"));
+  return makeTempDir("nax-runs-test-");
 }
 
 function makeStatusFile(overrides: Partial<NaxStatusFile["run"]> = {}): NaxStatusFile {
