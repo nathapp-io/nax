@@ -11,16 +11,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
-import fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { NaxConfig } from "../../../src/config";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { initLogger, resetLogger } from "../../../src/logger";
 import type { PipelineContext, PipelineRunResult } from "../../../src/pipeline/types";
-import type { LoadedHooksConfig } from "../../../src/hooks";
-import type { PluginRegistry } from "../../../src/plugins";
 import type { PRD, UserStory } from "../../../src/prd/types";
 import type { StoryMetrics } from "../../../src/metrics";
 
@@ -77,15 +73,16 @@ function makeStoryMetrics(storyId: string, overrides: Partial<StoryMetrics> = {}
 let tmpDir: string;
 
 beforeEach(() => {
-  tmpDir = mkdtempSync(path.join(tmpdir(), "nax-ac-"));
+  tmpDir = path.join(tmpdir(), `nax-ac-${Date.now()}`);
+  Bun.spawnSync(["mkdir", "-p", tmpDir]);
   initLogger();
 });
 
 afterEach(() => {
   resetLogger();
   try {
-    if (tmpDir && fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+    if (tmpDir) {
+      Bun.spawnSync(["rm", "-rf", tmpDir]);
     }
   } catch {
     // Ignore cleanup errors
@@ -234,21 +231,10 @@ describe("AC-7: runParallelBatch rectification failure", () => {
 
 describe("AC-8: merge-conflict-rectify exports", () => {
   test("src/execution/merge-conflict-rectify.ts exports ConflictedStoryInfo", async () => {
-    try {
-      const module = await import("../../../src/execution/merge-conflict-rectify");
-      expect(module).toBeDefined();
-      // Verify type exists by checking it's used in function signature
-      expect(typeof module.rectifyConflictedStory).toBe("function");
-    } catch {
-      // Module not yet renamed from parallel-executor-rectify
-      // For now, verify old module exists
-      try {
-        await import("../../../src/execution/parallel-executor-rectify");
-        expect(true).toBe(true);
-      } catch {
-        expect(false).toBe(true);
-      }
-    }
+    const module = await import("../../../src/execution/merge-conflict-rectify");
+    expect(module).toBeDefined();
+    // Verify type exists by checking it's used in function signature
+    expect(typeof module.rectifyConflictedStory).toBe("function");
   });
 
   test("exports RectificationResult type", async () => {
@@ -274,7 +260,7 @@ describe("AC-8: merge-conflict-rectify exports", () => {
 describe("AC-9: import sites updated", () => {
   test("parallel-batch.ts imports from merge-conflict-rectify", async () => {
     const source = await Bun.file(
-      path.join(tmpDir, "../../../src/execution/parallel-batch.ts"),
+      path.join(import.meta.dir, "../../../src/execution/parallel-batch.ts"),
     ).text().catch(() => "");
     if (source) {
       expect(source).toContain("merge-conflict-rectify");
@@ -297,7 +283,7 @@ describe("AC-9: import sites updated", () => {
 
 describe("AC-10: rectification-pass deleted", () => {
   test("src/execution/parallel-executor-rectification-pass.ts does not exist", async () => {
-    const filePath = path.join(tmpDir, "../../../src/execution/parallel-executor-rectification-pass.ts");
+    const filePath = path.join(import.meta.dir, "../../../src/execution/parallel-executor-rectification-pass.ts");
     const exists = await Bun.file(filePath).exists();
     expect(exists).toBe(false);
   });
@@ -464,7 +450,7 @@ describe("AC-16: SequentialExecutionContext.parallelCount", () => {
     } catch {
       // Import type to verify it exists
       const source = await Bun.file(
-        path.join(tmpDir, "../../../src/execution/executor-types.ts"),
+        path.join(import.meta.dir, "../../../src/execution/executor-types.ts"),
       ).text().catch(() => "");
       if (source) {
         expect(source).toContain("parallelCount");
@@ -492,7 +478,7 @@ describe("AC-17: groupStoriesByDependencies accessibility", () => {
 
   test("parallel-coordinator.ts imports groupStoriesByDependencies from story-selector", async () => {
     const source = await Bun.file(
-      path.join(tmpDir, "../../../src/execution/parallel-coordinator.ts"),
+      path.join(import.meta.dir, "../../../src/execution/parallel-coordinator.ts"),
     ).text().catch(() => "");
     if (source) {
       expect(source).toContain("story-selector");
@@ -624,7 +610,7 @@ describe("AC-24: cost-limit enforcement", () => {
 describe("AC-25: runner-execution unified dispatch", () => {
   test("runner-execution.ts contains no conditional parallel dispatch branch", async () => {
     const source = await Bun.file(
-      path.join(tmpDir, "../../../src/execution/runner-execution.ts"),
+      path.join(import.meta.dir, "../../../src/execution/runner-execution.ts"),
     ).text().catch(() => "");
     if (source) {
       expect(source).not.toContain("runParallelExecution");
@@ -635,7 +621,7 @@ describe("AC-25: runner-execution unified dispatch", () => {
 
   test("always calls executeUnified passing parallelCount from options", async () => {
     const source = await Bun.file(
-      path.join(tmpDir, "../../../src/execution/runner-execution.ts"),
+      path.join(import.meta.dir, "../../../src/execution/runner-execution.ts"),
     ).text().catch(() => "");
     if (source) {
       expect(source).toContain("executeUnified");
@@ -652,7 +638,7 @@ describe("AC-25: runner-execution unified dispatch", () => {
 
 describe("AC-26: parallel-executor deleted", () => {
   test("src/execution/parallel-executor.ts does not exist", async () => {
-    const filePath = path.join(tmpDir, "../../../src/execution/parallel-executor.ts");
+    const filePath = path.join(import.meta.dir, "../../../src/execution/parallel-executor.ts");
     const exists = await Bun.file(filePath).exists();
     // Once deleted, should not exist
     expect(true).toBe(true);
@@ -669,7 +655,7 @@ describe("AC-26: parallel-executor deleted", () => {
 
 describe("AC-27: parallel-lifecycle deleted", () => {
   test("src/execution/lifecycle/parallel-lifecycle.ts does not exist", async () => {
-    const filePath = path.join(tmpDir, "../../../src/execution/lifecycle/parallel-lifecycle.ts");
+    const filePath = path.join(import.meta.dir, "../../../src/execution/lifecycle/parallel-lifecycle.ts");
     const exists = await Bun.file(filePath).exists();
     expect(exists).toBe(false);
   });
@@ -686,7 +672,7 @@ describe("AC-27: parallel-lifecycle deleted", () => {
 describe("AC-28: runner.ts cleanup", () => {
   test("runner.ts does not reference _runnerDeps.runParallelExecution", async () => {
     const source = await Bun.file(
-      path.join(tmpDir, "../../../src/execution/runner.ts"),
+      path.join(import.meta.dir, "../../../src/execution/runner.ts"),
     ).text().catch(() => "");
     if (source) {
       expect(source).not.toContain("runParallelExecution");
