@@ -24,13 +24,13 @@ import type { PRD } from "../prd";
 import { countStories, isComplete, markStoryPassed } from "../prd";
 import { errorMessage } from "../utils/errors";
 import { getAllReadyStories, hookCtx } from "./helpers";
-import { executeParallel } from "./parallel";
 import {
   type ConflictedStoryInfo,
   type RectificationResult,
   type RectifyConflictedStoryOptions,
   rectifyConflictedStory,
-} from "./parallel-executor-rectify";
+} from "./merge-conflict-rectify";
+import { executeParallel } from "./parallel";
 import type { PidRegistry } from "./pid-registry";
 import type { StatusWriter } from "./status-writer";
 
@@ -100,7 +100,7 @@ async function runRectificationPass(
   const rectify =
     rectifyFn ||
     (async (opts: RectifyConflictedStoryOptions) => {
-      const { rectifyConflictedStory: importedRectify } = await import("./parallel-executor-rectify");
+      const { rectifyConflictedStory: importedRectify } = await import("./merge-conflict-rectify");
       return importedRectify(opts);
     });
 
@@ -427,4 +427,4 @@ export type {
   ConflictedStoryInfo,
   RectificationResult,
   RectifyConflictedStoryOptions,
-} from "./parallel-executor-rectify";
+} from "./merge-conflict-rectify";
