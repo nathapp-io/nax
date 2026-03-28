@@ -6,6 +6,7 @@ import os from "node:os";
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
+import type { InteractionChain } from "../interaction/chain";
 import { getSafeLogger } from "../logger";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import type { AgentGetFn } from "../pipeline/types";
@@ -16,6 +17,7 @@ import { errorMessage } from "../utils/errors";
 import { WorktreeManager } from "../worktree/manager";
 import { MergeEngine, type StoryDependencies } from "../worktree/merge";
 import { executeParallelBatch } from "./parallel-worker";
+import type { PidRegistry } from "./pid-registry";
 
 /**
  * Group stories into dependency batches; stories in each batch can run in parallel.
@@ -109,6 +111,8 @@ export async function executeParallel(
   parallel: number,
   eventEmitter?: PipelineEventEmitter,
   agentGetFn?: AgentGetFn,
+  pidRegistry?: PidRegistry,
+  interactionChain?: InteractionChain | null,
 ): Promise<{
   storiesCompleted: number;
   totalCost: number;
@@ -155,6 +159,8 @@ export async function executeParallel(
       plugins,
       storyStartTime: new Date().toISOString(),
       agentGetFn,
+      pidRegistry,
+      interaction: interactionChain ?? undefined,
     };
 
     // Create worktrees for all stories in batch

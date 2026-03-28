@@ -14,6 +14,7 @@ import path from "node:path";
 import type { NaxConfig } from "../config";
 import type { LoadedHooksConfig } from "../hooks";
 import { fireHook } from "../hooks";
+import type { InteractionChain } from "../interaction/chain";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
 import type { PipelineEventEmitter } from "../pipeline/events";
@@ -26,6 +27,7 @@ import { getAllReadyStories, hookCtx } from "./helpers";
 import { executeParallel } from "./parallel";
 import { type ParallelStoryMetrics, runRectificationPass } from "./parallel-executor-rectification-pass";
 import { type ConflictedStoryInfo, rectifyConflictedStory } from "./parallel-executor-rectify";
+import type { PidRegistry } from "./pid-registry";
 import type { StatusWriter } from "./status-writer";
 
 /**
@@ -59,6 +61,8 @@ export interface ParallelExecutorOptions {
   formatterMode: "quiet" | "normal" | "verbose" | "json";
   headless: boolean;
   agentGetFn?: AgentGetFn;
+  pidRegistry?: PidRegistry;
+  interactionChain?: InteractionChain | null;
 }
 
 export interface RectificationStats {
@@ -161,6 +165,8 @@ export async function runParallelExecution(
       parallelCount,
       eventEmitter,
       options.agentGetFn,
+      options.pidRegistry,
+      options.interactionChain,
     );
 
     const batchDurationMs = Date.now() - batchStartMs;
