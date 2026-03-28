@@ -178,6 +178,8 @@ export async function runExecutionPhase(
         formatterMode: options.formatterMode,
         headless: options.headless,
         agentGetFn: options.agentGetFn,
+        pidRegistry: options.pidRegistry,
+        interactionChain: options.interactionChain,
       },
       prd,
     );
