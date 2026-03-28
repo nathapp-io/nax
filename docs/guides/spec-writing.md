@@ -157,6 +157,53 @@ Ambiguous formats → the agent guesses → the tests assert the wrong shape →
 
 **Prefer JSON or YAML** for new file formats. Custom line-based formats (e.g., `KEY=type,modifier`) require the agent to write a parser from scratch — more code, more bugs, more ACs. JSON/YAML parsing is free with standard libraries.
 
+## Extending an Existing System
+
+When a feature extends existing code (not greenfield), the Design section **must** include:
+
+1. **Existing types to extend** — name the exact types, interfaces, or unions the agent must modify. Don't assume the agent knows the codebase.
+2. **Integration point** — where does new code plug in? Name the function, stage, or hook.
+3. **Existing patterns to follow** — point to a similar feature already implemented as a reference.
+4. **First story = types + config** — when adding a new capability to an existing system, the first story should extend the type system and config schema. Implementation stories depend on it.
+
+```markdown
+### Integration
+- Extend `ReviewCheckName` union in `src/review/types.ts` to include `"semantic"`
+- Wire into `runReview()` in `src/review/runner.ts` (same pattern as `"lint"` check)
+- Add `SemanticReviewConfig` to `ReviewConfig` in `src/config/runtime-types.ts`
+- Follow the same `ReviewCheckResult` return shape as existing checks
+```
+
+Without this, the agent invents its own types and wiring — which won't compile against the existing code.
+
+## Implementation Approach
+
+The Design section must state **how** the feature works — not just what it does. If the agent has to guess the approach, it will guess wrong.
+
+```markdown
+### Approach
+This uses an LLM call (not AST analysis) to review the diff.
+```
+
+This is especially critical for features that could be implemented multiple ways (LLM vs regex vs AST, polling vs webhook, sync vs async).
+
+## Failure Modes
+
+Every spec should state what happens when things go wrong:
+
+- **Fail-open vs fail-closed** — does a failure block the pipeline or get logged and skipped?
+- **Retry behavior** — does the system retry? How many times? What context does the retry get?
+- **Error output** — what does the user see on failure?
+
+```markdown
+### Failure Handling
+- If LLM response is not valid JSON → fail-open (log warning, treat as passed)
+- If review fails → autofix stage retries with findings as context
+- If autofix exhausted → escalate (same as lint/typecheck exhaustion)
+```
+
+Without this, the agent either ignores errors entirely or adds overly defensive error handling that blocks on non-critical failures.
+
 ## Anti-Patterns
 
 | Pattern | Problem | Fix |
@@ -170,6 +217,9 @@ Ambiguous formats → the agent guesses → the tests assert the wrong shape →
 | Scope creep in ACs | Agent builds unrequested features | ACs must trace back to a requirement in Summary/Design |
 | Ambiguous file format | Agent invents wrong schema shape | Show exact example with all fields in Design |
 | Missing CLI contract | Agent guesses exit codes/output | Specify exit codes, stdout/stderr, output format |
+| No integration context | Agent invents types that don't fit existing code | List exact types/interfaces to extend in Design |
+| Missing implementation approach | Agent guesses wrong method (AST vs LLM vs regex) | State the approach explicitly in Design |
+| No failure modes | Agent ignores errors or over-blocks | Specify fail-open/closed, retry, error output |
 | Too many stories | Overhead per story; tiny stories are fragile | Target 3-5 stories; merge if <4 ACs each |
 | Integration-only story | Duplicates ACs from earlier stories | Integration behavior belongs in the story that implements it |
 | Custom file format | Agent writes a fragile parser | Use JSON/YAML unless there's a strong reason not to |
