@@ -61,6 +61,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
     attempt: 0,
     initialFailures: testSummary.failed,
     currentFailures: testSummary.failed,
+    lastExitCode: 1, // Assume failure since we entered the loop
   };
 
   logger?.info("rectification", `Starting ${label} loop`, {
@@ -149,6 +150,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
     if (retryVerification.output) {
       const newTestSummary = parseBunTestOutput(retryVerification.output);
       rectificationState.currentFailures = newTestSummary.failed;
+      rectificationState.lastExitCode = retryVerification.status === "SUCCESS" ? 0 : 1; // Basic mapping
       testSummary.failures = newTestSummary.failures;
       testSummary.failed = newTestSummary.failed;
       testSummary.passed = newTestSummary.passed;

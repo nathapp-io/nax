@@ -85,6 +85,8 @@ export interface RectificationState {
   initialFailures: number;
   /** Number of test failures on current run */
   currentFailures: number;
+  /** #89: Exit code from the last test run */
+  lastExitCode?: number;
 }
 
 /** Verification gate options */

@@ -85,6 +85,8 @@ export async function executeParallelBatch(
   worktreePaths: Map<string, string>,
   maxConcurrency: number,
   eventEmitter?: PipelineEventEmitter,
+  // #93: Per-story effective configs (PKG-003) — if absent falls back to context.effectiveConfig
+  storyEffectiveConfigs?: Map<string, NaxConfig>,
 ): Promise<ParallelBatchResult> {
   const logger = getSafeLogger();
   const results: ParallelBatchResult = {
@@ -111,7 +113,17 @@ export async function executeParallelBatch(
 
     const routing = routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, config);
 
-    const executePromise = executeStoryInWorktree(story, worktreePath, context, routing as RoutingResult, eventEmitter)
+    // #93: Override effectiveConfig with per-story resolved config (PKG-003) if available
+    const storyConfig = storyEffectiveConfigs?.get(story.id);
+    const storyContext = storyConfig ? { ...context, effectiveConfig: storyConfig } : context;
+
+    const executePromise = executeStoryInWorktree(
+      story,
+      worktreePath,
+      storyContext,
+      routing as RoutingResult,
+      eventEmitter,
+    )
       .then((result) => {
         results.totalCost += result.cost;
         results.storyCosts.set(story.id, result.cost);
