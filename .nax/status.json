@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-14T13-17-33-297Z",
-    "feature": "plan-v2",
-    "startedAt": "2026-03-14T13:17:33.297Z",
-    "status": "completed",
+    "id": "run-2026-03-28T14-05-01-041Z",
+    "feature": "parallel-unify-001",
+    "startedAt": "2026-03-28T14:05:01.041Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 6887
+    "pid": 93080
   },
   "progress": {
-    "total": 5,
-    "passed": 5,
+    "total": 4,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 4
   },
   "cost": {
-    "spent": 0.8405975000000001,
-    "limit": 8
+    "spent": 0,
+    "limit": 30
   },
-  "current": null,
-  "iterations": 6,
-  "updatedAt": "2026-03-14T13:46:04.165Z",
-  "durationMs": 1710868
+  "current": {
+    "storyId": "US-001",
+    "title": "Add parallel-batch.ts and rename rectify file",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 1,
+  "updatedAt": "2026-03-28T14:13:02.196Z",
+  "durationMs": 481155,
+  "lastHeartbeat": "2026-03-28T14:13:02.196Z"
 }

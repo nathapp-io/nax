@@ -1,0 +1,240 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "runParallelBatch({ stories, ctx, prd }) returns ParallelBatchResult where completed contains stories whose pipeline passed and were merged to base branch",
+    "refined": "runParallelBatch({ stories, ctx, prd }) returns ParallelBatchResult where completed contains stories whose pipeline passed and were merged to base branch",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "runParallelBatch returns ParallelBatchResult where failed contains { story, pipelineResult: PipelineRunResult } for each story whose pipeline did not pass",
+    "refined": "runParallelBatch returns ParallelBatchResult where failed contains { story, pipelineResult: PipelineRunResult } for each story whose pipeline did not pass",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "runParallelBatch returns ParallelBatchResult where mergeConflicts contains { story, rectified: boolean, cost: number } for each story that had a merge conflict",
+    "refined": "runParallelBatch returns ParallelBatchResult where mergeConflicts contains { story, rectified: boolean, cost: number } for each story that had a merge conflict",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "runParallelBatch returns storyCosts Map where storyCosts.get(story.id) equals the per-story cost from executeParallelBatch's storyCosts, not an even-split formula",
+    "refined": "runParallelBatch returns storyCosts Map where storyCosts.get(story.id) equals the per-story cost from executeParallelBatch's storyCosts, not an even-split formula",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "runParallelBatch returns totalCost equal to the sum of all per-story costs in the batch",
+    "refined": "runParallelBatch returns totalCost equal to the sum of all per-story costs in the batch",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When executeParallelBatch returns a merge conflict for a story, runParallelBatch calls rectifyConflictedStory and sets rectified: true in mergeConflicts when rectification succeeds",
+    "refined": "When executeParallelBatch returns a merge conflict for a story, runParallelBatch calls rectifyConflictedStory and sets rectified: true in mergeConflicts when rectification succeeds",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When rectifyConflictedStory fails, runParallelBatch sets rectified: false in mergeConflicts for that story",
+    "refined": "When rectifyConflictedStory fails, runParallelBatch sets rectified: false in mergeConflicts for that story",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "src/execution/merge-conflict-rectify.ts exports ConflictedStoryInfo, RectificationResult, RectifyConflictedStoryOptions, and rectifyConflictedStory with identical signatures to the original parallel-executor-rectify.ts",
+    "refined": "src/execution/merge-conflict-rectify.ts exports ConflictedStoryInfo, RectificationResult, RectifyConflictedStoryOptions, and rectifyConflictedStory with identical signatures to the original parallel-executor-rectify.ts",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "All import sites of parallel-executor-rectify are updated to import from merge-conflict-rectify",
+    "refined": "All import sites of parallel-executor-rectify are updated to import from merge-conflict-rectify",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "parallel-executor-rectification-pass.ts is deleted and no file in src/ imports from it",
+    "refined": "parallel-executor-rectification-pass.ts is deleted and no file in src/ imports from it",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "selectIndependentBatch(stories, maxCount) returns an empty array when stories is empty",
+    "refined": "selectIndependentBatch(stories, maxCount) returns an empty array when stories is empty",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "selectIndependentBatch(stories, maxCount) returns a single-element array when exactly one story has no unmet dependencies",
+    "refined": "selectIndependentBatch(stories, maxCount) returns a single-element array when exactly one story has no unmet dependencies",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "selectIndependentBatch(stories, maxCount) returns at most maxCount stories even when more dependency-free stories are available",
+    "refined": "selectIndependentBatch(stories, maxCount) returns at most maxCount stories even when more dependency-free stories are available",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "selectIndependentBatch(stories, maxCount) returns only stories whose dependencies are all in status 'completed' (no unmet deps)",
+    "refined": "selectIndependentBatch(stories, maxCount) returns only stories whose dependencies are all in status 'completed' (no unmet deps)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "selectIndependentBatch is exported from src/execution/story-selector.ts",
+    "refined": "selectIndependentBatch is exported from src/execution/story-selector.ts",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "SequentialExecutionContext in src/execution/executor-types.ts has a parallelCount?: number field",
+    "refined": "SequentialExecutionContext in src/execution/executor-types.ts has a parallelCount?: number field",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "groupStoriesByDependencies is accessible from src/execution/story-selector.ts (exported or re-exported) and parallel-coordinator.ts imports it from story-selector.ts rather than defining its own copy",
+    "refined": "groupStoriesByDependencies is accessible from src/execution/story-selector.ts (exported or re-exported) and parallel-coordinator.ts imports it from story-selector.ts rather than defining its own copy",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "src/execution/unified-executor.ts exports executeUnified() with the same return type as the former executeSequential()",
+    "refined": "src/execution/unified-executor.ts exports executeUnified() with the same return type as the former executeSequential()",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When ctx.parallelCount > 0 and selectIndependentBatch returns more than 1 story, executeUnified calls runParallelBatch instead of runIteration",
+    "refined": "When ctx.parallelCount > 0 and selectIndependentBatch returns more than 1 story, executeUnified calls runParallelBatch instead of runIteration",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When ctx.parallelCount > 0 but selectIndependentBatch returns exactly 1 story, executeUnified calls runIteration for that story",
+    "refined": "When ctx.parallelCount > 0 but selectIndependentBatch returns exactly 1 story, executeUnified calls runIteration for that story",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When ctx.parallelCount is undefined or 0, executeUnified always calls runIteration and never calls runParallelBatch",
+    "refined": "When ctx.parallelCount is undefined or 0, executeUnified always calls runIteration and never calls runParallelBatch",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "For each story in a parallel batch, pipelineEventBus.emit({ type: 'story:started', storyId: story.id }) fires before runParallelBatch is called",
+    "refined": "For each story in a parallel batch, pipelineEventBus.emit({ type: 'story:started', storyId: story.id }) fires before runParallelBatch is called",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When a parallel story's pipelineResult indicates failure, executeUnified passes it to handlePipelineFailure and handleTierEscalation is reached when finalAction === 'escalate'",
+    "refined": "When a parallel story's pipelineResult indicates failure, executeUnified passes it to handlePipelineFailure and handleTierEscalation is reached when finalAction === 'escalate'",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "After a parallel batch, the existing cost-limit check in the loop runs and exits with reason 'cost-limit' when totalCost exceeds the configured limit",
+    "refined": "After a parallel batch, the existing cost-limit check in the loop runs and exits with reason 'cost-limit' when totalCost exceeds the configured limit",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "runner-execution.ts no longer contains a conditional parallel dispatch branch; it always calls executeUnified passing parallelCount from its options",
+    "refined": "runner-execution.ts no longer contains a conditional parallel dispatch branch; it always calls executeUnified passing parallelCount from its options",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "src/execution/parallel-executor.ts is deleted and no file in src/ imports from it",
+    "refined": "src/execution/parallel-executor.ts is deleted and no file in src/ imports from it",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "src/execution/lifecycle/parallel-lifecycle.ts is deleted and no file in src/ imports from it",
+    "refined": "src/execution/lifecycle/parallel-lifecycle.ts is deleted and no file in src/ imports from it",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "runner.ts no longer references _runnerDeps.runParallelExecution",
+    "refined": "runner.ts no longer references _runnerDeps.runParallelExecution",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When runParallelBatch completes, the StoryMetrics entry for each completed story has cost equal to storyCosts.get(story.id) from the batch result",
+    "refined": "When runParallelBatch completes, the StoryMetrics entry for each completed story has cost equal to storyCosts.get(story.id) from the batch result",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When runParallelBatch completes, the StoryMetrics entry for each completed story has durationMs equal to the elapsed time for that story individually (worktree creation to merge), not the wall-clock time of the full batch",
+    "refined": "When runParallelBatch completes, the StoryMetrics entry for each completed story has durationMs equal to the elapsed time for that story individually (worktree creation to merge), not the wall-clock time of the full batch",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When a story is successfully rectified after a merge conflict, its StoryMetrics entry has source: 'rectification' and rectificationCost reflecting only the cost incurred during rectification",
+    "refined": "When a story is successfully rectified after a merge conflict, its StoryMetrics entry has source: 'rectification' and rectificationCost reflecting only the cost incurred during rectification",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When --parallel is set and a batch runs, a story:started event is emitted with the correct storyId for each story in the batch before the batch executes",
+    "refined": "When --parallel is set and a batch runs, a story:started event is emitted with the correct storyId for each story in the batch before the batch executes",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "runner-parallel-metrics.test.ts tests pass without mocking runParallelExecution — they invoke executeUnified directly with parallelCount set",
+    "refined": "runner-parallel-metrics.test.ts tests pass without mocking runParallelExecution — they invoke executeUnified directly with parallelCount set",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000 exits 0 with no test failures",
+    "refined": "NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000 exits 0 with no test failures",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
