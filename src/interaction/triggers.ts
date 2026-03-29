@@ -35,7 +35,10 @@ export function isTriggerEnabled(trigger: TriggerName, config: NaxConfig): boole
 /**
  * Get trigger configuration (fallback, timeout)
  */
-function getTriggerConfig(trigger: TriggerName, config: NaxConfig): { fallback: InteractionFallback; timeout: number } {
+export function getTriggerConfig(
+  trigger: TriggerName,
+  config: NaxConfig,
+): { fallback: InteractionFallback; timeout: number } {
   const metadata = TRIGGER_METADATA[trigger];
   const triggerConfig = config.interaction?.triggers?.[trigger];
   const defaults = config.interaction?.defaults ?? {
@@ -224,8 +227,11 @@ export async function checkReviewGate(
 ): Promise<boolean> {
   if (!isTriggerEnabled("review-gate", config)) return true;
 
+  const { fallback } = getTriggerConfig("review-gate", config);
   const response = await executeTrigger("review-gate", context, config, chain);
-  return response.action === "approve";
+  // Apply configured fallback so timeout + fallback:"continue" auto-approves instead of rejecting
+  const effectiveAction = chain.applyFallback(response, fallback);
+  return effectiveAction === "approve";
 }
 
 /**

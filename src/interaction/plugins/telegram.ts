@@ -156,7 +156,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
 
     return {
       requestId,
-      action: "skip",
+      action: "skip", // This will be overridden by the chain's applyFallback if respondedBy is "timeout"
       respondedBy: "timeout",
       respondedAt: Date.now(),
     };
@@ -334,14 +334,25 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
     if (!this.botToken) return [];
 
     try {
-      const response = await fetch(`https://api.telegram.org/bot${this.botToken}/getUpdates`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          offset: this.lastUpdateId + 1,
-          timeout: 1, // Short polling
-        }),
-      });
+      // Client-side timeout guards against network hangs (no OS TCP timeout = 75s+ stall)
+      // With short-polling timeout:1, server responds in ~1s. 8s client timeout is safe headroom.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+
+      let response: Response;
+      try {
+        response = await fetch(`https://api.telegram.org/bot${this.botToken}/getUpdates`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            offset: this.lastUpdateId + 1,
+            timeout: 1, // Short polling — server holds connection up to 1s
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
 
       if (!response.ok) {
         const errorBody = await response.text().catch(() => "");
@@ -454,6 +465,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
           chat_id: this.chatId,
           message_id: lastId,
           text: "⏱ EXPIRED — Interaction timed out",
+          reply_markup: { inline_keyboard: [] }, // Remove buttons so expired interactions can't be re-tapped
         }),
       });
     } catch {
