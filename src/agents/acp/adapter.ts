@@ -448,14 +448,18 @@ function extractQuestion(output: string): string | null {
   const text = output.trim();
   if (!text) return null;
 
-  const sentences = text.split(/(?<=[.!?])\s+/);
-  const questionSentences = sentences.filter((s) => s.trim().endsWith("?"));
-  if (questionSentences.length > 0) {
-    const q = questionSentences[questionSentences.length - 1].trim();
-    if (q.length > 10) return q;
+  // BUG-097: Only check the last non-empty line for question marks.
+  // Scanning all sentences caused false positives on code snippets mid-output
+  // containing ?. (optional chaining), ?? (nullish coalescing), or ternary ?.
+  const lines = text.split("\n").filter((l) => l.trim().length > 0);
+  const lastLine = lines.at(-1)?.trim() ?? "";
+
+  if (lastLine.endsWith("?") && lastLine.length > 10) {
+    return lastLine;
   }
 
-  const lower = text.toLowerCase();
+  // Keyword markers — also scoped to the last line to avoid mid-message false positives
+  const lower = lastLine.toLowerCase();
   const markers = [
     "please confirm",
     "please specify",
@@ -467,7 +471,7 @@ function extractQuestion(output: string): string | null {
   ];
   for (const marker of markers) {
     if (lower.includes(marker)) {
-      return text.slice(-200).trim();
+      return lastLine;
     }
   }
 

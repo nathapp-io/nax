@@ -91,6 +91,8 @@ describe("AcpInteractionBridge — question pattern detection", () => {
     ["code output", "function hello() { return 42; }"],
     ["progress report", "Wrote 3 files to disk."],
     ["empty content", ""],
+    ["BUG-097: nullish coalescing in code snippet", "Here's what was changed:\n\n**AC-2 fix**: Replaced with `batchResult.storyDurations?.get(story.id) ?? 0`"],
+    ["BUG-097: optional chaining in status update", "Updated src/foo.ts to use config?.timeout instead of hardcoded value."],
   ])("non-question ignored: %s", (_label, content) => {
     const notification = makeNotification(content);
     expect(bridge.isQuestion(notification)).toBe(false);
