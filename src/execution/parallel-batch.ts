@@ -34,6 +34,8 @@ export interface RunParallelBatchResult {
   mergeConflicts: Array<{ story: UserStory; rectified: boolean; cost: number }>;
   /** Per-story execution costs (direct from executeParallelBatch, not averaged) */
   storyCosts: Map<string, number>;
+  /** Per-story elapsed times in milliseconds (worktree creation to merge completion) */
+  storyDurations?: Map<string, number>;
   /** Sum of all per-story costs in the batch */
   totalCost: number;
 }
