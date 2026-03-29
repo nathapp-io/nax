@@ -397,6 +397,12 @@ const ProjectProfileSchema = z.object({
   lintTool: z.string().optional(),
 });
 
+const VALID_AGENT_TYPES = ["claude", "codex", "opencode", "cursor", "windsurf", "aider", "gemini"] as const;
+
+const GenerateConfigSchema = z.object({
+  agents: z.array(z.enum(VALID_AGENT_TYPES)).optional(),
+});
+
 export const NaxConfigSchema = z
   .object({
     version: z.number(),
@@ -421,6 +427,7 @@ export const NaxConfigSchema = z
     precheck: PrecheckConfigSchema.optional(),
     prompts: PromptsConfigSchema.optional(),
     decompose: DecomposeConfigSchema.optional(),
+    generate: GenerateConfigSchema.optional(),
     project: ProjectProfileSchema.optional(),
   })
   .refine((data) => data.version === 1, {
