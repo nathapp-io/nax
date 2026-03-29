@@ -164,22 +164,14 @@ export async function runExecutionPhase(
       pluginRegistry,
       eventEmitter: options.eventEmitter,
       statusWriter: options.statusWriter,
-      statusFile: options.statusFile,
       logFilePath: options.logFilePath,
       runId: options.runId,
-      startedAt: options.startedAt,
       startTime: options.startTime,
-      formatterMode: options.formatterMode,
-      headless: options.headless,
       parallelCount: options.parallel,
       agentGetFn: options.agentGetFn,
       pidRegistry: options.pidRegistry,
       interactionChain: options.interactionChain,
       batchPlan,
-      totalCost,
-      iterations,
-      storiesCompleted,
-      allStoryMetrics,
     },
     prd,
   );
@@ -191,7 +183,7 @@ export async function runExecutionPhase(
   totalCost = unifiedResult.totalCost;
   allStoryMetrics.push(...unifiedResult.allStoryMetrics);
 
-  if (unifiedResult.completedEarly && unifiedResult.durationMs !== undefined) {
+  if (unifiedResult.exitReason === "completed") {
     return {
       prd,
       iterations,
@@ -199,7 +191,7 @@ export async function runExecutionPhase(
       totalCost,
       allStoryMetrics,
       completedEarly: true,
-      durationMs: unifiedResult.durationMs,
+      durationMs: Date.now() - options.startTime,
     };
   }
 

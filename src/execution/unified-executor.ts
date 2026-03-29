@@ -1,331 +1,323 @@
-/**
- * Unified Executor
- *
- * Single dispatch point for story execution.
- * Handles both parallel (when parallelCount is set) and sequential execution.
- */
+/** Unified Story Executor (ADR-005, Phase 4) — sequential loop with optional parallel dispatch. */
 
-import * as os from "node:os";
-import path from "node:path";
-import type { NaxConfig } from "../config";
-import type { LoadedHooksConfig } from "../hooks";
-import { fireHook } from "../hooks";
-import type { InteractionChain } from "../interaction/chain";
+import { checkCostExceeded, checkCostWarning, checkPreMerge, isTriggerEnabled } from "../interaction/triggers";
 import { getSafeLogger } from "../logger";
 import type { StoryMetrics } from "../metrics";
-import { saveRunMetrics } from "../metrics";
-import type { PipelineEventEmitter } from "../pipeline/events";
-import type { AgentGetFn } from "../pipeline/types";
-import type { PluginRegistry } from "../plugins/registry";
-import type { PRD } from "../prd";
-import { countStories, isComplete } from "../prd";
-import { errorMessage } from "../utils/errors";
-import type { StoryBatch } from "./batching";
-import { getAllReadyStories, hookCtx } from "./helpers";
-import {
-  type RectificationResult,
-  type RectifyConflictedStoryOptions,
-  rectifyConflictedStory,
-} from "./merge-conflict-rectify";
-import { executeParallel } from "./parallel-coordinator";
-import type { PidRegistry } from "./pid-registry";
-import type { StatusWriter } from "./status-writer";
+import { pipelineEventBus } from "../pipeline/event-bus";
+import { runPipeline } from "../pipeline/runner";
+import { postRunPipeline, preRunPipeline } from "../pipeline/stages";
+import { wireEventsWriter } from "../pipeline/subscribers/events-writer";
+import { wireHooks } from "../pipeline/subscribers/hooks";
+import { wireInteraction } from "../pipeline/subscribers/interaction";
+import { wireRegistry } from "../pipeline/subscribers/registry";
+import { wireReporters } from "../pipeline/subscribers/reporters";
+import type { PipelineContext } from "../pipeline/types";
+import { isComplete, isStalled, loadPRD } from "../prd";
+import type { PRD } from "../prd/types";
+import { startHeartbeat } from "./crash-recovery";
+import { captureRunStartRef, runDeferredReview } from "./deferred-review";
+import type { DeferredReviewResult } from "./deferred-review";
+import type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
+import { getAllReadyStories } from "./helpers";
+import { runIteration } from "./iteration-runner";
+import type { RunParallelBatchOptions, RunParallelBatchResult } from "./parallel-batch";
+import { handlePipelineFailure } from "./pipeline-result-handler";
+import { selectIndependentBatch, selectNextStories } from "./story-selector";
 
-export interface UnifiedExecutorOptions {
-  prdPath: string;
-  workdir: string;
-  config: NaxConfig;
-  hooks: LoadedHooksConfig;
-  feature: string;
-  featureDir?: string;
-  dryRun: boolean;
-  useBatch: boolean;
-  eventEmitter?: PipelineEventEmitter;
-  // biome-ignore lint/suspicious/noExplicitAny: StatusWriter interface varies by platform
-  statusWriter: any;
-  statusFile: string;
-  logFilePath?: string;
-  runId: string;
-  startedAt: string;
-  startTime: number;
-  formatterMode: "quiet" | "normal" | "verbose" | "json";
-  headless: boolean;
-  parallelCount?: number;
-  agentGetFn?: AgentGetFn;
-  pidRegistry?: PidRegistry;
-  interactionChain?: InteractionChain | null;
-  pluginRegistry: PluginRegistry;
-  batchPlan: StoryBatch[];
-  totalCost: number;
-  iterations: number;
-  storiesCompleted: number;
-  allStoryMetrics: StoryMetrics[];
-}
+export type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
 
-export interface UnifiedExecutorResult {
-  prd: PRD;
-  iterations: number;
-  storiesCompleted: number;
-  totalCost: number;
-  allStoryMetrics: StoryMetrics[];
-  completedEarly?: boolean;
-  durationMs?: number;
+export async function executeUnified(
+  ctx: SequentialExecutionContext,
+  initialPrd: PRD,
+): Promise<SequentialExecutionResult> {
+  const logger = getSafeLogger();
+  let prd = initialPrd;
+  let prdDirty = false;
+  let iterations = 0;
+  let storiesCompleted = 0;
+  let totalCost = 0;
+  let lastStoryId: string | null = null;
+  let currentBatchIndex = 0;
+  const allStoryMetrics: StoryMetrics[] = [];
+  let warningSent = false;
+  let deferredReview: DeferredReviewResult | undefined;
+
+  const runStartRef = await captureRunStartRef(ctx.workdir);
+
+  pipelineEventBus.clear();
+  wireHooks(pipelineEventBus, ctx.hooks, ctx.workdir, ctx.feature);
+  wireReporters(pipelineEventBus, ctx.pluginRegistry, ctx.runId, ctx.startTime);
+  wireInteraction(pipelineEventBus, ctx.interactionChain, ctx.config);
+  wireEventsWriter(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir);
+  wireRegistry(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir);
+
+  const buildResult = (exitReason: SequentialExecutionResult["exitReason"]): SequentialExecutionResult => ({
+    prd,
+    iterations,
+    storiesCompleted,
+    totalCost,
+    allStoryMetrics,
+    exitReason,
+    deferredReview,
+  });
+
+  startHeartbeat(
+    ctx.statusWriter,
+    () => totalCost,
+    () => iterations,
+    ctx.logFilePath,
+  );
+
+  try {
+    if (isComplete(prd)) {
+      logger?.info("execution", "All stories already complete — skipping pre-run pipeline");
+      deferredReview = await runDeferredReview(ctx.workdir, ctx.config.review, ctx.pluginRegistry, runStartRef);
+      return buildResult("completed");
+    }
+
+    // Pre-run pipeline (acceptance test setup with RED gate) — only when acceptance is configured
+    if (ctx.config.acceptance?.enabled) {
+      logger?.info("execution", "Running pre-run pipeline (acceptance test setup)");
+      const preRunCtx: PipelineContext = {
+        config: ctx.config,
+        effectiveConfig: ctx.config,
+        prd,
+        workdir: ctx.workdir,
+        featureDir: ctx.featureDir,
+        story: prd.userStories[0],
+        stories: prd.userStories,
+        routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+        hooks: ctx.hooks,
+        agentGetFn: ctx.agentGetFn,
+      };
+      await runPipeline(preRunPipeline, preRunCtx, ctx.eventEmitter);
+    }
+
+    while (iterations < ctx.config.execution.maxIterations) {
+      iterations++;
+      if (Math.round(process.memoryUsage().heapUsed / 1024 / 1024) > 1024)
+        logger?.warn("execution", "High memory usage detected");
+      if (prdDirty) {
+        prd = await loadPRD(ctx.prdPath);
+        prdDirty = false;
+      }
+      if (isComplete(prd)) {
+        if (ctx.interactionChain && isTriggerEnabled("pre-merge", ctx.config)) {
+          const shouldProceed = await checkPreMerge(
+            { featureName: ctx.feature, totalStories: prd.userStories.length, cost: totalCost },
+            ctx.config,
+            ctx.interactionChain,
+          );
+          if (!shouldProceed) return buildResult("pre-merge-aborted");
+        }
+        deferredReview = await runDeferredReview(ctx.workdir, ctx.config.review, ctx.pluginRegistry, runStartRef);
+        return buildResult("completed");
+      }
+
+      const costLimit = ctx.config.execution.costLimit;
+
+      // Parallel dispatch: when parallelCount > 0 and batch has more than 1 story
+      if ((ctx.parallelCount ?? 0) > 0) {
+        const readyStories = getAllReadyStories(prd);
+        const batch = _unifiedExecutorDeps.selectIndependentBatch(readyStories, ctx.parallelCount as number);
+
+        if (batch.length > 1) {
+          // Emit story:started for each batch story before dispatch (AC-5)
+          for (const story of batch) {
+            pipelineEventBus.emit({
+              type: "story:started",
+              storyId: story.id,
+              story,
+              workdir: ctx.workdir,
+              modelTier: "balanced",
+              agent: ctx.config.autoMode.defaultAgent,
+              iteration: iterations,
+            });
+          }
+
+          const batchResult = await _unifiedExecutorDeps.runParallelBatch({
+            stories: batch,
+            ctx: {
+              workdir: ctx.workdir,
+              config: ctx.config,
+              hooks: ctx.hooks,
+              pluginRegistry: ctx.pluginRegistry,
+              maxConcurrency: ctx.parallelCount as number,
+              pipelineContext: {
+                config: ctx.config,
+                effectiveConfig: ctx.config,
+                prd,
+                hooks: ctx.hooks,
+                agentGetFn: ctx.agentGetFn,
+              } as unknown as RunParallelBatchOptions["ctx"]["pipelineContext"],
+              eventEmitter: ctx.eventEmitter,
+              agentGetFn: ctx.agentGetFn,
+            },
+            prd,
+          });
+
+          // Route parallel failures through handlePipelineFailure (AC-6)
+          for (const { story, pipelineResult } of batchResult.failed) {
+            await handlePipelineFailure(
+              {
+                config: ctx.config,
+                prd,
+                prdPath: ctx.prdPath,
+                workdir: ctx.workdir,
+                featureDir: ctx.featureDir,
+                hooks: ctx.hooks,
+                feature: ctx.feature,
+                totalCost,
+                startTime: ctx.startTime,
+                runId: ctx.runId,
+                pluginRegistry: ctx.pluginRegistry,
+                story,
+                storiesToExecute: [story],
+                routing: { complexity: "medium", modelTier: "balanced", testStrategy: "test-after", reasoning: "" },
+                isBatchExecution: false,
+                allStoryMetrics,
+                storyGitRef: null,
+                interactionChain: ctx.interactionChain,
+              },
+              pipelineResult,
+            );
+          }
+
+          totalCost += batchResult.totalCost;
+          storiesCompleted += batchResult.completed.length;
+          prdDirty = true;
+
+          // Cost-limit check after parallel batch (AC-7)
+          if (totalCost >= costLimit) {
+            return buildResult("cost-limit");
+          }
+
+          continue;
+        }
+        // batch.length <= 1: fall through to sequential single-story path
+      }
+
+      // Sequential single-story dispatch
+      const selected = selectNextStories(prd, ctx.config, ctx.batchPlan, currentBatchIndex, lastStoryId, ctx.useBatch);
+      if (!selected) return buildResult("no-stories");
+      if (!selected.selection) {
+        currentBatchIndex = selected.nextBatchIndex;
+        continue;
+      }
+      currentBatchIndex = selected.nextBatchIndex;
+      const { selection } = selected;
+      if (!ctx.useBatch) lastStoryId = selection.story.id;
+
+      if (totalCost >= costLimit) {
+        const shouldProceed =
+          ctx.interactionChain && isTriggerEnabled("cost-exceeded", ctx.config)
+            ? await checkCostExceeded(
+                { featureName: ctx.feature, cost: totalCost, limit: costLimit },
+                ctx.config,
+                ctx.interactionChain,
+              )
+            : false;
+        if (!shouldProceed) {
+          pipelineEventBus.emit({
+            type: "run:paused",
+            reason: `Cost limit reached: $${totalCost.toFixed(2)}`,
+            storyId: selection.story.id,
+            cost: totalCost,
+          });
+          return buildResult("cost-limit");
+        }
+        pipelineEventBus.emit({ type: "run:resumed", feature: ctx.feature });
+      }
+
+      pipelineEventBus.emit({
+        type: "story:started",
+        storyId: selection.story.id,
+        story: selection.story,
+        workdir: ctx.workdir,
+        modelTier: selection.routing.modelTier,
+        agent: ctx.config.autoMode.defaultAgent,
+        iteration: iterations,
+      });
+
+      const iter = await _unifiedExecutorDeps.runIteration(ctx, prd, selection, iterations, totalCost, allStoryMetrics);
+      [prd, storiesCompleted, totalCost, prdDirty] = [
+        iter.prd,
+        storiesCompleted + iter.storiesCompletedDelta,
+        totalCost + iter.costDelta,
+        iter.prdDirty,
+      ];
+
+      // ENH-009: Decomposition is not real work — don't charge an iteration.
+      if (iter.finalAction === "decomposed") {
+        iterations--;
+        pipelineEventBus.emit({
+          type: "story:decomposed",
+          storyId: selection.story.id,
+          story: selection.story,
+          subStoryCount: iter.subStoryCount ?? 0,
+        });
+        if (iter.prdDirty) {
+          prd = await loadPRD(ctx.prdPath);
+          prdDirty = false;
+        }
+        ctx.statusWriter.setPrd(prd);
+        continue;
+      }
+
+      if (ctx.interactionChain && isTriggerEnabled("cost-warning", ctx.config) && !warningSent) {
+        const triggerCfg = ctx.config.interaction?.triggers?.["cost-warning"];
+        const threshold = typeof triggerCfg === "object" ? (triggerCfg.threshold ?? 0.8) : 0.8;
+        if (totalCost >= costLimit * threshold) {
+          await checkCostWarning(
+            { featureName: ctx.feature, cost: totalCost, limit: costLimit },
+            ctx.config,
+            ctx.interactionChain,
+          );
+          warningSent = true;
+        }
+      }
+
+      if (iter.prdDirty) {
+        prd = await loadPRD(ctx.prdPath);
+        prdDirty = false;
+      }
+      ctx.statusWriter.setPrd(prd);
+      ctx.statusWriter.setCurrentStory(null);
+      await ctx.statusWriter.update(totalCost, iterations);
+
+      if (isStalled(prd)) {
+        pipelineEventBus.emit({ type: "run:paused", reason: "All remaining stories blocked", cost: totalCost });
+        return buildResult("stalled");
+      }
+      if (ctx.config.execution.iterationDelayMs > 0) await Bun.sleep(ctx.config.execution.iterationDelayMs);
+    }
+
+    // Post-run pipeline (acceptance tests) — only when acceptance is configured
+    if (ctx.config.acceptance?.enabled) {
+      logger?.info("execution", "Running post-run pipeline (acceptance tests)");
+      await runPipeline(
+        postRunPipeline,
+        { config: ctx.config, prd, workdir: ctx.workdir, story: prd.userStories[0] } as unknown as PipelineContext,
+        ctx.eventEmitter,
+      );
+    }
+
+    return buildResult("max-iterations");
+  } finally {
+    // Cleanup moved to runner.ts (RL-007): exit summary and heartbeat stop are owned by runner
+  }
 }
 
 /**
- * Execute stories using the appropriate strategy.
- * Uses parallel execution when parallelCount is set, otherwise sequential.
+ * Injectable dependencies for testing.
+ * Defined after executeUnified so "story:started" precedes "runParallelBatch" in source order.
+ * @internal — test use only.
  */
-export async function executeUnified(options: UnifiedExecutorOptions, prd: PRD): Promise<UnifiedExecutorResult> {
-  const { parallelCount } = options;
-
-  if (parallelCount !== undefined) {
-    return executeUnifiedParallel(options, prd);
-  }
-
-  return executeUnifiedSequential(options, prd);
-}
-
-async function executeUnifiedSequential(options: UnifiedExecutorOptions, prd: PRD): Promise<UnifiedExecutorResult> {
-  const { executeSequential } = await import("./sequential-executor");
-  const result = await executeSequential(
-    {
-      prdPath: options.prdPath,
-      workdir: options.workdir,
-      config: options.config,
-      hooks: options.hooks,
-      feature: options.feature,
-      featureDir: options.featureDir,
-      dryRun: options.dryRun,
-      useBatch: options.useBatch,
-      pluginRegistry: options.pluginRegistry,
-      eventEmitter: options.eventEmitter,
-      statusWriter: options.statusWriter,
-      logFilePath: options.logFilePath,
-      runId: options.runId,
-      startTime: options.startTime,
-      batchPlan: options.batchPlan,
-      agentGetFn: options.agentGetFn,
-      pidRegistry: options.pidRegistry,
-      interactionChain: options.interactionChain,
-    },
-    prd,
-  );
-
-  return {
-    prd: result.prd,
-    iterations: result.iterations,
-    storiesCompleted: options.storiesCompleted + result.storiesCompleted,
-    totalCost: options.totalCost + result.totalCost,
-    allStoryMetrics: [...options.allStoryMetrics, ...result.allStoryMetrics],
-  };
-}
-
-async function executeUnifiedParallel(
-  options: UnifiedExecutorOptions,
-  initialPrd: PRD,
-): Promise<UnifiedExecutorResult> {
-  const logger = getSafeLogger();
-  const {
-    workdir,
-    config,
-    hooks,
-    feature,
-    featureDir,
-    prdPath,
-    runId,
-    startedAt,
-    startTime,
-    pluginRegistry,
-    formatterMode,
-    headless,
-    eventEmitter,
-    agentGetFn,
-    pidRegistry,
-    interactionChain,
-  } = options;
-
-  let { totalCost, storiesCompleted, allStoryMetrics } = options;
-  const { iterations } = options;
-  let prd = initialPrd;
-
-  const parallelCount = options.parallelCount as number;
-  const readyStories = getAllReadyStories(prd);
-  if (readyStories.length === 0) {
-    return { prd, iterations, storiesCompleted, totalCost, allStoryMetrics };
-  }
-
-  const maxConcurrency = parallelCount === 0 ? os.cpus().length : Math.max(1, parallelCount);
-  const initialPassedIds = new Set(initialPrd.userStories.filter((s) => s.status === "passed").map((s) => s.id));
-  const batchStartedAt = new Date().toISOString();
-  const batchStartMs = Date.now();
-
-  options.statusWriter.setPrd(prd);
-  await options.statusWriter.update(totalCost, iterations, {
-    parallel: {
-      enabled: true,
-      maxConcurrency,
-      activeStories: readyStories.map((s) => ({
-        storyId: s.id,
-        worktreePath: path.join(workdir, ".nax-wt", s.id),
-      })),
-    },
-  });
-
-  let conflictedStories: Array<{ storyId: string; conflictFiles: string[]; originalCost: number }> = [];
-
-  try {
-    const parallelResult = await executeParallel(
-      readyStories,
-      prdPath,
-      workdir,
-      config,
-      hooks,
-      pluginRegistry,
-      prd,
-      featureDir,
-      parallelCount,
-      eventEmitter,
-      agentGetFn,
-      pidRegistry,
-      interactionChain,
-    );
-
-    const batchDurationMs = Date.now() - batchStartMs;
-    const batchCompletedAt = new Date().toISOString();
-    prd = parallelResult.updatedPrd;
-    storiesCompleted += parallelResult.storiesCompleted;
-    totalCost += parallelResult.totalCost;
-    conflictedStories = parallelResult.mergeConflicts ?? [];
-
-    const newlyPassed = prd.userStories.filter((s) => s.status === "passed" && !initialPassedIds.has(s.id));
-    const costPerStory = newlyPassed.length > 0 ? parallelResult.totalCost / newlyPassed.length : 0;
-    const batchMetrics: StoryMetrics[] = newlyPassed.map((story) => ({
-      storyId: story.id,
-      complexity: "unknown",
-      modelTier: "parallel",
-      modelUsed: "parallel",
-      attempts: 1,
-      finalTier: "parallel",
-      success: true,
-      cost: costPerStory,
-      durationMs: batchDurationMs,
-      firstPassSuccess: true,
-      startedAt: batchStartedAt,
-      completedAt: batchCompletedAt,
-      source: "parallel" as const,
-    }));
-    allStoryMetrics = [...allStoryMetrics, ...batchMetrics];
-
-    options.statusWriter.setPrd(prd);
-    await options.statusWriter.update(totalCost, iterations, {
-      parallel: { enabled: true, maxConcurrency, activeStories: [] },
-    });
-  } catch (error) {
-    logger?.error("parallel", "Parallel execution failed", { error: errorMessage(error) });
-    await options.statusWriter.update(totalCost, iterations, { parallel: undefined });
-    throw error;
-  }
-
-  // Rectification pass for merge conflicts
-  for (const conflictInfo of conflictedStories) {
-    try {
-      const result: RectificationResult = await rectifyConflictedStory({
-        ...conflictInfo,
-        workdir,
-        config,
-        hooks,
-        pluginRegistry,
-        prd: initialPrd,
-        eventEmitter,
-        agentGetFn,
-      } as RectifyConflictedStoryOptions);
-      if (result.success) {
-        storiesCompleted++;
-        totalCost += result.cost;
-      }
-    } catch (err) {
-      logger?.warn("parallel", "Rectification failed", {
-        storyId: conflictInfo.storyId,
-        error: errorMessage(err),
-      });
-    }
-  }
-
-  if (isComplete(prd)) {
-    await fireHook(hooks, "on-all-stories-complete", hookCtx(feature, { status: "passed", cost: totalCost }), workdir);
-    await fireHook(hooks, "on-complete", hookCtx(feature, { status: "complete", cost: totalCost }), workdir);
-
-    const durationMs = Date.now() - startTime;
-    const runCompletedAt = new Date().toISOString();
-
-    const finalCounts = countStories(prd);
-    await saveRunMetrics(workdir, {
-      runId,
-      feature,
-      startedAt,
-      completedAt: runCompletedAt,
-      totalCost,
-      totalStories: allStoryMetrics.length,
-      storiesCompleted,
-      storiesFailed: finalCounts.failed,
-      totalDurationMs: durationMs,
-      stories: allStoryMetrics,
-    });
-
-    const reporters = pluginRegistry.getReporters();
-    for (const reporter of reporters) {
-      if (reporter.onRunEnd) {
-        try {
-          await reporter.onRunEnd({
-            runId,
-            totalDurationMs: durationMs,
-            totalCost,
-            storySummary: {
-              completed: storiesCompleted,
-              failed: finalCounts.failed,
-              skipped: finalCounts.skipped,
-              paused: finalCounts.paused,
-            },
-          });
-        } catch (e) {
-          logger?.warn("plugins", "Reporter onRunEnd failed", { error: errorMessage(e) });
-        }
-      }
-    }
-
-    options.statusWriter.setPrd(prd);
-    options.statusWriter.setCurrentStory(null);
-    options.statusWriter.setRunStatus("completed");
-    await options.statusWriter.update(totalCost, iterations);
-
-    if (headless && formatterMode !== "json") {
-      const { outputRunFooter } = await import("./lifecycle/headless-formatter");
-      outputRunFooter({
-        finalCounts: {
-          total: finalCounts.total,
-          passed: finalCounts.passed,
-          failed: finalCounts.failed,
-          skipped: finalCounts.skipped,
-        },
-        durationMs,
-        totalCost,
-        startedAt,
-        completedAt: runCompletedAt,
-        formatterMode,
-      });
-    }
-
-    return {
-      prd,
-      iterations,
-      storiesCompleted,
-      totalCost,
-      allStoryMetrics,
-      completedEarly: true,
-      durationMs,
-    };
-  }
-
-  return { prd, iterations, storiesCompleted, totalCost, allStoryMetrics };
-}
+export const _unifiedExecutorDeps = {
+  runParallelBatch: async (opts: RunParallelBatchOptions): Promise<RunParallelBatchResult> => {
+    const { runParallelBatch } = await import("./parallel-batch");
+    return runParallelBatch(opts);
+  },
+  runIteration,
+  selectIndependentBatch,
+};
