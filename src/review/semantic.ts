@@ -13,6 +13,7 @@ import type { NaxConfig } from "../config";
 import type { ModelTier } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
+import { getMergeBase, isGitRefValid } from "../utils/git";
 import type { ReviewCheckResult, SemanticReviewConfig } from "./types";
 
 /** Story fields required for semantic review */
@@ -29,6 +30,8 @@ export type ModelResolver = (tier: ModelTier) => AgentAdapter | null | undefined
 /** Injectable dependencies for semantic.ts — allows tests to mock spawn without mock.module() */
 export const _semanticDeps = {
   spawn: spawn as typeof spawn,
+  isGitRefValid,
+  getMergeBase,
 };
 
 /**
@@ -240,8 +243,27 @@ export async function runSemanticReview(
   const startTime = Date.now();
   const logger = getSafeLogger();
 
-  // Early exit when no git ref
-  if (!storyGitRef) {
+  // BUG-114: Resolve effective git ref for the diff range.
+  // Priority 1: use the supplied ref if valid (persisted from story start).
+  // Priority 2: fall back to merge-base with the default remote branch so that
+  //   the semantic reviewer always sees the full story diff even after a restart.
+  // Priority 3: skip review when no ref can be resolved (non-git workdir, etc.).
+  let effectiveRef: string | undefined;
+  if (storyGitRef && (await _semanticDeps.isGitRefValid(workdir, storyGitRef))) {
+    effectiveRef = storyGitRef;
+  } else {
+    const fallback = await _semanticDeps.getMergeBase(workdir);
+    if (fallback) {
+      logger?.info("review", "storyGitRef missing or invalid — using merge-base fallback", {
+        storyId: story.id,
+        storyGitRef,
+        fallback,
+      });
+      effectiveRef = fallback;
+    }
+  }
+
+  if (!effectiveRef) {
     return {
       check: "semantic",
       success: true,
@@ -259,11 +281,11 @@ export async function runSemanticReview(
   });
 
   // Collect production-only diff (test files excluded at git level via configurable patterns)
-  const rawDiff = await collectDiff(workdir, storyGitRef, semanticConfig.excludePatterns);
+  const rawDiff = await collectDiff(workdir, effectiveRef, semanticConfig.excludePatterns);
 
   // Truncate if over cap — collect stat summary (all files) when truncation needed
   const needsTruncation = rawDiff.length > DIFF_CAP_BYTES;
-  const stat = needsTruncation ? await collectDiffStat(workdir, storyGitRef) : undefined;
+  const stat = needsTruncation ? await collectDiffStat(workdir, effectiveRef) : undefined;
   const diff = truncateDiff(rawDiff, stat);
 
   // Resolve agent

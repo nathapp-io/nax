@@ -83,6 +83,54 @@ export async function captureGitRef(workdir: string): Promise<string | undefined
 }
 
 /**
+ * Verify that a git ref (SHA or branch name) is reachable in the given workdir.
+ * Used to validate a persisted storyGitRef before using it in a diff range.
+ *
+ * @returns true if the ref resolves successfully, false otherwise
+ */
+export async function isGitRefValid(workdir: string, ref: string): Promise<boolean> {
+  try {
+    const { exitCode } = await gitWithTimeout(["cat-file", "-e", `${ref}^{commit}`], workdir);
+    return exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Return the merge-base SHA between HEAD and the default remote branch.
+ * Tries `origin/main` first, then `origin/master`.
+ * Falls back to the oldest reachable commit when no remote branch exists.
+ *
+ * Used as a fallback for storyGitRef when the stored ref is missing or invalid
+ * (e.g. after a rebase, or on a brand-new run where no ref was persisted yet).
+ */
+export async function getMergeBase(workdir: string): Promise<string | undefined> {
+  for (const branch of ["origin/main", "origin/master"]) {
+    try {
+      const { stdout, exitCode } = await gitWithTimeout(["merge-base", "HEAD", branch], workdir);
+      if (exitCode === 0) {
+        const sha = stdout.trim();
+        if (sha) return sha;
+      }
+    } catch {
+      // try next branch
+    }
+  }
+  // Last resort: oldest ancestor (initial commit)
+  try {
+    const { stdout, exitCode } = await gitWithTimeout(["rev-list", "--max-parents=0", "HEAD"], workdir);
+    if (exitCode === 0) {
+      const sha = stdout.trim().split("\n")[0];
+      if (sha) return sha;
+    }
+  } catch {
+    // ignore
+  }
+  return undefined;
+}
+
+/**
  * Check if a story ID appears in recent git commit messages.
  *
  * Searches the last N commits for commit messages containing the story ID.
