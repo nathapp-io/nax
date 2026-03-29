@@ -157,7 +157,9 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
   }));
 
   // 5. Rectify merge conflicts sequentially
-  // Track per-story end times: conflicts extend past batchEndMs into rectification
+  // Track per-story end times: conflicts extend past batchEndMs into rectification.
+  // Conflict stories are intentionally omitted from the initial loop and handled
+  // after rectification so their end times reflect the full rectification duration.
   const storyEndTimes = new Map<string, number>();
   for (const story of [...workerResult.pipelinePassed, ...workerResult.merged]) {
     storyEndTimes.set(story.id, batchEndMs);

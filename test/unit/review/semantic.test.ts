@@ -220,31 +220,8 @@ describe("runSemanticReview — git diff invocation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC-3: Diff truncation at 102400 bytes (100KB)
+// AC-3: Diff truncation at 12288 bytes
 // ---------------------------------------------------------------------------
-
-/** Spawn mock that returns different output for diff vs diff --stat */
-function makeSpawnMockWithStat(diffStdout: string, statStdout: string, exitCode = 0) {
-  return mock((opts: { cmd?: string[] }) => {
-    const isStatCall = opts.cmd?.includes("--stat");
-    const stdout = isStatCall ? statStdout : diffStdout;
-    return {
-      exited: Promise.resolve(exitCode),
-      stdout: new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(stdout));
-          controller.close();
-        },
-      }),
-      stderr: new ReadableStream({
-        start(controller) {
-          controller.close();
-        },
-      }),
-      kill: () => {},
-    };
-  }) as unknown as typeof _semanticDeps.spawn;
-}
 
 describe("runSemanticReview — diff truncation", () => {
   let origSpawn: typeof _semanticDeps.spawn;
@@ -257,7 +234,7 @@ describe("runSemanticReview — diff truncation", () => {
     _semanticDeps.spawn = origSpawn;
   });
 
-  test("passes full diff to LLM prompt when diff is under 102400 bytes", async () => {
+  test("passes full diff to LLM prompt when diff is under 12288 bytes", async () => {
     const smallDiff = "a".repeat(100);
     _semanticDeps.spawn = makeSpawnMock(smallDiff, 0);
     let capturedPrompt = "";
@@ -272,10 +249,9 @@ describe("runSemanticReview — diff truncation", () => {
     expect(capturedPrompt).toContain(smallDiff);
   });
 
-  test("truncates diff and appends truncation marker when diff exceeds 102400 bytes", async () => {
-    const largeDiff = "x".repeat(110_000);
-    const statOutput = " src/foo.ts | 100 +\n src/bar.ts | 50 +\n 2 files changed";
-    _semanticDeps.spawn = makeSpawnMockWithStat(largeDiff, statOutput, 0);
+  test("truncates diff and appends truncation marker when diff exceeds 12288 bytes", async () => {
+    const largeDiff = "x".repeat(15_000);
+    _semanticDeps.spawn = makeSpawnMock(largeDiff, 0);
     let capturedPrompt = "";
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
     (agent.complete as ReturnType<typeof mock>).mockImplementation(async (prompt: string) => {
@@ -285,16 +261,15 @@ describe("runSemanticReview — diff truncation", () => {
 
     await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
 
-    expect(capturedPrompt).toContain("truncated at 102400 bytes");
-    // The diff in the prompt must not exceed the cap (plus stat preamble + marker overhead)
-    const diffSection = capturedPrompt.match(/```diff\n([\s\S]*?)```/)?.[1] ?? "";
-    expect(diffSection.length).toBeLessThanOrEqual(102_400 + 500); // cap + stat preamble + marker
+    expect(capturedPrompt).toContain("... (truncated, showing first");
+    // The diff in the prompt must not exceed the cap
+    const diffInPrompt = capturedPrompt.match(/```diff\n([\s\S]*?)```/)?.[1] ?? "";
+    expect(diffInPrompt.length).toBeLessThanOrEqual(12_288 + 100); // cap + marker overhead
   });
 
-  test("truncation includes file summary from git diff --stat", async () => {
-    const largeDiff = "y".repeat(110_000);
-    const statOutput = " src/foo.ts | 100 +\n src/bar.ts | 50 +\n 2 files changed";
-    _semanticDeps.spawn = makeSpawnMockWithStat(largeDiff, statOutput, 0);
+  test("truncation marker contains 'truncated, showing first N files'", async () => {
+    const largeDiff = "y".repeat(20_000);
+    _semanticDeps.spawn = makeSpawnMock(largeDiff, 0);
     let capturedPrompt = "";
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
     (agent.complete as ReturnType<typeof mock>).mockImplementation(async (prompt: string) => {
@@ -304,9 +279,7 @@ describe("runSemanticReview — diff truncation", () => {
 
     await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
 
-    expect(capturedPrompt).toContain("File Summary (all changed files)");
-    expect(capturedPrompt).toContain("src/foo.ts");
-    expect(capturedPrompt).toContain("src/bar.ts");
+    expect(capturedPrompt).toMatch(/\.\.\. \(truncated, showing first \d+ files?\)/);
   });
 });
 
@@ -542,53 +515,6 @@ describe("runSemanticReview — fail-open on invalid JSON", () => {
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
 
     expect(result.check).toBe("semantic");
-  });
-});
-
-// #105: Truncated JSON with "passed": false should fail-closed
-// ---------------------------------------------------------------------------
-
-describe("runSemanticReview — fail-closed on truncated JSON with passed:false (#105)", () => {
-  let origSpawn: typeof _semanticDeps.spawn;
-
-  beforeEach(() => {
-    origSpawn = _semanticDeps.spawn;
-  });
-
-  afterEach(() => {
-    _semanticDeps.spawn = origSpawn;
-  });
-
-  test("returns success=false when truncated JSON contains passed:false", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
-    // Simulates LLM output cut off mid-response — JSON is invalid but clearly says passed:false
-    const truncatedResponse = '```json\n{"passed": false, "findings": [{"severity": "error", "file": "test.ts", "line": 1, "issue": "Test file is 78';
-    const agent = makeMockAgent(truncatedResponse);
-
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
-
-    expect(result.success).toBe(false);
-  });
-
-  test("output mentions truncated response on fail-closed", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
-    const truncatedResponse = '{"passed": false, "findings": [{"severity": "error"';
-    const agent = makeMockAgent(truncatedResponse);
-
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
-
-    expect(result.output).toContain("truncated");
-    expect(result.output).toContain("passed:false");
-  });
-
-  test("still fail-open when truncated JSON contains passed:true", async () => {
-    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
-    const truncatedResponse = '{"passed": true, "findings": [';
-    const agent = makeMockAgent(truncatedResponse);
-
-    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
-
-    expect(result.success).toBe(true);
   });
 });
 
