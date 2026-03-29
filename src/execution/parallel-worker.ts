@@ -7,6 +7,7 @@ import type { NaxConfig } from "../config";
 import { getSafeLogger } from "../logger";
 import type { PipelineEventEmitter } from "../pipeline/events";
 import { runPipeline } from "../pipeline/runner";
+import type { PipelineRunResult } from "../pipeline/runner";
 import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext, RoutingResult } from "../pipeline/types";
 import type { UserStory } from "../prd";
@@ -22,7 +23,7 @@ export async function executeStoryInWorktree(
   context: Omit<PipelineContext, "story" | "stories" | "workdir" | "routing">,
   routing: RoutingResult,
   eventEmitter?: PipelineEventEmitter,
-): Promise<{ success: boolean; cost: number; error?: string }> {
+): Promise<{ success: boolean; cost: number; error?: string; pipelineResult?: PipelineRunResult }> {
   const logger = getSafeLogger();
 
   try {
@@ -46,6 +47,7 @@ export async function executeStoryInWorktree(
       success: result.success,
       cost: result.context.agentResult?.estimatedCost || 0,
       error: result.success ? undefined : result.reason,
+      pipelineResult: result,
     };
   } catch (error) {
     return {
@@ -65,7 +67,7 @@ export interface ParallelBatchResult {
   /** Stories that were actually merged to the base branch */
   merged: UserStory[];
   /** Stories that failed the pipeline */
-  failed: Array<{ story: UserStory; error: string }>;
+  failed: Array<{ story: UserStory; error: string; pipelineResult?: PipelineRunResult }>;
   /** Total cost accumulated */
   totalCost: number;
   /** Stories with merge conflicts (includes per-story original cost for rectification) */
@@ -135,7 +137,7 @@ export async function executeParallelBatch(
             cost: result.cost,
           });
         } else {
-          results.failed.push({ story, error: result.error || "Unknown error" });
+          results.failed.push({ story, error: result.error || "Unknown error", pipelineResult: result.pipelineResult });
           logger?.error("parallel", "Story execution failed", {
             storyId: story.id,
             error: result.error,

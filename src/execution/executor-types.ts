@@ -39,6 +39,8 @@ export interface SequentialExecutionContext {
   agentGetFn?: AgentGetFn;
   /** PID registry for crash recovery — register child PIDs so they can be killed on SIGTERM. */
   pidRegistry?: PidRegistry;
+  /** Max parallel sessions: undefined=sequential, 0=auto-detect, N>0=cap at N */
+  parallelCount?: number;
 }
 
 export interface SequentialExecutionResult {

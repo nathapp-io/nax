@@ -232,7 +232,7 @@ export class Logger {
  * });
  * ```
  */
-export function initLogger(options: LoggerOptions): Logger {
+export function initLogger(options: LoggerOptions = { level: "warn" }): Logger {
   if (instance) {
     throw new Error("Logger already initialized. Call getLogger() to access existing instance.");
   }

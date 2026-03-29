@@ -1,0 +1,332 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "parallel-unify-001",
+  "branchName": "feat/parallel-unify-001",
+  "createdAt": "2026-03-28T00:00:00.000Z",
+  "updatedAt": "2026-03-29T07:15:36.275Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add parallel-batch.ts and rename rectify file",
+      "description": "Extract batch orchestration logic from parallel-executor.ts and parallel-executor-rectification-pass.ts into a new focused file src/execution/parallel-batch.ts. This file exports runParallelBatch() which creates worktrees, runs executeParallelBatch (from parallel-worker.ts), merges results via MergeEngine, runs a rectification pass for conflicts, and returns ParallelBatchResult with per-story costs from the storyCosts Map (not even-split). Simultaneously rename src/execution/parallel-executor-rectify.ts to src/execution/merge-conflict-rectify.ts with identical exports, and update all import sites. Delete parallel-executor-rectification-pass.ts after absorbing its logic.",
+      "acceptanceCriteria": [
+        "runParallelBatch({ stories, ctx, prd }) returns ParallelBatchResult where completed contains stories whose pipeline passed and were merged to base branch",
+        "runParallelBatch returns ParallelBatchResult where failed contains { story, pipelineResult: PipelineRunResult } for each story whose pipeline did not pass",
+        "runParallelBatch returns ParallelBatchResult where mergeConflicts contains { story, rectified: boolean, cost: number } for each story that had a merge conflict",
+        "runParallelBatch returns storyCosts Map where storyCosts.get(story.id) equals the per-story cost from executeParallelBatch's storyCosts, not an even-split formula",
+        "runParallelBatch returns totalCost equal to the sum of all per-story costs in the batch",
+        "When executeParallelBatch returns a merge conflict for a story, runParallelBatch calls rectifyConflictedStory and sets rectified: true in mergeConflicts when rectification succeeds",
+        "When rectifyConflictedStory fails, runParallelBatch sets rectified: false in mergeConflicts for that story",
+        "src/execution/merge-conflict-rectify.ts exports ConflictedStoryInfo, RectificationResult, RectifyConflictedStoryOptions, and rectifyConflictedStory with identical signatures to the original parallel-executor-rectify.ts",
+        "All import sites of parallel-executor-rectify are updated to import from merge-conflict-rectify",
+        "parallel-executor-rectification-pass.ts is deleted and no file in src/ imports from it"
+      ],
+      "tags": [
+        "feature",
+        "refactor"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": false,
+      "attempts": 1,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/execution/parallel-executor.ts",
+        "src/execution/parallel-coordinator.ts",
+        "src/execution/parallel-executor-rectify.ts",
+        "src/execution/parallel-executor-rectification-pass.ts",
+        "src/execution/parallel-worker.ts"
+      ],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Autofix exhausted: review still failing after fix attempts"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "review",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "reviewFindings": [
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": ".nax/features/parallel-unify-001/.nax-acceptance.test.ts",
+              "line": 1,
+              "message": "The diff is truncated to only show the acceptance test file. The story requires creating src/execution/parallel-batch.ts, renaming parallel-executor-rectify.ts to merge-conflict-rectify.ts, deleting parallel-executor-rectification-pass.ts, and updating all import sites. None of these implementation changes are visible in the diff. ACs 4, 8, 9, and 10 cannot be verified.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "warning",
+              "file": ".nax/features/parallel-unify-001/.nax-acceptance.test.ts",
+              "line": 129,
+              "message": "Uses Bun.spawnSync([\"rm\", \"-rf\", tmpDir]) for test cleanup. Rule 04-forbidden-patterns.md explicitly bans rm -rf in test cleanup due to accidental deletion risk.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "warning",
+              "file": ".nax/features/parallel-unify-001/.nax-acceptance.test.ts",
+              "line": 126,
+              "message": "tmpDir is created with Bun.spawnSync([\"mkdir\", \"-p\", tmpDir]) rather than mkdtempSync. mkdtempSync atomically creates a unique temp directory and returns its path, avoiding a TOCTOU race between path generation and directory creation.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "info",
+              "file": ".nax/features/parallel-unify-001/.nax-acceptance.test.ts",
+              "line": 106,
+              "message": "The BatchOverrides.failed type is { story: UserStory; error: string }[] but AC-2 asserts result.failed[0].pipelineResult is defined with success: false. This means runParallelBatch must synthesize a PipelineRunResult from the raw error string. This mapping logic is reasonable but must be present in the (invisible) parallel-batch.ts implementation.",
+              "source": "semantic-review"
+            }
+          ],
+          "cost": 2.2736438999999997,
+          "timestamp": "2026-03-28T15:07:37.791Z"
+        }
+      ],
+      "storyPoints": 1,
+      "failureCategory": "session-failure"
+    },
+    {
+      "id": "US-002",
+      "title": "Add selectIndependentBatch() to story-selector and parallelCount to ExecutionContext",
+      "description": "Add selectIndependentBatch(stories, maxCount) to src/execution/story-selector.ts that returns the first dependency-free batch of stories capped at maxCount. Move groupStoriesByDependencies from parallel-coordinator.ts to story-selector.ts (or re-export from there) so the function is not duplicated. Add parallelCount?: number to SequentialExecutionContext in src/execution/executor-types.ts.",
+      "acceptanceCriteria": [
+        "selectIndependentBatch(stories, maxCount) returns an empty array when stories is empty",
+        "selectIndependentBatch(stories, maxCount) returns a single-element array when exactly one story has no unmet dependencies",
+        "selectIndependentBatch(stories, maxCount) returns at most maxCount stories even when more dependency-free stories are available",
+        "selectIndependentBatch(stories, maxCount) returns only stories whose dependencies are all in status 'completed' (no unmet deps)",
+        "selectIndependentBatch is exported from src/execution/story-selector.ts",
+        "SequentialExecutionContext in src/execution/executor-types.ts has a parallelCount?: number field",
+        "groupStoriesByDependencies is accessible from src/execution/story-selector.ts (exported or re-exported) and parallel-coordinator.ts imports it from story-selector.ts rather than defining its own copy"
+      ],
+      "tags": [
+        "feature"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "modelTier": "balanced",
+        "initialComplexity": "simple"
+      },
+      "contextFiles": [
+        "src/execution/story-selector.ts",
+        "src/execution/parallel-coordinator.ts",
+        "src/execution/executor-types.ts",
+        "src/prd/types.ts",
+        "src/prd/schema.ts"
+      ],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast: Autofix exhausted: review still failing after fix attempts"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "fast",
+          "stage": "review",
+          "summary": "Failed with tier fast, escalating to next tier",
+          "reviewFindings": [
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/story-selector.ts",
+              "line": 1,
+              "message": "Implementation file src/execution/story-selector.ts is not present in the diff. The test file imports selectIndependentBatch and groupStoriesByDependencies from this module, but no creation or modification of this source file is visible. ACs 1-5 and 7 cannot be verified.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/executor-types.ts",
+              "line": 1,
+              "message": "AC 6 requires adding parallelCount?: number to SequentialExecutionContext in src/execution/executor-types.ts, but no changes to this file are present in the diff.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/parallel-coordinator.ts",
+              "line": 1,
+              "message": "AC 7 requires parallel-coordinator.ts to import groupStoriesByDependencies from story-selector.ts rather than defining its own copy, but no changes to this file are visible in the diff. Cannot verify the deduplication/re-export requirement.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "warning",
+              "file": "test/unit/execution/story-selector.test.ts",
+              "line": 95,
+              "message": "AC 4 specifies dependencies must be in status 'completed', but the test uses status 'passed' (via createCompletedStory which sets status: \"passed\"). If the canonical terminal status in the UserStory type is 'passed', the AC wording and test description on line 95 disagree with each other — one of them is incorrect.",
+              "source": "semantic-review"
+            }
+          ],
+          "cost": 0.24027750000000003,
+          "timestamp": "2026-03-28T15:19:13.740Z"
+        }
+      ],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-003",
+      "title": "Unify executors — integrate parallel dispatch into sequential loop",
+      "description": "Rename src/execution/sequential-executor.ts to src/execution/unified-executor.ts and rename the exported function from executeSequential to executeUnified. Extend the executor loop to dispatch to runParallelBatch when ctx.parallelCount > 0 and selectIndependentBatch returns more than 1 story; fall back to runIteration for single-story or non-parallel runs. Route parallel failures through handlePipelineFailure (same escalation path as sequential). Emit story:started events for each story before the batch. Simplify runner-execution.ts to always call executeUnified (remove separate parallel dispatch branch). Delete parallel-executor.ts and lifecycle/parallel-lifecycle.ts. Update runner.ts to remove reference to _runnerDeps.runParallelExecution.",
+      "acceptanceCriteria": [
+        "src/execution/unified-executor.ts exports executeUnified() with the same return type as the former executeSequential()",
+        "When ctx.parallelCount > 0 and selectIndependentBatch returns more than 1 story, executeUnified calls runParallelBatch instead of runIteration",
+        "When ctx.parallelCount > 0 but selectIndependentBatch returns exactly 1 story, executeUnified calls runIteration for that story",
+        "When ctx.parallelCount is undefined or 0, executeUnified always calls runIteration and never calls runParallelBatch",
+        "For each story in a parallel batch, pipelineEventBus.emit({ type: 'story:started', storyId: story.id }) fires before runParallelBatch is called",
+        "When a parallel story's pipelineResult indicates failure, executeUnified passes it to handlePipelineFailure and handleTierEscalation is reached when finalAction === 'escalate'",
+        "After a parallel batch, the existing cost-limit check in the loop runs and exits with reason 'cost-limit' when totalCost exceeds the configured limit",
+        "runner-execution.ts no longer contains a conditional parallel dispatch branch; it always calls executeUnified passing parallelCount from its options",
+        "src/execution/parallel-executor.ts is deleted and no file in src/ imports from it",
+        "src/execution/lifecycle/parallel-lifecycle.ts is deleted and no file in src/ imports from it",
+        "runner.ts no longer references _runnerDeps.runParallelExecution"
+      ],
+      "tags": [
+        "feature",
+        "refactor"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/execution/sequential-executor.ts",
+        "src/execution/runner-execution.ts",
+        "src/execution/pipeline-result-handler.ts",
+        "src/execution/iteration-runner.ts",
+        "src/execution/runner.ts"
+      ],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Autofix exhausted: review still failing after fix attempts"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "review",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "reviewFindings": [
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/parallel-executor.ts",
+              "line": 1,
+              "message": "AC-9 requires src/execution/parallel-executor.ts to be deleted, but the git diff contains no deletion for this file. The test in unified-executor.test.ts will fail because the file still exists.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/lifecycle/parallel-lifecycle.ts",
+              "line": 1,
+              "message": "AC-10 requires src/execution/lifecycle/parallel-lifecycle.ts to be deleted, but no deletion appears in the diff. The corresponding test assertion will fail.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/runner.ts",
+              "line": 1,
+              "message": "AC-11 requires runner.ts to remove _runnerDeps.runParallelExecution, but no diff for runner.ts is present. The reference likely still exists.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "warning",
+              "file": "src/execution/unified-executor.ts",
+              "line": 135,
+              "message": "story:started is emitted for each batch story with hardcoded modelTier: 'balanced', ignoring the story's own routing metadata. This produces inaccurate event data for stories routed to a different tier.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "warning",
+              "file": "src/execution/unified-executor.ts",
+              "line": 163,
+              "message": "The pipelineContext is constructed with 'as unknown as RunParallelBatchOptions[\"ctx\"][\"pipelineContext\"]', a double cast that suppresses a genuine type mismatch. The object is missing required fields (featureDir, story, agentGetFn at minimum) and the cast hides compile-time errors.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "warning",
+              "file": "src/execution/runner-execution.ts",
+              "line": 164,
+              "message": "statusFile, startedAt, formatterMode, and headless are removed from the SequentialExecutionContext passed to executeUnified. No diff for executor-types.ts is present to confirm these fields were removed from the type. If the type still declares them as required, this is a TypeScript error.",
+              "source": "semantic-review"
+            }
+          ],
+          "cost": 3.7738056500000003,
+          "timestamp": "2026-03-29T03:11:42.254Z"
+        }
+      ],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-004",
+      "title": "Fix per-story metrics accuracy and migrate parallel tests",
+      "description": "Plumb the storyCosts Map from ParallelBatchResult through to per-story StoryMetrics so each story's cost field reflects its actual agent cost rather than an even-split estimate. Set per-story durationMs to the time from worktree creation to merge completion for that story, not the batch total. Ensure rectification story metrics carry source: 'rectification' and an accurate rectificationCost field. Update or migrate test/integration/execution/runner-parallel-metrics.test.ts so it exercises the unified executor path rather than mocking runParallelExecution.",
+      "acceptanceCriteria": [
+        "When runParallelBatch completes, the StoryMetrics entry for each completed story has cost equal to storyCosts.get(story.id) from the batch result",
+        "When runParallelBatch completes, the StoryMetrics entry for each completed story has durationMs equal to the elapsed time for that story individually (worktree creation to merge), not the wall-clock time of the full batch",
+        "When a story is successfully rectified after a merge conflict, its StoryMetrics entry has source: 'rectification' and rectificationCost reflecting only the cost incurred during rectification",
+        "When --parallel is set and a batch runs, a story:started event is emitted with the correct storyId for each story in the batch before the batch executes",
+        "runner-parallel-metrics.test.ts tests pass without mocking runParallelExecution — they invoke executeUnified directly with parallelCount set",
+        "NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000 exits 0 with no test failures"
+      ],
+      "tags": [
+        "feature",
+        "metrics"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/unified-executor.ts",
+        "src/execution/parallel-batch.ts",
+        "src/metrics/types.ts",
+        "src/metrics/tracker.ts",
+        "test/integration/execution/runner-parallel-metrics.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    }
+  ],
+  "analysis": "The codebase has two separate execution codepaths: sequential-executor.ts (229 lines, exports executeSequential) and parallel-executor.ts (337 lines, exports runParallelExecution). The parallel path is missing ~80% of sequential's lifecycle logic: no pipeline event bus wiring, no cost enforcement, no tier escalation, no pre/post-run pipelines, no deferred review, and inaccurate per-story metrics.\n\nKey files and their roles:\n- src/execution/sequential-executor.ts: Main loop with pipelineEventBus wiring, cost checks, story selection via selectNextStories(), runIteration() dispatch. To be renamed unified-executor.ts with executeUnified() export.\n- src/execution/executor-types.ts (74 lines): Defines SequentialExecutionContext (missing parallelCount) and SequentialExecutionResult. Needs parallelCount?: number added.\n- src/execution/parallel-executor.ts (337 lines): Standalone parallel orchestrator with runParallelExecution(). To be deleted — its lifecycle logic is replaced by the unified loop.\n- src/execution/parallel-coordinator.ts (319 lines): Has executeParallel(), groupStoriesByDependencies(), buildDependencyMap(). groupStoriesByDependencies() must move to story-selector.ts without duplication. executeParallel() is called by parallel-executor.ts which is being deleted.\n- src/execution/parallel-executor-rectify.ts (140 lines): rectifyConflictedStory() with ConflictedStoryInfo, RectificationResult types. To be renamed merge-conflict-rectify.ts with identical exports. All imports must be updated.\n- src/execution/parallel-executor-rectification-pass.ts (118 lines): runRectificationPass() and ParallelStoryMetrics interface. Logic to be absorbed into parallel-batch.ts, file deleted.\n- src/execution/parallel-worker.ts (162 lines): executeParallelBatch() and ParallelBatchResult. Kept as-is — parallel-batch.ts calls it.\n- src/execution/story-selector.ts (77 lines): selectNextStories() with StorySelection interface. Needs selectIndependentBatch() added using groupStoriesByDependencies moved from parallel-coordinator.\n- src/execution/runner-execution.ts (250 lines): Has separate parallel dispatch branch (calls runParallelExecution then returns early). Must be simplified to always call executeUnified with parallelCount.\n- src/execution/pipeline-result-handler.ts (220 lines): handlePipelineFailure() routes to handleTierEscalation when finalAction === 'escalate'. Must be reused by unified executor for parallel failures.\n- src/execution/lifecycle/parallel-lifecycle.ts: Exists and must be deleted.\n- src/execution/runner.ts: References _runnerDeps.runParallelExecution — must be updated.\n\nRisk areas:\n1. Import chain: parallel-executor.ts is imported by runner-execution.ts. Deleting it without updating all consumers causes build failures. Must scan for all import sites.\n2. groupStoriesByDependencies move: parallel-coordinator.ts uses it internally. After moving to story-selector.ts, parallel-coordinator.ts must import from story-selector or a shared location — not duplicate.\n3. Metrics accuracy: Currently parallel-executor uses even-split cost formula. storyCosts Map from executeParallelBatch (parallel-worker.ts) has per-story costs — must be plumbed through to StoryMetrics.\n4. Sequential regression: The sequential-only code path in unified-executor.ts must be unchanged. When parallelCount is undefined/0, behavior must be identical to v0.54.6.\n5. Event bus wiring: The sequential loop already wires pipelineEventBus subscribers. Parallel batch must emit story:started for each story before batch and story:completed after merge — using the same bus already initialized by the loop.\n\nMigration order (dependency-driven): US-001 and US-002 are independent (no shared dependencies). US-003 depends on both. US-004 depends on US-003."
+}
