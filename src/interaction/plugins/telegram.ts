@@ -156,7 +156,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
 
     return {
       requestId,
-      action: "skip",
+      action: "skip", // This will be overridden by the chain's applyFallback if respondedBy is "timeout"
       respondedBy: "timeout",
       respondedAt: Date.now(),
     };
