@@ -113,9 +113,12 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
   const { workdir, config, maxConcurrency, pipelineContext, eventEmitter, agentGetFn, hooks, pluginRegistry } = ctx;
 
   // 1. Create worktree manager and worktrees for each story
+  // Record per-story start time at worktree creation (AC-2: worktree creation → merge completion)
   const worktreeManager = await _parallelBatchDeps.createWorktreeManager();
   const worktreePaths = new Map<string, string>();
+  const storyStartTimes = new Map<string, number>();
   for (const story of stories) {
+    storyStartTimes.set(story.id, Date.now());
     await worktreeManager.create(workdir, story.id);
     worktreePaths.set(story.id, path.join(workdir, ".nax-wt", story.id));
   }
@@ -130,6 +133,8 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
     maxConcurrency,
     eventEmitter,
   );
+  // Batch execution complete — record end time for stories resolved in the batch
+  const batchEndMs = Date.now();
 
   // 3. Completed = stories merged to base.
   // Note: we use workerResult.merged (stories that were actually merged to the base branch),
@@ -152,6 +157,15 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
   }));
 
   // 5. Rectify merge conflicts sequentially
+  // Track per-story end times: conflicts extend past batchEndMs into rectification
+  const storyEndTimes = new Map<string, number>();
+  for (const story of [...workerResult.pipelinePassed, ...workerResult.merged]) {
+    storyEndTimes.set(story.id, batchEndMs);
+  }
+  for (const { story } of workerResult.failed) {
+    storyEndTimes.set(story.id, batchEndMs);
+  }
+
   const mergeConflicts: RunParallelBatchResult["mergeConflicts"] = [];
   for (const conflict of workerResult.mergeConflicts) {
     const story = stories.find((s) => s.id === conflict.storyId);
@@ -177,11 +191,23 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
       });
       mergeConflicts.push({ story, rectified: false, cost: 0 });
     }
+    // Record end time after rectification attempt (success or failure)
+    storyEndTimes.set(conflict.storyId, Date.now());
   }
 
   // 6. Costs from worker (not even-split)
   const storyCosts = workerResult.storyCosts;
   const totalCost = [...storyCosts.values()].reduce((sum, c) => sum + c, 0);
 
-  return { completed, failed, mergeConflicts, storyCosts, totalCost };
+  // 7. Build storyDurations: elapsed time from worktree creation to merge/rectification completion
+  const storyDurations = new Map<string, number>();
+  for (const story of stories) {
+    const startMs = storyStartTimes.get(story.id);
+    const endMs = storyEndTimes.get(story.id);
+    if (startMs !== undefined && endMs !== undefined) {
+      storyDurations.set(story.id, endMs - startMs);
+    }
+  }
+
+  return { completed, failed, mergeConflicts, storyCosts, storyDurations, totalCost };
 }
