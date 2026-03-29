@@ -61,9 +61,21 @@ function makeSpawnMock(stdout = "diff output", exitCode = 0) {
 
 describe("runSemanticReview — structured findings in result (US-003 AC-2)", () => {
   let origSpawn: typeof _semanticDeps.spawn;
+  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
+  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
 
-  beforeEach(() => { origSpawn = _semanticDeps.spawn; });
-  afterEach(() => { _semanticDeps.spawn = origSpawn; });
+  beforeEach(() => {
+    origSpawn = _semanticDeps.spawn;
+    origIsGitRefValid = _semanticDeps.isGitRefValid;
+    origGetMergeBase = _semanticDeps.getMergeBase;
+    _semanticDeps.isGitRefValid = mock(async () => true);
+    _semanticDeps.getMergeBase = mock(async () => undefined);
+  });
+  afterEach(() => {
+    _semanticDeps.spawn = origSpawn;
+    _semanticDeps.isGitRefValid = origIsGitRefValid;
+    _semanticDeps.getMergeBase = origGetMergeBase;
+  });
 
   test("result.findings is defined and non-empty when LLM returns passed=false with findings", async () => {
     _semanticDeps.spawn = makeSpawnMock("some diff");
