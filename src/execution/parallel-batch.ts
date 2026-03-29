@@ -114,12 +114,21 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
 
   // 1. Create worktree manager and worktrees for each story
   // Record per-story start time at worktree creation (AC-2: worktree creation → merge completion)
+  const logger = getSafeLogger();
   const worktreeManager = await _parallelBatchDeps.createWorktreeManager();
   const worktreePaths = new Map<string, string>();
   const storyStartTimes = new Map<string, number>();
   for (const story of stories) {
     storyStartTimes.set(story.id, Date.now());
-    await worktreeManager.create(workdir, story.id);
+    try {
+      await worktreeManager.create(workdir, story.id);
+    } catch (error) {
+      logger?.error("parallel-batch", "Failed to create worktree for story", {
+        storyId: story.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
     worktreePaths.set(story.id, path.join(workdir, ".nax-wt", story.id));
   }
 
