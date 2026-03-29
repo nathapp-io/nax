@@ -32,7 +32,8 @@ type BridgeEventHandler = (event: unknown) => void;
 // Question pattern detection
 // ─────────────────────────────────────────────────────────────────────────────
 
-const QUESTION_PATTERNS = [/\?/, /\bwhich\b/i, /\bshould i\b/i, /\bunclear\b/i, /\bplease clarify\b/i];
+// Match `?` only when NOT part of `?.` (optional chaining) or `??` (nullish coalescing)
+const QUESTION_PATTERNS = [/(?<![?])\?(?![.?])/, /\bwhich\b/i, /\bshould i\b/i, /\bunclear\b/i, /\bplease clarify\b/i];
 
 function containsQuestionPattern(content: string): boolean {
   return QUESTION_PATTERNS.some((pattern) => pattern.test(content));
