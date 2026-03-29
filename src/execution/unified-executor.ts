@@ -208,6 +208,7 @@ export async function executeUnified(
           for (const story of batchResult.completed) {
             const storyCost = batchResult.storyCosts.get(story.id) ?? 0;
             const storyStartTime = storyStartMs.get(story.id) ?? Date.now();
+            const storyDuration = batchResult.storyDurations?.get(story.id) ?? Date.now() - storyStartTime;
             allStoryMetrics.push({
               storyId: story.id,
               complexity: story.routing?.complexity ?? "medium",
@@ -217,12 +218,36 @@ export async function executeUnified(
               finalTier: story.routing?.modelTier ?? "balanced",
               success: true,
               cost: storyCost,
-              durationMs: Date.now() - storyStartTime,
+              durationMs: storyDuration,
               firstPassSuccess: true,
               startedAt: batchStartedAt,
               completedAt: batchCompletedAt,
               source: "parallel" as const,
             });
+          }
+
+          // Build metrics for rectified merge-conflict stories (AC-3)
+          for (const conflict of batchResult.mergeConflicts) {
+            if (conflict.rectified) {
+              const storyStartTime = storyStartMs.get(conflict.story.id) ?? Date.now();
+              const storyDuration = batchResult.storyDurations?.get(conflict.story.id) ?? Date.now() - storyStartTime;
+              allStoryMetrics.push({
+                storyId: conflict.story.id,
+                complexity: conflict.story.routing?.complexity ?? "medium",
+                modelTier: conflict.story.routing?.modelTier ?? "balanced",
+                modelUsed: ctx.config.autoMode.defaultAgent,
+                attempts: 1,
+                finalTier: conflict.story.routing?.modelTier ?? "balanced",
+                success: true,
+                cost: batchResult.storyCosts.get(conflict.story.id) ?? 0,
+                durationMs: storyDuration,
+                firstPassSuccess: false,
+                startedAt: batchStartedAt,
+                completedAt: batchCompletedAt,
+                source: "rectification" as const,
+                rectificationCost: conflict.cost,
+              });
+            }
           }
 
           // Cost-limit check after parallel batch (AC-7)
