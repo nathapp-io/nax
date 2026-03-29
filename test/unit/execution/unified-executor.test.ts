@@ -468,6 +468,104 @@ describe("AC-7 — cost-limit check after parallel batch (source)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AC-7 — cost-limit exit after parallel batch (runtime)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("AC-7 — cost-limit exit after parallel batch (runtime)", () => {
+  let deps: Record<string, unknown>;
+  let origRunParallelBatch: unknown;
+  let origSelectIndependentBatch: unknown;
+
+  beforeEach(async () => {
+    const mod = await import("../../../src/execution/unified-executor");
+    deps = (mod as Record<string, unknown>)._unifiedExecutorDeps as Record<string, unknown>;
+    origRunParallelBatch = deps.runParallelBatch;
+    origSelectIndependentBatch = deps.selectIndependentBatch;
+  });
+
+  afterEach(() => {
+    if (deps) {
+      deps.runParallelBatch = origRunParallelBatch;
+      deps.selectIndependentBatch = origSelectIndependentBatch;
+    }
+    mock.restore();
+  });
+
+  test("executeUnified returns exitReason 'cost-limit' when parallel batch pushes totalCost over the configured limit", async () => {
+    const story1 = makePendingStory("US-001");
+    const story2 = makePendingStory("US-002");
+
+    deps.selectIndependentBatch = mock(() => [story1, story2]);
+    deps.runParallelBatch = mock(async () => ({
+      completed: [story1, story2],
+      failed: [],
+      mergeConflicts: [],
+      storyCosts: new Map<string, number>([
+        [story1.id, 3],
+        [story2.id, 3],
+      ]),
+      totalCost: 6, // exceeds costLimit of 5
+    }));
+
+    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const prd = makePrd([story1, story2]);
+    const baseCtx = makeCtx({ parallelCount: 2 });
+    const ctx = {
+      ...baseCtx,
+      config: {
+        ...baseCtx.config,
+        execution: {
+          ...baseCtx.config.execution,
+          costLimit: 5,
+          maxIterations: 2,
+        },
+      },
+    };
+
+    const result = await executeUnified(ctx as never, prd as never);
+    expect(result.exitReason).toBe("cost-limit");
+    expect(result.totalCost).toBeGreaterThanOrEqual(6);
+  });
+
+  test("executeUnified does NOT exit with cost-limit when parallel batch cost stays below limit", async () => {
+    const story1 = makePendingStory("US-001");
+    const story2 = makePendingStory("US-002");
+
+    deps.selectIndependentBatch = mock(() => [story1, story2]);
+    deps.runParallelBatch = mock(async () => ({
+      completed: [story1, story2],
+      failed: [],
+      mergeConflicts: [],
+      storyCosts: new Map<string, number>([
+        [story1.id, 1],
+        [story2.id, 1],
+      ]),
+      totalCost: 2, // below costLimit of 100
+    }));
+
+    const { executeUnified } = await import("../../../src/execution/unified-executor");
+    const prd = makePrd([story1, story2]);
+    const baseCtx = makeCtx({ parallelCount: 2 });
+    const ctx = {
+      ...baseCtx,
+      config: {
+        ...baseCtx.config,
+        execution: {
+          ...baseCtx.config.execution,
+          costLimit: 100,
+          maxIterations: 1,
+        },
+      },
+    };
+
+    const result = await executeUnified(ctx as never, prd as never).catch(
+      () => ({ exitReason: "error" }) as { exitReason: string },
+    );
+    expect(result.exitReason).not.toBe("cost-limit");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AC-8 — runner-execution.ts always calls executeUnified (no conditional branch)
 // ─────────────────────────────────────────────────────────────────────────────
 
