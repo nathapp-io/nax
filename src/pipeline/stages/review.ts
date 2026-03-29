@@ -40,6 +40,10 @@ export const reviewStage: PipelineStage = {
     const agentName = effectiveConfig.autoMode?.defaultAgent;
     const modelResolver = (_tier: string) => (agentName ? (agentResolver(agentName) ?? null) : null);
 
+    // #136: Consume retrySkipChecks once (cleared after use so subsequent retries re-evaluate)
+    const retrySkipChecks = ctx.retrySkipChecks;
+    ctx.retrySkipChecks = undefined;
+
     const result = await reviewOrchestrator.review(
       effectiveConfig.review,
       effectiveWorkdir,
@@ -57,6 +61,7 @@ export const reviewStage: PipelineStage = {
       },
       modelResolver,
       ctx.config,
+      retrySkipChecks,
     );
 
     ctx.reviewResult = result.builtIn;
