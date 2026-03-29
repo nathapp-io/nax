@@ -69,13 +69,40 @@ export class WorktreeManager {
     const worktreePath = join(projectRoot, ".nax-wt", storyId);
     const branchName = `nax/${storyId}`;
 
-    // Clean up any stale worktree/branch from a previous crashed run before creating.
-    // This handles the case where git still has a worktree reference (orphaned after
-    // a crash) but the directory was deleted, causing "already exists" errors.
+    // Clean up any stale worktree/branch from a previous crashed run.
+    // Three cleanup steps handle all orphaned-worktree scenarios:
+    // 1. `git worktree prune` — removes admin refs whose directories no longer exist
+    // 2. `git worktree remove --force` — removes worktree if directory still exists
+    // 3. `git branch -D` — removes leftover branch so `-b` flag doesn't conflict
     try {
+      // Step 1: Prune orphaned worktree references (dir deleted but .git/worktrees/ entry remains)
+      const pruneProc = _managerDeps.spawn(["git", "worktree", "prune"], {
+        cwd: projectRoot,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      await pruneProc.exited;
+    } catch {
+      // prune is best-effort
+    }
+
+    try {
+      // Step 2: Remove worktree if it still exists as a live worktree
       await this.remove(projectRoot, storyId);
     } catch {
-      // remove() throws if worktree doesn't exist — that's fine, we just want a clean slate
+      // remove() throws if worktree doesn't exist — that's fine
+    }
+
+    try {
+      // Step 3: Delete orphaned branch (may exist even after worktree is gone)
+      const branchProc = _managerDeps.spawn(["git", "branch", "-D", branchName], {
+        cwd: projectRoot,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      await branchProc.exited;
+    } catch {
+      // branch may not exist — that's fine
     }
 
     try {
