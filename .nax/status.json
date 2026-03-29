@@ -1,37 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-28T14-05-01-041Z",
+    "id": "run-2026-03-29T02-32-39-732Z",
     "feature": "parallel-unify-001",
-    "startedAt": "2026-03-28T14:05:01.041Z",
-    "status": "crashed",
+    "startedAt": "2026-03-29T02:32:39.732Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 93080,
-    "crashedAt": "2026-03-28T15:20:01.333Z",
-    "crashSignal": "SIGTERM"
+    "pid": 12611
   },
   "progress": {
     "total": 4,
-    "passed": 0,
-    "failed": 1,
+    "passed": 2,
+    "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 2
   },
   "cost": {
     "spent": 0,
     "limit": 30
   },
   "current": {
-    "storyId": "US-002",
-    "title": "Add selectIndependentBatch() to story-selector and parallelCount to ExecutionContext",
-    "complexity": "simple",
-    "tddStrategy": "tdd-simple",
+    "storyId": "US-003",
+    "title": "Unify executors — integrate parallel dispatch into sequential loop",
+    "complexity": "complex",
+    "tddStrategy": "three-session-tdd",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 0,
-  "updatedAt": "2026-03-28T15:20:01.333Z",
-  "durationMs": 4500292
+  "iterations": 3,
+  "updatedAt": "2026-03-29T02:39:41.222Z",
+  "durationMs": 421490,
+  "lastHeartbeat": "2026-03-29T02:39:41.222Z"
 }

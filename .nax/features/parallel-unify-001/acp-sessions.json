@@ -1,1 +1,6 @@
-{}
+{
+  "US-003:test-writer": {
+    "sessionName": "nax-bfff486f-parallel-unify-001-us-003-test-writer",
+    "agentName": "claude"
+  }
+}
