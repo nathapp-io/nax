@@ -1,6 +1,6 @@
 {
   "name": "@nathapp/nax",
-  "version": "0.54.7",
+  "version": "0.54.8",
   "description": "AI Coding Agent Orchestrator — loops until done",
   "type": "module",
   "bin": {
@@ -12,8 +12,10 @@
     "build": "bun build bin/nax.ts --outdir dist --target bun --define \"GIT_COMMIT=\\\"$(git rev-parse --short HEAD)\\\"\"",
     "typecheck": "bun x tsc --noEmit",
     "lint": "bun x biome check src/ bin/",
+    "lint:fix": "bun x biome lint --write src/ bin/",
     "release": "bun scripts/release.ts",
     "test": "bun test test/unit/ --timeout=60000 && bun test test/integration/ --timeout=60000 && bun test test/ui/ --timeout=60000",
+    "test:bail": "bun test test/unit/ --timeout=60000 --bail && bun test test/integration/ --timeout=60000 --bail && bun test test/ui/ --timeout=60000 --bail",
     "test:watch": "bun test --watch",
     "test:unit": "bun test ./test/unit/ --timeout=60000",
     "test:integration": "bun test ./test/integration/ --timeout=60000",

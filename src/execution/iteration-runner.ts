@@ -13,8 +13,9 @@ import { runPipeline } from "../pipeline/runner";
 import type { PipelineRunResult } from "../pipeline/runner";
 import { defaultPipeline } from "../pipeline/stages";
 import type { PipelineContext } from "../pipeline/types";
+import { savePRD } from "../prd";
 import type { PRD } from "../prd/types";
-import { captureGitRef } from "../utils/git";
+import { captureGitRef, isGitRefValid } from "../utils/git";
 import { handleDryRun } from "./dry-run";
 import type { SequentialExecutionContext } from "./executor-types";
 import { handlePipelineFailure, handlePipelineSuccess } from "./pipeline-result-handler";
@@ -63,7 +64,21 @@ export async function runIteration(
   }
 
   const storyStartTime = Date.now();
-  const storyGitRef = await captureGitRef(ctx.workdir);
+
+  // BUG-114: Persist storyGitRef in prd.json so it survives crashes and restarts.
+  // On the first attempt we capture HEAD and save it. On resume we reuse the stored
+  // ref (after validating it still exists in git history), so semantic review always
+  // diffs from the true start of this story regardless of how many times nax restarted.
+  let storyGitRef: string | undefined;
+  if (story.storyGitRef && (await isGitRefValid(ctx.workdir, story.storyGitRef))) {
+    storyGitRef = story.storyGitRef;
+  } else {
+    storyGitRef = await captureGitRef(ctx.workdir);
+    if (storyGitRef) {
+      story.storyGitRef = storyGitRef;
+      await savePRD(prd, ctx.prdPath);
+    }
+  }
 
   // BUG-067: Accumulate cost from all prior failed attempts (stored in priorFailures by handleTierEscalation)
   const accumulatedAttemptCost = (story.priorFailures || []).reduce((sum, f) => sum + (f.cost || 0), 0);

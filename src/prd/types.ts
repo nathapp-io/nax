@@ -146,6 +146,13 @@ export interface UserStory {
    * Used to promote the parent from 'decomposed' → 'passed' once all sub-stories complete.
    */
   parentStoryId?: string;
+  /**
+   * Git SHA captured at the start of the first execution attempt for this story.
+   * Persisted to prd.json so that on resume/restart the semantic review diff
+   * covers the full range of commits made for this story (not just the new run).
+   * When absent, semantic review falls back to git merge-base with the default branch.
+   */
+  storyGitRef?: string;
 }
 
 // ============================================================================

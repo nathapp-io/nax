@@ -16,10 +16,13 @@ Bun + TypeScript CLI that orchestrates AI coding agents (Claude Code) with model
 
 | Command | Purpose |
 |:--------|:--------|
+| `bun run build` | build the source |
 | `bun run typecheck` | tsc --noEmit |
 | `bun run lint` | Biome |
+| `bun run lint:fix` | Biome lint fix |
 | `bun test test/unit/foo.test.ts` | Targeted test during iteration |
-| `NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000 --bail` | Full suite |
+| `bun run test` | Full suite |
+| `bun run test:bail` | Full suite with bail |
 
 nax runs lint, typecheck, and tests automatically via the pipeline. Run these manually only when working outside a nax session.
 
@@ -28,7 +31,6 @@ nax runs lint, typecheck, and tests automatically via the pipeline. Run these ma
 - **Senior Engineer mindset**: check edge cases, null/undefined, race conditions, and error states.
 - **TDD first**: write or update tests before implementation when the story calls for it.
 - **Stuck rule**: if the same test fails 2+ iterations, stop, summarise failed attempts, reassess approach.
-- **Never push to remote** — the human reviews and pushes.
 
 ## Architecture
 
@@ -77,7 +79,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator only]
 
 ### Config
 
-- Global: `~/.nax/config.json` → Project: `<workdir>/nax/config.json`
+- Global: `~/.nax/config.json` → Project: `<workdir>/.nax/config.json`
 - Schema: `src/config/schema.ts` — no hardcoded flags or credentials anywhere
 
 ## Agent Adapter & LLM Calls

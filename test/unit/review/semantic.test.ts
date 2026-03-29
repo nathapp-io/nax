@@ -1,12 +1,13 @@
 /**
  * Unit tests for src/review/semantic.ts
  *
- * Tests cover all acceptance criteria for US-002:
+ * Tests cover:
  * - runSemanticReview() signature and early-exit on missing git ref
- * - git diff collection and 12 KB truncation
- * - LLM prompt construction (title, description, ACs, default rules, custom rules, diff)
+ * - git diff collection (production code only — test files excluded)
+ * - Diff truncation at 50KB with stat preamble
+ * - LLM prompt construction (title, description, ACs, custom rules, diff)
  * - JSON response parsing (passed=true, passed=false with findings)
- * - Fail-open behaviour on invalid JSON
+ * - Fail-open / fail-closed behaviour on invalid JSON
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -32,6 +33,7 @@ const STORY: SemanticStory = {
 const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
   modelTier: "balanced",
   rules: [],
+  excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"],
 };
 
 /** Build a mock AgentAdapter whose complete() resolves to the supplied JSON string */
@@ -112,13 +114,22 @@ describe("runSemanticReview — signature", () => {
 
 describe("runSemanticReview — missing storyGitRef", () => {
   let origSpawn: typeof _semanticDeps.spawn;
+  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
+  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
 
   beforeEach(() => {
     origSpawn = _semanticDeps.spawn;
+    origIsGitRefValid = _semanticDeps.isGitRefValid;
+    origGetMergeBase = _semanticDeps.getMergeBase;
+    // No valid ref — getMergeBase also returns undefined so review is skipped
+    _semanticDeps.isGitRefValid = mock(async () => false);
+    _semanticDeps.getMergeBase = mock(async () => undefined);
   });
 
   afterEach(() => {
     _semanticDeps.spawn = origSpawn;
+    _semanticDeps.isGitRefValid = origIsGitRefValid;
+    _semanticDeps.getMergeBase = origGetMergeBase;
   });
 
   test("returns success=true when storyGitRef is undefined", async () => {
@@ -181,16 +192,25 @@ describe("runSemanticReview — missing storyGitRef", () => {
 
 describe("runSemanticReview — git diff invocation", () => {
   let origSpawn: typeof _semanticDeps.spawn;
+  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
+  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
 
   beforeEach(() => {
     origSpawn = _semanticDeps.spawn;
+    origIsGitRefValid = _semanticDeps.isGitRefValid;
+    origGetMergeBase = _semanticDeps.getMergeBase;
+    // Mark supplied storyGitRef as valid so tests proceed without a real git repo
+    _semanticDeps.isGitRefValid = mock(async () => true);
+    _semanticDeps.getMergeBase = mock(async () => undefined);
   });
 
   afterEach(() => {
     _semanticDeps.spawn = origSpawn;
+    _semanticDeps.isGitRefValid = origIsGitRefValid;
+    _semanticDeps.getMergeBase = origGetMergeBase;
   });
 
-  test("calls spawn with git diff --unified=3 <storyGitRef>..HEAD", async () => {
+  test("calls spawn with git diff --unified=3 <storyGitRef>..HEAD and test exclusions", async () => {
     const spawnMock = makeSpawnMock("diff output", 0);
     _semanticDeps.spawn = spawnMock;
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
@@ -204,6 +224,10 @@ describe("runSemanticReview — git diff invocation", () => {
     expect(spawnOpts.cmd).toContain("diff");
     expect(spawnOpts.cmd).toContain("--unified=3");
     expect(spawnOpts.cmd).toContain("abc123..HEAD");
+    // Test file exclusion pathspecs
+    expect(spawnOpts.cmd).toContain(":!test/");
+    expect(spawnOpts.cmd).toContain(":!*.test.ts");
+    expect(spawnOpts.cmd).toContain(":!*.spec.ts");
   });
 
   test("passes workdir as cwd to spawn", async () => {
@@ -220,21 +244,53 @@ describe("runSemanticReview — git diff invocation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC-3: Diff truncation at 12288 bytes
+// Diff truncation at 51200 bytes (50KB)
 // ---------------------------------------------------------------------------
+
+/** Spawn mock that returns different output for diff vs diff --stat */
+function makeSpawnMockWithStat(diffStdout: string, statStdout: string, exitCode = 0) {
+  return mock((opts: { cmd?: string[] }) => {
+    const isStatCall = opts.cmd?.includes("--stat");
+    const stdout = isStatCall ? statStdout : diffStdout;
+    return {
+      exited: Promise.resolve(exitCode),
+      stdout: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(stdout));
+          controller.close();
+        },
+      }),
+      stderr: new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      kill: () => {},
+    };
+  }) as unknown as typeof _semanticDeps.spawn;
+}
 
 describe("runSemanticReview — diff truncation", () => {
   let origSpawn: typeof _semanticDeps.spawn;
+  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
+  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
 
   beforeEach(() => {
     origSpawn = _semanticDeps.spawn;
+    origIsGitRefValid = _semanticDeps.isGitRefValid;
+    origGetMergeBase = _semanticDeps.getMergeBase;
+    // Mark supplied storyGitRef as valid so tests proceed without a real git repo
+    _semanticDeps.isGitRefValid = mock(async () => true);
+    _semanticDeps.getMergeBase = mock(async () => undefined);
   });
 
   afterEach(() => {
     _semanticDeps.spawn = origSpawn;
+    _semanticDeps.isGitRefValid = origIsGitRefValid;
+    _semanticDeps.getMergeBase = origGetMergeBase;
   });
 
-  test("passes full diff to LLM prompt when diff is under 12288 bytes", async () => {
+  test("passes full diff to LLM prompt when diff is under 51200 bytes", async () => {
     const smallDiff = "a".repeat(100);
     _semanticDeps.spawn = makeSpawnMock(smallDiff, 0);
     let capturedPrompt = "";
@@ -249,9 +305,10 @@ describe("runSemanticReview — diff truncation", () => {
     expect(capturedPrompt).toContain(smallDiff);
   });
 
-  test("truncates diff and appends truncation marker when diff exceeds 12288 bytes", async () => {
-    const largeDiff = "x".repeat(15_000);
-    _semanticDeps.spawn = makeSpawnMock(largeDiff, 0);
+  test("truncates diff and appends truncation marker when diff exceeds 51200 bytes", async () => {
+    const largeDiff = "x".repeat(60_000);
+    const statOutput = " src/foo.ts | 100 +\n src/bar.ts | 50 +\n 2 files changed";
+    _semanticDeps.spawn = makeSpawnMockWithStat(largeDiff, statOutput, 0);
     let capturedPrompt = "";
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
     (agent.complete as ReturnType<typeof mock>).mockImplementation(async (prompt: string) => {
@@ -261,15 +318,16 @@ describe("runSemanticReview — diff truncation", () => {
 
     await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
 
-    expect(capturedPrompt).toContain("... (truncated, showing first");
-    // The diff in the prompt must not exceed the cap
-    const diffInPrompt = capturedPrompt.match(/```diff\n([\s\S]*?)```/)?.[1] ?? "";
-    expect(diffInPrompt.length).toBeLessThanOrEqual(12_288 + 100); // cap + marker overhead
+    expect(capturedPrompt).toContain("truncated at 51200 bytes");
+    // The diff in the prompt must not exceed the cap (plus stat preamble + marker overhead)
+    const diffSection = capturedPrompt.match(/```diff\n([\s\S]*?)```/)?.[1] ?? "";
+    expect(diffSection.length).toBeLessThanOrEqual(51_200 + 500); // cap + stat preamble + marker
   });
 
-  test("truncation marker contains 'truncated, showing first N files'", async () => {
-    const largeDiff = "y".repeat(20_000);
-    _semanticDeps.spawn = makeSpawnMock(largeDiff, 0);
+  test("truncation includes file summary from git diff --stat", async () => {
+    const largeDiff = "y".repeat(60_000);
+    const statOutput = " src/foo.ts | 100 +\n src/bar.ts | 50 +\n 2 files changed";
+    _semanticDeps.spawn = makeSpawnMockWithStat(largeDiff, statOutput, 0);
     let capturedPrompt = "";
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
     (agent.complete as ReturnType<typeof mock>).mockImplementation(async (prompt: string) => {
@@ -279,7 +337,9 @@ describe("runSemanticReview — diff truncation", () => {
 
     await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
 
-    expect(capturedPrompt).toMatch(/\.\.\. \(truncated, showing first \d+ files?\)/);
+    expect(capturedPrompt).toContain("File Summary (all changed files)");
+    expect(capturedPrompt).toContain("src/foo.ts");
+    expect(capturedPrompt).toContain("src/bar.ts");
   });
 });
 
@@ -289,13 +349,22 @@ describe("runSemanticReview — diff truncation", () => {
 
 describe("runSemanticReview — LLM prompt construction", () => {
   let origSpawn: typeof _semanticDeps.spawn;
+  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
+  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
 
   beforeEach(() => {
     origSpawn = _semanticDeps.spawn;
+    origIsGitRefValid = _semanticDeps.isGitRefValid;
+    origGetMergeBase = _semanticDeps.getMergeBase;
+    // Mark supplied storyGitRef as valid so tests proceed without a real git repo
+    _semanticDeps.isGitRefValid = mock(async () => true);
+    _semanticDeps.getMergeBase = mock(async () => undefined);
   });
 
   afterEach(() => {
     _semanticDeps.spawn = origSpawn;
+    _semanticDeps.isGitRefValid = origIsGitRefValid;
+    _semanticDeps.getMergeBase = origGetMergeBase;
   });
 
   async function capturePrompt(
@@ -332,22 +401,19 @@ describe("runSemanticReview — LLM prompt construction", () => {
     });
   });
 
-  test("prompt includes 5 default review rules", async () => {
+  test("prompt includes AC-focused review criteria", async () => {
     const prompt = await capturePrompt();
-    // These are the 5 known default rules
-    const expectedRules = ["stubs", "placeholder", "unrelated", "wiring", "error"];
-    let ruleCount = 0;
-    for (const keyword of expectedRules) {
-      if (prompt.toLowerCase().includes(keyword)) ruleCount++;
-    }
-    // At least 4 of 5 rule keywords must appear (some may be phrased differently)
-    expect(ruleCount).toBeGreaterThanOrEqual(4);
+    // The prompt should instruct the LLM to verify ACs, flag dead code, and check wiring
+    expect(prompt).toContain("acceptance criterion");
+    expect(prompt).toContain("dead paths");
+    expect(prompt).toContain("wired into callers");
   });
 
   test("prompt includes custom rules from semanticConfig.rules", async () => {
     const config: SemanticReviewConfig = {
       modelTier: "balanced",
       rules: ["Never use console.log", "All exports must be typed"],
+      excludePatterns: [":!test/"],
     };
     const prompt = await capturePrompt(STORY, config);
     expect(prompt).toContain("Never use console.log");
@@ -366,6 +432,13 @@ describe("runSemanticReview — LLM prompt construction", () => {
     // Should still work — just verifying no crash and prompt is well-formed
     expect(prompt.length).toBeGreaterThan(100);
   });
+
+  test("prompt states diff is production code only", async () => {
+    const prompt = await capturePrompt();
+    expect(prompt).toContain("production code only");
+    expect(prompt).toContain("Do NOT flag");
+    expect(prompt).toContain("lint handles");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -374,13 +447,22 @@ describe("runSemanticReview — LLM prompt construction", () => {
 
 describe("runSemanticReview — LLM response parsing (passed=false)", () => {
   let origSpawn: typeof _semanticDeps.spawn;
+  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
+  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
 
   beforeEach(() => {
     origSpawn = _semanticDeps.spawn;
+    origIsGitRefValid = _semanticDeps.isGitRefValid;
+    origGetMergeBase = _semanticDeps.getMergeBase;
+    // Mark supplied storyGitRef as valid so tests proceed without a real git repo
+    _semanticDeps.isGitRefValid = mock(async () => true);
+    _semanticDeps.getMergeBase = mock(async () => undefined);
   });
 
   afterEach(() => {
     _semanticDeps.spawn = origSpawn;
+    _semanticDeps.isGitRefValid = origIsGitRefValid;
+    _semanticDeps.getMergeBase = origGetMergeBase;
   });
 
   test("returns success=false when LLM returns passed=false", async () => {
@@ -472,13 +554,22 @@ describe("runSemanticReview — LLM response parsing (passed=false)", () => {
 
 describe("runSemanticReview — fail-open on invalid JSON", () => {
   let origSpawn: typeof _semanticDeps.spawn;
+  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
+  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
 
   beforeEach(() => {
     origSpawn = _semanticDeps.spawn;
+    origIsGitRefValid = _semanticDeps.isGitRefValid;
+    origGetMergeBase = _semanticDeps.getMergeBase;
+    // Mark supplied storyGitRef as valid so tests proceed without a real git repo
+    _semanticDeps.isGitRefValid = mock(async () => true);
+    _semanticDeps.getMergeBase = mock(async () => undefined);
   });
 
   afterEach(() => {
     _semanticDeps.spawn = origSpawn;
+    _semanticDeps.isGitRefValid = origIsGitRefValid;
+    _semanticDeps.getMergeBase = origGetMergeBase;
   });
 
   test("returns success=true when LLM returns invalid JSON", async () => {
@@ -518,18 +609,83 @@ describe("runSemanticReview — fail-open on invalid JSON", () => {
   });
 });
 
+// #105: Truncated JSON with "passed": false should fail-closed
+// ---------------------------------------------------------------------------
+
+describe("runSemanticReview — fail-closed on truncated JSON with passed:false (#105)", () => {
+  let origSpawn: typeof _semanticDeps.spawn;
+  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
+  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+
+  beforeEach(() => {
+    origSpawn = _semanticDeps.spawn;
+    origIsGitRefValid = _semanticDeps.isGitRefValid;
+    origGetMergeBase = _semanticDeps.getMergeBase;
+    // Mark supplied storyGitRef as valid so tests proceed without a real git repo
+    _semanticDeps.isGitRefValid = mock(async () => true);
+    _semanticDeps.getMergeBase = mock(async () => undefined);
+  });
+
+  afterEach(() => {
+    _semanticDeps.spawn = origSpawn;
+    _semanticDeps.isGitRefValid = origIsGitRefValid;
+    _semanticDeps.getMergeBase = origGetMergeBase;
+  });
+
+  test("returns success=false when truncated JSON contains passed:false", async () => {
+    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    // Simulates LLM output cut off mid-response — JSON is invalid but clearly says passed:false
+    const truncatedResponse = '```json\n{"passed": false, "findings": [{"severity": "error", "file": "test.ts", "line": 1, "issue": "Test file is 78';
+    const agent = makeMockAgent(truncatedResponse);
+
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(result.success).toBe(false);
+  });
+
+  test("output mentions truncated response on fail-closed", async () => {
+    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    const truncatedResponse = '{"passed": false, "findings": [{"severity": "error"';
+    const agent = makeMockAgent(truncatedResponse);
+
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(result.output).toContain("truncated");
+    expect(result.output).toContain("passed:false");
+  });
+
+  test("still fail-open when truncated JSON contains passed:true", async () => {
+    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    const truncatedResponse = '{"passed": true, "findings": [';
+    const agent = makeMockAgent(truncatedResponse);
+
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(result.success).toBe(true);
+  });
+});
+
 // BUG-090: Markdown fence stripping
 // ---------------------------------------------------------------------------
 
 describe("runSemanticReview — markdown fence stripping (BUG-090)", () => {
   let origSpawn: typeof _semanticDeps.spawn;
+  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
+  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
 
   beforeEach(() => {
     origSpawn = _semanticDeps.spawn;
+    origIsGitRefValid = _semanticDeps.isGitRefValid;
+    origGetMergeBase = _semanticDeps.getMergeBase;
+    // Mark supplied storyGitRef as valid so tests proceed without a real git repo
+    _semanticDeps.isGitRefValid = mock(async () => true);
+    _semanticDeps.getMergeBase = mock(async () => undefined);
   });
 
   afterEach(() => {
     _semanticDeps.spawn = origSpawn;
+    _semanticDeps.isGitRefValid = origIsGitRefValid;
+    _semanticDeps.getMergeBase = origGetMergeBase;
   });
 
   test("parses JSON wrapped in ```json fences", async () => {
@@ -566,5 +722,97 @@ describe("runSemanticReview — markdown fence stripping (BUG-090)", () => {
     const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
 
     expect(result.success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BUG-114: storyGitRef fallback — merge-base when ref is missing or invalid
+// ---------------------------------------------------------------------------
+
+describe("runSemanticReview — BUG-114 storyGitRef fallback (merge-base)", () => {
+  let origSpawn: typeof _semanticDeps.spawn;
+  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
+  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+
+  beforeEach(() => {
+    origSpawn = _semanticDeps.spawn;
+    origIsGitRefValid = _semanticDeps.isGitRefValid;
+    origGetMergeBase = _semanticDeps.getMergeBase;
+  });
+
+  afterEach(() => {
+    _semanticDeps.spawn = origSpawn;
+    _semanticDeps.isGitRefValid = origIsGitRefValid;
+    _semanticDeps.getMergeBase = origGetMergeBase;
+  });
+
+  test("uses effectiveRef = storyGitRef when ref is valid", async () => {
+    const spawnMock = makeSpawnMock("diff content", 0);
+    _semanticDeps.spawn = spawnMock;
+    _semanticDeps.isGitRefValid = mock(async () => true);
+    _semanticDeps.getMergeBase = mock(async () => "merge-base-sha");
+    const agent = makeMockAgent(PASSING_LLM_RESPONSE);
+
+    await runSemanticReview("/tmp/wd", "valid-sha", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(spawnMock).toHaveBeenCalled();
+    const call = (spawnMock as ReturnType<typeof mock>).mock.calls[0];
+    const spawnOpts = call[0] as { cmd: string[] };
+    // Should use the valid storyGitRef, not the merge-base
+    expect(spawnOpts.cmd).toContain("valid-sha..HEAD");
+    expect(_semanticDeps.getMergeBase).not.toHaveBeenCalled();
+  });
+
+  test("falls back to merge-base when storyGitRef is undefined", async () => {
+    const spawnMock = makeSpawnMock("diff content", 0);
+    _semanticDeps.spawn = spawnMock;
+    _semanticDeps.isGitRefValid = mock(async () => false);
+    _semanticDeps.getMergeBase = mock(async () => "abc-merge-base");
+    const agent = makeMockAgent(PASSING_LLM_RESPONSE);
+
+    await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(spawnMock).toHaveBeenCalled();
+    const call = (spawnMock as ReturnType<typeof mock>).mock.calls[0];
+    const spawnOpts = call[0] as { cmd: string[] };
+    expect(spawnOpts.cmd).toContain("abc-merge-base..HEAD");
+  });
+
+  test("falls back to merge-base when storyGitRef is invalid (e.g. after rebase)", async () => {
+    const spawnMock = makeSpawnMock("diff content", 0);
+    _semanticDeps.spawn = spawnMock;
+    _semanticDeps.isGitRefValid = mock(async () => false);
+    _semanticDeps.getMergeBase = mock(async () => "fallback-merge-base-sha");
+    const agent = makeMockAgent(PASSING_LLM_RESPONSE);
+
+    await runSemanticReview("/tmp/wd", "stale-sha-after-rebase", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(spawnMock).toHaveBeenCalled();
+    const call = (spawnMock as ReturnType<typeof mock>).mock.calls[0];
+    const spawnOpts = call[0] as { cmd: string[] };
+    expect(spawnOpts.cmd).toContain("fallback-merge-base-sha..HEAD");
+    expect(_semanticDeps.isGitRefValid).toHaveBeenCalledWith("/tmp/wd", "stale-sha-after-rebase");
+  });
+
+  test("skips review (success=true) when storyGitRef is undefined and merge-base is also unavailable", async () => {
+    _semanticDeps.spawn = makeSpawnMock("", 0);
+    _semanticDeps.isGitRefValid = mock(async () => false);
+    _semanticDeps.getMergeBase = mock(async () => undefined);
+
+    const result = await runSemanticReview("/tmp/wd", undefined, STORY, DEFAULT_SEMANTIC_CONFIG, () => null);
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("skipped: no git ref");
+  });
+
+  test("skips review (success=true) when storyGitRef is invalid and merge-base is also unavailable", async () => {
+    _semanticDeps.spawn = makeSpawnMock("", 0);
+    _semanticDeps.isGitRefValid = mock(async () => false);
+    _semanticDeps.getMergeBase = mock(async () => undefined);
+
+    const result = await runSemanticReview("/tmp/wd", "bad-sha", STORY, DEFAULT_SEMANTIC_CONFIG, () => null);
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("skipped: no git ref");
   });
 });

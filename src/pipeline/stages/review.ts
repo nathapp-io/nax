@@ -56,6 +56,7 @@ export const reviewStage: PipelineStage = {
         acceptanceCriteria: ctx.story.acceptanceCriteria,
       },
       modelResolver,
+      ctx.config,
     );
 
     ctx.reviewResult = result.builtIn;

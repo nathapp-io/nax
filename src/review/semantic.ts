@@ -2,13 +2,18 @@
  * Semantic Review Runner
  *
  * Runs an LLM-based semantic review against the git diff for a story.
+ * Validates behavior — checks that the implementation satisfies the
+ * story's acceptance criteria. Code quality (lint, style, conventions)
+ * is handled by lint/typecheck, not semantic review.
  */
 
 import { spawn } from "bun";
 import type { AgentAdapter } from "../agents/types";
+import type { NaxConfig } from "../config";
 import type { ModelTier } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
+import { getMergeBase, isGitRefValid } from "../utils/git";
 import type { ReviewCheckResult, SemanticReviewConfig } from "./types";
 
 /** Story fields required for semantic review */
@@ -25,26 +30,29 @@ export type ModelResolver = (tier: ModelTier) => AgentAdapter | null | undefined
 /** Injectable dependencies for semantic.ts — allows tests to mock spawn without mock.module() */
 export const _semanticDeps = {
   spawn: spawn as typeof spawn,
+  isGitRefValid,
+  getMergeBase,
 };
 
-/** Maximum diff size in bytes before truncation */
-const DIFF_CAP_BYTES = 12_288;
-
-/** Default review rules applied to every semantic check */
-const DEFAULT_RULES = [
-  "No stubs or noops left in production code paths",
-  "No placeholder values (TODO, FIXME, hardcoded dummy data)",
-  "No unrelated changes outside the story scope",
-  "All new code is properly wired into callers and exports",
-  "No silent error swallowing (catch blocks that discard errors without logging)",
-];
+/**
+ * Maximum diff size in bytes before truncation.
+ * 50KB keeps the prompt well within LLM context and reduces output truncation risk.
+ * Test files are excluded from the diff, so the budget goes entirely to production code.
+ */
+const DIFF_CAP_BYTES = 51_200;
 
 /**
- * Collect git diff for the story range.
+ * Collect git diff for the story range (production code only).
+ * Excludes test files via configurable pathspec patterns — semantic review
+ * validates behavior against ACs, not test style or conventions.
  */
-async function collectDiff(workdir: string, storyGitRef: string): Promise<string> {
+async function collectDiff(workdir: string, storyGitRef: string, excludePatterns: string[]): Promise<string> {
+  const cmd = ["git", "diff", "--unified=3", `${storyGitRef}..HEAD`];
+  if (excludePatterns.length > 0) {
+    cmd.push("--", ".", ...excludePatterns);
+  }
   const proc = _semanticDeps.spawn({
-    cmd: ["git", "diff", "--unified=3", `${storyGitRef}..HEAD`],
+    cmd,
     cwd: workdir,
     stdout: "pipe",
     stderr: "pipe",
@@ -64,17 +72,46 @@ async function collectDiff(workdir: string, storyGitRef: string): Promise<string
 }
 
 /**
- * Truncate diff to stay within token budget.
+ * Collect git diff --stat summary (all files including tests — for context).
+ * Used as a preamble when the full diff is truncated so the reviewer
+ * always knows which files changed even if the content is cut off.
  */
-function truncateDiff(diff: string): string {
+async function collectDiffStat(workdir: string, storyGitRef: string): Promise<string> {
+  const proc = _semanticDeps.spawn({
+    cmd: ["git", "diff", "--stat", `${storyGitRef}..HEAD`],
+    cwd: workdir,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const [exitCode, stdout] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+
+  return exitCode === 0 ? stdout.trim() : "";
+}
+
+/**
+ * Truncate diff to stay within token budget.
+ * When truncated, prepends a --stat summary so the reviewer knows all changed files.
+ */
+function truncateDiff(diff: string, stat?: string): string {
   if (diff.length <= DIFF_CAP_BYTES) {
     return diff;
   }
 
   const truncated = diff.slice(0, DIFF_CAP_BYTES);
-  // Count approximate file count from diff headers
-  const fileCount = (truncated.match(/^diff --git/gm) ?? []).length;
-  return `${truncated}\n... (truncated, showing first ${fileCount} files)`;
+  // Count files visible vs total
+  const visibleFiles = (truncated.match(/^diff --git/gm) ?? []).length;
+  const totalFiles = (diff.match(/^diff --git/gm) ?? []).length;
+
+  const statPreamble = stat
+    ? `## File Summary (all changed files)\n${stat}\n\n## Diff (truncated — ${visibleFiles}/${totalFiles} files shown)\n`
+    : "";
+
+  return `${statPreamble}${truncated}\n... (truncated at ${DIFF_CAP_BYTES} bytes, showing ${visibleFiles}/${totalFiles} files)`;
 }
 
 /**
@@ -83,14 +120,12 @@ function truncateDiff(diff: string): string {
 function buildPrompt(story: SemanticStory, semanticConfig: SemanticReviewConfig, diff: string): string {
   const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
 
-  const defaultRulesText = DEFAULT_RULES.map((r, i) => `${i + 1}. ${r}`).join("\n");
-
   const customRulesSection =
     semanticConfig.rules.length > 0
-      ? `\n## Custom Rules\n${semanticConfig.rules.map((r, i) => `${i + 1}. ${r}`).join("\n")}\n`
+      ? `\n## Additional Review Rules\n${semanticConfig.rules.map((r, i) => `${i + 1}. ${r}`).join("\n")}\n`
       : "";
 
-  return `You are a code reviewer. Review the following git diff against the story requirements and rules.
+  return `You are a semantic code reviewer. Your job is to verify that the implementation satisfies the story's acceptance criteria (ACs). You are NOT a linter or style checker — lint, typecheck, and convention checks are handled separately.
 
 ## Story: ${story.title}
 
@@ -99,27 +134,29 @@ ${story.description}
 
 ### Acceptance Criteria
 ${acList}
-
-## Review Rules
-
-### Default Rules
-${defaultRulesText}
 ${customRulesSection}
-## Git Diff
+## Git Diff (production code only — test files excluded)
 
 \`\`\`diff
 ${diff}\`\`\`
 
 ## Instructions
 
-Respond with JSON only. No markdown fences around the JSON response itself.
-Format:
+For each acceptance criterion, verify the diff implements it correctly. Flag issues only when:
+1. An AC is not implemented or partially implemented
+2. The implementation contradicts what the AC specifies
+3. New code has dead paths that will never execute (stubs, noops, unreachable branches)
+4. New code is not wired into callers/exports (written but never used)
+
+Do NOT flag: style issues, naming conventions, import ordering, file length, or anything lint handles.
+
+Respond in JSON format:
 {
   "passed": boolean,
   "findings": [
     {
       "severity": "error" | "warn" | "info",
-      "file": "path/to/file.ts",
+      "file": "path/to/file",
       "line": 42,
       "issue": "description of the issue",
       "suggestion": "how to fix it"
@@ -127,7 +164,7 @@ Format:
   ]
 }
 
-If the implementation looks correct, respond with { "passed": true, "findings": [] }.`;
+If all ACs are correctly implemented, respond with { "passed": true, "findings": [] }.`;
 }
 
 interface LLMFinding {
@@ -145,11 +182,11 @@ interface LLMResponse {
 
 /**
  * Parse and validate LLM JSON response.
- * Returns null if invalid.
+ * Strips markdown fences if present (LLMs frequently add them despite instructions).
+ * Returns null if truly unparseable.
  */
 function parseLLMResponse(raw: string): LLMResponse | null {
   try {
-    // Strip markdown fences if present — LLMs frequently wrap JSON in ```json ... ``` despite instructions
     let cleaned = raw.trim();
     const fenceMatch = cleaned.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
     if (fenceMatch) cleaned = fenceMatch[1].trim();
@@ -201,12 +238,32 @@ export async function runSemanticReview(
   story: SemanticStory,
   semanticConfig: SemanticReviewConfig,
   modelResolver: ModelResolver,
+  naxConfig?: NaxConfig,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
 
-  // AC-4: Early exit when no git ref
-  if (!storyGitRef) {
+  // BUG-114: Resolve effective git ref for the diff range.
+  // Priority 1: use the supplied ref if valid (persisted from story start).
+  // Priority 2: fall back to merge-base with the default remote branch so that
+  //   the semantic reviewer always sees the full story diff even after a restart.
+  // Priority 3: skip review when no ref can be resolved (non-git workdir, etc.).
+  let effectiveRef: string | undefined;
+  if (storyGitRef && (await _semanticDeps.isGitRefValid(workdir, storyGitRef))) {
+    effectiveRef = storyGitRef;
+  } else {
+    const fallback = await _semanticDeps.getMergeBase(workdir);
+    if (fallback) {
+      logger?.info("review", "storyGitRef missing or invalid — using merge-base fallback", {
+        storyId: story.id,
+        storyGitRef,
+        fallback,
+      });
+      effectiveRef = fallback;
+    }
+  }
+
+  if (!effectiveRef) {
     return {
       check: "semantic",
       success: true,
@@ -217,13 +274,19 @@ export async function runSemanticReview(
     };
   }
 
-  logger?.info("review", "Running semantic check", { storyId: story.id, modelTier: semanticConfig.modelTier });
+  logger?.info("review", "Running semantic check", {
+    storyId: story.id,
+    modelTier: semanticConfig.modelTier,
+    configProvided: !!naxConfig,
+  });
 
-  // AC-2: Collect git diff
-  const rawDiff = await collectDiff(workdir, storyGitRef);
+  // Collect production-only diff (test files excluded at git level via configurable patterns)
+  const rawDiff = await collectDiff(workdir, effectiveRef, semanticConfig.excludePatterns);
 
-  // AC-3: Truncate if over cap
-  const diff = truncateDiff(rawDiff);
+  // Truncate if over cap — collect stat summary (all files) when truncation needed
+  const needsTruncation = rawDiff.length > DIFF_CAP_BYTES;
+  const stat = needsTruncation ? await collectDiffStat(workdir, effectiveRef) : undefined;
+  const diff = truncateDiff(rawDiff, stat);
 
   // Resolve agent
   const agent = modelResolver(semanticConfig.modelTier);
@@ -241,7 +304,7 @@ export async function runSemanticReview(
     };
   }
 
-  // AC-5: Build prompt
+  // Build prompt
   const prompt = buildPrompt(story, semanticConfig, diff);
 
   // Call LLM
@@ -251,6 +314,8 @@ export async function runSemanticReview(
       sessionName: `nax-semantic-${story.id}`,
       workdir,
       timeoutMs: semanticConfig.timeoutMs,
+      modelTier: semanticConfig.modelTier,
+      config: naxConfig,
     });
   } catch (err) {
     logger?.warn("semantic", "LLM call failed — fail-open", { cause: String(err) });
@@ -264,9 +329,28 @@ export async function runSemanticReview(
     };
   }
 
-  // AC-6 + AC-8: Parse response, fail-open on invalid JSON
+  // Parse response — fail-closed when LLM clearly intended to fail,
+  // fail-open only when response is truly unparseable with no signal.
   const parsed = parseLLMResponse(rawResponse);
   if (!parsed) {
+    // Check if truncated response contains "passed": false — LLM intended to fail
+    // but output was cut off mid-response. Treating this as a pass is incorrect (#105).
+    const looksLikeFail = /"passed"\s*:\s*false/.test(rawResponse);
+    if (looksLikeFail) {
+      logger?.warn("semantic", "LLM returned truncated JSON with passed:false — treating as failure", {
+        rawResponse: rawResponse.slice(0, 200),
+      });
+      return {
+        check: "semantic",
+        success: false,
+        command: "",
+        exitCode: 1,
+        output:
+          "semantic review: LLM response truncated but indicated failure (passed:false found in partial response)",
+        durationMs: Date.now() - startTime,
+      };
+    }
+
     logger?.warn("semantic", "LLM returned invalid JSON — fail-open", { rawResponse: rawResponse.slice(0, 200) });
     return {
       check: "semantic",
@@ -278,7 +362,7 @@ export async function runSemanticReview(
     };
   }
 
-  // AC-7: Format findings and populate structured ReviewFinding[] (US-003 AC-2)
+  // Format findings and populate structured ReviewFinding[]
   if (!parsed.passed && parsed.findings.length > 0) {
     const durationMs = Date.now() - startTime;
     logger?.warn("review", `Semantic review failed: ${parsed.findings.length} findings`, {

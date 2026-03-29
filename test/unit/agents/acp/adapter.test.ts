@@ -263,6 +263,83 @@ describe("complete()", () => {
   });
 });
 
+// complete() — model resolution from config + modelTier
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("complete() — model resolution", () => {
+  const origCreateClient = _acpAdapterDeps.createClient;
+  const origSleep = _acpAdapterDeps.sleep;
+
+  beforeEach(() => {
+    _acpAdapterDeps.sleep = mock(async (_ms: number) => {});
+  });
+
+  afterEach(() => {
+    _acpAdapterDeps.createClient = origCreateClient;
+    _acpAdapterDeps.sleep = origSleep;
+    mock.restore();
+  });
+
+  function makePassSession() {
+    const session = makeSession();
+    return makeClient(session);
+  }
+
+  test("uses 'default' when no model or config provided", async () => {
+    let capturedCmd = "";
+    const client = makePassSession();
+    _acpAdapterDeps.createClient = mock((cmd: string) => {
+      capturedCmd = cmd;
+      return client as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
+    });
+
+    await new AcpAgentAdapter("claude").complete("test");
+    expect(capturedCmd).toContain("--model default");
+  });
+
+  test("uses explicit model string when provided", async () => {
+    let capturedCmd = "";
+    const client = makePassSession();
+    _acpAdapterDeps.createClient = mock((cmd: string) => {
+      capturedCmd = cmd;
+      return client as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
+    });
+
+    await new AcpAgentAdapter("claude").complete("test", { model: "claude-haiku-4-5" });
+    expect(capturedCmd).toContain("--model claude-haiku-4-5");
+  });
+
+  test("resolves model from config.models[modelTier] when model not explicit", async () => {
+    let capturedCmd = "";
+    const client = makePassSession();
+    _acpAdapterDeps.createClient = mock((cmd: string) => {
+      capturedCmd = cmd;
+      return client as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
+    });
+
+    const naxConfig = {
+      models: { fast: "claude-haiku-4-5-20250514", balanced: "claude-sonnet-4-5-20250514" },
+    } as unknown as Parameters<AcpAgentAdapter["complete"]>[1]["config"];
+
+    await new AcpAgentAdapter("claude").complete("test", { modelTier: "fast", config: naxConfig });
+    expect(capturedCmd).toContain("--model claude-haiku-4-5-20250514");
+  });
+
+  test("falls back to 'default' when config has no matching tier", async () => {
+    let capturedCmd = "";
+    const client = makePassSession();
+    _acpAdapterDeps.createClient = mock((cmd: string) => {
+      capturedCmd = cmd;
+      return client as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
+    });
+
+    const naxConfig = { models: {} } as unknown as Parameters<AcpAgentAdapter["complete"]>[1]["config"];
+
+    await new AcpAgentAdapter("claude").complete("test", { modelTier: "powerful", config: naxConfig });
+    expect(capturedCmd).toContain("--model default");
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // _acpAdapterDeps — injectable dependency surface
 // ─────────────────────────────────────────────────────────────────────────────

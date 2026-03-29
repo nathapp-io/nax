@@ -52,6 +52,7 @@ describe("SemanticReviewConfig", () => {
       modelTier: "balanced",
       rules: [],
       timeoutMs: 600_000,
+      excludePatterns: [],
     };
     expect(config.modelTier).toBe("balanced");
     expect(typeof config.modelTier).toBe("string");
@@ -62,6 +63,7 @@ describe("SemanticReviewConfig", () => {
       modelTier: "balanced",
       rules: ["rule1", "rule2"],
       timeoutMs: 600_000,
+      excludePatterns: [],
     };
     expect(Array.isArray(config.rules)).toBe(true);
     expect(config.rules.every((r) => typeof r === "string")).toBe(true);
@@ -79,6 +81,7 @@ describe("SemanticReviewConfig", () => {
         modelTier: tier,
         rules: [],
         timeoutMs: 600_000,
+        excludePatterns: [],
       };
       expect(config.modelTier).toBe(tier);
     });
@@ -104,6 +107,7 @@ describe("ReviewConfig semantic field", () => {
         modelTier: "balanced",
         rules: [],
         timeoutMs: 600_000,
+        excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"],
       });
     }
   });
@@ -212,11 +216,12 @@ describe("DEFAULT_CONFIG.review.semantic", () => {
     expect(DEFAULT_CONFIG.review.semantic?.rules).toEqual([]);
   });
 
-  test("DEFAULT_CONFIG.review.semantic equals { modelTier: 'balanced', rules: [], timeoutMs: 600_000 }", () => {
+  test("DEFAULT_CONFIG.review.semantic has correct defaults", () => {
     expect(DEFAULT_CONFIG.review.semantic).toEqual({
       modelTier: "balanced",
       rules: [],
       timeoutMs: 600_000,
+      excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"],
     });
   });
 });
