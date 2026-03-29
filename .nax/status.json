@@ -4,32 +4,34 @@
     "id": "run-2026-03-28T14-05-01-041Z",
     "feature": "parallel-unify-001",
     "startedAt": "2026-03-28T14:05:01.041Z",
-    "status": "running",
+    "status": "crashed",
     "dryRun": false,
-    "pid": 93080
+    "pid": 93080,
+    "crashedAt": "2026-03-28T15:20:01.333Z",
+    "crashSignal": "SIGTERM"
   },
   "progress": {
     "total": 4,
     "passed": 0,
-    "failed": 0,
+    "failed": 1,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 2.5139213999999996,
+    "spent": 0,
     "limit": 30
   },
   "current": {
-    "storyId": "US-001",
-    "title": "Add parallel-batch.ts and rename rectify file",
-    "complexity": "medium",
-    "tddStrategy": "three-session-tdd-lite",
-    "model": "powerful",
+    "storyId": "US-002",
+    "title": "Add selectIndependentBatch() to story-selector and parallelCount to ExecutionContext",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
+    "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-03-28T15:19:15.759Z",
-  "durationMs": 4454718
+  "iterations": 0,
+  "updatedAt": "2026-03-28T15:20:01.333Z",
+  "durationMs": 4500292
 }
