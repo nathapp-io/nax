@@ -183,45 +183,7 @@ export async function runExecutionPhase(
   totalCost = unifiedResult.totalCost;
   allStoryMetrics.push(...unifiedResult.allStoryMetrics);
 
-  if (unifiedResult.exitReason === "completed") {
-    return {
-      prd,
-      iterations,
-      storiesCompleted,
-      totalCost,
-      allStoryMetrics,
-      completedEarly: true,
-      durationMs: Date.now() - options.startTime,
-    };
-  }
-
-  if (unifiedResult.exitReason === "pre-merge-aborted" || unifiedResult.exitReason === "stalled") {
-    return {
-      prd,
-      iterations,
-      storiesCompleted,
-      totalCost,
-      allStoryMetrics,
-      completedEarly: false,
-      durationMs: Date.now() - options.startTime,
-    };
-  }
-
-  if (
-    unifiedResult.exitReason === "cost-limit" ||
-    unifiedResult.exitReason === "max-iterations" ||
-    unifiedResult.exitReason === "no-stories"
-  ) {
-    return {
-      prd,
-      iterations,
-      storiesCompleted,
-      totalCost,
-      allStoryMetrics,
-      completedEarly: false,
-      durationMs: Date.now() - options.startTime,
-    };
-  }
-
+  // Always let Phase 3 (runCompletionPhase) run to handle setRunStatus,
+  // metrics, hooks, and cleanup — the unified executor does not perform these.
   return { prd, iterations, storiesCompleted, totalCost, allStoryMetrics };
 }
