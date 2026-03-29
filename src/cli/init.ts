@@ -9,6 +9,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { globalConfigDir, projectConfigDir } from "../config/paths";
 import { getLogger } from "../logger";
+import { NAX_GITIGNORE_ENTRIES } from "../utils/gitignore";
 import { initContext, initPackage } from "./init-context";
 import { buildInitConfig, detectStack } from "./init-detect";
 import type { ProjectStack } from "./init-detect";
@@ -34,26 +35,6 @@ export interface InitProjectOptions {
   /** Force overwrite of existing files */
   force?: boolean;
 }
-
-/**
- * Gitignore entries added by nax init
- */
-const NAX_GITIGNORE_ENTRIES = [
-  ".nax-verifier-verdict.json",
-  "nax.lock",
-  ".nax/**/runs/",
-  ".nax/metrics.json",
-  ".nax/features/*/status.json",
-  ".nax/features/*/plan/",
-  ".nax/features/*/acp-sessions.json",
-  ".nax/features/*/interactions/",
-  ".nax/features/*/progress.txt",
-  ".nax/features/*/acceptance-refined.json",
-  ".nax-pids",
-  ".nax-wt/",
-  "**/.nax-acceptance*",
-  "**/.nax/features/*/",
-];
 
 /**
  * Add nax-specific entries to .gitignore if not already present.

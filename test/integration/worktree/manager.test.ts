@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { WorktreeManager } from "../../../src/worktree/manager";
+import { NAX_GITIGNORE_ENTRIES } from "../../../src/utils/gitignore";
 import { makeTempDir } from "../../helpers/temp";
 
 describe("WorktreeManager", () => {
@@ -179,6 +179,77 @@ describe("WorktreeManager", () => {
       await expect(manager.remove(projectRoot, storyId)).rejects.toThrow(
         /not found|does not exist|no such worktree|worktree not found/i,
       );
+    });
+  });
+
+  describe("ensureGitExcludes", () => {
+    test("writes nax entries to .git/info/exclude", async () => {
+      const manager = new WorktreeManager();
+
+      await manager.ensureGitExcludes(projectRoot);
+
+      const excludePath = join(projectRoot, ".git", "info", "exclude");
+      expect(existsSync(excludePath)).toBe(true);
+
+      const content = await Bun.file(excludePath).text();
+      expect(content).toContain(".nax/features/*/acp-sessions.json");
+      expect(content).toContain("nax.lock");
+      expect(content).toContain(".nax-wt/");
+    });
+
+    test("is idempotent — does not duplicate entries on repeated calls", async () => {
+      const manager = new WorktreeManager();
+
+      await manager.ensureGitExcludes(projectRoot);
+      await manager.ensureGitExcludes(projectRoot);
+
+      const excludePath = join(projectRoot, ".git", "info", "exclude");
+      const content = await Bun.file(excludePath).text();
+
+      // Count occurrences of a known entry — must appear exactly once
+      const occurrences = content.split(".nax/features/*/acp-sessions.json").length - 1;
+      expect(occurrences).toBe(1);
+    });
+
+    test("creates .git/info/ directory if it does not exist", async () => {
+      const manager = new WorktreeManager();
+
+      const infoDir = join(projectRoot, ".git", "info");
+      rmSync(infoDir, { recursive: true, force: true });
+      expect(existsSync(infoDir)).toBe(false);
+
+      await manager.ensureGitExcludes(projectRoot);
+
+      expect(existsSync(join(infoDir, "exclude"))).toBe(true);
+    });
+
+    test("preserves existing content in exclude file", async () => {
+      const manager = new WorktreeManager();
+
+      const infoDir = join(projectRoot, ".git", "info");
+      mkdirSync(infoDir, { recursive: true });
+      const excludePath = join(infoDir, "exclude");
+      writeFileSync(excludePath, "# existing user rule\n*.log\n");
+
+      await manager.ensureGitExcludes(projectRoot);
+
+      const content = await Bun.file(excludePath).text();
+      expect(content).toContain("# existing user rule");
+      expect(content).toContain("*.log");
+      expect(content).toContain(".nax/features/*/acp-sessions.json");
+    });
+
+    test("all NAX_GITIGNORE_ENTRIES are written to exclude", async () => {
+      const manager = new WorktreeManager();
+
+      await manager.ensureGitExcludes(projectRoot);
+
+      const excludePath = join(projectRoot, ".git", "info", "exclude");
+      const content = await Bun.file(excludePath).text();
+
+      for (const entry of NAX_GITIGNORE_ENTRIES) {
+        expect(content).toContain(entry);
+      }
     });
   });
 

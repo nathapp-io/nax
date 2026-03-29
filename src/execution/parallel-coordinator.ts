@@ -122,6 +122,12 @@ export async function executeParallel(
       interaction: interactionChain ?? undefined,
     };
 
+    // #121: Ensure nax runtime files (acp-sessions.json, etc.) are excluded from
+    // git across all worktrees. Writes to .git/info/exclude — never committed.
+    // Must run before any worktrees are created so the exclude rules are in place
+    // when each story's auto-commit runs.
+    await worktreeManager.ensureGitExcludes(projectRoot);
+
     // Create worktrees for all stories in batch
     const worktreePaths = new Map<string, string>();
 
