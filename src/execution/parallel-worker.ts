@@ -13,6 +13,7 @@ import type { PipelineContext, RoutingResult } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { routeTask } from "../routing";
 import { errorMessage } from "../utils/errors";
+import { captureGitRef, isGitRefValid } from "../utils/git";
 
 /**
  * Execute a single story in its worktree
@@ -27,6 +28,20 @@ export async function executeStoryInWorktree(
   const logger = getSafeLogger();
 
   try {
+    // Capture storyGitRef from the worktree before execution (mirrors iteration-runner.ts BUG-114).
+    // In parallel mode, each story runs directly via runPipeline (bypassing iteration-runner),
+    // so we must capture the ref here to ensure review/verify stages can diff against the
+    // pre-execution HEAD.
+    let storyGitRef: string | undefined;
+    if (story.storyGitRef && (await isGitRefValid(worktreePath, story.storyGitRef))) {
+      storyGitRef = story.storyGitRef;
+    } else {
+      storyGitRef = await captureGitRef(worktreePath);
+      if (storyGitRef) {
+        story.storyGitRef = storyGitRef;
+      }
+    }
+
     const pipelineContext: PipelineContext = {
       ...context,
       effectiveConfig: context.effectiveConfig ?? context.config,
@@ -34,6 +49,7 @@ export async function executeStoryInWorktree(
       stories: [story],
       workdir: worktreePath,
       routing,
+      storyGitRef: storyGitRef ?? undefined,
     };
 
     logger?.debug("parallel", "Executing story in worktree", {
