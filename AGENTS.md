@@ -1,6 +1,6 @@
 # Agent Instructions
 
-This file is auto-generated from `nax/context.md`.
+This file is auto-generated from `.nax/context.md`.
 DO NOT EDIT MANUALLY — run `nax generate` to regenerate.
 
 These instructions apply to all AI coding agents in this project.
@@ -36,10 +36,13 @@ Bun + TypeScript CLI that orchestrates AI coding agents (Claude Code) with model
 
 | Command | Purpose |
 |:--------|:--------|
+| `bun run build` | build the source |
 | `bun run typecheck` | tsc --noEmit |
 | `bun run lint` | Biome |
+| `bun run lint:fix` | Biome lint fix |
 | `bun test test/unit/foo.test.ts` | Targeted test during iteration |
-| `NAX_SKIP_PRECHECK=1 bun test test/ --timeout=60000 --bail` | Full suite |
+| `bun run test` | Full suite |
+| `bun run test:bail` | Full suite with bail |
 
 nax runs lint, typecheck, and tests automatically via the pipeline. Run these manually only when working outside a nax session.
 
@@ -48,7 +51,6 @@ nax runs lint, typecheck, and tests automatically via the pipeline. Run these ma
 - **Senior Engineer mindset**: check edge cases, null/undefined, race conditions, and error states.
 - **TDD first**: write or update tests before implementation when the story calls for it.
 - **Stuck rule**: if the same test fails 2+ iterations, stop, summarise failed attempts, reassess approach.
-- **Never push to remote** — the human reviews and pushes.
 
 ## Architecture
 
@@ -97,7 +99,7 @@ Runner.run()  [src/execution/runner.ts — thin orchestrator only]
 
 ### Config
 
-- Global: `~/.nax/config.json` → Project: `<workdir>/nax/config.json`
+- Global: `~/.nax/config.json` → Project: `<workdir>/.nax/config.json`
 - Schema: `src/config/schema.ts` — no hardcoded flags or credentials anywhere
 
 ## Agent Adapter & LLM Calls
@@ -157,19 +159,5 @@ Additional rules in `.claude/rules/` (loaded automatically):
 
 - `01-project-conventions.md` — Bun-native APIs, 400-line limit, barrel imports, logging, commits
 - `02-test-architecture.md` — directory mirroring, placement rules, file naming
-- `03-test-writing.md` — nax-specific `_deps` table (points to full rules below)
+- `03-test-writing.md` — `_deps` injection pattern, mock discipline, CI guards
 - `04-forbidden-patterns.md` — banned APIs and test anti-patterns with alternatives
-
-## Test Writing Rules
-
-**Full rules:** `docs/guides/testing-rules.md` — read before writing any test.
-
-Key rules (see full doc for examples):
-- No `mock.module()` — use `_deps` injection
-- No `Bun.spawn` mutations — use `_deps.spawn`
-- No `Bun.spawn` for shell utils (`mv`, `rm`, `mkdir`) — use `node:fs/promises`
-- No `Bun.sleep()` — use `waitForFile()` helper or make operations awaitable
-- No subprocess spawning — use direct function imports
-- No flaky tests — fix the design, not the timeout
-- `mock.restore()` in every `afterEach`
-- Tests must be hermetic — mock all I/O boundaries
