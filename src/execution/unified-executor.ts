@@ -208,6 +208,9 @@ export async function executeUnified(
           for (const story of batchResult.completed) {
             const storyCost = batchResult.storyCosts.get(story.id) ?? 0;
             const storyStartTime = storyStartMs.get(story.id) ?? Date.now();
+            // Prefer per-story duration from the batch (worktree creation → merge completion per AC-2).
+            // Falls back to elapsed time since storyStartMs was recorded (set just before the batch
+            // call), which is a slightly wider window but only applies when storyDurations is absent.
             const storyDuration = batchResult.storyDurations?.get(story.id) ?? Date.now() - storyStartTime;
             allStoryMetrics.push({
               storyId: story.id,
@@ -239,6 +242,8 @@ export async function executeUnified(
                 attempts: 1,
                 finalTier: conflict.story.routing?.modelTier ?? "balanced",
                 success: true,
+                // cost = total per-story agent cost including rectification work.
+                // rectificationCost = only the conflict resolution portion (conflict.cost).
                 cost: batchResult.storyCosts.get(conflict.story.id) ?? 0,
                 durationMs: storyDuration,
                 firstPassSuccess: false,
