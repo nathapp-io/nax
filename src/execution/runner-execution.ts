@@ -195,5 +195,17 @@ export async function runExecutionPhase(
     };
   }
 
+  if (unifiedResult.exitReason === "pre-merge-aborted" || unifiedResult.exitReason === "stalled") {
+    return {
+      prd,
+      iterations,
+      storiesCompleted,
+      totalCost,
+      allStoryMetrics,
+      completedEarly: false,
+      durationMs: Date.now() - options.startTime,
+    };
+  }
+
   return { prd, iterations, storiesCompleted, totalCost, allStoryMetrics };
 }

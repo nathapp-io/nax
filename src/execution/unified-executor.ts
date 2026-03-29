@@ -14,7 +14,7 @@ import { wireReporters } from "../pipeline/subscribers/reporters";
 import type { PipelineContext } from "../pipeline/types";
 import { isComplete, isStalled, loadPRD } from "../prd";
 import type { PRD } from "../prd/types";
-import { startHeartbeat } from "./crash-recovery";
+import { startHeartbeat, stopHeartbeat } from "./crash-recovery";
 import { captureRunStartRef, runDeferredReview } from "./deferred-review";
 import type { DeferredReviewResult } from "./deferred-review";
 import type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
@@ -158,6 +158,7 @@ export async function executeUnified(
 
           // Route parallel failures through handlePipelineFailure (AC-6)
           for (const { story, pipelineResult } of batchResult.failed) {
+            const storyRouting = prd.userStories.find((s) => s.id === story.id)?.routing;
             await handlePipelineFailure(
               {
                 config: ctx.config,
@@ -173,7 +174,12 @@ export async function executeUnified(
                 pluginRegistry: ctx.pluginRegistry,
                 story,
                 storiesToExecute: [story],
-                routing: { complexity: "medium", modelTier: "balanced", testStrategy: "test-after", reasoning: "" },
+                routing: {
+                  complexity: storyRouting?.complexity ?? "medium",
+                  modelTier: storyRouting?.modelTier ?? "balanced",
+                  testStrategy: storyRouting?.testStrategy ?? "test-after",
+                  reasoning: storyRouting?.reasoning ?? "",
+                },
                 isBatchExecution: false,
                 allStoryMetrics,
                 storyGitRef: null,
@@ -186,6 +192,26 @@ export async function executeUnified(
           totalCost += batchResult.totalCost;
           storiesCompleted += batchResult.completed.length;
           prdDirty = true;
+
+          // Build per-story metrics for completed parallel batch stories
+          const batchCompletedAt = new Date().toISOString();
+          for (const story of batchResult.completed) {
+            const storyCost = batchResult.storyCosts.get(story.id) ?? 0;
+            allStoryMetrics.push({
+              storyId: story.id,
+              complexity: story.routing?.complexity ?? "medium",
+              modelTier: story.routing?.modelTier ?? "balanced",
+              modelUsed: ctx.config.autoMode.defaultAgent,
+              attempts: 1,
+              finalTier: story.routing?.modelTier ?? "balanced",
+              success: true,
+              cost: storyCost,
+              durationMs: 0,
+              firstPassSuccess: true,
+              startedAt: batchCompletedAt,
+              completedAt: batchCompletedAt,
+            });
+          }
 
           // Cost-limit check after parallel batch (AC-7)
           if (totalCost >= costLimit) {
@@ -304,7 +330,7 @@ export async function executeUnified(
 
     return buildResult("max-iterations");
   } finally {
-    // Cleanup moved to runner.ts (RL-007): exit summary and heartbeat stop are owned by runner
+    stopHeartbeat();
   }
 }
 

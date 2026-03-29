@@ -509,11 +509,11 @@ describe("AC-9 — parallel-executor.ts deleted", () => {
       ["grep", "-r", "parallel-executor", "--include=*.ts", "-l", join(SRC)],
       { stdout: "pipe", stderr: "pipe" },
     );
-    const [exitCode, stdout] = await Promise.all([
+    const [_exitCode, stdout] = await Promise.all([
       proc.exited,
       new Response(proc.stdout).text(),
     ]);
-    // exitCode 1 means no matches (grep convention) — that's what we want
+    // _exitCode 1 means no matches (grep convention) — that's what we want
     const matchingFiles = stdout.trim().split("\n").filter(Boolean);
     expect(matchingFiles).toHaveLength(0);
   });
@@ -534,7 +534,7 @@ describe("AC-10 — lifecycle/parallel-lifecycle.ts deleted", () => {
       ["grep", "-r", "parallel-lifecycle", "--include=*.ts", "-l", join(SRC)],
       { stdout: "pipe", stderr: "pipe" },
     );
-    const [exitCode, stdout] = await Promise.all([
+    const [_exitCode, stdout] = await Promise.all([
       proc.exited,
       new Response(proc.stdout).text(),
     ]);
