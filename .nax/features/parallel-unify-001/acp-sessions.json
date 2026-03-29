@@ -18,5 +18,9 @@
   "US-004:implementer": {
     "sessionName": "nax-bfff486f-parallel-unify-001-us-004-implementer",
     "agentName": "claude"
+  },
+  "US-004:verifier": {
+    "sessionName": "nax-bfff486f-parallel-unify-001-us-004-verifier",
+    "agentName": "claude"
   }
 }
