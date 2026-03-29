@@ -14,6 +14,8 @@ import type { AgentType } from "../context/types";
 
 /** Options for `nax generate` */
 export interface GenerateCommandOptions {
+  /** Project directory (default: process.cwd()) */
+  dir?: string;
   /** Path to context file (default: nax/context.md) */
   context?: string;
   /** Output directory (default: project root) */
@@ -43,7 +45,7 @@ const VALID_AGENTS: AgentType[] = ["claude", "codex", "opencode", "cursor", "win
  * `nax generate` command handler.
  */
 export async function generateCommand(options: GenerateCommandOptions): Promise<void> {
-  const workdir = process.cwd();
+  const workdir = options.dir ?? process.cwd();
   const dryRun = options.dryRun ?? false;
 
   // Load config early — needed for all paths

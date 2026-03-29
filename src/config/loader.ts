@@ -5,7 +5,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { getLogger } from "../logger";
 import { loadJsonFile } from "../utils/json-file";
 import { mergePackageConfig } from "./merge";
@@ -88,8 +88,17 @@ function applyBatchModeCompat(conf: Record<string, unknown>): Record<string, unk
   return conf;
 }
 
-/** Load merged configuration (defaults < global < project < CLI overrides) */
-export async function loadConfig(projectDir?: string, cliOverrides?: Record<string, unknown>): Promise<NaxConfig> {
+/**
+ * Load merged configuration (defaults < global < project < CLI overrides).
+ *
+ * @param startDir - Either the project root (workdir) OR the `.nax/` directory.
+ *   - **Project root** (e.g. `/home/user/myproject`): `findProjectDir` is called
+ *     internally to locate `.nax/config.json`. This is the recommended usage.
+ *   - **Nax dir** (e.g. `/home/user/myproject/.nax`): detected by `basename === ".nax"`,
+ *     used directly. Kept for backward-compatibility with `loadConfigForWorkdir`.
+ *   - **Omitted / undefined**: falls back to `findProjectDir(process.cwd())`.
+ */
+export async function loadConfig(startDir?: string, cliOverrides?: Record<string, unknown>): Promise<NaxConfig> {
   // Start with defaults as a plain object
   let rawConfig: Record<string, unknown> = structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>);
 
@@ -102,7 +111,13 @@ export async function loadConfig(projectDir?: string, cliOverrides?: Record<stri
   }
 
   // Layer 2: Project config (nax/config.json)
-  const projDir = projectDir ?? findProjectDir();
+  // Resolve projDir: if startDir is already the .nax/ dir (basename === ".nax"), use it
+  // directly; otherwise treat startDir as the project root and walk up to find .nax/.
+  const projDir = startDir
+    ? basename(startDir) === PROJECT_NAX_DIR
+      ? startDir
+      : findProjectDir(startDir)
+    : findProjectDir();
   if (projDir) {
     const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"), "config");
     if (projConf) {
