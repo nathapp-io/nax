@@ -6,5 +6,9 @@
   "US-003:implementer": {
     "sessionName": "nax-bfff486f-parallel-unify-001-us-003-implementer",
     "agentName": "claude"
+  },
+  "US-003:verifier": {
+    "sessionName": "nax-bfff486f-parallel-unify-001-us-003-verifier",
+    "agentName": "claude"
   }
 }
