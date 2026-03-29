@@ -483,6 +483,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
       expect.objectContaining({ id: "US-001", title: "My story", acceptanceCriteria: ["AC1"] }),
       expect.any(Object),
       mockResolver,
+      undefined,
     );
   });
 
@@ -501,7 +502,7 @@ describe("runReview — semantic check integration (AC-9)", () => {
 
     const configWithSemantic: ReviewConfig = {
       ...semanticConfig,
-      semantic: { modelTier: "powerful", rules: ["no stubs"] },
+      semantic: { modelTier: "powerful", rules: ["no stubs"], timeoutMs: 600_000, excludePatterns: [":!test/"] },
     };
 
     await runReview(configWithSemantic, "/tmp/fake-workdir");
@@ -510,8 +511,9 @@ describe("runReview — semantic check integration (AC-9)", () => {
       "/tmp/fake-workdir",
       undefined,
       expect.any(Object),
-      { modelTier: "powerful", rules: ["no stubs"] },
+      { modelTier: "powerful", rules: ["no stubs"], timeoutMs: 600_000, excludePatterns: [":!test/"] },
       expect.any(Function),
+      undefined,
     );
   });
 });

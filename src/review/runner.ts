@@ -6,6 +6,7 @@
 
 import { spawn } from "bun";
 import type { AgentAdapter } from "../agents/types";
+import type { NaxConfig } from "../config";
 import type { ExecutionConfig, QualityConfig } from "../config/schema";
 import type { ModelTier } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
@@ -279,6 +280,7 @@ export async function runReview(
   storyGitRef?: string,
   story?: SemanticStory,
   modelResolver?: (tier: ModelTier) => AgentAdapter | null | undefined,
+  naxConfig?: NaxConfig,
 ): Promise<ReviewResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -336,6 +338,7 @@ export async function runReview(
         modelTier: "balanced" as const,
         rules: [] as string[],
         timeoutMs: 600_000,
+        excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"],
       };
       const result = await _reviewSemanticDeps.runSemanticReview(
         workdir,
@@ -343,6 +346,7 @@ export async function runReview(
         semanticStory,
         semanticCfg,
         modelResolver ?? (() => null),
+        naxConfig,
       );
       checks.push(result);
       if (!result.success && !firstFailure) {

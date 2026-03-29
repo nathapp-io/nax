@@ -27,7 +27,7 @@ const STORY: SemanticStory = {
   acceptanceCriteria: ["ctx.reviewFindings is populated when semantic fails"],
 };
 
-const CFG: SemanticReviewConfig = { modelTier: "balanced", rules: [] };
+const CFG: SemanticReviewConfig = { modelTier: "balanced", rules: [], excludePatterns: [":!test/"] };
 
 function makeMockAgent(response: string): AgentAdapter {
   return {

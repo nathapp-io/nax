@@ -1,12 +1,13 @@
 /**
  * Unit tests for src/review/semantic.ts
  *
- * Tests cover all acceptance criteria for US-002:
+ * Tests cover:
  * - runSemanticReview() signature and early-exit on missing git ref
- * - git diff collection and 12 KB truncation
- * - LLM prompt construction (title, description, ACs, default rules, custom rules, diff)
+ * - git diff collection (production code only — test files excluded)
+ * - Diff truncation at 50KB with stat preamble
+ * - LLM prompt construction (title, description, ACs, custom rules, diff)
  * - JSON response parsing (passed=true, passed=false with findings)
- * - Fail-open behaviour on invalid JSON
+ * - Fail-open / fail-closed behaviour on invalid JSON
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -32,6 +33,7 @@ const STORY: SemanticStory = {
 const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
   modelTier: "balanced",
   rules: [],
+  excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"],
 };
 
 /** Build a mock AgentAdapter whose complete() resolves to the supplied JSON string */
@@ -190,7 +192,7 @@ describe("runSemanticReview — git diff invocation", () => {
     _semanticDeps.spawn = origSpawn;
   });
 
-  test("calls spawn with git diff --unified=3 <storyGitRef>..HEAD", async () => {
+  test("calls spawn with git diff --unified=3 <storyGitRef>..HEAD and test exclusions", async () => {
     const spawnMock = makeSpawnMock("diff output", 0);
     _semanticDeps.spawn = spawnMock;
     const agent = makeMockAgent(PASSING_LLM_RESPONSE);
@@ -204,6 +206,10 @@ describe("runSemanticReview — git diff invocation", () => {
     expect(spawnOpts.cmd).toContain("diff");
     expect(spawnOpts.cmd).toContain("--unified=3");
     expect(spawnOpts.cmd).toContain("abc123..HEAD");
+    // Test file exclusion pathspecs
+    expect(spawnOpts.cmd).toContain(":!test/");
+    expect(spawnOpts.cmd).toContain(":!*.test.ts");
+    expect(spawnOpts.cmd).toContain(":!*.spec.ts");
   });
 
   test("passes workdir as cwd to spawn", async () => {
@@ -220,7 +226,7 @@ describe("runSemanticReview — git diff invocation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC-3: Diff truncation at 102400 bytes (100KB)
+// Diff truncation at 51200 bytes (50KB)
 // ---------------------------------------------------------------------------
 
 /** Spawn mock that returns different output for diff vs diff --stat */
@@ -257,7 +263,7 @@ describe("runSemanticReview — diff truncation", () => {
     _semanticDeps.spawn = origSpawn;
   });
 
-  test("passes full diff to LLM prompt when diff is under 102400 bytes", async () => {
+  test("passes full diff to LLM prompt when diff is under 51200 bytes", async () => {
     const smallDiff = "a".repeat(100);
     _semanticDeps.spawn = makeSpawnMock(smallDiff, 0);
     let capturedPrompt = "";
@@ -272,8 +278,8 @@ describe("runSemanticReview — diff truncation", () => {
     expect(capturedPrompt).toContain(smallDiff);
   });
 
-  test("truncates diff and appends truncation marker when diff exceeds 102400 bytes", async () => {
-    const largeDiff = "x".repeat(110_000);
+  test("truncates diff and appends truncation marker when diff exceeds 51200 bytes", async () => {
+    const largeDiff = "x".repeat(60_000);
     const statOutput = " src/foo.ts | 100 +\n src/bar.ts | 50 +\n 2 files changed";
     _semanticDeps.spawn = makeSpawnMockWithStat(largeDiff, statOutput, 0);
     let capturedPrompt = "";
@@ -285,14 +291,14 @@ describe("runSemanticReview — diff truncation", () => {
 
     await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
 
-    expect(capturedPrompt).toContain("truncated at 102400 bytes");
+    expect(capturedPrompt).toContain("truncated at 51200 bytes");
     // The diff in the prompt must not exceed the cap (plus stat preamble + marker overhead)
     const diffSection = capturedPrompt.match(/```diff\n([\s\S]*?)```/)?.[1] ?? "";
-    expect(diffSection.length).toBeLessThanOrEqual(102_400 + 500); // cap + stat preamble + marker
+    expect(diffSection.length).toBeLessThanOrEqual(51_200 + 500); // cap + stat preamble + marker
   });
 
   test("truncation includes file summary from git diff --stat", async () => {
-    const largeDiff = "y".repeat(110_000);
+    const largeDiff = "y".repeat(60_000);
     const statOutput = " src/foo.ts | 100 +\n src/bar.ts | 50 +\n 2 files changed";
     _semanticDeps.spawn = makeSpawnMockWithStat(largeDiff, statOutput, 0);
     let capturedPrompt = "";
@@ -359,22 +365,19 @@ describe("runSemanticReview — LLM prompt construction", () => {
     });
   });
 
-  test("prompt includes 5 default review rules", async () => {
+  test("prompt includes AC-focused review criteria", async () => {
     const prompt = await capturePrompt();
-    // These are the 5 known default rules
-    const expectedRules = ["stubs", "placeholder", "unrelated", "wiring", "error"];
-    let ruleCount = 0;
-    for (const keyword of expectedRules) {
-      if (prompt.toLowerCase().includes(keyword)) ruleCount++;
-    }
-    // At least 4 of 5 rule keywords must appear (some may be phrased differently)
-    expect(ruleCount).toBeGreaterThanOrEqual(4);
+    // The prompt should instruct the LLM to verify ACs, flag dead code, and check wiring
+    expect(prompt).toContain("acceptance criterion");
+    expect(prompt).toContain("dead paths");
+    expect(prompt).toContain("wired into callers");
   });
 
   test("prompt includes custom rules from semanticConfig.rules", async () => {
     const config: SemanticReviewConfig = {
       modelTier: "balanced",
       rules: ["Never use console.log", "All exports must be typed"],
+      excludePatterns: [":!test/"],
     };
     const prompt = await capturePrompt(STORY, config);
     expect(prompt).toContain("Never use console.log");
@@ -392,6 +395,13 @@ describe("runSemanticReview — LLM prompt construction", () => {
     const prompt = await capturePrompt(STORY, DEFAULT_SEMANTIC_CONFIG);
     // Should still work — just verifying no crash and prompt is well-formed
     expect(prompt.length).toBeGreaterThan(100);
+  });
+
+  test("prompt states diff is production code only", async () => {
+    const prompt = await capturePrompt();
+    expect(prompt).toContain("production code only");
+    expect(prompt).toContain("Do NOT flag");
+    expect(prompt).toContain("lint handles");
   });
 });
 

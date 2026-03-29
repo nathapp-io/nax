@@ -237,6 +237,9 @@ const SemanticReviewConfigSchema = z.object({
   modelTier: ModelTierSchema.default("balanced"),
   rules: z.array(z.string()).default([]),
   timeoutMs: z.number().int().positive().default(600_000),
+  excludePatterns: z
+    .array(z.string())
+    .default([":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"]),
 });
 
 const ReviewConfigSchema = z.object({

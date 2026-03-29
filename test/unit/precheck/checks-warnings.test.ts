@@ -124,7 +124,7 @@ function makeBugConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
     review: {
       checks: ["typecheck", "lint"],
       commands: {},
-      semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000 },
+      semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000, excludePatterns: [] },
     },
     quality: { commands: {} },
     ...overrides,
@@ -153,7 +153,7 @@ describe("checkBuildCommandInReviewChecks (BUG-092)", () => {
         review: {
           checks: ["typecheck", "lint"],
           commands: { build: "bun run build" },
-          semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000 },
+          semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000, excludePatterns: [] },
         },
       } as Partial<NaxConfig>),
     );
@@ -168,7 +168,7 @@ describe("checkBuildCommandInReviewChecks (BUG-092)", () => {
         review: {
           checks: ["typecheck", "lint", "build"],
           commands: {},
-          semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000 },
+          semantic: { enabled: false, rules: [], modelTier: "fast", timeoutMs: 600000, excludePatterns: [] },
         },
       } as Partial<NaxConfig>),
     );
