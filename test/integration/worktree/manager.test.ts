@@ -134,14 +134,18 @@ describe("WorktreeManager", () => {
       );
     });
 
-    test("throws descriptive error when worktree already exists", async () => {
+    test("cleanly replaces an existing worktree for the same story", async () => {
       const manager = new WorktreeManager();
       const storyId = "story-duplicate";
 
+      // Create a worktree
       await manager.create(projectRoot, storyId);
+      const worktreePath = join(projectRoot, ".nax-wt", storyId);
+      expect(existsSync(worktreePath)).toBe(true);
 
-      // Try to create the same worktree again
-      await expect(manager.create(projectRoot, storyId)).rejects.toThrow(/already exists|worktree.*exists/i);
+      // Create the same worktree again — should succeed (removes stale one first)
+      await manager.create(projectRoot, storyId);
+      expect(existsSync(worktreePath)).toBe(true); // still exists, just recreated
     });
   });
 

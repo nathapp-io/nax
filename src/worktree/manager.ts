@@ -58,13 +58,25 @@ export class WorktreeManager {
 
   /**
    * Creates a git worktree at .nax-wt/<storyId>/ with branch nax/<storyId>
-   * and symlinks node_modules and .env from project root
+   * and symlinks node_modules and .env from project root.
+   *
+   * If a worktree or branch for this story already exists (orphaned from a
+   * previous crashed run), it is removed first so we get a clean slate.
    */
   async create(projectRoot: string, storyId: string): Promise<void> {
     validateStoryId(storyId);
 
     const worktreePath = join(projectRoot, ".nax-wt", storyId);
     const branchName = `nax/${storyId}`;
+
+    // Clean up any stale worktree/branch from a previous crashed run before creating.
+    // This handles the case where git still has a worktree reference (orphaned after
+    // a crash) but the directory was deleted, causing "already exists" errors.
+    try {
+      await this.remove(projectRoot, storyId);
+    } catch {
+      // remove() throws if worktree doesn't exist — that's fine, we just want a clean slate
+    }
 
     try {
       // Create worktree with new branch
@@ -84,9 +96,6 @@ export class WorktreeManager {
         // Enhance error messages for common scenarios
         if (error.message.includes("not a git repository")) {
           throw new Error(`Not a git repository: ${projectRoot}`);
-        }
-        if (error.message.includes("already exists")) {
-          throw new Error(`Worktree for story ${storyId} already exists at ${worktreePath}`);
         }
         throw error;
       }
