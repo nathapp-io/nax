@@ -154,6 +154,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
       modelTier: "balanced",
       rules: [],
       timeoutMs: 600_000,
+      excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"],
     },
   },
   plan: {

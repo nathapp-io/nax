@@ -15,6 +15,8 @@ export interface SemanticReviewConfig {
   rules: string[];
   /** Timeout in milliseconds for the LLM call (default: 600_000) */
   timeoutMs: number;
+  /** Git pathspec patterns to exclude from the semantic diff (e.g. ':!test/', ':!*.test.ts') */
+  excludePatterns: string[];
 }
 
 /** Review check result */
