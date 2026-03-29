@@ -454,6 +454,7 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
           chat_id: this.chatId,
           message_id: lastId,
           text: "⏱ EXPIRED — Interaction timed out",
+          reply_markup: { inline_keyboard: [] }, // Remove buttons so expired interactions can't be re-tapped
         }),
       });
     } catch {
