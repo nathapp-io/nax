@@ -724,7 +724,22 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async complete(prompt: string, _options?: CompleteOptions): Promise<string> {
-    const model = _options?.model ?? "default";
+    // Resolve model: explicit option > config.models[tier] > "default"
+    let model = _options?.model;
+    if (!model && _options?.modelTier && _options?.config?.models) {
+      const tier = _options.modelTier;
+      const { resolveModel } = await import("../../config/schema");
+      const models = _options.config.models as Record<string, unknown>;
+      const entry = models[tier] ?? models.balanced;
+      if (entry) {
+        try {
+          model = resolveModel(entry as Parameters<typeof resolveModel>[0]).model;
+        } catch {
+          // resolveModel can throw on malformed entries — fall through to "default"
+        }
+      }
+    }
+    model ??= "default";
     const timeoutMs = _options?.timeoutMs ?? 120_000; // 2-min safety net by default
     const permissionMode = resolvePermissions(_options?.config, "complete").mode;
     const workdir = _options?.workdir;

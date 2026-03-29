@@ -9,6 +9,7 @@
 
 import { spawn } from "bun";
 import type { AgentAdapter } from "../agents/types";
+import type { NaxConfig } from "../config";
 import type { ModelTier } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
@@ -234,6 +235,7 @@ export async function runSemanticReview(
   story: SemanticStory,
   semanticConfig: SemanticReviewConfig,
   modelResolver: ModelResolver,
+  naxConfig?: NaxConfig,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -250,7 +252,11 @@ export async function runSemanticReview(
     };
   }
 
-  logger?.info("review", "Running semantic check", { storyId: story.id, modelTier: semanticConfig.modelTier });
+  logger?.info("review", "Running semantic check", {
+    storyId: story.id,
+    modelTier: semanticConfig.modelTier,
+    configProvided: !!naxConfig,
+  });
 
   // Collect production-only diff (test files excluded at git level via configurable patterns)
   const rawDiff = await collectDiff(workdir, storyGitRef, semanticConfig.excludePatterns);
@@ -286,6 +292,8 @@ export async function runSemanticReview(
       sessionName: `nax-semantic-${story.id}`,
       workdir,
       timeoutMs: semanticConfig.timeoutMs,
+      modelTier: semanticConfig.modelTier,
+      config: naxConfig,
     });
   } catch (err) {
     logger?.warn("semantic", "LLM call failed — fail-open", { cause: String(err) });
