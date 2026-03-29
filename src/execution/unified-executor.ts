@@ -130,7 +130,10 @@ export async function executeUnified(
               storyId: story.id,
               story,
               workdir: ctx.workdir,
-              modelTier: "balanced",
+              modelTier:
+                story.routing?.modelTier ??
+                ctx.config.autoMode.complexityRouting?.[story.routing?.complexity ?? "medium"] ??
+                "balanced",
               agent: ctx.config.autoMode.defaultAgent,
               iteration: iterations,
             });
@@ -153,8 +156,10 @@ export async function executeUnified(
                 effectiveConfig: ctx.config,
                 prd,
                 hooks: ctx.hooks,
+                featureDir: ctx.featureDir,
                 agentGetFn: ctx.agentGetFn,
-              } as unknown as RunParallelBatchOptions["ctx"]["pipelineContext"],
+                pidRegistry: ctx.pidRegistry,
+              },
               eventEmitter: ctx.eventEmitter,
               agentGetFn: ctx.agentGetFn,
             },
