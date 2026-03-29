@@ -23,7 +23,8 @@ export interface BridgeContext {
   stage: InteractionStage;
 }
 
-const QUESTION_PATTERNS = [/\?/, /\bwhich\b/i, /\bshould i\b/i, /\bunclear\b/i, /\bplease clarify\b/i];
+// BUG-097: Use /\?\s*$/ instead of /\?/ to avoid false positives on code (?., ??, ternary)
+const QUESTION_PATTERNS = [/\?\s*$/, /\bwhich\b/i, /\bshould i\b/i, /\bunclear\b/i, /\bplease clarify\b/i];
 
 /** Default interaction timeout when config value is not available (2 minutes) */
 const DEFAULT_INTERACTION_TIMEOUT_MS = 120_000;
