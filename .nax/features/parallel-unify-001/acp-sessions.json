@@ -10,5 +10,9 @@
   "US-003:verifier": {
     "sessionName": "nax-bfff486f-parallel-unify-001-us-003-verifier",
     "agentName": "claude"
+  },
+  "US-004:test-writer": {
+    "sessionName": "nax-bfff486f-parallel-unify-001-us-004-test-writer",
+    "agentName": "claude"
   }
 }

@@ -3,7 +3,7 @@
   "feature": "parallel-unify-001",
   "branchName": "feat/parallel-unify-001",
   "createdAt": "2026-03-28T00:00:00.000Z",
-  "updatedAt": "2026-03-29T03:11:44.274Z",
+  "updatedAt": "2026-03-29T03:43:04.417Z",
   "userStories": [
     {
       "id": "US-001",
@@ -203,8 +203,8 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -312,7 +312,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/unified-executor.ts",
