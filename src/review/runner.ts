@@ -281,6 +281,7 @@ export async function runReview(
   story?: SemanticStory,
   modelResolver?: (tier: ModelTier) => AgentAdapter | null | undefined,
   naxConfig?: NaxConfig,
+  retrySkipChecks?: Set<string>,
 ): Promise<ReviewResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -326,6 +327,15 @@ export async function runReview(
   }
 
   for (const checkName of config.checks) {
+    // #136: Skip checks that already passed in a previous review pass within this pipeline run.
+    // Populated by autofix stage when retrying — only skips checks that were NOT the failing check.
+    if (retrySkipChecks?.has(checkName)) {
+      getSafeLogger()?.debug("review", `Skipping ${checkName} check (already passed in previous review pass)`, {
+        storyId,
+      });
+      continue;
+    }
+
     // Semantic check: delegate to LLM-based runner instead of shell command
     if (checkName === "semantic") {
       const semanticStory: SemanticStory = {

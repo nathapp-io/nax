@@ -84,6 +84,7 @@ export class ReviewOrchestrator {
     story?: SemanticStory,
     modelResolver?: (tier: ModelTier) => AgentAdapter | null | undefined,
     naxConfig?: NaxConfig,
+    retrySkipChecks?: Set<string>,
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
@@ -97,6 +98,7 @@ export class ReviewOrchestrator {
       story,
       modelResolver,
       naxConfig,
+      retrySkipChecks,
     );
 
     if (!builtIn.success) {

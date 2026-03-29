@@ -117,6 +117,17 @@ export const autofixStage: PipelineStage = {
     const agentFixed = await _autofixDeps.runAgentRectification(ctx);
     if (agentFixed) {
       if (ctx.reviewResult) ctx.reviewResult = { ...ctx.reviewResult, success: true };
+      // #136: Skip checks that already passed — only re-run checks that originally failed.
+      // Agent rectification fixes mechanical issues (lint/typecheck); passing checks like
+      // semantic (~45s) don't need to re-run unless they were the failing check.
+      const passedChecks = (ctx.reviewResult?.checks ?? []).filter((c) => c.success).map((c) => c.check);
+      if (passedChecks.length > 0) {
+        ctx.retrySkipChecks = new Set(passedChecks);
+        logger.debug("autofix", "Skipping already-passed checks on retry", {
+          storyId: ctx.story.id,
+          skippedChecks: passedChecks,
+        });
+      }
       logger.info("autofix", "Agent rectification succeeded — retrying review", { storyId: ctx.story.id });
       return { action: "retry", fromStage: "review" };
     }
