@@ -18,6 +18,7 @@ import { startHeartbeat, stopHeartbeat } from "./crash-recovery";
 import { captureRunStartRef, runDeferredReview } from "./deferred-review";
 import type { DeferredReviewResult } from "./deferred-review";
 import type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
+import { buildPreviewRouting } from "./executor-types";
 import { getAllReadyStories } from "./helpers";
 import { runIteration } from "./iteration-runner";
 import type { RunParallelBatchOptions, RunParallelBatchResult } from "./parallel-batch";
@@ -135,6 +136,10 @@ export async function executeUnified(
             });
           }
 
+          const batchStartedAt = new Date().toISOString();
+          const storyStartMs = new Map<string, number>();
+          for (const s of batch) storyStartMs.set(s.id, Date.now());
+
           const batchResult = await _unifiedExecutorDeps.runParallelBatch({
             stories: batch,
             ctx: {
@@ -197,6 +202,7 @@ export async function executeUnified(
           const batchCompletedAt = new Date().toISOString();
           for (const story of batchResult.completed) {
             const storyCost = batchResult.storyCosts.get(story.id) ?? 0;
+            const storyStartTime = storyStartMs.get(story.id) ?? Date.now();
             allStoryMetrics.push({
               storyId: story.id,
               complexity: story.routing?.complexity ?? "medium",
@@ -206,10 +212,11 @@ export async function executeUnified(
               finalTier: story.routing?.modelTier ?? "balanced",
               success: true,
               cost: storyCost,
-              durationMs: 0,
+              durationMs: Date.now() - storyStartTime,
               firstPassSuccess: true,
-              startedAt: batchCompletedAt,
+              startedAt: batchStartedAt,
               completedAt: batchCompletedAt,
+              source: "parallel" as const,
             });
           }
 
@@ -220,7 +227,98 @@ export async function executeUnified(
 
           continue;
         }
-        // batch.length <= 1: fall through to sequential single-story path
+
+        // batch.length === 1: dispatch the single story the batch selector chose,
+        // honouring its dependency/priority logic rather than re-running selectNextStories.
+        if (batch.length === 1) {
+          const singleStory = batch[0];
+          const singleSelection = {
+            story: singleStory,
+            storiesToExecute: [singleStory],
+            routing: buildPreviewRouting(singleStory, ctx.config),
+            isBatchExecution: false,
+          };
+
+          if (!ctx.useBatch) lastStoryId = singleStory.id;
+
+          if (totalCost >= costLimit) {
+            const shouldProceed =
+              ctx.interactionChain && isTriggerEnabled("cost-exceeded", ctx.config)
+                ? await checkCostExceeded(
+                    { featureName: ctx.feature, cost: totalCost, limit: costLimit },
+                    ctx.config,
+                    ctx.interactionChain,
+                  )
+                : false;
+            if (!shouldProceed) {
+              pipelineEventBus.emit({
+                type: "run:paused",
+                reason: `Cost limit reached: $${totalCost.toFixed(2)}`,
+                storyId: singleStory.id,
+                cost: totalCost,
+              });
+              return buildResult("cost-limit");
+            }
+            pipelineEventBus.emit({ type: "run:resumed", feature: ctx.feature });
+          }
+
+          pipelineEventBus.emit({
+            type: "story:started",
+            storyId: singleStory.id,
+            story: singleStory,
+            workdir: ctx.workdir,
+            modelTier: singleSelection.routing.modelTier,
+            agent: ctx.config.autoMode.defaultAgent,
+            iteration: iterations,
+          });
+
+          const singleIter = await _unifiedExecutorDeps.runIteration(
+            ctx,
+            prd,
+            singleSelection,
+            iterations,
+            totalCost,
+            allStoryMetrics,
+          );
+          [prd, storiesCompleted, totalCost, prdDirty] = [
+            singleIter.prd,
+            storiesCompleted + singleIter.storiesCompletedDelta,
+            totalCost + singleIter.costDelta,
+            singleIter.prdDirty,
+          ];
+
+          if (singleIter.finalAction === "decomposed") {
+            iterations--;
+            pipelineEventBus.emit({
+              type: "story:decomposed",
+              storyId: singleStory.id,
+              story: singleStory,
+              subStoryCount: singleIter.subStoryCount ?? 0,
+            });
+            if (singleIter.prdDirty) {
+              prd = await loadPRD(ctx.prdPath);
+              prdDirty = false;
+            }
+            ctx.statusWriter.setPrd(prd);
+            continue;
+          }
+
+          if (singleIter.prdDirty) {
+            prd = await loadPRD(ctx.prdPath);
+            prdDirty = false;
+          }
+          ctx.statusWriter.setPrd(prd);
+          ctx.statusWriter.setCurrentStory(null);
+          await ctx.statusWriter.update(totalCost, iterations);
+
+          if (isStalled(prd)) {
+            pipelineEventBus.emit({ type: "run:paused", reason: "All remaining stories blocked", cost: totalCost });
+            return buildResult("stalled");
+          }
+          if (ctx.config.execution.iterationDelayMs > 0) await Bun.sleep(ctx.config.execution.iterationDelayMs);
+          continue;
+        }
+        // batch.length === 0: fall through to sequential single-story path
       }
 
       // Sequential single-story dispatch

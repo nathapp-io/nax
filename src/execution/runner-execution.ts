@@ -207,5 +207,21 @@ export async function runExecutionPhase(
     };
   }
 
+  if (
+    unifiedResult.exitReason === "cost-limit" ||
+    unifiedResult.exitReason === "max-iterations" ||
+    unifiedResult.exitReason === "no-stories"
+  ) {
+    return {
+      prd,
+      iterations,
+      storiesCompleted,
+      totalCost,
+      allStoryMetrics,
+      completedEarly: false,
+      durationMs: Date.now() - options.startTime,
+    };
+  }
+
   return { prd, iterations, storiesCompleted, totalCost, allStoryMetrics };
 }
