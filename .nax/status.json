@@ -17,7 +17,7 @@
     "pending": 2
   },
   "cost": {
-    "spent": 0,
+    "spent": 3.7738056500000003,
     "limit": 30
   },
   "current": {
@@ -25,12 +25,12 @@
     "title": "Unify executors — integrate parallel dispatch into sequential loop",
     "complexity": "complex",
     "tddStrategy": "three-session-tdd",
-    "model": "balanced",
+    "model": "powerful",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-03-29T03:09:41.309Z",
-  "durationMs": 2221577,
-  "lastHeartbeat": "2026-03-29T03:09:41.309Z"
+  "iterations": 4,
+  "updatedAt": "2026-03-29T03:17:42.742Z",
+  "durationMs": 2703010,
+  "lastHeartbeat": "2026-03-29T03:17:42.742Z"
 }

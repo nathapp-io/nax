@@ -3,7 +3,7 @@
   "feature": "parallel-unify-001",
   "branchName": "feat/parallel-unify-001",
   "createdAt": "2026-03-28T00:00:00.000Z",
-  "updatedAt": "2026-03-29T02:32:41.637Z",
+  "updatedAt": "2026-03-29T03:11:44.274Z",
   "userStories": [
     {
       "id": "US-001",
@@ -212,7 +212,7 @@
         "testStrategy": "three-session-tdd",
         "reasoning": "validated from LLM output",
         "initialComplexity": "complex",
-        "modelTier": "balanced"
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/execution/sequential-executor.ts",
@@ -221,8 +221,69 @@
         "src/execution/iteration-runner.ts",
         "src/execution/runner.ts"
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Autofix exhausted: review still failing after fix attempts"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "review",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "reviewFindings": [
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/parallel-executor.ts",
+              "line": 1,
+              "message": "AC-9 requires src/execution/parallel-executor.ts to be deleted, but the git diff contains no deletion for this file. The test in unified-executor.test.ts will fail because the file still exists.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/lifecycle/parallel-lifecycle.ts",
+              "line": 1,
+              "message": "AC-10 requires src/execution/lifecycle/parallel-lifecycle.ts to be deleted, but no deletion appears in the diff. The corresponding test assertion will fail.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/runner.ts",
+              "line": 1,
+              "message": "AC-11 requires runner.ts to remove _runnerDeps.runParallelExecution, but no diff for runner.ts is present. The reference likely still exists.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "warning",
+              "file": "src/execution/unified-executor.ts",
+              "line": 135,
+              "message": "story:started is emitted for each batch story with hardcoded modelTier: 'balanced', ignoring the story's own routing metadata. This produces inaccurate event data for stories routed to a different tier.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "warning",
+              "file": "src/execution/unified-executor.ts",
+              "line": 163,
+              "message": "The pipelineContext is constructed with 'as unknown as RunParallelBatchOptions[\"ctx\"][\"pipelineContext\"]', a double cast that suppresses a genuine type mismatch. The object is missing required fields (featureDir, story, agentGetFn at minimum) and the cast hides compile-time errors.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "warning",
+              "file": "src/execution/runner-execution.ts",
+              "line": 164,
+              "message": "statusFile, startedAt, formatterMode, and headless are removed from the SequentialExecutionContext passed to executeUnified. No diff for executor-types.ts is present to confirm these fields were removed from the type. If the type still declares them as required, this is a TypeScript error.",
+              "source": "semantic-review"
+            }
+          ],
+          "cost": 3.7738056500000003,
+          "timestamp": "2026-03-29T03:11:42.254Z"
+        }
+      ],
       "storyPoints": 1
     },
     {
