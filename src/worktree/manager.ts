@@ -1,9 +1,11 @@
 import { existsSync, symlinkSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { getSafeLogger } from "../logger";
 import { validateStoryId } from "../prd/validate";
 import { spawn } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
+import { NAX_GITIGNORE_ENTRIES } from "../utils/gitignore";
 import type { WorktreeInfo } from "./types";
 
 /** Injectable deps for testability — mock _managerDeps.spawn instead of global Bun.spawn */
@@ -12,6 +14,48 @@ export const _managerDeps = {
 };
 
 export class WorktreeManager {
+  /**
+   * Ensures nax runtime files are excluded from git in all worktrees by writing
+   * to .git/info/exclude — which is never committed and applies across all linked
+   * worktrees sharing this repo.
+   *
+   * This prevents acp-sessions.json and other nax runtime files from being
+   * committed in parallel story worktrees, which causes merge conflicts even when
+   * the actual implementation files don't overlap.
+   *
+   * Call once before creating worktrees for a parallel batch.
+   */
+  async ensureGitExcludes(projectRoot: string): Promise<void> {
+    const logger = getSafeLogger();
+    const infoDir = join(projectRoot, ".git", "info");
+    const excludePath = join(infoDir, "exclude");
+
+    try {
+      await mkdir(infoDir, { recursive: true });
+
+      let existing = "";
+      if (existsSync(excludePath)) {
+        existing = await Bun.file(excludePath).text();
+      }
+
+      const missing = NAX_GITIGNORE_ENTRIES.filter((entry) => !existing.includes(entry));
+      if (missing.length === 0) return;
+
+      const section = `\n# nax — generated files (auto-added by nax parallel)\n${missing.join("\n")}\n`;
+      await Bun.write(excludePath, existing + section);
+
+      logger?.info("worktree", "Updated .git/info/exclude with nax entries", {
+        added: missing.length,
+      });
+    } catch (error) {
+      // Non-fatal — log warning and continue. Worktrees may still get conflicts
+      // if the project's .gitignore is also missing these entries.
+      logger?.warn("worktree", "Failed to update .git/info/exclude", {
+        error: errorMessage(error),
+      });
+    }
+  }
+
   /**
    * Creates a git worktree at .nax-wt/<storyId>/ with branch nax/<storyId>
    * and symlinks node_modules and .env from project root
