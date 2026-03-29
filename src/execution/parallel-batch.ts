@@ -145,10 +145,44 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
   // Batch execution complete — record end time for stories resolved in the batch
   const batchEndMs = Date.now();
 
-  // 3. Completed = stories merged to base.
-  // Note: we use workerResult.merged (stories that were actually merged to the base branch),
-  // NOT workerResult.pipelinePassed (stories that passed tests but may not have merged yet).
-  const completed: UserStory[] = workerResult.merged;
+  // 3. Merge pipeline-passed stories into the base branch in topological order.
+  // parallel-worker.ts only populates pipelinePassed (pipeline success) and merged=[].
+  // We must call mergeEngine.mergeAll here so that worktree branches are integrated
+  // into the project root before acceptance/regression stages run.
+  const completed: UserStory[] = [];
+  if (workerResult.pipelinePassed.length > 0) {
+    const mergeEngine = await _parallelBatchDeps.createMergeEngine(worktreeManager);
+    const successfulIds = workerResult.pipelinePassed.map((s) => s.id);
+    // Build dependency map for topological merge ordering
+    const deps: Record<string, string[]> = {};
+    for (const s of stories) deps[s.id] = s.dependencies ?? [];
+
+    const mergeResults = await mergeEngine.mergeAll(workdir, successfulIds, deps);
+
+    for (const mergeResult of mergeResults) {
+      const story = workerResult.pipelinePassed.find((s) => s.id === mergeResult.storyId);
+      if (!story) continue;
+
+      if (mergeResult.success) {
+        completed.push(story);
+        workerResult.merged.push(story);
+        logger?.info("parallel-batch", "Story merged successfully", {
+          storyId: mergeResult.storyId,
+        });
+      } else {
+        // Merge conflict — move to mergeConflicts for rectification below
+        workerResult.mergeConflicts.push({
+          storyId: mergeResult.storyId,
+          conflictFiles: mergeResult.conflictFiles || [],
+          originalCost: workerResult.storyCosts.get(mergeResult.storyId) ?? 0,
+        });
+        logger?.warn("parallel-batch", "Merge conflict — will attempt rectification", {
+          storyId: mergeResult.storyId,
+          conflictFiles: mergeResult.conflictFiles,
+        });
+      }
+    }
+  }
 
   // 4. Failed = stories whose pipeline did not pass.
   // executeParallelBatch returns failed items as { story, error, pipelineResult? }.

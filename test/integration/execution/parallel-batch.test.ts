@@ -97,7 +97,7 @@ describe("AC-1: runParallelBatch completed stories", () => {
     const origMerge = _parallelBatchDeps.createMergeEngine;
 
     _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({} as any);
+    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: stories,
       merged: stories,
@@ -151,7 +151,7 @@ describe("AC-2: runParallelBatch failed stories", () => {
     const origMerge = _parallelBatchDeps.createMergeEngine;
 
     _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({} as any);
+    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
@@ -205,7 +205,7 @@ describe("AC-3: runParallelBatch merge conflicts", () => {
     const origRectify = _parallelBatchDeps.rectifyConflictedStory;
 
     _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({} as any);
+    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
@@ -260,7 +260,7 @@ describe("AC-4: runParallelBatch per-story costs", () => {
     const origMerge = _parallelBatchDeps.createMergeEngine;
 
     _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({} as any);
+    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: stories,
       merged: stories,
@@ -313,7 +313,7 @@ describe("AC-5: runParallelBatch totalCost", () => {
     const origMerge = _parallelBatchDeps.createMergeEngine;
 
     _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({} as any);
+    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: stories,
       merged: stories,
@@ -366,7 +366,7 @@ describe("AC-6: runParallelBatch rectification success", () => {
     const origRectify = _parallelBatchDeps.rectifyConflictedStory;
 
     _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({} as any);
+    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
@@ -413,7 +413,7 @@ describe("AC-6: runParallelBatch rectification success", () => {
     const origRectify = _parallelBatchDeps.rectifyConflictedStory;
 
     _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({} as any);
+    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],
@@ -463,7 +463,7 @@ describe("AC-7: runParallelBatch rectification failure", () => {
     const origRectify = _parallelBatchDeps.rectifyConflictedStory;
 
     _parallelBatchDeps.createWorktreeManager = async () => ({ create: async () => {}, remove: async () => {} } as any);
-    _parallelBatchDeps.createMergeEngine = async () => ({} as any);
+    _parallelBatchDeps.createMergeEngine = async () => ({ mergeAll: async (_wd: string, ids: string[]) => ids.map(id => ({ success: true, storyId: id })) } as any);
     _parallelBatchDeps.executeParallelBatch = async () => ({
       pipelinePassed: [],
       merged: [],

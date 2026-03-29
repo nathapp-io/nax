@@ -254,10 +254,11 @@ describe("AC-3: runParallelBatch — merge conflicts", () => {
     const prd = makePrd([story]);
     const ctx = makeCtx(tmpDir);
 
+    // US-001 passed the pipeline; merge conflict is reported by mergeEngine.mergeAll (not pre-populated)
     const workerResult = makeWorkerBatchResult({
       pipelinePassed: [story],
       merged: [],
-      mergeConflicts: [{ storyId: "US-001", conflictFiles: ["src/foo.ts"], originalCost: 0.5 }],
+      mergeConflicts: [],
       storyCosts: new Map([["US-001", 0.5]]),
       totalCost: 0.5,
     });

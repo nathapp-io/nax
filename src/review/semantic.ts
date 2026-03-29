@@ -188,7 +188,9 @@ interface LLMResponse {
 function parseLLMResponse(raw: string): LLMResponse | null {
   try {
     let cleaned = raw.trim();
-    const fenceMatch = cleaned.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
+    // Match code fence even when the LLM appends explanation text after the closing fence.
+    // Use non-anchored end so trailing content (e.g. "All AC are met: ...") is ignored.
+    const fenceMatch = cleaned.match(/^```(?:json)?\s*\n([\s\S]*?)\n```/);
     if (fenceMatch) cleaned = fenceMatch[1].trim();
     const parsed = JSON.parse(cleaned) as unknown;
     if (typeof parsed !== "object" || parsed === null) return null;
