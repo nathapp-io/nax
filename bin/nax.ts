@@ -850,11 +850,20 @@ program
 program
   .command("config")
   .description("Display effective merged configuration")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
   .option("--explain", "Show detailed field descriptions", false)
   .option("--diff", "Show only fields where project overrides global", false)
   .action(async (options) => {
+    let workdir: string;
     try {
-      const config = await loadConfig();
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+      return;
+    }
+    try {
+      const config = await loadConfig(workdir);
       await configCommand(config, { explain: options.explain, diff: options.diff });
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
@@ -1159,6 +1168,7 @@ program
 program
   .command("generate")
   .description("Generate agent config files (CLAUDE.md, AGENTS.md, etc.) from nax/context.md")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
   .option("-c, --context <path>", "Context file path (default: nax/context.md)")
   .option("-o, --output <dir>", "Output directory (default: project root)")
   .option("-a, --agent <name>", "Specific agent (claude|opencode|cursor|windsurf|aider)")
@@ -1167,8 +1177,17 @@ program
   .option("--package <dir>", "Generate CLAUDE.md for a specific package (e.g. packages/api)")
   .option("--all-packages", "Generate CLAUDE.md for all discovered packages", false)
   .action(async (options) => {
+    let workdir: string;
+    try {
+      workdir = validateDirectory(options.dir);
+    } catch (err) {
+      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
+      process.exit(1);
+      return;
+    }
     try {
       await generateCommand({
+        dir: workdir,
         context: options.context,
         output: options.output,
         agent: options.agent,
