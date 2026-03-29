@@ -267,3 +267,25 @@ mkdirSync(join(tempDir, ".nax"), { recursive: true });
 tempDir = makeTempDir("nax-config-test-");
 // .nax/ does NOT exist — writeFileSync to .nax/config.json will ENOENT
 ```
+
+## 10. Config Schema Coverage Rule
+
+**When adding a new top-level field to `NaxConfig` (in `src/config/runtime-types.ts`):**
+
+1. **Add a Zod schema** in `src/config/schemas.ts` and wire it into `NaxConfigSchema`
+2. **Add the field to `MAXIMAL_CONFIG`** in `test/unit/config/schema-coverage.test.ts` with a valid fixture value
+3. **Assert it survives `safeParse`** in the coverage test (add an `expect(data.newField).toBeDefined()` line)
+4. **Add the key** to `EXPECTED_KEYS` in the shape-coverage test
+
+### Why
+
+Zod's `safeParse` strips unknown keys by default. A TypeScript interface field that has no matching Zod schema silently disappears from the loaded config at runtime — no error, no warning, just `undefined`. This pattern caused `config.generate.agents` to be always `undefined` (fixed in PR #117).
+
+### Quick checklist
+
+```
+[ ] runtime-types.ts — added interface field
+[ ] schemas.ts       — added Zod schema + wired into NaxConfigSchema
+[ ] schema-coverage.test.ts — MAXIMAL_CONFIG updated, assertion added, EXPECTED_KEYS updated
+[ ] test passes: bun test test/unit/config/schema-coverage.test.ts
+```

@@ -168,10 +168,18 @@ describe("wireEventsWriter", () => {
     const bus = new PipelineEventBus();
     wireEventsWriter(bus, "feat-f", "run-multi", workdir);
 
-    bus.emit({ type: "run:started", feature: "feat-f", totalStories: 2, workdir });
-    bus.emit({ type: "story:started", storyId: "US-001", story: stubStory, workdir });
-    bus.emit({ type: "story:completed", storyId: "US-001", story: stubStory, passed: true, durationMs: 100 });
-    bus.emit({
+    // Use emitAsync so each async write completes before reading the file.
+    // bus.emit() is fire-and-forget for async subscribers — reads would race.
+    await bus.emitAsync({ type: "run:started", feature: "feat-f", totalStories: 2, workdir });
+    await bus.emitAsync({ type: "story:started", storyId: "US-001", story: stubStory, workdir });
+    await bus.emitAsync({
+      type: "story:completed",
+      storyId: "US-001",
+      story: stubStory,
+      passed: true,
+      durationMs: 100,
+    });
+    await bus.emitAsync({
       type: "run:completed",
       totalStories: 1,
       passedStories: 1,
