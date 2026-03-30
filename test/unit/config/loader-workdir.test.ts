@@ -1,13 +1,14 @@
 /**
- * Unit tests for loadConfigForWorkdir (MW-008)
+ * Unit tests for loadConfigForWorkdir (MW-008, BUG-134)
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { existsSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { globalConfigPath, loadConfigForWorkdir } from "../../../src/config/loader";
+import { getLogger } from "../../../src/logger";
 import { makeTempDir } from "../../helpers/temp";
 
 describe("loadConfigForWorkdir", () => {
@@ -101,6 +102,47 @@ describe("loadConfigForWorkdir", () => {
     const result = await loadConfigForWorkdir(rootConfigPath);
 
     expect(result.quality.commands.test).toBe("bun test");
+  });
+
+  test("BUG-134: logs debug when package config not found (fallback to root)", async () => {
+    writeFileSync(
+      join(tempDir, ".nax", "config.json"),
+      JSON.stringify({ quality: { commands: { test: "bun test" } } }),
+    );
+
+    const logger = getLogger();
+    const debugSpy = spyOn(logger, "debug");
+
+    const rootConfigPath = join(tempDir, ".nax", "config.json");
+    await loadConfigForWorkdir(rootConfigPath, "packages/missing");
+
+    const fallbackCall = debugSpy.mock.calls.find(
+      (args) => typeof args[1] === "string" && args[1].includes("Per-package config not found"),
+    );
+    expect(fallbackCall).toBeDefined();
+    expect(fallbackCall?.[2]).toMatchObject({ packageDir: "packages/missing" });
+
+    debugSpy.mockRestore();
+  });
+
+  test("BUG-134: logs debug when packageDir is undefined (no per-package resolution)", async () => {
+    writeFileSync(
+      join(tempDir, ".nax", "config.json"),
+      JSON.stringify({ quality: { commands: { test: "bun test" } } }),
+    );
+
+    const logger = getLogger();
+    const debugSpy = spyOn(logger, "debug");
+
+    const rootConfigPath = join(tempDir, ".nax", "config.json");
+    await loadConfigForWorkdir(rootConfigPath);
+
+    const noWorkdirCall = debugSpy.mock.calls.find(
+      (args) => typeof args[1] === "string" && args[1].includes("No packageDir"),
+    );
+    expect(noWorkdirCall).toBeDefined();
+
+    debugSpy.mockRestore();
   });
 
   test("package config without quality.commands does not change test command", async () => {
