@@ -11,7 +11,7 @@ import { getAgent } from "../agents/registry";
 import { scanCodebase } from "../analyze/scanner";
 import type { CodebaseScan } from "../analyze/types";
 import type { NaxConfig } from "../config";
-import { resolveModel } from "../config/schema";
+import { resolveModelForAgent } from "../config/schema";
 import { getLogger } from "../logger";
 import type { PRD, UserStory } from "../prd";
 import { loadPRD } from "../prd";
@@ -231,7 +231,12 @@ async function reclassifyWithLLM(
   if (!adapter) throw new Error(`Agent "${agentName}" not found`);
 
   const modelTier = config.analyze.model;
-  const modelDef = resolveModel(config.models[modelTier]);
+  const modelDef = resolveModelForAgent(
+    config.models,
+    config.autoMode.defaultAgent,
+    modelTier,
+    config.autoMode.defaultAgent,
+  );
 
   const result = await adapter.decompose({
     specContent: storySpec,

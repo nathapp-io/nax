@@ -6,7 +6,7 @@
 
 import type { AgentAdapter } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
-import { resolveModel } from "../config";
+import { resolveModelForAgent } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import type { InteractionBridge } from "../interaction/bridge-builder";
 import { getLogger } from "../logger";
@@ -175,7 +175,12 @@ export async function runTddSession(
     prompt,
     workdir,
     modelTier,
-    modelDef: resolveModel(config.models[modelTier]),
+    modelDef: resolveModelForAgent(
+      config.models,
+      config.autoMode.defaultAgent,
+      modelTier,
+      config.autoMode.defaultAgent,
+    ),
     timeoutSeconds: config.execution.sessionTimeoutSeconds,
     dangerouslySkipPermissions: resolvePermissions(config, "run").skipPermissions,
     pipelineStage: "run",

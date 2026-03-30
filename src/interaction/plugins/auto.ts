@@ -8,7 +8,7 @@
 import { z } from "zod";
 import type { AgentAdapter } from "../../agents/types";
 import type { NaxConfig } from "../../config";
-import { resolveModel } from "../../config";
+import { resolveModelForAgent } from "../../config";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 
 /** Auto plugin configuration */
@@ -144,11 +144,13 @@ export class AutoInteractionPlugin implements InteractionPlugin {
     let modelArg: string | undefined;
     if (this.config.naxConfig) {
       const modelTier = this.config.model ?? "fast";
-      const modelEntry = this.config.naxConfig.models[modelTier];
-      if (!modelEntry) {
-        throw new Error(`Model tier "${modelTier}" not found in config.models`);
-      }
-      const modelDef = resolveModel(modelEntry);
+      const naxConfig = this.config.naxConfig;
+      const modelDef = resolveModelForAgent(
+        naxConfig.models,
+        naxConfig.autoMode.defaultAgent,
+        modelTier,
+        naxConfig.autoMode.defaultAgent,
+      );
       modelArg = modelDef.model;
     }
 

@@ -14,7 +14,7 @@ import { type FixStory, convertFixStoryToUserStory, generateFixStories } from ".
 import { getAgent } from "../../agents/registry";
 import type { NaxConfig } from "../../config";
 import { loadConfigForWorkdir } from "../../config/loader";
-import { resolveModel } from "../../config/schema";
+import { resolveModelForAgent } from "../../config/schema";
 import { type LoadedHooksConfig, fireHook } from "../../hooks";
 import { getSafeLogger } from "../../logger";
 import type { StoryMetrics } from "../../metrics";
@@ -113,7 +113,12 @@ async function generateAndAddFixStories(
     logger?.error("acceptance", "Agent not found, cannot generate fix stories");
     return null;
   }
-  const modelDef = resolveModel(ctx.config.models[ctx.config.analyze.model]);
+  const modelDef = resolveModelForAgent(
+    ctx.config.models,
+    ctx.config.autoMode.defaultAgent,
+    ctx.config.analyze.model,
+    ctx.config.autoMode.defaultAgent,
+  );
   const testFilePath = ctx.featureDir ? path.join(ctx.featureDir, "acceptance.test.ts") : undefined;
   const fixStories = await generateFixStories(agent, {
     failedACs: failures.failedACs,

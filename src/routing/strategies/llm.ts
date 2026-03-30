@@ -8,7 +8,7 @@
 
 import type { AgentAdapter } from "../../agents/types";
 import type { NaxConfig } from "../../config";
-import { resolveModel } from "../../config";
+import { resolveModelForAgent } from "../../config";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd/types";
 import { typedSpawn } from "../../utils/bun-deps";
@@ -83,12 +83,12 @@ async function callLlmOnce(
   config: NaxConfig,
   timeoutMs: number,
 ): Promise<string> {
-  const modelEntry = config.models[modelTier];
-  if (!modelEntry) {
-    throw new Error(`Model tier "${modelTier}" not found in config.models`);
-  }
-
-  const modelDef = resolveModel(modelEntry);
+  const modelDef = resolveModelForAgent(
+    config.models,
+    config.autoMode.defaultAgent,
+    modelTier,
+    config.autoMode.defaultAgent,
+  );
   const modelArg = modelDef.model;
 
   let timeoutId: ReturnType<typeof setTimeout> | undefined;

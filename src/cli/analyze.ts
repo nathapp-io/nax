@@ -11,7 +11,7 @@ import { generateAcceptanceTests } from "../acceptance";
 import { getAgent } from "../agents/registry";
 import { scanCodebase } from "../analyze/scanner";
 import type { NaxConfig } from "../config";
-import { resolveModel } from "../config/schema";
+import { resolveModelForAgent } from "../config/schema";
 import { applyDecomposition } from "../decompose/apply";
 import { DecomposeBuilder } from "../decompose/builder";
 import type { DecomposeAgentConfig as BuilderDecomposeConfig, DecomposeResult, SubStory } from "../decompose/types";
@@ -114,7 +114,12 @@ async function decomposeLLM(
     if (!adapter) throw new Error(`Agent "${agentName}" not found`);
 
     const modelTier = config.analyze.model;
-    const modelDef = resolveModel(config.models[modelTier]);
+    const modelDef = resolveModelForAgent(
+      config.models,
+      config.autoMode.defaultAgent,
+      modelTier,
+      config.autoMode.defaultAgent,
+    );
     const result = await adapter.decompose({ specContent, workdir, codebaseContext, modelTier, modelDef, config });
 
     logger.info("cli", "[OK] Agent decompose complete", { storiesCount: result.stories.length });
@@ -184,7 +189,12 @@ async function generateAcceptanceTestsForFeature(
     if (!adapter) throw new Error(`Agent "${config.autoMode.defaultAgent}" not found`);
 
     const modelTier = config.analyze.model;
-    const modelDef = resolveModel(config.models[modelTier]);
+    const modelDef = resolveModelForAgent(
+      config.models,
+      config.autoMode.defaultAgent,
+      modelTier,
+      config.autoMode.defaultAgent,
+    );
     const result = await generateAcceptanceTests(adapter, {
       specContent,
       featureName,

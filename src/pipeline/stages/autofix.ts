@@ -21,7 +21,7 @@
 
 import { join } from "node:path";
 import { getAgent } from "../../agents";
-import { resolveModel } from "../../config";
+import { resolveModelForAgent } from "../../config";
 import { loadConfigForWorkdir } from "../../config/loader";
 import { resolvePermissions } from "../../config/permissions";
 import { getLogger } from "../../logger";
@@ -239,7 +239,12 @@ async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
 
     const prompt = buildReviewRectificationPrompt(failedChecks, ctx.story);
     const modelTier = ctx.story.routing?.modelTier ?? ctx.config.autoMode.escalation.tierOrder[0]?.tier ?? "balanced";
-    const modelDef = resolveModel(ctx.config.models[modelTier]);
+    const modelDef = resolveModelForAgent(
+      ctx.config.models,
+      ctx.config.autoMode.defaultAgent,
+      modelTier,
+      ctx.config.autoMode.defaultAgent,
+    );
 
     // ENH-008: Scope agent to story.workdir for monorepo — prevents out-of-package changes
     const rectificationWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;

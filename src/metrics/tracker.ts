@@ -5,7 +5,7 @@
  */
 
 import path from "node:path";
-import { resolveModel } from "../config/schema";
+import { resolveModelForAgent } from "../config/schema";
 import type { PipelineContext } from "../pipeline/types";
 import { loadJsonFile, saveJsonFile } from "../utils/json-file";
 import type { RunMetrics, StoryMetrics } from "./types";
@@ -55,9 +55,18 @@ export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string
   const firstPassSuccess = agentResult?.success === true && escalationCount === 0 && priorFailureCount === 0;
 
   // Extract model name from config
-  const modelEntry = ctx.config.models[routing.modelTier];
-  const modelDef = modelEntry ? resolveModel(modelEntry) : null;
-  const modelUsed = modelDef?.model || routing.modelTier;
+  let modelUsed: string = routing.modelTier;
+  try {
+    const modelDef = resolveModelForAgent(
+      ctx.config.models,
+      ctx.config.autoMode.defaultAgent,
+      routing.modelTier,
+      ctx.config.autoMode.defaultAgent,
+    );
+    modelUsed = modelDef.model;
+  } catch {
+    /* tier not configured — use tier name as fallback */
+  }
 
   // initialComplexity: prefer story.routing.initialComplexity (first classify),
   // fall back to routing.complexity for backward compat
@@ -117,9 +126,18 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
   const costPerStory = totalCost / stories.length;
   const durationPerStory = totalDuration / stories.length;
 
-  const modelEntry = ctx.config.models[routing.modelTier];
-  const modelDef = modelEntry ? resolveModel(modelEntry) : null;
-  const modelUsed = modelDef?.model || routing.modelTier;
+  let modelUsed: string = routing.modelTier;
+  try {
+    const modelDef = resolveModelForAgent(
+      ctx.config.models,
+      ctx.config.autoMode.defaultAgent,
+      routing.modelTier,
+      ctx.config.autoMode.defaultAgent,
+    );
+    modelUsed = modelDef.model;
+  } catch {
+    /* tier not configured — use tier name as fallback */
+  }
 
   return stories.map((story) => {
     // initialComplexity: prefer story.routing.initialComplexity (if individual routing exists),

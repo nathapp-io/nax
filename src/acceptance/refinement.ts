@@ -7,7 +7,7 @@
 
 import type { AgentAdapter } from "../agents";
 import { ClaudeCodeAdapter } from "../agents/claude";
-import { resolveModel } from "../config/schema";
+import { resolveModelForAgent } from "../config/schema";
 import { getLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import type { RefinedCriterion, RefinementContext } from "./types";
@@ -176,13 +176,12 @@ export async function refineAcceptanceCriteria(
   const logger = getLogger();
 
   const modelTier = config.acceptance?.model ?? "fast";
-  const modelEntry = config.models[modelTier] ?? config.models.fast;
-
-  if (!modelEntry) {
-    throw new Error(`[refinement] config.models.${modelTier} not configured`);
-  }
-
-  const modelDef = resolveModel(modelEntry);
+  const modelDef = resolveModelForAgent(
+    config.models,
+    config.autoMode.defaultAgent,
+    modelTier,
+    config.autoMode.defaultAgent,
+  );
   const prompt = buildRefinementPrompt(criteria, codebaseContext, { testStrategy, testFramework });
 
   let response: string;

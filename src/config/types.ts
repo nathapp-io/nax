@@ -20,7 +20,7 @@ export type {
   TierConfig,
   TokenPricing,
 } from "./schema-types";
-export { resolveModel } from "./schema-types";
+export { resolveModel, resolveModelForAgent } from "./schema-types";
 
 // Debate types
 export type {

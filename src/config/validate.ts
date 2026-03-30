@@ -34,25 +34,31 @@ export function validateConfig(config: NaxConfig): ValidationResult {
     errors.push(`Invalid version: expected 1, got ${config.version}`);
   }
 
-  // Models mapping
+  // Models mapping (per-agent structure: Record<agentName, Record<ModelTier, ModelEntry>>)
   const requiredTiers = ["fast", "balanced", "powerful"] as const;
   if (!config.models) {
     errors.push("models mapping is required");
   } else {
-    for (const tier of requiredTiers) {
-      const entry = config.models[tier];
-      if (!entry) {
-        errors.push(`models.${tier} is required`);
-      } else if (typeof entry === "string") {
-        if (entry.trim() === "") {
-          errors.push(`models.${tier} must be a non-empty model identifier`);
-        }
-      } else {
-        if (!entry.provider || entry.provider.trim() === "") {
-          errors.push(`models.${tier}.provider must be non-empty`);
-        }
-        if (!entry.model || entry.model.trim() === "") {
-          errors.push(`models.${tier}.model must be non-empty`);
+    const defaultAgent = config.autoMode?.defaultAgent ?? "claude";
+    const agentModels = config.models[defaultAgent];
+    if (!agentModels) {
+      errors.push(`models.${defaultAgent} is required (default agent has no model map)`);
+    } else {
+      for (const tier of requiredTiers) {
+        const entry = agentModels[tier];
+        if (!entry) {
+          errors.push(`models.${defaultAgent}.${tier} is required`);
+        } else if (typeof entry === "string") {
+          if (entry.trim() === "") {
+            errors.push(`models.${defaultAgent}.${tier} must be a non-empty model identifier`);
+          }
+        } else {
+          if (!entry.provider || entry.provider.trim() === "") {
+            errors.push(`models.${defaultAgent}.${tier}.provider must be non-empty`);
+          }
+          if (!entry.model || entry.model.trim() === "") {
+            errors.push(`models.${defaultAgent}.${tier}.model must be non-empty`);
+          }
         }
       }
     }
@@ -87,7 +93,8 @@ export function validateConfig(config: NaxConfig): ValidationResult {
   }
 
   // Validate complexityRouting values reference tiers that exist in models config
-  const configuredTiers = Object.keys(config.models);
+  const defaultAgentKey = config.autoMode?.defaultAgent ?? "claude";
+  const configuredTiers = Object.keys(config.models[defaultAgentKey] ?? {});
   const complexities = ["simple", "medium", "complex", "expert"] as const;
   for (const complexity of complexities) {
     const tier = config.autoMode.complexityRouting[complexity];
