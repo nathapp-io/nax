@@ -5,6 +5,8 @@
  * Resolves adapters, runs proposal and critique rounds, and calls the configured resolver.
  */
 
+import type { AcpClient, AcpSession, AcpSessionResponse } from "../agents/acp/adapter";
+import { createSpawnAcpClient } from "../agents/acp/spawn-client";
 import { getAgent } from "../agents/registry";
 import type { AgentAdapter } from "../agents/types";
 import { getSafeLogger } from "../logger";
@@ -25,6 +27,7 @@ export interface DebateSessionOptions {
 export const _debateSessionDeps = {
   getAgent: getAgent as (name: string) => AgentAdapter | undefined,
   getSafeLogger: getSafeLogger as () => ReturnType<typeof getSafeLogger>,
+  createSpawnAcpClient: (cmdStr: string, cwd?: string): AcpClient => createSpawnAcpClient(cmdStr, cwd),
 };
 
 interface ResolvedDebater {
@@ -58,6 +61,12 @@ function buildFailedResult(
   };
 }
 
+function extractSessionOutput(response: AcpSessionResponse): string {
+  const messages = response.messages ?? [];
+  const last = [...messages].reverse().find((m) => m.role === "assistant");
+  return last?.content ?? "";
+}
+
 export class DebateSession {
   private readonly storyId: string;
   private readonly stage: string;
@@ -70,6 +79,157 @@ export class DebateSession {
   }
 
   async run(prompt: string): Promise<DebateResult> {
+    const sessionMode = this.stageConfig.sessionMode ?? "one-shot";
+
+    if (sessionMode === "stateful") {
+      return this.runStateful(prompt);
+    }
+
+    return this.runOneShot(prompt);
+  }
+
+  private async runStateful(prompt: string): Promise<DebateResult> {
+    const logger = _debateSessionDeps.getSafeLogger();
+    const config = this.stageConfig;
+    const debaters = config.debaters ?? [];
+    const totalCostUsd = 0;
+
+    // Resolve adapters — skip unavailable agents
+    const resolved: ResolvedDebater[] = [];
+    for (const debater of debaters) {
+      const adapter = _debateSessionDeps.getAgent(debater.agent);
+      if (!adapter) {
+        logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`);
+        continue;
+      }
+      resolved.push({ debater, adapter });
+    }
+
+    interface SessionEntry {
+      debater: Debater;
+      adapter: AgentAdapter;
+      session: AcpSession;
+    }
+
+    const sessions: SessionEntry[] = [];
+
+    try {
+      // Create SpawnAcpClient and session per debater
+      for (let i = 0; i < resolved.length; i++) {
+        const { debater, adapter } = resolved[i];
+        const cmdStr = `acpx --model ${debater.model} ${debater.agent}`;
+        const client = _debateSessionDeps.createSpawnAcpClient(cmdStr);
+        const sessionName = `nax-debate-${this.storyId}-${i}`;
+
+        try {
+          const session = await client.createSession({
+            agentName: debater.agent,
+            permissionMode: "approve-reads",
+            sessionName,
+          });
+          sessions.push({ debater, adapter, session });
+        } catch {
+          logger?.warn("debate", `Failed to create session for '${debater.agent}' — skipping`);
+        }
+      }
+
+      // Fewer than 2 sessions created — single-agent fallback
+      if (sessions.length < 2) {
+        if (sessions.length === 1) {
+          const solo = sessions[0];
+          const resp = await solo.session.prompt(prompt);
+          const output = extractSessionOutput(resp);
+          return {
+            storyId: this.storyId,
+            stage: this.stage,
+            outcome: "passed",
+            rounds: 1,
+            debaters: [solo.debater.agent],
+            resolverType: config.resolver.type,
+            proposals: [{ debater: solo.debater, output }],
+            totalCostUsd,
+          };
+        }
+        return buildFailedResult(this.storyId, this.stage, config, totalCostUsd);
+      }
+
+      // Proposal round — parallel via Promise.allSettled
+      const proposalSettled = await Promise.allSettled(sessions.map(({ session }) => session.prompt(prompt)));
+
+      const successfulSessions: Array<{ entry: SessionEntry; output: string }> = [];
+      for (let i = 0; i < proposalSettled.length; i++) {
+        const r = proposalSettled[i];
+        if (r.status === "fulfilled") {
+          successfulSessions.push({
+            entry: sessions[i],
+            output: extractSessionOutput(r.value),
+          });
+        }
+      }
+
+      if (successfulSessions.length < 2) {
+        if (successfulSessions.length === 1) {
+          const solo = successfulSessions[0];
+          return {
+            storyId: this.storyId,
+            stage: this.stage,
+            outcome: "passed",
+            rounds: 1,
+            debaters: [solo.entry.debater.agent],
+            resolverType: config.resolver.type,
+            proposals: [{ debater: solo.entry.debater, output: solo.output }],
+            totalCostUsd,
+          };
+        }
+        return buildFailedResult(this.storyId, this.stage, config, totalCostUsd);
+      }
+
+      // Critique round (when rounds > 1)
+      // In stateful mode, send only OTHER debaters' proposals — session retains own history
+      let critiqueOutputs: string[] = [];
+      if (config.rounds > 1) {
+        const proposalOutputs = successfulSessions.map((s) => s.output);
+        const critiqueSettled = await Promise.allSettled(
+          successfulSessions.map(({ entry }, i) =>
+            entry.session.prompt(buildCritiquePrompt(prompt, proposalOutputs, i)),
+          ),
+        );
+        critiqueOutputs = critiqueSettled
+          .filter((r): r is PromiseFulfilledResult<AcpSessionResponse> => r.status === "fulfilled")
+          .map((r) => extractSessionOutput(r.value));
+      }
+
+      // Resolve outcome
+      const proposalOutputs = successfulSessions.map((s) => s.output);
+      const successfulProposals: SuccessfulProposal[] = successfulSessions.map((s) => ({
+        debater: s.entry.debater,
+        adapter: s.entry.adapter,
+        output: s.output,
+        cost: 0,
+      }));
+      const outcome = await this.resolve(proposalOutputs, critiqueOutputs, successfulProposals);
+
+      const proposals: Proposal[] = successfulSessions.map((s) => ({
+        debater: s.entry.debater,
+        output: s.output,
+      }));
+
+      return {
+        storyId: this.storyId,
+        stage: this.stage,
+        outcome,
+        rounds: config.rounds,
+        debaters: successfulSessions.map((s) => s.entry.debater.agent),
+        resolverType: config.resolver.type,
+        proposals,
+        totalCostUsd,
+      };
+    } finally {
+      await Promise.allSettled(sessions.map(({ session }) => session.close()));
+    }
+  }
+
+  private async runOneShot(prompt: string): Promise<DebateResult> {
     const logger = _debateSessionDeps.getSafeLogger();
     const config = this.stageConfig;
     const debaters = config.debaters ?? [];
