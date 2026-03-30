@@ -26,6 +26,7 @@ import { loadConfigForWorkdir } from "../../config/loader";
 import { resolvePermissions } from "../../config/permissions";
 import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
+import { runQualityCommand } from "../../quality";
 import type { ReviewCheckResult } from "../../review/types";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -75,7 +76,12 @@ export const autofixStage: PipelineStage = {
     if (hasLintFailure && (lintFixCmd || formatFixCmd)) {
       if (lintFixCmd) {
         pipelineEventBus.emit({ type: "autofix:started", storyId: ctx.story.id, command: lintFixCmd });
-        const lintResult = await _autofixDeps.runCommand(lintFixCmd, effectiveWorkdir);
+        const lintResult = await _autofixDeps.runQualityCommand({
+          commandName: "lintFix",
+          command: lintFixCmd,
+          workdir: effectiveWorkdir,
+          storyId: ctx.story.id,
+        });
         logger.debug("autofix", `lintFix exit=${lintResult.exitCode}`, { storyId: ctx.story.id, command: lintFixCmd });
         if (lintResult.exitCode !== 0) {
           logger.warn("autofix", "lintFix command failed — may not have fixed all issues", {
@@ -87,7 +93,12 @@ export const autofixStage: PipelineStage = {
 
       if (formatFixCmd) {
         pipelineEventBus.emit({ type: "autofix:started", storyId: ctx.story.id, command: formatFixCmd });
-        const fmtResult = await _autofixDeps.runCommand(formatFixCmd, effectiveWorkdir);
+        const fmtResult = await _autofixDeps.runQualityCommand({
+          commandName: "formatFix",
+          command: formatFixCmd,
+          workdir: effectiveWorkdir,
+          storyId: ctx.story.id,
+        });
         logger.debug("autofix", `formatFix exit=${fmtResult.exitCode}`, {
           storyId: ctx.story.id,
           command: formatFixCmd,
@@ -140,22 +151,6 @@ export const autofixStage: PipelineStage = {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-interface CommandResult {
-  exitCode: number;
-  output: string;
-}
-
-async function runCommand(cmd: string, cwd: string): Promise<CommandResult> {
-  const parts = cmd.split(/\s+/);
-  const proc = Bun.spawn(parts, { cwd, stdout: "pipe", stderr: "pipe" });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  return { exitCode, output: `${stdout}\n${stderr}` };
-}
 
 async function recheckReview(ctx: PipelineContext): Promise<boolean> {
   // Import reviewStage lazily to avoid circular deps
@@ -272,7 +267,7 @@ async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
  */
 export const _autofixDeps = {
   getAgent,
-  runCommand,
+  runQualityCommand,
   recheckReview,
   runAgentRectification,
   loadConfigForWorkdir,
