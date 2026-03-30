@@ -40,12 +40,28 @@ export type LlmRoutingMode = "one-shot" | "per-story" | "hybrid";
 
 /** Resolve the correct ModelEntry for a given agent and tier, with defaultAgent fallback */
 export function resolveModelForAgent(
-  _models: ModelsConfig,
-  _agent: string,
-  _tier: ModelTier,
-  _defaultAgent: string,
-): ModelEntry {
-  throw new Error("resolveModelForAgent: not implemented");
+  models: ModelsConfig,
+  agent: string,
+  tier: ModelTier,
+  defaultAgent: string,
+): ModelDef {
+  const agentEntry = models[agent]?.[tier];
+  if (agentEntry !== undefined) {
+    return resolveModel(agentEntry);
+  }
+
+  const defaultEntry = models[defaultAgent]?.[tier];
+  if (defaultEntry !== undefined) {
+    return resolveModel(defaultEntry);
+  }
+
+  // Import inline to avoid circular deps — NaxError is in src/errors.ts
+  const { NaxError } = require("../errors") as { NaxError: typeof import("../errors").NaxError };
+  throw new NaxError(
+    `No model entry found for agent "${agent}" or default agent "${defaultAgent}" at tier "${tier}"`,
+    "MODEL_NOT_FOUND",
+    { stage: "config", agent, tier, defaultAgent },
+  );
 }
 
 /** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */
