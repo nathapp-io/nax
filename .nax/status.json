@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 9,
-    "passed": 0,
+    "passed": 1,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 9
+    "pending": 8
   },
   "cost": {
-    "spent": 0,
+    "spent": 0.3674088000000001,
     "limit": 30
   },
   "current": {
-    "storyId": "US-001-1",
-    "title": "Restructure ModelsConfig and TierConfig types in schema-types.ts",
+    "storyId": "US-001-2",
+    "title": "Implement resolveModelForAgent() in schema-types.ts",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 1,
-  "updatedAt": "2026-03-30T12:20:11.311Z",
-  "durationMs": 480982,
-  "lastHeartbeat": "2026-03-30T12:20:11.311Z"
+  "iterations": 2,
+  "updatedAt": "2026-03-30T12:23:11.311Z",
+  "durationMs": 660982,
+  "lastHeartbeat": "2026-03-30T12:23:11.311Z"
 }

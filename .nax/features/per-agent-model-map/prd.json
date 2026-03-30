@@ -3,7 +3,7 @@
   "feature": "per-agent-model-map",
   "branchName": "feat/per-agent-model-map",
   "createdAt": "2026-03-30T12:00:00.000Z",
-  "updatedAt": "2026-03-30T12:16:34.784Z",
+  "updatedAt": "2026-03-30T12:21:34.499Z",
   "analysis": "This feature restructures the models config from a flat tier→model map to a per-agent model map (Record<agentName, Record<tier, ModelEntry>>), making it the SSOT for any (agent, tier) → model resolution. It also activates the existing dead-code fallbackOrder as a rate-limit agent fallback chain inside the ACP adapter, and adds optional agent field to TierConfig for cross-agent escalation. There are 22 callsites using config.models[tier] that need migration to resolveModelForAgent(). The fallback implementation lives inside AcpAgentAdapter so all LLM calls (plan, review, acceptance, routing, rectification, autofix, TDD, analyze) get fallback for free.",
   "userStories": [
     {
@@ -70,8 +70,8 @@
         "schema"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "parentStoryId": "US-001",
@@ -82,7 +82,10 @@
         "testStrategy": "tdd-simple",
         "reasoning": "Pure type definition refactoring in single file — restructuring Record types and adding optional fields with no behavior changes.",
         "modelTier": "fast"
-      }
+      },
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-001-2",
@@ -106,7 +109,18 @@
       "passes": false,
       "escalations": [],
       "attempts": 0,
-      "parentStoryId": "US-001"
+      "parentStoryId": "US-001",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "41d092ff4cb3e47d6ad50ebe319cb8397a111b30",
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Standard utility function with conditional fallback logic and error handling; straightforward but requires understanding schema structure and implementing all 5 test cases.",
+        "modelTier": "balanced"
+      }
     },
     {
       "id": "US-001-3",
@@ -127,7 +141,10 @@
       "passes": false,
       "escalations": [],
       "attempts": 0,
-      "parentStoryId": "US-001"
+      "parentStoryId": "US-001",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-001-4",
@@ -149,7 +166,10 @@
       "passes": false,
       "escalations": [],
       "attempts": 0,
-      "parentStoryId": "US-001"
+      "parentStoryId": "US-001",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-001-5",
@@ -172,7 +192,10 @@
       "passes": false,
       "escalations": [],
       "attempts": 0,
-      "parentStoryId": "US-001"
+      "parentStoryId": "US-001",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-002",

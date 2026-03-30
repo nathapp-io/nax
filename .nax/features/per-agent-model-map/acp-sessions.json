@@ -1,1 +1,6 @@
-{}
+{
+  "US-001-2:test-writer": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-001-2-test-writer",
+    "agentName": "claude"
+  }
+}
