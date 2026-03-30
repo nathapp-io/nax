@@ -3,7 +3,7 @@
   "feature": "per-agent-model-map",
   "branchName": "feat/per-agent-model-map",
   "createdAt": "2026-03-30T12:00:00.000Z",
-  "updatedAt": "2026-03-30T13:29:54.794Z",
+  "updatedAt": "2026-03-30T13:52:04.388Z",
   "analysis": "This feature restructures the models config from a flat tier→model map to a per-agent model map (Record<agentName, Record<tier, ModelEntry>>), making it the SSOT for any (agent, tier) → model resolution. It also activates the existing dead-code fallbackOrder as a rate-limit agent fallback chain inside the ACP adapter, and adds optional agent field to TierConfig for cross-agent escalation. There are 22 callsites using config.models[tier] that need migration to resolveModelForAgent(). The fallback implementation lives inside AcpAgentAdapter so all LLM calls (plan, review, acceptance, routing, rectification, autofix, TDD, analyze) get fallback for free.",
   "userStories": [
     {
@@ -266,13 +266,42 @@
       "passes": false,
       "attempts": 0,
       "escalations": [],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Autofix exhausted: review still failing after fix attempts"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "review",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "reviewFindings": [
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/config/validate.ts",
+              "line": 95,
+              "message": "AC5 requires validation of both fallbackOrder AND tierOrder[].agent agents against models keys. The diff shows only fallbackOrder validation. tierOrder[].agent validation is missing — the comment claims it validates both but the code only checks fallbackOrder.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "warning",
+              "file": "src/routing/strategies/llm.ts",
+              "line": 86,
+              "message": "The story lists src/routing/strategies/llm.ts line ~86 as requiring migration from resolveModel() to resolveModelForAgent(). The diff shows only import reorganization (../../agents/types → ../../agents, ../../prd/types → ../../prd) but no visible callsite changes at line 86. If a resolveModel() call exists at line 86 in the original file, it is not shown as being migrated in this diff.",
+              "source": "semantic-review"
+            }
+          ],
+          "cost": 3.1235234500000004,
+          "timestamp": "2026-03-30T13:52:02.368Z"
+        }
+      ],
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
         "reasoning": "Mechanical migration of 22 callsites, same behavior. Medium due to breadth (16 files) not depth.",
-        "modelTier": "balanced",
+        "modelTier": "powerful",
         "initialComplexity": "medium"
       },
       "contextFiles": [

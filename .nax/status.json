@@ -17,7 +17,7 @@
     "pending": 3
   },
   "cost": {
-    "spent": 7.221685399999998,
+    "spent": 10.345208849999999,
     "limit": 30
   },
   "current": {
@@ -25,12 +25,12 @@
     "title": "Migrate all callsites to resolveModelForAgent()",
     "complexity": "medium",
     "tddStrategy": "tdd-simple",
-    "model": "balanced",
+    "model": "powerful",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 7,
-  "updatedAt": "2026-03-30T13:50:11.439Z",
-  "durationMs": 5881110,
-  "lastHeartbeat": "2026-03-30T13:50:11.438Z"
+  "iterations": 8,
+  "updatedAt": "2026-03-30T14:14:11.475Z",
+  "durationMs": 7321146,
+  "lastHeartbeat": "2026-03-30T14:14:11.475Z"
 }
