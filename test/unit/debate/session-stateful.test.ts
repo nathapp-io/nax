@@ -825,7 +825,7 @@ describe("DebateSession.run() — independent sessionMode per stage (AC6)", () =
     _debateSessionDeps.getAgent = mock((name: string) => makeMockAdapter(name));
 
     const statefulPlanSession = new DebateSession({
-      storyId: "US-003",
+      storyId: "PLAN-001",
       stage: "plan",
       stageConfig: makeStageConfig({
         sessionMode: "stateful",
@@ -837,7 +837,7 @@ describe("DebateSession.run() — independent sessionMode per stage (AC6)", () =
     });
 
     const statefulReviewSession = new DebateSession({
-      storyId: "US-003",
+      storyId: "REVIEW-001",
       stage: "review",
       stageConfig: makeStageConfig({
         sessionMode: "stateful",
