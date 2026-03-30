@@ -30,5 +30,9 @@
   "US-001-5:implementer": {
     "sessionName": "nax-51590e53-per-agent-model-map-us-001-5-implementer",
     "agentName": "claude"
+  },
+  "US-001-5:verifier": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-001-5-verifier",
+    "agentName": "claude"
   }
 }
