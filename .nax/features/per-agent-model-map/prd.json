@@ -3,7 +3,7 @@
   "feature": "per-agent-model-map",
   "branchName": "feat/per-agent-model-map",
   "createdAt": "2026-03-30T12:00:00.000Z",
-  "updatedAt": "2026-03-30T12:21:34.499Z",
+  "updatedAt": "2026-03-30T12:27:45.073Z",
   "analysis": "This feature restructures the models config from a flat tier→model map to a per-agent model map (Record<agentName, Record<tier, ModelEntry>>), making it the SSOT for any (agent, tier) → model resolution. It also activates the existing dead-code fallbackOrder as a rate-limit agent fallback chain inside the ACP adapter, and adds optional agent field to TierConfig for cross-agent escalation. There are 22 callsites using config.models[tier] that need migration to resolveModelForAgent(). The fallback implementation lives inside AcpAgentAdapter so all LLM calls (plan, review, acceptance, routing, rectification, autofix, TDD, analyze) get fallback for free.",
   "userStories": [
     {
@@ -105,8 +105,8 @@
       "dependencies": [
         "US-001-1"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "parentStoryId": "US-001",
@@ -144,7 +144,15 @@
       "parentStoryId": "US-001",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "79b783520d01b1345d2874cc7b900c517947bbbd",
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Schema migration with detection logic and Zod transform - standard pattern, single-file change, moderate complexity.",
+        "modelTier": "balanced"
+      }
     },
     {
       "id": "US-001-4",
