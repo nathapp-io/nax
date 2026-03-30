@@ -117,7 +117,7 @@ Same as lint/typecheck failures:
 1. Semantic review fails → review stage returns `continue` (built-in check failure = autofix handles it)
 2. Autofix stage receives the findings and retries the story
 3. Agent gets structured findings as `priorFailures` context
-4. If autofix exhausted → escalate (same as lint/typecheck exhaustion)
+4. If autofix exhausted (per-cycle `maxAttempts` or global `maxTotalAttempts`) → escalate
 
 ### Token Budget
 

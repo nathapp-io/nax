@@ -292,7 +292,8 @@ quality: {
   },
   autofix: {
     enabled: true,                      // NEW: master switch
-    maxAttempts: 2,                     // NEW: max auto-fix retries
+    maxAttempts: 2,                     // NEW: max auto-fix retries per review→autofix cycle
+    maxTotalAttempts: 10,               // NEW: global ceiling per story across all cycles
   }
 }
 ```

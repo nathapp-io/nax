@@ -237,6 +237,34 @@ See [Semantic Review](semantic-review.md) for the behavioral review check.
 
 ---
 
+### Autofix Budget
+
+Control how many agent rectification attempts nax makes when review checks fail:
+
+```json
+{
+  "quality": {
+    "autofix": {
+      "enabled": true,
+      "maxAttempts": 2,
+      "maxTotalAttempts": 10
+    }
+  }
+}
+```
+
+| Field | Default | Description |
+|:------|:--------|:------------|
+| `enabled` | `true` | Master switch for autofix |
+| `maxAttempts` | `2` | Max agent rectification attempts per review→autofix cycle |
+| `maxTotalAttempts` | `10` | Global ceiling per story across all review→autofix cycles |
+
+**How it works:** When review fails, autofix spawns an agent up to `maxAttempts` times per cycle. If the agent fixes the issue but a subsequent review fails again, a new cycle starts. `maxTotalAttempts` caps the total agent spawns across all cycles to prevent runaway loops.
+
+Example with defaults: a story can cycle through review→autofix up to 5 times (5 × 2 = 10 spawns) before hitting the global ceiling and escalating.
+
+---
+
 ### Monorepo Acceptance Test Exclusion
 
 nax generates per-package acceptance test files at `<package-root>/.nax-acceptance.test.ts`. These files are meant to be run by nax only — **not** by your regular test suite.
