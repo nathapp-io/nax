@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 5,
-    "passed": 1,
+    "passed": 2,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 2.05382305,
+    "spent": 4.7592982500000005,
     "limit": 30
   },
   "current": {
-    "storyId": "US-002",
-    "title": "Implement DebateSession core with one-shot mode and resolvers",
+    "storyId": "US-003",
+    "title": "Add stateful session mode for debate",
     "complexity": "complex",
     "tddStrategy": "three-session-tdd",
     "model": "powerful",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-03-30T09:48:55.827Z",
-  "durationMs": 3241311,
-  "lastHeartbeat": "2026-03-30T09:48:55.827Z"
+  "iterations": 3,
+  "updatedAt": "2026-03-30T10:02:55.855Z",
+  "durationMs": 4081339,
+  "lastHeartbeat": "2026-03-30T10:02:55.855Z"
 }
