@@ -58,6 +58,8 @@ const RectificationConfigSchema = z.object({
   maxFailureSummaryChars: z.number().int().min(500).max(10000).default(2000),
   abortOnIncreasingFailures: z.boolean().default(true),
   escalateOnExhaustion: z.boolean().optional().default(true),
+  rethinkAtAttempt: z.number().int().min(1).default(2),
+  urgencyAtAttempt: z.number().int().min(1).default(3),
 });
 
 const RegressionGateConfigSchema = z.object({

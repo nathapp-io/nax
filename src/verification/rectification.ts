@@ -50,9 +50,49 @@ export function shouldRetryRectification(state: RectificationState, config: Rect
 }
 
 /**
+ * Build the progressive escalation preamble to prepend when attempt >= threshold.
+ *
+ * - rethink phase  (attempt >= rethinkAtAttempt):  nudge the agent to change strategy
+ * - urgency phase  (attempt >= urgencyAtAttempt):  add "final chance" pressure
+ *
+ * Returns an empty string when no injection is needed.
+ */
+function buildEscalationPreamble(attempt: number, config: RectificationConfig): string {
+  const rethinkAt = config.rethinkAtAttempt ?? 2;
+  const urgencyAt = config.urgencyAtAttempt ?? 3;
+
+  if (attempt < rethinkAt) return "";
+
+  const isUrgent = attempt >= urgencyAt;
+
+  const rethinkSection = `## ⚠️ Previous Attempt Did Not Fix the Failures
+
+Your previous fix attempt (attempt ${attempt}) did not resolve all failures. **Step back and reconsider your approach.**
+
+- The root cause may be different from what you assumed.
+- Avoid iterating on the same fix — try a **fundamentally different strategy**.
+- Re-read the story context and test failures carefully before making changes.
+- Consider: are there missing edge cases, incorrect assumptions, or a design flaw in the implementation?
+
+`;
+
+  const urgencySection = isUrgent
+    ? `## 🚨 Final Rectification Attempt Before Model Escalation
+
+This is attempt ${attempt} — if the tests still fail after this, the task will escalate to a stronger model tier.
+A **completely different approach** is required. Do not repeat what you have already tried.
+
+`
+    : "";
+
+  return `${urgencySection}${rethinkSection}`;
+}
+
+/**
  * Create a rectification prompt with failure context.
  *
  * Includes:
+ * - Progressive escalation preamble when attempt >= rethinkAtAttempt (or urgencyAtAttempt)
  * - Clear instructions about test regressions
  * - Formatted failure summary
  * - Specific test commands for failing files
@@ -61,6 +101,7 @@ export function createRectificationPrompt(
   failures: TestFailure[],
   story: UserStory,
   config?: RectificationConfig,
+  attempt?: number,
 ): string {
   const maxChars = config?.maxFailureSummaryChars ?? 2000;
   const failureSummary = formatFailureSummary(failures, maxChars);
@@ -69,7 +110,10 @@ export function createRectificationPrompt(
   const failingFiles = Array.from(new Set(failures.map((f) => f.file)));
   const testCommands = failingFiles.map((file) => `  bun test ${file}`).join("\n");
 
-  return `# Rectification Required
+  // Progressive escalation preamble (empty string on attempt 1 or when thresholds not met)
+  const preamble = config && attempt !== undefined && attempt > 1 ? buildEscalationPreamble(attempt, config) : "";
+
+  return `${preamble}# Rectification Required
 
 Your changes caused test regressions. Fix these without breaking existing logic.
 

@@ -47,6 +47,17 @@ export interface RectificationConfig {
   abortOnIncreasingFailures: boolean;
   /** Escalate to higher model tier after exhausting maxRetries (default: true) */
   escalateOnExhaustion: boolean;
+  /**
+   * Attempt number at which "rethink your approach" language is injected into the prompt.
+   * Nudges the agent to try a fundamentally different strategy instead of repeating the same fix.
+   * Set >= maxRetries to disable. (default: 2)
+   */
+  rethinkAtAttempt: number;
+  /**
+   * Attempt number at which "final chance before escalation" urgency is added to the prompt.
+   * Should be >= rethinkAtAttempt. Set >= maxRetries to disable. (default: 3)
+   */
+  urgencyAtAttempt: number;
 }
 
 /** Regression gate config (BUG-009, BUG-026) */

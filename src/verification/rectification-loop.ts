@@ -78,7 +78,12 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       currentFailures: rectificationState.currentFailures,
     });
 
-    let rectificationPrompt = createRectificationPrompt(testSummary.failures, story, rectificationConfig);
+    let rectificationPrompt = createRectificationPrompt(
+      testSummary.failures,
+      story,
+      rectificationConfig,
+      rectificationState.attempt,
+    );
     if (promptPrefix) rectificationPrompt = `${promptPrefix}\n\n${rectificationPrompt}`;
 
     const agent = (agentGetFn ?? _rectificationDeps.getAgent)(config.autoMode.defaultAgent);

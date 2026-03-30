@@ -58,6 +58,8 @@ export const DEFAULT_CONFIG: NaxConfig = {
       maxFailureSummaryChars: 2000,
       abortOnIncreasingFailures: true,
       escalateOnExhaustion: true,
+      rethinkAtAttempt: 2,
+      urgencyAtAttempt: 3,
     },
     regressionGate: {
       enabled: true,
