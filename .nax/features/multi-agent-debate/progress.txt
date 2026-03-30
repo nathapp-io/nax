@@ -2,3 +2,4 @@
 [2026-03-30T09:49:07.976Z] US-002 — PASSED — Implement DebateSession core with one-shot mode and resolvers — Cost: $2.7055
 [2026-03-30T10:23:46.866Z] US-003 — PASSED — Add stateful session mode for debate — Cost: $2.2393
 [2026-03-30T10:45:42.618Z] US-004 — PASSED — Integrate debate into nax plan and semantic review — Cost: $3.0258
+[2026-03-30T11:36:14.460Z] US-005 — PASSED — Integrate debate into rectification diagnosis — Cost: $1.8988
