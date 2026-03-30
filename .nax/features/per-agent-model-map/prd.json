@@ -1,0 +1,154 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "per-agent-model-map",
+  "branchName": "feat/per-agent-model-map",
+  "createdAt": "2026-03-30T12:00:00.000Z",
+  "updatedAt": "2026-03-30T12:00:00.000Z",
+  "analysis": "This feature restructures the models config from a flat tier→model map to a per-agent model map (Record<agentName, Record<tier, ModelEntry>>), making it the SSOT for any (agent, tier) → model resolution. It also activates the existing dead-code fallbackOrder as a rate-limit agent fallback chain inside the ACP adapter, and adds optional agent field to TierConfig for cross-agent escalation. There are 22 callsites using config.models[tier] that need migration to resolveModelForAgent(). The fallback implementation lives inside AcpAgentAdapter so all LLM calls (plan, review, acceptance, routing, rectification, autofix, TDD, analyze) get fallback for free.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Per-agent model map types, schema, migration, and defaults",
+      "description": "Restructure ModelsConfig type from Record<ModelTier, ModelEntry> to Record<string, Record<ModelTier, ModelEntry>>. In src/config/schema-types.ts: add resolveModelForAgent(models, agent, tier, defaultAgent) function that tries exact agent+tier, falls back to defaultAgent's tier, and throws if both missing. In src/config/schemas.ts: update the Zod ModelsSchema to accept the new per-agent shape AND auto-migrate legacy flat format via .transform() — detect old shape by checking if first value is a ModelEntry (string or {provider,model}) vs an agent map (object with tier keys). Update DEFAULT_CONFIG in src/config/defaults.ts to new shape: { claude: { fast: 'haiku', balanced: 'sonnet', powerful: 'opus' } }. Update fallbackOrder default to ['claude']. Add optional 'agent' field to TierConfig in src/config/schema-types.ts. Add optional 'agent' field to StoryRouting type (manual/expert-only, nax plan does not generate it). Update config descriptions in src/cli/config-descriptions.ts. Update validation in src/config/validate.ts to check that every agent in fallbackOrder and every tierOrder[].agent exists as a key in models.",
+      "acceptanceCriteria": [
+        "resolveModelForAgent(models, 'claude', 'fast', 'claude') returns { provider: 'anthropic', model: 'claude-haiku-4-5' } when models.claude.fast is 'claude-haiku-4-5'",
+        "resolveModelForAgent(models, 'codex', 'fast', 'claude') returns codex's fast model when models.codex.fast exists",
+        "resolveModelForAgent(models, 'unknown-agent', 'fast', 'claude') falls back to models.claude.fast (defaultAgent fallback)",
+        "resolveModelForAgent(models, 'codex', 'powerful', 'claude') falls back to models.claude.powerful when models.codex has no powerful tier",
+        "When legacy flat config { fast: { provider: 'anthropic', model: 'haiku' } } is loaded, NaxConfigSchema.parse() auto-migrates to { claude: { fast: { provider: 'anthropic', model: 'haiku' } } } using defaultAgent",
+        "When new per-agent config { claude: { fast: 'haiku' }, codex: { fast: 'gpt-5' } } is loaded, NaxConfigSchema.parse() preserves it unchanged",
+        "TierConfig accepts optional agent field — { tier: 'fast', attempts: 3, agent: 'codex' } passes Zod validation",
+        "TierConfig without agent field passes Zod validation (backward compat)",
+        "DEFAULT_CONFIG.models is { claude: { fast: 'haiku', balanced: 'sonnet', powerful: 'opus' } } and DEFAULT_CONFIG.autoMode.fallbackOrder is ['claude']",
+        "validate() returns error when fallbackOrder contains agent 'codex' but models has no 'codex' key",
+        "validate() returns error when tierOrder has { tier: 'fast', agent: 'codex' } but models has no 'codex' key"
+      ],
+      "tags": ["types", "config", "schema", "migration"],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Nested Zod schema with legacy migration transform, cross-reference validation, multiple new types. Complex due to backward compat requirements.",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/config/schema-types.ts",
+        "src/config/schemas.ts",
+        "src/config/defaults.ts",
+        "src/config/runtime-types.ts",
+        "src/config/types.ts",
+        "src/config/validate.ts",
+        "src/cli/config-descriptions.ts"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Migrate all callsites to resolveModelForAgent()",
+      "description": "Replace all resolveModel(config.models[tier]) callsites with resolveModelForAgent(config.models, agent, tier, config.autoMode.defaultAgent). The agent parameter at each callsite comes from: (a) ctx.routing.agent if set (PRD override), (b) config.autoMode.defaultAgent otherwise. This is a mechanical migration — same behavior when only one agent is configured. Files to migrate: src/pipeline/stages/execution.ts (line ~249), src/pipeline/stages/acceptance-setup.ts (line ~279), src/pipeline/stages/autofix.ts (line ~242), src/pipeline/stages/routing.ts (line ~57), src/verification/rectification-loop.ts (lines ~100, ~214), src/metrics/tracker.ts (lines ~58-60, ~120-122), src/cli/analyze-parser.ts (line ~234), src/cli/analyze.ts (lines ~117, ~187), src/agents/acp/adapter.ts (lines ~752, ~870), src/routing/strategies/llm.ts (line ~86), src/config/validate.ts (line ~43), src/execution/lifecycle/acceptance-loop.ts (line ~116), src/tdd/session-runner.ts (line ~178), src/tdd/rectification-gate.ts (line ~181), src/tdd/orchestrator.ts (line ~92), src/acceptance/refinement.ts (line ~179). Also add agentUsed field to story metrics in metrics/tracker.ts. Ensure the old resolveModel(config.models[tier]) pattern no longer appears in any src/ file.",
+      "acceptanceCriteria": [
+        "When config.models has only claude agent and defaultAgent is 'claude', all callsites behave identically to the old flat config.models[tier] pattern",
+        "When ctx.routing.agent is 'codex' and config.models.codex.fast exists, execution.ts resolves to codex's fast model instead of claude's",
+        "When ctx.routing.agent is unset, all callsites resolve using config.autoMode.defaultAgent",
+        "metrics/tracker.ts records agentUsed (the resolved agent name) alongside modelTier and modelUsed in story metrics",
+        "config/validate.ts validates that every agent in fallbackOrder and every tierOrder[].agent exists as a key in models",
+        "The old resolveModel(config.models[tier]) pattern no longer appears in any source file under src/"
+      ],
+      "tags": ["migration", "execution", "metrics"],
+      "dependencies": ["US-001"],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Mechanical migration of 22 callsites, same behavior. Medium due to breadth (16 files) not depth.",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/execution.ts",
+        "src/agents/acp/adapter.ts",
+        "src/verification/rectification-loop.ts",
+        "src/metrics/tracker.ts",
+        "src/config/schema-types.ts"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Rate-limit and auth error fallback inside ACP adapter",
+      "description": "Implement fallback directly inside AcpAgentAdapter.complete() and AcpAgentAdapter.run() in src/agents/acp/adapter.ts. When acpx returns a 429/rate-limit or 401/403 auth error (detected by parsing stderr), the adapter walks config.autoMode.fallbackOrder, resolves the next agent's model via resolveModelForAgent(), and retries with --model <fallback-model> — transparently to callers. Add AgentError type to src/agents/types.ts with type: 'rate-limit' | 'auth' | 'timeout' | 'crash' | 'unknown' and optional retryAfterSeconds. Add parseAgentError() helper to detect error patterns in acpx stderr: '429', 'rate limit', 'Rate limit', '401', '403', 'unauthorized', 'Unauthorized', 'forbidden', 'Forbidden'. Track unavailable agents in adapter instance state (this._unavailableAgents: Set<string>). Rate-limit fallback does NOT burn attempt count. Auth error fallback marks agent unavailable for rest of run. When all agents rate-limited, wait min(retryAfterSeconds) or 30s default. When all agents permanently unavailable (auth), throw AllAgentsUnavailableError. Log fallback events at info level with stage 'agent-fallback'. Use _deps injection: _fallbackDeps = { parseAgentError, sleep }. CLI adapter is NOT modified.",
+      "acceptanceCriteria": [
+        "When adapter.complete() receives a 429 response from acpx, it automatically retries with the next agent in fallbackOrder at the same tier — caller receives the successful response without knowing a fallback occurred",
+        "When adapter.run() receives stderr containing 'rate limit' or '429', it automatically retries with the next agent in fallbackOrder",
+        "When adapter.complete() receives a 401/403 auth error, it retries with next agent in fallbackOrder AND marks the failing agent unavailable for subsequent calls (this._unavailableAgents)",
+        "Fallback does NOT decrement the story's attempt count",
+        "When all agents in fallbackOrder return rate-limit errors, adapter waits min(retryAfterSeconds) seconds (or 30s default) then retries from fallbackOrder[0]",
+        "When fallbackOrder has only one agent and it's rate-limited, adapter waits retryAfterSeconds (or 30s default) then retries the same agent",
+        "When all agents are permanently unavailable (auth errors on every agent), adapter throws AllAgentsUnavailableError",
+        "Fallback events are logged at info level with stage 'agent-fallback' including: original agent, fallback agent, error type, retry count",
+        "CLI adapter (src/agents/cli/) is unchanged — no fallback logic added"
+      ],
+      "tags": ["agents", "acp", "fallback", "resilience"],
+      "dependencies": ["US-002"],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Error detection, retry logic, stateful unavailable tracking, wait-and-retry for rate limits. Complex error handling paths.",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/agents/types.ts",
+        "src/agents/acp/adapter.ts",
+        "src/config/schema-types.ts",
+        "src/execution/escalation/escalation.ts"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Cross-agent escalation in tierOrder",
+      "description": "Update escalateTier() in src/execution/escalation/escalation.ts to return both the next tier AND the next agent (as { tier: string, agent?: string } | null instead of string | null). Update getTierConfig() to also expose the agent field. Update handlePreIterationEscalation() in src/execution/escalation/tier-escalation.ts to set the resolved agent on ctx.routing.agent when escalating to a tier that has an agent field. Update the execution stage (src/pipeline/stages/execution.ts) to use the escalation-provided agent when present. When tierOrder entry has no agent field, the returned agent is undefined and caller uses defaultAgent (backward compat). This enables configs like: exhaust claude/fast (3 attempts) → claude/balanced (2 attempts) → codex/fast (2 attempts).",
+      "acceptanceCriteria": [
+        "escalateTier('fast', tierOrder) returns { tier: 'balanced', agent: 'claude' } when tierOrder is [{ tier: 'fast', agent: 'claude', attempts: 3 }, { tier: 'balanced', agent: 'claude', attempts: 2 }]",
+        "escalateTier('balanced', tierOrder) returns { tier: 'fast', agent: 'codex' } when next entry is { tier: 'fast', agent: 'codex', attempts: 2 }",
+        "escalateTier('balanced', tierOrder) returns null when at last tier entry",
+        "When tierOrder entry has no agent field, escalateTier() returns { tier: nextTier, agent: undefined } and caller uses defaultAgent",
+        "handlePreIterationEscalation() sets ctx.routing.agent to the escalated tier's agent when present",
+        "After escalation from claude/balanced to codex/fast, execution stage calls resolveModelForAgent(models, 'codex', 'fast', defaultAgent)"
+      ],
+      "tags": ["escalation", "execution", "agents"],
+      "dependencies": ["US-002"],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Modifying existing escalation functions with new return type. Medium — changes are focused but touch critical path.",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/escalation/escalation.ts",
+        "src/execution/escalation/tier-escalation.ts",
+        "src/pipeline/stages/execution.ts",
+        "src/config/schema-types.ts"
+      ]
+    }
+  ]
+}
