@@ -4,13 +4,12 @@
  * Runs configurable quality checks after story implementation
  */
 
-import { spawn } from "bun";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import type { ExecutionConfig, QualityConfig } from "../config/schema";
 import type { ModelTier } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
-import { errorMessage } from "../utils/errors";
+import { runQualityCommand } from "../quality";
 import { autoCommitIfDirty } from "../utils/git";
 import { resolveLanguageCommand } from "./language-commands";
 import { runSemanticReview as _runSemanticReviewImpl } from "./semantic";
@@ -32,12 +31,11 @@ export const _reviewSemanticDeps = {
 
 /**
  * Injectable dependencies for runner internals — allows tests to intercept
- * Bun.file and spawn calls without mock.module().
+ * Bun.file and Bun.which calls without mock.module().
  *
  * @internal
  */
 export const _reviewRunnerDeps = {
-  spawn,
   file: Bun.file,
   which: Bun.which as (command: string) => string | null,
 };
@@ -133,105 +131,27 @@ export async function resolveCommand(
   return null;
 }
 
-/** Default timeout for review checks (lint, typecheck). BUG-039. */
-const REVIEW_CHECK_TIMEOUT_MS = 120_000;
-
-/** Grace period between SIGTERM and SIGKILL for review check cleanup. */
-const SIGKILL_GRACE_PERIOD_MS = 5_000;
-
 /**
- * Run a single review check with a hard timeout.
+ * Run a single review check by delegating to the shared runQualityCommand
+ * utility. Maps QualityCommandResult back to the ReviewCheckResult shape.
  *
- * BUG-039: Added SIGTERM + SIGKILL cleanup to prevent orphan lint/typecheck processes.
+ * BUG-039: Timeout + SIGTERM/SIGKILL handling lives in runQualityCommand.
  */
-async function runCheck(check: ReviewCheckName, command: string, workdir: string): Promise<ReviewCheckResult> {
-  const startTime = Date.now();
-  const logger = getSafeLogger();
-
-  logger?.info("review", `Running ${check} check`, { check, command, workdir });
-
-  try {
-    // Parse command into executable and args
-    const parts = command.split(/\s+/);
-    const executable = parts[0];
-    const args = parts.slice(1);
-
-    // Spawn the process
-    const proc = _reviewRunnerDeps.spawn({
-      cmd: [executable, ...args],
-      cwd: workdir,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-
-    // BUG-039: Hard timeout — kill the process if it hangs
-    let timedOut = false;
-    const timerId = setTimeout(() => {
-      timedOut = true;
-      try {
-        proc.kill("SIGTERM");
-      } catch {
-        /* already exited */
-      }
-      setTimeout(() => {
-        try {
-          proc.kill("SIGKILL");
-        } catch {
-          /* already exited */
-        }
-      }, SIGKILL_GRACE_PERIOD_MS);
-    }, REVIEW_CHECK_TIMEOUT_MS);
-
-    // Wait for completion
-    const exitCode = await proc.exited;
-    clearTimeout(timerId);
-
-    if (timedOut) {
-      return {
-        check,
-        command,
-        success: false,
-        exitCode: -1,
-        output: `[nax] ${check} timed out after ${REVIEW_CHECK_TIMEOUT_MS / 1000}s`,
-        durationMs: Date.now() - startTime,
-      };
-    }
-
-    // Collect output
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
-    const output = [stdout, stderr].filter(Boolean).join("\n");
-
-    if (exitCode !== 0) {
-      logger?.warn("review", `${check} check failed`, {
-        check,
-        command,
-        workdir,
-        exitCode,
-        output: output.slice(0, 2000),
-      });
-    } else {
-      logger?.debug("review", `${check} check passed`, { check, command, durationMs: Date.now() - startTime });
-    }
-
-    return {
-      check,
-      command,
-      success: exitCode === 0,
-      exitCode,
-      output,
-      durationMs: Date.now() - startTime,
-    };
-  } catch (error) {
-    return {
-      check,
-      command,
-      success: false,
-      exitCode: -1,
-      output: errorMessage(error),
-      durationMs: Date.now() - startTime,
-    };
-  }
+async function runCheck(
+  check: ReviewCheckName,
+  command: string,
+  workdir: string,
+  storyId?: string,
+): Promise<ReviewCheckResult> {
+  const result = await runQualityCommand({ commandName: check, command, workdir, storyId });
+  return {
+    check,
+    command: result.command,
+    success: result.success,
+    exitCode: result.exitCode,
+    output: result.output,
+    durationMs: result.durationMs,
+  };
 }
 
 /**
@@ -240,7 +160,7 @@ async function runCheck(check: ReviewCheckName, command: string, workdir: string
  */
 async function getUncommittedFilesImpl(workdir: string): Promise<string[]> {
   try {
-    const proc = _reviewRunnerDeps.spawn({
+    const proc = Bun.spawn({
       cmd: ["git", "diff", "--name-only", "HEAD"],
       cwd: workdir,
       stdout: "pipe",
@@ -378,7 +298,7 @@ export async function runReview(
     }
 
     // Run the check
-    const result = await runCheck(checkName, command, workdir);
+    const result = await runCheck(checkName, command, workdir, storyId);
     checks.push(result);
 
     // Track first failure

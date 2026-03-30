@@ -89,7 +89,7 @@ describe("autofixStage", () => {
 
   test("returns retry when recheck passes", async () => {
     const saved = { ..._autofixDeps };
-    _autofixDeps.runCommand = async () => ({ exitCode: 0, output: "" });
+    _autofixDeps.runQualityCommand = async () => ({ commandName: "lintFix", command: "", success: true, exitCode: 0, output: "", durationMs: 0, timedOut: false });
     _autofixDeps.recheckReview = async () => true;
 
     // Must have a lint failure to trigger Phase 1 (mechanical fix)
@@ -104,7 +104,7 @@ describe("autofixStage", () => {
 
   test("escalates when recheck still fails and agent rectification also fails", async () => {
     const saved = { ..._autofixDeps };
-    _autofixDeps.runCommand = async () => ({ exitCode: 1, output: "lint error" });
+    _autofixDeps.runQualityCommand = async () => ({ commandName: "lintFix", command: "", success: false, exitCode: 1, output: "lint error", durationMs: 0, timedOut: false });
     _autofixDeps.recheckReview = async () => false;
     _autofixDeps.runAgentRectification = async () => false;
 
@@ -147,7 +147,7 @@ describe("autofixStage", () => {
   test("agent rectification runs when mechanical fix fails", async () => {
     const saved = { ..._autofixDeps };
     let agentRectificationCalled = false;
-    _autofixDeps.runCommand = async () => ({ exitCode: 0, output: "" });
+    _autofixDeps.runQualityCommand = async () => ({ commandName: "lintFix", command: "", success: true, exitCode: 0, output: "", durationMs: 0, timedOut: false });
     _autofixDeps.recheckReview = async () => false;
     _autofixDeps.runAgentRectification = async () => {
       agentRectificationCalled = true;
@@ -164,7 +164,7 @@ describe("autofixStage", () => {
 
   test("agent rectification succeeds → returns retry fromStage review", async () => {
     const saved = { ..._autofixDeps };
-    _autofixDeps.runCommand = async () => ({ exitCode: 1, output: "" });
+    _autofixDeps.runQualityCommand = async () => ({ commandName: "lintFix", command: "", success: false, exitCode: 1, output: "", durationMs: 0, timedOut: false });
     _autofixDeps.recheckReview = async () => false;
     _autofixDeps.runAgentRectification = async () => true;
 
@@ -179,7 +179,7 @@ describe("autofixStage", () => {
 
   test("agent rectification exhausted → returns escalate", async () => {
     const saved = { ..._autofixDeps };
-    _autofixDeps.runCommand = async () => ({ exitCode: 1, output: "" });
+    _autofixDeps.runQualityCommand = async () => ({ commandName: "lintFix", command: "", success: false, exitCode: 1, output: "", durationMs: 0, timedOut: false });
     _autofixDeps.recheckReview = async () => false;
     _autofixDeps.runAgentRectification = async () => false;
 
@@ -194,7 +194,7 @@ describe("autofixStage", () => {
   test("agent rectification skipped when review passes after mechanical fix", async () => {
     const saved = { ..._autofixDeps };
     let agentRectificationCalled = false;
-    _autofixDeps.runCommand = async () => ({ exitCode: 0, output: "" });
+    _autofixDeps.runQualityCommand = async () => ({ commandName: "lintFix", command: "", success: true, exitCode: 0, output: "", durationMs: 0, timedOut: false });
     _autofixDeps.recheckReview = async () => true;
     _autofixDeps.runAgentRectification = async () => {
       agentRectificationCalled = true;
@@ -213,11 +213,11 @@ describe("autofixStage", () => {
 
   test("typecheck failure skips mechanical fix and goes straight to agent rectification", async () => {
     const saved = { ..._autofixDeps };
-    let runCommandCalled = false;
+    let runQualityCommandCalled = false;
     let agentRectificationCalled = false;
-    _autofixDeps.runCommand = async () => {
-      runCommandCalled = true;
-      return { exitCode: 0, output: "" };
+    _autofixDeps.runQualityCommand = async () => {
+      runQualityCommandCalled = true;
+      return { commandName: "lintFix", command: "", success: true, exitCode: 0, output: "", durationMs: 0, timedOut: false };
     };
     _autofixDeps.runAgentRectification = async () => {
       agentRectificationCalled = true;
@@ -230,7 +230,7 @@ describe("autofixStage", () => {
 
     Object.assign(_autofixDeps, saved);
 
-    expect(runCommandCalled).toBe(false); // lintFix/formatFix not called
+    expect(runQualityCommandCalled).toBe(false); // lintFix/formatFix not called
     expect(agentRectificationCalled).toBe(true); // went straight to agent
   });
 
