@@ -38,6 +38,16 @@ export type RoutingStrategyName = "keyword" | "llm" | "manual" | "adaptive" | "c
 
 export type LlmRoutingMode = "one-shot" | "per-story" | "hybrid";
 
+/** Resolve the correct ModelEntry for a given agent and tier, with defaultAgent fallback */
+export function resolveModelForAgent(
+  _models: ModelsConfig,
+  _agent: string,
+  _tier: ModelTier,
+  _defaultAgent: string,
+): ModelEntry {
+  throw new Error("resolveModelForAgent: not implemented");
+}
+
 /** Resolve a ModelEntry (string shorthand or full object) into a ModelDef */
 export function resolveModel(entry: ModelEntry): ModelDef {
   if (typeof entry === "string") {
