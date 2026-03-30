@@ -117,11 +117,44 @@ Controls how nax classifies story complexity and selects model tier + test strat
 
 **Priority order (regardless of strategy):**
 
-1. **PRD explicit** — if a story has `routing.testStrategy` set in `prd.json`, it always wins
+1. **PRD routing (always wins)** — if a story has `routing.complexity` and `routing.testStrategy` set in `prd.json`, all other routing is skipped
 2. **Plugin routers** — registered plugins can override routing per-story
 3. **Strategy fallback** — keyword or LLM depending on `routing.strategy`
 
-**Opting into LLM routing:**
+> **In practice, PRD routing always wins.** `nax plan` generates `routing.complexity`, `routing.testStrategy`, and `routing.reasoning` for every story in the PRD. Since `resolveRouting()` returns early when these fields are present, the plugin → LLM → keyword chain only fires for hand-written PRDs that omit routing fields.
+
+**Per-story routing in PRD (set by `nax plan`):**
+
+```json
+{
+  "userStories": [
+    {
+      "id": "US-001",
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "security-critical: auth, jwt"
+      }
+    }
+  ]
+}
+```
+
+You can manually edit these fields in `prd.json` to override the plan agent's routing decisions before running `nax run`.
+
+**Fallback routing (for hand-written PRDs without routing fields):**
+
+The `routing.strategy` config controls how stories are classified when PRD routing is absent:
+
+```json
+{
+  "routing": {
+    "strategy": "keyword"
+  }
+}
+```
+
+**Opting into LLM fallback routing:**
 
 ```json
 {
@@ -137,24 +170,6 @@ Controls how nax classifies story complexity and selects model tier + test strat
 ```
 
 > **Note:** LLM routing requires an agent (e.g. `claude`) to be installed and configured. It makes real API calls, which incur cost and latency. For CI or contributor environments, prefer `"keyword"`.
-
-**Per-story override in PRD:**
-
-```json
-{
-  "userStories": [
-    {
-      "id": "US-001",
-      "routing": {
-        "testStrategy": "three-session-tdd",
-        "complexity": "complex"
-      }
-    }
-  ]
-}
-```
-
-Story-level routing always takes priority over `routing.strategy`.
 
 ---
 
