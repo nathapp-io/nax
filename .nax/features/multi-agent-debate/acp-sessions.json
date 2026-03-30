@@ -6,5 +6,9 @@
   "US-002:implementer": {
     "sessionName": "nax-0c2a22d3-multi-agent-debate-us-002-implementer",
     "agentName": "claude"
+  },
+  "US-002:verifier": {
+    "sessionName": "nax-0c2a22d3-multi-agent-debate-us-002-verifier",
+    "agentName": "claude"
   }
 }
