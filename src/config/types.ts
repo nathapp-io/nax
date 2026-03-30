@@ -21,6 +21,17 @@ export type {
 } from "./schema-types";
 export { resolveModel } from "./schema-types";
 
+// Debate types
+export type {
+  DebateConfig,
+  DebateStageConfig,
+  ResolverConfig,
+  Debater,
+  DebateResult,
+  ResolverType,
+  SessionMode,
+} from "../debate/types";
+
 // Runtime types
 export type {
   AcceptanceConfig,

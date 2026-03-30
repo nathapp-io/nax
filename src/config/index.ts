@@ -1,4 +1,13 @@
 export type {
+  DebateConfig,
+  DebateStageConfig,
+  ResolverConfig,
+  Debater,
+  DebateResult,
+  ResolverType,
+  SessionMode,
+} from "../debate/types";
+export type {
   NaxConfig,
   Complexity,
   TestStrategy,

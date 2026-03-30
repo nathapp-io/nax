@@ -228,4 +228,37 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
     "Inject hermetic test requirement into prompts — never call real external services in tests (default: true)",
   "quality.testing.externalBoundaries": "Project-specific CLI tools/clients to mock (e.g. ['claude', 'acpx', 'redis'])",
   "quality.testing.mockGuidance": "Project-specific mocking guidance injected verbatim into the prompt",
+
+  // Debate (US-001)
+  debate: "Multi-agent debate configuration — run multiple agents in parallel to improve output quality",
+  "debate.enabled": "Enable multi-agent debate globally (default: false)",
+  "debate.agents":
+    "Default number of debating agents when no explicit debaters array is specified (default: 3, min: 2)",
+  "debate.stages": "Per-stage debate configuration",
+  "debate.stages.plan":
+    "Debate settings for the planning stage (default: stateful, synthesis resolver, 3 rounds, enabled)",
+  "debate.stages.review":
+    "Debate settings for the review stage (default: one-shot, majority-fail-closed, 2 rounds, enabled)",
+  "debate.stages.acceptance":
+    "Debate settings for the acceptance test stage (default: one-shot, majority-fail-closed, 1 round, disabled)",
+  "debate.stages.rectification":
+    "Debate settings for the rectification loop (default: one-shot, synthesis, 1 round, disabled)",
+  "debate.stages.escalation":
+    "Debate settings for the escalation phase (default: one-shot, majority-fail-closed, 1 round, disabled)",
+  "debate.stages.plan.enabled": "Enable debate for this stage",
+  "debate.stages.plan.resolver": "Resolver configuration — how debate outcomes are determined",
+  "debate.stages.plan.resolver.type":
+    "Resolver strategy: 'synthesis' (LLM synthesises all outputs) | 'majority-fail-closed' (majority vote, ties fail) | 'majority-fail-open' (majority vote, ties pass) | 'custom'",
+  "debate.stages.plan.resolver.agent":
+    "Agent used as resolver — resolved from config.autoMode.defaultAgent when absent",
+  "debate.stages.plan.resolver.tieBreaker": "Tie-breaker strategy when votes are tied",
+  "debate.stages.plan.resolver.maxPromptTokens": "Max prompt tokens passed to the resolver agent",
+  "debate.stages.plan.sessionMode":
+    "Session mode: 'stateful' (agents maintain context across rounds) | 'one-shot' (fresh session per round)",
+  "debate.stages.plan.rounds": "Number of debate rounds (min: 1)",
+  "debate.stages.plan.debaters":
+    "Optional array of debater agents (min 2 entries). Resolved from config.autoMode.defaultAgent when absent.",
+  "debate.stages.plan.debaters[].agent": "Agent name (e.g. 'claude', 'opencode')",
+  "debate.stages.plan.debaters[].model":
+    "Optional model override — resolved from config.models.fast at runtime when absent",
 };

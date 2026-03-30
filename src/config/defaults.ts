@@ -4,6 +4,7 @@
  * The default NaxConfig used as a base for all projects.
  */
 
+import type { DebateConfig } from "../debate/types";
 import type { NaxConfig } from "./types";
 
 /** Default configuration */
@@ -220,4 +221,40 @@ export const DEFAULT_CONFIG: NaxConfig = {
     maxRetries: 2,
     model: "balanced",
   },
+  debate: {
+    enabled: false,
+    agents: 3,
+    stages: {
+      plan: {
+        enabled: true,
+        resolver: { type: "synthesis" },
+        sessionMode: "stateful",
+        rounds: 3,
+      },
+      review: {
+        enabled: true,
+        resolver: { type: "majority-fail-closed" },
+        sessionMode: "one-shot",
+        rounds: 2,
+      },
+      acceptance: {
+        enabled: false,
+        resolver: { type: "majority-fail-closed" },
+        sessionMode: "one-shot",
+        rounds: 1,
+      },
+      rectification: {
+        enabled: false,
+        resolver: { type: "synthesis" },
+        sessionMode: "one-shot",
+        rounds: 1,
+      },
+      escalation: {
+        enabled: false,
+        resolver: { type: "majority-fail-closed" },
+        sessionMode: "one-shot",
+        rounds: 1,
+      },
+    },
+  } satisfies DebateConfig,
 };

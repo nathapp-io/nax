@@ -1,0 +1,84 @@
+/**
+ * Debate Feature Types
+ *
+ * Type definitions for the multi-agent debate system.
+ */
+
+/** How the resolver determines the outcome of a debate round */
+export type ResolverType = "synthesis" | "majority-fail-closed" | "majority-fail-open" | "custom";
+
+/** How agent sessions are managed across debate rounds */
+export type SessionMode = "one-shot" | "stateful";
+
+/** A single debater agent in a debate */
+export interface Debater {
+  /** Agent name (e.g. 'claude', 'opencode') */
+  agent: string;
+  /** Optional model override — resolved from config.models.fast at runtime when absent */
+  model?: string;
+}
+
+/** Resolver configuration for a debate stage */
+export interface ResolverConfig {
+  /** Strategy for resolving debate outcome */
+  type: ResolverType;
+  /** Optional agent to use as resolver (resolved from config.autoMode.defaultAgent when absent) */
+  agent?: string;
+  /** Tie-breaker strategy when votes are tied */
+  tieBreaker?: string;
+  /** Max prompt tokens passed to the resolver agent */
+  maxPromptTokens?: number;
+}
+
+/** Per-stage debate configuration */
+export interface DebateStageConfig {
+  /** Enable debate for this stage */
+  enabled: boolean;
+  /** Resolver configuration */
+  resolver: ResolverConfig;
+  /** Session mode for debater agents */
+  sessionMode: SessionMode;
+  /** Number of debate rounds */
+  rounds: number;
+  /** Optional debaters array — resolved from config.autoMode.defaultAgent when absent (min 2 entries) */
+  debaters?: Debater[];
+}
+
+/** Top-level debate configuration */
+export interface DebateConfig {
+  /** Enable multi-agent debate globally */
+  enabled: boolean;
+  /** Default number of debating agents when no explicit debaters array is specified */
+  agents: number;
+  /** Per-stage debate configuration */
+  stages: {
+    /** Planning phase debate */
+    plan: DebateStageConfig;
+    /** Review phase debate */
+    review: DebateStageConfig;
+    /** Acceptance test phase debate */
+    acceptance: DebateStageConfig;
+    /** Rectification loop debate */
+    rectification: DebateStageConfig;
+    /** Escalation phase debate */
+    escalation: DebateStageConfig;
+  };
+}
+
+/** Result of a completed debate session */
+export interface DebateResult {
+  /** Story identifier */
+  storyId: string;
+  /** Pipeline stage the debate ran in */
+  stage: string;
+  /** Debate outcome */
+  outcome: "passed" | "failed" | "skipped";
+  /** Number of rounds completed */
+  rounds: number;
+  /** Agents that participated as debaters */
+  debaters: string[];
+  /** Resolver strategy used */
+  resolverType: ResolverType;
+  /** Optional human-readable summary from the resolver */
+  summary?: string;
+}
