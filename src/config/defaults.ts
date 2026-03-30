@@ -20,7 +20,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
   autoMode: {
     enabled: true,
     defaultAgent: "claude",
-    fallbackOrder: ["claude"],
+    fallbackOrder: ["claude"], // single-agent fallback chain
     complexityRouting: {
       simple: "fast",
       medium: "balanced",
