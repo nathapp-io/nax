@@ -11,6 +11,8 @@ import { spawn } from "bun";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import type { ModelTier } from "../config/schema-types";
+import { DebateSession } from "../debate";
+import type { DebateSessionOptions } from "../debate";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
 import { getMergeBase, isGitRefValid } from "../utils/git";
@@ -32,6 +34,7 @@ export const _semanticDeps = {
   spawn: spawn as typeof spawn,
   isGitRefValid,
   getMergeBase,
+  createDebateSession: (opts: DebateSessionOptions): DebateSession => new DebateSession(opts),
 };
 
 /**
@@ -173,6 +176,7 @@ interface LLMFinding {
   line: number;
   issue: string;
   suggestion: string;
+  acId?: string;
 }
 
 interface LLMResponse {
@@ -308,6 +312,82 @@ export async function runSemanticReview(
 
   // Build prompt
   const prompt = buildPrompt(story, semanticConfig, diff);
+
+  // Debate path: when debate is enabled for review stage, use DebateSession instead of agent.complete()
+  const reviewDebateEnabled = naxConfig?.debate?.enabled && naxConfig?.debate?.stages?.review?.enabled;
+  if (reviewDebateEnabled) {
+    // Safe: reviewDebateEnabled guard confirms naxConfig.debate.stages.review is defined
+    const reviewStageConfig = naxConfig?.debate?.stages.review as import("../debate").DebateStageConfig;
+    const debateSession = _semanticDeps.createDebateSession({
+      storyId: story.id,
+      stage: "review",
+      stageConfig: reviewStageConfig,
+    });
+    const debateResult = await debateSession.run(prompt);
+
+    // Compute majority vote and merge findings from all proposals
+    let passCount = 0;
+    let failCount = 0;
+    const allFindings: LLMFinding[] = [];
+    for (const p of debateResult.proposals) {
+      const parsed = parseLLMResponse(p.output);
+      if (parsed) {
+        if (parsed.passed) passCount++;
+        else failCount++;
+        allFindings.push(...parsed.findings);
+      } else {
+        failCount++; // unparseable — fail-closed
+      }
+    }
+    const majorityPassed = passCount > failCount;
+
+    // Deduplicate findings by AC id (primary) or file:line (fallback)
+    const seen = new Set<string>();
+    const deduped: LLMFinding[] = [];
+    for (const f of allFindings) {
+      const key = f.acId ?? `${f.file}:${f.line}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduped.push(f);
+      }
+    }
+
+    const durationMs = Date.now() - startTime;
+    if (!majorityPassed) {
+      if (deduped.length > 0) {
+        logger?.warn("review", `Semantic review failed (debate): ${deduped.length} findings`, {
+          storyId: story.id,
+          durationMs,
+        });
+        return {
+          check: "semantic",
+          success: false,
+          command: "",
+          exitCode: 1,
+          output: `Semantic review failed:\n\n${formatFindings(deduped)}`,
+          durationMs,
+          findings: toReviewFindings(deduped),
+        };
+      }
+      return {
+        check: "semantic",
+        success: false,
+        command: "",
+        exitCode: 1,
+        output: "Semantic review failed (debate, no findings)",
+        durationMs,
+      };
+    }
+    logger?.info("review", "Semantic review passed (debate)", { storyId: story.id, durationMs });
+    return {
+      check: "semantic",
+      success: true,
+      command: "",
+      exitCode: 0,
+      output: "Semantic review passed",
+      durationMs,
+    };
+  }
 
   // Call LLM
   let rawResponse: string;

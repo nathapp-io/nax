@@ -1,0 +1,244 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "multi-agent-debate",
+  "branchName": "feat/multi-agent-debate",
+  "createdAt": "2026-03-30T08:46:00.000Z",
+  "updatedAt": "2026-03-30T11:36:22.168Z",
+  "analysis": "This feature adds a debate session primitive to nax. The debate system wraps existing adapter.complete() calls with multi-agent deliberation — spawning 2-3 agents (potentially different agents via ACP) to propose, critique, and resolve judgment tasks. Key integration points: nax plan (src/cli/plan.ts), semantic review (src/review/semantic.ts), and rectification loop (src/verification/rectification-loop.ts). The debate module is self-contained in src/debate/ and uses the existing AgentAdapter.complete() interface. Per-stage defaults: plan uses stateful sessions + synthesis resolver (3 rounds), review uses one-shot + majority resolver (2 rounds). Agent/model defaults inherit from config.autoMode.defaultAgent + config.models.fast.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add debate types, Zod config schema, and defaults",
+      "description": "Create src/debate/types.ts with DebateConfig, DebateStageConfig, ResolverConfig, Debater, DebateResult, ResolverType, and SessionMode types. Add a 'debate' section to the NaxConfig Zod schema in src/config/schema.ts with full validation: debate.enabled (boolean, default false), debate.agents (number >= 2, default 3), and debate.stages with per-stage defaults (plan: stateful/synthesis/3 rounds/enabled, review: one-shot/majority-fail-closed/2 rounds/enabled, acceptance: one-shot/majority-fail-closed/1 round/disabled, rectification: one-shot/synthesis/1 round/disabled, escalation: one-shot/majority-fail-closed/1 round/disabled). Each stage has: enabled (boolean), resolver (object with type + optional agent + optional tieBreaker + optional maxPromptTokens), sessionMode ('one-shot' | 'stateful'), rounds (number >= 1), and optional debaters array (min 2 entries when specified, each with agent string + optional model string). Export types from src/config/index.ts. Add human-readable descriptions to src/cli/config-descriptions.ts. Update DEFAULT_CONFIG in src/config/defaults.ts. Follow the pattern of existing config sections like 'rectification' for schema structure.",
+      "acceptanceCriteria": [
+        "When 'debate' key is absent from config JSON, loadConfig() returns debate.enabled = false with all per-stage defaults populated (plan: stateful/synthesis/3, review: one-shot/majority/2, acceptance: one-shot/majority/1 disabled, rectification: one-shot/synthesis/1 disabled, escalation: one-shot/majority/1 disabled)",
+        "When no debaters or resolver.agent is specified, no agent/model fields are stored in debate config — runtime resolves from config.autoMode.defaultAgent and config.models.fast",
+        "When a stage config has debaters array with fewer than 2 entries, NaxConfigSchema.safeParse() returns validation error containing 'debaters must have at least 2 entries'",
+        "When debate.stages.plan.resolver.type is set to 'invalid', NaxConfigSchema.safeParse() returns a validation error",
+        "When debate.stages.plan is partially specified (e.g., only resolver), remaining fields fall back to that stage's built-in defaults (not global defaults)",
+        "When a debaters entry has agent but no model, the debater is valid — model is resolved at runtime",
+        "When nax config show is called, the debate section appears with human-readable descriptions for all fields"
+      ],
+      "tags": [
+        "types",
+        "config",
+        "schema"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Config schema + types, follows existing patterns, medium due to nested Zod schema complexity",
+        "modelTier": "balanced",
+        "initialComplexity": "medium"
+      },
+      "contextFiles": [
+        "src/config/schema.ts",
+        "src/config/schema-types.ts",
+        "src/config/defaults.ts",
+        "src/config/index.ts",
+        "src/cli/config-descriptions.ts"
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "3581340f0a417ab4b18b096583dd73d414e41fa0"
+    },
+    {
+      "id": "US-002",
+      "title": "Implement DebateSession core with one-shot mode and resolvers",
+      "description": "Create src/debate/session.ts with DebateSession class. The run() method: (1) resolves each debater's AgentAdapter via getAgent(debater.agent) from src/agents/registry.ts, (2) runs proposal round — calls adapter.complete(prompt, { model: debater.model }) for all debaters in parallel via Promise.allSettled(), (3) if rounds > 1, runs critique rounds — each debater receives all other debaters' proposals in a critique prompt, (4) calls the configured resolver. Create src/debate/resolvers.ts with: majorityResolver (parses JSON pass/fail from each proposal, returns majority vote, fail-closed on tie), synthesisResolver (calls adapter.complete() with synthesis prompt containing all proposals + critiques), judgeResolver (calls adapter.complete() with judge prompt using resolver.agent). Create src/debate/prompts.ts with prompt templates for critique and synthesis rounds. Create src/debate/index.ts barrel. When a debater's agent is unavailable (getAgent returns null), skip it and log warning. When fewer than 2 debaters succeed, fall back to single-agent mode. DebateResult tracks per-debater identity, cost, duration, and aggregated totals. All debate activity logs via getSafeLogger() with stage 'debate'. Follow the injectable _deps pattern (export _debateSessionDeps for testability).",
+      "acceptanceCriteria": [
+        "DebateSession.run() resolves each debater's AgentAdapter via getAgent(debater.agent) and calls adapter.complete() with the debater's model override",
+        "DebateSession.run() calls all debaters in parallel for the proposal round via Promise.allSettled()",
+        "When a debater's agent is not installed (getAgent returns null), that debater is skipped and a warning is logged with stage 'debate'",
+        "When fewer than 2 debaters succeed in the proposal round, DebateSession.run() falls back to single-agent mode — returns the one successful proposal or calls complete() fresh if all failed",
+        "When rounds is 2, the critique round sends each debater all other debaters' proposals in its critique prompt",
+        "When rounds is 1 (propose only), critique round is skipped and proposals go directly to the resolver",
+        "majorityResolver() returns 'passed' when 2 of 3 proposals contain '\"passed\": true' in their JSON output",
+        "majorityResolver() returns the fail-closed answer (more conservative) on a tie (1 pass, 1 fail, 1 unparseable)",
+        "synthesisResolver() calls adapter.complete() once with a synthesis prompt containing all proposals and critiques, returns the output",
+        "judgeResolver() calls adapter.complete() once with a judge prompt using resolver.agent (or default agent at fast tier if unset)",
+        "DebateResult.totalCostUsd equals the sum of all complete() call costs across all debaters and rounds including resolver",
+        "DebateResult.proposals contains the debater identity (agent, model) alongside each proposal output"
+      ],
+      "tags": [
+        "debate",
+        "core",
+        "execution"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Core orchestration logic with parallel execution, error handling, 3 resolver strategies, and fallback behavior",
+        "modelTier": "powerful",
+        "initialComplexity": "complex"
+      },
+      "contextFiles": [
+        "src/agents/types.ts",
+        "src/agents/acp/adapter.ts",
+        "src/agents/registry.ts",
+        "src/review/semantic.ts"
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "0aad072450547ef205c125da1b2f01cec042e7ff"
+    },
+    {
+      "id": "US-003",
+      "title": "Add stateful session mode for debate",
+      "description": "Extend DebateSession.run() in src/debate/session.ts with a stateful session mode branch. When stageConfig.sessionMode is 'stateful': (1) create a SpawnAcpClient per debater using 'acpx --model <debater.model> <debater.agent>', (2) call client.createSession() for each debater with session name 'nax-debate-<storyId>-<debaterIndex>', (3) use session.prompt() for each round instead of adapter.complete(), (4) in critique rounds, send only other debaters' proposals (the session retains its own history), (5) close all sessions in finally block via session.close(). When a stateful session fails to create, skip that debater and continue with remaining (minimum 2). When sessionMode is 'one-shot' (default for most stages), behavior is unchanged from US-002. Follow the pattern in src/agents/acp/adapter.ts for session lifecycle management (createSession, prompt, close in finally).",
+      "acceptanceCriteria": [
+        "When sessionMode is 'stateful', DebateSession.run() creates a SpawnAcpClient per debater and calls client.createSession() with session name containing storyId and debater index",
+        "When sessionMode is 'stateful', critique round does NOT paste all proposals into the prompt — sends only other debaters' proposals (session retains own history)",
+        "When sessionMode is 'stateful', all sessions are closed via session.close() in the finally block — even if debate fails mid-round",
+        "When sessionMode is 'one-shot', DebateSession.run() uses adapter.complete() and does NOT create persistent sessions",
+        "When a stateful session fails to create (acpx error), that debater is skipped and debate continues with remaining debaters (minimum 2 required)",
+        "When two stages in the same run have different sessionMode values (e.g., plan=stateful, review=one-shot), each uses its own mode independently"
+      ],
+      "tags": [
+        "debate",
+        "acp",
+        "sessions"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "ACP session lifecycle management, cleanup in error paths, interaction with SpawnAcpClient",
+        "modelTier": "powerful",
+        "initialComplexity": "complex"
+      },
+      "contextFiles": [
+        "src/agents/acp/spawn-client.ts",
+        "src/agents/acp/adapter.ts",
+        "src/debate/types.ts"
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "e016afc6a21a8e59ee3387ef720576f1d3dce798"
+    },
+    {
+      "id": "US-004",
+      "title": "Integrate debate into nax plan and semantic review",
+      "description": "Wire DebateSession into two integration points. (1) src/cli/plan.ts: after building the planning prompt (~line 200), check if debate is enabled for plan stage. If so, resolve the debate stage config (merge per-stage defaults + user overrides), instantiate DebateSession, call debateSession.run(prompt, stageConfig). Use the result.output as rawResponse. If all debaters fail, fall back to single adapter.complete() and log warning. (2) src/review/semantic.ts: in runSemanticReview() after building the prompt (~line 315), check if debate is enabled for review stage. If so, run DebateSession with the semantic review prompt. For majority resolver, parse each proposal as the existing JSON format ({passed, findings}), majority-vote on passed, merge findings deduplicated by AC id. Wire DebateResult.totalCostUsd into the existing cost tracking. Add debate cost to story metrics. Follow the existing pattern of config-gated behavior (check config flag → branch → fallback).",
+      "acceptanceCriteria": [
+        "When debate.enabled is true and debate.stages.plan.enabled is true, nax plan --auto uses DebateSession.run() instead of single adapter.complete()",
+        "When debate.enabled is false, nax plan --auto calls adapter.complete() exactly once (no behavior change)",
+        "When debate.enabled is true and debate.stages.review.enabled is true, runSemanticReview() uses DebateSession.run() instead of single agent.complete()",
+        "When review debate uses majority resolver, final ReviewCheckResult.success reflects the majority vote of debater responses",
+        "When review debate uses majority resolver, ReviewCheckResult.findings contains merged findings deduplicated by AC id from all debaters",
+        "When all debaters fail during plan, system falls back to single adapter.complete() and logs warning with stage 'debate' and event 'fallback'"
+      ],
+      "tags": [
+        "debate",
+        "integration",
+        "plan",
+        "review"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Integration wiring into existing modules, config-gated branching, finding deduplication logic",
+        "modelTier": "balanced",
+        "initialComplexity": "medium"
+      },
+      "contextFiles": [
+        "src/cli/plan.ts",
+        "src/review/semantic.ts",
+        "src/review/types.ts",
+        "src/pipeline/stages/review.ts"
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "44e809bee2596c82dbef31babed59f8e9d7c5ed2"
+    },
+    {
+      "id": "US-005",
+      "title": "Integrate debate into rectification diagnosis",
+      "description": "Add optional debate-based root cause diagnosis to the rectification loop. In src/verification/rectification-loop.ts, before the rectification prompt is built and sent to the execution agent, check if debate.stages.rectification.enabled is true. If so, build a diagnosis prompt from the test failure summary (using formatFailureSummary from rectification.ts), run DebateSession with synthesis resolver, and prepend the diagnosis output to the rectification prompt as a '## Root Cause Analysis' section. If the diagnosis debate fails (all debaters error), proceed without the diagnosis section and log event 'fallback'. Include debate cost in story total cost. This is disabled by default (debate.stages.rectification.enabled = false) to avoid adding latency to the retry loop.",
+      "acceptanceCriteria": [
+        "When debate.stages.rectification.enabled is true, rectification loop runs debate session to diagnose root cause BEFORE building the agent's rectification prompt",
+        "Diagnosis output is prepended to the rectification prompt as a '## Root Cause Analysis' section",
+        "When debate.stages.rectification.enabled is false (default), rectification loop is unchanged from today",
+        "When diagnosis debate fails (all debaters error), rectification prompt proceeds without diagnosis section and logs event 'fallback'",
+        "Debate cost is included in the story's total cost tracking"
+      ],
+      "tags": [
+        "debate",
+        "integration",
+        "rectification"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Autofix exhausted: review still failing after fix attempts"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "review",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "reviewFindings": [
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/logger/logger.ts",
+              "line": 281,
+              "message": "getSafeLogger() no longer checks if the result is noopLogger before returning. The old code returned null when logging was disabled; the new code always returns a logger. This changes the semantic contract of the function and could break code that depends on the null return value to detect disabled logging.",
+              "source": "semantic-review"
+            }
+          ],
+          "cost": 2.4846791,
+          "timestamp": "2026-03-30T11:19:26.883Z"
+        }
+      ],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Single integration point, config-gated, graceful degradation. Medium due to rectification loop complexity.",
+        "modelTier": "powerful",
+        "initialComplexity": "medium"
+      },
+      "contextFiles": [
+        "src/verification/rectification-loop.ts",
+        "src/verification/rectification.ts"
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "2a2760fdc61bc068b1f53c6e0ef938514f94ebc2"
+    }
+  ]
+}

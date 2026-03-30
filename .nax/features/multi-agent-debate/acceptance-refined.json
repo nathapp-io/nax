@@ -1,0 +1,254 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "When 'debate' key is absent from config JSON, loadConfig() returns debate.enabled = false with all per-stage defaults populated (plan: stateful/synthesis/3, review: one-shot/majority/2, acceptance: one-shot/majority/1 disabled, rectification: one-shot/synthesis/1 disabled, escalation: one-shot/majority/1 disabled)",
+    "refined": "When 'debate' key is absent from config JSON, loadConfig() returns debate.enabled = false with all per-stage defaults populated (plan: stateful/synthesis/3, review: one-shot/majority/2, acceptance: one-shot/majority/1 disabled, rectification: one-shot/synthesis/1 disabled, escalation: one-shot/majority/1 disabled)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "When no debaters or resolver.agent is specified, no agent/model fields are stored in debate config — runtime resolves from config.autoMode.defaultAgent and config.models.fast",
+    "refined": "When no debaters or resolver.agent is specified, no agent/model fields are stored in debate config — runtime resolves from config.autoMode.defaultAgent and config.models.fast",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When a stage config has debaters array with fewer than 2 entries, NaxConfigSchema.safeParse() returns validation error containing 'debaters must have at least 2 entries'",
+    "refined": "When a stage config has debaters array with fewer than 2 entries, NaxConfigSchema.safeParse() returns validation error containing 'debaters must have at least 2 entries'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "When debate.stages.plan.resolver.type is set to 'invalid', NaxConfigSchema.safeParse() returns a validation error",
+    "refined": "When debate.stages.plan.resolver.type is set to 'invalid', NaxConfigSchema.safeParse() returns a validation error",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When debate.stages.plan is partially specified (e.g., only resolver), remaining fields fall back to that stage's built-in defaults (not global defaults)",
+    "refined": "When debate.stages.plan is partially specified (e.g., only resolver), remaining fields fall back to that stage's built-in defaults (not global defaults)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When a debaters entry has agent but no model, the debater is valid — model is resolved at runtime",
+    "refined": "When a debaters entry has agent but no model, the debater is valid — model is resolved at runtime",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When nax config show is called, the debate section appears with human-readable descriptions for all fields",
+    "refined": "When nax config show is called, the debate section appears with human-readable descriptions for all fields",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "DebateSession.run() resolves each debater's AgentAdapter via getAgent(debater.agent) and calls adapter.complete() with the debater's model override",
+    "refined": "DebateSession.run() resolves each debater's AgentAdapter via getAgent(debater.agent) and calls adapter.complete() with the debater's model override",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "DebateSession.run() calls all debaters in parallel for the proposal round via Promise.allSettled()",
+    "refined": "DebateSession.run() calls all debaters in parallel for the proposal round via Promise.allSettled()",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When a debater's agent is not installed (getAgent returns null), that debater is skipped and a warning is logged with stage 'debate'",
+    "refined": "When a debater's agent is not installed (getAgent returns null), that debater is skipped and a warning is logged with stage 'debate'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When fewer than 2 debaters succeed in the proposal round, DebateSession.run() falls back to single-agent mode — returns the one successful proposal or calls complete() fresh if all failed",
+    "refined": "When fewer than 2 debaters succeed in the proposal round, DebateSession.run() falls back to single-agent mode — returns the one successful proposal or calls complete() fresh if all failed",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When rounds is 2, the critique round sends each debater all other debaters' proposals in its critique prompt",
+    "refined": "When rounds is 2, the critique round sends each debater all other debaters' proposals in its critique prompt",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When rounds is 1 (propose only), critique round is skipped and proposals go directly to the resolver",
+    "refined": "When rounds is 1 (propose only), critique round is skipped and proposals go directly to the resolver",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "majorityResolver() returns 'passed' when 2 of 3 proposals contain '\"passed\": true' in their JSON output",
+    "refined": "majorityResolver() returns 'passed' when 2 of 3 proposals contain '\"passed\": true' in their JSON output",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "majorityResolver() returns the fail-closed answer (more conservative) on a tie (1 pass, 1 fail, 1 unparseable)",
+    "refined": "majorityResolver() returns the fail-closed answer (more conservative) on a tie (1 pass, 1 fail, 1 unparseable)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "synthesisResolver() calls adapter.complete() once with a synthesis prompt containing all proposals and critiques, returns the output",
+    "refined": "synthesisResolver() calls adapter.complete() once with a synthesis prompt containing all proposals and critiques, returns the output",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "judgeResolver() calls adapter.complete() once with a judge prompt using resolver.agent (or default agent at fast tier if unset)",
+    "refined": "judgeResolver() calls adapter.complete() once with a judge prompt using resolver.agent (or default agent at fast tier if unset)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "DebateResult.totalCostUsd equals the sum of all complete() call costs across all debaters and rounds including resolver",
+    "refined": "DebateResult.totalCostUsd equals the sum of all complete() call costs across all debaters and rounds including resolver",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "DebateResult.proposals contains the debater identity (agent, model) alongside each proposal output",
+    "refined": "DebateResult.proposals contains the debater identity (agent, model) alongside each proposal output",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-20",
+    "original": "When sessionMode is 'stateful', DebateSession.run() creates a SpawnAcpClient per debater and calls client.createSession() with session name containing storyId and debater index",
+    "refined": "When sessionMode is 'stateful', DebateSession.run() creates a SpawnAcpClient per debater and calls client.createSession() with session name containing storyId and debater index",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When sessionMode is 'stateful', critique round does NOT paste all proposals into the prompt — sends only other debaters' proposals (session retains own history)",
+    "refined": "When sessionMode is 'stateful', critique round does NOT paste all proposals into the prompt — sends only other debaters' proposals (session retains own history)",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When sessionMode is 'stateful', all sessions are closed via session.close() in the finally block — even if debate fails mid-round",
+    "refined": "When sessionMode is 'stateful', all sessions are closed via session.close() in the finally block — even if debate fails mid-round",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When sessionMode is 'one-shot', DebateSession.run() uses adapter.complete() and does NOT create persistent sessions",
+    "refined": "When sessionMode is 'one-shot', DebateSession.run() uses adapter.complete() and does NOT create persistent sessions",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When a stateful session fails to create (acpx error), that debater is skipped and debate continues with remaining debaters (minimum 2 required)",
+    "refined": "When a stateful session fails to create (acpx error), that debater is skipped and debate continues with remaining debaters (minimum 2 required)",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When two stages in the same run have different sessionMode values (e.g., plan=stateful, review=one-shot), each uses its own mode independently",
+    "refined": "When two stages in the same run have different sessionMode values (e.g., plan=stateful, review=one-shot), each uses its own mode independently",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When debate.enabled is true and debate.stages.plan.enabled is true, nax plan --auto uses DebateSession.run() instead of single adapter.complete()",
+    "refined": "When debate.enabled is true and debate.stages.plan.enabled is true, nax plan --auto uses DebateSession.run() instead of single adapter.complete()",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "When debate.enabled is false, nax plan --auto calls adapter.complete() exactly once (no behavior change)",
+    "refined": "When debate.enabled is false, nax plan --auto calls adapter.complete() exactly once (no behavior change)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When debate.enabled is true and debate.stages.review.enabled is true, runSemanticReview() uses DebateSession.run() instead of single agent.complete()",
+    "refined": "When debate.enabled is true and debate.stages.review.enabled is true, runSemanticReview() uses DebateSession.run() instead of single agent.complete()",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When review debate uses majority resolver, final ReviewCheckResult.success reflects the majority vote of debater responses",
+    "refined": "When review debate uses majority resolver, final ReviewCheckResult.success reflects the majority vote of debater responses",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When review debate uses majority resolver, ReviewCheckResult.findings contains merged findings deduplicated by AC id from all debaters",
+    "refined": "When review debate uses majority resolver, ReviewCheckResult.findings contains merged findings deduplicated by AC id from all debaters",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When all debaters fail during plan, system falls back to single adapter.complete() and logs warning with stage 'debate' and event 'fallback'",
+    "refined": "When all debaters fail during plan, system falls back to single adapter.complete() and logs warning with stage 'debate' and event 'fallback'",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When debate.stages.rectification.enabled is true, rectification loop runs debate session to diagnose root cause BEFORE building the agent's rectification prompt",
+    "refined": "When debate.stages.rectification.enabled is true, rectification loop runs debate session to diagnose root cause BEFORE building the agent's rectification prompt",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-33",
+    "original": "Diagnosis output is prepended to the rectification prompt as a '## Root Cause Analysis' section",
+    "refined": "Diagnosis output is prepended to the rectification prompt as a '## Root Cause Analysis' section",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When debate.stages.rectification.enabled is false (default), rectification loop is unchanged from today",
+    "refined": "When debate.stages.rectification.enabled is false (default), rectification loop is unchanged from today",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When diagnosis debate fails (all debaters error), rectification prompt proceeds without diagnosis section and logs event 'fallback'",
+    "refined": "When diagnosis debate fails (all debaters error), rectification prompt proceeds without diagnosis section and logs event 'fallback'",
+    "testable": true,
+    "storyId": "US-005"
+  },
+  {
+    "acId": "AC-36",
+    "original": "Debate cost is included in the story's total cost tracking",
+    "refined": "Debate cost is included in the story's total cost tracking",
+    "testable": true,
+    "storyId": "US-005"
+  }
+]

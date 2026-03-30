@@ -19,6 +19,8 @@ import { resolvePermissions } from "../config/permissions";
 import type { ProjectProfile } from "../config/runtime-types";
 import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE, getAcQualityRules } from "../config/test-strategy";
 import { discoverWorkspacePackages } from "../context/generator";
+import { DebateSession } from "../debate";
+import type { DebateSessionOptions } from "../debate";
 import { PidRegistry } from "../execution/pid-registry";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import { initInteractionChain } from "../interaction/init";
@@ -55,6 +57,7 @@ export const _planDeps = {
     onQuestionDetected: (text: string) => Promise<string>;
   } => createCliInteractionBridge(),
   initInteractionChain: (cfg: NaxConfig, headless: boolean) => initInteractionChain(cfg, headless),
+  createDebateSession: (opts: DebateSessionOptions): DebateSession => new DebateSession(opts),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -197,14 +200,42 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       rawResponse = await _planDeps.readFile(outputPath);
     } else {
       // CLI: one-shot complete() — simple and fast, no session overhead
-      rawResponse = await adapter.complete(prompt, {
-        model: autoModel,
-        jsonMode: true,
-        workdir,
-        config,
-        featureName: options.feature,
-        sessionRole: "plan",
-      });
+      const debateEnabled = config?.debate?.enabled && config?.debate?.stages?.plan?.enabled;
+      if (debateEnabled) {
+        // Safe: debateEnabled guard confirms config.debate.stages.plan is defined
+        const planStageConfig = config.debate?.stages.plan as import("../debate").DebateStageConfig;
+        const debateSession = _planDeps.createDebateSession({
+          storyId: options.feature,
+          stage: "plan",
+          stageConfig: planStageConfig,
+        });
+        const debateResult = await debateSession.run(prompt);
+        if (debateResult.outcome !== "failed" && debateResult.output) {
+          rawResponse = debateResult.output;
+        } else {
+          logger?.warn("debate", "All debaters failed — falling back to single agent", {
+            stage: "debate",
+            event: "fallback",
+          });
+          rawResponse = await adapter.complete(prompt, {
+            model: autoModel,
+            jsonMode: true,
+            workdir,
+            config,
+            featureName: options.feature,
+            sessionRole: "plan",
+          });
+        }
+      } else {
+        rawResponse = await adapter.complete(prompt, {
+          model: autoModel,
+          jsonMode: true,
+          workdir,
+          config,
+          featureName: options.feature,
+          sessionRole: "plan",
+        });
+      }
       // CLI adapter returns {"type":"result","result":"..."} envelope — unwrap it
       try {
         const envelope = JSON.parse(rawResponse) as Record<string, unknown>;

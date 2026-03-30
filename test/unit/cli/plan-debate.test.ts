@@ -1,0 +1,389 @@
+/**
+ * Unit tests — planCommand debate integration (US-004)
+ *
+ * AC1: When debate.enabled=true and stages.plan.enabled=true,
+ *      planCommand --auto uses DebateSession.run() instead of adapter.complete()
+ * AC2: When debate.enabled=false, adapter.complete() called exactly once
+ * AC6: When all debaters fail, fallback to adapter.complete() and log warning
+ */
+
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { _planDeps, planCommand } from "../../../src/cli/plan";
+import type { NaxConfig } from "../../../src/config";
+import type { DebateResult } from "../../../src/debate/types";
+import type { PRD } from "../../../src/prd/types";
+import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fixtures
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SAMPLE_SPEC = `# Feature: Debate Integration Test\n## Goal\nTest that debate is wired into plan.\n`;
+
+const SAMPLE_PRD: PRD = {
+  project: "test-project",
+  feature: "debate-plan",
+  branchName: "feat/debate-plan",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  userStories: [
+    {
+      id: "US-001",
+      title: "Debate plan test story",
+      description: "Test story for debate integration",
+      acceptanceCriteria: ["When debate enabled, use DebateSession"],
+      tags: [],
+      dependencies: [],
+      status: "pending",
+      passes: false,
+      escalations: [],
+      attempts: 0,
+      routing: {
+        complexity: "simple",
+        testStrategy: "test-after",
+        reasoning: "simple test",
+      },
+    },
+  ],
+};
+
+const DEBATE_PLAN_ENABLED_CONFIG: NaxConfig = {
+  debate: {
+    enabled: true,
+    agents: 2,
+    stages: {
+      plan: {
+        enabled: true,
+        resolver: { type: "majority-fail-closed" },
+        sessionMode: "one-shot",
+        rounds: 1,
+        debaters: [
+          { agent: "claude" },
+          { agent: "opencode" },
+        ],
+      },
+      review: {
+        enabled: false,
+        resolver: { type: "majority-fail-closed" },
+        sessionMode: "one-shot",
+        rounds: 1,
+      },
+      acceptance: {
+        enabled: false,
+        resolver: { type: "majority-fail-closed" },
+        sessionMode: "one-shot",
+        rounds: 1,
+      },
+      rectification: {
+        enabled: false,
+        resolver: { type: "majority-fail-closed" },
+        sessionMode: "one-shot",
+        rounds: 1,
+      },
+      escalation: {
+        enabled: false,
+        resolver: { type: "majority-fail-closed" },
+        sessionMode: "one-shot",
+        rounds: 1,
+      },
+    },
+  },
+} as NaxConfig;
+
+const DEBATE_PLAN_STAGE_DISABLED_CONFIG: NaxConfig = {
+  debate: {
+    enabled: true,
+    agents: 2,
+    stages: {
+      plan: {
+        enabled: false,
+        resolver: { type: "majority-fail-closed" },
+        sessionMode: "one-shot",
+        rounds: 1,
+      },
+      review: {
+        enabled: false,
+        resolver: { type: "majority-fail-closed" },
+        sessionMode: "one-shot",
+        rounds: 1,
+      },
+      acceptance: {
+        enabled: false,
+        resolver: { type: "majority-fail-closed" },
+        sessionMode: "one-shot",
+        rounds: 1,
+      },
+      rectification: {
+        enabled: false,
+        resolver: { type: "majority-fail-closed" },
+        sessionMode: "one-shot",
+        rounds: 1,
+      },
+      escalation: {
+        enabled: false,
+        resolver: { type: "majority-fail-closed" },
+        sessionMode: "one-shot",
+        rounds: 1,
+      },
+    },
+  },
+} as NaxConfig;
+
+const DEBATE_PASSED_RESULT: DebateResult = {
+  storyId: "debate-plan",
+  stage: "plan",
+  outcome: "passed",
+  output: JSON.stringify(SAMPLE_PRD),
+  rounds: 1,
+  debaters: ["claude", "opencode"],
+  resolverType: "majority-fail-closed",
+  proposals: [
+    { debater: { agent: "claude" }, output: JSON.stringify(SAMPLE_PRD) },
+    { debater: { agent: "opencode" }, output: JSON.stringify(SAMPLE_PRD) },
+  ],
+  totalCostUsd: 0.001,
+};
+
+const DEBATE_FAILED_RESULT: DebateResult = {
+  storyId: "debate-plan",
+  stage: "plan",
+  outcome: "failed",
+  output: "",
+  rounds: 0,
+  debaters: [],
+  resolverType: "majority-fail-closed",
+  proposals: [],
+  totalCostUsd: 0,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Save originals for restoration in afterEach
+// ─────────────────────────────────────────────────────────────────────────────
+
+const origReadFile = _planDeps.readFile;
+const origWriteFile = _planDeps.writeFile;
+const origScanCodebase = _planDeps.scanCodebase;
+const origGetAgent = _planDeps.getAgent;
+const origReadPackageJson = _planDeps.readPackageJson;
+const origSpawnSync = _planDeps.spawnSync;
+const origMkdirp = _planDeps.mkdirp;
+const origExistsSync = _planDeps.existsSync;
+const origDiscoverWorkspacePackages = _planDeps.discoverWorkspacePackages;
+const origReadPackageJsonAt = _planDeps.readPackageJsonAt;
+const origCreateDebateSession = _planDeps.createDebateSession;
+const origInitInteractionChain = _planDeps.initInteractionChain;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeFakeAdapter(prd: PRD = SAMPLE_PRD) {
+  return { complete: mock(async () => JSON.stringify(prd)) };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("planCommand — debate integration (US-004)", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = makeTempDir("nax-plan-debate-");
+    await mkdir(join(tmpDir, ".nax"), { recursive: true });
+
+    _planDeps.readFile = mock(async () => SAMPLE_SPEC);
+    _planDeps.writeFile = mock(async () => {});
+    _planDeps.scanCodebase = mock(async () => ({
+      fileTree: "└── src/",
+      dependencies: {},
+      devDependencies: {},
+      testPatterns: [],
+    }));
+    _planDeps.readPackageJson = mock(async () => ({ name: "test-project" }));
+    _planDeps.readPackageJsonAt = mock(async () => null);
+    _planDeps.spawnSync = mock(() => ({ stdout: Buffer.from(""), exitCode: 1 }));
+    _planDeps.mkdirp = mock(async () => {});
+    _planDeps.discoverWorkspacePackages = mock(async () => []);
+    _planDeps.existsSync = mock(() => false);
+    _planDeps.initInteractionChain = mock(async () => null);
+    _planDeps.getAgent = mock(() => makeFakeAdapter() as never);
+    _planDeps.createDebateSession = origCreateDebateSession;
+  });
+
+  afterEach(() => {
+    mock.restore();
+    _planDeps.readFile = origReadFile;
+    _planDeps.writeFile = origWriteFile;
+    _planDeps.scanCodebase = origScanCodebase;
+    _planDeps.getAgent = origGetAgent;
+    _planDeps.readPackageJson = origReadPackageJson;
+    _planDeps.spawnSync = origSpawnSync;
+    _planDeps.mkdirp = origMkdirp;
+    _planDeps.existsSync = origExistsSync;
+    _planDeps.discoverWorkspacePackages = origDiscoverWorkspacePackages;
+    _planDeps.readPackageJsonAt = origReadPackageJsonAt;
+    _planDeps.createDebateSession = origCreateDebateSession;
+    _planDeps.initInteractionChain = origInitInteractionChain;
+    cleanupTempDir(tmpDir);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // AC1: debate.enabled=true and stages.plan.enabled=true → DebateSession used
+  // ─────────────────────────────────────────────────────────────────────────
+
+  test("AC1: createDebateSession is called when debate.enabled=true and stages.plan.enabled=true", async () => {
+    const runMock = mock(async () => DEBATE_PASSED_RESULT);
+    _planDeps.createDebateSession = mock(() => ({ run: runMock }));
+
+    await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
+      from: "/spec.md",
+      feature: "debate-plan",
+      auto: true,
+    });
+
+    expect(_planDeps.createDebateSession).toHaveBeenCalled();
+  });
+
+  test("AC1: DebateSession.run() is called with the planning prompt", async () => {
+    const runMock = mock(async () => DEBATE_PASSED_RESULT);
+    _planDeps.createDebateSession = mock(() => ({ run: runMock }));
+
+    await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
+      from: "/spec.md",
+      feature: "debate-plan",
+      auto: true,
+    });
+
+    expect(runMock).toHaveBeenCalledTimes(1);
+    const [promptArg] = runMock.mock.calls[0];
+    expect(typeof promptArg).toBe("string");
+    expect(promptArg.length).toBeGreaterThan(100);
+  });
+
+  test("AC1: createDebateSession receives the plan stage config", async () => {
+    const runMock = mock(async () => DEBATE_PASSED_RESULT);
+    const createMock = mock(() => ({ run: runMock }));
+    _planDeps.createDebateSession = createMock;
+
+    await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
+      from: "/spec.md",
+      feature: "debate-plan",
+      auto: true,
+    });
+
+    const [opts] = createMock.mock.calls[0];
+    expect(opts.stage).toBe("plan");
+    expect(opts.stageConfig.enabled).toBe(true);
+  });
+
+  test("AC1: adapter.complete() is NOT called when debate is enabled and succeeds", async () => {
+    const adapterComplete = mock(async () => JSON.stringify(SAMPLE_PRD));
+    _planDeps.getAgent = mock(() => ({ complete: adapterComplete }) as never);
+
+    _planDeps.createDebateSession = mock(() => ({
+      run: mock(async () => DEBATE_PASSED_RESULT),
+    }));
+
+    await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
+      from: "/spec.md",
+      feature: "debate-plan",
+      auto: true,
+    });
+
+    expect(adapterComplete).not.toHaveBeenCalled();
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // AC2: debate disabled → adapter.complete() called exactly once, no debate
+  // ─────────────────────────────────────────────────────────────────────────
+
+  test("AC2: adapter.complete() called exactly once when debate.enabled=false", async () => {
+    const adapterComplete = mock(async () => JSON.stringify(SAMPLE_PRD));
+    _planDeps.getAgent = mock(() => ({ complete: adapterComplete }) as never);
+
+    const createDebateMock = mock(() => ({ run: mock(async () => DEBATE_PASSED_RESULT) }));
+    _planDeps.createDebateSession = createDebateMock;
+
+    await planCommand(
+      tmpDir,
+      { debate: { enabled: false, agents: 0, stages: {} as never } } as NaxConfig,
+      { from: "/spec.md", feature: "debate-plan", auto: true },
+    );
+
+    expect(adapterComplete).toHaveBeenCalledTimes(1);
+    expect(createDebateMock).not.toHaveBeenCalled();
+  });
+
+  test("AC2: adapter.complete() called exactly once when debate config is absent", async () => {
+    const adapterComplete = mock(async () => JSON.stringify(SAMPLE_PRD));
+    _planDeps.getAgent = mock(() => ({ complete: adapterComplete }) as never);
+
+    const createDebateMock = mock(() => ({ run: mock(async () => DEBATE_PASSED_RESULT) }));
+    _planDeps.createDebateSession = createDebateMock;
+
+    await planCommand(tmpDir, {} as NaxConfig, {
+      from: "/spec.md",
+      feature: "debate-plan",
+      auto: true,
+    });
+
+    expect(adapterComplete).toHaveBeenCalledTimes(1);
+    expect(createDebateMock).not.toHaveBeenCalled();
+  });
+
+  test("AC2: adapter.complete() called when debate.stages.plan.enabled=false", async () => {
+    const adapterComplete = mock(async () => JSON.stringify(SAMPLE_PRD));
+    _planDeps.getAgent = mock(() => ({ complete: adapterComplete }) as never);
+
+    const createDebateMock = mock(() => ({ run: mock(async () => DEBATE_PASSED_RESULT) }));
+    _planDeps.createDebateSession = createDebateMock;
+
+    await planCommand(tmpDir, DEBATE_PLAN_STAGE_DISABLED_CONFIG, {
+      from: "/spec.md",
+      feature: "debate-plan",
+      auto: true,
+    });
+
+    expect(adapterComplete).toHaveBeenCalledTimes(1);
+    expect(createDebateMock).not.toHaveBeenCalled();
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // AC6: all debaters fail → fallback to adapter.complete() and log warning
+  // ─────────────────────────────────────────────────────────────────────────
+
+  test("AC6: falls back to adapter.complete() when DebateSession returns outcome=failed", async () => {
+    const adapterComplete = mock(async () => JSON.stringify(SAMPLE_PRD));
+    _planDeps.getAgent = mock(() => ({ complete: adapterComplete }) as never);
+
+    _planDeps.createDebateSession = mock(() => ({
+      run: mock(async () => DEBATE_FAILED_RESULT),
+    }));
+
+    await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
+      from: "/spec.md",
+      feature: "debate-plan",
+      auto: true,
+    });
+
+    expect(adapterComplete).toHaveBeenCalledTimes(1);
+  });
+
+  test("AC6: planCommand succeeds (does not throw) when debate fails and fallback is used", async () => {
+    _planDeps.getAgent = mock(() => makeFakeAdapter() as never);
+    _planDeps.createDebateSession = mock(() => ({
+      run: mock(async () => DEBATE_FAILED_RESULT),
+    }));
+
+    await expect(
+      planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
+        from: "/spec.md",
+        feature: "debate-plan",
+        auto: true,
+      }),
+    ).resolves.toBeDefined();
+  });
+});

@@ -461,6 +461,17 @@ export interface ProjectProfile {
   lintTool?: string;
 }
 
+// Re-exported from debate/types.ts to maintain single source of truth
+export type {
+  DebateConfig,
+  DebateStageConfig,
+  ResolverConfig,
+  Debater,
+  DebateResult,
+  ResolverType,
+  SessionMode,
+} from "../debate/types";
+
 /** Full nax configuration */
 export interface NaxConfig {
   /** Schema version */
@@ -511,6 +522,8 @@ export interface NaxConfig {
   generate?: GenerateConfig;
   /** Project profile — language and tooling metadata (US-001) */
   project?: ProjectProfile;
+  /** Multi-agent debate settings */
+  debate?: import("../debate/types").DebateConfig;
 }
 
 /** Generate command configuration */

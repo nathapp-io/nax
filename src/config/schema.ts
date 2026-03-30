@@ -7,6 +7,17 @@
  * - defaults.ts: DEFAULT_CONFIG constant
  */
 
+// Debate types
+export type {
+  DebateConfig,
+  DebateStageConfig,
+  ResolverConfig,
+  Debater,
+  DebateResult,
+  ResolverType,
+  SessionMode,
+} from "../debate/types";
+
 // Types and resolveModel
 export type {
   Complexity,

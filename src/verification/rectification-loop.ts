@@ -8,15 +8,19 @@
  */
 
 import { getAgent as _getAgent } from "../agents";
+import { estimateCostByDuration } from "../agents/cost";
+import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolveModel } from "../config";
 import { resolvePermissions } from "../config/permissions";
+import type { DebateStageConfig, Debater } from "../debate/types";
 import { escalateTier as _escalateTier } from "../execution/escalation/escalation";
 import { parseBunTestOutput } from "../execution/test-output-parser";
 import { getSafeLogger } from "../logger";
 import type { AgentGetFn } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
+import { formatFailureSummary } from "./parser";
 import {
   type RectificationState,
   createEscalatedRectificationPrompt,
@@ -39,13 +43,64 @@ export interface RectificationLoopOptions {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Debate diagnosis helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function _defaultRunDebate(
+  storyId: string,
+  stageConfig: DebateStageConfig,
+  prompt: string,
+): Promise<{ output: string | null; totalCostUsd: number }> {
+  const logger = getSafeLogger();
+  const debaters: Debater[] = stageConfig.debaters ?? [];
+  const resolved: Array<{ debater: Debater; adapter: AgentAdapter }> = [];
+
+  for (const debater of debaters) {
+    const adapter = _rectificationDeps.getAgent(debater.agent);
+    if (adapter) {
+      resolved.push({ debater, adapter });
+    }
+  }
+
+  if (resolved.length === 0) {
+    return { output: null, totalCostUsd: 0 };
+  }
+
+  const startMs = Date.now();
+  const proposalSettled = await Promise.allSettled(
+    resolved.map(({ debater, adapter }) =>
+      adapter.complete(prompt, { model: debater.model }).then((out: string) => out),
+    ),
+  );
+  const durationMs = Date.now() - startMs;
+
+  const successful = proposalSettled
+    .filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
+    .map((r) => r.value);
+
+  if (successful.length === 0) {
+    return { output: null, totalCostUsd: 0 };
+  }
+
+  const successCount = successful.length;
+  const costPerDebater = estimateCostByDuration("balanced", durationMs / successCount);
+  const totalCostUsd = costPerDebater.cost * successCount;
+
+  logger?.debug("rectification", "debate diagnosis complete", { storyId, successCount, totalCostUsd });
+
+  const output = successful.join("\n\n");
+  return { output, totalCostUsd };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Injectable dependencies
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const _rectificationDeps = {
-  getAgent: _getAgent as (name: string) => import("../agents/types").AgentAdapter | undefined,
+  getAgent: _getAgent as (name: string) => AgentAdapter | undefined,
   runVerification: _fullSuite as typeof _fullSuite,
   escalateTier: _escalateTier,
+  runDebate: _defaultRunDebate as typeof _defaultRunDebate,
 };
 
 /** Run the rectification retry loop. Returns true if all failures were fixed. */
@@ -78,12 +133,42 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       currentFailures: rectificationState.currentFailures,
     });
 
+    // Debate-based root cause diagnosis (when enabled)
+    let diagnosisPrefix: string | null = null;
+    const debateStageConfig = config.debate?.stages?.rectification;
+    if (debateStageConfig?.enabled) {
+      const failureSummary = formatFailureSummary(testSummary.failures);
+      const diagnosisPrompt = `Analyze the following test failures and identify the root cause:\n\n${failureSummary}`;
+      try {
+        const debateResult = await _rectificationDeps.runDebate(story.id, debateStageConfig, diagnosisPrompt);
+        if (debateResult.totalCostUsd > 0 && story.routing) {
+          story.routing.estimatedCost = (story.routing.estimatedCost ?? 0) + debateResult.totalCostUsd;
+        }
+        if (debateResult.output !== null) {
+          diagnosisPrefix = `## Root Cause Analysis\n\n${debateResult.output}`;
+        } else {
+          logger?.info("rectification", "debate diagnosis fallback — all debaters failed", {
+            storyId: story.id,
+            attempt: rectificationState.attempt,
+            event: "fallback",
+          });
+        }
+      } catch (err) {
+        logger?.info("rectification", "debate diagnosis fallback — debate threw error", {
+          storyId: story.id,
+          attempt: rectificationState.attempt,
+          event: "fallback",
+        });
+      }
+    }
+
     let rectificationPrompt = createRectificationPrompt(
       testSummary.failures,
       story,
       rectificationConfig,
       rectificationState.attempt,
     );
+    if (diagnosisPrefix) rectificationPrompt = `${diagnosisPrefix}\n\n${rectificationPrompt}`;
     if (promptPrefix) rectificationPrompt = `${promptPrefix}\n\n${rectificationPrompt}`;
 
     const agent = (agentGetFn ?? _rectificationDeps.getAgent)(config.autoMode.defaultAgent);
