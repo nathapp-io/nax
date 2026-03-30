@@ -130,6 +130,9 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       const diagnosisPrompt = `Analyze the following test failures and identify the root cause:\n\n${failureSummary}`;
       try {
         const debateResult = await _rectificationDeps.runDebate(story.id, debateStageConfig, diagnosisPrompt);
+        if (debateResult.totalCostUsd > 0 && story.routing) {
+          story.routing.estimatedCost = (story.routing.estimatedCost ?? 0) + debateResult.totalCostUsd;
+        }
         if (debateResult.output !== null) {
           diagnosisPrefix = `## Root Cause Analysis\n\n${debateResult.output}`;
         } else {
