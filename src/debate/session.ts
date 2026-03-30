@@ -36,9 +36,16 @@ interface SuccessfulProposal {
   debater: Debater;
   adapter: AgentAdapter;
   output: string;
+  /** Cost for this complete() call in USD. Always 0 until complete() exposes cost metadata. */
+  cost: number;
 }
 
-function buildFailedResult(storyId: string, stage: string, stageConfig: DebateStageConfig): DebateResult {
+function buildFailedResult(
+  storyId: string,
+  stage: string,
+  stageConfig: DebateStageConfig,
+  totalCostUsd = 0,
+): DebateResult {
   return {
     storyId,
     stage,
@@ -47,7 +54,7 @@ function buildFailedResult(storyId: string, stage: string, stageConfig: DebateSt
     debaters: [],
     resolverType: stageConfig.resolver.type,
     proposals: [],
-    totalCostUsd: 0,
+    totalCostUsd,
   };
 }
 
@@ -66,6 +73,7 @@ export class DebateSession {
     const logger = _debateSessionDeps.getSafeLogger();
     const config = this.stageConfig;
     const debaters = config.debaters ?? [];
+    let totalCostUsd = 0;
 
     // Step 1: Resolve adapters — skip unavailable agents
     const resolved: ResolvedDebater[] = [];
@@ -81,13 +89,23 @@ export class DebateSession {
     // Step 2: Proposal round — parallel via Promise.allSettled
     const proposalSettled = await Promise.allSettled(
       resolved.map(({ debater, adapter }) =>
-        adapter.complete(prompt, { model: debater.model }).then((output) => ({ debater, adapter, output })),
+        adapter
+          .complete(prompt, { model: debater.model })
+          // complete() returns string only — cost is 0 until the interface exposes cost metadata
+          .then((output) => ({ debater, adapter, output, cost: 0 })),
       ),
     );
 
     const successful: SuccessfulProposal[] = proposalSettled
       .filter((r): r is PromiseFulfilledResult<SuccessfulProposal> => r.status === "fulfilled")
       .map((r) => r.value);
+
+    // Accumulate proposal round costs
+    for (const r of proposalSettled) {
+      if (r.status === "fulfilled") {
+        totalCostUsd += r.value.cost;
+      }
+    }
 
     // Step 3: Fewer than 2 succeeded — single-agent fallback
     if (successful.length < 2) {
@@ -101,10 +119,32 @@ export class DebateSession {
           debaters: [solo.debater.agent],
           resolverType: config.resolver.type,
           proposals: [{ debater: solo.debater, output: solo.output }],
-          totalCostUsd: 0,
+          totalCostUsd,
         };
       }
-      return buildFailedResult(this.storyId, this.stage, config);
+
+      // All debaters failed — attempt fresh complete() on first resolved adapter (AC4)
+      if (resolved.length > 0) {
+        const { adapter: fallbackAdapter, debater: fallbackDebater } = resolved[0];
+        try {
+          const fallbackOutput = await fallbackAdapter.complete(prompt, { model: fallbackDebater.model });
+          // cost from fresh fallback call — 0 until complete() exposes cost metadata
+          return {
+            storyId: this.storyId,
+            stage: this.stage,
+            outcome: "passed",
+            rounds: 1,
+            debaters: [fallbackDebater.agent],
+            resolverType: config.resolver.type,
+            proposals: [{ debater: fallbackDebater, output: fallbackOutput }],
+            totalCostUsd,
+          };
+        } catch {
+          // Fallback also failed — fall through to buildFailedResult
+        }
+      }
+
+      return buildFailedResult(this.storyId, this.stage, config, totalCostUsd);
     }
 
     // Step 4: Critique rounds (when rounds > 1)
@@ -118,6 +158,12 @@ export class DebateSession {
           }),
         ),
       );
+      // Accumulate critique round costs (0 until complete() exposes cost metadata)
+      for (const r of critiqueSettled) {
+        if (r.status === "fulfilled") {
+          totalCostUsd += 0;
+        }
+      }
       critiqueOutputs = critiqueSettled
         .filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
         .map((r) => r.value);
@@ -126,6 +172,8 @@ export class DebateSession {
     // Step 5: Resolve outcome
     const proposalOutputs = successful.map((p) => p.output);
     const outcome = await this.resolve(proposalOutputs, critiqueOutputs, successful);
+    // Accumulate resolver cost (0 until complete() exposes cost metadata)
+    totalCostUsd += 0;
 
     const proposals: Proposal[] = successful.map((p) => ({
       debater: p.debater,
@@ -140,7 +188,7 @@ export class DebateSession {
       debaters: successful.map((p) => p.debater.agent),
       resolverType: config.resolver.type,
       proposals,
-      totalCostUsd: 0,
+      totalCostUsd,
     };
   }
 
