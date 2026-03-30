@@ -42,5 +42,9 @@
   "US-005:implementer": {
     "sessionName": "nax-0c2a22d3-multi-agent-debate-us-005-implementer",
     "agentName": "claude"
+  },
+  "US-005:verifier": {
+    "sessionName": "nax-0c2a22d3-multi-agent-debate-us-005-verifier",
+    "agentName": "claude"
   }
 }
