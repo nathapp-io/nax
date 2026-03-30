@@ -5,6 +5,7 @@
  */
 
 import { z } from "zod";
+import { DEFAULT_CONFIG } from "./defaults";
 
 /** Zod schema for runtime validation */
 const TokenPricingSchema = z.object({
@@ -506,7 +507,9 @@ export const NaxConfigSchema = z
     decompose: DecomposeConfigSchema.optional(),
     generate: GenerateConfigSchema.optional(),
     project: ProjectProfileSchema.optional(),
-    debate: DebateConfigSchema,
+    debate: DebateConfigSchema.optional().default(
+      () => DEFAULT_CONFIG.debate as NonNullable<typeof DEFAULT_CONFIG.debate>,
+    ),
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",
