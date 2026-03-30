@@ -91,7 +91,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   if (dryRun) {
     const modelDef = resolveModelForAgent(
       config.models,
-      config.autoMode.defaultAgent,
+      story.routing?.agent ?? config.autoMode.defaultAgent,
       modelTier,
       config.autoMode.defaultAgent,
     );

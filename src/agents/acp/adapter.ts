@@ -749,19 +749,17 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async complete(prompt: string, _options?: CompleteOptions): Promise<string> {
-    // Resolve model: explicit option > config.models[tier] > "default"
+    // Resolve model: explicit option > resolveModelForAgent(tier) > "default"
     let model = _options?.model;
     if (!model && _options?.modelTier && _options?.config?.models) {
       const tier = _options.modelTier;
-      const { resolveModel } = await import("../../config/schema");
-      const models = _options.config.models as Record<string, unknown>;
-      const entry = models[tier] ?? models.balanced;
-      if (entry) {
-        try {
-          model = resolveModel(entry as Parameters<typeof resolveModel>[0]).model;
-        } catch {
-          // resolveModel can throw on malformed entries — fall through to "default"
-        }
+      const config = _options.config;
+      const { resolveModelForAgent } = await import("../../config/schema");
+      try {
+        const defaultAgent = config.autoMode?.defaultAgent ?? "claude";
+        model = resolveModelForAgent(config.models, defaultAgent, tier, defaultAgent).model;
+      } catch {
+        // resolveModelForAgent can throw on malformed entries — fall through to "default"
       }
     }
     model ??= "default";
@@ -867,19 +865,17 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {
-    // Resolve model: explicit > config.models[tier] > config.models.balanced > fallback
+    // Resolve model: explicit > resolveModelForAgent(tier) > fallback
     let modelDef = options.modelDef;
     if (!modelDef && options.config?.models) {
       const tier = options.modelTier ?? "balanced";
-      const { resolveModel } = await import("../../config/schema");
-      const models = options.config.models as Record<string, unknown>;
-      const entry = models[tier] ?? models.balanced;
-      if (entry) {
-        try {
-          modelDef = resolveModel(entry as Parameters<typeof resolveModel>[0]);
-        } catch {
-          // resolveModel can throw on malformed entries
-        }
+      const config = options.config;
+      const { resolveModelForAgent } = await import("../../config/schema");
+      try {
+        const defaultAgent = config.autoMode?.defaultAgent ?? "claude";
+        modelDef = resolveModelForAgent(config.models ?? {}, defaultAgent, tier, defaultAgent);
+      } catch {
+        // resolveModelForAgent can throw on malformed entries
       }
     }
     modelDef ??= { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };

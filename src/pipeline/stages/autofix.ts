@@ -241,7 +241,7 @@ async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
     const modelTier = ctx.story.routing?.modelTier ?? ctx.config.autoMode.escalation.tierOrder[0]?.tier ?? "balanced";
     const modelDef = resolveModelForAgent(
       ctx.config.models,
-      ctx.config.autoMode.defaultAgent,
+      ctx.routing.agent ?? ctx.config.autoMode.defaultAgent,
       modelTier,
       ctx.config.autoMode.defaultAgent,
     );

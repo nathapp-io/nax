@@ -177,7 +177,7 @@ export async function runTddSession(
     modelTier,
     modelDef: resolveModelForAgent(
       config.models,
-      config.autoMode.defaultAgent,
+      story.routing?.agent ?? config.autoMode.defaultAgent,
       modelTier,
       config.autoMode.defaultAgent,
     ),

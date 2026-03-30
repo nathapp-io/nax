@@ -248,7 +248,7 @@ export const executionStage: PipelineStage = {
       modelTier: ctx.routing.modelTier,
       modelDef: resolveModelForAgent(
         ctx.config.models,
-        ctx.config.autoMode.defaultAgent,
+        ctx.routing.agent ?? ctx.config.autoMode.defaultAgent,
         ctx.routing.modelTier,
         ctx.config.autoMode.defaultAgent,
       ),

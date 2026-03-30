@@ -184,7 +184,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       config.autoMode.complexityRouting?.[complexity] || config.autoMode.escalation.tierOrder[0]?.tier || "balanced";
     const modelDef = resolveModelForAgent(
       config.models,
-      config.autoMode.defaultAgent,
+      story.routing?.agent ?? config.autoMode.defaultAgent,
       modelTier,
       config.autoMode.defaultAgent,
     );
@@ -303,7 +303,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
 
       const escalatedModelDef = resolveModelForAgent(
         config.models,
-        config.autoMode.defaultAgent,
+        story.routing?.agent ?? config.autoMode.defaultAgent,
         escalatedTier,
         config.autoMode.defaultAgent,
       );

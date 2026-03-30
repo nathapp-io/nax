@@ -52,12 +52,11 @@ async function runDecompose(
   const decomposeTier = naxDecompose?.model ?? "balanced";
   let decomposeModel: string | undefined;
   try {
-    const { resolveModel } = await import("../../config/schema");
-    const models = config.models as Record<string, unknown>;
-    const entry = models[decomposeTier] ?? models.balanced;
-    if (entry) decomposeModel = resolveModel(entry as Parameters<typeof resolveModel>[0]).model;
+    const { resolveModelForAgent } = await import("../../config/schema");
+    const defaultAgent = config.autoMode?.defaultAgent ?? "claude";
+    decomposeModel = resolveModelForAgent(config.models, defaultAgent, decomposeTier, defaultAgent).model;
   } catch {
-    // resolveModel can throw on malformed entries — fall through to let complete() handle it
+    // resolveModelForAgent can throw on malformed entries — fall through to let complete() handle it
   }
 
   const storySessionName = `nax-decompose-${story.id.toLowerCase()}`;
@@ -102,7 +101,7 @@ export const routingStage: PipelineStage = {
     const isEscalated = previousTier !== undefined && (TIER_RANK[previousTier] ?? 0) > (TIER_RANK[derivedTier] ?? 0);
     const modelTier = isEscalated ? previousTier : derivedTier;
 
-    const routing = { ...decision, modelTier };
+    const routing = { ...decision, modelTier, agent: ctx.story.routing?.agent };
 
     // Write routing back to story (for escalation tracking)
     ctx.story.routing = {

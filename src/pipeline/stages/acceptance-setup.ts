@@ -278,7 +278,7 @@ export const acceptanceSetupStage: PipelineStage = {
           modelTier: ctx.config.acceptance.model ?? "fast",
           modelDef: resolveModelForAgent(
             ctx.config.models,
-            ctx.config.autoMode.defaultAgent,
+            ctx.routing.agent ?? ctx.config.autoMode.defaultAgent,
             ctx.config.acceptance.model ?? "fast",
             ctx.config.autoMode.defaultAgent,
           ),

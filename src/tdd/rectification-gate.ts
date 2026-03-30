@@ -180,7 +180,7 @@ async function runRectificationLoop(
       modelTier: implementerTier,
       modelDef: resolveModelForAgent(
         config.models,
-        config.autoMode.defaultAgent,
+        story.routing?.agent ?? config.autoMode.defaultAgent,
         implementerTier,
         config.autoMode.defaultAgent,
       ),
