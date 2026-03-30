@@ -168,6 +168,11 @@ export async function executeParallel(
 
         // #93: Resolve per-package effective config so testScoped/test overrides apply (same as iteration-runner PKG-003)
         const rootConfigPath = join(projectRoot, ".nax", "config.json");
+        if (!story.workdir) {
+          logger?.debug("parallel", "No story.workdir — skipping per-package config, using root config", {
+            storyId: story.id,
+          });
+        }
         const effectiveConfig = story.workdir ? await loadConfigForWorkdir(rootConfigPath, story.workdir) : config;
         storyEffectiveConfigs.set(story.id, effectiveConfig);
       } catch (error) {

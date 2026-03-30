@@ -158,10 +158,12 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
  * @param packageDir - Package directory relative to repo root (e.g. "packages/api")
  */
 export async function loadConfigForWorkdir(rootConfigPath: string, packageDir?: string): Promise<NaxConfig> {
+  const logger = getLogger();
   const rootNaxDir = dirname(rootConfigPath);
   const rootConfig = await loadConfig(rootNaxDir);
 
   if (!packageDir) {
+    logger.debug("config", "No packageDir — using root config");
     return rootConfig;
   }
 
@@ -171,8 +173,13 @@ export async function loadConfigForWorkdir(rootConfigPath: string, packageDir?: 
   const packageOverride = await loadJsonFile<Partial<NaxConfig>>(packageConfigPath, "config");
 
   if (!packageOverride) {
+    logger.debug("config", "Per-package config not found — falling back to root config", {
+      packageConfigPath,
+      packageDir,
+    });
     return rootConfig;
   }
 
+  logger.debug("config", "Per-package config loaded", { packageConfigPath, packageDir });
   return mergePackageConfig(rootConfig, packageOverride);
 }

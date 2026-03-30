@@ -12,6 +12,7 @@
 
 import path from "node:path";
 import type { NaxConfig } from "../config";
+import { loadConfigForWorkdir } from "../config/loader";
 import type { LoadedHooksConfig } from "../hooks";
 import { getSafeLogger } from "../logger";
 import type { PipelineEventEmitter } from "../pipeline/events";
@@ -76,6 +77,7 @@ export const _parallelBatchDeps = {
     _worktreePaths: Map<string, string>,
     _maxConcurrency: number,
     _eventEmitter?: PipelineEventEmitter,
+    _storyEffectiveConfigs?: Map<string, NaxConfig>,
   ): Promise<import("./parallel-worker").ParallelBatchResult> => {
     const { executeParallelBatch } = await import("./parallel-worker");
     return executeParallelBatch(
@@ -86,6 +88,7 @@ export const _parallelBatchDeps = {
       _worktreePaths,
       _maxConcurrency,
       _eventEmitter,
+      _storyEffectiveConfigs,
     );
   },
 
@@ -132,6 +135,18 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
     worktreePaths.set(story.id, path.join(workdir, ".nax-wt", story.id));
   }
 
+  // PKG-003 (parallel): Resolve per-story effective configs so per-package quality/review
+  // command overrides apply in parallel mode (same as iteration-runner does for sequential).
+  // Without this, all parallel stories use the root config regardless of story.workdir.
+  const rootConfigPath = path.join(workdir, ".nax", "config.json");
+  const storyEffectiveConfigs = new Map<string, NaxConfig>();
+  for (const story of stories) {
+    if (story.workdir) {
+      const effectiveConfig = await loadConfigForWorkdir(rootConfigPath, story.workdir);
+      storyEffectiveConfigs.set(story.id, effectiveConfig);
+    }
+  }
+
   // 2. Execute all stories in parallel
   const workerResult = await _parallelBatchDeps.executeParallelBatch(
     stories,
@@ -141,6 +156,7 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
     worktreePaths,
     maxConcurrency,
     eventEmitter,
+    storyEffectiveConfigs.size > 0 ? storyEffectiveConfigs : undefined,
   );
   // Batch execution complete — record end time for stories resolved in the batch
   const batchEndMs = Date.now();
