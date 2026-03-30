@@ -3,7 +3,7 @@
   "feature": "multi-agent-debate",
   "branchName": "feat/multi-agent-debate",
   "createdAt": "2026-03-30T08:46:00.000Z",
-  "updatedAt": "2026-03-30T08:46:00.000Z",
+  "updatedAt": "2026-03-30T08:58:11.379Z",
   "analysis": "This feature adds a debate session primitive to nax. The debate system wraps existing adapter.complete() calls with multi-agent deliberation — spawning 2-3 agents (potentially different agents via ACP) to propose, critique, and resolve judgment tasks. Key integration points: nax plan (src/cli/plan.ts), semantic review (src/review/semantic.ts), and rectification loop (src/verification/rectification-loop.ts). The debate module is self-contained in src/debate/ and uses the existing AgentAdapter.complete() interface. Per-stage defaults: plan uses stateful sessions + synthesis resolver (3 rounds), review uses one-shot + majority resolver (2 rounds). Agent/model defaults inherit from config.autoMode.defaultAgent + config.models.fast.",
   "userStories": [
     {
@@ -19,7 +19,11 @@
         "When a debaters entry has agent but no model, the debater is valid — model is resolved at runtime",
         "When nax config show is called, the debate section appears with human-readable descriptions for all fields"
       ],
-      "tags": ["types", "config", "schema"],
+      "tags": [
+        "types",
+        "config",
+        "schema"
+      ],
       "dependencies": [],
       "status": "pending",
       "passes": false,
@@ -31,7 +35,8 @@
         "complexity": "medium",
         "testStrategy": "tdd-simple",
         "reasoning": "Config schema + types, follows existing patterns, medium due to nested Zod schema complexity",
-        "modelTier": "balanced"
+        "modelTier": "balanced",
+        "initialComplexity": "medium"
       },
       "contextFiles": [
         "src/config/schema.ts",
@@ -39,7 +44,9 @@
         "src/config/defaults.ts",
         "src/config/index.ts",
         "src/cli/config-descriptions.ts"
-      ]
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "3581340f0a417ab4b18b096583dd73d414e41fa0"
     },
     {
       "id": "US-002",
@@ -59,8 +66,14 @@
         "DebateResult.totalCostUsd equals the sum of all complete() call costs across all debaters and rounds including resolver",
         "DebateResult.proposals contains the debater identity (agent, model) alongside each proposal output"
       ],
-      "tags": ["debate", "core", "execution"],
-      "dependencies": ["US-001"],
+      "tags": [
+        "debate",
+        "core",
+        "execution"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
       "status": "pending",
       "passes": false,
       "attempts": 0,
@@ -78,7 +91,8 @@
         "src/agents/acp/adapter.ts",
         "src/agents/registry.ts",
         "src/review/semantic.ts"
-      ]
+      ],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -92,8 +106,14 @@
         "When a stateful session fails to create (acpx error), that debater is skipped and debate continues with remaining debaters (minimum 2 required)",
         "When two stages in the same run have different sessionMode values (e.g., plan=stateful, review=one-shot), each uses its own mode independently"
       ],
-      "tags": ["debate", "acp", "sessions"],
-      "dependencies": ["US-002"],
+      "tags": [
+        "debate",
+        "acp",
+        "sessions"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
       "status": "pending",
       "passes": false,
       "attempts": 0,
@@ -110,7 +130,8 @@
         "src/agents/acp/spawn-client.ts",
         "src/agents/acp/adapter.ts",
         "src/debate/types.ts"
-      ]
+      ],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -124,8 +145,15 @@
         "When review debate uses majority resolver, ReviewCheckResult.findings contains merged findings deduplicated by AC id from all debaters",
         "When all debaters fail during plan, system falls back to single adapter.complete() and logs warning with stage 'debate' and event 'fallback'"
       ],
-      "tags": ["debate", "integration", "plan", "review"],
-      "dependencies": ["US-002"],
+      "tags": [
+        "debate",
+        "integration",
+        "plan",
+        "review"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
       "status": "pending",
       "passes": false,
       "attempts": 0,
@@ -143,7 +171,8 @@
         "src/review/semantic.ts",
         "src/review/types.ts",
         "src/pipeline/stages/review.ts"
-      ]
+      ],
+      "storyPoints": 1
     },
     {
       "id": "US-005",
@@ -156,8 +185,14 @@
         "When diagnosis debate fails (all debaters error), rectification prompt proceeds without diagnosis section and logs event 'fallback'",
         "Debate cost is included in the story's total cost tracking"
       ],
-      "tags": ["debate", "integration", "rectification"],
-      "dependencies": ["US-002"],
+      "tags": [
+        "debate",
+        "integration",
+        "rectification"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
       "status": "pending",
       "passes": false,
       "attempts": 0,
@@ -173,7 +208,8 @@
       "contextFiles": [
         "src/verification/rectification-loop.ts",
         "src/verification/rectification.ts"
-      ]
+      ],
+      "storyPoints": 1
     }
   ]
 }
