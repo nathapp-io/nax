@@ -14,9 +14,11 @@ import { FIELD_DESCRIPTIONS } from "../../../src/cli/config-descriptions";
 const baseConfig = {
   version: 1,
   models: {
-    fast: { provider: "anthropic", model: "haiku" },
-    balanced: { provider: "anthropic", model: "sonnet" },
-    powerful: { provider: "anthropic", model: "opus" },
+    claude: {
+      fast: { provider: "anthropic", model: "haiku" },
+      balanced: { provider: "anthropic", model: "sonnet" },
+      powerful: { provider: "anthropic", model: "opus" },
+    },
   },
   autoMode: {
     enabled: true,

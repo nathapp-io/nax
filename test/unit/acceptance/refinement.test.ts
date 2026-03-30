@@ -39,9 +39,11 @@ function makeConfig(acceptanceOverride?: Partial<NaxConfig["acceptance"]>): NaxC
   return {
     version: 1,
     models: {
-      fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-      balanced: { provider: "anthropic", model: "claude-sonnet-4-5" },
-      powerful: { provider: "anthropic", model: "claude-opus-4-5" },
+      claude: {
+        fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+        balanced: { provider: "anthropic", model: "claude-sonnet-4-5" },
+        powerful: { provider: "anthropic", model: "claude-opus-4-5" },
+      },
     },
     autoMode: {
       enabled: true,

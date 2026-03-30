@@ -47,9 +47,11 @@ function makeConfig(overrides: Partial<NaxConfig["execution"]> = {}): NaxConfig 
   return {
     version: 1,
     models: {
-      fast: "claude-sonnet-4-5",
-      balanced: "claude-sonnet-4-5",
-      powerful: "claude-opus-4-6",
+      "nax-agent-claude": {
+        fast: "claude-sonnet-4-5",
+        balanced: "claude-sonnet-4-5",
+        powerful: "claude-opus-4-6",
+      },
     },
     autoMode: {
       enabled: true,

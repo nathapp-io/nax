@@ -121,9 +121,11 @@ export function validateRoutingDecision(
     throw new Error(`Invalid complexity: ${parsed.complexity}`);
   }
 
-  // Validate modelTier exists in config
-  if (!config.models[parsed.modelTier as string]) {
-    throw new Error(`Invalid modelTier: ${parsed.modelTier} (not in config.models)`);
+  // Validate modelTier exists in config (check any agent's tier map)
+  const modelTier = parsed.modelTier as string;
+  const tierExistsInAnyAgent = Object.values(config.models).some((agentTiers) => modelTier in agentTiers);
+  if (!tierExistsInAnyAgent) {
+    throw new Error(`Invalid modelTier: ${modelTier} (not found in any agent's tier map)`);
   }
 
   // BUG-045: Derive testStrategy from determineTestStrategy() — single source of truth.

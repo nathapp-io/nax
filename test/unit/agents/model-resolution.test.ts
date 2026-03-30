@@ -21,8 +21,11 @@ import type { ModelDef } from "../../../src/config/schema";
 describe("resolveBalancedModelDef()", () => {
   test("returns ModelDef from config.models.balanced when present as object", () => {
     const config = {
+      autoMode: { defaultAgent: "claude" },
       models: {
-        balanced: { provider: "anthropic", model: "claude-opus-4-5", env: {} },
+        claude: {
+          balanced: { provider: "anthropic", model: "claude-opus-4-5", env: {} },
+        },
       },
     };
 
@@ -34,8 +37,11 @@ describe("resolveBalancedModelDef()", () => {
 
   test("resolves string shorthand in config.models.balanced via resolveModel", () => {
     const config = {
+      autoMode: { defaultAgent: "claude" },
       models: {
-        balanced: "claude-opus-4-5",
+        claude: {
+          balanced: "claude-opus-4-5",
+        },
       },
     };
 
@@ -48,7 +54,7 @@ describe("resolveBalancedModelDef()", () => {
   test("falls back to adapterDefault when config has no balanced model", () => {
     const adapterDefault: ModelDef = { provider: "anthropic", model: "fallback-model", env: {} };
 
-    const result = resolveBalancedModelDef({ models: {} } as Parameters<typeof resolveBalancedModelDef>[0], adapterDefault);
+    const result = resolveBalancedModelDef({ autoMode: { defaultAgent: "claude" }, models: { claude: {} } } as Parameters<typeof resolveBalancedModelDef>[0], adapterDefault);
 
     expect(result.model).toBe("fallback-model");
   });
@@ -69,7 +75,8 @@ describe("resolveBalancedModelDef()", () => {
 
   test("throws when config has no balanced tier and adapterDefault is undefined", () => {
     const config = {
-      models: { fast: { provider: "anthropic", model: "haiku" } },
+      autoMode: { defaultAgent: "claude" },
+      models: { claude: { fast: { provider: "anthropic", model: "haiku" } } },
     };
 
     expect(() =>
@@ -155,8 +162,11 @@ describe("ClaudeCodeAdapter.decompose() model resolution", () => {
     };
 
     const config = {
+      autoMode: { defaultAgent: "claude" },
       models: {
-        balanced: { provider: "anthropic", model: "custom-balanced-model", env: {} },
+        claude: {
+          balanced: { provider: "anthropic", model: "custom-balanced-model", env: {} },
+        },
       },
     };
 
@@ -208,8 +218,11 @@ describe("ClaudeCodeAdapter.decompose() model resolution", () => {
     };
 
     const config = {
+      autoMode: { defaultAgent: "claude" },
       models: {
-        balanced: { provider: "anthropic", model: "config-balanced", env: {} },
+        claude: {
+          balanced: { provider: "anthropic", model: "config-balanced", env: {} },
+        },
       },
     };
 
@@ -235,8 +248,11 @@ import { buildPlanCommand } from "../../../src/agents/claude/plan";
 describe("buildPlanCommand() model resolution", () => {
   test("includes --model from config.models.balanced when modelDef is absent", () => {
     const config = {
+      autoMode: { defaultAgent: "claude" },
       models: {
-        balanced: { provider: "anthropic", model: "config-plan-model", env: {} },
+        claude: {
+          balanced: { provider: "anthropic", model: "config-plan-model", env: {} },
+        },
       },
     };
 
@@ -255,8 +271,11 @@ describe("buildPlanCommand() model resolution", () => {
 
   test("explicit modelDef still takes priority over config in buildPlanCommand", () => {
     const config = {
+      autoMode: { defaultAgent: "claude" },
       models: {
-        balanced: { provider: "anthropic", model: "config-plan-model", env: {} },
+        claude: {
+          balanced: { provider: "anthropic", model: "config-plan-model", env: {} },
+        },
       },
     };
 

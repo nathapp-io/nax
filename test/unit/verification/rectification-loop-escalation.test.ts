@@ -73,9 +73,11 @@ function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
       permissionProfile: "cautious",
     },
     models: {
-      fast: { provider: "anthropic", model: "claude-haiku-4-5" },
-      balanced: { provider: "anthropic", model: "claude-sonnet-4-6" },
-      powerful: { provider: "anthropic", model: "claude-opus-4-6" },
+      claude: {
+        fast: { provider: "anthropic", model: "claude-haiku-4-5" },
+        balanced: { provider: "anthropic", model: "claude-sonnet-4-6" },
+        powerful: { provider: "anthropic", model: "claude-opus-4-6" },
+      },
     },
     agent: {
       maxInteractionTurns: 5,

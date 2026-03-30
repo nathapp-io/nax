@@ -318,7 +318,8 @@ describe("complete() — model resolution", () => {
     });
 
     const naxConfig = {
-      models: { fast: "claude-haiku-4-5-20250514", balanced: "claude-sonnet-4-5-20250514" },
+      autoMode: { defaultAgent: "claude" },
+      models: { claude: { fast: "claude-haiku-4-5-20250514", balanced: "claude-sonnet-4-5-20250514" } },
     } as unknown as Parameters<AcpAgentAdapter["complete"]>[1]["config"];
 
     await new AcpAgentAdapter("claude").complete("test", { modelTier: "fast", config: naxConfig });
@@ -333,7 +334,7 @@ describe("complete() — model resolution", () => {
       return client as unknown as ReturnType<typeof _acpAdapterDeps.createClient>;
     });
 
-    const naxConfig = { models: {} } as unknown as Parameters<AcpAgentAdapter["complete"]>[1]["config"];
+    const naxConfig = { autoMode: { defaultAgent: "claude" }, models: {} } as unknown as Parameters<AcpAgentAdapter["complete"]>[1]["config"];
 
     await new AcpAgentAdapter("claude").complete("test", { modelTier: "powerful", config: naxConfig });
     expect(capturedCmd).toContain("--model default");

@@ -50,9 +50,11 @@ function makeConfig(): NaxConfig {
   return {
     autoMode: { defaultAgent: "test-agent" },
     models: {
-      fast: "claude-haiku-4-5",
-      balanced: "claude-sonnet-4-5",
-      powerful: "claude-opus-4-5",
+      "test-agent": {
+        fast: "claude-haiku-4-5",
+        balanced: "claude-sonnet-4-5",
+        powerful: "claude-opus-4-5",
+      },
     },
     execution: {
       sessionTimeoutSeconds: 60,
