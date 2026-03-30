@@ -7,15 +7,16 @@ Project-specific async and Bun-native patterns for nax.
 **Always** await `.exited` on Bun.spawn processes:
 
 ```typescript
-// ✅ Correct
+// ✅ Correct — simple await
 const proc = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe" });
 const exitCode = await proc.exited;
 
-// ❌ Wrong — using Promise.race with setTimeout
+// ✅ Also correct — timeout enforcement via Promise.race
 const exitCode = await Promise.race([
   proc.exited,
   new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
 ]);
+// Always .catch(() => {}) the losing promise to avoid unhandled rejections
 ```
 
 ## Concurrent Output Draining
@@ -50,13 +51,17 @@ if (exitCode !== 0) {
 
 ## Bun.sleep for Delays
 
-Use `Bun.sleep()` instead of `setTimeout` for delays in async functions:
+Use `Bun.sleep()` for simple delays. **Exception:** `Bun.sleep()` is uncancellable — use `setTimeout` when cancellation is needed (e.g., `Promise.race` timeout patterns).
 
 ```typescript
-// ✅ Correct
+// ✅ Simple delay
 await Bun.sleep(1000);
 
-// ❌ Wrong
+// ✅ Cancellable timeout (setTimeout is correct here)
+const timer = setTimeout(() => reject(new Error("timeout")), 5000);
+// ... on success: clearTimeout(timer)
+
+// ❌ Wrong — setTimeout for simple delay
 await new Promise((resolve) => setTimeout(resolve, 1000));
 ```
 
@@ -133,17 +138,16 @@ if (result === undefined) {
 }
 ```
 
-## No Node.js Globals
+## Globals & Environment
 
-Bun does not include all Node.js globals. Avoid:
-- `global` (use `globalThis`)
-- `process.env` — use `Bun.env` instead
-- `Buffer` — use `Uint8Array` or `btoa/atob`
+Prefer Bun-native globals where available:
+- `global` → use `globalThis`
+- `Buffer` → prefer `Uint8Array` or `btoa/atob`
+
+For environment variables, both `process.env` and `Bun.env` work (they are aliases in Bun). Existing code uses `process.env` — no need to migrate. Prefer `Bun.env` in new code for consistency.
 
 ```typescript
-// ✅ Correct
+// ✅ Both are fine
 const apiKey = Bun.env.OPENAI_API_KEY;
-
-// ❌ Wrong
 const apiKey = process.env.OPENAI_API_KEY;
 ```
