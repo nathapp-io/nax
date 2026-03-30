@@ -141,13 +141,14 @@ export class DebateSession {
       // Proposal round — parallel via Promise.allSettled
       const proposalSettled = await Promise.allSettled(sessions.map(({ session }) => session.prompt(prompt)));
 
-      const successfulSessions: Array<{ entry: SessionEntry; output: string }> = [];
+      const successfulSessions: Array<{ entry: SessionEntry; output: string; originalIndex: number }> = [];
       for (let i = 0; i < proposalSettled.length; i++) {
         const r = proposalSettled[i];
         if (r.status === "fulfilled") {
           successfulSessions.push({
             entry: sessions[i],
             output: extractSessionOutput(r.value),
+            originalIndex: i,
           });
         }
       }
@@ -158,13 +159,16 @@ export class DebateSession {
       }
 
       // Critique round (when rounds > 1)
-      // In stateful mode, send only OTHER debaters' proposals — session retains own history
+      // In stateful mode, send only OTHER debaters' proposals — session retains own history.
+      // proposalOutputs is indexed by position within successfulSessions (dense, 0..N-1),
+      // so we use successfulIdx (not originalIndex) when calling buildCritiquePrompt to
+      // correctly exclude each debater's own proposal from the critique context.
       let critiqueOutputs: string[] = [];
       if (config.rounds > 1) {
         const proposalOutputs = successfulSessions.map((s) => s.output);
         const critiqueSettled = await Promise.allSettled(
-          successfulSessions.map(({ entry }, i) =>
-            entry.session.prompt(buildCritiquePrompt(prompt, proposalOutputs, i)),
+          successfulSessions.map(({ entry }, successfulIdx) =>
+            entry.session.prompt(buildCritiquePrompt(prompt, proposalOutputs, successfulIdx)),
           ),
         );
         critiqueOutputs = critiqueSettled
