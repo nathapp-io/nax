@@ -3,7 +3,7 @@
   "feature": "per-agent-model-map",
   "branchName": "feat/per-agent-model-map",
   "createdAt": "2026-03-30T12:00:00.000Z",
-  "updatedAt": "2026-03-30T12:00:00.000Z",
+  "updatedAt": "2026-03-30T12:16:34.784Z",
   "analysis": "This feature restructures the models config from a flat tier→model map to a per-agent model map (Record<agentName, Record<tier, ModelEntry>>), making it the SSOT for any (agent, tier) → model resolution. It also activates the existing dead-code fallbackOrder as a rate-limit agent fallback chain inside the ACP adapter, and adds optional agent field to TierConfig for cross-agent escalation. There are 22 callsites using config.models[tier] that need migration to resolveModelForAgent(). The fallback implementation lives inside AcpAgentAdapter so all LLM calls (plan, review, acceptance, routing, rectification, autofix, TDD, analyze) get fallback for free.",
   "userStories": [
     {
@@ -23,9 +23,14 @@
         "validate() returns error when fallbackOrder contains agent 'codex' but models has no 'codex' key",
         "validate() returns error when tierOrder has { tier: 'fast', agent: 'codex' } but models has no 'codex' key"
       ],
-      "tags": ["types", "config", "schema", "migration"],
+      "tags": [
+        "types",
+        "config",
+        "schema",
+        "migration"
+      ],
       "dependencies": [],
-      "status": "pending",
+      "status": "decomposed",
       "passes": false,
       "attempts": 0,
       "escalations": [],
@@ -35,7 +40,8 @@
         "complexity": "complex",
         "testStrategy": "tdd-simple",
         "reasoning": "Nested Zod schema with legacy migration transform, cross-reference validation, multiple new types. Complex due to backward compat requirements.",
-        "modelTier": "balanced"
+        "modelTier": "balanced",
+        "initialComplexity": "complex"
       },
       "contextFiles": [
         "src/config/schema-types.ts",
@@ -45,7 +51,128 @@
         "src/config/types.ts",
         "src/config/validate.ts",
         "src/cli/config-descriptions.ts"
-      ]
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "b26e4e4906c12f4e09484d4787455c569b8a161c"
+    },
+    {
+      "id": "US-001-1",
+      "title": "Restructure ModelsConfig and TierConfig types in schema-types.ts",
+      "description": "In src/config/schema-types.ts: change ModelsConfig from Record<ModelTier, ModelEntry> to Record<string, Record<ModelTier, ModelEntry>>. Add optional 'agent' field (string) to TierConfig. Add optional 'agent' field (string) to StoryRouting type.",
+      "acceptanceCriteria": [
+        "ModelsConfig is typed as Record<string, Record<ModelTier, ModelEntry>>",
+        "TierConfig accepts optional agent field — { tier: 'fast', attempts: 3, agent: 'codex' } is valid",
+        "TierConfig without agent field remains valid (backward compat)",
+        "StoryRouting has optional agent field typed as string"
+      ],
+      "tags": [
+        "types",
+        "schema"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "parentStoryId": "US-001",
+      "storyGitRef": "b26e4e4906c12f4e09484d4787455c569b8a161c",
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Pure type definition refactoring in single file — restructuring Record types and adding optional fields with no behavior changes.",
+        "modelTier": "fast"
+      }
+    },
+    {
+      "id": "US-001-2",
+      "title": "Implement resolveModelForAgent() in schema-types.ts",
+      "description": "Add resolveModelForAgent(models: ModelsConfig, agent: string, tier: ModelTier, defaultAgent: string): ModelEntry function to src/config/schema-types.ts. Logic: (1) return models[agent]?.[tier] if exists; (2) fall back to models[defaultAgent]?.[tier] if agent differs or agent key missing; (3) throw NaxError with code MODEL_NOT_FOUND if both missing.",
+      "acceptanceCriteria": [
+        "resolveModelForAgent(models, 'claude', 'fast', 'claude') returns { provider: 'anthropic', model: 'claude-haiku-4-5' } when models.claude.fast is 'claude-haiku-4-5'",
+        "resolveModelForAgent(models, 'codex', 'fast', 'claude') returns codex's fast model when models.codex.fast exists",
+        "resolveModelForAgent(models, 'unknown-agent', 'fast', 'claude') falls back to models.claude.fast",
+        "resolveModelForAgent(models, 'codex', 'powerful', 'claude') falls back to models.claude.powerful when models.codex has no powerful tier",
+        "Throws NaxError MODEL_NOT_FOUND when neither agent nor defaultAgent has the requested tier"
+      ],
+      "tags": [
+        "types",
+        "config"
+      ],
+      "dependencies": [
+        "US-001-1"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "parentStoryId": "US-001"
+    },
+    {
+      "id": "US-001-3",
+      "title": "Update ModelsSchema in schemas.ts with per-agent shape and legacy migration transform",
+      "description": "In src/config/schemas.ts: update ModelsSchema Zod definition to accept Record<string, Record<ModelTier, ModelEntry>>. Add a .transform() that detects legacy flat format (first value is a ModelEntry string or {provider,model} object rather than a tier map) and auto-migrates by wrapping under the defaultAgent key. Detection: if any top-level value is a string or has a 'provider'/'model' key directly, treat as legacy.",
+      "acceptanceCriteria": [
+        "When legacy flat config { fast: { provider: 'anthropic', model: 'haiku' } } is parsed, NaxConfigSchema.parse() auto-migrates to { claude: { fast: { provider: 'anthropic', model: 'haiku' } } } using defaultAgent",
+        "When new per-agent config { claude: { fast: 'haiku' }, codex: { fast: 'gpt-5' } } is parsed, NaxConfigSchema.parse() preserves it unchanged"
+      ],
+      "tags": [
+        "schema",
+        "migration"
+      ],
+      "dependencies": [
+        "US-001-1"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "parentStoryId": "US-001"
+    },
+    {
+      "id": "US-001-4",
+      "title": "Update DEFAULT_CONFIG and config descriptions",
+      "description": "In src/config/defaults.ts: update DEFAULT_CONFIG.models to { claude: { fast: 'haiku', balanced: 'sonnet', powerful: 'opus' } } and DEFAULT_CONFIG.autoMode.fallbackOrder to ['claude']. In src/cli/config-descriptions.ts: update description strings for the models field and fallbackOrder to reflect per-agent shape.",
+      "acceptanceCriteria": [
+        "DEFAULT_CONFIG.models is { claude: { fast: 'haiku', balanced: 'sonnet', powerful: 'opus' } }",
+        "DEFAULT_CONFIG.autoMode.fallbackOrder is ['claude']",
+        "config-descriptions.ts descriptions mention per-agent map shape"
+      ],
+      "tags": [
+        "config",
+        "defaults"
+      ],
+      "dependencies": [
+        "US-001-1"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "parentStoryId": "US-001"
+    },
+    {
+      "id": "US-001-5",
+      "title": "Update validate() to check agent keys against models map",
+      "description": "In src/config/validate.ts: add validation rules — (1) every agent name in autoMode.fallbackOrder must exist as a key in config.models; (2) every TierConfig entry in autoMode.tierOrder that has an agent field must have that agent exist as a key in config.models. Return descriptive error strings for each violation.",
+      "acceptanceCriteria": [
+        "validate() returns error when fallbackOrder contains 'codex' but models has no 'codex' key",
+        "validate() returns error when tierOrder has { tier: 'fast', agent: 'codex' } but models has no 'codex' key",
+        "validate() passes when all fallbackOrder agents and tierOrder agents exist in models"
+      ],
+      "tags": [
+        "config",
+        "schema"
+      ],
+      "dependencies": [
+        "US-001-1",
+        "US-001-4"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "parentStoryId": "US-001"
     },
     {
       "id": "US-002",
@@ -59,8 +186,14 @@
         "config/validate.ts validates that every agent in fallbackOrder and every tierOrder[].agent exists as a key in models",
         "The old resolveModel(config.models[tier]) pattern no longer appears in any source file under src/"
       ],
-      "tags": ["migration", "execution", "metrics"],
-      "dependencies": ["US-001"],
+      "tags": [
+        "migration",
+        "execution",
+        "metrics"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
       "status": "pending",
       "passes": false,
       "attempts": 0,
@@ -79,7 +212,8 @@
         "src/verification/rectification-loop.ts",
         "src/metrics/tracker.ts",
         "src/config/schema-types.ts"
-      ]
+      ],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -96,8 +230,15 @@
         "Fallback events are logged at info level with stage 'agent-fallback' including: original agent, fallback agent, error type, retry count",
         "CLI adapter (src/agents/cli/) is unchanged — no fallback logic added"
       ],
-      "tags": ["agents", "acp", "fallback", "resilience"],
-      "dependencies": ["US-002"],
+      "tags": [
+        "agents",
+        "acp",
+        "fallback",
+        "resilience"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
       "status": "pending",
       "passes": false,
       "attempts": 0,
@@ -115,7 +256,8 @@
         "src/agents/acp/adapter.ts",
         "src/config/schema-types.ts",
         "src/execution/escalation/escalation.ts"
-      ]
+      ],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -129,8 +271,14 @@
         "handlePreIterationEscalation() sets ctx.routing.agent to the escalated tier's agent when present",
         "After escalation from claude/balanced to codex/fast, execution stage calls resolveModelForAgent(models, 'codex', 'fast', defaultAgent)"
       ],
-      "tags": ["escalation", "execution", "agents"],
-      "dependencies": ["US-002"],
+      "tags": [
+        "escalation",
+        "execution",
+        "agents"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
       "status": "pending",
       "passes": false,
       "attempts": 0,
@@ -148,7 +296,8 @@
         "src/execution/escalation/tier-escalation.ts",
         "src/pipeline/stages/execution.ts",
         "src/config/schema-types.ts"
-      ]
+      ],
+      "storyPoints": 1
     }
   ]
 }

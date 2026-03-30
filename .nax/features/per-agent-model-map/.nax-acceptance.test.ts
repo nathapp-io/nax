@@ -1,3 +1,11 @@
+/**
+ * Acceptance Tests: Per-Agent Model Map Feature
+ *
+ * Comprehensive test suite verifying the per-agent model map functionality,
+ * including model resolution, config migration, escalation, fallback retry logic,
+ * and metrics tracking across all 32 acceptance criteria (AC-1 through AC-32).
+ */
+
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import { NaxConfigSchema } from "../../../src/config/schemas";

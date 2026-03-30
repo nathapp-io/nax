@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-30T08-54-54-516Z",
-    "feature": "multi-agent-debate",
-    "startedAt": "2026-03-30T08:54:54.516Z",
-    "status": "completed",
+    "id": "run-2026-03-30T12-12-10-329Z",
+    "feature": "per-agent-model-map",
+    "startedAt": "2026-03-30T12:12:10.329Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 41336
+    "pid": 16968
   },
   "progress": {
-    "total": 5,
-    "passed": 5,
+    "total": 9,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 9
   },
   "cost": {
-    "spent": 14.40778725,
+    "spent": 0,
     "limit": 30
   },
-  "current": null,
-  "iterations": 7,
-  "updatedAt": "2026-03-30T11:39:04.196Z",
-  "durationMs": 9849680
+  "current": {
+    "storyId": "US-001-1",
+    "title": "Restructure ModelsConfig and TierConfig types in schema-types.ts",
+    "complexity": "medium",
+    "tddStrategy": "test-after",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 1,
+  "updatedAt": "2026-03-30T12:20:11.311Z",
+  "durationMs": 480982,
+  "lastHeartbeat": "2026-03-30T12:20:11.311Z"
 }
