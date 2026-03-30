@@ -12,6 +12,7 @@ export type {
   ModelDef,
   ModelEntry,
   ModelMap,
+  ModelsConfig,
   ModelTier,
   RoutingStrategyName,
   TddStrategy,

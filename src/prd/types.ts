@@ -77,6 +77,8 @@ export interface StoryRouting {
   strategy?: "keyword" | "llm";
   /** Model used for classification (if LLM strategy) */
   llmModel?: string;
+  /** Agent to use for this story (overrides default agent from config) */
+  agent?: string;
 }
 
 /** Escalation attempt tracking */

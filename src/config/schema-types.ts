@@ -26,10 +26,12 @@ export interface ModelDef {
 
 export type ModelEntry = ModelDef | string;
 export type ModelMap = Record<ModelTier, ModelEntry>;
+export type ModelsConfig = Record<string, Record<ModelTier, ModelEntry>>;
 
 export interface TierConfig {
   tier: string;
   attempts: number;
+  agent?: string;
 }
 
 export type RoutingStrategyName = "keyword" | "llm" | "manual" | "adaptive" | "custom";
