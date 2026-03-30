@@ -73,6 +73,10 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "execution.rectification.abortOnIncreasingFailures": "Abort if failure count increases",
   "execution.rectification.escalateOnExhaustion":
     "Enable model tier escalation when retries are exhausted with remaining failures",
+  "execution.rectification.rethinkAtAttempt":
+    "Attempt number at which 'rethink your approach' language is injected into the prompt (default: 2, set >= maxRetries to disable)",
+  "execution.rectification.urgencyAtAttempt":
+    "Attempt number at which 'final chance before escalation' urgency is added to the prompt (default: 3, set >= maxRetries to disable)",
   "execution.regressionGate": "Regression gate settings (full suite after scoped tests)",
   "execution.regressionGate.enabled": "Enable full-suite regression gate",
   "execution.regressionGate.timeoutSeconds": "Timeout for regression run in seconds",

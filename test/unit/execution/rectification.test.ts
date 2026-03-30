@@ -283,6 +283,94 @@ describe("createRectificationPrompt", () => {
     expect(prompt).toContain("run ONLY the failing test files shown above");
     expect(prompt).toContain("NEVER run `bun test` without a file filter");
   });
+
+  describe("progressive prompt escalation", () => {
+    const escalationConfig: RectificationConfig = {
+      enabled: true,
+      maxRetries: 4,
+      fullSuiteTimeoutSeconds: 120,
+      maxFailureSummaryChars: 2000,
+      abortOnIncreasingFailures: true,
+      escalateOnExhaustion: true,
+      rethinkAtAttempt: 2,
+      urgencyAtAttempt: 3,
+    };
+
+    test("attempt 1 — no preamble injected", () => {
+      const prompt = createRectificationPrompt(mockFailures, mockStory, escalationConfig, 1);
+      expect(prompt).not.toContain("Previous Attempt Did Not Fix");
+      expect(prompt).not.toContain("Final Rectification Attempt");
+      expect(prompt).toContain("# Rectification Required");
+    });
+
+    test("attempt 2 (= rethinkAtAttempt) — rethink section injected, no urgency", () => {
+      const prompt = createRectificationPrompt(mockFailures, mockStory, escalationConfig, 2);
+      expect(prompt).toContain("Previous Attempt Did Not Fix");
+      expect(prompt).toContain("fundamentally different strategy");
+      expect(prompt).not.toContain("Final Rectification Attempt");
+    });
+
+    test("attempt 3 (= urgencyAtAttempt) — both rethink and urgency injected", () => {
+      const prompt = createRectificationPrompt(mockFailures, mockStory, escalationConfig, 3);
+      expect(prompt).toContain("Previous Attempt Did Not Fix");
+      expect(prompt).toContain("Final Rectification Attempt");
+      expect(prompt).toContain("escalate to a stronger model tier");
+    });
+
+    test("attempt 4 (> urgencyAtAttempt) — both sections still present", () => {
+      const prompt = createRectificationPrompt(mockFailures, mockStory, escalationConfig, 4);
+      expect(prompt).toContain("Previous Attempt Did Not Fix");
+      expect(prompt).toContain("Final Rectification Attempt");
+      expect(prompt).toContain("attempt 4");
+    });
+
+    test("attempt number appears in preamble context", () => {
+      const prompt = createRectificationPrompt(mockFailures, mockStory, escalationConfig, 2);
+      expect(prompt).toContain("attempt 2");
+    });
+
+    test("no injection when attempt is undefined (backward compat)", () => {
+      const prompt = createRectificationPrompt(mockFailures, mockStory, escalationConfig, undefined);
+      expect(prompt).not.toContain("Previous Attempt Did Not Fix");
+      expect(prompt).not.toContain("Final Rectification Attempt");
+    });
+
+    test("no injection when config is undefined", () => {
+      const prompt = createRectificationPrompt(mockFailures, mockStory, undefined, 3);
+      expect(prompt).not.toContain("Previous Attempt Did Not Fix");
+      expect(prompt).not.toContain("Final Rectification Attempt");
+    });
+
+    test("rethink disabled when rethinkAtAttempt >= maxRetries", () => {
+      const disabledConfig: RectificationConfig = {
+        ...escalationConfig,
+        rethinkAtAttempt: 99,
+        urgencyAtAttempt: 99,
+      };
+      const prompt = createRectificationPrompt(mockFailures, mockStory, disabledConfig, 3);
+      expect(prompt).not.toContain("Previous Attempt Did Not Fix");
+      expect(prompt).not.toContain("Final Rectification Attempt");
+    });
+
+    test("rethink but no urgency when urgencyAtAttempt > attempt", () => {
+      const lateUrgencyConfig: RectificationConfig = {
+        ...escalationConfig,
+        rethinkAtAttempt: 2,
+        urgencyAtAttempt: 10, // effectively disabled
+      };
+      const prompt = createRectificationPrompt(mockFailures, mockStory, lateUrgencyConfig, 3);
+      expect(prompt).toContain("Previous Attempt Did Not Fix");
+      expect(prompt).not.toContain("Final Rectification Attempt");
+    });
+
+    test("core prompt structure still present when preamble is injected", () => {
+      const prompt = createRectificationPrompt(mockFailures, mockStory, escalationConfig, 3);
+      expect(prompt).toContain("# Rectification Required");
+      expect(prompt).toContain("## Story Context");
+      expect(prompt).toContain("## Test Failures");
+      expect(prompt).toContain("## Instructions");
+    });
+  });
 });
 
 describe("createEscalatedRectificationPrompt", () => {
