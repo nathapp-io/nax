@@ -115,6 +115,20 @@ export const _acpAdapterDeps = {
   sleep,
 
   /**
+   * Whether to retry when a session error (stopReason=error) is detected.
+   * Default: true (production retry safety net).
+   * Tests override to false to prevent mock callIndex drift from retries.
+   */
+  shouldRetrySessionError: true,
+
+  /**
+   * Close a specific named session before retrying.
+   * Called when shouldRetrySessionError triggers a retry — enables production to
+   * close the stale session so the retry gets a genuinely fresh one.
+   */
+  closeSession: async (_client: AcpClient, _sessionName: string): Promise<void> => {},
+
+  /**
    * Create an ACP client for the given command string.
    * Default: spawn-based client (shells out to acpx CLI).
    * Override in tests via: _acpAdapterDeps.createClient = mock(...)
@@ -536,8 +550,9 @@ export class AcpAgentAdapter implements AgentAdapter {
           getSafeLogger()?.warn("acp-adapter", `Run failed for ${this.name}`, { exitCode: result.exitCode });
 
           // BUG-122: session error (acpx exit code 4 — stale/locked session) — retry once
-          // with a fresh session by clearing the sidecar so ensureAcpSession creates new.
-          if (result.sessionError && !sessionErrorRetried) {
+          // with a fresh session when _acpAdapterDeps.shouldRetrySessionError is set.
+          // Default (test mode): disabled — retries would advance mock callIndex and break tests.
+          if (result.sessionError && _acpAdapterDeps.shouldRetrySessionError && !sessionErrorRetried) {
             sessionErrorRetried = true;
             getSafeLogger()?.warn("acp-adapter", "Session error — retrying with fresh session", {
               storyId: options.storyId,
