@@ -11,7 +11,7 @@ import { generateAcceptanceTests } from "../acceptance";
 import { getAgent } from "../agents/registry";
 import { scanCodebase } from "../analyze/scanner";
 import type { NaxConfig } from "../config";
-import { resolveModelForAgent } from "../config/schema";
+import { resolveModelForAgent } from "../config";
 import { applyDecomposition } from "../decompose/apply";
 import { DecomposeBuilder } from "../decompose/builder";
 import type { DecomposeAgentConfig as BuilderDecomposeConfig, DecomposeResult, SubStory } from "../decompose/types";

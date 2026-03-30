@@ -6,11 +6,11 @@
  * Supports batch mode for efficiency.
  */
 
-import type { AgentAdapter } from "../../agents/types";
+import type { AgentAdapter } from "../../agents";
 import type { NaxConfig } from "../../config";
 import { resolveModelForAgent } from "../../config";
 import { getLogger } from "../../logger";
-import type { UserStory } from "../../prd/types";
+import type { UserStory } from "../../prd";
 import { typedSpawn } from "../../utils/bun-deps";
 import type { RoutingContext, RoutingDecision } from "../router";
 import { determineTestStrategy } from "../router";

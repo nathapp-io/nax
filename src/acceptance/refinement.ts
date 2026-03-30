@@ -7,7 +7,7 @@
 
 import type { AgentAdapter } from "../agents";
 import { ClaudeCodeAdapter } from "../agents/claude";
-import { resolveModelForAgent } from "../config/schema";
+import { resolveModelForAgent } from "../config";
 import { getLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
 import type { RefinedCriterion, RefinementContext } from "./types";

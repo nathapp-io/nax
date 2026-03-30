@@ -92,7 +92,7 @@ export function validateConfig(config: NaxConfig): ValidationResult {
     }
   }
 
-  // Validate fallbackOrder agents exist as keys in models
+  // Validate fallbackOrder and tierOrder agents exist as keys in models (AC5 — US-001-5)
   if (config.models && config.autoMode?.fallbackOrder) {
     const modelKeys = Object.keys(config.models);
     for (const agent of config.autoMode.fallbackOrder) {
