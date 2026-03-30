@@ -133,23 +133,8 @@ export class DebateSession {
         }
       }
 
-      // Fewer than 2 sessions created — single-agent fallback
+      // Fewer than 2 sessions created — AC5 requires minimum 2 debaters
       if (sessions.length < 2) {
-        if (sessions.length === 1) {
-          const solo = sessions[0];
-          const resp = await solo.session.prompt(prompt);
-          const output = extractSessionOutput(resp);
-          return {
-            storyId: this.storyId,
-            stage: this.stage,
-            outcome: "passed",
-            rounds: 1,
-            debaters: [solo.debater.agent],
-            resolverType: config.resolver.type,
-            proposals: [{ debater: solo.debater, output }],
-            totalCostUsd,
-          };
-        }
         return buildFailedResult(this.storyId, this.stage, config, totalCostUsd);
       }
 
@@ -167,20 +152,8 @@ export class DebateSession {
         }
       }
 
+      // AC5: minimum 2 debaters required for a valid debate
       if (successfulSessions.length < 2) {
-        if (successfulSessions.length === 1) {
-          const solo = successfulSessions[0];
-          return {
-            storyId: this.storyId,
-            stage: this.stage,
-            outcome: "passed",
-            rounds: 1,
-            debaters: [solo.entry.debater.agent],
-            resolverType: config.resolver.type,
-            proposals: [{ debater: solo.entry.debater, output: solo.output }],
-            totalCostUsd,
-          };
-        }
         return buildFailedResult(this.storyId, this.stage, config, totalCostUsd);
       }
 
