@@ -12,9 +12,9 @@ export const DEFAULT_CONFIG: NaxConfig = {
   version: 1,
   models: {
     claude: {
-      fast: { provider: "anthropic", model: "haiku" },
-      balanced: { provider: "anthropic", model: "sonnet" },
-      powerful: { provider: "anthropic", model: "opus" },
+      fast: "haiku",
+      balanced: "sonnet",
+      powerful: "opus",
     },
   },
   autoMode: {

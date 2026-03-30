@@ -10,10 +10,12 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   version: "Configuration schema version",
 
   // Models
-  models: "Model tier definitions (fast/balanced/powerful)",
-  "models.fast": "Fast model for lightweight tasks (e.g., haiku)",
-  "models.balanced": "Balanced model for general coding (e.g., sonnet)",
-  "models.powerful": "Powerful model for complex tasks (e.g., opus)",
+  models:
+    "Per-agent model map defining tier assignments. Maps agent names to their available tiers (fast/balanced/powerful). Example: { claude: { fast: 'haiku', balanced: 'sonnet', powerful: 'opus' } }",
+  "models.claude": "Claude agent tier definitions (fast/balanced/powerful)",
+  "models.claude.fast": "Fast model for lightweight tasks (e.g., haiku)",
+  "models.claude.balanced": "Balanced model for general coding (e.g., sonnet)",
+  "models.claude.powerful": "Powerful model for complex tasks (e.g., opus)",
 
   // Auto mode
   autoMode:
@@ -22,7 +24,7 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "autoMode.defaultAgent":
     "Default agent to use when no specific agent is requested. Examples: 'claude' (Claude Code), 'codex' (GitHub Copilot), 'opencode' (OpenCode). The agent handles the main coding tasks.",
   "autoMode.fallbackOrder":
-    'Fallback order for agent selection when the primary agent is rate-limited, unavailable, or fails. Tries each agent in sequence until one succeeds. Example: ["claude", "codex", "opencode"] means try Claude first, then Copilot, then OpenCode.',
+    'Fallback order for per-agent selection when the primary agent is rate-limited, unavailable, or fails. Specifies which agents in the per-agent model map to try in sequence. Example: ["claude", "codex"] means try Claude first, then Copilot. Each agent must have tiers defined in the models per-agent map.',
   "autoMode.complexityRouting":
     "Model tier routing rules mapped to story complexity levels. Determines which model (fast/balanced/powerful) to use based on task complexity: simple → fast, medium → balanced, complex → powerful, expert → powerful.",
   "autoMode.complexityRouting.simple": "Model tier for simple tasks (low complexity, straightforward changes)",

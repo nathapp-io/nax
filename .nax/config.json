@@ -1,17 +1,10 @@
 {
     "version": 1,
     "models": {
-        "fast": {
-            "provider": "anthropic",
-            "model": "haiku"
-        },
-        "balanced": {
-            "provider": "anthropic",
-            "model": "sonnet"
-        },
-        "powerful": {
-            "provider": "anthropic",
-            "model": "sonnet"
+        "claude": {
+            "fast": "haiku",
+            "balanced": "sonnet",
+            "powerful": "sonnet"
         }
     },
     "autoMode": {

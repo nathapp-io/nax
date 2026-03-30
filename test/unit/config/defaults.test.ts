@@ -111,4 +111,46 @@ describe("schema: 'build' is a valid review check (BUILD-001)", () => {
   });
 });
 
+describe("DEFAULT_CONFIG.models per-agent shape (US-001-4)", () => {
+  test("models has per-agent structure with 'claude' key", () => {
+    expect(DEFAULT_CONFIG.models).toHaveProperty("claude");
+  });
 
+  test("models.claude has fast/balanced/powerful tiers as strings", () => {
+    expect(DEFAULT_CONFIG.models.claude).toEqual({
+      fast: "haiku",
+      balanced: "sonnet",
+      powerful: "opus",
+    });
+  });
+
+  test("models.claude.fast is 'haiku'", () => {
+    expect(DEFAULT_CONFIG.models.claude.fast).toBe("haiku");
+  });
+
+  test("models.claude.balanced is 'sonnet'", () => {
+    expect(DEFAULT_CONFIG.models.claude.balanced).toBe("sonnet");
+  });
+
+  test("models.claude.powerful is 'opus'", () => {
+    expect(DEFAULT_CONFIG.models.claude.powerful).toBe("opus");
+  });
+});
+
+describe("DEFAULT_CONFIG.autoMode.fallbackOrder (US-001-4)", () => {
+  test("fallbackOrder is ['claude']", () => {
+    expect(DEFAULT_CONFIG.autoMode.fallbackOrder).toEqual(["claude"]);
+  });
+
+  test("fallbackOrder is an array", () => {
+    expect(Array.isArray(DEFAULT_CONFIG.autoMode.fallbackOrder)).toBe(true);
+  });
+
+  test("fallbackOrder contains exactly one element", () => {
+    expect(DEFAULT_CONFIG.autoMode.fallbackOrder).toHaveLength(1);
+  });
+
+  test("fallbackOrder[0] is 'claude'", () => {
+    expect(DEFAULT_CONFIG.autoMode.fallbackOrder[0]).toBe("claude");
+  });
+});
