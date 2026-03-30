@@ -3,7 +3,7 @@
   "feature": "per-agent-model-map",
   "branchName": "feat/per-agent-model-map",
   "createdAt": "2026-03-30T12:00:00.000Z",
-  "updatedAt": "2026-03-30T13:11:22.396Z",
+  "updatedAt": "2026-03-30T13:19:03.591Z",
   "analysis": "This feature restructures the models config from a flat tier→model map to a per-agent model map (Record<agentName, Record<tier, ModelEntry>>), making it the SSOT for any (agent, tier) → model resolution. It also activates the existing dead-code fallbackOrder as a rate-limit agent fallback chain inside the ACP adapter, and adds optional agent field to TierConfig for cross-agent escalation. There are 22 callsites using config.models[tier] that need migration to resolveModelForAgent(). The fallback implementation lives inside AcpAgentAdapter so all LLM calls (plan, review, acceptance, routing, rectification, autofix, TDD, analyze) get fallback for free.",
   "userStories": [
     {
@@ -175,8 +175,29 @@
       "escalations": [],
       "attempts": 0,
       "parentStoryId": "US-001",
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast: Autofix exhausted: review still failing after fix attempts"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "fast",
+          "stage": "review",
+          "summary": "Failed with tier fast, escalating to next tier",
+          "reviewFindings": [
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/config/defaults.ts",
+              "line": null,
+              "message": "AC #2 not verified: DEFAULT_CONFIG.autoMode.fallbackOrder should be updated to ['claude'], but the diff only shows changes to the models section. The autoMode section is not included in the diff output, so it cannot be confirmed that fallbackOrder was updated.",
+              "source": "semantic-review"
+            }
+          ],
+          "cost": 0.43847330000000007,
+          "timestamp": "2026-03-30T13:19:01.569Z"
+        }
+      ],
       "storyPoints": 1,
       "storyGitRef": "997a7b8dea1dc02c3dd58593d2691b7c5dc13d28",
       "routing": {
@@ -184,7 +205,7 @@
         "initialComplexity": "simple",
         "testStrategy": "tdd-simple",
         "reasoning": "Configuration value and description string updates in two files, no new logic or behavior required.",
-        "modelTier": "fast"
+        "modelTier": "balanced"
       }
     },
     {

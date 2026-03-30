@@ -17,20 +17,20 @@
     "pending": 6
   },
   "cost": {
-    "spent": 5.721405999999998,
+    "spent": 6.159879299999998,
     "limit": 30
   },
   "current": {
     "storyId": "US-001-4",
     "title": "Update DEFAULT_CONFIG and config descriptions",
-    "complexity": "medium",
-    "tddStrategy": "test-after",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 4,
-  "updatedAt": "2026-03-30T13:18:11.433Z",
-  "durationMs": 3961104,
-  "lastHeartbeat": "2026-03-30T13:18:11.432Z"
+  "iterations": 5,
+  "updatedAt": "2026-03-30T13:19:11.433Z",
+  "durationMs": 4021104,
+  "lastHeartbeat": "2026-03-30T13:19:11.433Z"
 }
