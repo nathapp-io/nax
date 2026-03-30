@@ -150,13 +150,12 @@ Your task: Review and verify the implementation against acceptance criteria.
 Context: You are the final session in a multi-session workflow. A test-writer created tests, and an implementer wrote the code. The orchestrator has already run the full test suite and confirmed it passes before handing off to you.
 
 Instructions:
-- Do NOT run the full test suite — the orchestrator already verified all tests pass
-- If you need to check specific behavior, run ONLY the story's test files (not the entire suite)
+- Run ONLY the story's scoped test files — do NOT run the full test suite (the orchestrator already handled that)
 - Check that implementation meets all acceptance criteria from the story
 - Inspect code quality, error handling, and edge cases
 - Verify any test modifications (if any) are legitimate fixes, not shortcuts
 - Write a detailed verdict with reasoning
-- Goal: provide comprehensive code review and quality assurance — focus on correctness, not re-running tests`;
+- Goal: verify story-scoped tests pass, provide comprehensive code review and quality assurance`;
   }
 
   if (role === "single-session") {

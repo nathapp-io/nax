@@ -17,7 +17,7 @@ After completing your verification, you **MUST** write a verdict file at the **p
 **File:** \`.nax-verifier-verdict.json\`
 
 Set \`approved: true\` when ALL of these conditions are met:
-- All tests pass
+- All story-scoped tests pass (the orchestrator already confirmed the full suite passes — you only need to verify the story's own tests)
 - Implementation is clean and follows conventions
 - All acceptance criteria met
 - Any test modifications by implementer are legitimate fixes
