@@ -127,7 +127,8 @@ class SpawnAcpSession implements AcpSession {
 
       if (exitCode !== 0) {
         getSafeLogger()?.warn("acp-adapter", `Session prompt exited with code ${exitCode}`, {
-          stderr: stderr.slice(0, 200),
+          exitCode,
+          stderr: stderr.slice(0, 500),
         });
         // Return error response so the adapter can handle it
         return {

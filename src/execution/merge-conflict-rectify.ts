@@ -15,6 +15,26 @@ import type { PluginRegistry } from "../plugins/registry";
 import type { PRD } from "../prd";
 import { errorMessage } from "../utils/errors";
 
+/**
+ * Close a stale ACP session by name — best-effort, swallows all errors.
+ *
+ * Called before rectification to evict sessions from the previous failed run
+ * that share the same session name (derived from the same worktree path).
+ * Without this, acpx returns exit code 4 (session in bad state) immediately.
+ */
+async function closeStaleAcpSession(worktreePath: string, sessionName: string): Promise<void> {
+  const logger = getSafeLogger();
+  try {
+    const { typedSpawn } = await import("../utils/bun-deps");
+    const cmd = ["acpx", "--cwd", worktreePath, "claude", "sessions", "close", sessionName];
+    logger?.debug("parallel", "Closing stale ACP session before rectification", { sessionName });
+    const proc = typedSpawn(cmd, { stdout: "pipe", stderr: "pipe" });
+    await proc.exited;
+  } catch {
+    // Best-effort — session may already be gone
+  }
+}
+
 /** A story that conflicted during the initial parallel merge pass */
 export interface ConflictedStoryInfo {
   storyId: string;
@@ -82,6 +102,14 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
     // Step 2: Create fresh worktree from current HEAD
     await worktreeManager.create(workdir, storyId);
     const worktreePath = path.join(workdir, ".nax-wt", storyId);
+
+    // BUG-122: Close stale ACP session from the original failed run before re-running.
+    // buildSessionName hashes the workdir path — same worktree path = same session name.
+    // The old Claude process may still be registered in acpx, causing prompt() to exit
+    // with code 4 immediately. Close it explicitly so ensureAcpSession creates fresh.
+    const { buildSessionName } = await import("../agents/acp/adapter");
+    const staleSessionName = buildSessionName(worktreePath, prd.feature, storyId);
+    await closeStaleAcpSession(worktreePath, staleSessionName);
 
     // Step 3: Re-run the story pipeline
     const story = prd.userStories.find((s) => s.id === storyId);

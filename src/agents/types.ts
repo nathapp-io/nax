@@ -43,6 +43,8 @@ export interface AgentResult {
   tokenUsage?: TokenUsage;
   /** Process ID of the spawned agent (for cleanup on failure) */
   pid?: number;
+  /** Whether the failure was a session error (e.g. acpx exit code 4 — stale/locked session) */
+  sessionError?: boolean;
 }
 
 /**

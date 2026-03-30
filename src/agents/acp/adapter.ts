@@ -115,6 +115,13 @@ export const _acpAdapterDeps = {
   sleep,
 
   /**
+   * Whether to retry when a session error (stopReason=error) is detected.
+   * Default: true (production retry safety net).
+   * Tests override to false to prevent mock callIndex drift from retries.
+   */
+  shouldRetrySessionError: true,
+
+  /**
    * Create an ACP client for the given command string.
    * Default: spawn-based client (shells out to acpx CLI).
    * Override in tests via: _acpAdapterDeps.createClient = mock(...)
@@ -528,11 +535,27 @@ export class AcpAgentAdapter implements AgentAdapter {
       sessionRole: options.sessionRole,
     });
 
+    let sessionErrorRetried = false;
     for (let attempt = 0; attempt < MAX_RATE_LIMIT_RETRIES; attempt++) {
       try {
         const result = await this._runWithClient(options, startTime);
         if (!result.success) {
           getSafeLogger()?.warn("acp-adapter", `Run failed for ${this.name}`, { exitCode: result.exitCode });
+
+          // BUG-122: session error (acpx exit code 4 — stale/locked session) — retry once
+          // with a fresh session when _acpAdapterDeps.shouldRetrySessionError is set.
+          // Default (test mode): disabled — retries would advance mock callIndex and break tests.
+          if (result.sessionError && _acpAdapterDeps.shouldRetrySessionError && !sessionErrorRetried) {
+            sessionErrorRetried = true;
+            getSafeLogger()?.warn("acp-adapter", "Session error — retrying with fresh session", {
+              storyId: options.storyId,
+              featureName: options.featureName,
+            });
+            if (options.featureName && options.storyId) {
+              await clearAcpSession(options.workdir, options.featureName, options.storyId);
+            }
+            continue;
+          }
         }
         return result;
       } catch (err) {
@@ -704,6 +727,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
 
     const success = lastResponse?.stopReason === "end_turn";
+    const isSessionError = lastResponse?.stopReason === "error";
     const output = extractOutput(lastResponse);
 
     // Prefer exact cost from acpx usage_update; fall back to token-based estimation
@@ -718,6 +742,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       exitCode: success ? 0 : 1,
       output: output.slice(-MAX_AGENT_OUTPUT_CHARS),
       rateLimited: false,
+      sessionError: isSessionError,
       durationMs,
       estimatedCost,
     };
