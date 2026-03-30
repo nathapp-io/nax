@@ -176,6 +176,7 @@ interface LLMFinding {
   line: number;
   issue: string;
   suggestion: string;
+  acId?: string;
 }
 
 interface LLMResponse {
@@ -340,11 +341,11 @@ export async function runSemanticReview(
     }
     const majorityPassed = passCount > failCount;
 
-    // Deduplicate findings by file:line
+    // Deduplicate findings by AC id (primary) or file:line (fallback)
     const seen = new Set<string>();
     const deduped: LLMFinding[] = [];
     for (const f of allFindings) {
-      const key = `${f.file}:${f.line}`;
+      const key = f.acId ?? `${f.file}:${f.line}`;
       if (!seen.has(key)) {
         seen.add(key);
         deduped.push(f);
