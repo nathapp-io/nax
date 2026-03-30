@@ -17,7 +17,7 @@
     "pending": 1
   },
   "cost": {
-    "spent": 10.024346150000001,
+    "spent": 12.50902525,
     "limit": 30
   },
   "current": {
@@ -25,12 +25,12 @@
     "title": "Integrate debate into rectification diagnosis",
     "complexity": "medium",
     "tddStrategy": "three-session-tdd-lite",
-    "model": "balanced",
+    "model": "powerful",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 5,
-  "updatedAt": "2026-03-30T11:17:55.961Z",
-  "durationMs": 8581445,
-  "lastHeartbeat": "2026-03-30T11:17:55.961Z"
+  "iterations": 6,
+  "updatedAt": "2026-03-30T11:24:55.976Z",
+  "durationMs": 9001460,
+  "lastHeartbeat": "2026-03-30T11:24:55.976Z"
 }
