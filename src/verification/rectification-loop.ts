@@ -8,6 +8,8 @@
  */
 
 import { getAgent as _getAgent } from "../agents";
+import { estimateCostByDuration } from "../agents/cost";
+import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolveModel } from "../config";
 import { resolvePermissions } from "../config/permissions";
@@ -49,8 +51,9 @@ async function _defaultRunDebate(
   stageConfig: DebateStageConfig,
   prompt: string,
 ): Promise<{ output: string | null; totalCostUsd: number }> {
+  const logger = getSafeLogger();
   const debaters: Debater[] = stageConfig.debaters ?? [];
-  const resolved: Array<{ debater: Debater; adapter: import("../agents/types").AgentAdapter }> = [];
+  const resolved: Array<{ debater: Debater; adapter: AgentAdapter }> = [];
 
   for (const debater of debaters) {
     const adapter = _rectificationDeps.getAgent(debater.agent);
@@ -63,11 +66,13 @@ async function _defaultRunDebate(
     return { output: null, totalCostUsd: 0 };
   }
 
+  const startMs = Date.now();
   const proposalSettled = await Promise.allSettled(
     resolved.map(({ debater, adapter }) =>
       adapter.complete(prompt, { model: debater.model }).then((out: string) => out),
     ),
   );
+  const durationMs = Date.now() - startMs;
 
   const successful = proposalSettled
     .filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
@@ -77,8 +82,14 @@ async function _defaultRunDebate(
     return { output: null, totalCostUsd: 0 };
   }
 
+  const successCount = successful.length;
+  const costPerDebater = estimateCostByDuration("balanced", durationMs / successCount);
+  const totalCostUsd = costPerDebater.cost * successCount;
+
+  logger?.debug("rectification", "debate diagnosis complete", { storyId, successCount, totalCostUsd });
+
   const output = successful.join("\n\n");
-  return { output, totalCostUsd: 0 };
+  return { output, totalCostUsd };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,7 +97,7 @@ async function _defaultRunDebate(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const _rectificationDeps = {
-  getAgent: _getAgent as (name: string) => import("../agents/types").AgentAdapter | undefined,
+  getAgent: _getAgent as (name: string) => AgentAdapter | undefined,
   runVerification: _fullSuite as typeof _fullSuite,
   escalateTier: _escalateTier,
   runDebate: _defaultRunDebate as typeof _defaultRunDebate,
