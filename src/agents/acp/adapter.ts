@@ -122,13 +122,6 @@ export const _acpAdapterDeps = {
   shouldRetrySessionError: true,
 
   /**
-   * Close a specific named session before retrying.
-   * Called when shouldRetrySessionError triggers a retry — enables production to
-   * close the stale session so the retry gets a genuinely fresh one.
-   */
-  closeSession: async (_client: AcpClient, _sessionName: string): Promise<void> => {},
-
-  /**
    * Create an ACP client for the given command string.
    * Default: spawn-based client (shells out to acpx CLI).
    * Override in tests via: _acpAdapterDeps.createClient = mock(...)
