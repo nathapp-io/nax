@@ -277,8 +277,7 @@ export function getLogger(): Logger {
  */
 export function getSafeLogger(): Logger | null {
   try {
-    const logger = getLogger();
-    return logger === noopLogger ? null : logger;
+    return getLogger();
   } catch {
     return null;
   }
