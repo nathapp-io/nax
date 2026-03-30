@@ -43,9 +43,11 @@ const makeScan = (): CodebaseScan => ({
 const makeConfig = (analyzeOverride?: Partial<NaxConfig["analyze"]>): NaxConfig => ({
   version: 1,
   models: {
-    fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-    balanced: { provider: "anthropic", model: "sonnet" },
-    powerful: { provider: "anthropic", model: "opus" },
+    claude: {
+      fast: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+      balanced: { provider: "anthropic", model: "sonnet" },
+      powerful: { provider: "anthropic", model: "opus" },
+    },
   },
   autoMode: {
     enabled: true,
@@ -280,7 +282,10 @@ describe("classifyStories — adapter.complete() integration (AA-002)", () => {
         const scan = makeScan();
         // Use a custom fast model to verify dynamic resolution
         const config = makeConfig();
-        config.models.fast = { provider: "anthropic", model: "claude-haiku-custom-model" };
+        config.models.claude = {
+          ...config.models.claude,
+          fast: { provider: "anthropic", model: "claude-haiku-custom-model" },
+        };
 
         let capturedOptions: Parameters<typeof _classifyDeps.adapter.complete>[1];
         _classifyDeps.adapter.complete = mock(async (_prompt: string, options) => {

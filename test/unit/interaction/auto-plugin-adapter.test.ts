@@ -169,8 +169,11 @@ describe("adapter.complete() is called with correct arguments", () => {
       model: "fast",
       naxConfig: {
         models: {
-          fast: { model: "claude-haiku-4-5", provider: "anthropic" },
+          claude: {
+            fast: { model: "claude-haiku-4-5", provider: "anthropic" },
+          },
         },
+        autoMode: { defaultAgent: "claude" },
       },
     });
 
