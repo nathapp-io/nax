@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 9,
-    "passed": 4,
+    "passed": 6,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 5
+    "pending": 3
   },
   "cost": {
-    "spent": 6.389088599999998,
+    "spent": 7.221685399999998,
     "limit": 30
   },
   "current": {
-    "storyId": "US-001-5",
-    "title": "Update validate() to check agent keys against models map",
+    "storyId": "US-002",
+    "title": "Migrate all callsites to resolveModelForAgent()",
     "complexity": "medium",
-    "tddStrategy": "test-after",
+    "tddStrategy": "tdd-simple",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 6,
-  "updatedAt": "2026-03-30T13:29:11.443Z",
-  "durationMs": 4621114,
-  "lastHeartbeat": "2026-03-30T13:29:11.443Z"
+  "iterations": 7,
+  "updatedAt": "2026-03-30T13:42:11.435Z",
+  "durationMs": 5401106,
+  "lastHeartbeat": "2026-03-30T13:42:11.434Z"
 }

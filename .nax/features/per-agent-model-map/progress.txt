@@ -2,3 +2,4 @@
 [2026-03-30T12:27:19.216Z] US-001-2 — PASSED — Implement resolveModelForAgent() in schema-types.ts — Cost: $0.7371
 [2026-03-30T13:10:59.766Z] US-001-3 — PASSED — Update ModelsSchema in schemas.ts with per-agent shape and legacy migration transform — Cost: $4.6169
 [2026-03-30T13:23:34.859Z] US-001-4 — PASSED — Update DEFAULT_CONFIG and config descriptions — Cost: $0.2292
+[2026-03-30T13:29:52.729Z] US-001-5 — PASSED — Update validate() to check agent keys against models map — Cost: $0.8326

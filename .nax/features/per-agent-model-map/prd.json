@@ -3,7 +3,7 @@
   "feature": "per-agent-model-map",
   "branchName": "feat/per-agent-model-map",
   "createdAt": "2026-03-30T12:00:00.000Z",
-  "updatedAt": "2026-03-30T13:24:03.301Z",
+  "updatedAt": "2026-03-30T13:29:54.794Z",
   "analysis": "This feature restructures the models config from a flat tier→model map to a per-agent model map (Record<agentName, Record<tier, ModelEntry>>), making it the SSOT for any (agent, tier) → model resolution. It also activates the existing dead-code fallbackOrder as a rate-limit agent fallback chain inside the ACP adapter, and adds optional agent field to TierConfig for cross-agent escalation. There are 22 callsites using config.models[tier] that need migration to resolveModelForAgent(). The fallback implementation lives inside AcpAgentAdapter so all LLM calls (plan, review, acceptance, routing, rectification, autofix, TDD, analyze) get fallback for free.",
   "userStories": [
     {
@@ -30,8 +30,8 @@
         "migration"
       ],
       "dependencies": [],
-      "status": "decomposed",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "priorErrors": [],
@@ -225,8 +225,8 @@
         "US-001-1",
         "US-001-4"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "parentStoryId": "US-001",
@@ -272,7 +272,8 @@
         "complexity": "medium",
         "testStrategy": "tdd-simple",
         "reasoning": "Mechanical migration of 22 callsites, same behavior. Medium due to breadth (16 files) not depth.",
-        "modelTier": "balanced"
+        "modelTier": "balanced",
+        "initialComplexity": "medium"
       },
       "contextFiles": [
         "src/pipeline/stages/execution.ts",
@@ -281,7 +282,8 @@
         "src/metrics/tracker.ts",
         "src/config/schema-types.ts"
       ],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "96236caad729b87a4802b730cd1196e949c146ad"
     },
     {
       "id": "US-003",
