@@ -165,37 +165,38 @@ This was the root cause of 38 test failures (March 2026) — fixed in commit `a1
 
 ## 3. Error Handling
 
-### Current Pattern (Transitional)
+### NaxError (v0.38.0+) — Standard Pattern
 
-Until `NaxError` class is introduced (v0.38.0), follow these rules:
+Use `NaxError` for all errors. It provides a machine-readable `code`, structured `context`, and preserves the error chain via `cause`.
 
 ```typescript
-// ✅ Descriptive message with context
-throw new Error(`[routing] LLM strategy failed for story ${story.id}: ${err.message}`);
+import { NaxError } from "../../src/errors";
 
-// ✅ Include stage prefix in brackets
-throw new Error(`[verify] Test command timed out after ${timeoutMs}ms`);
-
-// ❌ Vague message
-throw new Error("Something went wrong");
-
-// ❌ No context
-throw new Error("Failed");
+throw new NaxError(
+  `LLM strategy failed for story ${story.id}`,
+  "ROUTING_LLM_FAILED",
+  { storyId: story.id, stage: "routing", cause: err }
+);
 ```
 
 ### Rules
 
-1. **Always include stage prefix** in error messages: `[routing]`, `[verify]`, `[execution]`
-2. **Include identifiers** — story ID, file path, command that failed
-3. **Wrap external errors** — catch and re-throw with context, preserving original as `cause`
-4. **Never swallow errors silently** — at minimum, log them
+1. **Always use `NaxError`** — not plain `Error`
+2. **Use descriptive error codes** — `ROUTING_LLM_FAILED`, `AGENT_NOT_FOUND`, `VERIFICATION_TIMEOUT`
+3. **Include `storyId` in context** — for all pipeline stage errors
+4. **Preserve the error chain** — pass `cause: err`
+5. **Never swallow errors silently** — at minimum, log them
 
 ```typescript
 // ✅ Wrapping external errors
 try {
   await externalCall();
 } catch (err) {
-  throw new Error(`[execution] Agent spawn failed for ${storyId}`, { cause: err });
+  throw new NaxError(
+    `Agent spawn failed for ${storyId}`,
+    "AGENT_SPAWN_FAILED",
+    { storyId, stage: "execution", cause: err }
+  );
 }
 
 // ❌ Swallowing
@@ -206,16 +207,9 @@ try {
 }
 ```
 
-### Future: NaxError (v0.38.0)
+### Legacy Pattern (pre-v0.38.0)
 
-```typescript
-// Target pattern — not yet implemented
-throw new NaxError("ROUTING_LLM_FAILED", {
-  stage: "routing",
-  storyId: story.id,
-  cause: err,
-});
-```
+The old `throw new Error("[stage] message")` pattern is deprecated. Do not use it for new code.
 
 ---
 
