@@ -4,33 +4,24 @@
     "id": "run-2026-03-30T12-12-10-329Z",
     "feature": "per-agent-model-map",
     "startedAt": "2026-03-30T12:12:10.329Z",
-    "status": "running",
+    "status": "stalled",
     "dryRun": false,
     "pid": 16968
   },
   "progress": {
     "total": 9,
     "passed": 6,
-    "failed": 0,
+    "failed": 1,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 2
   },
   "cost": {
-    "spent": 10.345208849999999,
+    "spent": 12.56672205,
     "limit": 30
   },
-  "current": {
-    "storyId": "US-002",
-    "title": "Migrate all callsites to resolveModelForAgent()",
-    "complexity": "medium",
-    "tddStrategy": "tdd-simple",
-    "model": "powerful",
-    "attempt": 1,
-    "phase": "routing"
-  },
+  "current": null,
   "iterations": 8,
-  "updatedAt": "2026-03-30T14:18:11.483Z",
-  "durationMs": 7561154,
-  "lastHeartbeat": "2026-03-30T14:18:11.483Z"
+  "updatedAt": "2026-03-30T14:20:15.286Z",
+  "durationMs": 7684957
 }
