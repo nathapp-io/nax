@@ -22,5 +22,9 @@
   "US-003:verifier": {
     "sessionName": "nax-0c2a22d3-multi-agent-debate-us-003-verifier",
     "agentName": "claude"
+  },
+  "US-004:test-writer": {
+    "sessionName": "nax-0c2a22d3-multi-agent-debate-us-004-test-writer",
+    "agentName": "claude"
   }
 }

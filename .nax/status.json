@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 5,
-    "passed": 2,
+    "passed": 3,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 2
   },
   "cost": {
-    "spent": 4.7592982500000005,
+    "spent": 6.998592550000001,
     "limit": 30
   },
   "current": {
-    "storyId": "US-003",
-    "title": "Add stateful session mode for debate",
-    "complexity": "complex",
-    "tddStrategy": "three-session-tdd",
-    "model": "powerful",
+    "storyId": "US-004",
+    "title": "Integrate debate into nax plan and semantic review",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
+    "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-03-30T10:22:55.881Z",
-  "durationMs": 5281365,
-  "lastHeartbeat": "2026-03-30T10:22:55.881Z"
+  "iterations": 4,
+  "updatedAt": "2026-03-30T10:34:55.905Z",
+  "durationMs": 6001389,
+  "lastHeartbeat": "2026-03-30T10:34:55.905Z"
 }
