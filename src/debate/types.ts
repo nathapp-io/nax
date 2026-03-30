@@ -65,6 +65,14 @@ export interface DebateConfig {
   };
 }
 
+/** A single debater's proposal output */
+export interface Proposal {
+  /** Debater identity */
+  debater: Debater;
+  /** Output from the debater's complete() call */
+  output: string;
+}
+
 /** Result of a completed debate session */
 export interface DebateResult {
   /** Story identifier */
@@ -79,6 +87,10 @@ export interface DebateResult {
   debaters: string[];
   /** Resolver strategy used */
   resolverType: ResolverType;
+  /** Per-debater proposals with identity and output */
+  proposals: Proposal[];
+  /** Total cost across all complete() calls (USD) */
+  totalCostUsd: number;
   /** Optional human-readable summary from the resolver */
   summary?: string;
 }

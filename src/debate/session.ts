@@ -1,0 +1,177 @@
+/**
+ * DebateSession
+ *
+ * Orchestrates a multi-agent debate for a single pipeline stage.
+ * Resolves adapters, runs proposal and critique rounds, and calls the configured resolver.
+ */
+
+import { getAgent } from "../agents/registry";
+import type { AgentAdapter } from "../agents/types";
+import { getSafeLogger } from "../logger";
+import { buildCritiquePrompt } from "./prompts";
+import { judgeResolver, majorityResolver, synthesisResolver } from "./resolvers";
+import type { DebateResult, DebateStageConfig, Debater, Proposal } from "./types";
+
+/** Fallback agent name used when resolver.agent is not specified for synthesis/judge */
+const RESOLVER_FALLBACK_AGENT = "synthesis";
+
+export interface DebateSessionOptions {
+  storyId: string;
+  stage: string;
+  stageConfig: DebateStageConfig;
+}
+
+/** Injectable deps for testability */
+export const _debateSessionDeps = {
+  getAgent: getAgent as (name: string) => AgentAdapter | undefined,
+  getSafeLogger: getSafeLogger as () => ReturnType<typeof getSafeLogger>,
+};
+
+interface ResolvedDebater {
+  debater: Debater;
+  adapter: AgentAdapter;
+}
+
+interface SuccessfulProposal {
+  debater: Debater;
+  adapter: AgentAdapter;
+  output: string;
+}
+
+function buildFailedResult(storyId: string, stage: string, stageConfig: DebateStageConfig): DebateResult {
+  return {
+    storyId,
+    stage,
+    outcome: "failed",
+    rounds: 0,
+    debaters: [],
+    resolverType: stageConfig.resolver.type,
+    proposals: [],
+    totalCostUsd: 0,
+  };
+}
+
+export class DebateSession {
+  private readonly storyId: string;
+  private readonly stage: string;
+  private readonly stageConfig: DebateStageConfig;
+
+  constructor(opts: DebateSessionOptions) {
+    this.storyId = opts.storyId;
+    this.stage = opts.stage;
+    this.stageConfig = opts.stageConfig;
+  }
+
+  async run(prompt: string): Promise<DebateResult> {
+    const logger = _debateSessionDeps.getSafeLogger();
+    const config = this.stageConfig;
+    const debaters = config.debaters ?? [];
+
+    // Step 1: Resolve adapters — skip unavailable agents
+    const resolved: ResolvedDebater[] = [];
+    for (const debater of debaters) {
+      const adapter = _debateSessionDeps.getAgent(debater.agent);
+      if (!adapter) {
+        logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`);
+        continue;
+      }
+      resolved.push({ debater, adapter });
+    }
+
+    // Step 2: Proposal round — parallel via Promise.allSettled
+    const proposalSettled = await Promise.allSettled(
+      resolved.map(({ debater, adapter }) =>
+        adapter.complete(prompt, { model: debater.model }).then((output) => ({ debater, adapter, output })),
+      ),
+    );
+
+    const successful: SuccessfulProposal[] = proposalSettled
+      .filter((r): r is PromiseFulfilledResult<SuccessfulProposal> => r.status === "fulfilled")
+      .map((r) => r.value);
+
+    // Step 3: Fewer than 2 succeeded — single-agent fallback
+    if (successful.length < 2) {
+      if (successful.length === 1) {
+        const solo = successful[0];
+        return {
+          storyId: this.storyId,
+          stage: this.stage,
+          outcome: "passed",
+          rounds: 1,
+          debaters: [solo.debater.agent],
+          resolverType: config.resolver.type,
+          proposals: [{ debater: solo.debater, output: solo.output }],
+          totalCostUsd: 0,
+        };
+      }
+      return buildFailedResult(this.storyId, this.stage, config);
+    }
+
+    // Step 4: Critique rounds (when rounds > 1)
+    let critiqueOutputs: string[] = [];
+    if (config.rounds > 1) {
+      const proposalOutputs = successful.map((p) => p.output);
+      const critiqueSettled = await Promise.allSettled(
+        successful.map(({ debater, adapter }, i) =>
+          adapter.complete(buildCritiquePrompt(prompt, proposalOutputs, i), {
+            model: debater.model,
+          }),
+        ),
+      );
+      critiqueOutputs = critiqueSettled
+        .filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
+        .map((r) => r.value);
+    }
+
+    // Step 5: Resolve outcome
+    const proposalOutputs = successful.map((p) => p.output);
+    const outcome = await this.resolve(proposalOutputs, critiqueOutputs, successful);
+
+    const proposals: Proposal[] = successful.map((p) => ({
+      debater: p.debater,
+      output: p.output,
+    }));
+
+    return {
+      storyId: this.storyId,
+      stage: this.stage,
+      outcome,
+      rounds: config.rounds,
+      debaters: successful.map((p) => p.debater.agent),
+      resolverType: config.resolver.type,
+      proposals,
+      totalCostUsd: 0,
+    };
+  }
+
+  private async resolve(
+    proposalOutputs: string[],
+    critiqueOutputs: string[],
+    successful: SuccessfulProposal[],
+  ): Promise<"passed" | "failed" | "skipped"> {
+    const resolverConfig = this.stageConfig.resolver;
+
+    if (resolverConfig.type === "majority-fail-closed" || resolverConfig.type === "majority-fail-open") {
+      return majorityResolver(proposalOutputs);
+    }
+
+    if (resolverConfig.type === "synthesis") {
+      const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
+      const adapter = _debateSessionDeps.getAgent(agentName);
+      if (adapter) {
+        await synthesisResolver(proposalOutputs, critiqueOutputs, { adapter });
+      }
+      return "passed";
+    }
+
+    if (resolverConfig.type === "custom") {
+      await judgeResolver(proposalOutputs, critiqueOutputs, resolverConfig, {
+        getAgent: _debateSessionDeps.getAgent,
+        defaultAgentName: RESOLVER_FALLBACK_AGENT,
+      });
+      return "passed";
+    }
+
+    return "passed";
+  }
+}
