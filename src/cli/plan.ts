@@ -200,14 +200,42 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       rawResponse = await _planDeps.readFile(outputPath);
     } else {
       // CLI: one-shot complete() — simple and fast, no session overhead
-      rawResponse = await adapter.complete(prompt, {
-        model: autoModel,
-        jsonMode: true,
-        workdir,
-        config,
-        featureName: options.feature,
-        sessionRole: "plan",
-      });
+      const debateEnabled = config?.debate?.enabled && config?.debate?.stages?.plan?.enabled;
+      if (debateEnabled) {
+        // Safe: debateEnabled guard confirms config.debate.stages.plan is defined
+        const planStageConfig = config.debate?.stages.plan as import("../debate").DebateStageConfig;
+        const debateSession = _planDeps.createDebateSession({
+          storyId: options.feature,
+          stage: "plan",
+          stageConfig: planStageConfig,
+        });
+        const debateResult = await debateSession.run(prompt);
+        if (debateResult.outcome !== "failed" && debateResult.output) {
+          rawResponse = debateResult.output;
+        } else {
+          logger?.warn("debate", "All debaters failed — falling back to single agent", {
+            stage: "debate",
+            event: "fallback",
+          });
+          rawResponse = await adapter.complete(prompt, {
+            model: autoModel,
+            jsonMode: true,
+            workdir,
+            config,
+            featureName: options.feature,
+            sessionRole: "plan",
+          });
+        }
+      } else {
+        rawResponse = await adapter.complete(prompt, {
+          model: autoModel,
+          jsonMode: true,
+          workdir,
+          config,
+          featureName: options.feature,
+          sessionRole: "plan",
+        });
+      }
       // CLI adapter returns {"type":"result","result":"..."} envelope — unwrap it
       try {
         const envelope = JSON.parse(rawResponse) as Record<string, unknown>;

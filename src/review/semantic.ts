@@ -312,6 +312,82 @@ export async function runSemanticReview(
   // Build prompt
   const prompt = buildPrompt(story, semanticConfig, diff);
 
+  // Debate path: when debate is enabled for review stage, use DebateSession instead of agent.complete()
+  const reviewDebateEnabled = naxConfig?.debate?.enabled && naxConfig?.debate?.stages?.review?.enabled;
+  if (reviewDebateEnabled) {
+    // Safe: reviewDebateEnabled guard confirms naxConfig.debate.stages.review is defined
+    const reviewStageConfig = naxConfig?.debate?.stages.review as import("../debate").DebateStageConfig;
+    const debateSession = _semanticDeps.createDebateSession({
+      storyId: story.id,
+      stage: "review",
+      stageConfig: reviewStageConfig,
+    });
+    const debateResult = await debateSession.run(prompt);
+
+    // Compute majority vote and merge findings from all proposals
+    let passCount = 0;
+    let failCount = 0;
+    const allFindings: LLMFinding[] = [];
+    for (const p of debateResult.proposals) {
+      const parsed = parseLLMResponse(p.output);
+      if (parsed) {
+        if (parsed.passed) passCount++;
+        else failCount++;
+        allFindings.push(...parsed.findings);
+      } else {
+        failCount++; // unparseable — fail-closed
+      }
+    }
+    const majorityPassed = passCount > failCount;
+
+    // Deduplicate findings by file:line
+    const seen = new Set<string>();
+    const deduped: LLMFinding[] = [];
+    for (const f of allFindings) {
+      const key = `${f.file}:${f.line}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduped.push(f);
+      }
+    }
+
+    const durationMs = Date.now() - startTime;
+    if (!majorityPassed) {
+      if (deduped.length > 0) {
+        logger?.warn("review", `Semantic review failed (debate): ${deduped.length} findings`, {
+          storyId: story.id,
+          durationMs,
+        });
+        return {
+          check: "semantic",
+          success: false,
+          command: "",
+          exitCode: 1,
+          output: `Semantic review failed:\n\n${formatFindings(deduped)}`,
+          durationMs,
+          findings: toReviewFindings(deduped),
+        };
+      }
+      return {
+        check: "semantic",
+        success: false,
+        command: "",
+        exitCode: 1,
+        output: "Semantic review failed (debate, no findings)",
+        durationMs,
+      };
+    }
+    logger?.info("review", "Semantic review passed (debate)", { storyId: story.id, durationMs });
+    return {
+      check: "semantic",
+      success: true,
+      command: "",
+      exitCode: 0,
+      output: "Semantic review passed",
+      durationMs,
+    };
+  }
+
   // Call LLM
   let rawResponse: string;
   try {
