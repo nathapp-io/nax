@@ -277,4 +277,58 @@ describe("autofixStage", () => {
 
     expect(prompt).not.toContain("Only modify files within");
   });
+
+  test("#106: global autofix budget — ctx.autofixAttempt persists across cycles", async () => {
+    const saved = { ..._autofixDeps };
+    // Agent always "fails" so we exhaust attempts
+    let agentSpawnCount = 0;
+    _autofixDeps.getAgent = () =>
+      ({
+        run: async () => {
+          agentSpawnCount++;
+          return { success: false };
+        },
+      }) as any;
+    _autofixDeps.recheckReview = async () => false;
+    _autofixDeps.loadConfigForWorkdir = async () => null;
+
+    const ctx = makeCtx({
+      reviewResult: makeFailedReviewResult([{ check: "typecheck", output: "TS error" }]),
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { test: "bun test" },
+          autofix: { enabled: true, maxAttempts: 2, maxTotalAttempts: 5 },
+        },
+        autoMode: { ...DEFAULT_CONFIG.autoMode, defaultAgent: "claude" },
+      } as any,
+    });
+
+    // Simulate 3 review→autofix cycles by calling execute repeatedly
+    // Cycle 1: should use 2 attempts (total: 2)
+    await autofixStage.execute(ctx);
+    expect(ctx.autofixAttempt).toBe(2);
+    expect(agentSpawnCount).toBe(2);
+
+    // Cycle 2: reset review failure, call again — should use 2 more (total: 4)
+    ctx.reviewResult = makeFailedReviewResult([{ check: "typecheck", output: "TS error" }]);
+    await autofixStage.execute(ctx);
+    expect(ctx.autofixAttempt).toBe(4);
+    expect(agentSpawnCount).toBe(4);
+
+    // Cycle 3: only 1 remaining in budget (5 - 4 = 1)
+    ctx.reviewResult = makeFailedReviewResult([{ check: "typecheck", output: "TS error" }]);
+    await autofixStage.execute(ctx);
+    expect(ctx.autofixAttempt).toBe(5);
+    expect(agentSpawnCount).toBe(5); // only 1 more, not 2
+
+    // Cycle 4: budget exhausted — no more spawns
+    ctx.reviewResult = makeFailedReviewResult([{ check: "typecheck", output: "TS error" }]);
+    await autofixStage.execute(ctx);
+    expect(ctx.autofixAttempt).toBe(5); // unchanged
+    expect(agentSpawnCount).toBe(5); // no more spawns
+
+    Object.assign(_autofixDeps, saved);
+  });
 });

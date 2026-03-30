@@ -147,8 +147,10 @@ export interface QualityConfig {
   autofix?: {
     /** Whether to auto-fix lint/format errors before escalating (default: true) */
     enabled?: boolean;
-    /** Max auto-fix attempts (default: 2) */
+    /** Max auto-fix attempts per review-autofix cycle (default: 2) */
     maxAttempts?: number;
+    /** Max total auto-fix attempts across all review-autofix cycles per story (default: 10) */
+    maxTotalAttempts?: number;
   };
   /** Append --forceExit to test command to prevent open handle hangs (default: false) */
   forceExit: boolean;

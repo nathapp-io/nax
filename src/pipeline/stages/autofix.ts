@@ -193,7 +193,9 @@ Commit your fixes when done.${scopeConstraint}`;
 async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
   const logger = getLogger();
   const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
-  const maxAttempts = effectiveConfig.quality.autofix?.maxAttempts ?? 2;
+  const maxPerCycle = effectiveConfig.quality.autofix?.maxAttempts ?? 2;
+  const maxTotal = effectiveConfig.quality.autofix?.maxTotalAttempts ?? 10;
+  const consumed = ctx.autofixAttempt ?? 0;
   const failedChecks = collectFailedChecks(ctx);
 
   if (failedChecks.length === 0) {
@@ -201,16 +203,33 @@ async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
     return false;
   }
 
+  // Global budget check — escalate if total attempts exhausted across all cycles
+  if (consumed >= maxTotal) {
+    logger.warn("autofix", "Global autofix budget exhausted — escalating", {
+      storyId: ctx.story.id,
+      totalAttempts: consumed,
+      maxTotalAttempts: maxTotal,
+    });
+    return false;
+  }
+
+  // Cap this cycle's attempts to not exceed global budget
+  const remainingBudget = maxTotal - consumed;
+  const maxAttempts = Math.min(maxPerCycle, remainingBudget);
+
   logger.info("autofix", "Starting agent rectification for review failures", {
     storyId: ctx.story.id,
     failedChecks: failedChecks.map((c) => c.check),
     maxAttempts,
+    totalUsed: consumed,
+    maxTotalAttempts: maxTotal,
   });
 
   const agentGetFn = ctx.agentGetFn ?? _autofixDeps.getAgent;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    logger.info("autofix", `Agent rectification attempt ${attempt}/${maxAttempts}`, { storyId: ctx.story.id });
+    ctx.autofixAttempt = consumed + attempt;
+    logger.info("autofix", `Agent rectification attempt ${ctx.autofixAttempt}/${maxTotal}`, { storyId: ctx.story.id });
 
     const agent = agentGetFn(ctx.config.autoMode.defaultAgent);
     if (!agent) {
