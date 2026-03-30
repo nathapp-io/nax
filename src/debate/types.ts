@@ -93,4 +93,6 @@ export interface DebateResult {
   totalCostUsd: number;
   /** Optional human-readable summary from the resolver */
   summary?: string;
+  /** Resolved output text from the debate (populated by the resolver; used as rawResponse in plan/review) */
+  output?: string;
 }

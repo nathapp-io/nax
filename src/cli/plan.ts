@@ -19,6 +19,8 @@ import { resolvePermissions } from "../config/permissions";
 import type { ProjectProfile } from "../config/runtime-types";
 import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE, getAcQualityRules } from "../config/test-strategy";
 import { discoverWorkspacePackages } from "../context/generator";
+import { DebateSession } from "../debate";
+import type { DebateSessionOptions } from "../debate";
 import { PidRegistry } from "../execution/pid-registry";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import { initInteractionChain } from "../interaction/init";
@@ -55,6 +57,7 @@ export const _planDeps = {
     onQuestionDetected: (text: string) => Promise<string>;
   } => createCliInteractionBridge(),
   initInteractionChain: (cfg: NaxConfig, headless: boolean) => initInteractionChain(cfg, headless),
+  createDebateSession: (opts: DebateSessionOptions): DebateSession => new DebateSession(opts),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

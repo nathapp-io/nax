@@ -11,6 +11,8 @@ import { spawn } from "bun";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import type { ModelTier } from "../config/schema-types";
+import { DebateSession } from "../debate";
+import type { DebateSessionOptions } from "../debate";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
 import { getMergeBase, isGitRefValid } from "../utils/git";
@@ -32,6 +34,7 @@ export const _semanticDeps = {
   spawn: spawn as typeof spawn,
   isGitRefValid,
   getMergeBase,
+  createDebateSession: (opts: DebateSessionOptions): DebateSession => new DebateSession(opts),
 };
 
 /**
