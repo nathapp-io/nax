@@ -92,6 +92,30 @@ export function validateConfig(config: NaxConfig): ValidationResult {
     }
   }
 
+  // Validate fallbackOrder agents exist as keys in models
+  if (config.models && config.autoMode?.fallbackOrder) {
+    const modelKeys = Object.keys(config.models);
+    for (const agent of config.autoMode.fallbackOrder) {
+      if (!modelKeys.includes(agent)) {
+        errors.push(
+          `autoMode.fallbackOrder: agent "${agent}" is not a key in models (available: ${modelKeys.join(", ")})`,
+        );
+      }
+    }
+  }
+
+  // Validate tierOrder entries with agent field exist as keys in models
+  if (config.models && config.autoMode?.escalation?.tierOrder) {
+    const modelKeys = Object.keys(config.models);
+    for (const tc of config.autoMode.escalation.tierOrder) {
+      if (tc.agent !== undefined && !modelKeys.includes(tc.agent)) {
+        errors.push(
+          `autoMode.escalation.tierOrder: tier "${tc.tier}" agent "${tc.agent}" is not a key in models (available: ${modelKeys.join(", ")})`,
+        );
+      }
+    }
+  }
+
   // Validate complexityRouting values reference tiers that exist in models config
   const defaultAgentKey = config.autoMode?.defaultAgent ?? "claude";
   const configuredTiers = Object.keys(config.models[defaultAgentKey] ?? {});

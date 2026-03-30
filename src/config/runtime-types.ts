@@ -35,7 +35,7 @@ export interface AutoModeConfig {
   escalation: {
     enabled: boolean;
     /** Ordered tier escalation with per-tier attempt budgets */
-    tierOrder: Array<{ tier: string; attempts: number }>;
+    tierOrder: Array<{ tier: string; attempts: number; agent?: string }>;
     /** When a batch fails, escalate all stories in the batch (default: true) */
     escalateEntireBatch?: boolean;
   };
