@@ -3,7 +3,7 @@
   "feature": "multi-agent-debate",
   "branchName": "feat/multi-agent-debate",
   "createdAt": "2026-03-30T08:46:00.000Z",
-  "updatedAt": "2026-03-30T10:24:35.956Z",
+  "updatedAt": "2026-03-30T10:55:46.621Z",
   "analysis": "This feature adds a debate session primitive to nax. The debate system wraps existing adapter.complete() calls with multi-agent deliberation — spawning 2-3 agents (potentially different agents via ACP) to propose, critique, and resolve judgment tasks. Key integration points: nax plan (src/cli/plan.ts), semantic review (src/review/semantic.ts), and rectification loop (src/verification/rectification-loop.ts). The debate module is self-contained in src/debate/ and uses the existing AgentAdapter.complete() interface. Per-stage defaults: plan uses stateful sessions + synthesis resolver (3 rounds), review uses one-shot + majority resolver (2 rounds). Agent/model defaults inherit from config.autoMode.defaultAgent + config.models.fast.",
   "userStories": [
     {
@@ -158,8 +158,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "priorErrors": [],
@@ -209,13 +209,15 @@
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "Single integration point, config-gated, graceful degradation. Medium due to rectification loop complexity.",
-        "modelTier": "balanced"
+        "modelTier": "balanced",
+        "initialComplexity": "medium"
       },
       "contextFiles": [
         "src/verification/rectification-loop.ts",
         "src/verification/rectification.ts"
       ],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "2a2760fdc61bc068b1f53c6e0ef938514f94ebc2"
     }
   ]
 }

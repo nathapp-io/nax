@@ -1,3 +1,4 @@
 [2026-03-30T09:13:57.900Z] US-001 — PASSED — Add debate types, Zod config schema, and defaults — Cost: $2.0538
 [2026-03-30T09:49:07.976Z] US-002 — PASSED — Implement DebateSession core with one-shot mode and resolvers — Cost: $2.7055
 [2026-03-30T10:23:46.866Z] US-003 — PASSED — Add stateful session mode for debate — Cost: $2.2393
+[2026-03-30T10:45:42.618Z] US-004 — PASSED — Integrate debate into nax plan and semantic review — Cost: $3.0258
