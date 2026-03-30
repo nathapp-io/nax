@@ -92,6 +92,7 @@ export const completionStage: PipelineStage = {
     // Display progress
     const updatedCounts = countStories(ctx.prd);
     logger.info("completion", "Progress update", {
+      storyId: ctx.story.id,
       completed: updatedCounts.passed + updatedCounts.failed,
       total: updatedCounts.total,
       passed: updatedCounts.passed,

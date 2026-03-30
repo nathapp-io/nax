@@ -115,10 +115,10 @@ export const acceptanceStage: PipelineStage = {
     // PKG-004: use centrally resolved effective config
     const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
 
-    logger.info("acceptance", "Running acceptance tests");
+    logger.info("acceptance", "Running acceptance tests", { storyId: ctx.story.id });
 
     if (!ctx.featureDir) {
-      logger.warn("acceptance", "No feature directory — skipping acceptance tests");
+      logger.warn("acceptance", "No feature directory — skipping acceptance tests", { storyId: ctx.story.id });
       return { action: "continue" };
     }
 
@@ -143,7 +143,7 @@ export const acceptanceStage: PipelineStage = {
       const exists = await testFile.exists();
 
       if (!exists) {
-        logger.warn("acceptance", "Acceptance test file not found — skipping", { testPath });
+        logger.warn("acceptance", "Acceptance test file not found — skipping", { storyId: ctx.story.id, testPath });
         continue;
       }
 
@@ -155,6 +155,7 @@ export const acceptanceStage: PipelineStage = {
         effectiveConfig.acceptance.command,
       );
       logger.info("acceptance", "Running acceptance command", {
+        storyId: ctx.story.id,
         cmd: testCmdParts.join(" "),
         packageDir,
       });
@@ -182,6 +183,7 @@ export const acceptanceStage: PipelineStage = {
 
       if (overriddenFailures.length > 0) {
         logger.warn("acceptance", "Skipped failures (overridden)", {
+          storyId: ctx.story.id,
           overriddenFailures,
           overrides: overriddenFailures.map((acId) => ({ acId, reason: overrides[acId] })),
         });
@@ -190,6 +192,7 @@ export const acceptanceStage: PipelineStage = {
       // Non-zero exit but no AC failures parsed — test crashed
       if (failedACs.length === 0 && exitCode !== 0) {
         logger.error("acceptance", "Tests errored with no AC failures parsed", {
+          storyId: ctx.story.id,
           exitCode,
           packageDir,
         });
@@ -208,12 +211,13 @@ export const acceptanceStage: PipelineStage = {
 
       if (actualFailures.length > 0) {
         logger.error("acceptance", "Acceptance tests failed", {
+          storyId: ctx.story.id,
           failedACs: actualFailures,
           packageDir,
         });
         logTestOutput(logger, "acceptance", output);
       } else if (exitCode === 0) {
-        logger.info("acceptance", "Package acceptance tests passed", { packageDir });
+        logger.info("acceptance", "Package acceptance tests passed", { storyId: ctx.story.id, packageDir });
       }
     }
 
@@ -221,7 +225,7 @@ export const acceptanceStage: PipelineStage = {
 
     // All packages passed
     if (allFailedACs.length === 0) {
-      logger.info("acceptance", "All acceptance tests passed");
+      logger.info("acceptance", "All acceptance tests passed", { storyId: ctx.story.id });
       return { action: "continue" };
     }
 
