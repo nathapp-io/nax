@@ -341,15 +341,32 @@ describe("createRectificationPrompt", () => {
       expect(prompt).not.toContain("Final Rectification Attempt");
     });
 
-    test("rethink disabled when rethinkAtAttempt >= maxRetries", () => {
-      const disabledConfig: RectificationConfig = {
+    test("rethink clamped to maxRetries when rethinkAtAttempt > maxRetries", () => {
+      // rethinkAtAttempt=99 > maxRetries=4 → clamped to 4 → fires on attempt 4
+      const highThresholdConfig: RectificationConfig = {
         ...escalationConfig,
         rethinkAtAttempt: 99,
         urgencyAtAttempt: 99,
       };
-      const prompt = createRectificationPrompt(mockFailures, mockStory, disabledConfig, 3);
-      expect(prompt).not.toContain("Previous Attempt Did Not Fix");
-      expect(prompt).not.toContain("Final Rectification Attempt");
+      const promptAttempt3 = createRectificationPrompt(mockFailures, mockStory, highThresholdConfig, 3);
+      expect(promptAttempt3).not.toContain("Previous Attempt Did Not Fix");
+
+      const promptAttempt4 = createRectificationPrompt(mockFailures, mockStory, highThresholdConfig, 4);
+      expect(promptAttempt4).toContain("Previous Attempt Did Not Fix");
+      expect(promptAttempt4).toContain("Final Rectification Attempt"); // urgency also clamped to 4
+    });
+
+    test("default urgencyAtAttempt=3 fires on final attempt when maxRetries=2", () => {
+      // Key regression: with default maxRetries=2, urgencyAtAttempt=3 was dead — clamping fixes this
+      const defaultMaxConfig: RectificationConfig = {
+        ...escalationConfig,
+        maxRetries: 2,
+        rethinkAtAttempt: 2,
+        urgencyAtAttempt: 3, // > maxRetries=2 → clamped to 2
+      };
+      const prompt = createRectificationPrompt(mockFailures, mockStory, defaultMaxConfig, 2);
+      expect(prompt).toContain("Previous Attempt Did Not Fix");
+      expect(prompt).toContain("Final Rectification Attempt"); // urgency fires because clamped to 2
     });
 
     test("rethink but no urgency when urgencyAtAttempt > attempt", () => {
