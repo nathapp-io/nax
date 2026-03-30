@@ -55,11 +55,15 @@ export function shouldRetryRectification(state: RectificationState, config: Rect
  * - rethink phase  (attempt >= rethinkAtAttempt):  nudge the agent to change strategy
  * - urgency phase  (attempt >= urgencyAtAttempt):  add "final chance" pressure
  *
+ * Both thresholds are clamped to maxRetries so they always fire on the final attempt
+ * when the configured value exceeds maxRetries (e.g. default urgencyAtAttempt=3 with
+ * default maxRetries=2 → urgency fires on attempt 2).
+ *
  * Returns an empty string when no injection is needed.
  */
 function buildEscalationPreamble(attempt: number, config: RectificationConfig): string {
-  const rethinkAt = config.rethinkAtAttempt ?? 2;
-  const urgencyAt = config.urgencyAtAttempt ?? 3;
+  const rethinkAt = Math.min(config.rethinkAtAttempt ?? 2, config.maxRetries);
+  const urgencyAt = Math.min(config.urgencyAtAttempt ?? 3, config.maxRetries);
 
   if (attempt < rethinkAt) return "";
 

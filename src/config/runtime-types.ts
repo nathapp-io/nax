@@ -50,12 +50,13 @@ export interface RectificationConfig {
   /**
    * Attempt number at which "rethink your approach" language is injected into the prompt.
    * Nudges the agent to try a fundamentally different strategy instead of repeating the same fix.
-   * Set >= maxRetries to disable. (default: 2)
+   * Clamped to maxRetries at runtime — so if this exceeds maxRetries it fires on the final attempt. (default: 2)
    */
   rethinkAtAttempt: number;
   /**
    * Attempt number at which "final chance before escalation" urgency is added to the prompt.
-   * Should be >= rethinkAtAttempt. Set >= maxRetries to disable. (default: 3)
+   * Should be >= rethinkAtAttempt. Clamped to maxRetries at runtime — so the default of 3 fires
+   * on the final attempt when maxRetries=2. (default: 3)
    */
   urgencyAtAttempt: number;
 }
