@@ -382,10 +382,10 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
-      "attempts": 0,
+      "attempts": 1,
       "parentStoryId": "US-003",
       "priorErrors": [],
       "priorFailures": [],
