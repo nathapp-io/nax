@@ -859,7 +859,12 @@ export class AcpAgentAdapter implements AgentAdapter {
         const tier = _options.modelTier;
         const { resolveModelForAgent } = await import("../../config/schema");
         try {
-          model = resolveModelForAgent(_options.config.models, agentName, tier, agentName).model;
+          model = resolveModelForAgent(
+            _options.config.models,
+            agentName,
+            tier,
+            _options.config.autoMode?.defaultAgent ?? agentName,
+          ).model;
         } catch {
           // fall through to "default"
         }
