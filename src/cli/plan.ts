@@ -830,5 +830,48 @@ export async function runReplanLoop(
   config: NaxConfig,
   options: { feature: string; prd: PRD; prdPath: string },
 ): Promise<void> {
-  // stub — implementer fills in (US-003)
+  const action = config?.precheck?.storySizeGate?.action ?? "block";
+  const maxAttempts = config?.precheck?.storySizeGate?.maxReplanAttempts ?? 3;
+
+  // AC-6: warn/skip action — replan loop does not fire
+  if (action !== "block") return;
+
+  const logger = getLogger();
+
+  // Initial precheck
+  let precheckResult = await _planDeps.runPrecheck(config, options.prd, { workdir, silent: true });
+
+  // No flagged stories — nothing to replan
+  if ((precheckResult.flaggedStories ?? []).length === 0) return;
+
+  let currentPrd = options.prd;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const flagged = precheckResult.flaggedStories ?? [];
+    logger?.info("replan", `[Replan ${attempt}/${maxAttempts}] Decomposing ${flagged.length} oversized stories...`);
+
+    for (const flaggedStory of flagged) {
+      await _planDeps.planDecompose(workdir, config, {
+        feature: options.feature,
+        storyId: flaggedStory.storyId,
+      });
+    }
+
+    // Reload PRD from disk after decompose
+    const prdContent = await _planDeps.readFile(options.prdPath);
+    currentPrd = JSON.parse(prdContent) as PRD;
+
+    // Re-run precheck with reloaded PRD
+    precheckResult = await _planDeps.runPrecheck(config, currentPrd, { workdir, silent: true });
+
+    // AC-3: exit early when all stories cleared
+    if ((precheckResult.flaggedStories ?? []).length === 0) return;
+  }
+
+  // AC-5: still blocked after max attempts
+  const remainingIds = (precheckResult.flaggedStories ?? []).map((f) => f.storyId).join(", ");
+  logger?.error("replan", `Replan exhausted: stories still oversized after ${maxAttempts} attempts`, {
+    storyIds: remainingIds,
+  });
+  _planDeps.processExit(1);
 }
