@@ -353,7 +353,7 @@ export class DebateSession {
     const resolverConfig = this.stageConfig.resolver;
 
     if (resolverConfig.type === "majority-fail-closed" || resolverConfig.type === "majority-fail-open") {
-      return majorityResolver(proposalOutputs);
+      return majorityResolver(proposalOutputs, resolverConfig.type === "majority-fail-open");
     }
 
     if (resolverConfig.type === "synthesis") {
