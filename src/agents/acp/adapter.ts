@@ -899,10 +899,11 @@ export class AcpAgentAdapter implements AgentAdapter {
         if (parsed.type === "auth") {
           this.markUnavailable(currentAgent);
           const fallbacks = this.resolveFallbackOrder(config, currentAgent);
-          if (fallbacks.length === 0) {
+          const availableFallbacks = fallbacks.filter((a) => !this._unavailableAgents.has(a));
+          if (availableFallbacks.length === 0) {
             throw new AllAgentsUnavailableError([...this._unavailableAgents]);
           }
-          currentAgent = fallbacks[0];
+          currentAgent = availableFallbacks[0];
         } else if (parsed.type === "rate-limit") {
           rateLimitedRetryAfter.set(currentAgent, parsed.retryAfterSeconds);
           const fallbacks = this.resolveFallbackOrder(config, currentAgent);
