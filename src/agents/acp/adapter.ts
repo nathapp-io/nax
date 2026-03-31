@@ -17,6 +17,7 @@ import { resolvePermissions } from "../../config/permissions";
 import { getSafeLogger } from "../../logger";
 import { sleep, which } from "../../utils/bun-deps";
 import { buildDecomposePrompt, parseDecomposeOutput } from "../shared/decompose";
+import { parseAgentError } from "./parse-agent-error";
 import { createSpawnAcpClient } from "./spawn-client";
 
 import type {
@@ -134,6 +135,15 @@ export const _acpAdapterDeps = {
   ): AcpClient {
     return createSpawnAcpClient(cmdStr, cwd, timeoutSeconds, pidRegistry);
   },
+};
+
+/**
+ * Injectable dependencies for the fallback retry loop in complete().
+ * Override in tests to mock parseAgentError and sleep.
+ */
+export const _fallbackDeps = {
+  parseAgentError,
+  sleep,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
