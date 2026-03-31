@@ -14,15 +14,15 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import {
   AcpAgentAdapter,
-  _acpAdapterDeps,
-  _fallbackDeps,
   type AcpClient,
   type AcpSession,
   type AcpSessionResponse,
+  _acpAdapterDeps,
+  _fallbackDeps,
 } from "../../../../src/agents/acp/adapter";
 import { AllAgentsUnavailableError } from "../../../../src/agents/index";
-import type { NaxConfig } from "../../../../src/config";
 import type { AgentError } from "../../../../src/agents/types";
+import type { NaxConfig } from "../../../../src/config";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -212,10 +212,7 @@ describe("complete() — 429 rate-limit fallback", () => {
     _fallbackDeps.parseAgentError = mock((_s: string): AgentError => ({ type: "rate-limit" }));
     _fallbackDeps.sleep = mock(async (_ms: number) => {});
 
-    const { restore } = mockClientQueue(
-      makeErrorClient("429"),
-      makeSuccessClient("transparent result"),
-    );
+    const { restore } = mockClientQueue(makeErrorClient("429"), makeSuccessClient("transparent result"));
 
     try {
       const adapter = new AcpAgentAdapter("claude");
@@ -266,10 +263,7 @@ describe("complete() — 401 auth fallback", () => {
     _fallbackDeps.parseAgentError = mock((_s: string): AgentError => ({ type: "auth" }));
     _fallbackDeps.sleep = mock(async (_ms: number) => {});
 
-    const { restore } = mockClientQueue(
-      makeErrorClient("401"),
-      makeSuccessClient("from-gemini"),
-    );
+    const { restore } = mockClientQueue(makeErrorClient("401"), makeSuccessClient("from-gemini"));
 
     try {
       const adapter = new AcpAgentAdapter("claude");
@@ -345,6 +339,7 @@ describe("complete() — all fallbackOrder agents rate-limited", () => {
 
     const { restore } = mockClientQueue(
       makeErrorClient("429"),
+      makeErrorClient("429"),
       makeSuccessClient("result after 30s"),
     );
 
@@ -400,10 +395,12 @@ describe("complete() — single fallbackOrder agent rate-limited", () => {
     const sleepMock = mock(async (_ms: number) => {});
     _fallbackDeps.sleep = sleepMock;
 
-    _fallbackDeps.parseAgentError = mock((_s: string): AgentError => ({
-      type: "rate-limit",
-      retryAfterSeconds: 90,
-    }));
+    _fallbackDeps.parseAgentError = mock(
+      (_s: string): AgentError => ({
+        type: "rate-limit",
+        retryAfterSeconds: 90,
+      }),
+    );
 
     // Primary "claude" fails (rate-limit), fallback "codex" also fails (rate-limit),
     // then after sleep, codex succeeds
@@ -436,11 +433,7 @@ describe("complete() — single fallbackOrder agent rate-limited", () => {
 
     _fallbackDeps.parseAgentError = mock((_s: string): AgentError => ({ type: "rate-limit" }));
 
-    const { restore } = mockClientQueue(
-      makeErrorClient("429"),
-      makeErrorClient("429"),
-      makeSuccessClient("ok"),
-    );
+    const { restore } = mockClientQueue(makeErrorClient("429"), makeErrorClient("429"), makeSuccessClient("ok"));
 
     try {
       const adapter = new AcpAgentAdapter("claude");
@@ -463,10 +456,7 @@ describe("complete() — all agents auth-failed", () => {
     _fallbackDeps.sleep = mock(async (_ms: number) => {});
 
     // All clients throw auth errors
-    const { restore } = mockClientQueue(
-      makeErrorClient("401 Unauthorized"),
-      makeErrorClient("401 Unauthorized"),
-    );
+    const { restore } = mockClientQueue(makeErrorClient("401 Unauthorized"), makeErrorClient("401 Unauthorized"));
 
     try {
       const adapter = new AcpAgentAdapter("claude");
@@ -484,10 +474,7 @@ describe("complete() — all agents auth-failed", () => {
     _fallbackDeps.parseAgentError = mock((_s: string): AgentError => ({ type: "auth" }));
     _fallbackDeps.sleep = mock(async (_ms: number) => {});
 
-    const { restore } = mockClientQueue(
-      makeErrorClient("401"),
-      makeErrorClient("401"),
-    );
+    const { restore } = mockClientQueue(makeErrorClient("401"), makeErrorClient("401"));
 
     try {
       const adapter = new AcpAgentAdapter("claude");
@@ -505,10 +492,7 @@ describe("complete() — all agents auth-failed", () => {
     _fallbackDeps.parseAgentError = mock((_s: string): AgentError => ({ type: "auth" }));
     _fallbackDeps.sleep = mock(async (_ms: number) => {});
 
-    const { restore } = mockClientQueue(
-      makeErrorClient("401"),
-      makeErrorClient("401"),
-    );
+    const { restore } = mockClientQueue(makeErrorClient("401"), makeErrorClient("401"));
 
     try {
       const adapter = new AcpAgentAdapter("claude");
@@ -535,16 +519,13 @@ describe("complete() — all agents auth-failed", () => {
     _fallbackDeps.sleep = sleepMock;
     _fallbackDeps.parseAgentError = mock((_s: string): AgentError => ({ type: "auth" }));
 
-    const { restore } = mockClientQueue(
-      makeErrorClient("401"),
-      makeErrorClient("401"),
-    );
+    const { restore } = mockClientQueue(makeErrorClient("401"), makeErrorClient("401"));
 
     try {
       const adapter = new AcpAgentAdapter("claude");
-      await expect(
-        adapter.complete("prompt", { config: makeConfig(["claude", "codex"]) }),
-      ).rejects.toBeInstanceOf(AllAgentsUnavailableError);
+      await expect(adapter.complete("prompt", { config: makeConfig(["claude", "codex"]) })).rejects.toBeInstanceOf(
+        AllAgentsUnavailableError,
+      );
 
       expect(sleepMock).not.toHaveBeenCalled();
     } finally {
