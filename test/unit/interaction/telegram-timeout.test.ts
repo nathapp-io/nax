@@ -6,11 +6,22 @@
  * BUG-116: checkReviewGate ignores fallback on timeout (should auto-approve for fallback:"continue")
  */
 
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { TelegramInteractionPlugin } from "../../../src/interaction/plugins/telegram";
 import type { InteractionRequest } from "../../../src/interaction/types";
 
 describe("TelegramInteractionPlugin - Regression BUG-116", () => {
+  let savedFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    savedFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    mock.restore();
+    globalThis.fetch = savedFetch;
+  });
+
   test("receive() returns respondedBy: 'timeout' on timeout", async () => {
     let editCalled = false;
     let editBody: Record<string, unknown> | null = null;

@@ -35,7 +35,13 @@ interface WebhookConfig {
 /** Zod schema for validating webhook plugin config */
 const WebhookConfigSchema = z.object({
   url: z.string().url().optional(),
-  callbackPort: z.number().int().min(1024).max(65535).optional(),
+  callbackPort: z
+    .number()
+    .int()
+    .refine((p) => p === 0 || (p >= 1024 && p <= 65535), {
+      message: "Port must be 0 (auto-assign) or between 1024 and 65535",
+    })
+    .optional(),
   secret: z.string().optional(),
   maxPayloadBytes: z.number().int().positive().optional(),
 });
@@ -61,6 +67,12 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
   private pendingResponses = new Map<string, InteractionResponse>();
   /** Event-driven callbacks: requestId → resolve fn (set by receive(), called by handleRequest) */
   private receiveCallbacks = new Map<string, (response: InteractionResponse) => void>();
+
+  /** The actual port the callback server is listening on; null if not yet started. */
+  get callbackServerPort(): number | null {
+    if (!this.server) return null;
+    return (this.server as unknown as { port: number }).port;
+  }
 
   async init(config: Record<string, unknown>): Promise<void> {
     const cfg = WebhookConfigSchema.parse(config);

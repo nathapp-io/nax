@@ -391,7 +391,7 @@ describe("WebhookInteractionPlugin - send() and HMAC validation", () => {
     const captured: { contentType: string | null; body: unknown } = { contentType: null, body: null };
 
     const testServer = Bun.serve({
-      port: 19977,
+      port: 0, // OS assigns an available port — avoids conflicts on rerun
       fetch: async (req) => {
         captured.contentType = req.headers.get("content-type");
         captured.body = await req.json();
@@ -401,7 +401,7 @@ describe("WebhookInteractionPlugin - send() and HMAC validation", () => {
 
     const plugin = new WebhookInteractionPlugin();
     try {
-      await plugin.init({ url: "http://localhost:19977/hook" });
+      await plugin.init({ url: `http://localhost:${testServer.port}/hook` });
 
       await plugin.send(makeWebhookRequest("wh-send-1"));
 
@@ -410,7 +410,7 @@ describe("WebhookInteractionPlugin - send() and HMAC validation", () => {
       // callbackUrl is injected by send()
       expect(typeof (captured.body as { callbackUrl: string }).callbackUrl).toBe("string");
     } finally {
-      testServer.stop();
+      testServer.stop(true);
       await plugin.destroy();
     }
   });
@@ -419,7 +419,7 @@ describe("WebhookInteractionPlugin - send() and HMAC validation", () => {
     const captured: { signature: string | null; body: string } = { signature: null, body: "" };
 
     const testServer = Bun.serve({
-      port: 19978,
+      port: 0, // OS assigns an available port — avoids conflicts on rerun
       fetch: async (req) => {
         captured.signature = req.headers.get("x-nax-signature");
         captured.body = await req.text();
@@ -429,7 +429,7 @@ describe("WebhookInteractionPlugin - send() and HMAC validation", () => {
 
     const plugin = new WebhookInteractionPlugin();
     try {
-      await plugin.init({ url: "http://localhost:19978/hook", secret: "my-secret" });
+      await plugin.init({ url: `http://localhost:${testServer.port}/hook`, secret: "my-secret" });
 
       await plugin.send(makeWebhookRequest("wh-sig-1"));
 
@@ -438,7 +438,7 @@ describe("WebhookInteractionPlugin - send() and HMAC validation", () => {
       const expected = createHmac("sha256", "my-secret").update(captured.body).digest("hex");
       expect(captured.signature).toBe(expected);
     } finally {
-      testServer.stop();
+      testServer.stop(true);
       await plugin.destroy();
     }
   });
@@ -447,20 +447,23 @@ describe("WebhookInteractionPlugin - send() and HMAC validation", () => {
     const plugin = new WebhookInteractionPlugin();
     // url won't be called in this test — we test the callback server
     await plugin.init({
-      url: "http://localhost:19900/unused",
+      url: "http://localhost/unused",
       secret: "test-secret",
-      callbackPort: 19988,
+      callbackPort: 0, // OS assigns an available port — avoids conflicts on rerun
     });
 
     // Start the callback server by calling receive() in the background
     const receivePromise = plugin.receive("wh-hmac-1", 4000);
 
-    // Give the server a moment to bind
+    // Drain microtasks so startServer() completes and the port is assigned
     await Promise.resolve();
+    await Promise.resolve();
+
+    const callbackPort = plugin.callbackServerPort!;
 
     try {
       // POST without signature → 401
-      const noSigResp = await fetch("http://localhost:19988/nax/interact/wh-hmac-1", {
+      const noSigResp = await fetch(`http://localhost:${callbackPort}/nax/interact/wh-hmac-1`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ requestId: "wh-hmac-1", action: "approve", respondedAt: Date.now() }),
@@ -468,7 +471,7 @@ describe("WebhookInteractionPlugin - send() and HMAC validation", () => {
       expect(noSigResp.status).toBe(401);
 
       // POST with wrong signature → 401
-      const badSigResp = await fetch("http://localhost:19988/nax/interact/wh-hmac-1", {
+      const badSigResp = await fetch(`http://localhost:${callbackPort}/nax/interact/wh-hmac-1`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Nax-Signature": "deadbeef" },
         body: JSON.stringify({ requestId: "wh-hmac-1", action: "approve", respondedAt: Date.now() }),
@@ -478,7 +481,7 @@ describe("WebhookInteractionPlugin - send() and HMAC validation", () => {
       // POST with correct HMAC signature → 200, receive() resolves
       const payload = JSON.stringify({ requestId: "wh-hmac-1", action: "approve", respondedAt: Date.now() });
       const sig = createHmac("sha256", "test-secret").update(payload).digest("hex");
-      const validResp = await fetch("http://localhost:19988/nax/interact/wh-hmac-1", {
+      const validResp = await fetch(`http://localhost:${callbackPort}/nax/interact/wh-hmac-1`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Nax-Signature": sig },
         body: payload,
