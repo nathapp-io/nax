@@ -139,8 +139,14 @@ export const _acpAdapterDeps = {
 };
 
 /**
- * Injectable dependencies for the fallback retry loop in complete().
+ * Injectable dependencies for the fallback retry loop in complete() and run().
  * Override in tests to mock parseAgentError and sleep.
+ *
+ * Fallback logging uses getSafeLogger() with stage 'agent-fallback'.
+ * Log data always has storyId as the first key, followed by
+ * originalAgent, fallbackAgent, errorType, and retryCount (AC6).
+ * Unit tests for this interface are in:
+ *   test/unit/agents/acp/adapter-fallback-logging.test.ts
  */
 export const _fallbackDeps = {
   parseAgentError,
