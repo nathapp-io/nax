@@ -12,6 +12,7 @@
 import { spawn } from "bun";
 import { getSafeLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
+import { killProcessGroup } from "../utils/process-kill";
 
 /** Default timeout for quality commands — matches legacy REVIEW_CHECK_TIMEOUT_MS. */
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -80,17 +81,9 @@ export async function runQualityCommand(opts: QualityCommandOptions): Promise<Qu
     let timedOut = false;
     const killTimer = setTimeout(() => {
       timedOut = true;
-      try {
-        proc.kill("SIGTERM");
-      } catch {
-        /* already exited */
-      }
+      killProcessGroup(proc.pid, "SIGTERM");
       setTimeout(() => {
-        try {
-          proc.kill("SIGKILL");
-        } catch {
-          /* already exited */
-        }
+        killProcessGroup(proc.pid, "SIGKILL");
       }, SIGKILL_GRACE_PERIOD_MS);
     }, timeoutMs);
 

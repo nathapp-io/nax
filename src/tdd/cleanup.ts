@@ -7,6 +7,7 @@
 
 import { getLogger } from "../logger";
 import { sleep, spawn } from "../utils/bun-deps";
+import { killProcessGroup } from "../utils/process-kill";
 
 /** Injectable deps for testability — mock _cleanupDeps instead of global Bun.spawn/process.kill */
 export const _cleanupDeps = {
@@ -80,15 +81,11 @@ export async function cleanupProcessTree(pid: number, gracePeriodMs = 3000): Pro
       return;
     }
 
-    // Send SIGTERM to all processes in the group (negative PGID)
-    try {
-      _cleanupDeps.kill(-pgid, "SIGTERM");
-    } catch (error) {
-      // ESRCH means no such process — already dead
-      const err = error as NodeJS.ErrnoException;
-      if (err.code !== "ESRCH") {
-        throw error;
-      }
+    // Send SIGTERM to all processes in the group
+    // killProcessGroup handles process group semantics (negative PGID)
+    const sentSigterm = killProcessGroup(pgid, "SIGTERM");
+    if (!sentSigterm) {
+      // Process already exited
       return;
     }
 
@@ -104,11 +101,7 @@ export async function cleanupProcessTree(pid: number, gracePeriodMs = 3000): Pro
     // 1. Process still exists (pgidAfterWait is not null)
     // 2. PGID hasn't changed (still the same process group)
     if (pgidAfterWait && pgidAfterWait === pgid) {
-      try {
-        _cleanupDeps.kill(-pgid, "SIGKILL");
-      } catch {
-        // Ignore errors — processes may have exited during the wait
-      }
+      killProcessGroup(pgid, "SIGKILL");
     }
   } catch (error) {
     // Log but don't throw — cleanup is best-effort
