@@ -160,7 +160,7 @@
         }
     },
     "decompose": {
-        "trigger": "auto",
+        "trigger": "disabled",
         "maxAcceptanceCriteria": 8,
         "maxSubstories": 5,
         "maxSubstoryComplexity": "medium",
