@@ -34,6 +34,26 @@ describe("FIELD_DESCRIPTIONS.autoMode.fallbackOrder (US-001-4)", () => {
   });
 });
 
+describe("FIELD_DESCRIPTIONS.precheck.storySizeGate action and maxReplanAttempts (US-001)", () => {
+  test("precheck.storySizeGate.action description exists", () => {
+    expect(FIELD_DESCRIPTIONS["precheck.storySizeGate.action"]).toBeDefined();
+  });
+
+  test("precheck.storySizeGate.action description is a non-empty string", () => {
+    expect(typeof FIELD_DESCRIPTIONS["precheck.storySizeGate.action"]).toBe("string");
+    expect(FIELD_DESCRIPTIONS["precheck.storySizeGate.action"].length).toBeGreaterThan(0);
+  });
+
+  test("precheck.storySizeGate.maxReplanAttempts description exists", () => {
+    expect(FIELD_DESCRIPTIONS["precheck.storySizeGate.maxReplanAttempts"]).toBeDefined();
+  });
+
+  test("precheck.storySizeGate.maxReplanAttempts description is a non-empty string", () => {
+    expect(typeof FIELD_DESCRIPTIONS["precheck.storySizeGate.maxReplanAttempts"]).toBe("string");
+    expect(FIELD_DESCRIPTIONS["precheck.storySizeGate.maxReplanAttempts"].length).toBeGreaterThan(0);
+  });
+});
+
 describe("FIELD_DESCRIPTIONS structure for per-agent models", () => {
   test("models.claude description exists for agent tier definitions", () => {
     expect(FIELD_DESCRIPTIONS["models.claude"]).toBeDefined();

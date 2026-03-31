@@ -362,12 +362,16 @@ export interface ContextConfig {
 export interface StorySizeGateConfig {
   /** Enable story size gate (default: true) */
   enabled: boolean;
-  /** Max acceptance criteria count before flagging (default: 6) */
+  /** Max acceptance criteria count before flagging (default: 10) */
   maxAcCount: number;
-  /** Max description character length before flagging (default: 2000) */
+  /** Max description character length before flagging (default: 3000) */
   maxDescriptionLength: number;
-  /** Max bullet point count before flagging (default: 8) */
+  /** Max bullet point count before flagging (default: 12) */
   maxBulletPoints: number;
+  /** Action when stories exceed thresholds: 'block' (fail-fast), 'warn' (non-blocking), 'skip' (disabled) */
+  action: "block" | "warn" | "skip";
+  /** Max number of replan attempts before escalating (default: 3) */
+  maxReplanAttempts: number;
 }
 
 /** Precheck configuration (v0.16.0) */

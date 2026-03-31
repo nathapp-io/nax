@@ -209,6 +209,8 @@ export const DEFAULT_CONFIG: NaxConfig = {
       maxAcCount: 6,
       maxDescriptionLength: 2000,
       maxBulletPoints: 8,
+      action: "block" as const,
+      maxReplanAttempts: 3,
     },
   },
   prompts: {},

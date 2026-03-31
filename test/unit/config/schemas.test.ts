@@ -238,6 +238,59 @@ describe("ModelsSchema — new per-agent config (no migration)", () => {
   });
 });
 
+describe("StorySizeGateConfigSchema — action and maxReplanAttempts (US-001)", () => {
+  function basePrecheckConfig(storySizeGate: Record<string, unknown>): Record<string, unknown> {
+    return {
+      ...(DEFAULT_CONFIG as Record<string, unknown>),
+      precheck: { storySizeGate },
+    };
+  }
+
+  test("action defaults to 'block' when omitted", () => {
+    const config = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, maxReplanAttempts: 3 });
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    const gate = (result.data as Record<string, unknown>).precheck as Record<string, unknown>;
+    const ssg = gate.storySizeGate as Record<string, unknown>;
+    expect(ssg.action).toBe("block");
+  });
+
+  test("action accepts 'warn'", () => {
+    const config = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, maxReplanAttempts: 3, action: "warn" });
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  test("action accepts 'skip'", () => {
+    const config = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, maxReplanAttempts: 3, action: "skip" });
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+  });
+
+  test("action rejects invalid values", () => {
+    const config = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, maxReplanAttempts: 3, action: "invalid" });
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+  });
+
+  test("maxReplanAttempts defaults to 3 when omitted", () => {
+    const config = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block" });
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    const gate = (result.data as Record<string, unknown>).precheck as Record<string, unknown>;
+    const ssg = gate.storySizeGate as Record<string, unknown>;
+    expect(ssg.maxReplanAttempts).toBe(3);
+  });
+
+  test("maxReplanAttempts rejects 0 (must be >= 1)", () => {
+    const config = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 0 });
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(false);
+  });
+});
+
 describe("ModelsSchema — DEFAULT_CONFIG compatibility", () => {
   test("DEFAULT_CONFIG (legacy flat format) parses successfully after migration", () => {
     const result = NaxConfigSchema.safeParse(DEFAULT_CONFIG as Record<string, unknown>);
