@@ -53,7 +53,6 @@ export {
   checkPreMerge,
   checkStoryAmbiguity,
   checkReviewGate,
-  checkStoryOversized,
 } from "./triggers";
 export type { TriggerContext } from "./triggers";
 

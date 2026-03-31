@@ -322,22 +322,6 @@ export async function executeUnified(
             singleIter.prdDirty,
           ];
 
-          if (singleIter.finalAction === "decomposed") {
-            iterations--;
-            pipelineEventBus.emit({
-              type: "story:decomposed",
-              storyId: singleStory.id,
-              story: singleStory,
-              subStoryCount: singleIter.subStoryCount ?? 0,
-            });
-            if (singleIter.prdDirty) {
-              prd = await loadPRD(ctx.prdPath);
-              prdDirty = false;
-            }
-            ctx.statusWriter.setPrd(prd);
-            continue;
-          }
-
           if (singleIter.prdDirty) {
             prd = await loadPRD(ctx.prdPath);
             prdDirty = false;
@@ -405,23 +389,6 @@ export async function executeUnified(
         totalCost + iter.costDelta,
         iter.prdDirty,
       ];
-
-      // ENH-009: Decomposition is not real work — don't charge an iteration.
-      if (iter.finalAction === "decomposed") {
-        iterations--;
-        pipelineEventBus.emit({
-          type: "story:decomposed",
-          storyId: selection.story.id,
-          story: selection.story,
-          subStoryCount: iter.subStoryCount ?? 0,
-        });
-        if (iter.prdDirty) {
-          prd = await loadPRD(ctx.prdPath);
-          prdDirty = false;
-        }
-        ctx.statusWriter.setPrd(prd);
-        continue;
-      }
 
       if (ctx.interactionChain && isTriggerEnabled("cost-warning", ctx.config) && !warningSent) {
         const triggerCfg = ctx.config.interaction?.triggers?.["cost-warning"];

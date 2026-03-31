@@ -7,72 +7,19 @@
  * BUG-032: If story.routing.modelTier is already set (tier escalation), the bumped tier
  * is preserved after classification.
  *
- * SD-004: Oversized story detection — after routing, checks if story exceeds
- * config.decompose.maxAcceptanceCriteria with complex/expert complexity.
- *
  * @returns
  * - `continue`: Routing determined, proceed to next stage
- * - `decomposed`: Story was decomposed into substories
  */
 
 import { join } from "node:path";
 import { getAgent } from "../../agents/registry";
 import type { NaxConfig } from "../../config";
 import { isGreenfieldStory } from "../../context/greenfield";
-import { applyDecomposition } from "../../decompose/apply";
-import { DecomposeBuilder } from "../../decompose/builder";
-import type { DecomposeAgentConfig as BuilderDecomposeConfig, DecomposeResult } from "../../decompose/types";
-import { checkStoryOversized } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import { savePRD } from "../../prd";
-import type { PRD, UserStory } from "../../prd";
 import { complexityToModelTier, resolveRouting } from "../../routing";
 import { clearCache } from "../../routing/strategies/llm";
 import type { PipelineContext, PipelineStage, RoutingResult, StageResult } from "../types";
-
-async function runDecompose(
-  story: UserStory,
-  prd: PRD,
-  config: NaxConfig,
-  _workdir: string,
-  agentGetFn?: import("../types").AgentGetFn,
-): Promise<DecomposeResult> {
-  const naxDecompose = config.decompose;
-  const builderConfig: BuilderDecomposeConfig = {
-    maxSubStories: naxDecompose?.maxSubstories ?? 5,
-    maxComplexity: naxDecompose?.maxSubstoryComplexity ?? "medium",
-    maxRetries: naxDecompose?.maxRetries ?? 2,
-  };
-
-  const agent = (agentGetFn ?? getAgent)(config.autoMode.defaultAgent);
-  if (!agent) {
-    throw new Error(`[decompose] Agent "${config.autoMode.defaultAgent}" not found — cannot decompose`);
-  }
-
-  const decomposeTier = naxDecompose?.model ?? "balanced";
-  let decomposeModel: string | undefined;
-  try {
-    const { resolveModelForAgent } = await import("../../config/schema");
-    const defaultAgent = config.autoMode?.defaultAgent ?? "claude";
-    decomposeModel = resolveModelForAgent(config.models, defaultAgent, decomposeTier, defaultAgent).model;
-  } catch {
-    // resolveModelForAgent can throw on malformed entries — fall through to let complete() handle it
-  }
-
-  const storySessionName = `nax-decompose-${story.id.toLowerCase()}`;
-  const adapter = {
-    async decompose(prompt: string): Promise<string> {
-      return agent.complete(prompt, {
-        model: decomposeModel,
-        jsonMode: true,
-        config,
-        sessionName: storySessionName,
-      });
-    },
-  };
-
-  return DecomposeBuilder.for(story).prd(prd).config(builderConfig).decompose(adapter);
-}
 
 export const routingStage: PipelineStage = {
   name: "routing",
@@ -147,74 +94,6 @@ export const routingStage: PipelineStage = {
       logger.debug("routing", "Routing reasoning", { reasoning: ctx.routing.reasoning, storyId: ctx.story.id });
     }
 
-    // SD-004: Oversized story detection and decomposition
-    const decomposeConfig = effectiveConfig.decompose;
-    if (decomposeConfig && ctx.story.status !== "decomposed") {
-      const acCount = ctx.story.acceptanceCriteria.length;
-      const complexity = ctx.routing.complexity;
-      const isOversized =
-        acCount > decomposeConfig.maxAcceptanceCriteria && (complexity === "complex" || complexity === "expert");
-
-      if (isOversized) {
-        if (decomposeConfig.trigger === "disabled") {
-          logger.warn(
-            "routing",
-            `Story ${ctx.story.id} is oversized (${acCount} ACs) but decompose is disabled — continuing with original`,
-          );
-        } else if (decomposeConfig.trigger === "auto") {
-          const result = await _routingDeps.runDecompose(
-            ctx.story,
-            ctx.prd,
-            effectiveConfig,
-            ctx.workdir,
-            ctx.agentGetFn,
-          );
-          if (result.validation.valid) {
-            _routingDeps.applyDecomposition(ctx.prd, result);
-            if (ctx.prdPath) await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
-            logger.info("routing", `Story ${ctx.story.id} decomposed into ${result.subStories.length} substories`);
-            return {
-              action: "decomposed",
-              reason: `Decomposed into ${result.subStories.length} substories`,
-              subStoryCount: result.subStories.length,
-            };
-          }
-          logger.warn("routing", `Story ${ctx.story.id} decompose failed after retries — continuing with original`, {
-            errors: result.validation.errors,
-          });
-        } else if (decomposeConfig.trigger === "confirm") {
-          const action = await _routingDeps.checkStoryOversized(
-            { featureName: ctx.prd.feature, storyId: ctx.story.id, criteriaCount: acCount },
-            effectiveConfig,
-            // biome-ignore lint/style/noNonNullAssertion: confirm mode is only reached when interaction chain is present in production; tests mock checkStoryOversized directly
-            ctx.interaction!,
-          );
-          if (action === "decompose") {
-            const result = await _routingDeps.runDecompose(
-              ctx.story,
-              ctx.prd,
-              effectiveConfig,
-              ctx.workdir,
-              ctx.agentGetFn,
-            );
-            if (result.validation.valid) {
-              _routingDeps.applyDecomposition(ctx.prd, result);
-              if (ctx.prdPath) await _routingDeps.savePRD(ctx.prd, ctx.prdPath);
-              logger.info("routing", `Story ${ctx.story.id} decomposed into ${result.subStories.length} substories`);
-              return {
-                action: "decomposed",
-                reason: `Decomposed into ${result.subStories.length} substories`,
-                subStoryCount: result.subStories.length,
-              };
-            }
-            logger.warn("routing", `Story ${ctx.story.id} decompose failed after retries — continuing with original`, {
-              errors: result.validation.errors,
-            });
-          }
-        }
-      }
-    }
-
     return { action: "continue" };
   },
 };
@@ -228,8 +107,5 @@ export const _routingDeps = {
   isGreenfieldStory,
   clearCache,
   savePRD,
-  applyDecomposition,
-  runDecompose,
-  checkStoryOversized,
   getAgent,
 };

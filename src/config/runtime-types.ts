@@ -430,22 +430,6 @@ export interface PromptsConfig {
   >;
 }
 
-/** Decompose config (SD-003) */
-export interface DecomposeConfig {
-  /** Trigger mode: 'auto' = decompose automatically, 'confirm' = ask user, 'disabled' = skip */
-  trigger: "auto" | "confirm" | "disabled";
-  /** Max acceptance criteria before flagging a story as oversized (default: 6) */
-  maxAcceptanceCriteria: number;
-  /** Max number of substories to generate (default: 5) */
-  maxSubstories: number;
-  /** Max complexity for any generated substory (default: 'medium') */
-  maxSubstoryComplexity: Complexity;
-  /** Max retries on decomposition validation failure (default: 2) */
-  maxRetries: number;
-  /** Model tier for decomposition LLM calls (default: 'balanced') */
-  model: ModelTier;
-}
-
 /** Hermetic test enforcement configuration (ENH-010) */
 export interface TestingConfig {
   /**
@@ -526,8 +510,6 @@ export interface NaxConfig {
   precheck?: PrecheckConfig;
   /** Prompt override settings (PB-003) */
   prompts?: PromptsConfig;
-  /** Decompose settings (SD-003) */
-  decompose?: DecomposeConfig;
   /** Agent protocol settings (ACP-003) */
   agent?: AgentConfig;
   /** Generate settings */

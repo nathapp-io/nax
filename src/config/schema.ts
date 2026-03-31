@@ -57,7 +57,6 @@ export type {
   StorySizeGateConfig,
   PrecheckConfig,
   SmartTestRunnerConfig,
-  DecomposeConfig,
   NaxConfig,
   AgentConfig,
   ProjectProfile,

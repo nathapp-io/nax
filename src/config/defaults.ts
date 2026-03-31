@@ -217,14 +217,6 @@ export const DEFAULT_CONFIG: NaxConfig = {
   agent: {
     protocol: "acp",
   },
-  decompose: {
-    trigger: "auto",
-    maxAcceptanceCriteria: 6,
-    maxSubstories: 5,
-    maxSubstoryComplexity: "medium",
-    maxRetries: 2,
-    model: "balanced",
-  },
   debate: {
     enabled: false,
     agents: 3,

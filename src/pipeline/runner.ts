@@ -84,16 +84,6 @@ export async function runPipeline(
       case "skip":
         return { success: false, finalAction: "skip", reason: result.reason, stoppedAtStage: stage.name, context };
 
-      case "decomposed":
-        return {
-          success: false,
-          finalAction: "decomposed",
-          reason: result.reason,
-          subStoryCount: result.subStoryCount,
-          stoppedAtStage: stage.name,
-          context,
-        };
-
       case "fail":
         return { success: false, finalAction: "fail", reason: result.reason, stoppedAtStage: stage.name, context };
 

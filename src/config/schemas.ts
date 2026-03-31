@@ -402,15 +402,6 @@ export const PromptsConfigSchema = z.object({
     .optional(),
 });
 
-const DecomposeConfigSchema = z.object({
-  trigger: z.enum(["auto", "confirm", "disabled"]).default("auto"),
-  maxAcceptanceCriteria: z.number().int().min(1).default(6),
-  maxSubstories: z.number().int().min(1).default(5),
-  maxSubstoryComplexity: z.enum(["simple", "medium", "complex", "expert"]).default("medium"),
-  maxRetries: z.number().int().min(0).default(2),
-  model: z.string().min(1).default("balanced"),
-});
-
 const ProjectProfileSchema = z.object({
   language: z.enum(["typescript", "javascript", "go", "rust", "python", "ruby", "java", "kotlin", "php"]).optional(),
   type: z.string().optional(),
@@ -522,7 +513,6 @@ export const NaxConfigSchema = z
     agent: AgentConfigSchema.optional(),
     precheck: PrecheckConfigSchema.optional(),
     prompts: PromptsConfigSchema.optional(),
-    decompose: DecomposeConfigSchema.optional(),
     generate: GenerateConfigSchema.optional(),
     project: ProjectProfileSchema.optional(),
     debate: DebateConfigSchema.optional().default(
