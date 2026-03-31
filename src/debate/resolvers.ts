@@ -43,13 +43,15 @@ function parsePassedField(proposal: string): boolean | null {
  * Majority resolver — parses JSON pass/fail from each proposal.
  * Returns 'passed' when a strict majority pass. Fail-closed on tie.
  */
-export function majorityResolver(proposals: string[]): "passed" | "failed" {
+export function majorityResolver(proposals: string[], failOpen: boolean): "passed" | "failed" {
   let passCount = 0;
   let failCount = 0;
 
   for (const proposal of proposals) {
     const passed = parsePassedField(proposal);
     if (passed === true) passCount++;
+    else if (failOpen)
+      passCount++; // null (unparseable) counts as pass — fail-open
     else failCount++; // null (unparseable) counts as fail — fail-closed
   }
 

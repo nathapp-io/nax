@@ -55,7 +55,7 @@ describe("majorityResolver()", () => {
       '{"passed": false, "reason": "needs work"}',
     ];
 
-    const result = majorityResolver(proposals);
+    const result = majorityResolver(proposals, false);
 
     expect(result).toBe("passed");
   });
@@ -67,7 +67,7 @@ describe("majorityResolver()", () => {
       '{"passed": true, "reason": "looks good"}',
     ];
 
-    const result = majorityResolver(proposals);
+    const result = majorityResolver(proposals, false);
 
     expect(result).toBe("failed");
   });
@@ -79,7 +79,7 @@ describe("majorityResolver()", () => {
       '{"passed": true}',
     ];
 
-    const result = majorityResolver(proposals);
+    const result = majorityResolver(proposals, false);
 
     expect(result).toBe("passed");
   });
@@ -91,7 +91,7 @@ describe("majorityResolver()", () => {
       '{"passed": false}',
     ];
 
-    const result = majorityResolver(proposals);
+    const result = majorityResolver(proposals, false);
 
     expect(result).toBe("failed");
   });
@@ -104,7 +104,7 @@ describe("majorityResolver()", () => {
       "this is not valid JSON",
     ];
 
-    const result = majorityResolver(proposals);
+    const result = majorityResolver(proposals, false);
 
     expect(result).toBe("failed");
   });
@@ -115,7 +115,7 @@ describe("majorityResolver()", () => {
       '{"passed": false}',
     ];
 
-    const result = majorityResolver(proposals);
+    const result = majorityResolver(proposals, false);
 
     expect(result).toBe("failed");
   });
@@ -123,7 +123,7 @@ describe("majorityResolver()", () => {
   test("returns fail-closed 'failed' when all proposals are unparseable", () => {
     const proposals = ["not json", "also not json", "still not json"];
 
-    const result = majorityResolver(proposals);
+    const result = majorityResolver(proposals, false);
 
     expect(result).toBe("failed");
   });
@@ -136,7 +136,7 @@ describe("majorityResolver()", () => {
     ];
 
     // 2 pass — should return 'passed'
-    const result = majorityResolver(proposals);
+    const result = majorityResolver(proposals, false);
 
     expect(result).toBe("passed");
   });
@@ -148,9 +148,56 @@ describe("majorityResolver()", () => {
       '{"passed": false}',
     ];
 
-    const result = majorityResolver(proposals);
+    const result = majorityResolver(proposals, false);
 
     expect(result).toBe("failed");
+  });
+});
+
+// ─── majorityResolver fail-open ─────────────────────────────────────────────
+
+describe("majorityResolver(..., true) — fail-open", () => {
+  test("returns fail-open 'passed' on tie: 1 pass, 1 fail, 1 unparseable", () => {
+    const proposals = [
+      '{"passed": true, "reason": "looks good"}',
+      '{"passed": false, "reason": "needs work"}',
+      "this is not valid JSON",
+    ];
+
+    const result = majorityResolver(proposals, true);
+
+    expect(result).toBe("passed");
+  });
+
+  test("returns fail-open 'passed' when all proposals are unparseable", () => {
+    const proposals = ["not json", "also not json", "still not json"];
+
+    const result = majorityResolver(proposals, true);
+
+    expect(result).toBe("passed"); // unparseable → pass in fail-open: passCount=3, failCount=0
+  });
+
+  test("returns fail-open 'passed' on exact 50/50 tie with 2 debaters", () => {
+    const proposals = [
+      '{"passed": true}',
+      '{"passed": false}',
+    ];
+
+    const result = majorityResolver(proposals, true);
+
+    expect(result).toBe("passed"); // tie goes to pass in fail-open
+  });
+
+  test("returns fail-open 'passed' when majority are parseable and pass", () => {
+    const proposals = [
+      '{"passed": true}',
+      '{"passed": false}',
+      "not json",
+    ];
+
+    const result = majorityResolver(proposals, true);
+
+    expect(result).toBe("passed"); // 2 passCount (true + failOpen) vs 1 failCount
   });
 });
 
