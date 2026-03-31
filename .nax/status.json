@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-30T12-12-10-329Z",
+    "id": "run-2026-03-31T01-44-42-582Z",
     "feature": "per-agent-model-map",
-    "startedAt": "2026-03-30T12:12:10.329Z",
-    "status": "stalled",
+    "startedAt": "2026-03-31T01:44:42.582Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 16968
+    "pid": 1177
   },
   "progress": {
-    "total": 9,
-    "passed": 6,
-    "failed": 1,
+    "total": 14,
+    "passed": 7,
+    "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 7
   },
   "cost": {
-    "spent": 12.56672205,
+    "spent": 0,
     "limit": 30
   },
-  "current": null,
-  "iterations": 8,
-  "updatedAt": "2026-03-30T14:20:15.286Z",
-  "durationMs": 7684957
+  "current": {
+    "storyId": "US-004",
+    "title": "Cross-agent escalation in tierOrder",
+    "complexity": "medium",
+    "tddStrategy": "tdd-simple",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 1,
+  "updatedAt": "2026-03-31T01:54:43.722Z",
+  "durationMs": 601140,
+  "lastHeartbeat": "2026-03-31T01:54:43.722Z"
 }
