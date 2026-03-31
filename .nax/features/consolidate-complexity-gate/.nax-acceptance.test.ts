@@ -1,3 +1,12 @@
+/**
+ * Acceptance Tests for consolidate-complexity-gate Feature
+ *
+ * Validates the story size gate implementation including config types,
+ * schema validation, gate behavior, and CLI decompose command.
+ *
+ * Test file location: .nax/features/consolidate-complexity-gate/.nax-acceptance.test.ts
+ */
+
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
