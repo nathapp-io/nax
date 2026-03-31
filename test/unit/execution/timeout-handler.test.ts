@@ -10,6 +10,8 @@ describe("withProcessTimeout", () => {
 
   let resolveExit: (code: number) => void;
   let exitPromise: Promise<number>;
+  let originalProcessKill: typeof process.kill;
+  let processKillMock: ReturnType<typeof mock>;
 
   beforeEach(() => {
     resolveExit = () => {};
@@ -22,9 +24,15 @@ describe("withProcessTimeout", () => {
       exited: exitPromise,
       kill: mock(() => {}),
     };
+
+    // Spy on process.kill — killProcessGroup calls process.kill(-pid, signal)
+    originalProcessKill = process.kill;
+    processKillMock = mock(() => {});
+    process.kill = processKillMock as typeof process.kill;
   });
 
   afterEach(() => {
+    process.kill = originalProcessKill;
     mock.restore();
     // Clear any pending timers
     Bun.gc(true);
@@ -79,7 +87,7 @@ describe("withProcessTimeout", () => {
     expect(onTimeoutMock).toHaveBeenCalled();
   });
 
-  test("sends SIGTERM when timeout is reached", async () => {
+  test("sends SIGTERM via process group kill when timeout is reached", async () => {
     const timeoutMs = 100;
 
     const result = withProcessTimeout(mockProc, timeoutMs, {
@@ -91,7 +99,8 @@ describe("withProcessTimeout", () => {
     resolveExit(-1);
 
     await result;
-    expect(mockProc.kill).toHaveBeenCalled();
+    // killProcessGroup calls process.kill(-pid, signal)
+    expect(processKillMock).toHaveBeenCalledWith(-mockProc.pid, "SIGTERM");
   });
 
   test("respects custom grace period", async () => {
@@ -107,8 +116,9 @@ describe("withProcessTimeout", () => {
     resolveExit(-1);
 
     await result;
-    // If custom grace period was used, SIGKILL should have been called
-    expect(mockProc.kill).toHaveBeenCalled();
+    // First SIGTERM call, then SIGKILL after grace period
+    expect(processKillMock).toHaveBeenCalledWith(-mockProc.pid, "SIGTERM");
+    expect(processKillMock).toHaveBeenCalledWith(-mockProc.pid, "SIGKILL");
   });
 
   test("returns -1 when hard deadline is exceeded", async () => {
@@ -128,15 +138,14 @@ describe("withProcessTimeout", () => {
   });
 
   test("cleans up timers even if process.kill throws", async () => {
-    const errProc = {
-      ...mockProc,
-      kill: mock(() => {
-        throw new Error("Kill failed");
-      }),
-    };
+    // Make process.kill throw — killProcessGroup catches the error
+    processKillMock = mock(() => {
+      throw new Error("Kill failed");
+    });
+    process.kill = processKillMock as typeof process.kill;
 
     const timeoutMs = 50;
-    const result = withProcessTimeout(errProc, timeoutMs, {
+    const result = withProcessTimeout(mockProc, timeoutMs, {
       graceMs: 50,
     });
 
