@@ -14,6 +14,8 @@ export const _cleanupDeps = {
   spawn,
   sleep,
   kill: process.kill.bind(process) as typeof process.kill,
+  /** Wraps killProcessGroup so tests can mock it — calls process.kill(-pid, signal) internally */
+  killProcessGroupFn: (pid: number, signal: NodeJS.Signals | number) => killProcessGroup(pid, signal),
 };
 
 /**
@@ -83,7 +85,7 @@ export async function cleanupProcessTree(pid: number, gracePeriodMs = 3000): Pro
 
     // Send SIGTERM to all processes in the group
     // killProcessGroup handles process group semantics (negative PGID)
-    const sentSigterm = killProcessGroup(pgid, "SIGTERM");
+    const sentSigterm = _cleanupDeps.killProcessGroupFn(pgid, "SIGTERM");
     if (!sentSigterm) {
       // Process already exited
       return;
@@ -101,7 +103,7 @@ export async function cleanupProcessTree(pid: number, gracePeriodMs = 3000): Pro
     // 1. Process still exists (pgidAfterWait is not null)
     // 2. PGID hasn't changed (still the same process group)
     if (pgidAfterWait && pgidAfterWait === pgid) {
-      killProcessGroup(pgid, "SIGKILL");
+      _cleanupDeps.killProcessGroupFn(pgid, "SIGKILL");
     }
   } catch (error) {
     // Log but don't throw — cleanup is best-effort
