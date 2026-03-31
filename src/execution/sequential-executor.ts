@@ -199,7 +199,14 @@ export async function executeSequential(
     logger?.info("execution", "Running post-run pipeline (acceptance tests)");
     await runPipeline(
       postRunPipeline,
-      { config: ctx.config, prd, workdir: ctx.workdir, story: prd.userStories[0] } as unknown as PipelineContext,
+      {
+        config: ctx.config,
+        prd,
+        workdir: ctx.workdir,
+        featureDir: ctx.featureDir,
+        story: prd.userStories[0],
+        acceptanceTestPaths: preRunCtx.acceptanceTestPaths,
+      } as unknown as PipelineContext,
       ctx.eventEmitter,
     );
 

@@ -77,9 +77,10 @@ export async function executeUnified(
     }
 
     // Pre-run pipeline (acceptance test setup with RED gate) — only when acceptance is configured
+    let preRunCtx: PipelineContext | undefined;
     if (ctx.config.acceptance?.enabled) {
       logger?.info("execution", "Running pre-run pipeline (acceptance test setup)");
-      const preRunCtx: PipelineContext = {
+      preRunCtx = {
         config: ctx.config,
         effectiveConfig: ctx.config,
         prd,
@@ -423,7 +424,14 @@ export async function executeUnified(
       logger?.info("execution", "Running post-run pipeline (acceptance tests)");
       await runPipeline(
         postRunPipeline,
-        { config: ctx.config, prd, workdir: ctx.workdir, story: prd.userStories[0] } as unknown as PipelineContext,
+        {
+          config: ctx.config,
+          prd,
+          workdir: ctx.workdir,
+          featureDir: ctx.featureDir,
+          story: prd.userStories[0],
+          acceptanceTestPaths: preRunCtx?.acceptanceTestPaths,
+        } as unknown as PipelineContext,
         ctx.eventEmitter,
       );
     }
