@@ -57,6 +57,7 @@ import {
   pluginsListCommand,
   promptsCommand,
   promptsInitCommand,
+  runReplanLoop,
   runsListCommand,
   runsShowCommand,
 } from "../src/cli";
@@ -402,13 +403,23 @@ program
         // Load the generated PRD to display confirmation gate
         const generatedPrd = await loadPRD(generatedPrdPath);
 
+        // Run replan loop before confirmation gate (US-003: insert replan loop)
+        await runReplanLoop(workdir, config, {
+          feature: options.feature,
+          prd: generatedPrd,
+          prdPath: generatedPrdPath,
+        });
+
+        // Reload PRD after replan loop in case it was modified
+        const finalPrd = await loadPRD(generatedPrdPath);
+
         // Display story breakdown (AC-5: confirmation gate displays story breakdown)
         console.log(chalk.bold("\n── Planning Summary ──────────────────────────────"));
-        console.log(chalk.dim(`Feature: ${generatedPrd.feature}`));
-        console.log(chalk.dim(`Stories: ${generatedPrd.userStories.length}`));
+        console.log(chalk.dim(`Feature: ${finalPrd.feature}`));
+        console.log(chalk.dim(`Stories: ${finalPrd.userStories.length}`));
         console.log();
 
-        for (const story of generatedPrd.userStories) {
+        for (const story of finalPrd.userStories) {
           const complexity = story.routing?.complexity || "unknown";
           console.log(chalk.dim(`  ${story.id}: ${story.title} [${complexity}]`));
         }

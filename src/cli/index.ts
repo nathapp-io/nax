@@ -3,7 +3,7 @@
  */
 
 export { analyzeFeature } from "./analyze";
-export { planCommand, planDecomposeCommand } from "./plan";
+export { planCommand, planDecomposeCommand, runReplanLoop } from "./plan";
 export { acceptCommand, type AcceptOptions } from "./accept";
 export {
   displayCostMetrics,
