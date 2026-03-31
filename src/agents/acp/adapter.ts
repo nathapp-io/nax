@@ -550,15 +550,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     });
 
     // Start with this agent if available; otherwise skip to first available fallback
-    let currentAgent: string;
-    if (this.isAvailable(this.name)) {
-      currentAgent = this.name;
-    } else if (config) {
-      const available = this.resolveFallbackOrder(config, this.name);
-      currentAgent = available[0] ?? this.name;
-    } else {
-      currentAgent = this.name;
-    }
+    let currentAgent: string = this.resolveCurrentAgent(config);
 
     const rateLimitedRetryAfter = new Map<string, number | undefined>();
     let sessionErrorRetried = false;
@@ -909,15 +901,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     const rateLimitedRetryAfter = new Map<string, number | undefined>();
     const hasActiveFallbacks = (config?.autoMode?.fallbackOrder?.length ?? 0) > 0;
     // Start with this agent if available; otherwise skip to first available fallback
-    let currentAgent: string;
-    if (this.isAvailable(this.name)) {
-      currentAgent = this.name;
-    } else if (config) {
-      const available = this.resolveFallbackOrder(config, this.name);
-      currentAgent = available[0] ?? this.name;
-    } else {
-      currentAgent = this.name;
-    }
+    let currentAgent: string = this.resolveCurrentAgent(config);
     // Legacy attempt counter used only when no fallback chain is configured
     let legacyAttempt = 0;
 
@@ -1056,6 +1040,17 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   private isAvailable(agentName: string): boolean {
     return !this._unavailableAgents.has(agentName);
+  }
+
+  private resolveCurrentAgent(config: import("../../config").NaxConfig | undefined): string {
+    if (this.isAvailable(this.name)) {
+      return this.name;
+    }
+    if (config) {
+      const available = this.resolveFallbackOrder(config, this.name);
+      return available[0] ?? this.name;
+    }
+    return this.name;
   }
 
   private resolveFallbackOrder(config: unknown, currentAgent: string): string[] {
