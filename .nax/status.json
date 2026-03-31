@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 4,
-    "passed": 2,
+    "passed": 3,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 7.67395715,
+    "spent": 10.4908183,
     "limit": 30
   },
   "current": {
-    "storyId": "US-003",
-    "title": "Add replan loop to `nax run --plan`",
-    "complexity": "medium",
-    "tddStrategy": "three-session-tdd-lite",
+    "storyId": "US-004",
+    "title": "Remove runtime decomposer and clean up all references",
+    "complexity": "complex",
+    "tddStrategy": "three-session-tdd",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-03-31T07:33:31.017Z",
-  "durationMs": 4621026,
-  "lastHeartbeat": "2026-03-31T07:33:31.017Z"
+  "iterations": 4,
+  "updatedAt": "2026-03-31T07:38:31.101Z",
+  "durationMs": 4921110,
+  "lastHeartbeat": "2026-03-31T07:38:31.101Z"
 }

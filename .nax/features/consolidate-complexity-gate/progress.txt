@@ -1,2 +1,3 @@
 [2026-03-31T06:52:45.564Z] US-001 — PASSED — Upgrade StorySizeGate with configurable action — Cost: $4.0648
 [2026-03-31T07:13:51.305Z] US-002 — PASSED — Add `nax plan --decompose <storyId>` command — Cost: $3.6091
+[2026-03-31T07:34:42.379Z] US-003 — PASSED — Add replan loop to `nax run --plan` — Cost: $2.8169

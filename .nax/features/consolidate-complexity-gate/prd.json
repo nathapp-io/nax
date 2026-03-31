@@ -3,7 +3,7 @@
   "feature": "consolidate-complexity-gate",
   "branchName": "feat/consolidate-complexity-gate",
   "createdAt": "2026-03-31T00:00:00.000Z",
-  "updatedAt": "2026-03-31T07:13:53.370Z",
+  "updatedAt": "2026-03-31T07:34:44.445Z",
   "userStories": [
     {
       "id": "US-001",
@@ -120,8 +120,8 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -176,7 +176,9 @@
       "routing": {
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/pipeline/stages/routing.ts",
@@ -187,7 +189,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "18870eb8cfa36cf0cc90605e742682e6e4550c19"
     }
   ],
   "analysis": "This is a refactoring + feature enhancement that consolidates two overlapping size-checking systems into a single, coherent complexity gate. Key findings from codebase inspection:\n\n**Existing state:**\n- `src/precheck/story-size-gate.ts`: `checkStorySizeGate()` always returns `tier: 'warning'` (non-blocking). `StorySizeGateConfig` has only `enabled | maxAcCount | maxDescriptionLength | maxBulletPoints` — no `action` or `maxReplanAttempts` fields. `StorySizeGateResult` has `check` and `flaggedStories` but no `flaggedStoryIds` string array. Current defaults are `maxAcCount: 6`, spec requires default `10`.\n- `src/precheck/index.ts`: `runPrecheck()` runs story-size-gate unconditionally in the Tier 2 block (warnings only). Needs conditional routing: `action === 'block'` → Tier 1 blocker path, `action === 'warn'` → current Tier 2 path.\n- `src/config/runtime-types.ts`: `StorySizeGateConfig` missing `action` and `maxReplanAttempts`. `DecomposeConfig` interface exists (lines 430-443) and must be deleted. `NaxConfig.decompose?` field (line 526) must be removed.\n- `src/config/schemas.ts`: `DecomposeConfigSchema` and `StorySizeGateSchema` need updating — `action` enum with default `'block'`, `maxReplanAttempts` with default `3`, `enabled` field retained for backward compat but `action: 'skip'` replaces its semantic role.\n- `src/config/defaults.ts`: Must update `storySizeGate` defaults to `action: 'block'`, `maxReplanAttempts: 3`, `maxAcCount: 10`, `maxDescriptionLength: 3000`, `maxBulletPoints: 12`.\n- `src/cli/plan.ts`: `planCommand()` is the pattern to follow. `_planDeps` injection pattern, `buildPlanningPrompt()` structure, and debate integration are all in place. Need to add `planDecomposeCommand()` and `buildDecomposePrompt()` to this file. Import shared constants from `src/config/test-strategy.ts` and `buildCodebaseContext()` already exists as a private helper — it can be reused internally.\n- `src/pipeline/stages/routing.ts`: Contains `runDecompose()`, imports from `../../decompose/apply`, `../../decompose/builder`, `../../decompose/types`, and `checkStoryOversized` from `../../interaction/triggers`. All must be removed. `RoutingDecision.action` in `src/pipeline/types.ts` has `'decomposed'` union member to remove.\n- `src/interaction/triggers.ts`: Contains `checkStoryOversized()` to delete.\n- `src/decompose/`: 14 files (~845 LOC) to be deleted entirely.\n- `bin/nax.ts`: The `nax run --plan` flow needs the replan loop inserted between `planCommand()` and the confirmation gate.\n\n**Dependency order:**\n1. US-001 (gate config + tier routing) — no deps, can start immediately\n2. US-002 (plan --decompose command) — no deps on US-001, can run in parallel\n3. US-003 (replan loop) — depends on US-001 (flaggedStoryIds on result) and US-002 (planDecomposeCommand export)\n4. US-004 (delete decompose module) — depends on US-002 (routing.ts must stop importing decompose before files are deleted)\n\n**Risks:**\n- `StorySizeGateConfig.enabled` is used in existing configs — the `action: 'skip'` replacement must be backward-compatible or handled via a migration shim in the loader.\n- Deleting `src/decompose/` will break `src/pipeline/stages/routing.ts` at compile time if not cleaned up first — US-004 requires US-002 completes the routing.ts cleanup.\n- `story:decomposed` event removal from event-bus.ts must also remove all subscribers in events-writer.ts and hooks.ts.\n- `UserStory.status` keeps `'decomposed'` for backward compat with existing PRD files — do NOT remove it from prd/types.ts.\n- The `flaggedStoryIds` field on `StorySizeGateResult` (US-001) is consumed by the replan loop in US-003 — this is the key interface contract between the two stories."
