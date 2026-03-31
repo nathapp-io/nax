@@ -3,7 +3,7 @@
   "feature": "per-agent-model-map",
   "branchName": "feat/per-agent-model-map",
   "createdAt": "2026-03-30T12:00:00.000Z",
-  "updatedAt": "2026-03-31T02:22:50.892Z",
+  "updatedAt": "2026-03-31T02:58:27.460Z",
   "analysis": "This feature restructures the models config from a flat tier→model map to a per-agent model map (Record<agentName, Record<tier, ModelEntry>>), making it the SSOT for any (agent, tier) → model resolution. It also activates the existing dead-code fallbackOrder as a rate-limit agent fallback chain inside the ACP adapter, and adds optional agent field to TierConfig for cross-agent escalation. There are 22 callsites using config.models[tier] that need migration to resolveModelForAgent(). The fallback implementation lives inside AcpAgentAdapter so all LLM calls (plan, review, acceptance, routing, rectification, autofix, TDD, analyze) get fallback for free.",
   "userStories": [
     {
@@ -458,8 +458,8 @@
       "dependencies": [
         "US-003-2"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "parentStoryId": "US-003",
@@ -504,7 +504,15 @@
       "parentStoryId": "US-003",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "b4cad4bf95fa55e4d10cd5bdc821c03cf852d505",
+      "routing": {
+        "complexity": "medium",
+        "initialComplexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Applies established fallback pattern to run() with stderr parsing, agent retry logic, and shared state coordination; standard feature work with clear structure but requires careful integration and test coverage.",
+        "modelTier": "balanced"
+      }
     },
     {
       "id": "US-003-5",

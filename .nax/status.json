@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 14,
-    "passed": 10,
+    "passed": 11,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 2.49531635,
+    "spent": 7.068618149999999,
     "limit": 30
   },
   "current": {
-    "storyId": "US-003-3",
-    "title": "Implement fallback retry loop in AcpAgentAdapter.complete()",
+    "storyId": "US-003-4",
+    "title": "Implement fallback retry loop in AcpAgentAdapter.run()",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 4,
-  "updatedAt": "2026-03-31T02:57:43.867Z",
-  "durationMs": 4381285,
-  "lastHeartbeat": "2026-03-31T02:57:43.867Z"
+  "iterations": 5,
+  "updatedAt": "2026-03-31T03:03:43.884Z",
+  "durationMs": 4741302,
+  "lastHeartbeat": "2026-03-31T03:03:43.884Z"
 }
