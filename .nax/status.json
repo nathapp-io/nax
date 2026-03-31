@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 4,
-    "passed": 1,
+    "passed": 2,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 2
   },
   "cost": {
-    "spent": 4.0648451,
+    "spent": 7.67395715,
     "limit": 30
   },
   "current": {
-    "storyId": "US-002",
-    "title": "Add `nax plan --decompose <storyId>` command",
-    "complexity": "complex",
-    "tddStrategy": "three-session-tdd",
+    "storyId": "US-003",
+    "title": "Add replan loop to `nax run --plan`",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-03-31T07:13:30.997Z",
-  "durationMs": 3421006,
-  "lastHeartbeat": "2026-03-31T07:13:30.997Z"
+  "iterations": 3,
+  "updatedAt": "2026-03-31T07:23:31.003Z",
+  "durationMs": 4021012,
+  "lastHeartbeat": "2026-03-31T07:23:31.003Z"
 }

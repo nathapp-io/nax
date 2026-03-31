@@ -3,7 +3,7 @@
   "feature": "consolidate-complexity-gate",
   "branchName": "feat/consolidate-complexity-gate",
   "createdAt": "2026-03-31T00:00:00.000Z",
-  "updatedAt": "2026-03-31T06:52:47.651Z",
+  "updatedAt": "2026-03-31T07:13:53.370Z",
   "userStories": [
     {
       "id": "US-001",
@@ -78,8 +78,8 @@
         "plan"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -127,7 +127,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "bin/nax.ts",
@@ -137,7 +139,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "36746bdc01b0bf0f07b844954082703302ca782b"
     },
     {
       "id": "US-004",
