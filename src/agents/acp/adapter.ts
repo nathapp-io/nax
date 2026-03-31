@@ -556,6 +556,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     let sessionErrorRetried = false;
     // Legacy attempt counter used only when no fallback chain is configured
     let legacyAttempt = 0;
+    let retryCount = 0;
 
     while (true) {
       try {
@@ -597,19 +598,43 @@ export class AcpAgentAdapter implements AgentAdapter {
           const fallbacks = this.resolveFallbackOrder(config, currentAgent);
           const availableFallbacks = fallbacks.filter((a) => !this._unavailableAgents.has(a));
           if (availableFallbacks.length === 0) {
+            getSafeLogger()?.error("agent-fallback", "All agents unavailable after auth failures", {
+              storyId: options.storyId,
+              unavailableAgents: [...this._unavailableAgents],
+            });
             throw new AllAgentsUnavailableError([...this._unavailableAgents]);
           }
+          retryCount++;
+          getSafeLogger()?.info("agent-fallback", "Falling back after auth error", {
+            storyId: options.storyId,
+            originalAgent: currentAgent,
+            fallbackAgent: availableFallbacks[0],
+            errorType: "auth",
+            retryCount,
+          });
           currentAgent = availableFallbacks[0];
         } else if (parsed.type === "rate-limit") {
           rateLimitedRetryAfter.set(currentAgent, parsed.retryAfterSeconds);
           const fallbacks = this.resolveFallbackOrder(config, currentAgent);
           const nextAvailable = fallbacks.find((a) => !rateLimitedRetryAfter.has(a));
           if (nextAvailable) {
+            retryCount++;
+            getSafeLogger()?.info("agent-fallback", "Falling back after rate-limit", {
+              storyId: options.storyId,
+              originalAgent: currentAgent,
+              fallbackAgent: nextAvailable,
+              errorType: "rate-limit",
+              retryCount,
+            });
             currentAgent = nextAvailable;
           } else if (hasActiveFallbacks) {
             // All fallback agents exhausted — sleep then restart from fallbackOrder[0]
             const retryValues = [...rateLimitedRetryAfter.values()].filter((v): v is number => v !== undefined);
             const sleepMs = retryValues.length > 0 ? Math.min(...retryValues) * 1000 : 30_000;
+            getSafeLogger()?.info("agent-fallback", "All agents rate-limited, waiting before retry", {
+              storyId: options.storyId,
+              waitMs: sleepMs,
+            });
             await _fallbackDeps.sleep(sleepMs);
             rateLimitedRetryAfter.clear();
             const initialFallbacks = this.resolveFallbackOrder(config, this.name);
@@ -911,6 +936,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     let currentAgent: string = this.resolveCurrentAgent(config);
     // Legacy attempt counter used only when no fallback chain is configured
     let legacyAttempt = 0;
+    let retryCount = 0;
 
     while (true) {
       try {
@@ -924,19 +950,43 @@ export class AcpAgentAdapter implements AgentAdapter {
           const fallbacks = this.resolveFallbackOrder(config, currentAgent);
           const availableFallbacks = fallbacks.filter((a) => !this._unavailableAgents.has(a));
           if (availableFallbacks.length === 0) {
+            getSafeLogger()?.error("agent-fallback", "All agents unavailable after auth failures", {
+              storyId: _options?.storyId,
+              unavailableAgents: [...this._unavailableAgents],
+            });
             throw new AllAgentsUnavailableError([...this._unavailableAgents]);
           }
+          retryCount++;
+          getSafeLogger()?.info("agent-fallback", "Falling back after auth error", {
+            storyId: _options?.storyId,
+            originalAgent: currentAgent,
+            fallbackAgent: availableFallbacks[0],
+            errorType: "auth",
+            retryCount,
+          });
           currentAgent = availableFallbacks[0];
         } else if (parsed.type === "rate-limit") {
           rateLimitedRetryAfter.set(currentAgent, parsed.retryAfterSeconds);
           const fallbacks = this.resolveFallbackOrder(config, currentAgent);
           const nextAvailable = fallbacks.find((a) => !rateLimitedRetryAfter.has(a));
           if (nextAvailable) {
+            retryCount++;
+            getSafeLogger()?.info("agent-fallback", "Falling back after rate-limit", {
+              storyId: _options?.storyId,
+              originalAgent: currentAgent,
+              fallbackAgent: nextAvailable,
+              errorType: "rate-limit",
+              retryCount,
+            });
             currentAgent = nextAvailable;
           } else if (hasActiveFallbacks) {
             // All fallback agents exhausted — sleep then restart from fallbackOrder[0]
             const retryValues = [...rateLimitedRetryAfter.values()].filter((v): v is number => v !== undefined);
             const sleepMs = retryValues.length > 0 ? Math.min(...retryValues) * 1000 : 30_000;
+            getSafeLogger()?.info("agent-fallback", "All agents rate-limited, waiting before retry", {
+              storyId: _options?.storyId,
+              waitMs: sleepMs,
+            });
             await _fallbackDeps.sleep(sleepMs);
             rateLimitedRetryAfter.clear();
             const initialFallbacks = this.resolveFallbackOrder(config, this.name);
