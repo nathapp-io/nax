@@ -4,33 +4,24 @@
     "id": "run-2026-03-31T01-44-42-582Z",
     "feature": "per-agent-model-map",
     "startedAt": "2026-03-31T01:44:42.582Z",
-    "status": "running",
+    "status": "completed",
     "dryRun": false,
     "pid": 1177
   },
   "progress": {
     "total": 14,
-    "passed": 12,
+    "passed": 13,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 10.143051949999998,
+    "spent": 11.945375499999999,
     "limit": 30
   },
-  "current": {
-    "storyId": "US-003-5",
-    "title": "Add structured fallback logging to AcpAgentAdapter",
-    "complexity": "medium",
-    "tddStrategy": "test-after",
-    "model": "balanced",
-    "attempt": 1,
-    "phase": "routing"
-  },
-  "iterations": 6,
-  "updatedAt": "2026-03-31T03:50:43.862Z",
-  "durationMs": 7561280,
-  "lastHeartbeat": "2026-03-31T03:50:43.862Z"
+  "current": null,
+  "iterations": 7,
+  "updatedAt": "2026-03-31T03:55:34.790Z",
+  "durationMs": 7852208
 }

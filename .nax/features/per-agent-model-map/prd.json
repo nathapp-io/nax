@@ -3,7 +3,7 @@
   "feature": "per-agent-model-map",
   "branchName": "feat/per-agent-model-map",
   "createdAt": "2026-03-30T12:00:00.000Z",
-  "updatedAt": "2026-03-31T03:36:56.560Z",
+  "updatedAt": "2026-03-31T03:50:58.952Z",
   "analysis": "This feature restructures the models config from a flat tier→model map to a per-agent model map (Record<agentName, Record<tier, ModelEntry>>), making it the SSOT for any (agent, tier) → model resolution. It also activates the existing dead-code fallbackOrder as a rate-limit agent fallback chain inside the ACP adapter, and adds optional agent field to TierConfig for cross-agent escalation. There are 22 callsites using config.models[tier] that need migration to resolveModelForAgent(). The fallback implementation lives inside AcpAgentAdapter so all LLM calls (plan, review, acceptance, routing, rectification, autofix, TDD, analyze) get fallback for free.",
   "userStories": [
     {
@@ -338,8 +338,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "decomposed",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "priorErrors": [],
@@ -534,8 +534,8 @@
       "dependencies": [
         "US-003-4"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "parentStoryId": "US-003",

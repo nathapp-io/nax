@@ -10,3 +10,4 @@
 [2026-03-31T02:22:23.108Z] US-003-2 — PASSED — Add AllAgentsUnavailableError and _unavailableAgents tracking to AcpAgentAdapter — Cost: $1.0583
 [2026-03-31T02:57:54.908Z] US-003-3 — PASSED — Implement fallback retry loop in AcpAgentAdapter.complete() — Cost: $4.5733
 [2026-03-31T03:36:27.399Z] US-003-4 — PASSED — Implement fallback retry loop in AcpAgentAdapter.run() — Cost: $3.0744
+[2026-03-31T03:50:58.951Z] US-003-5 — PASSED — Add structured fallback logging to AcpAgentAdapter — Cost: $1.8023
