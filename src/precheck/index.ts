@@ -294,8 +294,7 @@ export async function runPrecheck(
     }
 
     // Story size gate (v0.16.0) — separate from standard checks, returns metadata
-    const { checkStorySizeGate } = await import("./story-size-gate");
-    const sizeGateResult = await checkStorySizeGate(config, prd);
+    const sizeGateResult = await _precheckDeps.checkStorySizeGate(config, prd);
 
     if (format === "human") {
       printCheckResult(sizeGateResult.check);
@@ -303,6 +302,9 @@ export async function runPrecheck(
 
     if (sizeGateResult.check.passed) {
       passed.push(sizeGateResult.check);
+    } else if (sizeGateResult.check.tier === "blocker") {
+      blockers.push(sizeGateResult.check);
+      flaggedStories = sizeGateResult.flaggedStories;
     } else {
       warnings.push(sizeGateResult.check);
       flaggedStories = sizeGateResult.flaggedStories;

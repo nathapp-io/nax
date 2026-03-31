@@ -201,6 +201,9 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "precheck.storySizeGate.maxAcCount": "Max acceptance criteria count before flagging",
   "precheck.storySizeGate.maxDescriptionLength": "Max description character length before flagging",
   "precheck.storySizeGate.maxBulletPoints": "Max bullet point count before flagging",
+  "precheck.storySizeGate.action":
+    "Action when stories exceed size thresholds: 'block' (fail-fast, Tier 1), 'warn' (non-blocking, Tier 2), 'skip' (disable gate)",
+  "precheck.storySizeGate.maxReplanAttempts": "Max replan attempts before escalating (default: 3)",
 
   // Prompts
   prompts: "Prompt template overrides (PB-003: PromptBuilder)",

@@ -373,6 +373,8 @@ const StorySizeGateConfigSchema = z.object({
   maxAcCount: z.number().int().min(1).max(50).default(6),
   maxDescriptionLength: z.number().int().min(100).max(10000).default(2000),
   maxBulletPoints: z.number().int().min(1).max(100).default(8),
+  action: z.enum(["block", "warn", "skip"]).default("block"),
+  maxReplanAttempts: z.number().int().min(1).default(3),
 });
 
 const AgentConfigSchema = z.object({
