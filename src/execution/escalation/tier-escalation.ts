@@ -108,10 +108,12 @@ export async function preIterationTierCheck(
   }
 
   // Exceeded current tier budget — try to escalate
-  const nextTier = escalateTier(currentTier, tierOrder);
+  const escalationResult = escalateTier(currentTier, tierOrder);
+  const nextTier = escalationResult?.tier ?? null;
+  const nextAgent = escalationResult?.agent;
   const routingMode = config.routing.llm?.mode ?? "hybrid";
 
-  if (nextTier && config.autoMode.escalation.enabled) {
+  if (escalationResult && config.autoMode.escalation.enabled) {
     logger?.warn("escalation", "Story exceeded tier budget, escalating", {
       storyId: story.id,
       attempts: story.attempts,
@@ -128,7 +130,9 @@ export async function preIterationTierCheck(
           ? {
               ...s,
               attempts: 0, // Reset attempts for new tier
-              routing: s.routing ? { ...s.routing, modelTier: nextTier } : { ...routing, modelTier: nextTier },
+              routing: s.routing
+                ? { ...s.routing, modelTier: nextTier, ...(nextAgent !== undefined ? { agent: nextAgent } : {}) }
+                : { ...routing, modelTier: nextTier, ...(nextAgent !== undefined ? { agent: nextAgent } : {}) },
             }
           : s,
       ) as PRD["userStories"],
@@ -246,7 +250,9 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
     return { outcome: "retry-same", prdDirty: false, prd: ctx.prd };
   }
 
-  const nextTier = escalateTier(ctx.routing.modelTier, ctx.config.autoMode.escalation.tierOrder);
+  const escalationResult = escalateTier(ctx.routing.modelTier, ctx.config.autoMode.escalation.tierOrder);
+  const nextTier = escalationResult?.tier ?? null;
+  const nextAgent = escalationResult?.agent;
   const escalateWholeBatch = ctx.config.autoMode.escalation.escalateEntireBatch ?? true;
   const storiesToEscalate = ctx.isBatchExecution && escalateWholeBatch ? ctx.storiesToExecute : [ctx.story];
 
@@ -258,7 +264,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
   const escalateRetryAsTestAfter = escalateFailureCategory === "greenfield-no-tests";
   const routingMode = ctx.config.routing.llm?.mode ?? "hybrid";
 
-  if (!nextTier || !ctx.config.autoMode.escalation.enabled) {
+  if (!escalationResult || !ctx.config.autoMode.escalation.enabled) {
     // No next tier or escalation disabled — pause or fail based on failure category
     return await handleNoTierAvailable(ctx, escalateFailureCategory);
   }
@@ -313,6 +319,7 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
       const updatedRouting = {
         ...baseRouting,
         modelTier: shouldSwitchToTestAfter ? baseRouting.modelTier : nextTier,
+        ...(nextAgent !== undefined ? { agent: nextAgent } : {}),
         ...(escalateRetryAsLite ? { testStrategy: "three-session-tdd-lite" as const } : {}),
         ...(shouldSwitchToTestAfter ? { testStrategy: "test-after" as const } : {}),
       };

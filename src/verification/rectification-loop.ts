@@ -293,17 +293,20 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
     const currentTier =
       config.autoMode.complexityRouting?.[complexity] || config.autoMode.escalation.tierOrder[0]?.tier || "balanced";
     const tierOrder = config.autoMode.escalation.tierOrder;
-    const escalatedTier = _rectificationDeps.escalateTier(currentTier, tierOrder);
+    const escalationResult = _rectificationDeps.escalateTier(currentTier, tierOrder);
+    const escalatedTier = escalationResult?.tier ?? null;
+    const escalatedAgent = escalationResult?.agent;
 
     if (escalatedTier !== null) {
-      const agent = (agentGetFn ?? _rectificationDeps.getAgent)(config.autoMode.defaultAgent);
+      const agentName = escalatedAgent ?? story.routing?.agent ?? config.autoMode.defaultAgent;
+      const agent = (agentGetFn ?? _rectificationDeps.getAgent)(agentName);
       if (!agent) {
         return false;
       }
 
       const escalatedModelDef = resolveModelForAgent(
         config.models,
-        story.routing?.agent ?? config.autoMode.defaultAgent,
+        agentName,
         escalatedTier,
         config.autoMode.defaultAgent,
       );
@@ -317,7 +320,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       );
       if (promptPrefix) escalationPrompt = `${promptPrefix}\n\n${escalationPrompt}`;
 
-      const escalationResult = await agent.run({
+      const escalationRunResult = await agent.run({
         prompt: escalationPrompt,
         workdir,
         modelTier: escalatedTier,
@@ -335,7 +338,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       logger?.info("rectification", "escalated rectification attempt cost", {
         storyId: story.id,
         escalatedTier,
-        cost: escalationResult.estimatedCost,
+        cost: escalationRunResult.estimatedCost,
       });
 
       const escalationVerification = await _rectificationDeps.runVerification({

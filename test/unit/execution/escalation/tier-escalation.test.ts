@@ -363,3 +363,230 @@ describe("handleTierEscalation — RUNTIME_CRASH retries same tier", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// handleTierEscalation — cross-agent escalation (US-004)
+//
+// When tierOrder entries have an agent field, the escalated story's routing
+// in the PRD should include the agent from the next tier entry.
+// ---------------------------------------------------------------------------
+
+describe("handleTierEscalation — cross-agent escalation (US-004)", () => {
+  test("sets routing.agent in PRD when next tier entry has agent field (AC-5)", async () => {
+    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const { handleTierEscalation, _tierEscalationDeps } = mod;
+
+    const origSavePRD = _tierEscalationDeps.savePRD;
+    _tierEscalationDeps.savePRD = () => Promise.resolve();
+
+    try {
+      const story = {
+        id: "US-001",
+        title: "Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        tags: [],
+        dependencies: [],
+        status: "in-progress" as const,
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { modelTier: "fast", testStrategy: "test-after", agent: "claude", complexity: "medium", reasoning: "" },
+      };
+
+      const ctx = {
+        story,
+        storiesToExecute: [story],
+        isBatchExecution: false,
+        routing: { modelTier: "fast", testStrategy: "test-after", agent: "claude" },
+        pipelineResult: { reason: "Tests failed", context: {} },
+        config: {
+          autoMode: {
+            defaultAgent: "claude",
+            escalation: {
+              enabled: true,
+              tierOrder: [
+                { tier: "fast", agent: "claude", attempts: 3 },
+                { tier: "balanced", agent: "claude", attempts: 2 },
+                { tier: "fast", agent: "codex", attempts: 2 },
+              ],
+              escalateEntireBatch: false,
+            },
+          },
+          routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+          models: {},
+        },
+        prd: {
+          project: "test",
+          feature: "f",
+          branchName: "b",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          userStories: [story],
+        },
+        prdPath: "/tmp/test-prd.json",
+        featureDir: undefined,
+        hooks: { hooks: {} },
+        feature: "f",
+        totalCost: 0,
+        workdir: "/tmp",
+        verifyResult: { status: "TEST_FAILURE", success: false },
+      };
+
+      const result = await handleTierEscalation(ctx as Parameters<typeof handleTierEscalation>[0]);
+
+      expect(result.outcome).toBe("escalated");
+      const updatedStory = result.prd.userStories.find((s) => s.id === "US-001");
+      // Next tier entry is { tier: "balanced", agent: "claude" }
+      expect(updatedStory?.routing?.modelTier).toBe("balanced");
+      expect(updatedStory?.routing?.agent).toBe("claude");
+    } finally {
+      _tierEscalationDeps.savePRD = origSavePRD;
+    }
+  });
+
+  test("sets codex agent when escalating from claude/balanced to codex/fast (AC-5, AC-6)", async () => {
+    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const { handleTierEscalation, _tierEscalationDeps } = mod;
+
+    const origSavePRD = _tierEscalationDeps.savePRD;
+    _tierEscalationDeps.savePRD = () => Promise.resolve();
+
+    try {
+      const story = {
+        id: "US-001",
+        title: "Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        tags: [],
+        dependencies: [],
+        status: "in-progress" as const,
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { modelTier: "balanced", testStrategy: "test-after", agent: "claude", complexity: "medium", reasoning: "" },
+      };
+
+      const ctx = {
+        story,
+        storiesToExecute: [story],
+        isBatchExecution: false,
+        routing: { modelTier: "balanced", testStrategy: "test-after", agent: "claude" },
+        pipelineResult: { reason: "Tests failed", context: {} },
+        config: {
+          autoMode: {
+            defaultAgent: "claude",
+            escalation: {
+              enabled: true,
+              tierOrder: [
+                { tier: "fast", agent: "claude", attempts: 3 },
+                { tier: "balanced", agent: "claude", attempts: 2 },
+                { tier: "fast", agent: "codex", attempts: 2 },
+              ],
+              escalateEntireBatch: false,
+            },
+          },
+          routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+          models: {},
+        },
+        prd: {
+          project: "test",
+          feature: "f",
+          branchName: "b",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          userStories: [story],
+        },
+        prdPath: "/tmp/test-prd.json",
+        featureDir: undefined,
+        hooks: { hooks: {} },
+        feature: "f",
+        totalCost: 0,
+        workdir: "/tmp",
+        verifyResult: { status: "TEST_FAILURE", success: false },
+      };
+
+      const result = await handleTierEscalation(ctx as Parameters<typeof handleTierEscalation>[0]);
+
+      expect(result.outcome).toBe("escalated");
+      const updatedStory = result.prd.userStories.find((s) => s.id === "US-001");
+      // Next tier entry is { tier: "fast", agent: "codex" }
+      expect(updatedStory?.routing?.modelTier).toBe("fast");
+      expect(updatedStory?.routing?.agent).toBe("codex");
+    } finally {
+      _tierEscalationDeps.savePRD = origSavePRD;
+    }
+  });
+
+  test("does not set agent when tierOrder entry has no agent field (AC-4 backward compat)", async () => {
+    const mod = await import("../../../../src/execution/escalation/tier-escalation");
+    const { handleTierEscalation, _tierEscalationDeps } = mod;
+
+    const origSavePRD = _tierEscalationDeps.savePRD;
+    _tierEscalationDeps.savePRD = () => Promise.resolve();
+
+    try {
+      const story = {
+        id: "US-001",
+        title: "Story",
+        description: "Test",
+        acceptanceCriteria: [],
+        tags: [],
+        dependencies: [],
+        status: "in-progress" as const,
+        passes: false,
+        escalations: [],
+        attempts: 0,
+        routing: { modelTier: "fast", testStrategy: "test-after", complexity: "medium", reasoning: "" },
+      };
+
+      const ctx = {
+        story,
+        storiesToExecute: [story],
+        isBatchExecution: false,
+        routing: { modelTier: "fast", testStrategy: "test-after" },
+        pipelineResult: { reason: "Tests failed", context: {} },
+        config: {
+          autoMode: {
+            defaultAgent: "claude",
+            escalation: {
+              enabled: true,
+              tierOrder: [
+                { tier: "fast", attempts: 3 },
+                { tier: "balanced", attempts: 2 },
+              ],
+              escalateEntireBatch: false,
+            },
+          },
+          routing: { llm: { mode: "per-story" }, strategy: "keyword" },
+          models: {},
+        },
+        prd: {
+          project: "test",
+          feature: "f",
+          branchName: "b",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          userStories: [story],
+        },
+        prdPath: "/tmp/test-prd.json",
+        featureDir: undefined,
+        hooks: { hooks: {} },
+        feature: "f",
+        totalCost: 0,
+        workdir: "/tmp",
+        verifyResult: { status: "TEST_FAILURE", success: false },
+      };
+
+      const result = await handleTierEscalation(ctx as Parameters<typeof handleTierEscalation>[0]);
+
+      expect(result.outcome).toBe("escalated");
+      const updatedStory = result.prd.userStories.find((s) => s.id === "US-001");
+      expect(updatedStory?.routing?.modelTier).toBe("balanced");
+      // No agent field set — caller uses defaultAgent
+      expect(updatedStory?.routing?.agent).toBeUndefined();
+    } finally {
+      _tierEscalationDeps.savePRD = origSavePRD;
+    }
+  });
+});
