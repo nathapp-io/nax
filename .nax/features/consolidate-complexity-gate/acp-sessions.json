@@ -6,5 +6,9 @@
   "US-001:implementer": {
     "sessionName": "nax-02787a80-consolidate-complexity-gate-us-001-implementer",
     "agentName": "claude"
+  },
+  "US-001:verifier": {
+    "sessionName": "nax-02787a80-consolidate-complexity-gate-us-001-verifier",
+    "agentName": "claude"
   }
 }
