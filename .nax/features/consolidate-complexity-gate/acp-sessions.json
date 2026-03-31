@@ -26,5 +26,9 @@
   "US-003:test-writer": {
     "sessionName": "nax-02787a80-consolidate-complexity-gate-us-003-test-writer",
     "agentName": "claude"
+  },
+  "US-003:implementer": {
+    "sessionName": "nax-02787a80-consolidate-complexity-gate-us-003-implementer",
+    "agentName": "claude"
   }
 }
