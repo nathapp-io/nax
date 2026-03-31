@@ -558,6 +558,19 @@ export class AcpAgentAdapter implements AgentAdapter {
             }
             continue;
           }
+
+          // Mark agent as unavailable after non-retryable failure and determine fallback options
+          this.markUnavailable(this.name);
+          if (options.config) {
+            const fallbacks = this.resolveFallbackOrder(options.config, this.name);
+            if (fallbacks.length > 0) {
+              getSafeLogger()?.info("acp-adapter", "Agent marked unavailable, fallback options available", {
+                unavailableAgent: this.name,
+                availableFallbacks: fallbacks,
+                storyId: options.storyId,
+              });
+            }
+          }
         }
         return result;
       } catch (err) {
@@ -565,7 +578,26 @@ export class AcpAgentAdapter implements AgentAdapter {
         lastError = error;
 
         const shouldRetry = isRateLimitError(error) && attempt < MAX_RATE_LIMIT_RETRIES - 1;
-        if (!shouldRetry) break;
+        if (!shouldRetry) {
+          // Mark agent as unavailable after non-retryable error
+          this.markUnavailable(this.name);
+          if (options.config) {
+            const fallbacks = this.resolveFallbackOrder(options.config, this.name);
+            if (fallbacks.length > 0) {
+              getSafeLogger()?.info(
+                "acp-adapter",
+                "Agent marked unavailable due to error, fallback options available",
+                {
+                  unavailableAgent: this.name,
+                  availableFallbacks: fallbacks,
+                  error: error.message,
+                  storyId: options.storyId,
+                },
+              );
+            }
+          }
+          break;
+        }
 
         const backoffMs = 2 ** (attempt + 1) * 1000;
         getSafeLogger()?.warn("acp-adapter", "Retrying after rate limit", {
@@ -847,7 +879,11 @@ export class AcpAgentAdapter implements AgentAdapter {
         lastError = error;
 
         const shouldRetry = isRateLimitError(error) && attempt < MAX_RATE_LIMIT_RETRIES - 1;
-        if (!shouldRetry) throw error;
+        if (!shouldRetry) {
+          // Mark agent as unavailable after non-retryable error in complete()
+          this.markUnavailable(this.name);
+          throw error;
+        }
 
         const backoffMs = 2 ** (attempt + 1) * 1000;
         getSafeLogger()?.warn("acp-adapter", "complete() rate limited, retrying", {
@@ -863,6 +899,8 @@ export class AcpAgentAdapter implements AgentAdapter {
       }
     }
 
+    // Mark agent as unavailable if we exhausted all retries
+    this.markUnavailable(this.name);
     throw lastError ?? new CompleteError("complete() failed with unknown error");
   }
 
@@ -906,11 +944,15 @@ export class AcpAgentAdapter implements AgentAdapter {
     });
 
     if (!result.success) {
+      // Mark agent as unavailable when plan() fails
+      this.markUnavailable(this.name);
       throw new Error(`[acp-adapter] plan() failed: ${result.output}`);
     }
 
     const specContent = result.output.trim();
     if (!specContent) {
+      // Mark agent as unavailable when plan() returns empty output
+      this.markUnavailable(this.name);
       throw new Error("[acp-adapter] plan() returned empty spec content");
     }
 
