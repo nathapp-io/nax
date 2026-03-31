@@ -28,6 +28,7 @@ import { initInteractionChain } from "../interaction/init";
 import { getLogger } from "../logger";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD, StoryStatus, UserStory } from "../prd/types";
+import type { PrecheckResultWithCode } from "../precheck";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dependency injection (_planDeps) — override in tests
@@ -60,6 +61,20 @@ export const _planDeps = {
   } => createCliInteractionBridge(),
   initInteractionChain: (cfg: NaxConfig, headless: boolean) => initInteractionChain(cfg, headless),
   createDebateSession: (opts: DebateSessionOptions): DebateSession => new DebateSession(opts),
+  runPrecheck: async (
+    config: NaxConfig,
+    prd: PRD,
+    opts?: { workdir: string; silent?: boolean },
+  ): Promise<PrecheckResultWithCode> => {
+    const { runPrecheck } = await import("../precheck");
+    return runPrecheck(config, prd, opts);
+  },
+  processExit: (code: number): never => process.exit(code),
+  planDecompose: (
+    workdir: string,
+    config: NaxConfig,
+    opts: { feature: string; storyId: string },
+  ): Promise<() => void> => planDecomposeCommand(workdir, config, opts),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -791,4 +806,29 @@ export async function planDecomposeCommand(
   const updatedPrd: PRD = { ...prd, userStories: finalStories };
   await _planDeps.writeFile(prdPath, JSON.stringify(updatedPrd, null, 2));
   return () => {};
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Replan loop
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Run the replan loop — decomposes oversized stories and re-runs precheck.
+ *
+ * When storySizeGate blocks stories with `action === 'block'`, this loop calls
+ * planDecomposeCommand for each flagged story, reloads the PRD, and re-runs
+ * precheck. Exits with code 1 if stories remain blocked after maxReplanAttempts.
+ *
+ * No-op when action === 'warn' (gate is non-blocking) or no stories are flagged.
+ *
+ * @param workdir  - Project root directory
+ * @param config   - Nax configuration
+ * @param options  - feature name, initial prd, and prd file path
+ */
+export async function runReplanLoop(
+  workdir: string,
+  config: NaxConfig,
+  options: { feature: string; prd: PRD; prdPath: string },
+): Promise<void> {
+  // stub — implementer fills in (US-003)
 }
