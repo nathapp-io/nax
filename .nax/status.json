@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 14,
-    "passed": 8,
+    "passed": 9,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 6
+    "pending": 5
   },
   "cost": {
-    "spent": 1.1944049999999997,
+    "spent": 1.4369860999999997,
     "limit": 30
   },
   "current": {
-    "storyId": "US-003-1",
-    "title": "Add AgentError type and parseAgentError() helper",
+    "storyId": "US-003-2",
+    "title": "Add AllAgentsUnavailableError and _unavailableAgents tracking to AcpAgentAdapter",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-03-31T02:02:43.736Z",
-  "durationMs": 1081154,
-  "lastHeartbeat": "2026-03-31T02:02:43.736Z"
+  "iterations": 3,
+  "updatedAt": "2026-03-31T02:05:43.748Z",
+  "durationMs": 1261166,
+  "lastHeartbeat": "2026-03-31T02:05:43.748Z"
 }
