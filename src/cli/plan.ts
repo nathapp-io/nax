@@ -20,12 +20,14 @@ import type { ProjectProfile } from "../config/runtime-types";
 import { COMPLEXITY_GUIDE, GROUPING_RULES, TEST_STRATEGY_GUIDE, getAcQualityRules } from "../config/test-strategy";
 import { discoverWorkspacePackages } from "../context/generator";
 import { DebateSession } from "../debate";
-import type { DebateSessionOptions } from "../debate";
+import type { DebateSessionOptions, DebateStageConfig } from "../debate";
+import { NaxError } from "../errors";
 import { PidRegistry } from "../execution/pid-registry";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import { initInteractionChain } from "../interaction/init";
 import { getLogger } from "../logger";
 import { validatePlanOutput } from "../prd/schema";
+import type { PRD, StoryStatus, UserStory } from "../prd/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dependency injection (_planDeps) — override in tests
@@ -617,4 +619,176 @@ ${
     ? `Write the PRD JSON directly to this file path: ${outputFilePath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`
     : "Output ONLY the JSON object. Do not wrap in markdown code blocks."
 }`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Decompose command
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build a decompose prompt that instructs the LLM to split a story into sub-stories.
+ */
+export function buildDecomposePrompt(targetStory: UserStory, siblings: UserStory[], codebaseContext: string): string {
+  const siblingsSummary =
+    siblings.length > 0 ? `\n## Sibling Stories\n\n${siblings.map((s) => `- ${s.id}: ${s.title}`).join("\n")}\n` : "";
+
+  return `You are a senior software architect decomposing a complex user story into smaller, implementable sub-stories.
+
+## Target Story
+
+${JSON.stringify(targetStory, null, 2)}${siblingsSummary}
+## Codebase Context
+
+${codebaseContext}
+
+${COMPLEXITY_GUIDE}
+
+${TEST_STRATEGY_GUIDE}
+
+${GROUPING_RULES}
+
+${getAcQualityRules()}
+
+## Output
+
+Return JSON with this exact structure (no markdown, no explanation — JSON only):
+
+{
+  "subStories": [
+    {
+      "id": "string — e.g. ${targetStory.id}-A",
+      "title": "string",
+      "description": "string",
+      "acceptanceCriteria": ["string — behavioral, testable criteria"],
+      "contextFiles": ["string — required, non-empty list of key source files"],
+      "tags": ["string"],
+      "dependencies": ["string"],
+      "status": "pending",
+      "passes": false,
+      "routing": {
+        "complexity": "simple | medium | complex | expert",
+        "testStrategy": "no-test | tdd-simple | three-session-tdd-lite | three-session-tdd | test-after",
+        "modelTier": "fast | balanced | powerful",
+        "reasoning": "string"
+      },
+      "escalations": [],
+      "attempts": 0
+    }
+  ]
+}`;
+}
+
+/**
+ * Decompose an existing story into sub-stories.
+ *
+ * @param workdir - Project root directory
+ * @param config  - Nax configuration
+ * @param options - feature name and storyId to decompose
+ * @returns no-op function (resolves on success)
+ */
+export async function planDecomposeCommand(
+  workdir: string,
+  config: NaxConfig,
+  options: { feature: string; storyId: string },
+): Promise<() => void> {
+  const prdPath = join(workdir, ".nax", "features", options.feature, "prd.json");
+
+  if (!_planDeps.existsSync(prdPath)) {
+    throw new NaxError(`PRD not found: ${prdPath}`, "PRD_NOT_FOUND", {
+      stage: "decompose",
+      feature: options.feature,
+    });
+  }
+
+  const prdContent = await _planDeps.readFile(prdPath);
+  const prd = JSON.parse(prdContent) as PRD;
+
+  const targetStory = prd.userStories.find((s) => s.id === options.storyId) ?? null;
+  if (!targetStory) {
+    throw new NaxError(`Story "${options.storyId}" not found in PRD`, "STORY_NOT_FOUND", {
+      stage: "decompose",
+      storyId: options.storyId,
+    });
+  }
+
+  if (targetStory.status === "decomposed") {
+    throw new NaxError(`Story "${options.storyId}" is already decomposed`, "STORY_ALREADY_DECOMPOSED", {
+      stage: "decompose",
+      storyId: options.storyId,
+    });
+  }
+
+  const scan = await _planDeps.scanCodebase(workdir);
+  const codebaseContext = buildCodebaseContext(scan);
+
+  const siblings = prd.userStories.filter((s) => s.id !== options.storyId);
+  const prompt = buildDecomposePrompt(targetStory, siblings, codebaseContext);
+
+  const agentName = config?.autoMode?.defaultAgent ?? "claude";
+  const adapter = _planDeps.getAgent(agentName, config);
+  if (!adapter) throw new Error(`[decompose] No agent adapter found for '${agentName}'`);
+
+  const stages = config?.debate?.stages as Record<string, DebateStageConfig> | undefined;
+  const debateEnabled = config?.debate?.enabled && stages?.decompose?.enabled;
+
+  let rawResponse: string;
+  if (debateEnabled) {
+    const stageConfig = stages?.decompose as DebateStageConfig;
+    const debateSession = _planDeps.createDebateSession({
+      storyId: options.storyId,
+      stage: "decompose",
+      stageConfig,
+    });
+    const debateResult = await debateSession.run(prompt);
+    if (debateResult.outcome !== "failed" && debateResult.output) {
+      rawResponse = debateResult.output;
+    } else {
+      rawResponse = await adapter.complete(prompt, { jsonMode: true });
+    }
+  } else {
+    rawResponse = await adapter.complete(prompt, { jsonMode: true });
+  }
+
+  const parsed = JSON.parse(rawResponse) as { subStories: UserStory[] };
+  const subStories = parsed.subStories;
+
+  const maxAcCount = config?.precheck?.storySizeGate?.maxAcCount ?? Number.POSITIVE_INFINITY;
+  for (const sub of subStories) {
+    if (!sub.contextFiles || sub.contextFiles.length === 0) {
+      throw new NaxError(`Sub-story "${sub.id}" has empty contextFiles`, "DECOMPOSE_VALIDATION_FAILED", {
+        stage: "decompose",
+        storyId: sub.id,
+      });
+    }
+    if (!sub.routing?.complexity || !sub.routing?.testStrategy || !sub.routing?.modelTier) {
+      throw new NaxError(`Sub-story "${sub.id}" is missing required routing fields`, "DECOMPOSE_VALIDATION_FAILED", {
+        stage: "decompose",
+        storyId: sub.id,
+      });
+    }
+    if (sub.acceptanceCriteria && sub.acceptanceCriteria.length > maxAcCount) {
+      throw new NaxError(
+        `Sub-story "${sub.id}" has ${sub.acceptanceCriteria.length} ACs, exceeds maxAcCount of ${maxAcCount}`,
+        "DECOMPOSE_VALIDATION_FAILED",
+        { stage: "decompose", storyId: sub.id },
+      );
+    }
+  }
+
+  const updatedStories = prd.userStories.map((s) =>
+    s.id === options.storyId ? { ...s, status: "decomposed" as StoryStatus } : s,
+  );
+
+  const subStoriesWithParent: UserStory[] = subStories.map((s) => ({ ...s, parentStoryId: options.storyId }));
+
+  const originalIndex = updatedStories.findIndex((s) => s.id === options.storyId);
+  const finalStories = [
+    ...updatedStories.slice(0, originalIndex + 1),
+    ...subStoriesWithParent,
+    ...updatedStories.slice(originalIndex + 1),
+  ];
+
+  const updatedPrd: PRD = { ...prd, userStories: finalStories };
+  await _planDeps.writeFile(prdPath, JSON.stringify(updatedPrd, null, 2));
+  return () => {};
 }
