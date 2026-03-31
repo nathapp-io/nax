@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 14,
-    "passed": 11,
+    "passed": 12,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 2
   },
   "cost": {
-    "spent": 7.068618149999999,
+    "spent": 10.143051949999998,
     "limit": 30
   },
   "current": {
-    "storyId": "US-003-4",
-    "title": "Implement fallback retry loop in AcpAgentAdapter.run()",
+    "storyId": "US-003-5",
+    "title": "Add structured fallback logging to AcpAgentAdapter",
     "complexity": "medium",
     "tddStrategy": "test-after",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 5,
-  "updatedAt": "2026-03-31T03:35:43.842Z",
-  "durationMs": 6661260,
-  "lastHeartbeat": "2026-03-31T03:35:43.842Z"
+  "iterations": 6,
+  "updatedAt": "2026-03-31T03:40:43.848Z",
+  "durationMs": 6961266,
+  "lastHeartbeat": "2026-03-31T03:40:43.848Z"
 }
