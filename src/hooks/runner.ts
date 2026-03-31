@@ -7,6 +7,7 @@
 import { join } from "node:path";
 import { getLogger } from "../logger";
 import { loadJsonFile } from "../utils/json-file";
+import { killProcessGroup } from "../utils/process-kill";
 import type { HookContext, HookDef, HookEvent, HooksConfig } from "./types";
 
 const DEFAULT_TIMEOUT = 5000;
@@ -207,7 +208,7 @@ async function executeHook(
 
   // Timeout handling
   const timeoutId = setTimeout(() => {
-    proc.kill("SIGTERM");
+    killProcessGroup(proc.pid, "SIGTERM");
   }, timeout);
 
   const exitCode = await proc.exited;

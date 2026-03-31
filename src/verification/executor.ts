@@ -8,6 +8,7 @@
 import type { Subprocess } from "bun";
 import { spawn } from "../utils/bun-deps";
 import { errorMessage } from "../utils/errors";
+import { killProcessGroup } from "../utils/process-kill";
 import type { TestExecutionResult } from "./types";
 
 /** Injectable deps for testability — mock _executorDeps.spawn instead of global Bun.spawn */
@@ -123,31 +124,14 @@ export async function executeWithTimeout(
   if (timedOut) {
     const pid = proc.pid;
 
-    // Send SIGTERM to process group (negative PID) to kill children too
-    try {
-      process.kill(-pid, "SIGTERM");
-    } catch (error) {
-      // Fallback: kill direct process if process group kill fails
-      try {
-        proc.kill("SIGTERM");
-      } catch (fallbackError) {
-        // Process may have already exited
-      }
-    }
+    // Send SIGTERM to process group to kill children too
+    killProcessGroup(pid, "SIGTERM");
 
     // Wait for graceful shutdown
     await Bun.sleep(gracePeriodMs);
 
     // Force SIGKILL entire process group if still running
-    try {
-      process.kill(-pid, "SIGKILL");
-    } catch (error) {
-      try {
-        proc.kill("SIGKILL");
-      } catch (fallbackError) {
-        // Process may have already exited
-      }
-    }
+    killProcessGroup(pid, "SIGKILL");
 
     // Bun bug workaround: piped streams don't close after kill
     const partialOutput = await drainWithDeadline(proc, drainTimeoutMs);

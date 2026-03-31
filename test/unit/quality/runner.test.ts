@@ -133,34 +133,38 @@ describe("runQualityCommand — failure (non-zero exit)", () => {
 
 describe("runQualityCommand — timeout flow", () => {
   let originalSpawn: typeof _qualityRunnerDeps.spawn;
+  let originalProcessKill: typeof process.kill;
 
   beforeEach(() => {
     originalSpawn = _qualityRunnerDeps.spawn;
+    originalProcessKill = process.kill;
   });
 
   afterEach(() => {
     _qualityRunnerDeps.spawn = originalSpawn;
+    process.kill = originalProcessKill;
   });
 
   test("returns timedOut=true and exitCode=-1 when process exceeds timeoutMs", async () => {
     const killMock = mock(() => {});
-
-    // Process hangs: exited resolves only after kill is called (simulate via resolved promise
-    // that races with the short timeout we set below).
     let resolveExited!: (code: number) => void;
     const exitedPromise = new Promise<number>((res) => {
       resolveExited = res;
     });
 
+    // Mock process.kill to track calls and resolve the process promise
+    process.kill = mock((pid, signal) => {
+      killMock(pid, signal);
+      // Simulate process dying after SIGTERM
+      if (signal === "SIGTERM") resolveExited(143);
+    }) as typeof process.kill;
+
     _qualityRunnerDeps.spawn = mock((_args: unknown) => ({
+      pid: 1234, // Provide explicit PID for killProcessGroup
       exited: exitedPromise,
       stdout: new ReadableStream({ start(c) { c.close(); } }),
       stderr: new ReadableStream({ start(c) { c.close(); } }),
-      kill: mock((signal: string) => {
-        killMock(signal);
-        // Simulate process dying after SIGTERM
-        if (signal === "SIGTERM") resolveExited(143);
-      }),
+      kill: mock(() => {}), // Not called anymore, but keep for safety
     } as unknown as ReturnType<typeof Bun.spawn>)) as typeof Bun.spawn;
 
     const result = await runQualityCommand({
@@ -175,7 +179,7 @@ describe("runQualityCommand — timeout flow", () => {
     expect(result.exitCode).toBe(-1);
     expect(result.output).toContain("timed out");
     expect(result.output).toContain("lint");
-    expect(killMock).toHaveBeenCalledWith("SIGTERM");
+    expect(killMock).toHaveBeenCalledWith(-1234, "SIGTERM");
   });
 });
 

@@ -5,6 +5,8 @@
  * Ensures all timers are cleaned up in all code paths (exit, timeout, hard deadline).
  */
 
+import { killProcessGroup } from "../utils/process-kill";
+
 export interface ProcessTimeoutOptions {
   /** Grace period in ms between SIGTERM and SIGKILL (default: 5000) */
   graceMs?: number;
@@ -14,9 +16,9 @@ export interface ProcessTimeoutOptions {
   hardDeadlineBufferMs?: number;
   /**
    * Optional injectable kill function for testability.
-   * Defaults to proc.kill(signal).
+   * Defaults to killProcessGroup(proc.pid, signal).
    */
-  killFn?: (proc: { kill(signal?: NodeJS.Signals | number): void }, signal: NodeJS.Signals) => void;
+  killFn?: (proc: { pid: number; kill(signal?: NodeJS.Signals | number): void }, signal: NodeJS.Signals) => void;
 }
 
 export interface ProcessTimeoutResult {
@@ -46,7 +48,7 @@ export async function withProcessTimeout(
 ): Promise<ProcessTimeoutResult> {
   const graceMs = opts?.graceMs ?? 5000;
   const hardDeadlineBufferMs = opts?.hardDeadlineBufferMs ?? 3000;
-  const killFn = opts?.killFn ?? ((p, signal) => p.kill(signal));
+  const killFn = opts?.killFn ?? ((p, signal) => killProcessGroup(p.pid, signal));
 
   let timedOut = false;
   let sigkillId: ReturnType<typeof setTimeout> | undefined;

@@ -9,6 +9,7 @@
 import path from "node:path";
 import { getLogger } from "../../logger";
 import { spawn } from "../../utils/bun-deps";
+import { killProcessGroup } from "../../utils/process-kill";
 import type { IVerificationStrategy, VerifyContext, VerifyResult } from "../orchestrator-types";
 import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrator-types";
 
@@ -64,17 +65,9 @@ export class AcceptanceStrategy implements IVerificationStrategy {
     let timedOut = false;
     const timeoutId = setTimeout(() => {
       timedOut = true;
-      try {
-        proc.kill("SIGTERM");
-      } catch {
-        /* already exited */
-      }
+      killProcessGroup(proc.pid, "SIGTERM");
       setTimeout(() => {
-        try {
-          proc.kill("SIGKILL");
-        } catch {
-          /* already exited */
-        }
+        killProcessGroup(proc.pid, "SIGKILL");
       }, 5000);
     }, timeoutMs);
 
