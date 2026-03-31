@@ -40,7 +40,7 @@ Bun + TypeScript CLI that orchestrates AI coding agents (Claude Code) with model
 | `bun run typecheck` | tsc --noEmit |
 | `bun run lint` | Biome |
 | `bun run lint:fix` | Biome lint fix |
-| `bun test test/unit/foo.test.ts` | Targeted test during iteration |
+| `bun test test/unit/foo.test.ts --timeout=30000` | Targeted test during iteration with timeout |
 | `bun run test` | Full suite |
 | `bun run test:bail` | Full suite with bail |
 
