@@ -578,6 +578,13 @@ export class AcpAgentAdapter implements AgentAdapter {
             }
             continue;
           }
+
+          // AC 1-3: parse output for rate-limit/auth errors so the fallback retry
+          // loop below can handle them, regardless of whether fallbacks are configured.
+          const parsed = _fallbackDeps.parseAgentError(result.output ?? "");
+          if (parsed.type === "rate-limit" || parsed.type === "auth") {
+            throw new Error(result.output ?? "agent run failed");
+          }
         }
 
         return result;
