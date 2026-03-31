@@ -1,0 +1,86 @@
+{
+  "US-001-2:test-writer": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-001-2-test-writer",
+    "agentName": "claude"
+  },
+  "US-001-2:implementer": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-001-2-implementer",
+    "agentName": "claude"
+  },
+  "US-001-2:verifier": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-001-2-verifier",
+    "agentName": "claude"
+  },
+  "US-001-3:test-writer": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-001-3-test-writer",
+    "agentName": "claude"
+  },
+  "US-001-3:implementer": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-001-3-implementer",
+    "agentName": "claude"
+  },
+  "US-001-3:verifier": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-001-3-verifier",
+    "agentName": "claude"
+  },
+  "US-001-5:test-writer": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-001-5-test-writer",
+    "agentName": "claude"
+  },
+  "US-001-5:implementer": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-001-5-implementer",
+    "agentName": "claude"
+  },
+  "US-001-5:verifier": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-001-5-verifier",
+    "agentName": "claude"
+  },
+  "US-003-2:test-writer": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-003-2-test-writer",
+    "agentName": "claude"
+  },
+  "US-003-2:implementer": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-003-2-implementer",
+    "agentName": "claude"
+  },
+  "US-003-2:verifier": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-003-2-verifier",
+    "agentName": "claude"
+  },
+  "US-003-3:test-writer": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-003-3-test-writer",
+    "agentName": "claude"
+  },
+  "US-003-3:implementer": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-003-3-implementer",
+    "agentName": "claude"
+  },
+  "US-003-3:verifier": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-003-3-verifier",
+    "agentName": "claude"
+  },
+  "US-003-4:test-writer": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-003-4-test-writer",
+    "agentName": "claude"
+  },
+  "US-003-4:implementer": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-003-4-implementer",
+    "agentName": "claude"
+  },
+  "US-003-4:verifier": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-003-4-verifier",
+    "agentName": "claude"
+  },
+  "US-003-5:test-writer": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-003-5-test-writer",
+    "agentName": "claude"
+  },
+  "US-003-5:implementer": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-003-5-implementer",
+    "agentName": "claude"
+  },
+  "US-003-5:verifier": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-003-5-verifier",
+    "agentName": "claude"
+  }
+}

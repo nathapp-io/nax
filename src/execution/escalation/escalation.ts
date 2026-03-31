@@ -7,27 +7,36 @@
 
 import type { TierConfig } from "../../config";
 
+/** Result of escalateTier — includes both the next tier name and optional next agent. */
+export interface EscalateTierResult {
+  tier: string;
+  agent?: string;
+}
+
 /**
  * Escalate to the next tier in the configured order.
  *
  * @param currentTier - Current tier name
  * @param tierOrder - Ordered tier config array from config (e.g., [{tier:"fast",attempts:5}, ...])
- * @returns Next tier name, or null if at max tier
+ * @returns Next tier and agent, or null if at max tier
  *
  * @example
  * ```typescript
- * const tiers = [{tier:"fast",attempts:5}, {tier:"balanced",attempts:3}, {tier:"powerful",attempts:2}];
- * escalateTier("fast", tiers);    // => "balanced"
- * escalateTier("powerful", tiers); // => null
+ * const tiers = [{tier:"fast",agent:"claude",attempts:3}, {tier:"balanced",agent:"claude",attempts:2}];
+ * escalateTier("fast", tiers);    // => { tier: "balanced", agent: "claude" }
+ * escalateTier("balanced", tiers); // => null
  * ```
  */
-export function escalateTier(currentTier: string, tierOrder: TierConfig[]): string | null {
+export function escalateTier(currentTier: string, tierOrder: TierConfig[]): EscalateTierResult | null {
   const getName = (t: TierConfig) => t.tier ?? (t as unknown as { name?: string }).name ?? null;
   const currentIndex = tierOrder.findIndex((t) => getName(t) === currentTier);
   if (currentIndex === -1 || currentIndex === tierOrder.length - 1) {
     return null;
   }
-  return getName(tierOrder[currentIndex + 1]);
+  const next = tierOrder[currentIndex + 1];
+  const nextName = getName(next);
+  if (!nextName) return null;
+  return { tier: nextName, agent: next.agent };
 }
 
 /**

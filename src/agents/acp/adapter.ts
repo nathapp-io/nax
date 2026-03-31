@@ -14,9 +14,11 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { resolvePermissions } from "../../config/permissions";
+import { AllAgentsUnavailableError } from "../../errors";
 import { getSafeLogger } from "../../logger";
 import { sleep, which } from "../../utils/bun-deps";
 import { buildDecomposePrompt, parseDecomposeOutput } from "../shared/decompose";
+import { parseAgentError } from "./parse-agent-error";
 import { createSpawnAcpClient } from "./spawn-client";
 
 import type {
@@ -134,6 +136,21 @@ export const _acpAdapterDeps = {
   ): AcpClient {
     return createSpawnAcpClient(cmdStr, cwd, timeoutSeconds, pidRegistry);
   },
+};
+
+/**
+ * Injectable dependencies for the fallback retry loop in complete() and run().
+ * Override in tests to mock parseAgentError and sleep.
+ *
+ * Fallback logging uses getSafeLogger() with stage 'agent-fallback'.
+ * Log data always has storyId as the first key, followed by
+ * originalAgent, fallbackAgent, errorType, and retryCount (AC6).
+ * Unit tests for this interface are in:
+ *   test/unit/agents/acp/adapter-fallback-logging.test.ts
+ */
+export const _fallbackDeps = {
+  parseAgentError,
+  sleep,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -494,6 +511,7 @@ export class AcpAgentAdapter implements AgentAdapter {
   readonly displayName: string;
   readonly binary: string;
   readonly capabilities: AgentCapabilities;
+  private _unavailableAgents: Set<string>;
 
   constructor(agentName: string) {
     const entry = resolveRegistryEntry(agentName);
@@ -505,6 +523,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       maxContextTokens: entry.maxContextTokens,
       features: new Set<"tdd" | "review" | "refactor" | "batch">(["tdd", "review", "refactor"]),
     };
+    this._unavailableAgents = new Set();
   }
 
   async isInstalled(): Promise<boolean> {
@@ -525,7 +544,8 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   async run(options: AgentRunOptions): Promise<AgentResult> {
     const startTime = Date.now();
-    let lastError: Error | undefined;
+    const config = options.config;
+    const hasActiveFallbacks = (config?.autoMode?.fallbackOrder?.length ?? 0) > 0;
 
     getSafeLogger()?.debug("acp-adapter", `Starting run for ${this.name}`, {
       model: options.modelDef.model,
@@ -535,12 +555,21 @@ export class AcpAgentAdapter implements AgentAdapter {
       sessionRole: options.sessionRole,
     });
 
+    // Start with this agent if available; otherwise skip to first available fallback
+    let currentAgent: string = this.resolveCurrentAgent(config);
+
+    const rateLimitedRetryAfter = new Map<string, number | undefined>();
     let sessionErrorRetried = false;
-    for (let attempt = 0; attempt < MAX_RATE_LIMIT_RETRIES; attempt++) {
+    // Legacy attempt counter used only when no fallback chain is configured
+    let legacyAttempt = 0;
+    let retryCount = 0;
+
+    while (true) {
       try {
-        const result = await this._runWithClient(options, startTime);
+        const result = await this._runWithClient(options, startTime, currentAgent);
+
         if (!result.success) {
-          getSafeLogger()?.warn("acp-adapter", `Run failed for ${this.name}`, { exitCode: result.exitCode });
+          getSafeLogger()?.warn("acp-adapter", `Run failed for ${currentAgent}`, { exitCode: result.exitCode });
 
           // BUG-122: session error (acpx exit code 4 — stale/locked session) — retry once
           // with a fresh session when _acpAdapterDeps.shouldRetrySessionError is set.
@@ -556,37 +585,106 @@ export class AcpAgentAdapter implements AgentAdapter {
             }
             continue;
           }
+
+          // AC 1-3: parse output for rate-limit/auth errors so the fallback retry
+          // loop below can handle them, regardless of whether fallbacks are configured.
+          const parsed = _fallbackDeps.parseAgentError(result.output ?? "");
+          if (parsed.type === "rate-limit" || parsed.type === "auth") {
+            throw new Error(result.output ?? "agent run failed");
+          }
         }
+
         return result;
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
-        lastError = error;
+        const parsed = _fallbackDeps.parseAgentError(error.message);
 
-        const shouldRetry = isRateLimitError(error) && attempt < MAX_RATE_LIMIT_RETRIES - 1;
-        if (!shouldRetry) break;
-
-        const backoffMs = 2 ** (attempt + 1) * 1000;
-        getSafeLogger()?.warn("acp-adapter", "Retrying after rate limit", {
-          backoffSeconds: backoffMs / 1000,
-          attempt: attempt + 1,
-        });
-        await _acpAdapterDeps.sleep(backoffMs);
+        if (parsed.type === "auth") {
+          this.markUnavailable(currentAgent);
+          const fallbacks = this.resolveFallbackOrder(config, currentAgent);
+          const availableFallbacks = fallbacks.filter((a) => !this._unavailableAgents.has(a));
+          if (availableFallbacks.length === 0) {
+            getSafeLogger()?.error("agent-fallback", "All agents unavailable after auth failures", {
+              storyId: options.storyId,
+              unavailableAgents: [...this._unavailableAgents],
+            });
+            throw new AllAgentsUnavailableError([...this._unavailableAgents]);
+          }
+          retryCount++;
+          getSafeLogger()?.info("agent-fallback", "Falling back after auth error", {
+            storyId: options.storyId,
+            originalAgent: currentAgent,
+            fallbackAgent: availableFallbacks[0],
+            errorType: "auth",
+            retryCount,
+          });
+          currentAgent = availableFallbacks[0];
+        } else if (parsed.type === "rate-limit") {
+          rateLimitedRetryAfter.set(currentAgent, parsed.retryAfterSeconds);
+          const fallbacks = this.resolveFallbackOrder(config, currentAgent);
+          const nextAvailable = fallbacks.find((a) => !rateLimitedRetryAfter.has(a));
+          if (nextAvailable) {
+            retryCount++;
+            getSafeLogger()?.info("agent-fallback", "Falling back after rate-limit", {
+              storyId: options.storyId,
+              originalAgent: currentAgent,
+              fallbackAgent: nextAvailable,
+              errorType: "rate-limit",
+              retryCount,
+            });
+            currentAgent = nextAvailable;
+          } else if (hasActiveFallbacks) {
+            // All fallback agents exhausted — sleep then restart from fallbackOrder[0]
+            const retryValues = [...rateLimitedRetryAfter.values()].filter((v): v is number => v !== undefined);
+            const sleepMs = retryValues.length > 0 ? Math.min(...retryValues) * 1000 : 30_000;
+            getSafeLogger()?.info("agent-fallback", "All agents rate-limited, waiting before retry", {
+              storyId: options.storyId,
+              waitMs: sleepMs,
+            });
+            await _fallbackDeps.sleep(sleepMs);
+            rateLimitedRetryAfter.clear();
+            const initialFallbacks = this.resolveFallbackOrder(config, this.name);
+            currentAgent = initialFallbacks[0] ?? this.name;
+          } else {
+            // No fallback chain — legacy exponential backoff for backward compat
+            if (legacyAttempt >= MAX_RATE_LIMIT_RETRIES - 1) {
+              const durationMs = Date.now() - startTime;
+              return {
+                success: false,
+                exitCode: 1,
+                output: error.message,
+                rateLimited: true,
+                durationMs,
+                estimatedCost: 0,
+              };
+            }
+            legacyAttempt++;
+            const backoffMs = 2 ** legacyAttempt * 1000;
+            await _acpAdapterDeps.sleep(backoffMs);
+            rateLimitedRetryAfter.clear();
+          }
+        } else {
+          // Unknown error — return as failure result (consistent with legacy run() behavior)
+          const durationMs = Date.now() - startTime;
+          return {
+            success: false,
+            exitCode: 1,
+            output: error.message,
+            rateLimited: false,
+            durationMs,
+            estimatedCost: 0,
+          };
+        }
       }
     }
-
-    const durationMs = Date.now() - startTime;
-    return {
-      success: false,
-      exitCode: 1,
-      output: lastError?.message ?? "Run failed",
-      rateLimited: isRateLimitError(lastError),
-      durationMs,
-      estimatedCost: 0,
-    };
   }
 
-  private async _runWithClient(options: AgentRunOptions, startTime: number): Promise<AgentResult> {
-    const cmdStr = `acpx --model ${options.modelDef.model} ${this.name}`;
+  private async _runWithClient(
+    options: AgentRunOptions,
+    startTime: number,
+    agentName = this.name,
+  ): Promise<AgentResult> {
+    const cmdStr = `acpx --model ${options.modelDef.model} ${agentName}`;
     const client = _acpAdapterDeps.createClient(cmdStr, options.workdir, options.timeoutSeconds, options.pidRegistry);
     await client.start();
 
@@ -608,12 +706,12 @@ export class AcpAgentAdapter implements AgentAdapter {
     });
 
     // 3. Ensure session (resume existing or create new)
-    const session = await ensureAcpSession(client, sessionName, this.name, permissionMode);
+    const session = await ensureAcpSession(client, sessionName, agentName, permissionMode);
 
     // 4. Persist for plan→run continuity
     if (options.featureName && options.storyId) {
       const sidecarKey = options.sessionRole ? `${options.storyId}:${options.sessionRole}` : options.storyId;
-      await saveAcpSession(options.workdir, options.featureName, sidecarKey, sessionName, this.name);
+      await saveAcpSession(options.workdir, options.featureName, sidecarKey, sessionName, agentName);
     }
 
     let lastResponse: AcpSessionResponse | null = null;
@@ -749,59 +847,55 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async complete(prompt: string, _options?: CompleteOptions): Promise<string> {
-    // Resolve model: explicit option > config.models[tier] > "default"
-    let model = _options?.model;
-    if (!model && _options?.modelTier && _options?.config?.models) {
-      const tier = _options.modelTier;
-      const { resolveModel } = await import("../../config/schema");
-      const models = _options.config.models as Record<string, unknown>;
-      const entry = models[tier] ?? models.balanced;
-      if (entry) {
-        try {
-          model = resolveModel(entry as Parameters<typeof resolveModel>[0]).model;
-        } catch {
-          // resolveModel can throw on malformed entries — fall through to "default"
-        }
-      }
-    }
-    model ??= "default";
-    const timeoutMs = _options?.timeoutMs ?? 120_000; // 2-min safety net by default
+    const timeoutMs = _options?.timeoutMs ?? 120_000;
     const permissionMode = resolvePermissions(_options?.config, "complete").mode;
     const workdir = _options?.workdir;
+    const config = _options?.config;
 
-    let lastError: Error | undefined;
+    // Resolve model for a given agent name
+    const resolveModel = async (agentName: string): Promise<string> => {
+      let model = _options?.model;
+      if (!model && _options?.modelTier && _options?.config?.models) {
+        const tier = _options.modelTier;
+        const { resolveModelForAgent } = await import("../../config/schema");
+        try {
+          model = resolveModelForAgent(
+            _options.config.models,
+            agentName,
+            tier,
+            _options.config.autoMode?.defaultAgent ?? agentName,
+          ).model;
+        } catch {
+          // fall through to "default"
+        }
+      }
+      return model ?? "default";
+    };
 
-    for (let attempt = 0; attempt < MAX_RATE_LIMIT_RETRIES; attempt++) {
-      const cmdStr = `acpx --model ${model} ${this.name}`;
+    // Attempt one call with the given agent; throws on any error
+    const tryOneAgent = async (agentName: string): Promise<string> => {
+      const model = await resolveModel(agentName);
+      const cmdStr = `acpx --model ${model} ${agentName}`;
       const client = _acpAdapterDeps.createClient(cmdStr, workdir);
       await client.start();
 
       let session: AcpSession | null = null;
       let hadError = false;
       try {
-        // complete() is one-shot — ephemeral session, no sidecar
-        // Use caller-provided sessionName if available; otherwise build from featureName/storyId/sessionRole
         const completeSessionName =
           _options?.sessionName ??
           buildSessionName(workdir ?? process.cwd(), _options?.featureName, _options?.storyId, _options?.sessionRole);
-        session = await client.createSession({
-          agentName: this.name,
-          permissionMode,
-          sessionName: completeSessionName,
-        });
+        session = await client.createSession({ agentName, permissionMode, sessionName: completeSessionName });
 
-        // Enforce timeout via Promise.race — session.prompt() can hang indefinitely
         let timeoutId: ReturnType<typeof setTimeout> | undefined;
         const timeoutPromise = new Promise<never>((_, reject) => {
           timeoutId = setTimeout(() => reject(new Error(`complete() timed out after ${timeoutMs}ms`)), timeoutMs);
         });
-        timeoutPromise.catch(() => {}); // prevent unhandled rejection if promptPromise wins
-
-        const promptPromise = session.prompt(prompt);
+        timeoutPromise.catch(() => {});
 
         let response: AcpSessionResponse;
         try {
-          response = await Promise.race([promptPromise, timeoutPromise]);
+          response = await Promise.race([session.prompt(prompt), timeoutPromise]);
         } finally {
           clearTimeout(timeoutId);
         }
@@ -816,9 +910,6 @@ export class AcpAgentAdapter implements AgentAdapter {
           .join("\n")
           .trim();
 
-        // ACP one-shot sessions wrap the response in a result envelope:
-        // {"type":"result","subtype":"success","result":"<actual output>"}
-        // Unwrap to return the actual content.
         let unwrapped = text;
         try {
           const envelope = JSON.parse(text) as Record<string, unknown>;
@@ -834,52 +925,112 @@ export class AcpAgentAdapter implements AgentAdapter {
         }
 
         if (response.exactCostUsd !== undefined) {
-          getSafeLogger()?.info("acp-adapter", "complete() cost", {
-            costUsd: response.exactCostUsd,
-            model,
-          });
+          getSafeLogger()?.info("acp-adapter", "complete() cost", { costUsd: response.exactCostUsd, model });
         }
 
         return unwrapped;
       } catch (err) {
         hadError = true;
-        const error = err instanceof Error ? err : new Error(String(err));
-        lastError = error;
-
-        const shouldRetry = isRateLimitError(error) && attempt < MAX_RATE_LIMIT_RETRIES - 1;
-        if (!shouldRetry) throw error;
-
-        const backoffMs = 2 ** (attempt + 1) * 1000;
-        getSafeLogger()?.warn("acp-adapter", "complete() rate limited, retrying", {
-          backoffSeconds: backoffMs / 1000,
-          attempt: attempt + 1,
-        });
-        await _acpAdapterDeps.sleep(backoffMs);
+        throw err;
       } finally {
         if (session) {
           await session.close({ forceTerminate: hadError }).catch(() => {});
         }
         await client.close().catch(() => {});
       }
-    }
+    };
 
-    throw lastError ?? new CompleteError("complete() failed with unknown error");
+    // Fallback retry loop: walk fallbackOrder on rate-limit/auth errors
+    const rateLimitedRetryAfter = new Map<string, number | undefined>();
+    const hasActiveFallbacks = (config?.autoMode?.fallbackOrder?.length ?? 0) > 0;
+    // Start with this agent if available; otherwise skip to first available fallback
+    let currentAgent: string = this.resolveCurrentAgent(config);
+    // Legacy attempt counter used only when no fallback chain is configured
+    let legacyAttempt = 0;
+    let retryCount = 0;
+
+    while (true) {
+      try {
+        return await tryOneAgent(currentAgent);
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        const parsed = _fallbackDeps.parseAgentError(error.message);
+
+        if (parsed.type === "auth") {
+          this.markUnavailable(currentAgent);
+          const fallbacks = this.resolveFallbackOrder(config, currentAgent);
+          const availableFallbacks = fallbacks.filter((a) => !this._unavailableAgents.has(a));
+          if (availableFallbacks.length === 0) {
+            getSafeLogger()?.error("agent-fallback", "All agents unavailable after auth failures", {
+              storyId: _options?.storyId,
+              unavailableAgents: [...this._unavailableAgents],
+            });
+            throw new AllAgentsUnavailableError([...this._unavailableAgents]);
+          }
+          retryCount++;
+          getSafeLogger()?.info("agent-fallback", "Falling back after auth error", {
+            storyId: _options?.storyId,
+            originalAgent: currentAgent,
+            fallbackAgent: availableFallbacks[0],
+            errorType: "auth",
+            retryCount,
+          });
+          currentAgent = availableFallbacks[0];
+        } else if (parsed.type === "rate-limit") {
+          rateLimitedRetryAfter.set(currentAgent, parsed.retryAfterSeconds);
+          const fallbacks = this.resolveFallbackOrder(config, currentAgent);
+          const nextAvailable = fallbacks.find((a) => !rateLimitedRetryAfter.has(a));
+          if (nextAvailable) {
+            retryCount++;
+            getSafeLogger()?.info("agent-fallback", "Falling back after rate-limit", {
+              storyId: _options?.storyId,
+              originalAgent: currentAgent,
+              fallbackAgent: nextAvailable,
+              errorType: "rate-limit",
+              retryCount,
+            });
+            currentAgent = nextAvailable;
+          } else if (hasActiveFallbacks) {
+            // All fallback agents exhausted — sleep then restart from fallbackOrder[0]
+            const retryValues = [...rateLimitedRetryAfter.values()].filter((v): v is number => v !== undefined);
+            const sleepMs = retryValues.length > 0 ? Math.min(...retryValues) * 1000 : 30_000;
+            getSafeLogger()?.info("agent-fallback", "All agents rate-limited, waiting before retry", {
+              storyId: _options?.storyId,
+              waitMs: sleepMs,
+            });
+            await _fallbackDeps.sleep(sleepMs);
+            rateLimitedRetryAfter.clear();
+            const initialFallbacks = this.resolveFallbackOrder(config, this.name);
+            currentAgent = initialFallbacks[0] ?? this.name;
+          } else {
+            // No fallback chain — old exponential backoff behavior (backward compat)
+            if (legacyAttempt >= MAX_RATE_LIMIT_RETRIES - 1) {
+              throw error;
+            }
+            legacyAttempt++;
+            const backoffMs = 2 ** legacyAttempt * 1000;
+            await _acpAdapterDeps.sleep(backoffMs);
+            rateLimitedRetryAfter.clear();
+          }
+        } else {
+          throw error;
+        }
+      }
+    }
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {
-    // Resolve model: explicit > config.models[tier] > config.models.balanced > fallback
+    // Resolve model: explicit > resolveModelForAgent(tier) > fallback
     let modelDef = options.modelDef;
     if (!modelDef && options.config?.models) {
       const tier = options.modelTier ?? "balanced";
-      const { resolveModel } = await import("../../config/schema");
-      const models = options.config.models as Record<string, unknown>;
-      const entry = models[tier] ?? models.balanced;
-      if (entry) {
-        try {
-          modelDef = resolveModel(entry as Parameters<typeof resolveModel>[0]);
-        } catch {
-          // resolveModel can throw on malformed entries
-        }
+      const config = options.config;
+      const { resolveModelForAgent } = await import("../../config/schema");
+      try {
+        const defaultAgent = config.autoMode?.defaultAgent ?? "claude";
+        modelDef = resolveModelForAgent(config.models ?? {}, defaultAgent, tier, defaultAgent);
+      } catch {
+        // resolveModelForAgent can throw on malformed entries
       }
     }
     modelDef ??= { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
@@ -908,11 +1059,15 @@ export class AcpAgentAdapter implements AgentAdapter {
     });
 
     if (!result.success) {
+      // Mark agent as unavailable when plan() fails
+      this.markUnavailable(this.name);
       throw new Error(`[acp-adapter] plan() failed: ${result.output}`);
     }
 
     const specContent = result.output.trim();
     if (!specContent) {
+      // Mark agent as unavailable when plan() returns empty output
+      this.markUnavailable(this.name);
       throw new Error("[acp-adapter] plan() returned empty spec content");
     }
 
@@ -945,5 +1100,41 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
 
     return { stories };
+  }
+
+  private markUnavailable(agentName: string): void {
+    this._unavailableAgents.add(agentName);
+  }
+
+  private isAvailable(agentName: string): boolean {
+    return !this._unavailableAgents.has(agentName);
+  }
+
+  private resolveCurrentAgent(config: import("../../config").NaxConfig | undefined): string {
+    if (this.isAvailable(this.name)) {
+      return this.name;
+    }
+    if (config) {
+      const available = this.resolveFallbackOrder(config, this.name);
+      return available[0] ?? this.name;
+    }
+    return this.name;
+  }
+
+  private resolveFallbackOrder(config: unknown, currentAgent: string): string[] {
+    if (!config) return [];
+    const typedConfig = config as { autoMode?: { fallbackOrder?: string[] } };
+    const fallbackOrder = typedConfig.autoMode?.fallbackOrder ?? [];
+
+    // Find the current agent's index
+    const currentIndex = fallbackOrder.indexOf(currentAgent);
+
+    // If current agent is not in the list, return all agents (filter unavailable)
+    if (currentIndex === -1) {
+      return fallbackOrder.filter((agent) => this.isAvailable(agent));
+    }
+
+    // Return agents after current agent, filtering out unavailable ones
+    return fallbackOrder.slice(currentIndex + 1).filter((agent) => this.isAvailable(agent));
   }
 }

@@ -232,10 +232,11 @@ describe("config --explain: autoMode multi-agent section", () => {
     await configCommand(config, { explain: true });
 
     const output = consoleOutput.join("\n");
-    // Should document the models section which defines the tier mappings
-    expect(output).toContain("models.fast");
-    expect(output).toContain("models.balanced");
-    expect(output).toContain("models.powerful");
+    // Should document the per-agent models section with the claude agent and tier keys
+    expect(output).toContain("models.claude");
+    expect(output).toContain("fast:");
+    expect(output).toContain("balanced:");
+    expect(output).toContain("powerful:");
   });
 
   test("explain output includes examples of agent names in defaultAgent", async () => {

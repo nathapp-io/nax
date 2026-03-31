@@ -11,14 +11,16 @@ import type { NaxConfig } from "./types";
 export const DEFAULT_CONFIG: NaxConfig = {
   version: 1,
   models: {
-    fast: { provider: "anthropic", model: "haiku" },
-    balanced: { provider: "anthropic", model: "sonnet" },
-    powerful: { provider: "anthropic", model: "opus" },
+    claude: {
+      fast: "haiku",
+      balanced: "sonnet",
+      powerful: "opus",
+    },
   },
   autoMode: {
     enabled: true,
     defaultAgent: "claude",
-    fallbackOrder: ["claude"],
+    fallbackOrder: ["claude"], // single-agent fallback chain
     complexityRouting: {
       simple: "fast",
       medium: "balanced",

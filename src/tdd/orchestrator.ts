@@ -9,7 +9,7 @@
 
 import type { AgentAdapter } from "../agents";
 import type { ModelTier, NaxConfig } from "../config";
-import { resolveModel } from "../config";
+import { resolveModelForAgent } from "../config";
 import { isGreenfieldStory } from "../context/greenfield";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import type { InteractionChain } from "../interaction/chain";
@@ -89,7 +89,12 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
 
   // Dry-run mode
   if (dryRun) {
-    const modelDef = resolveModel(config.models[modelTier]);
+    const modelDef = resolveModelForAgent(
+      config.models,
+      story.routing?.agent ?? config.autoMode.defaultAgent,
+      modelTier,
+      config.autoMode.defaultAgent,
+    );
     logger.info("tdd", "[DRY RUN] Would run 3-session TDD", {
       storyId: story.id,
       lite,

@@ -80,7 +80,7 @@ describe("Config Command", () => {
 
       // Should have field descriptions
       expect(output).toContain("# Configuration schema version");
-      expect(output).toContain("# Model tier definitions");
+      expect(output).toContain("# Per-agent model map");
       expect(output).toContain("# Auto mode configuration");
     });
   });
@@ -175,7 +175,7 @@ describe("Config Command", () => {
 
       const output = consoleOutput.join("\n");
 
-      expect(output).toContain("# Model tier definitions");
+      expect(output).toContain("# Per-agent model map");
       expect(output).toContain("# Auto mode configuration");
       expect(output).toContain("# Model routing strategy");
       expect(output).toContain("# Execution limits");
@@ -265,8 +265,8 @@ describe("Config Command", () => {
 
       const output = consoleOutput.join("\n");
 
-      // Models have string values
-      expect(output).toMatch(/model: "haiku"|model: "sonnet"|model: "opus"/);
+      // Models have string values in per-agent structure
+      expect(output).toMatch(/fast: "haiku"|balanced: "sonnet"|powerful: "opus"/);
     });
 
     test("formats booleans without quotes", async () => {
@@ -985,9 +985,8 @@ describe("Config Command --diff", () => {
       mkdirSync(naxDir, { recursive: true });
       const projectConfig = {
         models: {
-          fast: {
-            provider: "openai",
-            model: "gpt-4o-mini",
+          claude: {
+            fast: "gpt-4o-mini",
           },
         },
       };
@@ -1000,9 +999,8 @@ describe("Config Command --diff", () => {
 
       const output = consoleOutput.join("\n");
 
-      // Should show nested differences (provider and model fields)
-      expect(output).toContain("models.fast.provider");
-      expect(output).toContain("models.fast.model");
+      // Should show nested differences (per-agent tier field)
+      expect(output).toContain("models.claude.fast");
     });
   });
 

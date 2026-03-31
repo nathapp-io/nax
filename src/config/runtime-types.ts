@@ -7,7 +7,15 @@
 
 import type { ConstitutionConfig } from "../constitution/types";
 import type { ReviewConfig, SemanticReviewConfig } from "../review/types";
-import type { Complexity, LlmRoutingMode, ModelMap, ModelTier, RoutingStrategyName, TddStrategy } from "./schema-types";
+import type {
+  Complexity,
+  LlmRoutingMode,
+  ModelMap,
+  ModelTier,
+  ModelsConfig,
+  RoutingStrategyName,
+  TddStrategy,
+} from "./schema-types";
 
 export interface EscalationEntry {
   from: string;
@@ -27,7 +35,7 @@ export interface AutoModeConfig {
   escalation: {
     enabled: boolean;
     /** Ordered tier escalation with per-tier attempt budgets */
-    tierOrder: Array<{ tier: string; attempts: number }>;
+    tierOrder: Array<{ tier: string; attempts: number; agent?: string }>;
     /** When a batch fails, escalate all stories in the batch (default: true) */
     escalateEntireBatch?: boolean;
   };
@@ -476,8 +484,8 @@ export type {
 export interface NaxConfig {
   /** Schema version */
   version: 1;
-  /** Model mapping — abstract tiers to actual model identifiers */
-  models: ModelMap;
+  /** Model mapping — per-agent tier map: Record<agentName, Record<tierName, ModelEntry>> */
+  models: ModelsConfig;
   /** Auto mode / routing config */
   autoMode: AutoModeConfig;
   /** Routing strategy config */

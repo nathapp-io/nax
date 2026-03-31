@@ -1,0 +1,345 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "resolveModelForAgent(models, 'claude', 'fast', 'claude') returns { provider: 'anthropic', model: 'claude-haiku-4-5' } when models.claude.fast is 'claude-haiku-4-5'",
+    "refined": "resolveModelForAgent(models, 'claude', 'fast', 'claude') returns { provider: 'anthropic', model: 'claude-haiku-4-5' } when models.claude.fast is 'claude-haiku-4-5'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "resolveModelForAgent(models, 'codex', 'fast', 'claude') returns codex's fast model when models.codex.fast exists",
+    "refined": "resolveModelForAgent(models, 'codex', 'fast', 'claude') returns codex's fast model when models.codex.fast exists",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "resolveModelForAgent(models, 'unknown-agent', 'fast', 'claude') falls back to models.claude.fast (defaultAgent fallback)",
+    "refined": "resolveModelForAgent(models, 'unknown-agent', 'fast', 'claude') falls back to models.claude.fast (defaultAgent fallback)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "resolveModelForAgent(models, 'codex', 'powerful', 'claude') falls back to models.claude.powerful when models.codex has no powerful tier",
+    "refined": "resolveModelForAgent(models, 'codex', 'powerful', 'claude') falls back to models.claude.powerful when models.codex has no powerful tier",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When legacy flat config { fast: { provider: 'anthropic', model: 'haiku' } } is loaded, NaxConfigSchema.parse() auto-migrates to { claude: { fast: { provider: 'anthropic', model: 'haiku' } } } using defaultAgent",
+    "refined": "When legacy flat config { fast: { provider: 'anthropic', model: 'haiku' } } is loaded, NaxConfigSchema.parse() auto-migrates to { claude: { fast: { provider: 'anthropic', model: 'haiku' } } } using defaultAgent",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When new per-agent config { claude: { fast: 'haiku' }, codex: { fast: 'gpt-5' } } is loaded, NaxConfigSchema.parse() preserves it unchanged",
+    "refined": "When new per-agent config { claude: { fast: 'haiku' }, codex: { fast: 'gpt-5' } } is loaded, NaxConfigSchema.parse() preserves it unchanged",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "TierConfig accepts optional agent field — { tier: 'fast', attempts: 3, agent: 'codex' } passes Zod validation",
+    "refined": "TierConfig accepts optional agent field — { tier: 'fast', attempts: 3, agent: 'codex' } passes Zod validation",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "TierConfig without agent field passes Zod validation (backward compat)",
+    "refined": "TierConfig without agent field passes Zod validation (backward compat)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "DEFAULT_CONFIG.models is { claude: { fast: 'haiku', balanced: 'sonnet', powerful: 'opus' } } and DEFAULT_CONFIG.autoMode.fallbackOrder is ['claude']",
+    "refined": "DEFAULT_CONFIG.models is { claude: { fast: 'haiku', balanced: 'sonnet', powerful: 'opus' } } and DEFAULT_CONFIG.autoMode.fallbackOrder is ['claude']",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "validate() returns error when fallbackOrder contains agent 'codex' but models has no 'codex' key",
+    "refined": "validate() returns error when fallbackOrder contains agent 'codex' but models has no 'codex' key",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "validate() returns error when tierOrder has { tier: 'fast', agent: 'codex' } but models has no 'codex' key",
+    "refined": "validate() returns error when tierOrder has { tier: 'fast', agent: 'codex' } but models has no 'codex' key",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "ModelsConfig is typed as Record<string, Record<ModelTier, ModelEntry>>",
+    "refined": "ModelsConfig is typed as Record<string, Record<ModelTier, ModelEntry>>",
+    "testable": true,
+    "storyId": "US-001-1"
+  },
+  {
+    "acId": "AC-13",
+    "original": "TierConfig accepts optional agent field — { tier: 'fast', attempts: 3, agent: 'codex' } is valid",
+    "refined": "TierConfig accepts optional agent field — { tier: 'fast', attempts: 3, agent: 'codex' } is valid",
+    "testable": true,
+    "storyId": "US-001-1"
+  },
+  {
+    "acId": "AC-14",
+    "original": "TierConfig without agent field remains valid (backward compat)",
+    "refined": "TierConfig without agent field remains valid (backward compat)",
+    "testable": true,
+    "storyId": "US-001-1"
+  },
+  {
+    "acId": "AC-15",
+    "original": "StoryRouting has optional agent field typed as string",
+    "refined": "StoryRouting has optional agent field typed as string",
+    "testable": true,
+    "storyId": "US-001-1"
+  },
+  {
+    "acId": "AC-16",
+    "original": "resolveModelForAgent(models, 'claude', 'fast', 'claude') returns { provider: 'anthropic', model: 'claude-haiku-4-5' } when models.claude.fast is 'claude-haiku-4-5'",
+    "refined": "resolveModelForAgent(models, 'claude', 'fast', 'claude') returns { provider: 'anthropic', model: 'claude-haiku-4-5' } when models.claude.fast is 'claude-haiku-4-5'",
+    "testable": true,
+    "storyId": "US-001-2"
+  },
+  {
+    "acId": "AC-17",
+    "original": "resolveModelForAgent(models, 'codex', 'fast', 'claude') returns codex's fast model when models.codex.fast exists",
+    "refined": "resolveModelForAgent(models, 'codex', 'fast', 'claude') returns codex's fast model when models.codex.fast exists",
+    "testable": true,
+    "storyId": "US-001-2"
+  },
+  {
+    "acId": "AC-18",
+    "original": "resolveModelForAgent(models, 'unknown-agent', 'fast', 'claude') falls back to models.claude.fast",
+    "refined": "resolveModelForAgent(models, 'unknown-agent', 'fast', 'claude') falls back to models.claude.fast",
+    "testable": true,
+    "storyId": "US-001-2"
+  },
+  {
+    "acId": "AC-19",
+    "original": "resolveModelForAgent(models, 'codex', 'powerful', 'claude') falls back to models.claude.powerful when models.codex has no powerful tier",
+    "refined": "resolveModelForAgent(models, 'codex', 'powerful', 'claude') falls back to models.claude.powerful when models.codex has no powerful tier",
+    "testable": true,
+    "storyId": "US-001-2"
+  },
+  {
+    "acId": "AC-20",
+    "original": "Throws NaxError MODEL_NOT_FOUND when neither agent nor defaultAgent has the requested tier",
+    "refined": "Throws NaxError MODEL_NOT_FOUND when neither agent nor defaultAgent has the requested tier",
+    "testable": true,
+    "storyId": "US-001-2"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When legacy flat config { fast: { provider: 'anthropic', model: 'haiku' } } is parsed, NaxConfigSchema.parse() auto-migrates to { claude: { fast: { provider: 'anthropic', model: 'haiku' } } } using defaultAgent",
+    "refined": "When legacy flat config { fast: { provider: 'anthropic', model: 'haiku' } } is parsed, NaxConfigSchema.parse() auto-migrates to { claude: { fast: { provider: 'anthropic', model: 'haiku' } } } using defaultAgent",
+    "testable": true,
+    "storyId": "US-001-3"
+  },
+  {
+    "acId": "AC-22",
+    "original": "When new per-agent config { claude: { fast: 'haiku' }, codex: { fast: 'gpt-5' } } is parsed, NaxConfigSchema.parse() preserves it unchanged",
+    "refined": "When new per-agent config { claude: { fast: 'haiku' }, codex: { fast: 'gpt-5' } } is parsed, NaxConfigSchema.parse() preserves it unchanged",
+    "testable": true,
+    "storyId": "US-001-3"
+  },
+  {
+    "acId": "AC-23",
+    "original": "DEFAULT_CONFIG.models is { claude: { fast: 'haiku', balanced: 'sonnet', powerful: 'opus' } }",
+    "refined": "DEFAULT_CONFIG.models is { claude: { fast: 'haiku', balanced: 'sonnet', powerful: 'opus' } }",
+    "testable": true,
+    "storyId": "US-001-4"
+  },
+  {
+    "acId": "AC-24",
+    "original": "DEFAULT_CONFIG.autoMode.fallbackOrder is ['claude']",
+    "refined": "DEFAULT_CONFIG.autoMode.fallbackOrder is ['claude']",
+    "testable": true,
+    "storyId": "US-001-4"
+  },
+  {
+    "acId": "AC-25",
+    "original": "config-descriptions.ts descriptions mention per-agent map shape",
+    "refined": "config-descriptions.ts descriptions mention per-agent map shape",
+    "testable": true,
+    "storyId": "US-001-4"
+  },
+  {
+    "acId": "AC-26",
+    "original": "validate() returns error when fallbackOrder contains 'codex' but models has no 'codex' key",
+    "refined": "validate() returns error when fallbackOrder contains 'codex' but models has no 'codex' key",
+    "testable": true,
+    "storyId": "US-001-5"
+  },
+  {
+    "acId": "AC-27",
+    "original": "validate() returns error when tierOrder has { tier: 'fast', agent: 'codex' } but models has no 'codex' key",
+    "refined": "validate() returns error when tierOrder has { tier: 'fast', agent: 'codex' } but models has no 'codex' key",
+    "testable": true,
+    "storyId": "US-001-5"
+  },
+  {
+    "acId": "AC-28",
+    "original": "validate() passes when all fallbackOrder agents and tierOrder agents exist in models",
+    "refined": "validate() passes when all fallbackOrder agents and tierOrder agents exist in models",
+    "testable": true,
+    "storyId": "US-001-5"
+  },
+  {
+    "acId": "AC-29",
+    "original": "When config.models has only claude agent and defaultAgent is 'claude', all callsites behave identically to the old flat config.models[tier] pattern",
+    "refined": "When config.models has only claude agent and defaultAgent is 'claude', all callsites behave identically to the old flat config.models[tier] pattern",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When ctx.routing.agent is 'codex' and config.models.codex.fast exists, execution.ts resolves to codex's fast model instead of claude's",
+    "refined": "When ctx.routing.agent is 'codex' and config.models.codex.fast exists, execution.ts resolves to codex's fast model instead of claude's",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When ctx.routing.agent is unset, all callsites resolve using config.autoMode.defaultAgent",
+    "refined": "When ctx.routing.agent is unset, all callsites resolve using config.autoMode.defaultAgent",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-32",
+    "original": "metrics/tracker.ts records agentUsed (the resolved agent name) alongside modelTier and modelUsed in story metrics",
+    "refined": "metrics/tracker.ts records agentUsed (the resolved agent name) alongside modelTier and modelUsed in story metrics",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-33",
+    "original": "config/validate.ts validates that every agent in fallbackOrder and every tierOrder[].agent exists as a key in models",
+    "refined": "config/validate.ts validates that every agent in fallbackOrder and every tierOrder[].agent exists as a key in models",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-34",
+    "original": "The old resolveModel(config.models[tier]) pattern no longer appears in any source file under src/",
+    "refined": "The old resolveModel(config.models[tier]) pattern no longer appears in any source file under src/",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When adapter.complete() receives a 429 response from acpx, it automatically retries with the next agent in fallbackOrder at the same tier — caller receives the successful response without knowing a fallback occurred",
+    "refined": "When adapter.complete() receives a 429 response from acpx, it automatically retries with the next agent in fallbackOrder at the same tier — caller receives the successful response without knowing a fallback occurred",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-36",
+    "original": "When adapter.run() receives stderr containing 'rate limit' or '429', it automatically retries with the next agent in fallbackOrder",
+    "refined": "When adapter.run() receives stderr containing 'rate limit' or '429', it automatically retries with the next agent in fallbackOrder",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-37",
+    "original": "When adapter.complete() receives a 401/403 auth error, it retries with next agent in fallbackOrder AND marks the failing agent unavailable for subsequent calls (this._unavailableAgents)",
+    "refined": "When adapter.complete() receives a 401/403 auth error, it retries with next agent in fallbackOrder AND marks the failing agent unavailable for subsequent calls (this._unavailableAgents)",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-38",
+    "original": "Fallback does NOT decrement the story's attempt count",
+    "refined": "Fallback does NOT decrement the story's attempt count",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-39",
+    "original": "When all agents in fallbackOrder return rate-limit errors, adapter waits min(retryAfterSeconds) seconds (or 30s default) then retries from fallbackOrder[0]",
+    "refined": "When all agents in fallbackOrder return rate-limit errors, adapter waits min(retryAfterSeconds) seconds (or 30s default) then retries from fallbackOrder[0]",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-40",
+    "original": "When fallbackOrder has only one agent and it's rate-limited, adapter waits retryAfterSeconds (or 30s default) then retries the same agent",
+    "refined": "When fallbackOrder has only one agent and it's rate-limited, adapter waits retryAfterSeconds (or 30s default) then retries the same agent",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-41",
+    "original": "When all agents are permanently unavailable (auth errors on every agent), adapter throws AllAgentsUnavailableError",
+    "refined": "When all agents are permanently unavailable (auth errors on every agent), adapter throws AllAgentsUnavailableError",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-42",
+    "original": "Fallback events are logged at info level with stage 'agent-fallback' including: original agent, fallback agent, error type, retry count",
+    "refined": "Fallback events are logged at info level with stage 'agent-fallback' including: original agent, fallback agent, error type, retry count",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-43",
+    "original": "CLI adapter (src/agents/cli/) is unchanged — no fallback logic added",
+    "refined": "CLI adapter (src/agents/cli/) is unchanged — no fallback logic added",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-44",
+    "original": "escalateTier('fast', tierOrder) returns { tier: 'balanced', agent: 'claude' } when tierOrder is [{ tier: 'fast', agent: 'claude', attempts: 3 }, { tier: 'balanced', agent: 'claude', attempts: 2 }]",
+    "refined": "escalateTier('fast', tierOrder) returns { tier: 'balanced', agent: 'claude' } when tierOrder is [{ tier: 'fast', agent: 'claude', attempts: 3 }, { tier: 'balanced', agent: 'claude', attempts: 2 }]",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-45",
+    "original": "escalateTier('balanced', tierOrder) returns { tier: 'fast', agent: 'codex' } when next entry is { tier: 'fast', agent: 'codex', attempts: 2 }",
+    "refined": "escalateTier('balanced', tierOrder) returns { tier: 'fast', agent: 'codex' } when next entry is { tier: 'fast', agent: 'codex', attempts: 2 }",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-46",
+    "original": "escalateTier('balanced', tierOrder) returns null when at last tier entry",
+    "refined": "escalateTier('balanced', tierOrder) returns null when at last tier entry",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-47",
+    "original": "When tierOrder entry has no agent field, escalateTier() returns { tier: nextTier, agent: undefined } and caller uses defaultAgent",
+    "refined": "When tierOrder entry has no agent field, escalateTier() returns { tier: nextTier, agent: undefined } and caller uses defaultAgent",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-48",
+    "original": "handlePreIterationEscalation() sets ctx.routing.agent to the escalated tier's agent when present",
+    "refined": "handlePreIterationEscalation() sets ctx.routing.agent to the escalated tier's agent when present",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-49",
+    "original": "After escalation from claude/balanced to codex/fast, execution stage calls resolveModelForAgent(models, 'codex', 'fast', defaultAgent)",
+    "refined": "After escalation from claude/balanced to codex/fast, execution stage calls resolveModelForAgent(models, 'codex', 'fast', defaultAgent)",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]

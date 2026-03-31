@@ -8,7 +8,7 @@
 import type { AgentAdapter } from "../agents";
 import { ClaudeCodeAdapter } from "../agents/claude";
 import type { NaxConfig } from "../config";
-import { resolveModel } from "../config/schema";
+import { resolveModelForAgent } from "../config/schema";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { classifyComplexity } from "../routing";
@@ -108,12 +108,13 @@ async function classifyWithLLM(
   // Build prompt
   const prompt = buildClassificationPrompt(stories, scan);
 
-  // Resolve model from config.models.fast
-  const fastModelEntry = config.models.fast;
-  if (!fastModelEntry) {
-    throw new Error("config.models.fast not configured");
-  }
-  const modelDef = resolveModel(fastModelEntry);
+  // Resolve model from config.models for "fast" tier
+  const modelDef = resolveModelForAgent(
+    config.models,
+    config.autoMode.defaultAgent,
+    "fast",
+    config.autoMode.defaultAgent,
+  );
 
   // Make API call via adapter (uses config.models.fast tier)
   const jsonText = await _classifyDeps.adapter.complete(prompt, {

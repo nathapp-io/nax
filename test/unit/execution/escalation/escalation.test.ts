@@ -30,9 +30,9 @@ const customTierOrder: TierConfig[] = [
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("escalateTier", () => {
-  it("returns next tier in order when not at max", () => {
-    expect(escalateTier("fast", defaultTierOrder)).toBe("balanced");
-    expect(escalateTier("balanced", defaultTierOrder)).toBe("powerful");
+  it("returns next tier object when not at max", () => {
+    expect(escalateTier("fast", defaultTierOrder)).toEqual({ tier: "balanced", agent: undefined });
+    expect(escalateTier("balanced", defaultTierOrder)).toEqual({ tier: "powerful", agent: undefined });
   });
 
   it("returns null when at max tier", () => {
@@ -49,13 +49,47 @@ describe("escalateTier", () => {
   });
 
   it("works with custom tier names", () => {
-    expect(escalateTier("haiku", customTierOrder)).toBe("sonnet");
-    expect(escalateTier("sonnet", customTierOrder)).toBe("opus");
+    expect(escalateTier("haiku", customTierOrder)).toEqual({ tier: "sonnet", agent: undefined });
+    expect(escalateTier("sonnet", customTierOrder)).toEqual({ tier: "opus", agent: undefined });
     expect(escalateTier("opus", customTierOrder)).toBeNull();
   });
 
   it("returns null for empty tier order", () => {
     expect(escalateTier("fast", [])).toBeNull();
+  });
+
+  it("returns agent from next tier entry when agent field is set (AC-1)", () => {
+    const tierOrder: TierConfig[] = [
+      { tier: "fast", agent: "claude", attempts: 3 },
+      { tier: "balanced", agent: "claude", attempts: 2 },
+    ];
+    expect(escalateTier("fast", tierOrder)).toEqual({ tier: "balanced", agent: "claude" });
+  });
+
+  it("returns codex agent when next entry is codex/fast (AC-2)", () => {
+    const tierOrder: TierConfig[] = [
+      { tier: "fast", agent: "claude", attempts: 3 },
+      { tier: "balanced", agent: "claude", attempts: 2 },
+      { tier: "fast", agent: "codex", attempts: 2 },
+    ];
+    expect(escalateTier("balanced", tierOrder)).toEqual({ tier: "fast", agent: "codex" });
+  });
+
+  it("returns null at last entry even with agent field (AC-3)", () => {
+    const tierOrder: TierConfig[] = [
+      { tier: "fast", agent: "claude", attempts: 3 },
+      { tier: "balanced", agent: "claude", attempts: 2 },
+    ];
+    expect(escalateTier("balanced", tierOrder)).toBeNull();
+  });
+
+  it("returns undefined agent when tierOrder entry has no agent field (AC-4)", () => {
+    const tierOrder: TierConfig[] = [
+      { tier: "fast", attempts: 5 },
+      { tier: "balanced", attempts: 3 },
+    ];
+    const result = escalateTier("fast", tierOrder);
+    expect(result).toEqual({ tier: "balanced", agent: undefined });
   });
 });
 

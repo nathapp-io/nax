@@ -24,7 +24,7 @@ import path from "node:path";
 import { acceptanceTestFilename, buildAcceptanceRunCommand } from "../../acceptance/generator";
 import type { RefinedCriterion } from "../../acceptance/types";
 import { getAgent } from "../../agents/registry";
-import { resolveModel } from "../../config";
+import { resolveModelForAgent } from "../../config";
 import { getSafeLogger } from "../../logger";
 import type { UserStory } from "../../prd/types";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -276,7 +276,12 @@ export const acceptanceSetupStage: PipelineStage = {
           featureDir: ctx.featureDir,
           codebaseContext: "",
           modelTier: ctx.config.acceptance.model ?? "fast",
-          modelDef: resolveModel(ctx.config.models[ctx.config.acceptance.model ?? "fast"]),
+          modelDef: resolveModelForAgent(
+            ctx.config.models,
+            ctx.routing.agent ?? ctx.config.autoMode.defaultAgent,
+            ctx.config.acceptance.model ?? "fast",
+            ctx.config.autoMode.defaultAgent,
+          ),
           config: ctx.config,
           testStrategy: ctx.config.acceptance.testStrategy,
           testFramework: ctx.config.acceptance.testFramework,

@@ -22,11 +22,27 @@ const ModelDefSchema = z.object({
 
 const ModelEntrySchema = z.union([z.string().min(1, "Model identifier must be non-empty"), ModelDefSchema]);
 
-const ModelMapSchema = z.object({
-  fast: ModelEntrySchema,
-  balanced: ModelEntrySchema,
-  powerful: ModelEntrySchema,
-});
+/** Detect legacy flat format: any top-level value is a string or has 'provider'/'model' key directly */
+function isLegacyFlatModels(val: unknown): boolean {
+  if (typeof val !== "object" || val === null) return false;
+  const obj = val as Record<string, unknown>;
+  for (const v of Object.values(obj)) {
+    if (typeof v === "string") return true;
+    if (typeof v === "object" && v !== null && ("provider" in v || "model" in v)) return true;
+  }
+  return false;
+}
+
+/** Per-agent model map: Record<agentName, Record<tierName, ModelEntry>> */
+const PerAgentModelMapSchema = z.record(z.string().min(1), z.record(z.string().min(1), ModelEntrySchema));
+
+const ModelMapSchema = z.preprocess((val) => {
+  if (isLegacyFlatModels(val)) {
+    const defaultAgent = DEFAULT_CONFIG.autoMode.defaultAgent;
+    return { [defaultAgent]: val };
+  }
+  return val;
+}, PerAgentModelMapSchema);
 
 const ModelTierSchema = z.string().min(1, "Tier name must be non-empty");
 

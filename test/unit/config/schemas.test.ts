@@ -1,0 +1,256 @@
+/**
+ * NaxConfigSchema — ModelsSchema per-agent shape and legacy migration tests
+ *
+ * Story US-001-3: Update ModelsSchema in schemas.ts with per-agent shape and
+ * legacy migration transform.
+ *
+ * These tests cover:
+ * - Legacy flat model config auto-migration to per-agent shape using defaultAgent
+ * - New per-agent config is preserved unchanged
+ */
+
+import { describe, expect, test } from "bun:test";
+import { NaxConfigSchema } from "../../../src/config/schemas";
+import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+
+/** Minimal valid config base — everything except models */
+function baseConfig(models: unknown): Record<string, unknown> {
+  return {
+    ...(DEFAULT_CONFIG as Record<string, unknown>),
+    models,
+  };
+}
+
+describe("ModelsSchema — legacy flat config migration", () => {
+  test("auto-migrates legacy flat ModelDef object to per-agent shape using defaultAgent", () => {
+    const legacy = {
+      fast: { provider: "anthropic", model: "haiku" },
+      balanced: { provider: "anthropic", model: "sonnet" },
+      powerful: { provider: "anthropic", model: "opus" },
+    };
+
+    const result = NaxConfigSchema.safeParse(baseConfig(legacy));
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    const defaultAgent = (DEFAULT_CONFIG as { autoMode: { defaultAgent: string } }).autoMode.defaultAgent;
+    const models = result.data.models as Record<string, unknown>;
+
+    // Top-level keys should be agent names, not tier names
+    expect(models[defaultAgent]).toBeDefined();
+    expect(models["fast"]).toBeUndefined();
+    expect(models["balanced"]).toBeUndefined();
+    expect(models["powerful"]).toBeUndefined();
+  });
+
+  test("migrated per-agent config contains the original tier entries under defaultAgent", () => {
+    const legacy = {
+      fast: { provider: "anthropic", model: "haiku" },
+      balanced: { provider: "anthropic", model: "sonnet" },
+      powerful: { provider: "anthropic", model: "opus" },
+    };
+
+    const result = NaxConfigSchema.safeParse(baseConfig(legacy));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    const defaultAgent = (DEFAULT_CONFIG as { autoMode: { defaultAgent: string } }).autoMode.defaultAgent;
+    const models = result.data.models as Record<string, Record<string, unknown>>;
+    const agentMap = models[defaultAgent];
+
+    expect(agentMap).toBeDefined();
+    expect(agentMap["fast"]).toEqual({ provider: "anthropic", model: "haiku" });
+    expect(agentMap["balanced"]).toEqual({ provider: "anthropic", model: "sonnet" });
+    expect(agentMap["powerful"]).toEqual({ provider: "anthropic", model: "opus" });
+  });
+
+  test("auto-migrates legacy flat string model entries to per-agent shape using defaultAgent", () => {
+    const legacy = {
+      fast: "claude-haiku-4-5",
+      balanced: "claude-sonnet-4-5",
+      powerful: "claude-opus-4-5",
+    };
+
+    const result = NaxConfigSchema.safeParse(baseConfig(legacy));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    const defaultAgent = (DEFAULT_CONFIG as { autoMode: { defaultAgent: string } }).autoMode.defaultAgent;
+    const models = result.data.models as Record<string, Record<string, unknown>>;
+
+    expect(models[defaultAgent]).toBeDefined();
+    expect(models["fast"]).toBeUndefined();
+  });
+
+  test("migrated string model entries are preserved under defaultAgent", () => {
+    const legacy = {
+      fast: "claude-haiku-4-5",
+      balanced: "claude-sonnet-4-5",
+    };
+
+    const result = NaxConfigSchema.safeParse(baseConfig(legacy));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    const defaultAgent = (DEFAULT_CONFIG as { autoMode: { defaultAgent: string } }).autoMode.defaultAgent;
+    const models = result.data.models as Record<string, Record<string, unknown>>;
+    const agentMap = models[defaultAgent];
+
+    expect(agentMap["fast"]).toBe("claude-haiku-4-5");
+    expect(agentMap["balanced"]).toBe("claude-sonnet-4-5");
+  });
+
+  test("detection: value with 'provider' key directly triggers legacy migration", () => {
+    const legacy = {
+      fast: { provider: "anthropic", model: "haiku" },
+    };
+
+    const result = NaxConfigSchema.safeParse(baseConfig(legacy));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    // After migration, top-level should not have tier names
+    const models = result.data.models as Record<string, unknown>;
+    expect(models["fast"]).toBeUndefined();
+  });
+
+  test("detection: string value at top level triggers legacy migration", () => {
+    const legacy = {
+      fast: "claude-haiku",
+    };
+
+    const result = NaxConfigSchema.safeParse(baseConfig(legacy));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    const models = result.data.models as Record<string, unknown>;
+    expect(models["fast"]).toBeUndefined();
+  });
+});
+
+describe("ModelsSchema — new per-agent config (no migration)", () => {
+  test("preserves new per-agent config unchanged when format is correct", () => {
+    const perAgent = {
+      claude: {
+        fast: "haiku",
+        balanced: "sonnet",
+        powerful: "opus",
+      },
+      codex: {
+        fast: "gpt-5",
+      },
+    };
+
+    const result = NaxConfigSchema.safeParse(baseConfig(perAgent));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    const models = result.data.models as Record<string, Record<string, unknown>>;
+    expect(models["claude"]).toBeDefined();
+    expect(models["codex"]).toBeDefined();
+  });
+
+  test("per-agent config: claude agent entries are preserved intact", () => {
+    const perAgent = {
+      claude: {
+        fast: "haiku",
+        balanced: "sonnet",
+        powerful: "opus",
+      },
+      codex: {
+        fast: "gpt-5",
+      },
+    };
+
+    const result = NaxConfigSchema.safeParse(baseConfig(perAgent));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    const models = result.data.models as Record<string, Record<string, unknown>>;
+    expect(models["claude"]["fast"]).toBe("haiku");
+    expect(models["claude"]["balanced"]).toBe("sonnet");
+    expect(models["claude"]["powerful"]).toBe("opus");
+  });
+
+  test("per-agent config: codex agent entries are preserved intact", () => {
+    const perAgent = {
+      claude: { fast: "haiku" },
+      codex: { fast: "gpt-5" },
+    };
+
+    const result = NaxConfigSchema.safeParse(baseConfig(perAgent));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    const models = result.data.models as Record<string, Record<string, unknown>>;
+    expect(models["codex"]["fast"]).toBe("gpt-5");
+  });
+
+  test("per-agent config: ModelDef objects at tier level are preserved", () => {
+    const perAgent = {
+      claude: {
+        fast: { provider: "anthropic", model: "claude-haiku-4-5" },
+        balanced: { provider: "anthropic", model: "claude-sonnet-4-5" },
+      },
+    };
+
+    const result = NaxConfigSchema.safeParse(baseConfig(perAgent));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    const models = result.data.models as Record<string, Record<string, unknown>>;
+    expect(models["claude"]["fast"]).toEqual({ provider: "anthropic", model: "claude-haiku-4-5" });
+  });
+
+  test("per-agent config: no legacy tier names appear at top level", () => {
+    const perAgent = {
+      claude: { fast: "haiku" },
+      codex: { fast: "gpt-5" },
+    };
+
+    const result = NaxConfigSchema.safeParse(baseConfig(perAgent));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    const models = result.data.models as Record<string, unknown>;
+    // Tier names should NOT be top-level keys
+    expect(models["fast"]).toBeUndefined();
+    expect(models["balanced"]).toBeUndefined();
+    expect(models["powerful"]).toBeUndefined();
+  });
+
+  test("per-agent config: mixed string and object tier entries are preserved", () => {
+    const perAgent = {
+      claude: {
+        fast: "haiku",
+        balanced: { provider: "anthropic", model: "claude-sonnet-4-5" },
+      },
+    };
+
+    const result = NaxConfigSchema.safeParse(baseConfig(perAgent));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    const models = result.data.models as Record<string, Record<string, unknown>>;
+    expect(models["claude"]["fast"]).toBe("haiku");
+    expect(models["claude"]["balanced"]).toEqual({ provider: "anthropic", model: "claude-sonnet-4-5" });
+  });
+});
+
+describe("ModelsSchema — DEFAULT_CONFIG compatibility", () => {
+  test("DEFAULT_CONFIG (legacy flat format) parses successfully after migration", () => {
+    const result = NaxConfigSchema.safeParse(DEFAULT_CONFIG as Record<string, unknown>);
+    expect(result.success).toBe(true);
+  });
+
+  test("DEFAULT_CONFIG after migration has per-agent structure", () => {
+    const result = NaxConfigSchema.safeParse(DEFAULT_CONFIG as Record<string, unknown>);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    const models = result.data.models as Record<string, unknown>;
+    // Should contain agent key (defaultAgent = "claude"), not tier keys
+    expect(models["claude"]).toBeDefined();
+  });
+});

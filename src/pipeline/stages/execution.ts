@@ -34,7 +34,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getAgent, validateAgentForTier } from "../../agents";
-import { resolveModel } from "../../config";
+import { resolveModelForAgent } from "../../config";
 import { resolvePermissions } from "../../config/permissions";
 import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
@@ -246,7 +246,12 @@ export const executionStage: PipelineStage = {
       prompt: ctx.prompt,
       workdir: storyWorkdir,
       modelTier: ctx.routing.modelTier,
-      modelDef: resolveModel(ctx.config.models[ctx.routing.modelTier]),
+      modelDef: resolveModelForAgent(
+        ctx.config.models,
+        ctx.routing.agent ?? ctx.config.autoMode.defaultAgent,
+        ctx.routing.modelTier,
+        ctx.config.autoMode.defaultAgent,
+      ),
       timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
       dangerouslySkipPermissions: resolvePermissions(ctx.config, "run").skipPermissions,
       pipelineStage: "run",

@@ -18,6 +18,8 @@ export interface StoryMetrics {
   modelTier: string;
   /** Actual model used (e.g., "claude-sonnet-4.5") */
   modelUsed: string;
+  /** Agent used for this story (e.g., "claude", "codex") */
+  agentUsed?: string;
   /** Number of attempts (includes escalations) */
   attempts: number;
   /** Final tier that succeeded */

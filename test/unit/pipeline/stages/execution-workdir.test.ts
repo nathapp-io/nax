@@ -75,7 +75,7 @@ function makeConfig(): NaxConfig {
   return {
     autoMode: { defaultAgent: "claude" },
     execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60 },
-    models: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
+    models: { claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" } },
     quality: { requireTests: false, commands: { test: "bun test" } },
     agent: {},
   } as unknown as NaxConfig;

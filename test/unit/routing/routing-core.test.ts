@@ -262,11 +262,11 @@ describe("escalateTier", () => {
   ];
 
   test("escalates fast → balanced", () => {
-    expect(escalateTier("fast", defaultTiers)).toBe("balanced");
+    expect(escalateTier("fast", defaultTiers)).toEqual({ tier: "balanced", agent: undefined });
   });
 
   test("escalates balanced → powerful", () => {
-    expect(escalateTier("balanced", defaultTiers)).toBe("powerful");
+    expect(escalateTier("balanced", defaultTiers)).toEqual({ tier: "powerful", agent: undefined });
   });
 
   test("escalates powerful → null (max reached)", () => {
@@ -274,13 +274,13 @@ describe("escalateTier", () => {
   });
 
   test("explicit 3-tier escalation chain: fast → balanced → powerful → null", () => {
-    let tier: string | null = escalateTier("fast", defaultTiers);
-    expect(tier).toBe("balanced");
+    let result = escalateTier("fast", defaultTiers);
+    expect(result?.tier).toBe("balanced");
 
-    tier = escalateTier(tier!, defaultTiers);
-    expect(tier).toBe("powerful");
+    result = escalateTier(result!.tier, defaultTiers);
+    expect(result?.tier).toBe("powerful");
 
-    tier = escalateTier(tier!, defaultTiers);
-    expect(tier).toBeNull();
+    result = escalateTier(result!.tier, defaultTiers);
+    expect(result).toBeNull();
   });
 });

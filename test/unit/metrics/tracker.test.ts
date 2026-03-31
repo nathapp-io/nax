@@ -187,3 +187,36 @@ describe("StoryMetrics type - initialComplexity field", () => {
     expect(typeof metrics.initialComplexity).toBe("string");
   });
 });
+
+// ---------------------------------------------------------------------------
+// AC-4: collectStoryMetrics records agentUsed field
+// ---------------------------------------------------------------------------
+
+describe("collectStoryMetrics - agentUsed field", () => {
+  test("agentUsed is defaultAgent when routing.agent is unset", () => {
+    const story = makeStory();
+    const ctx = makeCtx(story, { modelTier: "balanced" });
+
+    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.agentUsed).toBe("claude");
+  });
+
+  test("agentUsed is routing.agent when set", () => {
+    const story = makeStory();
+    const ctx = makeCtx(story, { modelTier: "fast", agent: "codex" } as Partial<PipelineContext["routing"]>);
+
+    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.agentUsed).toBe("codex");
+  });
+
+  test("agentUsed field exists on StoryMetrics", () => {
+    const story = makeStory();
+    const ctx = makeCtx(story);
+
+    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect("agentUsed" in metrics).toBe(true);
+  });
+});

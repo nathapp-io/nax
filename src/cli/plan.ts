@@ -159,10 +159,11 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     let autoModel: string | undefined;
     try {
       const planTier = config?.plan?.model ?? "balanced";
-      const { resolveModel } = await import("../config/schema");
-      const models = config?.models as Record<string, unknown> | undefined;
-      const entry = models?.[planTier] ?? models?.balanced;
-      if (entry) autoModel = resolveModel(entry as Parameters<typeof resolveModel>[0]).model;
+      const { resolveModelForAgent } = await import("../config/schema");
+      if (config?.models) {
+        const defaultAgent = config.autoMode?.defaultAgent ?? "claude";
+        autoModel = resolveModelForAgent(config.models, defaultAgent, planTier, defaultAgent).model;
+      }
     } catch {
       // fall through — adapter will use its own fallback
     }

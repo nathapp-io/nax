@@ -30,7 +30,8 @@ function makeStory(overrides: Partial<UserStory> = {}): UserStory {
 
 function makeConfig(maxRetries = 2): NaxConfig {
   return {
-    models: { fast: { model: "fast-model" }, balanced: { model: "balanced-model" }, powerful: { model: "powerful-model" } },
+    models: { claude: { fast: { model: "fast-model" }, balanced: { model: "balanced-model" }, powerful: { model: "powerful-model" } } },
+    autoMode: { defaultAgent: "claude" },
     execution: {
       rectification: {
         enabled: true,

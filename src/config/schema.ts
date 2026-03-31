@@ -63,7 +63,7 @@ export type {
   ProjectProfile,
 } from "./types";
 
-export { resolveModel } from "./types";
+export { resolveModel, resolveModelForAgent } from "./types";
 
 // Zod schemas
 export { NaxConfigSchema, AcceptanceConfigSchema } from "./schemas";

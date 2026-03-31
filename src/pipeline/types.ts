@@ -32,6 +32,8 @@ export interface RoutingResult {
   reasoning: string;
   /** Estimated cost for this story */
   estimatedCost?: number;
+  /** Agent override from story.routing.agent (PRD-level per-agent routing) */
+  agent?: string;
 }
 
 /**

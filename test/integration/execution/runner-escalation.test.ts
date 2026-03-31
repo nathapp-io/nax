@@ -85,7 +85,7 @@ describe("Batch Failure Escalation Strategy", () => {
     const nextTier = escalateTier(currentTier!, tierOrder);
 
     expect(currentTier).toBe("fast");
-    expect(nextTier).toBe("balanced");
+    expect(nextTier?.tier).toBe("balanced");
 
     // 2. Remaining stories (US-002, US-003, US-004) should remain at 'fast' tier
     // They will be retried individually at the same tier on next iteration
@@ -112,7 +112,7 @@ describe("Batch Failure Escalation Strategy", () => {
 
     for (let i = 0; i < tiers.length; i++) {
       const nextTier = escalateTier(tiers[i], tierOrder);
-      expect(nextTier).toBe(expectedNext[i]);
+      expect(nextTier?.tier ?? null).toBe(expectedNext[i]);
     }
 
     const powerfulTier = escalateTier("powerful", tierOrder);
@@ -160,8 +160,8 @@ describe("Configurable Escalation Chain (ADR-003)", () => {
   ];
 
   test("escalateTier with standard chain", () => {
-    expect(escalateTier("fast", defaultTiers)).toBe("balanced");
-    expect(escalateTier("balanced", defaultTiers)).toBe("powerful");
+    expect(escalateTier("fast", defaultTiers)?.tier).toBe("balanced");
+    expect(escalateTier("balanced", defaultTiers)?.tier).toBe("powerful");
     expect(escalateTier("powerful", defaultTiers)).toBeNull();
   });
 
@@ -170,7 +170,7 @@ describe("Configurable Escalation Chain (ADR-003)", () => {
       { tier: "fast", attempts: 5 },
       { tier: "powerful", attempts: 2 },
     ];
-    expect(escalateTier("fast", customOrder)).toBe("powerful");
+    expect(escalateTier("fast", customOrder)?.tier).toBe("powerful");
     expect(escalateTier("powerful", customOrder)).toBeNull();
     expect(escalateTier("balanced", customOrder)).toBeNull();
   });
@@ -186,8 +186,8 @@ describe("Configurable Escalation Chain (ADR-003)", () => {
       { tier: "balanced", attempts: 3 },
       { tier: "fast", attempts: 5 },
     ];
-    expect(escalateTier("powerful", reversed)).toBe("balanced");
-    expect(escalateTier("balanced", reversed)).toBe("fast");
+    expect(escalateTier("powerful", reversed)?.tier).toBe("balanced");
+    expect(escalateTier("balanced", reversed)?.tier).toBe("fast");
     expect(escalateTier("fast", reversed)).toBeNull();
   });
 
@@ -196,8 +196,8 @@ describe("Configurable Escalation Chain (ADR-003)", () => {
   });
 
   test("escalateTier with three-tier standard order", () => {
-    expect(escalateTier("fast", defaultTiers)).toBe("balanced");
-    expect(escalateTier("balanced", defaultTiers)).toBe("powerful");
+    expect(escalateTier("fast", defaultTiers)?.tier).toBe("balanced");
+    expect(escalateTier("balanced", defaultTiers)?.tier).toBe("powerful");
     expect(escalateTier("powerful", defaultTiers)).toBeNull();
   });
 
@@ -252,7 +252,7 @@ describe("Pre-Iteration Escalation: tier budget exhaustion triggers escalation b
 
     // Should escalate to next tier
     const nextTier = escalateTier(currentTier!, defaultTiers);
-    expect(nextTier).toBe("balanced");
+    expect(nextTier?.tier).toBe("balanced");
   });
 
   test("story at balanced tier with 3 attempts should escalate to powerful", () => {
@@ -277,7 +277,7 @@ describe("Pre-Iteration Escalation: tier budget exhaustion triggers escalation b
     expect(story.attempts).toBeGreaterThanOrEqual(tierCfg!.attempts);
 
     const nextTier = escalateTier(currentTier!, defaultTiers);
-    expect(nextTier).toBe("powerful");
+    expect(nextTier?.tier).toBe("powerful");
   });
 
   test("story at powerful tier with 2 attempts should mark as FAILED (no more tiers)", () => {
@@ -336,7 +336,7 @@ describe("Pre-Iteration Escalation: tier budget exhaustion triggers escalation b
 
     // Should escalate instead of retrying at same tier
     const nextTier = escalateTier(currentTier!, defaultTiers);
-    expect(nextTier).toBe("balanced");
+    expect(nextTier?.tier).toBe("balanced");
   });
 
   test("ASSET_CHECK failure should increment attempts and respect escalation", () => {
@@ -369,7 +369,7 @@ describe("Pre-Iteration Escalation: tier budget exhaustion triggers escalation b
     expect(updatedStory.attempts).toBeGreaterThanOrEqual(tierCfg!.attempts);
 
     const nextTier = escalateTier("fast", defaultTiers);
-    expect(nextTier).toBe("balanced");
+    expect(nextTier?.tier).toBe("balanced");
   });
 
   test("story below tier budget should not escalate", () => {

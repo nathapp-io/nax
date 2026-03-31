@@ -1,180 +1,170 @@
 {
-  "version": 1,
-  "models": {
-    "fast": {
-      "provider": "anthropic",
-      "model": "haiku"
-    },
-    "balanced": {
-      "provider": "anthropic",
-      "model": "sonnet"
-    },
-    "powerful": {
-      "provider": "anthropic",
-      "model": "sonnet"
-    }
-  },
-  "autoMode": {
-    "enabled": true,
-    "defaultAgent": "claude",
-    "fallbackOrder": [
-      "claude"
-    ],
-    "complexityRouting": {
-      "simple": "fast",
-      "medium": "balanced",
-      "complex": "balanced",
-      "expert": "powerful"
-    },
-    "escalation": {
-      "enabled": true,
-      "tierOrder": [
-        {
-          "tier": "fast",
-          "attempts": 3
-        },
-        {
-          "tier": "balanced",
-          "attempts": 2
-        },
-        {
-          "tier": "powerful",
-          "attempts": 1
+    "version": 1,
+    "models": {
+        "claude": {
+            "fast": "haiku",
+            "balanced": "sonnet",
+            "powerful": "sonnet"
         }
-      ],
-      "escalateEntireBatch": false
-    }
-  },
-  "generate": {
-    "agents": ["claude", "codex", "gemini", "opencode"]
-  },
-  "agent": {
-    "protocol": "acp"
-  },
-  "routing": {
-    "strategy": "llm",
-    "llm": {
-      "model": "fast",
-      "fallbackToKeywords": true,
-      "cacheDecisions": true,
-      "mode": "hybrid",
-      "timeoutMs": 60000
-    }
-  },
-  "execution": {
-    "permissionProfile": "unrestricted",
-    "maxIterations": 6,
-    "iterationDelayMs": 2000,
-    "costLimit": 30.0,
-    "sessionTimeoutSeconds": 7200,
-    "verificationTimeoutSeconds": 600,
-    "maxStoriesPerFeature": 15,
-    "rectification": {
-      "enabled": true,
-      "maxRetries": 2,
-      "fullSuiteTimeoutSeconds": 600,
-      "maxFailureSummaryChars": 2000,
-      "abortOnIncreasingFailures": true
     },
-    "regressionGate": {
-      "enabled": true,
-      "mode": "deferred",
-      "timeoutSeconds": 600,
-      "acceptOnTimeout": true,
-      "maxRectificationAttempts": 2
-    }
-  },
-  "quality": {
-    "requireTypecheck": true,
-    "requireLint": true,
-    "requireTests": true,
-    "commands": {
-      "test": "bun run test",
-      "typecheck": "bun run typecheck",
-      "lint": "bun run lint",
-      "build": "bun run build",
-      "testScoped": "CI=1 bun test --timeout=60000 {{files}}"
+    "autoMode": {
+        "enabled": true,
+        "defaultAgent": "claude",
+        "fallbackOrder": ["claude"],
+        "complexityRouting": {
+            "simple": "fast",
+            "medium": "balanced",
+            "complex": "balanced",
+            "expert": "powerful"
+        },
+        "escalation": {
+            "enabled": true,
+            "tierOrder": [
+                {
+                    "tier": "fast",
+                    "attempts": 3
+                },
+                {
+                    "tier": "balanced",
+                    "attempts": 2
+                },
+                {
+                    "tier": "powerful",
+                    "attempts": 1
+                }
+            ],
+            "escalateEntireBatch": false
+        }
     },
-    "forceExit": false,
-    "detectOpenHandles": true,
-    "detectOpenHandlesRetries": 1,
-    "gracePeriodMs": 5000,
-    "drainTimeoutMs": 2000,
-    "shell": "/bin/sh",
-    "stripEnvVars": [
-      "CLAUDECODE",
-      "REPL_ID",
-      "AGENT"
-    ]
-  },
-  "tdd": {
-    "maxRetries": 2,
-    "autoVerifyIsolation": true,
-    "autoApproveVerifier": true,
-    "strategy": "auto",
-    "sessionTiers": {
-      "testWriter": "balanced",
-      "verifier": "fast"
-    }
-  },
-  "constitution": {
-    "enabled": true,
-    "path": "constitution.md",
-    "maxTokens": 2000
-  },
-  "analyze": {
-    "llmEnhanced": false,
-    "model": "balanced",
-    "fallbackToKeywords": true,
-    "maxCodebaseSummaryTokens": 5000
-  },
-  "review": {
-    "enabled": true,
-    "checks": [
-      "build",
-      "typecheck",
-      "lint",
-      "semantic"
-    ],
-    "commands": {
-      "typecheck": "bun run typecheck",
-      "lint": "bun run lint",
-      "build": "bun run build",
-      "lintFix": "bun run lint:fix",
-      "formatFix": "bun run lint:fix"
+    "generate": {
+        "agents": ["claude", "codex", "gemini", "opencode"]
     },
-    "pluginMode": "deferred",
-    "semantic": {
-      "modelTier": "fast",
-      "rules": []
+    "agent": {
+        "protocol": "acp"
+    },
+    "routing": {
+        "strategy": "llm",
+        "llm": {
+            "model": "fast",
+            "fallbackToKeywords": true,
+            "cacheDecisions": true,
+            "mode": "hybrid",
+            "timeoutMs": 60000
+        }
+    },
+    "execution": {
+        "permissionProfile": "unrestricted",
+        "maxIterations": 6,
+        "iterationDelayMs": 2000,
+        "costLimit": 30.0,
+        "sessionTimeoutSeconds": 7200,
+        "verificationTimeoutSeconds": 600,
+        "maxStoriesPerFeature": 15,
+        "rectification": {
+            "enabled": true,
+            "maxRetries": 2,
+            "fullSuiteTimeoutSeconds": 600,
+            "maxFailureSummaryChars": 2000,
+            "abortOnIncreasingFailures": true
+        },
+        "regressionGate": {
+            "enabled": true,
+            "mode": "deferred",
+            "timeoutSeconds": 600,
+            "acceptOnTimeout": true,
+            "maxRectificationAttempts": 2
+        }
+    },
+    "quality": {
+        "requireTypecheck": true,
+        "requireLint": true,
+        "requireTests": true,
+        "commands": {
+            "test": "bun run test",
+            "typecheck": "bun run typecheck",
+            "lint": "bun run lint",
+            "build": "bun run build",
+            "testScoped": "CI=1 bun test --timeout=60000 {{files}}"
+        },
+        "forceExit": false,
+        "detectOpenHandles": true,
+        "detectOpenHandlesRetries": 1,
+        "gracePeriodMs": 5000,
+        "drainTimeoutMs": 2000,
+        "shell": "/bin/sh",
+        "stripEnvVars": ["CLAUDECODE", "REPL_ID", "AGENT"]
+    },
+    "tdd": {
+        "maxRetries": 2,
+        "autoVerifyIsolation": true,
+        "autoApproveVerifier": true,
+        "strategy": "auto",
+        "sessionTiers": {
+            "testWriter": "balanced",
+            "verifier": "fast"
+        }
+    },
+    "constitution": {
+        "enabled": true,
+        "path": "constitution.md",
+        "maxTokens": 2000
+    },
+    "analyze": {
+        "llmEnhanced": false,
+        "model": "balanced",
+        "fallbackToKeywords": true,
+        "maxCodebaseSummaryTokens": 5000
+    },
+    "review": {
+        "enabled": true,
+        "checks": ["build", "typecheck", "lint", "semantic"],
+        "commands": {
+            "typecheck": "bun run typecheck",
+            "lint": "bun run lint",
+            "build": "bun run build",
+            "lintFix": "bun run lint:fix",
+            "formatFix": "bun run lint:fix"
+        },
+        "pluginMode": "deferred",
+        "semantic": {
+            "modelTier": "fast",
+            "rules": []
+        }
+    },
+    "plan": {
+        "model": "balanced",
+        "outputPath": "spec.md"
+    },
+    "acceptance": {
+        "enabled": true,
+        "maxRetries": 2,
+        "generateTests": true,
+        "testPath": "acceptance.test.ts"
+    },
+    "context": {
+        "fileInjection": "disabled",
+        "testCoverage": {
+            "enabled": true,
+            "detail": "names-and-counts",
+            "maxTokens": 500,
+            "testPattern": "**/*.test.{ts,js}",
+            "scopeToStory": true
+        }
+    },
+    "precheck": {
+        "storySizeGate": {
+            "enabled": true,
+            "maxAcCount": 10,
+            "maxDescriptionLength": 2000,
+            "maxBulletPoints": 15
+        }
+    },
+    "decompose": {
+        "trigger": "auto",
+        "maxAcceptanceCriteria": 8,
+        "maxSubstories": 5,
+        "maxSubstoryComplexity": "medium",
+        "maxRetries": 2,
+        "model": "balanced"
     }
-  },
-  "plan": {
-    "model": "balanced",
-    "outputPath": "spec.md"
-  },
-  "acceptance": {
-    "enabled": true,
-    "maxRetries": 2,
-    "generateTests": true,
-    "testPath": "acceptance.test.ts"
-  },
-  "context": {
-    "fileInjection": "disabled",
-    "testCoverage": {
-      "enabled": true,
-      "detail": "names-and-counts",
-      "maxTokens": 500,
-      "testPattern": "**/*.test.{ts,js}",
-      "scopeToStory": true
-    }
-  },
-  "precheck": {
-    "storySizeGate": {
-      "enabled": false
-    }
-  },
-  "decompose": {
-    "trigger": "disabled"
-  }
 }

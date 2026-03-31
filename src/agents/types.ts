@@ -170,6 +170,18 @@ export class CompleteError extends Error {
 }
 
 /**
+ * Parsed agent error information extracted from stderr.
+ *
+ * Identifies error types like rate limits, auth failures, timeouts, etc.
+ */
+export interface AgentError {
+  /** Error type classification */
+  type: "rate-limit" | "auth" | "timeout" | "crash" | "unknown";
+  /** Optional retry delay in seconds (for rate-limit errors) */
+  retryAfterSeconds?: number;
+}
+
+/**
  * Agent adapter interface — one implementation per supported coding agent.
  *
  * Provides uniform interface for checking installation, running agents,

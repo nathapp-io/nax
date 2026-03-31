@@ -5,7 +5,7 @@
  */
 
 import path from "node:path";
-import { resolveModel } from "../config/schema";
+import { resolveModelForAgent } from "../config/schema";
 import type { PipelineContext } from "../pipeline/types";
 import { loadJsonFile, saveJsonFile } from "../utils/json-file";
 import type { RunMetrics, StoryMetrics } from "./types";
@@ -54,10 +54,20 @@ export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string
   // First pass success = succeeded with no prior failures and no escalations (BUG-067)
   const firstPassSuccess = agentResult?.success === true && escalationCount === 0 && priorFailureCount === 0;
 
-  // Extract model name from config
-  const modelEntry = ctx.config.models[routing.modelTier];
-  const modelDef = modelEntry ? resolveModel(modelEntry) : null;
-  const modelUsed = modelDef?.model || routing.modelTier;
+  // Extract model name and agent from config
+  const agentUsed = routing.agent ?? ctx.config.autoMode.defaultAgent;
+  let modelUsed: string = routing.modelTier;
+  try {
+    const modelDef = resolveModelForAgent(
+      ctx.config.models,
+      agentUsed,
+      routing.modelTier,
+      ctx.config.autoMode.defaultAgent,
+    );
+    modelUsed = modelDef.model;
+  } catch {
+    /* tier not configured — use tier name as fallback */
+  }
 
   // initialComplexity: prefer story.routing.initialComplexity (first classify),
   // fall back to routing.complexity for backward compat
@@ -74,6 +84,7 @@ export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string
     initialComplexity,
     modelTier: routing.modelTier,
     modelUsed,
+    agentUsed,
     attempts,
     finalTier,
     success: agentResult?.success || false,
@@ -117,9 +128,19 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
   const costPerStory = totalCost / stories.length;
   const durationPerStory = totalDuration / stories.length;
 
-  const modelEntry = ctx.config.models[routing.modelTier];
-  const modelDef = modelEntry ? resolveModel(modelEntry) : null;
-  const modelUsed = modelDef?.model || routing.modelTier;
+  const batchAgentUsed = routing.agent ?? ctx.config.autoMode.defaultAgent;
+  let modelUsed: string = routing.modelTier;
+  try {
+    const modelDef = resolveModelForAgent(
+      ctx.config.models,
+      batchAgentUsed,
+      routing.modelTier,
+      ctx.config.autoMode.defaultAgent,
+    );
+    modelUsed = modelDef.model;
+  } catch {
+    /* tier not configured — use tier name as fallback */
+  }
 
   return stories.map((story) => {
     // initialComplexity: prefer story.routing.initialComplexity (if individual routing exists),
@@ -132,6 +153,7 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
       initialComplexity,
       modelTier: routing.modelTier,
       modelUsed,
+      agentUsed: batchAgentUsed,
       attempts: 1, // batch stories don't escalate individually
       finalTier: routing.modelTier,
       success: true, // if batch succeeded, all stories succeeded

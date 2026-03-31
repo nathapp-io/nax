@@ -9,7 +9,7 @@
 import type { AgentAdapter } from "../agents";
 import { buildSessionName } from "../agents/acp/adapter";
 import type { ModelTier, NaxConfig } from "../config";
-import { resolveModel } from "../config";
+import { resolveModelForAgent } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import type { getLogger } from "../logger";
 import type { UserStory } from "../prd";
@@ -178,7 +178,12 @@ async function runRectificationLoop(
       prompt: rectificationPrompt,
       workdir,
       modelTier: implementerTier,
-      modelDef: resolveModel(config.models[implementerTier]),
+      modelDef: resolveModelForAgent(
+        config.models,
+        story.routing?.agent ?? config.autoMode.defaultAgent,
+        implementerTier,
+        config.autoMode.defaultAgent,
+      ),
       timeoutSeconds: config.execution.sessionTimeoutSeconds,
       dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
       pipelineStage: "rectification",

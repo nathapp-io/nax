@@ -80,9 +80,11 @@ function makeCtx(
         iterationDelayMs: 0,
       },
       models: {
-        fast: "claude-3-haiku-20240307",
-        balanced: "claude-3-5-sonnet-20241022",
-        powerful: "claude-opus-4-20250514",
+        claude: {
+          fast: "claude-3-haiku-20240307",
+          balanced: "claude-3-5-sonnet-20241022",
+          powerful: "claude-opus-4-20250514",
+        },
       },
       autoMode: { defaultAgent: "claude" },
       tdd: { rollbackOnFailure: false },

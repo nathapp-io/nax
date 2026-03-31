@@ -11,7 +11,7 @@ import { getAgent as _getAgent } from "../agents";
 import { estimateCostByDuration } from "../agents/cost";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
-import { resolveModel } from "../config";
+import { resolveModelForAgent } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import type { DebateStageConfig, Debater } from "../debate/types";
 import { escalateTier as _escalateTier } from "../execution/escalation/escalation";
@@ -182,7 +182,12 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
     const complexity = story.routing?.complexity ?? "medium";
     const modelTier =
       config.autoMode.complexityRouting?.[complexity] || config.autoMode.escalation.tierOrder[0]?.tier || "balanced";
-    const modelDef = resolveModel(config.models[modelTier]);
+    const modelDef = resolveModelForAgent(
+      config.models,
+      story.routing?.agent ?? config.autoMode.defaultAgent,
+      modelTier,
+      config.autoMode.defaultAgent,
+    );
 
     const agentResult = await agent.run({
       prompt: rectificationPrompt,
@@ -288,15 +293,23 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
     const currentTier =
       config.autoMode.complexityRouting?.[complexity] || config.autoMode.escalation.tierOrder[0]?.tier || "balanced";
     const tierOrder = config.autoMode.escalation.tierOrder;
-    const escalatedTier = _rectificationDeps.escalateTier(currentTier, tierOrder);
+    const escalationResult = _rectificationDeps.escalateTier(currentTier, tierOrder);
+    const escalatedTier = escalationResult?.tier ?? null;
+    const escalatedAgent = escalationResult?.agent;
 
     if (escalatedTier !== null) {
-      const agent = (agentGetFn ?? _rectificationDeps.getAgent)(config.autoMode.defaultAgent);
+      const agentName = escalatedAgent ?? story.routing?.agent ?? config.autoMode.defaultAgent;
+      const agent = (agentGetFn ?? _rectificationDeps.getAgent)(agentName);
       if (!agent) {
         return false;
       }
 
-      const escalatedModelDef = resolveModel(config.models[escalatedTier]);
+      const escalatedModelDef = resolveModelForAgent(
+        config.models,
+        agentName,
+        escalatedTier,
+        config.autoMode.defaultAgent,
+      );
       let escalationPrompt = createEscalatedRectificationPrompt(
         testSummary.failures,
         story,
@@ -307,7 +320,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       );
       if (promptPrefix) escalationPrompt = `${promptPrefix}\n\n${escalationPrompt}`;
 
-      const escalationResult = await agent.run({
+      const escalationRunResult = await agent.run({
         prompt: escalationPrompt,
         workdir,
         modelTier: escalatedTier,
@@ -325,7 +338,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       logger?.info("rectification", "escalated rectification attempt cost", {
         storyId: story.id,
         escalatedTier,
-        cost: escalationResult.estimatedCost,
+        cost: escalationRunResult.estimatedCost,
       });
 
       const escalationVerification = await _rectificationDeps.runVerification({

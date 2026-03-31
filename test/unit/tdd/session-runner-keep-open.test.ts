@@ -28,10 +28,13 @@ function makeStory(): UserStory {
 function makeConfig(rectificationEnabled: boolean): NaxConfig {
   return {
     models: {
-      fast: { model: "fast-model" },
-      balanced: { model: "balanced-model" },
-      powerful: { model: "powerful-model" },
+      claude: {
+        fast: { model: "fast-model" },
+        balanced: { model: "balanced-model" },
+        powerful: { model: "powerful-model" },
+      },
     },
+    autoMode: { defaultAgent: "claude" },
     execution: {
       rectification: rectificationEnabled
         ? { enabled: true, maxRetries: 2, fullSuiteTimeoutSeconds: 60, maxFailureSummaryChars: 1000 }
