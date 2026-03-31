@@ -5,3 +5,4 @@
 [2026-03-30T13:29:52.729Z] US-001-5 — PASSED — Update validate() to check agent keys against models map — Cost: $0.8326
 [2026-03-30T14:19:37.961Z] US-002 — FAILED — Migrate all callsites to resolveModelForAgent() — Execution failed
 [2026-03-30T14:30:32.000Z] US-002 — PASSED (manually verified on VPS) — Migrate all callsites to resolveModelForAgent()
+[2026-03-31T01:56:45.359Z] US-004 — PASSED — Cross-agent escalation in tierOrder — Cost: $1.1944

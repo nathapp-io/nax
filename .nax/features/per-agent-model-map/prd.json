@@ -3,7 +3,7 @@
   "feature": "per-agent-model-map",
   "branchName": "feat/per-agent-model-map",
   "createdAt": "2026-03-30T12:00:00.000Z",
-  "updatedAt": "2026-03-31T01:50:05.320Z",
+  "updatedAt": "2026-03-31T01:57:11.350Z",
   "analysis": "This feature restructures the models config from a flat tier→model map to a per-agent model map (Record<agentName, Record<tier, ModelEntry>>), making it the SSOT for any (agent, tier) → model resolution. It also activates the existing dead-code fallbackOrder as a rate-limit agent fallback chain inside the ACP adapter, and adds optional agent field to TierConfig for cross-agent escalation. There are 22 callsites using config.models[tier] that need migration to resolveModelForAgent(). The fallback implementation lives inside AcpAgentAdapter so all LLM calls (plan, review, acceptance, routing, rectification, autofix, TDD, analyze) get fallback for free.",
   "userStories": [
     {
@@ -386,7 +386,18 @@
       "passes": false,
       "escalations": [],
       "attempts": 0,
-      "parentStoryId": "US-003"
+      "parentStoryId": "US-003",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "3a7723c2a507c1bfe719815776f667a137d320e7",
+      "routing": {
+        "complexity": "simple",
+        "initialComplexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Straightforward type definition + pattern-matching string function with clear acceptance criteria; no architectural decisions or complex logic.",
+        "modelTier": "fast"
+      }
     },
     {
       "id": "US-003-2",
@@ -412,7 +423,10 @@
       "passes": false,
       "escalations": [],
       "attempts": 0,
-      "parentStoryId": "US-003"
+      "parentStoryId": "US-003",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003-3",
@@ -440,7 +454,10 @@
       "passes": false,
       "escalations": [],
       "attempts": 0,
-      "parentStoryId": "US-003"
+      "parentStoryId": "US-003",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003-4",
@@ -468,7 +485,10 @@
       "passes": false,
       "escalations": [],
       "attempts": 0,
-      "parentStoryId": "US-003"
+      "parentStoryId": "US-003",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-003-5",
@@ -494,7 +514,10 @@
       "passes": false,
       "escalations": [],
       "attempts": 0,
-      "parentStoryId": "US-003"
+      "parentStoryId": "US-003",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -516,8 +539,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "priorErrors": [],
