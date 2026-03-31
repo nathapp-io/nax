@@ -46,5 +46,9 @@
   "US-003-2:verifier": {
     "sessionName": "nax-51590e53-per-agent-model-map-us-003-2-verifier",
     "agentName": "claude"
+  },
+  "US-003-3:test-writer": {
+    "sessionName": "nax-51590e53-per-agent-model-map-us-003-3-test-writer",
+    "agentName": "claude"
   }
 }

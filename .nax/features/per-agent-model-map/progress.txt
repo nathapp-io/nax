@@ -7,3 +7,4 @@
 [2026-03-30T14:30:32.000Z] US-002 — PASSED (manually verified on VPS) — Migrate all callsites to resolveModelForAgent()
 [2026-03-31T01:56:45.359Z] US-004 — PASSED — Cross-agent escalation in tierOrder — Cost: $1.1944
 [2026-03-31T02:03:28.875Z] US-003-1 — PASSED — Add AgentError type and parseAgentError() helper — Cost: $0.2426
+[2026-03-31T02:22:23.108Z] US-003-2 — PASSED — Add AllAgentsUnavailableError and _unavailableAgents tracking to AcpAgentAdapter — Cost: $1.0583
