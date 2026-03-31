@@ -136,7 +136,7 @@ describe("acceptanceStage.execute", () => {
     const ctx = createTestContext(prd);
 
     // Create passing acceptance test
-    const testPath = path.join(featureDir, "acceptance.test.ts");
+    const testPath = path.join(featureDir, ".nax-acceptance.test.ts");
     await Bun.write(
       testPath,
       `
@@ -160,7 +160,7 @@ describe("test-feature - Acceptance Tests", () => {
     const ctx = createTestContext(prd);
 
     // Create failing acceptance test
-    const testPath = path.join(featureDir, "acceptance.test.ts");
+    const testPath = path.join(featureDir, ".nax-acceptance.test.ts");
     await Bun.write(
       testPath,
       `
@@ -209,7 +209,7 @@ describe("test-feature - Acceptance Tests", () => {
     const ctx = createTestContext(prd);
 
     // Create failing acceptance test for AC-1
-    const testPath = path.join(featureDir, "acceptance.test.ts");
+    const testPath = path.join(featureDir, ".nax-acceptance.test.ts");
     await Bun.write(
       testPath,
       `
@@ -237,7 +237,7 @@ describe("test-feature - Acceptance Tests", () => {
     const ctx = createTestContext(prd);
 
     // Create tests: AC-1 and AC-2 fail, but AC-1 is overridden
-    const testPath = path.join(featureDir, "acceptance.test.ts");
+    const testPath = path.join(featureDir, ".nax-acceptance.test.ts");
     await Bun.write(
       testPath,
       `
@@ -269,7 +269,7 @@ describe("test-feature - Acceptance Tests", () => {
     const ctx = createTestContext(prd);
 
     // Create multiple failing tests
-    const testPath = path.join(featureDir, "acceptance.test.ts");
+    const testPath = path.join(featureDir, ".nax-acceptance.test.ts");
     await Bun.write(
       testPath,
       `
@@ -306,7 +306,7 @@ describe("test-feature - Acceptance Tests", () => {
     const ctx = createTestContext(prd);
 
     // Create a test file with a syntax error — bun exits non-zero but no (fail) AC-N lines
-    const testPath = path.join(featureDir, "acceptance.test.ts");
+    const testPath = path.join(featureDir, ".nax-acceptance.test.ts");
     await Bun.write(
       testPath,
       `
@@ -346,7 +346,7 @@ describe("BUG-083: acceptance command scoping", () => {
       },
     });
 
-    const testPath = path.join(featureDir, "acceptance.test.ts");
+    const testPath = path.join(featureDir, ".nax-acceptance.test.ts");
     await Bun.write(
       testPath,
       `import { describe, test, expect } from "bun:test";
@@ -372,7 +372,7 @@ describe("test-feature", () => {
       },
     });
 
-    const testPath = path.join(featureDir, "acceptance.test.ts");
+    const testPath = path.join(featureDir, ".nax-acceptance.test.ts");
     await Bun.write(
       testPath,
       `import { describe, test, expect } from "bun:test";
@@ -389,7 +389,7 @@ describe("test-feature", () => {
     const prd = createTestPRD([{ id: "US-001", status: "passed" }]);
 
     // Point to the real acceptance test file using absolute path in command
-    const testPath = path.join(featureDir, "acceptance.test.ts");
+    const testPath = path.join(featureDir, ".nax-acceptance.test.ts");
     await Bun.write(
       testPath,
       `import { describe, test, expect } from "bun:test";
@@ -418,7 +418,7 @@ describe("test-feature", () => {
       },
     });
 
-    const testPath = path.join(featureDir, "acceptance.test.ts");
+    const testPath = path.join(featureDir, ".nax-acceptance.test.ts");
     await Bun.write(
       testPath,
       `import { describe, test, expect } from "bun:test";
