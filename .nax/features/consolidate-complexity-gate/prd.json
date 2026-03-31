@@ -1,0 +1,197 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "consolidate-complexity-gate",
+  "branchName": "feat/consolidate-complexity-gate",
+  "createdAt": "2026-03-31T00:00:00.000Z",
+  "updatedAt": "2026-03-31T07:54:06.410Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Upgrade StorySizeGate with configurable action",
+      "description": "Add `action: 'block' | 'warn' | 'skip'` and `maxReplanAttempts: number` to `StorySizeGateConfig`. Update `checkStorySizeGate()` to return `tier: 'blocker'` and a block message when `action === 'block'`. Add `flaggedStoryIds: string[]` to `StorySizeGateResult`. Update `runPrecheck()` to route the story-size-gate result into Tier 1 blockers when `action === 'block'` and Tier 2 warnings when `action === 'warn'`. Update Zod schema and defaults. Add CLI config descriptions.",
+      "acceptanceCriteria": [
+        "`StorySizeGateConfig` in `src/config/runtime-types.ts` includes `action: 'block' | 'warn' | 'skip'` field",
+        "`StorySizeGateConfig` in `src/config/runtime-types.ts` includes `maxReplanAttempts: number` field",
+        "Zod schema for `storySizeGate` validates `action` as `z.enum(['block', 'warn', 'skip']).default('block')` and `maxReplanAttempts` as `z.number().int().min(1).default(3)`",
+        "`DEFAULT_CONFIG.precheck.storySizeGate` has `action: 'block'`, `maxReplanAttempts: 3`, `maxAcCount: 10`, `maxDescriptionLength: 3000`, `maxBulletPoints: 12`",
+        "`checkStorySizeGate()` returns `{ check: { tier: 'blocker', passed: false }, flaggedStories: [...] }` when `action === 'block'` and stories exceed thresholds",
+        "`checkStorySizeGate()` returns `{ check: { tier: 'warning', passed: false }, flaggedStories: [...] }` when `action === 'warn'` and stories exceed thresholds",
+        "`checkStorySizeGate()` returns `{ check: { passed: true }, flaggedStories: [] }` when `action === 'skip'` regardless of story size",
+        "`StorySizeGateResult` includes `flaggedStoryIds: string[]` populated with story IDs from `flaggedStories`",
+        "When `action === 'block'`, the blocker message includes the story ID and instructions to run `nax plan --decompose <storyId>`",
+        "`runPrecheck()` places the story-size-gate check in the Tier 1 blockers section (fail-fast) when `action === 'block'` and the check fails",
+        "`runPrecheck()` places the story-size-gate check in the Tier 2 warnings section when `action === 'warn'` and the check fails",
+        "`src/cli/config-descriptions.ts` includes CLI help entries for `precheck.storySizeGate.action` and `precheck.storySizeGate.maxReplanAttempts`"
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "precheck"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/precheck/story-size-gate.ts",
+        "src/precheck/index.ts",
+        "src/config/runtime-types.ts",
+        "src/config/schemas.ts",
+        "src/config/defaults.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "4c1692c16223a35cb06e0f70df039e78b10c2a88"
+    },
+    {
+      "id": "US-002",
+      "title": "Add `nax plan --decompose <storyId>` command",
+      "description": "Add `planDecomposeCommand()` and `buildDecomposePrompt()` to `src/cli/plan.ts`. The command loads an existing PRD, finds the target story, builds a plan-quality decompose prompt reusing `buildCodebaseContext()`, `GROUPING_RULES`, `getAcQualityRules()`, `COMPLEXITY_GUIDE`, and `TEST_STRATEGY_GUIDE`. Optionally runs a `DebateSession` when `debate.stages.decompose?.enabled` is set, otherwise calls `adapter.complete()` one-shot with `jsonMode: true`. Validates sub-stories (non-empty `contextFiles`, `routing` fields, AC count ≤ `maxAcCount`). Replaces original story in PRD with `status: 'decomposed'` and inserts sub-stories with `parentStoryId`. Registers `--decompose <storyId>` option in `bin/nax.ts`.",
+      "acceptanceCriteria": [
+        "`planDecomposeCommand()` is exported from `src/cli/plan.ts` and accepts `(workdir: string, config: NaxConfig, options: { feature: string; storyId: string })` parameters",
+        "`planDecomposeCommand()` throws a `NaxError` with code `'PRD_NOT_FOUND'` when `.nax/features/<feature>/prd.json` does not exist",
+        "`planDecomposeCommand()` throws a `NaxError` with code `'STORY_NOT_FOUND'` when `storyId` is not found in the PRD",
+        "`planDecomposeCommand()` throws a `NaxError` with code `'STORY_ALREADY_DECOMPOSED'` when the target story already has `status: 'decomposed'`",
+        "`planDecomposeCommand()` calls `adapter.complete()` with a prompt that includes the full target story JSON, sibling story IDs and titles, and codebase context from `buildCodebaseContext()`",
+        "`planDecomposeCommand()` throws a `NaxError` with code `'DECOMPOSE_VALIDATION_FAILED'` when any sub-story has an empty `contextFiles` array",
+        "`planDecomposeCommand()` throws a `NaxError` with code `'DECOMPOSE_VALIDATION_FAILED'` when any sub-story is missing `routing.complexity`, `routing.testStrategy`, or `routing.modelTier`",
+        "`planDecomposeCommand()` throws a `NaxError` with code `'DECOMPOSE_VALIDATION_FAILED'` when any sub-story has more acceptance criteria than `config.precheck.storySizeGate.maxAcCount`",
+        "After successful decompose, the original story in the PRD has `status: 'decomposed'` and each sub-story has `parentStoryId` set to the original story's ID",
+        "`planDecomposeCommand()` writes the updated PRD back to `.nax/features/<feature>/prd.json`",
+        "`bin/nax.ts` registers `--decompose <storyId>` option on the `plan` command and routes to `planDecomposeCommand()` when the option is provided",
+        "When `config.debate?.enabled && config.debate?.stages?.decompose?.enabled`, `planDecomposeCommand()` creates a `DebateSession` with `stage: 'decompose'` and uses its output if `outcome !== 'failed'`",
+        "When the debate result has `outcome === 'failed'`, `planDecomposeCommand()` falls back to single-agent `adapter.complete()`",
+        "When `debate.stages.decompose` is not configured, `planDecomposeCommand()` calls `adapter.complete()` directly without creating a `DebateSession`"
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "plan"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/cli/plan.ts",
+        "src/config/test-strategy.ts",
+        "src/prd/types.ts",
+        "src/debate/types.ts",
+        "bin/nax.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-003",
+      "title": "Add replan loop to `nax run --plan`",
+      "description": "After `planCommand()` generates a PRD during `nax run --plan --from <spec>`, insert a replan loop before the confirmation gate. The loop runs `runPrecheck()` (silent), checks if `storySizeGate` blocked any stories via `flaggedStories`, calls `planDecomposeCommand()` for each flagged story, reloads the PRD, and repeats up to `config.precheck.storySizeGate.maxReplanAttempts` times (default 3). If still blocked after max attempts, exits with error code 1. When `action === 'warn'`, no replan loop fires.",
+      "acceptanceCriteria": [
+        "When `nax run --plan --from <spec>` generates a PRD and `storySizeGate` blocks with `action === 'block'`, `planDecomposeCommand()` is called for each story in `flaggedStories`",
+        "After each decompose call, the PRD is reloaded from disk and `runPrecheck()` re-runs with `silent: true`",
+        "The replan loop exits early when `runPrecheck()` returns `flaggedStories` with length 0",
+        "The replan loop repeats at most `config.precheck.storySizeGate.maxReplanAttempts ?? 3` times",
+        "When all attempts are exhausted and precheck still blocks, `process.exit(1)` is called with an error message naming the still-oversized stories",
+        "When `action === 'warn'` (gate is non-blocking), the replan loop does not fire and execution continues to the confirmation gate",
+        "A progress log line is emitted before each replan attempt: `[Replan N/M] Decomposing K oversized stories...`"
+      ],
+      "tags": [
+        "feature",
+        "cli",
+        "precheck"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "bin/nax.ts",
+        "src/precheck/index.ts",
+        "src/cli/plan.ts",
+        "src/precheck/story-size-gate.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "36746bdc01b0bf0f07b844954082703302ca782b"
+    },
+    {
+      "id": "US-004",
+      "title": "Remove runtime decomposer and clean up all references",
+      "description": "Delete `src/decompose/` (14 files), remove decompose logic from `src/pipeline/stages/routing.ts` (`runDecompose()`, `applyDecomposition`, `checkStoryOversized`, all imports from `../../decompose/`), remove `story:decomposed` event from `src/pipeline/event-bus.ts` and its handlers from `events-writer.ts` and `hooks.ts`, remove `RoutingDecision.action: 'decomposed'` from `src/pipeline/types.ts`, remove `checkStoryOversized()` from `src/interaction/triggers.ts`, delete `DecomposeConfig` interface and `NaxConfig.decompose?` from `src/config/runtime-types.ts`, delete `DecomposeConfigSchema` from `src/config/schemas.ts`, remove decompose defaults from `src/config/defaults.ts`, remove all `decompose.*` entries from `src/cli/config-descriptions.ts`, and delete 9 decompose-related test files.",
+      "acceptanceCriteria": [
+        "`src/decompose/` directory does not exist after this story completes",
+        "`src/pipeline/stages/routing.ts` does not import from `../../decompose/` and does not contain `runDecompose` or `applyDecomposition` function references",
+        "`src/pipeline/stages/routing.ts` does not contain `checkStoryOversized` or `decomposeConfig` references",
+        "`RoutingDecision` type in `src/pipeline/types.ts` does not include `'decomposed'` in its `action` union",
+        "`story:decomposed` event type is removed from `src/pipeline/event-bus.ts`",
+        "`src/pipeline/subscribers/events-writer.ts` does not subscribe to `story:decomposed`",
+        "`src/pipeline/subscribers/hooks.ts` does not subscribe to `story:decomposed`",
+        "`checkStoryOversized()` function is removed from `src/interaction/triggers.ts`",
+        "`DecomposeConfig` interface is removed from `src/config/runtime-types.ts`",
+        "`NaxConfig` in `src/config/runtime-types.ts` does not have a `decompose?` field",
+        "`DecomposeConfigSchema` is removed from `src/config/schemas.ts` and is not referenced in the main config schema",
+        "`src/config/defaults.ts` does not contain a `decompose` key at the top-level config",
+        "`src/cli/config-descriptions.ts` does not contain any entries with keys starting with `decompose.`",
+        "Test files `test/unit/decompose/apply.test.ts`, `test/unit/decompose/builder.test.ts`, `test/unit/decompose/validators.test.ts`, `test/unit/pipeline/stages/routing-decompose.test.ts`, and `test/unit/interaction/story-oversized-trigger.test.ts` do not exist"
+      ],
+      "tags": [
+        "refactor",
+        "cleanup"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "complex",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/routing.ts",
+        "src/pipeline/event-bus.ts",
+        "src/config/runtime-types.ts",
+        "src/config/schemas.ts",
+        "src/interaction/triggers.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "18870eb8cfa36cf0cc90605e742682e6e4550c19"
+    }
+  ],
+  "analysis": "This is a refactoring + feature enhancement that consolidates two overlapping size-checking systems into a single, coherent complexity gate. Key findings from codebase inspection:\n\n**Existing state:**\n- `src/precheck/story-size-gate.ts`: `checkStorySizeGate()` always returns `tier: 'warning'` (non-blocking). `StorySizeGateConfig` has only `enabled | maxAcCount | maxDescriptionLength | maxBulletPoints` — no `action` or `maxReplanAttempts` fields. `StorySizeGateResult` has `check` and `flaggedStories` but no `flaggedStoryIds` string array. Current defaults are `maxAcCount: 6`, spec requires default `10`.\n- `src/precheck/index.ts`: `runPrecheck()` runs story-size-gate unconditionally in the Tier 2 block (warnings only). Needs conditional routing: `action === 'block'` → Tier 1 blocker path, `action === 'warn'` → current Tier 2 path.\n- `src/config/runtime-types.ts`: `StorySizeGateConfig` missing `action` and `maxReplanAttempts`. `DecomposeConfig` interface exists (lines 430-443) and must be deleted. `NaxConfig.decompose?` field (line 526) must be removed.\n- `src/config/schemas.ts`: `DecomposeConfigSchema` and `StorySizeGateSchema` need updating — `action` enum with default `'block'`, `maxReplanAttempts` with default `3`, `enabled` field retained for backward compat but `action: 'skip'` replaces its semantic role.\n- `src/config/defaults.ts`: Must update `storySizeGate` defaults to `action: 'block'`, `maxReplanAttempts: 3`, `maxAcCount: 10`, `maxDescriptionLength: 3000`, `maxBulletPoints: 12`.\n- `src/cli/plan.ts`: `planCommand()` is the pattern to follow. `_planDeps` injection pattern, `buildPlanningPrompt()` structure, and debate integration are all in place. Need to add `planDecomposeCommand()` and `buildDecomposePrompt()` to this file. Import shared constants from `src/config/test-strategy.ts` and `buildCodebaseContext()` already exists as a private helper — it can be reused internally.\n- `src/pipeline/stages/routing.ts`: Contains `runDecompose()`, imports from `../../decompose/apply`, `../../decompose/builder`, `../../decompose/types`, and `checkStoryOversized` from `../../interaction/triggers`. All must be removed. `RoutingDecision.action` in `src/pipeline/types.ts` has `'decomposed'` union member to remove.\n- `src/interaction/triggers.ts`: Contains `checkStoryOversized()` to delete.\n- `src/decompose/`: 14 files (~845 LOC) to be deleted entirely.\n- `bin/nax.ts`: The `nax run --plan` flow needs the replan loop inserted between `planCommand()` and the confirmation gate.\n\n**Dependency order:**\n1. US-001 (gate config + tier routing) — no deps, can start immediately\n2. US-002 (plan --decompose command) — no deps on US-001, can run in parallel\n3. US-003 (replan loop) — depends on US-001 (flaggedStoryIds on result) and US-002 (planDecomposeCommand export)\n4. US-004 (delete decompose module) — depends on US-002 (routing.ts must stop importing decompose before files are deleted)\n\n**Risks:**\n- `StorySizeGateConfig.enabled` is used in existing configs — the `action: 'skip'` replacement must be backward-compatible or handled via a migration shim in the loader.\n- Deleting `src/decompose/` will break `src/pipeline/stages/routing.ts` at compile time if not cleaned up first — US-004 requires US-002 completes the routing.ts cleanup.\n- `story:decomposed` event removal from event-bus.ts must also remove all subscribers in events-writer.ts and hooks.ts.\n- `UserStory.status` keeps `'decomposed'` for backward compat with existing PRD files — do NOT remove it from prd/types.ts.\n- The `flaggedStoryIds` field on `StorySizeGateResult` (US-001) is consumed by the replan loop in US-003 — this is the key interface contract between the two stories."
+}

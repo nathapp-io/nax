@@ -137,6 +137,28 @@ describe("DEFAULT_CONFIG.models per-agent shape (US-001-4)", () => {
   });
 });
 
+describe("DEFAULT_CONFIG.precheck.storySizeGate (US-001)", () => {
+  test("precheck.storySizeGate.action defaults to 'block'", () => {
+    expect(DEFAULT_CONFIG.precheck.storySizeGate.action).toBe("block");
+  });
+
+  test("precheck.storySizeGate.maxReplanAttempts defaults to 3", () => {
+    expect(DEFAULT_CONFIG.precheck.storySizeGate.maxReplanAttempts).toBe(3);
+  });
+
+  test("precheck.storySizeGate.maxAcCount defaults to 10", () => {
+    expect(DEFAULT_CONFIG.precheck.storySizeGate.maxAcCount).toBe(10);
+  });
+
+  test("precheck.storySizeGate.maxDescriptionLength defaults to 3000", () => {
+    expect(DEFAULT_CONFIG.precheck.storySizeGate.maxDescriptionLength).toBe(3000);
+  });
+
+  test("precheck.storySizeGate.maxBulletPoints defaults to 12", () => {
+    expect(DEFAULT_CONFIG.precheck.storySizeGate.maxBulletPoints).toBe(12);
+  });
+});
+
 describe("DEFAULT_CONFIG.autoMode.fallbackOrder (US-001-4)", () => {
   test("fallbackOrder is ['claude']", () => {
     expect(DEFAULT_CONFIG.autoMode.fallbackOrder).toEqual(["claude"]);

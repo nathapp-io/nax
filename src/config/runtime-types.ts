@@ -362,12 +362,16 @@ export interface ContextConfig {
 export interface StorySizeGateConfig {
   /** Enable story size gate (default: true) */
   enabled: boolean;
-  /** Max acceptance criteria count before flagging (default: 6) */
+  /** Max acceptance criteria count before flagging (default: 10) */
   maxAcCount: number;
-  /** Max description character length before flagging (default: 2000) */
+  /** Max description character length before flagging (default: 3000) */
   maxDescriptionLength: number;
-  /** Max bullet point count before flagging (default: 8) */
+  /** Max bullet point count before flagging (default: 12) */
   maxBulletPoints: number;
+  /** Action when stories exceed thresholds: 'block' (fail-fast), 'warn' (non-blocking), 'skip' (disabled) */
+  action: "block" | "warn" | "skip";
+  /** Max number of replan attempts before escalating (default: 3) */
+  maxReplanAttempts: number;
 }
 
 /** Precheck configuration (v0.16.0) */
@@ -424,22 +428,6 @@ export interface PromptsConfig {
   overrides?: Partial<
     Record<"no-test" | "test-writer" | "implementer" | "verifier" | "single-session" | "tdd-simple" | "batch", string>
   >;
-}
-
-/** Decompose config (SD-003) */
-export interface DecomposeConfig {
-  /** Trigger mode: 'auto' = decompose automatically, 'confirm' = ask user, 'disabled' = skip */
-  trigger: "auto" | "confirm" | "disabled";
-  /** Max acceptance criteria before flagging a story as oversized (default: 6) */
-  maxAcceptanceCriteria: number;
-  /** Max number of substories to generate (default: 5) */
-  maxSubstories: number;
-  /** Max complexity for any generated substory (default: 'medium') */
-  maxSubstoryComplexity: Complexity;
-  /** Max retries on decomposition validation failure (default: 2) */
-  maxRetries: number;
-  /** Model tier for decomposition LLM calls (default: 'balanced') */
-  model: ModelTier;
 }
 
 /** Hermetic test enforcement configuration (ENH-010) */
@@ -522,8 +510,6 @@ export interface NaxConfig {
   precheck?: PrecheckConfig;
   /** Prompt override settings (PB-003) */
   prompts?: PromptsConfig;
-  /** Decompose settings (SD-003) */
-  decompose?: DecomposeConfig;
   /** Agent protocol settings (ACP-003) */
   agent?: AgentConfig;
   /** Generate settings */

@@ -53,9 +53,11 @@ import {
   displayModelEfficiency,
   exportPromptCommand,
   planCommand,
+  planDecomposeCommand,
   pluginsListCommand,
   promptsCommand,
   promptsInitCommand,
+  runReplanLoop,
   runsListCommand,
   runsShowCommand,
 } from "../src/cli";
@@ -401,13 +403,23 @@ program
         // Load the generated PRD to display confirmation gate
         const generatedPrd = await loadPRD(generatedPrdPath);
 
+        // Run replan loop before confirmation gate (US-003: insert replan loop)
+        await runReplanLoop(workdir, config, {
+          feature: options.feature,
+          prd: generatedPrd,
+          prdPath: generatedPrdPath,
+        });
+
+        // Reload PRD after replan loop in case it was modified
+        const finalPrd = await loadPRD(generatedPrdPath);
+
         // Display story breakdown (AC-5: confirmation gate displays story breakdown)
         console.log(chalk.bold("\n── Planning Summary ──────────────────────────────"));
-        console.log(chalk.dim(`Feature: ${generatedPrd.feature}`));
-        console.log(chalk.dim(`Stories: ${generatedPrd.userStories.length}`));
+        console.log(chalk.dim(`Feature: ${finalPrd.feature}`));
+        console.log(chalk.dim(`Stories: ${finalPrd.userStories.length}`));
         console.log();
 
-        for (const story of generatedPrd.userStories) {
+        for (const story of finalPrd.userStories) {
           const complexity = story.routing?.complexity || "unknown";
           console.log(chalk.dim(`  ${story.id}: ${story.title} [${complexity}]`));
         }
@@ -695,12 +707,13 @@ features
 program
   .command("plan [description]")
   .description("Generate prd.json from a spec file via LLM one-shot call (replaces deprecated 'nax analyze')")
-  .requiredOption("--from <spec-path>", "Path to spec file (required)")
+  .option("--from <spec-path>", "Path to spec file (required unless --decompose is used)")
   .requiredOption("-f, --feature <name>", "Feature name (required)")
   .option("--auto", "Run in one-shot LLM mode (alias: --one-shot)", false)
   .option("--one-shot", "Run in one-shot LLM mode (alias: --auto)", false)
   .option("-b, --branch <branch>", "Override default branch name")
   .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("--decompose <storyId>", "Decompose an existing story into sub-stories")
   .action(async (description, options) => {
     // AC-3: Detect and reject old positional argument form
     if (description) {
@@ -736,17 +749,30 @@ program
     console.log(chalk.dim(`   [Plan log: ${planLogPath}]`));
 
     try {
-      const prdPath = await planCommand(workdir, config, {
-        from: options.from,
-        feature: options.feature,
-        auto: options.auto || options.oneShot, // --auto and --one-shot are aliases
-        branch: options.branch,
-      });
+      if (options.decompose) {
+        await planDecomposeCommand(workdir, config, {
+          feature: options.feature,
+          storyId: options.decompose,
+        });
+        console.log(chalk.green("\n[OK] Story decomposed"));
+        console.log(chalk.dim(`   Log: ${planLogPath}`));
+      } else {
+        if (!options.from) {
+          console.error(chalk.red("Error: --from <spec-path> is required unless --decompose is used"));
+          process.exit(1);
+        }
+        const prdPath = await planCommand(workdir, config, {
+          from: options.from,
+          feature: options.feature,
+          auto: options.auto || options.oneShot, // --auto and --one-shot are aliases
+          branch: options.branch,
+        });
 
-      console.log(chalk.green("\n[OK] PRD generated"));
-      console.log(chalk.dim(`   PRD: ${prdPath}`));
-      console.log(chalk.dim(`   Log: ${planLogPath}`));
-      console.log(chalk.dim(`\nNext: nax run -f ${options.feature}`));
+        console.log(chalk.green("\n[OK] PRD generated"));
+        console.log(chalk.dim(`   PRD: ${prdPath}`));
+        console.log(chalk.dim(`   Log: ${planLogPath}`));
+        console.log(chalk.dim(`\nNext: nax run -f ${options.feature}`));
+      }
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);

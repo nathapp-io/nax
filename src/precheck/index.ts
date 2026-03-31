@@ -34,6 +34,7 @@ import {
   checkTypecheckCommand,
   checkWorkingTreeClean,
 } from "./checks";
+import type { FlaggedStory, StorySizeGateResult } from "./story-size-gate";
 import type { Check, PrecheckResult } from "./types";
 
 /** Formatted output with summary */
@@ -84,7 +85,7 @@ export interface PrecheckResultWithCode {
   /** Output for display */
   output: PrecheckOutput;
   /** Flagged stories from story size gate (v0.16.0) */
-  flaggedStories?: import("./story-size-gate").FlaggedStory[];
+  flaggedStories?: FlaggedStory[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -146,6 +147,14 @@ function getProjectBlockers(prd: PRD): CheckFn[] {
 function getProjectWarnings(prd: PRD): CheckFn[] {
   return [() => checkPendingStories(prd)];
 }
+
+/** Injectable dependencies for testing */
+export const _precheckDeps = {
+  checkStorySizeGate: async (config: NaxConfig, prd: PRD): Promise<StorySizeGateResult> => {
+    const { checkStorySizeGate } = await import("./story-size-gate");
+    return checkStorySizeGate(config, prd);
+  },
+};
 
 /** Normalize check result to array (some checks return Check[]) */
 function normalizeChecks(result: Check | Check[]): Check[] {
@@ -267,7 +276,7 @@ export async function runPrecheck(
   // Tier 2 Warnings — environment + project, run all regardless of failures
   // ─────────────────────────────────────────────────────────────────────────────
 
-  let flaggedStories: import("./story-size-gate").FlaggedStory[] = [];
+  let flaggedStories: FlaggedStory[] = [];
 
   // Only run Tier 2 if no blockers
   if (blockers.length === 0) {
@@ -285,8 +294,7 @@ export async function runPrecheck(
     }
 
     // Story size gate (v0.16.0) — separate from standard checks, returns metadata
-    const { checkStorySizeGate } = await import("./story-size-gate");
-    const sizeGateResult = await checkStorySizeGate(config, prd);
+    const sizeGateResult = await _precheckDeps.checkStorySizeGate(config, prd);
 
     if (format === "human") {
       printCheckResult(sizeGateResult.check);
@@ -294,6 +302,9 @@ export async function runPrecheck(
 
     if (sizeGateResult.check.passed) {
       passed.push(sizeGateResult.check);
+    } else if (sizeGateResult.check.tier === "blocker") {
+      blockers.push(sizeGateResult.check);
+      flaggedStories = sizeGateResult.flaggedStories;
     } else {
       warnings.push(sizeGateResult.check);
       flaggedStories = sizeGateResult.flaggedStories;

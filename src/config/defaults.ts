@@ -206,22 +206,16 @@ export const DEFAULT_CONFIG: NaxConfig = {
   precheck: {
     storySizeGate: {
       enabled: true,
-      maxAcCount: 6,
-      maxDescriptionLength: 2000,
-      maxBulletPoints: 8,
+      maxAcCount: 10,
+      maxDescriptionLength: 3000,
+      maxBulletPoints: 12,
+      action: "block" as const,
+      maxReplanAttempts: 3,
     },
   },
   prompts: {},
   agent: {
     protocol: "acp",
-  },
-  decompose: {
-    trigger: "auto",
-    maxAcceptanceCriteria: 6,
-    maxSubstories: 5,
-    maxSubstoryComplexity: "medium",
-    maxRetries: 2,
-    model: "balanced",
   },
   debate: {
     enabled: false,

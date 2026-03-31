@@ -166,25 +166,6 @@ export async function executeSequential(
         iter.prdDirty,
       ];
 
-      // ENH-009: Decomposition is not real work — don't charge an iteration.
-      // Emit story:decomposed event and immediately continue so sub-stories
-      // are picked up on the very next loop turn.
-      if (iter.finalAction === "decomposed") {
-        iterations--;
-        pipelineEventBus.emit({
-          type: "story:decomposed",
-          storyId: selection.story.id,
-          story: selection.story,
-          subStoryCount: iter.subStoryCount ?? 0,
-        });
-        if (iter.prdDirty) {
-          prd = await loadPRD(ctx.prdPath);
-          prdDirty = false;
-        }
-        ctx.statusWriter.setPrd(prd);
-        continue;
-      }
-
       if (ctx.interactionChain && isTriggerEnabled("cost-warning", ctx.config) && !warningSent) {
         const costLimit = ctx.config.execution.costLimit;
         const triggerCfg = ctx.config.interaction?.triggers?.["cost-warning"];

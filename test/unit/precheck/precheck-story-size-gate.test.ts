@@ -15,6 +15,15 @@ import { checkStorySizeGate } from "../../../src/precheck/story-size-gate";
 // Test fixtures
 // ─────────────────────────────────────────────────────────────────────────────
 
+const DEFAULT_GATE_CONFIG = {
+  enabled: true,
+  maxAcCount: 6,
+  maxDescriptionLength: 2000,
+  maxBulletPoints: 8,
+  action: "block" as const,
+  maxReplanAttempts: 3,
+};
+
 const createMockConfig = (
   storySizeGateConfig?: NaxConfig["precheck"],
 ): NaxConfig =>
@@ -283,5 +292,84 @@ Requirements:
     expect(result.flaggedStories[0].recommendation).toContain("too large");
     expect(result.flaggedStories[0].recommendation).toContain("5 AC");
     expect(result.flaggedStories[0].recommendation).toContain("max 3");
+  });
+});
+
+describe("checkStorySizeGate — action field (US-001)", () => {
+  test("returns tier 'blocker' when action is 'block' and story exceeds thresholds", async () => {
+    const config = createMockConfig({ storySizeGate: { ...DEFAULT_GATE_CONFIG, action: "block", maxAcCount: 3 } });
+    const story = createMockStory({ id: "US-001", acceptanceCriteria: Array(5).fill("AC") });
+    const prd = createMockPRD([story]);
+
+    const result = await checkStorySizeGate(config, prd);
+
+    expect(result.check.passed).toBe(false);
+    expect(result.check.tier).toBe("blocker");
+    expect(result.flaggedStories).toHaveLength(1);
+  });
+
+  test("returns tier 'warning' when action is 'warn' and story exceeds thresholds", async () => {
+    const config = createMockConfig({ storySizeGate: { ...DEFAULT_GATE_CONFIG, action: "warn", maxAcCount: 3 } });
+    const story = createMockStory({ id: "US-001", acceptanceCriteria: Array(5).fill("AC") });
+    const prd = createMockPRD([story]);
+
+    const result = await checkStorySizeGate(config, prd);
+
+    expect(result.check.passed).toBe(false);
+    expect(result.check.tier).toBe("warning");
+    expect(result.flaggedStories).toHaveLength(1);
+  });
+
+  test("returns passed: true when action is 'skip' regardless of story size", async () => {
+    const config = createMockConfig({ storySizeGate: { ...DEFAULT_GATE_CONFIG, action: "skip", maxAcCount: 1 } });
+    const story = createMockStory({
+      id: "US-001",
+      acceptanceCriteria: Array(20).fill("AC"),
+      description: "x".repeat(5000),
+    });
+    const prd = createMockPRD([story]);
+
+    const result = await checkStorySizeGate(config, prd);
+
+    expect(result.check.passed).toBe(true);
+    expect(result.flaggedStories).toHaveLength(0);
+  });
+
+  test("result includes flaggedStoryIds populated from flaggedStories", async () => {
+    const config = createMockConfig({ storySizeGate: { ...DEFAULT_GATE_CONFIG, action: "block", maxAcCount: 3 } });
+    const story1 = createMockStory({ id: "US-001", acceptanceCriteria: Array(5).fill("AC") });
+    const story2 = createMockStory({ id: "US-002", acceptanceCriteria: Array(5).fill("AC") });
+    const prd = createMockPRD([story1, story2]);
+
+    const result = await checkStorySizeGate(config, prd);
+
+    expect(result.flaggedStoryIds).toBeDefined();
+    expect(result.flaggedStoryIds).toHaveLength(2);
+    expect(result.flaggedStoryIds).toContain("US-001");
+    expect(result.flaggedStoryIds).toContain("US-002");
+  });
+
+  test("flaggedStoryIds is empty when no stories are flagged", async () => {
+    const config = createMockConfig({ storySizeGate: { ...DEFAULT_GATE_CONFIG, action: "block" } });
+    const story = createMockStory({ id: "US-001", acceptanceCriteria: ["AC1"] });
+    const prd = createMockPRD([story]);
+
+    const result = await checkStorySizeGate(config, prd);
+
+    expect(result.check.passed).toBe(true);
+    expect(result.flaggedStoryIds).toBeDefined();
+    expect(result.flaggedStoryIds).toHaveLength(0);
+  });
+
+  test("blocker message includes story ID and decompose command when action is 'block'", async () => {
+    const config = createMockConfig({ storySizeGate: { ...DEFAULT_GATE_CONFIG, action: "block", maxAcCount: 3 } });
+    const story = createMockStory({ id: "US-007", acceptanceCriteria: Array(5).fill("AC") });
+    const prd = createMockPRD([story]);
+
+    const result = await checkStorySizeGate(config, prd);
+
+    expect(result.check.passed).toBe(false);
+    expect(result.check.message).toContain("US-007");
+    expect(result.check.message).toContain("nax plan --decompose");
   });
 });

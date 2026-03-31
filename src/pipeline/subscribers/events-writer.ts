@@ -105,20 +105,6 @@ export function wireEventsWriter(
   );
 
   unsubs.push(
-    bus.on("story:decomposed", (ev) => {
-      return write({
-        ts: new Date().toISOString(),
-        event: "story:decomposed",
-        runId,
-        feature,
-        project,
-        storyId: ev.storyId,
-        data: { subStoryCount: ev.subStoryCount },
-      });
-    }),
-  );
-
-  unsubs.push(
     bus.on("story:failed", (ev) => {
       return write({
         ts: new Date().toISOString(),

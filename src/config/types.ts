@@ -42,7 +42,6 @@ export type {
   ConstitutionConfig,
   ContextAutoDetectConfig,
   ContextConfig,
-  DecomposeConfig,
   EscalationEntry,
   ExecutionConfig,
   RawHooksConfig,

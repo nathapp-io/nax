@@ -78,20 +78,6 @@ export function wireHooks(
     }),
   );
 
-  // story:decomposed → on-story-complete (status: "decomposed")
-  unsubs.push(
-    bus.on("story:decomposed", (ev) => {
-      return safe("on-story-complete (decomposed)", () =>
-        fireHook(
-          hooks,
-          "on-story-complete",
-          hookCtx(feature, { storyId: ev.storyId, status: "decomposed", subStoryCount: ev.subStoryCount }),
-          workdir,
-        ),
-      );
-    }),
-  );
-
   // story:failed → on-story-fail
   unsubs.push(
     bus.on("story:failed", (ev) => {

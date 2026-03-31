@@ -201,6 +201,9 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "precheck.storySizeGate.maxAcCount": "Max acceptance criteria count before flagging",
   "precheck.storySizeGate.maxDescriptionLength": "Max description character length before flagging",
   "precheck.storySizeGate.maxBulletPoints": "Max bullet point count before flagging",
+  "precheck.storySizeGate.action":
+    "Action when stories exceed size thresholds: 'block' (fail-fast, Tier 1), 'warn' (non-blocking, Tier 2), 'skip' (disable gate)",
+  "precheck.storySizeGate.maxReplanAttempts": "Max replan attempts before escalating (default: 3)",
 
   // Prompts
   prompts: "Prompt template overrides (PB-003: PromptBuilder)",
@@ -209,15 +212,6 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "prompts.overrides.implementer": 'Path to custom implementer prompt (e.g., ".nax/prompts/implementer.md")',
   "prompts.overrides.verifier": 'Path to custom verifier prompt (e.g., ".nax/prompts/verifier.md")',
   "prompts.overrides.single-session": 'Path to custom single-session prompt (e.g., ".nax/prompts/single-session.md")',
-
-  // Decompose
-  decompose: "Story decomposition configuration (SD-003)",
-  "decompose.trigger": "Decomposition trigger mode: auto | confirm | disabled",
-  "decompose.maxAcceptanceCriteria": "Max acceptance criteria before flagging as oversized (default: 6)",
-  "decompose.maxSubstories": "Max number of substories to generate (default: 5)",
-  "decompose.maxSubstoryComplexity": "Max complexity for any generated substory (default: 'medium')",
-  "decompose.maxRetries": "Max retries on decomposition validation failure (default: 2)",
-  "decompose.model": "Model tier for decomposition LLM calls (default: 'balanced')",
 
   // Agent protocol
   agent: "Agent protocol configuration (ACP-003)",

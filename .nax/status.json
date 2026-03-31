@@ -1,27 +1,27 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-31T01-44-42-582Z",
-    "feature": "per-agent-model-map",
-    "startedAt": "2026-03-31T01:44:42.582Z",
+    "id": "run-2026-03-31T06-16-29-991Z",
+    "feature": "consolidate-complexity-gate",
+    "startedAt": "2026-03-31T06:16:29.991Z",
     "status": "completed",
     "dryRun": false,
-    "pid": 1177
+    "pid": 79425
   },
   "progress": {
-    "total": 14,
-    "passed": 13,
+    "total": 4,
+    "passed": 4,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 0
   },
   "cost": {
-    "spent": 11.945375499999999,
+    "spent": 13.684810800000001,
     "limit": 30
   },
   "current": null,
-  "iterations": 7,
-  "updatedAt": "2026-03-31T03:55:34.790Z",
-  "durationMs": 7852208
+  "iterations": 5,
+  "updatedAt": "2026-03-31T07:54:54.105Z",
+  "durationMs": 5904114
 }

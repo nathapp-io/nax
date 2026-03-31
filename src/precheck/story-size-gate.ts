@@ -25,6 +25,8 @@ export interface FlaggedStory {
 export interface StorySizeGateResult {
   check: Check;
   flaggedStories: FlaggedStory[];
+  /** Story IDs from flaggedStories (convenience field) */
+  flaggedStoryIds: string[];
 }
 
 /**
@@ -92,10 +94,14 @@ export async function checkStorySizeGate(config: NaxConfig, prd: PRD): Promise<S
     maxAcCount: 6,
     maxDescriptionLength: 2000,
     maxBulletPoints: 8,
+    action: "warn" as const,
+    maxReplanAttempts: 3,
   };
 
-  // Gate disabled - pass with no flags
-  if (!gateConfig.enabled) {
+  const action = gateConfig.action ?? "warn";
+
+  // Gate disabled or action is 'skip' - pass with no flags
+  if (!gateConfig.enabled || action === "skip") {
     return {
       check: {
         name: "story-size-gate",
@@ -104,6 +110,7 @@ export async function checkStorySizeGate(config: NaxConfig, prd: PRD): Promise<S
         message: "Story size gate disabled",
       },
       flaggedStories: [],
+      flaggedStoryIds: [],
     };
   }
 
@@ -117,9 +124,26 @@ export async function checkStorySizeGate(config: NaxConfig, prd: PRD): Promise<S
     }
   }
 
-  // If stories are flagged, return warning (Tier 2, non-blocking)
+  const flaggedStoryIds = flaggedStories.map((f) => f.storyId);
+
+  // If stories are flagged, return tier based on action
   if (flaggedStories.length > 0) {
-    const storyIds = flaggedStories.map((f) => f.storyId).join(", ");
+    if (action === "block") {
+      const storyIds = flaggedStoryIds.join(", ");
+      const decomposeCmds = flaggedStoryIds.map((id) => `nax plan --decompose ${id}`).join("; ");
+      return {
+        check: {
+          name: "story-size-gate",
+          tier: "blocker",
+          passed: false,
+          message: `${flaggedStories.length} large stories detected: ${storyIds}. Run: ${decomposeCmds}`,
+        },
+        flaggedStories,
+        flaggedStoryIds,
+      };
+    }
+
+    const storyIds = flaggedStoryIds.join(", ");
     return {
       check: {
         name: "story-size-gate",
@@ -128,6 +152,7 @@ export async function checkStorySizeGate(config: NaxConfig, prd: PRD): Promise<S
         message: `${flaggedStories.length} large stories detected: ${storyIds}`,
       },
       flaggedStories,
+      flaggedStoryIds,
     };
   }
 
@@ -140,5 +165,6 @@ export async function checkStorySizeGate(config: NaxConfig, prd: PRD): Promise<S
       message: `All ${pendingStories.length} pending stories within size limits`,
     },
     flaggedStories: [],
+    flaggedStoryIds: [],
   };
 }
