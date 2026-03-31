@@ -494,6 +494,7 @@ export class AcpAgentAdapter implements AgentAdapter {
   readonly displayName: string;
   readonly binary: string;
   readonly capabilities: AgentCapabilities;
+  private _unavailableAgents: Set<string>;
 
   constructor(agentName: string) {
     const entry = resolveRegistryEntry(agentName);
@@ -505,6 +506,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       maxContextTokens: entry.maxContextTokens,
       features: new Set<"tdd" | "review" | "refactor" | "batch">(["tdd", "review", "refactor"]),
     };
+    this._unavailableAgents = new Set();
   }
 
   async isInstalled(): Promise<boolean> {
@@ -941,5 +943,29 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
 
     return { stories };
+  }
+
+  private markUnavailable(agentName: string): void {
+    this._unavailableAgents.add(agentName);
+  }
+
+  private isAvailable(agentName: string): boolean {
+    return !this._unavailableAgents.has(agentName);
+  }
+
+  private resolveFallbackOrder(config: unknown, currentAgent: string): string[] {
+    const typedConfig = config as { autoMode?: { fallbackOrder?: string[] } };
+    const fallbackOrder = typedConfig.autoMode?.fallbackOrder ?? [];
+
+    // Find the current agent's index
+    const currentIndex = fallbackOrder.indexOf(currentAgent);
+
+    // If current agent is not in the list, return all agents (filter unavailable)
+    if (currentIndex === -1) {
+      return fallbackOrder.filter((agent) => this.isAvailable(agent));
+    }
+
+    // Return agents after current agent, filtering out unavailable ones
+    return fallbackOrder.slice(currentIndex + 1).filter((agent) => this.isAvailable(agent));
   }
 }
