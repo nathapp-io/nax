@@ -3,7 +3,7 @@
   "feature": "consolidate-complexity-gate",
   "branchName": "feat/consolidate-complexity-gate",
   "createdAt": "2026-03-31T00:00:00.000Z",
-  "updatedAt": "2026-03-31T06:19:51.297Z",
+  "updatedAt": "2026-03-31T06:52:47.651Z",
   "userStories": [
     {
       "id": "US-001",
@@ -29,8 +29,8 @@
         "precheck"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 4,
-    "passed": 0,
+    "passed": 1,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 0,
+    "spent": 4.0648451,
     "limit": 30
   },
   "current": {
-    "storyId": "US-001",
-    "title": "Upgrade StorySizeGate with configurable action",
-    "complexity": "medium",
-    "tddStrategy": "three-session-tdd-lite",
+    "storyId": "US-002",
+    "title": "Add `nax plan --decompose <storyId>` command",
+    "complexity": "complex",
+    "tddStrategy": "three-session-tdd",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 1,
-  "updatedAt": "2026-03-31T06:51:30.925Z",
-  "durationMs": 2100934,
-  "lastHeartbeat": "2026-03-31T06:51:30.925Z"
+  "iterations": 2,
+  "updatedAt": "2026-03-31T06:59:30.931Z",
+  "durationMs": 2580940,
+  "lastHeartbeat": "2026-03-31T06:59:30.931Z"
 }

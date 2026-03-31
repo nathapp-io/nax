@@ -10,5 +10,9 @@
   "US-001:verifier": {
     "sessionName": "nax-02787a80-consolidate-complexity-gate-us-001-verifier",
     "agentName": "claude"
+  },
+  "US-002:test-writer": {
+    "sessionName": "nax-02787a80-consolidate-complexity-gate-us-002-test-writer",
+    "agentName": "claude"
   }
 }
