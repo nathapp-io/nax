@@ -448,7 +448,36 @@ async function runFixRouting(options: FixRoutingOptions): Promise<FixRoutingResu
     }
 
     logger?.info("acceptance", "Source fix succeeded — re-running acceptance to verify");
-    return { fixed: true, cost: sourceFixCost, prdDirty: false };
+
+    const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
+    const acceptanceResult = await acceptanceStage.execute(acceptanceContext);
+
+    if (acceptanceResult.action === "continue") {
+      logger?.info("acceptance", "Acceptance passed after source fix");
+      return { fixed: true, cost: sourceFixCost, prdDirty: false };
+    }
+
+    logger?.info("acceptance", "Acceptance still failing after source fix — regenerating test");
+
+    if (!ctx.featureDir) {
+      logger?.error("acceptance", "Cannot regenerate test without featureDir");
+      return { fixed: false, cost: sourceFixCost, prdDirty: false };
+    }
+
+    const testPath = path.join(ctx.featureDir, "acceptance.test.ts");
+    const testFile = Bun.file(testPath);
+    if (!(await testFile.exists())) {
+      logger?.error("acceptance", "Acceptance test file not found for regeneration");
+      return { fixed: false, cost: sourceFixCost, prdDirty: false };
+    }
+
+    const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext);
+
+    logger?.info("acceptance.test-regen", "Test regeneration completed", {
+      outcome: regenerated ? "success" : "failure",
+    });
+
+    return { fixed: regenerated, cost: sourceFixCost, prdDirty: regenerated };
   }
 
   return { fixed: false, cost: 0, prdDirty: false };
