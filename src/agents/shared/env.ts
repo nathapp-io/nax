@@ -25,7 +25,18 @@ const API_KEY_VARS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "
  * Env var prefixes passed through in bulk.
  * Union of CLI and ACP adapter needs.
  */
-const ALLOWED_PREFIXES = ["CLAUDE_", "NAX_", "CLAW_", "TURBO_", "ACPX_", "CODEX_", "GEMINI_", "ANTHROPIC_"];
+const ALLOWED_PREFIXES = [
+  "CLAUDE_",
+  "NAX_",
+  "CLAW_",
+  "TURBO_",
+  "ACPX_",
+  "CODEX_",
+  "GEMINI_",
+  "ANTHROPIC_",
+  "OPENCODE_",
+  "MINIMAX_",
+];
 
 export interface BuildAllowedEnvOptions {
   /** Extra vars merged in last (highest priority). */
