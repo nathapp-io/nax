@@ -94,10 +94,12 @@ describe("_rectificationDeps", () => {
 describe("runRectificationLoop — session context params", () => {
   const origGetAgent = _rectificationDeps.getAgent;
   const origRunVerification = _rectificationDeps.runVerification;
+  const origEscalateTier = _rectificationDeps.escalateTier;
 
   afterEach(() => {
     _rectificationDeps.getAgent = origGetAgent;
     _rectificationDeps.runVerification = origRunVerification;
+    _rectificationDeps.escalateTier = origEscalateTier;
     mock.restore();
   });
 
@@ -197,6 +199,130 @@ describe("runRectificationLoop — session context params", () => {
     });
 
     expect(result).toBe(false);
+  });
+
+  test("passes config into fallback _rectificationDeps.getAgent when agentGetFn is omitted", async () => {
+    const config = makeConfig({
+      agent: {
+        protocol: "acp",
+        maxInteractionTurns: 5,
+      },
+    } as unknown as Partial<NaxConfig>);
+    let capturedConfig: NaxConfig | undefined;
+
+    const mockAgent = {
+      name: "claude",
+      run: mock(async (_opts: AgentRunOptions) => {
+        return { success: true, exitCode: 0, output: "done", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+      }),
+      complete: mock(async (_prompt: string) => ""),
+      isInstalled: mock(async () => true),
+      buildCommand: mock((_opts: AgentRunOptions) => ["claude"]),
+      buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
+    };
+
+    _rectificationDeps.getAgent = mock((_name: string, cfg?: NaxConfig) => {
+      capturedConfig = cfg;
+      return mockAgent as unknown as import("../../../src/agents/types").AgentAdapter;
+    });
+
+    _rectificationDeps.runVerification = mock(async () => ({
+      success: true,
+      output: "1 pass, 0 fail",
+    }));
+
+    const result = await runRectificationLoop({
+      config,
+      workdir: "/tmp/test",
+      story: makeStory({ id: "TS-ACP" }),
+      testCommand: "bun test",
+      timeoutSeconds: 30,
+      testOutput: FAILING_TEST_OUTPUT,
+    });
+
+    expect(result).toBe(true);
+    expect(capturedConfig).toBe(config);
+  });
+
+  test("passes config into fallback _rectificationDeps.getAgent during escalation", async () => {
+    const config = makeConfig({
+      models: {
+        claude: {
+          fast: { provider: "anthropic", model: "claude-haiku-4-5" },
+          balanced: { provider: "anthropic", model: "claude-haiku-4-5" },
+        },
+      },
+      autoMode: {
+        defaultAgent: "claude",
+        complexityRouting: {
+          simple: "fast",
+          medium: "balanced",
+          complex: "powerful",
+          expert: "powerful",
+        },
+        escalation: {
+          enabled: true,
+          tierOrder: [
+            { tier: "fast" },
+            { tier: "balanced" },
+          ],
+        },
+      },
+      execution: {
+        sessionTimeoutSeconds: 120,
+        permissionProfile: "cautious",
+        rectification: {
+          maxRetries: 1,
+          abortOnRegression: true,
+          escalateOnExhaustion: true,
+        },
+      },
+    } as unknown as Partial<NaxConfig>);
+
+    const capturedConfigs: NaxConfig[] = [];
+    let verifyCallCount = 0;
+
+    const mockAgent = {
+      name: "claude",
+      run: mock(async (_opts: AgentRunOptions) => {
+        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+      }),
+      complete: mock(async (_prompt: string) => ""),
+      isInstalled: mock(async () => true),
+      buildCommand: mock((_opts: AgentRunOptions) => ["claude"]),
+      buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
+    };
+
+    _rectificationDeps.getAgent = mock((_name: string, cfg?: NaxConfig) => {
+      if (cfg) capturedConfigs.push(cfg);
+      return mockAgent as unknown as import("../../../src/agents/types").AgentAdapter;
+    });
+
+    _rectificationDeps.escalateTier = mock(() => ({ tier: "balanced", agent: "claude" }));
+
+    _rectificationDeps.runVerification = mock(async () => {
+      verifyCallCount += 1;
+      return {
+        success: false,
+        status: "FAILED" as const,
+        output: "✗ still failing\n(fail) still failing",
+      };
+    });
+
+    const result = await runRectificationLoop({
+      config,
+      workdir: "/tmp/test",
+      story: makeStory({ id: "TS-ESC", routing: { complexity: "simple", modelTier: "fast" } as never }),
+      testCommand: "bun test",
+      timeoutSeconds: 30,
+      testOutput: FAILING_TEST_OUTPUT,
+    });
+
+    expect(result).toBe(false);
+    expect(verifyCallCount).toBeGreaterThanOrEqual(1);
+    expect(capturedConfigs.length).toBeGreaterThanOrEqual(2);
+    expect(capturedConfigs[0]).toBe(config);
+    expect(capturedConfigs[1]).toBe(config);
   });
 
   test("storyId is always passed from story.id regardless of featureName", async () => {

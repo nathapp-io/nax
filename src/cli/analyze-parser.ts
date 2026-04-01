@@ -7,7 +7,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { getAgent } from "../agents/registry";
+import { createAgentRegistry } from "../agents/registry";
 import { scanCodebase } from "../analyze/scanner";
 import type { CodebaseScan } from "../analyze/types";
 import type { NaxConfig } from "../config";
@@ -227,7 +227,7 @@ async function reclassifyWithLLM(
   config: NaxConfig,
 ): Promise<UserStory> {
   const agentName = config.autoMode.defaultAgent;
-  const adapter = getAgent(agentName);
+  const adapter = createAgentRegistry(config).getAgent(agentName);
   if (!adapter) throw new Error(`Agent "${agentName}" not found`);
 
   const modelTier = config.analyze.model;

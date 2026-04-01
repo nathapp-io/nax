@@ -7,7 +7,7 @@
  * - judgeResolver: calls adapter.complete() with a judge prompt using resolver.agent
  */
 
-import type { AgentAdapter, CompleteResult } from "../agents/types";
+import type { AgentAdapter, CompleteOptions, CompleteResult } from "../agents/types";
 import { buildJudgePrompt, buildSynthesisPrompt } from "./prompts";
 import type { ResolverConfig } from "./types";
 
@@ -65,10 +65,10 @@ export function majorityResolver(proposals: string[], failOpen: boolean): "passe
 export async function synthesisResolver(
   proposals: string[],
   critiques: string[],
-  opts: { adapter: AgentAdapter },
+  opts: { adapter: AgentAdapter; completeOptions?: CompleteOptions },
 ): Promise<CompleteResult> {
   const prompt = buildSynthesisPrompt(proposals, critiques);
-  return opts.adapter.complete(prompt);
+  return opts.adapter.complete(prompt, opts.completeOptions);
 }
 
 /**
@@ -83,6 +83,7 @@ export async function judgeResolver(
   opts: {
     getAgent: (name: string) => AgentAdapter | undefined;
     defaultAgentName?: string;
+    completeOptions?: CompleteOptions;
   },
 ): Promise<CompleteResult> {
   const agentName = resolverConfig.agent ?? opts.defaultAgentName ?? DEFAULT_FALLBACK_AGENT;
@@ -93,5 +94,5 @@ export async function judgeResolver(
   }
 
   const prompt = buildJudgePrompt(proposals, critiques);
-  return adapter.complete(prompt);
+  return adapter.complete(prompt, opts.completeOptions);
 }

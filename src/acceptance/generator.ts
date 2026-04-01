@@ -6,7 +6,7 @@
  */
 
 import { join } from "node:path";
-import { ClaudeCodeAdapter } from "../agents/claude";
+import { createAgentRegistry } from "../agents/registry";
 import type { AgentAdapter } from "../agents/types";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd/types";
@@ -66,7 +66,18 @@ function skeletonImportLine(testFramework?: string): string {
  * @internal
  */
 export const _generatorPRDDeps = {
-  adapter: new ClaudeCodeAdapter() as AgentAdapter,
+  adapter: {
+    complete: async (...args: Parameters<AgentAdapter["complete"]>) => {
+      const options = args[1];
+      const config = options?.config;
+      if (!config) throw new Error("Acceptance generator adapter requires config");
+
+      const adapter = createAgentRegistry(config).getAgent(config.autoMode.defaultAgent);
+      if (!adapter) throw new Error(`Agent "${config.autoMode.defaultAgent}" not found`);
+
+      return adapter.complete(...args);
+    },
+  } satisfies Pick<AgentAdapter, "complete">,
   writeFile: async (path: string, content: string): Promise<void> => {
     await Bun.write(path, content);
   },

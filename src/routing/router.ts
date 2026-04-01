@@ -6,7 +6,7 @@
  *   plugin routers > LLM fallback > keyword fallback
  */
 
-import { getAgent } from "../agents/registry";
+import { createAgentRegistry } from "../agents/registry";
 import type { AgentAdapter } from "../agents/types";
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../config";
 import { getSafeLogger } from "../logger";
@@ -354,7 +354,9 @@ export function routeTask(
  *
  * No-ops if routing.strategy is not "llm" or mode is "per-story" or stories is empty.
  */
-export const _tryLlmBatchRouteDeps = { getAgent };
+export const _tryLlmBatchRouteDeps = {
+  getAgent: (name: string, config: NaxConfig) => createAgentRegistry(config).getAgent(name),
+};
 
 export async function tryLlmBatchRoute(
   config: NaxConfig,
@@ -368,7 +370,7 @@ export async function tryLlmBatchRoute(
   // PRD wins: skip stories that already have routing set (from plan or previous run)
   const needsRouting = stories.filter((s) => !(s.routing?.complexity && s.routing?.testStrategy));
   if (needsRouting.length === 0) return;
-  const resolvedAdapter = _deps.getAgent(config.execution?.agent ?? "claude");
+  const resolvedAdapter = _deps.getAgent(config.execution?.agent ?? "claude", config);
   if (!resolvedAdapter) return;
 
   const logger = getSafeLogger();

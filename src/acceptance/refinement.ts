@@ -6,7 +6,7 @@
  */
 
 import type { AgentAdapter } from "../agents";
-import { ClaudeCodeAdapter } from "../agents/claude";
+import { createAgentRegistry } from "../agents/registry";
 import { resolveModelForAgent } from "../config";
 import { getLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
@@ -19,7 +19,18 @@ import type { RefinedCriterion, RefinementContext } from "./types";
  * @internal
  */
 export const _refineDeps = {
-  adapter: new ClaudeCodeAdapter() as AgentAdapter,
+  adapter: {
+    complete: async (...args: Parameters<AgentAdapter["complete"]>) => {
+      const options = args[1];
+      const config = options?.config;
+      if (!config) throw new Error("Refinement adapter requires config");
+
+      const adapter = createAgentRegistry(config).getAgent(config.autoMode.defaultAgent);
+      if (!adapter) throw new Error(`Agent "${config.autoMode.defaultAgent}" not found`);
+
+      return adapter.complete(...args);
+    },
+  } satisfies Pick<AgentAdapter, "complete">,
 };
 
 /**
