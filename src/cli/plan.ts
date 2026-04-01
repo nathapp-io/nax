@@ -758,13 +758,38 @@ export async function planDecomposeCommand(
     if (debateResult.outcome !== "failed" && debateResult.output) {
       rawResponse = debateResult.output;
     } else {
-      rawResponse = await adapter.complete(prompt, { jsonMode: true });
+      rawResponse = await adapter.complete(prompt, {
+        jsonMode: true,
+        workdir,
+        sessionRole: "decompose",
+        featureName: options.feature,
+        storyId: options.storyId,
+      });
     }
   } else {
-    rawResponse = await adapter.complete(prompt, { jsonMode: true });
+    rawResponse = await adapter.complete(prompt, {
+      jsonMode: true,
+      workdir,
+      sessionRole: "decompose",
+      featureName: options.feature,
+      storyId: options.storyId,
+    });
   }
 
-  const parsed = JSON.parse(rawResponse) as { subStories: UserStory[] };
+  // Strip markdown code fences if the LLM wrapped JSON in backticks
+  const jsonMatch = rawResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const cleanedResponse = jsonMatch ? jsonMatch[1] : rawResponse;
+
+  let parsed: { subStories: UserStory[] };
+  try {
+    parsed = JSON.parse(cleanedResponse.trim()) as { subStories: UserStory[] };
+  } catch (err) {
+    throw new NaxError(
+      `Failed to parse decompose response as JSON: ${(err as Error).message}\n\nResponse (first 500 chars):\n${rawResponse.slice(0, 500)}`,
+      "DECOMPOSE_PARSE_FAILED",
+      { stage: "decompose", storyId: options.storyId },
+    );
+  }
   const subStories = parsed.subStories;
 
   const maxAcCount = config?.precheck?.storySizeGate?.maxAcCount ?? Number.POSITIVE_INFINITY;

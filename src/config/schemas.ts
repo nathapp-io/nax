@@ -113,7 +113,7 @@ const ExecutionConfigSchema = z.object({
   maxIterations: z.number().int().positive({ message: "maxIterations must be > 0" }),
   iterationDelayMs: z.number().int().nonnegative(),
   costLimit: z.number().positive({ message: "costLimit must be > 0" }),
-  sessionTimeoutSeconds: z.number().int().positive({ message: "sessionTimeoutSeconds must be > 0" }),
+  sessionTimeoutSeconds: z.number().int().positive({ message: "sessionTimeoutSeconds must be > 0" }).default(3600),
   verificationTimeoutSeconds: z.number().int().min(1).max(3600).default(300),
   maxStoriesPerFeature: z.number().int().positive(),
   rectification: RectificationConfigSchema,
@@ -370,9 +370,9 @@ const InteractionConfigSchema = z.object({
 
 const StorySizeGateConfigSchema = z.object({
   enabled: z.boolean().default(true),
-  maxAcCount: z.number().int().min(1).max(50).default(6),
-  maxDescriptionLength: z.number().int().min(100).max(10000).default(2000),
-  maxBulletPoints: z.number().int().min(1).max(100).default(8),
+  maxAcCount: z.number().int().min(1).max(50).default(10),
+  maxDescriptionLength: z.number().int().min(100).max(10000).default(3000),
+  maxBulletPoints: z.number().int().min(1).max(100).default(12),
   action: z.enum(["block", "warn", "skip"]).default("block"),
   maxReplanAttempts: z.number().int().min(1).default(3),
 });
