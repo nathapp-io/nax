@@ -87,6 +87,8 @@ export interface GenerateFixStoriesOptions {
   config: NaxConfig;
   /** Path to acceptance test file for agent context (P1-A) */
   testFilePath?: string;
+  /** Timeout for each complete() call (ms). Defaults to acceptance.timeoutMs config or 1800000. */
+  timeoutMs?: number;
 }
 
 /**
@@ -297,6 +299,7 @@ export async function generateFixStories(
         featureName: options.prd.feature,
         workdir: options.workdir,
         sessionRole: "fix-gen",
+        timeoutMs: options.timeoutMs ?? options.config?.acceptance?.timeoutMs ?? 1800000,
       });
 
       fixStories.push({
