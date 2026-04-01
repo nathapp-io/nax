@@ -51,12 +51,17 @@ Model resolution follows the same pattern as `debate.synthesisModel` — tier na
 
 ### Phase 1: Diagnose (`src/acceptance/fix-diagnosis.ts`)
 
-Single LLM call using `diagnoseModel` tier. Input:
+Full agent session using `diagnoseModel` tier via `adapter.run()` — NOT `complete()`. The diagnosis must run as a proper ACP session so it gets correct session naming, protocol handling, cost tracking, and fallback chain support.
+
+Session naming: `nax-<hash>-<feature>-<storyId>-diagnose` (via `buildSessionName()` with `sessionRole: "diagnose"`).
+
+Input (passed as prompt to the agent session):
 - Failing test output (truncated to 2000 chars)
 - Acceptance test file content
 - Source files imported by the test (auto-detected from import statements)
+- Instruction to output a JSON verdict
 
-Output schema:
+Output schema (parsed from agent session output):
 ```typescript
 interface DiagnosisResult {
   verdict: "source_bug" | "test_bug" | "both";
@@ -67,19 +72,23 @@ interface DiagnosisResult {
 }
 ```
 
-Diagnosis prompt instructs the LLM to:
+Diagnosis prompt instructs the agent to:
 1. Read the failing test assertions and understand what they expect
 2. Read the source code being tested
 3. Determine if the test setup/assertions are correct
 4. Determine if the source implementation matches the acceptance criteria
+5. Output a JSON object matching `DiagnosisResult`
 
 When `strategy: "implement-only"`, Phase 1 is skipped entirely — goes straight to source fix.
 
 ### Phase 2: Fix (based on verdict)
 
 **`source_bug`** — Fix source code:
-- Single implementation session using `fixModel` tier
+- Full agent session using `fixModel` tier via `adapter.run()`
+- Session naming: `nax-<hash>-<feature>-<storyId>-source-fix` (via `sessionRole: "source-fix"`)
 - Session receives: failing test output + test file + diagnosis reasoning
+- When ACP protocol: runs as ACP session with correct session name
+- When CLI protocol: runs as CLI session (same `run()` path, adapter handles protocol)
 - Verify by running acceptance tests
 - Instructions: "Fix the source implementation to pass the acceptance tests. Do NOT modify the test file."
 
@@ -109,15 +118,25 @@ diagnoseAcceptanceFailure() → based on verdict:
   both        → executeSourceFix() → verify → if still failing → regenerate → verify
 ```
 
-The fix session bypasses routing entirely — no `routeTask()` call. Instead, it directly creates a `PipelineContext` with a hardcoded `implement-only` routing result (no test-writer, no verifier stage — just the implementation + acceptance test verification).
+The fix session bypasses routing entirely — no `routeTask()` call. Instead, it uses `adapter.run()` directly with the correct `sessionRole` and model tier. The adapter handles protocol selection (ACP vs CLI) internally.
+
+### Session Protocol Handling
+
+Both diagnosis and fix sessions go through `adapter.run()`, which:
+1. Resolves the agent via `createAgentRegistry(config)` — respects ACP/CLI protocol setting
+2. Creates/resumes ACP session with correct name via `buildSessionName(workdir, feature, storyId, sessionRole)`
+3. Registers session in the sidecar file for cleanup
+4. Handles fallback chain, rate limits, and session errors
+
+This ensures sessions appear correctly in `acpx list`, have proper cost attribution, and can be debugged.
 
 ### Fix Session Pipeline
 
-The fix session uses a minimal pipeline: `execute` → `verify` (against acceptance tests). No test-writer, no review, no regression gate. The acceptance tests ARE the verification.
+The fix session uses `adapter.run()` directly — NOT the full pipeline. No test-writer, no review, no regression gate. The acceptance tests ARE the verification — run `bun test <acceptance-test-path>` after the fix session completes.
 
 ### Failure Handling
 
-- Diagnosis call fails (timeout/error) → fall back to `"implement-only"` strategy (assume source bug)
+- Diagnosis session fails (timeout/error) → fall back to `"implement-only"` strategy (assume source bug)
 - Low confidence diagnosis (<0.5) → log warning, proceed with verdict
 - Fix session fails after `maxRetries` → escalate to manual intervention via `on-pause` hook
 - `strategy: "implement-only"` → skip diagnosis entirely, always treat as source bug
@@ -136,33 +155,37 @@ Add `AcceptanceFixConfig` to config schema with defaults. Add `DiagnosisResult` 
 - `DiagnosisResult` interface exported from `src/acceptance/types.ts` with fields `verdict`, `reasoning`, `confidence`, `testIssues`, `sourceIssues`
 - Config validation rejects unknown `strategy` values (only `"diagnose-first"` and `"implement-only"` allowed)
 
-### US-002: Diagnosis function
+### US-002: Diagnosis session
 
-Implement `diagnoseAcceptanceFailure()` in `src/acceptance/fix-diagnosis.ts`. Takes failing test output, test file content, and source imports. Returns `DiagnosisResult` via single LLM call.
+Implement `diagnoseAcceptanceFailure()` in `src/acceptance/fix-diagnosis.ts`. Runs a full agent session via `adapter.run()` (not `complete()`) to diagnose whether the failure is a source bug, test bug, or both. Session runs under ACP protocol when configured, with correct session naming.
 
 **Dependencies:** US-001
 
 **Acceptance Criteria:**
-- `diagnoseAcceptanceFailure()` calls `adapter.complete()` with `timeoutMs` from `acceptance.timeoutMs` config
+- `diagnoseAcceptanceFailure()` calls `adapter.run()` (not `adapter.complete()`) with `sessionRole: "diagnose"`
+- Session name follows pattern `nax-<hash>-<feature>-<storyId>-diagnose` via `buildSessionName()`
 - `diagnoseAcceptanceFailure()` resolves `diagnoseModel` tier via `resolveModelForAgent()` — never passes raw tier name to adapter
-- When LLM returns valid JSON matching `DiagnosisResult` schema, function returns parsed result
-- When LLM returns invalid/unparsable response, function returns `{ verdict: "source_bug", reasoning: "diagnosis failed", confidence: 0 }`
+- When agent output contains valid JSON matching `DiagnosisResult` schema, function returns parsed result
+- When agent output is invalid/unparsable, function returns `{ verdict: "source_bug", reasoning: "diagnosis failed", confidence: 0 }`
 - `diagnoseAcceptanceFailure()` auto-detects source file paths from test file `import` statements and reads their content (up to 5 files, 500 lines each)
 - When `strategy` is `"implement-only"`, `diagnoseAcceptanceFailure()` is not called (caller skips it)
+- When `config.agent.protocol` is `"acp"`, the session runs as a proper ACP session (visible in `acpx list`)
 
-### US-003: Source fix execution (implement-only session)
+### US-003: Source fix session
 
-Implement `executeSourceFix()` — single agent session that fixes source code, verified against existing acceptance tests. Bypasses routing.
+Implement `executeSourceFix()` — full agent session via `adapter.run()` that fixes source code, verified against existing acceptance tests. Bypasses routing/pipeline — runs the agent directly.
 
 **Dependencies:** US-001
 
 **Acceptance Criteria:**
-- `executeSourceFix()` creates a `PipelineContext` with routing `{ complexity: "medium", testStrategy: "no-test", modelTier: fixModel }` — no test-writer stage
+- `executeSourceFix()` calls `adapter.run()` (not `complete()`) with `sessionRole: "source-fix"`
+- Session name follows pattern `nax-<hash>-<feature>-<storyId>-source-fix` via `buildSessionName()`
 - `executeSourceFix()` resolves `fixModel` tier via `resolveModelForAgent()`
 - Fix session prompt includes: failing test output, test file path, diagnosis reasoning (if available), and instruction to fix source only
-- `executeSourceFix()` runs the pipeline with `execute` + `verify` stages only (no test-writer, no review, no regression)
+- `executeSourceFix()` does NOT use the pipeline — calls `adapter.run()` directly, then verifies by running `bun test <acceptance-test-path>`
 - Verification runs `bun test <acceptance-test-path>` — passes when all acceptance tests pass
-- `executeSourceFix()` returns `{ success: boolean, cost: number }` with cost from the agent session
+- `executeSourceFix()` returns `{ success: boolean, cost: number }` with cost from `AgentResult`
+- When `config.agent.protocol` is `"acp"`, the session runs as a proper ACP session with correct session name
 
 ### US-004: Wire into acceptance-loop
 
