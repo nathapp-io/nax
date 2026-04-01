@@ -578,7 +578,7 @@ describe("AC-10: ACP session visible in acpx list with correct session name", ()
       storyId: "US-001",
     });
     const runCall = getRunMockCalls(mockAgent)[0][0];
-    expect(runCall.acpSessionName).toMatch(/^nax-[a-f0-9]+-test-feature-\d+-diagnose$/);
+    expect(runCall.acpSessionName).toMatch(/^nax-[a-f0-9]+-test-feature-us-001-diagnose$/);
   });
 });
 
