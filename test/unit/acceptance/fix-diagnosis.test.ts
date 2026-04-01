@@ -1,0 +1,703 @@
+/**
+ * Tests for diagnoseAcceptanceFailure() in src/acceptance/fix-diagnosis.ts
+ *
+ * Covers acceptance criteria:
+ * 1. Receives agent adapter via parameter (never calls bare getAgent())
+ * 2. Calls agent.run() with sessionRole 'diagnose'
+ * 3. Session name follows pattern via buildSessionName()
+ * 4. Resolves diagnoseModel via resolveModelForAgent()
+ * 5. Auto-detects source files from import statements
+ * 6. Parses DiagnosisResult JSON from agent output
+ * 7. Returns fallback on parse failure
+ * 8. Catches errors from adapter.run()
+ * 9. ACP sessions visible in acpx list
+ */
+
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { createHash } from "node:crypto";
+import { diagnoseAcceptanceFailure } from "../../../src/acceptance/fix-diagnosis";
+import type { DiagnosisResult } from "../../../src/acceptance/types";
+import { buildSessionName } from "../../../src/agents/acp/adapter";
+import type { AgentAdapter, AgentResult } from "../../../src/agents/types";
+import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import type { NaxConfig } from "../../../src/config/schema";
+import { resolveModelForAgent } from "../../../src/config/schema-types";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeMockAgentAdapter(result?: Partial<AgentResult>): AgentAdapter {
+  const defaultResult: AgentResult = {
+    success: true,
+    exitCode: 0,
+    output: '{"verdict":"source_bug","reasoning":"test reasoning","confidence":0.9}',
+    rateLimited: false,
+    durationMs: 1000,
+    estimatedCost: 0.05,
+  };
+  const mockRun = mock(async () => ({ ...defaultResult, ...result }));
+  const mockComplete = mock(async () => ({ output: "{}", costUsd: 0.01, source: "exact" as const }));
+  const mockPlan = mock(async () => ({ stories: [], output: "", specContent: "" }));
+  const mockDecompose = mock(async () => ({ stories: [], output: "" }));
+  const mockIsInstalled = mock(async () => true);
+  const mockBuildCommand = mock(() => ["mock", "cmd"]);
+  return {
+    name: "mock",
+    displayName: "Mock Agent",
+    binary: "mock",
+    capabilities: {
+      supportedTiers: ["fast", "balanced", "powerful"],
+      maxContextTokens: 200000,
+      features: new Set(["tdd", "review", "refactor"]),
+    },
+    isInstalled: mockIsInstalled,
+    run: mockRun,
+    buildCommand: mockBuildCommand,
+    plan: mockPlan,
+    decompose: mockDecompose,
+    complete: mockComplete,
+  } as unknown as AgentAdapter;
+}
+
+function getRunMockCalls(agent: AgentAdapter): Array<Parameters<AgentAdapter["run"]>> {
+  return (agent.run as unknown as { mock: { calls: Array<Parameters<AgentAdapter["run"]>> } }).mock.calls;
+}
+
+function makeMinimalConfig(overrides: Partial<NaxConfig["acceptance"]> = {}): NaxConfig {
+  return {
+    ...DEFAULT_CONFIG,
+    models: {
+      claude: { fast: "haiku", balanced: "sonnet", powerful: "opus" },
+    },
+    autoMode: { ...DEFAULT_CONFIG.autoMode },
+    routing: { ...DEFAULT_CONFIG.routing },
+    execution: { ...DEFAULT_CONFIG.execution },
+    quality: { ...DEFAULT_CONFIG.quality },
+    tdd: { ...DEFAULT_CONFIG.tdd },
+    constitution: { ...DEFAULT_CONFIG.constitution },
+    analyze: { ...DEFAULT_CONFIG.analyze },
+    review: { ...DEFAULT_CONFIG.review },
+    plan: { ...DEFAULT_CONFIG.plan },
+    acceptance: {
+      ...DEFAULT_CONFIG.acceptance,
+      ...overrides,
+    },
+    context: { ...DEFAULT_CONFIG.context },
+    agent: { protocol: "acp" },
+  } as NaxConfig;
+}
+
+// ---------------------------------------------------------------------------
+// AC-1: diagnoseAcceptanceFailure() receives agent adapter via parameter
+// ---------------------------------------------------------------------------
+
+describe("AC-1: diagnoseAcceptanceFailure receives agent adapter via parameter", () => {
+  test("never calls bare getAgent() — uses passed adapter", async () => {
+    const mockAgent = makeMockAgentAdapter();
+    const config = makeMinimalConfig();
+    await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    expect(mockAgent.run).toHaveBeenCalled();
+  });
+
+  test("throws when agent is undefined", async () => {
+    const config = makeMinimalConfig();
+    await expect(
+      diagnoseAcceptanceFailure(undefined as unknown as AgentAdapter, {
+        testOutput: "FAIL",
+        testFileContent: "test content",
+        config,
+        workdir: "/tmp/test",
+        featureName: "test-feature",
+        storyId: "US-001",
+      }),
+    ).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-2: diagnoseAcceptanceFailure calls agent.run() (not agent.complete())
+// ---------------------------------------------------------------------------
+
+describe("AC-2: diagnoseAcceptanceFailure calls agent.run() with sessionRole diagnose", () => {
+  test("calls agent.run() not agent.complete()", async () => {
+    const mockAgent = makeMockAgentAdapter();
+    const config = makeMinimalConfig();
+    await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    expect(mockAgent.run).toHaveBeenCalled();
+    expect(mockAgent.complete).not.toHaveBeenCalled();
+  });
+
+  test("passes sessionRole 'diagnose' to agent.run()", async () => {
+    const mockAgent = makeMockAgentAdapter();
+    const config = makeMinimalConfig();
+    await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    const runCall = getRunMockCalls(mockAgent)[0][0];
+    expect(runCall.sessionRole).toBe("diagnose");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-3: Session name follows pattern nax-<hash>-<feature>-<storyId>-diagnose
+// ---------------------------------------------------------------------------
+
+describe("AC-3: Session name follows nax-<hash>-<feature>-<storyId>-diagnose pattern", () => {
+  test("buildSessionName returns correct pattern for diagnose session", () => {
+    const sessionName = buildSessionName("/tmp/test-workdir", "my-feature", "US-001", "diagnose");
+    const hash = createHash("sha256").update("/tmp/test-workdir").digest("hex").slice(0, 8);
+    expect(sessionName).toBe(`nax-${hash}-my-feature-us-001-diagnose`);
+    expect(sessionName).toMatch(/^nax-[a-f0-9]+-.+-\d+-diagnose$/);
+  });
+
+  test("diagnoseAcceptanceFailure uses buildSessionName with 'diagnose' role", async () => {
+    const mockAgent = makeMockAgentAdapter();
+    const config = makeMinimalConfig();
+    await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test-workdir",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    const runCall = getRunMockCalls(mockAgent)[0][0];
+    const expectedSessionName = buildSessionName("/tmp/test-workdir", "test-feature", "US-001", "diagnose");
+    expect(runCall.acpSessionName).toBe(expectedSessionName);
+  });
+
+  test("session name is visible in acpx list when protocol is ACP", async () => {
+    const mockAgent = makeMockAgentAdapter();
+    const config = makeMinimalConfig();
+    expect(config.agent?.protocol).toBe("acp");
+    await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test-workdir",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    const runCall = getRunMockCalls(mockAgent)[0][0];
+    expect(runCall.acpSessionName).toMatch(/^nax-[a-f0-9]+-test-feature-us-001-diagnose$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-4: diagnoseModel resolved via resolveModelForAgent()
+// ---------------------------------------------------------------------------
+
+describe("AC-4: diagnoseAcceptanceFailure resolves diagnoseModel via resolveModelForAgent", () => {
+  test("uses config.acceptance.fix.diagnoseModel tier", async () => {
+    const mockAgent = makeMockAgentAdapter();
+    const config = makeMinimalConfig();
+    expect(config.acceptance.fix.diagnoseModel).toBe("fast");
+    await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    const runCall = getRunMockCalls(mockAgent)[0][0];
+    const expectedModelDef = resolveModelForAgent(
+      config.models,
+      config.autoMode.defaultAgent,
+      config.acceptance.fix.diagnoseModel as "fast",
+      config.autoMode.defaultAgent,
+    );
+    expect(runCall.modelDef).toEqual(expectedModelDef);
+  });
+
+  test("never passes raw tier name to adapter — always resolved via resolveModelForAgent", async () => {
+    const mockAgent = makeMockAgentAdapter();
+    const config = makeMinimalConfig();
+    await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    const runCall = getRunMockCalls(mockAgent)[0][0];
+    expect(runCall.modelTier).toBeUndefined();
+    expect(runCall.modelDef.provider).toBeDefined();
+    expect(runCall.modelDef.model).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-5: Auto-detects source file paths from import statements
+// ---------------------------------------------------------------------------
+
+describe("AC-5: diagnoseAcceptanceFailure auto-detects source files from imports", () => {
+  test("parses import statements from test file content", async () => {
+    const mockAgent = makeMockAgentAdapter();
+    const config = makeMinimalConfig();
+    const testContent = `
+import { add } from "./src/math.ts";
+import { multiply } from "./src/utils.ts";
+test("AC-1", () => { expect(add(1,2)).toBe(3); });
+`;
+    await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL: expected 3 but got 4",
+      testFileContent: testContent,
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    expect(mockAgent.run).toHaveBeenCalled();
+  });
+
+  test("limits to 5 files maximum", async () => {
+    const mockAgent = makeMockAgentAdapter();
+    const config = makeMinimalConfig();
+    const testContent = `
+import { a } from "./src/file1.ts";
+import { b } from "./src/file2.ts";
+import { c } from "./src/file3.ts";
+import { d } from "./src/file4.ts";
+import { e } from "./src/file5.ts";
+import { f } from "./src/file6.ts";
+test("AC-1", () => { expect(a()).toBe(1); });
+`;
+    await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: testContent,
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    const runCall = getRunMockCalls(mockAgent)[0][0];
+    expect(runCall.prompt).toBeDefined();
+  });
+
+  test("limits each file to 500 lines maximum", async () => {
+    const mockAgent = makeMockAgentAdapter();
+    const config = makeMinimalConfig();
+    const testContent = `
+import { bigFunc } from "./src/big-file.ts";
+test("AC-1", () => { expect(bigFunc()).toBeDefined(); });
+`;
+    await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: testContent,
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    expect(mockAgent.run).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-6: Returns parsed DiagnosisResult when agent output is valid JSON
+// ---------------------------------------------------------------------------
+
+describe("AC-6: diagnoseAcceptanceFailure returns parsed DiagnosisResult", () => {
+  test("returns DiagnosisResult when agent output is valid JSON", async () => {
+    const diagnosisResult: DiagnosisResult = {
+      verdict: "source_bug",
+      reasoning: "The login function has a null pointer exception",
+      confidence: 0.95,
+      sourceIssues: ["NullPointerException on line 42"],
+    };
+    const mockAgent = makeMockAgentAdapter({
+      output: JSON.stringify(diagnosisResult),
+    });
+    const config = makeMinimalConfig();
+    const result = await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL: expected true but got false",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    expect(result.verdict).toBe("source_bug");
+    expect(result.reasoning).toBe("The login function has a null pointer exception");
+    expect(result.confidence).toBe(0.95);
+  });
+
+  test("returns test_bug verdict when test is incorrect", async () => {
+    const diagnosisResult: DiagnosisResult = {
+      verdict: "test_bug",
+      reasoning: "The test assertion is wrong",
+      confidence: 0.88,
+      testIssues: ["Assertion expects 3 but actual is 4"],
+    };
+    const mockAgent = makeMockAgentAdapter({
+      output: JSON.stringify(diagnosisResult),
+    });
+    const config = makeMinimalConfig();
+    const result = await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    expect(result.verdict).toBe("test_bug");
+  });
+
+  test("returns both verdict when both source and test have issues", async () => {
+    const diagnosisResult: DiagnosisResult = {
+      verdict: "both",
+      reasoning: "Both source and test have bugs",
+      confidence: 0.75,
+      testIssues: ["Test mocks database incorrectly"],
+      sourceIssues: ["Off-by-one error in loop"],
+    };
+    const mockAgent = makeMockAgentAdapter({
+      output: JSON.stringify(diagnosisResult),
+    });
+    const config = makeMinimalConfig();
+    const result = await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    expect(result.verdict).toBe("both");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-7: Returns fallback DiagnosisResult on parse failure
+// ---------------------------------------------------------------------------
+
+describe("AC-7: diagnoseAcceptanceFailure returns fallback on parse failure", () => {
+  test("returns fallback when agent output is invalid JSON", async () => {
+    const mockAgent = makeMockAgentAdapter({
+      output: "This is not JSON output",
+    });
+    const config = makeMinimalConfig();
+    const result = await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    expect(result.verdict).toBe("source_bug");
+    expect(result.reasoning).toBe("diagnosis failed — falling back to source fix");
+    expect(result.confidence).toBe(0);
+  });
+
+  test("returns fallback when agent output is empty", async () => {
+    const mockAgent = makeMockAgentAdapter({
+      output: "",
+    });
+    const config = makeMinimalConfig();
+    const result = await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    expect(result.verdict).toBe("source_bug");
+    expect(result.reasoning).toBe("diagnosis failed — falling back to source fix");
+    expect(result.confidence).toBe(0);
+  });
+
+  test("returns fallback when agent output is partial JSON", async () => {
+    const mockAgent = makeMockAgentAdapter({
+      output: '{"verdict": "source_bug", ',
+    });
+    const config = makeMinimalConfig();
+    const result = await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    expect(result.verdict).toBe("source_bug");
+    expect(result.confidence).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-8: Catches errors from adapter.run() and returns fallback
+// ---------------------------------------------------------------------------
+
+describe("AC-8: diagnoseAcceptanceFailure catches adapter.run() errors", () => {
+  test("returns fallback DiagnosisResult when adapter.run() throws", async () => {
+    const errorAgent = {
+      name: "error-agent",
+      displayName: "Error Agent",
+      binary: "error",
+      capabilities: {
+        supportedTiers: ["fast", "balanced", "powerful"] as const,
+        maxContextTokens: 200000,
+        features: new Set(["tdd", "review", "refactor"]),
+      },
+      isInstalled: mock(async () => true),
+      run: mock(async () => {
+        throw new Error("Connection refused");
+      }),
+      buildCommand: mock(() => ["error", "cmd"]),
+      plan: mock(async () => ({ stories: [], output: "", specContent: "" })),
+      decompose: mock(async () => ({ stories: [], output: "" })),
+      complete: mock(async () => ({ output: "", costUsd: 0, source: "exact" as const })),
+    } as unknown as AgentAdapter;
+    const config = makeMinimalConfig();
+    const result = await diagnoseAcceptanceFailure(errorAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    expect(result.verdict).toBe("source_bug");
+    expect(result.reasoning).toBe("diagnosis failed — falling back to source fix");
+    expect(result.confidence).toBe(0);
+  });
+
+  test("does not throw when adapter.run() throws", async () => {
+    const errorAgent = {
+      name: "error-agent",
+      displayName: "Error Agent",
+      binary: "error",
+      capabilities: {
+        supportedTiers: ["fast", "balanced", "powerful"] as const,
+        maxContextTokens: 200000,
+        features: new Set(["tdd", "review", "refactor"]),
+      },
+      isInstalled: mock(async () => true),
+      run: mock(async () => {
+        throw new Error("Network error");
+      }),
+      buildCommand: mock(() => ["error", "cmd"]),
+      plan: mock(async () => ({ stories: [], output: "", specContent: "" })),
+      decompose: mock(async () => ({ stories: [], output: "" })),
+      complete: mock(async () => ({ output: "", costUsd: 0, source: "exact" as const })),
+    } as unknown as AgentAdapter;
+    const config = makeMinimalConfig();
+    await expect(
+      diagnoseAcceptanceFailure(errorAgent, {
+        testOutput: "FAIL",
+        testFileContent: "test content",
+        config,
+        workdir: "/tmp/test",
+        featureName: "test-feature",
+        storyId: "US-001",
+      }),
+    ).resolves.toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-9: Test output truncated to 2000 chars
+// ---------------------------------------------------------------------------
+
+describe("AC-9: Test output truncated to 2000 characters", () => {
+  test("truncates test output to 2000 chars in prompt", async () => {
+    const mockAgent = makeMockAgentAdapter();
+    const config = makeMinimalConfig();
+    const longOutput = "FAIL".repeat(1000);
+    expect(longOutput.length).toBeGreaterThan(2000);
+    await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: longOutput,
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    const runCall = getRunMockCalls(mockAgent)[0][0];
+    expect(runCall.prompt.length).toBeLessThanOrEqual(longOutput.length + 1000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-10: ACP session visible in acpx list with correct session name
+// ---------------------------------------------------------------------------
+
+describe("AC-10: ACP session visible in acpx list with correct session name", () => {
+  test("session name follows nax-<hash>-<feature>-<storyId>-diagnose pattern for ACP", async () => {
+    const mockAgent = makeMockAgentAdapter();
+    const config = makeMinimalConfig({});
+    config.agent = { protocol: "acp" };
+    await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test-workdir",
+      featureName: "my-feature",
+      storyId: "US-001",
+    });
+    const runCall = getRunMockCalls(mockAgent)[0][0];
+    const hash = createHash("sha256").update("/tmp/test-workdir").digest("hex").slice(0, 8);
+    expect(runCall.acpSessionName).toBe(`nax-${hash}-my-feature-us-001-diagnose`);
+  });
+
+  test("ACP protocol ensures session appears in acpx list", async () => {
+    const mockAgent = makeMockAgentAdapter();
+    const config = makeMinimalConfig();
+    config.agent = { protocol: "acp" };
+    await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test-workdir",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    const runCall = getRunMockCalls(mockAgent)[0][0];
+    expect(runCall.acpSessionName).toMatch(/^nax-[a-f0-9]+-test-feature-\d+-diagnose$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DiagnosisResult interface validation
+// ---------------------------------------------------------------------------
+
+describe("DiagnosisResult interface validation", () => {
+  test("verdict accepts 'source_bug'", () => {
+    const result: DiagnosisResult = {
+      verdict: "source_bug",
+      reasoning: "Source code bug found",
+      confidence: 0.85,
+    };
+    expect(result.verdict).toBe("source_bug");
+  });
+
+  test("verdict accepts 'test_bug'", () => {
+    const result: DiagnosisResult = {
+      verdict: "test_bug",
+      reasoning: "Test bug found",
+      confidence: 0.9,
+    };
+    expect(result.verdict).toBe("test_bug");
+  });
+
+  test("verdict accepts 'both'", () => {
+    const result: DiagnosisResult = {
+      verdict: "both",
+      reasoning: "Both bugs found",
+      confidence: 0.75,
+    };
+    expect(result.verdict).toBe("both");
+  });
+
+  test("confidence must be between 0 and 1", () => {
+    const lowConfidence: DiagnosisResult = {
+      verdict: "source_bug",
+      reasoning: "Low confidence",
+      confidence: 0,
+    };
+    const highConfidence: DiagnosisResult = {
+      verdict: "test_bug",
+      reasoning: "High confidence",
+      confidence: 1,
+    };
+    expect(lowConfidence.confidence).toBe(0);
+    expect(highConfidence.confidence).toBe(1);
+  });
+
+  test("testIssues and sourceIssues are optional", () => {
+    const minimal: DiagnosisResult = {
+      verdict: "source_bug",
+      reasoning: "Minimal result",
+      confidence: 0.5,
+    };
+    expect(minimal.testIssues).toBeUndefined();
+    expect(minimal.sourceIssues).toBeUndefined();
+  });
+
+  test("testIssues and sourceIssues can be provided together", () => {
+    const full: DiagnosisResult = {
+      verdict: "both",
+      reasoning: "Full result",
+      confidence: 0.95,
+      testIssues: ["Test issue 1"],
+      sourceIssues: ["Source issue 1", "Source issue 2"],
+    };
+    expect(full.testIssues).toEqual(["Test issue 1"]);
+    expect(full.sourceIssues).toEqual(["Source issue 1", "Source issue 2"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Edge cases
+// ---------------------------------------------------------------------------
+
+describe("Edge cases", () => {
+  test("works without optional featureName", async () => {
+    const mockAgent = makeMockAgentAdapter();
+    const config = makeMinimalConfig();
+    await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test",
+      storyId: "US-001",
+    });
+    expect(mockAgent.run).toHaveBeenCalled();
+  });
+
+  test("works without optional storyId", async () => {
+    const mockAgent = makeMockAgentAdapter();
+    const config = makeMinimalConfig();
+    await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: "test content",
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+    });
+    expect(mockAgent.run).toHaveBeenCalled();
+  });
+
+  test("handles missing source files gracefully", async () => {
+    const mockAgent = makeMockAgentAdapter();
+    const config = makeMinimalConfig();
+    const testContent = `
+import { nonexistent } from "./src/nonexistent.ts";
+test("AC-1", () => { expect(nonexistent()).toBe(1); });
+`;
+    await diagnoseAcceptanceFailure(mockAgent, {
+      testOutput: "FAIL",
+      testFileContent: testContent,
+      config,
+      workdir: "/tmp/test",
+      featureName: "test-feature",
+      storyId: "US-001",
+    });
+    expect(mockAgent.run).toHaveBeenCalled();
+  });
+});
