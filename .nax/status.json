@@ -4,33 +4,24 @@
     "id": "run-2026-04-01T15-57-42-449Z",
     "feature": "acceptance-fix-strategy",
     "startedAt": "2026-04-01T15:57:42.449Z",
-    "status": "running",
+    "status": "completed",
     "dryRun": false,
     "pid": 59995
   },
   "progress": {
     "total": 4,
-    "passed": 3,
+    "passed": 4,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 0
   },
   "cost": {
-    "spent": 0.7574738999999999,
+    "spent": 1.490571375,
     "limit": 30
   },
-  "current": {
-    "storyId": "US-004",
-    "title": "Wire diagnosis and fix routing into acceptance-loop.ts",
-    "complexity": "complex",
-    "tddStrategy": "three-session-tdd",
-    "model": "powerful",
-    "attempt": 1,
-    "phase": "routing"
-  },
-  "iterations": 4,
-  "updatedAt": "2026-04-01T17:51:43.532Z",
-  "durationMs": 6841083,
-  "lastHeartbeat": "2026-04-01T17:51:43.532Z"
+  "current": null,
+  "iterations": 5,
+  "updatedAt": "2026-04-01T17:53:36.046Z",
+  "durationMs": 6953597
 }
