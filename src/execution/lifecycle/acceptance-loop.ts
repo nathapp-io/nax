@@ -129,6 +129,7 @@ async function generateAndAddFixStories(
     modelDef,
     config: ctx.config,
     testFilePath,
+    timeoutMs: ctx.config.acceptance?.timeoutMs,
   });
   if (fixStories.length === 0) {
     logger?.error("acceptance", "Failed to generate fix stories");
