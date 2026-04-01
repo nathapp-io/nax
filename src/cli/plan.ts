@@ -155,9 +155,59 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
   // Timeout: from config, or default to 600 seconds (10 min)
   const timeoutSeconds = config?.execution?.sessionTimeoutSeconds ?? 600;
 
-  // Route to auto (one-shot) or interactive (multi-turn) mode
+  // Route: debate > auto (one-shot) > interactive (multi-turn)
+  // Debate fires whenever config.debate.enabled + stages.plan.enabled — regardless of auto/interactive mode.
   let rawResponse: string;
-  if (options.auto) {
+
+  // Debate check is SSOT here — applies to both auto and interactive paths (Option A).
+  const debateEnabled = config?.debate?.enabled && config?.debate?.stages?.plan?.enabled;
+
+  if (debateEnabled) {
+    // Debate path: run N agents in parallel via DebateSession.runPlan().
+    // Each debater calls adapter.plan() writing to a temp path; resolver picks the best PRD.
+    // basePrompt has no file-write instruction — DebateSession.runPlan() injects per-debater paths.
+    const basePrompt = buildPlanningPrompt(
+      specContent,
+      codebaseContext,
+      undefined, // no file path — runPlan() appends per-debater temp path
+      relativePackages,
+      packageDetails,
+      config?.project,
+    );
+    const resolvedPerm = resolvePermissions(config, "plan");
+    // Safe: debateEnabled guard confirms config.debate.stages.plan is defined
+    const planStageConfig = config?.debate?.stages.plan as import("../debate").DebateStageConfig;
+    const debateSession = _planDeps.createDebateSession({
+      storyId: options.feature,
+      stage: "plan",
+      stageConfig: planStageConfig,
+      config,
+    });
+    logger?.info("plan", "Starting debate planning session", {
+      debaters: planStageConfig.debaters?.map((d) => d.agent),
+      rounds: planStageConfig.rounds,
+      feature: options.feature,
+    });
+    const debateResult = await debateSession.runPlan(basePrompt, {
+      workdir,
+      feature: options.feature,
+      outputDir: outputDir,
+      timeoutSeconds,
+      dangerouslySkipPermissions: resolvedPerm.skipPermissions,
+      maxInteractionTurns: config?.agent?.maxInteractionTurns,
+    });
+    if (debateResult.outcome !== "failed" && debateResult.output) {
+      rawResponse = debateResult.output;
+    } else {
+      logger?.warn("debate", "All plan debaters failed — falling back to single agent", {
+        stage: "plan",
+        event: "fallback",
+      });
+      // Fallback: interactive single-agent plan (most robust — writes to file)
+      rawResponse = await runInteractivePlan();
+    }
+  } else if (options.auto) {
+    // Auto (one-shot) path — no debate
     // #91: Respect agent.protocol — ACP protocol uses adapter.plan() (session-based),
     // CLI protocol uses adapter.complete() (one-shot). This matches how the run path works.
     const isAcp = config?.agent?.protocol === "acp";
@@ -185,40 +235,37 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       // fall through — adapter will use its own fallback
     }
 
-    // runSingleAgentPlan: closure over adapter, isAcp, autoModel, prompt, outputPath, config, logger
-    const runSingleAgentPlan = async (): Promise<string> => {
-      if (isAcp) {
-        // ACP: run as a non-interactive session (no interactionBridge) — agent writes PRD to outputPath
-        logger?.info("plan", "Starting ACP auto planning session", {
-          agent: agentName,
-          model: autoModel ?? config?.plan?.model ?? "balanced",
+    if (isAcp) {
+      logger?.info("plan", "Starting ACP auto planning session", {
+        agent: agentName,
+        model: autoModel ?? config?.plan?.model ?? "balanced",
+        workdir,
+        feature: options.feature,
+        timeoutSeconds,
+      });
+      const pidRegistry = new PidRegistry(workdir);
+      try {
+        await adapter.plan({
+          prompt,
           workdir,
-          feature: options.feature,
+          interactive: false,
           timeoutSeconds,
+          config,
+          modelTier: config?.plan?.model ?? "balanced",
+          dangerouslySkipPermissions: resolvePermissions(config, "plan").skipPermissions,
+          maxInteractionTurns: config?.agent?.maxInteractionTurns,
+          featureName: options.feature,
+          pidRegistry,
+          sessionRole: "plan",
         });
-        const pidRegistry = new PidRegistry(workdir);
-        try {
-          await adapter.plan({
-            prompt,
-            workdir,
-            interactive: false,
-            timeoutSeconds,
-            config,
-            modelTier: config?.plan?.model ?? "balanced",
-            dangerouslySkipPermissions: resolvePermissions(config, "plan").skipPermissions,
-            maxInteractionTurns: config?.agent?.maxInteractionTurns,
-            featureName: options.feature,
-            pidRegistry,
-            sessionRole: "plan",
-          });
-        } finally {
-          await pidRegistry.killAll().catch(() => {});
-        }
-        if (!_planDeps.existsSync(outputPath)) {
-          throw new Error(`[plan] ACP agent did not write PRD to ${outputPath}. Check agent logs for errors.`);
-        }
-        return await _planDeps.readFile(outputPath);
+      } finally {
+        await pidRegistry.killAll().catch(() => {});
       }
+      if (!_planDeps.existsSync(outputPath)) {
+        throw new Error(`[plan] ACP agent did not write PRD to ${outputPath}. Check agent logs for errors.`);
+      }
+      rawResponse = await _planDeps.readFile(outputPath);
+    } else {
       // CLI: one-shot complete() — simple and fast, no session overhead
       let result = await adapter.complete(prompt, {
         model: autoModel,
@@ -237,34 +284,14 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       } catch {
         // Not an envelope — use result as-is
       }
-      return result;
-    };
-
-    // Debate check hoisted above isAcp gate — runs regardless of protocol
-    const debateEnabled = config?.debate?.enabled && config?.debate?.stages?.plan?.enabled;
-    if (debateEnabled) {
-      // Safe: debateEnabled guard confirms config.debate.stages.plan is defined
-      const planStageConfig = config?.debate?.stages.plan as import("../debate").DebateStageConfig;
-      const debateSession = _planDeps.createDebateSession({
-        storyId: options.feature,
-        stage: "plan",
-        stageConfig: planStageConfig,
-        config,
-      });
-      const debateResult = await debateSession.run(prompt);
-      if (debateResult.outcome !== "failed" && debateResult.output) {
-        rawResponse = debateResult.output;
-      } else {
-        logger?.warn("debate", "All debaters failed — falling back to single agent", {
-          stage: "debate",
-          event: "fallback",
-        });
-        rawResponse = await runSingleAgentPlan();
-      }
-    } else {
-      rawResponse = await runSingleAgentPlan();
+      rawResponse = result;
     }
   } else {
+    rawResponse = await runInteractivePlan();
+  }
+
+  // ── Interactive plan helper (used by: interactive path + debate fallback) ──────────────────────
+  async function runInteractivePlan(): Promise<string> {
     // Interactive: agent writes PRD JSON directly to outputPath (avoids output truncation)
     const prompt = buildPlanningPrompt(
       specContent,
@@ -322,7 +349,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     if (!_planDeps.existsSync(outputPath)) {
       throw new Error(`[plan] Agent did not write PRD to ${outputPath}. Check agent logs for errors.`);
     }
-    rawResponse = await _planDeps.readFile(outputPath);
+    return _planDeps.readFile(outputPath);
   }
 
   // Validate and normalize: handles markdown extraction, trailing commas, LLM quirks,
