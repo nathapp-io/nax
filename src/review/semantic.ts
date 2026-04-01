@@ -323,6 +323,9 @@ export async function runSemanticReview(
       stage: "review",
       stageConfig: reviewStageConfig,
       config: naxConfig,
+      workdir,
+      featureName: story.id,
+      timeoutSeconds: naxConfig?.execution?.sessionTimeoutSeconds,
     });
     const debateResult = await debateSession.run(prompt);
 
