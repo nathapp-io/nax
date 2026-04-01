@@ -3,7 +3,7 @@
   "feature": "acceptance-fix-strategy",
   "branchName": "feat/acceptance-fix-strategy",
   "createdAt": "2026-04-01T11:40:00.000Z",
-  "updatedAt": "2026-04-01T16:43:39.238Z",
+  "updatedAt": "2026-04-01T17:05:24.450Z",
   "userStories": [
     {
       "id": "US-001",
@@ -113,8 +113,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "priorErrors": [],
@@ -169,7 +169,8 @@
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
         "reasoning": "Complex integration replacing existing flow with verdict-based routing, multiple code paths, event emission",
-        "modelTier": "powerful"
+        "modelTier": "powerful",
+        "initialComplexity": "complex"
       },
       "contextFiles": [
         "src/execution/lifecycle/acceptance-loop.ts",
@@ -177,7 +178,8 @@
         "src/acceptance/fix-generator.ts",
         "src/acceptance/types.ts"
       ],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "0964faadad6a3f6ecfad3ebd62ba5e3c8d5d3d27"
     }
   ]
 }

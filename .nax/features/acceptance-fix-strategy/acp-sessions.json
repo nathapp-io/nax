@@ -22,5 +22,9 @@
   "US-003:verifier": {
     "sessionName": "nax-a789a3b6-acceptance-fix-strategy-us-003-verifier",
     "agentName": "opencode"
+  },
+  "US-004:test-writer": {
+    "sessionName": "nax-a789a3b6-acceptance-fix-strategy-us-004-test-writer",
+    "agentName": "opencode"
   }
 }
