@@ -120,10 +120,23 @@ diagnoseAcceptanceFailure() → based on verdict:
 
 The fix session bypasses routing entirely — no `routeTask()` call. Instead, it uses `adapter.run()` directly with the correct `sessionRole` and model tier. The adapter handles protocol selection (ACP vs CLI) internally.
 
-### Session Protocol Handling
+### Agent Wiring (Rule 08)
 
-Both diagnosis and fix sessions go through `adapter.run()`, which:
-1. Resolves the agent via `createAgentRegistry(config)` — respects ACP/CLI protocol setting
+Both `diagnoseAcceptanceFailure()` and `executeSourceFix()` run inside the acceptance loop, which has `ctx.agentGetFn` available (threaded from `runner.ts` via `createAgentRegistry(config)`). Agent resolution MUST use this config-aware path:
+
+```typescript
+// In acceptance-loop.ts (has ctx with agentGetFn):
+const agent = (ctx.agentGetFn ?? _acceptanceLoopDeps.getAgent)(ctx.config.autoMode.defaultAgent);
+
+// Pass agent to diagnosis/fix functions:
+await diagnoseAcceptanceFailure({ agent, ... });
+await executeSourceFix({ agent, ... });
+```
+
+**Never use bare `getAgent()`** — it ignores `config.agent.protocol` and always returns CLI adapters (see #191).
+
+Both diagnosis and fix sessions go through `agent.run()`, which:
+1. Respects ACP/CLI protocol (agent was created via `createAgentRegistry(config)`)
 2. Creates/resumes ACP session with correct name via `buildSessionName(workdir, feature, storyId, sessionRole)`
 3. Registers session in the sidecar file for cleanup
 4. Handles fallback chain, rate limits, and session errors
@@ -162,7 +175,8 @@ Implement `diagnoseAcceptanceFailure()` in `src/acceptance/fix-diagnosis.ts`. Ru
 **Dependencies:** US-001
 
 **Acceptance Criteria:**
-- `diagnoseAcceptanceFailure()` calls `adapter.run()` (not `adapter.complete()`) with `sessionRole: "diagnose"`
+- `diagnoseAcceptanceFailure()` receives the agent via parameter (obtained from `ctx.agentGetFn` in caller) — never calls bare `getAgent()`
+- `diagnoseAcceptanceFailure()` calls `agent.run()` (not `agent.complete()`) with `sessionRole: "diagnose"`
 - Session name follows pattern `nax-<hash>-<feature>-<storyId>-diagnose` via `buildSessionName()`
 - `diagnoseAcceptanceFailure()` resolves `diagnoseModel` tier via `resolveModelForAgent()` — never passes raw tier name to adapter
 - When agent output contains valid JSON matching `DiagnosisResult` schema, function returns parsed result
@@ -178,7 +192,8 @@ Implement `executeSourceFix()` — full agent session via `adapter.run()` that f
 **Dependencies:** US-001
 
 **Acceptance Criteria:**
-- `executeSourceFix()` calls `adapter.run()` (not `complete()`) with `sessionRole: "source-fix"`
+- `executeSourceFix()` receives the agent via parameter (obtained from `ctx.agentGetFn` in caller) — never calls bare `getAgent()`
+- `executeSourceFix()` calls `agent.run()` (not `agent.complete()`) with `sessionRole: "source-fix"`
 - Session name follows pattern `nax-<hash>-<feature>-<storyId>-source-fix` via `buildSessionName()`
 - `executeSourceFix()` resolves `fixModel` tier via `resolveModelForAgent()`
 - Fix session prompt includes: failing test output, test file path, diagnosis reasoning (if available), and instruction to fix source only
