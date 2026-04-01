@@ -2,9 +2,14 @@
  * Progress Logging
  *
  * Append timestamped entries to progress.txt after story completion.
+ *
+ * Uses node:fs/promises appendFile instead of Bun.file().text() + Bun.write()
+ * to avoid a Bun use-after-free when the Bun.file handle is GC'd alongside
+ * a concurrent Bun.write on the same path. appendFile is O_APPEND-safe and
+ * does not require a read-modify-write cycle.
  */
 
-import { mkdirSync } from "node:fs";
+import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { StoryStatus } from "../prd";
 
@@ -15,13 +20,9 @@ export async function appendProgress(
   status: StoryStatus,
   message: string,
 ): Promise<void> {
-  mkdirSync(featureDir, { recursive: true });
+  await mkdir(featureDir, { recursive: true });
   const progressPath = join(featureDir, "progress.txt");
   const timestamp = new Date().toISOString();
   const entry = `[${timestamp}] ${storyId} — ${status.toUpperCase()} — ${message}\n`;
-
-  // Append to file (creates if doesn't exist)
-  const file = Bun.file(progressPath);
-  const existing = (await file.exists()) ? await file.text() : "";
-  await Bun.write(progressPath, existing + entry);
+  await appendFile(progressPath, entry);
 }
