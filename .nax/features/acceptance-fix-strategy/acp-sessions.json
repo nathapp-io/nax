@@ -26,5 +26,9 @@
   "US-004:test-writer": {
     "sessionName": "nax-a789a3b6-acceptance-fix-strategy-us-004-test-writer",
     "agentName": "opencode"
+  },
+  "US-004:implementer": {
+    "sessionName": "nax-a789a3b6-acceptance-fix-strategy-us-004-implementer",
+    "agentName": "opencode"
   }
 }
