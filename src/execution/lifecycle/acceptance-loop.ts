@@ -11,6 +11,9 @@
 
 import path, { join } from "node:path";
 import { type FixStory, convertFixStoryToUserStory, generateFixStories } from "../../acceptance";
+import { diagnoseAcceptanceFailure } from "../../acceptance/fix-diagnosis";
+import { executeSourceFix } from "../../acceptance/fix-executor";
+import type { DiagnosisResult } from "../../acceptance/types";
 import { getAgent } from "../../agents/registry";
 import type { NaxConfig } from "../../config";
 import { resolveModelForAgent } from "../../config";
@@ -85,6 +88,15 @@ async function loadSpecContent(featureDir?: string): Promise<string> {
   const specPath = path.join(featureDir, "spec.md");
   const specFile = Bun.file(specPath);
   return (await specFile.exists()) ? await specFile.text() : "";
+}
+
+/** Load acceptance test file content */
+async function loadAcceptanceTestContent(featureDir?: string): Promise<{ content: string; path: string }> {
+  if (!featureDir) return { content: "", path: "" };
+  const testPath = path.join(featureDir, "acceptance.test.ts");
+  const testFile = Bun.file(testPath);
+  const content = (await testFile.exists()) ? await testFile.text() : "";
+  return { content, path: testPath };
 }
 
 /** Build result object for loop exit */
@@ -225,6 +237,223 @@ async function regenerateAcceptanceTest(testPath: string, acceptanceContext: Pip
   return true;
 }
 
+interface FixRoutingOptions {
+  ctx: AcceptanceLoopContext;
+  failures: { failedACs: string[]; testOutput: string };
+  prd: PRD;
+  acceptanceContext: PipelineContext;
+}
+
+interface FixRoutingResult {
+  fixed: boolean;
+  cost: number;
+  prdDirty: boolean;
+}
+
+/**
+ * Run fix routing based on strategy (diagnose-first or implement-only).
+ *
+ * When strategy is 'diagnose-first':
+ * - Calls diagnoseAcceptanceFailure() to get diagnosis
+ * - Routes based on verdict: source_bug → executeSourceFix, test_bug → regenerateAcceptanceTest, both → both
+ *
+ * When strategy is 'implement-only':
+ * - Calls executeSourceFix() directly without diagnosis
+ *
+ * Emits JSONL events for acceptance.diagnosis, acceptance.source-fix, and acceptance.test-regen.
+ */
+async function runFixRouting(options: FixRoutingOptions): Promise<FixRoutingResult> {
+  const logger = getSafeLogger();
+  const { ctx, failures, prd, acceptanceContext } = options;
+
+  const agentName = ctx.config.autoMode.defaultAgent;
+  const agent = (ctx.agentGetFn ?? _acceptanceLoopDeps.getAgent)(agentName);
+  if (!agent) {
+    logger?.error("acceptance", "Agent not found for fix routing");
+    return { fixed: false, cost: 0, prdDirty: false };
+  }
+
+  const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
+  const fixMaxRetries = ctx.config.acceptance.fix?.maxRetries ?? 2;
+
+  const { content: testFileContent, path: acceptanceTestPath } = await loadAcceptanceTestContent(ctx.featureDir);
+  const firstStory = prd.userStories[0];
+  const storyId = firstStory?.id ?? "unknown";
+
+  if (strategy === "implement-only") {
+    logger?.info("acceptance", "Strategy is implement-only — executing source fix directly");
+
+    let fixAttempts = 0;
+    while (fixAttempts < fixMaxRetries) {
+      fixAttempts++;
+      logger?.info("acceptance", `Source fix attempt ${fixAttempts}/${fixMaxRetries}`);
+
+      const defaultDiagnosis: DiagnosisResult = {
+        verdict: "source_bug",
+        reasoning: "implement-only strategy — skipping diagnosis",
+        confidence: 1.0,
+      };
+
+      const fixResult = await executeSourceFix(agent, {
+        testOutput: failures.testOutput,
+        testFileContent,
+        diagnosis: defaultDiagnosis,
+        config: ctx.config,
+        workdir: ctx.workdir,
+        featureName: ctx.feature,
+        storyId,
+        acceptanceTestPath,
+      });
+
+      logger?.info("acceptance.source-fix", "Source fix completed", {
+        success: fixResult.success,
+        cost: fixResult.cost,
+        attempt: fixAttempts,
+      });
+
+      if (fixResult.success) {
+        return { fixed: true, cost: fixResult.cost, prdDirty: false };
+      }
+
+      if (fixAttempts >= fixMaxRetries) {
+        logger?.error("acceptance", `Source fix failed after ${fixMaxRetries} attempts`);
+        break;
+      }
+    }
+
+    return { fixed: false, cost: 0, prdDirty: false };
+  }
+
+  logger?.info("acceptance", "Strategy is diagnose-first — running diagnosis");
+  const diagnosis = await diagnoseAcceptanceFailure(agent, {
+    testOutput: failures.testOutput,
+    testFileContent,
+    config: ctx.config,
+    workdir: ctx.workdir,
+    featureName: ctx.feature,
+    storyId,
+  });
+
+  logger?.info("acceptance.diagnosis", "Diagnosis complete", {
+    verdict: diagnosis.verdict,
+    confidence: diagnosis.confidence,
+    reasoning: diagnosis.reasoning,
+  });
+
+  if (diagnosis.verdict === "source_bug") {
+    logger?.info("acceptance", "Diagnosis: source_bug — executing source fix");
+
+    let fixAttempts = 0;
+    while (fixAttempts < fixMaxRetries) {
+      fixAttempts++;
+      logger?.info("acceptance", `Source fix attempt ${fixAttempts}/${fixMaxRetries}`);
+
+      const fixResult = await executeSourceFix(agent, {
+        testOutput: failures.testOutput,
+        testFileContent,
+        diagnosis,
+        config: ctx.config,
+        workdir: ctx.workdir,
+        featureName: ctx.feature,
+        storyId,
+        acceptanceTestPath,
+      });
+
+      logger?.info("acceptance.source-fix", "Source fix completed", {
+        success: fixResult.success,
+        cost: fixResult.cost,
+        attempt: fixAttempts,
+      });
+
+      if (fixResult.success) {
+        return { fixed: true, cost: fixResult.cost, prdDirty: false };
+      }
+
+      if (fixAttempts >= fixMaxRetries) {
+        logger?.error("acceptance", `Source fix failed after ${fixMaxRetries} attempts`);
+        break;
+      }
+    }
+
+    return { fixed: false, cost: 0, prdDirty: false };
+  }
+
+  if (diagnosis.verdict === "test_bug") {
+    logger?.info("acceptance", "Diagnosis: test_bug — regenerating acceptance test");
+
+    if (!ctx.featureDir) {
+      logger?.error("acceptance", "Cannot regenerate test without featureDir");
+      return { fixed: false, cost: 0, prdDirty: false };
+    }
+
+    const testPath = path.join(ctx.featureDir, "acceptance.test.ts");
+    const testFile = Bun.file(testPath);
+    if (!(await testFile.exists())) {
+      logger?.error("acceptance", "Acceptance test file not found for regeneration");
+      return { fixed: false, cost: 0, prdDirty: false };
+    }
+
+    const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext);
+
+    logger?.info("acceptance.test-regen", "Test regeneration completed", {
+      outcome: regenerated ? "success" : "failure",
+    });
+
+    return { fixed: regenerated, cost: 0, prdDirty: regenerated };
+  }
+
+  if (diagnosis.verdict === "both") {
+    logger?.info("acceptance", "Diagnosis: both — executing source fix then regenerating test if needed");
+
+    let sourceFixSuccess = false;
+    let sourceFixCost = 0;
+
+    let fixAttempts = 0;
+    while (fixAttempts < fixMaxRetries && !sourceFixSuccess) {
+      fixAttempts++;
+      logger?.info("acceptance", `Source fix attempt ${fixAttempts}/${fixMaxRetries}`);
+
+      const fixResult = await executeSourceFix(agent, {
+        testOutput: failures.testOutput,
+        testFileContent,
+        diagnosis,
+        config: ctx.config,
+        workdir: ctx.workdir,
+        featureName: ctx.feature,
+        storyId,
+        acceptanceTestPath,
+      });
+
+      logger?.info("acceptance.source-fix", "Source fix completed", {
+        success: fixResult.success,
+        cost: fixResult.cost,
+        attempt: fixAttempts,
+      });
+
+      sourceFixSuccess = fixResult.success;
+      sourceFixCost += fixResult.cost;
+
+      if (fixResult.success) {
+        break;
+      }
+
+      if (fixAttempts >= fixMaxRetries) {
+        logger?.error("acceptance", `Source fix failed after ${fixMaxRetries} attempts`);
+        break;
+      }
+    }
+
+    if (!sourceFixSuccess) {
+      return { fixed: false, cost: sourceFixCost, prdDirty: false };
+    }
+
+    logger?.info("acceptance", "Source fix succeeded — re-running acceptance to verify");
+    return { fixed: true, cost: sourceFixCost, prdDirty: false };
+  }
+
+  return { fixed: false, cost: 0, prdDirty: false };
+}
+
 /**
  * Run the acceptance retry loop
  *
@@ -360,7 +589,30 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       }
     }
 
-    // Generate and add fix stories
+    // Run fix routing based on strategy
+    const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
+    if (strategy === "diagnose-first" || strategy === "implement-only") {
+      logger?.info("acceptance", `Running fix routing with strategy: ${strategy}`);
+
+      const fixResult = await runFixRouting({
+        ctx,
+        failures,
+        prd,
+        acceptanceContext,
+      });
+
+      totalCost += fixResult.cost;
+
+      if (fixResult.fixed) {
+        logger?.info("acceptance", "Fix succeeded — re-running acceptance tests...");
+        continue;
+      }
+
+      logger?.error("acceptance", "Fix routing failed to resolve acceptance failures");
+      return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
+    }
+
+    // Fallback: generate and add fix stories (legacy path)
     logger?.info("acceptance", "Generating fix stories...");
     const fixStories = await generateAndAddFixStories(ctx, failures, prd);
     if (!fixStories) {
