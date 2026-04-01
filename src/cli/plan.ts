@@ -185,84 +185,84 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       // fall through — adapter will use its own fallback
     }
 
-    if (isAcp) {
-      // ACP: run as a non-interactive session (no interactionBridge) — agent writes PRD to outputPath
-      logger?.info("plan", "Starting ACP auto planning session", {
-        agent: agentName,
-        model: autoModel ?? config?.plan?.model ?? "balanced",
-        workdir,
-        feature: options.feature,
-        timeoutSeconds,
-      });
-      const pidRegistry = new PidRegistry(workdir);
-      try {
-        await adapter.plan({
-          prompt,
+    // runSingleAgentPlan: closure over adapter, isAcp, autoModel, prompt, outputPath, config, logger
+    const runSingleAgentPlan = async (): Promise<string> => {
+      if (isAcp) {
+        // ACP: run as a non-interactive session (no interactionBridge) — agent writes PRD to outputPath
+        logger?.info("plan", "Starting ACP auto planning session", {
+          agent: agentName,
+          model: autoModel ?? config?.plan?.model ?? "balanced",
           workdir,
-          interactive: false,
+          feature: options.feature,
           timeoutSeconds,
-          config,
-          modelTier: config?.plan?.model ?? "balanced",
-          dangerouslySkipPermissions: resolvePermissions(config, "plan").skipPermissions,
-          maxInteractionTurns: config?.agent?.maxInteractionTurns,
-          featureName: options.feature,
-          pidRegistry,
-          sessionRole: "plan",
         });
-      } finally {
-        await pidRegistry.killAll().catch(() => {});
-      }
-      if (!_planDeps.existsSync(outputPath)) {
-        throw new Error(`[plan] ACP agent did not write PRD to ${outputPath}. Check agent logs for errors.`);
-      }
-      rawResponse = await _planDeps.readFile(outputPath);
-    } else {
-      // CLI: one-shot complete() — simple and fast, no session overhead
-      const debateEnabled = config?.debate?.enabled && config?.debate?.stages?.plan?.enabled;
-      if (debateEnabled) {
-        // Safe: debateEnabled guard confirms config.debate.stages.plan is defined
-        const planStageConfig = config.debate?.stages.plan as import("../debate").DebateStageConfig;
-        const debateSession = _planDeps.createDebateSession({
-          storyId: options.feature,
-          stage: "plan",
-          stageConfig: planStageConfig,
-        });
-        const debateResult = await debateSession.run(prompt);
-        if (debateResult.outcome !== "failed" && debateResult.output) {
-          rawResponse = debateResult.output;
-        } else {
-          logger?.warn("debate", "All debaters failed — falling back to single agent", {
-            stage: "debate",
-            event: "fallback",
-          });
-          rawResponse = await adapter.complete(prompt, {
-            model: autoModel,
-            jsonMode: true,
+        const pidRegistry = new PidRegistry(workdir);
+        try {
+          await adapter.plan({
+            prompt,
             workdir,
+            interactive: false,
+            timeoutSeconds,
             config,
+            modelTier: config?.plan?.model ?? "balanced",
+            dangerouslySkipPermissions: resolvePermissions(config, "plan").skipPermissions,
+            maxInteractionTurns: config?.agent?.maxInteractionTurns,
             featureName: options.feature,
+            pidRegistry,
             sessionRole: "plan",
           });
+        } finally {
+          await pidRegistry.killAll().catch(() => {});
         }
-      } else {
-        rawResponse = await adapter.complete(prompt, {
-          model: autoModel,
-          jsonMode: true,
-          workdir,
-          config,
-          featureName: options.feature,
-          sessionRole: "plan",
-        });
+        if (!_planDeps.existsSync(outputPath)) {
+          throw new Error(`[plan] ACP agent did not write PRD to ${outputPath}. Check agent logs for errors.`);
+        }
+        return await _planDeps.readFile(outputPath);
       }
+      // CLI: one-shot complete() — simple and fast, no session overhead
+      let result = await adapter.complete(prompt, {
+        model: autoModel,
+        jsonMode: true,
+        workdir,
+        config,
+        featureName: options.feature,
+        sessionRole: "plan",
+      });
       // CLI adapter returns {"type":"result","result":"..."} envelope — unwrap it
       try {
-        const envelope = JSON.parse(rawResponse) as Record<string, unknown>;
+        const envelope = JSON.parse(result) as Record<string, unknown>;
         if (envelope?.type === "result" && typeof envelope?.result === "string") {
-          rawResponse = envelope.result;
+          result = envelope.result;
         }
       } catch {
-        // Not an envelope — use rawResponse as-is
+        // Not an envelope — use result as-is
       }
+      return result;
+    };
+
+    // Debate check hoisted above isAcp gate — runs regardless of protocol
+    const debateEnabled = config?.debate?.enabled && config?.debate?.stages?.plan?.enabled;
+    if (debateEnabled) {
+      // Safe: debateEnabled guard confirms config.debate.stages.plan is defined
+      const planStageConfig = config?.debate?.stages.plan as import("../debate").DebateStageConfig;
+      const debateSession = _planDeps.createDebateSession({
+        storyId: options.feature,
+        stage: "plan",
+        stageConfig: planStageConfig,
+        config,
+      });
+      const debateResult = await debateSession.run(prompt);
+      if (debateResult.outcome !== "failed" && debateResult.output) {
+        rawResponse = debateResult.output;
+      } else {
+        logger?.warn("debate", "All debaters failed — falling back to single agent", {
+          stage: "debate",
+          event: "fallback",
+        });
+        rawResponse = await runSingleAgentPlan();
+      }
+    } else {
+      rawResponse = await runSingleAgentPlan();
     }
   } else {
     // Interactive: agent writes PRD JSON directly to outputPath (avoids output truncation)
