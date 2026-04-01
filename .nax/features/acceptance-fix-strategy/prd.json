@@ -3,7 +3,7 @@
   "feature": "acceptance-fix-strategy",
   "branchName": "feat/acceptance-fix-strategy",
   "createdAt": "2026-04-01T11:40:00.000Z",
-  "updatedAt": "2026-04-01T16:14:29.819Z",
+  "updatedAt": "2026-04-01T16:20:58.268Z",
   "userStories": [
     {
       "id": "US-001",
@@ -21,8 +21,8 @@
         "acceptance"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "priorErrors": [],
@@ -77,7 +77,8 @@
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "New module with agent session integration, import parsing, ACP protocol handling — moderate complexity",
-        "modelTier": "balanced"
+        "modelTier": "balanced",
+        "initialComplexity": "medium"
       },
       "contextFiles": [
         "src/agents/acp/adapter.ts",
@@ -85,7 +86,8 @@
         "src/acceptance/generator.ts",
         "src/config/index.ts"
       ],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5210d1e29972839a98aba8dc8438717d150bea55"
     },
     {
       "id": "US-003",
