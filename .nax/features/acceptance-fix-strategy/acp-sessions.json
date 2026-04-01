@@ -6,5 +6,9 @@
   "US-002:implementer": {
     "sessionName": "nax-a789a3b6-acceptance-fix-strategy-us-002-implementer",
     "agentName": "opencode"
+  },
+  "US-002:verifier": {
+    "sessionName": "nax-a789a3b6-acceptance-fix-strategy-us-002-verifier",
+    "agentName": "opencode"
   }
 }
