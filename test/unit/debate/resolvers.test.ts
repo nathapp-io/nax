@@ -10,15 +10,19 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { judgeResolver, majorityResolver, synthesisResolver } from "../../../src/debate/resolvers";
-import type { AgentAdapter, CompleteOptions } from "../../../src/agents/types";
+import {
+  judgeResolver,
+  majorityResolver,
+  synthesisResolver,
+} from "../../../src/debate/resolvers";
+import type { AgentAdapter, CompleteOptions, CompleteResult } from "../../../src/agents/types";
 import type { ResolverConfig } from "../../../src/debate/types";
 
 // ─── Mock Helpers ──────────────────────────────────────────────────────────────
 
 function makeMockAdapter(
   name: string,
-  completeFn?: (prompt: string, opts?: CompleteOptions) => Promise<string>,
+  completeFn?: (prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>,
 ): AgentAdapter {
   return {
     name,
@@ -41,7 +45,7 @@ function makeMockAdapter(
     buildCommand: () => [],
     plan: async () => ({ specContent: "" }),
     decompose: async () => ({ stories: [] }),
-    complete: completeFn ?? (async () => "default output"),
+    complete: completeFn ?? (async () => ({ output: "default output", costUsd: 0, source: "fallback" })),
   };
 }
 
@@ -208,7 +212,7 @@ describe("synthesisResolver()", () => {
     let callCount = 0;
     const adapter = makeMockAdapter("claude", async () => {
       callCount++;
-      return "synthesis output";
+      return { output: "synthesis output", costUsd: 0, source: "fallback" };
     });
 
     await synthesisResolver(["proposal 1", "proposal 2", "proposal 3"], [], { adapter });
@@ -220,7 +224,7 @@ describe("synthesisResolver()", () => {
     let capturedPrompt = "";
     const adapter = makeMockAdapter("claude", async (prompt) => {
       capturedPrompt = prompt;
-      return "synthesis output";
+      return { output: "synthesis output", costUsd: 0, source: "fallback" };
     });
 
     await synthesisResolver(
@@ -238,7 +242,7 @@ describe("synthesisResolver()", () => {
     let capturedPrompt = "";
     const adapter = makeMockAdapter("claude", async (prompt) => {
       capturedPrompt = prompt;
-      return "synthesis output";
+      return { output: "synthesis output", costUsd: 0, source: "fallback" };
     });
 
     await synthesisResolver(["proposal 1"], ["critique X", "critique Y"], { adapter });
@@ -247,20 +251,34 @@ describe("synthesisResolver()", () => {
     expect(capturedPrompt).toContain("critique Y");
   });
 
-  test("returns the string output from adapter.complete()", async () => {
-    const adapter = makeMockAdapter("claude", async () => "the synthesis result");
+  test("returns output and cost metadata from adapter.complete()", async () => {
+    const adapter = makeMockAdapter("claude", async () => ({ output: "the synthesis result", costUsd: 0, source: "fallback" }));
 
     const result = await synthesisResolver(["prop 1", "prop 2"], [], { adapter });
 
-    expect(result).toBe("the synthesis result");
+    expect(result.output).toBe("the synthesis result");
+    expect(result.costUsd).toBe(0);
+    expect(result.source).toBe("fallback");
   });
 
   test("works when critiques array is empty", async () => {
-    const adapter = makeMockAdapter("claude", async () => "synthesis without critiques");
+    const adapter = makeMockAdapter("claude", async () => ({ output: "synthesis without critiques", costUsd: 0, source: "fallback" }));
 
     const result = await synthesisResolver(["p1", "p2"], [], { adapter });
 
-    expect(result).toBe("synthesis without critiques");
+    expect(result.output).toBe("synthesis without critiques");
+    expect(result.costUsd).toBe(0);
+    expect(result.source).toBe("fallback");
+  });
+
+  test("preserves exact cost metadata from adapter.complete()", async () => {
+    const adapter = makeMockAdapter("claude", async () => ({ output: "exact synthesis", costUsd: 0.42, source: "exact" }));
+
+    const result = await synthesisResolver(["p1", "p2"], ["c1"], { adapter });
+
+    expect(result.output).toBe("exact synthesis");
+    expect(result.costUsd).toBeCloseTo(0.42, 6);
+    expect(result.source).toBe("exact");
   });
 });
 
@@ -272,7 +290,7 @@ describe("judgeResolver()", () => {
 
     const getAgentFn = mock((name: string) => {
       usedAgentName = name;
-      return makeMockAdapter(name, async () => "judge output");
+      return makeMockAdapter(name, async () => ({ output: "judge output", costUsd: 0, source: "fallback" }));
     });
 
     const resolverConfig: ResolverConfig = {
@@ -293,7 +311,7 @@ describe("judgeResolver()", () => {
     const getAgentFn = mock((_name: string) =>
       makeMockAdapter("judge", async () => {
         callCount++;
-        return "judge output";
+        return { output: "judge output", costUsd: 0, source: "fallback" };
       }),
     );
 
@@ -310,7 +328,7 @@ describe("judgeResolver()", () => {
     const getAgentFn = mock((_name: string) =>
       makeMockAdapter("judge", async (prompt) => {
         capturedPrompt = prompt;
-        return "judge output";
+        return { output: "judge output", costUsd: 0, source: "fallback" };
       }),
     );
 
@@ -331,7 +349,7 @@ describe("judgeResolver()", () => {
     const getAgentFn = mock((_name: string) =>
       makeMockAdapter("judge", async (prompt) => {
         capturedPrompt = prompt;
-        return "judge output";
+        return { output: "judge output", costUsd: 0, source: "fallback" };
       }),
     );
 
@@ -346,16 +364,32 @@ describe("judgeResolver()", () => {
     expect(capturedPrompt).toContain("critique two");
   });
 
-  test("returns the output from adapter.complete()", async () => {
+  test("returns output and cost metadata from adapter.complete()", async () => {
     const getAgentFn = mock((_name: string) =>
-      makeMockAdapter("judge", async () => "final judge verdict"),
+      makeMockAdapter("judge", async () => ({ output: "final judge verdict", costUsd: 0, source: "fallback" })),
     );
 
     const result = await judgeResolver(["p1"], [], { type: "custom", agent: "judge" }, {
       getAgent: getAgentFn,
     });
 
-    expect(result).toBe("final judge verdict");
+    expect(result.output).toBe("final judge verdict");
+    expect(result.costUsd).toBe(0);
+    expect(result.source).toBe("fallback");
+  });
+
+  test("preserves exact cost metadata from judge adapter complete()", async () => {
+    const getAgentFn = mock((_name: string) =>
+      makeMockAdapter("judge", async () => ({ output: "judge verdict", costUsd: 0.55, source: "exact" })),
+    );
+
+    const result = await judgeResolver(["p1"], ["c1"], { type: "custom", agent: "judge" }, {
+      getAgent: getAgentFn,
+    });
+
+    expect(result.output).toBe("judge verdict");
+    expect(result.costUsd).toBeCloseTo(0.55, 6);
+    expect(result.source).toBe("exact");
   });
 
   test("uses defaultAgentName when resolver.agent is not specified", async () => {
@@ -363,7 +397,7 @@ describe("judgeResolver()", () => {
 
     const getAgentFn = mock((name: string) => {
       usedAgentName = name;
-      return makeMockAdapter(name, async () => "judge output");
+      return makeMockAdapter(name, async () => ({ output: "judge output", costUsd: 0, source: "fallback" }));
     });
 
     const resolverConfig: ResolverConfig = {
@@ -384,7 +418,7 @@ describe("judgeResolver()", () => {
 
     const getAgentFn = mock((_name: string) => {
       wasCalled = true;
-      return makeMockAdapter("fallback", async () => "fallback judge output");
+      return makeMockAdapter("fallback", async () => ({ output: "fallback judge output", costUsd: 0, source: "fallback" }));
     });
 
     const resolverConfig: ResolverConfig = {
@@ -399,5 +433,6 @@ describe("judgeResolver()", () => {
 
     expect(wasCalled).toBe(true);
     expect(result).toBeDefined();
+    expect(result.output).toBe("fallback judge output");
   });
 });

@@ -155,7 +155,7 @@ export class AutoInteractionPlugin implements InteractionPlugin {
     }
 
     // Use adapter.complete() for one-shot LLM call
-    const output = await adapter.complete(prompt, {
+    const result = await adapter.complete(prompt, {
       ...(modelArg && { model: modelArg }),
       jsonMode: true,
       ...(this.config.naxConfig && { config: this.config.naxConfig }),
@@ -164,6 +164,7 @@ export class AutoInteractionPlugin implements InteractionPlugin {
       sessionRole: "auto",
     });
 
+    const output = typeof result === "string" ? result : result.output;
     return this.parseResponse(output);
   }
 

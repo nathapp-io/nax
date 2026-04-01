@@ -393,13 +393,14 @@ export async function runSemanticReview(
   // Call LLM
   let rawResponse: string;
   try {
-    rawResponse = await agent.complete(prompt, {
+    const completeResult = await agent.complete(prompt, {
       sessionName: `nax-semantic-${story.id}`,
       workdir,
       timeoutMs: semanticConfig.timeoutMs,
       modelTier: semanticConfig.modelTier,
       config: naxConfig,
     });
+    rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
   } catch (err) {
     logger?.warn("semantic", "LLM call failed — fail-open", { cause: String(err) });
     return {

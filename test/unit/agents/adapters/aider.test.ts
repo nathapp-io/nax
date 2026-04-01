@@ -124,7 +124,7 @@ describe("complete()", () => {
 
     const result = await adapter.complete("say hello");
 
-    expect(result).toContain("response from aider");
+    expect(result.output).toContain("response from aider");
   });
 
   test("trims trailing whitespace from output", async () => {
@@ -132,7 +132,7 @@ describe("complete()", () => {
 
     const result = await adapter.complete("test");
 
-    expect(result).toBe("trimmed output");
+    expect(result.output).toBe("trimmed output");
   });
 
   // ── CLI command structure — headless flags ──────────────────────────────

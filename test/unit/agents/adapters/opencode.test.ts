@@ -116,7 +116,7 @@ describe("complete()", () => {
 
     const result = await adapter.complete("say hello");
 
-    expect(result).toContain("hello from opencode");
+    expect(result.output).toContain("hello from opencode");
   });
 
   test("trims trailing whitespace from output", async () => {
@@ -124,7 +124,7 @@ describe("complete()", () => {
 
     const result = await adapter.complete("test");
 
-    expect(result).toBe("trimmed output");
+    expect(result.output).toBe("trimmed output");
   });
 
   // ── CLI command structure ───────────────────────────────────────────────

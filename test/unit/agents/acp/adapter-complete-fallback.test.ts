@@ -146,7 +146,7 @@ describe("complete() — happy path", () => {
     try {
       const adapter = new AcpAgentAdapter("claude");
       const result = await adapter.complete("prompt", { config: makeConfig([]) });
-      expect(result).toBe("hello world");
+      expect(result.output).toBe("hello world");
       expect(sleepMock).not.toHaveBeenCalled();
     } finally {
       restore();
@@ -194,7 +194,7 @@ describe("complete() — 429 rate-limit fallback", () => {
       });
 
       // Caller sees the successful result — retries are transparent
-      expect(result).toBe("fallback answer");
+      expect(result.output).toBe("fallback answer");
 
       // Verify a second agent was attempted (cmdStr should reference fallback agent)
       expect(capturedCmdStrs.length).toBeGreaterThanOrEqual(2);
@@ -218,7 +218,7 @@ describe("complete() — 429 rate-limit fallback", () => {
       const adapter = new AcpAgentAdapter("claude");
       // Single call to complete() — caller sees success, no retry count exposed
       const result = await adapter.complete("prompt", { config: makeConfig(["claude", "codex"]) });
-      expect(result).toBe("transparent result");
+      expect(result.output).toBe("transparent result");
     } finally {
       restore();
     }
@@ -245,7 +245,7 @@ describe("complete() — 401 auth fallback", () => {
         config: makeConfig(["claude", "codex"]),
       });
 
-      expect(result).toBe("auth-fallback result");
+      expect(result.output).toBe("auth-fallback result");
 
       // Primary agent "claude" was tried first, then fallback
       expect(capturedCmdStrs.length).toBeGreaterThanOrEqual(2);
@@ -270,7 +270,7 @@ describe("complete() — 401 auth fallback", () => {
       const result = await adapter.complete("prompt", {
         config: makeConfig(["claude", "gemini"]),
       });
-      expect(result).toBe("from-gemini");
+      expect(result.output).toBe("from-gemini");
     } finally {
       restore();
     }
@@ -322,7 +322,7 @@ describe("complete() — all fallbackOrder agents rate-limited", () => {
         config: makeConfig(["claude", "codex"]),
       });
 
-      expect(result).toBe("after-sleep result");
+      expect(result.output).toBe("after-sleep result");
       // sleep called once with min(60, 45)*1000 = 45_000
       expect(sleepMock).toHaveBeenCalledTimes(1);
       expect(sleepMock).toHaveBeenCalledWith(45_000);
@@ -349,7 +349,7 @@ describe("complete() — all fallbackOrder agents rate-limited", () => {
         config: makeConfig(["claude", "codex"]),
       });
 
-      expect(result).toBe("result after 30s");
+      expect(result.output).toBe("result after 30s");
       expect(sleepMock).toHaveBeenCalledTimes(1);
       expect(sleepMock).toHaveBeenCalledWith(30_000);
     } finally {
@@ -416,7 +416,7 @@ describe("complete() — single fallbackOrder agent rate-limited", () => {
         config: makeConfig(["claude", "codex"]),
       });
 
-      expect(result).toBe("single-fallback-retry");
+      expect(result.output).toBe("single-fallback-retry");
       expect(sleepMock).toHaveBeenCalledTimes(1);
       expect(sleepMock).toHaveBeenCalledWith(90_000);
 

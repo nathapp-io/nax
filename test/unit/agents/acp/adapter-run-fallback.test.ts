@@ -556,7 +556,7 @@ describe("run() — shared _unavailableAgents with complete()", () => {
     const completeClients = mockClientQueue(makeSuccessClient("complete from codex"));
     try {
       const result = await adapter.complete("prompt", { config: makeConfig(["claude", "codex"]) });
-      expect(result).toContain("complete from codex");
+      expect(result.output).toContain("complete from codex");
 
       // claude is unavailable, so codex should be used first
       const firstCmd = completeClients.capturedCmdStrs[0];

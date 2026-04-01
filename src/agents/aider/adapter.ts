@@ -12,6 +12,7 @@ import type {
   AgentResult,
   AgentRunOptions,
   CompleteOptions,
+  CompleteResult,
   DecomposeOptions,
   DecomposeResult,
   PlanOptions,
@@ -82,7 +83,7 @@ export class AiderAdapter implements AgentAdapter {
     };
   }
 
-  async complete(prompt: string, options?: CompleteOptions): Promise<string> {
+  async complete(prompt: string, options?: CompleteOptions): Promise<CompleteResult> {
     const cmd = ["aider", "--message", prompt, "--yes"];
 
     if (options?.model) {
@@ -106,7 +107,11 @@ export class AiderAdapter implements AgentAdapter {
       throw new CompleteError("complete() returned empty output");
     }
 
-    return trimmed;
+    return {
+      output: trimmed,
+      costUsd: 0,
+      source: "fallback",
+    };
   }
 
   async plan(_options: PlanOptions): Promise<PlanResult> {

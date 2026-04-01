@@ -2,7 +2,7 @@
  * Tests for ClaudeCodeAdapter.complete() — one-shot LLM call
  *
  * Covers: AA-001
- * - AgentAdapter interface has complete(prompt, options?): Promise<string>
+ * - AgentAdapter interface has complete(prompt, options?): Promise<CompleteResult>
  * - ClaudeAdapter implements complete() using Bun.spawn(['claude', '-p', prompt, ...flags])
  * - jsonMode adds --output-format json flag
  * - model option passes --model flag
@@ -58,7 +58,7 @@ describe("complete()", () => {
 
     const result = await adapter.complete("say hello");
 
-    expect(result).toContain("hello from claude");
+    expect(result.output).toContain("hello from claude");
   });
 
   test("trims trailing whitespace from output", async () => {
@@ -66,7 +66,7 @@ describe("complete()", () => {
 
     const result = await adapter.complete("test");
 
-    expect(result).toBe("trimmed output");
+    expect(result.output).toBe("trimmed output");
   });
 
   // ── CLI command structure ───────────────────────────────────────────────

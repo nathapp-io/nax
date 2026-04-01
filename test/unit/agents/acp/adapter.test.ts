@@ -171,7 +171,7 @@ describe("complete()", () => {
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
     const result = await new AcpAgentAdapter("claude").complete("What is the answer?");
-    expect(result).toBe("The answer is 42.");
+    expect(result.output).toBe("The answer is 42.");
   });
 
   test("sends the provided prompt to the ACP session", async () => {
@@ -246,7 +246,7 @@ describe("complete()", () => {
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
     const result = await new AcpAgentAdapter("claude").complete("Retry me");
-    expect(result).toBe("Retried OK.");
+    expect(result.output).toBe("Retried OK.");
     expect(calls).toBe(2);
     expect(_acpAdapterDeps.sleep).toHaveBeenCalledTimes(1);
   });

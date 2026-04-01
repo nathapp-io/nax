@@ -16,7 +16,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
 import type { DebateStageConfig } from "../../../src/debate/types";
-import type { AgentAdapter, CompleteOptions } from "../../../src/agents/types";
+import type { AgentAdapter, CompleteOptions, CompleteResult } from "../../../src/agents/types";
 import type { AcpClient, AcpSession, AcpSessionResponse } from "../../../src/agents/acp/adapter";
 
 // ─── Extended deps type (US-003 adds createSpawnAcpClient) ───────────────────
@@ -32,7 +32,7 @@ const extDeps = _debateSessionDeps as ExtendedDeps;
 function makeMockAdapter(
   name: string,
   options: {
-    completeFn?: (prompt: string, opts?: CompleteOptions) => Promise<string>;
+    completeFn?: (prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
   } = {},
 ): AgentAdapter {
   return {
@@ -56,7 +56,7 @@ function makeMockAdapter(
     buildCommand: () => [],
     plan: async () => ({ specContent: "" }),
     decompose: async () => ({ stories: [] }),
-    complete: options.completeFn ?? (async () => `output from ${name}`),
+    complete: options.completeFn ?? (async () => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" })),
   };
 }
 
@@ -295,7 +295,7 @@ describe("DebateSession.run() — stateful mode: SpawnAcpClient creation (AC1)",
       makeMockAdapter(name, {
         completeFn: async (p) => {
           completeCalls.push(p);
-          return `complete from ${name}`;
+          return { output: `complete from ${name}`, costUsd: 0, source: "fallback" };
         },
       }),
     );
@@ -555,7 +555,7 @@ describe("DebateSession.run() — one-shot mode: no persistent sessions (AC4)", 
 
     _debateSessionDeps.getAgent = mock((name: string) =>
       makeMockAdapter(name, {
-        completeFn: async () => `{"passed": true}`,
+        completeFn: async () => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" }),
       }),
     );
 
@@ -856,5 +856,40 @@ describe("DebateSession.run() — independent sessionMode per stage (AC6)", () =
     // Session names should be unique per stage
     const uniqueNames = new Set(sessionNames);
     expect(uniqueNames.size).toBe(4);
+  });
+});
+
+describe("DebateSession.run() — stateful mode cost tracking", () => {
+  test("accumulates totalCostUsd from ACP exactCostUsd across rounds", async () => {
+    let sessionIndex = 0;
+
+    extDeps.createSpawnAcpClient = mock((_cmdStr: string) => {
+      const idx = sessionIndex++;
+      return makeMockClient({
+        createSessionFn: async (_opts) =>
+          makeMockSession({
+            promptFn: async (_text) => ({
+              messages: [{ role: "assistant", content: `output from ${idx}` }],
+              stopReason: "end_turn",
+              exactCostUsd: 0.25,
+            }),
+          }),
+      });
+    });
+
+    _debateSessionDeps.getAgent = mock((name: string) => makeMockAdapter(name));
+
+    const session = new DebateSession({
+      storyId: "US-003",
+      stage: "review",
+      stageConfig: makeStageConfig({
+        rounds: 2,
+        debaters: [{ agent: "claude" }, { agent: "opencode" }],
+      }),
+    });
+
+    const result = await session.run("test prompt");
+
+    expect(result.totalCostUsd).toBeCloseTo(1, 6);
   });
 });

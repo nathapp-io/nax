@@ -12,6 +12,7 @@ import type {
   AgentResult,
   AgentRunOptions,
   CompleteOptions,
+  CompleteResult,
   DecomposeOptions,
   DecomposeResult,
   PlanOptions,
@@ -111,7 +112,7 @@ export class GeminiAdapter implements AgentAdapter {
     };
   }
 
-  async complete(prompt: string, _options?: CompleteOptions): Promise<string> {
+  async complete(prompt: string, _options?: CompleteOptions): Promise<CompleteResult> {
     const cmd = ["gemini", "-p", prompt];
 
     const proc = _geminiCompleteDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
@@ -131,7 +132,11 @@ export class GeminiAdapter implements AgentAdapter {
       throw new CompleteError("complete() returned empty output");
     }
 
-    return trimmed;
+    return {
+      output: trimmed,
+      costUsd: 0,
+      source: "fallback",
+    };
   }
 
   async plan(_options: PlanOptions): Promise<PlanResult> {

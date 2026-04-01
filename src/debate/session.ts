@@ -7,8 +7,10 @@
 
 import type { AcpClient, AcpSession, AcpSessionResponse } from "../agents/acp/adapter";
 import { createSpawnAcpClient } from "../agents/acp/spawn-client";
+import { estimateCostByDuration } from "../agents/cost/calculate";
 import { getAgent } from "../agents/registry";
-import type { AgentAdapter } from "../agents/types";
+import type { AgentAdapter, CompleteOptions, CompleteResult } from "../agents/types";
+import type { ModelTier } from "../config";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
 import { getSafeLogger } from "../logger";
@@ -61,8 +63,13 @@ interface SuccessfulProposal {
   debater: Debater;
   adapter: AgentAdapter;
   output: string;
-  /** Cost for this complete() call in USD. Always 0 until complete() exposes cost metadata. */
+  /** Cost for this complete() call in USD. */
   cost: number;
+}
+
+interface ResolveOutcome {
+  outcome: "passed" | "failed" | "skipped";
+  resolverCostUsd: number;
 }
 
 function buildFailedResult(
@@ -87,6 +94,34 @@ function extractSessionOutput(response: AcpSessionResponse): string {
   const messages = response.messages ?? [];
   const last = [...messages].reverse().find((m) => m.role === "assistant");
   return last?.content ?? "";
+}
+
+function modelTierFromDebater(debater: Debater): ModelTier {
+  if (debater.model === "fast" || debater.model === "balanced" || debater.model === "powerful") {
+    return debater.model;
+  }
+  return "fast";
+}
+
+async function runComplete(
+  adapter: AgentAdapter,
+  prompt: string,
+  options: CompleteOptions,
+  modelTier: ModelTier,
+): Promise<CompleteResult> {
+  return adapter.complete(prompt, {
+    ...options,
+    modelTier,
+  });
+}
+
+function sessionResponseCostUsd(response: AcpSessionResponse, modelTier: ModelTier, durationMs: number): number {
+  if (response.exactCostUsd !== undefined) {
+    return response.exactCostUsd;
+  }
+
+  const estimate = estimateCostByDuration(modelTier, durationMs);
+  return estimate.cost;
 }
 
 export class DebateSession {
@@ -116,7 +151,7 @@ export class DebateSession {
     const logger = _debateSessionDeps.getSafeLogger();
     const config = this.stageConfig;
     const debaters = config.debaters ?? [];
-    const totalCostUsd = 0;
+    let totalCostUsd = 0;
 
     // Resolve adapters — skip unavailable agents
     const resolved: ResolvedDebater[] = [];
@@ -174,7 +209,9 @@ export class DebateSession {
             reason: "only 1 session created",
           });
           const solo = sessions[0];
+          const soloStart = Date.now();
           const response = await solo.session.prompt(prompt);
+          totalCostUsd += sessionResponseCostUsd(response, modelTierFromDebater(solo.debater), Date.now() - soloStart);
           const output = extractSessionOutput(response);
           logger?.info("debate", "debate:result", {
             storyId: this.storyId,
@@ -201,17 +238,31 @@ export class DebateSession {
       }
 
       // Proposal round — parallel via Promise.allSettled
-      const proposalSettled = await Promise.allSettled(sessions.map(({ session }) => session.prompt(prompt)));
+      const proposalSettled = await Promise.allSettled(
+        sessions.map(async (entry) => {
+          const startTime = Date.now();
+          const response = await entry.session.prompt(prompt);
+          return {
+            entry,
+            response,
+            output: extractSessionOutput(response),
+            cost: sessionResponseCostUsd(response, modelTierFromDebater(entry.debater), Date.now() - startTime),
+          };
+        }),
+      );
 
-      const successfulSessions: Array<{ entry: SessionEntry; output: string; originalIndex: number }> = [];
+      const successfulSessions: Array<{ entry: SessionEntry; output: string; cost: number; originalIndex: number }> =
+        [];
       for (let i = 0; i < proposalSettled.length; i++) {
         const r = proposalSettled[i];
         if (r.status === "fulfilled") {
           successfulSessions.push({
-            entry: sessions[i],
-            output: extractSessionOutput(r.value),
+            entry: r.value.entry,
+            output: r.value.output,
+            cost: r.value.cost,
             originalIndex: i,
           });
+          totalCostUsd += r.value.cost;
         }
       }
 
@@ -244,13 +295,21 @@ export class DebateSession {
       if (config.rounds > 1) {
         const proposalOutputs = successfulSessions.map((s) => s.output);
         const critiqueSettled = await Promise.allSettled(
-          successfulSessions.map(({ entry }, successfulIdx) =>
-            entry.session.prompt(buildCritiquePrompt(prompt, proposalOutputs, successfulIdx)),
-          ),
+          successfulSessions.map(async ({ entry }, successfulIdx) => {
+            const startTime = Date.now();
+            const response = await entry.session.prompt(buildCritiquePrompt(prompt, proposalOutputs, successfulIdx));
+            return {
+              output: extractSessionOutput(response),
+              cost: sessionResponseCostUsd(response, modelTierFromDebater(entry.debater), Date.now() - startTime),
+            };
+          }),
         );
         critiqueOutputs = critiqueSettled
-          .filter((r): r is PromiseFulfilledResult<AcpSessionResponse> => r.status === "fulfilled")
-          .map((r) => extractSessionOutput(r.value));
+          .filter((r): r is PromiseFulfilledResult<{ output: string; cost: number }> => r.status === "fulfilled")
+          .map((r) => {
+            totalCostUsd += r.value.cost;
+            return r.value.output;
+          });
       }
 
       // Resolve outcome
@@ -259,9 +318,10 @@ export class DebateSession {
         debater: s.entry.debater,
         adapter: s.entry.adapter,
         output: s.output,
-        cost: 0,
+        cost: s.cost,
       }));
       const outcome = await this.resolve(proposalOutputs, critiqueOutputs, successfulProposals);
+      totalCostUsd += outcome.resolverCostUsd;
 
       const proposals: Proposal[] = successfulSessions.map((s) => ({
         debater: s.entry.debater,
@@ -271,12 +331,12 @@ export class DebateSession {
       logger?.info("debate", "debate:result", {
         storyId: this.storyId,
         stage: this.stage,
-        outcome,
+        outcome: outcome.outcome,
       });
       return {
         storyId: this.storyId,
         stage: this.stage,
-        outcome,
+        outcome: outcome.outcome,
         rounds: config.rounds,
         debaters: successfulSessions.map((s) => s.entry.debater.agent),
         resolverType: config.resolver.type,
@@ -314,10 +374,12 @@ export class DebateSession {
     // Step 2: Proposal round — parallel via Promise.allSettled
     const proposalSettled = await Promise.allSettled(
       resolved.map(({ debater, adapter }) =>
-        adapter
-          .complete(prompt, { model: resolveDebaterModel(debater, this.config) })
-          // complete() returns string only — cost is 0 until the interface exposes cost metadata
-          .then((output) => ({ debater, adapter, output, cost: 0 })),
+        runComplete(
+          adapter,
+          prompt,
+          { model: resolveDebaterModel(debater, this.config) },
+          modelTierFromDebater(debater),
+        ).then((result) => ({ debater, adapter, output: result.output, cost: result.costUsd })),
       ),
     );
 
@@ -377,10 +439,13 @@ export class DebateSession {
           reason: "all debaters failed — retrying with first adapter",
         });
         try {
-          const fallbackOutput = await fallbackAdapter.complete(prompt, {
-            model: resolveDebaterModel(fallbackDebater, this.config),
-          });
-          // cost from fresh fallback call — 0 until complete() exposes cost metadata
+          const fallbackResult = await runComplete(
+            fallbackAdapter,
+            prompt,
+            { model: resolveDebaterModel(fallbackDebater, this.config) },
+            modelTierFromDebater(fallbackDebater),
+          );
+          totalCostUsd += fallbackResult.costUsd;
           logger?.info("debate", "debate:result", {
             storyId: this.storyId,
             stage: this.stage,
@@ -393,7 +458,7 @@ export class DebateSession {
             rounds: 1,
             debaters: [fallbackDebater.agent],
             resolverType: config.resolver.type,
-            proposals: [{ debater: fallbackDebater, output: fallbackOutput }],
+            proposals: [{ debater: fallbackDebater, output: fallbackResult.output }],
             totalCostUsd,
           };
         } catch {
@@ -410,27 +475,28 @@ export class DebateSession {
       const proposalOutputs = successful.map((p) => p.output);
       const critiqueSettled = await Promise.allSettled(
         successful.map(({ debater, adapter }, i) =>
-          adapter.complete(buildCritiquePrompt(prompt, proposalOutputs, i), {
-            model: resolveDebaterModel(debater, this.config),
-          }),
+          runComplete(
+            adapter,
+            buildCritiquePrompt(prompt, proposalOutputs, i),
+            { model: resolveDebaterModel(debater, this.config) },
+            modelTierFromDebater(debater),
+          ),
         ),
       );
-      // Accumulate critique round costs (0 until complete() exposes cost metadata)
       for (const r of critiqueSettled) {
         if (r.status === "fulfilled") {
-          totalCostUsd += 0;
+          totalCostUsd += r.value.costUsd;
         }
       }
       critiqueOutputs = critiqueSettled
-        .filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
-        .map((r) => r.value);
+        .filter((r): r is PromiseFulfilledResult<CompleteResult> => r.status === "fulfilled")
+        .map((r) => r.value.output);
     }
 
     // Step 5: Resolve outcome
     const proposalOutputs = successful.map((p) => p.output);
     const outcome = await this.resolve(proposalOutputs, critiqueOutputs, successful);
-    // Accumulate resolver cost (0 until complete() exposes cost metadata)
-    totalCostUsd += 0;
+    totalCostUsd += outcome.resolverCostUsd;
 
     const proposals: Proposal[] = successful.map((p) => ({
       debater: p.debater,
@@ -440,12 +506,12 @@ export class DebateSession {
     logger?.info("debate", "debate:result", {
       storyId: this.storyId,
       stage: this.stage,
-      outcome,
+      outcome: outcome.outcome,
     });
     return {
       storyId: this.storyId,
       stage: this.stage,
-      outcome,
+      outcome: outcome.outcome,
       rounds: config.rounds,
       debaters: successful.map((p) => p.debater.agent),
       resolverType: config.resolver.type,
@@ -458,30 +524,46 @@ export class DebateSession {
     proposalOutputs: string[],
     critiqueOutputs: string[],
     _successful: SuccessfulProposal[],
-  ): Promise<"passed" | "failed" | "skipped"> {
+  ): Promise<ResolveOutcome> {
     const resolverConfig = this.stageConfig.resolver;
 
     if (resolverConfig.type === "majority-fail-closed" || resolverConfig.type === "majority-fail-open") {
-      return majorityResolver(proposalOutputs, resolverConfig.type === "majority-fail-open");
+      return {
+        outcome: majorityResolver(proposalOutputs, resolverConfig.type === "majority-fail-open"),
+        resolverCostUsd: 0,
+      };
     }
 
     if (resolverConfig.type === "synthesis") {
       const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
       const adapter = _debateSessionDeps.getAgent(agentName);
       if (adapter) {
-        await synthesisResolver(proposalOutputs, critiqueOutputs, { adapter });
+        const resolverResult = await synthesisResolver(proposalOutputs, critiqueOutputs, { adapter });
+        return {
+          outcome: "passed",
+          resolverCostUsd: resolverResult.costUsd,
+        };
       }
-      return "passed";
+      return {
+        outcome: "passed",
+        resolverCostUsd: 0,
+      };
     }
 
     if (resolverConfig.type === "custom") {
-      await judgeResolver(proposalOutputs, critiqueOutputs, resolverConfig, {
+      const resolverResult = await judgeResolver(proposalOutputs, critiqueOutputs, resolverConfig, {
         getAgent: _debateSessionDeps.getAgent,
         defaultAgentName: RESOLVER_FALLBACK_AGENT,
       });
-      return "passed";
+      return {
+        outcome: "passed",
+        resolverCostUsd: resolverResult.costUsd,
+      };
     }
 
-    return "passed";
+    return {
+      outcome: "passed",
+      resolverCostUsd: 0,
+    };
   }
 }

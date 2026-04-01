@@ -291,7 +291,7 @@ export async function generateFixStories(
     const workdir = relatedStory?.workdir;
 
     try {
-      const fixDescription = await adapter.complete(prompt, {
+      const fixResult = await adapter.complete(prompt, {
         model: modelDef.model,
         config: options.config,
         featureName: options.prd.feature,
@@ -306,7 +306,7 @@ export async function generateFixStories(
         batchedACs,
         testOutput,
         relatedStories,
-        description: fixDescription,
+        description: typeof fixResult === "string" ? fixResult : fixResult.output,
         testFilePath,
         workdir,
       });
