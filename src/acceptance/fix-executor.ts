@@ -10,7 +10,14 @@ import type { AgentAdapter, AgentRunOptions } from "../agents/types";
 import type { NaxConfig } from "../config/schema";
 import type { ModelTier } from "../config/schema-types";
 import { resolveModelForAgent } from "../config/schema-types";
+import { spawn } from "../utils/bun-deps";
 import type { DiagnosisResult } from "./types";
+
+interface FixExecutorDeps {
+  spawn: typeof spawn;
+}
+
+export const _fixExecutorDeps: FixExecutorDeps = { spawn };
 
 export interface ExecuteSourceFixOptions {
   testOutput: string;
@@ -82,8 +89,15 @@ export async function executeSourceFix(
 
   const result = await agent.run(runOptions);
 
+  const verifyProc = _fixExecutorDeps.spawn(["bun", "test", acceptanceTestPath], {
+    cwd: workdir,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const exitCode = await verifyProc.exited;
+
   return {
-    success: result.success,
+    success: exitCode === 0,
     cost: result.estimatedCost,
   };
 }
