@@ -182,6 +182,9 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       stage: "plan",
       stageConfig: planStageConfig,
       config,
+      workdir,
+      featureName: options.feature,
+      timeoutSeconds,
     });
     logger?.info("plan", "Starting debate planning session", {
       debaters: planStageConfig.debaters?.map((d) => d.agent),
@@ -781,6 +784,10 @@ export async function planDecomposeCommand(
       storyId: options.storyId,
       stage: "decompose",
       stageConfig,
+      config,
+      workdir,
+      featureName: options.feature,
+      timeoutSeconds: config?.execution?.sessionTimeoutSeconds,
     });
     const debateResult = await debateSession.run(prompt);
     if (debateResult.outcome !== "failed" && debateResult.output) {
