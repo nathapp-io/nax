@@ -1,0 +1,140 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "acceptance-fix-strategy",
+  "branchName": "feat/acceptance-fix-strategy",
+  "createdAt": "2026-04-01T11:40:00.000Z",
+  "updatedAt": "2026-04-01T11:40:00.000Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add AcceptanceFixConfig to config schema with defaults and DiagnosisResult type",
+      "description": "Add AcceptanceFixConfig interface to src/config/types.ts following the existing pattern for acceptance config. Fields: diagnoseModel (string, default 'fast'), fixModel (string, default 'balanced'), strategy ('diagnose-first' | 'implement-only', default 'diagnose-first'), maxRetries (number, default 2). Wire into NaxConfig.acceptance.fix in the config type. Add defaults to src/config/defaults.ts. Add DiagnosisResult interface to src/acceptance/types.ts with fields: verdict ('source_bug' | 'test_bug' | 'both'), reasoning (string), confidence (number 0-1), testIssues (optional string[]), sourceIssues (optional string[]). Add validation in src/config/schema.ts to reject unknown strategy values.",
+      "acceptanceCriteria": [
+        "NaxConfig.acceptance.fix has type AcceptanceFixConfig with fields diagnoseModel (string), fixModel (string), strategy ('diagnose-first' | 'implement-only'), maxRetries (number)",
+        "DEFAULT_CONFIG.acceptance.fix equals { diagnoseModel: 'fast', fixModel: 'balanced', strategy: 'diagnose-first', maxRetries: 2 }",
+        "DiagnosisResult interface exported from src/acceptance/types.ts with required fields verdict, reasoning, confidence and optional fields testIssues, sourceIssues",
+        "Config validation rejects strategy values other than 'diagnose-first' and 'implement-only'"
+      ],
+      "tags": ["types", "config", "acceptance"],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Type definitions and config defaults only — purely additive",
+        "modelTier": "fast"
+      },
+      "contextFiles": [
+        "src/config/types.ts",
+        "src/config/defaults.ts",
+        "src/config/schema.ts",
+        "src/acceptance/types.ts"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Implement diagnoseAcceptanceFailure() with auto-detected source context",
+      "description": "Create src/acceptance/fix-diagnosis.ts. Implement diagnoseAcceptanceFailure(adapter, testOutput, testFileContent, config) that makes a single adapter.complete() call with diagnoseModel tier (resolved via resolveModelForAgent). The prompt should include: failing test output (truncated to 2000 chars), full acceptance test file content, and auto-detected source file contents (parse import statements from test file, read up to 5 files, 500 lines each). Return parsed DiagnosisResult. On parse failure, return { verdict: 'source_bug', reasoning: 'diagnosis failed', confidence: 0 }. Use jsonMode: true in the complete() call. Pass timeoutMs from acceptance.timeoutMs config. Follow the pattern in src/acceptance/refinement.ts for adapter.complete() usage and error handling.",
+      "acceptanceCriteria": [
+        "diagnoseAcceptanceFailure() calls adapter.complete() with model resolved from config.acceptance.fix.diagnoseModel via resolveModelForAgent()",
+        "diagnoseAcceptanceFailure() passes timeoutMs from config.acceptance.timeoutMs to adapter.complete()",
+        "diagnoseAcceptanceFailure() auto-detects source file paths from import statements in the test file content and includes their content in the prompt (up to 5 files, 500 lines each)",
+        "When adapter.complete() returns valid JSON matching DiagnosisResult schema, diagnoseAcceptanceFailure() returns the parsed result",
+        "When adapter.complete() returns invalid or unparsable JSON, diagnoseAcceptanceFailure() returns { verdict: 'source_bug', reasoning: 'diagnosis failed — falling back to source fix', confidence: 0 }",
+        "When adapter.complete() throws an error, diagnoseAcceptanceFailure() catches it and returns the fallback DiagnosisResult"
+      ],
+      "tags": ["acceptance", "diagnosis", "llm"],
+      "dependencies": ["US-001"],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New module with LLM integration, import parsing, and error handling — moderate complexity",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/acceptance/refinement.ts",
+        "src/acceptance/types.ts",
+        "src/acceptance/generator.ts",
+        "src/config/index.ts"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Implement executeSourceFix() — single-session fix bypassing routing",
+      "description": "Add executeSourceFix() to src/acceptance/fix-executor.ts. This function creates a PipelineContext with hardcoded routing { complexity: 'medium', testStrategy: 'no-test', modelTier: <resolved fixModel> } — no test-writer stage. The session prompt includes: failing test output, acceptance test file path, diagnosis reasoning (if available), and instruction 'Fix the source implementation. Do NOT modify the test file.' Runs pipeline with execute + verify stages only. Verify command runs bun test against the acceptance test file path. Returns { success, cost }. Follow the pattern in executeFixStory() in acceptance-loop.ts but with simplified pipeline (no routing, no test-writer). Model resolved via resolveModelForAgent() from config.acceptance.fix.fixModel.",
+      "acceptanceCriteria": [
+        "executeSourceFix() creates PipelineContext with routing testStrategy 'no-test' and modelTier resolved from config.acceptance.fix.fixModel via resolveModelForAgent()",
+        "executeSourceFix() runs pipeline with execute and verify stages only — test-writer, review, and regression stages are skipped",
+        "executeSourceFix() verification runs bun test against the acceptance test file path (not the full test suite)",
+        "executeSourceFix() includes failing test output and diagnosis reasoning in the agent prompt",
+        "executeSourceFix() returns { success: boolean, cost: number } where cost is extracted from the agent session result"
+      ],
+      "tags": ["acceptance", "execution", "fix"],
+      "dependencies": ["US-001"],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Pipeline integration with custom stage selection — requires understanding of pipeline internals",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/execution/lifecycle/acceptance-loop.ts",
+        "src/pipeline/runner.ts",
+        "src/pipeline/stages/index.ts",
+        "src/acceptance/fix-generator.ts"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Wire diagnosis and fix routing into acceptance-loop.ts",
+      "description": "Replace the current generateAndAddFixStories() + full pipeline flow in runAcceptanceLoop() with the new two-phase approach. When strategy is 'diagnose-first': call diagnoseAcceptanceFailure(), then route based on verdict — source_bug calls executeSourceFix(), test_bug calls regenerateAcceptanceTest(), both calls executeSourceFix() first then regenerateAcceptanceTest() if still failing. When strategy is 'implement-only': skip diagnosis, call executeSourceFix() directly. Use acceptance.fix.maxRetries for fix retry count. Emit JSONL events: acceptance.diagnosis (verdict, confidence), acceptance.source-fix (cost, success), acceptance.test-regen (outcome). Keep the existing generateAndAddFixStories() code path removable but functional during transition.",
+      "acceptanceCriteria": [
+        "When strategy is 'diagnose-first' and diagnosis verdict is 'source_bug', acceptance-loop calls executeSourceFix() instead of generateAndAddFixStories()",
+        "When strategy is 'diagnose-first' and diagnosis verdict is 'test_bug', acceptance-loop calls regenerateAcceptanceTest() then re-runs acceptance validation",
+        "When strategy is 'diagnose-first' and diagnosis verdict is 'both', acceptance-loop calls executeSourceFix() first, then calls regenerateAcceptanceTest() if acceptance still fails",
+        "When strategy is 'implement-only', acceptance-loop skips diagnosis and calls executeSourceFix() directly",
+        "Fix retries respect config.acceptance.fix.maxRetries (separate from config.acceptance.maxRetries)",
+        "JSONL event with stage 'acceptance.diagnosis' emitted containing verdict and confidence fields",
+        "JSONL event with stage 'acceptance.source-fix' emitted containing cost and success fields",
+        "JSONL event with stage 'acceptance.test-regen' emitted containing outcome field"
+      ],
+      "tags": ["acceptance", "integration", "loop"],
+      "dependencies": ["US-002", "US-003"],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "priorErrors": [],
+      "priorFailures": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Complex integration replacing existing flow with verdict-based routing, multiple code paths, event emission",
+        "modelTier": "powerful"
+      },
+      "contextFiles": [
+        "src/execution/lifecycle/acceptance-loop.ts",
+        "src/acceptance/fix-diagnosis.ts",
+        "src/acceptance/fix-generator.ts",
+        "src/acceptance/types.ts"
+      ]
+    }
+  ]
+}
