@@ -6,6 +6,7 @@
  */
 
 import type { RectificationConfig } from "../config";
+import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { formatFailureSummary } from "./parser";
 import type { RectificationState, TestFailure } from "./types";
@@ -62,12 +63,29 @@ export function shouldRetryRectification(state: RectificationState, config: Rect
  * Returns an empty string when no injection is needed.
  */
 function buildEscalationPreamble(attempt: number, config: RectificationConfig): string {
+  const logger = getSafeLogger();
   const rethinkAt = Math.min(config.rethinkAtAttempt ?? 2, config.maxRetries);
   const urgencyAt = Math.min(config.urgencyAtAttempt ?? 3, config.maxRetries);
 
   if (attempt < rethinkAt) return "";
 
   const isUrgent = attempt >= urgencyAt;
+
+  // Log progressive prompt escalation (#147)
+  if (isUrgent) {
+    logger?.info("rectification", "Progressive prompt escalation: urgency + rethink injected", {
+      attempt,
+      urgencyAtAttempt: urgencyAt,
+      rethinkAtAttempt: rethinkAt,
+      maxRetries: config.maxRetries,
+    });
+  } else {
+    logger?.info("rectification", "Progressive prompt escalation: rethink injected", {
+      attempt,
+      rethinkAtAttempt: rethinkAt,
+      maxRetries: config.maxRetries,
+    });
+  }
 
   const rethinkSection = `## ⚠️ Previous Attempt Did Not Fix the Failures
 

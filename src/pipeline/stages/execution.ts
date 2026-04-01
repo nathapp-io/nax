@@ -216,6 +216,12 @@ export const executionStage: PipelineStage = {
               });
             }
           }
+
+          // Pause for human review instead of auto-escalating (#3 bench-04 finding)
+          return {
+            action: "pause",
+            reason: tddResult.reviewReason || `Human review needed: ${tddResult.failureCategory ?? "unknown"}`,
+          };
         }
 
         return routeTddFailure(tddResult.failureCategory, isLiteMode, ctx, tddResult.reviewReason);
