@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-03-31T06-16-29-991Z",
-    "feature": "consolidate-complexity-gate",
-    "startedAt": "2026-03-31T06:16:29.991Z",
-    "status": "completed",
+    "id": "run-2026-04-01T15-57-42-449Z",
+    "feature": "acceptance-fix-strategy",
+    "startedAt": "2026-04-01T15:57:42.449Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 79425
+    "pid": 59995
   },
   "progress": {
     "total": 4,
-    "passed": 4,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 4
   },
   "cost": {
-    "spent": 13.684810800000001,
+    "spent": 0,
     "limit": 30
   },
-  "current": null,
-  "iterations": 5,
-  "updatedAt": "2026-03-31T07:54:54.105Z",
-  "durationMs": 5904114
+  "current": {
+    "storyId": "US-001",
+    "title": "Add AcceptanceFixConfig to config schema with defaults and DiagnosisResult type",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
+    "model": "fast",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 1,
+  "updatedAt": "2026-04-01T16:18:43.323Z",
+  "durationMs": 1260874,
+  "lastHeartbeat": "2026-04-01T16:18:43.323Z"
 }

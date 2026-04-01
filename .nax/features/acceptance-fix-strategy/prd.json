@@ -3,7 +3,7 @@
   "feature": "acceptance-fix-strategy",
   "branchName": "feat/acceptance-fix-strategy",
   "createdAt": "2026-04-01T11:40:00.000Z",
-  "updatedAt": "2026-04-01T11:40:00.000Z",
+  "updatedAt": "2026-04-01T16:14:29.819Z",
   "userStories": [
     {
       "id": "US-001",
@@ -15,7 +15,11 @@
         "DiagnosisResult interface exported from src/acceptance/types.ts with required fields verdict, reasoning, confidence and optional fields testIssues, sourceIssues",
         "Config validation rejects strategy values other than 'diagnose-first' and 'implement-only'"
       ],
-      "tags": ["types", "config", "acceptance"],
+      "tags": [
+        "types",
+        "config",
+        "acceptance"
+      ],
       "dependencies": [],
       "status": "pending",
       "passes": false,
@@ -27,14 +31,17 @@
         "complexity": "simple",
         "testStrategy": "tdd-simple",
         "reasoning": "Type definitions and config defaults only — purely additive",
-        "modelTier": "fast"
+        "modelTier": "fast",
+        "initialComplexity": "simple"
       },
       "contextFiles": [
         "src/config/types.ts",
         "src/config/defaults.ts",
         "src/config/schema.ts",
         "src/acceptance/types.ts"
-      ]
+      ],
+      "storyPoints": 1,
+      "storyGitRef": "6cd3e589eac3f4d5f2d55d7900d04b076f936f0f"
     },
     {
       "id": "US-002",
@@ -51,8 +58,15 @@
         "When adapter.run() throws an error, diagnoseAcceptanceFailure() catches it and returns the fallback DiagnosisResult",
         "When config.agent.protocol is 'acp', the diagnosis session runs as a proper ACP session visible in acpx list"
       ],
-      "tags": ["acceptance", "diagnosis", "acp", "session"],
-      "dependencies": ["US-001"],
+      "tags": [
+        "acceptance",
+        "diagnosis",
+        "acp",
+        "session"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
       "status": "pending",
       "passes": false,
       "attempts": 0,
@@ -70,7 +84,8 @@
         "src/acceptance/types.ts",
         "src/acceptance/generator.ts",
         "src/config/index.ts"
-      ]
+      ],
+      "storyPoints": 1
     },
     {
       "id": "US-003",
@@ -86,8 +101,16 @@
         "executeSourceFix() returns { success: boolean, cost: number } where cost is extracted from AgentResult",
         "When config.agent.protocol is 'acp', the fix session runs as a proper ACP session visible in acpx list with correct session name"
       ],
-      "tags": ["acceptance", "execution", "fix", "acp", "session"],
-      "dependencies": ["US-001"],
+      "tags": [
+        "acceptance",
+        "execution",
+        "fix",
+        "acp",
+        "session"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
       "status": "pending",
       "passes": false,
       "attempts": 0,
@@ -105,7 +128,8 @@
         "src/execution/lifecycle/acceptance-loop.ts",
         "src/acceptance/fix-generator.ts",
         "src/acceptance/types.ts"
-      ]
+      ],
+      "storyPoints": 1
     },
     {
       "id": "US-004",
@@ -122,8 +146,15 @@
         "JSONL event with stage 'acceptance.source-fix' emitted containing cost and success fields",
         "JSONL event with stage 'acceptance.test-regen' emitted containing outcome field"
       ],
-      "tags": ["acceptance", "integration", "loop"],
-      "dependencies": ["US-002", "US-003"],
+      "tags": [
+        "acceptance",
+        "integration",
+        "loop"
+      ],
+      "dependencies": [
+        "US-002",
+        "US-003"
+      ],
       "status": "pending",
       "passes": false,
       "attempts": 0,
@@ -141,7 +172,8 @@
         "src/acceptance/fix-diagnosis.ts",
         "src/acceptance/fix-generator.ts",
         "src/acceptance/types.ts"
-      ]
+      ],
+      "storyPoints": 1
     }
   ]
 }
