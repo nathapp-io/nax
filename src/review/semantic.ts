@@ -322,6 +322,7 @@ export async function runSemanticReview(
       storyId: story.id,
       stage: "review",
       stageConfig: reviewStageConfig,
+      config: naxConfig,
     });
     const debateResult = await debateSession.run(prompt);
 

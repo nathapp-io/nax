@@ -1,0 +1,34 @@
+{
+  "debate": {
+    "enabled": true,
+    "agents": 2,
+    "stages": {
+      "plan": {
+        "enabled": true,
+        "resolver": {
+          "type": "synthesis",
+          "agent": "minimax"
+        },
+        "sessionMode": "stateful",
+        "rounds": 3,
+        "debaters": [
+          { "agent": "claude", "model": "fast" },
+          { "agent": "claude", "model": "fast" }
+        ]
+      },
+      "review": {
+        "enabled": true,
+        "resolver": {
+          "type": "majority-fail-closed",
+          "agent": "minimax"
+        },
+        "sessionMode": "one-shot",
+        "rounds": 2,
+        "debaters": [
+          { "agent": "claude", "model": "fast" },
+          { "agent": "claude", "model": "fast" }
+        ]
+      }
+    }
+  }
+}

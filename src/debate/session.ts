@@ -9,6 +9,8 @@ import type { AcpClient, AcpSession, AcpSessionResponse } from "../agents/acp/ad
 import { createSpawnAcpClient } from "../agents/acp/spawn-client";
 import { getAgent } from "../agents/registry";
 import type { AgentAdapter } from "../agents/types";
+import type { NaxConfig } from "../config";
+import { resolveModelForAgent } from "../config";
 import { getSafeLogger } from "../logger";
 import { buildCritiquePrompt } from "./prompts";
 import { judgeResolver, majorityResolver, synthesisResolver } from "./resolvers";
@@ -17,10 +19,30 @@ import type { DebateResult, DebateStageConfig, Debater, Proposal } from "./types
 /** Fallback agent name used when resolver.agent is not specified for synthesis/judge */
 const RESOLVER_FALLBACK_AGENT = "synthesis";
 
+/**
+ * Resolve the model string for a debater.
+ * When debater.model is set, treat it as a tier name and resolve via config.models.
+ * When absent, default to "fast" tier.
+ * Falls back to the raw debater.model string if config resolution fails (backward compat).
+ */
+export function resolveDebaterModel(debater: Debater, config?: NaxConfig): string | undefined {
+  const tier = debater.model ?? "fast";
+  if (!config?.models) return debater.model;
+  try {
+    const defaultAgent = config.autoMode?.defaultAgent ?? debater.agent;
+    const modelDef = resolveModelForAgent(config.models, debater.agent, tier, defaultAgent);
+    return modelDef.model;
+  } catch {
+    // Config resolution failed — return raw model string as fallback (backward compat)
+    return debater.model;
+  }
+}
+
 export interface DebateSessionOptions {
   storyId: string;
   stage: string;
   stageConfig: DebateStageConfig;
+  config?: NaxConfig;
 }
 
 /** Injectable deps for testability */
@@ -71,11 +93,13 @@ export class DebateSession {
   private readonly storyId: string;
   private readonly stage: string;
   private readonly stageConfig: DebateStageConfig;
+  private readonly config: NaxConfig | undefined;
 
   constructor(opts: DebateSessionOptions) {
     this.storyId = opts.storyId;
     this.stage = opts.stage;
     this.stageConfig = opts.stageConfig;
+    this.config = opts.config;
   }
 
   async run(prompt: string): Promise<DebateResult> {
@@ -105,6 +129,12 @@ export class DebateSession {
       resolved.push({ debater, adapter });
     }
 
+    logger?.info("debate", "debate:start", {
+      storyId: this.storyId,
+      stage: this.stage,
+      debaters: resolved.map((r) => r.debater.agent),
+    });
+
     interface SessionEntry {
       debater: Debater;
       adapter: AgentAdapter;
@@ -117,7 +147,8 @@ export class DebateSession {
       // Create SpawnAcpClient and session per debater
       for (let i = 0; i < resolved.length; i++) {
         const { debater, adapter } = resolved[i];
-        const cmdStr = `acpx --model ${debater.model} ${debater.agent}`;
+        const resolvedModel = resolveDebaterModel(debater, this.config);
+        const cmdStr = resolvedModel ? `acpx --model ${resolvedModel} ${debater.agent}` : `acpx ${debater.agent}`;
         const client = _debateSessionDeps.createSpawnAcpClient(cmdStr);
         const sessionName = `nax-debate-${this.storyId}-${i}`;
 
@@ -137,9 +168,19 @@ export class DebateSession {
       if (sessions.length < 2) {
         // Single-agent fallback — run the one successful session as solo
         if (sessions.length === 1) {
+          logger?.warn("debate", "debate:fallback", {
+            storyId: this.storyId,
+            stage: this.stage,
+            reason: "only 1 session created",
+          });
           const solo = sessions[0];
           const response = await solo.session.prompt(prompt);
           const output = extractSessionOutput(response);
+          logger?.info("debate", "debate:result", {
+            storyId: this.storyId,
+            stage: this.stage,
+            outcome: "passed",
+          });
           return {
             storyId: this.storyId,
             stage: this.stage,
@@ -151,6 +192,11 @@ export class DebateSession {
             totalCostUsd,
           };
         }
+        logger?.warn("debate", "debate:fallback", {
+          storyId: this.storyId,
+          stage: this.stage,
+          reason: "no sessions created",
+        });
         return buildFailedResult(this.storyId, this.stage, config, totalCostUsd);
       }
 
@@ -171,7 +217,22 @@ export class DebateSession {
 
       // AC5: minimum 2 debaters required for a valid debate
       if (successfulSessions.length < 2) {
+        logger?.warn("debate", "debate:fallback", {
+          storyId: this.storyId,
+          stage: this.stage,
+          reason: "fewer than 2 proposal rounds succeeded",
+        });
         return buildFailedResult(this.storyId, this.stage, config, totalCostUsd);
+      }
+
+      for (let i = 0; i < successfulSessions.length; i++) {
+        const s = successfulSessions[i];
+        logger?.info("debate", "debate:proposal", {
+          storyId: this.storyId,
+          stage: this.stage,
+          debaterIndex: i,
+          agent: s.entry.debater.agent,
+        });
       }
 
       // Critique round (when rounds > 1)
@@ -207,6 +268,11 @@ export class DebateSession {
         output: s.output,
       }));
 
+      logger?.info("debate", "debate:result", {
+        storyId: this.storyId,
+        stage: this.stage,
+        outcome,
+      });
       return {
         storyId: this.storyId,
         stage: this.stage,
@@ -239,11 +305,17 @@ export class DebateSession {
       resolved.push({ debater, adapter });
     }
 
+    logger?.info("debate", "debate:start", {
+      storyId: this.storyId,
+      stage: this.stage,
+      debaters: resolved.map((r) => r.debater.agent),
+    });
+
     // Step 2: Proposal round — parallel via Promise.allSettled
     const proposalSettled = await Promise.allSettled(
       resolved.map(({ debater, adapter }) =>
         adapter
-          .complete(prompt, { model: debater.model })
+          .complete(prompt, { model: resolveDebaterModel(debater, this.config) })
           // complete() returns string only — cost is 0 until the interface exposes cost metadata
           .then((output) => ({ debater, adapter, output, cost: 0 })),
       ),
@@ -260,10 +332,30 @@ export class DebateSession {
       }
     }
 
+    for (let i = 0; i < successful.length; i++) {
+      logger?.info("debate", "debate:proposal", {
+        storyId: this.storyId,
+        stage: this.stage,
+        debaterIndex: i,
+        agent: successful[i].debater.agent,
+        model: resolveDebaterModel(successful[i].debater, this.config),
+      });
+    }
+
     // Step 3: Fewer than 2 succeeded — single-agent fallback
     if (successful.length < 2) {
       if (successful.length === 1) {
+        logger?.warn("debate", "debate:fallback", {
+          storyId: this.storyId,
+          stage: this.stage,
+          reason: "only 1 debater succeeded",
+        });
         const solo = successful[0];
+        logger?.info("debate", "debate:result", {
+          storyId: this.storyId,
+          stage: this.stage,
+          outcome: "passed",
+        });
         return {
           storyId: this.storyId,
           stage: this.stage,
@@ -279,9 +371,21 @@ export class DebateSession {
       // All debaters failed — attempt fresh complete() on first resolved adapter (AC4)
       if (resolved.length > 0) {
         const { adapter: fallbackAdapter, debater: fallbackDebater } = resolved[0];
+        logger?.warn("debate", "debate:fallback", {
+          storyId: this.storyId,
+          stage: this.stage,
+          reason: "all debaters failed — retrying with first adapter",
+        });
         try {
-          const fallbackOutput = await fallbackAdapter.complete(prompt, { model: fallbackDebater.model });
+          const fallbackOutput = await fallbackAdapter.complete(prompt, {
+            model: resolveDebaterModel(fallbackDebater, this.config),
+          });
           // cost from fresh fallback call — 0 until complete() exposes cost metadata
+          logger?.info("debate", "debate:result", {
+            storyId: this.storyId,
+            stage: this.stage,
+            outcome: "passed",
+          });
           return {
             storyId: this.storyId,
             stage: this.stage,
@@ -307,7 +411,7 @@ export class DebateSession {
       const critiqueSettled = await Promise.allSettled(
         successful.map(({ debater, adapter }, i) =>
           adapter.complete(buildCritiquePrompt(prompt, proposalOutputs, i), {
-            model: debater.model,
+            model: resolveDebaterModel(debater, this.config),
           }),
         ),
       );
@@ -333,6 +437,11 @@ export class DebateSession {
       output: p.output,
     }));
 
+    logger?.info("debate", "debate:result", {
+      storyId: this.storyId,
+      stage: this.stage,
+      outcome,
+    });
     return {
       storyId: this.storyId,
       stage: this.stage,
@@ -348,7 +457,7 @@ export class DebateSession {
   private async resolve(
     proposalOutputs: string[],
     critiqueOutputs: string[],
-    successful: SuccessfulProposal[],
+    _successful: SuccessfulProposal[],
   ): Promise<"passed" | "failed" | "skipped"> {
     const resolverConfig = this.stageConfig.resolver;
 
