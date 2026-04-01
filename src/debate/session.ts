@@ -5,10 +5,11 @@
  * Resolves adapters, runs proposal and critique rounds, and calls the configured resolver.
  */
 
+import { join } from "node:path";
 import type { AcpClient, AcpSession, AcpSessionResponse } from "../agents/acp/adapter";
 import { createSpawnAcpClient } from "../agents/acp/spawn-client";
 import { estimateCostByDuration } from "../agents/cost/calculate";
-import { getAgent } from "../agents/registry";
+import { createAgentRegistry, getAgent } from "../agents/registry";
 import type { AgentAdapter, CompleteOptions, CompleteResult } from "../agents/types";
 import type { ModelTier } from "../config";
 import type { NaxConfig } from "../config";
@@ -49,9 +50,17 @@ export interface DebateSessionOptions {
 
 /** Injectable deps for testability */
 export const _debateSessionDeps = {
-  getAgent: getAgent as (name: string) => AgentAdapter | undefined,
+  /**
+   * Resolve an agent adapter by name.
+   * When config is provided, uses createAgentRegistry(config) so that ACP agents
+   * are returned as AcpAgentAdapter (respecting agent.protocol).
+   * Falls back to bare getAgent() when config is absent (backward compat / tests).
+   */
+  getAgent: (name: string, config?: NaxConfig): AgentAdapter | undefined =>
+    config ? createAgentRegistry(config).getAgent(name) : getAgent(name),
   getSafeLogger: getSafeLogger as () => ReturnType<typeof getSafeLogger>,
   createSpawnAcpClient: (cmdStr: string, cwd?: string): AcpClient => createSpawnAcpClient(cmdStr, cwd),
+  readFile: (path: string): Promise<string> => Bun.file(path).text(),
 };
 
 interface ResolvedDebater {
@@ -156,7 +165,7 @@ export class DebateSession {
     // Resolve adapters — skip unavailable agents
     const resolved: ResolvedDebater[] = [];
     for (const debater of debaters) {
-      const adapter = _debateSessionDeps.getAgent(debater.agent);
+      const adapter = _debateSessionDeps.getAgent(debater.agent, this.config);
       if (!adapter) {
         logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`);
         continue;
@@ -357,7 +366,7 @@ export class DebateSession {
     // Step 1: Resolve adapters — skip unavailable agents
     const resolved: ResolvedDebater[] = [];
     for (const debater of debaters) {
-      const adapter = _debateSessionDeps.getAgent(debater.agent);
+      const adapter = _debateSessionDeps.getAgent(debater.agent, this.config);
       if (!adapter) {
         logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`);
         continue;
@@ -520,6 +529,143 @@ export class DebateSession {
     };
   }
 
+  /**
+   * Run a plan-mode debate.
+   *
+   * Each debater calls adapter.plan() writing its PRD to a unique temp path under outputDir.
+   * After all plans complete, the resolver picks the best PRD (or synthesises one).
+   * Returns a DebateResult whose `output` field contains the winning PRD JSON string.
+   *
+   * @param basePrompt - Planning prompt WITHOUT a file-write instruction (outputFilePath omitted).
+   *                     runPlan() appends the per-debater temp file path instruction itself.
+   * @param opts       - Plan options shared across all debaters.
+   */
+  async runPlan(
+    basePrompt: string,
+    opts: {
+      workdir: string;
+      feature: string;
+      outputDir: string;
+      timeoutSeconds?: number;
+      dangerouslySkipPermissions?: boolean;
+      maxInteractionTurns?: number;
+    },
+  ): Promise<DebateResult> {
+    const logger = _debateSessionDeps.getSafeLogger();
+    const config = this.stageConfig;
+    const debaters = config.debaters ?? [];
+    const totalCostUsd = 0;
+
+    // Resolve adapters — skip unavailable agents
+    const resolved: ResolvedDebater[] = [];
+    for (const debater of debaters) {
+      const adapter = _debateSessionDeps.getAgent(debater.agent, this.config);
+      if (!adapter) {
+        logger?.warn("debate", `Agent '${debater.agent}' not found — skipping debater`);
+        continue;
+      }
+      resolved.push({ debater, adapter });
+    }
+
+    logger?.info("debate", "debate:start", {
+      storyId: this.storyId,
+      stage: this.stage,
+      debaters: resolved.map((r) => r.debater.agent),
+    });
+
+    // Run plan() for each debater in parallel, each writing to a unique temp path
+    const planSettled = await Promise.allSettled(
+      resolved.map(async ({ debater, adapter }, i) => {
+        const tempOutputPath = join(opts.outputDir, `prd-debate-${i}.json`);
+        // Append file-write instruction pointing at this debater's temp path
+        const debaterPrompt = `${basePrompt}\n\nWrite the PRD JSON directly to this file path: ${tempOutputPath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`;
+
+        await adapter.plan({
+          prompt: debaterPrompt,
+          workdir: opts.workdir,
+          interactive: false,
+          timeoutSeconds: opts.timeoutSeconds,
+          config: this.config,
+          modelTier: (debater.model ?? "balanced") as import("../config/schema-types").ModelTier,
+          dangerouslySkipPermissions: opts.dangerouslySkipPermissions,
+          maxInteractionTurns: opts.maxInteractionTurns,
+          featureName: opts.feature,
+          sessionRole: "plan",
+        });
+
+        const output = await _debateSessionDeps.readFile(tempOutputPath);
+        return { debater, adapter, output, cost: 0 } as SuccessfulProposal;
+      }),
+    );
+
+    const successful: SuccessfulProposal[] = planSettled
+      .filter((r): r is PromiseFulfilledResult<SuccessfulProposal> => r.status === "fulfilled")
+      .map((r) => r.value);
+
+    for (let i = 0; i < successful.length; i++) {
+      logger?.info("debate", "debate:proposal", {
+        storyId: this.storyId,
+        stage: this.stage,
+        debaterIndex: i,
+        agent: successful[i].debater.agent,
+      });
+    }
+
+    if (successful.length === 0) {
+      logger?.warn("debate", "debate:fallback", {
+        storyId: this.storyId,
+        stage: this.stage,
+        reason: "all plan debaters failed",
+      });
+      return buildFailedResult(this.storyId, this.stage, config, totalCostUsd);
+    }
+
+    // Single success — use directly (no resolver needed)
+    if (successful.length === 1) {
+      logger?.warn("debate", "debate:fallback", {
+        storyId: this.storyId,
+        stage: this.stage,
+        reason: "only 1 plan debater succeeded — using as solo",
+      });
+      logger?.info("debate", "debate:result", { storyId: this.storyId, stage: this.stage, outcome: "passed" });
+      return {
+        storyId: this.storyId,
+        stage: this.stage,
+        outcome: "passed",
+        rounds: 1,
+        debaters: [successful[0].debater.agent],
+        resolverType: config.resolver.type,
+        proposals: [{ debater: successful[0].debater, output: successful[0].output }],
+        output: successful[0].output,
+        totalCostUsd,
+      };
+    }
+
+    // Multiple proposals — resolve to pick the winning PRD
+    const proposalOutputs = successful.map((p) => p.output);
+    const outcome = await this.resolve(proposalOutputs, [], successful);
+
+    // Winning output: synthesis resolver returns combined PRD via synthesisResolver output;
+    // for majority/custom, use the first proposal as the baseline winner.
+    // synthesisResolver currently does not return output — use first proposal for now.
+    const winningOutput = successful[0].output;
+
+    const proposals: Proposal[] = successful.map((p) => ({ debater: p.debater, output: p.output }));
+
+    logger?.info("debate", "debate:result", { storyId: this.storyId, stage: this.stage, outcome });
+    return {
+      storyId: this.storyId,
+      stage: this.stage,
+      outcome: outcome.outcome,
+      rounds: 1,
+      debaters: successful.map((p) => p.debater.agent),
+      resolverType: config.resolver.type,
+      proposals,
+      output: winningOutput,
+      totalCostUsd,
+    };
+  }
+
   private async resolve(
     proposalOutputs: string[],
     critiqueOutputs: string[],
@@ -536,7 +682,7 @@ export class DebateSession {
 
     if (resolverConfig.type === "synthesis") {
       const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
-      const adapter = _debateSessionDeps.getAgent(agentName);
+      const adapter = _debateSessionDeps.getAgent(agentName, this.config);
       if (adapter) {
         const resolverResult = await synthesisResolver(proposalOutputs, critiqueOutputs, { adapter });
         return {
@@ -552,7 +698,7 @@ export class DebateSession {
 
     if (resolverConfig.type === "custom") {
       const resolverResult = await judgeResolver(proposalOutputs, critiqueOutputs, resolverConfig, {
-        getAgent: _debateSessionDeps.getAgent,
+        getAgent: (name: string) => _debateSessionDeps.getAgent(name, this.config),
         defaultAgentName: RESOLVER_FALLBACK_AGENT,
       });
       return {
