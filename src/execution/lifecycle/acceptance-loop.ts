@@ -399,7 +399,20 @@ async function runFixRouting(options: FixRoutingOptions): Promise<FixRoutingResu
       outcome: regenerated ? "success" : "failure",
     });
 
-    return { fixed: regenerated, cost: 0, prdDirty: regenerated };
+    if (!regenerated) {
+      return { fixed: false, cost: 0, prdDirty: false };
+    }
+
+    const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
+    const acceptanceResult = await acceptanceStage.execute(acceptanceContext);
+
+    if (acceptanceResult.action === "continue") {
+      logger?.info("acceptance", "Acceptance passed after test regeneration");
+      return { fixed: true, cost: 0, prdDirty: true };
+    }
+
+    logger?.warn("acceptance", "Acceptance still failing after test regeneration");
+    return { fixed: false, cost: 0, prdDirty: true };
   }
 
   if (diagnosis.verdict === "both") {
