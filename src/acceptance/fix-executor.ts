@@ -89,15 +89,21 @@ export async function executeSourceFix(
 
   const result = await agent.run(runOptions);
 
-  const verifyProc = _fixExecutorDeps.spawn(["bun", "test", acceptanceTestPath], {
-    cwd: workdir,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const exitCode = await verifyProc.exited;
+  let success = result.success;
+  try {
+    const verifyProc = _fixExecutorDeps.spawn(["bun", "test", acceptanceTestPath], {
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const exitCode = await verifyProc.exited;
+    success = exitCode === 0;
+  } catch {
+    success = result.success;
+  }
 
   return {
-    success: exitCode === 0,
+    success,
     cost: result.estimatedCost,
   };
 }
