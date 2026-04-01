@@ -69,7 +69,7 @@ async function _defaultRunDebate(
   const startMs = Date.now();
   const proposalSettled = await Promise.allSettled(
     resolved.map(({ debater, adapter }) =>
-      adapter.complete(prompt, { model: debater.model }).then((out: string) => out),
+      adapter.complete(prompt, { model: debater.model }).then((out) => (typeof out === "string" ? out : out.output)),
     ),
   );
   const durationMs = Date.now() - startMs;

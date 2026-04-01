@@ -157,6 +157,18 @@ export interface CompleteOptions {
 }
 
 /**
+ * Result for one-shot completion calls that include normalized cost metadata.
+ */
+export interface CompleteResult {
+  /** Raw text output from the completion call */
+  output: string;
+  /** Cost for this completion call in USD */
+  costUsd: number;
+  /** How costUsd was derived */
+  source: "exact" | "estimated" | "fallback";
+}
+
+/**
  * Typed error thrown when complete() fails due to non-zero exit or empty output.
  */
 export class CompleteError extends Error {
@@ -215,10 +227,10 @@ export interface AgentAdapter {
   ): Promise<import("./shared/types-extended").DecomposeResult>;
 
   /**
-   * Run a one-shot LLM call and return the plain text response.
+   * Run a one-shot LLM call and return output with cost metadata.
    * Uses claude -p CLI for non-interactive completions.
    */
-  complete(prompt: string, options?: CompleteOptions): Promise<string>;
+  complete(prompt: string, options?: CompleteOptions): Promise<CompleteResult>;
 
   /**
    * Run the agent in interactive PTY mode for TUI embedding.

@@ -187,7 +187,7 @@ export async function refineAcceptanceCriteria(
   let response: string;
 
   try {
-    response = await _refineDeps.adapter.complete(prompt, {
+    const completeResult = await _refineDeps.adapter.complete(prompt, {
       jsonMode: true,
       maxTokens: 4096,
       model: modelDef.model,
@@ -197,6 +197,7 @@ export async function refineAcceptanceCriteria(
       workdir,
       sessionRole: "refine",
     });
+    response = typeof completeResult === "string" ? completeResult : completeResult.output;
   } catch (error) {
     const reason = errorMessage(error);
     logger.warn("refinement", "adapter.complete() failed, falling back to original criteria", {

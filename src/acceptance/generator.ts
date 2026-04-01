@@ -203,7 +203,7 @@ Rules:
 
   logger.info("acceptance", "Generating tests from PRD refined criteria", { count: refinedCriteria.length });
 
-  const rawOutput = await (options.adapter ?? _generatorPRDDeps.adapter).complete(prompt, {
+  const completeResult = await (options.adapter ?? _generatorPRDDeps.adapter).complete(prompt, {
     model: options.modelDef.model,
     config: options.config,
     timeoutMs: options.config?.acceptance?.timeoutMs ?? 1800000,
@@ -211,6 +211,7 @@ Rules:
     featureName: options.featureName,
     sessionRole: "acceptance-gen",
   });
+  const rawOutput = typeof completeResult === "string" ? completeResult : completeResult.output;
   let testCode = extractTestCode(rawOutput);
 
   logger.debug("acceptance", "Received raw output from LLM", {
@@ -452,7 +453,7 @@ export async function generateAcceptanceTests(
 
   try {
     // Call adapter to generate tests
-    const output = await adapter.complete(prompt, {
+    const completeResult = await adapter.complete(prompt, {
       model: options.modelDef.model,
       config: options.config,
       timeoutMs: options.config?.acceptance?.timeoutMs ?? 1800000,
@@ -460,6 +461,7 @@ export async function generateAcceptanceTests(
       featureName: options.featureName,
       sessionRole: "acceptance-gen",
     });
+    const output = typeof completeResult === "string" ? completeResult : completeResult.output;
 
     // Extract test code from output
     const testCode = extractTestCode(output);

@@ -9,6 +9,7 @@ import { PidRegistry } from "../../execution/pid-registry";
 import { withProcessTimeout } from "../../execution/timeout-handler";
 import { getLogger } from "../../logger";
 import { sleep, typedSpawn } from "../../utils/bun-deps";
+import { estimateCostByDuration } from "../cost/calculate";
 import { buildDecomposePrompt, parseDecomposeOutput } from "../shared/decompose";
 import type {
   AgentAdapter,
@@ -16,6 +17,7 @@ import type {
   AgentResult,
   AgentRunOptions,
   CompleteOptions,
+  CompleteResult,
   DecomposeOptions,
   DecomposeResult,
   InteractiveRunOptions,
@@ -149,8 +151,18 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     }
   }
 
-  async complete(prompt: string, options?: CompleteOptions): Promise<string> {
-    return executeComplete(this.binary, prompt, options);
+  async complete(prompt: string, options?: CompleteOptions): Promise<CompleteResult> {
+    const startTime = Date.now();
+    const output = await executeComplete(this.binary, prompt, options);
+    const durationMs = Date.now() - startTime;
+    const modelTier = options?.modelTier ?? "balanced";
+    const estimate = estimateCostByDuration(modelTier, durationMs);
+
+    return {
+      output,
+      costUsd: estimate.cost,
+      source: estimate.confidence,
+    };
   }
 
   async plan(options: PlanOptions): Promise<PlanResult> {

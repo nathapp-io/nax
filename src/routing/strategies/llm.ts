@@ -104,7 +104,7 @@ async function callLlmOnce(
   try {
     const result = await Promise.race([outputPromise, timeoutPromise]);
     clearTimeout(timeoutId);
-    return result;
+    return typeof result === "string" ? result : result.output;
   } catch (err) {
     clearTimeout(timeoutId);
     outputPromise.catch(() => {});

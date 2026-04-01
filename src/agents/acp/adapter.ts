@@ -27,6 +27,7 @@ import type {
   AgentResult,
   AgentRunOptions,
   CompleteOptions,
+  CompleteResult,
   DecomposeOptions,
   DecomposeResult,
   PlanOptions,
@@ -846,7 +847,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     };
   }
 
-  async complete(prompt: string, _options?: CompleteOptions): Promise<string> {
+  async complete(prompt: string, _options?: CompleteOptions): Promise<CompleteResult> {
     const timeoutMs = _options?.timeoutMs ?? 120_000;
     const permissionMode = resolvePermissions(_options?.config, "complete").mode;
     const workdir = _options?.workdir;
@@ -873,7 +874,7 @@ export class AcpAgentAdapter implements AgentAdapter {
     };
 
     // Attempt one call with the given agent; throws on any error
-    const tryOneAgent = async (agentName: string): Promise<string> => {
+    const tryOneAgent = async (agentName: string): Promise<CompleteResult> => {
       const model = await resolveModel(agentName);
       const cmdStr = `acpx --model ${model} ${agentName}`;
       const client = _acpAdapterDeps.createClient(cmdStr, workdir);
@@ -926,9 +927,26 @@ export class AcpAgentAdapter implements AgentAdapter {
 
         if (response.exactCostUsd !== undefined) {
           getSafeLogger()?.info("acp-adapter", "complete() cost", { costUsd: response.exactCostUsd, model });
+          return {
+            output: unwrapped,
+            costUsd: response.exactCostUsd,
+            source: "exact",
+          };
         }
 
-        return unwrapped;
+        if (response.cumulative_token_usage) {
+          return {
+            output: unwrapped,
+            costUsd: estimateCostFromTokenUsage(response.cumulative_token_usage, model),
+            source: "estimated",
+          };
+        }
+
+        return {
+          output: unwrapped,
+          costUsd: 0,
+          source: "fallback",
+        };
       } catch (err) {
         hadError = true;
         throw err;
@@ -1080,13 +1098,14 @@ export class AcpAgentAdapter implements AgentAdapter {
 
     let output: string;
     try {
-      output = await this.complete(prompt, {
+      const completeResult = await this.complete(prompt, {
         model,
         jsonMode: true,
         config: options.config as import("../../config").NaxConfig | undefined,
         workdir: options.workdir,
         sessionRole: "decompose",
       });
+      output = completeResult.output;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`[acp-adapter] decompose() failed: ${msg}`, { cause: err });

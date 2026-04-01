@@ -267,7 +267,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       rawResponse = await _planDeps.readFile(outputPath);
     } else {
       // CLI: one-shot complete() — simple and fast, no session overhead
-      let result = await adapter.complete(prompt, {
+      const completeResult = await adapter.complete(prompt, {
         model: autoModel,
         jsonMode: true,
         workdir,
@@ -275,6 +275,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         featureName: options.feature,
         sessionRole: "plan",
       });
+      let result = typeof completeResult === "string" ? completeResult : completeResult.output;
       // CLI adapter returns {"type":"result","result":"..."} envelope — unwrap it
       try {
         const envelope = JSON.parse(result) as Record<string, unknown>;
@@ -785,22 +786,24 @@ export async function planDecomposeCommand(
     if (debateResult.outcome !== "failed" && debateResult.output) {
       rawResponse = debateResult.output;
     } else {
-      rawResponse = await adapter.complete(prompt, {
+      const completeResult = await adapter.complete(prompt, {
         jsonMode: true,
         workdir,
         sessionRole: "decompose",
         featureName: options.feature,
         storyId: options.storyId,
       });
+      rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
     }
   } else {
-    rawResponse = await adapter.complete(prompt, {
+    const completeResult = await adapter.complete(prompt, {
       jsonMode: true,
       workdir,
       sessionRole: "decompose",
       featureName: options.feature,
       storyId: options.storyId,
     });
+    rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
   }
 
   // Strip markdown code fences if the LLM wrapped JSON in backticks

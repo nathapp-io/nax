@@ -117,12 +117,13 @@ async function classifyWithLLM(
   );
 
   // Make API call via adapter (uses config.models.fast tier)
-  const jsonText = await _classifyDeps.adapter.complete(prompt, {
+  const completeResult = await _classifyDeps.adapter.complete(prompt, {
     jsonMode: true,
     maxTokens: 4096,
     model: modelDef.model,
     config,
   });
+  const jsonText = typeof completeResult === "string" ? completeResult : completeResult.output;
 
   // Parse JSON response
   const parsed: unknown = JSON.parse(jsonText);

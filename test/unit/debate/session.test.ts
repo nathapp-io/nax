@@ -18,14 +18,14 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps, resolveDebaterModel } from "../../../src/debate/session";
 import type { DebateStageConfig, Debater } from "../../../src/debate/types";
 import type { NaxConfig } from "../../../src/config";
-import type { AgentAdapter, CompleteOptions } from "../../../src/agents/types";
+import type { AgentAdapter, CompleteOptions, CompleteResult } from "../../../src/agents/types";
 
 // ─── Mock Helpers ──────────────────────────────────────────────────────────────
 
 function makeMockAdapter(
   name: string,
   options: {
-    completeFn?: (prompt: string, opts?: CompleteOptions) => Promise<string>;
+    completeFn?: (prompt: string, opts?: CompleteOptions) => Promise<CompleteResult>;
     isInstalledFn?: () => Promise<boolean>;
   } = {},
 ): AgentAdapter {
@@ -50,7 +50,12 @@ function makeMockAdapter(
     buildCommand: () => [],
     plan: async () => ({ specContent: "" }),
     decompose: async () => ({ stories: [] }),
-    complete: options.completeFn ?? (async (_p, _o) => `output from ${name}`),
+    complete: options.completeFn ??
+      (async (_p, _o) => ({
+        output: `output from ${name}`,
+        costUsd: 0,
+        source: "fallback",
+      })),
   };
 }
 
@@ -115,7 +120,7 @@ describe("DebateSession.run() — agent resolution", () => {
       makeMockAdapter(name, {
         completeFn: async (_prompt, opts) => {
           completeCalls.push({ agent: name, model: opts?.model });
-          return `{"passed": true}`;
+          return { output: `{"passed": true}`, costUsd: 0, source: "fallback" };
         },
       }),
     );
@@ -147,7 +152,7 @@ describe("DebateSession.run() — agent resolution", () => {
       makeMockAdapter(name, {
         completeFn: async (prompt) => {
           receivedPrompts.push(prompt);
-          return `{"passed": true}`;
+          return { output: `{"passed": true}`, costUsd: 0, source: "fallback" };
         },
       }),
     );
@@ -178,7 +183,7 @@ describe("DebateSession.run() — parallel execution", () => {
         completeFn: async () => {
           startTimes.push(Date.now());
           await new Promise<void>((resolve) => resolvers.push(resolve));
-          return `output from ${name}`;
+          return { output: `output from ${name}`, costUsd: 0, source: "fallback" };
         },
       }),
     );
@@ -208,7 +213,7 @@ describe("DebateSession.run() — parallel execution", () => {
       makeMockAdapter(name, {
         completeFn: async () => {
           if (name === "failing") throw new Error("agent error");
-          return `{"passed": true}`;
+          return { output: `{"passed": true}`, costUsd: 0, source: "fallback" };
         },
       }),
     );
@@ -238,7 +243,7 @@ describe("DebateSession.run() — unavailable agent handling", () => {
       return makeMockAdapter(name, {
         completeFn: async () => {
           completeCalls.push(name);
-          return `{"passed": true}`;
+          return { output: `{"passed": true}`, costUsd: 0, source: "fallback" };
         },
       });
     });
@@ -298,7 +303,7 @@ describe("DebateSession.run() — unavailable agent handling", () => {
       return makeMockAdapter(name, {
         completeFn: async () => {
           completeCalls.push(name);
-          return `{"passed": true}`;
+          return { output: `{"passed": true}`, costUsd: 0, source: "fallback" };
         },
       });
     });
@@ -324,7 +329,7 @@ describe("DebateSession.run() — single-agent fallback", () => {
     _debateSessionDeps.getAgent = mock((name: string) => {
       if (name === "claude") {
         return makeMockAdapter("claude", {
-          completeFn: async () => "the single successful proposal",
+          completeFn: async () => ({ output: "the single successful proposal", costUsd: 0, source: "fallback" }),
         });
       }
       // Other debaters unavailable
@@ -398,7 +403,7 @@ describe("DebateSession.run() — critique rounds (rounds === 2)", () => {
       makeMockAdapter(name, {
         completeFn: async () => {
           callCounts[name] = (callCounts[name] ?? 0) + 1;
-          return `proposal from ${name}`;
+          return { output: `proposal from ${name}`, costUsd: 0, source: "fallback" };
         },
       }),
     );
@@ -427,7 +432,7 @@ describe("DebateSession.run() — critique rounds (rounds === 2)", () => {
         completeFn: async (prompt) => {
           if (!promptsByAgent[name]) promptsByAgent[name] = [];
           promptsByAgent[name].push(prompt);
-          return `proposal from ${name}`;
+          return { output: `proposal from ${name}`, costUsd: 0, source: "fallback" };
         },
       }),
     );
@@ -458,7 +463,7 @@ describe("DebateSession.run() — critique rounds (rounds === 2)", () => {
         completeFn: async (prompt) => {
           if (!promptsByAgent[name]) promptsByAgent[name] = [];
           promptsByAgent[name].push(prompt);
-          return `proposal from ${name}`;
+          return { output: `proposal from ${name}`, costUsd: 0, source: "fallback" };
         },
       }),
     );
@@ -488,7 +493,7 @@ describe("DebateSession.run() — critique rounds (rounds === 2)", () => {
         completeFn: async (prompt) => {
           if (!promptsByAgent[name]) promptsByAgent[name] = [];
           promptsByAgent[name].push(prompt);
-          return `proposal from ${name}`;
+          return { output: `proposal from ${name}`, costUsd: 0, source: "fallback" };
         },
       }),
     );
@@ -521,7 +526,7 @@ describe("DebateSession.run() — no critique round (rounds === 1)", () => {
       makeMockAdapter(name, {
         completeFn: async () => {
           callCounts[name] = (callCounts[name] ?? 0) + 1;
-          return `{"passed": true}`;
+          return { output: `{"passed": true}`, costUsd: 0, source: "fallback" };
         },
       }),
     );
@@ -545,23 +550,30 @@ describe("DebateSession.run() — no critique round (rounds === 1)", () => {
 // ─── AC11: totalCostUsd is aggregated ─────────────────────────────────────────
 
 describe("DebateSession.run() — cost tracking", () => {
-  test("DebateResult.totalCostUsd is a non-negative number", async () => {
+  test("DebateResult.totalCostUsd aggregates proposal, critique, and resolver costs", async () => {
     _debateSessionDeps.getAgent = mock((name: string) =>
       makeMockAdapter(name, {
-        completeFn: async () => `{"passed": true}`,
+        completeFn: async () => ({
+          output: `{"passed": true}`,
+          costUsd: 0.1,
+          source: "exact",
+        }),
       }),
     );
 
     const session = new DebateSession({
       storyId: "US-002",
       stage: "review",
-      stageConfig: makeStageConfig(),
+      stageConfig: makeStageConfig({
+        rounds: 2,
+        resolver: { type: "synthesis", agent: "claude" },
+      }),
     });
 
     const result = await session.run("test prompt");
 
     expect(typeof result.totalCostUsd).toBe("number");
-    expect(result.totalCostUsd).toBeGreaterThanOrEqual(0);
+    expect(result.totalCostUsd).toBeCloseTo(0.7, 6);
   });
 
   test("DebateResult has totalCostUsd field", async () => {
@@ -585,7 +597,7 @@ describe("DebateSession.run() — proposals structure", () => {
   test("DebateResult.proposals contains one entry per successful debater", async () => {
     _debateSessionDeps.getAgent = mock((name: string) =>
       makeMockAdapter(name, {
-        completeFn: async () => `output from ${name}`,
+        completeFn: async () => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" }),
       }),
     );
 
@@ -608,7 +620,7 @@ describe("DebateSession.run() — proposals structure", () => {
   test("each proposal entry contains debater identity (agent name)", async () => {
     _debateSessionDeps.getAgent = mock((name: string) =>
       makeMockAdapter(name, {
-        completeFn: async () => `output from ${name}`,
+        completeFn: async () => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" }),
       }),
     );
 
@@ -633,7 +645,7 @@ describe("DebateSession.run() — proposals structure", () => {
   test("each proposal entry contains the output from complete()", async () => {
     _debateSessionDeps.getAgent = mock((name: string) =>
       makeMockAdapter(name, {
-        completeFn: async () => `output from ${name}`,
+        completeFn: async () => ({ output: `output from ${name}`, costUsd: 0, source: "fallback" }),
       }),
     );
 
@@ -659,7 +671,7 @@ describe("DebateSession.run() — proposals structure", () => {
 
   test("DebateResult includes storyId, stage, and resolverType", async () => {
     _debateSessionDeps.getAgent = mock((name: string) =>
-      makeMockAdapter(name, { completeFn: async () => `{"passed": true}` }),
+      makeMockAdapter(name, { completeFn: async () => ({ output: `{"passed": true}`, costUsd: 0, source: "fallback" }) }),
     );
 
     const session = new DebateSession({

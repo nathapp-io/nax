@@ -12,6 +12,7 @@ import type {
   AgentResult,
   AgentRunOptions,
   CompleteOptions,
+  CompleteResult,
   DecomposeOptions,
   DecomposeResult,
   PlanOptions,
@@ -57,7 +58,7 @@ export class OpenCodeAdapter implements AgentAdapter {
     throw new Error("OpenCodeAdapter.run() not implemented");
   }
 
-  async complete(prompt: string, _options?: CompleteOptions): Promise<string> {
+  async complete(prompt: string, _options?: CompleteOptions): Promise<CompleteResult> {
     const cmd = ["opencode", "--prompt", prompt];
 
     const proc = _opencodeCompleteDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
@@ -77,7 +78,11 @@ export class OpenCodeAdapter implements AgentAdapter {
       throw new CompleteError("complete() returned empty output");
     }
 
-    return trimmed;
+    return {
+      output: trimmed,
+      costUsd: 0,
+      source: "fallback",
+    };
   }
 
   async plan(_options: PlanOptions): Promise<PlanResult> {
