@@ -2,9 +2,14 @@
  * Unit tests — planCommand debate integration (US-004)
  *
  * AC1: When debate.enabled=true and stages.plan.enabled=true,
- *      planCommand --auto uses DebateSession.run() instead of adapter.complete()
- * AC2: When debate.enabled=false, adapter.complete() called exactly once
- * AC6: When all debaters fail, fallback to adapter.complete() and log warning
+ *      planCommand uses DebateSession.runPlan() — regardless of auto/interactive mode
+ * AC2: When debate.enabled=false, adapter.complete() called exactly once (auto mode)
+ * AC6: When all debaters fail (runPlan returns failed), fallback to interactive plan path
+ *
+ * Design change (Option A, #172 fix):
+ *   - Debate is now SSOT: fires whenever debate.enabled + stages.plan.enabled, regardless of mode.
+ *   - DebateSession.runPlan() replaces DebateSession.run() for the plan stage.
+ *   - Fallback on debate failure uses the interactive plan path (adapter.plan()), not complete().
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -179,8 +184,24 @@ const origInitInteractionChain = _planDeps.initInteractionChain;
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeFakeAdapter(prd: PRD = SAMPLE_PRD) {
+/** Adapter that simulates complete() for CLI/auto mode */
+function makeFakeCompleteAdapter(prd: PRD = SAMPLE_PRD) {
   return { complete: mock(async () => JSON.stringify(prd)) };
+}
+
+/** Adapter that simulates plan() for interactive/ACP mode (writes nothing — we mock readFile) */
+function makeFakePlanAdapter() {
+  return {
+    plan: mock(async () => ({ specContent: "" })),
+    complete: mock(async () => JSON.stringify(SAMPLE_PRD)),
+  };
+}
+
+/** Set up mocks for a successful interactive plan (adapter.plan() path) */
+function setupInteractivePlanMocks(adapter: ReturnType<typeof makeFakePlanAdapter>) {
+  _planDeps.getAgent = mock(() => adapter as never);
+  _planDeps.existsSync = mock((p: string) => p.includes(".nax"));
+  _planDeps.readFile = mock(async () => JSON.stringify(SAMPLE_PRD));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -209,7 +230,7 @@ describe("planCommand — debate integration (US-004)", () => {
     _planDeps.discoverWorkspacePackages = mock(async () => []);
     _planDeps.existsSync = mock(() => false);
     _planDeps.initInteractionChain = mock(async () => null);
-    _planDeps.getAgent = mock(() => makeFakeAdapter() as never);
+    _planDeps.getAgent = mock(() => makeFakeCompleteAdapter() as never);
     _planDeps.createDebateSession = origCreateDebateSession;
   });
 
@@ -231,12 +252,12 @@ describe("planCommand — debate integration (US-004)", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // AC1: debate.enabled=true and stages.plan.enabled=true → DebateSession used
+  // AC1: debate.enabled=true + stages.plan.enabled=true → DebateSession.runPlan() used
   // ─────────────────────────────────────────────────────────────────────────
 
   test("AC1: createDebateSession is called when debate.enabled=true and stages.plan.enabled=true", async () => {
-    const runMock = mock(async () => DEBATE_PASSED_RESULT);
-    _planDeps.createDebateSession = mock(() => ({ run: runMock }));
+    const runPlanMock = mock(async () => DEBATE_PASSED_RESULT);
+    _planDeps.createDebateSession = mock(() => ({ runPlan: runPlanMock }));
 
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
       from: "/spec.md",
@@ -247,9 +268,9 @@ describe("planCommand — debate integration (US-004)", () => {
     expect(_planDeps.createDebateSession).toHaveBeenCalled();
   });
 
-  test("AC1: DebateSession.run() is called with the planning prompt", async () => {
-    const runMock = mock(async () => DEBATE_PASSED_RESULT);
-    _planDeps.createDebateSession = mock(() => ({ run: runMock }));
+  test("AC1: DebateSession.runPlan() is called with the planning prompt and options", async () => {
+    const runPlanMock = mock(async () => DEBATE_PASSED_RESULT);
+    _planDeps.createDebateSession = mock(() => ({ runPlan: runPlanMock }));
 
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
       from: "/spec.md",
@@ -257,15 +278,17 @@ describe("planCommand — debate integration (US-004)", () => {
       auto: true,
     });
 
-    expect(runMock).toHaveBeenCalledTimes(1);
-    const [promptArg] = runMock.mock.calls[0];
+    expect(runPlanMock).toHaveBeenCalledTimes(1);
+    const [promptArg, optsArg] = runPlanMock.mock.calls[0];
     expect(typeof promptArg).toBe("string");
     expect(promptArg.length).toBeGreaterThan(100);
+    expect(optsArg.feature).toBe("debate-plan");
+    expect(optsArg.workdir).toBe(tmpDir);
   });
 
   test("AC1: createDebateSession receives the plan stage config", async () => {
-    const runMock = mock(async () => DEBATE_PASSED_RESULT);
-    const createMock = mock(() => ({ run: runMock }));
+    const runPlanMock = mock(async () => DEBATE_PASSED_RESULT);
+    const createMock = mock(() => ({ runPlan: runPlanMock }));
     _planDeps.createDebateSession = createMock;
 
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
@@ -284,7 +307,7 @@ describe("planCommand — debate integration (US-004)", () => {
     _planDeps.getAgent = mock(() => ({ complete: adapterComplete }) as never);
 
     _planDeps.createDebateSession = mock(() => ({
-      run: mock(async () => DEBATE_PASSED_RESULT),
+      runPlan: mock(async () => DEBATE_PASSED_RESULT),
     }));
 
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
@@ -296,6 +319,18 @@ describe("planCommand — debate integration (US-004)", () => {
     expect(adapterComplete).not.toHaveBeenCalled();
   });
 
+  test("AC1: debate fires in interactive mode (no --auto flag) when debate.enabled=true", async () => {
+    const runPlanMock = mock(async () => DEBATE_PASSED_RESULT);
+    _planDeps.createDebateSession = mock(() => ({ runPlan: runPlanMock }));
+    // No auto: true — interactive mode
+    await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
+      from: "/spec.md",
+      feature: "debate-plan",
+    });
+
+    expect(runPlanMock).toHaveBeenCalledTimes(1);
+  });
+
   // ─────────────────────────────────────────────────────────────────────────
   // AC2: debate disabled → adapter.complete() called exactly once, no debate
   // ─────────────────────────────────────────────────────────────────────────
@@ -304,7 +339,7 @@ describe("planCommand — debate integration (US-004)", () => {
     const adapterComplete = mock(async () => JSON.stringify(SAMPLE_PRD));
     _planDeps.getAgent = mock(() => ({ complete: adapterComplete }) as never);
 
-    const createDebateMock = mock(() => ({ run: mock(async () => DEBATE_PASSED_RESULT) }));
+    const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
     _planDeps.createDebateSession = createDebateMock;
 
     await planCommand(
@@ -321,7 +356,7 @@ describe("planCommand — debate integration (US-004)", () => {
     const adapterComplete = mock(async () => JSON.stringify(SAMPLE_PRD));
     _planDeps.getAgent = mock(() => ({ complete: adapterComplete }) as never);
 
-    const createDebateMock = mock(() => ({ run: mock(async () => DEBATE_PASSED_RESULT) }));
+    const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
     _planDeps.createDebateSession = createDebateMock;
 
     await planCommand(tmpDir, {} as NaxConfig, {
@@ -338,7 +373,7 @@ describe("planCommand — debate integration (US-004)", () => {
     const adapterComplete = mock(async () => JSON.stringify(SAMPLE_PRD));
     _planDeps.getAgent = mock(() => ({ complete: adapterComplete }) as never);
 
-    const createDebateMock = mock(() => ({ run: mock(async () => DEBATE_PASSED_RESULT) }));
+    const createDebateMock = mock(() => ({ runPlan: mock(async () => DEBATE_PASSED_RESULT) }));
     _planDeps.createDebateSession = createDebateMock;
 
     await planCommand(tmpDir, DEBATE_PLAN_STAGE_DISABLED_CONFIG, {
@@ -352,37 +387,37 @@ describe("planCommand — debate integration (US-004)", () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // AC6: all debaters fail → fallback to adapter.complete() and log warning
+  // AC6: all debaters fail → fallback to interactive plan path (adapter.plan())
   // ─────────────────────────────────────────────────────────────────────────
 
-  test("AC6: falls back to adapter.complete() when DebateSession returns outcome=failed", async () => {
-    const adapterComplete = mock(async () => JSON.stringify(SAMPLE_PRD));
-    _planDeps.getAgent = mock(() => ({ complete: adapterComplete }) as never);
+  test("AC6: falls back to interactive plan path when DebateSession returns outcome=failed", async () => {
+    const adapter = makeFakePlanAdapter();
+    setupInteractivePlanMocks(adapter);
 
     _planDeps.createDebateSession = mock(() => ({
-      run: mock(async () => DEBATE_FAILED_RESULT),
+      runPlan: mock(async () => DEBATE_FAILED_RESULT),
     }));
 
     await planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
       from: "/spec.md",
       feature: "debate-plan",
-      auto: true,
     });
 
-    expect(adapterComplete).toHaveBeenCalledTimes(1);
+    expect(adapter.plan).toHaveBeenCalledTimes(1);
   });
 
   test("AC6: planCommand succeeds (does not throw) when debate fails and fallback is used", async () => {
-    _planDeps.getAgent = mock(() => makeFakeAdapter() as never);
+    const adapter = makeFakePlanAdapter();
+    setupInteractivePlanMocks(adapter);
+
     _planDeps.createDebateSession = mock(() => ({
-      run: mock(async () => DEBATE_FAILED_RESULT),
+      runPlan: mock(async () => DEBATE_FAILED_RESULT),
     }));
 
     await expect(
       planCommand(tmpDir, DEBATE_PLAN_ENABLED_CONFIG, {
         from: "/spec.md",
         feature: "debate-plan",
-        auto: true,
       }),
     ).resolves.toBeDefined();
   });
