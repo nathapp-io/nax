@@ -280,6 +280,26 @@ describe("synthesisResolver()", () => {
     expect(result.costUsd).toBeCloseTo(0.42, 6);
     expect(result.source).toBe("exact");
   });
+
+  test("forwards complete options to adapter.complete()", async () => {
+    let capturedOptions: CompleteOptions | undefined;
+    const adapter = makeMockAdapter("claude", async (_prompt, opts) => {
+      capturedOptions = opts;
+      return { output: "exact synthesis", costUsd: 0.42, source: "exact" };
+    });
+
+    const completeOptions: CompleteOptions = {
+      model: "claude-sonnet-4-5",
+      storyId: "US-001",
+      sessionRole: "synthesis",
+    };
+
+    await synthesisResolver(["p1", "p2"], ["c1"], { adapter, completeOptions });
+
+    expect(capturedOptions?.model).toBe("claude-sonnet-4-5");
+    expect(capturedOptions?.storyId).toBe("US-001");
+    expect(capturedOptions?.sessionRole).toBe("synthesis");
+  });
 });
 
 // ─── AC10: judgeResolver ─────────────────────────────────────────────────────
@@ -434,5 +454,30 @@ describe("judgeResolver()", () => {
     expect(wasCalled).toBe(true);
     expect(result).toBeDefined();
     expect(result.output).toBe("fallback judge output");
+  });
+
+  test("forwards complete options to judge adapter", async () => {
+    let capturedOptions: CompleteOptions | undefined;
+    const getAgentFn = mock((_name: string) =>
+      makeMockAdapter("judge", async (_prompt, opts) => {
+        capturedOptions = opts;
+        return { output: "judge verdict", costUsd: 0.55, source: "exact" };
+      }),
+    );
+
+    const completeOptions: CompleteOptions = {
+      model: "claude-haiku-4-5",
+      storyId: "US-002",
+      sessionRole: "judge",
+    };
+
+    await judgeResolver(["p1"], ["c1"], { type: "custom", agent: "judge" }, {
+      getAgent: getAgentFn,
+      completeOptions,
+    });
+
+    expect(capturedOptions?.model).toBe("claude-haiku-4-5");
+    expect(capturedOptions?.storyId).toBe("US-002");
+    expect(capturedOptions?.sessionRole).toBe("judge");
   });
 });

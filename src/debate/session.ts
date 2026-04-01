@@ -386,7 +386,13 @@ export class DebateSession {
         runComplete(
           adapter,
           prompt,
-          { model: resolveDebaterModel(debater, this.config) },
+          {
+            model: resolveDebaterModel(debater, this.config),
+            featureName: this.stage,
+            config: this.config,
+            storyId: this.storyId,
+            sessionRole: "debate-proposal",
+          },
           modelTierFromDebater(debater),
         ).then((result) => ({ debater, adapter, output: result.output, cost: result.costUsd })),
       ),
@@ -451,7 +457,13 @@ export class DebateSession {
           const fallbackResult = await runComplete(
             fallbackAdapter,
             prompt,
-            { model: resolveDebaterModel(fallbackDebater, this.config) },
+            {
+              model: resolveDebaterModel(fallbackDebater, this.config),
+              featureName: this.stage,
+              config: this.config,
+              storyId: this.storyId,
+              sessionRole: "debate-fallback",
+            },
             modelTierFromDebater(fallbackDebater),
           );
           totalCostUsd += fallbackResult.costUsd;
@@ -487,7 +499,13 @@ export class DebateSession {
           runComplete(
             adapter,
             buildCritiquePrompt(prompt, proposalOutputs, i),
-            { model: resolveDebaterModel(debater, this.config) },
+            {
+              model: resolveDebaterModel(debater, this.config),
+              featureName: this.stage,
+              config: this.config,
+              storyId: this.storyId,
+              sessionRole: "debate-critique",
+            },
             modelTierFromDebater(debater),
           ),
         ),
@@ -684,7 +702,15 @@ export class DebateSession {
       const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
       const adapter = _debateSessionDeps.getAgent(agentName, this.config);
       if (adapter) {
-        const resolverResult = await synthesisResolver(proposalOutputs, critiqueOutputs, { adapter });
+        const resolverResult = await synthesisResolver(proposalOutputs, critiqueOutputs, {
+          adapter,
+          completeOptions: {
+            model: resolveDebaterModel({ agent: agentName }, this.config),
+            config: this.config,
+            storyId: this.storyId,
+            sessionRole: "synthesis",
+          },
+        });
         return {
           outcome: "passed",
           resolverCostUsd: resolverResult.costUsd,
@@ -697,9 +723,16 @@ export class DebateSession {
     }
 
     if (resolverConfig.type === "custom") {
+      const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
       const resolverResult = await judgeResolver(proposalOutputs, critiqueOutputs, resolverConfig, {
         getAgent: (name: string) => _debateSessionDeps.getAgent(name, this.config),
         defaultAgentName: RESOLVER_FALLBACK_AGENT,
+        completeOptions: {
+          model: resolveDebaterModel({ agent: agentName }, this.config),
+          config: this.config,
+          storyId: this.storyId,
+          sessionRole: "judge",
+        },
       });
       return {
         outcome: "passed",
