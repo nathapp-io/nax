@@ -144,3 +144,17 @@ export interface AcceptanceTestResult {
   /** Acceptance criteria that were processed */
   criteria: AcceptanceCriterion[];
 }
+
+/** Diagnosis result from acceptance test failure analysis (US-001) */
+export interface DiagnosisResult {
+  /** Verdict of the diagnosis */
+  verdict: "source_bug" | "test_bug" | "both";
+  /** Reasoning behind the verdict */
+  reasoning: string;
+  /** Confidence score between 0 and 1 */
+  confidence: number;
+  /** Issues found in the test (optional) */
+  testIssues?: string[];
+  /** Issues found in the source code (optional) */
+  sourceIssues?: string[];
+}

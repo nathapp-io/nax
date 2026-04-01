@@ -41,6 +41,7 @@ export type {
   ReviewConfig,
   PlanConfig,
   AcceptanceConfig,
+  AcceptanceFixConfig,
   AcceptanceTestStrategy,
   OptimizerConfig,
   PluginConfigEntry,

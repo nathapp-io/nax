@@ -246,6 +246,18 @@ export interface PlanConfig {
 /** Valid test strategy values for acceptance testing */
 export type AcceptanceTestStrategy = "unit" | "component" | "cli" | "e2e" | "snapshot";
 
+/** Acceptance fix config (US-001) */
+export interface AcceptanceFixConfig {
+  /** Model tier for diagnosis (default: "fast") */
+  diagnoseModel: string;
+  /** Model tier for fix implementation (default: "balanced") */
+  fixModel: string;
+  /** Fix strategy (default: "diagnose-first") */
+  strategy: "diagnose-first" | "implement-only";
+  /** Maximum retry attempts (default: 2) */
+  maxRetries: number;
+}
+
 /** Acceptance validation config */
 export interface AcceptanceConfig {
   /** Enable acceptance test generation and validation */
@@ -271,6 +283,8 @@ export interface AcceptanceConfig {
   testFramework?: string;
   /** Timeout for acceptance test generation in milliseconds (default: 1800000 = 30 min) */
   timeoutMs: number;
+  /** Fix configuration for acceptance test failures (US-001) */
+  fix: AcceptanceFixConfig;
 }
 
 /** Optimizer config (v0.10) */
