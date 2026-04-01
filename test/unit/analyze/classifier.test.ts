@@ -228,6 +228,7 @@ describe("classifyStories — adapter.complete() integration (AA-002)", () => {
         restoreComplete();
 
         expect(capturedOptions?.jsonMode).toBe(true);
+        expect(capturedOptions?.sessionRole).toBe("decompose");
       })
     );
 

@@ -6,7 +6,7 @@
  */
 
 import type { AgentAdapter } from "../agents";
-import { ClaudeCodeAdapter } from "../agents/claude";
+import { createAgentRegistry } from "../agents/registry";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema";
 import { getLogger } from "../logger";
@@ -22,7 +22,18 @@ import type { ClassificationResult, CodebaseScan, StoryClassification } from "./
  * @internal
  */
 export const _classifyDeps = {
-  adapter: new ClaudeCodeAdapter() as AgentAdapter,
+  adapter: {
+    complete: async (...args: Parameters<AgentAdapter["complete"]>) => {
+      const options = args[1];
+      const config = options?.config;
+      if (!config) throw new Error("Classifier adapter requires config");
+
+      const adapter = createAgentRegistry(config).getAgent(config.autoMode.defaultAgent);
+      if (!adapter) throw new Error(`Agent "${config.autoMode.defaultAgent}" not found`);
+
+      return adapter.complete(...args);
+    },
+  } satisfies Pick<AgentAdapter, "complete">,
 };
 
 /**
@@ -122,6 +133,7 @@ async function classifyWithLLM(
     maxTokens: 4096,
     model: modelDef.model,
     config,
+    sessionRole: "decompose",
   });
   const jsonText = typeof completeResult === "string" ? completeResult : completeResult.output;
 

@@ -9,6 +9,7 @@
 
 import { getAgent as _getAgent } from "../agents";
 import { estimateCostByDuration } from "../agents/cost";
+import { createAgentRegistry } from "../agents/registry";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
@@ -50,13 +51,14 @@ async function _defaultRunDebate(
   storyId: string,
   stageConfig: DebateStageConfig,
   prompt: string,
+  config?: NaxConfig,
 ): Promise<{ output: string | null; totalCostUsd: number }> {
   const logger = getSafeLogger();
   const debaters: Debater[] = stageConfig.debaters ?? [];
   const resolved: Array<{ debater: Debater; adapter: AgentAdapter }> = [];
 
   for (const debater of debaters) {
-    const adapter = _rectificationDeps.getAgent(debater.agent);
+    const adapter = _rectificationDeps.getAgent(debater.agent, config);
     if (adapter) {
       resolved.push({ debater, adapter });
     }
@@ -97,7 +99,8 @@ async function _defaultRunDebate(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const _rectificationDeps = {
-  getAgent: _getAgent as (name: string) => AgentAdapter | undefined,
+  getAgent: (name: string, config?: NaxConfig) =>
+    (config ? createAgentRegistry(config).getAgent(name) : _getAgent(name)) as AgentAdapter | undefined,
   runVerification: _fullSuite as typeof _fullSuite,
   escalateTier: _escalateTier,
   runDebate: _defaultRunDebate as typeof _defaultRunDebate,
@@ -140,7 +143,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       const failureSummary = formatFailureSummary(testSummary.failures);
       const diagnosisPrompt = `Analyze the following test failures and identify the root cause:\n\n${failureSummary}`;
       try {
-        const debateResult = await _rectificationDeps.runDebate(story.id, debateStageConfig, diagnosisPrompt);
+        const debateResult = await _rectificationDeps.runDebate(story.id, debateStageConfig, diagnosisPrompt, config);
         if (debateResult.totalCostUsd > 0 && story.routing) {
           story.routing.estimatedCost = (story.routing.estimatedCost ?? 0) + debateResult.totalCostUsd;
         }
@@ -171,7 +174,9 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
     if (diagnosisPrefix) rectificationPrompt = `${diagnosisPrefix}\n\n${rectificationPrompt}`;
     if (promptPrefix) rectificationPrompt = `${promptPrefix}\n\n${rectificationPrompt}`;
 
-    const agent = (agentGetFn ?? _rectificationDeps.getAgent)(config.autoMode.defaultAgent);
+    const agent = agentGetFn
+      ? agentGetFn(config.autoMode.defaultAgent)
+      : _rectificationDeps.getAgent(config.autoMode.defaultAgent, config);
     if (!agent) {
       logger?.error("rectification", "Agent not found, cannot retry");
       break;
@@ -299,7 +304,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
 
     if (escalatedTier !== null) {
       const agentName = escalatedAgent ?? story.routing?.agent ?? config.autoMode.defaultAgent;
-      const agent = (agentGetFn ?? _rectificationDeps.getAgent)(agentName);
+      const agent = agentGetFn ? agentGetFn(agentName) : _rectificationDeps.getAgent(agentName, config);
       if (!agent) {
         return false;
       }

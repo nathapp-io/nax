@@ -8,7 +8,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { generateAcceptanceTests } from "../acceptance";
-import { getAgent } from "../agents/registry";
+import { createAgentRegistry } from "../agents/registry";
 import { scanCodebase } from "../analyze/scanner";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config";
@@ -107,7 +107,7 @@ async function decomposeLLM(
     const scan = await scanCodebase(workdir);
     const codebaseContext = buildCodebaseContext(scan);
     const agentName = config.autoMode.defaultAgent;
-    const adapter = getAgent(agentName);
+    const adapter = createAgentRegistry(config).getAgent(agentName);
     if (!adapter) throw new Error(`Agent "${agentName}" not found`);
 
     const modelTier = config.analyze.model;
@@ -182,7 +182,7 @@ async function generateAcceptanceTestsForFeature(
   try {
     const scan = await scanCodebase(workdir);
     const codebaseContext = buildCodebaseContext(scan);
-    const adapter = getAgent(config.autoMode.defaultAgent);
+    const adapter = createAgentRegistry(config).getAgent(config.autoMode.defaultAgent);
     if (!adapter) throw new Error(`Agent "${config.autoMode.defaultAgent}" not found`);
 
     const modelTier = config.analyze.model;
