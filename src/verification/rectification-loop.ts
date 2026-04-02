@@ -68,10 +68,19 @@ async function _defaultRunDebate(
     return { output: null, totalCostUsd: 0 };
   }
 
+  const timeoutMs = (config?.execution?.sessionTimeoutSeconds ?? 600) * 1000;
   const startMs = Date.now();
   const proposalSettled = await Promise.allSettled(
     resolved.map(({ debater, adapter }) =>
-      adapter.complete(prompt, { model: debater.model }).then((out) => (typeof out === "string" ? out : out.output)),
+      adapter
+        .complete(prompt, {
+          model: debater.model,
+          config,
+          storyId,
+          sessionRole: "debate-proposal",
+          timeoutMs,
+        })
+        .then((out) => (typeof out === "string" ? out : out.output)),
     ),
   );
   const durationMs = Date.now() - startMs;

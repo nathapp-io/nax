@@ -241,6 +241,8 @@ export interface PlanConfig {
   model: ModelTier;
   /** Output path for generated spec (relative to nax/ directory) */
   outputPath: string;
+  /** Timeout for plan sessions in seconds (default: execution.sessionTimeoutSeconds) */
+  timeoutSeconds?: number;
 }
 
 /** Valid test strategy values for acceptance testing */

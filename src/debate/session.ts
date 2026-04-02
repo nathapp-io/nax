@@ -116,12 +116,16 @@ async function runComplete(
   prompt: string,
   options: CompleteOptions,
   modelTier: ModelTier,
+  timeoutMs?: number,
 ): Promise<CompleteResult> {
   return adapter.complete(prompt, {
     ...options,
     modelTier,
+    ...(timeoutMs !== undefined && { timeoutMs }),
   });
 }
+
+const DEFAULT_TIMEOUT_SECONDS = 600;
 
 export class DebateSession {
   private readonly storyId: string;
@@ -131,6 +135,9 @@ export class DebateSession {
   private readonly workdir: string;
   private readonly featureName: string;
   private readonly timeoutSeconds: number;
+  private get timeoutMs(): number {
+    return this.timeoutSeconds * 1000;
+  }
 
   constructor(opts: DebateSessionOptions) {
     this.storyId = opts.storyId;
@@ -139,7 +146,7 @@ export class DebateSession {
     this.config = opts.config;
     this.workdir = opts.workdir ?? process.cwd();
     this.featureName = opts.featureName ?? opts.stage;
-    this.timeoutSeconds = opts.timeoutSeconds ?? opts.config?.execution?.sessionTimeoutSeconds ?? 600;
+    this.timeoutSeconds = opts.timeoutSeconds ?? opts.stageConfig.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
   }
 
   private pipelineStageForDebate(): import("../config/permissions").PipelineStage {
@@ -470,6 +477,7 @@ export class DebateSession {
             config: this.config,
             storyId: this.storyId,
             sessionRole: "debate-proposal",
+            timeoutMs: this.timeoutMs,
           },
           modelTierFromDebater(debater),
         ).then((result) => ({ debater, adapter, output: result.output, cost: result.costUsd })),
@@ -541,6 +549,7 @@ export class DebateSession {
               config: this.config,
               storyId: this.storyId,
               sessionRole: "debate-fallback",
+              timeoutMs: this.timeoutMs,
             },
             modelTierFromDebater(fallbackDebater),
           );
@@ -583,6 +592,7 @@ export class DebateSession {
               config: this.config,
               storyId: this.storyId,
               sessionRole: "debate-critique",
+              timeoutMs: this.timeoutMs,
             },
             modelTierFromDebater(debater),
           ),
@@ -787,6 +797,7 @@ export class DebateSession {
             config: this.config,
             storyId: this.storyId,
             sessionRole: "synthesis",
+            timeoutMs: this.timeoutMs,
           },
         });
         return {
@@ -810,6 +821,7 @@ export class DebateSession {
           config: this.config,
           storyId: this.storyId,
           sessionRole: "judge",
+          timeoutMs: this.timeoutMs,
         },
       });
       return {
