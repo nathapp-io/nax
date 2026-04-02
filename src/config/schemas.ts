@@ -5,7 +5,6 @@
  */
 
 import { z } from "zod";
-import { DEFAULT_CONFIG } from "./defaults";
 
 /** Zod schema for runtime validation */
 const TokenPricingSchema = z.object({
@@ -38,8 +37,7 @@ const PerAgentModelMapSchema = z.record(z.string().min(1), z.record(z.string().m
 
 const ModelMapSchema = z.preprocess((val) => {
   if (isLegacyFlatModels(val)) {
-    const defaultAgent = DEFAULT_CONFIG.autoMode.defaultAgent;
-    return { [defaultAgent]: val };
+    return { claude: val };
   }
   return val;
 }, PerAgentModelMapSchema);
@@ -530,9 +528,47 @@ export const NaxConfigSchema = z
     prompts: PromptsConfigSchema.optional(),
     generate: GenerateConfigSchema.optional(),
     project: ProjectProfileSchema.optional(),
-    debate: DebateConfigSchema.optional().default(
-      () => DEFAULT_CONFIG.debate as NonNullable<typeof DEFAULT_CONFIG.debate>,
-    ),
+    debate: DebateConfigSchema.optional().default(() => ({
+      enabled: false,
+      agents: 3,
+      stages: {
+        plan: {
+          enabled: true,
+          resolver: { type: "synthesis" as const },
+          sessionMode: "stateful" as const,
+          rounds: 3,
+          timeoutSeconds: 600,
+        },
+        review: {
+          enabled: true,
+          resolver: { type: "majority-fail-closed" as const },
+          sessionMode: "one-shot" as const,
+          rounds: 2,
+          timeoutSeconds: 600,
+        },
+        acceptance: {
+          enabled: false,
+          resolver: { type: "majority-fail-closed" as const },
+          sessionMode: "one-shot" as const,
+          rounds: 1,
+          timeoutSeconds: 600,
+        },
+        rectification: {
+          enabled: false,
+          resolver: { type: "synthesis" as const },
+          sessionMode: "one-shot" as const,
+          rounds: 1,
+          timeoutSeconds: 600,
+        },
+        escalation: {
+          enabled: false,
+          resolver: { type: "majority-fail-closed" as const },
+          sessionMode: "one-shot" as const,
+          rounds: 1,
+          timeoutSeconds: 600,
+        },
+      },
+    })),
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",
