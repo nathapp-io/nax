@@ -101,6 +101,16 @@ export function acceptanceTestFilename(language?: string): string {
 }
 
 /**
+ * resolveAcceptanceTestFile determines the filename for the acceptance test based on language and config.
+ * @param language - Programming language of the project
+ * @param testPathConfig - Optional custom test path from configuration
+ * @returns The resolved acceptance test filename
+ */
+export function resolveAcceptanceTestFile(language?: string, testPathConfig?: string): string {
+  return testPathConfig ?? acceptanceTestFilename(language);
+}
+
+/**
  * Build the command to run a single acceptance test file.
  *
  * Priority:
@@ -208,7 +218,7 @@ Rules:
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
 - **Prefer behavioral tests** — import functions and call them rather than reading source files. For example, to verify "getPostRunActions() returns empty array", import PluginRegistry and call getPostRunActions(), don't grep the source file for the method name.
 - **File output (REQUIRED)**: Write the acceptance test file DIRECTLY to the path shown below. Do NOT output the test code in your response. After writing the file, reply with a brief confirmation.
-- **Path anchor (CRITICAL)**: Write the test file to this exact path: \`${join(options.workdir, ".nax", "features", options.featureName, options.config.acceptance.testPath ?? acceptanceTestFilename(options.language))}\`. Import from package sources using relative paths like \`../../../src/...\` (3 levels up from \`.nax/features/<name>/\` to the package root).`;
+- **Path anchor (CRITICAL)**: Write the test file to this exact path: \`${join(options.workdir, ".nax", "features", options.featureName, resolveAcceptanceTestFile(options.language, options.config?.acceptance?.testPath))}\`. Import from package sources using relative paths like \`../../../src/...\` (3 levels up from \`.nax/features/<name>/\` to the package root).`;
 
   const prompt = basePrompt;
 
@@ -240,7 +250,7 @@ Rules:
       ".nax",
       "features",
       options.featureName,
-      options.config.acceptance.testPath ?? acceptanceTestFilename(options.language),
+      resolveAcceptanceTestFile(options.language, options.config?.acceptance?.testPath),
     );
     let recoveryFailed = false;
 
