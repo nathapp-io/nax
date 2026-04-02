@@ -4,12 +4,12 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
-import { NaxConfigSchema } from "../../../src/config/schemas";
-import type { StorySizeGateConfig, NaxConfig } from "../../../src/config/runtime-types";
-import { checkStorySizeGate } from "../../../src/precheck/story-size-gate";
-import type { PRD, UserStory } from "../../../src/prd/types";
-import type { Check } from "../../../src/precheck/types";
+import { DEFAULT_CONFIG } from "./src/config/defaults";
+import { NaxConfigSchema } from "./src/config/schemas";
+import type { StorySizeGateConfig, NaxConfig } from "./src/config/runtime-types";
+import { checkStorySizeGate } from "./src/precheck/story-size-gate";
+import type { PRD, UserStory } from "./src/prd/types";
+import type { Check } from "./src/precheck/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test Helpers

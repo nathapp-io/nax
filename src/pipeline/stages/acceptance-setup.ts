@@ -21,7 +21,7 @@
  */
 
 import path from "node:path";
-import { acceptanceTestFilename, buildAcceptanceRunCommand } from "../../acceptance/generator";
+import { buildAcceptanceRunCommand } from "../../acceptance/generator";
 import type { RefinedCriterion } from "../../acceptance/types";
 import { getAgent } from "../../agents/registry";
 import { resolveModelForAgent } from "../../config";
@@ -143,6 +143,7 @@ export const acceptanceSetupStage: PipelineStage = {
     }
 
     const language = (ctx.effectiveConfig ?? ctx.config).project?.language;
+    const testPathConfig = (ctx.effectiveConfig ?? ctx.config).acceptance.testPath;
     const metaPath = path.join(ctx.featureDir, "acceptance-meta.json");
 
     // All criteria from original stories only — fix stories (US-FIX-*) are excluded
@@ -180,7 +181,7 @@ export const acceptanceSetupStage: PipelineStage = {
     const testPaths: Array<{ testPath: string; packageDir: string }> = [];
     for (const [workdir] of workdirGroups) {
       const packageDir = workdir ? path.join(ctx.workdir, workdir) : ctx.workdir;
-      const testPath = path.join(packageDir, ".nax", "features", featureName, acceptanceTestFilename(language));
+      const testPath = path.join(packageDir, ".nax", "features", featureName, testPathConfig);
       testPaths.push({ testPath, packageDir });
     }
 
@@ -264,7 +265,7 @@ export const acceptanceSetupStage: PipelineStage = {
       // Generate one acceptance test file per workdir group
       for (const [workdir, group] of workdirGroups) {
         const packageDir = workdir ? path.join(ctx.workdir, workdir) : ctx.workdir;
-        const testPath = path.join(packageDir, acceptanceTestFilename(language));
+        const testPath = path.join(packageDir, testPathConfig);
 
         // Filter refined criteria to this group's stories
         const groupStoryIds = new Set(group.stories.map((s) => s.id));
