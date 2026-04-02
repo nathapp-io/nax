@@ -11,26 +11,18 @@
   "progress": {
     "total": 3,
     "passed": 2,
-    "failed": 0,
+    "failed": 1,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 0
   },
   "cost": {
-    "spent": 2.6209944749999994,
+    "spent": 2.6517430049999993,
     "limit": 30
   },
-  "current": {
-    "storyId": "US-003",
-    "title": "Guard test — schema defaults match DEFAULT_CONFIG",
-    "complexity": "simple",
-    "tddStrategy": "tdd-simple",
-    "model": "powerful",
-    "attempt": 1,
-    "phase": "routing"
-  },
+  "current": null,
   "iterations": 6,
-  "updatedAt": "2026-04-02T11:45:23.383Z",
-  "durationMs": 13141279,
-  "lastHeartbeat": "2026-04-02T11:45:23.383Z"
+  "updatedAt": "2026-04-02T12:30:23.420Z",
+  "durationMs": 15841316,
+  "lastHeartbeat": "2026-04-02T12:30:23.420Z"
 }

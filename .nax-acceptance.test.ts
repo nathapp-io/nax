@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { buildSessionName } from "../../../src/agents/acp/adapter";
-import type { AgentAdapter, AgentResult } from "../../../src/agents/types";
-import { DEFAULT_CONFIG, NaxConfigSchema } from "../../../src/config";
-import type { NaxConfig } from "../../../src/config/schema";
+import { buildSessionName } from "./src/agents/acp/adapter";
+import type { AgentAdapter, AgentResult } from "./src/agents/types";
+import { DEFAULT_CONFIG, NaxConfigSchema } from "./src/config";
+import type { NaxConfig } from "./src/config/schema";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -59,6 +59,7 @@ function makeMinimalConfig(overrides: Partial<NaxConfig["acceptance"]> = {}): Na
     plan: { ...DEFAULT_CONFIG.plan },
     acceptance: {
       ...DEFAULT_CONFIG.acceptance,
+      fix: { ...DEFAULT_CONFIG.acceptance.fix },
       ...overrides,
     },
     context: { ...DEFAULT_CONFIG.context },
@@ -117,7 +118,7 @@ describe("AC-2: DEFAULT_CONFIG.acceptance.fix has correct default values", () =>
 
 describe("AC-3: DiagnosisResult interface with required and optional fields", () => {
   test("DiagnosisResult has required fields verdict, reasoning, confidence", async () => {
-    const types = await import("../../../src/acceptance/types");
+    const types = await import("./src/acceptance/types");
     expect(types.DiagnosisResult).toBeDefined();
   });
 
@@ -176,12 +177,12 @@ describe("AC-4: NaxConfigSchema.parse validates strategy field", () => {
 
 describe("AC-5: diagnoseAcceptanceFailure function signature has agentAdapter parameter", () => {
   test("module exports diagnoseAcceptanceFailure function", async () => {
-    const { diagnoseAcceptanceFailure } = await import("../../../src/acceptance/fix-diagnosis");
+    const { diagnoseAcceptanceFailure } = await import("./src/acceptance/fix-diagnosis");
     expect(typeof diagnoseAcceptanceFailure).toBe("function");
   });
 
   test("function accepts agentAdapter as first parameter", async () => {
-    const { diagnoseAcceptanceFailure } = await import("../../../src/acceptance/fix-diagnosis");
+    const { diagnoseAcceptanceFailure } = await import("./src/acceptance/fix-diagnosis");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     const result = await diagnoseAcceptanceFailure(mockAgent, {
@@ -202,7 +203,7 @@ describe("AC-5: diagnoseAcceptanceFailure function signature has agentAdapter pa
 
 describe("AC-6: diagnoseAcceptanceFailure calls agentAdapter.run() with sessionRole 'diagnose'", () => {
   test("agentAdapter.run() is called with sessionRole 'diagnose'", async () => {
-    const { diagnoseAcceptanceFailure } = await import("../../../src/acceptance/fix-diagnosis");
+    const { diagnoseAcceptanceFailure } = await import("./src/acceptance/fix-diagnosis");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     await diagnoseAcceptanceFailure(mockAgent, {
@@ -217,7 +218,7 @@ describe("AC-6: diagnoseAcceptanceFailure calls agentAdapter.run() with sessionR
   });
 
   test("agentAdapter.complete() is never called in diagnoseAcceptanceFailure", async () => {
-    const { diagnoseAcceptanceFailure } = await import("../../../src/acceptance/fix-diagnosis");
+    const { diagnoseAcceptanceFailure } = await import("./src/acceptance/fix-diagnosis");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     await diagnoseAcceptanceFailure(mockAgent, {
@@ -245,7 +246,7 @@ describe("AC-7: sessionName matches nax-<hash>-<feature>-<storyId>-diagnose patt
   });
 
   test("diagnoseAcceptanceFailure creates session with 'diagnose' suffix", async () => {
-    const { diagnoseAcceptanceFailure } = await import("../../../src/acceptance/fix-diagnosis");
+    const { diagnoseAcceptanceFailure } = await import("./src/acceptance/fix-diagnosis");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     await diagnoseAcceptanceFailure(mockAgent, {
@@ -266,7 +267,7 @@ describe("AC-7: sessionName matches nax-<hash>-<feature>-<storyId>-diagnose patt
 
 describe("AC-8: diagnoseAcceptanceFailure resolves model via resolveModelForAgent", () => {
   test("diagnoseAcceptanceFailure passes resolved modelDef to agent.run()", async () => {
-    const { diagnoseAcceptanceFailure } = await import("../../../src/acceptance/fix-diagnosis");
+    const { diagnoseAcceptanceFailure } = await import("./src/acceptance/fix-diagnosis");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     await diagnoseAcceptanceFailure(mockAgent, {
@@ -281,7 +282,7 @@ describe("AC-8: diagnoseAcceptanceFailure resolves model via resolveModelForAgen
   });
 
   test("uses config.acceptance.fix.diagnoseModel tier ('fast' by default)", async () => {
-    const { diagnoseAcceptanceFailure } = await import("../../../src/acceptance/fix-diagnosis");
+    const { diagnoseAcceptanceFailure } = await import("./src/acceptance/fix-diagnosis");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     expect(config.acceptance.fix.diagnoseModel).toBe("fast");
@@ -303,7 +304,7 @@ describe("AC-8: diagnoseAcceptanceFailure resolves model via resolveModelForAgen
 
 describe("AC-9: diagnoseAcceptanceFailure prompt includes auto-detected source files", () => {
   test("prompt includes source file content from imports in test file", async () => {
-    const { diagnoseAcceptanceFailure } = await import("../../../src/acceptance/fix-diagnosis");
+    const { diagnoseAcceptanceFailure } = await import("./src/acceptance/fix-diagnosis");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     const testContent = `
@@ -329,7 +330,7 @@ test("AC-1", () => { expect(add(1,2)).toBe(3); });
 
 describe("AC-10: diagnoseAcceptanceFailure returns correct DiagnosisResult", () => {
   test("returns object with verdict, reasoning, confidence keys", async () => {
-    const { diagnoseAcceptanceFailure } = await import("../../../src/acceptance/fix-diagnosis");
+    const { diagnoseAcceptanceFailure } = await import("./src/acceptance/fix-diagnosis");
     const mockAgent = makeMockAgentAdapter({
       output: '{"verdict":"source_bug","reasoning":"src bug here","confidence":0.85}',
     });
@@ -348,7 +349,7 @@ describe("AC-10: diagnoseAcceptanceFailure returns correct DiagnosisResult", () 
   });
 
   test("JSON.parse succeeds on valid agent output", async () => {
-    const { diagnoseAcceptanceFailure } = await import("../../../src/acceptance/fix-diagnosis");
+    const { diagnoseAcceptanceFailure } = await import("./src/acceptance/fix-diagnosis");
     const mockAgent = makeMockAgentAdapter({
       output: '{"verdict":"test_bug","reasoning":"test issue","confidence":0.7}',
     });
@@ -365,7 +366,7 @@ describe("AC-10: diagnoseAcceptanceFailure returns correct DiagnosisResult", () 
   });
 
   test("schema validation passes for valid DiagnosisResult", async () => {
-    const { diagnoseAcceptanceFailure } = await import("../../../src/acceptance/fix-diagnosis");
+    const { diagnoseAcceptanceFailure } = await import("./src/acceptance/fix-diagnosis");
     const mockAgent = makeMockAgentAdapter({ output: '{"verdict":"both","reasoning":"both issues","confidence":0.6}' });
     const config = makeMinimalConfig();
     const result = await diagnoseAcceptanceFailure(mockAgent, {
@@ -386,7 +387,7 @@ describe("AC-10: diagnoseAcceptanceFailure returns correct DiagnosisResult", () 
 
 describe("AC-11: diagnoseAcceptanceFailure returns fallback on JSON.parse failure", () => {
   test("returns fallback DiagnosisResult on parse failure", async () => {
-    const { diagnoseAcceptanceFailure } = await import("../../../src/acceptance/fix-diagnosis");
+    const { diagnoseAcceptanceFailure } = await import("./src/acceptance/fix-diagnosis");
     const mockAgent = makeMockAgentAdapter({ output: "not valid json output from agent" });
     const config = makeMinimalConfig();
     const result = await diagnoseAcceptanceFailure(mockAgent, {
@@ -409,7 +410,7 @@ describe("AC-11: diagnoseAcceptanceFailure returns fallback on JSON.parse failur
 
 describe("AC-12: diagnoseAcceptanceFailure catches errors and returns fallback", () => {
   test("returns fallback DiagnosisResult when agentAdapter.run() throws", async () => {
-    const { diagnoseAcceptanceFailure } = await import("../../../src/acceptance/fix-diagnosis");
+    const { diagnoseAcceptanceFailure } = await import("./src/acceptance/fix-diagnosis");
     const failingAgent = makeMockAgentAdapter();
     (failingAgent.run as ReturnType<typeof mock>).mockImplementation(async () => {
       throw new Error("network error");
@@ -435,7 +436,7 @@ describe("AC-12: diagnoseAcceptanceFailure catches errors and returns fallback",
 
 describe("AC-13: When protocol is acp, session appears in acpx sessions list", () => {
   test("session name follows nax-<hash>-<feature>-<storyId>-diagnose pattern", async () => {
-    const { diagnoseAcceptanceFailure } = await import("../../../src/acceptance/fix-diagnosis");
+    const { diagnoseAcceptanceFailure } = await import("./src/acceptance/fix-diagnosis");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     await diagnoseAcceptanceFailure(mockAgent, {
@@ -456,12 +457,12 @@ describe("AC-13: When protocol is acp, session appears in acpx sessions list", (
 
 describe("AC-14: executeSourceFix receives agent adapter parameter", () => {
   test("module exports executeSourceFix function", async () => {
-    const { executeSourceFix } = await import("../../../src/acceptance/fix-executor");
+    const { executeSourceFix } = await import("./src/acceptance/fix-executor");
     expect(typeof executeSourceFix).toBe("function");
   });
 
   test("executeSourceFix accepts agent as first parameter", async () => {
-    const { executeSourceFix } = await import("../../../src/acceptance/fix-executor");
+    const { executeSourceFix } = await import("./src/acceptance/fix-executor");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     const result = await executeSourceFix(mockAgent, {
@@ -483,7 +484,7 @@ describe("AC-14: executeSourceFix receives agent adapter parameter", () => {
 
 describe("AC-15: executeSourceFix calls agent.run() with sessionRole 'source-fix'", () => {
   test("agent.run() called with sessionRole 'source-fix'", async () => {
-    const { executeSourceFix } = await import("../../../src/acceptance/fix-executor");
+    const { executeSourceFix } = await import("./src/acceptance/fix-executor");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     await executeSourceFix(mockAgent, {
@@ -499,7 +500,7 @@ describe("AC-15: executeSourceFix calls agent.run() with sessionRole 'source-fix
   });
 
   test("agent.complete() is not called in executeSourceFix", async () => {
-    const { executeSourceFix } = await import("../../../src/acceptance/fix-executor");
+    const { executeSourceFix } = await import("./src/acceptance/fix-executor");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     await executeSourceFix(mockAgent, {
@@ -528,7 +529,7 @@ describe("AC-16: executeSourceFix sessionName matches nax-<hash>-<feature>-<stor
   });
 
   test("executeSourceFix creates session with 'source-fix' suffix", async () => {
-    const { executeSourceFix } = await import("../../../src/acceptance/fix-executor");
+    const { executeSourceFix } = await import("./src/acceptance/fix-executor");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     await executeSourceFix(mockAgent, {
@@ -550,7 +551,7 @@ describe("AC-16: executeSourceFix sessionName matches nax-<hash>-<feature>-<stor
 
 describe("AC-17: executeSourceFix resolves fixModel via resolveModelForAgent", () => {
   test("passes resolved model to agent.run()", async () => {
-    const { executeSourceFix } = await import("../../../src/acceptance/fix-executor");
+    const { executeSourceFix } = await import("./src/acceptance/fix-executor");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     expect(config.acceptance.fix.fixModel).toBe("balanced");
@@ -573,7 +574,7 @@ describe("AC-17: executeSourceFix resolves fixModel via resolveModelForAgent", (
 
 describe("AC-18: executeSourceFix prompt contains 'failing test' and diagnosis/reasoning", () => {
   test("prompt string contains 'failing test'", async () => {
-    const { executeSourceFix } = await import("../../../src/acceptance/fix-executor");
+    const { executeSourceFix } = await import("./src/acceptance/fix-executor");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     await executeSourceFix(mockAgent, {
@@ -589,7 +590,7 @@ describe("AC-18: executeSourceFix prompt contains 'failing test' and diagnosis/r
   });
 
   test("prompt string contains diagnosis or reasoning", async () => {
-    const { executeSourceFix } = await import("../../../src/acceptance/fix-executor");
+    const { executeSourceFix } = await import("./src/acceptance/fix-executor");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     await executeSourceFix(mockAgent, {
@@ -611,7 +612,7 @@ describe("AC-18: executeSourceFix prompt contains 'failing test' and diagnosis/r
 
 describe("AC-19: executeSourceFix does not call Pipeline; Bun.spawn runs after adapter.run()", () => {
   test("executeSourceFix completes without calling pipeline", async () => {
-    const { executeSourceFix } = await import("../../../src/acceptance/fix-executor");
+    const { executeSourceFix } = await import("./src/acceptance/fix-executor");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     const result = await executeSourceFix(mockAgent, {
@@ -633,7 +634,7 @@ describe("AC-19: executeSourceFix does not call Pipeline; Bun.spawn runs after a
 
 describe("AC-20: executeSourceFix returns { success: boolean; cost: number }", () => {
   test("return type has success and cost fields", async () => {
-    const { executeSourceFix } = await import("../../../src/acceptance/fix-executor");
+    const { executeSourceFix } = await import("./src/acceptance/fix-executor");
     const mockAgent = makeMockAgentAdapter({ estimatedCost: 0.07 });
     const config = makeMinimalConfig();
     const result = await executeSourceFix(mockAgent, {
@@ -650,7 +651,7 @@ describe("AC-20: executeSourceFix returns { success: boolean; cost: number }", (
   });
 
   test("cost value comes from result.estimatedCost", async () => {
-    const { executeSourceFix } = await import("../../../src/acceptance/fix-executor");
+    const { executeSourceFix } = await import("./src/acceptance/fix-executor");
     const mockAgent = makeMockAgentAdapter({ estimatedCost: 0.12 });
     const config = makeMinimalConfig();
     const result = await executeSourceFix(mockAgent, {
@@ -672,7 +673,7 @@ describe("AC-20: executeSourceFix returns { success: boolean; cost: number }", (
 
 describe("AC-21: When config.agent.protocol is acp, session appears in acpx list", () => {
   test("session name follows nax-<hash>-<feature>-<storyId>-source-fix pattern", async () => {
-    const { executeSourceFix } = await import("../../../src/acceptance/fix-executor");
+    const { executeSourceFix } = await import("./src/acceptance/fix-executor");
     const mockAgent = makeMockAgentAdapter();
     const config = makeMinimalConfig();
     await executeSourceFix(mockAgent, {
@@ -694,14 +695,14 @@ describe("AC-21: When config.agent.protocol is acp, session appears in acpx list
 
 describe("AC-22: acceptance-loop obtains agent via agentGetFn, not bare getAgent()", () => {
   test("runAcceptanceLoop is exported from acceptance-loop module", async () => {
-    const { runAcceptanceLoop, _acceptanceLoopDeps } = await import("../../../src/execution/lifecycle/acceptance-loop");
+    const { runAcceptanceLoop, _acceptanceLoopDeps } = await import("./src/execution/lifecycle/acceptance-loop");
     expect(typeof runAcceptanceLoop).toBe("function");
     expect(_acceptanceLoopDeps).toBeDefined();
     expect(typeof _acceptanceLoopDeps.getAgent).toBe("function");
   });
 
   test("_acceptanceLoopDeps.getAgent exists for dependency injection", async () => {
-    const { _acceptanceLoopDeps } = await import("../../../src/execution/lifecycle/acceptance-loop");
+    const { _acceptanceLoopDeps } = await import("./src/execution/lifecycle/acceptance-loop");
     expect(_acceptanceLoopDeps.getAgent).toBeDefined();
   });
 });
@@ -712,7 +713,7 @@ describe("AC-22: acceptance-loop obtains agent via agentGetFn, not bare getAgent
 
 describe("AC-23: When strategy is diagnose-first and verdict is source_bug, calls executeSourceFix()", () => {
   test("executeSourceFix is exported from acceptance-fix module", async () => {
-    const { executeSourceFix } = await import("../../../src/acceptance/fix-executor");
+    const { executeSourceFix } = await import("./src/acceptance/fix-executor");
     expect(typeof executeSourceFix).toBe("function");
   });
 });
@@ -723,7 +724,7 @@ describe("AC-23: When strategy is diagnose-first and verdict is source_bug, call
 
 describe("AC-24: When strategy is diagnose-first and verdict is test_bug, calls regenerateAcceptanceTest()", () => {
   test("regenerateAcceptanceTest is exported from acceptance-loop", async () => {
-    const mod = await import("../../../src/execution/lifecycle/acceptance-loop");
+    const mod = await import("./src/execution/lifecycle/acceptance-loop");
     expect(typeof mod.regenerateAcceptanceTest).toBe("function");
   });
 });
@@ -734,8 +735,8 @@ describe("AC-24: When strategy is diagnose-first and verdict is test_bug, calls 
 
 describe("AC-25: When strategy is diagnose-first and verdict is both, calls executeSourceFix then regenerateAcceptanceTest", () => {
   test("both executeSourceFix and regenerateAcceptanceTest are exported", async () => {
-    const { executeSourceFix } = await import("../../../src/acceptance/fix-executor");
-    const mod = await import("../../../src/execution/lifecycle/acceptance-loop");
+    const { executeSourceFix } = await import("./src/acceptance/fix-executor");
+    const mod = await import("./src/execution/lifecycle/acceptance-loop");
     expect(typeof executeSourceFix).toBe("function");
     expect(typeof mod.regenerateAcceptanceTest).toBe("function");
   });
@@ -747,7 +748,7 @@ describe("AC-25: When strategy is diagnose-first and verdict is both, calls exec
 
 describe("AC-26: When strategy is implement-only, skips diagnosis and calls executeSourceFix() directly", () => {
   test("implement-only strategy skips diagnoseAcceptanceFailure", async () => {
-    const { runAcceptanceLoop } = await import("../../../src/execution/lifecycle/acceptance-loop");
+    const { runAcceptanceLoop } = await import("./src/execution/lifecycle/acceptance-loop");
     expect(typeof runAcceptanceLoop).toBe("function");
   });
 });
@@ -776,7 +777,7 @@ describe("AC-27: Fix retries respect config.acceptance.fix.maxRetries", () => {
 
 describe("AC-28: JSONL event with stage acceptance.diagnosis emitted", () => {
   test("event emitter interface supports acceptance.diagnosis stage", async () => {
-    const { runAcceptanceLoop } = await import("../../../src/execution/lifecycle/acceptance-loop");
+    const { runAcceptanceLoop } = await import("./src/execution/lifecycle/acceptance-loop");
     expect(typeof runAcceptanceLoop).toBe("function");
   });
 });

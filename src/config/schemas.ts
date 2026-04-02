@@ -279,10 +279,10 @@ const PlanConfigSchema = z.object({
 });
 
 const AcceptanceFixConfigSchema = z.object({
-  diagnoseModel: z.string().min(1, "acceptance.fix.diagnoseModel must be non-empty"),
-  fixModel: z.string().min(1, "acceptance.fix.fixModel must be non-empty"),
-  strategy: z.enum(["diagnose-first", "implement-only"]),
-  maxRetries: z.number().int().nonnegative(),
+  diagnoseModel: z.string().min(1, "acceptance.fix.diagnoseModel must be non-empty").default("fast"),
+  fixModel: z.string().min(1, "acceptance.fix.fixModel must be non-empty").default("balanced"),
+  strategy: z.enum(["diagnose-first", "implement-only"]).default("diagnose-first"),
+  maxRetries: z.number().int().nonnegative().default(2),
 });
 
 export const AcceptanceConfigSchema = z.object({
@@ -663,7 +663,7 @@ export const NaxConfigSchema = z
     }),
     acceptance: AcceptanceConfigSchema.default({
       enabled: true,
-      maxRetries: 2,
+      maxRetries: 3,
       generateTests: true,
       testPath: ".nax-acceptance.test.ts",
       model: "fast",

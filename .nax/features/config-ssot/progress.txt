@@ -1,2 +1,3 @@
 [2026-04-02T08:37:46.125Z] US-001 — PASSED — Inline DEFAULT_CONFIG references in schemas.ts — Cost: $0.0381
 [2026-04-02T10:26:12.678Z] US-002 — PASSED — Derive DEFAULT_CONFIG from schema parse — Cost: $2.4357
+[2026-04-02T11:48:51.375Z] US-003 — FAILED — Guard test — schema defaults match DEFAULT_CONFIG — Execution failed
