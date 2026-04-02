@@ -572,12 +572,8 @@ export const NaxConfigSchema = z
       typecheckCommand: null,
       dangerouslySkipPermissions: true,
       permissionProfile: "unrestricted",
-      smartTestRunner: {
-        enabled: true,
-        fallback: "import-grep",
-        testFilePatterns: ["test/**/*.test.ts"],
-      },
-    }),
+      smartTestRunner: true,
+    } as unknown as Parameters<typeof ExecutionConfigSchema.default>[0]),
     quality: QualityConfigSchema.default({
       requireTypecheck: true,
       requireLint: true,
