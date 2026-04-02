@@ -3,7 +3,7 @@
   "feature": "config-ssot",
   "branchName": "feat/config-ssot",
   "createdAt": "2026-04-02T12:00:00.000Z",
-  "updatedAt": "2026-04-02T11:48:51.375Z",
+  "updatedAt": "2026-04-02T15:40:20.908Z",
   "userStories": [
     {
       "id": "US-001",
@@ -125,7 +125,7 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "failed",
+      "status": "pending",
       "passes": false,
       "attempts": 1,
       "escalations": [],
@@ -201,7 +201,7 @@
         }
       ],
       "storyPoints": 1,
-      "storyGitRef": "90768daeda6692038f2e8ae7aca45bfefe1a64af"
+      "storyGitRef": "d009c819471459d27e9d4cf310f2951c630746fe"
     }
   ],
   "analysis": "## Analysis\n\n### Current State\n- **`src/config/defaults.ts`** (267 lines): Hand-maintained `DEFAULT_CONFIG` object literal with all defaults\n- **`src/config/schemas.ts`** (540 lines): Zod schemas with 72 `.default()` calls; imports `DEFAULT_CONFIG` from `defaults.ts` in two places:\n  - Line 8: `import { DEFAULT_CONFIG } from \"./defaults\"`\n  - Line 41: `DEFAULT_CONFIG.autoMode.defaultAgent` used in `isLegacyFlatModels` preprocessing\n  - Line 534: `DEFAULT_CONFIG.debate` used as default factory in `NaxConfigSchema`\n\n### Circular Dependency Problem\nAfter the change, `defaults.ts` will import `NaxConfigSchema` from `schemas.ts`. This creates a circular dependency since `schemas.ts` currently imports from `defaults.ts`. The solution is to inline the two referenced values in `schemas.ts` before breaking the import.\n\n### Files That Consume DEFAULT_CONFIG\n1. **`src/config/schema.ts`** — barrel re-export only (line 72)\n2. **`src/config/loader.ts`** — `loadConfig()` clones and deep-merges `DEFAULT_CONFIG` (line 103)\n3. **`src/cli/config-get.ts`** — `loadGlobalConfig()` clones and merges `DEFAULT_CONFIG` (lines 38, 41)\n4. **`test/unit/config/defaults.test.ts`** — existing tests verify `DEFAULT_CONFIG` values directly\n\n### Migration Path\n1. **US-001**: In schemas.ts, remove `DEFAULT_CONFIG` import and inline the two literal values\n2. **US-002**: Replace defaults.ts object literal with `NaxConfigSchema.parse({})`\n3. **US-003**: Add guard test to prevent future drift\n\n### Key Design Decisions\n- `DEFAULT_CONFIG` becomes derived: `NaxConfigSchema.parse({}) as NaxConfig`\n- Zod `.default()` values are authoritative; object literal is deleted\n- `loadConfig()` flow unchanged: Zod defaults → user layers → Zod validation\n- Fail-fast: if a `.default()` is removed, module load throws at startup\n\n### Risk Assessment\n- **Low risk**: Pure refactor, no behavioral change\n- **Breaking change**: None — API surface (DEFAULT_CONFIG export) remains identical\n- **Test impact**: Existing `defaults.test.ts` tests must continue to pass without modification\n- **Migration safety**: `loadConfig()` behavior is functionally identical; only the source of defaults changes from hand-maintained object to Zod-derived object"

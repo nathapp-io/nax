@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-04-02T15-08-51-892Z",
+    "id": "run-2026-04-02T15-40-19-151Z",
     "feature": "config-ssot",
-    "startedAt": "2026-04-02T15:08:51.892Z",
-    "status": "stalled",
+    "startedAt": "2026-04-02T15:40:19.151Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 25117
+    "pid": 40419
   },
   "progress": {
     "total": 3,
     "passed": 2,
-    "failed": 1,
+    "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 1
   },
   "cost": {
     "spent": 0,
     "limit": 30
   },
-  "current": null,
+  "current": {
+    "storyId": "US-003",
+    "title": "Guard test — schema defaults match DEFAULT_CONFIG",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
+    "model": "powerful",
+    "attempt": 2,
+    "phase": "routing"
+  },
   "iterations": 1,
-  "updatedAt": "2026-04-02T15:29:49.512Z",
-  "durationMs": 1257620
+  "updatedAt": "2026-04-02T15:43:19.970Z",
+  "durationMs": 180819,
+  "lastHeartbeat": "2026-04-02T15:43:19.970Z"
 }
