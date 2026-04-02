@@ -1,0 +1,212 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "NaxConfig.acceptance.fix has type AcceptanceFixConfig with fields diagnoseModel (string), fixModel (string), strategy ('diagnose-first' | 'implement-only'), maxRetries (number)",
+    "refined": "TypeScript type check passes: NaxConfig.acceptance has property 'fix' of type AcceptanceFixConfig with fields diagnoseModel (string), fixModel (string), strategy ('diagnose-first'|'implement-only'), maxRetries (number)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "DEFAULT_CONFIG.acceptance.fix equals { diagnoseModel: 'fast', fixModel: 'balanced', strategy: 'diagnose-first', maxRetries: 2 }",
+    "refined": "DEFAULT_CONFIG.acceptance.fix is deep-equal to { diagnoseModel: 'fast', fixModel: 'balanced', strategy: 'diagnose-first', maxRetries: 2 }",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "DiagnosisResult interface exported from src/acceptance/types.ts with required fields verdict, reasoning, confidence and optional fields testIssues, sourceIssues",
+    "refined": "TypeScript module src/acceptance/types.ts exports DiagnosisResult interface with required fields verdict: 'source_bug'|'test_bug'|'both', reasoning: string, confidence: number, and optional fields testIssues?: string[], sourceIssues?: string[]",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "Config validation rejects strategy values other than 'diagnose-first' and 'implement-only'",
+    "refined": "NaxConfigSchema.parse({ acceptance: { fix: { strategy: 'invalid' } } }) throws Zod validation error; NaxConfigSchema.parse({ acceptance: { fix: { strategy: 'diagnose-first' } } }) succeeds; NaxConfigSchema.parse({ acceptance: { fix: { strategy: 'implement-only' } } }) succeeds",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "diagnoseAcceptanceFailure() receives the agent adapter via parameter (from ctx.agentGetFn in caller) — never calls bare getAgent()",
+    "refined": "Function signature includes agentAdapter parameter; function body does not contain getAgent() call; agentAdapter.run() is invoked instead",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-6",
+    "original": "diagnoseAcceptanceFailure() calls agent.run() (not agent.complete()) with sessionRole 'diagnose'",
+    "refined": "agentAdapter.run() is called with sessionRole: 'diagnose' in arguments object; agentAdapter.complete() is never called",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-7",
+    "original": "Session name follows pattern nax-<hash>-<feature>-<storyId>-diagnose via buildSessionName(workdir, featureName, storyId, 'diagnose')",
+    "refined": "sessionName matches regex /^nax-[a-f0-9]+-.+-\\d+-diagnose$/; buildSessionName is called with suffix 'diagnose'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "diagnoseAcceptanceFailure() resolves diagnoseModel tier from config.acceptance.fix.diagnoseModel via resolveModelForAgent() — never passes raw tier name",
+    "refined": "resolveModelForAgent(config.acceptance.fix.diagnoseModel) is called; raw tier string is not passed to agentAdapter.run(); resolved model is passed instead",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "diagnoseAcceptanceFailure() auto-detects source file paths from import statements in the test file content and includes their content in the prompt (up to 5 files, 500 lines each)",
+    "refined": "prompt includes content from ≤5 files; each file has ≤500 lines; extracted from import/export statements in test file; source files are read via fs.readFileSync",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When agent output contains valid JSON matching DiagnosisResult schema, diagnoseAcceptanceFailure() returns the parsed result",
+    "refined": "Returns object with keys: verdict (string), reasoning (string), confidence (number), fixPlan (string|undefined); JSON.parse succeeds on agent output; schema validation passes",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When agent output is invalid or unparsable, diagnoseAcceptanceFailure() returns { verdict: 'source_bug', reasoning: 'diagnosis failed — falling back to source fix', confidence: 0 }",
+    "refined": "On JSON.parse failure or schema validation failure, returns exact object: {verdict: 'source_bug', reasoning: 'diagnosis failed — falling back to source fix', confidence: 0}",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When adapter.run() throws an error, diagnoseAcceptanceFailure() catches it and returns the fallback DiagnosisResult",
+    "refined": "try/catch wraps agentAdapter.run() call; on thrown error, returns fallback DiagnosisResult with verdict: 'source_bug', confidence: 0, reasoning contains error message",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When config.agent.protocol is 'acp', the diagnosis session runs as a proper ACP session visible in acpx list",
+    "refined": "When protocol === 'acp', session appears in acpx sessions list with name matching nax-<hash>-<feature>-<storyId>-diagnose pattern; acpx session-ls returns this session within 5s of diagnosis start",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "executeSourceFix() receives the agent adapter via parameter (from ctx.agentGetFn in caller) — never calls bare getAgent()",
+    "refined": "Function executeSourceFix has a parameter named 'agent' of type AgentAdapter; the function body contains no calls to getAgent() or agentGetFn()",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-15",
+    "original": "executeSourceFix() calls agent.run() (not agent.complete(), not pipeline) with sessionRole 'source-fix'",
+    "refined": "agent.run() is called within executeSourceFix with sessionRole string equal to 'source-fix'; agent.complete() and pipeline calls are absent from executeSourceFix body",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "Session name follows pattern nax-<hash>-<feature>-<storyId>-source-fix via buildSessionName(workdir, featureName, storyId, 'source-fix')",
+    "refined": "buildSessionName(workdir, featureName, storyId, 'source-fix') is called and its return value is passed as sessionName to agent.run(); returned string matches /^nax-[a-f0-9]+-.+-.*-source-fix$/",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "executeSourceFix() resolves fixModel tier from config.acceptance.fix.fixModel via resolveModelForAgent() — never passes raw tier name",
+    "refined": "resolveModelForAgent(config.acceptance.fix.fixModel) is called and its result is passed to agent.run(); no raw tier string is passed directly to agent.run()",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "executeSourceFix() includes failing test output and diagnosis reasoning in the agent prompt",
+    "refined": "The prompt string passed to agent.run() contains substring 'failing test' and contains substring 'diagnosis' or 'reasoning'; prompt is a single concatenated string argument to agent.run()",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "executeSourceFix() does NOT use the pipeline — calls adapter.run() directly, then verifies by running bun test <acceptance-test-path>",
+    "refined": "executeSourceFix does not reference Pipeline or pipeline.execute; Bun.spawn or Bun.secondary's args array includes 'bun test <acceptance-test-path>' after adapter.run() completes",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "executeSourceFix() returns { success: boolean, cost: number } where cost is extracted from AgentResult",
+    "refined": "Return type annotation is { success: boolean; cost: number }; cost value is sourced from result.cost or result.usage?.cost on the AgentResult returned by agent.run()",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When config.agent.protocol is 'acp', the fix session runs as a proper ACP session visible in acpx list with correct session name",
+    "refined": "When config.agent.protocol === 'acp', the session name passed to agent.run() appears in output of `acpx list` command after session creation",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "acceptance-loop.ts obtains agent via (ctx.agentGetFn ?? _acceptanceLoopDeps.getAgent)(agentName) and passes it to diagnoseAcceptanceFailure() and executeSourceFix() — never bare getAgent()",
+    "refined": "acceptance-loop.ts obtains agent via (ctx.agentGetFn ?? _acceptanceLoopDeps.getAgent)(agentName) and passes it to diagnoseAcceptanceFailure() and executeSourceFix() — never bare getAgent()",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When strategy is 'diagnose-first' and diagnosis verdict is 'source_bug', acceptance-loop calls executeSourceFix() (which uses agent.run() with sessionRole 'source-fix') instead of generateAndAddFixStories()",
+    "refined": "When strategy is 'diagnose-first' and diagnosis verdict is 'source_bug', acceptance-loop calls executeSourceFix() (which uses agent.run() with sessionRole 'source-fix') instead of generateAndAddFixStories()",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When strategy is 'diagnose-first' and diagnosis verdict is 'test_bug', acceptance-loop calls regenerateAcceptanceTest() then re-runs acceptance validation",
+    "refined": "When strategy is 'diagnose-first' and diagnosis verdict is 'test_bug', acceptance-loop calls regenerateAcceptanceTest() then re-runs acceptance validation",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When strategy is 'diagnose-first' and diagnosis verdict is 'both', acceptance-loop calls executeSourceFix() first, then calls regenerateAcceptanceTest() if acceptance still fails",
+    "refined": "When strategy is 'diagnose-first' and diagnosis verdict is 'both', acceptance-loop calls executeSourceFix() first, then calls regenerateAcceptanceTest() if acceptance still fails",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When strategy is 'implement-only', acceptance-loop skips diagnosis and calls executeSourceFix() directly",
+    "refined": "When strategy is 'implement-only', acceptance-loop skips diagnosis and calls executeSourceFix() directly",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-27",
+    "original": "Fix retries respect config.acceptance.fix.maxRetries (separate from config.acceptance.maxRetries)",
+    "refined": "Fix retries respect config.acceptance.fix.maxRetries (separate from config.acceptance.maxRetries)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-28",
+    "original": "JSONL event with stage 'acceptance.diagnosis' emitted containing verdict and confidence fields",
+    "refined": "JSONL event with stage 'acceptance.diagnosis' emitted containing verdict and confidence fields",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-29",
+    "original": "JSONL event with stage 'acceptance.source-fix' emitted containing cost and success fields",
+    "refined": "JSONL event with stage 'acceptance.source-fix' emitted containing cost and success fields",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "JSONL event with stage 'acceptance.test-regen' emitted containing outcome field",
+    "refined": "JSONL event with stage 'acceptance.test-regen' emitted containing outcome field",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
