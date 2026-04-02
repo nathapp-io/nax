@@ -289,6 +289,19 @@ export async function runSemanticReview(
   // Collect production-only diff (test files excluded at git level via configurable patterns)
   const rawDiff = await collectDiff(workdir, effectiveRef, semanticConfig.excludePatterns);
 
+  // Skip when diff is empty (story only changed test files — nothing to verify in production code)
+  if (rawDiff.length === 0) {
+    logger?.info("review", "Skipping semantic review — no production code changes", { storyId: story.id });
+    return {
+      check: "semantic",
+      success: true,
+      command: "",
+      exitCode: 0,
+      output: "skipped: no production code changes",
+      durationMs: Date.now() - startTime,
+    };
+  }
+
   // Truncate if over cap — collect stat summary (all files) when truncation needed
   const needsTruncation = rawDiff.length > DIFF_CAP_BYTES;
   const stat = needsTruncation ? await collectDiffStat(workdir, effectiveRef) : undefined;
