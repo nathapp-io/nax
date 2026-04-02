@@ -384,13 +384,12 @@ export async function runSemanticReview(
           findings: toReviewFindings(deduped),
         };
       }
-      logger?.info("review", "Semantic review passed (debate, no findings)", { storyId: story.id, durationMs });
       return {
         check: "semantic",
-        success: true,
+        success: false,
         command: "",
-        exitCode: 0,
-        output: "Semantic review passed (debate, no findings to report)",
+        exitCode: 1,
+        output: "Semantic review failed (debate, no findings)",
         durationMs,
       };
     }
