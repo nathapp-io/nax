@@ -52,6 +52,8 @@ export interface DebateConfig {
   enabled: boolean;
   /** Default number of debating agents when no explicit debaters array is specified */
   agents: number;
+  /** Maximum number of debaters running concurrently per debate round (default: 2) */
+  maxConcurrentDebaters: number;
   /** Per-stage debate configuration */
   stages: {
     /** Planning phase debate */
