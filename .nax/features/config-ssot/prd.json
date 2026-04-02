@@ -3,7 +3,7 @@
   "feature": "config-ssot",
   "branchName": "feat/config-ssot",
   "createdAt": "2026-04-02T12:00:00.000Z",
-  "updatedAt": "2026-04-02T10:26:14.732Z",
+  "updatedAt": "2026-04-02T10:52:36.656Z",
   "userStories": [
     {
       "id": "US-001",
@@ -134,7 +134,7 @@
         "testStrategy": "tdd-simple",
         "reasoning": "validated from LLM output",
         "initialComplexity": "simple",
-        "modelTier": "fast"
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/config/defaults.ts",
@@ -142,8 +142,29 @@
         "src/config/schema.ts",
         "test/unit/config/defaults.test.ts"
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast: Autofix exhausted: review still failing after fix attempts"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "fast",
+          "stage": "review",
+          "summary": "Failed with tier fast, escalating to next tier",
+          "reviewFindings": [
+            {
+              "ruleId": "semantic",
+              "severity": "info",
+              "file": "src/review/semantic.ts",
+              "line": 292,
+              "message": "The new early-return for empty diff (lines 292–300) is unrelated to the story's ACs. It is production code that was not part of the story's scope.",
+              "source": "semantic-review"
+            }
+          ],
+          "cost": 0.116859195,
+          "timestamp": "2026-04-02T10:52:34.639Z"
+        }
+      ],
       "storyPoints": 1,
       "storyGitRef": "90768daeda6692038f2e8ae7aca45bfefe1a64af"
     }
