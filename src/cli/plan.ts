@@ -777,6 +777,18 @@ export async function planDecomposeCommand(
   const adapter = _planDeps.getAgent(agentName, config);
   if (!adapter) throw new Error(`[decompose] No agent adapter found for '${agentName}'`);
 
+  let decomposeModel: string | undefined;
+  try {
+    const planTier = config?.plan?.model ?? "balanced";
+    const { resolveModelForAgent } = await import("../config/schema");
+    if (config?.models) {
+      const defaultAgent = config.autoMode?.defaultAgent ?? "claude";
+      decomposeModel = resolveModelForAgent(config.models, defaultAgent, planTier, defaultAgent).model;
+    }
+  } catch {
+    // fall through — adapter will use its own fallback
+  }
+
   const stages = config?.debate?.stages as Record<string, DebateStageConfig> | undefined;
   const debateEnabled = config?.debate?.enabled && stages?.decompose?.enabled;
 
@@ -799,6 +811,7 @@ export async function planDecomposeCommand(
       rawResponse = debateResult.output;
     } else {
       const completeResult = await adapter.complete(prompt, {
+        model: decomposeModel,
         jsonMode: true,
         workdir,
         sessionRole: "decompose",
@@ -810,6 +823,7 @@ export async function planDecomposeCommand(
     }
   } else {
     const completeResult = await adapter.complete(prompt, {
+      model: decomposeModel,
       jsonMode: true,
       workdir,
       sessionRole: "decompose",
