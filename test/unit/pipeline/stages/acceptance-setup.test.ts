@@ -223,7 +223,7 @@ describe("acceptance-setup: calls refinement and generation", () => {
 // ---------------------------------------------------------------------------
 
 describe("acceptance-setup: writes test file", () => {
-  test("writes .nax-acceptance.test.ts to package root (not featureDir)", async () => {
+  test("writes .nax-acceptance.test.ts under .nax/features/<featureName>/", async () => {
     const writtenPaths: string[] = [];
     const testCode = 'import { test } from "bun:test"; test("AC-1", () => { throw new Error("red") })';
 
@@ -241,10 +241,9 @@ describe("acceptance-setup: writes test file", () => {
     await acceptanceSetupStage.execute(ctx);
 
     expect(writtenPaths.length).toBe(1);
-    // US-001: file is at package root, not inside featureDir
-    expect(writtenPaths[0]).toContain(".nax-acceptance.test.ts");
+    // BUG-186 regression: file must be under .nax/features/<featureName>/, not the bare package root
+    expect(writtenPaths[0]).toContain(".nax/features/test-feature/.nax-acceptance.test.ts");
     expect(writtenPaths[0]).toContain("/tmp/test-workdir");
-    expect(writtenPaths[0]).not.toContain("features/test-feature");
   });
 
   test("written content matches generated testCode", async () => {
@@ -786,7 +785,7 @@ describe("US-001: per-package test file generation by workdir", () => {
     expect(writtenPaths.some((p) => p.includes("apps/cli") && p.includes(".nax-acceptance.test.ts"))).toBe(true);
   });
 
-  test("AC-2: single-package project generates one file at repo root", async () => {
+  test("AC-2: single-package project generates one file under .nax/features/<featureName>/", async () => {
     const writtenPaths: string[] = [];
 
     _acceptanceSetupDeps.fileExists = async () => false;
@@ -807,8 +806,8 @@ describe("US-001: per-package test file generation by workdir", () => {
     await acceptanceSetupStage.execute(ctx);
 
     expect(writtenPaths.length).toBe(1);
-    expect(writtenPaths[0]).toContain("/tmp/test-workdir/.nax-acceptance.test.ts");
-    expect(writtenPaths[0]).not.toContain("features");
+    // BUG-186 regression: file must be under .nax/features/<featureName>/ (not bare package root)
+    expect(writtenPaths[0]).toContain("/tmp/test-workdir/.nax/features/test-feature/.nax-acceptance.test.ts");
   });
 
   test("AC-4: RED gate runs each file from its package directory", async () => {
