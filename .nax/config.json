@@ -87,9 +87,7 @@
         "detectOpenHandles": true,
         "detectOpenHandlesRetries": 1,
         "gracePeriodMs": 5000,
-        "drainTimeoutMs": 2000,
-        "shell": "/bin/sh",
-        "stripEnvVars": ["CLAUDECODE", "REPL_ID", "AGENT"]
+        "drainTimeoutMs": 2000
     },
     "debate": {
         "enabled": true,
@@ -160,27 +158,6 @@
             }
         }
     },
-    "tdd": {
-        "maxRetries": 2,
-        "autoVerifyIsolation": true,
-        "autoApproveVerifier": true,
-        "strategy": "auto",
-        "sessionTiers": {
-            "testWriter": "balanced",
-            "verifier": "fast"
-        }
-    },
-    "constitution": {
-        "enabled": true,
-        "path": "constitution.md",
-        "maxTokens": 2000
-    },
-    "analyze": {
-        "llmEnhanced": false,
-        "model": "balanced",
-        "fallbackToKeywords": true,
-        "maxCodebaseSummaryTokens": 5000
-    },
     "review": {
         "enabled": true,
         "checks": ["build", "typecheck", "lint", "semantic"],
@@ -198,39 +175,6 @@
         }
     },
     "plan": {
-        "model": "balanced",
-        "outputPath": "spec.md"
-    },
-    "acceptance": {
-        "enabled": true,
-        "maxRetries": 2,
-        "generateTests": true,
-        "testPath": "acceptance.test.ts"
-    },
-    "context": {
-        "fileInjection": "disabled",
-        "testCoverage": {
-            "enabled": true,
-            "detail": "names-and-counts",
-            "maxTokens": 500,
-            "testPattern": "**/*.test.{ts,js}",
-            "scopeToStory": true
-        }
-    },
-    "precheck": {
-        "storySizeGate": {
-            "enabled": true,
-            "maxAcCount": 10,
-            "maxDescriptionLength": 2000,
-            "maxBulletPoints": 15
-        }
-    },
-    "decompose": {
-        "trigger": "disabled",
-        "maxAcceptanceCriteria": 8,
-        "maxSubstories": 5,
-        "maxSubstoryComplexity": "medium",
-        "maxRetries": 2,
         "model": "balanced"
     }
 }
