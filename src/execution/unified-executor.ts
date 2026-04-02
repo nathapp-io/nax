@@ -12,7 +12,7 @@ import { wireInteraction } from "../pipeline/subscribers/interaction";
 import { wireRegistry } from "../pipeline/subscribers/registry";
 import { wireReporters } from "../pipeline/subscribers/reporters";
 import type { PipelineContext } from "../pipeline/types";
-import { isComplete, isStalled, loadPRD } from "../prd";
+import { countStories, isComplete, isStalled, loadPRD } from "../prd";
 import type { PRD } from "../prd/types";
 import { startHeartbeat } from "./crash-recovery";
 import { captureRunStartRef, runDeferredReview } from "./deferred-review";
@@ -103,7 +103,17 @@ export async function executeUnified(
         prd = await loadPRD(ctx.prdPath);
         prdDirty = false;
       }
+      const storyCounts = countStories(prd);
+      logger?.debug("execution", "Loop iteration", {
+        iteration: iterations,
+        isComplete: isComplete(prd),
+        passed: storyCounts.passed,
+        pending: storyCounts.pending,
+        failed: storyCounts.failed,
+        total: storyCounts.total,
+      });
       if (isComplete(prd)) {
+        logger?.debug("execution", "All stories complete — entering completion path");
         if (ctx.interactionChain && isTriggerEnabled("pre-merge", ctx.config)) {
           const shouldProceed = await checkPreMerge(
             { featureName: ctx.feature, totalStories: prd.userStories.length, cost: totalCost },
@@ -112,7 +122,9 @@ export async function executeUnified(
           );
           if (!shouldProceed) return buildResult("pre-merge-aborted");
         }
+        logger?.debug("execution", "Running deferred review");
         deferredReview = await runDeferredReview(ctx.workdir, ctx.config.review, ctx.pluginRegistry, runStartRef);
+        logger?.debug("execution", "Deferred review done — returning completed");
         return buildResult("completed");
       }
 

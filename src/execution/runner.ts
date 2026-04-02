@@ -234,13 +234,17 @@ export async function run(options: RunOptions): Promise<RunResult> {
       durationMs,
     };
   } finally {
+    const logger = getSafeLogger();
+    logger?.debug("execution", "Runner finally block — starting cleanup");
     // Stop heartbeat on any exit (US-007)
     stopHeartbeat();
     // Cleanup crash handlers (MEM-1 fix)
     cleanupCrashHandlers();
 
     // Sweep any remaining open ACP sessions for this feature
+    logger?.debug("execution", "Runner finally — sweeping ACP sessions");
     await sweepFeatureSessions(workdir, feature).catch(() => {});
+    logger?.debug("execution", "Runner finally — ACP sweep done");
 
     // Resolve current branch at runtime
     let branch = "";
@@ -252,6 +256,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     }
 
     // Execute cleanup operations
+    logger?.debug("execution", "Runner finally — running cleanupRun");
     const { cleanupRun } = await import("./lifecycle/run-cleanup");
     await cleanupRun({
       runId,
@@ -267,6 +272,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       branch,
       version: NAX_VERSION,
     });
+    logger?.debug("execution", "Runner finally — cleanupRun done, run() returning");
   }
 }
 

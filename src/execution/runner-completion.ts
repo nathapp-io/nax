@@ -67,6 +67,11 @@ export interface RunnerCompletionResult {
 export async function runCompletionPhase(options: RunnerCompletionOptions): Promise<RunnerCompletionResult> {
   const logger = getSafeLogger();
 
+  logger?.debug("execution", "Completion phase started", {
+    acceptanceEnabled: options.config.acceptance?.enabled,
+    isComplete: isComplete(options.prd),
+  });
+
   // Check if we need acceptance retry loop
   if (options.config.acceptance.enabled && isComplete(options.prd)) {
     const { runAcceptanceLoop } = await import("./lifecycle/acceptance-loop");
@@ -152,6 +157,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   }
 
   // Stop heartbeat and write exit summary (US-007)
+  logger?.debug("execution", "Completion phase — stopping heartbeat and writing exit summary");
   stopHeartbeat();
   await writeExitSummary(
     options.logFilePath,
@@ -162,7 +168,9 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   );
 
   // Commit status.json and any other nax runtime files left dirty at run end
+  logger?.debug("execution", "Completion phase — auto-committing dirty files");
   await autoCommitIfDirty(options.workdir, "run.complete", "run-summary", options.feature);
+  logger?.debug("execution", "Completion phase done — returning to runner");
 
   return {
     durationMs,
