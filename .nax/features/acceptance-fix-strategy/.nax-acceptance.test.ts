@@ -1,3 +1,14 @@
+/**
+ * Acceptance Tests for acceptance-fix-strategy Feature
+ *
+ * Tests the diagnose-first vs implement-only fix strategy for acceptance failures.
+ * Verifies: config schema, DiagnosisResult type, diagnoseAcceptanceFailure(),
+ * executeSourceFix(), and acceptance-loop wiring.
+ *
+ * Note: Many tests require the feature modules (fix-diagnosis.ts, fix-executor.ts)
+ * to be implemented. These tests will pass once the feature is complete.
+ */
+
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { buildSessionName } from "../../../src/agents/acp/adapter";

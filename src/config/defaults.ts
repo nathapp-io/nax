@@ -175,6 +175,12 @@ export const DEFAULT_CONFIG: NaxConfig = {
     refinement: true,
     redGate: true,
     timeoutMs: 1800000,
+    fix: {
+      diagnoseModel: "fast",
+      fixModel: "balanced",
+      strategy: "diagnose-first",
+      maxRetries: 2,
+    },
   },
   context: {
     fileInjection: "disabled",

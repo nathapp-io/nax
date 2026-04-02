@@ -7,15 +7,13 @@
             "powerful": "sonnet"
         },
         "opencode": {
-            "fast": "minimax/MiniMax-M2.7",
-            "balanced": "minimax/MiniMax-M2.7",
-            "powerful": "minimax/MiniMax-M2.7"
-        }
+            "fast": "minimax/MiniMax-M2.7"
+        }        
     },
     "autoMode": {
         "enabled": true,
-        "defaultAgent": "opencode",
-        "fallbackOrder": ["opencode"],
+        "defaultAgent": "claude",
+        "fallbackOrder": ["claude"],
         "complexityRouting": {
             "simple": "fast",
             "medium": "balanced",
@@ -47,6 +45,16 @@
     "agent": {
         "protocol": "acp"
     },
+    "routing": {
+        "strategy": "llm",
+        "llm": {
+            "model": "fast",
+            "fallbackToKeywords": true,
+            "cacheDecisions": true,
+            "mode": "hybrid",
+            "timeoutMs": 60000
+        }
+    },
     "execution": {
         "permissionProfile": "unrestricted",
         "maxIterations": 6,
@@ -57,9 +65,7 @@
         "maxStoriesPerFeature": 15,
         "rectification": {
             "enabled": true,
-            "maxRetries": 3,
-            "rethinkAtAttempt": 2,
-            "urgencyAtAttempt": 3,
+            "maxRetries": 2,
             "fullSuiteTimeoutSeconds": 600,
             "maxFailureSummaryChars": 2000,
             "abortOnIncreasingFailures": true
@@ -88,75 +94,6 @@
         "detectOpenHandlesRetries": 1,
         "gracePeriodMs": 5000,
         "drainTimeoutMs": 2000
-    },
-    "debate": {
-        "enabled": true,
-        "agents": 2,
-        "stages": {
-            "plan": {
-                "enabled": true,
-                "rounds": 2,
-                "sessionMode": "stateful",
-                "resolver": {
-                    "type": "synthesis",
-                    "agent": "claude"
-                },
-                "debaters": [
-                    {
-                        "agent": "opencode",
-                        "model": "fast"
-                    },
-                    {
-                        "agent": "opencode",
-                        "model": "fast"
-                    }
-                ]
-            },
-            "review": {
-                "enabled": true,
-                "rounds": 2,
-                "sessionMode": "one-shot",
-                "resolver": {
-                    "type": "majority-fail-closed",
-                    "agent": "claude",
-                    "model": "fast"
-                },
-                "debaters": [
-                    {
-                        "agent": "opencode",
-                        "model": "fast"
-                    },
-                    {
-                        "agent": "opencode",
-                        "model": "fast"
-                    }
-                ]
-            },
-            "acceptance": {
-                "enabled": false,
-                "rounds": 1,
-                "sessionMode": "one-shot",
-                "resolver": {
-                    "type": "majority-fail-closed"
-                }
-            },
-            "rectification": {
-                "enabled": false,
-                "rounds": 1,
-                "sessionMode": "one-shot",
-                "resolver": {
-                    "type": "majority-fail-closed"
-                }
-            },
-            "escalation": {
-                "enabled": false,
-                "rounds": 1,
-                "sessionMode": "one-shot",
-                "resolver": {
-                    "type": "majority-fail-closed"
-                }
-            }
-        }
     },
     "review": {
         "enabled": true,

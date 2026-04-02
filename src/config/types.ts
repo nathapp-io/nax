@@ -36,6 +36,7 @@ export type {
 // Runtime types
 export type {
   AcceptanceConfig,
+  AcceptanceFixConfig,
   AcceptanceTestStrategy,
   AnalyzeConfig,
   AutoModeConfig,

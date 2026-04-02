@@ -279,6 +279,13 @@ const PlanConfigSchema = z.object({
   outputPath: z.string().min(1, "plan.outputPath must be non-empty"),
 });
 
+const AcceptanceFixConfigSchema = z.object({
+  diagnoseModel: z.string().min(1, "acceptance.fix.diagnoseModel must be non-empty"),
+  fixModel: z.string().min(1, "acceptance.fix.fixModel must be non-empty"),
+  strategy: z.enum(["diagnose-first", "implement-only"]),
+  maxRetries: z.number().int().nonnegative(),
+});
+
 export const AcceptanceConfigSchema = z.object({
   enabled: z.boolean(),
   maxRetries: z.number().int().nonnegative(),
@@ -291,6 +298,12 @@ export const AcceptanceConfigSchema = z.object({
   testStrategy: z.enum(["unit", "component", "cli", "e2e", "snapshot"]).optional(),
   testFramework: z.string().min(1, "acceptance.testFramework must be non-empty").optional(),
   timeoutMs: z.number().int().min(30000).max(3600000).default(1800000),
+  fix: AcceptanceFixConfigSchema.optional().default({
+    diagnoseModel: "fast",
+    fixModel: "balanced",
+    strategy: "diagnose-first",
+    maxRetries: 2,
+  }),
 });
 
 const TestCoverageConfigSchema = z.object({

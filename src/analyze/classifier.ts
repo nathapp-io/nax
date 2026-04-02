@@ -134,6 +134,7 @@ async function classifyWithLLM(
     model: modelDef.model,
     config,
     sessionRole: "decompose",
+    timeoutMs: (config.execution?.sessionTimeoutSeconds ?? 3600) * 1000,
   });
   const jsonText = typeof completeResult === "string" ? completeResult : completeResult.output;
 

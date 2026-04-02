@@ -207,6 +207,7 @@ export async function refineAcceptanceCriteria(
       storyId,
       workdir,
       sessionRole: "refine",
+      timeoutMs: config.acceptance?.timeoutMs ?? 120_000,
     });
     response = typeof completeResult === "string" ? completeResult : completeResult.output;
   } catch (error) {
