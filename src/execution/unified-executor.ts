@@ -14,7 +14,7 @@ import { wireReporters } from "../pipeline/subscribers/reporters";
 import type { PipelineContext } from "../pipeline/types";
 import { isComplete, isStalled, loadPRD } from "../prd";
 import type { PRD } from "../prd/types";
-import { startHeartbeat, stopHeartbeat } from "./crash-recovery";
+import { startHeartbeat } from "./crash-recovery";
 import { captureRunStartRef, runDeferredReview } from "./deferred-review";
 import type { DeferredReviewResult } from "./deferred-review";
 import type { SequentialExecutionContext, SequentialExecutionResult } from "./executor-types";
@@ -438,7 +438,11 @@ export async function executeUnified(
 
     return buildResult("max-iterations");
   } finally {
-    stopHeartbeat();
+    // NOTE: stopHeartbeat() is intentionally NOT called here.
+    // The heartbeat must stay alive until runner-completion.ts finishes the
+    // regression gate and exit summary — those run AFTER executeUnified returns.
+    // stopHeartbeat() is called by runner.ts:finally (catches all exit paths)
+    // and by runner-completion.ts after handleRunCompletion().
   }
 }
 
