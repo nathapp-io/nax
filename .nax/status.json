@@ -1,12 +1,12 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-04-02T08-06-22-104Z",
+    "id": "run-2026-04-02T15-08-51-892Z",
     "feature": "config-ssot",
-    "startedAt": "2026-04-02T08:06:22.104Z",
-    "status": "running",
+    "startedAt": "2026-04-02T15:08:51.892Z",
+    "status": "stalled",
     "dryRun": false,
-    "pid": 80953
+    "pid": 25117
   },
   "progress": {
     "total": 3,
@@ -17,12 +17,11 @@
     "pending": 0
   },
   "cost": {
-    "spent": 2.6517430049999993,
+    "spent": 0,
     "limit": 30
   },
   "current": null,
-  "iterations": 6,
-  "updatedAt": "2026-04-02T12:30:23.420Z",
-  "durationMs": 15841316,
-  "lastHeartbeat": "2026-04-02T12:30:23.420Z"
+  "iterations": 1,
+  "updatedAt": "2026-04-02T15:29:49.512Z",
+  "durationMs": 1257620
 }

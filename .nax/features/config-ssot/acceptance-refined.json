@@ -1,0 +1,114 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "schemas.ts has zero imports from \"./defaults\" or \"./defaults.ts\"",
+    "refined": "schemas.ts file content does not contain any import statements matching /^import\\s+.*\\s+from\\s+['\"]\\.\\/defaults(\\.ts)?['\"]/",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "NaxConfigSchema.parse({}) returns an object where autoMode.defaultAgent === \"claude\"",
+    "refined": "NaxConfigSchema.parse({}).autoMode.defaultAgent === 'claude'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "NaxConfigSchema.parse({}) returns an object where debate.enabled === false",
+    "refined": "NaxConfigSchema.parse({}).debate.enabled === false",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "NaxConfigSchema.parse({}) returns an object where debate.stages.plan.enabled === true",
+    "refined": "NaxConfigSchema.parse({}).debate.stages.plan.enabled === true",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "NaxConfigSchema.parse({}).debate deeply equals the current DEFAULT_CONFIG.debate value from defaults.ts",
+    "refined": "JSON.stringify(NaxConfigSchema.parse({}).debate) === JSON.stringify(DEFAULT_CONFIG.debate) where DEFAULT_CONFIG is imported from defaults.ts",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "defaults.ts exports DEFAULT_CONFIG as NaxConfigSchema.parse({}) cast to NaxConfig",
+    "refined": "TypeScript: typeof DEFAULT_CONFIG extends NaxConfig && exports['DEFAULT_CONFIG'] !== undefined",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-7",
+    "original": "defaults.ts is fewer than 15 lines total",
+    "refined": "File line count < 15",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "DEFAULT_CONFIG.execution.sessionTimeoutSeconds === 3600",
+    "refined": "expect(DEFAULT_CONFIG.execution.sessionTimeoutSeconds).toBe(3600)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "DEFAULT_CONFIG.execution.rectification.maxRetries === 2",
+    "refined": "expect(DEFAULT_CONFIG.execution.rectification.maxRetries).toBe(2)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "DEFAULT_CONFIG.quality.requireTypecheck === true",
+    "refined": "expect(DEFAULT_CONFIG.quality.requireTypecheck).toBe(true)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "loadConfig() called with no config files returns a config deeply equal to DEFAULT_CONFIG",
+    "refined": "expect(loadConfig({})).toEqual(DEFAULT_CONFIG)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "Test file exists at test/unit/config/defaults-ssot.test.ts",
+    "refined": "fs.existsSync('test/unit/config/defaults-ssot.test.ts') returns true",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-13",
+    "original": "Test asserts deepEqual(NaxConfigSchema.parse({}), DEFAULT_CONFIG) passes",
+    "refined": "expect(NaxConfigSchema.parse({})).toStrictEqual(DEFAULT_CONFIG) does not throw and returns true",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-14",
+    "original": "Test asserts every top-level key of NaxConfig is present in NaxConfigSchema.parse({})",
+    "refined": "Object.keys(DEFAULT_CONFIG).every(key => key in NaxConfigSchema.parse({})) returns true",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-15",
+    "original": "Test asserts NaxConfigSchema.parse({}) does not throw",
+    "refined": "expect(() => NaxConfigSchema.parse({})).not.toThrow() passes",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "All existing tests in test/unit/config/defaults.test.ts continue to pass without modification",
+    "refined": "bun test test/unit/config/defaults.test.ts exits with code 0",
+    "testable": true,
+    "storyId": "US-003"
+  }
+]
