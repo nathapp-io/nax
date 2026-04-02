@@ -185,5 +185,11 @@ export async function runExecutionPhase(
 
   // Always let Phase 3 (runCompletionPhase) run to handle setRunStatus,
   // metrics, hooks, and cleanup — the unified executor does not perform these.
+  logger?.debug("execution", "Execution phase complete — handing off to completion phase", {
+    exitReason: unifiedResult.exitReason,
+    iterations,
+    storiesCompleted,
+    totalCost,
+  });
   return { prd, iterations, storiesCompleted, totalCost, allStoryMetrics };
 }
