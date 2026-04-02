@@ -151,9 +151,10 @@ export async function diagnoseAcceptanceFailure(
       confidence: 0,
     };
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "unknown error";
     return {
       verdict: "source_bug",
-      reasoning: "diagnosis failed — falling back to source fix",
+      reasoning: `diagnosis failed — ${errMsg}`,
       confidence: 0,
     };
   }
