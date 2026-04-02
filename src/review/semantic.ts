@@ -294,6 +294,17 @@ export async function runSemanticReview(
   const stat = needsTruncation ? await collectDiffStat(workdir, effectiveRef) : undefined;
   const diff = truncateDiff(rawDiff, stat);
 
+  if (!diff) {
+    return {
+      check: "semantic",
+      success: true,
+      command: "",
+      exitCode: 0,
+      output: "skipped: no production code changes",
+      durationMs: Date.now() - startTime,
+    };
+  }
+
   // Resolve agent
   const agent = modelResolver(semanticConfig.modelTier);
   if (!agent) {
