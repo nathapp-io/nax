@@ -3,7 +3,7 @@
   "feature": "config-ssot",
   "branchName": "feat/config-ssot",
   "createdAt": "2026-04-02T12:00:00.000Z",
-  "updatedAt": "2026-04-02T08:07:54.929Z",
+  "updatedAt": "2026-04-02T08:23:22.515Z",
   "userStories": [
     {
       "id": "US-001",
@@ -32,14 +32,35 @@
         "reasoning": "validated from LLM output",
         "noTestJustification": "US-001 is a pure inlining refactor with zero behavioral change. Verification happens via US-002 when NaxConfigSchema.parse({}) is used to derive DEFAULT_CONFIG. The schema defaults are tested in US-003.",
         "initialComplexity": "simple",
-        "modelTier": "fast"
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/config/schemas.ts",
         "src/config/defaults.ts"
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: fast: Autofix exhausted: review still failing after fix attempts"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "fast",
+          "stage": "review",
+          "summary": "Failed with tier fast, escalating to next tier",
+          "reviewFindings": [
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/config/schemas.ts",
+              "line": 0,
+              "message": "The diff contains no changes to src/config/schemas.ts. AC1 requires schemas.ts to have zero imports from './defaults' or './defaults.ts', but the import at line 8 (`import { DEFAULT_CONFIG } from \"./defaults\"`) is not removed.",
+              "source": "semantic-review"
+            }
+          ],
+          "cost": 0.002003145,
+          "timestamp": "2026-04-02T08:23:20.498Z"
+        }
+      ],
       "storyPoints": 1,
       "storyGitRef": "f933c5625def3c61837fed30940c4094c9db8786"
     },

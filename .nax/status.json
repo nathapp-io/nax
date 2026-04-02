@@ -17,7 +17,7 @@
     "pending": 3
   },
   "cost": {
-    "spent": 0,
+    "spent": 0.002003145,
     "limit": 30
   },
   "current": {
@@ -29,8 +29,8 @@
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 1,
-  "updatedAt": "2026-04-02T08:08:23.104Z",
-  "durationMs": 121000,
-  "lastHeartbeat": "2026-04-02T08:08:23.104Z"
+  "iterations": 2,
+  "updatedAt": "2026-04-02T08:26:23.154Z",
+  "durationMs": 1201050,
+  "lastHeartbeat": "2026-04-02T08:26:23.154Z"
 }
