@@ -235,7 +235,6 @@ export const acceptanceSetupStage: PipelineStage = {
     if (shouldGenerate) {
       totalCriteria = allCriteria.length;
 
-      const { getAgent } = await import("../../agents");
       const agent = (ctx.agentGetFn ?? _acceptanceSetupDeps.getAgent)(ctx.config.autoMode.defaultAgent);
 
       // Refine criteria per-story (preserves storyId association for per-group filtering)
@@ -271,7 +270,13 @@ export const acceptanceSetupStage: PipelineStage = {
       // Generate one acceptance test file per workdir group
       for (const [workdir, group] of workdirGroups) {
         const packageDir = workdir ? path.join(ctx.workdir, workdir) : ctx.workdir;
-        const testPath = path.join(packageDir, resolveAcceptanceTestFile(language, testPathConfig));
+        const testPath = path.join(
+          packageDir,
+          ".nax",
+          "features",
+          featureName,
+          resolveAcceptanceTestFile(language, testPathConfig),
+        );
 
         // Filter refined criteria to this group's stories
         const groupStoryIds = new Set(group.stories.map((s) => s.id));
