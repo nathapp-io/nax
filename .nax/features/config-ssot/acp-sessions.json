@@ -6,5 +6,9 @@
   "US-002:implementer": {
     "sessionName": "nax-1aff848c-config-ssot-us-002-implementer",
     "agentName": "opencode"
+  },
+  "US-002:verifier": {
+    "sessionName": "nax-1aff848c-config-ssot-us-002-verifier",
+    "agentName": "opencode"
   }
 }
