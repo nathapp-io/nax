@@ -277,6 +277,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         config,
         featureName: options.feature,
         sessionRole: "plan",
+        timeoutMs: (config?.execution?.sessionTimeoutSeconds ?? 3600) * 1000,
       });
       let result = typeof completeResult === "string" ? completeResult : completeResult.output;
       // CLI adapter returns {"type":"result","result":"..."} envelope — unwrap it
@@ -799,6 +800,7 @@ export async function planDecomposeCommand(
         sessionRole: "decompose",
         featureName: options.feature,
         storyId: options.storyId,
+        timeoutMs: (config?.execution?.sessionTimeoutSeconds ?? 3600) * 1000,
       });
       rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
     }
@@ -809,6 +811,7 @@ export async function planDecomposeCommand(
       sessionRole: "decompose",
       featureName: options.feature,
       storyId: options.storyId,
+      timeoutMs: (config?.execution?.sessionTimeoutSeconds ?? 3600) * 1000,
     });
     rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
   }

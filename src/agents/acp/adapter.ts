@@ -877,7 +877,8 @@ export class AcpAgentAdapter implements AgentAdapter {
     const tryOneAgent = async (agentName: string): Promise<CompleteResult> => {
       const model = await resolveModel(agentName);
       const cmdStr = `acpx --model ${model} ${agentName}`;
-      const client = _acpAdapterDeps.createClient(cmdStr, workdir);
+      const timeoutSeconds = Math.ceil(timeoutMs / 1000);
+      const client = _acpAdapterDeps.createClient(cmdStr, workdir, timeoutSeconds);
       await client.start();
 
       let session: AcpSession | null = null;
