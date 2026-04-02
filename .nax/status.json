@@ -30,6 +30,7 @@
     "phase": "routing"
   },
   "iterations": 1,
-  "updatedAt": "2026-04-02T08:07:54.928Z",
-  "durationMs": 92824
+  "updatedAt": "2026-04-02T08:08:23.104Z",
+  "durationMs": 121000,
+  "lastHeartbeat": "2026-04-02T08:08:23.104Z"
 }
