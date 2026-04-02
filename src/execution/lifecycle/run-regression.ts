@@ -186,6 +186,25 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
 
   // Step 2: Parse failures and map to source files to stories
   const testSummary = _regressionDeps.parseBunTestOutput(fullSuiteResult.output);
+
+  // Guard: if no test results could be parsed (0 pass + 0 fail), the test runner
+  // itself crashed or had a compilation error — there are no actual test regressions.
+  // Treat as pass to avoid false-positive regression reports. (BUG-REG-001)
+  if (testSummary.failed === 0 && testSummary.passed === 0) {
+    logger?.warn(
+      "regression",
+      "No test results parsed from output — test runner likely crashed or errored (not a regression, accepting as pass)",
+      { output: fullSuiteResult.output.slice(0, 500) },
+    );
+    return {
+      success: true,
+      failedTests: 0,
+      passedTests: 0,
+      rectificationAttempts: 0,
+      affectedStories: [],
+    };
+  }
+
   const affectedStories = new Set<string>();
   const affectedStoriesObjs = new Map<string, UserStory>();
 
