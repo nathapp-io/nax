@@ -467,7 +467,7 @@ export class DebateSession {
 
     // Step 2: Proposal round — parallel via Promise.allSettled
     const proposalSettled = await Promise.allSettled(
-      resolved.map(({ debater, adapter }) =>
+      resolved.map(({ debater, adapter }, i) =>
         runComplete(
           adapter,
           prompt,
@@ -476,7 +476,7 @@ export class DebateSession {
             featureName: this.stage,
             config: this.config,
             storyId: this.storyId,
-            sessionRole: "debate-proposal",
+            sessionRole: `debate-proposal-${i}`,
             timeoutMs: this.timeoutMs,
           },
           modelTierFromDebater(debater),
@@ -591,7 +591,7 @@ export class DebateSession {
               featureName: this.stage,
               config: this.config,
               storyId: this.storyId,
-              sessionRole: "debate-critique",
+              sessionRole: `debate-critique-${i}`,
               timeoutMs: this.timeoutMs,
             },
             modelTierFromDebater(debater),
@@ -679,13 +679,14 @@ export class DebateSession {
       debaters: resolved.map((r) => r.debater.agent),
     });
 
-    // Run plan() for each debater in parallel, each writing to a unique temp path
-    const planSettled = await Promise.allSettled(
-      resolved.map(async ({ debater, adapter }, i) => {
-        const tempOutputPath = join(opts.outputDir, `prd-debate-${i}.json`);
-        // Append file-write instruction pointing at this debater's temp path
-        const debaterPrompt = `${basePrompt}\n\nWrite the PRD JSON directly to this file path: ${tempOutputPath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`;
+    // Run plan() turn-by-turn to avoid concurrent session races in ACP mode.
+    const successful: SuccessfulProposal[] = [];
+    for (let i = 0; i < resolved.length; i++) {
+      const { debater, adapter } = resolved[i];
+      const tempOutputPath = join(opts.outputDir, `prd-debate-${i}.json`);
+      const debaterPrompt = `${basePrompt}\n\nWrite the PRD JSON directly to this file path: ${tempOutputPath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`;
 
+      try {
         await adapter.plan({
           prompt: debaterPrompt,
           workdir: opts.workdir,
@@ -696,17 +697,23 @@ export class DebateSession {
           dangerouslySkipPermissions: opts.dangerouslySkipPermissions,
           maxInteractionTurns: opts.maxInteractionTurns,
           featureName: opts.feature,
-          sessionRole: "plan",
+          storyId: this.storyId,
+          sessionRole: `plan-${i}`,
         });
 
         const output = await _debateSessionDeps.readFile(tempOutputPath);
-        return { debater, adapter, output, cost: 0 } as SuccessfulProposal;
-      }),
-    );
-
-    const successful: SuccessfulProposal[] = planSettled
-      .filter((r): r is PromiseFulfilledResult<SuccessfulProposal> => r.status === "fulfilled")
-      .map((r) => r.value);
+        successful.push({ debater, adapter, output, cost: 0 });
+      } catch (err) {
+        logger?.warn("debate", "debate:debater-failed", {
+          storyId: this.storyId,
+          stage: this.stage,
+          debaterIndex: i,
+          agent: debater.agent,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        // Keep debate resilient: continue with remaining debaters when one fails.
+      }
+    }
 
     for (let i = 0; i < successful.length; i++) {
       logger?.info("debate", "debate:proposal", {
