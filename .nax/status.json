@@ -17,7 +17,7 @@
     "pending": 1
   },
   "cost": {
-    "spent": 2.5926751649999993,
+    "spent": 2.6209944749999994,
     "limit": 30
   },
   "current": {
@@ -25,12 +25,12 @@
     "title": "Guard test — schema defaults match DEFAULT_CONFIG",
     "complexity": "simple",
     "tddStrategy": "tdd-simple",
-    "model": "balanced",
+    "model": "powerful",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 5,
-  "updatedAt": "2026-04-02T11:19:23.362Z",
-  "durationMs": 11581258,
-  "lastHeartbeat": "2026-04-02T11:19:23.362Z"
+  "iterations": 6,
+  "updatedAt": "2026-04-02T11:24:23.363Z",
+  "durationMs": 11881259,
+  "lastHeartbeat": "2026-04-02T11:24:23.363Z"
 }

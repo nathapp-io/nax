@@ -3,7 +3,7 @@
   "feature": "config-ssot",
   "branchName": "feat/config-ssot",
   "createdAt": "2026-04-02T12:00:00.000Z",
-  "updatedAt": "2026-04-02T10:52:36.656Z",
+  "updatedAt": "2026-04-02T11:22:56.086Z",
   "userStories": [
     {
       "id": "US-001",
@@ -134,7 +134,7 @@
         "testStrategy": "tdd-simple",
         "reasoning": "validated from LLM output",
         "initialComplexity": "simple",
-        "modelTier": "balanced"
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/config/defaults.ts",
@@ -143,7 +143,8 @@
         "test/unit/config/defaults.test.ts"
       ],
       "priorErrors": [
-        "Attempt 1 failed with model tier: fast: Autofix exhausted: review still failing after fix attempts"
+        "Attempt 1 failed with model tier: fast: Autofix exhausted: review still failing after fix attempts",
+        "Attempt 1 failed with model tier: balanced: Autofix exhausted: review still failing after fix attempts"
       ],
       "priorFailures": [
         {
@@ -163,6 +164,40 @@
           ],
           "cost": 0.116859195,
           "timestamp": "2026-04-02T10:52:34.639Z"
+        },
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "review",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "reviewFindings": [
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "test/unit/config/defaults-ssot.test.ts",
+              "line": 0,
+              "message": "Test file does not exist at test/unit/config/defaults-ssot.test.ts",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/config/defaults.ts",
+              "line": 0,
+              "message": "No production code changes visible in diff that implement the derivation of DEFAULT_CONFIG from NaxConfigSchema.parse({}). US-002 passed but its changes are not reflected in this diff.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "warning",
+              "file": "src/review/semantic.ts",
+              "line": 297,
+              "message": "The early-return for empty diff (lines 297-304) is production code unrelated to this story's ACs. It was not part of the story scope.",
+              "source": "semantic-review"
+            }
+          ],
+          "cost": 0.02831931,
+          "timestamp": "2026-04-02T11:22:54.067Z"
         }
       ],
       "storyPoints": 1,
