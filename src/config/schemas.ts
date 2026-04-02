@@ -277,6 +277,7 @@ const ReviewConfigSchema = z.object({
 const PlanConfigSchema = z.object({
   model: ModelTierSchema,
   outputPath: z.string().min(1, "plan.outputPath must be non-empty"),
+  timeoutSeconds: z.number().int().positive().default(600),
 });
 
 const AcceptanceFixConfigSchema = z.object({
@@ -462,6 +463,7 @@ const DebateStageConfigSchema = (defaults: {
       sessionMode: z.enum(["one-shot", "stateful"]).default(defaults.sessionMode),
       rounds: z.number().int().min(1).default(defaults.rounds),
       debaters: z.array(DebaterSchema).min(2, "debaters must have at least 2 entries").optional(),
+      timeoutSeconds: z.number().int().positive().default(600),
     }),
   );
 

@@ -42,6 +42,8 @@ export interface DebateStageConfig {
   rounds: number;
   /** Optional debaters array — resolved from config.autoMode.defaultAgent when absent (min 2 entries) */
   debaters?: Debater[];
+  /** Timeout for debate session in seconds (default: 600) */
+  timeoutSeconds: number;
 }
 
 /** Top-level debate configuration */
