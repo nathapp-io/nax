@@ -1,0 +1,125 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "config-ssot",
+  "branchName": "feat/config-ssot",
+  "createdAt": "2026-04-02T12:00:00.000Z",
+  "updatedAt": "2026-04-02T08:07:54.929Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Inline DEFAULT_CONFIG references in schemas.ts",
+      "description": "Remove the `import { DEFAULT_CONFIG } from \"./defaults\"` in schemas.ts and inline the two values that are currently referenced from DEFAULT_CONFIG: (1) `DEFAULT_CONFIG.autoMode.defaultAgent` at line 41 becomes the literal string `\"claude\"`, and (2) `DEFAULT_CONFIG.debate` at line 534 becomes the inline debate config object literal. This breaks the circular dependency so that defaults.ts can later import from schemas.ts.",
+      "acceptanceCriteria": [
+        "schemas.ts has zero imports from \"./defaults\" or \"./defaults.ts\"",
+        "NaxConfigSchema.parse({}) returns an object where autoMode.defaultAgent === \"claude\"",
+        "NaxConfigSchema.parse({}) returns an object where debate.enabled === false",
+        "NaxConfigSchema.parse({}) returns an object where debate.stages.plan.enabled === true",
+        "NaxConfigSchema.parse({}).debate deeply equals the current DEFAULT_CONFIG.debate value from defaults.ts"
+      ],
+      "tags": [
+        "refactor",
+        "config",
+        "schema"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "no-test",
+        "reasoning": "validated from LLM output",
+        "noTestJustification": "US-001 is a pure inlining refactor with zero behavioral change. Verification happens via US-002 when NaxConfigSchema.parse({}) is used to derive DEFAULT_CONFIG. The schema defaults are tested in US-003.",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
+      },
+      "contextFiles": [
+        "src/config/schemas.ts",
+        "src/config/defaults.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "f933c5625def3c61837fed30940c4094c9db8786"
+    },
+    {
+      "id": "US-002",
+      "title": "Derive DEFAULT_CONFIG from schema parse",
+      "description": "Replace the 267-line hand-maintained `DEFAULT_CONFIG` object literal in defaults.ts with a single line that derives the config from `NaxConfigSchema.parse({})`. The Zod `.default()` values become the authoritative source of truth. Delete the entire object literal. The file becomes ~10 lines (imports + export + comment).",
+      "acceptanceCriteria": [
+        "defaults.ts exports DEFAULT_CONFIG as NaxConfigSchema.parse({}) cast to NaxConfig",
+        "defaults.ts is fewer than 15 lines total",
+        "DEFAULT_CONFIG.execution.sessionTimeoutSeconds === 3600",
+        "DEFAULT_CONFIG.execution.rectification.maxRetries === 2",
+        "DEFAULT_CONFIG.quality.requireTypecheck === true",
+        "loadConfig() called with no config files returns a config deeply equal to DEFAULT_CONFIG"
+      ],
+      "tags": [
+        "refactor",
+        "config",
+        "schema"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/config/defaults.ts",
+        "src/config/schemas.ts",
+        "src/config/loader.ts",
+        "src/cli/config-get.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-003",
+      "title": "Guard test — schema defaults match DEFAULT_CONFIG",
+      "description": "Add a CI guard test that asserts NaxConfigSchema.parse({}) deeply equals DEFAULT_CONFIG. Since DEFAULT_CONFIG is now derived from the schema (US-002), this test is trivially true today but catches future regressions if someone accidentally re-introduces a separate defaults object or breaks the derivation. Also verifies every top-level key in NaxConfig has a .default() on the corresponding schema field.",
+      "acceptanceCriteria": [
+        "Test file exists at test/unit/config/defaults-ssot.test.ts",
+        "Test asserts deepEqual(NaxConfigSchema.parse({}), DEFAULT_CONFIG) passes",
+        "Test asserts every top-level key of NaxConfig is present in NaxConfigSchema.parse({})",
+        "Test asserts NaxConfigSchema.parse({}) does not throw",
+        "All existing tests in test/unit/config/defaults.test.ts continue to pass without modification"
+      ],
+      "tags": [
+        "testing",
+        "config",
+        "ci"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/config/defaults.ts",
+        "src/config/schemas.ts",
+        "src/config/schema.ts",
+        "test/unit/config/defaults.test.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    }
+  ],
+  "analysis": "## Analysis\n\n### Current State\n- **`src/config/defaults.ts`** (267 lines): Hand-maintained `DEFAULT_CONFIG` object literal with all defaults\n- **`src/config/schemas.ts`** (540 lines): Zod schemas with 72 `.default()` calls; imports `DEFAULT_CONFIG` from `defaults.ts` in two places:\n  - Line 8: `import { DEFAULT_CONFIG } from \"./defaults\"`\n  - Line 41: `DEFAULT_CONFIG.autoMode.defaultAgent` used in `isLegacyFlatModels` preprocessing\n  - Line 534: `DEFAULT_CONFIG.debate` used as default factory in `NaxConfigSchema`\n\n### Circular Dependency Problem\nAfter the change, `defaults.ts` will import `NaxConfigSchema` from `schemas.ts`. This creates a circular dependency since `schemas.ts` currently imports from `defaults.ts`. The solution is to inline the two referenced values in `schemas.ts` before breaking the import.\n\n### Files That Consume DEFAULT_CONFIG\n1. **`src/config/schema.ts`** — barrel re-export only (line 72)\n2. **`src/config/loader.ts`** — `loadConfig()` clones and deep-merges `DEFAULT_CONFIG` (line 103)\n3. **`src/cli/config-get.ts`** — `loadGlobalConfig()` clones and merges `DEFAULT_CONFIG` (lines 38, 41)\n4. **`test/unit/config/defaults.test.ts`** — existing tests verify `DEFAULT_CONFIG` values directly\n\n### Migration Path\n1. **US-001**: In schemas.ts, remove `DEFAULT_CONFIG` import and inline the two literal values\n2. **US-002**: Replace defaults.ts object literal with `NaxConfigSchema.parse({})`\n3. **US-003**: Add guard test to prevent future drift\n\n### Key Design Decisions\n- `DEFAULT_CONFIG` becomes derived: `NaxConfigSchema.parse({}) as NaxConfig`\n- Zod `.default()` values are authoritative; object literal is deleted\n- `loadConfig()` flow unchanged: Zod defaults → user layers → Zod validation\n- Fail-fast: if a `.default()` is removed, module load throws at startup\n\n### Risk Assessment\n- **Low risk**: Pure refactor, no behavioral change\n- **Breaking change**: None — API surface (DEFAULT_CONFIG export) remains identical\n- **Test impact**: Existing `defaults.test.ts` tests must continue to pass without modification\n- **Migration safety**: `loadConfig()` behavior is functionally identical; only the source of defaults changes from hand-maintained object to Zod-derived object"
+}
