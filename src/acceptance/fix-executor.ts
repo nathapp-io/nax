@@ -84,7 +84,7 @@ export async function executeSourceFix(
     featureName,
     storyId,
     config,
-    pipelineStage: "run",
+    pipelineStage: "acceptance",
   };
 
   const result = await agent.run(runOptions);

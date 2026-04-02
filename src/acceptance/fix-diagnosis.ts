@@ -8,7 +8,7 @@
 import { buildSessionName } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config/schema";
-import { resolveModelForAgent } from "../config/schema-types";
+import { type ModelTier, resolveModelForAgent } from "../config/schema-types";
 import type { DiagnosisResult } from "./types";
 
 export interface DiagnoseOptions {
@@ -111,7 +111,7 @@ export async function diagnoseAcceptanceFailure(
   const modelDef = resolveModelForAgent(
     config.models,
     config.autoMode.defaultAgent,
-    diagnoseModelTier as "fast" | "balanced" | "powerful",
+    diagnoseModelTier as ModelTier,
     config.autoMode.defaultAgent,
   );
 
