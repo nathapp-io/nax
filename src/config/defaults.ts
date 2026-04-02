@@ -226,6 +226,7 @@ export const DEFAULT_CONFIG: NaxConfig = {
   debate: {
     enabled: false,
     agents: 3,
+    maxConcurrentDebaters: 2,
     stages: {
       plan: {
         enabled: true,

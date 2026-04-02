@@ -71,7 +71,7 @@ describe("DebateSession.runPlan()", () => {
       stageConfig: makeStageConfig({
         debaters: [{ agent: "opencode" }, { agent: "opencode" }, { agent: "opencode" }],
       }),
-      config: TEST_CONFIG,
+      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
     });
 
     await session.runPlan("base prompt", {
@@ -122,7 +122,7 @@ describe("DebateSession.runPlan()", () => {
       storyId: "config-ssot",
       stage: "plan",
       stageConfig: makeStageConfig(),
-      config: TEST_CONFIG,
+      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
     });
 
     await session.runPlan("base prompt", {
@@ -134,7 +134,7 @@ describe("DebateSession.runPlan()", () => {
     expect(storyIds).toEqual(["config-ssot", "config-ssot"]);
   });
 
-  test("runs plan debaters turn-by-turn instead of in parallel", async () => {
+  test("runs plan debaters in parallel (when limit >= agents)", async () => {
     const startedOrder: number[] = [];
     const resolvers: Array<() => void> = [];
 
@@ -175,7 +175,7 @@ describe("DebateSession.runPlan()", () => {
       storyId: "config-ssot",
       stage: "plan",
       stageConfig: makeStageConfig(),
-      config: TEST_CONFIG,
+      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
     });
 
     const runPromise = session.runPlan("base prompt", {
@@ -185,12 +185,10 @@ describe("DebateSession.runPlan()", () => {
     });
 
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(startedOrder).toEqual([0]);
-
-    resolvers[0]?.();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Verify parallel execution (both started)
     expect(startedOrder).toEqual([0, 1]);
 
+    resolvers[0]?.();
     resolvers[1]?.();
     await runPromise;
   });
