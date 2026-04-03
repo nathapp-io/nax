@@ -584,8 +584,6 @@ export const NaxConfigSchema = z
         maxRectificationAttempts: 3,
       },
       contextProviderTokenBudget: 2000,
-      lintCommand: null,
-      typecheckCommand: null,
       dangerouslySkipPermissions: true,
       permissionProfile: "unrestricted",
       smartTestRunner: true,
