@@ -15,44 +15,34 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { existsSync, renameSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { globalConfigPath, loadConfig } from "../../../src/config/loader";
 import { makeTempDir } from "../../helpers/temp";
 
 describe("Config Loader - Backward Compatibility", () => {
   let tempDir: string;
-  let globalBackup: string | null = null;
+  let globalConfigDirBackup: string | undefined;
 
   beforeEach(() => {
     // Create a temporary test directory
     tempDir = makeTempDir("nax-test-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
-    // Backup existing global config if present
-    const globalPath = globalConfigPath();
-    if (existsSync(globalPath)) {
-      globalBackup = `${globalPath}.test-backup-${Date.now()}`;
-      renameSync(globalPath, globalBackup);
-    }
+    // Isolate global config to test fixture (never touch real ~/.nax)
+    globalConfigDirBackup = process.env.NAX_GLOBAL_CONFIG_DIR;
+    process.env.NAX_GLOBAL_CONFIG_DIR = join(tempDir, ".nax-global");
   });
 
   afterEach(() => {
-    // Clean up temp directory
+    // Clean up temp directory (includes isolated global config dir)
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
     }
 
-    // Restore global config if we backed it up
-    if (globalBackup && existsSync(globalBackup)) {
-      const globalPath = globalConfigPath();
-      if (existsSync(globalPath)) {
-        rmSync(globalPath);
-      }
-      renameSync(globalBackup, globalPath);
-      globalBackup = null;
+    if (globalConfigDirBackup === undefined) {
+      delete process.env.NAX_GLOBAL_CONFIG_DIR;
+    } else {
+      process.env.NAX_GLOBAL_CONFIG_DIR = globalConfigDirBackup;
     }
   });
 
@@ -131,35 +121,28 @@ describe("Config Loader - Backward Compatibility", () => {
 
 describe("Config Loader - Plugin Configuration (US-007)", () => {
   let tempDir: string;
-  let globalBackup: string | null = null;
+  let globalConfigDirBackup: string | undefined;
 
   beforeEach(() => {
     // Create a temporary test directory
     tempDir = makeTempDir("nax-test-plugins-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
 
-    // Backup existing global config if present
-    const globalPath = globalConfigPath();
-    if (existsSync(globalPath)) {
-      globalBackup = `${globalPath}.test-backup-${Date.now()}`;
-      renameSync(globalPath, globalBackup);
-    }
+    // Isolate global config to test fixture (never touch real ~/.nax)
+    globalConfigDirBackup = process.env.NAX_GLOBAL_CONFIG_DIR;
+    process.env.NAX_GLOBAL_CONFIG_DIR = join(tempDir, ".nax-global");
   });
 
   afterEach(() => {
-    // Clean up temp directory
+    // Clean up temp directory (includes isolated global config dir)
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
     }
 
-    // Restore global config if we backed it up
-    if (globalBackup && existsSync(globalBackup)) {
-      const globalPath = globalConfigPath();
-      if (existsSync(globalPath)) {
-        rmSync(globalPath);
-      }
-      renameSync(globalBackup, globalPath);
-      globalBackup = null;
+    if (globalConfigDirBackup === undefined) {
+      delete process.env.NAX_GLOBAL_CONFIG_DIR;
+    } else {
+      process.env.NAX_GLOBAL_CONFIG_DIR = globalConfigDirBackup;
     }
   });
 
@@ -218,7 +201,7 @@ describe("Config Loader - Plugin Configuration (US-007)", () => {
   test("merges plugins[] from global and project config", async () => {
     // Create global config with plugins
     const globalPath = globalConfigPath();
-    mkdirSync(join(homedir(), ".nax"), { recursive: true });
+    mkdirSync(join(tempDir, ".nax-global"), { recursive: true });
     const globalConfig = {
       plugins: [
         {
