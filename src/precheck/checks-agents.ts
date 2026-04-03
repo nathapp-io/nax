@@ -8,6 +8,11 @@
 import { getAgentVersions } from "../agents/shared/version-detection";
 import type { Check } from "./types";
 
+/** Injectable deps for testability — avoids spawning real agent binaries in unit tests */
+export const _checkAgentsDeps = {
+  getAgentVersions,
+};
+
 /**
  * Check multi-agent health: installed agents and their versions
  *
@@ -17,7 +22,7 @@ import type { Check } from "./types";
  */
 export async function checkMultiAgentHealth(): Promise<Check> {
   try {
-    const versions = await getAgentVersions();
+    const versions = await _checkAgentsDeps.getAgentVersions();
 
     // Separate installed from not installed
     const installed = versions.filter((v) => v.installed);
