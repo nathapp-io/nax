@@ -2,5 +2,9 @@
   "US-001-B:test-writer": {
     "sessionName": "nax-a3c4fa9d-config-profiles-us-001-b-test-writer",
     "agentName": "claude"
+  },
+  "US-001-B:implementer": {
+    "sessionName": "nax-a3c4fa9d-config-profiles-us-001-b-implementer",
+    "agentName": "claude"
   }
 }
