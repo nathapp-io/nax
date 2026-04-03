@@ -442,4 +442,23 @@ describe("planCommand — interactive mode (PLN-002)", () => {
 
     expect(bridgeHasRequiredMethods).toBe(true);
   });
+
+  test("AC-8: interactive planning passes sessionRole 'plan' to adapter.plan()", async () => {
+    let capturedSessionRole: string | undefined;
+    const fakeAdapter = {
+      plan: mock(async (planOpts: any) => {
+        capturedSessionRole = planOpts.sessionRole;
+        return { specContent: JSON.stringify(SAMPLE_PRD) };
+      }),
+    };
+
+    _deps.getAgent = mock((_name: string) => fakeAdapter as never);
+
+    await planCommand(tmpDir, {} as never, {
+      from: "/spec.md",
+      feature: "url-shortener",
+    });
+
+    expect(capturedSessionRole).toBe("plan");
+  });
 });

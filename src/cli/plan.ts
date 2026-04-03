@@ -346,6 +346,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         maxInteractionTurns: config?.agent?.maxInteractionTurns,
         featureName: options.feature,
         pidRegistry,
+        sessionRole: "plan",
       });
     } finally {
       await pidRegistry.killAll().catch(() => {});
