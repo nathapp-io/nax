@@ -4,7 +4,7 @@
   "analysis": "## Key Findings\n\n### Two Divergent Decompose Paths\n\n1. **Adapter path** (`src/agents/acp/adapter.ts:1096-1123` and `src/agents/claude/adapter.ts:173+`): Calls `buildDecomposePrompt(options)` from `src/agents/shared/decompose.ts`, then `this.complete(prompt, ...)`, then `parseDecomposeOutput(output)`. Returns `DecomposeResult { stories: DecomposedStory[] }`. The shared parser handles markdown code fences and validates `id`/`title` fields.\n\n2. **CLI plan path** (`src/cli/plan.ts:738-892`, `planDecomposeCommand()`): Has its own `buildDecomposePrompt()` (line 680) with a DIFFERENT signature `(targetStory, siblings, codebaseContext)` vs the shared one `(options: DecomposeOptions)`. Calls `adapter.complete()` directly, does its own markdown fence stripping (line 838), then `JSON.parse()` expecting `{ subStories: UserStory[] }` envelope shape — NOT the flat `DecomposedStory[]` the shared parser produces.\n\n### Specific Divergences\n\n- **Prompt**: plan.ts prompt asks for `{ subStories: [...] }` envelope (line 706). Shared decompose prompt asks for flat JSON array.\n- **Parsing**: plan.ts does raw `JSON.parse()` (line 843) with only fence stripping. Shared `parseDecomposeOutput()` has robust array extraction, per-field validation with index-aware errors, complexity coercion, and `relevantFiles` fallback.\n- **Return type**: plan.ts expects `UserStory[]` (PRD shape with `routing`, `status`, `passes`). Shared parser returns `DecomposedStory[]` (agent shape with `complexity`, `estimatedLOC`, `risks`).\n- **Context propagation**: plan.ts passes `sessionRole`, `featureName`, `storyId` to `complete()` but NOT through `adapter.decompose()`. The adapter's `decompose()` method in ACP doesn't forward `featureName` or `storyId` to its internal `complete()` call (line 1102-1108).\n- **Validation**: plan.ts validates `contextFiles` non-empty and `routing` fields present (lines 854-873). Shared parser validates `id`/`title` only.\n\n### Files Requiring Modification\n\n1. **`src/cli/plan.ts`** — Major: Replace `planDecomposeCommand()` internals to call `adapter.decompose()` instead of `adapter.complete()` + raw `JSON.parse`. Remove local `buildDecomposePrompt()`. Add mapping from `DecomposedStory[]` to `UserStory[]`.\n2. **`src/agents/shared/decompose.ts`** — Medium: Extend `DecomposeOptions` or `buildDecomposePrompt()` to support the richer plan decompose context (target story + siblings + PRD-specific fields). Possibly add validation for PRD-required fields.\n3. **`src/agents/acp/adapter.ts`** — Small: Forward `featureName`, `storyId` from `DecomposeOptions` to the internal `complete()` call.\n4. **`src/agents/shared/types-extended.ts`** — Small: Extend `DecomposeOptions` to include `featureName`, `storyId`, `sessionRole` fields.\n5. **`src/agents/claude/adapter.ts`** — Small: Same context propagation fix as ACP adapter.\n\n### Type Mapping Gap\n\n`DecomposedStory` has: `complexity`, `estimatedLOC`, `risks`, `reasoning`, `testStrategy` (flat fields).\n`UserStory` has: `routing: { complexity, testStrategy, modelTier, reasoning }`, `status`, `passes`, `escalations`, `attempts` (structured routing + lifecycle fields).\n\nThe CLI needs a mapper: `DecomposedStory → UserStory` that moves flat fields into the `routing` sub-object and sets lifecycle defaults.\n\n### Existing Test Coverage\n\n- `test/unit/cli/plan-decompose.test.ts` — tests `planDecomposeCommand()`\n- `test/unit/agents/acp/decompose.test.ts` — tests ACP adapter decompose\n- `test/unit/cli/plan-replan.test.ts` — tests replan loop that calls decompose\n- `test/unit/cleanup/decompose-removal.test.ts` — cleanup tests\n\n### Risks\n\n1. **Prompt change**: The shared decompose prompt currently asks for flat array. Plan decompose asks for `{ subStories }` envelope with PRD-specific fields (`routing`, `status`). Unifying the prompt means deciding on one shape — the flat `DecomposedStory[]` is correct per the spec, with mapping in the CLI layer.\n2. **Backward compatibility**: The `planDecomposeCommand` is called from `_planDeps.planDecompose` and from the replan loop. Both callers expect it to write the PRD file directly. This contract should be preserved.\n3. **Debate integration**: plan.ts has debate support for decompose (lines 793-823). This must be preserved or adapted to work through `adapter.decompose()`.\n4. **Model resolution**: plan.ts resolves `decomposeModel` from config (lines 780-790). This logic needs to feed into `DecomposeOptions.modelDef` for the adapter path.",
   "branchName": "feat/spec-169-decompose-consolidation",
   "createdAt": "2026-04-03T00:00:00.000Z",
-  "updatedAt": "2026-04-03T10:36:23.529Z",
+  "updatedAt": "2026-04-03T11:05:07.382Z",
   "userStories": [
     {
       "id": "US-001",
@@ -108,8 +108,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
@@ -152,13 +152,16 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Reworking existing debate integration to use new decompose path. Logic is contained in planDecomposeCommand(). Need to ensure debate output shape compatibility with shared parser."
+        "reasoning": "Reworking existing debate integration to use new decompose path. Logic is contained in planDecomposeCommand(). Need to ensure debate output shape compatibility with shared parser.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "escalations": [],
       "attempts": 0,
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "18d2c60dea08eb6165344ff28436bf94e27c7e47"
     },
     {
       "id": "US-005",

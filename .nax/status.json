@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 5,
-    "passed": 2,
+    "passed": 3,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 2
   },
   "cost": {
-    "spent": 4.774345750000001,
+    "spent": 7.300483100000001,
     "limit": 30
   },
   "current": {
-    "storyId": "US-003",
-    "title": "Create DecomposedStory-to-UserStory mapper for PRD mutations",
+    "storyId": "US-004",
+    "title": "Preserve debate integration through adapter.decompose() path",
     "complexity": "medium",
     "tddStrategy": "three-session-tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-04-03T11:04:18.799Z",
-  "durationMs": 4380239,
-  "lastHeartbeat": "2026-04-03T11:04:18.799Z"
+  "iterations": 4,
+  "updatedAt": "2026-04-03T11:11:18.812Z",
+  "durationMs": 4800252,
+  "lastHeartbeat": "2026-04-03T11:11:18.812Z"
 }

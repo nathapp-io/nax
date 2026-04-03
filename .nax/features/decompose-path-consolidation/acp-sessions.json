@@ -22,5 +22,9 @@
   "US-003:verifier": {
     "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-003-verifier",
     "agentName": "claude"
+  },
+  "US-004:test-writer": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-004-test-writer",
+    "agentName": "claude"
   }
 }
