@@ -214,7 +214,7 @@ async function executeFixStory(
  *
  * @returns true if regeneration succeeded, false otherwise
  */
-async function regenerateAcceptanceTest(testPath: string, acceptanceContext: PipelineContext): Promise<boolean> {
+export async function regenerateAcceptanceTest(testPath: string, acceptanceContext: PipelineContext): Promise<boolean> {
   const logger = getSafeLogger();
   const bakPath = `${testPath}.bak`;
 

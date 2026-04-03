@@ -7,12 +7,16 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
+const GLOBAL_CONFIG_DIR_ENV = "NAX_GLOBAL_CONFIG_DIR";
+
 /**
  * Returns the global config directory path (~/.nax).
  *
  * @returns Absolute path to global config directory
  */
 export function globalConfigDir(): string {
+  const override = process.env[GLOBAL_CONFIG_DIR_ENV];
+  if (override) return override;
   return join(homedir(), ".nax");
 }
 

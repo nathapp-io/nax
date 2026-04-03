@@ -1,14 +1,21 @@
+/**
+ * Acceptance Tests for config-ssot Feature
+ *
+ * Verifies that DEFAULT_CONFIG is derived from NaxConfigSchema.parse({})
+ * and that schemas.ts does not import from defaults.ts (SSOT principle).
+ */
+
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { DEFAULT_CONFIG } from "./src/config/defaults";
-import { loadConfig } from "./src/config/loader";
-import type { NaxConfig } from "./src/config/schema";
-import { NaxConfigSchema } from "./src/config/schemas";
+import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { loadConfig } from "../../../src/config/loader";
+import type { NaxConfig } from "../../../src/config/schema";
+import { NaxConfigSchema } from "../../../src/config/schemas";
 
 describe("AC-1: schemas.ts does not import from defaults.ts", () => {
   test("schemas.ts has no import statements matching ./defaults or ./defaults.ts", () => {
-    const schemasPath = resolve(import.meta.dir, "./src/config/schemas.ts");
+    const schemasPath = resolve(import.meta.dir, "../../../src/config/schemas.ts");
     const content = readFileSync(schemasPath, "utf-8");
     const importDefaultsRegex = /^import\s+.*\s+from\s+['"]\.\/defaults(\.ts)?['"]/gm;
     const matches = content.match(importDefaultsRegex);
@@ -56,7 +63,7 @@ describe("AC-6: DEFAULT_CONFIG type compatibility", () => {
 
 describe("AC-7: defaults.ts file line count < 15", () => {
   test("defaults.ts has fewer than 15 lines", () => {
-    const defaultsPath = resolve(import.meta.dir, "./src/config/defaults.ts");
+    const defaultsPath = resolve(import.meta.dir, "../../../src/config/defaults.ts");
     const content = readFileSync(defaultsPath, "utf-8");
     const lineCount = content.split("\n").length;
     expect(lineCount).toBeLessThan(15);
@@ -86,7 +93,7 @@ describe("AC-11: loadConfig with no files returns DEFAULT_CONFIG", () => {
     const { mkdirSync, rmSync, existsSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
-    const { globalConfigPath } = await import("./src/config/loader");
+    const { globalConfigPath } = await import("../../../src/config/loader");
 
     const tempDir = join(tmpdir(), `nax-acceptance-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
@@ -114,7 +121,7 @@ describe("AC-11: loadConfig with no files returns DEFAULT_CONFIG", () => {
 
 describe("AC-12: defaults-ssot.test.ts file exists", () => {
   test("test/unit/config/defaults-ssot.test.ts exists", () => {
-    const testPath = resolve(import.meta.dir, "./test/unit/config/defaults-ssot.test.ts");
+    const testPath = resolve(import.meta.dir, "../../../test/unit/config/defaults-ssot.test.ts");
     expect(existsSync(testPath)).toBe(true);
   });
 });
@@ -144,7 +151,7 @@ describe("AC-15: NaxConfigSchema.parse({}) does not throw", () => {
 describe("AC-16: bun test exits with code 0 for defaults.test.ts", () => {
   test("bun test test/unit/config/defaults.test.ts exits with code 0", async () => {
     const { spawnSync } = await import("bun");
-    const projectRoot = resolve(import.meta.dir, ".");
+    const projectRoot = resolve(import.meta.dir, "../../../..");
     const result = spawnSync(["bun", "test", "test/unit/config/defaults.test.ts"], {
       cwd: projectRoot,
       stdout: "inherit",

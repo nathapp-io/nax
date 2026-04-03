@@ -132,7 +132,15 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     rawConfig = deepMergeConfig(rawConfig, cliOverrides);
   }
 
+  // Track if any configs were merged (for optimization - skip safeParse when just using defaults)
+  const hasMergedConfigs = globalConfRaw || projDir !== null || cliOverrides !== undefined;
+
   // Parse and validate with Zod
+  // Skip validation if no configs were merged (rawConfig is just DEFAULT_CONFIG)
+  if (!hasMergedConfigs) {
+    return structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>) as unknown as NaxConfig;
+  }
+
   const result = NaxConfigSchema.safeParse(rawConfig);
   if (!result.success) {
     const errors = result.error.issues.map((err) => {
