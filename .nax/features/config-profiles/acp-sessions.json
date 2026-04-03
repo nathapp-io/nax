@@ -10,5 +10,9 @@
   "US-001-B:verifier": {
     "sessionName": "nax-a3c4fa9d-config-profiles-us-001-b-verifier",
     "agentName": "claude"
+  },
+  "US-001-C:test-writer": {
+    "sessionName": "nax-a3c4fa9d-config-profiles-us-001-c-test-writer",
+    "agentName": "claude"
   }
 }

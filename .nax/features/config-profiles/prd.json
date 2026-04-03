@@ -3,7 +3,7 @@
   "feature": "config-profiles",
   "branchName": "feat/config-profiles",
   "createdAt": "2026-04-03T12:00:00.000Z",
-  "updatedAt": "2026-04-03T03:48:21.616Z",
+  "updatedAt": "2026-04-03T03:55:07.478Z",
   "userStories": [
     {
       "id": "US-001",
@@ -117,8 +117,8 @@
         "core"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
@@ -171,14 +171,16 @@
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
         "modelTier": "powerful",
-        "reasoning": "Four functions spanning file I/O (Bun.file, directory scanning), path resolution across two scopes (global ~/.nax and project .nax), deep-merge semantics, and priority-chain logic. Requires test-writer to set up fs fixtures in isolation before implementer touches src/. Nine ACs with non-trivial setup (temp dirs, mock config.json, layered .env files)."
+        "reasoning": "Four functions spanning file I/O (Bun.file, directory scanning), path resolution across two scopes (global ~/.nax and project .nax), deep-merge semantics, and priority-chain logic. Requires test-writer to set up fs fixtures in isolation before implementer touches src/. Nine ACs with non-trivial setup (temp dirs, mock config.json, layered .env files).",
+        "initialComplexity": "complex"
       },
       "escalations": [],
       "attempts": 0,
       "parentStoryId": "US-001",
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "8a82eb97f9966df27bdff79046932948d5d0e091"
     },
     {
       "id": "US-002",

@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 1,
+    "passed": 2,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 6
+    "pending": 5
   },
   "cost": {
-    "spent": 0.33644535000000003,
+    "spent": 1.1433141999999998,
     "limit": 30
   },
   "current": {
-    "storyId": "US-001-B",
-    "title": "Implement parseDotenv() and resolveEnvVars() in src/config/dotenv.ts",
-    "complexity": "medium",
-    "tddStrategy": "three-session-tdd-lite",
-    "model": "balanced",
+    "storyId": "US-001-C",
+    "title": "Implement loadProfile(), loadProfileEnv(), resolveProfileName(), and listProfiles() in src/config/profile.ts",
+    "complexity": "complex",
+    "tddStrategy": "three-session-tdd",
+    "model": "powerful",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-04-03T03:54:15.219Z",
-  "durationMs": 780998,
-  "lastHeartbeat": "2026-04-03T03:54:15.219Z"
+  "iterations": 4,
+  "updatedAt": "2026-04-03T03:57:15.222Z",
+  "durationMs": 961001,
+  "lastHeartbeat": "2026-04-03T03:57:15.222Z"
 }
