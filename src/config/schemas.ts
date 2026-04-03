@@ -470,6 +470,7 @@ const DebateConfigSchema = z.preprocess(
   z.object({
     enabled: z.boolean().default(false),
     agents: z.number().int().min(2).default(3),
+    maxConcurrentDebaters: z.number().int().min(1).max(10).default(2),
     stages: z.preprocess(
       toObject,
       z.object({
@@ -728,6 +729,7 @@ export const NaxConfigSchema = z
     debate: DebateConfigSchema.optional().default(() => ({
       enabled: false,
       agents: 3,
+      maxConcurrentDebaters: 2,
       stages: {
         plan: {
           enabled: true,

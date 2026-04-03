@@ -13,9 +13,10 @@ import type { NaxConfig } from "../config";
 import { DEFAULT_CONFIG, resolveModel, resolveModelForAgent } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { getSafeLogger } from "../logger";
+import { allSettledBounded } from "./concurrency";
 import { buildCritiquePrompt } from "./prompts";
 import { judgeResolver, majorityResolver, synthesisResolver } from "./resolvers";
-import type { DebateResult, DebateStageConfig, Debater, Proposal } from "./types";
+import type { DebateConfig, DebateResult, DebateStageConfig, Debater, Proposal } from "./types";
 
 /** Fallback agent name used when resolver.agent is not specified for synthesis/judge */
 const RESOLVER_FALLBACK_AGENT = "synthesis";
@@ -284,11 +285,17 @@ export class DebateSession {
       debaters: resolved.map((r) => r.debater.agent),
     });
 
-    // Proposal round — parallel via Promise.allSettled
-    const proposalSettled = await Promise.allSettled(
-      resolved.map(({ debater, adapter }, debaterIdx) =>
-        this.runStatefulTurn(adapter, debater, prompt, `debate-${this.stage}-${debaterIdx}`, config.rounds > 1),
+    // Proposal round — bounded parallel
+    const cfg = this.config;
+    const debate = cfg?.debate;
+    const concurrencyLimit = debate?.maxConcurrentDebaters ?? 2;
+    const proposalSettled = await allSettledBounded(
+      resolved.map(
+        ({ debater, adapter }, debaterIdx) =>
+          () =>
+            this.runStatefulTurn(adapter, debater, prompt, `debate-${this.stage}-${debaterIdx}`, config.rounds > 1),
       ),
+      concurrencyLimit,
     );
 
     const successfulProposals: SuccessfulProposal[] = proposalSettled
@@ -392,16 +399,18 @@ export class DebateSession {
     let critiqueOutputs: string[] = [];
     if (config.rounds > 1) {
       const proposalOutputs = successfulProposals.map((s) => s.output);
-      const critiqueSettled = await Promise.allSettled(
-        successfulProposals.map((proposal, successfulIdx) =>
-          this.runStatefulTurn(
-            proposal.adapter,
-            proposal.debater,
-            buildCritiquePrompt(prompt, proposalOutputs, successfulIdx),
-            proposal.roleKey ?? `debate-${this.stage}-${successfulIdx}`,
-            false,
-          ),
+      const critiqueSettled = await allSettledBounded(
+        successfulProposals.map(
+          (proposal, successfulIdx) => () =>
+            this.runStatefulTurn(
+              proposal.adapter,
+              proposal.debater,
+              buildCritiquePrompt(prompt, proposalOutputs, successfulIdx),
+              proposal.roleKey ?? `debate-${this.stage}-${successfulIdx}`,
+              false,
+            ),
         ),
+        concurrencyLimit,
       );
 
       for (const r of critiqueSettled) {
@@ -465,23 +474,29 @@ export class DebateSession {
       debaters: resolved.map((r) => r.debater.agent),
     });
 
-    // Step 2: Proposal round — parallel via Promise.allSettled
-    const proposalSettled = await Promise.allSettled(
-      resolved.map(({ debater, adapter }) =>
-        runComplete(
-          adapter,
-          prompt,
-          {
-            model: resolveDebaterModel(debater, this.config),
-            featureName: this.stage,
-            config: this.config,
-            storyId: this.storyId,
-            sessionRole: "debate-proposal",
-            timeoutMs: this.timeoutMs,
-          },
-          modelTierFromDebater(debater),
-        ).then((result) => ({ debater, adapter, output: result.output, cost: result.costUsd })),
+    // Step 2: Proposal round — bounded parallel
+    const cfg = this.config;
+    const debate = cfg?.debate;
+    const concurrencyLimit = debate?.maxConcurrentDebaters ?? 2;
+    const proposalSettled = await allSettledBounded(
+      resolved.map(
+        ({ debater, adapter }, i) =>
+          () =>
+            runComplete(
+              adapter,
+              prompt,
+              {
+                model: resolveDebaterModel(debater, this.config),
+                featureName: this.stage,
+                config: this.config,
+                storyId: this.storyId,
+                sessionRole: `debate-proposal-${i}`,
+                timeoutMs: this.timeoutMs,
+              },
+              modelTierFromDebater(debater),
+            ).then((result) => ({ debater, adapter, output: result.output, cost: result.costUsd })),
       ),
+      concurrencyLimit,
     );
 
     const successful: SuccessfulProposal[] = proposalSettled
@@ -581,22 +596,25 @@ export class DebateSession {
     let critiqueOutputs: string[] = [];
     if (config.rounds > 1) {
       const proposalOutputs = successful.map((p) => p.output);
-      const critiqueSettled = await Promise.allSettled(
-        successful.map(({ debater, adapter }, i) =>
-          runComplete(
-            adapter,
-            buildCritiquePrompt(prompt, proposalOutputs, i),
-            {
-              model: resolveDebaterModel(debater, this.config),
-              featureName: this.stage,
-              config: this.config,
-              storyId: this.storyId,
-              sessionRole: "debate-critique",
-              timeoutMs: this.timeoutMs,
-            },
-            modelTierFromDebater(debater),
-          ),
+      const critiqueSettled = await allSettledBounded(
+        successful.map(
+          ({ debater, adapter }, i) =>
+            () =>
+              runComplete(
+                adapter,
+                buildCritiquePrompt(prompt, proposalOutputs, i),
+                {
+                  model: resolveDebaterModel(debater, this.config),
+                  featureName: this.stage,
+                  config: this.config,
+                  storyId: this.storyId,
+                  sessionRole: `debate-critique-${i}`,
+                  timeoutMs: this.timeoutMs,
+                },
+                modelTierFromDebater(debater),
+              ),
         ),
+        concurrencyLimit,
       );
       for (const r of critiqueSettled) {
         if (r.status === "fulfilled") {
@@ -679,11 +697,13 @@ export class DebateSession {
       debaters: resolved.map((r) => r.debater.agent),
     });
 
-    // Run plan() for each debater in parallel, each writing to a unique temp path
-    const planSettled = await Promise.allSettled(
-      resolved.map(async ({ debater, adapter }, i) => {
+    // Run plan() bounded parallel (restores concurrency after PR #211 workaround)
+    const cfg = this.config;
+    const debate = cfg?.debate;
+    const concurrencyLimit = debate?.maxConcurrentDebaters ?? 2;
+    const settled = await allSettledBounded(
+      resolved.map(({ debater, adapter }, i) => async () => {
         const tempOutputPath = join(opts.outputDir, `prd-debate-${i}.json`);
-        // Append file-write instruction pointing at this debater's temp path
         const debaterPrompt = `${basePrompt}\n\nWrite the PRD JSON directly to this file path: ${tempOutputPath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`;
 
         await adapter.plan({
@@ -696,17 +716,32 @@ export class DebateSession {
           dangerouslySkipPermissions: opts.dangerouslySkipPermissions,
           maxInteractionTurns: opts.maxInteractionTurns,
           featureName: opts.feature,
-          sessionRole: "plan",
+          storyId: this.storyId,
+          sessionRole: `plan-${i}`,
         });
 
         const output = await _debateSessionDeps.readFile(tempOutputPath);
-        return { debater, adapter, output, cost: 0 } as SuccessfulProposal;
+        return { debater, adapter, output, cost: 0 };
       }),
+      concurrencyLimit,
     );
 
-    const successful: SuccessfulProposal[] = planSettled
-      .filter((r): r is PromiseFulfilledResult<SuccessfulProposal> => r.status === "fulfilled")
-      .map((r) => r.value);
+    const successful: SuccessfulProposal[] = [];
+    for (let i = 0; i < settled.length; i++) {
+      const res = settled[i];
+      if (res.status === "fulfilled") {
+        successful.push(res.value);
+      } else {
+        const { debater } = resolved[i];
+        logger?.warn("debate", "debate:debater-failed", {
+          storyId: this.storyId,
+          stage: this.stage,
+          debaterIndex: i,
+          agent: debater.agent,
+          error: res.reason instanceof Error ? res.reason.message : String(res.reason),
+        });
+      }
+    }
 
     for (let i = 0; i < successful.length; i++) {
       logger?.info("debate", "debate:proposal", {
