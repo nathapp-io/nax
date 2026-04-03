@@ -34,5 +34,9 @@
   "US-004:verifier": {
     "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-004-verifier",
     "agentName": "claude"
+  },
+  "US-005:test-writer": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-005-test-writer",
+    "agentName": "claude"
   }
 }

@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 5,
-    "passed": 3,
+    "passed": 4,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 7.300483100000001,
+    "spent": 9.26253915,
     "limit": 30
   },
   "current": {
-    "storyId": "US-004",
-    "title": "Preserve debate integration through adapter.decompose() path",
+    "storyId": "US-005",
+    "title": "Regression tests for fenced JSON parsing and contract parity",
     "complexity": "medium",
     "tddStrategy": "three-session-tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 4,
-  "updatedAt": "2026-04-03T11:26:18.834Z",
-  "durationMs": 5700274,
-  "lastHeartbeat": "2026-04-03T11:26:18.834Z"
+  "iterations": 5,
+  "updatedAt": "2026-04-03T11:32:18.850Z",
+  "durationMs": 6060290,
+  "lastHeartbeat": "2026-04-03T11:32:18.850Z"
 }
