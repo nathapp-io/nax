@@ -57,6 +57,7 @@ export function mapDecomposedStoriesToUserStories(stories: DecomposedStory[], pa
         complexity: story.complexity,
         testStrategy: story.testStrategy ?? ("test-after" as const),
         reasoning: story.reasoning,
+        modelTier: "balanced" as const,
       },
     };
   });
