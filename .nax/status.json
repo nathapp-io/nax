@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-04-03T03-41-14-221Z",
-    "feature": "config-profiles",
-    "startedAt": "2026-04-03T03:41:14.221Z",
-    "status": "completed",
+    "id": "run-2026-04-03T09-51-18-560Z",
+    "feature": "decompose-path-consolidation",
+    "startedAt": "2026-04-03T09:51:18.560Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 9749
+    "pid": 18904
   },
   "progress": {
-    "total": 7,
-    "passed": 7,
+    "total": 5,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 5
   },
   "cost": {
-    "spent": 6.68803665,
+    "spent": 0,
     "limit": 30
   },
-  "current": null,
-  "iterations": 8,
-  "updatedAt": "2026-04-03T04:50:19.648Z",
-  "durationMs": 4145427
+  "current": {
+    "storyId": "US-001",
+    "title": "Extend DecomposeOptions with session context fields",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 1,
+  "updatedAt": "2026-04-03T09:58:18.618Z",
+  "durationMs": 420058,
+  "lastHeartbeat": "2026-04-03T09:58:18.618Z"
 }
