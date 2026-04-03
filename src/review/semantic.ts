@@ -140,7 +140,7 @@ ${story.description}
 
 ### Acceptance Criteria
 ${acList}
-${customRulesSection}${statSection}
+${customRulesSection}
 ## Git Diff (production code only — test files excluded)
 
 \`\`\`diff
