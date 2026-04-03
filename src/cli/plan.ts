@@ -11,7 +11,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { createAgentRegistry, getAgent } from "../agents/registry";
-import type { AgentAdapter } from "../agents/types";
+import { buildDecomposePrompt, parseDecomposeOutput } from "../agents/shared/decompose";
+import type { AgentAdapter, DecomposedStory } from "../agents/types";
 import { scanCodebase } from "../analyze/scanner";
 import type { CodebaseScan } from "../analyze/types";
 import type { NaxConfig } from "../config";
@@ -675,59 +676,6 @@ ${
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Build a decompose prompt that instructs the LLM to split a story into sub-stories.
- */
-function buildDecomposePrompt(targetStory: UserStory, siblings: UserStory[], codebaseContext: string): string {
-  const siblingsSummary =
-    siblings.length > 0 ? `\n## Sibling Stories\n\n${siblings.map((s) => `- ${s.id}: ${s.title}`).join("\n")}\n` : "";
-
-  return `You are a senior software architect decomposing a complex user story into smaller, implementable sub-stories.
-
-## Target Story
-
-${JSON.stringify(targetStory, null, 2)}${siblingsSummary}
-## Codebase Context
-
-${codebaseContext}
-
-${COMPLEXITY_GUIDE}
-
-${TEST_STRATEGY_GUIDE}
-
-${GROUPING_RULES}
-
-${getAcQualityRules()}
-
-## Output
-
-Return JSON with this exact structure (no markdown, no explanation — JSON only):
-
-{
-  "subStories": [
-    {
-      "id": "string — e.g. ${targetStory.id}-A",
-      "title": "string",
-      "description": "string",
-      "acceptanceCriteria": ["string — behavioral, testable criteria"],
-      "contextFiles": ["string — required, non-empty list of key source files"],
-      "tags": ["string"],
-      "dependencies": ["string"],
-      "status": "pending",
-      "passes": false,
-      "routing": {
-        "complexity": "simple | medium | complex | expert",
-        "testStrategy": "no-test | tdd-simple | three-session-tdd-lite | three-session-tdd | test-after",
-        "modelTier": "fast | balanced | powerful",
-        "reasoning": "string"
-      },
-      "escalations": [],
-      "attempts": 0
-    }
-  ]
-}`;
-}
-
-/**
  * Decompose an existing story into sub-stories.
  *
  * @param workdir - Project root directory
@@ -799,8 +747,8 @@ export async function planDecomposeCommand(
   let subStoriesWithParent: UserStory[];
 
   if (debateEnabled || !canDecompose) {
-    // Debate path (always uses legacy string format) OR legacy complete() path (adapter has no decompose method)
-    const prompt = buildDecomposePrompt(targetStory, siblings, codebaseContext);
+    // Debate path OR legacy complete() path (adapter has no decompose method)
+    const prompt = buildDecomposePrompt({ specContent: "", codebaseContext, workdir, targetStory, siblings });
     let rawResponse: string;
     if (debateEnabled) {
       const stageConfig = stages?.decompose as DebateStageConfig;
@@ -841,13 +789,9 @@ export async function planDecomposeCommand(
       rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
     }
 
-    // Strip markdown code fences if the LLM wrapped JSON in backticks
-    const jsonMatch = rawResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    const cleanedResponse = jsonMatch ? jsonMatch[1] : rawResponse;
-
-    let parsed: { subStories: UserStory[] };
+    let legacySubStories: DecomposedStory[];
     try {
-      parsed = JSON.parse(cleanedResponse.trim()) as { subStories: UserStory[] };
+      legacySubStories = parseDecomposeOutput(rawResponse);
     } catch (err) {
       throw new NaxError(
         `Failed to parse decompose response as JSON: ${(err as Error).message}\n\nResponse (first 500 chars):\n${rawResponse.slice(0, 500)}`,
@@ -855,7 +799,6 @@ export async function planDecomposeCommand(
         { stage: "decompose", storyId: options.storyId },
       );
     }
-    const legacySubStories = parsed.subStories;
 
     for (const sub of legacySubStories) {
       if (!sub.contextFiles || sub.contextFiles.length === 0) {
@@ -864,7 +807,7 @@ export async function planDecomposeCommand(
           storyId: sub.id,
         });
       }
-      if (!sub.routing?.complexity || !sub.routing?.testStrategy || !sub.routing?.modelTier) {
+      if (!sub.complexity || !sub.testStrategy) {
         throw new NaxError(`Sub-story "${sub.id}" is missing required routing fields`, "DECOMPOSE_VALIDATION_FAILED", {
           stage: "decompose",
           storyId: sub.id,
@@ -879,7 +822,26 @@ export async function planDecomposeCommand(
       }
     }
 
-    subStoriesWithParent = legacySubStories.map((s) => ({ ...s, parentStoryId: options.storyId }));
+    subStoriesWithParent = legacySubStories.map((s) => ({
+      id: s.id,
+      title: s.title,
+      description: s.description,
+      acceptanceCriteria: s.acceptanceCriteria,
+      tags: s.tags,
+      dependencies: s.dependencies,
+      status: "pending" as const,
+      passes: false,
+      escalations: [],
+      attempts: 0,
+      contextFiles: s.contextFiles,
+      routing: {
+        complexity: s.complexity,
+        testStrategy: s.testStrategy ?? ("test-after" as const),
+        reasoning: s.reasoning,
+        modelTier: "balanced" as const,
+      },
+      parentStoryId: options.storyId,
+    }));
   } else {
     // New path: call adapter.decompose() — returns structured DecomposeResult
     const result = await adapter.decompose({
