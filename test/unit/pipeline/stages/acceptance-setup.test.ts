@@ -244,6 +244,103 @@ describe("acceptance-setup: calls refinement and generation", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Refinement bounded concurrency (#226)
+// ---------------------------------------------------------------------------
+
+describe("acceptance-setup: refinement concurrency", () => {
+  function makeMultiStoryCtx(storyCount: number, refinementConcurrency?: number) {
+    const stories = Array.from({ length: storyCount }, (_, i) =>
+      makeStory(`US-${String(i + 1).padStart(3, "0")}`, [`AC-${i + 1}: criterion`]),
+    );
+    return makeCtx({
+      prd: makePrd(stories),
+      stories,
+      story: stories[0],
+      config: {
+        ...DEFAULT_CONFIG,
+        acceptance: {
+          ...DEFAULT_CONFIG.acceptance,
+          enabled: true,
+          refinement: true,
+          redGate: true,
+          ...(refinementConcurrency !== undefined ? { refinementConcurrency } : {}),
+        },
+      } as any,
+    });
+  }
+
+  function stubDeps() {
+    _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
+    _acceptanceSetupDeps.generate = async () => ({
+      testCode: 'test("AC", () => { throw new Error("red") })',
+      criteria: [],
+    });
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+  }
+
+  test("respects refinementConcurrency limit", async () => {
+    let concurrent = 0;
+    let peakConcurrent = 0;
+    stubDeps();
+    _acceptanceSetupDeps.refine = async (criteria, opts) => {
+      concurrent++;
+      peakConcurrent = Math.max(peakConcurrent, concurrent);
+      await Bun.sleep(10);
+      concurrent--;
+      return criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: opts.storyId }));
+    };
+
+    await acceptanceSetupStage.execute(makeMultiStoryCtx(5, 2));
+
+    expect(peakConcurrent).toBeLessThanOrEqual(2);
+    expect(peakConcurrent).toBeGreaterThan(1); // actually ran concurrently
+  });
+
+  test("preserves story order regardless of completion order", async () => {
+    const completionOrder: string[] = [];
+    stubDeps();
+    // Story 3 resolves fastest, story 1 slowest
+    const delays: Record<string, number> = { "US-001": 30, "US-002": 20, "US-003": 10 };
+    _acceptanceSetupDeps.refine = async (criteria, opts) => {
+      await Bun.sleep(delays[opts.storyId] ?? 10);
+      completionOrder.push(opts.storyId);
+      return criteria.map((c) => ({ original: c, refined: `R:${c}`, testable: true, storyId: opts.storyId }));
+    };
+
+    let capturedRefined: any[] = [];
+    _acceptanceSetupDeps.generate = async (_stories, refined) => {
+      capturedRefined = refined;
+      return { testCode: 'test("AC", () => { throw new Error("red") })', criteria: [] };
+    };
+
+    await acceptanceSetupStage.execute(makeMultiStoryCtx(3, 3));
+
+    // Completion order is non-deterministic, but output order must match story order
+    expect(capturedRefined.map((r: any) => r.storyId)).toEqual(["US-001", "US-002", "US-003"]);
+  });
+
+  test("DEFAULT_CONFIG.acceptance.refinementConcurrency is 3", () => {
+    expect((DEFAULT_CONFIG.acceptance as any).refinementConcurrency).toBe(3);
+  });
+
+  test("single story works without concurrency edge case", async () => {
+    let refineCalled = false;
+    stubDeps();
+    _acceptanceSetupDeps.refine = async (criteria, opts) => {
+      refineCalled = true;
+      return criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: opts.storyId }));
+    };
+
+    await acceptanceSetupStage.execute(makeMultiStoryCtx(1, 2));
+
+    expect(refineCalled).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // AC-3: acceptance-setup writes acceptance.test.ts to feature directory
 // ---------------------------------------------------------------------------
 

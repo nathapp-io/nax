@@ -278,6 +278,8 @@ export interface AcceptanceConfig {
   model: ModelTier;
   /** Whether to LLM-refine acceptance criteria before generating tests (default: true) */
   refinement: boolean;
+  /** Max concurrent refinement LLM calls (default: 3) */
+  refinementConcurrency: number;
   /** Whether to run RED gate check after generating acceptance tests (default: true) */
   redGate: boolean;
   /** Override command to run acceptance tests. Use {{FILE}} as placeholder for the test file path.

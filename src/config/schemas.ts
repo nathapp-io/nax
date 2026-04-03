@@ -308,6 +308,7 @@ export const AcceptanceConfigSchema = z.object({
   command: z.string().optional(),
   model: z.enum(["fast", "balanced", "powerful"]).default("fast"),
   refinement: z.boolean().default(true),
+  refinementConcurrency: z.number().int().min(1).max(10).default(3),
   redGate: z.boolean().default(true),
   testStrategy: z.enum(["unit", "component", "cli", "e2e", "snapshot"]).optional(),
   testFramework: z.string().min(1, "acceptance.testFramework must be non-empty").optional(),
@@ -689,6 +690,7 @@ export const NaxConfigSchema = z
       testPath: ".nax-acceptance.test.ts",
       model: "fast",
       refinement: true,
+      refinementConcurrency: 3,
       redGate: true,
       timeoutMs: 1800000,
       fix: {

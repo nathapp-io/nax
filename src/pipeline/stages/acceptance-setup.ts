@@ -241,19 +241,37 @@ export const acceptanceSetupStage: PipelineStage = {
       let allRefinedCriteria: RefinedCriterion[];
 
       if (ctx.config.acceptance.refinement) {
-        allRefinedCriteria = [];
-        for (const story of nonFixStories) {
-          const storyRefined = await _acceptanceSetupDeps.refine(story.acceptanceCriteria, {
-            storyId: story.id,
-            featureName: ctx.prd.feature,
-            workdir: ctx.workdir,
-            codebaseContext: "",
-            config: ctx.config,
-            testStrategy: ctx.config.acceptance.testStrategy,
-            testFramework: ctx.config.acceptance.testFramework,
-          });
-          allRefinedCriteria = allRefinedCriteria.concat(storyRefined);
+        const maxConcurrency = ctx.config.acceptance.refinementConcurrency ?? 3;
+        const results: RefinedCriterion[][] = new Array(nonFixStories.length);
+        const executing = new Set<Promise<void>>();
+
+        for (let i = 0; i < nonFixStories.length; i++) {
+          const story = nonFixStories[i];
+          const task = _acceptanceSetupDeps
+            .refine(story.acceptanceCriteria, {
+              storyId: story.id,
+              featureName: ctx.prd.feature,
+              workdir: ctx.workdir,
+              codebaseContext: "",
+              config: ctx.config,
+              testStrategy: ctx.config.acceptance.testStrategy,
+              testFramework: ctx.config.acceptance.testFramework,
+            })
+            .then((refined) => {
+              results[i] = refined;
+            })
+            .finally(() => {
+              executing.delete(task);
+            });
+          executing.add(task);
+
+          if (executing.size >= maxConcurrency) {
+            await Promise.race(executing);
+          }
         }
+
+        await Promise.all(executing);
+        allRefinedCriteria = results.flat();
       } else {
         allRefinedCriteria = nonFixStories.flatMap((story) =>
           story.acceptanceCriteria.map((c) => ({
