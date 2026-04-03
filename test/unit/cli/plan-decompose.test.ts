@@ -87,8 +87,8 @@ function makeSubStory(id: string, overrides: Partial<UserStory> = {}): UserStory
   };
 }
 
-function makeDecomposeResponse(subStories: UserStory[]): string {
-  return JSON.stringify({ subStories });
+function makeDecomposeResponse(stories: UserStory[]): string {
+  return JSON.stringify(stories);
 }
 
 function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
@@ -144,7 +144,7 @@ describe("planDecomposeCommand", () => {
 
   function setupDeps(
     prd: PRD,
-    subStories: UserStory[] = [makeSubStory("US-001-A"), makeSubStory("US-001-B")],
+    stories: UserStory[] = [makeSubStory("US-001-A"), makeSubStory("US-001-B")],
   ) {
     const prdPath = join(tmpDir, ".nax", "features", FEATURE, "prd.json");
 
@@ -169,7 +169,7 @@ describe("planDecomposeCommand", () => {
     const fakeAdapter = {
       complete: mock(async (prompt: string) => {
         capturedCompleteArgs.push(prompt);
-        return makeDecomposeResponse(subStories);
+        return makeDecomposeResponse(stories);
       }),
     };
     _planDeps.getAgent = mock(() => fakeAdapter as never);
@@ -475,8 +475,8 @@ describe("planDecomposeCommand", () => {
 
   test("AC-9: each sub-story has parentStoryId set to original story ID", async () => {
     const prd = makePrd([makeStory({ id: "US-001" })]);
-    const subStories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
-    setupDeps(prd, subStories);
+    const stories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
+    setupDeps(prd, stories);
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
 
@@ -533,9 +533,9 @@ describe("planDecomposeCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-12: creates DebateSession with stage 'decompose' when debate is enabled", async () => {
-    const subStories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
+    const stories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
     const prd = makePrd();
-    setupDeps(prd, subStories);
+    setupDeps(prd, stories);
 
     const capturedDebateOpts: unknown[] = [];
     _planDeps.createDebateSession = mock((opts) => {
@@ -550,7 +550,7 @@ describe("planDecomposeCommand", () => {
           resolverType: "synthesis" as const,
           proposals: [],
           totalCostUsd: 0,
-          output: makeDecomposeResponse(subStories),
+          output: makeDecomposeResponse(stories),
         })),
       } as never;
     });
@@ -579,9 +579,9 @@ describe("planDecomposeCommand", () => {
   });
 
   test("AC-12: uses debate output when outcome is not 'failed'", async () => {
-    const subStories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
+    const stories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
     const prd = makePrd();
-    setupDeps(prd, subStories);
+    setupDeps(prd, stories);
 
     _planDeps.createDebateSession = mock(() => ({
       run: mock(async () => ({
@@ -593,7 +593,7 @@ describe("planDecomposeCommand", () => {
         resolverType: "synthesis" as const,
         proposals: [],
         totalCostUsd: 0,
-        output: makeDecomposeResponse(subStories),
+        output: makeDecomposeResponse(stories),
       })),
     }) as never);
 
@@ -603,7 +603,7 @@ describe("planDecomposeCommand", () => {
         ({
           complete: mock(async (prompt: string) => {
             adapterCompleteCalls.push(prompt);
-            return makeDecomposeResponse(subStories);
+            return makeDecomposeResponse(stories);
           }),
         }) as never,
     );
@@ -636,9 +636,9 @@ describe("planDecomposeCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-13: falls back to adapter.complete() when debate outcome is 'failed'", async () => {
-    const subStories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
+    const stories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
     const prd = makePrd();
-    setupDeps(prd, subStories);
+    setupDeps(prd, stories);
 
     _planDeps.createDebateSession = mock(() => ({
       run: mock(async () => ({
@@ -659,7 +659,7 @@ describe("planDecomposeCommand", () => {
         ({
           complete: mock(async (prompt: string) => {
             adapterCompleteCalls.push(prompt);
-            return makeDecomposeResponse(subStories);
+            return makeDecomposeResponse(stories);
           }),
         }) as never,
     );

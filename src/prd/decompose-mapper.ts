@@ -24,7 +24,7 @@ import type { UserStory } from "./types";
 export function mapDecomposedStoriesToUserStories(stories: DecomposedStory[], parentStoryId: string): UserStory[] {
   return stories.map((story, entryIndex) => {
     if (!story.id) {
-      throw new NaxError(`Entry ${entryIndex} is missing required id field`, "DECOMPOSE_VALIDATION_FAILED", {
+      throw new NaxError(`Entry at index ${entryIndex} is missing required id field`, "DECOMPOSE_VALIDATION_FAILED", {
         stage: "decompose-mapper",
         entryIndex,
         parentStoryId,
