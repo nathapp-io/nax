@@ -216,6 +216,31 @@ describe("acceptance-setup: calls refinement and generation", () => {
     // Refined text should be used (prefixed with "R:")
     expect((generateArgs!.refined[0] as any).refined).toStartWith("R:");
   });
+
+  test("passes acceptance.model tier into generator options", async () => {
+    let receivedModelTier: string | undefined;
+
+    _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
+    _acceptanceSetupDeps.refine = async (criteria) =>
+      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
+    _acceptanceSetupDeps.generate = async (_stories, _refined, options) => {
+      receivedModelTier = options?.modelTier;
+      return { testCode: 'test("AC-1", () => { throw new Error("") })', criteria: [] };
+    };
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    const ctx = makeCtx({
+      config: {
+        ...DEFAULT_CONFIG,
+        acceptance: { ...DEFAULT_CONFIG.acceptance, enabled: true, refinement: true, model: "balanced" },
+      } as any,
+    });
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(receivedModelTier).toBe("balanced");
+  });
 });
 
 // ---------------------------------------------------------------------------

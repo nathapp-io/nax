@@ -155,6 +155,10 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = {
   "acceptance.testPath": "Path to acceptance test file (relative to feature dir)",
   "acceptance.command":
     "Override command to run acceptance tests. Use {{FILE}} as placeholder for the test file path (default: 'bun test {{FILE}} --timeout=60000')",
+  "acceptance.model":
+    "Model tier for acceptance generation/refinement LLM calls (fast | balanced | powerful). Default: fast.",
+  "acceptance.refinement":
+    "Enable acceptance criteria refinement step before execution (default: true). Disable to skip refinement and use generated criteria as-is.",
   "acceptance.timeoutMs": "Timeout for acceptance test generation in milliseconds (default: 1800000 = 30 min)",
 
   // Context

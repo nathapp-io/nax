@@ -320,6 +320,24 @@ describe("refineAcceptanceCriteria — adapter.complete() integration", () => {
     expect(callCount).toBe(1);
   });
 
+  test("uses config.acceptance.model tier to resolve adapter model", async () => {
+    const config = makeConfig({ model: "balanced" });
+    let receivedModel: string | undefined;
+
+    _refineDeps.adapter.complete = mock(async (_prompt, options) => {
+      receivedModel = options?.model;
+      return makeLLMResponse(SAMPLE_CRITERIA, STORY_ID);
+    });
+
+    await refineAcceptanceCriteria(SAMPLE_CRITERIA, {
+      storyId: STORY_ID,
+      codebaseContext: CODEBASE_CONTEXT,
+      config,
+    });
+
+    expect(receivedModel).toBe("claude-sonnet-4-5");
+  });
+
   test("does NOT call Bun.spawn directly — uses adapter.complete()", async () => {
     const config = makeConfig();
     const spawnCalls: unknown[] = [];
