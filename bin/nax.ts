@@ -311,6 +311,7 @@ program
   .option("--json", "JSON mode (raw JSONL output to stdout)", false)
   .option("-d, --dir <path>", "Working directory", process.cwd())
   .option("--skip-precheck", "Skip precheck validations (advanced users only)", false)
+  .option("--profile <name>", "Profile to use (overrides config.json profile)")
   .action(async (options) => {
     // Validate directory path
     let workdir: string;
@@ -357,7 +358,11 @@ program
     }
 
     const naxDir = findProjectDir(workdir);
-    const config = await loadConfig(naxDir ?? undefined);
+    const cliOverrides: Record<string, unknown> = {};
+    if (options.profile) {
+      cliOverrides.profile = options.profile;
+    }
+    const config = await loadConfig(naxDir ?? undefined, cliOverrides);
 
     if (!naxDir) {
       console.error(chalk.red("nax not initialized. Run: nax init"));
@@ -721,6 +726,7 @@ program
   .option("-b, --branch <branch>", "Override default branch name")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .option("--decompose <storyId>", "Decompose an existing story into sub-stories")
+  .option("--profile <name>", "Profile to use (overrides config.json profile)")
   .action(async (description, options) => {
     // AC-3: Detect and reject old positional argument form
     if (description) {
@@ -745,7 +751,11 @@ program
     }
 
     // Load config
-    const config = await loadConfig(workdir);
+    const cliOverrides: Record<string, unknown> = {};
+    if (options.profile) {
+      cliOverrides.profile = options.profile;
+    }
+    const config = await loadConfig(workdir, cliOverrides);
 
     // Initialize logger — writes to nax/features/<feature>/plan/<timestamp>.jsonl
     const featureLogDir = join(naxDir, "features", options.feature, "plan");
