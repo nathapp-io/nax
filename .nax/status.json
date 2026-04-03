@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 5,
-    "passed": 1,
+    "passed": 2,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 0.5179309500000001,
+    "spent": 4.774345750000001,
     "limit": 30
   },
   "current": {
-    "storyId": "US-002",
-    "title": "Unify plan CLI decompose to call adapter.decompose()",
-    "complexity": "complex",
-    "tddStrategy": "three-session-tdd",
+    "storyId": "US-003",
+    "title": "Create DecomposedStory-to-UserStory mapper for PRD mutations",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-04-03T10:35:18.719Z",
-  "durationMs": 2640159,
-  "lastHeartbeat": "2026-04-03T10:35:18.719Z"
+  "iterations": 3,
+  "updatedAt": "2026-04-03T10:43:18.729Z",
+  "durationMs": 3120169,
+  "lastHeartbeat": "2026-04-03T10:43:18.729Z"
 }

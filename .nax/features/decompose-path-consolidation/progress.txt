@@ -1,1 +1,2 @@
 [2026-04-03T09:59:44.586Z] US-001 — PASSED — Extend DecomposeOptions with session context fields — Cost: $0.5179
+[2026-04-03T10:36:21.466Z] US-002 — PASSED — Unify plan CLI decompose to call adapter.decompose() — Cost: $4.2564
