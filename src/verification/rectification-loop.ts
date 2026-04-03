@@ -263,6 +263,16 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       testSummary.failures = newTestSummary.failures;
       testSummary.failed = newTestSummary.failed;
       testSummary.passed = newTestSummary.passed;
+
+      if (newTestSummary.failed === 0) {
+        rectificationState.lastExitCode = 0;
+        logger?.info("rectification", `[OK] ${label} succeeded after parsing retry output`, {
+          storyId: story.id,
+          attempt: rectificationState.attempt,
+          initialFailures: rectificationState.initialFailures,
+        });
+        return true;
+      }
     }
 
     const failingTests = testSummary.failures.slice(0, 10).map((f) => f.testName);

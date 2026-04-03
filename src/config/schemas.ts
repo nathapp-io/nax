@@ -68,7 +68,7 @@ const AutoModeConfigSchema = z.object({
 
 const RectificationConfigSchema = z.object({
   enabled: z.boolean().default(true),
-  maxRetries: z.number().int().min(0).max(10).default(2),
+  maxRetries: z.number().int().min(0).max(10).default(3),
   fullSuiteTimeoutSeconds: z.number().int().min(10).max(600).default(120),
   maxFailureSummaryChars: z.number().int().min(500).max(10000).default(2000),
   abortOnIncreasingFailures: z.boolean().default(true),
@@ -154,6 +154,21 @@ const QualityConfigSchema = z.object({
     formatFix: z.string().optional(),
     build: z.string().optional(),
   }),
+  autofix: z
+    .object({
+      enabled: z.boolean().default(true),
+      maxAttempts: z.number().int().min(1).default(3),
+      maxTotalAttempts: z.number().int().min(1).default(12),
+      rethinkAtAttempt: z.number().int().min(1).default(2),
+      urgencyAtAttempt: z.number().int().min(1).default(3),
+    })
+    .default({
+      enabled: true,
+      maxAttempts: 3,
+      maxTotalAttempts: 12,
+      rethinkAtAttempt: 2,
+      urgencyAtAttempt: 3,
+    }),
   forceExit: z.boolean().default(false),
   detectOpenHandles: z.boolean().default(true),
   detectOpenHandlesRetries: z.number().int().min(0).max(5).default(1),
@@ -553,7 +568,7 @@ export const NaxConfigSchema = z
       maxStoriesPerFeature: 500,
       rectification: {
         enabled: true,
-        maxRetries: 2,
+        maxRetries: 3,
         fullSuiteTimeoutSeconds: 300,
         maxFailureSummaryChars: 2000,
         abortOnIncreasingFailures: true,
@@ -566,7 +581,7 @@ export const NaxConfigSchema = z
         timeoutSeconds: 300,
         acceptOnTimeout: true,
         mode: "deferred",
-        maxRectificationAttempts: 2,
+        maxRectificationAttempts: 3,
       },
       contextProviderTokenBudget: 2000,
       lintCommand: null,
@@ -580,6 +595,13 @@ export const NaxConfigSchema = z
       requireLint: true,
       requireTests: true,
       commands: {},
+      autofix: {
+        enabled: true,
+        maxAttempts: 3,
+        maxTotalAttempts: 12,
+        rethinkAtAttempt: 2,
+        urgencyAtAttempt: 3,
+      },
       forceExit: false,
       detectOpenHandles: true,
       detectOpenHandlesRetries: 1,

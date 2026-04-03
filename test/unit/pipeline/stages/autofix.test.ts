@@ -331,4 +331,113 @@ describe("autofixStage", () => {
 
     Object.assign(_autofixDeps, saved);
   });
+
+  test("injects rethink prompt on configured autofix attempt", async () => {
+    const saved = { ..._autofixDeps };
+    const prompts: string[] = [];
+
+    _autofixDeps.getAgent = () =>
+      ({
+        run: async ({ prompt }: { prompt: string }) => {
+          prompts.push(prompt);
+          return { success: false };
+        },
+      }) as any;
+    _autofixDeps.recheckReview = async () => false;
+
+    const ctx = makeCtx({
+      reviewResult: makeFailedReviewResult([{ check: "typecheck", output: "TS error" }]),
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { test: "bun test" },
+          autofix: { enabled: true, maxAttempts: 2, rethinkAtAttempt: 2 },
+        },
+        autoMode: { ...DEFAULT_CONFIG.autoMode, defaultAgent: "claude" },
+      } as any,
+    });
+
+    await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).not.toContain("Rethink your approach");
+    expect(prompts[1]).toContain("Rethink your approach");
+    expect(prompts[1]).toContain("Final Autofix Attempt Before Escalation");
+  });
+
+  test("injects urgency and rethink when urgencyAtAttempt is reached", async () => {
+    const saved = { ..._autofixDeps };
+    const prompts: string[] = [];
+
+    _autofixDeps.getAgent = () =>
+      ({
+        run: async ({ prompt }: { prompt: string }) => {
+          prompts.push(prompt);
+          return { success: false };
+        },
+      }) as any;
+    _autofixDeps.recheckReview = async () => false;
+
+    const ctx = makeCtx({
+      reviewResult: makeFailedReviewResult([{ check: "typecheck", output: "TS error" }]),
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { test: "bun test" },
+          autofix: { enabled: true, maxAttempts: 2, rethinkAtAttempt: 2, urgencyAtAttempt: 2 },
+        },
+        autoMode: { ...DEFAULT_CONFIG.autoMode, defaultAgent: "claude" },
+      } as any,
+    });
+
+    await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).not.toContain("Rethink your approach");
+    expect(prompts[1]).toContain("Rethink your approach");
+    expect(prompts[1]).toContain("Final Autofix Attempt Before Escalation");
+  });
+
+  test("uses default rethink and urgency thresholds when autofix escalation config is not set", async () => {
+    const saved = { ..._autofixDeps };
+    const prompts: string[] = [];
+
+    _autofixDeps.getAgent = () =>
+      ({
+        run: async ({ prompt }: { prompt: string }) => {
+          prompts.push(prompt);
+          return { success: false };
+        },
+      }) as any;
+    _autofixDeps.recheckReview = async () => false;
+
+    const ctx = makeCtx({
+      reviewResult: makeFailedReviewResult([{ check: "typecheck", output: "TS error" }]),
+      config: {
+        ...DEFAULT_CONFIG,
+        quality: {
+          ...DEFAULT_CONFIG.quality,
+          commands: { test: "bun test" },
+          autofix: { enabled: true, maxAttempts: 2 },
+        },
+        autoMode: { ...DEFAULT_CONFIG.autoMode, defaultAgent: "claude" },
+      } as any,
+    });
+
+    await autofixStage.execute(ctx);
+
+    Object.assign(_autofixDeps, saved);
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).not.toContain("Rethink your approach");
+    expect(prompts[0]).not.toContain("Final Autofix Attempt Before Escalation");
+    expect(prompts[1]).toContain("Rethink your approach");
+    expect(prompts[1]).toContain("Final Autofix Attempt Before Escalation");
+  });
 });

@@ -190,11 +190,69 @@ Do NOT add new features — only fix the quality check errors.
 Commit your fixes when done.${scopeConstraint}`;
 }
 
+function buildAutofixEscalationPreamble(
+  attempt: number,
+  maxAttempts: number,
+  rethinkAtAttempt?: number,
+  urgencyAtAttempt?: number,
+): string {
+  const logger = getLogger();
+  const rethinkAt = rethinkAtAttempt === undefined ? undefined : Math.min(rethinkAtAttempt, maxAttempts);
+  const urgencyAt = urgencyAtAttempt === undefined ? undefined : Math.min(urgencyAtAttempt, maxAttempts);
+
+  const shouldRethink = rethinkAt !== undefined && attempt >= rethinkAt;
+  const shouldUrgency = urgencyAt !== undefined && attempt >= urgencyAt;
+
+  if (!shouldRethink && !shouldUrgency) {
+    return "";
+  }
+
+  if (shouldUrgency) {
+    logger.info("autofix", "Progressive prompt escalation: urgency + rethink injected", {
+      attempt,
+      rethinkAtAttempt: rethinkAt,
+      urgencyAtAttempt: urgencyAt,
+      maxAttempts,
+    });
+  } else {
+    logger.info("autofix", "Progressive prompt escalation: rethink injected", {
+      attempt,
+      rethinkAtAttempt: rethinkAt,
+      maxAttempts,
+    });
+  }
+
+  const urgencySection = shouldUrgency
+    ? `## Final Autofix Attempt Before Escalation
+
+This is attempt ${attempt}. If the review still fails after this, autofix will escalate instead of retrying.
+A different approach is required. Do not repeat the same fix.
+
+`
+    : "";
+
+  const rethinkSection = shouldRethink
+    ? `## Previous Attempt Did Not Fix the Failures
+
+Your previous fix attempt (attempt ${attempt}) did not resolve the quality errors. Rethink your approach.
+
+- Do not repeat the same edit pattern.
+- Re-read the failing diagnostics carefully.
+- Try a fundamentally different fix strategy if the earlier one did not work.
+
+`
+    : "";
+
+  return `${urgencySection}${rethinkSection}`;
+}
+
 async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
   const logger = getLogger();
   const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
   const maxPerCycle = effectiveConfig.quality.autofix?.maxAttempts ?? 2;
   const maxTotal = effectiveConfig.quality.autofix?.maxTotalAttempts ?? 10;
+  const rethinkAtAttempt = effectiveConfig.quality.autofix?.rethinkAtAttempt ?? 2;
+  const urgencyAtAttempt = effectiveConfig.quality.autofix?.urgencyAtAttempt ?? 3;
   const consumed = ctx.autofixAttempt ?? 0;
   const failedChecks = collectFailedChecks(ctx);
 
@@ -237,7 +295,11 @@ async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
       return false;
     }
 
-    const prompt = buildReviewRectificationPrompt(failedChecks, ctx.story);
+    let prompt = buildReviewRectificationPrompt(failedChecks, ctx.story);
+    const escalationPreamble = buildAutofixEscalationPreamble(attempt, maxAttempts, rethinkAtAttempt, urgencyAtAttempt);
+    if (escalationPreamble) {
+      prompt = `${escalationPreamble}${prompt}`;
+    }
     const modelTier = ctx.story.routing?.modelTier ?? ctx.config.autoMode.escalation.tierOrder[0]?.tier ?? "balanced";
     const modelDef = resolveModelForAgent(
       ctx.config.models,

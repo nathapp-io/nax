@@ -619,4 +619,46 @@ Error: Test failed
     const logData = failingLog?.data as Record<string, unknown>;
     expect("totalFailingTests" in logData).toBe(false);
   });
+
+  test("stops successfully when retry output parses to zero remaining failures", async () => {
+    let agentRunCount = 0;
+    const mockAgent = {
+      name: "claude",
+      run: mock(async (_opts: AgentRunOptions) => {
+        agentRunCount += 1;
+        return { success: false, exitCode: 1, output: "failed", rateLimited: false, durationMs: 10, estimatedCost: 0 };
+      }),
+      complete: mock(async (_prompt: string) => ""),
+      isInstalled: mock(async () => true),
+      buildCommand: mock((_opts: AgentRunOptions) => ["claude"]),
+      buildAllowedEnv: mock((_opts?: AgentRunOptions) => ({})),
+    };
+
+    _rectificationDeps.getAgent = mock(
+      (_name: string) => mockAgent as unknown as import("../../../src/agents/types").AgentAdapter,
+    );
+
+    let verificationCalls = 0;
+    _rectificationDeps.runVerification = mock(async () => {
+      verificationCalls += 1;
+      return {
+        success: false,
+        status: "TEST_FAILURE" as const,
+        output: "test/example.test.ts:\n✓ fixed test [1ms]\n1 passed, 0 failed [1ms]",
+      };
+    });
+
+    const result = await runRectificationLoop({
+      config: makeConfig(),
+      workdir: "/tmp/test",
+      story: makeStory({ id: "TS-ZERO" }),
+      testCommand: "bun test",
+      timeoutSeconds: 30,
+      testOutput: FAILING_TEST_OUTPUT,
+    });
+
+    expect(result).toBe(true);
+    expect(agentRunCount).toBe(1);
+    expect(verificationCalls).toBe(1);
+  });
 });

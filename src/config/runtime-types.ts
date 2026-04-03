@@ -171,6 +171,10 @@ export interface QualityConfig {
     maxAttempts?: number;
     /** Max total auto-fix attempts across all review-autofix cycles per story (default: 10) */
     maxTotalAttempts?: number;
+    /** Inject a rethink prompt on and after this autofix attempt number (default: 2) */
+    rethinkAtAttempt?: number;
+    /** Inject final-attempt urgency language on and after this autofix attempt number (default: 3) */
+    urgencyAtAttempt?: number;
   };
   /** Append --forceExit to test command to prevent open handle hangs (default: false) */
   forceExit: boolean;
