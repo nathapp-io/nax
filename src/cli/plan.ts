@@ -11,7 +11,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { createAgentRegistry, getAgent } from "../agents/registry";
-import { buildDecomposePrompt } from "../agents/shared/decompose";
+import { buildDecomposePrompt, parseDecomposeOutput } from "../agents/shared/decompose";
 import type { AgentAdapter } from "../agents/types";
 import { scanCodebase } from "../analyze/scanner";
 import type { CodebaseScan } from "../analyze/types";
@@ -732,17 +732,51 @@ export async function planDecomposeCommand(
 
   if (typeof (adapter as { decompose?: unknown }).decompose === "function") {
     // decompose() path — adapter supports structured decompose
-    const result = await adapter.decompose({
-      specContent: "",
-      codebaseContext,
-      workdir,
-      targetStory,
-      siblings,
-      featureName: options.feature,
-      storyId: options.storyId,
-      config,
-    });
-    const decompStories = result.stories;
+    const debateStages = config?.debate?.stages as unknown as Record<string, DebateStageConfig | undefined>;
+    const debateDecompEnabled = config?.debate?.enabled && debateStages?.decompose?.enabled;
+
+    let decompStories: import("../agents/shared/types-extended").DecomposedStory[] | undefined;
+
+    if (debateDecompEnabled) {
+      const decomposeStageConfig = debateStages.decompose as DebateStageConfig;
+      const prompt = buildDecomposePrompt({
+        specContent: "",
+        codebaseContext,
+        workdir,
+        targetStory,
+        siblings,
+        featureName: options.feature,
+        storyId: options.storyId,
+        config,
+      });
+      const debateSession = _planDeps.createDebateSession({
+        storyId: options.storyId,
+        stage: "decompose",
+        stageConfig: decomposeStageConfig,
+        config,
+        workdir,
+        featureName: options.feature,
+        timeoutSeconds,
+      });
+      const debateResult = await debateSession.run(prompt);
+      if (debateResult.outcome !== "failed" && debateResult.output) {
+        decompStories = parseDecomposeOutput(debateResult.output);
+      }
+    }
+
+    if (!decompStories) {
+      const result = await adapter.decompose({
+        specContent: "",
+        codebaseContext,
+        workdir,
+        targetStory,
+        siblings,
+        featureName: options.feature,
+        storyId: options.storyId,
+        config,
+      });
+      decompStories = result.stories;
+    }
 
     for (const sub of decompStories) {
       if (!sub.complexity || !sub.testStrategy) {
