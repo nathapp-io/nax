@@ -119,14 +119,21 @@ function truncateDiff(diff: string, stat?: string): string {
 
 /**
  * Build the LLM prompt for semantic review.
+ * @param stat - Optional git diff --stat output (all files, including tests). Always included
+ *               as context so the LLM knows which test files were modified even when their
+ *               content is excluded from the diff.
  */
-function buildPrompt(story: SemanticStory, semanticConfig: SemanticReviewConfig, diff: string): string {
+function buildPrompt(story: SemanticStory, semanticConfig: SemanticReviewConfig, diff: string, stat?: string): string {
   const acList = story.acceptanceCriteria.map((ac, i) => `${i + 1}. ${ac}`).join("\n");
 
   const customRulesSection =
     semanticConfig.rules.length > 0
       ? `\n## Additional Review Rules\n${semanticConfig.rules.map((r, i) => `${i + 1}. ${r}`).join("\n")}\n`
       : "";
+
+  const statSection = stat
+    ? `\n## Changed Files (all files — includes test files not shown in diff below)\n\`\`\`\n${stat}\n\`\`\`\n`
+    : "";
 
   return `You are a semantic code reviewer. Your job is to verify that the implementation satisfies the story's acceptance criteria (ACs). You are NOT a linter or style checker — lint, typecheck, and convention checks are handled separately.
 
@@ -137,7 +144,7 @@ ${story.description}
 
 ### Acceptance Criteria
 ${acList}
-${customRulesSection}
+${customRulesSection}${statSection}
 ## Git Diff (production code only — test files excluded)
 
 \`\`\`diff
@@ -287,12 +294,15 @@ export async function runSemanticReview(
   });
 
   // Collect production-only diff (test files excluded at git level via configurable patterns)
-  const rawDiff = await collectDiff(workdir, effectiveRef, semanticConfig.excludePatterns);
+  // Collect stat summary (all files including tests) unconditionally so the LLM can verify
+  // test-related ACs even though test file content is excluded from the diff.
+  const [rawDiff, stat] = await Promise.all([
+    collectDiff(workdir, effectiveRef, semanticConfig.excludePatterns),
+    collectDiffStat(workdir, effectiveRef),
+  ]);
 
-  // Truncate if over cap — collect stat summary (all files) when truncation needed
-  const needsTruncation = rawDiff.length > DIFF_CAP_BYTES;
-  const stat = needsTruncation ? await collectDiffStat(workdir, effectiveRef) : undefined;
-  const diff = truncateDiff(rawDiff, stat);
+  // Truncate diff if over cap — stat summary is always included for context
+  const diff = truncateDiff(rawDiff, rawDiff.length > DIFF_CAP_BYTES ? stat : undefined);
 
   if (!diff) {
     return {
@@ -321,8 +331,9 @@ export async function runSemanticReview(
     };
   }
 
-  // Build prompt
-  const prompt = buildPrompt(story, semanticConfig, diff);
+  // Build prompt — pass stat so LLM can see which test files changed even though
+  // test file content is excluded from the diff (satisfies test-only AC verification)
+  const prompt = buildPrompt(story, semanticConfig, diff, stat || undefined);
 
   // Debate path: when debate is enabled for review stage, use DebateSession instead of agent.complete()
   const reviewDebateEnabled = naxConfig?.debate?.enabled && naxConfig?.debate?.stages?.review?.enabled;

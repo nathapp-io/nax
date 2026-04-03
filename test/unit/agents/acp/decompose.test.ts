@@ -263,3 +263,151 @@ describe("decompose() — ACP error handling", () => {
     ).rejects.toThrow();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// decompose() — session context fields forwarding
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("decompose() — session context fields forwarding", () => {
+  const origCreateClient = _acpAdapterDeps.createClient;
+  const origSleep = _acpAdapterDeps.sleep;
+
+  beforeEach(() => {
+    _acpAdapterDeps.sleep = mock(async (_ms: number) => {});
+  });
+
+  afterEach(() => {
+    _acpAdapterDeps.createClient = origCreateClient;
+    _acpAdapterDeps.sleep = origSleep;
+    mock.restore();
+  });
+
+  test("forwards options.featureName to complete() call", async () => {
+    let completeCalled = false;
+    let capturedOptions: any = {};
+    const adapter = new AcpAgentAdapter("claude");
+    const origComplete = adapter.complete.bind(adapter);
+
+    adapter.complete = mock(async (prompt: string, options?: any) => {
+      completeCalled = true;
+      capturedOptions = options;
+      return origComplete(prompt, options);
+    });
+
+    const session = makeSession({
+      promptFn: async (_text: string) => ({
+        messages: [{ role: "assistant", content: SAMPLE_STORIES_JSON }],
+        stopReason: "end_turn",
+        cumulative_token_usage: { input_tokens: 200, output_tokens: 300 },
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    const featureName = "spec-decomposition";
+    await adapter.decompose(makeDecomposeOptions({ featureName }));
+
+    expect(completeCalled).toBe(true);
+    expect(capturedOptions.featureName).toBe(featureName);
+  });
+
+  test("forwards options.storyId to complete() call", async () => {
+    let capturedOptions: any = {};
+    const adapter = new AcpAgentAdapter("claude");
+    const origComplete = adapter.complete.bind(adapter);
+
+    adapter.complete = mock(async (prompt: string, options?: any) => {
+      capturedOptions = options;
+      return origComplete(prompt, options);
+    });
+
+    const session = makeSession({
+      promptFn: async (_text: string) => ({
+        messages: [{ role: "assistant", content: SAMPLE_STORIES_JSON }],
+        stopReason: "end_turn",
+        cumulative_token_usage: { input_tokens: 200, output_tokens: 300 },
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    const storyId = "US-123";
+    await adapter.decompose(makeDecomposeOptions({ storyId }));
+
+    expect(capturedOptions.storyId).toBe(storyId);
+  });
+
+  test("uses sessionRole 'decompose' when options.sessionRole is not set", async () => {
+    let capturedOptions: any = {};
+    const adapter = new AcpAgentAdapter("claude");
+    const origComplete = adapter.complete.bind(adapter);
+
+    adapter.complete = mock(async (prompt: string, options?: any) => {
+      capturedOptions = options;
+      return origComplete(prompt, options);
+    });
+
+    const session = makeSession({
+      promptFn: async (_text: string) => ({
+        messages: [{ role: "assistant", content: SAMPLE_STORIES_JSON }],
+        stopReason: "end_turn",
+        cumulative_token_usage: { input_tokens: 200, output_tokens: 300 },
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    await adapter.decompose(makeDecomposeOptions());
+
+    expect(capturedOptions.sessionRole).toBe("decompose");
+  });
+
+  test("uses options.sessionRole when provided instead of default 'decompose'", async () => {
+    let capturedOptions: any = {};
+    const adapter = new AcpAgentAdapter("claude");
+    const origComplete = adapter.complete.bind(adapter);
+
+    adapter.complete = mock(async (prompt: string, options?: any) => {
+      capturedOptions = options;
+      return origComplete(prompt, options);
+    });
+
+    const session = makeSession({
+      promptFn: async (_text: string) => ({
+        messages: [{ role: "assistant", content: SAMPLE_STORIES_JSON }],
+        stopReason: "end_turn",
+        cumulative_token_usage: { input_tokens: 200, output_tokens: 300 },
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    const customRole = "custom-decompose-role";
+    await adapter.decompose(makeDecomposeOptions({ sessionRole: customRole }));
+
+    expect(capturedOptions.sessionRole).toBe(customRole);
+  });
+
+  test("forwards featureName and storyId together to complete()", async () => {
+    let capturedOptions: any = {};
+    const adapter = new AcpAgentAdapter("claude");
+    const origComplete = adapter.complete.bind(adapter);
+
+    adapter.complete = mock(async (prompt: string, options?: any) => {
+      capturedOptions = options;
+      return origComplete(prompt, options);
+    });
+
+    const session = makeSession({
+      promptFn: async (_text: string) => ({
+        messages: [{ role: "assistant", content: SAMPLE_STORIES_JSON }],
+        stopReason: "end_turn",
+        cumulative_token_usage: { input_tokens: 200, output_tokens: 300 },
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    const featureName = "feature-x";
+    const storyId = "story-y";
+    await adapter.decompose(makeDecomposeOptions({ featureName, storyId }));
+
+    expect(capturedOptions.featureName).toBe(featureName);
+    expect(capturedOptions.storyId).toBe(storyId);
+  });
+});

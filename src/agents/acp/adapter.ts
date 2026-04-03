@@ -1109,7 +1109,9 @@ export class AcpAgentAdapter implements AgentAdapter {
         jsonMode: true,
         config: options.config as import("../../config").NaxConfig | undefined,
         workdir: options.workdir,
-        sessionRole: "decompose",
+        featureName: options.featureName,
+        storyId: options.storyId,
+        sessionRole: options.sessionRole ?? "decompose",
       });
       output = completeResult.output;
     } catch (err) {
