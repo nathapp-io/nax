@@ -46,5 +46,13 @@
   "US-005:verifier": {
     "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-005-verifier",
     "agentName": "claude"
+  },
+  "US-001:diagnose": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-001-diagnose",
+    "agentName": "claude"
+  },
+  "US-001:source-fix": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-001-source-fix",
+    "agentName": "claude"
   }
 }

@@ -4,33 +4,24 @@
     "id": "run-2026-04-03T09-51-18-560Z",
     "feature": "decompose-path-consolidation",
     "startedAt": "2026-04-03T09:51:18.560Z",
-    "status": "running",
+    "status": "completed",
     "dryRun": false,
     "pid": 18904
   },
   "progress": {
     "total": 5,
-    "passed": 4,
+    "passed": 5,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 0
   },
   "cost": {
-    "spent": 9.26253915,
+    "spent": 11.97697835,
     "limit": 30
   },
-  "current": {
-    "storyId": "US-005",
-    "title": "Regression tests for fenced JSON parsing and contract parity",
-    "complexity": "medium",
-    "tddStrategy": "three-session-tdd-lite",
-    "model": "balanced",
-    "attempt": 1,
-    "phase": "routing"
-  },
-  "iterations": 5,
-  "updatedAt": "2026-04-03T11:54:18.882Z",
-  "durationMs": 7380322,
-  "lastHeartbeat": "2026-04-03T11:54:18.882Z"
+  "current": null,
+  "iterations": 6,
+  "updatedAt": "2026-04-03T11:56:46.783Z",
+  "durationMs": 7528223
 }
