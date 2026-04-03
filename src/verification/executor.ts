@@ -5,9 +5,7 @@
  * Extracted from execution/verification.ts to eliminate duplication.
  */
 
-import type { Subprocess } from "bun";
 import { spawn } from "../utils/bun-deps";
-import { errorMessage } from "../utils/errors";
 import { killProcessGroup } from "../utils/process-kill";
 import type { TestExecutionResult } from "./types";
 
@@ -15,43 +13,19 @@ import type { TestExecutionResult } from "./types";
 export const _executorDeps = { spawn };
 
 /**
- * Drain stdout+stderr from a killed Bun subprocess with a hard deadline.
+ * Race an already-in-progress Promise against a deadline.
  *
- * Bun doesn't close piped streams when a child process is killed (unlike Node).
- * `await new Response(proc.stdout).text()` hangs forever. This races the read
- * against a timeout so we get whatever output was buffered without blocking.
+ * Used to apply a hard cap to stream drain operations after a process is killed.
+ * Uses setTimeout (not Bun.sleep) so the timer can be cleared once the race settles
+ * — prevents timer leaks per rule 07.
  */
-async function drainWithDeadline(proc: Subprocess, deadlineMs: number): Promise<string> {
-  const EMPTY = Symbol("timeout");
-  const race = <T>(p: Promise<T>) => {
-    // BUG-039: Store timer handle so it can be cleared after race resolves (prevent leak)
-    let timerId: ReturnType<typeof setTimeout>;
-    const timeoutPromise = new Promise<typeof EMPTY>((r) => {
-      timerId = setTimeout(() => r(EMPTY), deadlineMs);
-    });
-    return Promise.race([p, timeoutPromise]).finally(() => clearTimeout(timerId));
-  };
-
-  let out = "";
-  try {
-    const stdout = race(new Response(proc.stdout as ReadableStream).text());
-    const stderr = race(new Response(proc.stderr as ReadableStream).text());
-    const [o, e] = await Promise.all([stdout, stderr]);
-    if (o !== EMPTY) out += o;
-    if (e !== EMPTY) out += (out ? "\n" : "") + e;
-  } catch (error) {
-    // Expected: streams destroyed after kill (e.g. TypeError from closed ReadableStream)
-    const isExpectedStreamError =
-      error instanceof TypeError ||
-      (error instanceof Error && /abort|cancel|close|destroy|locked/i.test(error.message));
-    if (!isExpectedStreamError) {
-      const { getSafeLogger } = await import("../logger");
-      getSafeLogger()?.debug("executor", "Unexpected error draining process output", {
-        error: errorMessage(error),
-      });
-    }
-  }
-  return out;
+const DRAIN_TIMEOUT = Symbol("drain-timeout");
+function raceWithDeadline<T>(p: Promise<T>, deadlineMs: number): Promise<T | typeof DRAIN_TIMEOUT> {
+  const timer = { id: undefined as ReturnType<typeof setTimeout> | undefined };
+  const timeoutP = new Promise<typeof DRAIN_TIMEOUT>((r) => {
+    timer.id = setTimeout(() => r(DRAIN_TIMEOUT), deadlineMs);
+  });
+  return Promise.race([p, timeoutP]).finally(() => clearTimeout(timer.id));
 }
 
 /**
@@ -104,6 +78,14 @@ export async function executeWithTimeout(
     cwd: options?.cwd,
   });
 
+  // Rule 07: drain stdout+stderr concurrently with proc.exited to prevent
+  // pipe-buffer deadlock. Sequential reads (after proc.exited) block when
+  // the child writes more output than the OS pipe buffer can hold (~64 KB).
+  // .catch(() => "") guards against stream errors (e.g. broken pipe on SIGKILL)
+  // so the timeout path always returns a result instead of rejecting.
+  const stdoutPromise = new Response(proc.stdout as ReadableStream).text().catch(() => "");
+  const stderrPromise = new Response(proc.stderr as ReadableStream).text().catch(() => "");
+
   const timeoutMs = timeoutSeconds * 1000;
 
   let timedOut = false;
@@ -133,23 +115,29 @@ export async function executeWithTimeout(
     // Force SIGKILL entire process group if still running
     killProcessGroup(pid, "SIGKILL");
 
-    // Bun bug workaround: piped streams don't close after kill
-    const partialOutput = await drainWithDeadline(proc, drainTimeoutMs);
+    // Bun bug: piped streams may not close after kill — cap the already-in-progress
+    // reads with a deadline so we collect whatever was buffered without hanging.
+    const [out, err] = await Promise.all([
+      raceWithDeadline(stdoutPromise, drainTimeoutMs),
+      raceWithDeadline(stderrPromise, drainTimeoutMs),
+    ]);
+    const parts = [out !== DRAIN_TIMEOUT ? out : "", err !== DRAIN_TIMEOUT ? err : ""].filter(Boolean);
+    const partialOutput = parts.join("\n") || undefined;
 
     return {
       success: false,
       timeout: true,
       killed: true,
       childProcessesKilled: true,
-      output: partialOutput || undefined,
+      output: partialOutput,
       error: `EXECUTION_TIMEOUT: Verification process exceeded ${timeoutSeconds}s. Process group (PID ${pid}) killed.`,
       countsTowardEscalation: false, // Timeout is environmental, not code failure
     };
   }
 
-  const exitCode = raceResult as number;
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
+  const exitCode = typeof raceResult === "number" ? raceResult : 0;
+  // Stream reads were started concurrently — await their completion now.
+  const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
   const output = `${stdout}\n${stderr}`;
 
   return {
