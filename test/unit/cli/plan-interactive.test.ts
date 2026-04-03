@@ -461,4 +461,42 @@ describe("planCommand — interactive mode (PLN-002)", () => {
 
     expect(capturedSessionRole).toBe("plan");
   });
+
+  test("continues when interactive plan() errors but prd.json exists", async () => {
+    const fakeAdapter = {
+      plan: mock(async (_planOpts: any) => {
+        throw new Error("missing end_turn");
+      }),
+    };
+
+    _deps.getAgent = mock((_name: string) => fakeAdapter as never);
+    _deps.existsSync = mock((path: string) => path.endsWith("prd.json"));
+    _deps.readFile = mock(async (path: string) => (path.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC));
+
+    const result = await planCommand(tmpDir, {} as never, {
+      from: "/spec.md",
+      feature: "url-shortener",
+    });
+
+    expect(result).toContain("prd.json");
+    expect(fakeAdapter.plan).toHaveBeenCalled();
+  });
+
+  test("throws when interactive plan() errors and prd.json is missing", async () => {
+    const fakeAdapter = {
+      plan: mock(async (_planOpts: any) => {
+        throw new Error("missing end_turn");
+      }),
+    };
+
+    _deps.getAgent = mock((_name: string) => fakeAdapter as never);
+    _deps.existsSync = mock((_path: string) => false);
+
+    await expect(
+      planCommand(tmpDir, {} as never, {
+        from: "/spec.md",
+        feature: "url-shortener",
+      }),
+    ).rejects.toThrow("no PRD was written");
+  });
 });

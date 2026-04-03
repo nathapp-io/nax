@@ -254,6 +254,58 @@ describe("planCommand", () => {
     expect(fakeAdapter.plan).toHaveBeenCalled();
   });
 
+  test("ACP auto: continues when plan() errors but prd.json exists", async () => {
+    const fakeAdapter = {
+      plan: mock(async (_options: any) => {
+        throw new Error("missing end_turn");
+      }),
+    };
+    _planDeps.getAgent = mock((_name: string) => fakeAdapter as never);
+    _planDeps.existsSync = mock((path: string) => path.endsWith("prd.json"));
+    _planDeps.readFile = mock(async (path: string) => (path.endsWith("prd.json") ? JSON.stringify(SAMPLE_PRD) : SAMPLE_SPEC));
+
+    const result = await planCommand(
+      tmpDir,
+      {
+        agent: { protocol: "acp" },
+        autoMode: { defaultAgent: "claude" },
+      } as any,
+      {
+        from: "/spec.md",
+        feature: "url-shortener",
+        auto: true,
+      },
+    );
+
+    expect(result).toContain("prd.json");
+    expect(fakeAdapter.plan).toHaveBeenCalled();
+  });
+
+  test("ACP auto: throws when plan() errors and prd.json is missing", async () => {
+    const fakeAdapter = {
+      plan: mock(async (_options: any) => {
+        throw new Error("missing end_turn");
+      }),
+    };
+    _planDeps.getAgent = mock((_name: string) => fakeAdapter as never);
+    _planDeps.existsSync = mock((_path: string) => false);
+
+    await expect(
+      planCommand(
+        tmpDir,
+        {
+          agent: { protocol: "acp" },
+          autoMode: { defaultAgent: "claude" },
+        } as any,
+        {
+          from: "/spec.md",
+          feature: "url-shortener",
+          auto: true,
+        },
+      ),
+    ).rejects.toThrow("no PRD was written");
+  });
+
   // ──────────────────────────────────────────────────────────────────────────
   // AC-4: JSON response validated — invalid JSON or missing fields throws
   // ──────────────────────────────────────────────────────────────────────────
