@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 2,
+    "passed": 4,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 5
+    "pending": 3
   },
   "cost": {
-    "spent": 1.1433141999999998,
+    "spent": 2.5454341,
     "limit": 30
   },
   "current": {
-    "storyId": "US-001-C",
-    "title": "Implement loadProfile(), loadProfileEnv(), resolveProfileName(), and listProfiles() in src/config/profile.ts",
-    "complexity": "complex",
-    "tddStrategy": "three-session-tdd",
-    "model": "powerful",
+    "storyId": "US-002",
+    "title": "Profile activation in config loader merge chain",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
+    "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 4,
-  "updatedAt": "2026-04-03T04:13:15.288Z",
-  "durationMs": 1921067,
-  "lastHeartbeat": "2026-04-03T04:13:15.288Z"
+  "iterations": 5,
+  "updatedAt": "2026-04-03T04:19:15.300Z",
+  "durationMs": 2281079,
+  "lastHeartbeat": "2026-04-03T04:19:15.300Z"
 }

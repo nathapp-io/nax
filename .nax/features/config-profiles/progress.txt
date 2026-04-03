@@ -1,2 +1,3 @@
 [2026-04-03T03:48:19.551Z] US-001-A — PASSED — Add profile field to NaxConfigSchema and NaxConfig interface — Cost: $0.3364
 [2026-04-03T03:55:05.418Z] US-001-B — PASSED — Implement parseDotenv() and resolveEnvVars() in src/config/dotenv.ts — Cost: $0.8069
+[2026-04-03T04:14:57.083Z] US-001-C — PASSED — Implement loadProfile(), loadProfileEnv(), resolveProfileName(), and listProfiles() in src/config/profile.ts — Cost: $1.4021
