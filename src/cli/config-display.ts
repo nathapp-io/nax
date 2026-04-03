@@ -223,6 +223,29 @@ function displayConfigWithDescriptions(
       }
     }
   }
+
+  // At top level, show prompts.overrides documentation even if prompts is not in config
+  // (prompts is optional with no default, so NaxConfigSchema.parse({}).prompts is undefined)
+  if (indent === 0 && !entries.find(([k]) => k === "prompts")) {
+    console.log("# prompts: Prompt template overrides (PB-003: PromptBuilder)");
+    const description = FIELD_DESCRIPTIONS["prompts.overrides"];
+    if (description) {
+      console.log(`# prompts.overrides: ${description}`);
+    }
+    const roles = ["test-writer", "implementer", "verifier", "single-session"];
+    console.log("overrides:");
+    for (const role of roles) {
+      const roleDesc = FIELD_DESCRIPTIONS[`prompts.overrides.${role}`];
+      if (roleDesc) {
+        console.log(`  # ${roleDesc}`);
+        const match = roleDesc.match(/e\.g\., "([^"]+)"/);
+        if (match) {
+          console.log(`  # ${role}: "${match[1]}"`);
+        }
+      }
+    }
+    console.log();
+  }
 }
 
 /**

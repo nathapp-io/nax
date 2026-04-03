@@ -155,6 +155,9 @@ export class AutoInteractionPlugin implements InteractionPlugin {
     }
 
     // Use adapter.complete() for one-shot LLM call
+    const timeoutMs = this.config.naxConfig
+      ? (this.config.naxConfig.execution?.sessionTimeoutSeconds ?? 600) * 1000
+      : undefined;
     const result = await adapter.complete(prompt, {
       ...(modelArg && { model: modelArg }),
       jsonMode: true,
@@ -162,6 +165,7 @@ export class AutoInteractionPlugin implements InteractionPlugin {
       featureName: request.featureName,
       storyId: request.storyId,
       sessionRole: "auto",
+      ...(timeoutMs !== undefined && { timeoutMs }),
     });
 
     const output = typeof result === "string" ? result : result.output;

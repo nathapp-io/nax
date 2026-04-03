@@ -14,37 +14,31 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { existsSync, renameSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
-import { globalConfigPath, loadConfig } from "../../../src/config/loader";
+import { loadConfig } from "../../../src/config/loader";
 import { cleanupTempDir, makeTempDir } from "../../helpers/temp";
 
 const PROJECT_CONFIG = JSON.stringify({ quality: { commands: { test: "jest --watch=false" } } });
 
 describe("loadConfig — startDir auto-detection", () => {
   let tempDir: string;
-  let globalBackup: string | null = null;
+  let originalGlobalDir: string | undefined;
 
   beforeEach(() => {
     tempDir = makeTempDir("nax-loader-startdir-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
     writeFileSync(join(tempDir, ".nax", "config.json"), PROJECT_CONFIG);
-
-    // Isolate from real global config
-    const gPath = globalConfigPath();
-    if (existsSync(gPath)) {
-      globalBackup = `${gPath}.backup-${Date.now()}`;
-      renameSync(gPath, globalBackup);
-    }
+    originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+    process.env.NAX_GLOBAL_CONFIG_DIR = join(tempDir, ".global-nax");
   });
 
   afterEach(() => {
     cleanupTempDir(tempDir);
-    if (globalBackup && existsSync(globalBackup)) {
-      const gPath = globalConfigPath();
-      if (existsSync(gPath)) rmSync(gPath);
-      renameSync(globalBackup, gPath);
-      globalBackup = null;
+    if (originalGlobalDir === undefined) {
+      process.env.NAX_GLOBAL_CONFIG_DIR = undefined;
+    } else {
+      process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
     }
   });
 

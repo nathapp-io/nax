@@ -1,27 +1,29 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-04-01T15-57-42-449Z",
-    "feature": "acceptance-fix-strategy",
-    "startedAt": "2026-04-01T15:57:42.449Z",
-    "status": "completed",
+    "id": "run-2026-04-02T16-14-27-285Z",
+    "feature": "config-ssot",
+    "startedAt": "2026-04-02T16:14:27.285Z",
+    "status": "crashed",
     "dryRun": false,
-    "pid": 59995
+    "pid": 54801,
+    "crashedAt": "2026-04-02T16:32:12.369Z",
+    "crashSignal": "SIGINT"
   },
   "progress": {
-    "total": 4,
-    "passed": 4,
-    "failed": 0,
+    "total": 3,
+    "passed": 2,
+    "failed": 1,
     "paused": 0,
     "blocked": 0,
     "pending": 0
   },
   "cost": {
-    "spent": 1.490571375,
+    "spent": 0.097692345,
     "limit": 30
   },
   "current": null,
-  "iterations": 5,
-  "updatedAt": "2026-04-01T17:53:36.046Z",
-  "durationMs": 6953597
+  "iterations": 1,
+  "updatedAt": "2026-04-02T16:32:12.369Z",
+  "durationMs": 1065084
 }

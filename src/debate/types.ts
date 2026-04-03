@@ -42,6 +42,8 @@ export interface DebateStageConfig {
   rounds: number;
   /** Optional debaters array — resolved from config.autoMode.defaultAgent when absent (min 2 entries) */
   debaters?: Debater[];
+  /** Timeout for debate session in seconds (default: 600) */
+  timeoutSeconds: number;
 }
 
 /** Top-level debate configuration */
@@ -50,6 +52,8 @@ export interface DebateConfig {
   enabled: boolean;
   /** Default number of debating agents when no explicit debaters array is specified */
   agents: number;
+  /** Maximum number of debaters running concurrently per debate round (default: 2) */
+  maxConcurrentDebaters: number;
   /** Per-stage debate configuration */
   stages: {
     /** Planning phase debate */

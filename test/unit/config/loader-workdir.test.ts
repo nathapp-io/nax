@@ -4,40 +4,30 @@
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { existsSync, renameSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { globalConfigPath, loadConfigForWorkdir } from "../../../src/config/loader";
+import { loadConfigForWorkdir } from "../../../src/config/loader";
 import { getLogger } from "../../../src/logger";
 import { makeTempDir } from "../../helpers/temp";
 
 describe("loadConfigForWorkdir", () => {
   let tempDir: string;
-  let globalBackup: string | null = null;
+  let originalGlobalDir: string | undefined;
 
   beforeEach(() => {
     tempDir = makeTempDir("nax-test-workdir-");
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
-
-    // Backup global config if present to isolate tests
-    const globalPath = globalConfigPath();
-    if (existsSync(globalPath)) {
-      globalBackup = `${globalPath}.test-backup-${Date.now()}`;
-      renameSync(globalPath, globalBackup);
-    }
+    originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+    process.env.NAX_GLOBAL_CONFIG_DIR = join(tempDir, ".global-nax");
   });
 
   afterEach(() => {
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
     }
-    if (globalBackup && existsSync(globalBackup)) {
-      const globalPath = globalConfigPath();
-      if (existsSync(globalPath)) {
-        rmSync(globalPath);
-      }
-      renameSync(globalBackup, globalPath);
-      globalBackup = null;
+    if (originalGlobalDir === undefined) {
+      process.env.NAX_GLOBAL_CONFIG_DIR = undefined;
+    } else {
+      process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
     }
   });
 

@@ -150,7 +150,7 @@ export async function diagnoseAcceptanceFailure(
       reasoning: "diagnosis failed — falling back to source fix",
       confidence: 0,
     };
-  } catch (err) {
+  } catch {
     return {
       verdict: "source_bug",
       reasoning: "diagnosis failed — falling back to source fix",

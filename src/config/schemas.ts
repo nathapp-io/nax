@@ -5,7 +5,6 @@
  */
 
 import { z } from "zod";
-import { DEFAULT_CONFIG } from "./defaults";
 
 /** Zod schema for runtime validation */
 const TokenPricingSchema = z.object({
@@ -38,8 +37,7 @@ const PerAgentModelMapSchema = z.record(z.string().min(1), z.record(z.string().m
 
 const ModelMapSchema = z.preprocess((val) => {
   if (isLegacyFlatModels(val)) {
-    const defaultAgent = DEFAULT_CONFIG.autoMode.defaultAgent;
-    return { [defaultAgent]: val };
+    return { claude: val };
   }
   return val;
 }, PerAgentModelMapSchema);
@@ -277,13 +275,14 @@ const ReviewConfigSchema = z.object({
 const PlanConfigSchema = z.object({
   model: ModelTierSchema,
   outputPath: z.string().min(1, "plan.outputPath must be non-empty"),
+  timeoutSeconds: z.number().int().positive().default(600),
 });
 
 const AcceptanceFixConfigSchema = z.object({
-  diagnoseModel: z.string().min(1, "acceptance.fix.diagnoseModel must be non-empty"),
-  fixModel: z.string().min(1, "acceptance.fix.fixModel must be non-empty"),
-  strategy: z.enum(["diagnose-first", "implement-only"]),
-  maxRetries: z.number().int().nonnegative(),
+  diagnoseModel: z.string().min(1, "acceptance.fix.diagnoseModel must be non-empty").default("fast"),
+  fixModel: z.string().min(1, "acceptance.fix.fixModel must be non-empty").default("balanced"),
+  strategy: z.enum(["diagnose-first", "implement-only"]).default("diagnose-first"),
+  maxRetries: z.number().int().nonnegative().default(2),
 });
 
 export const AcceptanceConfigSchema = z.object({
@@ -462,6 +461,7 @@ const DebateStageConfigSchema = (defaults: {
       sessionMode: z.enum(["one-shot", "stateful"]).default(defaults.sessionMode),
       rounds: z.number().int().min(1).default(defaults.rounds),
       debaters: z.array(DebaterSchema).min(2, "debaters must have at least 2 entries").optional(),
+      timeoutSeconds: z.number().int().positive().default(600),
     }),
   );
 
@@ -470,6 +470,7 @@ const DebateConfigSchema = z.preprocess(
   z.object({
     enabled: z.boolean().default(false),
     agents: z.number().int().min(2).default(3),
+    maxConcurrentDebaters: z.number().int().min(1).max(10).default(2),
     stages: z.preprocess(
       toObject,
       z.object({
@@ -505,32 +506,268 @@ const DebateConfigSchema = z.preprocess(
 
 export const NaxConfigSchema = z
   .object({
-    version: z.number(),
-    models: ModelMapSchema,
-    autoMode: AutoModeConfigSchema,
-    routing: RoutingConfigSchema,
-    execution: ExecutionConfigSchema,
-    quality: QualityConfigSchema,
-    tdd: TddConfigSchema,
-    constitution: ConstitutionConfigSchema,
-    analyze: AnalyzeConfigSchema,
-    review: ReviewConfigSchema,
-    plan: PlanConfigSchema,
-    acceptance: AcceptanceConfigSchema,
-    context: ContextConfigSchema,
+    version: z.number().default(1),
+    models: ModelMapSchema.default({
+      claude: {
+        fast: "haiku",
+        balanced: "sonnet",
+        powerful: "opus",
+      },
+    }),
+    autoMode: AutoModeConfigSchema.default({
+      enabled: true,
+      defaultAgent: "claude",
+      fallbackOrder: ["claude"],
+      complexityRouting: {
+        simple: "fast",
+        medium: "balanced",
+        complex: "powerful",
+        expert: "powerful",
+      },
+      escalation: {
+        enabled: true,
+        tierOrder: [
+          { tier: "fast", attempts: 5 },
+          { tier: "balanced", attempts: 3 },
+          { tier: "powerful", attempts: 2 },
+        ],
+        escalateEntireBatch: true,
+      },
+    }),
+    routing: RoutingConfigSchema.default({
+      strategy: "keyword",
+      llm: {
+        model: "fast",
+        fallbackToKeywords: true,
+        cacheDecisions: true,
+        mode: "hybrid",
+        timeoutMs: 30000,
+      },
+    }),
+    execution: ExecutionConfigSchema.default({
+      maxIterations: 10,
+      iterationDelayMs: 2000,
+      costLimit: 30.0,
+      sessionTimeoutSeconds: 3600,
+      verificationTimeoutSeconds: 600,
+      maxStoriesPerFeature: 500,
+      rectification: {
+        enabled: true,
+        maxRetries: 2,
+        fullSuiteTimeoutSeconds: 300,
+        maxFailureSummaryChars: 2000,
+        abortOnIncreasingFailures: true,
+        escalateOnExhaustion: true,
+        rethinkAtAttempt: 2,
+        urgencyAtAttempt: 3,
+      },
+      regressionGate: {
+        enabled: true,
+        timeoutSeconds: 300,
+        acceptOnTimeout: true,
+        mode: "deferred",
+        maxRectificationAttempts: 2,
+      },
+      contextProviderTokenBudget: 2000,
+      lintCommand: null,
+      typecheckCommand: null,
+      dangerouslySkipPermissions: true,
+      permissionProfile: "unrestricted",
+      smartTestRunner: true,
+    } as unknown as Parameters<typeof ExecutionConfigSchema.default>[0]),
+    quality: QualityConfigSchema.default({
+      requireTypecheck: true,
+      requireLint: true,
+      requireTests: true,
+      commands: {},
+      forceExit: false,
+      detectOpenHandles: true,
+      detectOpenHandlesRetries: 1,
+      gracePeriodMs: 5000,
+      drainTimeoutMs: 2000,
+      shell: "/bin/sh",
+      stripEnvVars: [
+        "CLAUDECODE",
+        "REPL_ID",
+        "AGENT",
+        "GITLAB_ACCESS_TOKEN",
+        "GITHUB_TOKEN",
+        "GITHUB_ACCESS_TOKEN",
+        "GH_TOKEN",
+        "CI_GIT_TOKEN",
+        "CI_JOB_TOKEN",
+        "BITBUCKET_ACCESS_TOKEN",
+        "NPM_TOKEN",
+        "NPM_AUTH_TOKEN",
+        "YARN_NPM_AUTH_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "COHERE_API_KEY",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "GCLOUD_SERVICE_KEY",
+        "AZURE_CLIENT_SECRET",
+        "AZURE_TENANT_ID",
+        "TELEGRAM_BOT_TOKEN",
+        "SLACK_TOKEN",
+        "SLACK_WEBHOOK_URL",
+        "SENTRY_AUTH_TOKEN",
+        "DATADOG_API_KEY",
+      ],
+      testing: {
+        hermetic: true,
+      },
+    }),
+    tdd: TddConfigSchema.default({
+      maxRetries: 2,
+      autoVerifyIsolation: true,
+      autoApproveVerifier: true,
+      strategy: "auto",
+      sessionTiers: {
+        testWriter: "balanced",
+        verifier: "fast",
+      },
+      testWriterAllowedPaths: ["src/index.ts", "src/**/index.ts"],
+      rollbackOnFailure: true,
+      greenfieldDetection: true,
+    }),
+    constitution: ConstitutionConfigSchema.default({
+      enabled: true,
+      path: "constitution.md",
+      maxTokens: 2000,
+    }),
+    analyze: AnalyzeConfigSchema.default({
+      llmEnhanced: true,
+      model: "balanced",
+      fallbackToKeywords: true,
+      maxCodebaseSummaryTokens: 5000,
+    }),
+    review: ReviewConfigSchema.default({
+      enabled: true,
+      checks: ["typecheck", "lint"],
+      commands: {},
+      pluginMode: "per-story",
+      semantic: {
+        modelTier: "balanced",
+        rules: [],
+        timeoutMs: 600_000,
+        excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"],
+      },
+    }),
+    plan: PlanConfigSchema.default({
+      model: "balanced",
+      outputPath: "spec.md",
+      timeoutSeconds: 600,
+    }),
+    acceptance: AcceptanceConfigSchema.default({
+      enabled: true,
+      maxRetries: 2,
+      generateTests: true,
+      testPath: ".nax-acceptance.test.ts",
+      model: "fast",
+      refinement: true,
+      redGate: true,
+      timeoutMs: 1800000,
+      fix: {
+        diagnoseModel: "fast",
+        fixModel: "balanced",
+        strategy: "diagnose-first",
+        maxRetries: 2,
+      },
+    }),
+    context: ContextConfigSchema.default({
+      fileInjection: "disabled",
+      testCoverage: {
+        enabled: true,
+        detail: "names-and-counts",
+        maxTokens: 500,
+        testPattern: "**/*.test.{ts,js,tsx,jsx}",
+        scopeToStory: true,
+      },
+      autoDetect: {
+        enabled: true,
+        maxFiles: 5,
+        traceImports: false,
+      },
+    }),
     optimizer: OptimizerConfigSchema.optional(),
     plugins: z.array(PluginConfigEntrySchema).optional(),
     disabledPlugins: z.array(z.string()).optional(),
     hooks: HooksConfigSchema.optional(),
-    interaction: InteractionConfigSchema.optional(),
-    agent: AgentConfigSchema.optional(),
-    precheck: PrecheckConfigSchema.optional(),
+    interaction: InteractionConfigSchema.optional().default({
+      plugin: "cli",
+      config: {},
+      defaults: {
+        timeout: 600000,
+        fallback: "escalate",
+      },
+      triggers: {
+        "security-review": true,
+        "cost-warning": true,
+      },
+    }),
+    agent: AgentConfigSchema.optional().default({
+      protocol: "acp",
+      maxInteractionTurns: 10,
+    }),
+    precheck: PrecheckConfigSchema.optional().default({
+      storySizeGate: {
+        enabled: true,
+        maxAcCount: 10,
+        maxDescriptionLength: 3000,
+        maxBulletPoints: 12,
+        action: "block",
+        maxReplanAttempts: 3,
+      },
+    }),
     prompts: PromptsConfigSchema.optional(),
     generate: GenerateConfigSchema.optional(),
     project: ProjectProfileSchema.optional(),
-    debate: DebateConfigSchema.optional().default(
-      () => DEFAULT_CONFIG.debate as NonNullable<typeof DEFAULT_CONFIG.debate>,
-    ),
+    debate: DebateConfigSchema.optional().default(() => ({
+      enabled: false,
+      agents: 3,
+      maxConcurrentDebaters: 2,
+      stages: {
+        plan: {
+          enabled: true,
+          resolver: { type: "synthesis" as const },
+          sessionMode: "stateful" as const,
+          rounds: 3,
+          timeoutSeconds: 600,
+        },
+        review: {
+          enabled: true,
+          resolver: { type: "majority-fail-closed" as const },
+          sessionMode: "one-shot" as const,
+          rounds: 2,
+          timeoutSeconds: 600,
+        },
+        acceptance: {
+          enabled: false,
+          resolver: { type: "majority-fail-closed" as const },
+          sessionMode: "one-shot" as const,
+          rounds: 1,
+          timeoutSeconds: 600,
+        },
+        rectification: {
+          enabled: false,
+          resolver: { type: "synthesis" as const },
+          sessionMode: "one-shot" as const,
+          rounds: 1,
+          timeoutSeconds: 600,
+        },
+        escalation: {
+          enabled: false,
+          resolver: { type: "majority-fail-closed" as const },
+          sessionMode: "one-shot" as const,
+          rounds: 1,
+          timeoutSeconds: 600,
+        },
+      },
+    })),
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",

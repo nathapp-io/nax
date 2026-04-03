@@ -30,6 +30,7 @@ import { validatePlanOutput } from "../prd/schema";
 import type { PRD, StoryStatus, UserStory } from "../prd/types";
 import type { PrecheckResultWithCode } from "../precheck";
 
+const DEFAULT_TIMEOUT_SECONDS = 600;
 // ─────────────────────────────────────────────────────────────────────────────
 // Dependency injection (_planDeps) — override in tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -152,8 +153,8 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
 
   const agentName = config?.autoMode?.defaultAgent ?? "claude";
 
-  // Timeout: from config, or default to 600 seconds (10 min)
-  const timeoutSeconds = config?.execution?.sessionTimeoutSeconds ?? 600;
+  // Timeout: from plan config, or DEFAULT_TIMEOUT_SECONDS
+  const timeoutSeconds = config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
 
   // Route: debate > auto (one-shot) > interactive (multi-turn)
   // Debate fires whenever config.debate.enabled + stages.plan.enabled — regardless of auto/interactive mode.
@@ -270,6 +271,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       rawResponse = await _planDeps.readFile(outputPath);
     } else {
       // CLI: one-shot complete() — simple and fast, no session overhead
+      const timeoutMs = (config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS) * 1000;
       const completeResult = await adapter.complete(prompt, {
         model: autoModel,
         jsonMode: true,
@@ -277,7 +279,7 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         config,
         featureName: options.feature,
         sessionRole: "plan",
-        timeoutMs: (config?.execution?.sessionTimeoutSeconds ?? 3600) * 1000,
+        timeoutMs,
       });
       let result = typeof completeResult === "string" ? completeResult : completeResult.output;
       // CLI adapter returns {"type":"result","result":"..."} envelope — unwrap it
@@ -775,10 +777,24 @@ export async function planDecomposeCommand(
   const adapter = _planDeps.getAgent(agentName, config);
   if (!adapter) throw new Error(`[decompose] No agent adapter found for '${agentName}'`);
 
+  let decomposeModel: string | undefined;
+  try {
+    const planTier = config?.plan?.model ?? "balanced";
+    const { resolveModelForAgent } = await import("../config/schema");
+    if (config?.models) {
+      const defaultAgent = config.autoMode?.defaultAgent ?? "claude";
+      decomposeModel = resolveModelForAgent(config.models, defaultAgent, planTier, defaultAgent).model;
+    }
+  } catch {
+    // fall through — adapter will use its own fallback
+  }
+
   const stages = config?.debate?.stages as Record<string, DebateStageConfig> | undefined;
   const debateEnabled = config?.debate?.enabled && stages?.decompose?.enabled;
 
   let rawResponse: string;
+  const timeoutSeconds = config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
+  const timeoutMs = timeoutSeconds * 1000;
   if (debateEnabled) {
     const stageConfig = stages?.decompose as DebateStageConfig;
     const debateSession = _planDeps.createDebateSession({
@@ -788,30 +804,32 @@ export async function planDecomposeCommand(
       config,
       workdir,
       featureName: options.feature,
-      timeoutSeconds: config?.execution?.sessionTimeoutSeconds,
+      timeoutSeconds: timeoutSeconds,
     });
     const debateResult = await debateSession.run(prompt);
     if (debateResult.outcome !== "failed" && debateResult.output) {
       rawResponse = debateResult.output;
     } else {
       const completeResult = await adapter.complete(prompt, {
+        model: decomposeModel,
         jsonMode: true,
         workdir,
         sessionRole: "decompose",
         featureName: options.feature,
         storyId: options.storyId,
-        timeoutMs: (config?.execution?.sessionTimeoutSeconds ?? 3600) * 1000,
+        timeoutMs,
       });
       rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
     }
   } else {
     const completeResult = await adapter.complete(prompt, {
+      model: decomposeModel,
       jsonMode: true,
       workdir,
       sessionRole: "decompose",
       featureName: options.feature,
       storyId: options.storyId,
-      timeoutMs: (config?.execution?.sessionTimeoutSeconds ?? 3600) * 1000,
+      timeoutMs,
     });
     rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
   }

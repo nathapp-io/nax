@@ -96,10 +96,10 @@ export async function runPlan(
     modelDef,
     prompt: "",
     modelTier: options.modelTier || "balanced",
-    timeoutSeconds: 600,
+    timeoutSeconds: options.timeoutSeconds ?? 600,
   };
 
-  const PLAN_TIMEOUT_MS = 600_000; // 10 minutes
+  const planTimeoutMs = (options.timeoutSeconds ?? 600) * 1000;
 
   if (options.interactive) {
     // Interactive mode: inherit stdio
@@ -116,7 +116,7 @@ export async function runPlan(
 
     let exitCode: number;
     try {
-      const timeoutResult = await withProcessTimeout(proc, PLAN_TIMEOUT_MS, {
+      const timeoutResult = await withProcessTimeout(proc, planTimeoutMs, {
         graceMs: 5000,
       });
       exitCode = timeoutResult.exitCode;
@@ -151,7 +151,7 @@ export async function runPlan(
 
     let exitCode: number;
     try {
-      const timeoutResult = await withProcessTimeout(proc, PLAN_TIMEOUT_MS, {
+      const timeoutResult = await withProcessTimeout(proc, planTimeoutMs, {
         graceMs: 5000,
       });
       exitCode = timeoutResult.exitCode;
