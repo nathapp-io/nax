@@ -4,7 +4,7 @@ Project-specific configuration patterns for nax.
 
 ## Zod Schema Validation
 
-Use Zod `safeParse()` for all runtime config validation:
+Use Zod `safeParse()` for runtime config validation of layered or user-provided config:
 
 ```typescript
 import { NaxConfigSchema } from "./schema";
@@ -20,7 +20,38 @@ if (!result.success) {
 config = result.data;
 ```
 
-**Never** use `parse()` without catching — it throws on validation failure. Use `safeParse()`.
+`parse()` is allowed only for schema-owned invariants where fail-fast is intentional. The main example is config SSOT derivation:
+
+```typescript
+import { NaxConfigSchema } from "./schemas";
+import type { NaxConfig } from "./types";
+
+export const DEFAULT_CONFIG = NaxConfigSchema.parse({}) as NaxConfig;
+```
+
+Rule of thumb:
+
+- `safeParse()` for runtime/user input
+- `parse({})` for deriving `DEFAULT_CONFIG` from schema defaults
+- do not use `parse()` on layered config unless you explicitly want a throwing boundary
+
+## Config SSOT
+
+Config defaults are schema-driven.
+
+- Zod `.default()` values in `src/config/schemas.ts` are the single source of truth
+- `src/config/defaults.ts` must stay a thin derived export of `NaxConfigSchema.parse({})`
+- do not reintroduce a hand-maintained `DEFAULT_CONFIG` object literal
+- if a new config field needs a default, add it in the schema first
+
+This is the expected shape:
+
+```typescript
+import { NaxConfigSchema } from "./schemas";
+import type { NaxConfig } from "./types";
+
+export const DEFAULT_CONFIG = NaxConfigSchema.parse({}) as NaxConfig;
+```
 
 ## Config Schema Structure
 
@@ -40,18 +71,18 @@ const NaxConfigSchema = z.object({
 
 Config loads in priority order (later overrides earlier):
 
-1. **Defaults** — Zod schema defaults
+1. **Defaults** — `DEFAULT_CONFIG`, derived from Zod schema defaults
 2. **Global** — `~/.nax/config.json`
 3. **Project** — `<workdir>/.nax/config.json`
 4. **CLI overrides** — command-line arguments
 
 ```typescript
-const layered = {
-  ...schemaDefaults,
-  ...globalConfig,
-  ...projectConfig,
-  ...cliOverrides,
-};
+let rawConfig = structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>);
+rawConfig = deepMergeConfig(rawConfig, globalConfig);
+rawConfig = deepMergeConfig(rawConfig, projectConfig);
+rawConfig = deepMergeConfig(rawConfig, cliOverrides);
+
+const result = NaxConfigSchema.safeParse(rawConfig);
 ```
 
 ## Compatibility Shim Pattern
@@ -75,11 +106,11 @@ function applyRemovedStrategyCompat(conf: Record<string, unknown>): Record<strin
 
 ## Type-Only Imports for Config
 
-Use `import type` for schema types to avoid runtime overhead:
+Use `import type` for config types. Prefer leaf-module imports inside `src/config/*` to avoid barrel cycles:
 
 ```typescript
-import type { NaxConfig } from "./schema";
-// Not: import { NaxConfig } from "./schema"
+import type { NaxConfig } from "./types";
+// Avoid barrel imports inside config internals when a leaf module is available.
 ```
 
 ## Accessing Config Values

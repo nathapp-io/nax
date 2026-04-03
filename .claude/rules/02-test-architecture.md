@@ -1,3 +1,8 @@
+---
+paths:
+  - "test/**/*.test.ts"
+---
+
 # Test Architecture
 
 ## Directory Structure
