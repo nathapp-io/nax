@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 4,
+    "passed": 5,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 3
+    "pending": 2
   },
   "cost": {
-    "spent": 2.5454341,
+    "spent": 4.11747845,
     "limit": 30
   },
   "current": {
-    "storyId": "US-002",
-    "title": "Profile activation in config loader merge chain",
-    "complexity": "medium",
+    "storyId": "US-003",
+    "title": "Profile CLI commands (list, show, use, current, create)",
+    "complexity": "complex",
     "tddStrategy": "three-session-tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 5,
-  "updatedAt": "2026-04-03T04:25:15.305Z",
-  "durationMs": 2641084,
-  "lastHeartbeat": "2026-04-03T04:25:15.305Z"
+  "iterations": 6,
+  "updatedAt": "2026-04-03T04:32:15.327Z",
+  "durationMs": 3061106,
+  "lastHeartbeat": "2026-04-03T04:32:15.327Z"
 }
