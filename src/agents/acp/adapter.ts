@@ -367,7 +367,11 @@ const MAX_SESSION_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
  * Close all open sessions tracked in the sidecar file for a feature.
  * Called at run-end to ensure no sessions leak past the run boundary.
  */
-export async function sweepFeatureSessions(workdir: string, featureName: string): Promise<void> {
+export async function sweepFeatureSessions(
+  workdir: string,
+  featureName: string,
+  pidRegistry?: import("../../execution/pid-registry").PidRegistry,
+): Promise<void> {
   const path = acpSessionsPath(workdir, featureName);
   let sessions: Record<string, SidecarEntry>;
   try {
@@ -394,7 +398,7 @@ export async function sweepFeatureSessions(workdir: string, featureName: string)
 
   for (const [agentName, sessionNames] of byAgent) {
     const cmdStr = `acpx ${agentName}`;
-    const client = _acpAdapterDeps.createClient(cmdStr, workdir);
+    const client = _acpAdapterDeps.createClient(cmdStr, workdir, undefined, pidRegistry);
     try {
       await client.start();
       for (const sessionName of sessionNames) {
@@ -430,6 +434,7 @@ export async function sweepStaleFeatureSessions(
   workdir: string,
   featureName: string,
   maxAgeMs = MAX_SESSION_AGE_MS,
+  pidRegistry?: import("../../execution/pid-registry").PidRegistry,
 ): Promise<void> {
   const path = acpSessionsPath(workdir, featureName);
   const file = Bun.file(path);
@@ -447,7 +452,7 @@ export async function sweepStaleFeatureSessions(
     },
   );
 
-  await sweepFeatureSessions(workdir, featureName);
+  await sweepFeatureSessions(workdir, featureName, pidRegistry);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
