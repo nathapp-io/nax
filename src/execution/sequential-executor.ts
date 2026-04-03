@@ -50,6 +50,15 @@ export async function executeSequential(
   wireEventsWriter(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir);
   wireRegistry(pipelineEventBus, ctx.feature, ctx.runId, ctx.workdir);
 
+  // Emit run:started once — subscribers (hooks.ts, reporters.ts) own the fan-out.
+  // Direct fireHook("on-start") and reporter.onRunStart() calls have been removed.
+  pipelineEventBus.emit({
+    type: "run:started",
+    feature: ctx.feature,
+    totalStories: initialPrd.userStories.length,
+    workdir: ctx.workdir,
+  });
+
   const buildResult = (exitReason: SequentialExecutionResult["exitReason"]): SequentialExecutionResult => ({
     prd,
     iterations,

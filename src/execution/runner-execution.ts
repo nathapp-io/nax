@@ -102,22 +102,8 @@ export async function runExecutionPhase(
   options.statusWriter.setCurrentStory(null);
   await options.statusWriter.update(totalCost, iterations);
 
-  // Update reporters with correct totalStories count
-  const reporters = pluginRegistry.getReporters();
-  for (const reporter of reporters) {
-    if (reporter.onRunStart) {
-      try {
-        await reporter.onRunStart({
-          runId: options.runId,
-          feature: options.feature,
-          totalStories: prd.userStories.length,
-          startTime: options.startedAt,
-        });
-      } catch (error) {
-        logger?.warn("plugins", `Reporter '${reporter.name}' onRunStart failed`, { error });
-      }
-    }
-  }
+  // onRunStart is now handled by the reporters.ts subscriber via the run:started event
+  // emitted inside executeUnified/executeSequential after bus wiring.
 
   logger?.info("execution", `Starting ${options.feature}`, {
     totalStories: prd.userStories.length,

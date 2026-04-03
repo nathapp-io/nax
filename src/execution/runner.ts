@@ -110,6 +110,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
   let iterations = 0;
   let storiesCompleted = 0;
   let totalCost = 0;
+  let runCompleted = false;
   // biome-ignore lint/suspicious/noExplicitAny: Metrics array type varies
   const allStoryMetrics: any[] = [];
 
@@ -225,6 +226,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     });
 
     const { durationMs } = completionResult;
+    runCompleted = true;
 
     return {
       success: isComplete(prd),
@@ -271,6 +273,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       prdPath,
       branch,
       version: NAX_VERSION,
+      runCompleted,
     });
     logger?.debug("execution", "Runner finally — cleanupRun done, run() returning");
   }
