@@ -188,7 +188,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
     totalCost = executionResult.totalCost;
     allStoryMetrics.push(...executionResult.allStoryMetrics);
 
-    // Return early if parallel execution completed everything
+    // Return early if parallel execution completed everything.
+    // NOTE: This path skips runCompletionPhase, so run:completed is never emitted
+    // and runCompleted stays false. cleanupRun will fire onRunEnd directly (correct).
+    // If this path is ever activated, also wire run:completed emission here so
+    // reporter subscribers and the on-complete hook fire consistently.
     if (executionResult.completedEarly && executionResult.durationMs !== undefined) {
       return {
         success: isComplete(prd),

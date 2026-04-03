@@ -102,6 +102,8 @@ export interface RunCompletedEvent {
   totalStories: number;
   passedStories: number;
   failedStories: number;
+  skippedStories: number;
+  pausedStories: number;
   durationMs: number;
   totalCost?: number;
 }

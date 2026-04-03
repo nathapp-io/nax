@@ -157,8 +157,8 @@ export function wireReporters(
                 storySummary: {
                   completed: ev.passedStories,
                   failed: ev.failedStories,
-                  skipped: 0,
-                  paused: 0,
+                  skipped: ev.skippedStories,
+                  paused: ev.pausedStories,
                 },
               });
             } catch (err) {
