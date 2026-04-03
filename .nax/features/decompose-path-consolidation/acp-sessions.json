@@ -26,5 +26,9 @@
   "US-004:test-writer": {
     "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-004-test-writer",
     "agentName": "claude"
+  },
+  "US-004:implementer": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-004-implementer",
+    "agentName": "claude"
   }
 }
