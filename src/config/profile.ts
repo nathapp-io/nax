@@ -30,7 +30,9 @@ export async function loadProfile(profileName: string, projectRoot: string): Pro
   const [globalExists, projectExists] = await Promise.all([globalFile.exists(), projectFile.exists()]);
 
   if (!globalExists && !projectExists) {
-    throw new Error(`Profile "${profileName}" not found in global or project config`);
+    const available = await listAvailableProfileNames(projectRoot);
+    const availableList = available.length > 0 ? available.join(", ") : "(none)";
+    throw new Error(`Profile "${profileName}" not found. Available: ${availableList}`);
   }
 
   let base: Record<string, unknown> = {};
@@ -82,7 +84,10 @@ export async function loadProfileEnv(profileName: string, projectRoot: string): 
 
 /**
  * Resolves the active profile name using priority:
- * CLI option > NAX_PROFILE env var > project config.json profile field > "default"
+ * CLI option > NAX_PROFILE env var > project config.json > global config.json > "default"
+ *
+ * For the config.json fallback, project takes precedence over global — consistent
+ * with the existing config merge order where project overrides global.
  */
 export async function resolveProfileName(
   cliOptions: { profile?: string },
@@ -97,17 +102,34 @@ export async function resolveProfileName(
     return env.NAX_PROFILE;
   }
 
-  const configPath = join(projectConfigDir(projectRoot), "config.json");
-  const configFile = Bun.file(configPath);
+  // Project config.json takes precedence over global config.json
+  const projectConfigPath = join(projectConfigDir(projectRoot), "config.json");
+  const projectConfigFile = Bun.file(projectConfigPath);
+  if (await projectConfigFile.exists()) {
+    const config = await projectConfigFile.json();
+    if (typeof config.profile === "string" && config.profile && config.profile !== "default") {
+      return config.profile;
+    }
+  }
 
-  if (await configFile.exists()) {
-    const config = await configFile.json();
-    if (typeof config.profile === "string" && config.profile) {
+  // Fall back to global config.json
+  const globalConfigPath = join(globalConfigDir(), "config.json");
+  const globalConfigFile = Bun.file(globalConfigPath);
+  if (await globalConfigFile.exists()) {
+    const config = await globalConfigFile.json();
+    if (typeof config.profile === "string" && config.profile && config.profile !== "default") {
       return config.profile;
     }
   }
 
   return "default";
+}
+
+/** Internal helper — returns deduplicated sorted profile names from both scopes. */
+async function listAvailableProfileNames(projectRoot: string): Promise<string[]> {
+  const entries = await listProfiles(projectRoot);
+  const names = [...new Set(entries.map((e) => e.name))].sort();
+  return names;
 }
 
 /**

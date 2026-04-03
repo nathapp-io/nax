@@ -169,27 +169,25 @@ describe("loadConfig — profile activation (US-002)", () => {
     expect(config.execution.sessionTimeoutSeconds).toBe(888);
   });
 
-  // AC 7: "profile" field from global config.json is stripped before merging
-  test('"profile" field from global config.json is stripped before merging into config object', async () => {
-    // Global config has a "profile" field — it must not influence profile resolution
-    // (only CLI > NAX_PROFILE > project config.json is the priority chain)
+  // AC 7: global config.json "profile" field activates profile as lowest-priority fallback,
+  // but the "profile" key itself is stripped from config layer merge so it doesn't double-apply.
+  test('"profile" field from global config.json activates profile as lowest-priority fallback', async () => {
+    // Global config has a "profile" field — activates profile when no CLI/NAX_PROFILE/project profile set
     writeJson(join(globalDir, "config.json"), {
       profile: "thorough",
       execution: { sessionTimeoutSeconds: 101 },
     });
 
-    // Thorough profile exists but must NOT be auto-activated by global config.json
+    // Thorough profile exists and SHOULD be activated via global config.json fallback
     writeJson(join(globalDir, "profiles", "thorough.json"), {
       execution: { sessionTimeoutSeconds: 202 },
     });
 
     const config = await loadConfig(projectDir);
 
-    // Profile from global config.json must not trigger profile loading
-    // Result should have profile="default" (no CLI, no NAX_PROFILE, no project config profile field)
-    expect(config.profile).toBe("default");
-    // The sessionTimeoutSeconds from global config.json itself IS still merged (it's a real value)
-    // but the "profile" key is stripped so it doesn't leak as config.profile="thorough"
+    // Global config.json profile field is used as fallback — profile is activated
+    expect(config.profile).toBe("thorough");
+    // Profile data (202) merged first, then global config.json (101) overwrites — project wins over profile
     expect(config.execution.sessionTimeoutSeconds).toBe(101);
   });
 

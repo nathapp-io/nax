@@ -83,8 +83,17 @@ describe("config/profile", () => {
       expect((result as Record<string, unknown>).timeout).toBe(30);
     });
 
-    test("throws an error whose message contains the profile name when neither global nor project profile exists", async () => {
-      await expect(loadProfile("nonexistent", projectDir)).rejects.toThrow("nonexistent");
+    test("throws an error whose message contains the profile name and Available list when neither global nor project profile exists", async () => {
+      // Pre-create a profile so the available list is non-empty
+      const globalProfilesDir = join(globalDir, "profiles");
+      mkdirSync(globalProfilesDir, { recursive: true });
+      await Bun.write(join(globalProfilesDir, "fast.json"), JSON.stringify({ tier: "fast" }));
+
+      const err = await loadProfile("nonexistent", projectDir).catch((e: Error) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err.message).toContain("nonexistent");
+      expect(err.message).toContain("Available:");
+      expect(err.message).toContain("fast");
     });
   });
 
@@ -185,6 +194,36 @@ describe("config/profile", () => {
 
       const result = await resolveProfileName({}, {}, projectDir);
       expect(result).toBe("persisted");
+    });
+
+    test('falls back to global config.json profile field when project config has none', async () => {
+      const globalNaxDir = join(globalDir);
+      mkdirSync(globalNaxDir, { recursive: true });
+      await Bun.write(
+        join(globalNaxDir, "config.json"),
+        JSON.stringify({ profile: "global-profile" }),
+      );
+
+      const result = await resolveProfileName({}, {}, projectDir);
+      expect(result).toBe("global-profile");
+    });
+
+    test('project config.json profile takes precedence over global config.json profile', async () => {
+      const projectNaxDir = join(projectDir, ".nax");
+      mkdirSync(projectNaxDir, { recursive: true });
+      await Bun.write(
+        join(projectNaxDir, "config.json"),
+        JSON.stringify({ profile: "project-profile" }),
+      );
+      const globalNaxDir = join(globalDir);
+      mkdirSync(globalNaxDir, { recursive: true });
+      await Bun.write(
+        join(globalNaxDir, "config.json"),
+        JSON.stringify({ profile: "global-profile" }),
+      );
+
+      const result = await resolveProfileName({}, {}, projectDir);
+      expect(result).toBe("project-profile");
     });
 
     test('returns "default" when no profile is set anywhere', async () => {
