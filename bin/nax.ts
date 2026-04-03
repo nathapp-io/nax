@@ -880,7 +880,7 @@ program
   });
 
 // ── config ───────────────────────────────────────────
-program
+const configCmd = program
   .command("config")
   .description("Display effective merged configuration")
   .option("-d, --dir <path>", "Project directory", process.cwd())
@@ -905,7 +905,7 @@ program
   });
 
 // ── config profile ────────────────────────────────────
-const configProfileCmd = program.command("config profile").description("Manage config profiles");
+const configProfileCmd = configCmd.command("profile").description("Manage config profiles");
 
 configProfileCmd
   .command("list")
