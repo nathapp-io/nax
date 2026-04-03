@@ -7,10 +7,10 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { globalConfigPath, loadConfig } from "../../../src/config/loader";
+import { loadConfig } from "../../../src/config/loader";
 import { DEFAULT_CONFIG, NaxConfigSchema } from "../../../src/config/schema";
 import type { NaxConfig } from "../../../src/config/schema";
 
@@ -75,35 +75,26 @@ describe("US-002: Derive DEFAULT_CONFIG from schema parse", () => {
   });
 
   describe("loadConfig() with no config files", () => {
-    let tempDir: string;
-    let globalBackup: string | null = null;
-
     test("loadConfig() with no config files returns config deeply equal to DEFAULT_CONFIG", async () => {
-      tempDir = join(tmpdir(), `nax-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-      mkdirSync(join(tempDir, ".nax"), { recursive: true });
+      const tempProjectDir = join(tmpdir(), `nax-test-project-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      const tempGlobalDir = join(tmpdir(), `nax-test-global-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      mkdirSync(join(tempProjectDir, ".nax"), { recursive: true });
+      mkdirSync(tempGlobalDir, { recursive: true });
 
-      const globalPath = globalConfigPath();
-      if (existsSync(globalPath)) {
-        globalBackup = `${globalPath}.test-backup-${Date.now()}`;
-        rmSync(globalPath, { recursive: true, force: true });
-      }
+      const originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
+      process.env.NAX_GLOBAL_CONFIG_DIR = tempGlobalDir;
 
       try {
-        const result = await loadConfig(tempDir);
+        const result = await loadConfig(tempProjectDir);
         expect(result).toEqual(DEFAULT_CONFIG);
       } finally {
-        rmSync(tempDir, { recursive: true, force: true });
-        if (globalBackup && existsSync(globalBackup)) {
-          const parentDir = globalPath.substring(0, globalPath.lastIndexOf("/"));
-          if (!existsSync(parentDir)) {
-            mkdirSync(parentDir, { recursive: true });
-          }
-          const backupContent = existsSync(globalBackup);
-          if (backupContent) {
-            const { renameSync } = await import("node:fs");
-            renameSync(globalBackup, globalPath);
-          }
+        if (originalGlobalDir === undefined) {
+          process.env.NAX_GLOBAL_CONFIG_DIR = undefined;
+        } else {
+          process.env.NAX_GLOBAL_CONFIG_DIR = originalGlobalDir;
         }
+        rmSync(tempProjectDir, { recursive: true, force: true });
+        rmSync(tempGlobalDir, { recursive: true, force: true });
       }
     });
   });
