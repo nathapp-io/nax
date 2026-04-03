@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { createAgentRegistry, getAgent } from "../agents/registry";
 import { buildDecomposePrompt, parseDecomposeOutput } from "../agents/shared/decompose";
+import type { DecomposedStory } from "../agents/shared/types-extended";
 import type { AgentAdapter } from "../agents/types";
 import { scanCodebase } from "../analyze/scanner";
 import type { CodebaseScan } from "../analyze/types";
@@ -735,7 +736,7 @@ export async function planDecomposeCommand(
     const debateStages = config?.debate?.stages as unknown as Record<string, DebateStageConfig | undefined>;
     const debateDecompEnabled = config?.debate?.enabled && debateStages?.decompose?.enabled;
 
-    let decompStories: import("../agents/shared/types-extended").DecomposedStory[] | undefined;
+    let decompStories: DecomposedStory[] | undefined;
 
     if (debateDecompEnabled) {
       const decomposeStageConfig = debateStages.decompose as DebateStageConfig;
