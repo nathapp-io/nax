@@ -110,6 +110,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
   let iterations = 0;
   let storiesCompleted = 0;
   let totalCost = 0;
+  let runCompleted = false;
   // biome-ignore lint/suspicious/noExplicitAny: Metrics array type varies
   const allStoryMetrics: any[] = [];
 
@@ -187,7 +188,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
     totalCost = executionResult.totalCost;
     allStoryMetrics.push(...executionResult.allStoryMetrics);
 
-    // Return early if parallel execution completed everything
+    // Return early if parallel execution completed everything.
+    // NOTE: This path skips runCompletionPhase, so run:completed is never emitted
+    // and runCompleted stays false. cleanupRun will fire onRunEnd directly (correct).
+    // If this path is ever activated, also wire run:completed emission here so
+    // reporter subscribers and the on-complete hook fire consistently.
     if (executionResult.completedEarly && executionResult.durationMs !== undefined) {
       return {
         success: isComplete(prd),
@@ -225,6 +230,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
     });
 
     const { durationMs } = completionResult;
+    runCompleted = true;
 
     return {
       success: isComplete(prd),
@@ -271,6 +277,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
       prdPath,
       branch,
       version: NAX_VERSION,
+      runCompleted,
     });
     logger?.debug("execution", "Runner finally — cleanupRun done, run() returning");
   }

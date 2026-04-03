@@ -173,6 +173,8 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     totalStories: finalCounts.total,
     passedStories: finalCounts.passed,
     failedStories: finalCounts.failed,
+    skippedStories: finalCounts.skipped,
+    pausedStories: finalCounts.paused,
     durationMs,
     totalCost,
   });

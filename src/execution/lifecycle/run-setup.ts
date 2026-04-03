@@ -17,7 +17,6 @@ import path from "node:path";
 import type { NaxConfig } from "../../config";
 import { LockAcquisitionError } from "../../errors";
 import type { LoadedHooksConfig } from "../../hooks";
-import { fireHook } from "../../hooks";
 import type { InteractionChain } from "../../interaction";
 import { initInteractionChain } from "../../interaction";
 import { getSafeLogger } from "../../logger";
@@ -30,7 +29,7 @@ import { loadPRD } from "../../prd";
 import { detectProjectProfile } from "../../project";
 import { NAX_BUILD_INFO, NAX_COMMIT, NAX_VERSION } from "../../version";
 import { installCrashHandlers } from "../crash-recovery";
-import { acquireLock, hookCtx, releaseLock } from "../helpers";
+import { acquireLock, releaseLock } from "../helpers";
 import { PidRegistry } from "../pid-registry";
 import { StatusWriter } from "../status-writer";
 
@@ -88,7 +87,6 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     prdPath,
     workdir,
     config,
-    hooks,
     feature,
     dryRun,
     statusFile,
@@ -241,8 +239,8 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
       naxCommit: NAX_COMMIT,
     });
 
-    // Fire on-start hook
-    await fireHook(hooks, "on-start", hookCtx(feature), workdir);
+    // on-start hook is now fired by the hooks.ts subscriber via the run:started event
+    // emitted inside executeUnified/executeSequential after bus wiring.
 
     // Initialize run: check agent, reconcile state, validate limits
     const { initializeRun } = await import("./run-initialization");
