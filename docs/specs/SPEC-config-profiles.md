@@ -45,7 +45,7 @@ The `default` profile name is reserved — it represents the baseline config wit
 
 ### Companion `.env` files
 
-A profile named `fast` may have a companion `fast.env` loaded automatically when the profile activates. Format: standard dotenv (`KEY=value`, `#` comments, no `export` prefix).
+A profile named `fast` may have a companion `fast.env` loaded automatically when the profile activates. Format: standard dotenv (`KEY=value`, `#` comments). Lines prefixed with `export ` are tolerated — the `export ` prefix is stripped during parsing.
 
 Resolution order for env vars:
 1. Profile `.env` (project scope: `.nax/profiles/<name>.env`)
@@ -100,7 +100,7 @@ Add to `NaxConfigSchema`:
 profile: z.string().default("default").describe("Active configuration profile name")
 ```
 
-This field is read-only during merge — it's consumed by the loader to determine which profile to apply, then set to the resolved profile name in the final config.
+This field is read-only during merge — it's consumed by the loader to determine which profile to apply. **After all merge layers complete (including CLI overrides), the loader must force-set `result.profile = resolvedProfileName`** to prevent later config layers from overwriting the actually-applied profile name. The `profile` field is also stripped from global/project config layers before merging to avoid confusion (only the resolved value survives).
 
 ### CLI commands
 
@@ -133,17 +133,22 @@ export async function loadConfig(startDir?, cliOverrides?): Promise<NaxConfig> {
     }
   }
 
-  // Layer 1: Global config (existing)
-  // Layer 2: Project config (existing)
+  // Layer 1: Global config (existing) — strip "profile" field before merge
+  // Layer 2: Project config (existing) — strip "profile" field before merge
   // Layer 3: CLI overrides (existing)
   // ...existing code...
+
+  // NEW: Force-set resolved profile name (prevents later layers from overwriting)
+  result.profile = profileName;
+
+  return result;
 }
 ```
 
 `resolveProfileName()` checks (in priority order):
 1. `cliOverrides?.profile` (from `--profile` flag)
 2. `process.env.NAX_PROFILE`
-3. Falls back to reading `config.json "profile"` field (requires pre-loading config — read raw JSON, extract `profile` field only)
+3. Falls back to reading the `"profile"` field from config files — **project config.json first, then global config.json** (project takes precedence, consistent with the existing config merge order where project overrides global). Only the raw `"profile"` string is extracted at this step — no full config parsing.
 
 `loadProfile()`:
 1. Load `~/.nax/profiles/<name>.json` (global)
@@ -174,7 +179,7 @@ Per-package config (loaded via `loadConfigForWorkdir`) merges **after** profile 
 defaults → profile → global config → root project config → per-package config → CLI overrides
 ```
 
-Profiles apply at the root level. If a monorepo package needs a different profile, it can set `"profile": "<name>"` in its own `.nax/config.json` — but this is an edge case for future consideration, not in scope for this spec.
+Profiles apply at the root level only. The `profile` field is **forbidden in per-package config** — `loadConfigForWorkdir()` does not perform a second profile-resolution pass, so a package-level `"profile"` would be silently ignored. If package-level profile support is needed in the future, it requires an explicit package-aware resolution step (out of scope for this spec). The Zod schema for per-package config should omit or reject the `profile` field.
 
 ### Error handling
 
@@ -184,7 +189,7 @@ Profiles apply at the root level. If a monorepo package needs a different profil
 | `$VAR` in profile but env var missing | Error: `Unresolved env var "$VAR" in profile "foo". Set it in foo.env or system env.` |
 | Profile JSON is invalid (parse error) | Error: `Failed to parse profile "foo": <parse error>` |
 | Profile field fails Zod validation | Handled by existing `NaxConfigSchema.safeParse()` — errors surface normally |
-| `nax config profile use default` | Removes `"profile"` field from config.json (or sets to `"default"`) |
+| `nax config profile use default` | Removes the `"profile"` field from config.json entirely (absence = default) |
 
 ## Stories
 
@@ -228,9 +233,9 @@ Add `nax config profile` subcommands: `list`, `show`, `use`, `current`, `create`
 
 **Acceptance Criteria:**
 - `nax config profile list` prints profile names from both `~/.nax/profiles/` and `.nax/profiles/`, grouped by scope, with the active profile marked
-- `nax config profile show fast` prints the contents of the `fast` profile with resolved `$VAR` values (secrets masked as `***`)
+- `nax config profile show fast` prints the resolved profile config. **Masking policy**: any config value that originated from a `$VAR` substitution is masked as `"***"` in the output (the raw `.env` values are never printed). Additionally, keys matching `/key|token|secret|password|credential/i` are always masked regardless of source. Use `--unmask` flag to show raw values (with a warning).
 - `nax config profile use fast` writes `"profile": "fast"` to `.nax/config.json`
-- `nax config profile use default` removes the `"profile"` field from `.nax/config.json` (or sets it to `"default"`)
+- `nax config profile use default` removes the `"profile"` field from `.nax/config.json` entirely (absence = default behavior)
 - `nax config profile current` prints the active profile name resolved from `--profile` > `NAX_PROFILE` > config.json > `"default"`
 - `nax config profile create myprofile` creates `.nax/profiles/myprofile.json` with an empty object `{}` and prints the path
 - `nax config profile create myprofile` returns an error if `.nax/profiles/myprofile.json` already exists
