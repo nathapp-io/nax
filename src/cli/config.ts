@@ -12,3 +12,13 @@ export { loadConfigFile, loadGlobalConfig, loadProjectConfig } from "./config-ge
 
 // Diff exports
 export { deepDiffConfigs, deepEqual, type ConfigDiff } from "./config-diff";
+
+// Profile command exports
+export {
+  profileListCommand,
+  profileShowCommand,
+  profileUseCommand,
+  profileCurrentCommand,
+  profileCreateCommand,
+  type ProfileShowOptions,
+} from "./config-profile";

@@ -1,0 +1,450 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "parseDotenv(\"FOO=bar\\n# comment\\n\\nexport BAZ=qux\\nQUOTED=\\\"hello world\\\"\") returns { FOO: \"bar\", BAZ: \"qux\", QUOTED: \"hello world\" }",
+    "refined": "parseDotenv(\"FOO=bar\\n# comment\\n\\nexport BAZ=qux\\nQUOTED=\\\"hello world\\\"\") returns { FOO: \"bar\", BAZ: \"qux\", QUOTED: \"hello world\" }",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "parseDotenv(\"\") returns an empty object",
+    "refined": "parseDotenv(\"\") returns an empty object",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "parseDotenv(\"export KEY=value\") returns { KEY: \"value\" } (export prefix stripped)",
+    "refined": "parseDotenv(\"export KEY=value\") returns { KEY: \"value\" } (export prefix stripped)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "resolveEnvVars({ a: \"$FOO\", b: { c: \"$BAR\" } }, { FOO: \"x\", BAR: \"y\" }) returns { a: \"x\", b: { c: \"y\" } }",
+    "refined": "resolveEnvVars({ a: \"$FOO\", b: { c: \"$BAR\" } }, { FOO: \"x\", BAR: \"y\" }) returns { a: \"x\", b: { c: \"y\" } }",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "resolveEnvVars({ a: \"$MISSING\" }, {}) throws an error whose message contains \"MISSING\" and the string \"$MISSING\"",
+    "refined": "resolveEnvVars({ a: \"$MISSING\" }, {}) throws an error whose message contains \"MISSING\" and the string \"$MISSING\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "resolveEnvVars({ n: 5, arr: [1, 2] }, {}) returns the input unchanged (non-string values pass through)",
+    "refined": "resolveEnvVars({ n: 5, arr: [1, 2] }, {}) returns the input unchanged (non-string values pass through)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "resolveEnvVars({ a: \"$$LITERAL\" }, {}) returns { a: \"$LITERAL\" } (double-dollar escape)",
+    "refined": "resolveEnvVars({ a: \"$$LITERAL\" }, {}) returns { a: \"$LITERAL\" } (double-dollar escape)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "resolveEnvVars({ a: \"prefix-$FOO-suffix\" }, { FOO: \"mid\" }) returns { a: \"prefix-mid-suffix\" } (inline substitution)",
+    "refined": "resolveEnvVars({ a: \"prefix-$FOO-suffix\" }, { FOO: \"mid\" }) returns { a: \"prefix-mid-suffix\" } (inline substitution)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "loadProfile(\"fast\", projectDir) returns deep-merged contents of global and project fast.json when both exist, with project values taking precedence",
+    "refined": "loadProfile(\"fast\", projectDir) returns deep-merged contents of global and project fast.json when both exist, with project values taking precedence",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "loadProfile(\"fast\", projectDir) returns only global profile contents when no project-level fast.json exists",
+    "refined": "loadProfile(\"fast\", projectDir) returns only global profile contents when no project-level fast.json exists",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "loadProfile(\"nonexistent\", projectDir) throws an error whose message contains \"nonexistent\"",
+    "refined": "loadProfile(\"nonexistent\", projectDir) throws an error whose message contains \"nonexistent\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "loadProfileEnv(\"fast\", projectDir) returns merged env map from global and project .env files, with project values taking precedence over global, and both taking precedence over process.env entries",
+    "refined": "loadProfileEnv(\"fast\", projectDir) returns merged env map from global and project .env files, with project values taking precedence over global, and both taking precedence over process.env entries",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "resolveProfileName({ profile: \"cli\" }, { NAX_PROFILE: \"env\" }) returns \"cli\" (CLI takes priority over env var)",
+    "refined": "resolveProfileName({ profile: \"cli\" }, { NAX_PROFILE: \"env\" }) returns \"cli\" (CLI takes priority over env var)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "resolveProfileName({}, { NAX_PROFILE: \"env\" }) returns \"env\" (env var used when no CLI override)",
+    "refined": "resolveProfileName({}, { NAX_PROFILE: \"env\" }) returns \"env\" (env var used when no CLI override)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-15",
+    "original": "resolveProfileName({}, {}) with \"profile\": \"persisted\" in project config.json returns \"persisted\" (config.json fallback)",
+    "refined": "resolveProfileName({}, {}) with \"profile\": \"persisted\" in project config.json returns \"persisted\" (config.json fallback)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-16",
+    "original": "resolveProfileName({}, {}) with no profile set anywhere returns \"default\"",
+    "refined": "resolveProfileName({}, {}) with no profile set anywhere returns \"default\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-17",
+    "original": "listProfiles(startDir) returns profile names and paths from both global and project scopes",
+    "refined": "listProfiles(startDir) returns profile names and paths from both global and project scopes",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-18",
+    "original": "NaxConfigSchema.parse({}).profile equals \"default\" (schema default)",
+    "refined": "NaxConfigSchema.parse({}).profile equals \"default\" (schema default)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-19",
+    "original": "NaxConfigSchema.parse({ profile: \"fast\" }).profile equals \"fast\"",
+    "refined": "NaxConfigSchema.parse({ profile: \"fast\" }).profile equals \"fast\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-20",
+    "original": "NaxConfigSchema.parse({}).profile equals \"default\"",
+    "refined": "NaxConfigSchema.parse({}).profile equals \"default\"",
+    "testable": true,
+    "storyId": "US-001-A"
+  },
+  {
+    "acId": "AC-21",
+    "original": "NaxConfigSchema.parse({ profile: \"fast\" }).profile equals \"fast\"",
+    "refined": "NaxConfigSchema.parse({ profile: \"fast\" }).profile equals \"fast\"",
+    "testable": true,
+    "storyId": "US-001-A"
+  },
+  {
+    "acId": "AC-22",
+    "original": "parseDotenv(\"FOO=bar\\n# comment\\n\\nexport BAZ=qux\\nQUOTED=\\\"hello world\\\"\") returns { FOO: \"bar\", BAZ: \"qux\", QUOTED: \"hello world\" }",
+    "refined": "parseDotenv(\"FOO=bar\\n# comment\\n\\nexport BAZ=qux\\nQUOTED=\\\"hello world\\\"\") returns { FOO: \"bar\", BAZ: \"qux\", QUOTED: \"hello world\" }",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-23",
+    "original": "parseDotenv(\"\") returns an empty object",
+    "refined": "parseDotenv(\"\") returns an empty object",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-24",
+    "original": "parseDotenv(\"export KEY=value\") returns { KEY: \"value\" } (export prefix stripped)",
+    "refined": "parseDotenv(\"export KEY=value\") returns { KEY: \"value\" } (export prefix stripped)",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-25",
+    "original": "resolveEnvVars({ a: \"$FOO\", b: { c: \"$BAR\" } }, { FOO: \"x\", BAR: \"y\" }) returns { a: \"x\", b: { c: \"y\" } }",
+    "refined": "resolveEnvVars({ a: \"$FOO\", b: { c: \"$BAR\" } }, { FOO: \"x\", BAR: \"y\" }) returns { a: \"x\", b: { c: \"y\" } }",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-26",
+    "original": "resolveEnvVars({ a: \"$MISSING\" }, {}) throws an error whose message contains \"MISSING\" and the string \"$MISSING\"",
+    "refined": "resolveEnvVars({ a: \"$MISSING\" }, {}) throws an error whose message contains \"MISSING\" and the string \"$MISSING\"",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-27",
+    "original": "resolveEnvVars({ n: 5, arr: [1, 2] }, {}) returns the input unchanged (non-string values pass through)",
+    "refined": "resolveEnvVars({ n: 5, arr: [1, 2] }, {}) returns the input unchanged (non-string values pass through)",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-28",
+    "original": "resolveEnvVars({ a: \"$$LITERAL\" }, {}) returns { a: \"$LITERAL\" } (double-dollar escape)",
+    "refined": "resolveEnvVars({ a: \"$$LITERAL\" }, {}) returns { a: \"$LITERAL\" } (double-dollar escape)",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-29",
+    "original": "resolveEnvVars({ a: \"prefix-$FOO-suffix\" }, { FOO: \"mid\" }) returns { a: \"prefix-mid-suffix\" } (inline substitution)",
+    "refined": "resolveEnvVars({ a: \"prefix-$FOO-suffix\" }, { FOO: \"mid\" }) returns { a: \"prefix-mid-suffix\" } (inline substitution)",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-30",
+    "original": "loadProfile(\"fast\", projectDir) returns deep-merged contents of global and project fast.json when both exist, with project values taking precedence",
+    "refined": "loadProfile(\"fast\", projectDir) returns deep-merged contents of global and project fast.json when both exist, with project values taking precedence",
+    "testable": true,
+    "storyId": "US-001-C"
+  },
+  {
+    "acId": "AC-31",
+    "original": "loadProfile(\"fast\", projectDir) returns only global profile contents when no project-level fast.json exists",
+    "refined": "loadProfile(\"fast\", projectDir) returns only global profile contents when no project-level fast.json exists",
+    "testable": true,
+    "storyId": "US-001-C"
+  },
+  {
+    "acId": "AC-32",
+    "original": "loadProfile(\"nonexistent\", projectDir) throws an error whose message contains \"nonexistent\"",
+    "refined": "loadProfile(\"nonexistent\", projectDir) throws an error whose message contains \"nonexistent\"",
+    "testable": true,
+    "storyId": "US-001-C"
+  },
+  {
+    "acId": "AC-33",
+    "original": "loadProfileEnv(\"fast\", projectDir) returns merged env map from global and project .env files, with project values taking precedence over global, and both taking precedence over process.env entries",
+    "refined": "loadProfileEnv(\"fast\", projectDir) returns merged env map from global and project .env files, with project values taking precedence over global, and both taking precedence over process.env entries",
+    "testable": true,
+    "storyId": "US-001-C"
+  },
+  {
+    "acId": "AC-34",
+    "original": "resolveProfileName({ profile: \"cli\" }, { NAX_PROFILE: \"env\" }) returns \"cli\" (CLI takes priority over env var)",
+    "refined": "resolveProfileName({ profile: \"cli\" }, { NAX_PROFILE: \"env\" }) returns \"cli\" (CLI takes priority over env var)",
+    "testable": true,
+    "storyId": "US-001-C"
+  },
+  {
+    "acId": "AC-35",
+    "original": "resolveProfileName({}, { NAX_PROFILE: \"env\" }) returns \"env\" (env var used when no CLI override)",
+    "refined": "resolveProfileName({}, { NAX_PROFILE: \"env\" }) returns \"env\" (env var used when no CLI override)",
+    "testable": true,
+    "storyId": "US-001-C"
+  },
+  {
+    "acId": "AC-36",
+    "original": "resolveProfileName({}, {}) with \"profile\": \"persisted\" in project config.json returns \"persisted\" (config.json fallback)",
+    "refined": "resolveProfileName({}, {}) with \"profile\": \"persisted\" in project config.json returns \"persisted\" (config.json fallback)",
+    "testable": true,
+    "storyId": "US-001-C"
+  },
+  {
+    "acId": "AC-37",
+    "original": "resolveProfileName({}, {}) with no profile set anywhere returns \"default\"",
+    "refined": "resolveProfileName({}, {}) with no profile set anywhere returns \"default\"",
+    "testable": true,
+    "storyId": "US-001-C"
+  },
+  {
+    "acId": "AC-38",
+    "original": "listProfiles(startDir) returns profile names and paths from both global and project scopes",
+    "refined": "listProfiles(startDir) returns profile names and paths from both global and project scopes",
+    "testable": true,
+    "storyId": "US-001-C"
+  },
+  {
+    "acId": "AC-39",
+    "original": "loadConfig(dir, { profile: \"fast\" }) merges the fast profile between defaults and global config.json layers",
+    "refined": "loadConfig(dir, { profile: \"fast\" }) merges the fast profile between defaults and global config.json layers",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-40",
+    "original": "loadConfig(dir) with NAX_PROFILE=fast in process.env applies the fast profile when no CLI profile override is present",
+    "refined": "loadConfig(dir) with NAX_PROFILE=fast in process.env applies the fast profile when no CLI profile override is present",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-41",
+    "original": "loadConfig(dir) with \"profile\": \"fast\" in project config.json applies the fast profile when neither CLI nor env override is set",
+    "refined": "loadConfig(dir) with \"profile\": \"fast\" in project config.json applies the fast profile when neither CLI nor env override is set",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-42",
+    "original": "loadConfig(dir, { profile: \"fast\" }) returns config with profile=\"fast\" even when NAX_PROFILE=\"thorough\" is set (CLI priority)",
+    "refined": "loadConfig(dir, { profile: \"fast\" }) returns config with profile=\"fast\" even when NAX_PROFILE=\"thorough\" is set (CLI priority)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-43",
+    "original": "loadConfig(dir) with no profile set anywhere returns config identical to today's behavior (backward compatible) with profile=\"default\"",
+    "refined": "loadConfig(dir) with no profile set anywhere returns config identical to today's behavior (backward compatible) with profile=\"default\"",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-44",
+    "original": "When NAX_PROFILE=fast and project config.json has \"profile\": \"slow\", loadConfig() returns config.profile === \"fast\" (force-set prevents overwrite)",
+    "refined": "When NAX_PROFILE=fast and project config.json has \"profile\": \"slow\", loadConfig() returns config.profile === \"fast\" (force-set prevents overwrite)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-45",
+    "original": "The \"profile\" field from global config.json is stripped before merging into the config object (profile JSON value does not leak into merged result)",
+    "refined": "The \"profile\" field from global config.json is stripped before merging into the config object (profile JSON value does not leak into merged result)",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-46",
+    "original": "The \"profile\" field from project config.json is stripped before merging into the config object",
+    "refined": "The \"profile\" field from project config.json is stripped before merging into the config object",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-47",
+    "original": "Companion .env file values used for $VAR resolution do not modify process.env after loadConfig() returns",
+    "refined": "Companion .env file values used for $VAR resolution do not modify process.env after loadConfig() returns",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-48",
+    "original": "loadConfig(dir, { profile: \"default\" }) applies no profile overlay — result matches defaults + global + project config layers only",
+    "refined": "loadConfig(dir, { profile: \"default\" }) applies no profile overlay — result matches defaults + global + project config layers only",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-49",
+    "original": "profileListCommand(startDir) outputs profile names grouped by scope label (\"global\" / \"project\") with the active profile marked with \"*\"",
+    "refined": "profileListCommand(startDir) outputs profile names grouped by scope label (\"global\" / \"project\") with the active profile marked with \"*\"",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-50",
+    "original": "profileShowCommand(\"fast\", startDir, { unmask: false }) outputs profile JSON where values originating from $VAR substitution are masked as \"***\"",
+    "refined": "profileShowCommand(\"fast\", startDir, { unmask: false }) outputs profile JSON where values originating from $VAR substitution are masked as \"***\"",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-51",
+    "original": "profileShowCommand(\"fast\", startDir, { unmask: false }) masks keys matching /key|token|secret|password|credential/i regardless of source",
+    "refined": "profileShowCommand(\"fast\", startDir, { unmask: false }) masks keys matching /key|token|secret|password|credential/i regardless of source",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-52",
+    "original": "profileShowCommand(\"fast\", startDir, { unmask: true }) outputs raw values and includes a warning banner containing \"WARNING\"",
+    "refined": "profileShowCommand(\"fast\", startDir, { unmask: true }) outputs raw values and includes a warning banner containing \"WARNING\"",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-53",
+    "original": "profileUseCommand(\"fast\", startDir) writes \"profile\": \"fast\" into .nax/config.json and returns a confirmation message",
+    "refined": "profileUseCommand(\"fast\", startDir) writes \"profile\": \"fast\" into .nax/config.json and returns a confirmation message",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-54",
+    "original": "profileUseCommand(\"default\", startDir) removes the \"profile\" field from .nax/config.json entirely",
+    "refined": "profileUseCommand(\"default\", startDir) removes the \"profile\" field from .nax/config.json entirely",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-55",
+    "original": "profileCurrentCommand(startDir) returns the resolved profile name following the priority chain (CLI > NAX_PROFILE > config.json > \"default\")",
+    "refined": "profileCurrentCommand(startDir) returns the resolved profile name following the priority chain (CLI > NAX_PROFILE > config.json > \"default\")",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-56",
+    "original": "profileCreateCommand(\"myprofile\", startDir) creates .nax/profiles/myprofile.json containing {} and returns the created file path",
+    "refined": "profileCreateCommand(\"myprofile\", startDir) creates .nax/profiles/myprofile.json containing {} and returns the created file path",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-57",
+    "original": "profileCreateCommand(\"myprofile\", startDir) when .nax/profiles/myprofile.json already exists throws an error with exit code 1",
+    "refined": "profileCreateCommand(\"myprofile\", startDir) when .nax/profiles/myprofile.json already exists throws an error with exit code 1",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-58",
+    "original": "The profile subcommands are registered under \"nax config profile\" in bin/nax.ts and appear in help output",
+    "refined": "The profile subcommands are registered under \"nax config profile\" in bin/nax.ts and appear in help output",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-59",
+    "original": "The run command in bin/nax.ts accepts a --profile <name> option and passes it to loadConfig as a CLI override",
+    "refined": "The run command in bin/nax.ts accepts a --profile <name> option and passes it to loadConfig as a CLI override",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-60",
+    "original": "The plan command in bin/nax.ts accepts a --profile <name> option and passes it to loadConfig as a CLI override",
+    "refined": "The plan command in bin/nax.ts accepts a --profile <name> option and passes it to loadConfig as a CLI override",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-61",
+    "original": "nax run --profile fast -f my-feature loads config with the fast profile applied without modifying .nax/config.json",
+    "refined": "nax run --profile fast -f my-feature loads config with the fast profile applied without modifying .nax/config.json",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-62",
+    "original": "nax run -f my-feature without --profile and without NAX_PROFILE uses the config.json profile field, defaulting to \"default\"",
+    "refined": "nax run -f my-feature without --profile and without NAX_PROFILE uses the config.json profile field, defaulting to \"default\"",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-63",
+    "original": "The --profile option appears in nax run --help output",
+    "refined": "The --profile option appears in nax run --help output",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-64",
+    "original": "The --profile option appears in nax plan --help output",
+    "refined": "The --profile option appears in nax plan --help output",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]

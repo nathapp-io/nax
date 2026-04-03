@@ -790,6 +790,7 @@ export const NaxConfigSchema = z
         },
       },
     })),
+    profile: z.string().default("default"),
   })
   .refine((data) => data.version === 1, {
     message: "Invalid version: expected 1",

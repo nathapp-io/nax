@@ -538,6 +538,8 @@ export interface NaxConfig {
   project?: ProjectProfile;
   /** Multi-agent debate settings */
   debate?: import("../debate/types").DebateConfig;
+  /** Configuration profile name (default: "default") */
+  profile: string;
 }
 
 /** Generate command configuration */

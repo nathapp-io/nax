@@ -1,3 +1,10 @@
+/**
+ * Acceptance Test Suite: config-profiles Feature
+ *
+ * Tests for profile loading, dotenv parsing, env resolution, CLI commands,
+ * and integration with the config loader.
+ */
+
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";

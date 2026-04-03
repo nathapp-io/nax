@@ -95,12 +95,3 @@ const agent = getAgent(agentName);  // even when config is in scope
 ```
 
 The `_deps.getAgent` fallback in `?? _deps.getAgent` is acceptable ONLY as a test injection point. In production, `agentGetFn` is always set by `runner.ts`.
-
-### Known Violations (#191)
-
-| File | Line | Call |
-|:-----|:-----|:-----|
-| `src/cli/analyze.ts` | 110, 185 | `getAgent(agentName)` — has config in scope |
-| `src/cli/analyze-parser.ts` | 230 | `getAgent(agentName)` — has config in scope |
-| `src/routing/router.ts` | 371 | `_deps.getAgent(...)` — has config in scope |
-| `src/verification/rectification-loop.ts` | 59 | `_rectificationDeps.getAgent(debater.agent)` — config available via params |

@@ -1,3 +1,8 @@
+---
+paths:
+  - "test/**/*.test.ts"
+---
+
 # Test Writing Rules
 
 **Full rules:** `docs/guides/testing-rules.md` — read that first.

@@ -62,6 +62,13 @@ import {
   runsShowCommand,
 } from "../src/cli";
 import { configCommand } from "../src/cli/config";
+import {
+  profileCreateCommand,
+  profileCurrentCommand,
+  profileListCommand,
+  profileShowCommand,
+  profileUseCommand,
+} from "../src/cli/config-profile";
 import { generateCommand } from "../src/cli/generate";
 import { diagnose } from "../src/commands/diagnose";
 import { logsCommand } from "../src/commands/logs";
@@ -304,6 +311,7 @@ program
   .option("--json", "JSON mode (raw JSONL output to stdout)", false)
   .option("-d, --dir <path>", "Working directory", process.cwd())
   .option("--skip-precheck", "Skip precheck validations (advanced users only)", false)
+  .option("--profile <name>", "Profile to use (overrides config.json profile)")
   .action(async (options) => {
     // Validate directory path
     let workdir: string;
@@ -350,7 +358,11 @@ program
     }
 
     const naxDir = findProjectDir(workdir);
-    const config = await loadConfig(naxDir ?? undefined);
+    const cliOverrides: Record<string, unknown> = {};
+    if (options.profile) {
+      cliOverrides.profile = options.profile;
+    }
+    const config = await loadConfig(naxDir ?? undefined, cliOverrides);
 
     if (!naxDir) {
       console.error(chalk.red("nax not initialized. Run: nax init"));
@@ -714,6 +726,7 @@ program
   .option("-b, --branch <branch>", "Override default branch name")
   .option("-d, --dir <path>", "Project directory", process.cwd())
   .option("--decompose <storyId>", "Decompose an existing story into sub-stories")
+  .option("--profile <name>", "Profile to use (overrides config.json profile)")
   .action(async (description, options) => {
     // AC-3: Detect and reject old positional argument form
     if (description) {
@@ -738,7 +751,11 @@ program
     }
 
     // Load config
-    const config = await loadConfig(workdir);
+    const cliOverrides: Record<string, unknown> = {};
+    if (options.profile) {
+      cliOverrides.profile = options.profile;
+    }
+    const config = await loadConfig(workdir, cliOverrides);
 
     // Initialize logger — writes to nax/features/<feature>/plan/<timestamp>.jsonl
     const featureLogDir = join(naxDir, "features", options.feature, "plan");
@@ -873,7 +890,7 @@ program
   });
 
 // ── config ───────────────────────────────────────────
-program
+const configCmd = program
   .command("config")
   .description("Display effective merged configuration")
   .option("-d, --dir <path>", "Project directory", process.cwd())
@@ -891,6 +908,80 @@ program
     try {
       const config = await loadConfig(workdir);
       await configCommand(config, { explain: options.explain, diff: options.diff });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+// ── config profile ────────────────────────────────────
+const configProfileCmd = configCmd.command("profile").description("Manage config profiles");
+
+configProfileCmd
+  .command("list")
+  .description("List all available profiles grouped by scope")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (options) => {
+    try {
+      const output = await profileListCommand(options.dir);
+      console.log(output);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+configProfileCmd
+  .command("show <name>")
+  .description("Show resolved profile JSON")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("--unmask", "Show raw values including secrets", false)
+  .action(async (name, options) => {
+    try {
+      const output = await profileShowCommand(name, options.dir, { unmask: options.unmask });
+      console.log(output);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+configProfileCmd
+  .command("use <name>")
+  .description("Set the active profile (use 'default' to clear)")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (name, options) => {
+    try {
+      const msg = await profileUseCommand(name, options.dir);
+      console.log(msg);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+configProfileCmd
+  .command("current")
+  .description("Show the currently active profile name")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (options) => {
+    try {
+      const name = await profileCurrentCommand(options.dir);
+      console.log(name);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+configProfileCmd
+  .command("create <name>")
+  .description("Create a new empty profile")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (name, options) => {
+    try {
+      const path = await profileCreateCommand(name, options.dir);
+      console.log(`Created profile at: ${path}`);
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);
