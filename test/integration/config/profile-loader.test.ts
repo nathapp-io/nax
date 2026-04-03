@@ -2,7 +2,7 @@
  * Profile Activation in Config Loader — Integration Tests (US-002)
  *
  * Tests that loadConfig() correctly wires profile resolution into the
- * config merge chain: defaults < profile < global < project < CLI.
+ * config merge chain: defaults < global < project < profile < CLI.
  *
  * All tests are RED until the implementer wires resolveProfileName() and
  * loadProfile() into src/config/loader.ts.
@@ -63,22 +63,22 @@ describe("loadConfig — profile activation (US-002)", () => {
     }
   });
 
-  // AC 1: loadConfig(dir, { profile: "fast" }) merges fast profile between defaults and global
-  test("CLI profile override merges profile data between defaults and global config", async () => {
+  // AC 1: loadConfig(dir, { profile: "fast" }) merges fast profile after global and project
+  test("CLI profile override takes precedence over global and project config", async () => {
     // Create a fast profile in global scope with a distinctive timeout value
     writeJson(join(globalDir, "profiles", "fast.json"), {
       execution: { sessionTimeoutSeconds: 111 },
     });
 
-    // Create global config that sets a different timeout (should override profile)
+    // Create global config that sets a different timeout (profile should override)
     writeJson(join(globalDir, "config.json"), {
       execution: { sessionTimeoutSeconds: 222 },
     });
 
     const config = await loadConfig(projectDir, { profile: "fast" });
 
-    // Global config (222) must override profile (111)
-    expect(config.execution.sessionTimeoutSeconds).toBe(222);
+    // Profile (111) must override global config (222)
+    expect(config.execution.sessionTimeoutSeconds).toBe(111);
     // Profile was applied (not just defaults)
     expect(config.profile).toBe("fast");
   });
@@ -171,7 +171,7 @@ describe("loadConfig — profile activation (US-002)", () => {
 
   // AC 7: global config.json "profile" field activates profile as lowest-priority fallback,
   // but the "profile" key itself is stripped from config layer merge so it doesn't double-apply.
-  test('"profile" field from global config.json activates profile as lowest-priority fallback', async () => {
+  test('"profile" field from global config.json activates profile; profile overrides global non-profile settings', async () => {
     // Global config has a "profile" field — activates profile when no CLI/NAX_PROFILE/project profile set
     writeJson(join(globalDir, "config.json"), {
       profile: "thorough",
@@ -187,8 +187,8 @@ describe("loadConfig — profile activation (US-002)", () => {
 
     // Global config.json profile field is used as fallback — profile is activated
     expect(config.profile).toBe("thorough");
-    // Profile data (202) merged first, then global config.json (101) overwrites — project wins over profile
-    expect(config.execution.sessionTimeoutSeconds).toBe(101);
+    // Profile data (202) is merged after global config.json (101) — profile wins
+    expect(config.execution.sessionTimeoutSeconds).toBe(202);
   });
 
   // AC 8: "profile" field from project config.json is stripped before merging
@@ -207,8 +207,8 @@ describe("loadConfig — profile activation (US-002)", () => {
 
     // Profile is resolved to "fast" from config.json, data merged correctly
     expect(config.profile).toBe("fast");
-    // The project config.json execution value (404) overrides the profile value (303)
-    expect(config.execution.sessionTimeoutSeconds).toBe(404);
+    // The profile value (303) overrides the project config.json execution value (404)
+    expect(config.execution.sessionTimeoutSeconds).toBe(303);
     // The "profile" key from project config.json is stripped (not double-applied via merge)
     // If not stripped, Zod would see "profile": "fast" twice and could behave unexpectedly
     // The reliable check: config.profile === "fast" (from force-set, not from leaked merge)
@@ -257,22 +257,22 @@ describe("loadConfig — profile activation (US-002)", () => {
     expect(config.execution.sessionTimeoutSeconds).toBe(606);
   });
 
-  // Additional: profile data is inserted between defaults and global (merge order check)
-  test("profile data is inserted between defaults and global config in merge order", async () => {
+  // Additional: profile data is merged after global and project (merge order check)
+  test("profile data is merged after global and project config in merge order", async () => {
     // Profile sets a value
     writeJson(join(globalDir, "profiles", "fast.json"), {
       execution: { sessionTimeoutSeconds: 707 },
     });
 
-    // Global config also sets the same value — should win over profile
+    // Global config also sets the same value — profile should win
     writeJson(join(globalDir, "config.json"), {
       execution: { sessionTimeoutSeconds: 808 },
     });
 
     const config = await loadConfig(projectDir, { profile: "fast" });
 
-    // Global (808) overrides profile (707)
-    expect(config.execution.sessionTimeoutSeconds).toBe(808);
+    // Profile (707) overrides global (808)
+    expect(config.execution.sessionTimeoutSeconds).toBe(707);
     expect(config.profile).toBe("fast");
   });
 

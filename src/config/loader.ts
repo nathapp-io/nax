@@ -125,15 +125,6 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     projectRoot,
   );
 
-  // Layer: Profile data (inserted between defaults and global config)
-  // "default" profile applies no overlay (AC 10)
-  if (profileName !== "default") {
-    const profileData = await loadProfile(profileName, projectRoot);
-    rawConfig = deepMergeConfig(rawConfig, profileData);
-    // Load companion .env for $VAR resolution — do NOT write to process.env (AC 9)
-    await loadProfileEnv(profileName, projectRoot);
-  }
-
   // Layer 1: Global config (~/.nax/config.json) — strip "profile" field before merging (AC 7)
   const globalConfRaw = await loadJsonFile<Record<string, unknown>>(globalConfigPath(), "config");
   if (globalConfRaw) {
@@ -152,7 +143,16 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     }
   }
 
-  // Layer 3: CLI overrides (highest priority)
+  // Layer 3: Profile data (overrides global + project — it's a run-time mode selection)
+  // "default" profile applies no overlay (AC 10)
+  if (profileName !== "default") {
+    const profileData = await loadProfile(profileName, projectRoot);
+    rawConfig = deepMergeConfig(rawConfig, profileData);
+    // Load companion .env for $VAR resolution — do NOT write to process.env (AC 9)
+    await loadProfileEnv(profileName, projectRoot);
+  }
+
+  // Layer 4: CLI overrides (highest priority)
   if (cliOverrides) {
     rawConfig = deepMergeConfig(rawConfig, cliOverrides);
   }
