@@ -62,6 +62,13 @@ import {
   runsShowCommand,
 } from "../src/cli";
 import { configCommand } from "../src/cli/config";
+import {
+  profileCreateCommand,
+  profileCurrentCommand,
+  profileListCommand,
+  profileShowCommand,
+  profileUseCommand,
+} from "../src/cli/config-profile";
 import { generateCommand } from "../src/cli/generate";
 import { diagnose } from "../src/commands/diagnose";
 import { logsCommand } from "../src/commands/logs";
@@ -891,6 +898,80 @@ program
     try {
       const config = await loadConfig(workdir);
       await configCommand(config, { explain: options.explain, diff: options.diff });
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+// ── config profile ────────────────────────────────────
+const configProfileCmd = program.command("config profile").description("Manage config profiles");
+
+configProfileCmd
+  .command("list")
+  .description("List all available profiles grouped by scope")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (options) => {
+    try {
+      const output = await profileListCommand(options.dir);
+      console.log(output);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+configProfileCmd
+  .command("show <name>")
+  .description("Show resolved profile JSON")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .option("--unmask", "Show raw values including secrets", false)
+  .action(async (name, options) => {
+    try {
+      const output = await profileShowCommand(name, options.dir, { unmask: options.unmask });
+      console.log(output);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+configProfileCmd
+  .command("use <name>")
+  .description("Set the active profile (use 'default' to clear)")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (name, options) => {
+    try {
+      const msg = await profileUseCommand(name, options.dir);
+      console.log(msg);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+configProfileCmd
+  .command("current")
+  .description("Show the currently active profile name")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (options) => {
+    try {
+      const name = await profileCurrentCommand(options.dir);
+      console.log(name);
+    } catch (err) {
+      console.error(chalk.red(`Error: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+configProfileCmd
+  .command("create <name>")
+  .description("Create a new empty profile")
+  .option("-d, --dir <path>", "Project directory", process.cwd())
+  .action(async (name, options) => {
+    try {
+      const path = await profileCreateCommand(name, options.dir);
+      console.log(`Created profile at: ${path}`);
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);
