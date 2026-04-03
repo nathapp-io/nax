@@ -1,0 +1,309 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "config-profiles",
+  "branchName": "feat/config-profiles",
+  "createdAt": "2026-04-03T12:00:00.000Z",
+  "updatedAt": "2026-04-03T03:45:56.576Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Profile loading, dotenv parsing, and env resolution",
+      "description": "Create src/config/profile.ts and src/config/dotenv.ts with core profile infrastructure: resolveProfileName() determines the active profile from CLI > env > config.json; loadProfile() loads and merges global + project profile JSON files; loadProfileEnv() loads companion .env files; resolveEnvVars() recursively replaces $VAR references in config values; parseDotenv() parses standard dotenv format; listProfiles() scans both scopes for available profiles. Add the `profile` field to NaxConfigSchema in schemas.ts and the NaxConfig interface in runtime-types.ts.",
+      "acceptanceCriteria": [
+        "parseDotenv(\"FOO=bar\\n# comment\\n\\nexport BAZ=qux\\nQUOTED=\\\"hello world\\\"\") returns { FOO: \"bar\", BAZ: \"qux\", QUOTED: \"hello world\" }",
+        "parseDotenv(\"\") returns an empty object",
+        "parseDotenv(\"export KEY=value\") returns { KEY: \"value\" } (export prefix stripped)",
+        "resolveEnvVars({ a: \"$FOO\", b: { c: \"$BAR\" } }, { FOO: \"x\", BAR: \"y\" }) returns { a: \"x\", b: { c: \"y\" } }",
+        "resolveEnvVars({ a: \"$MISSING\" }, {}) throws an error whose message contains \"MISSING\" and the string \"$MISSING\"",
+        "resolveEnvVars({ n: 5, arr: [1, 2] }, {}) returns the input unchanged (non-string values pass through)",
+        "resolveEnvVars({ a: \"$$LITERAL\" }, {}) returns { a: \"$LITERAL\" } (double-dollar escape)",
+        "resolveEnvVars({ a: \"prefix-$FOO-suffix\" }, { FOO: \"mid\" }) returns { a: \"prefix-mid-suffix\" } (inline substitution)",
+        "loadProfile(\"fast\", projectDir) returns deep-merged contents of global and project fast.json when both exist, with project values taking precedence",
+        "loadProfile(\"fast\", projectDir) returns only global profile contents when no project-level fast.json exists",
+        "loadProfile(\"nonexistent\", projectDir) throws an error whose message contains \"nonexistent\"",
+        "loadProfileEnv(\"fast\", projectDir) returns merged env map from global and project .env files, with project values taking precedence over global, and both taking precedence over process.env entries",
+        "resolveProfileName({ profile: \"cli\" }, { NAX_PROFILE: \"env\" }) returns \"cli\" (CLI takes priority over env var)",
+        "resolveProfileName({}, { NAX_PROFILE: \"env\" }) returns \"env\" (env var used when no CLI override)",
+        "resolveProfileName({}, {}) with \"profile\": \"persisted\" in project config.json returns \"persisted\" (config.json fallback)",
+        "resolveProfileName({}, {}) with no profile set anywhere returns \"default\"",
+        "listProfiles(startDir) returns profile names and paths from both global and project scopes",
+        "NaxConfigSchema.parse({}).profile equals \"default\" (schema default)",
+        "NaxConfigSchema.parse({ profile: \"fast\" }).profile equals \"fast\""
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "core"
+      ],
+      "dependencies": [],
+      "status": "decomposed",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/config/schemas.ts",
+        "src/config/runtime-types.ts",
+        "src/config/paths.ts",
+        "src/utils/json-file.ts",
+        "src/config/merger.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-001-A",
+      "title": "Add profile field to NaxConfigSchema and NaxConfig interface",
+      "description": "Add the `profile` string field to NaxConfigSchema in src/config/schemas.ts with a default of \"default\", and add the corresponding `profile` field to the NaxConfig interface in src/config/runtime-types.ts.",
+      "acceptanceCriteria": [
+        "NaxConfigSchema.parse({}).profile equals \"default\"",
+        "NaxConfigSchema.parse({ profile: \"fast\" }).profile equals \"fast\""
+      ],
+      "contextFiles": [
+        "src/config/schemas.ts",
+        "src/config/runtime-types.ts",
+        "src/config/defaults.ts"
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "core"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "modelTier": "fast",
+        "reasoning": "Two-line additive change — one Zod field with .default() in schemas.ts and one interface field in runtime-types.ts. No new abstractions or file I/O.",
+        "initialComplexity": "simple"
+      },
+      "escalations": [],
+      "attempts": 0,
+      "parentStoryId": "US-001",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "10b13343f4556b1f8411d7752f274cfe6a05a813"
+    },
+    {
+      "id": "US-001-B",
+      "title": "Implement parseDotenv() and resolveEnvVars() in src/config/dotenv.ts",
+      "description": "Create src/config/dotenv.ts with two pure utility functions: parseDotenv() parses standard dotenv file contents (stripping comments, blank lines, export prefixes, and quotes) into a string record; resolveEnvVars() recursively walks a config object and replaces $VAR references with values from a provided env map, supporting inline substitution, double-dollar escaping, and pass-through of non-string values.",
+      "acceptanceCriteria": [
+        "parseDotenv(\"FOO=bar\\n# comment\\n\\nexport BAZ=qux\\nQUOTED=\\\"hello world\\\"\") returns { FOO: \"bar\", BAZ: \"qux\", QUOTED: \"hello world\" }",
+        "parseDotenv(\"\") returns an empty object",
+        "parseDotenv(\"export KEY=value\") returns { KEY: \"value\" } (export prefix stripped)",
+        "resolveEnvVars({ a: \"$FOO\", b: { c: \"$BAR\" } }, { FOO: \"x\", BAR: \"y\" }) returns { a: \"x\", b: { c: \"y\" } }",
+        "resolveEnvVars({ a: \"$MISSING\" }, {}) throws an error whose message contains \"MISSING\" and the string \"$MISSING\"",
+        "resolveEnvVars({ n: 5, arr: [1, 2] }, {}) returns the input unchanged (non-string values pass through)",
+        "resolveEnvVars({ a: \"$$LITERAL\" }, {}) returns { a: \"$LITERAL\" } (double-dollar escape)",
+        "resolveEnvVars({ a: \"prefix-$FOO-suffix\" }, { FOO: \"mid\" }) returns { a: \"prefix-mid-suffix\" } (inline substitution)"
+      ],
+      "contextFiles": [
+        "src/config/schemas.ts",
+        "src/utils/errors.ts",
+        "src/errors.ts"
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "core"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "modelTier": "balanced",
+        "reasoning": "Two self-contained pure functions, ~100 LOC total. No file I/O or external dependencies. Eight distinct behavioral ACs covering edge cases (escaping, inline substitution, type pass-through, missing var error) warrant the three-session structure to isolate test authorship from implementation."
+      },
+      "escalations": [],
+      "attempts": 0,
+      "parentStoryId": "US-001",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-001-C",
+      "title": "Implement loadProfile(), loadProfileEnv(), resolveProfileName(), and listProfiles() in src/config/profile.ts",
+      "description": "Create src/config/profile.ts with the four profile-resolution functions: loadProfile() deep-merges global and project-scoped profile JSON files (project takes precedence), throwing when neither exists; loadProfileEnv() merges global and project companion .env files using parseDotenv(), with project values overriding global and both overriding process.env entries; resolveProfileName() resolves the active profile from CLI option > NAX_PROFILE env var > project config.json profile field > \"default\"; listProfiles() scans both global and project .nax/profiles/ directories and returns profile names with their paths.",
+      "acceptanceCriteria": [
+        "loadProfile(\"fast\", projectDir) returns deep-merged contents of global and project fast.json when both exist, with project values taking precedence",
+        "loadProfile(\"fast\", projectDir) returns only global profile contents when no project-level fast.json exists",
+        "loadProfile(\"nonexistent\", projectDir) throws an error whose message contains \"nonexistent\"",
+        "loadProfileEnv(\"fast\", projectDir) returns merged env map from global and project .env files, with project values taking precedence over global, and both taking precedence over process.env entries",
+        "resolveProfileName({ profile: \"cli\" }, { NAX_PROFILE: \"env\" }) returns \"cli\" (CLI takes priority over env var)",
+        "resolveProfileName({}, { NAX_PROFILE: \"env\" }) returns \"env\" (env var used when no CLI override)",
+        "resolveProfileName({}, {}) with \"profile\": \"persisted\" in project config.json returns \"persisted\" (config.json fallback)",
+        "resolveProfileName({}, {}) with no profile set anywhere returns \"default\"",
+        "listProfiles(startDir) returns profile names and paths from both global and project scopes"
+      ],
+      "contextFiles": [
+        "src/config/paths.ts",
+        "src/utils/json-file.ts",
+        "src/config/merger.ts",
+        "src/config/schemas.ts",
+        "src/config/runtime-types.ts",
+        "src/utils/errors.ts",
+        "src/errors.ts"
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "core"
+      ],
+      "dependencies": [
+        "US-001-A",
+        "US-001-B"
+      ],
+      "status": "pending",
+      "passes": false,
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "modelTier": "powerful",
+        "reasoning": "Four functions spanning file I/O (Bun.file, directory scanning), path resolution across two scopes (global ~/.nax and project .nax), deep-merge semantics, and priority-chain logic. Requires test-writer to set up fs fixtures in isolation before implementer touches src/. Nine ACs with non-trivial setup (temp dirs, mock config.json, layered .env files)."
+      },
+      "escalations": [],
+      "attempts": 0,
+      "parentStoryId": "US-001",
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-002",
+      "title": "Profile activation in config loader merge chain",
+      "description": "Wire resolveProfileName() and loadProfile() into loadConfig() in src/config/loader.ts. Insert profile resolution between defaults and global config merge. Strip the `profile` field from global and project config.json layers before merging. Force-set result.profile to the resolved profile name after all merge layers complete. Ensure loadConfigForWorkdir() does not perform a second profile-resolution pass. Export new profile functions from src/config/index.ts barrel.",
+      "acceptanceCriteria": [
+        "loadConfig(dir, { profile: \"fast\" }) merges the fast profile between defaults and global config.json layers",
+        "loadConfig(dir) with NAX_PROFILE=fast in process.env applies the fast profile when no CLI profile override is present",
+        "loadConfig(dir) with \"profile\": \"fast\" in project config.json applies the fast profile when neither CLI nor env override is set",
+        "loadConfig(dir, { profile: \"fast\" }) returns config with profile=\"fast\" even when NAX_PROFILE=\"thorough\" is set (CLI priority)",
+        "loadConfig(dir) with no profile set anywhere returns config identical to today's behavior (backward compatible) with profile=\"default\"",
+        "When NAX_PROFILE=fast and project config.json has \"profile\": \"slow\", loadConfig() returns config.profile === \"fast\" (force-set prevents overwrite)",
+        "The \"profile\" field from global config.json is stripped before merging into the config object (profile JSON value does not leak into merged result)",
+        "The \"profile\" field from project config.json is stripped before merging into the config object",
+        "Companion .env file values used for $VAR resolution do not modify process.env after loadConfig() returns",
+        "loadConfig(dir, { profile: \"default\" }) applies no profile overlay — result matches defaults + global + project config layers only"
+      ],
+      "tags": [
+        "feature",
+        "config",
+        "integration"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/config/loader.ts",
+        "src/config/merger.ts",
+        "src/config/index.ts",
+        "src/config/defaults.ts",
+        "src/config/paths.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-003",
+      "title": "Profile CLI commands (list, show, use, current, create)",
+      "description": "Create src/cli/config-profile.ts with handlers for the five profile subcommands. Wire them into bin/nax.ts under `nax config profile`. `list` scans both scopes and marks the active profile. `show` displays resolved profile JSON with secret masking ($VAR-substituted values masked, sensitive key names masked, --unmask flag). `use` persists profile name to project config.json (or removes it for \"default\"). `current` prints the resolved profile name. `create` scaffolds an empty profile JSON file. Update src/cli/config.ts barrel exports.",
+      "acceptanceCriteria": [
+        "profileListCommand(startDir) outputs profile names grouped by scope label (\"global\" / \"project\") with the active profile marked with \"*\"",
+        "profileShowCommand(\"fast\", startDir, { unmask: false }) outputs profile JSON where values originating from $VAR substitution are masked as \"***\"",
+        "profileShowCommand(\"fast\", startDir, { unmask: false }) masks keys matching /key|token|secret|password|credential/i regardless of source",
+        "profileShowCommand(\"fast\", startDir, { unmask: true }) outputs raw values and includes a warning banner containing \"WARNING\"",
+        "profileUseCommand(\"fast\", startDir) writes \"profile\": \"fast\" into .nax/config.json and returns a confirmation message",
+        "profileUseCommand(\"default\", startDir) removes the \"profile\" field from .nax/config.json entirely",
+        "profileCurrentCommand(startDir) returns the resolved profile name following the priority chain (CLI > NAX_PROFILE > config.json > \"default\")",
+        "profileCreateCommand(\"myprofile\", startDir) creates .nax/profiles/myprofile.json containing {} and returns the created file path",
+        "profileCreateCommand(\"myprofile\", startDir) when .nax/profiles/myprofile.json already exists throws an error with exit code 1",
+        "The profile subcommands are registered under \"nax config profile\" in bin/nax.ts and appear in help output"
+      ],
+      "tags": [
+        "feature",
+        "cli"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/cli/config.ts",
+        "src/cli/config-display.ts",
+        "bin/nax.ts",
+        "src/utils/json-file.ts",
+        "src/config/paths.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-004",
+      "title": "--profile flag on run and plan commands",
+      "description": "Add `--profile <name>` option to `nax run` and `nax plan` commands in bin/nax.ts. Pass the value as `cliOverrides.profile` (or equivalent) to loadConfig(). Ensure the flag appears in --help output for both commands.",
+      "acceptanceCriteria": [
+        "The run command in bin/nax.ts accepts a --profile <name> option and passes it to loadConfig as a CLI override",
+        "The plan command in bin/nax.ts accepts a --profile <name> option and passes it to loadConfig as a CLI override",
+        "nax run --profile fast -f my-feature loads config with the fast profile applied without modifying .nax/config.json",
+        "nax run -f my-feature without --profile and without NAX_PROFILE uses the config.json profile field, defaulting to \"default\"",
+        "The --profile option appears in nax run --help output",
+        "The --profile option appears in nax plan --help output"
+      ],
+      "tags": [
+        "feature",
+        "cli"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "bin/nax.ts",
+        "src/config/loader.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    }
+  ],
+  "analysis": "## Key Files Affected\n\n### Must Modify\n1. **src/config/schemas.ts** (line ~507-775): Add `profile: z.string().default(\"default\")` to `NaxConfigSchema`. This is the Zod SSOT.\n2. **src/config/runtime-types.ts** (line ~488-537): Add `profile: string` to the `NaxConfig` interface.\n3. **src/config/loader.ts** (line ~101-154): Insert profile resolution between defaults and global config merge. Strip `profile` field from global/project layers before merge, force-set after all merges. The current merge chain is: defaults → global → project → CLI. New chain: defaults → profile → global (stripped) → project (stripped) → CLI → force-set profile.\n4. **bin/nax.ts**: Add `--profile <name>` option to `run` (line ~287) and `plan` (line ~708) commands. Wire `nax config profile` subcommand group under the existing `config` command (line ~877). The config command is currently a simple `.command(\"config\")` — it needs to become a command group or have a subcommand added.\n5. **src/cli/config.ts**: Add exports for new profile CLI command handlers.\n6. **src/config/index.ts**: Export new profile functions from barrel.\n\n### New Files\n1. **src/config/profile.ts**: Core profile logic — `resolveProfileName()`, `loadProfile()`, `loadProfileEnv()`, `resolveEnvVars()`, `listProfiles()`. Must stay under 400 lines.\n2. **src/config/dotenv.ts**: `parseDotenv()` — standalone dotenv parser (~50 lines).\n3. **src/cli/config-profile.ts**: CLI handlers for `list`, `show`, `use`, `current`, `create` subcommands.\n\n### Reused As-Is\n- **src/config/merger.ts**: `deepMergeConfig()` — spec confirms no changes needed.\n- **src/config/paths.ts**: `globalConfigDir()`, `PROJECT_NAX_DIR` — used for profile path resolution.\n- **src/utils/json-file.ts**: `loadJsonFile()`, `saveJsonFile()` — used for profile JSON I/O.\n\n## Architecture Decisions\n\n1. **Profile merge position**: Profile sits between defaults and global config. This means profile values can be overridden by both global and project config.json, which is intentional — profiles set a baseline, config files customize further.\n\n2. **`profile` field integrity**: The spec requires stripping `profile` from global/project config layers before merge, then force-setting it after all merges. This prevents a config.json `\"profile\": \"slow\"` from overwriting the actually-applied profile name when `NAX_PROFILE=fast` was used.\n\n3. **`resolveProfileName()` reads raw JSON**: To avoid circular dependency with full config loading, profile name resolution reads only the `\"profile\"` string from raw config JSON files (project first, then global). It does NOT go through `loadConfig()`.\n\n4. **Env var isolation**: Companion `.env` values are used ONLY for `$VAR` substitution within profile JSON. They do NOT overwrite `process.env`. This is a security and isolation requirement.\n\n5. **Monorepo constraint**: `profile` field is forbidden in per-package config. `loadConfigForWorkdir()` does not perform a second profile-resolution pass.\n\n6. **CLI structure**: The existing `config` command at bin/nax.ts:877 is a leaf command with `--explain` and `--diff` options. Adding `profile` as a subcommand requires restructuring it as a command group using Commander's `.command()` chaining, or adding `config profile` as a separate command registration.\n\n## Risks\n\n1. **Circular dependency**: `resolveProfileName()` must read config files to find the persisted `\"profile\"` field, but `loadConfig()` calls `resolveProfileName()`. The spec addresses this by having `resolveProfileName()` do raw JSON reads, not full `loadConfig()` calls.\n\n2. **Schema validation**: Adding `profile` field to `NaxConfigSchema` means existing configs without it will get `\"default\"` via Zod `.default()`. This is backward-compatible.\n\n3. **Config command restructuring**: The current `config` command is a leaf action. Adding `profile` subcommand may require it to become a command group, which could break existing `nax config` (no subcommand) behavior. Commander supports both — a command with subcommands can still have a default action.\n\n4. **File count**: New files (profile.ts, dotenv.ts, config-profile.ts) plus test files stay within project conventions. All should be well under 400-line limit.\n\n## Dependency Order\n\nUS-001 (profile.ts + dotenv.ts) → US-002 (loader.ts integration) → US-003 (CLI commands) and US-004 (--profile flag). US-003 and US-004 are independent of each other but both depend on US-002."
+}
