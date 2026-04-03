@@ -6,5 +6,9 @@
   "US-001-B:implementer": {
     "sessionName": "nax-a3c4fa9d-config-profiles-us-001-b-implementer",
     "agentName": "claude"
+  },
+  "US-001-B:verifier": {
+    "sessionName": "nax-a3c4fa9d-config-profiles-us-001-b-verifier",
+    "agentName": "claude"
   }
 }
