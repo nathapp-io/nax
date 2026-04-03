@@ -3,7 +3,7 @@
   "feature": "config-ssot",
   "branchName": "feat/config-ssot",
   "createdAt": "2026-04-02T12:00:00.000Z",
-  "updatedAt": "2026-04-02T16:14:29.295Z",
+  "updatedAt": "2026-04-02T16:31:35.608Z",
   "userStories": [
     {
       "id": "US-001",
@@ -125,9 +125,9 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
-      "attempts": 1,
+      "attempts": 2,
       "escalations": [],
       "routing": {
         "complexity": "simple",
