@@ -11,8 +11,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { createAgentRegistry, getAgent } from "../agents/registry";
-import { buildDecomposePrompt, parseDecomposeOutput } from "../agents/shared/decompose";
-import type { AgentAdapter, DecomposedStory } from "../agents/types";
+import type { AgentAdapter } from "../agents/types";
 import { scanCodebase } from "../analyze/scanner";
 import type { CodebaseScan } from "../analyze/types";
 import type { NaxConfig } from "../config";
@@ -724,181 +723,64 @@ export async function planDecomposeCommand(
   const adapter = _planDeps.getAgent(agentName, config);
   if (!adapter) throw new Error(`[decompose] No agent adapter found for '${agentName}'`);
 
-  let decomposeModel: string | undefined;
-  try {
-    const planTier = config?.plan?.model ?? "balanced";
-    const { resolveModelForAgent } = await import("../config/schema");
-    if (config?.models) {
-      const defaultAgent = config.autoMode?.defaultAgent ?? "claude";
-      decomposeModel = resolveModelForAgent(config.models, defaultAgent, planTier, defaultAgent).model;
-    }
-  } catch {
-    // fall through — adapter will use its own fallback
-  }
-
-  const stages = config?.debate?.stages as Record<string, DebateStageConfig> | undefined;
-  const debateEnabled = config?.debate?.enabled && stages?.decompose?.enabled;
-  const canDecompose = typeof (adapter as unknown as Record<string, unknown>).decompose === "function";
-
   const timeoutSeconds = config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
-  const timeoutMs = timeoutSeconds * 1000;
   const maxAcCount = config?.precheck?.storySizeGate?.maxAcCount ?? Number.POSITIVE_INFINITY;
 
-  let subStoriesWithParent: UserStory[];
+  // All decompose goes through adapter.decompose() — returns structured DecomposeResult
+  const result = await adapter.decompose({
+    specContent: "",
+    codebaseContext,
+    workdir,
+    targetStory,
+    siblings,
+    featureName: options.feature,
+    storyId: options.storyId,
+    config,
+  });
+  const decompStories = result.stories;
 
-  if (debateEnabled || !canDecompose) {
-    // Debate path OR legacy complete() path (adapter has no decompose method)
-    const prompt = buildDecomposePrompt({ specContent: "", codebaseContext, workdir, targetStory, siblings });
-    let rawResponse: string;
-    if (debateEnabled) {
-      const stageConfig = stages?.decompose as DebateStageConfig;
-      const debateSession = _planDeps.createDebateSession({
-        storyId: options.storyId,
+  for (const sub of decompStories) {
+    if (!sub.contextFiles || sub.contextFiles.length === 0) {
+      throw new NaxError(`Sub-story "${sub.id}" has empty contextFiles`, "DECOMPOSE_VALIDATION_FAILED", {
         stage: "decompose",
-        stageConfig,
-        config,
-        workdir,
-        featureName: options.feature,
-        timeoutSeconds: timeoutSeconds,
+        storyId: sub.id,
       });
-      const debateResult = await debateSession.run(prompt);
-      if (debateResult.outcome !== "failed" && debateResult.output) {
-        rawResponse = debateResult.output;
-      } else {
-        const completeResult = await adapter.complete(prompt, {
-          model: decomposeModel,
-          jsonMode: true,
-          workdir,
-          sessionRole: "decompose",
-          featureName: options.feature,
-          storyId: options.storyId,
-          timeoutMs,
-        });
-        rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
-      }
-    } else {
-      const completeResult = await adapter.complete(prompt, {
-        model: decomposeModel,
-        jsonMode: true,
-        workdir,
-        sessionRole: "decompose",
-        featureName: options.feature,
-        storyId: options.storyId,
-        timeoutMs,
-      });
-      rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
     }
-
-    let legacySubStories: DecomposedStory[];
-    try {
-      legacySubStories = parseDecomposeOutput(rawResponse);
-    } catch (err) {
+    if (!sub.complexity || !sub.testStrategy) {
+      throw new NaxError(`Sub-story "${sub.id}" is missing required routing fields`, "DECOMPOSE_VALIDATION_FAILED", {
+        stage: "decompose",
+        storyId: sub.id,
+      });
+    }
+    if (sub.acceptanceCriteria && sub.acceptanceCriteria.length > maxAcCount) {
       throw new NaxError(
-        `Failed to parse decompose response as JSON: ${(err as Error).message}\n\nResponse (first 500 chars):\n${rawResponse.slice(0, 500)}`,
-        "DECOMPOSE_PARSE_FAILED",
-        { stage: "decompose", storyId: options.storyId },
+        `Sub-story "${sub.id}" has ${sub.acceptanceCriteria.length} ACs, exceeds maxAcCount of ${maxAcCount}`,
+        "DECOMPOSE_VALIDATION_FAILED",
+        { stage: "decompose", storyId: sub.id },
       );
     }
-
-    for (const sub of legacySubStories) {
-      if (!sub.contextFiles || sub.contextFiles.length === 0) {
-        throw new NaxError(`Sub-story "${sub.id}" has empty contextFiles`, "DECOMPOSE_VALIDATION_FAILED", {
-          stage: "decompose",
-          storyId: sub.id,
-        });
-      }
-      if (!sub.complexity || !sub.testStrategy) {
-        throw new NaxError(`Sub-story "${sub.id}" is missing required routing fields`, "DECOMPOSE_VALIDATION_FAILED", {
-          stage: "decompose",
-          storyId: sub.id,
-        });
-      }
-      if (sub.acceptanceCriteria && sub.acceptanceCriteria.length > maxAcCount) {
-        throw new NaxError(
-          `Sub-story "${sub.id}" has ${sub.acceptanceCriteria.length} ACs, exceeds maxAcCount of ${maxAcCount}`,
-          "DECOMPOSE_VALIDATION_FAILED",
-          { stage: "decompose", storyId: sub.id },
-        );
-      }
-    }
-
-    subStoriesWithParent = legacySubStories.map((s) => ({
-      id: s.id,
-      title: s.title,
-      description: s.description,
-      acceptanceCriteria: s.acceptanceCriteria,
-      tags: s.tags,
-      dependencies: s.dependencies,
-      status: "pending" as const,
-      passes: false,
-      escalations: [],
-      attempts: 0,
-      contextFiles: s.contextFiles,
-      routing: {
-        complexity: s.complexity,
-        testStrategy: s.testStrategy ?? ("test-after" as const),
-        reasoning: s.reasoning,
-        modelTier: "balanced" as const,
-      },
-      parentStoryId: options.storyId,
-    }));
-  } else {
-    // New path: call adapter.decompose() — returns structured DecomposeResult
-    const result = await adapter.decompose({
-      specContent: "",
-      codebaseContext,
-      workdir,
-      targetStory,
-      siblings,
-      featureName: options.feature,
-      storyId: options.storyId,
-      config,
-    });
-    const decompStories = result.stories;
-
-    for (const sub of decompStories) {
-      if (!sub.contextFiles || sub.contextFiles.length === 0) {
-        throw new NaxError(`Sub-story "${sub.id}" has empty contextFiles`, "DECOMPOSE_VALIDATION_FAILED", {
-          stage: "decompose",
-          storyId: sub.id,
-        });
-      }
-      if (!sub.complexity || !sub.testStrategy) {
-        throw new NaxError(`Sub-story "${sub.id}" is missing required routing fields`, "DECOMPOSE_VALIDATION_FAILED", {
-          stage: "decompose",
-          storyId: sub.id,
-        });
-      }
-      if (sub.acceptanceCriteria && sub.acceptanceCriteria.length > maxAcCount) {
-        throw new NaxError(
-          `Sub-story "${sub.id}" has ${sub.acceptanceCriteria.length} ACs, exceeds maxAcCount of ${maxAcCount}`,
-          "DECOMPOSE_VALIDATION_FAILED",
-          { stage: "decompose", storyId: sub.id },
-        );
-      }
-    }
-
-    subStoriesWithParent = decompStories.map((s) => ({
-      id: s.id,
-      title: s.title,
-      description: s.description,
-      acceptanceCriteria: s.acceptanceCriteria,
-      tags: s.tags,
-      dependencies: s.dependencies,
-      status: "pending" as const,
-      passes: false,
-      escalations: [],
-      attempts: 0,
-      contextFiles: s.contextFiles,
-      routing: {
-        complexity: s.complexity,
-        testStrategy: s.testStrategy ?? ("test-after" as const),
-        reasoning: s.reasoning,
-        modelTier: "balanced" as const,
-      },
-      parentStoryId: options.storyId,
-    }));
   }
+
+  const subStoriesWithParent = decompStories.map((s) => ({
+    id: s.id,
+    title: s.title,
+    description: s.description,
+    acceptanceCriteria: s.acceptanceCriteria,
+    tags: s.tags,
+    dependencies: s.dependencies,
+    status: "pending" as const,
+    passes: false,
+    escalations: [],
+    attempts: 0,
+    contextFiles: s.contextFiles,
+    routing: {
+      complexity: s.complexity,
+      testStrategy: s.testStrategy ?? ("test-after" as const),
+      reasoning: s.reasoning,
+      modelTier: "balanced" as const,
+    },
+    parentStoryId: options.storyId,
+  }));
 
   const updatedStories = prd.userStories.map((s) =>
     s.id === options.storyId ? { ...s, status: "decomposed" as StoryStatus } : s,
