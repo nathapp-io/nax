@@ -33,6 +33,43 @@ function makeSpawnResult(exitCode: number, stdout = ""): ReturnType<typeof _spaw
   };
 }
 
+/**
+ * Spawn mock where process exit resolves only after stdout starts being consumed.
+ * This reproduces deadlock-prone ordering: awaiting proc.exited before draining
+ * stdout can hang forever.
+ */
+function makeExitDependsOnStdoutRead(stdout = ""): ReturnType<typeof _spawnClientDeps.spawn> {
+  const enc = new TextEncoder();
+  let resolveExit: (code: number) => void = () => {};
+  const exited = new Promise<number>((resolve) => {
+    resolveExit = resolve;
+  });
+
+  let opened = false;
+  const stdoutStream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (opened) return;
+      opened = true;
+      resolveExit(0);
+      if (stdout) controller.enqueue(enc.encode(stdout));
+      controller.close();
+    },
+  });
+
+  return {
+    stdout: stdoutStream,
+    stderr: new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.close();
+      },
+    }),
+    stdin: { write: () => 0, end: () => {}, flush: () => {} },
+    exited,
+    pid: 12345,
+    kill: () => {},
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
@@ -156,5 +193,36 @@ describe("SpawnAcpClient — loadSession (SEC-3)", () => {
     }
 
     expect(capturedCmd).not.toContain("--approve-all");
+  });
+
+  test("prompt drains stdout/stderr concurrently with process exit (deadlock regression)", async () => {
+    let callCount = 0;
+    const promptOutput = JSON.stringify({ result: "done" });
+
+    _spawnClientDeps.spawn = (_cmd, _opts) => {
+      callCount++;
+      if (callCount === 1) {
+        // First call: ensure session
+        return makeSpawnResult(0);
+      }
+      // Second call: prompt where exit depends on stdout consumption
+      return makeExitDependsOnStdoutRead(promptOutput);
+    };
+
+    const client = new SpawnAcpClient("acpx --model claude-sonnet-4-5 claude", "/tmp");
+    const session = await client.loadSession("test-session", "claude");
+    expect(session).not.toBeNull();
+
+    const timed = Symbol("timed");
+    const result = await Promise.race([
+      session!.prompt("hello"),
+      new Promise<typeof timed>((resolve) => setTimeout(() => resolve(timed), 200)),
+    ]);
+
+    expect(result).not.toBe(timed);
+    if (result !== timed) {
+      expect(result.stopReason).toBe("end_turn");
+      expect(result.messages[0]?.content).toBe("done");
+    }
   });
 });

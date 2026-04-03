@@ -121,9 +121,13 @@ class SpawnAcpSession implements AcpSession {
       proc.stdin?.write(text);
       proc.stdin?.end();
 
-      const exitCode = await proc.exited;
-      const stdout = await new Response(proc.stdout).text();
-      const stderr = await new Response(proc.stderr).text();
+      // Drain stdout/stderr while waiting for process exit to avoid pipe-buffer deadlocks
+      // on large outputs (e.g. planning PRD generation).
+      const [exitCode, stdout, stderr] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
 
       if (exitCode !== 0) {
         getSafeLogger()?.warn("acp-adapter", `Session prompt exited with code ${exitCode}`, {
