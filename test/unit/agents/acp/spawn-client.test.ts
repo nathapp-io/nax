@@ -37,6 +37,79 @@ function makeSpawnResult(exitCode: number, stdout = ""): ReturnType<typeof _spaw
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PID registry mock helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeMockPidRegistry() {
+  const registered = new Set<number>();
+  return {
+    registered,
+    register: async (pid: number) => { registered.add(pid); },
+    unregister: async (pid: number) => { registered.delete(pid); },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PID registration tests (#228)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("SpawnAcpClient — PID registration (#228)", () => {
+  withDepsRestore(_spawnClientDeps, ["spawn"]);
+
+  test("createSession registers and unregisters PID with pidRegistry", async () => {
+    _spawnClientDeps.spawn = (_cmd, _opts) => makeSpawnResult(0);
+
+    const registry = makeMockPidRegistry();
+    const client = new SpawnAcpClient("acpx claude", "/tmp", undefined, registry as never);
+    await client.createSession({ agentName: "claude", permissionMode: "approve-reads" });
+
+    // PID should be unregistered after spawn completes
+    expect(registry.registered.size).toBe(0);
+  });
+
+  test("loadSession registers and unregisters PID with pidRegistry", async () => {
+    _spawnClientDeps.spawn = (_cmd, _opts) => makeSpawnResult(0);
+
+    const registry = makeMockPidRegistry();
+    const client = new SpawnAcpClient("acpx claude", "/tmp", undefined, registry as never);
+    await client.loadSession("test-session", "claude", "approve-reads");
+
+    expect(registry.registered.size).toBe(0);
+  });
+
+  test("session.close registers and unregisters PID with pidRegistry", async () => {
+    let callCount = 0;
+    _spawnClientDeps.spawn = (_cmd, _opts) => {
+      callCount++;
+      return makeSpawnResult(0);
+    };
+
+    const registry = makeMockPidRegistry();
+    const client = new SpawnAcpClient("acpx claude", "/tmp", undefined, registry as never);
+    const session = await client.createSession({ agentName: "claude", permissionMode: "approve-reads" });
+    await session.close();
+
+    // All PIDs should be unregistered after close completes
+    expect(registry.registered.size).toBe(0);
+  });
+
+  test("session.cancelActivePrompt registers and unregisters PID with pidRegistry", async () => {
+    let callCount = 0;
+    _spawnClientDeps.spawn = (_cmd, _opts) => {
+      callCount++;
+      return makeSpawnResult(0);
+    };
+
+    const registry = makeMockPidRegistry();
+    const client = new SpawnAcpClient("acpx claude", "/tmp", undefined, registry as never);
+    const session = await client.createSession({ agentName: "claude", permissionMode: "approve-reads" });
+    await session.cancelActivePrompt();
+
+    expect(registry.registered.size).toBe(0);
+  });
+});
+
 describe("SpawnAcpClient — loadSession (SEC-3)", () => {
   withDepsRestore(_spawnClientDeps, ["spawn"]);
 

@@ -44,13 +44,14 @@ function createSignalHandler(ctx: SignalHandlerContext): (signal: NodeJS.Signals
     const logger = getSafeLogger();
     logger?.error("crash-recovery", `Received ${signal}, shutting down...`, { signal });
 
-    if (ctx.pidRegistry) {
-      await ctx.pidRegistry.killAll();
-    }
-
-    // Close any open ACP sessions before exiting (prevents orphaned acpx processes)
+    // Close ACP sessions gracefully first (spawns are tracked by pidRegistry)
     if (ctx.onShutdown) {
       await ctx.onShutdown().catch(() => {});
+    }
+
+    // Kill any remaining processes (including hung session-close spawns)
+    if (ctx.pidRegistry) {
+      await ctx.pidRegistry.killAll();
     }
 
     ctx.emitError?.(signal.toLowerCase());
@@ -76,12 +77,14 @@ function createUncaughtExceptionHandler(ctx: SignalHandlerContext): (error: Erro
       stack: error.stack,
     });
 
-    if (ctx.pidRegistry) {
-      await ctx.pidRegistry.killAll();
-    }
-
+    // Close ACP sessions gracefully first (spawns are tracked by pidRegistry)
     if (ctx.onShutdown) {
       await ctx.onShutdown().catch(() => {});
+    }
+
+    // Kill any remaining processes (including hung session-close spawns)
+    if (ctx.pidRegistry) {
+      await ctx.pidRegistry.killAll();
     }
 
     ctx.emitError?.("uncaughtException");
@@ -111,12 +114,14 @@ function createUnhandledRejectionHandler(ctx: SignalHandlerContext): (reason: un
       stack: error.stack,
     });
 
-    if (ctx.pidRegistry) {
-      await ctx.pidRegistry.killAll();
-    }
-
+    // Close ACP sessions gracefully first (spawns are tracked by pidRegistry)
     if (ctx.onShutdown) {
       await ctx.onShutdown().catch(() => {});
+    }
+
+    // Kill any remaining processes (including hung session-close spawns)
+    if (ctx.pidRegistry) {
+      await ctx.pidRegistry.killAll();
     }
 
     ctx.emitError?.("unhandledRejection");

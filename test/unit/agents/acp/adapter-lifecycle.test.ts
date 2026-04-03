@@ -261,6 +261,31 @@ describe("sweepFeatureSessions", () => {
     expect(Object.keys(afterData)).toHaveLength(0);
   });
 
+  test("passes pidRegistry to createClient when provided (#228)", async () => {
+    const featureName = "pid-reg-feat";
+    const sidecarDir = join(tmpDir, ".nax", "features", featureName);
+    const sidecarPath = join(sidecarDir, "acp-sessions.json");
+
+    await Bun.write(
+      sidecarPath,
+      JSON.stringify({ "story-001": "nax-abc-pid-reg-feat-story-001" }),
+    );
+
+    let capturedPidRegistry: unknown = undefined;
+    const origCreate = _acpAdapterDeps.createClient;
+    _acpAdapterDeps.createClient = mock((_cmd: string, _cwd?: string, _timeout?: number, pidReg?: unknown) => {
+      capturedPidRegistry = pidReg;
+      const session = makeSession();
+      return makeClient(session);
+    });
+
+    const fakePidRegistry = { register: async () => {}, unregister: async () => {} };
+    await sweepFeatureSessions(tmpDir, featureName, fakePidRegistry as never);
+
+    expect(capturedPidRegistry).toBe(fakePidRegistry);
+    _acpAdapterDeps.createClient = origCreate;
+  });
+
   test("continues sweeping remaining sessions if one loadSession fails", async () => {
     const featureName = "partial-fail-feat";
     const sidecarDir = join(tmpDir, ".nax", "features", featureName);
