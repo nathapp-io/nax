@@ -1,5 +1,7 @@
 # Forbidden Patterns
 
+> Quick lookup table. For root-cause rationale and security context, see `docs/architecture/conventions.md` §2 and `docs/architecture/design-patterns.md` §12.
+
 These patterns are **banned** from the nax codebase. Violations must be caught during implementation, not after.
 
 ## Source Code

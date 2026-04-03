@@ -45,7 +45,7 @@ src/verification/smart-runner.ts → test/unit/verification/smart-runner.test.ts
 
 ## Process/Spawn Mocking Architecture
 
-Source modules that call `Bun.spawn`, `Bun.sleep`, or `process.kill` export an injectable `_deps` object so tests can mock at the module level without touching globals. This prevents cross-file contamination (see `03-test-writing.md`).
+Source modules that call `Bun.spawn`, `Bun.sleep`, or `process.kill` export an injectable `_deps` object so tests can mock at the module level without touching globals. This prevents cross-file contamination (see `docs/architecture/conventions.md` §2 for the full `_deps` reference table).
 
 **Pattern (in source file):**
 ```typescript

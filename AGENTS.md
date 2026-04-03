@@ -55,59 +55,77 @@ nax runs lint, typecheck, and tests automatically via the pipeline. Run these ma
 ## Architecture
 
 ```
-Runner.run()  [src/execution/runner.ts — thin orchestrator only]
-  → loadPlugins()
-  → for each story:
-    → Pipeline.execute()  [src/pipeline/pipeline.ts]
-      → stages: queueCheck → routing → constitution → context → prompt
-               → execution → verify → review → completion
-    → Reporter.emit()
-  → registry.teardownAll()
+Runner.run()  [src/execution/runner.ts — thin orchestrator]
+  → runSetupPhase()     [lifecycle/run-setup.ts]
+    → loadPlugins(), initLogger(), crash handlers
+  → runExecutionPhase() [runner-execution.ts]
+    → for each story (sequential or parallel):
+      → UnifiedExecutor.execute()  [unified-executor.ts]
+        → Pipeline stages 1–13 (defaultPipeline)
+        → Escalation on failure (fast → balanced → powerful)
+  → runCompletionPhase() [lifecycle/run-completion.ts]
+    → postRunPipeline (acceptance)
+    → hooks, metrics, cleanup
 ```
 
 ### Key Source Directories
 
 | Directory | Purpose |
 |:----------|:--------|
-| `src/execution/` | Runner loop, agent adapters, escalation, lifecycle hooks |
-| `src/execution/escalation/` | Tier escalation on repeated failures |
-| `src/pipeline/stages/` | One file per pipeline stage |
+| `src/execution/` | Runner loop, escalation, crash recovery, parallel execution, lifecycle phases |
+| `src/execution/escalation/` | Tier escalation on repeated failures (fast → balanced → powerful) |
+| `src/execution/lifecycle/` | Run lifecycle phases (setup, init, completion, cleanup, regression, acceptance) |
+| `src/pipeline/stages/` | 15 pipeline stages (13 default + pre-run + post-run) |
 | `src/pipeline/subscribers/` | Event-driven hooks (interaction, hooks.ts) |
 | `src/routing/` | Model-tier routing — keyword, LLM, plugin chain |
-| `src/routing/strategies/` | keyword.ts, llm.ts, llm-prompts.ts |
-| `src/interaction/` | Interaction triggers + plugins (Auto, Telegram, Webhook) |
-| `src/plugins/` | Plugin system — loader, registry, validator |
-| `src/verification/` | Test execution, smart runner, scoped runner |
+| `src/routing/strategies/` | llm.ts, llm-prompts.ts |
+| `src/interaction/` | Interaction triggers + plugins (Auto, Webhook) |
+| `src/plugins/` | Plugin system — loader, registry, validator (7 extension points) |
+| `src/verification/` | Test execution, smart runner, scoped runner, rectification loop |
 | `src/metrics/` | StoryMetrics, aggregator, tracker |
-| `src/config/` | Config schema + layered loader (global → project) |
-| `src/agents/adapters/` | Legacy CLI agent adapters (Claude Code, Codex, Gemini, etc.) |
+| `src/config/` | Config schema + layered loader (global → project) + permissions |
 | `src/agents/acp/` | ACP protocol adapter — unified, agent-agnostic via `acpx` |
+| `src/agents/claude/` | Claude Code CLI adapter (multi-file) |
+| `src/agents/cost/` | Centralized cost calculation (pricing, token parsing) |
+| `src/agents/shared/` | Cross-adapter utilities (decompose, env, model-resolution, validation) |
 | `src/cli/` + `src/commands/` | CLI commands — check both locations |
 | `src/prd/` | PRD types, loader, story state machine |
-| `src/hooks/` | Lifecycle hook wiring |
-| `src/constitution/` | Constitution loader + injection |
+| `src/hooks/` | Lifecycle hook wiring (11 event types) |
+| `src/constitution/` | Constitution loader + generation (6 agent types) |
+| `src/context/` | Context generation + auto-detect (7 agent generators) |
+| `src/acceptance/` | Acceptance test generation, refinement, fix stories, templates |
+| `src/tdd/` | TDD orchestration (three-session workflow, isolation, verdict) |
+| `src/review/` | Code review orchestration (built-in + semantic + plugin checks) |
 | `src/analyze/` | `nax analyze` — story classifier |
+| `src/debate/` | Multi-agent debate system |
+| `src/queue/` | Mid-run queue control (PAUSE, ABORT, SKIP) |
+| `src/worktree/` | Git worktree management for parallel execution |
+| `src/tui/` | React/Ink terminal UI |
+| `src/optimizer/` | Prompt optimization (rule-based, no-op) |
+| `src/project/` | Auto-detect project type, language, frameworks |
 
 ### Plugin Extension Points
 
 | Interface | Loaded By | Purpose |
 |:----------|:----------|:--------|
 | `IContextProvider` | `context.ts` stage | Inject context into agent prompts |
-| `IReviewer` | Review stage | Post-verify quality checks |
+| `IReviewPlugin` | Review stage | Post-verify quality checks |
 | `IReporter` | Runner | onRunStart / onStoryComplete / onRunEnd events |
 | `IRoutingStrategy` | Router chain | Override model-tier routing |
+| `IPromptOptimizer` | Optimizer stage | Reduce token usage |
+| `IPostRunAction` | Runner | Post-run hooks |
 
 ### Config
 
 - Global: `~/.nax/config.json` → Project: `<workdir>/.nax/config.json`
-- Schema: `src/config/schema.ts` — no hardcoded flags or credentials anywhere
+- Schema: `src/config/schemas.ts` — no hardcoded flags or credentials anywhere
 
 ## Agent Adapter & LLM Calls
 
 - **Two protocol modes:** CLI (`Bun.spawn`) and ACP (JSON-RPC via `acpx`), toggled by `agent.protocol` in config (default: `"acp"`)
 - **LLM fallback rule:** Any code needing LLM calls MUST use `getAgent(config.autoMode.defaultAgent)` from `src/agents/registry` — never inline stubs. Use `agent.complete(prompt, { jsonMode: true })` for one-shot calls.
 - **Forward-compatible:** `getAgent()` returns the correct adapter for the active protocol — calling code doesn't need to know which mode is active.
-- See `docs/architecture/ARCHITECTURE.md` §Adapter for full pattern.
+- See `docs/architecture/design-patterns.md` §11 (Adapter) for full pattern.
 
 ## Permission Resolution (Mandatory)
 
@@ -132,7 +150,7 @@ args.push("--dangerously-skip-permissions");
 ```
 
 **Profiles:** `unrestricted` (approve-all), `safe` (approve-reads), `scoped` (Phase 2).
-**Full spec:** `docs/architecture/ARCHITECTURE.md` §14.
+**Full spec:** `docs/architecture/agent-adapters.md` §14.
 
 ## Workflow Protocol
 
@@ -143,7 +161,7 @@ args.push("--dangerously-skip-permissions");
 
 ## Coding Standards & Architecture Patterns
 
-**Read `docs/architecture/ARCHITECTURE.md` before writing any code.** It defines all enterprise-grade patterns:
+**Read `docs/architecture/ARCHITECTURE.md` (index) before writing any code.** It links to focused docs covering:
 
 - **Dependency injection** — `_deps` pattern for all external calls (spawn, fs, fetch)
 - **Error handling** — `[stage]` prefix + context + `{ cause: err }`
@@ -157,7 +175,9 @@ args.push("--dangerously-skip-permissions");
 
 Additional rules in `.claude/rules/` (loaded automatically):
 
-- `01-project-conventions.md` — Bun-native APIs, 400-line limit, barrel imports, logging, commits
-- `02-test-architecture.md` — directory mirroring, placement rules, file naming
-- `03-test-writing.md` — `_deps` injection pattern, mock discipline, CI guards
-- `04-forbidden-patterns.md` — banned APIs and test anti-patterns with alternatives
+- `project-conventions.md` — Bun-native APIs, 400-line limit, barrel imports, logging, commits
+- `test-architecture.md` — directory mirroring, placement rules, file naming (path-scoped to `test/**/*.test.ts`)
+- `forbidden-patterns.md` — banned APIs and test anti-patterns with alternatives
+- `error-handling.md` — NaxError base class, cause chaining, return vs throw
+- `config-patterns.md` — Zod schema validation, config SSOT, layering order
+- `adapter-wiring.md` — run() vs complete(), session naming, agent resolution (path-scoped to `src/agents/**`)

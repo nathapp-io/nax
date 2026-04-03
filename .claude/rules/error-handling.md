@@ -1,6 +1,7 @@
 # Error Handling Patterns
 
-Project-specific error handling conventions for nax.
+> Project-specific error handling conventions for nax.
+> For the full NaxError class hierarchy (6 derived classes) and security implications, see `docs/architecture/conventions.md` §3 and `docs/architecture/subsystems.md` §33.
 
 ## NaxError Base Class
 

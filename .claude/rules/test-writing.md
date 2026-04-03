@@ -5,13 +5,11 @@ paths:
 
 # Test Writing Rules
 
-**Full rules:** `docs/guides/testing-rules.md` — read that first.
-
-This file contains the nax-specific injectable deps table that Claude Code needs when mocking subprocesses.
+> Quick lookup table for test mocking. For the full 70+ module `_deps` reference, see `docs/architecture/conventions.md` §2.
 
 ## Injectable `_deps` Available in nax Source
 
-Use these instead of mutating `Bun.spawn` globally (see testing-rules.md §2):
+Use these instead of mutating `Bun.spawn` globally (see `docs/architecture/conventions.md` §2):
 
 | Module | Deps export | Covers |
 |:---|:---|:---|

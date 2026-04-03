@@ -1,5 +1,7 @@
 # Project Conventions
 
+> Concise directives. For detailed rationale, see `docs/architecture/conventions.md` §1–§4 and `docs/architecture/coding-standards.md` §9–§10.
+
 ## Language & Runtime
 
 - **Bun-native only.** Use `Bun.file()`, `Bun.write()`, `Bun.spawn()`, `Bun.sleep()`. Never use Node.js equivalents (`fs.readFile`, `child_process.spawn`, `setTimeout` for delays).

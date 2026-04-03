@@ -1,4 +1,15 @@
-# Rule 08: Adapter Wiring — run() vs complete(), Session Naming, Agent Resolution
+---
+paths:
+  - "src/agents/**/*.ts"
+  - "src/pipeline/stages/execution.ts"
+  - "src/execution/**/*.ts"
+  - "src/tdd/**/*.ts"
+  - "src/acceptance/**/*.ts"
+---
+
+# Adapter Wiring — run() vs complete(), Session Naming, Agent Resolution
+
+> For agent protocol modes (ACP vs CLI), permission resolution, and adapter folder conventions, see `docs/architecture/agent-adapters.md` §14–§16 and `docs/architecture/design-patterns.md` §11.
 
 ## Rule 1: Method Selection
 

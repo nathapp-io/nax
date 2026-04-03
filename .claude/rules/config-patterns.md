@@ -1,6 +1,6 @@
 # Config Patterns
 
-Project-specific configuration patterns for nax.
+> Project-specific configuration patterns for nax. This is the SSOT for config conventions — no equivalent section in `docs/architecture/`.
 
 ## Zod Schema Validation
 
