@@ -248,25 +248,44 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
         timeoutSeconds,
       });
       const pidRegistry = new PidRegistry(workdir);
+      let planError: Error | null = null;
       try {
-        await adapter.plan({
-          prompt,
-          workdir,
-          interactive: false,
-          timeoutSeconds,
-          config,
-          modelTier: config?.plan?.model ?? "balanced",
-          dangerouslySkipPermissions: resolvePermissions(config, "plan").skipPermissions,
-          maxInteractionTurns: config?.agent?.maxInteractionTurns,
-          featureName: options.feature,
-          pidRegistry,
-          sessionRole: "plan",
-        });
+        try {
+          await adapter.plan({
+            prompt,
+            workdir,
+            interactive: false,
+            timeoutSeconds,
+            config,
+            modelTier: config?.plan?.model ?? "balanced",
+            dangerouslySkipPermissions: resolvePermissions(config, "plan").skipPermissions,
+            maxInteractionTurns: config?.agent?.maxInteractionTurns,
+            featureName: options.feature,
+            pidRegistry,
+            sessionRole: "plan",
+          });
+        } catch (err) {
+          planError = err instanceof Error ? err : new Error(String(err));
+          logger?.warn("plan", "ACP auto planning did not complete cleanly; checking for written PRD", {
+            error: planError.message,
+            outputPath,
+          });
+        }
       } finally {
         await pidRegistry.killAll().catch(() => {});
       }
       if (!_planDeps.existsSync(outputPath)) {
+        if (planError) {
+          throw new Error(`[plan] ACP planning failed and no PRD was written: ${planError.message}`, {
+            cause: planError,
+          });
+        }
         throw new Error(`[plan] ACP agent did not write PRD to ${outputPath}. Check agent logs for errors.`);
+      }
+      if (planError) {
+        logger?.warn("plan", "Proceeding with PRD written by ACP despite incomplete terminal response", {
+          outputPath,
+        });
       }
       rawResponse = await _planDeps.readFile(outputPath);
     } else {
@@ -333,21 +352,30 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
       timeoutSeconds,
     });
     const planStartTime = Date.now();
+    let planError: Error | null = null;
     try {
-      await adapter.plan({
-        prompt,
-        workdir,
-        interactive: true,
-        timeoutSeconds,
-        interactionBridge,
-        config,
-        modelTier: resolvedModel,
-        dangerouslySkipPermissions: resolvedPerm.skipPermissions,
-        maxInteractionTurns: config?.agent?.maxInteractionTurns,
-        featureName: options.feature,
-        pidRegistry,
-        sessionRole: "plan",
-      });
+      try {
+        await adapter.plan({
+          prompt,
+          workdir,
+          interactive: true,
+          timeoutSeconds,
+          interactionBridge,
+          config,
+          modelTier: resolvedModel,
+          dangerouslySkipPermissions: resolvedPerm.skipPermissions,
+          maxInteractionTurns: config?.agent?.maxInteractionTurns,
+          featureName: options.feature,
+          pidRegistry,
+          sessionRole: "plan",
+        });
+      } catch (err) {
+        planError = err instanceof Error ? err : new Error(String(err));
+        logger?.warn("plan", "Interactive planning did not complete cleanly; checking for written PRD", {
+          error: planError.message,
+          outputPath,
+        });
+      }
     } finally {
       await pidRegistry.killAll().catch(() => {});
       if (interactionChain) await interactionChain.destroy().catch(() => {});
@@ -355,7 +383,15 @@ export async function planCommand(workdir: string, config: NaxConfig, options: P
     }
     // Read back from file written by agent
     if (!_planDeps.existsSync(outputPath)) {
+      if (planError) {
+        throw new Error(`[plan] Planning failed and no PRD was written: ${planError.message}`, { cause: planError });
+      }
       throw new Error(`[plan] Agent did not write PRD to ${outputPath}. Check agent logs for errors.`);
+    }
+    if (planError) {
+      logger?.warn("plan", "Proceeding with PRD written by agent despite incomplete terminal response", {
+        outputPath,
+      });
     }
     return _planDeps.readFile(outputPath);
   }
