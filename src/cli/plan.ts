@@ -677,7 +677,7 @@ ${
 /**
  * Build a decompose prompt that instructs the LLM to split a story into sub-stories.
  */
-export function buildDecomposePrompt(targetStory: UserStory, siblings: UserStory[], codebaseContext: string): string {
+function buildDecomposePrompt(targetStory: UserStory, siblings: UserStory[], codebaseContext: string): string {
   const siblingsSummary =
     siblings.length > 0 ? `\n## Sibling Stories\n\n${siblings.map((s) => `- ${s.id}: ${s.title}`).join("\n")}\n` : "";
 
@@ -771,7 +771,6 @@ export async function planDecomposeCommand(
   const codebaseContext = buildCodebaseContext(scan);
 
   const siblings = prd.userStories.filter((s) => s.id !== options.storyId);
-  const prompt = buildDecomposePrompt(targetStory, siblings, codebaseContext);
 
   const agentName = config?.autoMode?.defaultAgent ?? "claude";
   const adapter = _planDeps.getAgent(agentName, config);
@@ -791,24 +790,44 @@ export async function planDecomposeCommand(
 
   const stages = config?.debate?.stages as Record<string, DebateStageConfig> | undefined;
   const debateEnabled = config?.debate?.enabled && stages?.decompose?.enabled;
+  const canDecompose = typeof (adapter as unknown as Record<string, unknown>).decompose === "function";
 
-  let rawResponse: string;
   const timeoutSeconds = config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
   const timeoutMs = timeoutSeconds * 1000;
-  if (debateEnabled) {
-    const stageConfig = stages?.decompose as DebateStageConfig;
-    const debateSession = _planDeps.createDebateSession({
-      storyId: options.storyId,
-      stage: "decompose",
-      stageConfig,
-      config,
-      workdir,
-      featureName: options.feature,
-      timeoutSeconds: timeoutSeconds,
-    });
-    const debateResult = await debateSession.run(prompt);
-    if (debateResult.outcome !== "failed" && debateResult.output) {
-      rawResponse = debateResult.output;
+  const maxAcCount = config?.precheck?.storySizeGate?.maxAcCount ?? Number.POSITIVE_INFINITY;
+
+  let subStoriesWithParent: UserStory[];
+
+  if (debateEnabled || !canDecompose) {
+    // Debate path (always uses legacy string format) OR legacy complete() path (adapter has no decompose method)
+    const prompt = buildDecomposePrompt(targetStory, siblings, codebaseContext);
+    let rawResponse: string;
+    if (debateEnabled) {
+      const stageConfig = stages?.decompose as DebateStageConfig;
+      const debateSession = _planDeps.createDebateSession({
+        storyId: options.storyId,
+        stage: "decompose",
+        stageConfig,
+        config,
+        workdir,
+        featureName: options.feature,
+        timeoutSeconds: timeoutSeconds,
+      });
+      const debateResult = await debateSession.run(prompt);
+      if (debateResult.outcome !== "failed" && debateResult.output) {
+        rawResponse = debateResult.output;
+      } else {
+        const completeResult = await adapter.complete(prompt, {
+          model: decomposeModel,
+          jsonMode: true,
+          workdir,
+          sessionRole: "decompose",
+          featureName: options.feature,
+          storyId: options.storyId,
+          timeoutMs,
+        });
+        rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
+      }
     } else {
       const completeResult = await adapter.complete(prompt, {
         model: decomposeModel,
@@ -821,63 +840,107 @@ export async function planDecomposeCommand(
       });
       rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
     }
-  } else {
-    const completeResult = await adapter.complete(prompt, {
-      model: decomposeModel,
-      jsonMode: true,
-      workdir,
-      sessionRole: "decompose",
-      featureName: options.feature,
-      storyId: options.storyId,
-      timeoutMs,
-    });
-    rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
-  }
 
-  // Strip markdown code fences if the LLM wrapped JSON in backticks
-  const jsonMatch = rawResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  const cleanedResponse = jsonMatch ? jsonMatch[1] : rawResponse;
+    // Strip markdown code fences if the LLM wrapped JSON in backticks
+    const jsonMatch = rawResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    const cleanedResponse = jsonMatch ? jsonMatch[1] : rawResponse;
 
-  let parsed: { subStories: UserStory[] };
-  try {
-    parsed = JSON.parse(cleanedResponse.trim()) as { subStories: UserStory[] };
-  } catch (err) {
-    throw new NaxError(
-      `Failed to parse decompose response as JSON: ${(err as Error).message}\n\nResponse (first 500 chars):\n${rawResponse.slice(0, 500)}`,
-      "DECOMPOSE_PARSE_FAILED",
-      { stage: "decompose", storyId: options.storyId },
-    );
-  }
-  const subStories = parsed.subStories;
-
-  const maxAcCount = config?.precheck?.storySizeGate?.maxAcCount ?? Number.POSITIVE_INFINITY;
-  for (const sub of subStories) {
-    if (!sub.contextFiles || sub.contextFiles.length === 0) {
-      throw new NaxError(`Sub-story "${sub.id}" has empty contextFiles`, "DECOMPOSE_VALIDATION_FAILED", {
-        stage: "decompose",
-        storyId: sub.id,
-      });
-    }
-    if (!sub.routing?.complexity || !sub.routing?.testStrategy || !sub.routing?.modelTier) {
-      throw new NaxError(`Sub-story "${sub.id}" is missing required routing fields`, "DECOMPOSE_VALIDATION_FAILED", {
-        stage: "decompose",
-        storyId: sub.id,
-      });
-    }
-    if (sub.acceptanceCriteria && sub.acceptanceCriteria.length > maxAcCount) {
+    let parsed: { subStories: UserStory[] };
+    try {
+      parsed = JSON.parse(cleanedResponse.trim()) as { subStories: UserStory[] };
+    } catch (err) {
       throw new NaxError(
-        `Sub-story "${sub.id}" has ${sub.acceptanceCriteria.length} ACs, exceeds maxAcCount of ${maxAcCount}`,
-        "DECOMPOSE_VALIDATION_FAILED",
-        { stage: "decompose", storyId: sub.id },
+        `Failed to parse decompose response as JSON: ${(err as Error).message}\n\nResponse (first 500 chars):\n${rawResponse.slice(0, 500)}`,
+        "DECOMPOSE_PARSE_FAILED",
+        { stage: "decompose", storyId: options.storyId },
       );
     }
+    const legacySubStories = parsed.subStories;
+
+    for (const sub of legacySubStories) {
+      if (!sub.contextFiles || sub.contextFiles.length === 0) {
+        throw new NaxError(`Sub-story "${sub.id}" has empty contextFiles`, "DECOMPOSE_VALIDATION_FAILED", {
+          stage: "decompose",
+          storyId: sub.id,
+        });
+      }
+      if (!sub.routing?.complexity || !sub.routing?.testStrategy || !sub.routing?.modelTier) {
+        throw new NaxError(`Sub-story "${sub.id}" is missing required routing fields`, "DECOMPOSE_VALIDATION_FAILED", {
+          stage: "decompose",
+          storyId: sub.id,
+        });
+      }
+      if (sub.acceptanceCriteria && sub.acceptanceCriteria.length > maxAcCount) {
+        throw new NaxError(
+          `Sub-story "${sub.id}" has ${sub.acceptanceCriteria.length} ACs, exceeds maxAcCount of ${maxAcCount}`,
+          "DECOMPOSE_VALIDATION_FAILED",
+          { stage: "decompose", storyId: sub.id },
+        );
+      }
+    }
+
+    subStoriesWithParent = legacySubStories.map((s) => ({ ...s, parentStoryId: options.storyId }));
+  } else {
+    // New path: call adapter.decompose() — returns structured DecomposeResult
+    const result = await adapter.decompose({
+      specContent: "",
+      codebaseContext,
+      workdir,
+      targetStory,
+      siblings,
+      featureName: options.feature,
+      storyId: options.storyId,
+      config,
+    });
+    const decompStories = result.stories;
+
+    for (const sub of decompStories) {
+      if (!sub.contextFiles || sub.contextFiles.length === 0) {
+        throw new NaxError(`Sub-story "${sub.id}" has empty contextFiles`, "DECOMPOSE_VALIDATION_FAILED", {
+          stage: "decompose",
+          storyId: sub.id,
+        });
+      }
+      if (!sub.complexity || !sub.testStrategy) {
+        throw new NaxError(`Sub-story "${sub.id}" is missing required routing fields`, "DECOMPOSE_VALIDATION_FAILED", {
+          stage: "decompose",
+          storyId: sub.id,
+        });
+      }
+      if (sub.acceptanceCriteria && sub.acceptanceCriteria.length > maxAcCount) {
+        throw new NaxError(
+          `Sub-story "${sub.id}" has ${sub.acceptanceCriteria.length} ACs, exceeds maxAcCount of ${maxAcCount}`,
+          "DECOMPOSE_VALIDATION_FAILED",
+          { stage: "decompose", storyId: sub.id },
+        );
+      }
+    }
+
+    subStoriesWithParent = decompStories.map((s) => ({
+      id: s.id,
+      title: s.title,
+      description: s.description,
+      acceptanceCriteria: s.acceptanceCriteria,
+      tags: s.tags,
+      dependencies: s.dependencies,
+      status: "pending" as const,
+      passes: false,
+      escalations: [],
+      attempts: 0,
+      contextFiles: s.contextFiles,
+      routing: {
+        complexity: s.complexity,
+        testStrategy: s.testStrategy ?? ("test-after" as const),
+        reasoning: s.reasoning,
+        modelTier: "balanced" as const,
+      },
+      parentStoryId: options.storyId,
+    }));
   }
 
   const updatedStories = prd.userStories.map((s) =>
     s.id === options.storyId ? { ...s, status: "decomposed" as StoryStatus } : s,
   );
-
-  const subStoriesWithParent: UserStory[] = subStories.map((s) => ({ ...s, parentStoryId: options.storyId }));
 
   const originalIndex = updatedStories.findIndex((s) => s.id === options.storyId);
   const finalStories = [

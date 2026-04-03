@@ -10,8 +10,67 @@ import type { DecomposeOptions, DecomposeResult, DecomposedStory } from "../type
 
 /**
  * Build the decompose prompt combining spec content and codebase context.
+ *
+ * When options.targetStory is present, builds a plan-mode decompose prompt
+ * that splits the target story into sub-stories using targetStory + siblings context.
  */
 export function buildDecomposePrompt(options: DecomposeOptions): string {
+  if (options.targetStory) {
+    return buildPlanModeDecomposePrompt(options);
+  }
+  return buildSpecDecomposePrompt(options);
+}
+
+/**
+ * Build a plan-mode decompose prompt for splitting a single story into sub-stories.
+ * Used when planDecomposeCommand() calls adapter.decompose() with targetStory.
+ */
+function buildPlanModeDecomposePrompt(options: DecomposeOptions): string {
+  // biome-ignore lint/style/noNonNullAssertion: caller ensures targetStory is defined (guarded by buildDecomposePrompt)
+  const targetStory = options.targetStory!;
+  const siblings = options.siblings ?? [];
+  const siblingsSummary =
+    siblings.length > 0 ? `\n## Sibling Stories\n\n${siblings.map((s) => `- ${s.id}: ${s.title}`).join("\n")}\n` : "";
+
+  return `You are a senior software architect decomposing a complex user story into smaller, implementable sub-stories.
+
+## Target Story
+
+${JSON.stringify(targetStory, null, 2)}${siblingsSummary}
+## Codebase Context
+
+${options.codebaseContext}
+
+${COMPLEXITY_GUIDE}
+
+${TEST_STRATEGY_GUIDE}
+
+${GROUPING_RULES}
+
+## Output
+
+Return a JSON array of sub-stories (no markdown code fences, no explanation — JSON array only):
+
+[{
+  "id": "string — e.g. ${targetStory.id}-A",
+  "title": "string",
+  "description": "string",
+  "acceptanceCriteria": ["string — behavioral, testable criteria"],
+  "contextFiles": ["string — required, non-empty list of key source files"],
+  "tags": ["string"],
+  "dependencies": ["string"],
+  "complexity": "simple | medium | complex | expert",
+  "reasoning": "string",
+  "estimatedLOC": 0,
+  "risks": ["string"],
+  "testStrategy": "no-test | tdd-simple | three-session-tdd-lite | three-session-tdd | test-after"
+}]`;
+}
+
+/**
+ * Build the original spec-decompose prompt for breaking a feature spec into stories.
+ */
+function buildSpecDecomposePrompt(options: DecomposeOptions): string {
   return `You are a requirements analyst. Break down the following feature specification into user stories and classify each story's complexity.
 
 CODEBASE CONTEXT:

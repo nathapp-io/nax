@@ -96,6 +96,10 @@ export interface DecomposeOptions {
   storyId?: string;
   /** Session role for TDD isolation (e.g. "decompose") */
   sessionRole?: string;
+  /** Target story to decompose (plan-mode decompose) */
+  targetStory?: import("../../prd/types").UserStory;
+  /** Sibling stories for context (plan-mode decompose) */
+  siblings?: import("../../prd/types").UserStory[];
 }
 
 /** A single classified user story from decompose result. */
