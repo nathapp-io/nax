@@ -42,5 +42,9 @@
   "US-005:implementer": {
     "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-005-implementer",
     "agentName": "claude"
+  },
+  "US-005:verifier": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-005-verifier",
+    "agentName": "claude"
   }
 }
