@@ -9,6 +9,7 @@ import type { RectificationConfig } from "../config";
 import { getSafeLogger } from "../logger";
 import type { UserStory } from "../prd";
 import { formatFailureSummary } from "./parser";
+import { buildProgressivePromptPreamble } from "./shared-rectification-loop";
 import type { RectificationState, TestFailure } from "./types";
 
 /**
@@ -63,31 +64,14 @@ export function shouldRetryRectification(state: RectificationState, config: Rect
  * Returns an empty string when no injection is needed.
  */
 function buildEscalationPreamble(attempt: number, config: RectificationConfig): string {
-  const logger = getSafeLogger();
-  const rethinkAt = Math.min(config.rethinkAtAttempt ?? 2, config.maxRetries);
-  const urgencyAt = Math.min(config.urgencyAtAttempt ?? 3, config.maxRetries);
-
-  if (attempt < rethinkAt) return "";
-
-  const isUrgent = attempt >= urgencyAt;
-
-  // Log progressive prompt escalation (#147)
-  if (isUrgent) {
-    logger?.info("rectification", "Progressive prompt escalation: urgency + rethink injected", {
-      attempt,
-      urgencyAtAttempt: urgencyAt,
-      rethinkAtAttempt: rethinkAt,
-      maxRetries: config.maxRetries,
-    });
-  } else {
-    logger?.info("rectification", "Progressive prompt escalation: rethink injected", {
-      attempt,
-      rethinkAtAttempt: rethinkAt,
-      maxRetries: config.maxRetries,
-    });
-  }
-
-  const rethinkSection = `## ⚠️ Previous Attempt Did Not Fix the Failures
+  return buildProgressivePromptPreamble({
+    attempt,
+    maxAttempts: config.maxRetries,
+    rethinkAtAttempt: config.rethinkAtAttempt,
+    urgencyAtAttempt: config.urgencyAtAttempt,
+    stage: "rectification",
+    logger: getSafeLogger(),
+    rethinkSection: `## ⚠️ Previous Attempt Did Not Fix the Failures
 
 Your previous fix attempt (attempt ${attempt}) did not resolve all failures. **Step back and reconsider your approach.**
 
@@ -96,18 +80,14 @@ Your previous fix attempt (attempt ${attempt}) did not resolve all failures. **S
 - Re-read the story context and test failures carefully before making changes.
 - Consider: are there missing edge cases, incorrect assumptions, or a design flaw in the implementation?
 
-`;
-
-  const urgencySection = isUrgent
-    ? `## 🚨 Final Rectification Attempt Before Model Escalation
+`,
+    urgencySection: `## 🚨 Final Rectification Attempt Before Model Escalation
 
 This is attempt ${attempt} — if the tests still fail after this, the task will escalate to a stronger model tier.
 A **completely different approach** is required. Do not repeat what you have already tried.
 
-`
-    : "";
-
-  return `${urgencySection}${rethinkSection}`;
+`,
+  });
 }
 
 /**

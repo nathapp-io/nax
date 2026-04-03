@@ -29,6 +29,7 @@ import {
   shouldRetryRectification,
 } from "./rectification";
 import { fullSuite as _fullSuite } from "./runners";
+import { runSharedRectificationLoop } from "./shared-rectification-loop";
 
 export interface RectificationLoopOptions {
   config: NaxConfig;
@@ -131,218 +132,226 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
     lastExitCode: 1, // Assume failure since we entered the loop
   };
 
-  logger?.info("rectification", `Starting ${label} loop`, {
+  return runSharedRectificationLoop({
+    stage: "rectification",
     storyId: story.id,
-    initialFailures: rectificationState.initialFailures,
-    maxRetries: rectificationConfig.maxRetries,
-  });
-
-  while (shouldRetryRectification(rectificationState, rectificationConfig)) {
-    rectificationState.attempt++;
-
-    logger?.info("rectification", `${label} attempt ${rectificationState.attempt}/${rectificationConfig.maxRetries}`, {
+    maxAttempts: rectificationConfig.maxRetries,
+    state: rectificationState,
+    logger,
+    startMessage: `Starting ${label} loop`,
+    startData: {
+      storyId: story.id,
+      initialFailures: rectificationState.initialFailures,
+      maxRetries: rectificationConfig.maxRetries,
+    },
+    attemptMessage: (attempt) => `${label} attempt ${attempt}/${rectificationConfig.maxRetries}`,
+    attemptData: () => ({
       storyId: story.id,
       currentFailures: rectificationState.currentFailures,
-    });
-
-    // Debate-based root cause diagnosis (when enabled)
-    let diagnosisPrefix: string | null = null;
-    const debateStageConfig = config.debate?.stages?.rectification;
-    if (debateStageConfig?.enabled) {
-      const failureSummary = formatFailureSummary(testSummary.failures);
-      const diagnosisPrompt = `Analyze the following test failures and identify the root cause:\n\n${failureSummary}`;
-      try {
-        const debateResult = await _rectificationDeps.runDebate(story.id, debateStageConfig, diagnosisPrompt, config);
-        if (debateResult.totalCostUsd > 0 && story.routing) {
-          story.routing.estimatedCost = (story.routing.estimatedCost ?? 0) + debateResult.totalCostUsd;
-        }
-        if (debateResult.output !== null) {
-          diagnosisPrefix = `## Root Cause Analysis\n\n${debateResult.output}`;
-        } else {
-          logger?.info("rectification", "debate diagnosis fallback — all debaters failed", {
+    }),
+    canContinue: (state) => shouldRetryRectification(state, rectificationConfig),
+    buildPrompt: async (attempt) => {
+      let diagnosisPrefix: string | null = null;
+      const debateStageConfig = config.debate?.stages?.rectification;
+      if (debateStageConfig?.enabled) {
+        const failureSummary = formatFailureSummary(testSummary.failures);
+        const diagnosisPrompt = `Analyze the following test failures and identify the root cause:\n\n${failureSummary}`;
+        try {
+          const debateResult = await _rectificationDeps.runDebate(story.id, debateStageConfig, diagnosisPrompt, config);
+          if (debateResult.totalCostUsd > 0 && story.routing) {
+            story.routing.estimatedCost = (story.routing.estimatedCost ?? 0) + debateResult.totalCostUsd;
+          }
+          if (debateResult.output !== null) {
+            diagnosisPrefix = `## Root Cause Analysis\n\n${debateResult.output}`;
+          } else {
+            logger?.info("rectification", "debate diagnosis fallback — all debaters failed", {
+              storyId: story.id,
+              attempt,
+              event: "fallback",
+            });
+          }
+        } catch (_error) {
+          logger?.info("rectification", "debate diagnosis fallback — debate threw error", {
             storyId: story.id,
-            attempt: rectificationState.attempt,
+            attempt,
             event: "fallback",
           });
         }
-      } catch (err) {
-        logger?.info("rectification", "debate diagnosis fallback — debate threw error", {
+      }
+
+      let rectificationPrompt = createRectificationPrompt(testSummary.failures, story, rectificationConfig, attempt);
+      if (diagnosisPrefix) {
+        rectificationPrompt = `${diagnosisPrefix}\n\n${rectificationPrompt}`;
+      }
+      if (promptPrefix) {
+        rectificationPrompt = `${promptPrefix}\n\n${rectificationPrompt}`;
+      }
+      return rectificationPrompt;
+    },
+    runAttempt: async (attempt, rectificationPrompt) => {
+      const agent = agentGetFn
+        ? agentGetFn(config.autoMode.defaultAgent)
+        : _rectificationDeps.getAgent(config.autoMode.defaultAgent, config);
+      if (!agent) {
+        logger?.error("rectification", "Agent not found, cannot retry");
+        throw new Error("RECTIFICATION_AGENT_NOT_FOUND");
+      }
+
+      const complexity = story.routing?.complexity ?? "medium";
+      const modelTier =
+        config.autoMode.complexityRouting?.[complexity] || config.autoMode.escalation.tierOrder[0]?.tier || "balanced";
+      const modelDef = resolveModelForAgent(
+        config.models,
+        story.routing?.agent ?? config.autoMode.defaultAgent,
+        modelTier,
+        config.autoMode.defaultAgent,
+      );
+
+      const agentResult = await agent.run({
+        prompt: rectificationPrompt,
+        workdir,
+        modelTier,
+        modelDef,
+        timeoutSeconds: config.execution.sessionTimeoutSeconds,
+        dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
+        pipelineStage: "rectification",
+        config,
+        maxInteractionTurns: config.agent?.maxInteractionTurns,
+        featureName,
+        storyId: story.id,
+        sessionRole: "implementer",
+      });
+
+      if (agentResult.success) {
+        logger?.info("rectification", `Agent ${label} session complete`, {
           storyId: story.id,
-          attempt: rectificationState.attempt,
-          event: "fallback",
+          attempt,
+          cost: agentResult.estimatedCost,
+        });
+      } else {
+        logger?.warn("rectification", `Agent ${label} session failed`, {
+          storyId: story.id,
+          attempt,
+          exitCode: agentResult.exitCode,
         });
       }
-    }
-
-    let rectificationPrompt = createRectificationPrompt(
-      testSummary.failures,
-      story,
-      rectificationConfig,
-      rectificationState.attempt,
-    );
-    if (diagnosisPrefix) rectificationPrompt = `${diagnosisPrefix}\n\n${rectificationPrompt}`;
-    if (promptPrefix) rectificationPrompt = `${promptPrefix}\n\n${rectificationPrompt}`;
-
-    const agent = agentGetFn
-      ? agentGetFn(config.autoMode.defaultAgent)
-      : _rectificationDeps.getAgent(config.autoMode.defaultAgent, config);
-    if (!agent) {
-      logger?.error("rectification", "Agent not found, cannot retry");
-      break;
-    }
-
-    // story.routing.modelTier is not persisted (derived at runtime) — derive tier from
-    // persisted complexity via complexityRouting instead of falling back to tierOrder[0] (fast/haiku).
-    const complexity = story.routing?.complexity ?? "medium";
-    const modelTier =
-      config.autoMode.complexityRouting?.[complexity] || config.autoMode.escalation.tierOrder[0]?.tier || "balanced";
-    const modelDef = resolveModelForAgent(
-      config.models,
-      story.routing?.agent ?? config.autoMode.defaultAgent,
-      modelTier,
-      config.autoMode.defaultAgent,
-    );
-
-    const agentResult = await agent.run({
-      prompt: rectificationPrompt,
-      workdir,
-      modelTier,
-      modelDef,
-      timeoutSeconds: config.execution.sessionTimeoutSeconds,
-      dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
-      pipelineStage: "rectification",
-      config,
-      maxInteractionTurns: config.agent?.maxInteractionTurns,
-      featureName,
-      storyId: story.id,
-      sessionRole: "implementer",
-    });
-
-    if (agentResult.success) {
-      logger?.info("rectification", `Agent ${label} session complete`, {
-        storyId: story.id,
-        attempt: rectificationState.attempt,
-        cost: agentResult.estimatedCost,
+    },
+    checkResult: async (attempt, state) => {
+      const retryVerification = await _rectificationDeps.runVerification({
+        workdir,
+        expectedFiles: getExpectedFiles(story),
+        command: testCommand,
+        timeoutSeconds,
+        forceExit: config.quality.forceExit,
+        detectOpenHandles: config.quality.detectOpenHandles,
+        detectOpenHandlesRetries: config.quality.detectOpenHandlesRetries,
+        timeoutRetryCount: 0,
+        gracePeriodMs: config.quality.gracePeriodMs,
+        drainTimeoutMs: config.quality.drainTimeoutMs,
+        shell: config.quality.shell,
+        stripEnvVars: config.quality.stripEnvVars,
       });
-    } else {
-      logger?.warn("rectification", `Agent ${label} session failed`, {
-        storyId: story.id,
-        attempt: rectificationState.attempt,
-        exitCode: agentResult.exitCode,
-      });
-    }
 
-    const retryVerification = await _rectificationDeps.runVerification({
-      workdir,
-      expectedFiles: getExpectedFiles(story),
-      command: testCommand,
-      timeoutSeconds,
-      forceExit: config.quality.forceExit,
-      detectOpenHandles: config.quality.detectOpenHandles,
-      detectOpenHandlesRetries: config.quality.detectOpenHandlesRetries,
-      timeoutRetryCount: 0,
-      gracePeriodMs: config.quality.gracePeriodMs,
-      drainTimeoutMs: config.quality.drainTimeoutMs,
-      shell: config.quality.shell,
-      stripEnvVars: config.quality.stripEnvVars,
-    });
-
-    if (retryVerification.success) {
-      logger?.info("rectification", `[OK] ${label} succeeded!`, {
-        storyId: story.id,
-        attempt: rectificationState.attempt,
-        initialFailures: rectificationState.initialFailures,
-      });
-      return true;
-    }
-
-    if (retryVerification.output) {
-      const newTestSummary = parseBunTestOutput(retryVerification.output);
-      rectificationState.currentFailures = newTestSummary.failed;
-      rectificationState.lastExitCode = retryVerification.status === "SUCCESS" ? 0 : 1; // Basic mapping
-      testSummary.failures = newTestSummary.failures;
-      testSummary.failed = newTestSummary.failed;
-      testSummary.passed = newTestSummary.passed;
-
-      if (newTestSummary.failed === 0) {
-        rectificationState.lastExitCode = 0;
-        logger?.info("rectification", `[OK] ${label} succeeded after parsing retry output`, {
+      if (retryVerification.success) {
+        logger?.info("rectification", `[OK] ${label} succeeded!`, {
           storyId: story.id,
-          attempt: rectificationState.attempt,
-          initialFailures: rectificationState.initialFailures,
+          attempt,
+          initialFailures: state.initialFailures,
         });
         return true;
       }
-    }
 
-    const failingTests = testSummary.failures.slice(0, 10).map((f) => f.testName);
-    const logData: Record<string, unknown> = {
-      storyId: story.id,
-      attempt: rectificationState.attempt,
-      remainingFailures: rectificationState.currentFailures,
-      failingTests,
-    };
+      if (retryVerification.output) {
+        const newTestSummary = parseBunTestOutput(retryVerification.output);
+        state.currentFailures = newTestSummary.failed;
+        state.lastExitCode = retryVerification.status === "SUCCESS" ? 0 : 1;
+        testSummary.failures = newTestSummary.failures;
+        testSummary.failed = newTestSummary.failed;
+        testSummary.passed = newTestSummary.passed;
 
-    // Include totalFailingTests if we have more than 10 structured failures
-    // OR if no structured failures exist but there are still failures reported
-    if (testSummary.failures.length > 10 || (testSummary.failures.length === 0 && testSummary.failed > 0)) {
-      logData.totalFailingTests = testSummary.failed;
-    }
+        if (newTestSummary.failed === 0) {
+          state.lastExitCode = 0;
+          logger?.info("rectification", `[OK] ${label} succeeded after parsing retry output`, {
+            storyId: story.id,
+            attempt,
+            initialFailures: state.initialFailures,
+          });
+          return true;
+        }
+      }
 
-    logger?.warn("rectification", `${label} still failing after attempt`, logData);
-  }
+      return false;
+    },
+    onAttemptFailure: (attempt, state) => {
+      const failingTests = testSummary.failures.slice(0, 10).map((failure) => failure.testName);
+      const logData: Record<string, unknown> = {
+        storyId: story.id,
+        attempt,
+        remainingFailures: state.currentFailures,
+        failingTests,
+      };
 
-  if (rectificationState.attempt >= rectificationConfig.maxRetries) {
-    logger?.warn("rectification", `${label} exhausted max retries`, {
-      storyId: story.id,
-      attempts: rectificationState.attempt,
-      remainingFailures: rectificationState.currentFailures,
-    });
-  } else if (rectificationState.currentFailures > rectificationState.initialFailures) {
-    logger?.warn("rectification", `${label} aborted due to further regression`, {
-      storyId: story.id,
-      initialFailures: rectificationState.initialFailures,
-      currentFailures: rectificationState.currentFailures,
-    });
-  }
+      if (testSummary.failures.length > 10 || (testSummary.failures.length === 0 && testSummary.failed > 0)) {
+        logData.totalFailingTests = testSummary.failed;
+      }
 
-  const shouldEscalate =
-    rectificationConfig.escalateOnExhaustion !== false &&
-    config.autoMode?.escalation?.enabled === true &&
-    rectificationState.attempt >= rectificationConfig.maxRetries &&
-    rectificationState.currentFailures > 0;
+      logger?.warn("rectification", `${label} still failing after attempt`, logData);
+    },
+    onLoopEnd: (state) => {
+      if (state.attempt >= rectificationConfig.maxRetries) {
+        logger?.warn("rectification", `${label} exhausted max retries`, {
+          storyId: story.id,
+          attempts: state.attempt,
+          remainingFailures: state.currentFailures,
+        });
+      } else if (state.currentFailures > state.initialFailures) {
+        logger?.warn("rectification", `${label} aborted due to further regression`, {
+          storyId: story.id,
+          initialFailures: state.initialFailures,
+          currentFailures: state.currentFailures,
+        });
+      }
+    },
+    onExhausted: async (state) => {
+      const shouldEscalate =
+        rectificationConfig.escalateOnExhaustion !== false &&
+        config.autoMode?.escalation?.enabled === true &&
+        state.currentFailures > 0;
 
-  if (shouldEscalate) {
-    const complexity = story.routing?.complexity ?? "medium";
-    const currentTier =
-      config.autoMode.complexityRouting?.[complexity] || config.autoMode.escalation.tierOrder[0]?.tier || "balanced";
-    const tierOrder = config.autoMode.escalation.tierOrder;
-    const escalationResult = _rectificationDeps.escalateTier(currentTier, tierOrder);
-    const escalatedTier = escalationResult?.tier ?? null;
-    const escalatedAgent = escalationResult?.agent;
+      if (!shouldEscalate) {
+        return false;
+      }
 
-    if (escalatedTier !== null) {
+      const complexity = story.routing?.complexity ?? "medium";
+      const currentTier =
+        config.autoMode.complexityRouting?.[complexity] || config.autoMode.escalation.tierOrder[0]?.tier || "balanced";
+      const tierOrder = config.autoMode.escalation.tierOrder;
+      const escalationResult = _rectificationDeps.escalateTier(currentTier, tierOrder);
+      const escalatedTier = escalationResult?.tier ?? null;
+      const escalatedAgent = escalationResult?.agent;
+
+      if (escalatedTier === null) {
+        return false;
+      }
+
       const agentName = escalatedAgent ?? story.routing?.agent ?? config.autoMode.defaultAgent;
       const agent = agentGetFn ? agentGetFn(agentName) : _rectificationDeps.getAgent(agentName, config);
       if (!agent) {
         return false;
       }
 
-      const escalatedModelDef = resolveModelForAgent(
-        config.models,
-        agentName,
-        escalatedTier,
-        config.autoMode.defaultAgent,
-      );
+      const escalatedModelDef = resolveModelForAgent(config.models, agentName, escalatedTier, config.autoMode.defaultAgent);
       let escalationPrompt = createEscalatedRectificationPrompt(
         testSummary.failures,
         story,
-        rectificationState.attempt,
+        state.attempt,
         currentTier,
         escalatedTier,
         rectificationConfig,
       );
-      if (promptPrefix) escalationPrompt = `${promptPrefix}\n\n${escalationPrompt}`;
+      if (promptPrefix) {
+        escalationPrompt = `${promptPrefix}\n\n${escalationPrompt}`;
+      }
 
       const escalationRunResult = await agent.run({
         prompt: escalationPrompt,
@@ -390,8 +399,12 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       }
 
       logger?.warn("rectification", "escalated rectification also failed", { storyId: story.id, escalatedTier });
+      return false;
+    },
+  }).catch((error: unknown) => {
+    if (error instanceof Error && error.message === "RECTIFICATION_AGENT_NOT_FOUND") {
+      return false;
     }
-  }
-
-  return false;
+    throw error;
+  });
 }
