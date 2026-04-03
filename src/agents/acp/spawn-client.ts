@@ -157,6 +157,29 @@ class SpawnAcpSession implements AcpSession {
     }
   }
 
+  /**
+   * Spawn an acpx command with PID tracking (register before await, unregister in finally).
+   * Drains stdout/stderr concurrently to avoid pipe-buffer deadlock.
+   */
+  private async trackedSpawn(
+    cmd: string[],
+    opts?: Parameters<typeof _spawnClientDeps.spawn>[1],
+  ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+    const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe", ...opts });
+    const pid = proc.pid;
+    await this.pidRegistry?.register(pid);
+    try {
+      const [exitCode, stdout, stderr] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      return { exitCode, stdout, stderr };
+    } finally {
+      await this.pidRegistry?.unregister(pid);
+    }
+  }
+
   async close(options?: { forceTerminate?: boolean }): Promise<void> {
     // Kill in-flight prompt process first (if any)
     if (this.activeProc) {
@@ -172,11 +195,9 @@ class SpawnAcpSession implements AcpSession {
     const cmd = ["acpx", "--cwd", this.cwd, this.agentName, "sessions", "close", this.sessionName];
     getSafeLogger()?.debug("acp-adapter", `Closing session: ${this.sessionName}`);
 
-    const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
-    const exitCode = await proc.exited;
+    const { exitCode, stderr } = await this.trackedSpawn(cmd);
 
     if (exitCode !== 0) {
-      const stderr = await new Response(proc.stderr).text();
       getSafeLogger()?.warn("acp-adapter", "Failed to close session", {
         sessionName: this.sessionName,
         stderr: stderr.slice(0, 200),
@@ -185,8 +206,7 @@ class SpawnAcpSession implements AcpSession {
 
     if (options?.forceTerminate) {
       try {
-        const stopProc = _spawnClientDeps.spawn(["acpx", this.agentName, "stop"], { stdout: "pipe", stderr: "pipe" });
-        await stopProc.exited;
+        await this.trackedSpawn(["acpx", this.agentName, "stop"]);
       } catch (err) {
         getSafeLogger()?.debug("acp-adapter", "acpx stop failed (swallowed)", { cause: String(err) });
       }
@@ -207,8 +227,7 @@ class SpawnAcpSession implements AcpSession {
     const cmd = ["acpx", this.agentName, "cancel"];
     getSafeLogger()?.debug("acp-adapter", `Cancelling active prompt: ${this.sessionName}`);
 
-    const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
-    await proc.exited;
+    await this.trackedSpawn(cmd);
   }
 }
 
@@ -254,6 +273,26 @@ export class SpawnAcpClient implements AcpClient {
     // No-op — spawn-based client doesn't need upfront initialization
   }
 
+  /**
+   * Spawn an acpx command with PID tracking (register before await, unregister in finally).
+   * Drains stdout/stderr concurrently to avoid pipe-buffer deadlock.
+   */
+  private async trackedSpawn(cmd: string[]): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+    const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
+    const pid = proc.pid;
+    await this.pidRegistry?.register(pid);
+    try {
+      const [exitCode, stdout, stderr] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      return { exitCode, stdout, stderr };
+    } finally {
+      await this.pidRegistry?.unregister(pid);
+    }
+  }
+
   async createSession(opts: {
     agentName: string;
     permissionMode: string;
@@ -265,11 +304,9 @@ export class SpawnAcpClient implements AcpClient {
     const cmd = ["acpx", "--cwd", this.cwd, opts.agentName, "sessions", "ensure", "--name", sessionName];
     getSafeLogger()?.debug("acp-adapter", `Ensuring session: ${sessionName}`);
 
-    const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
-    const exitCode = await proc.exited;
+    const { exitCode, stderr } = await this.trackedSpawn(cmd);
 
     if (exitCode !== 0) {
-      const stderr = await new Response(proc.stderr).text();
       throw new Error(`[acp-adapter] Failed to create session: ${stderr || `exit code ${exitCode}`}`);
     }
 
@@ -289,8 +326,7 @@ export class SpawnAcpClient implements AcpClient {
     // Try to ensure session exists — if it does, acpx returns success
     const cmd = ["acpx", "--cwd", this.cwd, agentName, "sessions", "ensure", "--name", sessionName];
 
-    const proc = _spawnClientDeps.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
-    const exitCode = await proc.exited;
+    const { exitCode } = await this.trackedSpawn(cmd);
 
     if (exitCode !== 0) {
       return null; // Session doesn't exist or can't be resumed

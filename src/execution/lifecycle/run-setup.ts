@@ -137,7 +137,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
     // Close open ACP sessions on SIGINT/SIGTERM so acpx processes don't stay alive
     onShutdown: async () => {
       const { sweepFeatureSessions } = await import("../../agents/acp/adapter");
-      await sweepFeatureSessions(workdir, feature).catch(() => {});
+      await sweepFeatureSessions(workdir, feature, pidRegistry).catch(() => {});
     },
   });
 
@@ -170,7 +170,7 @@ export async function setupRun(options: RunSetupOptions): Promise<RunSetupResult
 
   // Sweep stale ACP sessions from previous crashed runs (safety net)
   const { sweepStaleFeatureSessions } = await import("../../agents/acp/adapter");
-  await sweepStaleFeatureSessions(workdir, feature).catch(() => {});
+  await sweepStaleFeatureSessions(workdir, feature, undefined, pidRegistry).catch(() => {});
 
   // Acquire lock to prevent concurrent execution
   const lockAcquired = await acquireLock(workdir);
