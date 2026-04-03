@@ -22,7 +22,42 @@ import type { UserStory } from "./types";
  * @throws {NaxError} code=DECOMPOSE_VALIDATION_FAILED when required fields are missing
  */
 export function mapDecomposedStoriesToUserStories(stories: DecomposedStory[], parentStoryId: string): UserStory[] {
-  throw new NaxError("[decompose-mapper] not implemented", "NOT_IMPLEMENTED", {
-    stage: "decompose-mapper",
+  return stories.map((story, entryIndex) => {
+    if (!story.id) {
+      throw new NaxError(`Entry ${entryIndex} is missing required id field`, "DECOMPOSE_VALIDATION_FAILED", {
+        stage: "decompose-mapper",
+        entryIndex,
+        parentStoryId,
+      });
+    }
+
+    if (!story.contextFiles || story.contextFiles.length === 0) {
+      throw new NaxError(`Entry ${entryIndex} (${story.id}) has empty contextFiles`, "DECOMPOSE_VALIDATION_FAILED", {
+        stage: "decompose-mapper",
+        entryIndex,
+        storyId: story.id,
+        parentStoryId,
+      });
+    }
+
+    return {
+      id: story.id,
+      title: story.title,
+      description: story.description,
+      acceptanceCriteria: story.acceptanceCriteria,
+      tags: story.tags,
+      dependencies: story.dependencies,
+      contextFiles: story.contextFiles,
+      status: "pending" as const,
+      passes: false,
+      escalations: [],
+      attempts: 0,
+      parentStoryId,
+      routing: {
+        complexity: story.complexity,
+        testStrategy: story.testStrategy ?? ("test-after" as const),
+        reasoning: story.reasoning,
+      },
+    };
   });
 }

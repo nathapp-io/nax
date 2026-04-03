@@ -26,6 +26,7 @@ import { PidRegistry } from "../execution/pid-registry";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import { initInteractionChain } from "../interaction/init";
 import { getLogger } from "../logger";
+import { mapDecomposedStoriesToUserStories } from "../prd/decompose-mapper";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD, StoryStatus, UserStory } from "../prd/types";
 import type { PrecheckResultWithCode } from "../precheck";
@@ -740,12 +741,6 @@ export async function planDecomposeCommand(
   const decompStories = result.stories;
 
   for (const sub of decompStories) {
-    if (!sub.contextFiles || sub.contextFiles.length === 0) {
-      throw new NaxError(`Sub-story "${sub.id}" has empty contextFiles`, "DECOMPOSE_VALIDATION_FAILED", {
-        stage: "decompose",
-        storyId: sub.id,
-      });
-    }
     if (!sub.complexity || !sub.testStrategy) {
       throw new NaxError(`Sub-story "${sub.id}" is missing required routing fields`, "DECOMPOSE_VALIDATION_FAILED", {
         stage: "decompose",
@@ -761,26 +756,7 @@ export async function planDecomposeCommand(
     }
   }
 
-  const subStoriesWithParent = decompStories.map((s) => ({
-    id: s.id,
-    title: s.title,
-    description: s.description,
-    acceptanceCriteria: s.acceptanceCriteria,
-    tags: s.tags,
-    dependencies: s.dependencies,
-    status: "pending" as const,
-    passes: false,
-    escalations: [],
-    attempts: 0,
-    contextFiles: s.contextFiles,
-    routing: {
-      complexity: s.complexity,
-      testStrategy: s.testStrategy ?? ("test-after" as const),
-      reasoning: s.reasoning,
-      modelTier: "balanced" as const,
-    },
-    parentStoryId: options.storyId,
-  }));
+  const subStoriesWithParent = mapDecomposedStoriesToUserStories(decompStories, options.storyId);
 
   const updatedStories = prd.userStories.map((s) =>
     s.id === options.storyId ? { ...s, status: "decomposed" as StoryStatus } : s,
