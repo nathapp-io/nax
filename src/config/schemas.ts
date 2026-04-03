@@ -68,7 +68,7 @@ const AutoModeConfigSchema = z.object({
 
 const RectificationConfigSchema = z.object({
   enabled: z.boolean().default(true),
-  maxRetries: z.number().int().min(0).max(10).default(3),
+  maxRetries: z.number().int().min(0).max(10).default(2),
   fullSuiteTimeoutSeconds: z.number().int().min(10).max(600).default(120),
   maxFailureSummaryChars: z.number().int().min(500).max(10000).default(2000),
   abortOnIncreasingFailures: z.boolean().default(true),
@@ -568,7 +568,7 @@ export const NaxConfigSchema = z
       maxStoriesPerFeature: 500,
       rectification: {
         enabled: true,
-        maxRetries: 3,
+        maxRetries: 2,
         fullSuiteTimeoutSeconds: 300,
         maxFailureSummaryChars: 2000,
         abortOnIncreasingFailures: true,
