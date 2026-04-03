@@ -42,5 +42,9 @@
   "US-003:implementer": {
     "sessionName": "nax-a3c4fa9d-config-profiles-us-003-implementer",
     "agentName": "claude"
+  },
+  "US-003:verifier": {
+    "sessionName": "nax-a3c4fa9d-config-profiles-us-003-verifier",
+    "agentName": "claude"
   }
 }
