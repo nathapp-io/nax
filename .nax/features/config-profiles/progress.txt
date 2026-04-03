@@ -1,0 +1,1 @@
+[2026-04-03T03:48:19.551Z] US-001-A — PASSED — Add profile field to NaxConfigSchema and NaxConfig interface — Cost: $0.3364
