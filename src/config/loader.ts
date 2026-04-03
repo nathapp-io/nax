@@ -12,6 +12,7 @@ import { mergePackageConfig } from "./merge";
 import { deepMergeConfig } from "./merger";
 import { MAX_DIRECTORY_DEPTH } from "./path-security";
 import { PROJECT_NAX_DIR, globalConfigDir } from "./paths";
+import { loadProfile, loadProfileEnv, resolveProfileName } from "./profile";
 import { DEFAULT_CONFIG, type NaxConfig, NaxConfigSchema } from "./schema";
 
 /** Global config path */
@@ -102,15 +103,6 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
   // Start with defaults as a plain object
   let rawConfig: Record<string, unknown> = structuredClone(DEFAULT_CONFIG as unknown as Record<string, unknown>);
 
-  // Layer 1: Global config (~/.nax/config.json)
-  const globalConfRaw = await loadJsonFile<Record<string, unknown>>(globalConfigPath(), "config");
-  if (globalConfRaw) {
-    // Backward compatibility: apply compat shims before merge so defaults don't shadow them
-    const globalConf = applyBatchModeCompat(applyRemovedStrategyCompat(globalConfRaw));
-    rawConfig = deepMergeConfig(rawConfig, globalConf);
-  }
-
-  // Layer 2: Project config (nax/config.json)
   // Resolve projDir: if startDir is already the .nax/ dir (basename === ".nax"), use it
   // directly; otherwise treat startDir as the project root and walk up to find .nax/.
   const projDir = startDir
@@ -118,11 +110,44 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
       ? startDir
       : findProjectDir(startDir)
     : findProjectDir();
+
+  // Determine projectRoot for profile resolution
+  const projectRoot = startDir
+    ? basename(startDir) === PROJECT_NAX_DIR
+      ? dirname(startDir)
+      : startDir
+    : process.cwd();
+
+  // Resolve profile name: CLI > NAX_PROFILE env > project config.json > "default"
+  const profileName = await resolveProfileName(
+    cliOverrides ?? {},
+    process.env as Record<string, string | undefined>,
+    projectRoot,
+  );
+
+  // Layer: Profile data (inserted between defaults and global config)
+  // "default" profile applies no overlay (AC 10)
+  if (profileName !== "default") {
+    const profileData = await loadProfile(profileName, projectRoot);
+    rawConfig = deepMergeConfig(rawConfig, profileData);
+    // Load companion .env for $VAR resolution — do NOT write to process.env (AC 9)
+    await loadProfileEnv(profileName, projectRoot);
+  }
+
+  // Layer 1: Global config (~/.nax/config.json) — strip "profile" field before merging (AC 7)
+  const globalConfRaw = await loadJsonFile<Record<string, unknown>>(globalConfigPath(), "config");
+  if (globalConfRaw) {
+    const { profile: _gProfile, ...globalConfStripped } = globalConfRaw;
+    const globalConf = applyBatchModeCompat(applyRemovedStrategyCompat(globalConfStripped));
+    rawConfig = deepMergeConfig(rawConfig, globalConf);
+  }
+
+  // Layer 2: Project config (.nax/config.json) — strip "profile" field before merging (AC 8)
   if (projDir) {
     const projConf = await loadJsonFile<Record<string, unknown>>(join(projDir, "config.json"), "config");
     if (projConf) {
-      // Backward compatibility: apply compat shims before merge so defaults don't shadow them
-      const resolvedProjConf = applyBatchModeCompat(applyRemovedStrategyCompat(projConf));
+      const { profile: _pProfile, ...projConfStripped } = projConf;
+      const resolvedProjConf = applyBatchModeCompat(applyRemovedStrategyCompat(projConfStripped));
       rawConfig = deepMergeConfig(rawConfig, resolvedProjConf);
     }
   }
@@ -132,8 +157,11 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
     rawConfig = deepMergeConfig(rawConfig, cliOverrides);
   }
 
+  // Force-set profile to the resolved name after all merges (AC 6)
+  rawConfig.profile = profileName;
+
   // Track if any configs were merged (for optimization - skip safeParse when just using defaults)
-  const hasMergedConfigs = globalConfRaw || projDir !== null || cliOverrides !== undefined;
+  const hasMergedConfigs = globalConfRaw || projDir !== null || cliOverrides !== undefined || profileName !== "default";
 
   // Parse and validate with Zod
   // Skip validation if no configs were merged (rawConfig is just DEFAULT_CONFIG)
