@@ -32,6 +32,13 @@ export interface RunCleanupOptions {
   prdPath: string;
   branch: string;
   version: string;
+  /**
+   * True when run:completed was already emitted (success path).
+   * When true, skip the direct onRunEnd call — the reporters.ts subscriber
+   * handles it via the event. Only fire directly for abnormal exits where
+   * run:completed was never emitted.
+   */
+  runCompleted?: boolean;
 }
 
 /**
@@ -69,27 +76,33 @@ export async function cleanupRun(options: RunCleanupOptions): Promise<void> {
   const logger = getSafeLogger();
   const { runId, startTime, totalCost, storiesCompleted, prd, pluginRegistry, workdir, interactionChain } = options;
 
-  // Fire onRunEnd for reporters (even on failure/abort)
   const durationMs = Date.now() - startTime;
-  const finalCounts = countStories(prd);
-  const reporters = pluginRegistry.getReporters();
 
-  for (const reporter of reporters) {
-    if (reporter.onRunEnd) {
-      try {
-        await reporter.onRunEnd({
-          runId,
-          totalDurationMs: durationMs,
-          totalCost,
-          storySummary: {
-            completed: storiesCompleted,
-            failed: finalCounts.failed,
-            skipped: finalCounts.skipped,
-            paused: finalCounts.paused,
-          },
-        });
-      } catch (error) {
-        logger?.warn("plugins", `Reporter '${reporter.name}' onRunEnd failed`, { error });
+  // Fire onRunEnd for reporters only on abnormal exits (failure/abort/SIGTERM).
+  // On the success path, run:completed is emitted by run-completion.ts and the
+  // reporters.ts subscriber handles onRunEnd via the event — so we skip the
+  // direct call to avoid duplicate notifications.
+  if (!options.runCompleted) {
+    const finalCounts = countStories(prd);
+    const reporters = pluginRegistry.getReporters();
+
+    for (const reporter of reporters) {
+      if (reporter.onRunEnd) {
+        try {
+          await reporter.onRunEnd({
+            runId,
+            totalDurationMs: durationMs,
+            totalCost,
+            storySummary: {
+              completed: storiesCompleted,
+              failed: finalCounts.failed,
+              skipped: finalCounts.skipped,
+              paused: finalCounts.paused,
+            },
+          });
+        } catch (error) {
+          logger?.warn("plugins", `Reporter '${reporter.name}' onRunEnd failed`, { error });
+        }
       }
     }
   }
