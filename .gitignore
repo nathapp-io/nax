@@ -63,3 +63,10 @@ prompt.txt
 .nax-wt/
 tmp/.ci-test-output.txt
 logs/
+
+# Investigation/debug files
+.codex/
+bench.md
+enhancement.txt
+koda-web-i18n/
+semantic-review-investigation.md
