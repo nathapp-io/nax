@@ -128,7 +128,7 @@ function buildPrompt(story: SemanticStory, semanticConfig: SemanticReviewConfig,
       ? `\n## Additional Review Rules\n${semanticConfig.rules.map((r, i) => `${i + 1}. ${r}`).join("\n")}\n`
       : "";
 
-  return `You are a semantic code reviewer. Your job is to verify that the implementation satisfies the story's acceptance criteria (ACs). You are NOT a linter or style checker — lint, typecheck, and convention checks are handled separately.
+  return `You are a semantic code reviewer with access to the repository files. Your job is to verify that the implementation satisfies the story's acceptance criteria (ACs). You are NOT a linter or style checker — lint, typecheck, and convention checks are handled separately.
 
 ## Story: ${story.title}
 
@@ -145,20 +145,28 @@ ${diff}\`\`\`
 
 ## Instructions
 
-For each acceptance criterion, verify the diff implements it correctly. Flag issues only when:
-1. An AC is not implemented or partially implemented
+For each acceptance criterion, verify the diff implements it correctly.
+
+**Before reporting any finding as "error", you MUST verify it using your tools:**
+- If you suspect a key, function, import, or variable is missing, READ the relevant file to confirm before flagging.
+- If you suspect a code path is not wired in, GREP for its usage to confirm.
+- Do NOT flag something as missing based solely on its absence from the diff — it may already exist in the codebase. Check the actual file first.
+- If you cannot verify a claim even after checking, use "unverifiable" severity instead of "error".
+
+Flag issues only when you have confirmed:
+1. An AC is not implemented or partially implemented (verified by reading the actual files)
 2. The implementation contradicts what the AC specifies
 3. New code has dead paths that will never execute (stubs, noops, unreachable branches)
-4. New code is not wired into callers/exports (written but never used)
+4. New code is not wired into callers/exports (verified by grepping for usage)
 
 Do NOT flag: style issues, naming conventions, import ordering, file length, or anything lint handles.
 
-Respond in JSON format:
+Respond with JSON only — no explanation text before or after:
 {
   "passed": boolean,
   "findings": [
     {
-      "severity": "error" | "warn" | "info",
+      "severity": "error" | "warn" | "info" | "unverifiable",
       "file": "path/to/file",
       "line": 42,
       "issue": "description of the issue",
@@ -219,8 +227,14 @@ function formatFindings(findings: LLMFinding[]): string {
 /** Normalize LLM severity values to ReviewFinding severity union. */
 function normalizeSeverity(sev: string): ReviewFinding["severity"] {
   if (sev === "warn") return "warning";
+  if (sev === "unverifiable") return "info";
   if (sev === "critical" || sev === "error" || sev === "warning" || sev === "info" || sev === "low") return sev;
   return "info";
+}
+
+/** Check whether a finding severity is blocking (counts toward pass/fail). */
+function isBlockingSeverity(sev: string): boolean {
+  return sev !== "unverifiable";
 }
 
 /** Convert LLMFinding[] to ReviewFinding[] with semantic-review metadata. */
@@ -367,10 +381,13 @@ export async function runSemanticReview(
       }
     }
 
+    // Filter non-blocking findings from debate results
+    const debateBlocking = deduped.filter((f) => isBlockingSeverity(f.severity));
+
     const durationMs = Date.now() - startTime;
     if (!majorityPassed) {
-      if (deduped.length > 0) {
-        logger?.warn("review", `Semantic review failed (debate): ${deduped.length} findings`, {
+      if (debateBlocking.length > 0) {
+        logger?.warn("review", `Semantic review failed (debate): ${debateBlocking.length} findings`, {
           storyId: story.id,
           durationMs,
         });
@@ -379,17 +396,22 @@ export async function runSemanticReview(
           success: false,
           command: "",
           exitCode: 1,
-          output: `Semantic review failed:\n\n${formatFindings(deduped)}`,
+          output: `Semantic review failed:\n\n${formatFindings(debateBlocking)}`,
           durationMs,
-          findings: toReviewFindings(deduped),
+          findings: toReviewFindings(debateBlocking),
         };
       }
+      // All findings were non-blocking — override to pass
+      logger?.info("review", "Semantic review passed (debate, all findings non-blocking)", {
+        storyId: story.id,
+        durationMs,
+      });
       return {
         check: "semantic",
-        success: false,
+        success: true,
         command: "",
-        exitCode: 1,
-        output: "Semantic review failed (debate, no findings)",
+        exitCode: 0,
+        output: "Semantic review passed (debate, all findings were unverifiable or informational)",
         durationMs,
       };
     }
@@ -460,16 +482,31 @@ export async function runSemanticReview(
     };
   }
 
+  // Split findings into blocking (error/warn) and non-blocking (unverifiable/info)
+  const blockingFindings = parsed.findings.filter((f) => isBlockingSeverity(f.severity));
+  const nonBlockingFindings = parsed.findings.filter((f) => !isBlockingSeverity(f.severity));
+
+  if (nonBlockingFindings.length > 0) {
+    logger?.debug(
+      "review",
+      `Semantic review: ${nonBlockingFindings.length} non-blocking findings (unverifiable/info)`,
+      {
+        storyId: story.id,
+        findings: nonBlockingFindings.map((f) => ({ severity: f.severity, file: f.file, issue: f.issue })),
+      },
+    );
+  }
+
   // Format findings and populate structured ReviewFinding[]
-  if (!parsed.passed && parsed.findings.length > 0) {
+  if (!parsed.passed && blockingFindings.length > 0) {
     const durationMs = Date.now() - startTime;
-    logger?.warn("review", `Semantic review failed: ${parsed.findings.length} findings`, {
+    logger?.warn("review", `Semantic review failed: ${blockingFindings.length} findings`, {
       storyId: story.id,
       durationMs,
     });
     logger?.debug("review", "Semantic review findings", {
       storyId: story.id,
-      findings: parsed.findings.map((f) => ({
+      findings: blockingFindings.map((f) => ({
         severity: f.severity,
         file: f.file,
         line: f.line,
@@ -477,7 +514,7 @@ export async function runSemanticReview(
         suggestion: f.suggestion,
       })),
     });
-    const output = `Semantic review failed:\n\n${formatFindings(parsed.findings)}`;
+    const output = `Semantic review failed:\n\n${formatFindings(blockingFindings)}`;
     return {
       check: "semantic",
       success: false,
@@ -485,7 +522,21 @@ export async function runSemanticReview(
       exitCode: 1,
       output,
       durationMs,
-      findings: toReviewFindings(parsed.findings),
+      findings: toReviewFindings(blockingFindings),
+    };
+  }
+
+  // If LLM said failed but all findings are non-blocking, override to pass
+  if (!parsed.passed && blockingFindings.length === 0) {
+    const durationMs = Date.now() - startTime;
+    logger?.info("review", "Semantic review passed (all findings non-blocking)", { storyId: story.id, durationMs });
+    return {
+      check: "semantic",
+      success: true,
+      command: "",
+      exitCode: 0,
+      output: "Semantic review passed (all findings were unverifiable or informational)",
+      durationMs,
     };
   }
 

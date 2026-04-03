@@ -62,3 +62,4 @@ TEST_SUMMARY_*.md
 prompt.txt
 .nax-wt/
 tmp/.ci-test-output.txt
+logs/

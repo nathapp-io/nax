@@ -25,7 +25,6 @@ import { resolveModelForAgent } from "../../config";
 import { loadConfigForWorkdir } from "../../config/loader";
 import { resolvePermissions } from "../../config/permissions";
 import { getLogger } from "../../logger";
-import type { UserStory } from "../../prd";
 import { runQualityCommand } from "../../quality";
 import type { ReviewCheckResult } from "../../review/types";
 import {
@@ -171,28 +170,9 @@ function collectFailedChecks(ctx: PipelineContext): ReviewCheckResult[] {
   return (ctx.reviewResult?.checks ?? []).filter((c) => !c.success);
 }
 
-export function buildReviewRectificationPrompt(failedChecks: ReviewCheckResult[], story: UserStory): string {
-  const errors = failedChecks
-    .map((c) => `## ${c.check} errors (exit code ${c.exitCode})\n\`\`\`\n${c.output}\n\`\`\``)
-    .join("\n\n");
-
-  // ENH-008: Scope constraint for monorepo stories — prevent out-of-package changes
-  const scopeConstraint = story.workdir
-    ? `\n\nIMPORTANT: Only modify files within \`${story.workdir}/\`. Do NOT touch files outside this directory.`
-    : "";
-
-  return `You are fixing lint/typecheck errors from a code review.
-
-Story: ${story.title} (${story.id})
-
-The following quality checks failed after implementation:
-
-${errors}
-
-Fix ALL errors listed above. Do NOT change test files or test behavior.
-Do NOT add new features — only fix the quality check errors.
-Commit your fixes when done.${scopeConstraint}`;
-}
+// Re-export from extracted module for backward compatibility
+import { buildReviewRectificationPrompt } from "./autofix-prompts";
+export { buildReviewRectificationPrompt };
 
 function buildAutofixEscalationPreamble(
   attempt: number,
