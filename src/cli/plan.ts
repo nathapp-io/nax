@@ -2,7 +2,8 @@
  * Plan Command — Generate prd.json from a spec file via LLM one-shot call
  *
  * Reads a spec file (--from), builds a planning prompt with codebase context,
- * calls adapter.complete(), validates the JSON response, and writes prd.json.
+ * runs planning via agent adapter (plan()/complete() depending on mode),
+ * validates the JSON response, and writes prd.json.
  *
  * Interactive mode: uses ACP session + stdin bridge for Q&A.
  */
@@ -729,75 +730,21 @@ export async function planDecomposeCommand(
   const timeoutSeconds = config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
   const maxAcCount = config?.precheck?.storySizeGate?.maxAcCount ?? Number.POSITIVE_INFINITY;
 
-  let subStoriesWithParent: UserStory[];
+  if (typeof (adapter as { decompose?: unknown }).decompose !== "function") {
+    throw new NaxError(
+      `Agent "${agentName}" does not support decompose() required by plan --decompose`,
+      "DECOMPOSE_NOT_SUPPORTED",
+      { stage: "decompose", agent: agentName, storyId: options.storyId },
+    );
+  }
 
-  if (typeof (adapter as { decompose?: unknown }).decompose === "function") {
-    // decompose() path — adapter supports structured decompose
-    const debateStages = config?.debate?.stages as unknown as Record<string, DebateStageConfig | undefined>;
-    const debateDecompEnabled = config?.debate?.enabled && debateStages?.decompose?.enabled;
+  const debateStages = config?.debate?.stages as unknown as Record<string, DebateStageConfig | undefined>;
+  const debateDecompEnabled = config?.debate?.enabled && debateStages?.decompose?.enabled;
 
-    let decompStories: DecomposedStory[] | undefined;
+  let decompStories: DecomposedStory[] | undefined;
 
-    if (debateDecompEnabled) {
-      const decomposeStageConfig = debateStages.decompose as DebateStageConfig;
-      const prompt = buildDecomposePrompt({
-        specContent: "",
-        codebaseContext,
-        workdir,
-        targetStory,
-        siblings,
-        featureName: options.feature,
-        storyId: options.storyId,
-        config,
-      });
-      const debateSession = _planDeps.createDebateSession({
-        storyId: options.storyId,
-        stage: "decompose",
-        stageConfig: decomposeStageConfig,
-        config,
-        workdir,
-        featureName: options.feature,
-        timeoutSeconds,
-      });
-      const debateResult = await debateSession.run(prompt);
-      if (debateResult.outcome !== "failed" && debateResult.output) {
-        decompStories = parseDecomposeOutput(debateResult.output);
-      }
-    }
-
-    if (!decompStories) {
-      const result = await adapter.decompose({
-        specContent: "",
-        codebaseContext,
-        workdir,
-        targetStory,
-        siblings,
-        featureName: options.feature,
-        storyId: options.storyId,
-        config,
-      });
-      decompStories = result.stories;
-    }
-
-    for (const sub of decompStories) {
-      if (!sub.complexity || !sub.testStrategy) {
-        throw new NaxError(`Sub-story "${sub.id}" is missing required routing fields`, "DECOMPOSE_VALIDATION_FAILED", {
-          stage: "decompose",
-          storyId: sub.id,
-        });
-      }
-      if (sub.acceptanceCriteria && sub.acceptanceCriteria.length > maxAcCount) {
-        throw new NaxError(
-          `Sub-story "${sub.id}" has ${sub.acceptanceCriteria.length} ACs, exceeds maxAcCount of ${maxAcCount}`,
-          "DECOMPOSE_VALIDATION_FAILED",
-          { stage: "decompose", storyId: sub.id },
-        );
-      }
-    }
-
-    subStoriesWithParent = mapDecomposedStoriesToUserStories(decompStories, options.storyId);
-  } else {
-    // complete() path — fallback for adapters that do not implement decompose()
+  if (debateDecompEnabled) {
+    const decomposeStageConfig = debateStages.decompose as DebateStageConfig;
     const prompt = buildDecomposePrompt({
       specContent: "",
       codebaseContext,
@@ -808,71 +755,52 @@ export async function planDecomposeCommand(
       storyId: options.storyId,
       config,
     });
-
-    let rawJson: string;
-    const debateStages = config?.debate?.stages as unknown as Record<string, DebateStageConfig | undefined>;
-    const debateDecompEnabled = config?.debate?.enabled && debateStages?.decompose?.enabled;
-
-    if (debateDecompEnabled) {
-      const decomposeStageConfig = debateStages.decompose as DebateStageConfig;
-      const debateSession = _planDeps.createDebateSession({
-        storyId: options.storyId,
-        stage: "decompose",
-        stageConfig: decomposeStageConfig,
-        config,
-        workdir,
-        featureName: options.feature,
-        timeoutSeconds,
-      });
-      const debateResult = await debateSession.run(prompt);
-      if (debateResult.outcome !== "failed" && debateResult.output) {
-        rawJson = debateResult.output;
-      } else {
-        const raw = await adapter.complete(prompt, {
-          jsonMode: true,
-          config,
-          featureName: options.feature,
-          storyId: options.storyId,
-        });
-        rawJson = typeof raw === "string" ? raw : raw.output;
-      }
-    } else {
-      const raw = await adapter.complete(prompt, {
-        jsonMode: true,
-        config,
-        featureName: options.feature,
-        storyId: options.storyId,
-      });
-      rawJson = typeof raw === "string" ? raw : raw.output;
+    const debateSession = _planDeps.createDebateSession({
+      storyId: options.storyId,
+      stage: "decompose",
+      stageConfig: decomposeStageConfig,
+      config,
+      workdir,
+      featureName: options.feature,
+      timeoutSeconds,
+    });
+    const debateResult = await debateSession.run(prompt);
+    if (debateResult.outcome !== "failed" && debateResult.output) {
+      decompStories = parseDecomposeOutput(debateResult.output);
     }
-
-    const parsed = JSON.parse(rawJson) as { subStories?: UserStory[] } | UserStory[];
-    const subStories: UserStory[] = Array.isArray(parsed) ? parsed : (parsed.subStories ?? []);
-
-    for (const sub of subStories) {
-      if (!sub.contextFiles || sub.contextFiles.length === 0) {
-        throw new NaxError(`Sub-story "${sub.id}" has empty contextFiles`, "DECOMPOSE_VALIDATION_FAILED", {
-          stage: "decompose",
-          storyId: sub.id,
-        });
-      }
-      if (!sub.routing?.complexity || !sub.routing?.testStrategy || !sub.routing?.modelTier) {
-        throw new NaxError(`Sub-story "${sub.id}" is missing required routing fields`, "DECOMPOSE_VALIDATION_FAILED", {
-          stage: "decompose",
-          storyId: sub.id,
-        });
-      }
-      if (sub.acceptanceCriteria && sub.acceptanceCriteria.length > maxAcCount) {
-        throw new NaxError(
-          `Sub-story "${sub.id}" has ${sub.acceptanceCriteria.length} ACs, exceeds maxAcCount of ${maxAcCount}`,
-          "DECOMPOSE_VALIDATION_FAILED",
-          { stage: "decompose", storyId: sub.id },
-        );
-      }
-    }
-
-    subStoriesWithParent = subStories.map((s) => ({ ...s, parentStoryId: options.storyId }));
   }
+
+  if (!decompStories) {
+    const result = await adapter.decompose({
+      specContent: "",
+      codebaseContext,
+      workdir,
+      targetStory,
+      siblings,
+      featureName: options.feature,
+      storyId: options.storyId,
+      config,
+    });
+    decompStories = result.stories;
+  }
+
+  for (const sub of decompStories) {
+    if (!sub.complexity || !sub.testStrategy) {
+      throw new NaxError(`Sub-story "${sub.id}" is missing required routing fields`, "DECOMPOSE_VALIDATION_FAILED", {
+        stage: "decompose",
+        storyId: sub.id,
+      });
+    }
+    if (sub.acceptanceCriteria && sub.acceptanceCriteria.length > maxAcCount) {
+      throw new NaxError(
+        `Sub-story "${sub.id}" has ${sub.acceptanceCriteria.length} ACs, exceeds maxAcCount of ${maxAcCount}`,
+        "DECOMPOSE_VALIDATION_FAILED",
+        { stage: "decompose", storyId: sub.id },
+      );
+    }
+  }
+
+  const subStoriesWithParent: UserStory[] = mapDecomposedStoriesToUserStories(decompStories, options.storyId);
 
   const updatedStories = prd.userStories.map((s) =>
     s.id === options.storyId ? { ...s, status: "decomposed" as StoryStatus } : s,
