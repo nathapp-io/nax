@@ -81,7 +81,19 @@ export const _generatorPRDDeps = {
   writeFile: async (path: string, content: string): Promise<void> => {
     await Bun.write(path, content);
   },
+  backupFile: async (path: string, content: string): Promise<void> => {
+    await Bun.write(path, content);
+  },
 };
+
+function hasLikelyTestContent(content: string): boolean {
+  return (
+    /\b(?:describe|test|it|expect)\s*\(/.test(content) ||
+    /func\s+Test\w+\s*\(/.test(content) ||
+    /def\s+test_\w+/.test(content) ||
+    /#\[test\]/.test(content)
+  );
+}
 
 /**
  * Return the acceptance test filename for a given language.
@@ -252,40 +264,82 @@ Rules:
       options.featureName,
       resolveAcceptanceTestFile(options.language, options.config?.acceptance?.testPath),
     );
+    const backupPath = `${targetPath}.llm-recovery.bak`;
     let recoveryFailed = false;
 
-    logger.debug("acceptance", "BUG-076 recovery: checking for agent-written file", { targetPath });
+    logger.debug("acceptance", "BUG-076 recovery: checking for agent-written file", {
+      targetPath,
+      backupPath,
+      featureName: options.featureName,
+      workdir: options.workdir,
+    });
 
     try {
       const existing = await Bun.file(targetPath).text();
       const recovered = extractTestCode(existing);
+      const likelyTestContent = hasLikelyTestContent(existing);
 
       logger.debug("acceptance", "BUG-076 recovery: file check result", {
         fileSize: existing.length,
         extractedCode: recovered !== null,
+        likelyTestContent,
         filePreview: existing.slice(0, 300),
       });
 
       if (recovered) {
         logger.info("acceptance", "Acceptance test written directly by agent — using existing file", { targetPath });
         testCode = recovered;
+      } else if (existing.trim().length > 0 && likelyTestContent) {
+        let backupCreated = false;
+        try {
+          await _generatorPRDDeps.backupFile(backupPath, existing);
+          backupCreated = true;
+        } catch (backupError) {
+          logger.warn("acceptance", "BUG-076: failed to create recovery backup; preserving file anyway", {
+            targetPath,
+            backupPath,
+            backupError: backupError instanceof Error ? backupError.message : String(backupError),
+          });
+        }
+        logger.warn("acceptance", "BUG-076: preserving agent-written file with backup (heuristic recovery)", {
+          targetPath,
+          backupPath,
+          backupCreated,
+          reason: "extractTestCode returned null",
+        });
+        testCode = existing;
       } else {
-        // File exists but contains no extractable code
+        // File exists but does not contain recognizable test code.
+        if (existing.trim().length > 0) {
+          try {
+            await _generatorPRDDeps.backupFile(backupPath, existing);
+          } catch (backupError) {
+            logger.warn("acceptance", "BUG-076: failed to create fallback backup for unrecognized file", {
+              targetPath,
+              backupPath,
+              backupError: backupError instanceof Error ? backupError.message : String(backupError),
+            });
+          }
+        }
         recoveryFailed = true;
         logger.error(
           "acceptance",
-          "BUG-076: ACP adapter wrote file but no code extractable — falling back to skeleton",
+          "BUG-076: agent-written file not recognized as test code — falling back to skeleton",
           {
             targetPath,
+            backupPath,
+            fileSize: existing.length,
             filePreview: existing.slice(0, 300),
           },
         );
       }
-    } catch {
-      // File doesn't exist — recovery not possible
+    } catch (error) {
+      // File read failed — recovery not possible
       recoveryFailed = true;
-      logger.debug("acceptance", "BUG-076 recovery: no file written by agent, falling back to skeleton", {
+      logger.debug("acceptance", "BUG-076 recovery: failed to read agent-written file, falling back to skeleton", {
         targetPath,
+        backupPath,
+        error: error instanceof Error ? error.message : String(error),
         rawOutputPreview: rawOutput.slice(0, 500),
       });
     }
@@ -293,9 +347,11 @@ Rules:
     if (recoveryFailed) {
       logger.error(
         "acceptance",
-        "BUG-076: LLM returned non-code output and no file was written by agent — falling back to skeleton",
+        "BUG-076: LLM returned non-code output and recovery could not produce runnable tests — falling back to skeleton",
         {
           rawOutputPreview: rawOutput.slice(0, 500),
+          targetPath,
+          backupPath,
         },
       );
     }
