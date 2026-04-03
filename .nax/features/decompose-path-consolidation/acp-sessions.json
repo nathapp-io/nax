@@ -1,0 +1,58 @@
+{
+  "US-002:test-writer": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-002-test-writer",
+    "agentName": "claude"
+  },
+  "US-002:implementer": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-002-implementer",
+    "agentName": "claude"
+  },
+  "US-002:verifier": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-002-verifier",
+    "agentName": "claude"
+  },
+  "US-003:test-writer": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-003-test-writer",
+    "agentName": "claude"
+  },
+  "US-003:implementer": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-003-implementer",
+    "agentName": "claude"
+  },
+  "US-003:verifier": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-003-verifier",
+    "agentName": "claude"
+  },
+  "US-004:test-writer": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-004-test-writer",
+    "agentName": "claude"
+  },
+  "US-004:implementer": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-004-implementer",
+    "agentName": "claude"
+  },
+  "US-004:verifier": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-004-verifier",
+    "agentName": "claude"
+  },
+  "US-005:test-writer": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-005-test-writer",
+    "agentName": "claude"
+  },
+  "US-005:implementer": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-005-implementer",
+    "agentName": "claude"
+  },
+  "US-005:verifier": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-005-verifier",
+    "agentName": "claude"
+  },
+  "US-001:diagnose": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-001-diagnose",
+    "agentName": "claude"
+  },
+  "US-001:source-fix": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-001-source-fix",
+    "agentName": "claude"
+  }
+}

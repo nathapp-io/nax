@@ -90,6 +90,16 @@ export interface DecomposeOptions {
   modelDef?: ModelDef;
   /** Global config — used to resolve models.balanced when modelDef is absent */
   config?: Partial<NaxConfig>;
+  /** Feature name for ACP session naming (decompose context) */
+  featureName?: string;
+  /** Story ID for ACP session naming (decompose context) */
+  storyId?: string;
+  /** Session role for TDD isolation (e.g. "decompose") */
+  sessionRole?: string;
+  /** Target story to decompose (plan-mode decompose) */
+  targetStory?: import("../../prd/types").UserStory;
+  /** Sibling stories for context (plan-mode decompose) */
+  siblings?: import("../../prd/types").UserStory[];
 }
 
 /** A single classified user story from decompose result. */

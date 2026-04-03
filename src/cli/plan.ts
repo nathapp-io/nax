@@ -2,7 +2,8 @@
  * Plan Command — Generate prd.json from a spec file via LLM one-shot call
  *
  * Reads a spec file (--from), builds a planning prompt with codebase context,
- * calls adapter.complete(), validates the JSON response, and writes prd.json.
+ * runs planning via agent adapter (plan()/complete() depending on mode),
+ * validates the JSON response, and writes prd.json.
  *
  * Interactive mode: uses ACP session + stdin bridge for Q&A.
  */
@@ -11,6 +12,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { createAgentRegistry, getAgent } from "../agents/registry";
+import { buildDecomposePrompt, parseDecomposeOutput } from "../agents/shared/decompose";
+import type { DecomposedStory } from "../agents/shared/types-extended";
 import type { AgentAdapter } from "../agents/types";
 import { scanCodebase } from "../analyze/scanner";
 import type { CodebaseScan } from "../analyze/types";
@@ -26,6 +29,7 @@ import { PidRegistry } from "../execution/pid-registry";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import { initInteractionChain } from "../interaction/init";
 import { getLogger } from "../logger";
+import { mapDecomposedStoriesToUserStories } from "../prd/decompose-mapper";
 import { validatePlanOutput } from "../prd/schema";
 import type { PRD, StoryStatus, UserStory } from "../prd/types";
 import type { PrecheckResultWithCode } from "../precheck";
@@ -712,59 +716,6 @@ ${
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Build a decompose prompt that instructs the LLM to split a story into sub-stories.
- */
-export function buildDecomposePrompt(targetStory: UserStory, siblings: UserStory[], codebaseContext: string): string {
-  const siblingsSummary =
-    siblings.length > 0 ? `\n## Sibling Stories\n\n${siblings.map((s) => `- ${s.id}: ${s.title}`).join("\n")}\n` : "";
-
-  return `You are a senior software architect decomposing a complex user story into smaller, implementable sub-stories.
-
-## Target Story
-
-${JSON.stringify(targetStory, null, 2)}${siblingsSummary}
-## Codebase Context
-
-${codebaseContext}
-
-${COMPLEXITY_GUIDE}
-
-${TEST_STRATEGY_GUIDE}
-
-${GROUPING_RULES}
-
-${getAcQualityRules()}
-
-## Output
-
-Return JSON with this exact structure (no markdown, no explanation — JSON only):
-
-{
-  "subStories": [
-    {
-      "id": "string — e.g. ${targetStory.id}-A",
-      "title": "string",
-      "description": "string",
-      "acceptanceCriteria": ["string — behavioral, testable criteria"],
-      "contextFiles": ["string — required, non-empty list of key source files"],
-      "tags": ["string"],
-      "dependencies": ["string"],
-      "status": "pending",
-      "passes": false,
-      "routing": {
-        "complexity": "simple | medium | complex | expert",
-        "testStrategy": "no-test | tdd-simple | three-session-tdd-lite | three-session-tdd | test-after",
-        "modelTier": "fast | balanced | powerful",
-        "reasoning": "string"
-      },
-      "escalations": [],
-      "attempts": 0
-    }
-  ]
-}`;
-}
-
-/**
  * Decompose an existing story into sub-stories.
  *
  * @param workdir - Project root directory
@@ -808,94 +759,70 @@ export async function planDecomposeCommand(
   const codebaseContext = buildCodebaseContext(scan);
 
   const siblings = prd.userStories.filter((s) => s.id !== options.storyId);
-  const prompt = buildDecomposePrompt(targetStory, siblings, codebaseContext);
 
   const agentName = config?.autoMode?.defaultAgent ?? "claude";
   const adapter = _planDeps.getAgent(agentName, config);
   if (!adapter) throw new Error(`[decompose] No agent adapter found for '${agentName}'`);
 
-  let decomposeModel: string | undefined;
-  try {
-    const planTier = config?.plan?.model ?? "balanced";
-    const { resolveModelForAgent } = await import("../config/schema");
-    if (config?.models) {
-      const defaultAgent = config.autoMode?.defaultAgent ?? "claude";
-      decomposeModel = resolveModelForAgent(config.models, defaultAgent, planTier, defaultAgent).model;
-    }
-  } catch {
-    // fall through — adapter will use its own fallback
+  const timeoutSeconds = config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
+  const maxAcCount = config?.precheck?.storySizeGate?.maxAcCount ?? Number.POSITIVE_INFINITY;
+
+  if (typeof (adapter as { decompose?: unknown }).decompose !== "function") {
+    throw new NaxError(
+      `Agent "${agentName}" does not support decompose() required by plan --decompose`,
+      "DECOMPOSE_NOT_SUPPORTED",
+      { stage: "decompose", agent: agentName, storyId: options.storyId },
+    );
   }
 
-  const stages = config?.debate?.stages as Record<string, DebateStageConfig> | undefined;
-  const debateEnabled = config?.debate?.enabled && stages?.decompose?.enabled;
+  const debateStages = config?.debate?.stages as unknown as Record<string, DebateStageConfig | undefined>;
+  const debateDecompEnabled = config?.debate?.enabled && debateStages?.decompose?.enabled;
 
-  let rawResponse: string;
-  const timeoutSeconds = config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
-  const timeoutMs = timeoutSeconds * 1000;
-  if (debateEnabled) {
-    const stageConfig = stages?.decompose as DebateStageConfig;
+  let decompStories: DecomposedStory[] | undefined;
+
+  if (debateDecompEnabled) {
+    const decomposeStageConfig = debateStages.decompose as DebateStageConfig;
+    const prompt = buildDecomposePrompt({
+      specContent: "",
+      codebaseContext,
+      workdir,
+      targetStory,
+      siblings,
+      featureName: options.feature,
+      storyId: options.storyId,
+      config,
+    });
     const debateSession = _planDeps.createDebateSession({
       storyId: options.storyId,
       stage: "decompose",
-      stageConfig,
+      stageConfig: decomposeStageConfig,
       config,
       workdir,
       featureName: options.feature,
-      timeoutSeconds: timeoutSeconds,
+      timeoutSeconds,
     });
     const debateResult = await debateSession.run(prompt);
     if (debateResult.outcome !== "failed" && debateResult.output) {
-      rawResponse = debateResult.output;
-    } else {
-      const completeResult = await adapter.complete(prompt, {
-        model: decomposeModel,
-        jsonMode: true,
-        workdir,
-        sessionRole: "decompose",
-        featureName: options.feature,
-        storyId: options.storyId,
-        timeoutMs,
-      });
-      rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
+      decompStories = parseDecomposeOutput(debateResult.output);
     }
-  } else {
-    const completeResult = await adapter.complete(prompt, {
-      model: decomposeModel,
-      jsonMode: true,
+  }
+
+  if (!decompStories) {
+    const result = await adapter.decompose({
+      specContent: "",
+      codebaseContext,
       workdir,
-      sessionRole: "decompose",
+      targetStory,
+      siblings,
       featureName: options.feature,
       storyId: options.storyId,
-      timeoutMs,
+      config,
     });
-    rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
+    decompStories = result.stories;
   }
 
-  // Strip markdown code fences if the LLM wrapped JSON in backticks
-  const jsonMatch = rawResponse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  const cleanedResponse = jsonMatch ? jsonMatch[1] : rawResponse;
-
-  let parsed: { subStories: UserStory[] };
-  try {
-    parsed = JSON.parse(cleanedResponse.trim()) as { subStories: UserStory[] };
-  } catch (err) {
-    throw new NaxError(
-      `Failed to parse decompose response as JSON: ${(err as Error).message}\n\nResponse (first 500 chars):\n${rawResponse.slice(0, 500)}`,
-      "DECOMPOSE_PARSE_FAILED",
-      { stage: "decompose", storyId: options.storyId },
-    );
-  }
-  const subStories = parsed.subStories;
-
-  const maxAcCount = config?.precheck?.storySizeGate?.maxAcCount ?? Number.POSITIVE_INFINITY;
-  for (const sub of subStories) {
-    if (!sub.contextFiles || sub.contextFiles.length === 0) {
-      throw new NaxError(`Sub-story "${sub.id}" has empty contextFiles`, "DECOMPOSE_VALIDATION_FAILED", {
-        stage: "decompose",
-        storyId: sub.id,
-      });
-    }
-    if (!sub.routing?.complexity || !sub.routing?.testStrategy || !sub.routing?.modelTier) {
+  for (const sub of decompStories) {
+    if (!sub.complexity || !sub.testStrategy) {
       throw new NaxError(`Sub-story "${sub.id}" is missing required routing fields`, "DECOMPOSE_VALIDATION_FAILED", {
         stage: "decompose",
         storyId: sub.id,
@@ -910,11 +837,11 @@ export async function planDecomposeCommand(
     }
   }
 
+  const subStoriesWithParent: UserStory[] = mapDecomposedStoriesToUserStories(decompStories, options.storyId);
+
   const updatedStories = prd.userStories.map((s) =>
     s.id === options.storyId ? { ...s, status: "decomposed" as StoryStatus } : s,
   );
-
-  const subStoriesWithParent: UserStory[] = subStories.map((s) => ({ ...s, parentStoryId: options.storyId }));
 
   const originalIndex = updatedStories.findIndex((s) => s.id === options.storyId);
   const finalStories = [

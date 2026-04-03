@@ -15,6 +15,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { _planDeps, planDecomposeCommand } from "../../../src/cli/plan";
+import { buildDecomposePrompt } from "../../../src/agents/shared/decompose";
+import type { DecomposeOptions, DecomposedStory } from "../../../src/agents/shared/types-extended";
 import type { NaxConfig } from "../../../src/config";
 import { NaxError } from "../../../src/errors";
 import type { PRD, UserStory } from "../../../src/prd/types";
@@ -87,8 +89,25 @@ function makeSubStory(id: string, overrides: Partial<UserStory> = {}): UserStory
   };
 }
 
-function makeDecomposeResponse(subStories: UserStory[]): string {
-  return JSON.stringify({ subStories });
+function toDecomposedStory(story: UserStory): DecomposedStory {
+  return {
+    id: story.id,
+    title: story.title,
+    description: story.description,
+    acceptanceCriteria: story.acceptanceCriteria,
+    tags: story.tags,
+    dependencies: story.dependencies,
+    complexity: story.routing?.complexity ?? "simple",
+    contextFiles: story.contextFiles ?? [],
+    reasoning: story.routing?.reasoning ?? "",
+    estimatedLOC: 50,
+    risks: [],
+    testStrategy: story.routing?.testStrategy,
+  };
+}
+
+function makeDecomposeResponse(stories: UserStory[]): string {
+  return JSON.stringify(stories.map(toDecomposedStory));
 }
 
 function makeConfig(overrides: Partial<NaxConfig> = {}): NaxConfig {
@@ -144,7 +163,7 @@ describe("planDecomposeCommand", () => {
 
   function setupDeps(
     prd: PRD,
-    subStories: UserStory[] = [makeSubStory("US-001-A"), makeSubStory("US-001-B")],
+    stories: UserStory[] = [makeSubStory("US-001-A"), makeSubStory("US-001-B")],
   ) {
     const prdPath = join(tmpDir, ".nax", "features", FEATURE, "prd.json");
 
@@ -167,9 +186,13 @@ describe("planDecomposeCommand", () => {
     _planDeps.mkdirp = mock(async () => {});
 
     const fakeAdapter = {
+      decompose: mock(async (options: DecomposeOptions) => {
+        capturedCompleteArgs.push(buildDecomposePrompt(options));
+        return { stories: stories.map(toDecomposedStory) };
+      }),
       complete: mock(async (prompt: string) => {
         capturedCompleteArgs.push(prompt);
-        return makeDecomposeResponse(subStories);
+        return makeDecomposeResponse(stories);
       }),
     };
     _planDeps.getAgent = mock(() => fakeAdapter as never);
@@ -324,9 +347,9 @@ describe("planDecomposeCommand", () => {
     expect(prompt).toContain("zod");
   });
 
-  test("AC-5: adapter.complete() is called with jsonMode: true", async () => {
+  test("AC-5: adapter.decompose() receives decompose context options", async () => {
     const prd = makePrd();
-    const capturedOpts: unknown[] = [];
+    const capturedDecomposeOpts: unknown[] = [];
 
     _planDeps.existsSync = mock((path: string) =>
       path === join(tmpDir, ".nax", "features", FEATURE, "prd.json"),
@@ -344,17 +367,20 @@ describe("planDecomposeCommand", () => {
     _planDeps.getAgent = mock(
       () =>
         ({
-          complete: mock(async (prompt: string, opts: unknown) => {
-            capturedCompleteArgs.push(prompt);
-            capturedOpts.push(opts);
-            return makeDecomposeResponse([makeSubStory("US-001-A"), makeSubStory("US-001-B")]);
+          decompose: mock(async (opts: unknown) => {
+            capturedDecomposeOpts.push(opts);
+            return { stories: [makeSubStory("US-001-A"), makeSubStory("US-001-B")].map(toDecomposedStory) };
           }),
         }) as never,
     );
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
 
-    expect(capturedOpts[0]).toMatchObject({ jsonMode: true });
+    expect(capturedDecomposeOpts[0]).toMatchObject({
+      workdir: tmpDir,
+      featureName: FEATURE,
+      storyId: "US-001",
+    });
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -385,7 +411,7 @@ describe("planDecomposeCommand", () => {
   // AC-7: DECOMPOSE_VALIDATION_FAILED for missing routing fields
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-7: throws DECOMPOSE_VALIDATION_FAILED when sub-story missing routing.complexity", async () => {
+  test("AC-7: missing routing.complexity in legacy input is tolerated (adapter coercion)", async () => {
     const prd = makePrd();
     const badStory = makeSubStory("US-001-A");
     if (badStory.routing) delete (badStory.routing as Partial<typeof badStory.routing>).complexity;
@@ -393,7 +419,7 @@ describe("planDecomposeCommand", () => {
 
     await expect(
       planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" }),
-    ).rejects.toMatchObject({ code: "DECOMPOSE_VALIDATION_FAILED" });
+    ).resolves.not.toThrow();
   });
 
   test("AC-7: throws DECOMPOSE_VALIDATION_FAILED when sub-story missing routing.testStrategy", async () => {
@@ -407,7 +433,7 @@ describe("planDecomposeCommand", () => {
     ).rejects.toMatchObject({ code: "DECOMPOSE_VALIDATION_FAILED" });
   });
 
-  test("AC-7: throws DECOMPOSE_VALIDATION_FAILED when sub-story missing routing.modelTier", async () => {
+  test("AC-7: missing routing.modelTier in legacy input is tolerated (mapper default)", async () => {
     const prd = makePrd();
     const badStory = makeSubStory("US-001-A");
     if (badStory.routing) delete (badStory.routing as Partial<typeof badStory.routing>).modelTier;
@@ -415,7 +441,7 @@ describe("planDecomposeCommand", () => {
 
     await expect(
       planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" }),
-    ).rejects.toMatchObject({ code: "DECOMPOSE_VALIDATION_FAILED" });
+    ).resolves.not.toThrow();
   });
 
   test("AC-7: throws DECOMPOSE_VALIDATION_FAILED when sub-story has no routing field", async () => {
@@ -475,8 +501,8 @@ describe("planDecomposeCommand", () => {
 
   test("AC-9: each sub-story has parentStoryId set to original story ID", async () => {
     const prd = makePrd([makeStory({ id: "US-001" })]);
-    const subStories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
-    setupDeps(prd, subStories);
+    const stories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
+    setupDeps(prd, stories);
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
 
@@ -533,9 +559,9 @@ describe("planDecomposeCommand", () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   test("AC-12: creates DebateSession with stage 'decompose' when debate is enabled", async () => {
-    const subStories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
+    const stories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
     const prd = makePrd();
-    setupDeps(prd, subStories);
+    setupDeps(prd, stories);
 
     const capturedDebateOpts: unknown[] = [];
     _planDeps.createDebateSession = mock((opts) => {
@@ -550,7 +576,7 @@ describe("planDecomposeCommand", () => {
           resolverType: "synthesis" as const,
           proposals: [],
           totalCostUsd: 0,
-          output: makeDecomposeResponse(subStories),
+          output: makeDecomposeResponse(stories),
         })),
       } as never;
     });
@@ -579,9 +605,9 @@ describe("planDecomposeCommand", () => {
   });
 
   test("AC-12: uses debate output when outcome is not 'failed'", async () => {
-    const subStories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
+    const stories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
     const prd = makePrd();
-    setupDeps(prd, subStories);
+    setupDeps(prd, stories);
 
     _planDeps.createDebateSession = mock(() => ({
       run: mock(async () => ({
@@ -593,17 +619,17 @@ describe("planDecomposeCommand", () => {
         resolverType: "synthesis" as const,
         proposals: [],
         totalCostUsd: 0,
-        output: makeDecomposeResponse(subStories),
+        output: makeDecomposeResponse(stories),
       })),
     }) as never);
 
-    const adapterCompleteCalls: string[] = [];
+    const adapterDecomposeCalls: unknown[] = [];
     _planDeps.getAgent = mock(
       () =>
         ({
-          complete: mock(async (prompt: string) => {
-            adapterCompleteCalls.push(prompt);
-            return makeDecomposeResponse(subStories);
+          decompose: mock(async (opts: unknown) => {
+            adapterDecomposeCalls.push(opts);
+            return { stories: stories.map(toDecomposedStory) };
           }),
         }) as never,
     );
@@ -627,18 +653,18 @@ describe("planDecomposeCommand", () => {
       { feature: FEATURE, storyId: "US-001" },
     );
 
-    // When debate succeeds, adapter.complete() should NOT be called
-    expect(adapterCompleteCalls).toHaveLength(0);
+    // When debate succeeds, adapter.decompose() should NOT be called
+    expect(adapterDecomposeCalls).toHaveLength(0);
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // AC-13: debate outcome === 'failed' falls back to adapter.complete()
+  // AC-13: debate outcome === 'failed' falls back to adapter.decompose()
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-13: falls back to adapter.complete() when debate outcome is 'failed'", async () => {
-    const subStories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
+  test("AC-13: falls back to adapter.decompose() when debate outcome is 'failed'", async () => {
+    const stories = [makeSubStory("US-001-A"), makeSubStory("US-001-B")];
     const prd = makePrd();
-    setupDeps(prd, subStories);
+    setupDeps(prd, stories);
 
     _planDeps.createDebateSession = mock(() => ({
       run: mock(async () => ({
@@ -653,13 +679,13 @@ describe("planDecomposeCommand", () => {
       })),
     }) as never);
 
-    const adapterCompleteCalls: string[] = [];
+    const adapterDecomposeCalls: unknown[] = [];
     _planDeps.getAgent = mock(
       () =>
         ({
-          complete: mock(async (prompt: string) => {
-            adapterCompleteCalls.push(prompt);
-            return makeDecomposeResponse(subStories);
+          decompose: mock(async (opts: unknown) => {
+            adapterDecomposeCalls.push(opts);
+            return { stories: stories.map(toDecomposedStory) };
           }),
         }) as never,
     );
@@ -683,24 +709,24 @@ describe("planDecomposeCommand", () => {
       { feature: FEATURE, storyId: "US-001" },
     );
 
-    expect(adapterCompleteCalls).toHaveLength(1);
+    expect(adapterDecomposeCalls).toHaveLength(1);
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // AC-14: no debate config → adapter.complete() called directly
+  // AC-14: no debate config → adapter.decompose() called directly
   // ──────────────────────────────────────────────────────────────────────────
 
-  test("AC-14: calls adapter.complete() directly when debate.stages.decompose is not configured", async () => {
+  test("AC-14: calls adapter.decompose() directly when debate.stages.decompose is not configured", async () => {
     const prd = makePrd();
-    const adapterCompleteCalls: string[] = [];
+    const adapterDecomposeCalls: unknown[] = [];
 
     setupDeps(prd);
     _planDeps.getAgent = mock(
       () =>
         ({
-          complete: mock(async (prompt: string) => {
-            adapterCompleteCalls.push(prompt);
-            return makeDecomposeResponse([makeSubStory("US-001-A"), makeSubStory("US-001-B")]);
+          decompose: mock(async (opts: unknown) => {
+            adapterDecomposeCalls.push(opts);
+            return { stories: [makeSubStory("US-001-A"), makeSubStory("US-001-B")].map(toDecomposedStory) };
           }),
         }) as never,
     );
@@ -713,7 +739,7 @@ describe("planDecomposeCommand", () => {
 
     await planDecomposeCommand(tmpDir, makeConfig(), { feature: FEATURE, storyId: "US-001" });
 
-    expect(adapterCompleteCalls).toHaveLength(1);
+    expect(adapterDecomposeCalls).toHaveLength(1);
     expect(createDebateCalled).toHaveLength(0);
   });
 
