@@ -3,7 +3,7 @@
   "feature": "config-profiles",
   "branchName": "feat/config-profiles",
   "createdAt": "2026-04-03T12:00:00.000Z",
-  "updatedAt": "2026-04-03T04:27:00.808Z",
+  "updatedAt": "2026-04-03T04:42:50.174Z",
   "userStories": [
     {
       "id": "US-001",
@@ -253,8 +253,8 @@
         "US-001",
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -302,7 +302,9 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "bin/nax.ts",
@@ -310,7 +312,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "260d3dc30077af16c8d73c515eabbd8cd99d7a7d"
     }
   ],
   "analysis": "## Key Files Affected\n\n### Must Modify\n1. **src/config/schemas.ts** (line ~507-775): Add `profile: z.string().default(\"default\")` to `NaxConfigSchema`. This is the Zod SSOT.\n2. **src/config/runtime-types.ts** (line ~488-537): Add `profile: string` to the `NaxConfig` interface.\n3. **src/config/loader.ts** (line ~101-154): Insert profile resolution between defaults and global config merge. Strip `profile` field from global/project layers before merge, force-set after all merges. The current merge chain is: defaults → global → project → CLI. New chain: defaults → profile → global (stripped) → project (stripped) → CLI → force-set profile.\n4. **bin/nax.ts**: Add `--profile <name>` option to `run` (line ~287) and `plan` (line ~708) commands. Wire `nax config profile` subcommand group under the existing `config` command (line ~877). The config command is currently a simple `.command(\"config\")` — it needs to become a command group or have a subcommand added.\n5. **src/cli/config.ts**: Add exports for new profile CLI command handlers.\n6. **src/config/index.ts**: Export new profile functions from barrel.\n\n### New Files\n1. **src/config/profile.ts**: Core profile logic — `resolveProfileName()`, `loadProfile()`, `loadProfileEnv()`, `resolveEnvVars()`, `listProfiles()`. Must stay under 400 lines.\n2. **src/config/dotenv.ts**: `parseDotenv()` — standalone dotenv parser (~50 lines).\n3. **src/cli/config-profile.ts**: CLI handlers for `list`, `show`, `use`, `current`, `create` subcommands.\n\n### Reused As-Is\n- **src/config/merger.ts**: `deepMergeConfig()` — spec confirms no changes needed.\n- **src/config/paths.ts**: `globalConfigDir()`, `PROJECT_NAX_DIR` — used for profile path resolution.\n- **src/utils/json-file.ts**: `loadJsonFile()`, `saveJsonFile()` — used for profile JSON I/O.\n\n## Architecture Decisions\n\n1. **Profile merge position**: Profile sits between defaults and global config. This means profile values can be overridden by both global and project config.json, which is intentional — profiles set a baseline, config files customize further.\n\n2. **`profile` field integrity**: The spec requires stripping `profile` from global/project config layers before merge, then force-setting it after all merges. This prevents a config.json `\"profile\": \"slow\"` from overwriting the actually-applied profile name when `NAX_PROFILE=fast` was used.\n\n3. **`resolveProfileName()` reads raw JSON**: To avoid circular dependency with full config loading, profile name resolution reads only the `\"profile\"` string from raw config JSON files (project first, then global). It does NOT go through `loadConfig()`.\n\n4. **Env var isolation**: Companion `.env` values are used ONLY for `$VAR` substitution within profile JSON. They do NOT overwrite `process.env`. This is a security and isolation requirement.\n\n5. **Monorepo constraint**: `profile` field is forbidden in per-package config. `loadConfigForWorkdir()` does not perform a second profile-resolution pass.\n\n6. **CLI structure**: The existing `config` command at bin/nax.ts:877 is a leaf command with `--explain` and `--diff` options. Adding `profile` as a subcommand requires restructuring it as a command group using Commander's `.command()` chaining, or adding `config profile` as a separate command registration.\n\n## Risks\n\n1. **Circular dependency**: `resolveProfileName()` must read config files to find the persisted `\"profile\"` field, but `loadConfig()` calls `resolveProfileName()`. The spec addresses this by having `resolveProfileName()` do raw JSON reads, not full `loadConfig()` calls.\n\n2. **Schema validation**: Adding `profile` field to `NaxConfigSchema` means existing configs without it will get `\"default\"` via Zod `.default()`. This is backward-compatible.\n\n3. **Config command restructuring**: The current `config` command is a leaf action. Adding `profile` subcommand may require it to become a command group, which could break existing `nax config` (no subcommand) behavior. Commander supports both — a command with subcommands can still have a default action.\n\n4. **File count**: New files (profile.ts, dotenv.ts, config-profile.ts) plus test files stay within project conventions. All should be well under 400-line limit.\n\n## Dependency Order\n\nUS-001 (profile.ts + dotenv.ts) → US-002 (loader.ts integration) → US-003 (CLI commands) and US-004 (--profile flag). US-003 and US-004 are independent of each other but both depend on US-002."

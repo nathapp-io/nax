@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 5,
+    "passed": 6,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 4.11747845,
+    "spent": 6.0992974,
     "limit": 30
   },
   "current": {
-    "storyId": "US-003",
-    "title": "Profile CLI commands (list, show, use, current, create)",
-    "complexity": "complex",
-    "tddStrategy": "three-session-tdd-lite",
+    "storyId": "US-004",
+    "title": "--profile flag on run and plan commands",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 6,
-  "updatedAt": "2026-04-03T04:41:15.399Z",
-  "durationMs": 3601178,
-  "lastHeartbeat": "2026-04-03T04:41:15.399Z"
+  "iterations": 7,
+  "updatedAt": "2026-04-03T04:47:15.413Z",
+  "durationMs": 3961192,
+  "lastHeartbeat": "2026-04-03T04:47:15.413Z"
 }
