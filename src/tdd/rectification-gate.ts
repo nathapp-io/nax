@@ -20,6 +20,7 @@ import {
   executeWithTimeout as _executeWithTimeout,
   parseBunTestOutput as _parseBunTestOutput,
   shouldRetryRectification as _shouldRetryRectification,
+  runSharedRectificationLoop,
 } from "../verification";
 import { cleanupProcessTree } from "./cleanup";
 import { verifyImplementerIsolation } from "./isolation";
@@ -154,111 +155,131 @@ async function runRectificationLoop(
     sessionName: rectificationSessionName,
   });
 
-  while (_rectificationGateDeps.shouldRetryRectification(rectificationState, rectificationConfig)) {
-    rectificationState.attempt++;
+  const loopState = {
+    ...rectificationState,
+    isolationPassed: true,
+  };
 
-    const isLastAttempt = rectificationState.attempt >= rectificationConfig.maxRetries;
-
-    logger.info(
-      "tdd",
-      `-> Implementer rectification attempt ${rectificationState.attempt}/${rectificationConfig.maxRetries}`,
-      { storyId: story.id, currentFailures: rectificationState.currentFailures },
-    );
-
-    const rectificationPrompt = buildImplementerRectificationPrompt(
-      testSummary.failures,
-      story,
-      contextMarkdown,
-      rectificationConfig,
-    );
-
-    const rectifyBeforeRef = (await captureGitRef(workdir)) ?? "HEAD";
-
-    const rectifyResult = await agent.run({
-      prompt: rectificationPrompt,
-      workdir,
-      modelTier: implementerTier,
-      modelDef: resolveModelForAgent(
-        config.models,
-        story.routing?.agent ?? config.autoMode.defaultAgent,
-        implementerTier,
-        config.autoMode.defaultAgent,
-      ),
-      timeoutSeconds: config.execution.sessionTimeoutSeconds,
-      dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
-      pipelineStage: "rectification",
-      config,
-      maxInteractionTurns: config.agent?.maxInteractionTurns,
-      featureName,
+  const fixed = await runSharedRectificationLoop({
+    stage: "tdd",
+    storyId: story.id,
+    maxAttempts: rectificationConfig.maxRetries,
+    state: loopState,
+    logger,
+    startMessage: "Full suite gate detected regressions",
+    startData: {
       storyId: story.id,
-      sessionRole: "implementer",
-      // Reuse the same ACP session across all rectification attempts so the agent
-      // retains full conversation context (knows what it already tried).
-      acpSessionName: rectificationSessionName,
-      // Keep session open until the last attempt — the session sweep at run end
-      // will handle cleanup. On the last attempt, let the adapter close normally.
-      keepSessionOpen: !isLastAttempt,
-    });
-
-    if (!rectifyResult.success && rectifyResult.pid) {
-      await cleanupProcessTree(rectifyResult.pid);
-    }
-
-    if (rectifyResult.success) {
-      logger.info("tdd", "Rectification agent session complete", {
-        storyId: story.id,
-        attempt: rectificationState.attempt,
-        cost: rectifyResult.estimatedCost,
-      });
-    } else {
-      logger.warn("tdd", "Rectification agent session failed", {
-        storyId: story.id,
-        attempt: rectificationState.attempt,
-        exitCode: rectifyResult.exitCode,
-      });
-    }
-
-    // BUG-063: Auto-commit after rectification agent — prevents uncommitted changes
-    // from leaking into verifier/review stages. Same pattern as session-runner.ts.
-    await autoCommitIfDirty(workdir, "tdd", "rectification", story.id);
-
-    const rectifyIsolation = lite ? undefined : await verifyImplementerIsolation(workdir, rectifyBeforeRef);
-
-    if (rectifyIsolation && !rectifyIsolation.passed) {
-      logger.error("tdd", "Rectification violated isolation", {
-        storyId: story.id,
-        attempt: rectificationState.attempt,
-        violations: rectifyIsolation.violations,
-      });
-      break;
-    }
-
-    const retryFullSuite = await _rectificationGateDeps.executeWithTimeout(testCmd, fullSuiteTimeout, undefined, {
-      cwd: workdir,
-    });
-    const retrySuitePassed = retryFullSuite.success && retryFullSuite.exitCode === 0;
-
-    if (retrySuitePassed) {
-      logger.info("tdd", "Full suite gate passed after rectification!", {
-        storyId: story.id,
-        attempt: rectificationState.attempt,
-      });
-      return true;
-    }
-
-    if (retryFullSuite.output) {
-      const newTestSummary = _rectificationGateDeps.parseBunTestOutput(retryFullSuite.output);
-      rectificationState.currentFailures = newTestSummary.failed;
-      testSummary.failures = newTestSummary.failures;
-      testSummary.failed = newTestSummary.failed;
-      testSummary.passed = newTestSummary.passed;
-    }
-
-    logger.warn("tdd", "Full suite still failing after rectification attempt", {
+      failedTests: testSummary.failed,
+      passedTests: testSummary.passed,
+    },
+    attemptMessage: (attempt) => `-> Implementer rectification attempt ${attempt}/${rectificationConfig.maxRetries}`,
+    attemptData: (state) => ({
       storyId: story.id,
-      attempt: rectificationState.attempt,
-      remainingFailures: rectificationState.currentFailures,
-    });
+      currentFailures: state.currentFailures,
+    }),
+    canContinue: (state) =>
+      state.isolationPassed && _rectificationGateDeps.shouldRetryRectification(state, rectificationConfig),
+    buildPrompt: () =>
+      buildImplementerRectificationPrompt(testSummary.failures, story, contextMarkdown, rectificationConfig),
+    runAttempt: async (attempt, rectificationPrompt) => {
+      const isLastAttempt = attempt >= rectificationConfig.maxRetries;
+      const rectifyBeforeRef = (await captureGitRef(workdir)) ?? "HEAD";
+
+      const rectifyResult = await agent.run({
+        prompt: rectificationPrompt,
+        workdir,
+        modelTier: implementerTier,
+        modelDef: resolveModelForAgent(
+          config.models,
+          story.routing?.agent ?? config.autoMode.defaultAgent,
+          implementerTier,
+          config.autoMode.defaultAgent,
+        ),
+        timeoutSeconds: config.execution.sessionTimeoutSeconds,
+        dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
+        pipelineStage: "rectification",
+        config,
+        maxInteractionTurns: config.agent?.maxInteractionTurns,
+        featureName,
+        storyId: story.id,
+        sessionRole: "implementer",
+        acpSessionName: rectificationSessionName,
+        keepSessionOpen: !isLastAttempt,
+      });
+
+      if (!rectifyResult.success && rectifyResult.pid) {
+        await cleanupProcessTree(rectifyResult.pid);
+      }
+
+      if (rectifyResult.success) {
+        logger.info("tdd", "Rectification agent session complete", {
+          storyId: story.id,
+          attempt,
+          cost: rectifyResult.estimatedCost,
+        });
+      } else {
+        logger.warn("tdd", "Rectification agent session failed", {
+          storyId: story.id,
+          attempt,
+          exitCode: rectifyResult.exitCode,
+        });
+      }
+
+      await autoCommitIfDirty(workdir, "tdd", "rectification", story.id);
+
+      const rectifyIsolation = lite ? undefined : await verifyImplementerIsolation(workdir, rectifyBeforeRef);
+      if (rectifyIsolation && !rectifyIsolation.passed) {
+        loopState.isolationPassed = false;
+        logger.error("tdd", "Rectification violated isolation", {
+          storyId: story.id,
+          attempt,
+          violations: rectifyIsolation.violations,
+        });
+      }
+    },
+    checkResult: async (attempt, state) => {
+      if (!state.isolationPassed) {
+        return false;
+      }
+
+      const retryFullSuite = await _rectificationGateDeps.executeWithTimeout(testCmd, fullSuiteTimeout, undefined, {
+        cwd: workdir,
+      });
+      const retrySuitePassed = retryFullSuite.success && retryFullSuite.exitCode === 0;
+
+      if (retrySuitePassed) {
+        logger.info("tdd", "Full suite gate passed after rectification!", {
+          storyId: story.id,
+          attempt,
+        });
+        return true;
+      }
+
+      if (retryFullSuite.output) {
+        const newTestSummary = _rectificationGateDeps.parseBunTestOutput(retryFullSuite.output);
+        state.currentFailures = newTestSummary.failed;
+        testSummary.failures = newTestSummary.failures;
+        testSummary.failed = newTestSummary.failed;
+        testSummary.passed = newTestSummary.passed;
+      }
+
+      return false;
+    },
+    onAttemptFailure: (attempt, state) => {
+      if (!state.isolationPassed) {
+        return;
+      }
+
+      logger.warn("tdd", "Full suite still failing after rectification attempt", {
+        storyId: story.id,
+        attempt,
+        remainingFailures: state.currentFailures,
+      });
+    },
+  });
+
+  if (fixed) {
+    return true;
   }
 
   const finalFullSuite = await _rectificationGateDeps.executeWithTimeout(testCmd, fullSuiteTimeout, undefined, {

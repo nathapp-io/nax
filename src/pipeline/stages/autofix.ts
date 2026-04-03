@@ -28,6 +28,10 @@ import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { runQualityCommand } from "../../quality";
 import type { ReviewCheckResult } from "../../review/types";
+import {
+  buildProgressivePromptPreamble,
+  runSharedRectificationLoop,
+} from "../../verification/shared-rectification-loop";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -196,43 +200,20 @@ function buildAutofixEscalationPreamble(
   rethinkAtAttempt?: number,
   urgencyAtAttempt?: number,
 ): string {
-  const logger = getLogger();
-  const rethinkAt = rethinkAtAttempt === undefined ? undefined : Math.min(rethinkAtAttempt, maxAttempts);
-  const urgencyAt = urgencyAtAttempt === undefined ? undefined : Math.min(urgencyAtAttempt, maxAttempts);
-
-  const shouldRethink = rethinkAt !== undefined && attempt >= rethinkAt;
-  const shouldUrgency = urgencyAt !== undefined && attempt >= urgencyAt;
-
-  if (!shouldRethink && !shouldUrgency) {
-    return "";
-  }
-
-  if (shouldUrgency) {
-    logger.info("autofix", "Progressive prompt escalation: urgency + rethink injected", {
-      attempt,
-      rethinkAtAttempt: rethinkAt,
-      urgencyAtAttempt: urgencyAt,
-      maxAttempts,
-    });
-  } else {
-    logger.info("autofix", "Progressive prompt escalation: rethink injected", {
-      attempt,
-      rethinkAtAttempt: rethinkAt,
-      maxAttempts,
-    });
-  }
-
-  const urgencySection = shouldUrgency
-    ? `## Final Autofix Attempt Before Escalation
+  return buildProgressivePromptPreamble({
+    attempt,
+    maxAttempts,
+    rethinkAtAttempt,
+    urgencyAtAttempt,
+    stage: "autofix",
+    logger: getLogger(),
+    urgencySection: `## Final Autofix Attempt Before Escalation
 
 This is attempt ${attempt}. If the review still fails after this, autofix will escalate instead of retrying.
 A different approach is required. Do not repeat the same fix.
 
-`
-    : "";
-
-  const rethinkSection = shouldRethink
-    ? `## Previous Attempt Did Not Fix the Failures
+`,
+    rethinkSection: `## Previous Attempt Did Not Fix the Failures
 
 Your previous fix attempt (attempt ${attempt}) did not resolve the quality errors. Rethink your approach.
 
@@ -240,10 +221,8 @@ Your previous fix attempt (attempt ${attempt}) did not resolve the quality error
 - Re-read the failing diagnostics carefully.
 - Try a fundamentally different fix strategy if the earlier one did not work.
 
-`
-    : "";
-
-  return `${urgencySection}${rethinkSection}`;
+`,
+  });
 }
 
 async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
@@ -275,77 +254,104 @@ async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
   const remainingBudget = maxTotal - consumed;
   const maxAttempts = Math.min(maxPerCycle, remainingBudget);
 
-  logger.info("autofix", "Starting agent rectification for review failures", {
-    storyId: ctx.story.id,
-    failedChecks: failedChecks.map((c) => c.check),
-    maxAttempts,
-    totalUsed: consumed,
-    maxTotalAttempts: maxTotal,
-  });
-
   const agentGetFn = ctx.agentGetFn ?? _autofixDeps.getAgent;
+  const loopState = {
+    attempt: 0,
+    failedChecks,
+  };
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    ctx.autofixAttempt = consumed + attempt;
-    logger.info("autofix", `Agent rectification attempt ${ctx.autofixAttempt}/${maxTotal}`, { storyId: ctx.story.id });
-
-    const agent = agentGetFn(ctx.config.autoMode.defaultAgent);
-    if (!agent) {
-      logger.error("autofix", "Agent not found — cannot run agent rectification", { storyId: ctx.story.id });
-      return false;
-    }
-
-    let prompt = buildReviewRectificationPrompt(failedChecks, ctx.story);
-    const escalationPreamble = buildAutofixEscalationPreamble(attempt, maxAttempts, rethinkAtAttempt, urgencyAtAttempt);
-    if (escalationPreamble) {
-      prompt = `${escalationPreamble}${prompt}`;
-    }
-    const modelTier = ctx.story.routing?.modelTier ?? ctx.config.autoMode.escalation.tierOrder[0]?.tier ?? "balanced";
-    const modelDef = resolveModelForAgent(
-      ctx.config.models,
-      ctx.routing.agent ?? ctx.config.autoMode.defaultAgent,
-      modelTier,
-      ctx.config.autoMode.defaultAgent,
-    );
-
-    // ENH-008: Scope agent to story.workdir for monorepo — prevents out-of-package changes
-    const rectificationWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
-
-    await agent.run({
-      prompt,
-      workdir: rectificationWorkdir,
-      modelTier,
-      modelDef,
-      timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
-      dangerouslySkipPermissions: resolvePermissions(ctx.config, "rectification").skipPermissions,
-      pipelineStage: "rectification",
-      config: ctx.config,
-      maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
+  return runSharedRectificationLoop({
+    stage: "autofix",
+    storyId: ctx.story.id,
+    maxAttempts,
+    state: loopState,
+    logger,
+    startMessage: "Starting agent rectification for review failures",
+    startData: {
       storyId: ctx.story.id,
-      sessionRole: "implementer",
-    });
+      failedChecks: failedChecks.map((check) => check.check),
+      maxAttempts,
+      totalUsed: consumed,
+      maxTotalAttempts: maxTotal,
+    },
+    attemptMessage: (attempt) => `Agent rectification attempt ${consumed + attempt}/${maxTotal}`,
+    attemptData: { storyId: ctx.story.id },
+    canContinue: (state) => state.failedChecks.length > 0 && state.attempt < maxAttempts,
+    buildPrompt: (attempt, state) => {
+      let prompt = buildReviewRectificationPrompt(state.failedChecks, ctx.story);
+      const escalationPreamble = buildAutofixEscalationPreamble(
+        attempt,
+        maxAttempts,
+        rethinkAtAttempt,
+        urgencyAtAttempt,
+      );
+      if (escalationPreamble) {
+        prompt = `${escalationPreamble}${prompt}`;
+      }
+      return prompt;
+    },
+    runAttempt: async (attempt, prompt) => {
+      ctx.autofixAttempt = consumed + attempt;
+      const agent = agentGetFn(ctx.config.autoMode.defaultAgent);
+      if (!agent) {
+        logger.error("autofix", "Agent not found — cannot run agent rectification", { storyId: ctx.story.id });
+        throw new Error("AUTOFIX_AGENT_NOT_FOUND");
+      }
 
-    const passed = await _autofixDeps.recheckReview(ctx);
-    if (passed) {
-      logger.info("autofix", `[OK] Agent rectification succeeded on attempt ${attempt}`, {
+      const modelTier = ctx.story.routing?.modelTier ?? ctx.config.autoMode.escalation.tierOrder[0]?.tier ?? "balanced";
+      const modelDef = resolveModelForAgent(
+        ctx.config.models,
+        ctx.routing.agent ?? ctx.config.autoMode.defaultAgent,
+        modelTier,
+        ctx.config.autoMode.defaultAgent,
+      );
+      const rectificationWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+
+      await agent.run({
+        prompt,
+        workdir: rectificationWorkdir,
+        modelTier,
+        modelDef,
+        timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
+        dangerouslySkipPermissions: resolvePermissions(ctx.config, "rectification").skipPermissions,
+        pipelineStage: "rectification",
+        config: ctx.config,
+        maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
+        storyId: ctx.story.id,
+        sessionRole: "implementer",
+      });
+    },
+    checkResult: async (attempt, state) => {
+      const passed = await _autofixDeps.recheckReview(ctx);
+      if (passed) {
+        logger.info("autofix", `[OK] Agent rectification succeeded on attempt ${attempt}`, {
+          storyId: ctx.story.id,
+        });
+        return true;
+      }
+
+      const updatedFailed = collectFailedChecks(ctx);
+      if (updatedFailed.length > 0) {
+        state.failedChecks.splice(0, state.failedChecks.length, ...updatedFailed);
+      }
+      return false;
+    },
+    onAttemptFailure: (attempt) => {
+      logger.warn("autofix", `Agent rectification still failing after attempt ${attempt}`, {
         storyId: ctx.story.id,
       });
-      return true;
+    },
+    onLoopEnd: (state) => {
+      if (state.attempt >= maxAttempts) {
+        logger.warn("autofix", "Agent rectification exhausted", { storyId: ctx.story.id });
+      }
+    },
+  }).catch((error: unknown) => {
+    if (error instanceof Error && error.message === "AUTOFIX_AGENT_NOT_FOUND") {
+      return false;
     }
-
-    // Refresh failed checks for next attempt
-    const updatedFailed = collectFailedChecks(ctx);
-    if (updatedFailed.length > 0) {
-      failedChecks.splice(0, failedChecks.length, ...updatedFailed);
-    }
-
-    logger.warn("autofix", `Agent rectification still failing after attempt ${attempt}`, {
-      storyId: ctx.story.id,
-    });
-  }
-
-  logger.warn("autofix", "Agent rectification exhausted", { storyId: ctx.story.id });
-  return false;
+    throw error;
+  });
 }
 
 /**
