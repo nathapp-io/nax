@@ -28,7 +28,10 @@ import { getLogger } from "../../logger";
 import type { UserStory } from "../../prd";
 import { runQualityCommand } from "../../quality";
 import type { ReviewCheckResult } from "../../review/types";
-import { buildProgressivePromptPreamble, runSharedRectificationLoop } from "../../verification/shared-rectification-loop";
+import {
+  buildProgressivePromptPreamble,
+  runSharedRectificationLoop,
+} from "../../verification/shared-rectification-loop";
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 

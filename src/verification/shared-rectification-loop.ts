@@ -33,7 +33,10 @@ export interface SharedRectificationLoopOptions<State extends { attempt: number 
   onExhausted?: (state: State) => Promise<boolean> | boolean;
 }
 
-function resolveLogData<State>(data: LoopLogData<State> | undefined, state: State): Record<string, unknown> | undefined {
+function resolveLogData<State>(
+  data: LoopLogData<State> | undefined,
+  state: State,
+): Record<string, unknown> | undefined {
   if (!data) {
     return undefined;
   }

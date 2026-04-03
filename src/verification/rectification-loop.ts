@@ -340,7 +340,12 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
         return false;
       }
 
-      const escalatedModelDef = resolveModelForAgent(config.models, agentName, escalatedTier, config.autoMode.defaultAgent);
+      const escalatedModelDef = resolveModelForAgent(
+        config.models,
+        agentName,
+        escalatedTier,
+        config.autoMode.defaultAgent,
+      );
       let escalationPrompt = createEscalatedRectificationPrompt(
         testSummary.failures,
         story,

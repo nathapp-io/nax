@@ -19,8 +19,8 @@ import {
   type RectificationState,
   executeWithTimeout as _executeWithTimeout,
   parseBunTestOutput as _parseBunTestOutput,
-  runSharedRectificationLoop,
   shouldRetryRectification as _shouldRetryRectification,
+  runSharedRectificationLoop,
 } from "../verification";
 import { cleanupProcessTree } from "./cleanup";
 import { verifyImplementerIsolation } from "./isolation";
