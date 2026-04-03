@@ -41,6 +41,7 @@ const NAX_CONFIG_KEYS: (keyof NaxConfig)[] = [
   "generate",
   "project",
   "debate",
+  "profile",
 ];
 
 describe("NaxConfigSchema.parse({}) does not throw (AC-4)", () => {

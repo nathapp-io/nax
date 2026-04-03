@@ -307,3 +307,28 @@ describe("ModelsSchema — DEFAULT_CONFIG compatibility", () => {
     expect(models["claude"]).toBeDefined();
   });
 });
+
+describe("profile field — US-001-A", () => {
+  test("NaxConfigSchema.parse({}).profile equals 'default'", () => {
+    const result = NaxConfigSchema.safeParse(DEFAULT_CONFIG as Record<string, unknown>);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    const profile = (result.data as Record<string, unknown>).profile as string;
+    expect(profile).toBe("default");
+  });
+
+  test("NaxConfigSchema.parse({ profile: 'fast' }).profile equals 'fast'", () => {
+    const config = {
+      ...(DEFAULT_CONFIG as Record<string, unknown>),
+      profile: "fast",
+    };
+
+    const result = NaxConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    const profile = (result.data as Record<string, unknown>).profile as string;
+    expect(profile).toBe("fast");
+  });
+});
