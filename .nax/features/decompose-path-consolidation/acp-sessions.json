@@ -1,1 +1,6 @@
-{}
+{
+  "US-002:test-writer": {
+    "sessionName": "nax-a789a3b6-decompose-path-consolidation-us-002-test-writer",
+    "agentName": "claude"
+  }
+}
