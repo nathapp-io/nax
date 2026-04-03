@@ -46,5 +46,9 @@
   "US-003:verifier": {
     "sessionName": "nax-a3c4fa9d-config-profiles-us-003-verifier",
     "agentName": "claude"
+  },
+  "US-001:diagnose": {
+    "sessionName": "nax-a3c4fa9d-config-profiles-us-001-diagnose",
+    "agentName": "claude"
   }
 }

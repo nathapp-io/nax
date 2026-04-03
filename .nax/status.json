@@ -4,33 +4,24 @@
     "id": "run-2026-04-03T03-41-14-221Z",
     "feature": "config-profiles",
     "startedAt": "2026-04-03T03:41:14.221Z",
-    "status": "running",
+    "status": "completed",
     "dryRun": false,
     "pid": 9749
   },
   "progress": {
     "total": 7,
-    "passed": 6,
+    "passed": 7,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 0
   },
   "cost": {
-    "spent": 6.0992974,
+    "spent": 6.68803665,
     "limit": 30
   },
-  "current": {
-    "storyId": "US-004",
-    "title": "--profile flag on run and plan commands",
-    "complexity": "simple",
-    "tddStrategy": "tdd-simple",
-    "model": "balanced",
-    "attempt": 1,
-    "phase": "routing"
-  },
-  "iterations": 7,
-  "updatedAt": "2026-04-03T04:47:15.413Z",
-  "durationMs": 3961192,
-  "lastHeartbeat": "2026-04-03T04:47:15.413Z"
+  "current": null,
+  "iterations": 8,
+  "updatedAt": "2026-04-03T04:50:19.648Z",
+  "durationMs": 4145427
 }
