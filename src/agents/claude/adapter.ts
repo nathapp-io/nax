@@ -194,17 +194,30 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     const pidRegistry = this.getPidRegistry(options.workdir);
 
+    const env = this.buildAllowedEnv({
+      workdir: options.workdir,
+      modelDef,
+      prompt: "",
+      modelTier: options.modelTier || "balanced",
+      timeoutSeconds: 600,
+    });
+
+    // Add session context fields for session naming
+    if (options.featureName) {
+      env.NAX_FEATURE_NAME = options.featureName;
+    }
+    if (options.storyId) {
+      env.NAX_STORY_ID = options.storyId;
+    }
+    if (options.sessionRole) {
+      env.NAX_SESSION_ROLE = options.sessionRole;
+    }
+
     const proc = _decomposeDeps.spawn(cmd, {
       cwd: options.workdir,
       stdout: "pipe",
       stderr: "inherit",
-      env: this.buildAllowedEnv({
-        workdir: options.workdir,
-        modelDef,
-        prompt: "",
-        modelTier: options.modelTier || "balanced",
-        timeoutSeconds: 600,
-      }),
+      env,
     });
 
     await pidRegistry.register(proc.pid);
