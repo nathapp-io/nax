@@ -20,6 +20,95 @@ function makeCtx(overrides: Partial<VerifyContext> = {}): VerifyContext {
   };
 }
 
+function makeCtxWithThreshold(overrides: Partial<VerifyContext> = {}): VerifyContext {
+  return {
+    workdir: "/tmp/test-repo",
+    testCommand: "bun test",
+    timeoutSeconds: 60,
+    storyId: "US-001",
+    storyGitRef: "abc123",
+    regressionMode: "deferred",
+    acceptOnTimeout: true,
+    config: {
+      version: 1,
+      models: {},
+      autoMode: {
+        enabled: false,
+        defaultAgent: "claude",
+        fallbackOrder: [],
+        complexityRouting: { simple: "fast", medium: "balanced", complex: "powerful", expert: "powerful" },
+        escalation: { enabled: false, tierOrder: [] },
+      },
+      routing: { strategy: "keyword" },
+      execution: {
+        maxIterations: 10,
+        iterationDelayMs: 1000,
+        costLimit: 10,
+        sessionTimeoutSeconds: 3600,
+        verificationTimeoutSeconds: 300,
+        maxStoriesPerFeature: 10,
+        rectification: {
+          enabled: false,
+          maxRetries: 0,
+          fullSuiteTimeoutSeconds: 120,
+          maxFailureSummaryChars: 1000,
+          abortOnIncreasingFailures: false,
+          escalateOnExhaustion: false,
+          rethinkAtAttempt: 1,
+          urgencyAtAttempt: 1,
+        },
+        regressionGate: { enabled: false, timeoutSeconds: 120, mode: "deferred" },
+        contextProviderTokenBudget: 2000,
+        smartTestRunner: true,
+      },
+      quality: {
+        requireTypecheck: true,
+        requireLint: true,
+        requireTests: true,
+        scopeTestThreshold: 10,
+        commands: { test: "bun test" },
+        forceExit: false,
+        detectOpenHandles: true,
+        detectOpenHandlesRetries: 1,
+        gracePeriodMs: 5000,
+        drainTimeoutMs: 2000,
+        shell: "/bin/sh",
+        stripEnvVars: [],
+      },
+      tdd: { maxRetries: 0, autoVerifyIsolation: false, autoApproveVerifier: false, strategy: "auto" },
+      constitution: { enabled: false, path: "constitution.md", maxTokens: 1000 },
+      analyze: { llmEnhanced: false, model: "balanced", fallbackToKeywords: false, maxCodebaseSummaryTokens: 500 },
+      review: { enabled: false, checks: [], commands: {}, pluginMode: "per-story" },
+      plan: { model: "balanced", outputPath: "spec.md", timeoutSeconds: 600 },
+      acceptance: {
+        enabled: false,
+        maxRetries: 0,
+        generateTests: false,
+        testPath: ".nax-acceptance.test.ts",
+        model: "fast",
+        refinement: false,
+        refinementConcurrency: 1,
+        redGate: false,
+        timeoutMs: 1800000,
+        fix: { diagnoseModel: "fast", fixModel: "balanced", strategy: "diagnose-first", maxRetries: 0 },
+      },
+      context: {
+        testCoverage: {
+          enabled: false,
+          detail: "names-only",
+          maxTokens: 500,
+          testPattern: "**/*.test.{ts,js}",
+          scopeToStory: false,
+        },
+        autoDetect: { enabled: false, maxFiles: 5, traceImports: false },
+        fileInjection: "disabled",
+      },
+      profile: "default",
+    },
+    ...overrides,
+  };
+}
+
 describe("ScopedStrategy", () => {
   test("name is scoped", () => {
     expect(new ScopedStrategy().name).toBe("scoped");
@@ -381,5 +470,58 @@ describe("ScopedStrategy — scopeTestThreshold fallback (US-001)", () => {
     expect(regressionCommand).toBe("bun test");
     expect(regressionCommand).not.toContain("src/file0.ts");
     expect(regressionCommand).not.toContain("src/file");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ScopedStrategy — scopeTestFallback flag (US-002)
+// ---------------------------------------------------------------------------
+
+describe("ScopedStrategy — scopeTestFallback flag (US-002)", () => {
+  test("when fallback triggers due to threshold, verify result includes scopeTestFallback: true", async () => {
+    const saved = { ..._scopedDeps };
+
+    const manyFiles = Array.from({ length: 12 }, (_, i) => `src/file${i}.ts`);
+
+    _scopedDeps.getChangedSourceFiles = async () => manyFiles;
+    _scopedDeps.mapSourceToTests = async () => manyFiles;
+    _scopedDeps.regression = async () => ({
+      success: true,
+      status: "SUCCESS" as const,
+      countsTowardEscalation: false,
+      output: "100 pass",
+    });
+
+    const ctx = makeCtxWithThreshold({ regressionMode: "inline" });
+    const result = await new ScopedStrategy().execute(ctx);
+
+    Object.assign(_scopedDeps, saved);
+
+    expect(result.scopeTestFallback).toBe(true);
+  });
+
+  test("when scoped strategy runs normally (no fallback), scopeTestFallback is absent", async () => {
+    const saved = { ..._scopedDeps };
+
+    _scopedDeps.getChangedSourceFiles = async () => ["src/foo.ts", "src/bar.ts", "src/baz.ts"];
+    _scopedDeps.mapSourceToTests = async () => [
+      "test/unit/foo.test.ts",
+      "test/unit/bar.test.ts",
+      "test/unit/baz.test.ts",
+    ];
+    _scopedDeps.buildSmartTestCommand = (_files: string[], cmd: string) => `${cmd} ${_files.join(" ")}`;
+    _scopedDeps.regression = async () => ({
+      success: true,
+      status: "SUCCESS" as const,
+      countsTowardEscalation: false,
+      output: "3 pass",
+    });
+
+    const ctx = makeCtxWithThreshold({ regressionMode: "inline" });
+    const result = await new ScopedStrategy().execute(ctx);
+
+    Object.assign(_scopedDeps, saved);
+
+    expect(result.scopeTestFallback).toBeUndefined();
   });
 });

@@ -44,6 +44,8 @@ export interface StoryMetrics {
   fullSuiteGatePassed?: boolean;
   /** Cost incurred only during rectification (only set when source === 'rectification') */
   rectificationCost?: number;
+  /** When ScopedStrategy.verify() falls back to full suite due to threshold (US-002) */
+  scopeTestFallback?: boolean;
 }
 
 /**

@@ -64,6 +64,7 @@ export class ScopedStrategy implements IVerificationStrategy {
 
     let effectiveCommand = ctx.testCommand;
     let isFullSuite = true;
+    let scopeTestFallback: boolean | undefined;
 
     if (smartCfg.enabled && ctx.storyGitRef && !isMonorepoOrchestrator) {
       const sourceFiles = await _scopedDeps.getChangedSourceFiles(ctx.workdir, ctx.storyGitRef);
@@ -78,6 +79,7 @@ export class ScopedStrategy implements IVerificationStrategy {
           },
         );
         effectiveCommand = ctx.config?.quality?.commands?.test ?? ctx.testCommand;
+        scopeTestFallback = true;
       } else {
         const pass1Files = await _scopedDeps.mapSourceToTests(sourceFiles, ctx.workdir);
         if (pass1Files.length > 0) {
@@ -132,6 +134,7 @@ export class ScopedStrategy implements IVerificationStrategy {
         rawOutput: result.output,
         passCount: parsed.passed,
         durationMs,
+        scopeTestFallback,
       });
     }
 
@@ -140,6 +143,7 @@ export class ScopedStrategy implements IVerificationStrategy {
         rawOutput: result.output,
         durationMs,
         countsTowardEscalation: false,
+        scopeTestFallback,
       });
     }
 
@@ -152,6 +156,7 @@ export class ScopedStrategy implements IVerificationStrategy {
       durationMs,
       // #89: Pass through exit code to detect unparseable infra failures
       exitCode: result.status === "TEST_FAILURE" ? 1 : undefined,
+      scopeTestFallback,
     });
   }
 }
