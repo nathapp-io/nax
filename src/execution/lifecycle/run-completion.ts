@@ -46,6 +46,8 @@ export interface RunCompletionOptions {
   hooksConfig?: HooksConfig;
   /** Whether the run used sequential (non-parallel) execution. Defaults to true. */
   isSequential?: boolean;
+  /** Skip deferred regression gate — set when regression phase already passed on a prior run. */
+  skipRegression?: boolean;
   /** Protocol-aware agent resolver (ACP wiring). Falls back to static getAgent when absent. */
   agentGetFn?: AgentGetFn;
 }
@@ -112,7 +114,9 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
 
   // Run deferred regression gate before final metrics
   const regressionMode = config.execution.regressionGate?.mode;
-  if (regressionMode === "deferred" && config.quality.commands.test) {
+  if (options.skipRegression) {
+    // Regression phase already passed on a prior run — skip
+  } else if (regressionMode === "deferred" && config.quality.commands.test) {
     if (shouldSkipDeferredRegression(allStoryMetrics, isSequential)) {
       logger?.info(
         "regression",

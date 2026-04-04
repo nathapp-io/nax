@@ -224,6 +224,9 @@ export function markStoryAsBlocked(
 ): void {
   const story = prd.userStories.find((s) => s.id === storyId);
   if (story) {
+    if (story.status === "passed") {
+      statusWriter?.resetPostRunStatus();
+    }
     story.status = "blocked";
     story.priorErrors = [...(story.priorErrors || []), `BLOCKED: ${reason}`];
   }

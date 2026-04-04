@@ -197,6 +197,9 @@ export function markStoryFailed(
 ): void {
   const story = prd.userStories.find((s) => s.id === storyId);
   if (story) {
+    if (story.status === "passed") {
+      statusWriter?.resetPostRunStatus();
+    }
     story.status = "failed";
     story.attempts += 1;
     if (failureCategory !== undefined) {

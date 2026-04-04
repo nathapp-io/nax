@@ -92,46 +92,56 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     isComplete: isComplete(options.prd),
   });
 
-  // Check if we need acceptance retry loop
-  if (options.config.acceptance.enabled && isComplete(options.prd)) {
-    options.statusWriter.setPostRunPhase("acceptance", { status: "running" });
+  // Check post-run status to determine if phases can be skipped on rerun
+  const postRunStatus = options.statusWriter.getPostRunStatus?.();
+  const acceptanceAlreadyPassed = postRunStatus?.acceptance?.status === "passed";
+  const regressionAlreadyPassed = postRunStatus?.regression?.status === "passed";
 
-    const acceptanceResult = await _runnerCompletionDeps.runAcceptanceLoop({
-      config: options.config,
-      prd: options.prd,
-      prdPath: options.prdPath,
-      workdir: options.workdir,
-      featureDir: options.featureDir,
-      hooks: options.hooks,
-      feature: options.feature,
-      totalCost: options.totalCost,
-      iterations: options.iterations,
-      storiesCompleted: options.storiesCompleted,
-      allStoryMetrics: options.allStoryMetrics,
-      pluginRegistry: options.pluginRegistry,
-      eventEmitter: options.eventEmitter,
-      statusWriter: options.statusWriter,
-      agentGetFn: options.agentGetFn,
-    });
+  if (acceptanceAlreadyPassed && regressionAlreadyPassed) {
+    logger?.info("execution", "Post-run phases already passed — skipping acceptance and regression");
+  } else {
+    if (acceptanceAlreadyPassed) {
+      logger?.info("execution", "Acceptance already passed — skipping acceptance phase");
+    } else if (options.config.acceptance.enabled && isComplete(options.prd)) {
+      options.statusWriter.setPostRunPhase("acceptance", { status: "running" });
 
-    const lastRunAt = new Date().toISOString();
-    if (acceptanceResult.success) {
-      options.statusWriter.setPostRunPhase("acceptance", { status: "passed", lastRunAt });
-    } else {
-      options.statusWriter.setPostRunPhase("acceptance", {
-        status: "failed",
-        failedACs: acceptanceResult.failedACs ?? [],
-        retries: acceptanceResult.retries ?? 0,
-        lastRunAt,
+      const acceptanceResult = await _runnerCompletionDeps.runAcceptanceLoop({
+        config: options.config,
+        prd: options.prd,
+        prdPath: options.prdPath,
+        workdir: options.workdir,
+        featureDir: options.featureDir,
+        hooks: options.hooks,
+        feature: options.feature,
+        totalCost: options.totalCost,
+        iterations: options.iterations,
+        storiesCompleted: options.storiesCompleted,
+        allStoryMetrics: options.allStoryMetrics,
+        pluginRegistry: options.pluginRegistry,
+        eventEmitter: options.eventEmitter,
+        statusWriter: options.statusWriter,
+        agentGetFn: options.agentGetFn,
+      });
+
+      const lastRunAt = new Date().toISOString();
+      if (acceptanceResult.success) {
+        options.statusWriter.setPostRunPhase("acceptance", { status: "passed", lastRunAt });
+      } else {
+        options.statusWriter.setPostRunPhase("acceptance", {
+          status: "failed",
+          failedACs: acceptanceResult.failedACs ?? [],
+          retries: acceptanceResult.retries ?? 0,
+          lastRunAt,
+        });
+      }
+
+      Object.assign(options, {
+        prd: acceptanceResult.prd,
+        totalCost: acceptanceResult.totalCost,
+        iterations: acceptanceResult.iterations,
+        storiesCompleted: acceptanceResult.storiesCompleted,
       });
     }
-
-    Object.assign(options, {
-      prd: acceptanceResult.prd,
-      totalCost: acceptanceResult.totalCost,
-      iterations: acceptanceResult.iterations,
-      storiesCompleted: acceptanceResult.storiesCompleted,
-    });
   }
 
   // Fire on-all-stories-complete before regression gate (RL-001)
@@ -159,6 +169,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     statusWriter: options.statusWriter,
     config: options.config,
     agentGetFn: options.agentGetFn,
+    skipRegression: regressionAlreadyPassed,
   });
 
   const { durationMs, runCompletedAt, finalCounts } = completionResult;
