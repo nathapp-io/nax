@@ -1,27 +1,35 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-04-04T05-39-48-955Z",
+    "id": "run-2026-04-04T05-45-17-732Z",
     "feature": "debate-session-mode",
-    "startedAt": "2026-04-04T05:39:48.955Z",
+    "startedAt": "2026-04-04T05:45:17.732Z",
     "status": "running",
     "dryRun": false,
-    "pid": 50508
+    "pid": 58206
   },
   "progress": {
     "total": 9,
     "passed": 1,
-    "failed": 1,
+    "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 7
+    "pending": 8
   },
   "cost": {
     "spent": 0,
     "limit": 30
   },
-  "current": null,
+  "current": {
+    "storyId": "US-001-A",
+    "title": "Add DebateMode type, Rebuttal interface, and mode/rebuttals fields to debate types",
+    "complexity": "simple",
+    "tddStrategy": "no-test",
+    "model": "powerful",
+    "attempt": 2,
+    "phase": "routing"
+  },
   "iterations": 2,
-  "updatedAt": "2026-04-04T05:40:43.011Z",
-  "durationMs": 54056
+  "updatedAt": "2026-04-04T05:45:17.875Z",
+  "durationMs": 143
 }
