@@ -3,7 +3,7 @@
   "feature": "debate-session-mode",
   "branchName": "feat/debate-session-mode",
   "createdAt": "2026-04-04T12:00:00.000Z",
-  "updatedAt": "2026-04-04T06:15:35.175Z",
+  "updatedAt": "2026-04-04T06:18:12.439Z",
   "userStories": [
     {
       "id": "US-000",
@@ -241,8 +241,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -345,11 +345,13 @@
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "Creates a new file with ~120 LOC touching 3-4 modules. Proposal-round logic is well-scoped: parallel fan-out with a fallback path. No stateful session lifecycle yet. Fits three-session-tdd-lite.",
-        "modelTier": "balanced"
+        "modelTier": "balanced",
+        "initialComplexity": "medium"
       },
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "2906cae71d15d26d15ae596d1611f551114d80e0"
     },
     {
       "id": "US-004-B",
