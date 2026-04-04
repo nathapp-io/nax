@@ -332,3 +332,55 @@ describe("profile field — US-001-A", () => {
     expect(profile).toBe("fast");
   });
 });
+
+describe("DebateStageConfigSchema — mode field (US-001-B)", () => {
+  type DebateStages = {
+    plan: { mode: string };
+    review: { mode: string };
+    acceptance: { mode: string };
+    rectification: { mode: string };
+    escalation: { mode: string };
+  };
+
+  function getStages(): DebateStages {
+    const parsed = NaxConfigSchema.parse({});
+    return (parsed as unknown as { debate: { stages: DebateStages } }).debate.stages;
+  }
+
+  test("stages.plan.mode defaults to 'panel'", () => {
+    expect(getStages().plan.mode).toBe("panel");
+  });
+
+  test("stages.review.mode defaults to 'panel'", () => {
+    expect(getStages().review.mode).toBe("panel");
+  });
+
+  test("stages.acceptance.mode defaults to 'panel'", () => {
+    expect(getStages().acceptance.mode).toBe("panel");
+  });
+
+  test("stages.rectification.mode defaults to 'panel'", () => {
+    expect(getStages().rectification.mode).toBe("panel");
+  });
+
+  test("stages.escalation.mode defaults to 'panel'", () => {
+    expect(getStages().escalation.mode).toBe("panel");
+  });
+
+  test("stages.plan.mode accepts 'hybrid'", () => {
+    const result = NaxConfigSchema.safeParse({
+      debate: { stages: { plan: { mode: "hybrid" } } },
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    const stages = (result.data as unknown as { debate: { stages: DebateStages } }).debate.stages;
+    expect(stages.plan.mode).toBe("hybrid");
+  });
+
+  test("stages.plan.mode rejects invalid value 'sequential'", () => {
+    const result = NaxConfigSchema.safeParse({
+      debate: { stages: { plan: { mode: "sequential" } } },
+    });
+    expect(result.success).toBe(false);
+  });
+});
