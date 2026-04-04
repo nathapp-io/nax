@@ -1,0 +1,6 @@
+{
+  "autoMode": {
+    "defaultAgent": "opencode",
+    "fallbackOrder": ["opencode", "claude"]
+  }
+}
