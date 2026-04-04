@@ -3,7 +3,7 @@
   "feature": "rerun-postrun-tracking",
   "branchName": "feat/rerun-postrun-tracking",
   "createdAt": "2026-04-04T12:00:00.000Z",
-  "updatedAt": "2026-04-04T10:55:22.115Z",
+  "updatedAt": "2026-04-04T11:21:29.158Z",
   "userStories": [
     {
       "id": "US-001",
@@ -245,8 +245,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -291,7 +291,9 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "src/cli/status-features.ts",
@@ -299,7 +301,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5f6c9bc5b38f6ce87973ecabe8b067617e3356c8"
     }
   ],
   "analysis": "## Key Files & Current State\n\n### StatusWriter (src/execution/status-writer.ts, 210 lines)\n- Encapsulates mutable status state (_runStatus, _prd, _currentStory) with mutex-serialized writes\n- Methods: setRunStatus(), setPrd(), setCurrentStory(), getSnapshot(), update(), writeFeatureStatus()\n- New methods needed: setPostRunPhase(), getPostRunStatus(), resetPostRunStatus()\n- Must add private _postRun state field alongside existing _runStatus, _prd, _currentStory\n- Write mutex pattern must be preserved for new methods\n\n### NaxStatusFile (src/execution/status-file.ts, 264 lines)\n- Machine-readable status schema (version: 1) consumed by external tools\n- Types: NaxStatusFile, RunStateSnapshot, countProgress(), buildStatusSnapshot(), writeStatusFile()\n- Must add optional `postRun` field to NaxStatusFile interface\n- buildStatusSnapshot() must propagate postRun from RunStateSnapshot to NaxStatusFile\n- RunStateSnapshot must gain optional postRun field\n\n### Runner Completion (src/execution/runner-completion.ts, 179 lines)\n- runCompletionPhase() orchestrates: acceptance loop -> hooks -> handleRunCompletion() -> feature status -> heartbeat -> auto-commit\n- Currently calls runAcceptanceLoop() unconditionally when acceptance.enabled && isComplete(prd)\n- Must add postRun status check before acceptance/regression to skip already-passed phases\n- statusWriter is typed as `any` here (comment says interface varies by platform)\n\n### Acceptance Loop (src/execution/lifecycle/acceptance-loop.ts, 691 lines — near 400-line limit concern for adding code)\n- runAcceptanceLoop() returns AcceptanceLoopResult { success, prd, totalCost, iterations, storiesCompleted, prdDirty }\n- Does NOT currently write any postRun status — needs boundary instrumentation\n- statusWriter is available in AcceptanceLoopContext\n- Key boundary points: before entering loop, on success return, on failure return\n\n### Run Completion (src/execution/lifecycle/run-completion.ts, 249 lines)\n- handleRunCompletion() runs deferred regression gate, saves metrics, logs summary\n- shouldSkipDeferredRegression() for smart-skip logic\n- Must instrument regression boundary writes and handle smart-skip status\n- _runCompletionDeps injectable for testing\n\n### Gitignore & Prechecks\n- .gitignore line 50: `.nax/features/*/status.json` — must be REMOVED\n- checks-warnings.ts line 161: `\".nax/features/*/status.json\"` in patterns array — must be REMOVED\n- checks-git.ts: NAX_RUNTIME_PATTERNS already includes status.json regex — no change needed\n\n### CLI Status Display (src/cli/status-features.ts, 405 lines)\n- displayFeatureDetails() shows PRD summary, interactions, active/crashed run, story table\n- Must add postRun section after run info when postRun is present in status file\n- Loads status via loadStatusFile() which returns NaxStatusFile | null\n\n### Story Status Transitions\n- Story status mutations happen in src/prd/index.ts (markStoryPassed, markStoryFailed, etc.) and src/prd/types.ts (blockStory)\n- resetPostRunStatus() must be called when a story transitions FROM \"passed\" to non-passed\n- Key mutation sites: markStoryFailed (prd/index.ts:194), blockStory (prd/types.ts:217)\n- Forward transitions (pending->passed) must NOT trigger reset\n\n## Risks & Considerations\n\n1. **Backward compatibility**: Existing status.json files lack `postRun` field. getPostRunStatus() must default to both \"not-run\" when absent. buildStatusSnapshot() must conditionally include postRun.\n2. **Crash recovery**: `status: \"running\"` from a crashed run must be treated as \"not-run\" (stale running state).\n3. **File size limits**: acceptance-loop.ts is already 691 lines (well over 400-line convention). Adding instrumentation should be minimal — just setPostRunPhase() calls at boundaries, not new logic.\n4. **Mutation pattern**: StatusWriter uses mutable private state. postRun follows the same pattern — private _postRun field with setter/getter methods.\n5. **Git workflow**: Un-gitignoring status.json means it becomes a tracked file. autoCommitIfDirty() at run end already handles committing nax runtime files.\n6. **Type safety**: PostRunStatus types should live in status-file.ts alongside NaxStatusFile since they're part of the persisted schema."

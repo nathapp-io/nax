@@ -10,27 +10,26 @@
   },
   "progress": {
     "total": 7,
-    "passed": 5,
+    "passed": 6,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 7.259494800000001,
+    "spent": 10.14574945,
     "limit": 30
   },
   "current": {
-    "storyId": "US-003",
-    "title": "Rerun skip logic and story regression reset",
-    "complexity": "medium",
-    "tddStrategy": "three-session-tdd-lite",
+    "storyId": "US-004",
+    "title": "Display postRun status in nax status CLI",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 7,
-  "updatedAt": "2026-04-04T11:21:18.164Z",
-  "durationMs": 5880227,
-  "lastHeartbeat": "2026-04-04T11:21:18.164Z"
+  "iterations": 8,
+  "updatedAt": "2026-04-04T11:21:29.157Z",
+  "durationMs": 5891220
 }
