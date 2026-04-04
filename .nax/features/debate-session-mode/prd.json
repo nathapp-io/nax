@@ -1,394 +1,345 @@
 {
-  "project": "@nathapp/nax",
-  "feature": "debate-session-mode",
-  "branchName": "feat/debate-session-mode",
-  "createdAt": "2026-04-04T12:00:00.000Z",
-  "updatedAt": "2026-04-04T05:31:44.209Z",
-  "userStories": [
-    {
-      "id": "US-000",
-      "title": "Split session.ts below 400-line limit",
-      "description": "Extract the 873-line `src/debate/session.ts` into focused modules while preserving all existing behavior and barrel exports.\n\n1. **session-helpers.ts** — Shared types (`ResolvedDebater`, `SuccessfulProposal`, `ResolveOutcome`), helper functions (`buildFailedResult`, `runComplete`, `modelTierFromDebater`, `isTierLabel`), `_debateSessionDeps`, `resolveDebaterModel`, `DebateSessionOptions`, and constants (`RESOLVER_FALLBACK_AGENT`, `DEFAULT_TIMEOUT_SECONDS`).\n2. **session-one-shot.ts** — `runOneShot()` extracted as a standalone function (or method mixin) that receives `this` context from DebateSession.\n3. **session-stateful.ts** — `runStateful()`, `runStatefulTurn()`, `closeStatefulSession()` extracted similarly.\n4. **session-plan.ts** — `runPlan()` logic extracted.\n5. **session.ts** — Thin `DebateSession` class: constructor, `run()` dispatcher, `resolve()`, and delegation to extracted modules.\n6. **index.ts** — Updated barrel exports (must remain identical public API).",
-      "acceptanceCriteria": [
-        "After split, no file in src/debate/ exceeds 400 lines",
-        "DebateSession.run() with sessionMode 'one-shot' delegates to the extracted runOneShot logic and returns identical DebateResult as before",
-        "DebateSession.run() with sessionMode 'stateful' delegates to the extracted runStateful logic and returns identical DebateResult as before",
-        "DebateSession.runPlan() delegates to the extracted runPlan logic and returns identical DebateResult as before",
-        "_debateSessionDeps is exported from session-helpers.ts and re-exported through the barrel index.ts",
-        "resolveDebaterModel() is exported from session-helpers.ts and re-exported through the barrel index.ts",
-        "DebateSessionOptions type is exported from session-helpers.ts and re-exported through the barrel index.ts",
-        "All existing debate tests pass without modification to test files"
-      ],
-      "tags": [
-        "refactor",
-        "prerequisite"
-      ],
-      "dependencies": [],
-      "status": "passed",
-      "passes": true,
-      "attempts": 0,
-      "escalations": [],
-      "routing": {
-        "complexity": "complex",
-        "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output",
-        "initialComplexity": "complex",
-        "modelTier": "balanced"
-      },
-      "contextFiles": [
-        "src/debate/session.ts",
-        "src/debate/index.ts",
-        "src/debate/types.ts",
-        "src/debate/concurrency.ts",
-        "src/debate/resolvers.ts"
-      ],
-      "priorErrors": [],
-      "priorFailures": [],
-      "storyPoints": 1,
-      "storyGitRef": "348fa9215f7e5356ae0054e4a16868d0f9689ef5"
-    },
-    {
-      "id": "US-001",
-      "title": "Add DebateMode type, mode field to config schema and defaults",
-      "description": "Add `DebateMode = 'panel' | 'hybrid'` type to `src/debate/types.ts`. Add `mode` field to `DebateStageConfig` interface. Add `mode: z.enum(['panel', 'hybrid']).default('panel')` to `DebateStageConfigSchema` in `src/config/schemas.ts`. Update all stage defaults in both the schema factory defaults and the inline default function (line 751 of schemas.ts) to include `mode: 'panel'`. Also add the `Rebuttal` interface and optional `rebuttals?: Rebuttal[]` to `DebateResult` — combined here since both are small type-only changes in the same file.",
-      "acceptanceCriteria": [
-        "NaxConfigSchema.parse({}).debate.stages.plan.mode equals 'panel'",
-        "NaxConfigSchema.parse({}).debate.stages.review.mode equals 'panel'",
-        "NaxConfigSchema.parse({}).debate.stages.acceptance.mode equals 'panel'",
-        "NaxConfigSchema.parse({}).debate.stages.rectification.mode equals 'panel'",
-        "NaxConfigSchema.parse({}).debate.stages.escalation.mode equals 'panel'",
-        "NaxConfigSchema.parse({ debate: { stages: { plan: { mode: 'hybrid' } } } }) parses without error and stages.plan.mode equals 'hybrid'",
-        "NaxConfigSchema.safeParse({ debate: { stages: { plan: { mode: 'sequential' } } } }).success equals false",
-        "DebateStageConfig interface includes mode property typed as DebateMode",
-        "DebateResult interface includes optional rebuttals property typed as Rebuttal[]",
-        "Rebuttal interface has debater typed as Debater, round typed as number, and output typed as string",
-        "Existing code compiles without changes — mode and rebuttals fields are optional with defaults"
-      ],
-      "tags": [
-        "config",
-        "types"
-      ],
-      "dependencies": [
-        "US-000"
-      ],
-      "status": "decomposed",
-      "passes": false,
-      "attempts": 0,
-      "escalations": [],
-      "routing": {
-        "complexity": "simple",
-        "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
-      },
-      "contextFiles": [
-        "src/debate/types.ts",
-        "src/config/schemas.ts",
-        "src/debate/index.ts"
-      ],
-      "priorErrors": [],
-      "priorFailures": [],
-      "storyPoints": 1
-    },
-    {
-      "id": "US-001-A",
-      "title": "Add DebateMode type, Rebuttal interface, and mode/rebuttals fields to debate types",
-      "description": "In `src/debate/types.ts`: (1) export `DebateMode = 'panel' | 'hybrid'` type alias. (2) Add `mode: DebateMode` field to `DebateStageConfig` interface. (3) Add `Rebuttal` interface with fields `debater: Debater`, `round: number`, `output: string`. (4) Add optional `rebuttals?: Rebuttal[]` field to `DebateResult`. All additions are purely additive — no existing fields change, so downstream code continues to compile without modification.",
-      "acceptanceCriteria": [
-        "DebateMode type is exported from src/debate/types.ts and equals the union 'panel' | 'hybrid'",
-        "DebateStageConfig interface has a mode property typed as DebateMode",
-        "Rebuttal interface is exported and has debater typed as Debater, round typed as number, and output typed as string",
-        "DebateResult interface has an optional rebuttals property typed as Rebuttal[]",
-        "All existing consumers of DebateStageConfig and DebateResult compile without changes (mode and rebuttals are additive)"
-      ],
-      "tags": [
-        "types",
-        "debate"
-      ],
-      "dependencies": [
-        "US-000"
-      ],
-      "contextFiles": [
-        "src/debate/types.ts",
-        "src/debate/index.ts"
-      ],
-      "status": "failed",
-      "passes": false,
-      "escalations": [],
-      "attempts": 1,
-      "parentStoryId": "US-001",
-      "routing": {
-        "complexity": "simple",
-        "testStrategy": "no-test",
-        "reasoning": "Pure type-only additions to a single file — no runtime behavior, no logic, no imports added. Purely additive so existing code is unaffected. ~15 LOC.",
-        "modelTier": "powerful",
-        "initialComplexity": "simple"
-      },
-      "priorErrors": [
-        "Attempt 1 failed with model tier: balanced: Tests failed with runtime crash (exit code TEST_FAILURE)"
-      ],
-      "priorFailures": [
+    "project": "@nathapp/nax",
+    "feature": "debate-session-mode",
+    "branchName": "feat/debate-session-mode",
+    "createdAt": "2026-04-04T12:00:00.000Z",
+    "updatedAt": "2026-04-04T05:31:44.209Z",
+    "userStories": [
         {
-          "attempt": 1,
-          "modelTier": "balanced",
-          "stage": "escalation",
-          "summary": "Failed with tier balanced, escalating to next tier",
-          "cost": 0.25935089999999994,
-          "timestamp": "2026-04-04T05:30:27.432Z"
+            "id": "US-000",
+            "title": "Split session.ts below 400-line limit",
+            "description": "Extract the 873-line `src/debate/session.ts` into focused modules while preserving all existing behavior and barrel exports.\n\n1. **session-helpers.ts** — Shared types (`ResolvedDebater`, `SuccessfulProposal`, `ResolveOutcome`), helper functions (`buildFailedResult`, `runComplete`, `modelTierFromDebater`, `isTierLabel`), `_debateSessionDeps`, `resolveDebaterModel`, `DebateSessionOptions`, and constants (`RESOLVER_FALLBACK_AGENT`, `DEFAULT_TIMEOUT_SECONDS`).\n2. **session-one-shot.ts** — `runOneShot()` extracted as a standalone function (or method mixin) that receives `this` context from DebateSession.\n3. **session-stateful.ts** — `runStateful()`, `runStatefulTurn()`, `closeStatefulSession()` extracted similarly.\n4. **session-plan.ts** — `runPlan()` logic extracted.\n5. **session.ts** — Thin `DebateSession` class: constructor, `run()` dispatcher, `resolve()`, and delegation to extracted modules.\n6. **index.ts** — Updated barrel exports (must remain identical public API).",
+            "acceptanceCriteria": [
+                "After split, no file in src/debate/ exceeds 400 lines",
+                "DebateSession.run() with sessionMode 'one-shot' delegates to the extracted runOneShot logic and returns identical DebateResult as before",
+                "DebateSession.run() with sessionMode 'stateful' delegates to the extracted runStateful logic and returns identical DebateResult as before",
+                "DebateSession.runPlan() delegates to the extracted runPlan logic and returns identical DebateResult as before",
+                "_debateSessionDeps is exported from session-helpers.ts and re-exported through the barrel index.ts",
+                "resolveDebaterModel() is exported from session-helpers.ts and re-exported through the barrel index.ts",
+                "DebateSessionOptions type is exported from session-helpers.ts and re-exported through the barrel index.ts",
+                "All existing debate tests pass without modification to test files"
+            ],
+            "tags": ["refactor", "prerequisite"],
+            "dependencies": [],
+            "status": "passed",
+            "passes": true,
+            "attempts": 0,
+            "escalations": [],
+            "routing": {
+                "complexity": "complex",
+                "testStrategy": "three-session-tdd-lite",
+                "reasoning": "validated from LLM output",
+                "initialComplexity": "complex",
+                "modelTier": "balanced"
+            },
+            "contextFiles": [
+                "src/debate/session.ts",
+                "src/debate/index.ts",
+                "src/debate/types.ts",
+                "src/debate/concurrency.ts",
+                "src/debate/resolvers.ts"
+            ],
+            "priorErrors": [],
+            "priorFailures": [],
+            "storyPoints": 1,
+            "storyGitRef": "348fa9215f7e5356ae0054e4a16868d0f9689ef5"
+        },
+        {
+            "id": "US-001",
+            "title": "Add DebateMode type, mode field to config schema and defaults",
+            "description": "Add `DebateMode = 'panel' | 'hybrid'` type to `src/debate/types.ts`. Add `mode` field to `DebateStageConfig` interface. Add `mode: z.enum(['panel', 'hybrid']).default('panel')` to `DebateStageConfigSchema` in `src/config/schemas.ts`. Update all stage defaults in both the schema factory defaults and the inline default function (line 751 of schemas.ts) to include `mode: 'panel'`. Also add the `Rebuttal` interface and optional `rebuttals?: Rebuttal[]` to `DebateResult` — combined here since both are small type-only changes in the same file.",
+            "acceptanceCriteria": [
+                "NaxConfigSchema.parse({}).debate.stages.plan.mode equals 'panel'",
+                "NaxConfigSchema.parse({}).debate.stages.review.mode equals 'panel'",
+                "NaxConfigSchema.parse({}).debate.stages.acceptance.mode equals 'panel'",
+                "NaxConfigSchema.parse({}).debate.stages.rectification.mode equals 'panel'",
+                "NaxConfigSchema.parse({}).debate.stages.escalation.mode equals 'panel'",
+                "NaxConfigSchema.parse({ debate: { stages: { plan: { mode: 'hybrid' } } } }) parses without error and stages.plan.mode equals 'hybrid'",
+                "NaxConfigSchema.safeParse({ debate: { stages: { plan: { mode: 'sequential' } } } }).success equals false",
+                "DebateStageConfig interface includes mode property typed as DebateMode",
+                "DebateResult interface includes optional rebuttals property typed as Rebuttal[]",
+                "Rebuttal interface has debater typed as Debater, round typed as number, and output typed as string",
+                "Existing code compiles without changes — mode and rebuttals fields are optional with defaults"
+            ],
+            "tags": ["config", "types"],
+            "dependencies": ["US-000"],
+            "status": "decomposed",
+            "passes": false,
+            "attempts": 0,
+            "escalations": [],
+            "routing": {
+                "complexity": "simple",
+                "testStrategy": "tdd-simple",
+                "reasoning": "validated from LLM output"
+            },
+            "contextFiles": [
+                "src/debate/types.ts",
+                "src/config/schemas.ts",
+                "src/debate/index.ts"
+            ],
+            "priorErrors": [],
+            "priorFailures": [],
+            "storyPoints": 1
+        },
+        {
+            "id": "US-001-A",
+            "title": "Add DebateMode type, Rebuttal interface, and mode/rebuttals fields to debate types",
+            "description": "In `src/debate/types.ts`: (1) export `DebateMode = 'panel' | 'hybrid'` type alias. (2) Add `mode: DebateMode` field to `DebateStageConfig` interface. (3) Add `Rebuttal` interface with fields `debater: Debater`, `round: number`, `output: string`. (4) Add optional `rebuttals?: Rebuttal[]` field to `DebateResult`. All additions are purely additive — no existing fields change, so downstream code continues to compile without modification.",
+            "acceptanceCriteria": [
+                "DebateMode type is exported from src/debate/types.ts and equals the union 'panel' | 'hybrid'",
+                "DebateStageConfig interface has a mode property typed as DebateMode",
+                "Rebuttal interface is exported and has debater typed as Debater, round typed as number, and output typed as string",
+                "DebateResult interface has an optional rebuttals property typed as Rebuttal[]",
+                "All existing consumers of DebateStageConfig and DebateResult compile without changes (mode and rebuttals are additive)"
+            ],
+            "tags": ["types", "debate"],
+            "dependencies": ["US-000"],
+            "contextFiles": ["src/debate/types.ts", "src/debate/index.ts"],
+            "status": "pending",
+            "passes": false,
+            "escalations": [],
+            "attempts": 1,
+            "parentStoryId": "US-001",
+            "routing": {
+                "complexity": "simple",
+                "testStrategy": "no-test",
+                "reasoning": "Pure type-only additions to a single file — no runtime behavior, no logic, no imports added. Purely additive so existing code is unaffected. ~15 LOC.",
+                "modelTier": "powerful",
+                "initialComplexity": "simple"
+            },
+            "priorErrors": [
+                "Attempt 1 failed with model tier: balanced: Tests failed with runtime crash (exit code TEST_FAILURE)"
+            ],
+            "priorFailures": [
+                {
+                    "attempt": 1,
+                    "modelTier": "balanced",
+                    "stage": "escalation",
+                    "summary": "Failed with tier balanced, escalating to next tier",
+                    "cost": 0.25935089999999994,
+                    "timestamp": "2026-04-04T05:30:27.432Z"
+                }
+            ],
+            "storyPoints": 1,
+            "storyGitRef": "1a7aa0925ffecc5112f49d29b663b9d75e4ea75f"
+        },
+        {
+            "id": "US-001-B",
+            "title": "Add mode field to DebateStageConfigSchema and update all stage defaults to 'panel'",
+            "description": "In `src/config/schemas.ts`: (1) Add `mode: z.enum(['panel', 'hybrid']).default('panel')` to the `DebateStageConfigSchema` factory (line ~478). (2) Update the inline default function for `DebateConfigSchema.optional().default(...)` (line ~751) to include `mode: 'panel'` in every stage object (plan, review, acceptance, rectification, escalation). No other files change. The Zod schema change is the source of truth; the inline default object must mirror it so both code paths agree.",
+            "acceptanceCriteria": [
+                "NaxConfigSchema.parse({}).debate.stages.plan.mode equals 'panel'",
+                "NaxConfigSchema.parse({}).debate.stages.review.mode equals 'panel'",
+                "NaxConfigSchema.parse({}).debate.stages.acceptance.mode equals 'panel'",
+                "NaxConfigSchema.parse({}).debate.stages.rectification.mode equals 'panel'",
+                "NaxConfigSchema.parse({}).debate.stages.escalation.mode equals 'panel'",
+                "NaxConfigSchema.parse({ debate: { stages: { plan: { mode: 'hybrid' } } } }) succeeds and stages.plan.mode equals 'hybrid'",
+                "NaxConfigSchema.safeParse({ debate: { stages: { plan: { mode: 'sequential' } } } }).success equals false",
+                "Existing code compiles without changes after the schema addition"
+            ],
+            "tags": ["config", "schema", "debate"],
+            "dependencies": ["US-001-A"],
+            "contextFiles": [
+                "src/config/schemas.ts",
+                "src/config/defaults.ts",
+                "src/debate/types.ts"
+            ],
+            "status": "pending",
+            "passes": false,
+            "escalations": [],
+            "attempts": 0,
+            "parentStoryId": "US-001",
+            "routing": {
+                "complexity": "simple",
+                "testStrategy": "tdd-simple",
+                "reasoning": "Single-file schema change (~10 LOC) with clear behavioral verification via NaxConfigSchema.parse() assertions. Inline default object update is mechanical. All 8 ACs are directly testable with bun:test. Depends on US-001-A for the DebateMode type to exist in the interface layer.",
+                "modelTier": "balanced"
+            },
+            "priorErrors": [],
+            "priorFailures": [],
+            "storyPoints": 1
+        },
+        {
+            "id": "US-002",
+            "title": "Route run() by mode with hybrid fallback to panel",
+            "description": "Update the `run()` method in `DebateSession` (now in session.ts after split) to check `this.stageConfig.mode` before dispatching. When `mode === 'hybrid'` and `sessionMode === 'stateful'`, call `runHybrid()`. When `mode === 'hybrid'` but `sessionMode` is `'one-shot'` or undefined, log a warning and fall back to `runOneShot()`. When `mode === 'panel'` (default), preserve existing behavior. The `runHybrid` method will be a stub that throws `new Error('Not implemented')` until US-003 implements it — this allows testing the routing logic independently.",
+            "acceptanceCriteria": [
+                "run() with mode 'panel' and sessionMode 'one-shot' calls runOneShot and returns its result",
+                "run() with mode 'panel' and sessionMode 'stateful' calls runStateful and returns its result",
+                "run() with mode undefined and sessionMode 'one-shot' calls runOneShot (backward compat — mode defaults to panel)",
+                "run() with mode 'hybrid' and sessionMode 'stateful' calls runHybrid",
+                "run() with mode 'hybrid' and sessionMode 'one-shot' calls runOneShot and logs a warning containing 'hybrid mode requires sessionMode: stateful'",
+                "run() with mode 'hybrid' and sessionMode undefined calls runOneShot and logs a warning containing 'hybrid mode requires sessionMode: stateful'"
+            ],
+            "tags": ["routing", "feature"],
+            "dependencies": ["US-001"],
+            "status": "pending",
+            "passes": false,
+            "attempts": 0,
+            "escalations": [],
+            "routing": {
+                "complexity": "simple",
+                "testStrategy": "tdd-simple",
+                "reasoning": "validated from LLM output"
+            },
+            "contextFiles": [
+                "src/debate/session.ts",
+                "src/debate/session-helpers.ts",
+                "src/debate/types.ts"
+            ],
+            "priorErrors": [],
+            "priorFailures": [],
+            "storyPoints": 1
+        },
+        {
+            "id": "US-003",
+            "title": "buildRebuttalContext prompt builder",
+            "description": "Add `buildRebuttalContext()` to `src/debate/prompts.ts` and export from the barrel. This function builds the prompt for a rebuttal turn: includes all proposals, all previous rounds' rebuttals (flattened), and a task instruction addressing the current debater by index.\n\nSignature: `buildRebuttalContext(prompt: string, proposals: Array<{ debater: Debater; output: string }>, rebuttalOutputs: string[], currentDebaterIndex: number): string`\n\nThe output includes:\n1. The original prompt\n2. A '## Proposals' section with each proposal labeled by index and agent name\n3. A '## Previous Rebuttals' section (only when rebuttalOutputs is non-empty)\n4. A '## Your Task' section identifying the debater by index and providing rebuttal instructions",
+            "acceptanceCriteria": [
+                "buildRebuttalContext() with 2 proposals and 0 rebuttals returns string containing '## Proposals' section with both proposals and no '## Previous Rebuttals' section",
+                "buildRebuttalContext() with 2 proposals and 3 rebuttals returns string containing '## Previous Rebuttals' section with all 3 rebuttals numbered",
+                "buildRebuttalContext() with currentDebaterIndex 0 returns string containing 'You are debater 1' (1-indexed in output)",
+                "buildRebuttalContext() includes each proposal labeled with the debater's agent name",
+                "buildRebuttalContext() is exported from src/debate/index.ts barrel"
+            ],
+            "tags": ["feature", "prompt"],
+            "dependencies": ["US-001"],
+            "status": "pending",
+            "passes": false,
+            "attempts": 0,
+            "escalations": [],
+            "routing": {
+                "complexity": "simple",
+                "testStrategy": "tdd-simple",
+                "reasoning": "validated from LLM output"
+            },
+            "contextFiles": [
+                "src/debate/prompts.ts",
+                "src/debate/types.ts",
+                "src/debate/index.ts"
+            ],
+            "priorErrors": [],
+            "priorFailures": [],
+            "storyPoints": 1
+        },
+        {
+            "id": "US-004",
+            "title": "Implement runHybrid() — parallel proposals then sequential rebuttals",
+            "description": "Implement `runHybrid()` in `src/debate/session-hybrid.ts`. This is the core hybrid debate flow:\n\n1. Resolve adapters (shared helper from session-helpers.ts)\n2. Proposal round — parallel via `allSettledBounded`, each debater gets `sessionRole: debate-hybrid-${debaterIndex}` with `keepSessionOpen: true`\n3. Rebuttal rounds — sequential per-debater stateful turns. For each round r, for each debater d: build rebuttal context via `buildRebuttalContext()` with all proposals + all rebuttals from previous rounds, call `runStatefulTurn()` with same `sessionRole` (resumes ACP session), all turns use `keepSessionOpen: true`\n4. After rebuttal loop (or on error), `closeStatefulSession()` for every debater in a `try/finally`\n5. Pass proposals as `proposalOutputs` and rebuttals as `critiqueOutputs` to `resolve()`\n6. Populate `DebateResult.rebuttals` with per-turn data\n7. Log `debate:rebuttal-start` and `debate:rebuttal-end` debug events\n\nFewer than 2 proposals triggers single-agent fallback (same as panel). Failed rebuttal turns are logged and skipped (resilient). `maxConcurrentDebaters` applies only to proposal round.",
+            "acceptanceCriteria": [
+                "runHybrid() with 2 debaters and rounds: 1 calls runStatefulTurn() for rebuttals exactly 2 times (once per debater) in sequential order",
+                "runHybrid() with 3 debaters and rounds: 2 calls runStatefulTurn() for rebuttals exactly 6 times (3 debaters x 2 rounds)",
+                "Each rebuttal turn's prompt (via buildRebuttalContext) contains all proposal outputs",
+                "Round 2 rebuttal prompts include all round 1 rebuttal outputs in the previous rebuttals section",
+                "When a rebuttal turn fails, runHybrid() logs a warning and continues with remaining debaters in that round",
+                "When fewer than 2 proposals succeed, runHybrid() returns single-agent fallback result (same as panel stateful mode)",
+                "Proposal sessionRole is 'debate-hybrid-${debaterIndex}' and rebuttal sessionRole reuses the same value for the same debater",
+                "All runStatefulTurn() calls for rebuttals use keepSessionOpen: true (sessions are closed explicitly after the loop)",
+                "After rebuttal loop completes, closeStatefulSession() is called for every debater whose session was opened",
+                "When the rebuttal loop throws, closeStatefulSession() is still called for all opened sessions (try/finally guarantee)",
+                "Rebuttal turn costs are accumulated into totalCostUsd on the returned DebateResult",
+                "DebateResult.rebuttals contains one entry per successful rebuttal turn with correct debater, round, and output",
+                "runHybrid() logs 'debate:rebuttal-start' with round and debaterIndex before each rebuttal turn"
+            ],
+            "tags": ["feature", "core"],
+            "dependencies": ["US-002", "US-003"],
+            "status": "decomposed",
+            "passes": false,
+            "attempts": 0,
+            "escalations": [],
+            "routing": {
+                "complexity": "complex",
+                "testStrategy": "three-session-tdd",
+                "reasoning": "validated from LLM output"
+            },
+            "contextFiles": [
+                "src/debate/session-stateful.ts",
+                "src/debate/session-helpers.ts",
+                "src/debate/prompts.ts",
+                "src/debate/types.ts",
+                "src/debate/concurrency.ts"
+            ],
+            "priorErrors": [],
+            "priorFailures": [],
+            "storyPoints": 1
+        },
+        {
+            "id": "US-004-A",
+            "title": "runHybrid() skeleton and parallel proposal round",
+            "description": "Create `src/debate/session-hybrid.ts` with the `runHybrid()` function. Implement the proposal phase only:\n\n1. Resolve adapters using the shared helper from `session-helpers.ts`\n2. Run proposals in parallel via `allSettledBounded`, each debater gets `sessionRole: 'debate-hybrid-${debaterIndex}'` with `keepSessionOpen: true`\n3. Collect successful proposal outputs; if fewer than 2 succeed, return the single-agent fallback result (same path as panel stateful mode)\n4. `maxConcurrentDebaters` applies to this round only\n5. Return proposals ready to be passed as `proposalOutputs` to `resolve()` — the rebuttal loop is a stub (implemented in US-004-B)\n\nThe rebuttal loop body can be a `TODO` placeholder at this stage.",
+            "acceptanceCriteria": [
+                "sessionRole for each proposal call is 'debate-hybrid-${debaterIndex}' (index 0-based)",
+                "All proposal calls are made in parallel via allSettledBounded respecting maxConcurrentDebaters",
+                "Every proposal call uses keepSessionOpen: true",
+                "When fewer than 2 proposals succeed, runHybrid() returns the single-agent fallback result (same shape as panel stateful fallback)",
+                "Successful proposal outputs are collected and available as proposalOutputs for the resolve() call",
+                "Adapters are resolved via the shared helper imported from session-helpers.ts (not inline)"
+            ],
+            "tags": ["feature", "core"],
+            "dependencies": ["US-002", "US-003"],
+            "contextFiles": [
+                "src/debate/session-helpers.ts",
+                "src/debate/session-stateful.ts",
+                "src/debate/types.ts",
+                "src/debate/concurrency.ts",
+                "src/debate/resolvers.ts"
+            ],
+            "status": "pending",
+            "passes": false,
+            "escalations": [],
+            "attempts": 0,
+            "parentStoryId": "US-004",
+            "routing": {
+                "complexity": "medium",
+                "testStrategy": "three-session-tdd-lite",
+                "reasoning": "Creates a new file with ~120 LOC touching 3-4 modules. Proposal-round logic is well-scoped: parallel fan-out with a fallback path. No stateful session lifecycle yet. Fits three-session-tdd-lite.",
+                "modelTier": "balanced"
+            },
+            "priorErrors": [],
+            "priorFailures": [],
+            "storyPoints": 1
+        },
+        {
+            "id": "US-004-B",
+            "title": "runHybrid() sequential rebuttal loop, session cleanup, and result assembly",
+            "description": "Extend `runHybrid()` in `src/debate/session-hybrid.ts` (built in US-004-A) with the full rebuttal loop and result assembly:\n\n1. For each round `r` (1..rounds), for each debater `d`: build rebuttal context via `buildRebuttalContext()` (all proposals + all rebuttals from rounds < r), then call `runStatefulTurn()` reusing the same `sessionRole: 'debate-hybrid-${debaterIndex}'` with `keepSessionOpen: true`\n2. Failed rebuttal turns are caught, logged as warnings, and skipped — loop continues\n3. Wrap the entire rebuttal loop in `try/finally`; in the `finally` block call `closeStatefulSession()` for every debater whose session was opened\n4. Accumulate per-turn costs into `totalCostUsd` on the returned `DebateResult`\n5. Populate `DebateResult.rebuttals` with one entry per successful turn (debater index, round, output)\n6. Pass proposals as `proposalOutputs` and collected rebuttals as `critiqueOutputs` to `resolve()`\n7. Log `debate:rebuttal-start` (with `round` and `debaterIndex`) before each turn",
+            "acceptanceCriteria": [
+                "With 2 debaters and rounds=1, runStatefulTurn() is called exactly 2 times in sequential debater order",
+                "With 3 debaters and rounds=2, runStatefulTurn() is called exactly 6 times (3 debaters × 2 rounds, inner loop is debaters)",
+                "Each rebuttal turn's prompt (via buildRebuttalContext) includes all successful proposal outputs",
+                "Round 2 rebuttal prompts include all round 1 rebuttal outputs in the previous-rebuttals section",
+                "When a rebuttal turn throws, runHybrid() logs a warning and continues with the remaining debaters in that round",
+                "Every rebuttal runStatefulTurn() call uses the same sessionRole as the proposal round for that debater and keepSessionOpen: true",
+                "After the rebuttal loop completes normally, closeStatefulSession() is called once per opened debater session",
+                "When the rebuttal loop throws, closeStatefulSession() is still called for all opened sessions (try/finally guarantee)",
+                "Per-turn rebuttal costs are summed and reflected in totalCostUsd on the returned DebateResult",
+                "DebateResult.rebuttals contains one entry per successful rebuttal turn with correct debaterIndex, round, and output; debug event 'debate:rebuttal-start' is emitted before each turn"
+            ],
+            "tags": ["feature", "core"],
+            "dependencies": ["US-004-A"],
+            "contextFiles": [
+                "src/debate/session-hybrid.ts",
+                "src/debate/session-helpers.ts",
+                "src/debate/session-stateful.ts",
+                "src/debate/prompts.ts",
+                "src/debate/types.ts",
+                "src/debate/resolvers.ts"
+            ],
+            "status": "pending",
+            "passes": false,
+            "escalations": [],
+            "attempts": 0,
+            "parentStoryId": "US-004",
+            "routing": {
+                "complexity": "complex",
+                "testStrategy": "three-session-tdd",
+                "reasoning": "~200 LOC adding nested loop logic with stateful ACP session lifecycle, try/finally cleanup, cost accumulation, and resilient error handling across multiple modules. The try/finally session-close guarantee and round-over-round context threading are subtle correctness requirements that warrant three-session-tdd with strict session isolation.",
+                "modelTier": "balanced"
+            },
+            "priorErrors": [],
+            "priorFailures": [],
+            "storyPoints": 1
         }
-      ],
-      "storyPoints": 1,
-      "storyGitRef": "1a7aa0925ffecc5112f49d29b663b9d75e4ea75f"
-    },
-    {
-      "id": "US-001-B",
-      "title": "Add mode field to DebateStageConfigSchema and update all stage defaults to 'panel'",
-      "description": "In `src/config/schemas.ts`: (1) Add `mode: z.enum(['panel', 'hybrid']).default('panel')` to the `DebateStageConfigSchema` factory (line ~478). (2) Update the inline default function for `DebateConfigSchema.optional().default(...)` (line ~751) to include `mode: 'panel'` in every stage object (plan, review, acceptance, rectification, escalation). No other files change. The Zod schema change is the source of truth; the inline default object must mirror it so both code paths agree.",
-      "acceptanceCriteria": [
-        "NaxConfigSchema.parse({}).debate.stages.plan.mode equals 'panel'",
-        "NaxConfigSchema.parse({}).debate.stages.review.mode equals 'panel'",
-        "NaxConfigSchema.parse({}).debate.stages.acceptance.mode equals 'panel'",
-        "NaxConfigSchema.parse({}).debate.stages.rectification.mode equals 'panel'",
-        "NaxConfigSchema.parse({}).debate.stages.escalation.mode equals 'panel'",
-        "NaxConfigSchema.parse({ debate: { stages: { plan: { mode: 'hybrid' } } } }) succeeds and stages.plan.mode equals 'hybrid'",
-        "NaxConfigSchema.safeParse({ debate: { stages: { plan: { mode: 'sequential' } } } }).success equals false",
-        "Existing code compiles without changes after the schema addition"
-      ],
-      "tags": [
-        "config",
-        "schema",
-        "debate"
-      ],
-      "dependencies": [
-        "US-001-A"
-      ],
-      "contextFiles": [
-        "src/config/schemas.ts",
-        "src/config/defaults.ts",
-        "src/debate/types.ts"
-      ],
-      "status": "pending",
-      "passes": false,
-      "escalations": [],
-      "attempts": 0,
-      "parentStoryId": "US-001",
-      "routing": {
-        "complexity": "simple",
-        "testStrategy": "tdd-simple",
-        "reasoning": "Single-file schema change (~10 LOC) with clear behavioral verification via NaxConfigSchema.parse() assertions. Inline default object update is mechanical. All 8 ACs are directly testable with bun:test. Depends on US-001-A for the DebateMode type to exist in the interface layer.",
-        "modelTier": "balanced"
-      },
-      "priorErrors": [],
-      "priorFailures": [],
-      "storyPoints": 1
-    },
-    {
-      "id": "US-002",
-      "title": "Route run() by mode with hybrid fallback to panel",
-      "description": "Update the `run()` method in `DebateSession` (now in session.ts after split) to check `this.stageConfig.mode` before dispatching. When `mode === 'hybrid'` and `sessionMode === 'stateful'`, call `runHybrid()`. When `mode === 'hybrid'` but `sessionMode` is `'one-shot'` or undefined, log a warning and fall back to `runOneShot()`. When `mode === 'panel'` (default), preserve existing behavior. The `runHybrid` method will be a stub that throws `new Error('Not implemented')` until US-003 implements it — this allows testing the routing logic independently.",
-      "acceptanceCriteria": [
-        "run() with mode 'panel' and sessionMode 'one-shot' calls runOneShot and returns its result",
-        "run() with mode 'panel' and sessionMode 'stateful' calls runStateful and returns its result",
-        "run() with mode undefined and sessionMode 'one-shot' calls runOneShot (backward compat — mode defaults to panel)",
-        "run() with mode 'hybrid' and sessionMode 'stateful' calls runHybrid",
-        "run() with mode 'hybrid' and sessionMode 'one-shot' calls runOneShot and logs a warning containing 'hybrid mode requires sessionMode: stateful'",
-        "run() with mode 'hybrid' and sessionMode undefined calls runOneShot and logs a warning containing 'hybrid mode requires sessionMode: stateful'"
-      ],
-      "tags": [
-        "routing",
-        "feature"
-      ],
-      "dependencies": [
-        "US-001"
-      ],
-      "status": "pending",
-      "passes": false,
-      "attempts": 0,
-      "escalations": [],
-      "routing": {
-        "complexity": "simple",
-        "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
-      },
-      "contextFiles": [
-        "src/debate/session.ts",
-        "src/debate/session-helpers.ts",
-        "src/debate/types.ts"
-      ],
-      "priorErrors": [],
-      "priorFailures": [],
-      "storyPoints": 1
-    },
-    {
-      "id": "US-003",
-      "title": "buildRebuttalContext prompt builder",
-      "description": "Add `buildRebuttalContext()` to `src/debate/prompts.ts` and export from the barrel. This function builds the prompt for a rebuttal turn: includes all proposals, all previous rounds' rebuttals (flattened), and a task instruction addressing the current debater by index.\n\nSignature: `buildRebuttalContext(prompt: string, proposals: Array<{ debater: Debater; output: string }>, rebuttalOutputs: string[], currentDebaterIndex: number): string`\n\nThe output includes:\n1. The original prompt\n2. A '## Proposals' section with each proposal labeled by index and agent name\n3. A '## Previous Rebuttals' section (only when rebuttalOutputs is non-empty)\n4. A '## Your Task' section identifying the debater by index and providing rebuttal instructions",
-      "acceptanceCriteria": [
-        "buildRebuttalContext() with 2 proposals and 0 rebuttals returns string containing '## Proposals' section with both proposals and no '## Previous Rebuttals' section",
-        "buildRebuttalContext() with 2 proposals and 3 rebuttals returns string containing '## Previous Rebuttals' section with all 3 rebuttals numbered",
-        "buildRebuttalContext() with currentDebaterIndex 0 returns string containing 'You are debater 1' (1-indexed in output)",
-        "buildRebuttalContext() includes each proposal labeled with the debater's agent name",
-        "buildRebuttalContext() is exported from src/debate/index.ts barrel"
-      ],
-      "tags": [
-        "feature",
-        "prompt"
-      ],
-      "dependencies": [
-        "US-001"
-      ],
-      "status": "pending",
-      "passes": false,
-      "attempts": 0,
-      "escalations": [],
-      "routing": {
-        "complexity": "simple",
-        "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
-      },
-      "contextFiles": [
-        "src/debate/prompts.ts",
-        "src/debate/types.ts",
-        "src/debate/index.ts"
-      ],
-      "priorErrors": [],
-      "priorFailures": [],
-      "storyPoints": 1
-    },
-    {
-      "id": "US-004",
-      "title": "Implement runHybrid() — parallel proposals then sequential rebuttals",
-      "description": "Implement `runHybrid()` in `src/debate/session-hybrid.ts`. This is the core hybrid debate flow:\n\n1. Resolve adapters (shared helper from session-helpers.ts)\n2. Proposal round — parallel via `allSettledBounded`, each debater gets `sessionRole: debate-hybrid-${debaterIndex}` with `keepSessionOpen: true`\n3. Rebuttal rounds — sequential per-debater stateful turns. For each round r, for each debater d: build rebuttal context via `buildRebuttalContext()` with all proposals + all rebuttals from previous rounds, call `runStatefulTurn()` with same `sessionRole` (resumes ACP session), all turns use `keepSessionOpen: true`\n4. After rebuttal loop (or on error), `closeStatefulSession()` for every debater in a `try/finally`\n5. Pass proposals as `proposalOutputs` and rebuttals as `critiqueOutputs` to `resolve()`\n6. Populate `DebateResult.rebuttals` with per-turn data\n7. Log `debate:rebuttal-start` and `debate:rebuttal-end` debug events\n\nFewer than 2 proposals triggers single-agent fallback (same as panel). Failed rebuttal turns are logged and skipped (resilient). `maxConcurrentDebaters` applies only to proposal round.",
-      "acceptanceCriteria": [
-        "runHybrid() with 2 debaters and rounds: 1 calls runStatefulTurn() for rebuttals exactly 2 times (once per debater) in sequential order",
-        "runHybrid() with 3 debaters and rounds: 2 calls runStatefulTurn() for rebuttals exactly 6 times (3 debaters x 2 rounds)",
-        "Each rebuttal turn's prompt (via buildRebuttalContext) contains all proposal outputs",
-        "Round 2 rebuttal prompts include all round 1 rebuttal outputs in the previous rebuttals section",
-        "When a rebuttal turn fails, runHybrid() logs a warning and continues with remaining debaters in that round",
-        "When fewer than 2 proposals succeed, runHybrid() returns single-agent fallback result (same as panel stateful mode)",
-        "Proposal sessionRole is 'debate-hybrid-${debaterIndex}' and rebuttal sessionRole reuses the same value for the same debater",
-        "All runStatefulTurn() calls for rebuttals use keepSessionOpen: true (sessions are closed explicitly after the loop)",
-        "After rebuttal loop completes, closeStatefulSession() is called for every debater whose session was opened",
-        "When the rebuttal loop throws, closeStatefulSession() is still called for all opened sessions (try/finally guarantee)",
-        "Rebuttal turn costs are accumulated into totalCostUsd on the returned DebateResult",
-        "DebateResult.rebuttals contains one entry per successful rebuttal turn with correct debater, round, and output",
-        "runHybrid() logs 'debate:rebuttal-start' with round and debaterIndex before each rebuttal turn"
-      ],
-      "tags": [
-        "feature",
-        "core"
-      ],
-      "dependencies": [
-        "US-002",
-        "US-003"
-      ],
-      "status": "decomposed",
-      "passes": false,
-      "attempts": 0,
-      "escalations": [],
-      "routing": {
-        "complexity": "complex",
-        "testStrategy": "three-session-tdd",
-        "reasoning": "validated from LLM output"
-      },
-      "contextFiles": [
-        "src/debate/session-stateful.ts",
-        "src/debate/session-helpers.ts",
-        "src/debate/prompts.ts",
-        "src/debate/types.ts",
-        "src/debate/concurrency.ts"
-      ],
-      "priorErrors": [],
-      "priorFailures": [],
-      "storyPoints": 1
-    },
-    {
-      "id": "US-004-A",
-      "title": "runHybrid() skeleton and parallel proposal round",
-      "description": "Create `src/debate/session-hybrid.ts` with the `runHybrid()` function. Implement the proposal phase only:\n\n1. Resolve adapters using the shared helper from `session-helpers.ts`\n2. Run proposals in parallel via `allSettledBounded`, each debater gets `sessionRole: 'debate-hybrid-${debaterIndex}'` with `keepSessionOpen: true`\n3. Collect successful proposal outputs; if fewer than 2 succeed, return the single-agent fallback result (same path as panel stateful mode)\n4. `maxConcurrentDebaters` applies to this round only\n5. Return proposals ready to be passed as `proposalOutputs` to `resolve()` — the rebuttal loop is a stub (implemented in US-004-B)\n\nThe rebuttal loop body can be a `TODO` placeholder at this stage.",
-      "acceptanceCriteria": [
-        "sessionRole for each proposal call is 'debate-hybrid-${debaterIndex}' (index 0-based)",
-        "All proposal calls are made in parallel via allSettledBounded respecting maxConcurrentDebaters",
-        "Every proposal call uses keepSessionOpen: true",
-        "When fewer than 2 proposals succeed, runHybrid() returns the single-agent fallback result (same shape as panel stateful fallback)",
-        "Successful proposal outputs are collected and available as proposalOutputs for the resolve() call",
-        "Adapters are resolved via the shared helper imported from session-helpers.ts (not inline)"
-      ],
-      "tags": [
-        "feature",
-        "core"
-      ],
-      "dependencies": [
-        "US-002",
-        "US-003"
-      ],
-      "contextFiles": [
-        "src/debate/session-helpers.ts",
-        "src/debate/session-stateful.ts",
-        "src/debate/types.ts",
-        "src/debate/concurrency.ts",
-        "src/debate/resolvers.ts"
-      ],
-      "status": "pending",
-      "passes": false,
-      "escalations": [],
-      "attempts": 0,
-      "parentStoryId": "US-004",
-      "routing": {
-        "complexity": "medium",
-        "testStrategy": "three-session-tdd-lite",
-        "reasoning": "Creates a new file with ~120 LOC touching 3-4 modules. Proposal-round logic is well-scoped: parallel fan-out with a fallback path. No stateful session lifecycle yet. Fits three-session-tdd-lite.",
-        "modelTier": "balanced"
-      },
-      "priorErrors": [],
-      "priorFailures": [],
-      "storyPoints": 1
-    },
-    {
-      "id": "US-004-B",
-      "title": "runHybrid() sequential rebuttal loop, session cleanup, and result assembly",
-      "description": "Extend `runHybrid()` in `src/debate/session-hybrid.ts` (built in US-004-A) with the full rebuttal loop and result assembly:\n\n1. For each round `r` (1..rounds), for each debater `d`: build rebuttal context via `buildRebuttalContext()` (all proposals + all rebuttals from rounds < r), then call `runStatefulTurn()` reusing the same `sessionRole: 'debate-hybrid-${debaterIndex}'` with `keepSessionOpen: true`\n2. Failed rebuttal turns are caught, logged as warnings, and skipped — loop continues\n3. Wrap the entire rebuttal loop in `try/finally`; in the `finally` block call `closeStatefulSession()` for every debater whose session was opened\n4. Accumulate per-turn costs into `totalCostUsd` on the returned `DebateResult`\n5. Populate `DebateResult.rebuttals` with one entry per successful turn (debater index, round, output)\n6. Pass proposals as `proposalOutputs` and collected rebuttals as `critiqueOutputs` to `resolve()`\n7. Log `debate:rebuttal-start` (with `round` and `debaterIndex`) before each turn",
-      "acceptanceCriteria": [
-        "With 2 debaters and rounds=1, runStatefulTurn() is called exactly 2 times in sequential debater order",
-        "With 3 debaters and rounds=2, runStatefulTurn() is called exactly 6 times (3 debaters × 2 rounds, inner loop is debaters)",
-        "Each rebuttal turn's prompt (via buildRebuttalContext) includes all successful proposal outputs",
-        "Round 2 rebuttal prompts include all round 1 rebuttal outputs in the previous-rebuttals section",
-        "When a rebuttal turn throws, runHybrid() logs a warning and continues with the remaining debaters in that round",
-        "Every rebuttal runStatefulTurn() call uses the same sessionRole as the proposal round for that debater and keepSessionOpen: true",
-        "After the rebuttal loop completes normally, closeStatefulSession() is called once per opened debater session",
-        "When the rebuttal loop throws, closeStatefulSession() is still called for all opened sessions (try/finally guarantee)",
-        "Per-turn rebuttal costs are summed and reflected in totalCostUsd on the returned DebateResult",
-        "DebateResult.rebuttals contains one entry per successful rebuttal turn with correct debaterIndex, round, and output; debug event 'debate:rebuttal-start' is emitted before each turn"
-      ],
-      "tags": [
-        "feature",
-        "core"
-      ],
-      "dependencies": [
-        "US-004-A"
-      ],
-      "contextFiles": [
-        "src/debate/session-hybrid.ts",
-        "src/debate/session-helpers.ts",
-        "src/debate/session-stateful.ts",
-        "src/debate/prompts.ts",
-        "src/debate/types.ts",
-        "src/debate/resolvers.ts"
-      ],
-      "status": "pending",
-      "passes": false,
-      "escalations": [],
-      "attempts": 0,
-      "parentStoryId": "US-004",
-      "routing": {
-        "complexity": "complex",
-        "testStrategy": "three-session-tdd",
-        "reasoning": "~200 LOC adding nested loop logic with stateful ACP session lifecycle, try/finally cleanup, cost accumulation, and resilient error handling across multiple modules. The try/finally session-close guarantee and round-over-round context threading are subtle correctness requirements that warrant three-session-tdd with strict session isolation.",
-        "modelTier": "balanced"
-      },
-      "priorErrors": [],
-      "priorFailures": [],
-      "storyPoints": 1
-    }
-  ],
-  "analysis": "## Key Files & Impact Areas\n\n### Core files requiring modification:\n1. **src/debate/session.ts** (873 lines) — Main DebateSession class. Currently over 2x the 400-line limit. Contains `run()`, `runOneShot()`, `runStateful()`, `runPlan()`, `resolve()`, plus helper functions (`buildFailedResult`, `runComplete`, `modelTierFromDebater`, `isTierLabel`, `resolveDebaterModel`) and types (`ResolvedDebater`, `SuccessfulProposal`, `ResolveOutcome`, `DebateSessionOptions`). The `_debateSessionDeps` injection point lives here. Must be split before adding `runHybrid()`.\n2. **src/debate/types.ts** (102 lines) — `DebateStageConfig` interface needs `mode: DebateMode` field. `DebateResult` needs optional `rebuttals?: Rebuttal[]`. New `DebateMode` and `Rebuttal` types needed.\n3. **src/config/schemas.ts** (799 lines) — `DebateStageConfigSchema` factory (line 466-482) needs `mode` field with `z.enum(['panel', 'hybrid']).default('panel')`. The default function on line 751 also needs `mode` per-stage.\n4. **src/debate/prompts.ts** (63 lines) — Needs new `buildRebuttalContext()` function.\n5. **src/debate/index.ts** (18 lines) — Barrel exports need updating for new modules.\n\n### New files to create:\n- `src/debate/session-helpers.ts` — Extracted shared logic: `buildFailedResult`, `runComplete`, `modelTierFromDebater`, `isTierLabel`, types (`ResolvedDebater`, `SuccessfulProposal`, `ResolveOutcome`), `_debateSessionDeps`, `resolveDebaterModel`\n- `src/debate/session-one-shot.ts` — Extracted `runOneShot()` as standalone function\n- `src/debate/session-stateful.ts` — Extracted `runStateful()`, `runStatefulTurn()`, `closeStatefulSession()`\n- `src/debate/session-plan.ts` — Extracted `runPlan()`\n- `src/debate/session-hybrid.ts` — New `runHybrid()` implementation\n\n### Existing test files (all must continue passing after refactor):\n- `test/unit/config/debate-schema.test.ts` (304 lines) — Schema validation tests\n- `test/unit/cli/plan-debate.test.ts` (424 lines) — Plan debate tests\n- `test/unit/cli/plan-decompose-debate.test.ts` (508 lines) — Plan decompose debate tests\n- `test/unit/verification/rectification-loop-debate.test.ts` (312 lines)\n- `test/unit/verification/rectification-loop-debate-cost.test.ts` (134 lines)\n- `test/unit/review/semantic-debate.test.ts` (429 lines)\n\n### Architecture observations:\n- `DebateSession` uses `_debateSessionDeps` for DI (getAgent, getSafeLogger, readFile) — must remain a single injection point\n- `run()` currently dispatches to `runOneShot()` or `runStateful()` based on `sessionMode` — needs `mode` check first\n- `runStatefulTurn()` uses `adapter.run()` with `sessionRole` and `keepSessionOpen` for ACP session management — hybrid reuses this\n- `allSettledBounded` from `concurrency.ts` handles bounded parallel execution — reused for hybrid proposals\n- `resolve()` method is private and handles all resolver types — shared across all modes\n- Barrel imports in `index.ts` re-export `DebateSession`, `_debateSessionDeps`, `DebateSessionOptions` from `session.ts` — must not break\n\n### Risks:\n1. **Refactor breakage** — Splitting 873-line session.ts into 5 files risks breaking imports throughout the codebase. The barrel `index.ts` must maintain identical exports.\n2. **Session lifecycle in hybrid** — ACP sessions must be properly closed even on errors. The `try/finally` pattern with `closeStatefulSession()` is critical.\n3. **Backward compatibility** — `mode` defaults to `'panel'` so existing configs are unaffected. The `?? 'one-shot'` fallback for `sessionMode` handles undefined.\n4. **Schema changes** — Adding `mode` to `DebateStageConfigSchema` affects all 5 stage configs. The default function (line 751) uses inline objects that bypass the schema factory, so both locations need updating.\n\n### Dependencies between stories:\n- US-000 (split session.ts) is prerequisite for all others\n- US-001 (config) is prerequisite for US-002 (routing) and US-001b (types)\n- US-002 (routing) is prerequisite for US-003 (runHybrid)\n- US-001b (types) is prerequisite for US-003 (runHybrid)\n- US-003 depends on the rebuttal prompt builder, which can be included in US-003 or a prior story"
+    ],
+    "analysis": "## Key Files & Impact Areas\n\n### Core files requiring modification:\n1. **src/debate/session.ts** (873 lines) — Main DebateSession class. Currently over 2x the 400-line limit. Contains `run()`, `runOneShot()`, `runStateful()`, `runPlan()`, `resolve()`, plus helper functions (`buildFailedResult`, `runComplete`, `modelTierFromDebater`, `isTierLabel`, `resolveDebaterModel`) and types (`ResolvedDebater`, `SuccessfulProposal`, `ResolveOutcome`, `DebateSessionOptions`). The `_debateSessionDeps` injection point lives here. Must be split before adding `runHybrid()`.\n2. **src/debate/types.ts** (102 lines) — `DebateStageConfig` interface needs `mode: DebateMode` field. `DebateResult` needs optional `rebuttals?: Rebuttal[]`. New `DebateMode` and `Rebuttal` types needed.\n3. **src/config/schemas.ts** (799 lines) — `DebateStageConfigSchema` factory (line 466-482) needs `mode` field with `z.enum(['panel', 'hybrid']).default('panel')`. The default function on line 751 also needs `mode` per-stage.\n4. **src/debate/prompts.ts** (63 lines) — Needs new `buildRebuttalContext()` function.\n5. **src/debate/index.ts** (18 lines) — Barrel exports need updating for new modules.\n\n### New files to create:\n- `src/debate/session-helpers.ts` — Extracted shared logic: `buildFailedResult`, `runComplete`, `modelTierFromDebater`, `isTierLabel`, types (`ResolvedDebater`, `SuccessfulProposal`, `ResolveOutcome`), `_debateSessionDeps`, `resolveDebaterModel`\n- `src/debate/session-one-shot.ts` — Extracted `runOneShot()` as standalone function\n- `src/debate/session-stateful.ts` — Extracted `runStateful()`, `runStatefulTurn()`, `closeStatefulSession()`\n- `src/debate/session-plan.ts` — Extracted `runPlan()`\n- `src/debate/session-hybrid.ts` — New `runHybrid()` implementation\n\n### Existing test files (all must continue passing after refactor):\n- `test/unit/config/debate-schema.test.ts` (304 lines) — Schema validation tests\n- `test/unit/cli/plan-debate.test.ts` (424 lines) — Plan debate tests\n- `test/unit/cli/plan-decompose-debate.test.ts` (508 lines) — Plan decompose debate tests\n- `test/unit/verification/rectification-loop-debate.test.ts` (312 lines)\n- `test/unit/verification/rectification-loop-debate-cost.test.ts` (134 lines)\n- `test/unit/review/semantic-debate.test.ts` (429 lines)\n\n### Architecture observations:\n- `DebateSession` uses `_debateSessionDeps` for DI (getAgent, getSafeLogger, readFile) — must remain a single injection point\n- `run()` currently dispatches to `runOneShot()` or `runStateful()` based on `sessionMode` — needs `mode` check first\n- `runStatefulTurn()` uses `adapter.run()` with `sessionRole` and `keepSessionOpen` for ACP session management — hybrid reuses this\n- `allSettledBounded` from `concurrency.ts` handles bounded parallel execution — reused for hybrid proposals\n- `resolve()` method is private and handles all resolver types — shared across all modes\n- Barrel imports in `index.ts` re-export `DebateSession`, `_debateSessionDeps`, `DebateSessionOptions` from `session.ts` — must not break\n\n### Risks:\n1. **Refactor breakage** — Splitting 873-line session.ts into 5 files risks breaking imports throughout the codebase. The barrel `index.ts` must maintain identical exports.\n2. **Session lifecycle in hybrid** — ACP sessions must be properly closed even on errors. The `try/finally` pattern with `closeStatefulSession()` is critical.\n3. **Backward compatibility** — `mode` defaults to `'panel'` so existing configs are unaffected. The `?? 'one-shot'` fallback for `sessionMode` handles undefined.\n4. **Schema changes** — Adding `mode` to `DebateStageConfigSchema` affects all 5 stage configs. The default function (line 751) uses inline objects that bypass the schema factory, so both locations need updating.\n\n### Dependencies between stories:\n- US-000 (split session.ts) is prerequisite for all others\n- US-001 (config) is prerequisite for US-002 (routing) and US-001b (types)\n- US-002 (routing) is prerequisite for US-003 (runHybrid)\n- US-001b (types) is prerequisite for US-003 (runHybrid)\n- US-003 depends on the rebuttal prompt builder, which can be included in US-003 or a prior story"
 }
