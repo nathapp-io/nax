@@ -3,7 +3,7 @@
   "feature": "rerun-postrun-tracking",
   "branchName": "feat/rerun-postrun-tracking",
   "createdAt": "2026-04-04T12:00:00.000Z",
-  "updatedAt": "2026-04-04T09:58:10.843Z",
+  "updatedAt": "2026-04-04T10:00:21.336Z",
   "userStories": [
     {
       "id": "US-001",
@@ -120,11 +120,13 @@
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "Three new public methods with non-trivial crash-recovery logic in getPostRunStatus(). getSnapshot() must be updated to thread postRun through to buildStatusSnapshot(). ~90 LOC across one file but crash-recovery semantics warrant three-session-tdd-lite.",
-        "modelTier": "balanced"
+        "modelTier": "balanced",
+        "initialComplexity": "medium"
       },
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "c1186711c67a77f8fb0675076817fb9fa6ddfd1c"
     },
     {
       "id": "US-001-C",
@@ -145,8 +147,8 @@
         "src/precheck/checks-warnings.ts",
         "src/precheck/checks-git.ts"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "parentStoryId": "US-001",

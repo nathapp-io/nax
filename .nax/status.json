@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 7,
-    "passed": 1,
+    "passed": 2,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 6
+    "pending": 5
   },
   "cost": {
-    "spent": 0.3732858,
+    "spent": 0.7190691,
     "limit": 30
   },
   "current": {
-    "storyId": "US-001-C",
-    "title": "Un-gitignore .nax/features/*/status.json and remove from precheck patterns",
-    "complexity": "simple",
-    "tddStrategy": "tdd-simple",
+    "storyId": "US-001-B",
+    "title": "StatusWriter post-run phase methods: setPostRunPhase, getPostRunStatus, resetPostRunStatus",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-04-04T09:59:18.015Z",
-  "durationMs": 960078,
-  "lastHeartbeat": "2026-04-04T09:59:18.015Z"
+  "iterations": 4,
+  "updatedAt": "2026-04-04T10:02:18.052Z",
+  "durationMs": 1140115,
+  "lastHeartbeat": "2026-04-04T10:02:18.052Z"
 }

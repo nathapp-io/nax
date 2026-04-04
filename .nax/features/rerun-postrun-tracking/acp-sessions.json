@@ -1,1 +1,6 @@
-{}
+{
+  "US-001-B:test-writer": {
+    "sessionName": "nax-6411f7e6-rerun-postrun-tracking-us-001-b-test-writer",
+    "agentName": "claude"
+  }
+}
