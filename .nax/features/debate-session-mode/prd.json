@@ -3,7 +3,7 @@
   "feature": "debate-session-mode",
   "branchName": "feat/debate-session-mode",
   "createdAt": "2026-04-04T12:00:00.000Z",
-  "updatedAt": "2026-04-04T06:18:12.439Z",
+  "updatedAt": "2026-04-04T06:31:20.149Z",
   "userStories": [
     {
       "id": "US-000",
@@ -336,8 +336,8 @@
         "src/debate/concurrency.ts",
         "src/debate/resolvers.ts"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "parentStoryId": "US-004",
@@ -393,11 +393,13 @@
         "complexity": "complex",
         "testStrategy": "three-session-tdd",
         "reasoning": "~200 LOC adding nested loop logic with stateful ACP session lifecycle, try/finally cleanup, cost accumulation, and resilient error handling across multiple modules. The try/finally session-close guarantee and round-over-round context threading are subtle correctness requirements that warrant three-session-tdd with strict session isolation.",
-        "modelTier": "balanced"
+        "modelTier": "balanced",
+        "initialComplexity": "complex"
       },
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "028471fd5e13989f6d27710aef4fa80290d2d173"
     }
   ],
   "analysis": "## Key Files & Impact Areas\n\n### Core files requiring modification:\n1. **src/debate/session.ts** (873 lines) — Main DebateSession class. Currently over 2x the 400-line limit. Contains `run()`, `runOneShot()`, `runStateful()`, `runPlan()`, `resolve()`, plus helper functions (`buildFailedResult`, `runComplete`, `modelTierFromDebater`, `isTierLabel`, `resolveDebaterModel`) and types (`ResolvedDebater`, `SuccessfulProposal`, `ResolveOutcome`, `DebateSessionOptions`). The `_debateSessionDeps` injection point lives here. Must be split before adding `runHybrid()`.\n2. **src/debate/types.ts** (102 lines) — `DebateStageConfig` interface needs `mode: DebateMode` field. `DebateResult` needs optional `rebuttals?: Rebuttal[]`. New `DebateMode` and `Rebuttal` types needed.\n3. **src/config/schemas.ts** (799 lines) — `DebateStageConfigSchema` factory (line 466-482) needs `mode` field with `z.enum(['panel', 'hybrid']).default('panel')`. The default function on line 751 also needs `mode` per-stage.\n4. **src/debate/prompts.ts** (63 lines) — Needs new `buildRebuttalContext()` function.\n5. **src/debate/index.ts** (18 lines) — Barrel exports need updating for new modules.\n\n### New files to create:\n- `src/debate/session-helpers.ts` — Extracted shared logic: `buildFailedResult`, `runComplete`, `modelTierFromDebater`, `isTierLabel`, types (`ResolvedDebater`, `SuccessfulProposal`, `ResolveOutcome`), `_debateSessionDeps`, `resolveDebaterModel`\n- `src/debate/session-one-shot.ts` — Extracted `runOneShot()` as standalone function\n- `src/debate/session-stateful.ts` — Extracted `runStateful()`, `runStatefulTurn()`, `closeStatefulSession()`\n- `src/debate/session-plan.ts` — Extracted `runPlan()`\n- `src/debate/session-hybrid.ts` — New `runHybrid()` implementation\n\n### Existing test files (all must continue passing after refactor):\n- `test/unit/config/debate-schema.test.ts` (304 lines) — Schema validation tests\n- `test/unit/cli/plan-debate.test.ts` (424 lines) — Plan debate tests\n- `test/unit/cli/plan-decompose-debate.test.ts` (508 lines) — Plan decompose debate tests\n- `test/unit/verification/rectification-loop-debate.test.ts` (312 lines)\n- `test/unit/verification/rectification-loop-debate-cost.test.ts` (134 lines)\n- `test/unit/review/semantic-debate.test.ts` (429 lines)\n\n### Architecture observations:\n- `DebateSession` uses `_debateSessionDeps` for DI (getAgent, getSafeLogger, readFile) — must remain a single injection point\n- `run()` currently dispatches to `runOneShot()` or `runStateful()` based on `sessionMode` — needs `mode` check first\n- `runStatefulTurn()` uses `adapter.run()` with `sessionRole` and `keepSessionOpen` for ACP session management — hybrid reuses this\n- `allSettledBounded` from `concurrency.ts` handles bounded parallel execution — reused for hybrid proposals\n- `resolve()` method is private and handles all resolver types — shared across all modes\n- Barrel imports in `index.ts` re-export `DebateSession`, `_debateSessionDeps`, `DebateSessionOptions` from `session.ts` — must not break\n\n### Risks:\n1. **Refactor breakage** — Splitting 873-line session.ts into 5 files risks breaking imports throughout the codebase. The barrel `index.ts` must maintain identical exports.\n2. **Session lifecycle in hybrid** — ACP sessions must be properly closed even on errors. The `try/finally` pattern with `closeStatefulSession()` is critical.\n3. **Backward compatibility** — `mode` defaults to `'panel'` so existing configs are unaffected. The `?? 'one-shot'` fallback for `sessionMode` handles undefined.\n4. **Schema changes** — Adding `mode` to `DebateStageConfigSchema` affects all 5 stage configs. The default function (line 751) uses inline objects that bypass the schema factory, so both locations need updating.\n\n### Dependencies between stories:\n- US-000 (split session.ts) is prerequisite for all others\n- US-001 (config) is prerequisite for US-002 (routing) and US-001b (types)\n- US-002 (routing) is prerequisite for US-003 (runHybrid)\n- US-001b (types) is prerequisite for US-003 (runHybrid)\n- US-003 depends on the rebuttal prompt builder, which can be included in US-003 or a prior story"
