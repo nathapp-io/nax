@@ -10,7 +10,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { NaxConfig } from "../../../src/config/types";
-import { checkPromptOverrideFiles } from "../../../src/precheck/checks-warnings";
+import { checkGitignoreCoversNax, checkPromptOverrideFiles } from "../../../src/precheck/checks-warnings";
 import { makeTempDir } from "../../helpers/temp";
 
 function makeTmpDir(): string {
@@ -111,6 +111,50 @@ describe("checkPromptOverrideFiles", () => {
 
     expect(checks[0].name).toContain("prompt-override");
     expect(checks[0].name).toContain("verifier");
+  });
+});
+
+// checkGitignoreCoversNax — status.json removed from required patterns
+// ---------------------------------------------------------------------------
+
+describe("checkGitignoreCoversNax", () => {
+  let workdir: string;
+
+  beforeEach(() => {
+    workdir = makeTempDir("nax-gitignore-test-");
+  });
+
+  test("passes when .gitignore has all required patterns but omits .nax/features/*/status.json", async () => {
+    const gitignoreContent = [
+      "nax.lock",
+      ".nax/**/runs/",
+      ".nax/metrics.json",
+      ".nax-pids",
+      ".nax-wt/",
+      "**/.nax-acceptance*",
+      "**/.nax/features/*/",
+    ].join("\n");
+    writeFileSync(join(workdir, ".gitignore"), gitignoreContent);
+
+    const result = await checkGitignoreCoversNax(workdir);
+    expect(result.passed).toBe(true);
+  });
+
+  test("patterns array does not include .nax/features/*/status.json", async () => {
+    // A gitignore that has all current required patterns but NOT status.json should pass
+    const gitignoreContent = [
+      "nax.lock",
+      ".nax/**/runs/",
+      ".nax/metrics.json",
+      ".nax-pids",
+      ".nax-wt/",
+      "**/.nax-acceptance*",
+      "**/.nax/features/*/",
+    ].join("\n");
+    writeFileSync(join(workdir, ".gitignore"), gitignoreContent);
+
+    const result = await checkGitignoreCoversNax(workdir);
+    expect(result.message).not.toContain("status.json");
   });
 });
 
