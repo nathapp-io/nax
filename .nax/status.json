@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 3,
-    "passed": 1,
+    "passed": 2,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 0.05599681499999999,
+    "spent": 0.38916895500000004,
     "limit": 30
   },
   "current": {
-    "storyId": "US-002",
-    "title": "Thread token usage from ACP adapter through to StoryMetrics",
+    "storyId": "US-003",
+    "title": "Aggregate totalTokens in saveRunMetrics()",
     "complexity": "medium",
     "tddStrategy": "tdd-simple",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-04-04T15:27:13.637Z",
-  "durationMs": 2280108,
-  "lastHeartbeat": "2026-04-04T15:27:13.637Z"
+  "iterations": 3,
+  "updatedAt": "2026-04-04T15:35:13.654Z",
+  "durationMs": 2760125,
+  "lastHeartbeat": "2026-04-04T15:35:13.654Z"
 }
