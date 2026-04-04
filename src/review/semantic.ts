@@ -16,6 +16,7 @@ import type { DebateSessionOptions } from "../debate";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
 import { getMergeBase, isGitRefValid } from "../utils/git";
+import { extractJsonFromMarkdown, extractJsonObject, stripTrailingCommas, wrapJsonPrompt } from "../utils/llm-json";
 import type { ReviewCheckResult, SemanticReviewConfig } from "./types";
 
 /** Story fields required for semantic review */
@@ -131,7 +132,7 @@ function buildPrompt(story: SemanticStory, semanticConfig: SemanticReviewConfig,
       ? `\n## Additional Review Rules\n${semanticConfig.rules.map((r, i) => `${i + 1}. ${r}`).join("\n")}\n`
       : "";
 
-  return `You are a semantic code reviewer with access to the repository files. Your job is to verify that the implementation satisfies the story's acceptance criteria (ACs). You are NOT a linter or style checker — lint, typecheck, and convention checks are handled separately.
+  const core = `You are a semantic code reviewer with access to the repository files. Your job is to verify that the implementation satisfies the story's acceptance criteria (ACs). You are NOT a linter or style checker — lint, typecheck, and convention checks are handled separately.
 
 ## Story: ${story.title}
 
@@ -179,6 +180,8 @@ Respond with JSON only — no explanation text before or after:
 }
 
 If all ACs are correctly implemented, respond with { "passed": true, "findings": [] }.`;
+
+  return wrapJsonPrompt(core);
 }
 
 interface LLMFinding {
@@ -196,26 +199,56 @@ interface LLMResponse {
 }
 
 /**
- * Parse and validate LLM JSON response.
- * Strips markdown fences if present (LLMs frequently add them despite instructions).
- * Returns null if truly unparseable.
+ * Validate parsed JSON matches the expected LLM response shape.
+ */
+function validateLLMShape(parsed: unknown): LLMResponse | null {
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const obj = parsed as Record<string, unknown>;
+  if (typeof obj.passed !== "boolean") return null;
+  if (!Array.isArray(obj.findings)) return null;
+  return { passed: obj.passed, findings: obj.findings as LLMFinding[] };
+}
+
+/**
+ * Parse and validate LLM JSON response using multi-tier extraction.
+ *
+ * Tier 1: Direct JSON.parse (clean responses)
+ * Tier 2: Markdown fence extraction — non-anchored, handles preamble text before fence
+ * Tier 3: Bare JSON object extraction — handles JSON embedded in narration
+ *
+ * Returns null only when all tiers fail.
  */
 function parseLLMResponse(raw: string): LLMResponse | null {
+  const text = raw.trim();
+
+  // Tier 1: direct parse
   try {
-    let cleaned = raw.trim();
-    // Match code fence even when the LLM appends explanation text after the closing fence.
-    // Use non-anchored end so trailing content (e.g. "All AC are met: ...") is ignored.
-    const fenceMatch = cleaned.match(/^```(?:json)?\s*\n([\s\S]*?)\n```/);
-    if (fenceMatch) cleaned = fenceMatch[1].trim();
-    const parsed = JSON.parse(cleaned) as unknown;
-    if (typeof parsed !== "object" || parsed === null) return null;
-    const obj = parsed as Record<string, unknown>;
-    if (typeof obj.passed !== "boolean") return null;
-    if (!Array.isArray(obj.findings)) return null;
-    return { passed: obj.passed, findings: obj.findings as LLMFinding[] };
+    return validateLLMShape(JSON.parse(text));
   } catch {
-    return null;
+    /* not raw JSON */
   }
+
+  // Tier 2: extract from markdown fences (non-anchored — handles preamble)
+  const fromFence = extractJsonFromMarkdown(text);
+  if (fromFence !== text) {
+    try {
+      return validateLLMShape(JSON.parse(stripTrailingCommas(fromFence)));
+    } catch {
+      /* fence content not valid JSON */
+    }
+  }
+
+  // Tier 3: extract bare JSON object from narration
+  const bareJson = extractJsonObject(text);
+  if (bareJson) {
+    try {
+      return validateLLMShape(JSON.parse(stripTrailingCommas(bareJson)));
+    } catch {
+      /* extracted text not valid JSON */
+    }
+  }
+
+  return null;
 }
 
 /**

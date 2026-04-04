@@ -6,6 +6,8 @@
 
 import type { Complexity, TestStrategy } from "../config";
 import { resolveTestStrategy } from "../config/test-strategy";
+import { extractJsonFromMarkdown, stripTrailingCommas } from "../utils/llm-json";
+export { extractJsonFromMarkdown };
 import type { PRD, UserStory } from "./types";
 import { validateStoryId } from "./validate";
 
@@ -17,35 +19,6 @@ const VALID_COMPLEXITY: Complexity[] = ["simple", "medium", "complex", "expert"]
 
 /** Pattern matching ST001 → ST-001 style IDs (prefix letters + digits, no separator) */
 const STORY_ID_NO_SEPARATOR = /^([A-Za-z]+)(\d+)$/;
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
-/**
- * Extract JSON from a markdown code block.
- *
- * Handles:
- *   ```json ... ```
- *   ``` ... ```
- *
- * Returns the input unchanged if no code block is detected.
- */
-export function extractJsonFromMarkdown(text: string): string {
-  const match = text.match(/```(?:json)?\s*\n([\s\S]*?)\n?\s*```/);
-  if (match) {
-    return match[1] ?? text;
-  }
-  return text;
-}
-
-/**
- * Strip trailing commas before closing braces/brackets to handle a common LLM quirk.
- * e.g. `{"a":1,}` → `{"a":1}`
- */
-function stripTrailingCommas(text: string): string {
-  return text.replace(/,\s*([}\]])/g, "$1");
-}
 
 /**
  * Normalize a story ID: convert e.g. ST001 → ST-001.

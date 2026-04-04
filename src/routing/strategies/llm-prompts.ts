@@ -7,6 +7,7 @@
 
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../../config";
 import type { UserStory } from "../../prd/types";
+import { extractJsonFromMarkdown, wrapJsonPrompt } from "../../utils/llm-json";
 import { determineTestStrategy } from "../router";
 import type { RoutingDecision } from "../router";
 
@@ -21,7 +22,7 @@ export function buildRoutingPrompt(story: UserStory, config: NaxConfig): string 
   const { title, description, acceptanceCriteria, tags } = story;
   const criteria = acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
 
-  return `You are a code task router. Classify a user story's complexity and select the cheapest model tier that will succeed.
+  const core = `You are a code task router. Classify a user story's complexity and select the cheapest model tier that will succeed.
 
 ## Story
 Title: ${title}
@@ -47,8 +48,10 @@ Tags: ${tags.join(", ")}
 - Many files ≠ complex — copy-paste refactors across files are simple.
 - Pure refactoring/deletion with no new behavior → simple.
 
-Respond with ONLY this JSON (no markdown, no explanation):
+Respond with:
 {"complexity":"simple|medium|complex|expert","modelTier":"fast|balanced|powerful","reasoning":"<one line>"}`;
+
+  return wrapJsonPrompt(core);
 }
 
 /**
@@ -70,7 +73,7 @@ ${criteria}
     })
     .join("\n\n");
 
-  return `You are a code task router. Classify each story's complexity and select the cheapest model tier that will succeed.
+  const batchCore = `You are a code task router. Classify each story's complexity and select the cheapest model tier that will succeed.
 
 ## Stories
 ${storyBlocks}
@@ -92,8 +95,10 @@ ${storyBlocks}
 - Many files ≠ complex — copy-paste refactors across files are simple.
 - Pure refactoring/deletion with no new behavior → simple.
 
-Respond with ONLY a JSON array (no markdown, no explanation):
+Respond with a JSON array:
 [{"id":"US-001","complexity":"simple|medium|complex|expert","modelTier":"fast|balanced|powerful","reasoning":"<one line>"}]`;
+
+  return wrapJsonPrompt(batchCore);
 }
 
 /**
@@ -147,17 +152,19 @@ export function validateRoutingDecision(
   };
 }
 
-/** Strip markdown code fences from LLM output. */
+/**
+ * Strip markdown code fences from LLM output.
+ * @deprecated Use extractJsonFromMarkdown from utils/llm-json directly.
+ */
 export function stripCodeFences(text: string): string {
-  let result = text.trim();
-  if (result.startsWith("```")) {
-    const lines = result.split("\n");
-    result = lines.slice(1, -1).join("\n").trim();
+  const trimmed = text.trim();
+  const fromFence = extractJsonFromMarkdown(trimmed);
+  if (fromFence !== trimmed) return fromFence;
+  // Handle bare 'json\n...' pattern (LLM outputs language hint without backticks)
+  if (trimmed.startsWith("json")) {
+    return trimmed.slice(4).trim();
   }
-  if (result.startsWith("json")) {
-    result = result.slice(4).trim();
-  }
-  return result;
+  return trimmed;
 }
 
 /**
@@ -170,7 +177,7 @@ export function stripCodeFences(text: string): string {
  * @throws Error if JSON parsing or validation fails
  */
 export function parseRoutingResponse(output: string, story: UserStory, config: NaxConfig): RoutingDecision {
-  const jsonText = stripCodeFences(output);
+  const jsonText = extractJsonFromMarkdown(output.trim());
   const parsed = JSON.parse(jsonText);
   return validateRoutingDecision(parsed, config, story);
 }
@@ -189,17 +196,7 @@ export function parseBatchResponse(
   stories: UserStory[],
   config: NaxConfig,
 ): Map<string, RoutingDecision> {
-  // Strip markdown code blocks if present
-  let jsonText = output.trim();
-  if (jsonText.startsWith("```")) {
-    const lines = jsonText.split("\n");
-    jsonText = lines.slice(1, -1).join("\n").trim();
-  }
-  if (jsonText.startsWith("json")) {
-    jsonText = jsonText.slice(4).trim();
-  }
-
-  const parsed = JSON.parse(jsonText);
+  const parsed = JSON.parse(extractJsonFromMarkdown(output.trim()));
 
   if (!Array.isArray(parsed)) {
     throw new Error("Batch LLM response must be a JSON array");
