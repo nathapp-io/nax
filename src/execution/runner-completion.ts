@@ -99,9 +99,11 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
 
   if (acceptanceAlreadyPassed && regressionAlreadyPassed) {
     logger?.info("execution", "Post-run phases already passed — skipping acceptance and regression");
+    console.info("Post-run phases already passed — skipping acceptance and regression");
   } else {
     if (acceptanceAlreadyPassed) {
       logger?.info("execution", "Acceptance already passed — skipping acceptance phase");
+      console.info("Acceptance already passed — skipping acceptance phase");
     } else if (options.config.acceptance.enabled && isComplete(options.prd)) {
       options.statusWriter.setPostRunPhase("acceptance", { status: "running" });
 

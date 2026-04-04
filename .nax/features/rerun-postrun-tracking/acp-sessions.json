@@ -34,5 +34,13 @@
   "US-003:verifier": {
     "sessionName": "nax-6411f7e6-rerun-postrun-tracking-us-003-verifier",
     "agentName": "claude"
+  },
+  "US-001:diagnose": {
+    "sessionName": "nax-6411f7e6-rerun-postrun-tracking-us-001-diagnose",
+    "agentName": "claude"
+  },
+  "US-001:source-fix": {
+    "sessionName": "nax-6411f7e6-rerun-postrun-tracking-us-001-source-fix",
+    "agentName": "claude"
   }
 }

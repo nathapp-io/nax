@@ -5,7 +5,7 @@
  */
 
 import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import chalk from "chalk";
 import { resolveProject } from "../commands/common";
 import type { NaxStatusFile } from "../execution/status-file";
@@ -391,10 +391,9 @@ async function displayFeatureDetails(featureName: string, featureDir: string): P
       const timestamp = regression.lastRunAt ? ` (${regression.lastRunAt})` : "";
       console.log(chalk.green(`   Regression: passed${timestamp}`));
     } else if (regression.status === "failed") {
-      const failedInfo =
-        regression.failedTests && regression.failedTests.length > 0
-          ? ` (${regression.failedTests.length} test(s))`
-          : "";
+      const ft = regression.failedTests as string[] | number | undefined;
+      const failedCount = Array.isArray(ft) ? ft.length : typeof ft === "number" ? ft : 0;
+      const failedInfo = failedCount > 0 ? ` (${failedCount} test(s))` : "";
       const timestamp = regression.lastRunAt ? ` ${regression.lastRunAt}` : "";
       console.log(chalk.red(`   Regression: failed${failedInfo}${timestamp}`));
     } else if (regression.status === "running") {
@@ -429,19 +428,23 @@ async function displayFeatureDetails(featureName: string, featureDir: string): P
  * ```
  */
 export async function displayFeatureStatus(options: FeatureStatusOptions = {}): Promise<void> {
-  const resolved = resolveProject({
-    dir: options.dir,
-    feature: options.feature,
-  });
-
   if (options.feature) {
-    // Single feature view
-    if (!resolved.featureDir) {
-      throw new Error("Feature directory not resolved (this should not happen)");
+    // Single feature view — compute feature dir directly when dir is provided
+    // to avoid requiring config.json (status display only needs feature files)
+    let featureDir: string;
+    if (options.dir) {
+      featureDir = join(resolve(options.dir), ".nax", "features", options.feature);
+    } else {
+      const resolved = resolveProject({ feature: options.feature });
+      if (!resolved.featureDir) {
+        throw new Error("Feature directory not resolved (this should not happen)");
+      }
+      featureDir = resolved.featureDir;
     }
-    await displayFeatureDetails(options.feature, resolved.featureDir);
+    await displayFeatureDetails(options.feature, featureDir);
   } else {
     // All features table
+    const resolved = resolveProject({ dir: options.dir });
     await displayAllFeatures(resolved.projectDir);
   }
 }

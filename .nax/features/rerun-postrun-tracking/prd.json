@@ -3,7 +3,7 @@
   "feature": "rerun-postrun-tracking",
   "branchName": "feat/rerun-postrun-tracking",
   "createdAt": "2026-04-04T12:00:00.000Z",
-  "updatedAt": "2026-04-04T12:01:53.160Z",
+  "updatedAt": "2026-04-04T12:03:59.661Z",
   "userStories": [
     {
       "id": "US-001",
@@ -284,8 +284,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
