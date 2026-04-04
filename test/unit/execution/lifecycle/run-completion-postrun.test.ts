@@ -142,6 +142,7 @@ beforeEach(() => {
     async (): Promise<DeferredRegressionResult> => ({
       success: true,
       failedTests: 0,
+      failedTestFiles: [],
       passedTests: 10,
       rectificationAttempts: 0,
       affectedStories: [],
@@ -172,7 +173,7 @@ describe("handleRunCompletion - AC4: sets regression running before runDeferredR
 
     _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => {
       callOrder.push("runDeferredRegression");
-      return { success: true, failedTests: 0, passedTests: 5, rectificationAttempts: 0, affectedStories: [] };
+      return { success: true, failedTests: 0, failedTestFiles: [], passedTests: 5, rectificationAttempts: 0, affectedStories: [] };
     });
 
     const prd = makePRD([{ id: "US-001", status: "passed" }]);
@@ -238,6 +239,7 @@ describe("handleRunCompletion - AC5: sets regression passed on success", () => {
     _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => ({
       success: true,
       failedTests: 0,
+      failedTestFiles: [],
       passedTests: 10,
       rectificationAttempts: 0,
       affectedStories: [],
@@ -293,6 +295,7 @@ describe("handleRunCompletion - AC6: sets regression failed on failure", () => {
     _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => ({
       success: false,
       failedTests: 3,
+      failedTestFiles: [],
       passedTests: 7,
       rectificationAttempts: 2,
       affectedStories: ["US-001", "US-002"],
@@ -325,6 +328,7 @@ describe("handleRunCompletion - AC6: sets regression failed on failure", () => {
     _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => ({
       success: false,
       failedTests: 2,
+      failedTestFiles: [],
       passedTests: 5,
       rectificationAttempts: 1,
       affectedStories: ["US-003", "US-004"],
@@ -342,6 +346,34 @@ describe("handleRunCompletion - AC6: sets regression failed on failure", () => {
     expect(failedCall?.affectedStories).toEqual(["US-003", "US-004"]);
   });
 
+  test("failed call includes failedTests file paths from regressionResult.failedTestFiles", async () => {
+    const regressionCalls: Array<Record<string, unknown>> = [];
+
+    const statusWriter = makeStatusWriter();
+    statusWriter.setPostRunPhase = mock((phase: string, update: Record<string, unknown>) => {
+      if (phase === "regression") {
+        regressionCalls.push(update);
+      }
+    });
+
+    _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => ({
+      success: false,
+      failedTests: 2,
+      failedTestFiles: ["test/unit/foo.test.ts", "test/unit/bar.test.ts"],
+      passedTests: 5,
+      rectificationAttempts: 1,
+      affectedStories: ["US-005"],
+    }));
+
+    const prd = makePRD([{ id: "US-005", status: "passed" }]);
+    const config = makeConfig("deferred", "bun test");
+
+    await handleRunCompletion(makeOpts(config, prd, { statusWriter }));
+
+    const failedCall = regressionCalls.find((u) => u.status === "failed");
+    expect(failedCall?.failedTests).toEqual(["test/unit/foo.test.ts", "test/unit/bar.test.ts"]);
+  });
+
   test("running is called before failed when regression fails", async () => {
     const callOrder: string[] = [];
 
@@ -355,6 +387,7 @@ describe("handleRunCompletion - AC6: sets regression failed on failure", () => {
     _runCompletionDeps.runDeferredRegression = mock(async (): Promise<DeferredRegressionResult> => ({
       success: false,
       failedTests: 1,
+      failedTestFiles: [],
       passedTests: 5,
       rectificationAttempts: 0,
       affectedStories: ["US-001"],
