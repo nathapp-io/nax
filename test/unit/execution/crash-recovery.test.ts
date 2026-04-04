@@ -33,6 +33,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Stop heartbeat timer — if not cleared, the 60s setInterval keeps the Bun
+  // process alive after all tests complete, causing the suite to hang.
+  stopHeartbeat();
   // Reset crash handlers after each test
   resetCrashHandlers();
 

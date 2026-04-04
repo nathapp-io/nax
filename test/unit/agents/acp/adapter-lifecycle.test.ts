@@ -7,13 +7,24 @@
  * - _runWithClient closes session on success (close IS called when stopReason == "end_turn")
  * - sweepFeatureSessions closes all sessions listed in sidecar
  * - sweepFeatureSessions is no-op when sidecar is missing
+ * - runSessionPrompt timer cleanup (timer cleared when prompt wins the race)
+ * - clearAcpSession uses sessionRole-keyed sidecar entry
  */
 
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AcpAgentAdapter, _acpAdapterDeps, sweepFeatureSessions } from "../../../../src/agents/acp/adapter";
+import {
+  AcpAgentAdapter,
+  _acpAdapterDeps,
+  clearAcpSession,
+  readAcpSession,
+  runSessionPrompt,
+  saveAcpSession,
+  sweepFeatureSessions,
+} from "../../../../src/agents/acp/adapter";
+import type { AcpSession, AcpSessionResponse } from "../../../../src/agents/acp/adapter";
 import { makeTempDir } from "../../../helpers/temp";
 import { makeClient, makeSession } from "./adapter.test";
 
@@ -324,5 +335,81 @@ describe("sweepFeatureSessions", () => {
     await expect(sweepFeatureSessions(tmpDir, featureName)).resolves.toBeUndefined();
     // Second session should still be closed
     expect(closedSessions).toHaveLength(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// runSessionPrompt — timer cleanup
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("runSessionPrompt — timer cleanup", () => {
+  test("returns response when prompt resolves before timeout", async () => {
+    const fakeResponse: AcpSessionResponse = {
+      stopReason: "end_turn",
+      messages: [],
+    };
+    const mockSession: AcpSession = {
+      prompt: async () => fakeResponse,
+      cancelActivePrompt: async () => {},
+      close: async () => {},
+    };
+    const result = await runSessionPrompt(mockSession, "hello", 30_000);
+    expect(result.timedOut).toBe(false);
+    expect(result.response).toEqual(fakeResponse);
+  });
+
+  test("returns timedOut=true when timeout fires first", async () => {
+    const mockSession: AcpSession = {
+      prompt: () => new Promise(() => {}), // never resolves
+      cancelActivePrompt: async () => {},
+      close: async () => {},
+    };
+    const result = await runSessionPrompt(mockSession, "hello", 1); // 1ms timeout
+    expect(result.timedOut).toBe(true);
+    expect(result.response).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// clearAcpSession — sessionRole key fix
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("clearAcpSession — sessionRole key", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "nax-sidecar-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("clears role-keyed entry and leaves plain-key entry untouched", async () => {
+    const featureName = "feat";
+    const storyId = "US-001";
+    const role = "implementer";
+    const sidecarKey = `${storyId}:${role}`;
+
+    await saveAcpSession(tmpDir, featureName, sidecarKey, "session-abc", "claude");
+    await saveAcpSession(tmpDir, featureName, storyId, "session-xyz", "claude");
+
+    await clearAcpSession(tmpDir, featureName, storyId, role);
+
+    const roleEntry = await readAcpSession(tmpDir, featureName, sidecarKey);
+    const plainEntry = await readAcpSession(tmpDir, featureName, storyId);
+    expect(roleEntry).toBeNull();
+    expect(plainEntry).toBe("session-xyz");
+  });
+
+  test("clears plain-key entry when no sessionRole provided", async () => {
+    const featureName = "feat";
+    const storyId = "US-002";
+
+    await saveAcpSession(tmpDir, featureName, storyId, "session-plain", "claude");
+    await clearAcpSession(tmpDir, featureName, storyId);
+
+    const entry = await readAcpSession(tmpDir, featureName, storyId);
+    expect(entry).toBeNull();
   });
 });

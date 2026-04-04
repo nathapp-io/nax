@@ -64,7 +64,7 @@ export async function handleDryRun(ctx: DryRunContext): Promise<DryRunResult> {
     pipelineEventBus.emit({
       type: "story:completed",
       storyId: s.id,
-      story: s,
+      story: { id: s.id, title: s.title, status: s.status, attempts: s.attempts },
       passed: true,
       runElapsedMs: 0,
       cost: 0,

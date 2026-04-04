@@ -18,17 +18,29 @@
  */
 
 import { getLogger } from "../logger";
-import type { UserStory } from "../prd";
 import type { VerifyResult } from "../verification/orchestrator-types";
 
 // ---------------------------------------------------------------------------
 // Event types
 // ---------------------------------------------------------------------------
 
+/**
+ * Lightweight story metadata carried in internal pipeline events.
+ * Deliberately excludes heavy fields (priorFailures, escalations, contextFiles)
+ * to prevent large object retention in async subscriber closures.
+ * See: #253 — memory spike from fire-and-forget emit holding full UserStory.
+ */
+export interface StoryEventSummary {
+  id: string;
+  title: string;
+  status: string;
+  attempts: number;
+}
+
 export interface StoryStartedEvent {
   type: "story:started";
   storyId: string;
-  story: UserStory;
+  story: StoryEventSummary;
   workdir: string;
   /** Optional: passed by executor for hook subscriber */
   modelTier?: string;
@@ -39,7 +51,7 @@ export interface StoryStartedEvent {
 export interface StoryCompletedEvent {
   type: "story:completed";
   storyId: string;
-  story: UserStory;
+  story: StoryEventSummary;
   passed: boolean;
   runElapsedMs: number;
   /** Optional: passed by executor/stage for hook/reporter subscribers */
@@ -51,7 +63,7 @@ export interface StoryCompletedEvent {
 export interface StoryFailedEvent {
   type: "story:failed";
   storyId: string;
-  story: UserStory;
+  story: StoryEventSummary;
   reason: string;
   countsTowardEscalation: boolean;
   /** Optional: passed by executor for interaction subscriber */
@@ -183,6 +195,7 @@ type SubscriberMap = Map<string, EventSubscriber[]>;
 
 export class PipelineEventBus {
   private readonly subscribers: SubscriberMap = new Map();
+  private readonly _pending: Set<Promise<void>> = new Set();
 
   /**
    * Subscribe to a specific event type.
@@ -242,9 +255,11 @@ export class PipelineEventBus {
       try {
         const result = sub(event);
         if (result instanceof Promise) {
-          result.catch((err) => {
+          const tracked = result.catch((err) => {
             logger.warn("event-bus", `Subscriber error on ${event.type}`, { error: String(err) });
-          });
+          }) as Promise<void>;
+          this._pending.add(tracked);
+          tracked.finally(() => this._pending.delete(tracked));
         }
       } catch (err) {
         logger.warn("event-bus", `Subscriber threw on ${event.type}`, { error: String(err) });
@@ -274,6 +289,17 @@ export class PipelineEventBus {
         }
       }),
     );
+  }
+
+  /**
+   * Await all pending async subscriber Promises from prior emit() calls.
+   * Call this between story iterations to create an explicit GC sync point —
+   * ensures subscriber closures (and their captured event payloads) are released
+   * before the next story begins. See: #253.
+   */
+  async drain(): Promise<void> {
+    if (this._pending.size === 0) return;
+    await Promise.allSettled([...this._pending]);
   }
 
   /** Remove all subscribers (useful in tests). */

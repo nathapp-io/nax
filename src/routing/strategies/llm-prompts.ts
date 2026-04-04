@@ -8,7 +8,7 @@
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../../config";
 import type { UserStory } from "../../prd/types";
 import { extractJsonFromMarkdown, wrapJsonPrompt } from "../../utils/llm-json";
-import { determineTestStrategy } from "../router";
+import { determineTestStrategy } from "../classify";
 import type { RoutingDecision } from "../router";
 
 /**

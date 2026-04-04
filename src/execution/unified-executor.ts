@@ -46,6 +46,9 @@ export async function executeUnified(
   const runStartRef = await captureRunStartRef(ctx.workdir);
 
   pipelineEventBus.clear();
+  // Wire subscribers — unsubscribe fns are NOT called here because run:completed
+  // fires after executeUnified() returns (in runCompletionPhase). Cleanup happens
+  // via pipelineEventBus.clear() at the start of the next run.
   wireHooks(pipelineEventBus, ctx.hooks, ctx.workdir, ctx.feature);
   wireReporters(pipelineEventBus, ctx.pluginRegistry, ctx.runId, ctx.startTime);
   wireInteraction(pipelineEventBus, ctx.interactionChain, ctx.config);
@@ -150,7 +153,7 @@ export async function executeUnified(
             pipelineEventBus.emit({
               type: "story:started",
               storyId: story.id,
-              story,
+              story: { id: story.id, title: story.title, status: story.status, attempts: story.attempts },
               workdir: ctx.workdir,
               modelTier:
                 story.routing?.modelTier ??
@@ -221,6 +224,7 @@ export async function executeUnified(
             );
           }
 
+          await pipelineEventBus.drain();
           totalCost += batchResult.totalCost;
           storiesCompleted += batchResult.completed.length;
           prdDirty = true;
@@ -322,7 +326,7 @@ export async function executeUnified(
           pipelineEventBus.emit({
             type: "story:started",
             storyId: singleStory.id,
-            story: singleStory,
+            story: { id: singleStory.id, title: singleStory.title, status: singleStory.status, attempts: singleStory.attempts },
             workdir: ctx.workdir,
             modelTier: singleSelection.routing.modelTier,
             agent: ctx.config.autoMode.defaultAgent,
@@ -337,6 +341,7 @@ export async function executeUnified(
             totalCost,
             allStoryMetrics,
           );
+          await pipelineEventBus.drain();
           [prd, storiesCompleted, totalCost, prdDirty] = [
             singleIter.prd,
             storiesCompleted + singleIter.storiesCompletedDelta,
@@ -397,7 +402,7 @@ export async function executeUnified(
       pipelineEventBus.emit({
         type: "story:started",
         storyId: selection.story.id,
-        story: selection.story,
+        story: { id: selection.story.id, title: selection.story.title, status: selection.story.status, attempts: selection.story.attempts },
         workdir: ctx.workdir,
         modelTier: selection.routing.modelTier,
         agent: ctx.config.autoMode.defaultAgent,
@@ -405,6 +410,7 @@ export async function executeUnified(
       });
 
       const iter = await _unifiedExecutorDeps.runIteration(ctx, prd, selection, iterations, totalCost, allStoryMetrics);
+      await pipelineEventBus.drain();
       [prd, storiesCompleted, totalCost, prdDirty] = [
         iter.prd,
         storiesCompleted + iter.storiesCompletedDelta,

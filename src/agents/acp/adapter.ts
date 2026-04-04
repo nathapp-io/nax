@@ -247,9 +247,17 @@ export async function runSessionPrompt(
   timeoutMs: number,
 ): Promise<{ response: AcpSessionResponse | null; timedOut: boolean }> {
   const promptPromise = session.prompt(prompt);
-  const timeoutPromise = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), timeoutMs));
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<"timeout">((resolve) => {
+    timeoutId = setTimeout(() => resolve("timeout"), timeoutMs);
+  });
 
-  const winner = await Promise.race([promptPromise, timeoutPromise]);
+  let winner: AcpSessionResponse | "timeout";
+  try {
+    winner = await Promise.race([promptPromise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (winner === "timeout") {
     // Suppress the pending prompt rejection to prevent unhandled rejection after
@@ -590,7 +598,7 @@ export class AcpAgentAdapter implements AgentAdapter {
               featureName: options.featureName,
             });
             if (options.featureName && options.storyId) {
-              await clearAcpSession(options.workdir, options.featureName, options.storyId);
+              await clearAcpSession(options.workdir, options.featureName, options.storyId, options.sessionRole);
             }
             continue;
           }
@@ -779,18 +787,21 @@ export class AcpAgentAdapter implements AgentAdapter {
 
         getSafeLogger()?.debug("acp-adapter", "Agent asked question, routing to interactionBridge", { question });
 
+        let interactionTimeoutId: ReturnType<typeof setTimeout> | undefined;
         try {
           const answer = await Promise.race([
             options.interactionBridge.onQuestionDetected(question),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error("interaction timeout")), INTERACTION_TIMEOUT_MS),
-            ),
+            new Promise<never>((_, reject) => {
+              interactionTimeoutId = setTimeout(() => reject(new Error("interaction timeout")), INTERACTION_TIMEOUT_MS);
+            }),
           ]);
           currentPrompt = answer;
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           getSafeLogger()?.warn("acp-adapter", `InteractionBridge failed: ${msg}`);
           break;
+        } finally {
+          clearTimeout(interactionTimeoutId);
         }
       }
 
@@ -810,7 +821,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       if (runState.succeeded && !options.keepSessionOpen) {
         await closeAcpSession(session);
         if (options.featureName && options.storyId) {
-          await clearAcpSession(options.workdir, options.featureName, options.storyId);
+          await clearAcpSession(options.workdir, options.featureName, options.storyId, options.sessionRole);
         }
       } else if (!runState.succeeded) {
         getSafeLogger()?.info("acp-adapter", "Keeping session open for retry", { sessionName });
