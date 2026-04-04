@@ -2,5 +2,9 @@
   "US-004-A:test-writer": {
     "sessionName": "nax-4a1cdab1-debate-session-mode-us-004-a-test-writer",
     "agentName": "claude"
+  },
+  "US-004-A:implementer": {
+    "sessionName": "nax-4a1cdab1-debate-session-mode-us-004-a-implementer",
+    "agentName": "claude"
   }
 }
