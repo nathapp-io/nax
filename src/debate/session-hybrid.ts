@@ -152,7 +152,7 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
         const proposal = successfulProposals[debaterIdx];
         const sessionRole = `debate-hybrid-${debaterIdx}`;
 
-        logger?.debug("debate", "debate:rebuttal-start", {
+        logger?.info("debate:rebuttal-start", "debate:rebuttal-start", {
           storyId: ctx.storyId,
           round,
           debaterIndex: debaterIdx,

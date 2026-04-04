@@ -10,27 +10,19 @@
   },
   "progress": {
     "total": 9,
-    "passed": 7,
+    "passed": 9,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 0
   },
   "cost": {
-    "spent": 2.6933180000000005,
+    "spent": 5.162458600000001,
     "limit": 30
   },
-  "current": {
-    "storyId": "US-004-B",
-    "title": "runHybrid() sequential rebuttal loop, session cleanup, and result assembly",
-    "complexity": "complex",
-    "tddStrategy": "three-session-tdd",
-    "model": "balanced",
-    "attempt": 1,
-    "phase": "routing"
-  },
-  "iterations": 7,
-  "updatedAt": "2026-04-04T07:46:18.002Z",
-  "durationMs": 7260270,
-  "lastHeartbeat": "2026-04-04T07:46:18.002Z"
+  "current": null,
+  "iterations": 8,
+  "updatedAt": "2026-04-04T07:58:18.033Z",
+  "durationMs": 7980301,
+  "lastHeartbeat": "2026-04-04T07:58:18.032Z"
 }

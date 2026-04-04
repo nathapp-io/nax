@@ -638,14 +638,14 @@ describe("runHybrid() — DebateResult.rebuttals populated and debug event emitt
     }
   });
 
-  test("debate:rebuttal-start debug event is emitted before each rebuttal turn", async () => {
-    const debugEvents: Array<{ stage: string; event: string; data?: unknown }> = [];
+  test("debate:rebuttal-start info event is emitted before each rebuttal turn", async () => {
+    const infoEvents: Array<{ stage: string; event: string; data?: unknown }> = [];
     const mockLogger = {
       warn: () => {},
-      info: () => {},
-      debug: (stage: string, event: string, data?: unknown) => {
-        debugEvents.push({ stage, event, data });
+      info: (stage: string, event: string, data?: unknown) => {
+        infoEvents.push({ stage, event, data });
       },
+      debug: () => {},
       error: () => {},
     };
     _debateSessionDeps.getSafeLogger = mock(() => mockLogger as ReturnType<typeof _debateSessionDeps.getSafeLogger>);
@@ -674,7 +674,7 @@ describe("runHybrid() — DebateResult.rebuttals populated and debug event emitt
 
     await session.run("test prompt");
 
-    const rebuttalStartEvents = debugEvents.filter((e) => e.event === "debate:rebuttal-start");
+    const rebuttalStartEvents = infoEvents.filter((e) => e.stage === "debate:rebuttal-start");
     // One debate:rebuttal-start event per rebuttal turn (2 debaters × 1 round = 2)
     expect(rebuttalStartEvents).toHaveLength(2);
 

@@ -22,5 +22,13 @@
   "US-004-B:verifier": {
     "sessionName": "nax-4a1cdab1-debate-session-mode-us-004-b-verifier",
     "agentName": "claude"
+  },
+  "US-000:diagnose": {
+    "sessionName": "nax-4a1cdab1-debate-session-mode-us-000-diagnose",
+    "agentName": "claude"
+  },
+  "US-000:source-fix": {
+    "sessionName": "nax-4a1cdab1-debate-session-mode-us-000-source-fix",
+    "agentName": "claude"
   }
 }

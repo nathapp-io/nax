@@ -14,7 +14,7 @@ import type { PipelineStage } from "../config/permissions";
 import type { ModelDef } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
 import { judgeResolver, majorityResolver, synthesisResolver } from "./resolvers";
-import type { DebateResult, DebateStageConfig, Debater } from "./types";
+import type { DebateResult, DebateStageConfig, Debater, Rebuttal } from "./types";
 
 /** Fallback agent name used when resolver.agent is not specified for synthesis/judge */
 export const RESOLVER_FALLBACK_AGENT = "synthesis";
@@ -232,4 +232,33 @@ export async function resolveOutcome(
   }
 
   return { outcome: "passed", resolverCostUsd: 0 };
+}
+
+/**
+ * Build a rebuttal context string for a debater in the hybrid rebuttal loop.
+ * Formats proposals with debater agent labels and appends previous rebuttals when present.
+ */
+export function buildRebuttalContext(opts: {
+  proposals: string[];
+  debaters: Debater[];
+  rebuttals: Rebuttal[];
+  currentDebaterIndex: number;
+}): string {
+  const { proposals, debaters, rebuttals, currentDebaterIndex } = opts;
+
+  const proposalsSection = proposals
+    .map((p, i) => {
+      const agentName = debaters[i]?.agent ?? `debater-${i + 1}`;
+      return `### ${agentName}\n${p}`;
+    })
+    .join("\n\n");
+
+  const rebuttalsSection =
+    rebuttals.length > 0
+      ? `\n\n## Previous Rebuttals\n${rebuttals.map((r, i) => `${i + 1}. ${r.output}`).join("\n\n")}`
+      : "";
+
+  const debaterNumber = currentDebaterIndex + 1;
+
+  return `## Proposals\n${proposalsSection}${rebuttalsSection}\n\nYou are debater ${debaterNumber}. Provide your rebuttal.`;
 }

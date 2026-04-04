@@ -3,7 +3,7 @@
   "feature": "debate-session-mode",
   "branchName": "feat/debate-session-mode",
   "createdAt": "2026-04-04T12:00:00.000Z",
-  "updatedAt": "2026-04-04T06:31:20.149Z",
+  "updatedAt": "2026-04-04T07:48:18.417Z",
   "userStories": [
     {
       "id": "US-000",
@@ -289,8 +289,8 @@
         "US-002",
         "US-003"
       ],
-      "status": "decomposed",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -384,8 +384,8 @@
         "src/debate/types.ts",
         "src/debate/resolvers.ts"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "parentStoryId": "US-004",
