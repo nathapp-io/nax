@@ -10,5 +10,9 @@
   "US-001-B:verifier": {
     "sessionName": "nax-6411f7e6-rerun-postrun-tracking-us-001-b-verifier",
     "agentName": "claude"
+  },
+  "US-002:test-writer": {
+    "sessionName": "nax-6411f7e6-rerun-postrun-tracking-us-002-test-writer",
+    "agentName": "claude"
   }
 }
