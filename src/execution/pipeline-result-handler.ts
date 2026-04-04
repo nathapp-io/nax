@@ -15,6 +15,7 @@ import { pipelineEventBus } from "../pipeline/event-bus";
 import type { PipelineRunResult } from "../pipeline/runner";
 import type { PluginRegistry } from "../plugins";
 import { countStories, markStoryFailed, markStoryPaused, savePRD } from "../prd";
+import type { PostRunStatusWriter } from "../prd";
 import type { PRD, UserStory } from "../prd/types";
 import type { routeTask } from "../routing";
 import { captureDiffSummary, captureOutputFiles } from "../utils/git";
@@ -54,6 +55,7 @@ export interface PipelineHandlerContext {
   storyGitRef: string | null | undefined;
   interactionChain?: InteractionChain | null;
   storyStartTime?: number;
+  statusWriter?: PostRunStatusWriter;
 }
 
 export interface PipelineSuccessResult {
@@ -162,7 +164,13 @@ export async function handlePipelineFailure(
       break;
 
     case "fail":
-      markStoryFailed(prd, ctx.story.id, pipelineResult.context.tddFailureCategory, pipelineResult.stoppedAtStage);
+      markStoryFailed(
+        prd,
+        ctx.story.id,
+        pipelineResult.context.tddFailureCategory,
+        pipelineResult.stoppedAtStage,
+        ctx.statusWriter,
+      );
       await savePRD(prd, ctx.prdPath);
       prdDirty = true;
       logger?.error("pipeline", "Story failed", { storyId: ctx.story.id, reason: pipelineResult.reason });
