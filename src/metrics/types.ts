@@ -5,6 +5,20 @@
  */
 
 /**
+ * Token usage metrics for LLM calls
+ */
+export interface TokenUsage {
+  /** Number of input tokens consumed */
+  input_tokens: number;
+  /** Number of output tokens generated */
+  output_tokens: number;
+  /** Number of input tokens read from cache (optional) */
+  cache_read_input_tokens?: number;
+  /** Number of input tokens used for cache creation (optional) */
+  cache_creation_input_tokens?: number;
+}
+
+/**
  * Per-story execution metrics
  */
 export interface StoryMetrics {
@@ -44,6 +58,8 @@ export interface StoryMetrics {
   fullSuiteGatePassed?: boolean;
   /** Cost incurred only during rectification (only set when source === 'rectification') */
   rectificationCost?: number;
+  /** Token usage for this story */
+  tokens?: TokenUsage;
 }
 
 /**
@@ -70,6 +86,8 @@ export interface RunMetrics {
   totalDurationMs: number;
   /** Per-story metrics */
   stories: StoryMetrics[];
+  /** Total token usage for the run */
+  totalTokens?: TokenUsage;
 }
 
 /**

@@ -4,7 +4,7 @@
  * Per-story and per-run cost tracking for data-driven routing optimization.
  */
 
-export type { StoryMetrics, RunMetrics, AggregateMetrics } from "./types";
+export type { StoryMetrics, RunMetrics, AggregateMetrics, TokenUsage } from "./types";
 export {
   collectStoryMetrics,
   collectBatchMetrics,
