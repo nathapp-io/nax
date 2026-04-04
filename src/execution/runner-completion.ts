@@ -94,8 +94,9 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
 
   // Check if we need acceptance retry loop
   if (options.config.acceptance.enabled && isComplete(options.prd)) {
-    const { runAcceptanceLoop } = await import("./lifecycle/acceptance-loop");
-    const acceptanceResult = await runAcceptanceLoop({
+    options.statusWriter.setPostRunPhase("acceptance", { status: "running" });
+
+    const acceptanceResult = await _runnerCompletionDeps.runAcceptanceLoop({
       config: options.config,
       prd: options.prd,
       prdPath: options.prdPath,
@@ -112,6 +113,18 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
       statusWriter: options.statusWriter,
       agentGetFn: options.agentGetFn,
     });
+
+    const lastRunAt = new Date().toISOString();
+    if (acceptanceResult.success) {
+      options.statusWriter.setPostRunPhase("acceptance", { status: "passed", lastRunAt });
+    } else {
+      options.statusWriter.setPostRunPhase("acceptance", {
+        status: "failed",
+        failedACs: acceptanceResult.failedACs ?? [],
+        retries: acceptanceResult.retries ?? 0,
+        lastRunAt,
+      });
+    }
 
     Object.assign(options, {
       prd: acceptanceResult.prd,
@@ -132,8 +145,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   }
 
   // Handle run completion: save metrics, log summary, update status
-  const { handleRunCompletion } = await import("./lifecycle/run-completion");
-  const completionResult = await handleRunCompletion({
+  const completionResult = await _runnerCompletionDeps.handleRunCompletion({
     runId: options.runId,
     feature: options.feature,
     startedAt: options.startedAt,

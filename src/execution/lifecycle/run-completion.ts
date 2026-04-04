@@ -118,7 +118,14 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
         "regression",
         "Smart-skip: skipping deferred regression (all stories passed full-suite gate in sequential mode)",
       );
+      statusWriter.setPostRunPhase("regression", {
+        status: "passed",
+        skipped: true,
+        lastRunAt: new Date().toISOString(),
+      });
     } else {
+      statusWriter.setPostRunPhase("regression", { status: "running" });
+
       const regressionResult = await _runCompletionDeps.runDeferredRegression({
         config,
         prd,
@@ -126,13 +133,23 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
         agentGetFn: options.agentGetFn,
       });
 
+      const lastRunAt = new Date().toISOString();
+
       logger?.info("regression", "Deferred regression gate completed", {
         success: regressionResult.success,
         failedTests: regressionResult.failedTests,
         affectedStories: regressionResult.affectedStories,
       });
 
-      if (!regressionResult.success) {
+      if (regressionResult.success) {
+        statusWriter.setPostRunPhase("regression", { status: "passed", lastRunAt });
+      } else {
+        statusWriter.setPostRunPhase("regression", {
+          status: "failed",
+          affectedStories: regressionResult.affectedStories,
+          lastRunAt,
+        });
+
         // Mark affected stories as regression-failed (RL-004)
         for (const storyId of regressionResult.affectedStories) {
           const story = prd.userStories.find((s) => s.id === storyId);
