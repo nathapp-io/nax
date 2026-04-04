@@ -3,7 +3,7 @@
   "feature": "debate-session-mode",
   "branchName": "feat/debate-session-mode",
   "createdAt": "2026-04-04T12:00:00.000Z",
-  "updatedAt": "2026-04-04T05:30:29.454Z",
+  "updatedAt": "2026-04-04T05:31:44.209Z",
   "userStories": [
     {
       "id": "US-000",
@@ -111,10 +111,10 @@
         "src/debate/types.ts",
         "src/debate/index.ts"
       ],
-      "status": "pending",
+      "status": "failed",
       "passes": false,
       "escalations": [],
-      "attempts": 0,
+      "attempts": 1,
       "parentStoryId": "US-001",
       "routing": {
         "complexity": "simple",

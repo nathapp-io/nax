@@ -11,26 +11,17 @@
   "progress": {
     "total": 9,
     "passed": 1,
-    "failed": 0,
+    "failed": 1,
     "paused": 0,
     "blocked": 0,
-    "pending": 8
+    "pending": 7
   },
   "cost": {
-    "spent": 3.20873155,
+    "spent": 3.4193322999999998,
     "limit": 30
   },
-  "current": {
-    "storyId": "US-001-A",
-    "title": "Add DebateMode type, Rebuttal interface, and mode/rebuttals fields to debate types",
-    "complexity": "simple",
-    "tddStrategy": "no-test",
-    "model": "powerful",
-    "attempt": 1,
-    "phase": "routing"
-  },
-  "iterations": 3,
-  "updatedAt": "2026-04-04T05:30:54.680Z",
-  "durationMs": 2280046,
-  "lastHeartbeat": "2026-04-04T05:30:54.680Z"
+  "current": null,
+  "iterations": 4,
+  "updatedAt": "2026-04-04T05:31:46.224Z",
+  "durationMs": 2331590
 }
