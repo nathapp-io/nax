@@ -3,7 +3,7 @@
   "feature": "debate-session-mode",
   "branchName": "feat/debate-session-mode",
   "createdAt": "2026-04-04T12:00:00.000Z",
-  "updatedAt": "2026-04-04T06:06:46.516Z",
+  "updatedAt": "2026-04-04T06:09:01.278Z",
   "userStories": [
     {
       "id": "US-000",
@@ -71,8 +71,8 @@
       "dependencies": [
         "US-000"
       ],
-      "status": "decomposed",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -166,8 +166,8 @@
         "src/config/defaults.ts",
         "src/debate/types.ts"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 0,
       "parentStoryId": "US-001",
@@ -209,7 +209,9 @@
       "routing": {
         "complexity": "simple",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
       },
       "contextFiles": [
         "src/debate/session.ts",
@@ -218,7 +220,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "30568cd5ada8901728bef92a50da822d4a40b6f8"
     },
     {
       "id": "US-003",

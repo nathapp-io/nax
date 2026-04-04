@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 9,
-    "passed": 2,
+    "passed": 4,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 7
+    "pending": 5
   },
   "cost": {
-    "spent": 0.24011224999999997,
+    "spent": 0.49256659999999997,
     "limit": 30
   },
   "current": {
-    "storyId": "US-001-B",
-    "title": "Add mode field to DebateStageConfigSchema and update all stage defaults to 'panel'",
+    "storyId": "US-002",
+    "title": "Route run() by mode with hybrid fallback to panel",
     "complexity": "simple",
     "tddStrategy": "tdd-simple",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 3,
-  "updatedAt": "2026-04-04T06:07:17.774Z",
-  "durationMs": 1320042,
-  "lastHeartbeat": "2026-04-04T06:07:17.774Z"
+  "iterations": 4,
+  "updatedAt": "2026-04-04T06:14:17.820Z",
+  "durationMs": 1740088,
+  "lastHeartbeat": "2026-04-04T06:14:17.820Z"
 }

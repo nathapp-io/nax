@@ -1,3 +1,4 @@
 [2026-04-04T05:28:28.967Z] US-000 — PASSED — Split session.ts below 400-line limit — Cost: $2.9494
 [2026-04-04T05:31:44.209Z] US-001-A — FAILED — Add DebateMode type, Rebuttal interface, and mode/rebuttals fields to debate types — Execution failed
 [2026-04-04T06:06:44.448Z] US-001-A — PASSED — Add DebateMode type, Rebuttal interface, and mode/rebuttals fields to debate types — Cost: $0.2401
+[2026-04-04T06:08:59.211Z] US-001-B — PASSED — Add mode field to DebateStageConfigSchema and update all stage defaults to 'panel' — Cost: $0.2525

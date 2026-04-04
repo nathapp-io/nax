@@ -6,6 +6,7 @@
  */
 
 import type { NaxConfig } from "../config";
+import { _debateSessionDeps } from "./session-helpers";
 import { runOneShot } from "./session-one-shot";
 import { runPlan } from "./session-plan";
 import { runStateful } from "./session-stateful";
@@ -41,7 +42,34 @@ export class DebateSession {
 
   async run(prompt: string): Promise<DebateResult> {
     const sessionMode = this.stageConfig.sessionMode ?? "one-shot";
+    const mode = this.stageConfig.mode ?? "panel";
 
+    // Route by mode
+    if (mode === "hybrid") {
+      if (sessionMode === "stateful") {
+        return this.runHybrid(prompt);
+      }
+
+      // Hybrid mode requires stateful session — fall back to one-shot with warning
+      const logger = _debateSessionDeps.getSafeLogger();
+      logger?.warn(
+        "debate",
+        `hybrid mode requires sessionMode: stateful, but got '${sessionMode}' — falling back to one-shot`,
+      );
+
+      return runOneShot(
+        {
+          storyId: this.storyId,
+          stage: this.stage,
+          stageConfig: this.stageConfig,
+          config: this.config,
+          timeoutMs: this.timeoutMs,
+        },
+        prompt,
+      );
+    }
+
+    // Panel mode (default) — dispatch by sessionMode
     if (sessionMode === "stateful") {
       return runStateful(
         {
@@ -67,6 +95,18 @@ export class DebateSession {
       },
       prompt,
     );
+  }
+
+  /**
+   * Run a hybrid-mode debate.
+   *
+   * Hybrid mode combines panel and stateful debate modes.
+   * Stub implementation — to be implemented in US-003.
+   *
+   * @param prompt - The debate prompt.
+   */
+  private async runHybrid(prompt: string): Promise<DebateResult> {
+    throw new Error("Not implemented");
   }
 
   /**
