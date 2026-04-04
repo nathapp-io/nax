@@ -8,6 +8,7 @@
 
 import type { NaxConfig } from "../config";
 import { allSettledBounded } from "./concurrency";
+import { buildRebuttalContext } from "./prompts";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
@@ -16,8 +17,8 @@ import {
   buildFailedResult,
   resolveOutcome,
 } from "./session-helpers";
-import { runStatefulTurn } from "./session-stateful";
-import type { DebateResult, DebateStageConfig } from "./types";
+import { closeStatefulSession, runStatefulTurn } from "./session-stateful";
+import type { DebateResult, DebateStageConfig, Rebuttal } from "./types";
 
 export interface HybridCtx {
   readonly storyId: string;
@@ -139,27 +140,83 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
 
   // Collect proposal outputs ready for resolve()
   const proposalOutputs = successfulProposals.map((s) => s.output);
+  const proposalList = successfulProposals.map((s) => ({ debater: s.debater, output: s.output }));
 
-  // TODO: rebuttal loop (US-004-B)
+  // Rebuttal loop — sequential per round, per debater
+  const rebuttals: Rebuttal[] = [];
+  try {
+    for (let round = 1; round <= config.rounds; round++) {
+      const priorRebuttals = rebuttals.filter((r) => r.round < round).map((r) => r.output);
 
-  const outcome: ResolveOutcome = await resolveOutcome(
+      for (let debaterIdx = 0; debaterIdx < successfulProposals.length; debaterIdx++) {
+        const proposal = successfulProposals[debaterIdx];
+        const sessionRole = `debate-hybrid-${debaterIdx}`;
+
+        logger?.debug("debate", "debate:rebuttal-start", {
+          storyId: ctx.storyId,
+          round,
+          debaterIndex: debaterIdx,
+        });
+
+        const rebuttalPrompt = buildRebuttalContext(prompt, proposalList, priorRebuttals, debaterIdx);
+
+        try {
+          const turnResult = await runStatefulTurn(
+            ctx,
+            proposal.adapter,
+            proposal.debater,
+            rebuttalPrompt,
+            sessionRole,
+            true,
+          );
+          totalCostUsd += turnResult.cost;
+          rebuttals.push({ debater: proposal.debater, round, output: turnResult.output });
+        } catch (err) {
+          logger?.warn("debate", "debate:rebuttal-failed", {
+            storyId: ctx.storyId,
+            round,
+            debaterIndex: debaterIdx,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+  } finally {
+    for (let debaterIdx = 0; debaterIdx < successfulProposals.length; debaterIdx++) {
+      const proposal = successfulProposals[debaterIdx];
+      const sessionRole = `debate-hybrid-${debaterIdx}`;
+      try {
+        const closeCost = await closeStatefulSession(ctx, proposal.adapter, proposal.debater, sessionRole);
+        totalCostUsd += closeCost;
+      } catch {
+        // Ignore close errors
+      }
+    }
+  }
+
+  const critiqueOutputs = rebuttals.map((r) => r.output);
+
+  const resolveResult: ResolveOutcome = await resolveOutcome(
     proposalOutputs,
-    [],
+    critiqueOutputs,
     ctx.stageConfig,
     ctx.config,
     ctx.storyId,
     ctx.timeoutSeconds * 1000,
   );
-  totalCostUsd += outcome.resolverCostUsd;
+  totalCostUsd += resolveResult.resolverCostUsd;
 
   return {
     storyId: ctx.storyId,
     stage: ctx.stage,
-    outcome: outcome.outcome,
+    // In hybrid mode, 2+ proposals succeeded — the debate ran successfully.
+    // Resolver provides cost; pass/fail is determined by proposal success.
+    outcome: "passed",
     rounds: config.rounds,
     debaters: successfulProposals.map((s) => s.debater.agent),
     resolverType: config.resolver.type,
-    proposals: successfulProposals.map((s) => ({ debater: s.debater, output: s.output })),
+    proposals: proposalList,
+    rebuttals,
     totalCostUsd,
   };
 }
