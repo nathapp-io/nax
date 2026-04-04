@@ -3,7 +3,7 @@
   "feature": "rerun-postrun-tracking",
   "branchName": "feat/rerun-postrun-tracking",
   "createdAt": "2026-04-04T12:00:00.000Z",
-  "updatedAt": "2026-04-04T10:39:56.330Z",
+  "updatedAt": "2026-04-04T10:55:22.115Z",
   "userStories": [
     {
       "id": "US-001",
@@ -182,8 +182,8 @@
       "dependencies": [
         "US-001"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -252,7 +252,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "three-session-tdd-lite",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/execution/runner-completion.ts",
@@ -262,7 +264,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "f597d8e54f38a24fa25e1c7a8da2d70bfd49d198"
     },
     {
       "id": "US-004",
