@@ -3,7 +3,7 @@
   "feature": "debate-session-mode",
   "branchName": "feat/debate-session-mode",
   "createdAt": "2026-04-04T12:00:00.000Z",
-  "updatedAt": "2026-04-04T05:06:17.464Z",
+  "updatedAt": "2026-04-04T05:28:31.029Z",
   "userStories": [
     {
       "id": "US-000",
@@ -24,8 +24,8 @@
         "prerequisite"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -120,11 +120,13 @@
         "complexity": "simple",
         "testStrategy": "no-test",
         "reasoning": "Pure type-only additions to a single file — no runtime behavior, no logic, no imports added. Purely additive so existing code is unaffected. ~15 LOC.",
-        "modelTier": "balanced"
+        "modelTier": "balanced",
+        "initialComplexity": "simple"
       },
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "1a7aa0925ffecc5112f49d29b663b9d75e4ea75f"
     },
     {
       "id": "US-001-B",
