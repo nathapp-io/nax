@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 2,
-    "passed": 0,
+    "passed": 1,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 0,
+    "spent": 0.45084473999999997,
     "limit": 30
   },
   "current": {
-    "storyId": "US-001",
-    "title": "Config field + threshold check + warning log",
-    "complexity": "medium",
-    "tddStrategy": "three-session-tdd-lite",
+    "storyId": "US-002",
+    "title": "Story metric scopeTestFallback flag",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 1,
-  "updatedAt": "2026-04-04T15:21:13.751Z",
-  "durationMs": 1980029,
-  "lastHeartbeat": "2026-04-04T15:21:13.751Z"
+  "iterations": 2,
+  "updatedAt": "2026-04-04T15:32:13.772Z",
+  "durationMs": 2640050,
+  "lastHeartbeat": "2026-04-04T15:32:13.772Z"
 }
