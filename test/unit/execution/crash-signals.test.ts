@@ -70,4 +70,18 @@ describe("installSignalHandlers", () => {
     cleanup = undefined;
     expect(process.listenerCount("uncaughtException")).toBe(before);
   });
+
+  test("SIGPIPE listener is registered after install (prevents silent crash on broken pipe)", () => {
+    const before = process.listenerCount("SIGPIPE");
+    cleanup = installSignalHandlers(minimalCtx);
+    expect(process.listenerCount("SIGPIPE")).toBe(before + 1);
+  });
+
+  test("SIGPIPE listener is removed after cleanup", () => {
+    const before = process.listenerCount("SIGPIPE");
+    cleanup = installSignalHandlers(minimalCtx);
+    cleanup();
+    cleanup = undefined;
+    expect(process.listenerCount("SIGPIPE")).toBe(before);
+  });
 });

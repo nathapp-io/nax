@@ -151,10 +151,17 @@ export function installSignalHandlers(ctx: SignalHandlerContext): () => void {
   const sigtermHandler = () => signalHandler("SIGTERM");
   const sigintHandler = () => signalHandler("SIGINT");
   const sighupHandler = () => signalHandler("SIGHUP");
+  // SIGPIPE: Bun (unlike Node.js) does not set SIG_IGN for SIGPIPE at startup.
+  // Writing to a broken pipe — e.g. acpx exits before nax writes its stdin —
+  // would otherwise kill nax silently before any crash handler runs.
+  const sigpipeHandler = () => {
+    getSafeLogger()?.warn("crash-recovery", "Received SIGPIPE (subprocess exited before stdin write — suppressed)");
+  };
 
   process.on("SIGTERM", sigtermHandler);
   process.on("SIGINT", sigintHandler);
   process.on("SIGHUP", sighupHandler);
+  process.on("SIGPIPE", sigpipeHandler);
   process.on("uncaughtException", uncaughtExceptionHandler);
   const rejectionWrapper = (reason: unknown) => unhandledRejectionHandler(reason);
   process.on("unhandledRejection", rejectionWrapper);
@@ -165,6 +172,7 @@ export function installSignalHandlers(ctx: SignalHandlerContext): () => void {
     process.removeListener("SIGTERM", sigtermHandler);
     process.removeListener("SIGINT", sigintHandler);
     process.removeListener("SIGHUP", sighupHandler);
+    process.removeListener("SIGPIPE", sigpipeHandler);
     process.removeListener("uncaughtException", uncaughtExceptionHandler);
     process.removeListener("unhandledRejection", rejectionWrapper);
     logger?.debug("crash-recovery", "Signal handlers unregistered");

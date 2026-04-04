@@ -252,6 +252,9 @@ export async function runSessionPrompt(
   const winner = await Promise.race([promptPromise, timeoutPromise]);
 
   if (winner === "timeout") {
+    // Suppress the pending prompt rejection to prevent unhandled rejection after
+    // cancelActivePrompt kills the acpx process (which causes an EPIPE rejection).
+    promptPromise.catch(() => {});
     try {
       await session.cancelActivePrompt();
     } catch {

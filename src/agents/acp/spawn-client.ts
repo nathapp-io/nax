@@ -23,7 +23,9 @@ import { parseAcpxJsonOutput } from "./parser";
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ACPX_WATCHDOG_BUFFER_MS = 30_000;
+// Grace period for stream drain after acpx exits — handles Bun bug where
+// piped streams may not close after SIGTERM (e.g. cancelActivePrompt).
+const ACPX_STREAM_DRAIN_TIMEOUT_MS = 5_000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Spawn helper (injectable for future testing if needed)
@@ -31,6 +33,8 @@ const ACPX_WATCHDOG_BUFFER_MS = 30_000;
 
 export const _spawnClientDeps = {
   spawn: typedSpawn,
+  /** Stream drain timeout after proc.exited — injectable so tests can use a short value. */
+  streamDrainTimeoutMs: ACPX_STREAM_DRAIN_TIMEOUT_MS,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,15 +122,31 @@ class SpawnAcpSession implements AcpSession {
     await this.pidRegistry?.register(processPid);
 
     try {
-      proc.stdin?.write(text);
-      proc.stdin?.end();
+      try {
+        proc.stdin?.write(text);
+        proc.stdin?.end();
+      } catch {
+        // acpx exited before nax could write the prompt (EPIPE / broken pipe).
+        // This is expected when the subprocess crashes on startup.
+        // Do not rethrow — let proc.exited report the real exit code and stderr.
+        getSafeLogger()?.warn("acp-adapter", "Failed to write prompt to acpx stdin (subprocess exited early)", {
+          session: this.sessionName,
+        });
+      }
 
-      // Drain stdout/stderr while waiting for process exit to avoid pipe-buffer deadlocks
-      // on large outputs (e.g. planning PRD generation).
-      const [exitCode, stdout, stderr] = await Promise.all([
-        proc.exited,
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
+      // Start reads before proc.exited to prevent pipe-buffer deadlock on large output.
+      // .catch(() => "") guards against stream errors (e.g. acpx crash mid-run).
+      const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
+      const stderrPromise = new Response(proc.stderr).text().catch(() => "");
+
+      const exitCode = await proc.exited;
+
+      // Bun bug: piped streams may not close after kill (e.g. cancelActivePrompt SIGTERM).
+      // Race drain against a 5 s deadline so prompt() always resolves instead of hanging.
+      const drained = Bun.sleep(_spawnClientDeps.streamDrainTimeoutMs).then(() => "");
+      const [stdout, stderr] = await Promise.all([
+        Promise.race([stdoutPromise, drained]),
+        Promise.race([stderrPromise, drained]),
       ]);
 
       if (exitCode !== 0) {
@@ -175,8 +195,8 @@ class SpawnAcpSession implements AcpSession {
     try {
       const [exitCode, stdout, stderr] = await Promise.all([
         proc.exited,
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
+        new Response(proc.stdout).text().catch(() => ""),
+        new Response(proc.stderr).text().catch(() => ""),
       ]);
       return { exitCode, stdout, stderr };
     } finally {
@@ -288,8 +308,8 @@ export class SpawnAcpClient implements AcpClient {
     try {
       const [exitCode, stdout, stderr] = await Promise.all([
         proc.exited,
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
+        new Response(proc.stdout).text().catch(() => ""),
+        new Response(proc.stderr).text().catch(() => ""),
       ]);
       return { exitCode, stdout, stderr };
     } finally {
