@@ -1,12 +1,12 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-04-04T05-45-17-732Z",
+    "id": "run-2026-04-04T08-42-38-886Z",
     "feature": "debate-session-mode",
-    "startedAt": "2026-04-04T05:45:17.732Z",
-    "status": "running",
+    "startedAt": "2026-04-04T08:42:38.886Z",
+    "status": "completed",
     "dryRun": false,
-    "pid": 58206
+    "pid": 30247
   },
   "progress": {
     "total": 9,
@@ -17,12 +17,11 @@
     "pending": 0
   },
   "cost": {
-    "spent": 5.162458600000001,
+    "spent": 0,
     "limit": 30
   },
   "current": null,
-  "iterations": 8,
-  "updatedAt": "2026-04-04T07:58:18.033Z",
-  "durationMs": 7980301,
-  "lastHeartbeat": "2026-04-04T07:58:18.032Z"
+  "iterations": 0,
+  "updatedAt": "2026-04-04T08:43:37.199Z",
+  "durationMs": 58313
 }
