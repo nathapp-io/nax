@@ -18,5 +18,9 @@
   "US-002:implementer": {
     "sessionName": "nax-6411f7e6-rerun-postrun-tracking-us-002-implementer",
     "agentName": "claude"
+  },
+  "US-002:verifier": {
+    "sessionName": "nax-6411f7e6-rerun-postrun-tracking-us-002-verifier",
+    "agentName": "claude"
   }
 }
