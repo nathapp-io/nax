@@ -10,7 +10,14 @@ import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import { getSafeLogger } from "../logger";
 import type { PRD } from "../prd";
-import { type RunStateSnapshot, buildStatusSnapshot, writeStatusFile } from "./status-file";
+import {
+  type AcceptancePhaseStatus,
+  type PostRunStatus,
+  type RegressionPhaseStatus,
+  type RunStateSnapshot,
+  buildStatusSnapshot,
+  writeStatusFile,
+} from "./status-file";
 
 // ============================================================================
 // StatusWriterContext — fixed run metadata set at construction
@@ -60,6 +67,7 @@ export class StatusWriter {
   private _prd: PRD | null = null;
   private _currentStory: RunStateSnapshot["currentStory"] = null;
   private _consecutiveWriteFailures = 0; // BUG-2: Track consecutive write failures
+  private _postRun: PostRunStatus | null = null;
 
   /**
    * Write mutex — serializes concurrent update() calls.
@@ -97,13 +105,67 @@ export class StatusWriter {
   }
 
   /**
+   * Merge a partial update into the in-memory postRun state for a given phase.
+   * The next update() call will write the merged state to disk.
+   */
+  setPostRunPhase(phase: "acceptance", update: Partial<AcceptancePhaseStatus>): void;
+  setPostRunPhase(phase: "regression", update: Partial<RegressionPhaseStatus>): void;
+  setPostRunPhase(
+    phase: "acceptance" | "regression",
+    update: Partial<AcceptancePhaseStatus> | Partial<RegressionPhaseStatus>,
+  ): void {
+    if (!this._postRun) {
+      this._postRun = {
+        acceptance: { status: "not-run" },
+        regression: { status: "not-run" },
+      };
+    }
+    if (phase === "acceptance") {
+      this._postRun = {
+        ...this._postRun,
+        acceptance: { ...this._postRun.acceptance, ...(update as Partial<AcceptancePhaseStatus>) },
+      };
+    } else {
+      this._postRun = {
+        ...this._postRun,
+        regression: { ...this._postRun.regression, ...(update as Partial<RegressionPhaseStatus>) },
+      };
+    }
+  }
+
+  /**
+   * Returns the current postRun state with crash recovery:
+   * any phase with status "running" is treated as "not-run".
+   */
+  getPostRunStatus(): PostRunStatus {
+    const base: PostRunStatus = this._postRun ?? {
+      acceptance: { status: "not-run" },
+      regression: { status: "not-run" },
+    };
+    return {
+      acceptance: base.acceptance.status === "running" ? { status: "not-run" } : base.acceptance,
+      regression: base.regression.status === "running" ? { status: "not-run" } : base.regression,
+    };
+  }
+
+  /**
+   * Resets both phases to { status: "not-run" }, clearing all optional fields.
+   */
+  resetPostRunStatus(): void {
+    this._postRun = {
+      acceptance: { status: "not-run" },
+      regression: { status: "not-run" },
+    };
+  }
+
+  /**
    * Build a RunStateSnapshot from current state + live runner values.
    *
    * Returns null if no PRD has been set yet (status write is a no-op).
    */
   getSnapshot(totalCost: number, iterations: number): RunStateSnapshot | null {
     if (!this._prd) return null;
-    return {
+    const snapshot: RunStateSnapshot = {
       runId: this.ctx.runId,
       feature: this.ctx.feature,
       startedAt: this.ctx.startedAt,
@@ -117,6 +179,10 @@ export class StatusWriter {
       startTimeMs: this.ctx.startTimeMs,
       currentStory: this._currentStory,
     };
+    if (this._postRun !== null) {
+      snapshot.postRun = this._postRun;
+    }
+    return snapshot;
   }
 
   /**

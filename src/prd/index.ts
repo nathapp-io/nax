@@ -158,8 +158,13 @@ export function countStories(prd: PRD): {
   };
 }
 
+/** Minimal interface for statusWriter to support post-run status reset. */
+export interface PostRunStatusWriter {
+  resetPostRunStatus(): void;
+}
+
 /** Mark a story as passed */
-export function markStoryPassed(prd: PRD, storyId: string): void {
+export function markStoryPassed(prd: PRD, storyId: string, statusWriter?: PostRunStatusWriter): void {
   const story = prd.userStories.find((s) => s.id === storyId);
   if (story) {
     story.passes = true;
@@ -188,9 +193,13 @@ export function markStoryFailed(
   storyId: string,
   failureCategory?: FailureCategory,
   failureStage?: string,
+  statusWriter?: PostRunStatusWriter,
 ): void {
   const story = prd.userStories.find((s) => s.id === storyId);
   if (story) {
+    if (story.status === "passed") {
+      statusWriter?.resetPostRunStatus();
+    }
     story.status = "failed";
     story.attempts += 1;
     if (failureCategory !== undefined) {

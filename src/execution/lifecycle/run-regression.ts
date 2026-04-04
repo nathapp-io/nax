@@ -41,6 +41,7 @@ export interface DeferredRegressionOptions {
 export interface DeferredRegressionResult {
   success: boolean;
   failedTests: number;
+  failedTestFiles: string[];
   passedTests: number;
   rectificationAttempts: number;
   affectedStories: string[];
@@ -93,6 +94,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     return {
       success: true,
       failedTests: 0,
+      failedTestFiles: [],
       passedTests: 0,
       rectificationAttempts: 0,
       affectedStories: [],
@@ -104,6 +106,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     return {
       success: true,
       failedTests: 0,
+      failedTestFiles: [],
       passedTests: 0,
       rectificationAttempts: 0,
       affectedStories: [],
@@ -123,6 +126,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     return {
       success: true,
       failedTests: 0,
+      failedTestFiles: [],
       passedTests: 0,
       rectificationAttempts: 0,
       affectedStories: [],
@@ -154,6 +158,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     return {
       success: true,
       failedTests: 0,
+      failedTestFiles: [],
       passedTests: fullSuiteResult.passCount ?? 0,
       rectificationAttempts: 0,
       affectedStories: [],
@@ -167,6 +172,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     return {
       success: true,
       failedTests: 0,
+      failedTestFiles: [],
       passedTests: 0,
       rectificationAttempts: 0,
       affectedStories: [],
@@ -177,7 +183,8 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     logger?.error("regression", "Full suite failed with no output");
     return {
       success: false,
-      failedTests: fullSuiteResult.failCount ?? 0,
+      failedTests: 0,
+      failedTestFiles: [],
       passedTests: fullSuiteResult.passCount ?? 0,
       rectificationAttempts: 0,
       affectedStories: [],
@@ -199,6 +206,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     return {
       success: true,
       failedTests: 0,
+      failedTestFiles: [],
       passedTests: 0,
       rectificationAttempts: 0,
       affectedStories: [],
@@ -253,7 +261,8 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     logger?.warn("regression", "No stories could be mapped to failures");
     return {
       success: false,
-      failedTests: testSummary.failed,
+      failedTests: testFilesInFailures.size,
+      failedTestFiles: Array.from(testFilesInFailures),
       passedTests: testSummary.passed,
       rectificationAttempts: 0,
       affectedStories: Array.from(affectedStories),
@@ -316,7 +325,8 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
 
   return {
     success,
-    failedTests: retryResult.failCount ?? 0,
+    failedTests: testFilesInFailures.size,
+    failedTestFiles: Array.from(testFilesInFailures),
     passedTests: retryResult.passCount ?? 0,
     rectificationAttempts,
     affectedStories: Array.from(affectedStories),

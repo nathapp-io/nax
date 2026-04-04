@@ -267,7 +267,7 @@ export async function fireHook(
   }
 
   // Fire project hook (independent of global hook result)
-  const projectHookDef = config.hooks[event];
+  const projectHookDef = config.hooks?.[event];
   if (projectHookDef && projectHookDef.enabled !== false) {
     try {
       const result = await executeHook(projectHookDef, { ...ctx, event }, workdir);

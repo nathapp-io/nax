@@ -17,6 +17,8 @@ import { isComplete } from "../prd";
 import type { PRD } from "../prd";
 import { autoCommitIfDirty } from "../utils/git";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
+import type { AcceptanceLoopContext, AcceptanceLoopResult } from "./lifecycle/acceptance-loop";
+import type { RunCompletionOptions, RunCompletionResult } from "./lifecycle/run-completion";
 import { hookCtx } from "./story-context";
 
 /**
@@ -59,6 +61,24 @@ export interface RunnerCompletionResult {
 }
 
 /**
+ * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ * @internal - test use only.
+ */
+export const _runnerCompletionDeps: {
+  runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<AcceptanceLoopResult>;
+  handleRunCompletion(opts: RunCompletionOptions): Promise<RunCompletionResult>;
+} = {
+  async runAcceptanceLoop(ctx) {
+    const { runAcceptanceLoop } = await import("./lifecycle/acceptance-loop");
+    return runAcceptanceLoop(ctx);
+  },
+  async handleRunCompletion(opts) {
+    const { handleRunCompletion } = await import("./lifecycle/run-completion");
+    return handleRunCompletion(opts);
+  },
+};
+
+/**
  * Execute the completion phase of the run.
  *
  * @param options - Completion options
@@ -72,33 +92,58 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     isComplete: isComplete(options.prd),
   });
 
-  // Check if we need acceptance retry loop
-  if (options.config.acceptance.enabled && isComplete(options.prd)) {
-    const { runAcceptanceLoop } = await import("./lifecycle/acceptance-loop");
-    const acceptanceResult = await runAcceptanceLoop({
-      config: options.config,
-      prd: options.prd,
-      prdPath: options.prdPath,
-      workdir: options.workdir,
-      featureDir: options.featureDir,
-      hooks: options.hooks,
-      feature: options.feature,
-      totalCost: options.totalCost,
-      iterations: options.iterations,
-      storiesCompleted: options.storiesCompleted,
-      allStoryMetrics: options.allStoryMetrics,
-      pluginRegistry: options.pluginRegistry,
-      eventEmitter: options.eventEmitter,
-      statusWriter: options.statusWriter,
-      agentGetFn: options.agentGetFn,
-    });
+  // Check post-run status to determine if phases can be skipped on rerun
+  const postRunStatus = options.statusWriter.getPostRunStatus?.();
+  const acceptanceAlreadyPassed = postRunStatus?.acceptance?.status === "passed";
+  const regressionAlreadyPassed = postRunStatus?.regression?.status === "passed";
 
-    Object.assign(options, {
-      prd: acceptanceResult.prd,
-      totalCost: acceptanceResult.totalCost,
-      iterations: acceptanceResult.iterations,
-      storiesCompleted: acceptanceResult.storiesCompleted,
-    });
+  if (acceptanceAlreadyPassed && regressionAlreadyPassed) {
+    logger?.info("execution", "Post-run phases already passed — skipping acceptance and regression");
+    console.info("Post-run phases already passed — skipping acceptance and regression");
+  } else {
+    if (acceptanceAlreadyPassed) {
+      logger?.info("execution", "Acceptance already passed — skipping acceptance phase");
+      console.info("Acceptance already passed — skipping acceptance phase");
+    } else if (options.config.acceptance.enabled && isComplete(options.prd)) {
+      options.statusWriter.setPostRunPhase("acceptance", { status: "running" });
+
+      const acceptanceResult = await _runnerCompletionDeps.runAcceptanceLoop({
+        config: options.config,
+        prd: options.prd,
+        prdPath: options.prdPath,
+        workdir: options.workdir,
+        featureDir: options.featureDir,
+        hooks: options.hooks,
+        feature: options.feature,
+        totalCost: options.totalCost,
+        iterations: options.iterations,
+        storiesCompleted: options.storiesCompleted,
+        allStoryMetrics: options.allStoryMetrics,
+        pluginRegistry: options.pluginRegistry,
+        eventEmitter: options.eventEmitter,
+        statusWriter: options.statusWriter,
+        agentGetFn: options.agentGetFn,
+      });
+
+      const lastRunAt = new Date().toISOString();
+      if (acceptanceResult.success) {
+        options.statusWriter.setPostRunPhase("acceptance", { status: "passed", lastRunAt });
+      } else {
+        options.statusWriter.setPostRunPhase("acceptance", {
+          status: "failed",
+          failedACs: acceptanceResult.failedACs ?? [],
+          retries: acceptanceResult.retries ?? 0,
+          lastRunAt,
+        });
+      }
+
+      Object.assign(options, {
+        prd: acceptanceResult.prd,
+        totalCost: acceptanceResult.totalCost,
+        iterations: acceptanceResult.iterations,
+        storiesCompleted: acceptanceResult.storiesCompleted,
+      });
+    }
   }
 
   // Fire on-all-stories-complete before regression gate (RL-001)
@@ -112,8 +157,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
   }
 
   // Handle run completion: save metrics, log summary, update status
-  const { handleRunCompletion } = await import("./lifecycle/run-completion");
-  const completionResult = await handleRunCompletion({
+  const completionResult = await _runnerCompletionDeps.handleRunCompletion({
     runId: options.runId,
     feature: options.feature,
     startedAt: options.startedAt,
@@ -127,6 +171,7 @@ export async function runCompletionPhase(options: RunnerCompletionOptions): Prom
     statusWriter: options.statusWriter,
     config: options.config,
     agentGetFn: options.agentGetFn,
+    skipRegression: regressionAlreadyPassed,
   });
 
   const { durationMs, runCompletedAt, finalCounts } = completionResult;

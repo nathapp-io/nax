@@ -80,6 +80,7 @@ function makeStatusWriter() {
     setPrd: mock(() => {}),
     setCurrentStory: mock(() => {}),
     setRunStatus: mock(() => {}),
+    setPostRunPhase: mock((_phase: string, _update: Record<string, unknown>) => {}),
     update: mock(async () => {}),
     writeFeatureStatus: mock(async () => {}),
   };

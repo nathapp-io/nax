@@ -36,7 +36,7 @@ export async function checkGitRepoExists(workdir: string): Promise<Check> {
  * nax runtime files that are allowed to be dirty without blocking the precheck.
  * These are written during nax execution and should be gitignored by `nax init`.
  */
-const NAX_RUNTIME_PATTERNS = [
+export const NAX_RUNTIME_PATTERNS = [
   /^.{2} nax\.lock$/,
   /^.{2} \.nax\/$/,
   /^.{2} \.nax\/metrics\.json$/,

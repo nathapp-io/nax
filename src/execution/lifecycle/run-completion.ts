@@ -46,6 +46,8 @@ export interface RunCompletionOptions {
   hooksConfig?: HooksConfig;
   /** Whether the run used sequential (non-parallel) execution. Defaults to true. */
   isSequential?: boolean;
+  /** Skip deferred regression gate — set when regression phase already passed on a prior run. */
+  skipRegression?: boolean;
   /** Protocol-aware agent resolver (ACP wiring). Falls back to static getAgent when absent. */
   agentGetFn?: AgentGetFn;
 }
@@ -112,13 +114,22 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
 
   // Run deferred regression gate before final metrics
   const regressionMode = config.execution.regressionGate?.mode;
-  if (regressionMode === "deferred" && config.quality.commands.test) {
+  if (options.skipRegression) {
+    // Regression phase already passed on a prior run — skip
+  } else if (regressionMode === "deferred" && config.quality.commands.test) {
     if (shouldSkipDeferredRegression(allStoryMetrics, isSequential)) {
       logger?.info(
         "regression",
         "Smart-skip: skipping deferred regression (all stories passed full-suite gate in sequential mode)",
       );
+      statusWriter.setPostRunPhase("regression", {
+        status: "passed",
+        skipped: true,
+        lastRunAt: new Date().toISOString(),
+      });
     } else {
+      statusWriter.setPostRunPhase("regression", { status: "running" });
+
       const regressionResult = await _runCompletionDeps.runDeferredRegression({
         config,
         prd,
@@ -126,13 +137,24 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
         agentGetFn: options.agentGetFn,
       });
 
+      const lastRunAt = new Date().toISOString();
+
       logger?.info("regression", "Deferred regression gate completed", {
         success: regressionResult.success,
         failedTests: regressionResult.failedTests,
         affectedStories: regressionResult.affectedStories,
       });
 
-      if (!regressionResult.success) {
+      if (regressionResult.success) {
+        statusWriter.setPostRunPhase("regression", { status: "passed", lastRunAt });
+      } else {
+        statusWriter.setPostRunPhase("regression", {
+          status: "failed",
+          failedTests: regressionResult.failedTestFiles,
+          affectedStories: regressionResult.affectedStories,
+          lastRunAt,
+        });
+
         // Mark affected stories as regression-failed (RL-004)
         for (const storyId of regressionResult.affectedStories) {
           const story = prd.userStories.find((s) => s.id === storyId);

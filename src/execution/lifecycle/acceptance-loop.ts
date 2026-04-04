@@ -59,6 +59,10 @@ export interface AcceptanceLoopResult {
   iterations: number;
   storiesCompleted: number;
   prdDirty: boolean;
+  /** Acceptance criteria that failed — populated when success=false */
+  failedACs?: string[];
+  /** Number of acceptance retries performed */
+  retries?: number;
 }
 
 export function isStubTestFile(content: string): boolean {
@@ -107,8 +111,10 @@ function buildResult(
   iterations: number,
   storiesCompleted: number,
   prdDirty: boolean,
+  failedACs?: string[],
+  retries?: number,
 ): AcceptanceLoopResult {
-  return { success, prd, totalCost, iterations, storiesCompleted, prdDirty };
+  return { success, prd, totalCost, iterations, storiesCompleted, prdDirty, failedACs, retries };
 }
 
 export const _acceptanceLoopDeps = { getAgent };
@@ -581,7 +587,16 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         }),
         ctx.workdir,
       );
-      return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
+      return buildResult(
+        false,
+        prd,
+        totalCost,
+        iterations,
+        storiesCompleted,
+        prdDirty,
+        failures.failedACs,
+        acceptanceRetries,
+      );
     }
 
     // Check for stub test file before other checks
@@ -602,7 +617,16 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
               "acceptance",
               "Acceptance test generation failed after retry — manual implementation required",
             );
-            return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
+            return buildResult(
+              false,
+              prd,
+              totalCost,
+              iterations,
+              storiesCompleted,
+              prdDirty,
+              failures.failedACs,
+              acceptanceRetries,
+            );
           }
           continue;
         }
@@ -625,7 +649,16 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       if (await testFile.exists()) {
         const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext);
         if (!regenerated) {
-          return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
+          return buildResult(
+            false,
+            prd,
+            totalCost,
+            iterations,
+            storiesCompleted,
+            prdDirty,
+            failures.failedACs,
+            acceptanceRetries,
+          );
         }
         continue; // retry with regenerated test
       }
@@ -651,14 +684,32 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       }
 
       logger?.error("acceptance", "Fix routing failed to resolve acceptance failures");
-      return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
+      return buildResult(
+        false,
+        prd,
+        totalCost,
+        iterations,
+        storiesCompleted,
+        prdDirty,
+        failures.failedACs,
+        acceptanceRetries,
+      );
     }
 
     // Fallback: generate and add fix stories (legacy path)
     logger?.info("acceptance", "Generating fix stories...");
     const fixStories = await generateAndAddFixStories(ctx, failures, prd);
     if (!fixStories) {
-      return buildResult(false, prd, totalCost, iterations, storiesCompleted, prdDirty);
+      return buildResult(
+        false,
+        prd,
+        totalCost,
+        iterations,
+        storiesCompleted,
+        prdDirty,
+        failures.failedACs,
+        acceptanceRetries,
+      );
     }
 
     await savePRD(prd, ctx.prdPath);

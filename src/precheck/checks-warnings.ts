@@ -137,7 +137,7 @@ async function hasPackageScript(workdir: string, name: string): Promise<boolean>
 
 /**
  * Check if .gitignore covers nax runtime files.
- * Patterns: nax.lock, runs/, status.json, .nax-pids, .nax-wt/
+ * Patterns: nax.lock, runs/, .nax-pids, .nax-wt/
  */
 export async function checkGitignoreCoversNax(workdir: string): Promise<Check> {
   const gitignorePath = `${workdir}/.gitignore`;
@@ -158,7 +158,6 @@ export async function checkGitignoreCoversNax(workdir: string): Promise<Check> {
     "nax.lock",
     ".nax/**/runs/",
     ".nax/metrics.json",
-    ".nax/features/*/status.json",
     ".nax-pids",
     ".nax-wt/",
     "**/.nax-acceptance*",

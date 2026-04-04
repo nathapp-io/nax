@@ -5,7 +5,7 @@
  */
 
 import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import chalk from "chalk";
 import { resolveProject } from "../commands/common";
 import type { NaxStatusFile } from "../execution/status-file";
@@ -364,6 +364,47 @@ async function displayFeatureDetails(featureName: string, featureDir: string): P
 
   console.log();
 
+  // Display post-run status if present
+  if (status?.postRun) {
+    console.log(chalk.bold("Post-Run Status:\n"));
+
+    // Display acceptance phase status
+    const acceptance = status.postRun.acceptance;
+    if (acceptance.status === "passed") {
+      const timestamp = acceptance.lastRunAt ? ` (${acceptance.lastRunAt})` : "";
+      console.log(chalk.green(`   Acceptance: passed${timestamp}`));
+    } else if (acceptance.status === "failed") {
+      const failedInfo =
+        acceptance.failedACs && acceptance.failedACs.length > 0 ? ` (${acceptance.failedACs.length} AC(s))` : "";
+      console.log(chalk.red(`   Acceptance: failed${failedInfo}`));
+    } else if (acceptance.status === "running") {
+      console.log(chalk.yellow("   Acceptance: running"));
+    } else {
+      console.log(chalk.dim("   Acceptance: not-run"));
+    }
+
+    // Display regression phase status
+    const regression = status.postRun.regression;
+    if (regression.status === "passed" && regression.skipped) {
+      console.log(chalk.yellow("   Regression: skipped (smart-skip)"));
+    } else if (regression.status === "passed") {
+      const timestamp = regression.lastRunAt ? ` (${regression.lastRunAt})` : "";
+      console.log(chalk.green(`   Regression: passed${timestamp}`));
+    } else if (regression.status === "failed") {
+      const ft = regression.failedTests as string[] | number | undefined;
+      const failedCount = Array.isArray(ft) ? ft.length : typeof ft === "number" ? ft : 0;
+      const failedInfo = failedCount > 0 ? ` (${failedCount} test(s))` : "";
+      const timestamp = regression.lastRunAt ? ` ${regression.lastRunAt}` : "";
+      console.log(chalk.red(`   Regression: failed${failedInfo}${timestamp}`));
+    } else if (regression.status === "running") {
+      console.log(chalk.yellow("   Regression: running"));
+    } else {
+      console.log(chalk.dim("   Regression: not-run"));
+    }
+
+    console.log();
+  }
+
   // Display last run info if completed
   if (status && status.run.status !== "running") {
     console.log(chalk.dim(`Last run: ${status.run.id}`));
@@ -387,19 +428,23 @@ async function displayFeatureDetails(featureName: string, featureDir: string): P
  * ```
  */
 export async function displayFeatureStatus(options: FeatureStatusOptions = {}): Promise<void> {
-  const resolved = resolveProject({
-    dir: options.dir,
-    feature: options.feature,
-  });
-
   if (options.feature) {
-    // Single feature view
-    if (!resolved.featureDir) {
-      throw new Error("Feature directory not resolved (this should not happen)");
+    // Single feature view — compute feature dir directly when dir is provided
+    // to avoid requiring config.json (status display only needs feature files)
+    let featureDir: string;
+    if (options.dir) {
+      featureDir = join(resolve(options.dir), ".nax", "features", options.feature);
+    } else {
+      const resolved = resolveProject({ feature: options.feature });
+      if (!resolved.featureDir) {
+        throw new Error("Feature directory not resolved (this should not happen)");
+      }
+      featureDir = resolved.featureDir;
     }
-    await displayFeatureDetails(options.feature, resolved.featureDir);
+    await displayFeatureDetails(options.feature, featureDir);
   } else {
     // All features table
+    const resolved = resolveProject({ dir: options.dir });
     await displayAllFeatures(resolved.projectDir);
   }
 }

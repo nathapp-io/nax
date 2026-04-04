@@ -16,7 +16,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  type AcceptancePhaseStatus,
   type NaxStatusFile,
+  type PostRunStatus,
+  type RegressionPhaseStatus,
   type RunStateSnapshot,
   buildStatusSnapshot,
   countProgress,
@@ -377,5 +380,106 @@ describe("writeStatusFile", () => {
 
     const content = JSON.parse(readFileSync(outPath, "utf8")) as NaxStatusFile;
     expect(content.run.pid).toBe(testPid);
+  });
+});
+
+// ============================================================================
+// PostRunStatus type hierarchy
+// ============================================================================
+
+describe("PostRunStatus type hierarchy", () => {
+  test("AcceptancePhaseStatus accepts all valid status values", () => {
+    const statuses: AcceptancePhaseStatus["status"][] = ["not-run", "running", "passed", "failed"];
+    for (const status of statuses) {
+      const s: AcceptancePhaseStatus = { status };
+      expect(s.status).toBe(status);
+    }
+  });
+
+  test("AcceptancePhaseStatus optional fields are assignable", () => {
+    const s: AcceptancePhaseStatus = {
+      status: "failed",
+      lastRunAt: "2026-04-04T10:00:00.000Z",
+      retries: 2,
+      failedACs: ["AC-1", "AC-2"],
+    };
+    expect(s.lastRunAt).toBe("2026-04-04T10:00:00.000Z");
+    expect(s.retries).toBe(2);
+    expect(s.failedACs).toEqual(["AC-1", "AC-2"]);
+  });
+
+  test("RegressionPhaseStatus accepts all valid status values", () => {
+    const statuses: RegressionPhaseStatus["status"][] = ["not-run", "running", "passed", "failed"];
+    for (const status of statuses) {
+      const s: RegressionPhaseStatus = { status };
+      expect(s.status).toBe(status);
+    }
+  });
+
+  test("RegressionPhaseStatus optional fields are assignable", () => {
+    const s: RegressionPhaseStatus = {
+      status: "failed",
+      lastRunAt: "2026-04-04T10:00:00.000Z",
+      retries: 1,
+      failedTests: ["test-a", "test-b"],
+      affectedStories: ["US-001", "US-002"],
+    };
+    expect(s.lastRunAt).toBe("2026-04-04T10:00:00.000Z");
+    expect(s.retries).toBe(1);
+    expect(s.failedTests).toEqual(["test-a", "test-b"]);
+    expect(s.affectedStories).toEqual(["US-001", "US-002"]);
+  });
+
+  test("PostRunStatus has required acceptance and regression fields", () => {
+    const s: PostRunStatus = {
+      acceptance: { status: "passed" },
+      regression: { status: "not-run" },
+    };
+    expect(s.acceptance.status).toBe("passed");
+    expect(s.regression.status).toBe("not-run");
+  });
+});
+
+// ============================================================================
+// buildStatusSnapshot — postRun field
+// ============================================================================
+
+describe("buildStatusSnapshot postRun field", () => {
+  test("omits postRun from snapshot when RunStateSnapshot.postRun is undefined", () => {
+    const snapshot = buildStatusSnapshot(makeRunState());
+    expect(Object.prototype.hasOwnProperty.call(snapshot, "postRun")).toBe(false);
+  });
+
+  test("includes postRun in snapshot when RunStateSnapshot.postRun is present", () => {
+    const postRun: PostRunStatus = {
+      acceptance: { status: "passed", lastRunAt: "2026-04-04T10:00:00.000Z", retries: 0 },
+      regression: { status: "not-run" },
+    };
+    const snapshot = buildStatusSnapshot(makeRunState({ postRun }));
+    expect(snapshot.postRun).toBeDefined();
+    expect(snapshot.postRun?.acceptance.status).toBe("passed");
+    expect(snapshot.postRun?.regression.status).toBe("not-run");
+  });
+
+  test("postRun is preserved with all fields intact in snapshot", () => {
+    const postRun: PostRunStatus = {
+      acceptance: {
+        status: "failed",
+        lastRunAt: "2026-04-04T11:00:00.000Z",
+        retries: 2,
+        failedACs: ["AC-1"],
+      },
+      regression: {
+        status: "failed",
+        lastRunAt: "2026-04-04T11:00:00.000Z",
+        retries: 1,
+        failedTests: ["test-x"],
+        affectedStories: ["US-001"],
+      },
+    };
+    const snapshot = buildStatusSnapshot(makeRunState({ postRun }));
+    expect(snapshot.postRun?.acceptance.failedACs).toEqual(["AC-1"]);
+    expect(snapshot.postRun?.regression.failedTests).toEqual(["test-x"]);
+    expect(snapshot.postRun?.regression.affectedStories).toEqual(["US-001"]);
   });
 });

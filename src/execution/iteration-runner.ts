@@ -143,6 +143,7 @@ export async function runIteration(
     storyGitRef,
     interactionChain: ctx.interactionChain,
     storyStartTime,
+    statusWriter: ctx.statusWriter,
   };
 
   if (pipelineResult.success) {
