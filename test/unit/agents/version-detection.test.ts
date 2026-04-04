@@ -1,58 +1,149 @@
 /**
  * Unit tests for agent version detection
  *
- * Tests the getAgentVersion and getAgentVersions functions
- * that extract version info from agent binaries.
+ * Tests the getAgentVersion and getAgentVersions functions using
+ * dependency injection to avoid spawning real processes (each real
+ * Gatekeeper-checked spawn can take ~1.54s on macOS).
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { getAgentVersion, getAgentVersions } from "../../../src/agents/shared/version-detection";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  _versionDetectionDeps,
+  getAgentVersion,
+  getAgentVersions,
+} from "../../../src/agents/shared/version-detection";
+import type { AgentAdapter } from "../../../src/agents/types";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeMockProc(stdout: string, exitCode: number) {
+  const bytes = new TextEncoder().encode(stdout);
+  const makeStream = (content?: Uint8Array) =>
+    new ReadableStream<Uint8Array>({
+      start(c) {
+        if (content) c.enqueue(content);
+        c.close();
+      },
+    });
+  return {
+    exited: Promise.resolve(exitCode),
+    stdout: makeStream(bytes),
+    stderr: makeStream(),
+    pid: 0,
+    kill: () => {},
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Save / restore deps
+// ---------------------------------------------------------------------------
+
+let origSpawn: typeof _versionDetectionDeps.spawn;
+let origGetInstalledAgents: typeof _versionDetectionDeps.getInstalledAgents;
+
+beforeEach(() => {
+  origSpawn = _versionDetectionDeps.spawn;
+  origGetInstalledAgents = _versionDetectionDeps.getInstalledAgents;
+});
+
+afterEach(() => {
+  _versionDetectionDeps.spawn = origSpawn;
+  _versionDetectionDeps.getInstalledAgents = origGetInstalledAgents;
+});
+
+// ---------------------------------------------------------------------------
+// getAgentVersion
+// ---------------------------------------------------------------------------
 
 describe("getAgentVersion", () => {
-  test("should return version for installed agent", async () => {
-    // Most systems have git available, use it as a mock
+  test("returns parsed version when exit code is 0", async () => {
+    _versionDetectionDeps.spawn = mock(() => makeMockProc("git version 2.39.0\n", 0)) as typeof _versionDetectionDeps.spawn;
+
     const version = await getAgentVersion("git");
-    expect(version).toBeTruthy();
-    expect(typeof version).toBe("string");
-    expect(version.length).toBeGreaterThan(0);
+    expect(version).toBe("2.39.0");
   });
 
-  test("should return null for non-existent agent", async () => {
-    const version = await getAgentVersion("nonexistent-agent-xyz-123");
+  test("returns null when exit code is non-zero", async () => {
+    _versionDetectionDeps.spawn = mock(() => makeMockProc("", 1)) as typeof _versionDetectionDeps.spawn;
+
+    const version = await getAgentVersion("some-agent");
     expect(version).toBeNull();
   });
 
-  test("should handle agent not found gracefully", async () => {
-    const version = await getAgentVersion("fake-binary-that-does-not-exist");
+  test("returns null when spawn throws ENOENT (binary not found)", async () => {
+    _versionDetectionDeps.spawn = mock(() => {
+      throw new Error("ENOENT");
+    }) as typeof _versionDetectionDeps.spawn;
+
+    const version = await getAgentVersion("nonexistent-binary");
     expect(version).toBeNull();
+  });
+
+  test("extracts v-prefixed version format (e.g. claude v1.2.3)", async () => {
+    _versionDetectionDeps.spawn = mock(() => makeMockProc("claude v1.2.3\n", 0)) as typeof _versionDetectionDeps.spawn;
+
+    const version = await getAgentVersion("claude");
+    expect(version).toBe("v1.2.3");
   });
 });
 
+// ---------------------------------------------------------------------------
+// getAgentVersions
+// ---------------------------------------------------------------------------
+
 describe("getAgentVersions", () => {
-  test("should return version info for all agents", async () => {
+  test("returns an array", async () => {
+    _versionDetectionDeps.getInstalledAgents = mock(async () => []);
+    _versionDetectionDeps.spawn = mock(() => makeMockProc("", 1)) as typeof _versionDetectionDeps.spawn;
+
     const versions = await getAgentVersions();
     expect(Array.isArray(versions)).toBe(true);
-    expect(versions.length).toBeGreaterThan(0);
   });
 
-  test("should include agent name, displayName, and version", async () => {
+  test("each entry has name, displayName, version, and installed properties", async () => {
+    _versionDetectionDeps.getInstalledAgents = mock(async () => []);
+    _versionDetectionDeps.spawn = mock(() => makeMockProc("", 1)) as typeof _versionDetectionDeps.spawn;
+
     const versions = await getAgentVersions();
-    for (const agentInfo of versions) {
-      expect(agentInfo).toHaveProperty("name");
-      expect(agentInfo).toHaveProperty("displayName");
-      expect(agentInfo).toHaveProperty("version");
-      expect(typeof agentInfo.name).toBe("string");
-      expect(typeof agentInfo.displayName).toBe("string");
-      // version can be null if not installed
-      expect(agentInfo.version === null || typeof agentInfo.version === "string").toBe(true);
+    for (const entry of versions) {
+      expect(typeof entry.name).toBe("string");
+      expect(typeof entry.displayName).toBe("string");
+      expect(entry.version === null || typeof entry.version === "string").toBe(true);
+      expect(typeof entry.installed).toBe("boolean");
     }
   });
 
-  test("should include installed status for each agent", async () => {
+  test("marks agent as installed and returns version when getInstalledAgents includes it", async () => {
+    // Use the actual ALL_AGENTS list to pick a real agent name / binary
+    const { ALL_AGENTS } = await import("../../../src/agents/registry");
+    const firstAgent = ALL_AGENTS[0];
+
+    _versionDetectionDeps.getInstalledAgents = mock(async () => [firstAgent as AgentAdapter]);
+    _versionDetectionDeps.spawn = mock(() => makeMockProc(`${firstAgent.binary} v9.9.9\n`, 0)) as typeof _versionDetectionDeps.spawn;
+
     const versions = await getAgentVersions();
-    for (const agentInfo of versions) {
-      expect(agentInfo).toHaveProperty("installed");
-      expect(typeof agentInfo.installed).toBe("boolean");
-    }
+    const entry = versions.find((v) => v.name === firstAgent.name);
+
+    expect(entry).toBeDefined();
+    expect(entry?.installed).toBe(true);
+    expect(entry?.version).toBe("v9.9.9");
+  });
+
+  test("marks agent as not installed and version null when not in installed list", async () => {
+    const { ALL_AGENTS } = await import("../../../src/agents/registry");
+    const firstAgent = ALL_AGENTS[0];
+
+    // No agents installed
+    _versionDetectionDeps.getInstalledAgents = mock(async () => []);
+    _versionDetectionDeps.spawn = mock(() => makeMockProc("", 1)) as typeof _versionDetectionDeps.spawn;
+
+    const versions = await getAgentVersions();
+    const entry = versions.find((v) => v.name === firstAgent.name);
+
+    expect(entry).toBeDefined();
+    expect(entry?.installed).toBe(false);
+    expect(entry?.version).toBeNull();
   });
 });
