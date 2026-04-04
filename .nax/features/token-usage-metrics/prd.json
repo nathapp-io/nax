@@ -3,7 +3,7 @@
   "feature": "token-usage-metrics",
   "branchName": "feat/token-usage-metrics",
   "createdAt": "2026-04-04T00:00:00.000Z",
-  "updatedAt": "2026-04-04T15:28:39.427Z",
+  "updatedAt": "2026-04-04T15:36:57.192Z",
   "userStories": [
     {
       "id": "US-001",
@@ -105,8 +105,8 @@
       "dependencies": [
         "US-002"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

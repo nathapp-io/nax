@@ -7,14 +7,22 @@
 /**
  * Token usage metrics for LLM calls
  */
-export class TokenUsage {
+export interface TokenUsage {
   /** Number of input tokens consumed */
   input_tokens: number;
   /** Number of output tokens generated */
   output_tokens: number;
-  /** Number of input tokens read from cache (optional) */
+  /** Number of input tokens read from cache (optional, omitted when 0) */
   cache_read_input_tokens?: number;
-  /** Number of input tokens used for cache creation (optional) */
+  /** Number of input tokens used for cache creation (optional, omitted when 0) */
+  cache_creation_input_tokens?: number;
+}
+
+// biome-ignore lint/suspicious/noUnsafeDeclarationMerging: TokenUsage must be both an interface (for type checking) and a class (for runtime construction with toJSON)
+export class TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens?: number;
   cache_creation_input_tokens?: number;
 
   constructor(data: {

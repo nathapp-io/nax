@@ -98,10 +98,16 @@ export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string
     runtimeCrashes: ctx.storyRuntimeCrashes ?? 0,
     tokens: agentResult?.tokenUsage
       ? new TokenUsage({
-          input_tokens: agentResult.tokenUsage.inputTokens,
-          output_tokens: agentResult.tokenUsage.outputTokens,
-          cache_read_input_tokens: agentResult.tokenUsage.cache_read_input_tokens,
-          cache_creation_input_tokens: agentResult.tokenUsage.cache_creation_input_tokens,
+          input_tokens:
+            ((agentResult.tokenUsage as unknown as Record<string, unknown>).input_tokens as number) ??
+            ((agentResult.tokenUsage as unknown as Record<string, unknown>).inputTokens as number),
+          output_tokens:
+            ((agentResult.tokenUsage as unknown as Record<string, unknown>).output_tokens as number) ??
+            ((agentResult.tokenUsage as unknown as Record<string, unknown>).outputTokens as number),
+          cache_read_input_tokens: (agentResult.tokenUsage as unknown as Record<string, unknown>)
+            .cache_read_input_tokens as number | undefined,
+          cache_creation_input_tokens: (agentResult.tokenUsage as unknown as Record<string, unknown>)
+            .cache_creation_input_tokens as number | undefined,
         })
       : undefined,
   };
