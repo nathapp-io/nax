@@ -1,0 +1,338 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "setPostRunPhase(\"acceptance\", { status: \"passed\", lastRunAt: \"2026-04-04T12:00:00Z\" }) merges into the in-memory postRun.acceptance state and the next update() writes it to the status file's postRun.acceptance field",
+    "refined": "After calling setPostRunPhase(\"acceptance\", { status: \"passed\", lastRunAt: \"2026-04-04T12:00:00Z\" }) and then update(), the written status file contains postRun.acceptance.status === \"passed\" and postRun.acceptance.lastRunAt === \"2026-04-04T12:00:00Z\"; getPostRunStatus().acceptance deep-equals { status: \"passed\", lastRunAt: \"2026-04-04T12:00:00Z\" } before update() is called",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "setPostRunPhase(\"regression\", { status: \"failed\", failedTests: 3 }) merges into the in-memory postRun.regression state and the next update() writes it to the status file's postRun.regression field",
+    "refined": "After calling setPostRunPhase(\"regression\", { status: \"failed\", failedTests: 3 }) and then update(), the written status file contains postRun.regression.status === \"failed\" and postRun.regression.failedTests === 3; getPostRunStatus().regression deep-equals { status: \"failed\", failedTests: 3 } before update() is called",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "getPostRunStatus() returns { acceptance: { status: \"not-run\" }, regression: { status: \"not-run\" } } when no setPostRunPhase() has been called (default state)",
+    "refined": "Calling getPostRunStatus() on a freshly initialized RunState (no prior setPostRunPhase calls) returns an object that deep-equals { acceptance: { status: \"not-run\" }, regression: { status: \"not-run\" } }",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "getPostRunStatus() returns { acceptance: { status: \"not-run\" }, regression: { status: \"not-run\" } } when the in-memory postRun.acceptance.status is \"running\" (stale crash recovery — running is treated as not-run)",
+    "refined": "Given in-memory postRun.acceptance.status is \"running\" (set via setPostRunPhase(\"acceptance\", { status: \"running\" })), calling getPostRunStatus() returns an object where acceptance.status === \"not-run\" and regression.status === \"not-run\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "getPostRunStatus() returns { acceptance: { status: \"not-run\" }, regression: { status: \"not-run\" } } when the in-memory postRun.regression.status is \"running\" (stale crash recovery)",
+    "refined": "Given in-memory postRun.regression.status is \"running\" (set via setPostRunPhase(\"regression\", { status: \"running\" })), calling getPostRunStatus() returns an object where regression.status === \"not-run\" and acceptance.status === \"not-run\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "resetPostRunStatus() sets both phases to { status: \"not-run\" } and clears all other fields (retries, failedACs, failedTests, affectedStories, etc.)",
+    "refined": "After calling setPostRunPhase(\"acceptance\", { status: \"passed\", retries: 2, failedACs: [\"AC1\"] }) and setPostRunPhase(\"regression\", { status: \"failed\", failedTests: 5, affectedStories: [\"s1\"] }), calling resetPostRunStatus() causes getPostRunStatus() to return exactly { acceptance: { status: \"not-run\" }, regression: { status: \"not-run\" } } with no additional keys on either phase object",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "buildStatusSnapshot() includes the postRun field in the returned NaxStatusFile when RunStateSnapshot.postRun is present",
+    "refined": "When buildStatusSnapshot() is called with a RunStateSnapshot whose postRun field is a non-undefined object (e.g., { acceptance: { status: \"passed\" }, regression: { status: \"not-run\" } }), the returned NaxStatusFile object contains a postRun key whose value deep-equals that object",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "buildStatusSnapshot() omits the postRun field from the returned NaxStatusFile when RunStateSnapshot.postRun is undefined",
+    "refined": "When buildStatusSnapshot() is called with a RunStateSnapshot whose postRun field is undefined, the returned NaxStatusFile object does not contain a postRun key (i.e., Object.prototype.hasOwnProperty.call(result, \"postRun\") === false)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": ".gitignore does not contain the line `.nax/features/*/status.json` after this change",
+    "refined": "Reading the .gitignore file at the project root and splitting by newline, no element in the resulting array strictly equals \".nax/features/*/status.json\"",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "checkGitignoreCoversNax() patterns array does not include \".nax/features/*/status.json\"",
+    "refined": "The patterns array used or returned by checkGitignoreCoversNax() (as defined in checks-git.ts) does not include the string \".nax/features/*/status.json\"; asserting Array.includes(\".nax/features/*/status.json\") === false on that array",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "NAX_RUNTIME_PATTERNS in checks-git.ts still includes the regex matching .nax/features/*/status.json (unchanged)",
+    "refined": "The NAX_RUNTIME_PATTERNS constant exported from checks-git.ts contains at least one RegExp entry r such that r.test(\".nax/features/abc/status.json\") === true and r.test(\".nax/features/xyz-feature/status.json\") === true",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "PostRunPhaseStatus, AcceptancePhaseStatus, RegressionPhaseStatus, and PostRunStatus types are exported from status-file.ts",
+    "refined": "Importing { PostRunPhaseStatus, AcceptancePhaseStatus, RegressionPhaseStatus, PostRunStatus } from status-file.ts resolves without TypeScript errors and each is a named export",
+    "testable": true,
+    "storyId": "US-001-A"
+  },
+  {
+    "acId": "AC-13",
+    "original": "AcceptancePhaseStatus.status accepts \"not-run\" | \"running\" | \"passed\" | \"failed\" and includes optional lastRunAt, retries, and failedACs fields",
+    "refined": "TypeScript type AcceptancePhaseStatus has a required 'status' field typed as 'not-run' | 'running' | 'passed' | 'failed', and optional fields 'lastRunAt' (string or Date), 'retries' (number), and 'failedACs' (array or string[]); assigning a value with status: 'invalid' causes a compile error; assigning without lastRunAt/retries/failedACs compiles successfully",
+    "testable": true,
+    "storyId": "US-001-A"
+  },
+  {
+    "acId": "AC-14",
+    "original": "RegressionPhaseStatus.status accepts \"not-run\" | \"running\" | \"passed\" | \"failed\" and includes optional lastRunAt, retries, failedTests, and affectedStories fields",
+    "refined": "TypeScript type RegressionPhaseStatus has a required 'status' field typed as 'not-run' | 'running' | 'passed' | 'failed', and optional fields 'lastRunAt', 'retries' (number), 'failedTests' (array), and 'affectedStories' (array); assigning status: 'invalid' causes a compile error; omitting all optional fields compiles successfully",
+    "testable": true,
+    "storyId": "US-001-A"
+  },
+  {
+    "acId": "AC-15",
+    "original": "PostRunStatus has required acceptance: AcceptancePhaseStatus and regression: RegressionPhaseStatus fields",
+    "refined": "TypeScript type PostRunStatus has non-optional fields 'acceptance' typed as AcceptancePhaseStatus and 'regression' typed as RegressionPhaseStatus; constructing a PostRunStatus without either field causes a TypeScript compile error",
+    "testable": true,
+    "storyId": "US-001-A"
+  },
+  {
+    "acId": "AC-16",
+    "original": "NaxStatusFile has optional postRun: PostRunStatus field",
+    "refined": "TypeScript type NaxStatusFile includes an optional field 'postRun' typed as PostRunStatus | undefined; constructing NaxStatusFile without postRun compiles successfully; constructing with postRun set to a valid PostRunStatus value also compiles successfully",
+    "testable": true,
+    "storyId": "US-001-A"
+  },
+  {
+    "acId": "AC-17",
+    "original": "RunStateSnapshot has optional postRun: PostRunStatus field",
+    "refined": "TypeScript type RunStateSnapshot includes an optional field 'postRun' typed as PostRunStatus | undefined; constructing RunStateSnapshot without postRun compiles successfully; constructing with postRun set to a valid PostRunStatus value also compiles successfully",
+    "testable": true,
+    "storyId": "US-001-A"
+  },
+  {
+    "acId": "AC-18",
+    "original": "buildStatusSnapshot() includes the postRun field in the returned NaxStatusFile when RunStateSnapshot.postRun is present",
+    "refined": "When buildStatusSnapshot() is called with a RunStateSnapshot where postRun is a valid PostRunStatus object, the returned NaxStatusFile object has a 'postRun' property strictly equal (deep equal) to the input postRun value",
+    "testable": true,
+    "storyId": "US-001-A"
+  },
+  {
+    "acId": "AC-19",
+    "original": "buildStatusSnapshot() omits the postRun field from the returned NaxStatusFile when RunStateSnapshot.postRun is undefined",
+    "refined": "When buildStatusSnapshot() is called with a RunStateSnapshot where postRun is undefined or absent, the returned NaxStatusFile object does not have a 'postRun' key (i.e., 'postRun' in result === false or result.postRun === undefined)",
+    "testable": true,
+    "storyId": "US-001-A"
+  },
+  {
+    "acId": "AC-20",
+    "original": "setPostRunPhase(\"acceptance\", { status: \"passed\", lastRunAt: \"2026-04-04T12:00:00Z\" }) merges into the in-memory postRun.acceptance state and the next update() writes it to the status file's postRun.acceptance field",
+    "refined": "After calling setPostRunPhase(\"acceptance\", { status: \"passed\", lastRunAt: \"2026-04-04T12:00:00Z\" }), getPostRunStatus().acceptance deep-equals { status: \"passed\", lastRunAt: \"2026-04-04T12:00:00Z\" }; after the next update() call, reading the status file from disk and parsing its JSON yields postRun.acceptance deep-equal to { status: \"passed\", lastRunAt: \"2026-04-04T12:00:00Z\" }",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-21",
+    "original": "setPostRunPhase(\"regression\", { status: \"failed\", failedTests: 3 }) merges into the in-memory postRun.regression state and the next update() writes it to the status file's postRun.regression field",
+    "refined": "After calling setPostRunPhase(\"regression\", { status: \"failed\", failedTests: 3 }), getPostRunStatus().regression deep-equals { status: \"failed\", failedTests: 3 }; after the next update() call, reading the status file from disk and parsing its JSON yields postRun.regression deep-equal to { status: \"failed\", failedTests: 3 }",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-22",
+    "original": "getPostRunStatus() returns { acceptance: { status: \"not-run\" }, regression: { status: \"not-run\" } } when no setPostRunPhase() has been called",
+    "refined": "Given a freshly constructed RunState (or equivalent state manager) with no prior setPostRunPhase() calls, getPostRunStatus() returns an object where acceptance.status === \"not-run\" and regression.status === \"not-run\" with no extra keys on either phase object",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-23",
+    "original": "getPostRunStatus() returns { acceptance: { status: \"not-run\" }, regression: { status: \"not-run\" } } when in-memory postRun.acceptance.status is \"running\" (stale crash recovery)",
+    "refined": "Given internal postRun.acceptance.status is set to \"running\" (simulating a stale crash state), getPostRunStatus().acceptance.status === \"not-run\" and getPostRunStatus().regression.status === \"not-run\"; the \"running\" value is not surfaced to the caller",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-24",
+    "original": "getPostRunStatus() returns { acceptance: { status: \"not-run\" }, regression: { status: \"not-run\" } } when in-memory postRun.regression.status is \"running\" (stale crash recovery)",
+    "refined": "Given internal postRun.regression.status is set to \"running\" (simulating a stale crash state), getPostRunStatus().regression.status === \"not-run\" and getPostRunStatus().acceptance.status === \"not-run\"; the \"running\" value is not surfaced to the caller",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-25",
+    "original": "resetPostRunStatus() sets both phases to { status: \"not-run\" } and clears all optional fields (retries, failedACs, failedTests, affectedStories, lastRunAt)",
+    "refined": "After calling setPostRunPhase with arbitrary data on both phases, calling resetPostRunStatus() causes getPostRunStatus() to return { acceptance: { status: \"not-run\" }, regression: { status: \"not-run\" } } with no additional keys (retries, failedACs, failedTests, affectedStories, lastRunAt) present on either phase object; Object.keys(result.acceptance) deep-equals [\"status\"] and Object.keys(result.regression) deep-equals [\"status\"]",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-26",
+    "original": "getSnapshot() includes the postRun field in the returned RunStateSnapshot so update() propagates it to the status file on disk",
+    "refined": "getSnapshot() returns an object containing a top-level postRun key; after calling update() with that snapshot (or triggering update() internally), the status file parsed from disk contains a postRun field whose value deep-equals getSnapshot().postRun",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-27",
+    "original": ".gitignore does not contain the line `.nax/features/*/status.json` after this change",
+    "refined": "Reading the .gitignore file, the string `.nax/features/*/status.json` does not appear as a line in the file contents",
+    "testable": true,
+    "storyId": "US-001-C"
+  },
+  {
+    "acId": "AC-28",
+    "original": "checkGitignoreCoversNax() patterns array does not include \".nax/features/*/status.json\"",
+    "refined": "The REQUIRED_PATTERNS or equivalent array used by checkGitignoreCoversNax() in checks-git.ts does not contain the string \".nax/features/*/status.json\"",
+    "testable": true,
+    "storyId": "US-001-C"
+  },
+  {
+    "acId": "AC-29",
+    "original": "checkGitignoreCoversNax() returns passed: true for a .gitignore that contains all other required patterns but omits `.nax/features/*/status.json`",
+    "refined": "When checkGitignoreCoversNax() is called with a .gitignore content that includes all required patterns except `.nax/features/*/status.json`, the function returns an object where passed === true",
+    "testable": true,
+    "storyId": "US-001-C"
+  },
+  {
+    "acId": "AC-30",
+    "original": "NAX_RUNTIME_PATTERNS in checks-git.ts still includes the regex matching .nax/features/*/status.json (no change to checks-git.ts)",
+    "refined": "The NAX_RUNTIME_PATTERNS array in checks-git.ts contains a regex or string entry that matches the path `.nax/features/*/status.json`, verified by reading the file and confirming the pattern is present and unchanged",
+    "testable": true,
+    "storyId": "US-001-C"
+  },
+  {
+    "acId": "AC-31",
+    "original": "runCompletionPhase() calls statusWriter.setPostRunPhase(\"acceptance\", { status: \"running\" }) before entering runAcceptanceLoop()",
+    "refined": "A spy on statusWriter.setPostRunPhase records a call with args [\"acceptance\", { status: \"running\" }] whose call index is strictly less than the call index of runAcceptanceLoop() — verified by checking spy.calls order in a unit test that stubs both functions.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-32",
+    "original": "When runAcceptanceLoop() returns success=true, statusWriter.setPostRunPhase(\"acceptance\", { status: \"passed\", lastRunAt }) is called with an ISO 8601 timestamp",
+    "refined": "Given runAcceptanceLoop stub resolves { success: true }, spy on statusWriter.setPostRunPhase receives exactly one call matching [\"acceptance\", { status: \"passed\", lastRunAt: <string matching /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$/> }].",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When runAcceptanceLoop() returns success=false, statusWriter.setPostRunPhase(\"acceptance\", { status: \"failed\", failedACs, retries, lastRunAt }) is called with the actual failed AC list and retry count",
+    "refined": "Given runAcceptanceLoop stub resolves { success: false, failedACs: [\"AC-1\", \"AC-2\"], retries: 3 }, spy on statusWriter.setPostRunPhase receives a call matching [\"acceptance\", { status: \"failed\", failedACs: [\"AC-1\", \"AC-2\"], retries: 3, lastRunAt: <ISO 8601 string> }] — failedACs array deep-equals the stub value and retries equals 3.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-34",
+    "original": "handleRunCompletion() calls statusWriter.setPostRunPhase(\"regression\", { status: \"running\" }) before entering runDeferredRegression()",
+    "refined": "A spy on statusWriter.setPostRunPhase records a call with args [\"regression\", { status: \"running\" }] whose call index is strictly less than the call index of runDeferredRegression() — verified by checking spy.calls order in a unit test that stubs both functions.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-35",
+    "original": "When runDeferredRegression() succeeds, statusWriter.setPostRunPhase(\"regression\", { status: \"passed\", lastRunAt }) is called",
+    "refined": "Given runDeferredRegression stub resolves a success result, spy on statusWriter.setPostRunPhase receives exactly one call matching [\"regression\", { status: \"passed\", lastRunAt: <string matching ISO 8601 regex> }].",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-36",
+    "original": "When runDeferredRegression() fails, statusWriter.setPostRunPhase(\"regression\", { status: \"failed\", failedTests, affectedStories, lastRunAt }) is called with values from regressionResult",
+    "refined": "Given runDeferredRegression stub resolves { success: false, failedTests: [\"test-a\"], affectedStories: [\"story-1\"] }, spy on statusWriter.setPostRunPhase receives a call matching [\"regression\", { status: \"failed\", failedTests: [\"test-a\"], affectedStories: [\"story-1\"], lastRunAt: <ISO 8601 string> }] — both arrays deep-equal the stub values.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-37",
+    "original": "When shouldSkipDeferredRegression() returns true, statusWriter.setPostRunPhase(\"regression\", { status: \"passed\", skipped: true, lastRunAt }) is called",
+    "refined": "Given shouldSkipDeferredRegression stub returns true, spy on statusWriter.setPostRunPhase receives exactly one call matching [\"regression\", { status: \"passed\", skipped: true, lastRunAt: <ISO 8601 string> }] and runDeferredRegression is never called (call count === 0).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-38",
+    "original": "runCompletionPhase() skips both acceptance and regression when getPostRunStatus() returns both phases with status \"passed\", and logs at info level with message containing \"Post-run phases already passed\"",
+    "refined": "When getPostRunStatus() returns { acceptance: { status: 'passed' }, regression: { status: 'passed' } }, runCompletionPhase() must: (1) not invoke the acceptance phase runner, (2) not invoke the regression phase runner, (3) call logger.info exactly once with a message string containing the substring 'Post-run phases already passed'",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-39",
+    "original": "runCompletionPhase() skips acceptance but runs regression when getPostRunStatus() returns acceptance.status === \"passed\" and regression.status !== \"passed\", and logs at info level with message containing \"Acceptance already passed\"",
+    "refined": "When getPostRunStatus() returns { acceptance: { status: 'passed' }, regression: { status: 'not-run' } } (or any non-passed regression status), runCompletionPhase() must: (1) not invoke the acceptance phase runner, (2) invoke the regression phase runner exactly once, (3) call logger.info with a message string containing the substring 'Acceptance already passed'",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-40",
+    "original": "runCompletionPhase() runs both acceptance and regression when getPostRunStatus() returns acceptance.status === \"not-run\"",
+    "refined": "When getPostRunStatus() returns { acceptance: { status: 'not-run' } }, runCompletionPhase() must invoke both the acceptance phase runner and the regression phase runner each exactly once",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-41",
+    "original": "runCompletionPhase() runs both acceptance and regression when getPostRunStatus() returns acceptance.status === \"failed\"",
+    "refined": "When getPostRunStatus() returns { acceptance: { status: 'failed' } }, runCompletionPhase() must invoke both the acceptance phase runner and the regression phase runner each exactly once",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-42",
+    "original": "When markStoryFailed() is called for a story whose current status is \"passed\", resetPostRunStatus() is called on the statusWriter",
+    "refined": "Given a story with current persisted status 'passed', calling markStoryFailed(storyId) must result in exactly one call to statusWriter.resetPostRunStatus(storyId)",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-43",
+    "original": "When blockStory() is called for a story whose current status is \"passed\", resetPostRunStatus() is called on the statusWriter",
+    "refined": "Given a story with current persisted status 'passed', calling blockStory(storyId) must result in exactly one call to statusWriter.resetPostRunStatus(storyId)",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-44",
+    "original": "When markStoryPassed() is called for a story whose current status is \"pending\", resetPostRunStatus() is NOT called",
+    "refined": "Given a story with current persisted status 'pending', calling markStoryPassed(storyId) must result in zero calls to statusWriter.resetPostRunStatus",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-45",
+    "original": "displayFeatureDetails() outputs a line containing \"Acceptance: passed\" with a formatted timestamp when status file has postRun.acceptance.status === \"passed\" and lastRunAt is set",
+    "refined": "When displayFeatureDetails() is called with a status object where postRun.acceptance.status === \"passed\" and postRun.acceptance.lastRunAt is set to a valid ISO date string, the output string contains a line matching /Acceptance:\\s+passed.*\\d{4}/ (or equivalent timestamp pattern)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-46",
+    "original": "displayFeatureDetails() outputs a line containing \"Regression: failed\" with failedTests count when status file has postRun.regression.status === \"failed\" and failedTests is set",
+    "refined": "When displayFeatureDetails() is called with a status object where postRun.regression.status === \"failed\" and postRun.regression.failedTests is a positive integer N, the output string contains a line matching /Regression:\\s+failed.*N/ where N is the exact failedTests value",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-47",
+    "original": "displayFeatureDetails() does not output any post-run section when the loaded status file has no postRun field (backward compat)",
+    "refined": "When displayFeatureDetails() is called with a status object that has no postRun property (undefined or absent), the output string does not contain any of the substrings \"Acceptance:\", \"Regression:\", or \"post-run\" (case-insensitive)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-48",
+    "original": "displayFeatureDetails() outputs a line containing \"Regression: skipped (smart-skip)\" when postRun.regression.status === \"passed\" and postRun.regression.skipped === true",
+    "refined": "When displayFeatureDetails() is called with a status object where postRun.regression.status === \"passed\" and postRun.regression.skipped === true, the output string contains a line matching /Regression:\\s+skipped.*smart-skip/i",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]

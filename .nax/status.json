@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-04-04T08-42-38-886Z",
-    "feature": "debate-session-mode",
-    "startedAt": "2026-04-04T08:42:38.886Z",
-    "status": "completed",
+    "id": "run-2026-04-04T09-43-17-937Z",
+    "feature": "rerun-postrun-tracking",
+    "startedAt": "2026-04-04T09:43:17.937Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 30247
+    "pid": 45172
   },
   "progress": {
-    "total": 9,
-    "passed": 9,
+    "total": 7,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 7
   },
   "cost": {
     "spent": 0,
     "limit": 30
   },
-  "current": null,
-  "iterations": 0,
-  "updatedAt": "2026-04-04T08:43:37.199Z",
-  "durationMs": 58313
+  "current": {
+    "storyId": "US-001-A",
+    "title": "PostRunStatus type hierarchy and status-file.ts interface updates",
+    "complexity": "simple",
+    "tddStrategy": "tdd-simple",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 2,
+  "updatedAt": "2026-04-04T09:57:18.014Z",
+  "durationMs": 840077,
+  "lastHeartbeat": "2026-04-04T09:57:18.014Z"
 }

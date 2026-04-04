@@ -1,0 +1,277 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "rerun-postrun-tracking",
+  "branchName": "feat/rerun-postrun-tracking",
+  "createdAt": "2026-04-04T12:00:00.000Z",
+  "updatedAt": "2026-04-04T09:55:44.835Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "PostRunStatus types, StatusWriter methods, and un-gitignore",
+      "description": "Add PostRunStatus type hierarchy (PostRunPhaseStatus, AcceptancePhaseStatus, RegressionPhaseStatus, PostRunStatus) to status-file.ts. Add optional `postRun` field to NaxStatusFile and RunStateSnapshot interfaces. Update buildStatusSnapshot() to propagate postRun. Add three methods to StatusWriter: setPostRunPhase(phase, update), getPostRunStatus(), resetPostRunStatus(). Remove `.nax/features/*/status.json` from .gitignore and from checkGitignoreCoversNax() required patterns array in checks-warnings.ts. Verify NAX_RUNTIME_PATTERNS in checks-git.ts still includes the status.json regex (no change needed).",
+      "acceptanceCriteria": [
+        "setPostRunPhase(\"acceptance\", { status: \"passed\", lastRunAt: \"2026-04-04T12:00:00Z\" }) merges into the in-memory postRun.acceptance state and the next update() writes it to the status file's postRun.acceptance field",
+        "setPostRunPhase(\"regression\", { status: \"failed\", failedTests: 3 }) merges into the in-memory postRun.regression state and the next update() writes it to the status file's postRun.regression field",
+        "getPostRunStatus() returns { acceptance: { status: \"not-run\" }, regression: { status: \"not-run\" } } when no setPostRunPhase() has been called (default state)",
+        "getPostRunStatus() returns { acceptance: { status: \"not-run\" }, regression: { status: \"not-run\" } } when the in-memory postRun.acceptance.status is \"running\" (stale crash recovery — running is treated as not-run)",
+        "getPostRunStatus() returns { acceptance: { status: \"not-run\" }, regression: { status: \"not-run\" } } when the in-memory postRun.regression.status is \"running\" (stale crash recovery)",
+        "resetPostRunStatus() sets both phases to { status: \"not-run\" } and clears all other fields (retries, failedACs, failedTests, affectedStories, etc.)",
+        "buildStatusSnapshot() includes the postRun field in the returned NaxStatusFile when RunStateSnapshot.postRun is present",
+        "buildStatusSnapshot() omits the postRun field from the returned NaxStatusFile when RunStateSnapshot.postRun is undefined",
+        ".gitignore does not contain the line `.nax/features/*/status.json` after this change",
+        "checkGitignoreCoversNax() patterns array does not include \".nax/features/*/status.json\"",
+        "NAX_RUNTIME_PATTERNS in checks-git.ts still includes the regex matching .nax/features/*/status.json (unchanged)"
+      ],
+      "tags": [
+        "feature",
+        "types",
+        "config"
+      ],
+      "dependencies": [],
+      "status": "decomposed",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/execution/status-file.ts",
+        "src/execution/status-writer.ts",
+        "src/precheck/checks-warnings.ts",
+        "src/precheck/checks-git.ts",
+        ".gitignore"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-001-A",
+      "title": "PostRunStatus type hierarchy and status-file.ts interface updates",
+      "description": "Add PostRunPhaseStatus, AcceptancePhaseStatus, RegressionPhaseStatus, and PostRunStatus types to status-file.ts. Add optional postRun field to NaxStatusFile and RunStateSnapshot interfaces. Update buildStatusSnapshot() to include postRun in the output when RunStateSnapshot.postRun is present and omit it when absent.",
+      "acceptanceCriteria": [
+        "PostRunPhaseStatus, AcceptancePhaseStatus, RegressionPhaseStatus, and PostRunStatus types are exported from status-file.ts",
+        "AcceptancePhaseStatus.status accepts \"not-run\" | \"running\" | \"passed\" | \"failed\" and includes optional lastRunAt, retries, and failedACs fields",
+        "RegressionPhaseStatus.status accepts \"not-run\" | \"running\" | \"passed\" | \"failed\" and includes optional lastRunAt, retries, failedTests, and affectedStories fields",
+        "PostRunStatus has required acceptance: AcceptancePhaseStatus and regression: RegressionPhaseStatus fields",
+        "NaxStatusFile has optional postRun: PostRunStatus field",
+        "RunStateSnapshot has optional postRun: PostRunStatus field",
+        "buildStatusSnapshot() includes the postRun field in the returned NaxStatusFile when RunStateSnapshot.postRun is present",
+        "buildStatusSnapshot() omits the postRun field from the returned NaxStatusFile when RunStateSnapshot.postRun is undefined"
+      ],
+      "tags": [
+        "feature",
+        "types"
+      ],
+      "dependencies": [],
+      "contextFiles": [
+        "src/execution/status-file.ts"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "parentStoryId": "US-001",
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single-file additive change — new type exports plus two interface fields and one conditional spread in buildStatusSnapshot(). ~50 LOC, no external coupling.",
+        "modelTier": "balanced",
+        "initialComplexity": "simple"
+      },
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "c48c7c009d24c266a3a84dfb69291ad0f7ccdbff"
+    },
+    {
+      "id": "US-001-B",
+      "title": "StatusWriter post-run phase methods: setPostRunPhase, getPostRunStatus, resetPostRunStatus",
+      "description": "Add three methods to StatusWriter in status-writer.ts: setPostRunPhase(phase, update) that merges a partial update into in-memory postRun state; getPostRunStatus() that returns the current postRun state with crash recovery (treats \"running\" as \"not-run\" for both phases); resetPostRunStatus() that resets both phases to { status: \"not-run\" } and clears all optional fields. Update getSnapshot() to include the postRun field in the RunStateSnapshot so that update() propagates it to disk.",
+      "acceptanceCriteria": [
+        "setPostRunPhase(\"acceptance\", { status: \"passed\", lastRunAt: \"2026-04-04T12:00:00Z\" }) merges into the in-memory postRun.acceptance state and the next update() writes it to the status file's postRun.acceptance field",
+        "setPostRunPhase(\"regression\", { status: \"failed\", failedTests: 3 }) merges into the in-memory postRun.regression state and the next update() writes it to the status file's postRun.regression field",
+        "getPostRunStatus() returns { acceptance: { status: \"not-run\" }, regression: { status: \"not-run\" } } when no setPostRunPhase() has been called",
+        "getPostRunStatus() returns { acceptance: { status: \"not-run\" }, regression: { status: \"not-run\" } } when in-memory postRun.acceptance.status is \"running\" (stale crash recovery)",
+        "getPostRunStatus() returns { acceptance: { status: \"not-run\" }, regression: { status: \"not-run\" } } when in-memory postRun.regression.status is \"running\" (stale crash recovery)",
+        "resetPostRunStatus() sets both phases to { status: \"not-run\" } and clears all optional fields (retries, failedACs, failedTests, affectedStories, lastRunAt)",
+        "getSnapshot() includes the postRun field in the returned RunStateSnapshot so update() propagates it to the status file on disk"
+      ],
+      "tags": [
+        "feature",
+        "types"
+      ],
+      "dependencies": [
+        "US-001-A"
+      ],
+      "contextFiles": [
+        "src/execution/status-writer.ts",
+        "src/execution/status-file.ts"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "parentStoryId": "US-001",
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Three new public methods with non-trivial crash-recovery logic in getPostRunStatus(). getSnapshot() must be updated to thread postRun through to buildStatusSnapshot(). ~90 LOC across one file but crash-recovery semantics warrant three-session-tdd-lite.",
+        "modelTier": "balanced"
+      },
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-001-C",
+      "title": "Un-gitignore .nax/features/*/status.json and remove from precheck patterns",
+      "description": "Remove the line `.nax/features/*/status.json` from the project .gitignore. Remove `.nax/features/*/status.json` from the patterns array inside checkGitignoreCoversNax() in checks-warnings.ts. No changes to NAX_RUNTIME_PATTERNS in checks-git.ts (that regex already covers the path for dirty-tree detection and is intentionally retained).",
+      "acceptanceCriteria": [
+        ".gitignore does not contain the line `.nax/features/*/status.json` after this change",
+        "checkGitignoreCoversNax() patterns array does not include \".nax/features/*/status.json\"",
+        "checkGitignoreCoversNax() returns passed: true for a .gitignore that contains all other required patterns but omits `.nax/features/*/status.json`",
+        "NAX_RUNTIME_PATTERNS in checks-git.ts still includes the regex matching .nax/features/*/status.json (no change to checks-git.ts)"
+      ],
+      "tags": [
+        "config"
+      ],
+      "dependencies": [],
+      "contextFiles": [
+        ".gitignore",
+        "src/precheck/checks-warnings.ts",
+        "src/precheck/checks-git.ts"
+      ],
+      "status": "pending",
+      "passes": false,
+      "escalations": [],
+      "attempts": 0,
+      "parentStoryId": "US-001",
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Two surgical line deletions across two files plus a test update. ~5 LOC changed. The checks-git.ts verify step is read-only confirmation.",
+        "modelTier": "balanced"
+      },
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-002",
+      "title": "Write acceptance and regression phase status at boundaries",
+      "description": "Instrument runner-completion.ts, acceptance-loop.ts, and run-completion.ts to call setPostRunPhase() at each phase entry and exit. Before runAcceptanceLoop(): set acceptance to running. On acceptance success: set passed + lastRunAt. On acceptance failure: set failed + failedACs + retries + lastRunAt. Before runDeferredRegression(): set regression to running. On regression success: set passed + lastRunAt. On regression failure: set failed + failedTests + affectedStories + rectificationAttempts + lastRunAt. On smart-skip: set passed + skipped=true + lastRunAt.",
+      "acceptanceCriteria": [
+        "runCompletionPhase() calls statusWriter.setPostRunPhase(\"acceptance\", { status: \"running\" }) before entering runAcceptanceLoop()",
+        "When runAcceptanceLoop() returns success=true, statusWriter.setPostRunPhase(\"acceptance\", { status: \"passed\", lastRunAt }) is called with an ISO 8601 timestamp",
+        "When runAcceptanceLoop() returns success=false, statusWriter.setPostRunPhase(\"acceptance\", { status: \"failed\", failedACs, retries, lastRunAt }) is called with the actual failed AC list and retry count",
+        "handleRunCompletion() calls statusWriter.setPostRunPhase(\"regression\", { status: \"running\" }) before entering runDeferredRegression()",
+        "When runDeferredRegression() succeeds, statusWriter.setPostRunPhase(\"regression\", { status: \"passed\", lastRunAt }) is called",
+        "When runDeferredRegression() fails, statusWriter.setPostRunPhase(\"regression\", { status: \"failed\", failedTests, affectedStories, lastRunAt }) is called with values from regressionResult",
+        "When shouldSkipDeferredRegression() returns true, statusWriter.setPostRunPhase(\"regression\", { status: \"passed\", skipped: true, lastRunAt }) is called"
+      ],
+      "tags": [
+        "feature",
+        "instrumentation"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/execution/runner-completion.ts",
+        "src/execution/lifecycle/acceptance-loop.ts",
+        "src/execution/lifecycle/run-completion.ts",
+        "src/execution/status-writer.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-003",
+      "title": "Rerun skip logic and story regression reset",
+      "description": "Update runCompletionPhase() to check postRun status via statusWriter.getPostRunStatus() before running acceptance and regression phases. When both are passed, skip both and log info. When only acceptance is passed, skip acceptance but run regression. When acceptance is not-run or failed, run both (current behavior). Add resetPostRunStatus() call in the PRD story-status mutation functions (markStoryFailed, blockStory) when the story's previous status was \"passed\" — only backward transitions from passed trigger reset. Forward transitions (pending->passed) must NOT trigger reset.",
+      "acceptanceCriteria": [
+        "runCompletionPhase() skips both acceptance and regression when getPostRunStatus() returns both phases with status \"passed\", and logs at info level with message containing \"Post-run phases already passed\"",
+        "runCompletionPhase() skips acceptance but runs regression when getPostRunStatus() returns acceptance.status === \"passed\" and regression.status !== \"passed\", and logs at info level with message containing \"Acceptance already passed\"",
+        "runCompletionPhase() runs both acceptance and regression when getPostRunStatus() returns acceptance.status === \"not-run\"",
+        "runCompletionPhase() runs both acceptance and regression when getPostRunStatus() returns acceptance.status === \"failed\"",
+        "When markStoryFailed() is called for a story whose current status is \"passed\", resetPostRunStatus() is called on the statusWriter",
+        "When blockStory() is called for a story whose current status is \"passed\", resetPostRunStatus() is called on the statusWriter",
+        "When markStoryPassed() is called for a story whose current status is \"pending\", resetPostRunStatus() is NOT called"
+      ],
+      "tags": [
+        "feature",
+        "optimization"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/execution/runner-completion.ts",
+        "src/prd/index.ts",
+        "src/prd/types.ts",
+        "src/execution/status-writer.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-004",
+      "title": "Display postRun status in nax status CLI",
+      "description": "Update displayFeatureDetails() in src/cli/status-features.ts to show acceptance and regression phase status when the postRun field is present in the loaded status file. Show phase name, status, timestamp, and relevant details (failedACs count, failedTests count, skipped indicator). Omit the post-run section entirely when postRun is absent for backward compatibility with old status files.",
+      "acceptanceCriteria": [
+        "displayFeatureDetails() outputs a line containing \"Acceptance: passed\" with a formatted timestamp when status file has postRun.acceptance.status === \"passed\" and lastRunAt is set",
+        "displayFeatureDetails() outputs a line containing \"Regression: failed\" with failedTests count when status file has postRun.regression.status === \"failed\" and failedTests is set",
+        "displayFeatureDetails() does not output any post-run section when the loaded status file has no postRun field (backward compat)",
+        "displayFeatureDetails() outputs a line containing \"Regression: skipped (smart-skip)\" when postRun.regression.status === \"passed\" and postRun.regression.skipped === true"
+      ],
+      "tags": [
+        "feature",
+        "cli"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/cli/status-features.ts",
+        "src/execution/status-file.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    }
+  ],
+  "analysis": "## Key Files & Current State\n\n### StatusWriter (src/execution/status-writer.ts, 210 lines)\n- Encapsulates mutable status state (_runStatus, _prd, _currentStory) with mutex-serialized writes\n- Methods: setRunStatus(), setPrd(), setCurrentStory(), getSnapshot(), update(), writeFeatureStatus()\n- New methods needed: setPostRunPhase(), getPostRunStatus(), resetPostRunStatus()\n- Must add private _postRun state field alongside existing _runStatus, _prd, _currentStory\n- Write mutex pattern must be preserved for new methods\n\n### NaxStatusFile (src/execution/status-file.ts, 264 lines)\n- Machine-readable status schema (version: 1) consumed by external tools\n- Types: NaxStatusFile, RunStateSnapshot, countProgress(), buildStatusSnapshot(), writeStatusFile()\n- Must add optional `postRun` field to NaxStatusFile interface\n- buildStatusSnapshot() must propagate postRun from RunStateSnapshot to NaxStatusFile\n- RunStateSnapshot must gain optional postRun field\n\n### Runner Completion (src/execution/runner-completion.ts, 179 lines)\n- runCompletionPhase() orchestrates: acceptance loop -> hooks -> handleRunCompletion() -> feature status -> heartbeat -> auto-commit\n- Currently calls runAcceptanceLoop() unconditionally when acceptance.enabled && isComplete(prd)\n- Must add postRun status check before acceptance/regression to skip already-passed phases\n- statusWriter is typed as `any` here (comment says interface varies by platform)\n\n### Acceptance Loop (src/execution/lifecycle/acceptance-loop.ts, 691 lines — near 400-line limit concern for adding code)\n- runAcceptanceLoop() returns AcceptanceLoopResult { success, prd, totalCost, iterations, storiesCompleted, prdDirty }\n- Does NOT currently write any postRun status — needs boundary instrumentation\n- statusWriter is available in AcceptanceLoopContext\n- Key boundary points: before entering loop, on success return, on failure return\n\n### Run Completion (src/execution/lifecycle/run-completion.ts, 249 lines)\n- handleRunCompletion() runs deferred regression gate, saves metrics, logs summary\n- shouldSkipDeferredRegression() for smart-skip logic\n- Must instrument regression boundary writes and handle smart-skip status\n- _runCompletionDeps injectable for testing\n\n### Gitignore & Prechecks\n- .gitignore line 50: `.nax/features/*/status.json` — must be REMOVED\n- checks-warnings.ts line 161: `\".nax/features/*/status.json\"` in patterns array — must be REMOVED\n- checks-git.ts: NAX_RUNTIME_PATTERNS already includes status.json regex — no change needed\n\n### CLI Status Display (src/cli/status-features.ts, 405 lines)\n- displayFeatureDetails() shows PRD summary, interactions, active/crashed run, story table\n- Must add postRun section after run info when postRun is present in status file\n- Loads status via loadStatusFile() which returns NaxStatusFile | null\n\n### Story Status Transitions\n- Story status mutations happen in src/prd/index.ts (markStoryPassed, markStoryFailed, etc.) and src/prd/types.ts (blockStory)\n- resetPostRunStatus() must be called when a story transitions FROM \"passed\" to non-passed\n- Key mutation sites: markStoryFailed (prd/index.ts:194), blockStory (prd/types.ts:217)\n- Forward transitions (pending->passed) must NOT trigger reset\n\n## Risks & Considerations\n\n1. **Backward compatibility**: Existing status.json files lack `postRun` field. getPostRunStatus() must default to both \"not-run\" when absent. buildStatusSnapshot() must conditionally include postRun.\n2. **Crash recovery**: `status: \"running\"` from a crashed run must be treated as \"not-run\" (stale running state).\n3. **File size limits**: acceptance-loop.ts is already 691 lines (well over 400-line convention). Adding instrumentation should be minimal — just setPostRunPhase() calls at boundaries, not new logic.\n4. **Mutation pattern**: StatusWriter uses mutable private state. postRun follows the same pattern — private _postRun field with setter/getter methods.\n5. **Git workflow**: Un-gitignoring status.json means it becomes a tracked file. autoCommitIfDirty() at run end already handles committing nax runtime files.\n6. **Type safety**: PostRunStatus types should live in status-file.ts alongside NaxStatusFile since they're part of the persisted schema."
+}
