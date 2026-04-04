@@ -180,6 +180,8 @@ describe("DebateSession.run() mode routing — AC3: mode undefined defaults to p
 
 describe("DebateSession.run() mode routing — AC4: hybrid + stateful", () => {
   test("with mode 'hybrid' and sessionMode 'stateful', calls runHybrid", async () => {
+    _debateSessionDeps.getAgent = mock((name: string) => makeMockAdapter(name));
+
     const session = new DebateSession({
       storyId: "test-story",
       stage: "review",
@@ -191,17 +193,10 @@ describe("DebateSession.run() mode routing — AC4: hybrid + stateful", () => {
       featureName: "test-feature",
     });
 
-    // runHybrid should be called and throws "Not implemented"
-    let caughtError: Error | null = null;
-    try {
-      await session.run("test prompt");
-    } catch (err) {
-      caughtError = err as Error;
-    }
-
-    expect(caughtError).toBeDefined();
-    expect(caughtError instanceof Error).toBe(true);
-    expect((caughtError as Error).message).toMatch(/Not implemented/);
+    // runHybrid is now implemented — verify routing dispatches to it and returns a result
+    const result = await session.run("test prompt");
+    expect(result.storyId).toBe("test-story");
+    expect(result.stage).toBe("review");
   });
 });
 

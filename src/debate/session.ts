@@ -7,6 +7,7 @@
 
 import type { NaxConfig } from "../config";
 import { _debateSessionDeps } from "./session-helpers";
+import { runHybrid } from "./session-hybrid";
 import { runOneShot } from "./session-one-shot";
 import { runPlan } from "./session-plan";
 import { runStateful } from "./session-stateful";
@@ -47,7 +48,18 @@ export class DebateSession {
     // Route by mode
     if (mode === "hybrid") {
       if (sessionMode === "stateful") {
-        return this.runHybrid(prompt);
+        return runHybrid(
+          {
+            storyId: this.storyId,
+            stage: this.stage,
+            stageConfig: this.stageConfig,
+            config: this.config,
+            workdir: this.workdir,
+            featureName: this.featureName,
+            timeoutSeconds: this.timeoutSeconds,
+          },
+          prompt,
+        );
       }
 
       // Hybrid mode requires stateful session — fall back to one-shot with warning
@@ -95,18 +107,6 @@ export class DebateSession {
       },
       prompt,
     );
-  }
-
-  /**
-   * Run a hybrid-mode debate.
-   *
-   * Hybrid mode combines panel and stateful debate modes.
-   * Stub implementation — to be implemented in US-003.
-   *
-   * @param prompt - The debate prompt.
-   */
-  private async runHybrid(prompt: string): Promise<DebateResult> {
-    throw new Error("Not implemented");
   }
 
   /**
