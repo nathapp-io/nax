@@ -36,8 +36,13 @@ describe("run() — session flow", () => {
     const order: string[] = [];
     const session = makeSession();
     const client = makeClient(session, {
-      startFn: async () => { order.push("start"); },
-      createSessionFn: async (_opts) => { order.push("createSession"); return session; },
+      startFn: async () => {
+        order.push("start");
+      },
+      createSessionFn: async (_opts) => {
+        order.push("createSession");
+        return session;
+      },
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => client);
 
@@ -67,7 +72,11 @@ describe("run() — session flow", () => {
 
   test("closes the session after completion", async () => {
     let closeCalled = false;
-    const session = makeSession({ closeFn: async () => { closeCalled = true; } });
+    const session = makeSession({
+      closeFn: async () => {
+        closeCalled = true;
+      },
+    });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
     await new AcpAgentAdapter("claude").run(makeRunOptions());
@@ -78,12 +87,17 @@ describe("run() — session flow", () => {
     let capturedMode = "";
     const session = makeSession();
     const client = makeClient(session, {
-      createSessionFn: async (opts) => { capturedMode = opts.permissionMode; return session; },
+      createSessionFn: async (opts) => {
+        capturedMode = opts.permissionMode;
+        return session;
+      },
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => client);
 
     await new AcpAgentAdapter("claude").run(
-      makeRunOptions({ config: { execution: { permissionProfile: "unrestricted" } } as import("../../../../src/config").NaxConfig }),
+      makeRunOptions({
+        config: { execution: { permissionProfile: "unrestricted" } } as import("../../../../src/config").NaxConfig,
+      }),
     );
     expect(capturedMode).toBe("approve-all");
   });
@@ -92,7 +106,10 @@ describe("run() — session flow", () => {
     let capturedMode = "";
     const session = makeSession();
     const client = makeClient(session, {
-      createSessionFn: async (opts) => { capturedMode = opts.permissionMode; return session; },
+      createSessionFn: async (opts) => {
+        capturedMode = opts.permissionMode;
+        return session;
+      },
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => client);
 
@@ -208,7 +225,9 @@ describe("run() — rate limit retry", () => {
   test("retries up to 3 attempts on rate limit error then succeeds", async () => {
     let attempts = 0;
     const sleepCalls: number[] = [];
-    _acpAdapterDeps.sleep = mock(async (ms: number) => { sleepCalls.push(ms); });
+    _acpAdapterDeps.sleep = mock(async (ms: number) => {
+      sleepCalls.push(ms);
+    });
 
     const session = makeSession({
       promptFn: async (_: string) => {
@@ -233,7 +252,9 @@ describe("run() — rate limit retry", () => {
   test("backoff delay increases between retries", async () => {
     let attempts = 0;
     const sleepCalls: number[] = [];
-    _acpAdapterDeps.sleep = mock(async (ms: number) => { sleepCalls.push(ms); });
+    _acpAdapterDeps.sleep = mock(async (ms: number) => {
+      sleepCalls.push(ms);
+    });
 
     const session = makeSession({
       promptFn: async (_: string) => {
@@ -256,10 +277,14 @@ describe("run() — rate limit retry", () => {
 
   test("marks result as rateLimited=true after exhausting all 3 attempts", async () => {
     const sleepCalls: number[] = [];
-    _acpAdapterDeps.sleep = mock(async (ms: number) => { sleepCalls.push(ms); });
+    _acpAdapterDeps.sleep = mock(async (ms: number) => {
+      sleepCalls.push(ms);
+    });
 
     const session = makeSession({
-      promptFn: async (_: string) => { throw new Error("rate limit exceeded"); },
+      promptFn: async (_: string) => {
+        throw new Error("rate limit exceeded");
+      },
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
@@ -290,7 +315,9 @@ describe("run() — timeout", () => {
     const neverResolve = new Promise<never>(() => {});
     const session = makeSession({
       promptFn: () => neverResolve,
-      cancelFn: async () => { cancelCalled = true; },
+      cancelFn: async () => {
+        cancelCalled = true;
+      },
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
@@ -305,13 +332,149 @@ describe("run() — timeout", () => {
     const neverResolve = new Promise<never>(() => {});
     const session = makeSession({
       promptFn: () => neverResolve,
-      cancelFn: async () => { throw new Error("cancel not supported"); },
-      closeFn: async () => { closeCalled = true; },
+      cancelFn: async () => {
+        throw new Error("cancel not supported");
+      },
+      closeFn: async () => {
+        closeCalled = true;
+      },
     });
     _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
 
     await new AcpAgentAdapter("claude").run(makeRunOptions({ timeoutSeconds: 0.05 }));
 
     expect(closeCalled).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// run() — tokenUsage
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("run() — tokenUsage", () => {
+  const origCreateClient = _acpAdapterDeps.createClient;
+  const origSleep = _acpAdapterDeps.sleep;
+
+  beforeEach(() => {
+    _acpAdapterDeps.sleep = mock(async (_ms: number) => {});
+  });
+
+  afterEach(() => {
+    _acpAdapterDeps.createClient = origCreateClient;
+    _acpAdapterDeps.sleep = origSleep;
+    mock.restore();
+  });
+
+  test("returns tokenUsage with inputTokens and outputTokens when cumulative_token_usage is present", async () => {
+    const session = makeSession({
+      promptFn: async (_: string) => ({
+        messages: [{ role: "assistant", content: "Done." }],
+        stopReason: "end_turn",
+        cumulative_token_usage: { input_tokens: 1000, output_tokens: 500 },
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    const result = await new AcpAgentAdapter("claude").run(makeRunOptions());
+
+    expect(result.tokenUsage).toBeDefined();
+    expect(result.tokenUsage?.inputTokens).toBe(1000);
+    expect(result.tokenUsage?.outputTokens).toBe(500);
+  });
+
+  test("returns tokenUsage with cache fields when cumulative_token_usage includes them", async () => {
+    const session = makeSession({
+      promptFn: async (_: string) => ({
+        messages: [{ role: "assistant", content: "Done." }],
+        stopReason: "end_turn",
+        cumulative_token_usage: {
+          input_tokens: 1000,
+          output_tokens: 500,
+          cache_read_input_tokens: 100,
+          cache_creation_input_tokens: 50,
+        },
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    const result = await new AcpAgentAdapter("claude").run(makeRunOptions());
+
+    expect(result.tokenUsage).toBeDefined();
+    expect(result.tokenUsage?.inputTokens).toBe(1000);
+    expect(result.tokenUsage?.outputTokens).toBe(500);
+    expect((result.tokenUsage as Record<string, unknown>)["cache_read_input_tokens"]).toBe(100);
+    expect((result.tokenUsage as Record<string, unknown>)["cache_creation_input_tokens"]).toBe(50);
+  });
+
+  test("omits cache fields from tokenUsage when both are 0", async () => {
+    const session = makeSession({
+      promptFn: async (_: string) => ({
+        messages: [{ role: "assistant", content: "Done." }],
+        stopReason: "end_turn",
+        cumulative_token_usage: {
+          input_tokens: 1000,
+          output_tokens: 500,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    const result = await new AcpAgentAdapter("claude").run(makeRunOptions());
+
+    expect(result.tokenUsage).toBeDefined();
+    expect(result.tokenUsage?.inputTokens).toBe(1000);
+    expect(result.tokenUsage?.outputTokens).toBe(500);
+    expect(Object.prototype.hasOwnProperty.call(result.tokenUsage, "cache_read_input_tokens")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(result.tokenUsage, "cache_creation_input_tokens")).toBe(false);
+  });
+
+  test("returns undefined tokenUsage when cumulative_token_usage is absent", async () => {
+    const session = makeSession({
+      promptFn: async (_: string) => ({
+        messages: [{ role: "assistant", content: "Done." }],
+        stopReason: "end_turn",
+      }),
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    const result = await new AcpAgentAdapter("claude").run(makeRunOptions());
+
+    expect(result.tokenUsage).toBeUndefined();
+  });
+
+  test("accumulates tokenUsage across multiple turns in multi-turn session", async () => {
+    let turnCount = 0;
+    const session = makeSession({
+      promptFn: async (_: string) => {
+        turnCount++;
+        return {
+          messages: [{ role: "assistant", content: "Please confirm which approach to use?" }],
+          stopReason: "end_turn",
+          cumulative_token_usage: {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_read_input_tokens: 10,
+            cache_creation_input_tokens: 5,
+          },
+        };
+      },
+    });
+    _acpAdapterDeps.createClient = mock((_cmd: string) => makeClient(session));
+
+    const result = await new AcpAgentAdapter("claude").run(
+      makeRunOptions({
+        interactionBridge: { detectQuestion: async () => true, onQuestionDetected: async () => "answer" },
+        maxInteractionTurns: 3,
+      }),
+    );
+
+    expect(result.tokenUsage).toBeDefined();
+    expect(turnCount).toBe(3);
+    expect(result.tokenUsage?.inputTokens).toBe(300);
+    expect(result.tokenUsage?.outputTokens).toBe(150);
+    expect((result.tokenUsage as Record<string, unknown>)["cache_read_input_tokens"]).toBe(30);
+    expect((result.tokenUsage as Record<string, unknown>)["cache_creation_input_tokens"]).toBe(15);
   });
 });

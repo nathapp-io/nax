@@ -8,12 +8,12 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config";
+import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { collectStoryMetrics } from "../../../src/metrics/tracker";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { StoryRouting } from "../../../src/prd/types";
-import { collectStoryMetrics } from "../../../src/metrics/tracker";
 
 const WORKDIR = `/tmp/nax-tracker-test-${randomUUID()}`;
 
@@ -98,9 +98,9 @@ describe("collectStoryMetrics - initialComplexity field", () => {
 
   test("initialComplexity differs from complexity when story was escalated", () => {
     const routing: StoryRouting = {
-      complexity: "medium",         // complexity as classified
-      initialComplexity: "simple",  // original first-classify prediction
-      modelTier: "powerful",        // escalated tier
+      complexity: "medium", // complexity as classified
+      initialComplexity: "simple", // original first-classify prediction
+      modelTier: "powerful", // escalated tier
       testStrategy: "three-session-tdd",
       reasoning: "escalated",
     };
@@ -218,5 +218,78 @@ describe("collectStoryMetrics - agentUsed field", () => {
     const metrics = collectStoryMetrics(ctx, new Date().toISOString());
 
     expect("agentUsed" in metrics).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-7: collectStoryMetrics reads ctx.agentResult.tokenUsage and sets tokens
+// ---------------------------------------------------------------------------
+
+describe("collectStoryMetrics - tokenUsage field", () => {
+  test("sets storyMetrics.tokens when ctx.agentResult.tokenUsage is defined", () => {
+    const story = makeStory();
+    const ctx = makeCtx(story, { modelTier: "balanced" });
+    ctx.agentResult = {
+      success: true,
+      output: "",
+      exitCode: 0,
+      rateLimited: false,
+      estimatedCost: 0.01,
+      durationMs: 5000,
+      tokenUsage: {
+        inputTokens: 1000,
+        outputTokens: 500,
+      },
+    };
+
+    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.tokens).toBeDefined();
+    expect(metrics.tokens?.input_tokens).toBe(1000);
+    expect(metrics.tokens?.output_tokens).toBe(500);
+  });
+
+  test("sets storyMetrics.tokens with cache fields when present in tokenUsage", () => {
+    const story = makeStory();
+    const ctx = makeCtx(story, { modelTier: "balanced" });
+    ctx.agentResult = {
+      success: true,
+      output: "",
+      exitCode: 0,
+      rateLimited: false,
+      estimatedCost: 0.01,
+      durationMs: 5000,
+      tokenUsage: {
+        inputTokens: 1000,
+        outputTokens: 500,
+        cache_read_input_tokens: 100,
+        cache_creation_input_tokens: 50,
+      } as unknown as { inputTokens: number; outputTokens: number },
+    };
+
+    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.tokens).toBeDefined();
+    expect(metrics.tokens?.input_tokens).toBe(1000);
+    expect(metrics.tokens?.output_tokens).toBe(500);
+    expect(metrics.tokens?.cache_read_input_tokens).toBe(100);
+    expect(metrics.tokens?.cache_creation_input_tokens).toBe(50);
+  });
+
+  test("storyMetrics.tokens is undefined when ctx.agentResult.tokenUsage is undefined", () => {
+    const story = makeStory();
+    const ctx = makeCtx(story, { modelTier: "balanced" });
+    ctx.agentResult = {
+      success: true,
+      output: "",
+      exitCode: 0,
+      rateLimited: false,
+      estimatedCost: 0.01,
+      durationMs: 5000,
+    };
+
+    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.tokens).toBeUndefined();
   });
 });

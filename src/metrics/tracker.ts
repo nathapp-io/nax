@@ -9,6 +9,7 @@ import { resolveModelForAgent } from "../config/schema";
 import type { PipelineContext } from "../pipeline/types";
 import { loadJsonFile, saveJsonFile } from "../utils/json-file";
 import type { RunMetrics, StoryMetrics } from "./types";
+import { TokenUsage } from "./types";
 
 /**
  * Collect metrics for a single story execution.
@@ -95,6 +96,14 @@ export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string
     completedAt: new Date().toISOString(),
     fullSuiteGatePassed,
     runtimeCrashes: ctx.storyRuntimeCrashes ?? 0,
+    tokens: agentResult?.tokenUsage
+      ? new TokenUsage({
+          input_tokens: agentResult.tokenUsage.inputTokens,
+          output_tokens: agentResult.tokenUsage.outputTokens,
+          cache_read_input_tokens: agentResult.tokenUsage.cache_read_input_tokens,
+          cache_creation_input_tokens: agentResult.tokenUsage.cache_creation_input_tokens,
+        })
+      : undefined,
   };
 }
 
