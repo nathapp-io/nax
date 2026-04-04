@@ -4,7 +4,7 @@
  * Validates that the --parallel flag is correctly parsed and passed to RunOptions.
  */
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { RunOptions } from "../../../src/execution/runner";
 import { fullTest } from "../../helpers/env";
 import { makeTempDir } from "../../helpers/temp";
@@ -334,9 +334,6 @@ describe("nax logs CLI integration", () => {
  * instead of raw JSONL, while still writing JSONL to disk.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
 import { initLogger, resetLogger } from "../../../src/logger";
 
 describe("Headless mode formatter integration", () => {
@@ -508,10 +505,6 @@ describe("Headless mode formatter integration", () => {
  * Verifies AgentType union includes new agents and generators work correctly.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { generateCommand } from "../../../src/cli/generate";
 import { loadConfig } from "../../../src/config/loader";
 import { generateAll, generateFor } from "../../../src/context/generator";
@@ -868,14 +861,9 @@ describe("nax generate command", () => {
  * structured diagnosis reports via pure pattern matching.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-
 // Skip PID-sensitive tests in CI: container PIDs are ephemeral and low-numbered
 // Requires real PID checks — skipped by default, run with FULL=1.
 const skipInCI = fullTest;
-import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { diagnoseCommand } from "../../../src/cli/diagnose";
 import type { NaxStatusFile } from "../../../src/execution/status-file";
 import type { PRD } from "../../../src/prd";
@@ -1461,12 +1449,9 @@ describe("AC7: AUTO_RECOVERED stories shown as INFO", () => {
  * with their binary paths, versions, and health status.
  */
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { agentsListCommand } from "../../../src/cli/agents";
+import { agentsListCommand, _cliAgentsDeps } from "../../../src/cli/agents";
+import { _claudeAdapterDeps } from "../../../src/agents/claude/adapter";
 import { DEFAULT_CONFIG } from "../../../src/config";
 
 describe("agentsListCommand", () => {
@@ -1479,6 +1464,32 @@ describe("agentsListCommand", () => {
   afterAll(async () => {
     // Cleanup
     await rm(testDir, { recursive: true, force: true });
+  });
+
+  let origGetAgentVersion: typeof _cliAgentsDeps.getAgentVersion;
+  let origClaudeSpawn: typeof _claudeAdapterDeps.spawn;
+
+  beforeEach(() => {
+    origGetAgentVersion = _cliAgentsDeps.getAgentVersion;
+    origClaudeSpawn = _claudeAdapterDeps.spawn;
+    // Mock getAgentVersion to return a version immediately
+    _cliAgentsDeps.getAgentVersion = async () => "1.0.0";
+    // Mock Claude's isInstalled spawn to say "claude" is found
+    _claudeAdapterDeps.spawn = mock((cmd: string[]) => {
+      const isWhich = cmd[0] === "which";
+      return {
+        exited: Promise.resolve(isWhich ? 0 : 1),
+        stdout: new ReadableStream({ start(c) { c.close(); } }),
+        stderr: new ReadableStream({ start(c) { c.close(); } }),
+        pid: 0,
+        kill: () => {},
+      };
+    }) as typeof _claudeAdapterDeps.spawn;
+  });
+
+  afterEach(() => {
+    _cliAgentsDeps.getAgentVersion = origGetAgentVersion;
+    _claudeAdapterDeps.spawn = origClaudeSpawn;
   });
 
   test("should display agents table with headers", async () => {

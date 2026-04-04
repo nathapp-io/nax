@@ -11,14 +11,6 @@ import type { InteractionPlugin, InteractionRequest, InteractionResponse } from 
 /** Telegram message length limit (4096 max, keep buffer) */
 const MAX_MESSAGE_CHARS = 4000;
 
-/** Telegram plugin configuration */
-interface TelegramConfig {
-  /** Bot token (or env var NAX_TELEGRAM_TOKEN) */
-  botToken?: string;
-  /** Chat ID (or env var NAX_TELEGRAM_CHAT_ID) */
-  chatId?: string;
-}
-
 /** Zod schema for validating telegram plugin config */
 const TelegramConfigSchema = z.object({
   botToken: z.string().optional(),
@@ -147,8 +139,10 @@ export class TelegramInteractionPlugin implements InteractionPlugin {
         }
       }
 
-      // Use dynamic backoff (set by getUpdates on error)
-      await Bun.sleep(this.backoffMs);
+      // Use dynamic backoff (set by getUpdates on error), capped to remaining timeout
+      const remaining = timeout - (Date.now() - startTime);
+      if (remaining <= 0) break;
+      await Bun.sleep(Math.min(this.backoffMs, remaining));
     }
 
     // Timeout reached — send expiration message

@@ -3,7 +3,7 @@
  * Integration tests for context builder with execution runner
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, rm } from "node:fs/promises";
 import { DEFAULT_CONFIG } from "../../../src/config";
 import { buildContext, formatContextAsMarkdown } from "../../../src/context/builder";
@@ -79,6 +79,7 @@ describe("Context Builder Integration", () => {
       const opts: RunOptions = {
         prdPath,
         workdir: tmpDir,
+        statusFile: `${tmpDir}/status.json`,
         config: {
           ...TEST_CONFIG,
           execution: { ...TEST_CONFIG.execution, maxIterations: 1 },
@@ -86,7 +87,6 @@ describe("Context Builder Integration", () => {
         hooks: { hooks: {} },
         feature: "test-feature",
         dryRun: true,
-        useContext: true, // Default behavior
         skipPrecheck: true,
       };
 
@@ -114,6 +114,7 @@ describe("Context Builder Integration", () => {
       const opts: RunOptions = {
         prdPath,
         workdir: tmpDir,
+        statusFile: `${tmpDir}/status.json`,
         config: {
           ...TEST_CONFIG,
           execution: { ...TEST_CONFIG.execution, maxIterations: 1 },
@@ -121,7 +122,6 @@ describe("Context Builder Integration", () => {
         hooks: { hooks: {} },
         feature: "test-feature",
         dryRun: true,
-        useContext: false, // Disable context builder
         skipPrecheck: true,
       };
 
@@ -149,6 +149,7 @@ describe("Context Builder Integration", () => {
       const opts: RunOptions = {
         prdPath,
         workdir: tmpDir,
+        statusFile: `${tmpDir}/status.json`,
         config: {
           ...TEST_CONFIG,
           execution: { ...TEST_CONFIG.execution, maxIterations: 1 },
@@ -156,7 +157,6 @@ describe("Context Builder Integration", () => {
         hooks: { hooks: {} },
         feature: "test-feature",
         dryRun: true,
-        useContext: true,
         skipPrecheck: true,
       };
 

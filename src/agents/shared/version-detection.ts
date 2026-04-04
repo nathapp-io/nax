@@ -28,6 +28,7 @@ export interface AgentVersionInfo {
  */
 export const _versionDetectionDeps = {
   spawn: typedSpawn,
+  getInstalledAgents,
 };
 
 /**
@@ -74,7 +75,7 @@ export async function getAgentVersion(binaryName: string): Promise<string | null
  * Returns list of agents with their installation status and version info.
  */
 export async function getAgentVersions(): Promise<AgentVersionInfo[]> {
-  const agents = await getInstalledAgents();
+  const agents = await _versionDetectionDeps.getInstalledAgents();
   const agentsByName = new Map(agents.map((a) => [a.name, a]));
 
   // Import ALL_AGENTS to include non-installed ones

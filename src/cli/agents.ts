@@ -9,6 +9,14 @@ import { getAgentVersion } from "../agents/shared/version-detection";
 import type { NaxConfig } from "../config/schema";
 
 /**
+ * Injectable dependencies for agentsListCommand — allows tests to mock
+ * getAgentVersion without spawning real processes.
+ *
+ * @internal
+ */
+export const _cliAgentsDeps = { getAgentVersion };
+
+/**
  * List all agents with status, version, and capabilities.
  *
  * @param config - nax configuration
@@ -21,7 +29,7 @@ export async function agentsListCommand(config: NaxConfig, _workdir: string): Pr
       name: agent.name,
       displayName: agent.displayName,
       binary: agent.binary,
-      version: await getAgentVersion(agent.binary),
+      version: await _cliAgentsDeps.getAgentVersion(agent.binary),
       installed: await agent.isInstalled(),
       capabilities: agent.capabilities,
       isDefault: config.autoMode.defaultAgent === agent.name,
