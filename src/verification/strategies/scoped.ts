@@ -68,21 +68,33 @@ export class ScopedStrategy implements IVerificationStrategy {
     if (smartCfg.enabled && ctx.storyGitRef && !isMonorepoOrchestrator) {
       const sourceFiles = await _scopedDeps.getChangedSourceFiles(ctx.workdir, ctx.storyGitRef);
 
-      const pass1Files = await _scopedDeps.mapSourceToTests(sourceFiles, ctx.workdir);
-      if (pass1Files.length > 0) {
-        logger.info("verify[scoped]", `Pass 1: path convention matched ${pass1Files.length} test files`, {
-          storyId: ctx.storyId,
-        });
-        effectiveCommand = buildScopedCommand(pass1Files, ctx.testCommand, ctx.testScopedTemplate);
-        isFullSuite = false;
-      } else if (smartCfg.fallback === "import-grep") {
-        const pass2Files = await _scopedDeps.importGrepFallback(sourceFiles, ctx.workdir, smartCfg.testFilePatterns);
-        if (pass2Files.length > 0) {
-          logger.info("verify[scoped]", `Pass 2: import-grep matched ${pass2Files.length} test files`, {
+      const threshold = ctx.config?.quality?.scopeTestThreshold ?? 10;
+      if (sourceFiles.length > threshold) {
+        logger?.warn(
+          "verify[scoped]",
+          `Source file count ${sourceFiles.length} exceeds threshold ${threshold} — falling back to full suite`,
+          {
+            storyId: ctx.storyId,
+          },
+        );
+        effectiveCommand = ctx.config?.quality?.commands?.test ?? ctx.testCommand;
+      } else {
+        const pass1Files = await _scopedDeps.mapSourceToTests(sourceFiles, ctx.workdir);
+        if (pass1Files.length > 0) {
+          logger.info("verify[scoped]", `Pass 1: path convention matched ${pass1Files.length} test files`, {
             storyId: ctx.storyId,
           });
-          effectiveCommand = buildScopedCommand(pass2Files, ctx.testCommand, ctx.testScopedTemplate);
+          effectiveCommand = buildScopedCommand(pass1Files, ctx.testCommand, ctx.testScopedTemplate);
           isFullSuite = false;
+        } else if (smartCfg.fallback === "import-grep") {
+          const pass2Files = await _scopedDeps.importGrepFallback(sourceFiles, ctx.workdir, smartCfg.testFilePatterns);
+          if (pass2Files.length > 0) {
+            logger.info("verify[scoped]", `Pass 2: import-grep matched ${pass2Files.length} test files`, {
+              storyId: ctx.storyId,
+            });
+            effectiveCommand = buildScopedCommand(pass2Files, ctx.testCommand, ctx.testScopedTemplate);
+            isFullSuite = false;
+          }
         }
       }
     }
