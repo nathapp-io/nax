@@ -13,6 +13,43 @@ import type { NaxConfig } from "../config";
 import type { PRD, StoryStatus, UserStory } from "../prd";
 
 // ============================================================================
+// PostRun Phase Status Types
+// ============================================================================
+
+/** Shared status values for post-run phases */
+export type PostRunPhaseStatus = "not-run" | "running" | "passed" | "failed";
+
+/** Status of the acceptance test phase during post-run */
+export interface AcceptancePhaseStatus {
+  status: PostRunPhaseStatus;
+  /** ISO 8601 timestamp of the last acceptance run */
+  lastRunAt?: string;
+  /** Number of retries attempted */
+  retries?: number;
+  /** Acceptance criteria that failed */
+  failedACs?: string[];
+}
+
+/** Status of the regression test phase during post-run */
+export interface RegressionPhaseStatus {
+  status: PostRunPhaseStatus;
+  /** ISO 8601 timestamp of the last regression run */
+  lastRunAt?: string;
+  /** Number of retries attempted */
+  retries?: number;
+  /** Test identifiers that failed */
+  failedTests?: string[];
+  /** Story IDs affected by regression failures */
+  affectedStories?: string[];
+}
+
+/** Aggregate post-run phase statuses */
+export interface PostRunStatus {
+  acceptance: AcceptancePhaseStatus;
+  regression: RegressionPhaseStatus;
+}
+
+// ============================================================================
 // NaxStatusFile Interface
 // ============================================================================
 
@@ -107,6 +144,9 @@ export interface NaxStatusFile {
       worktreePath: string;
     }>;
   };
+
+  /** Post-run phase statuses (present when post-run has been initiated) */
+  postRun?: PostRunStatus;
 }
 
 // ============================================================================
@@ -182,6 +222,8 @@ export interface RunStateSnapshot {
   crashSignal?: string;
   /** ISO 8601 last heartbeat timestamp (updated every 60s during execution) */
   lastHeartbeat?: string;
+  /** Post-run phase statuses (optional) */
+  postRun?: PostRunStatus;
 }
 
 // ============================================================================
@@ -222,6 +264,10 @@ export function buildStatusSnapshot(state: RunStateSnapshot): NaxStatusFile {
 
   if (state.parallel) {
     snapshot.parallel = state.parallel;
+  }
+
+  if (state.postRun) {
+    snapshot.postRun = state.postRun;
   }
 
   return snapshot;
