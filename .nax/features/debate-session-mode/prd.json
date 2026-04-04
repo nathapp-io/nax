@@ -3,7 +3,7 @@
   "feature": "debate-session-mode",
   "branchName": "feat/debate-session-mode",
   "createdAt": "2026-04-04T12:00:00.000Z",
-  "updatedAt": "2026-04-04T05:28:31.029Z",
+  "updatedAt": "2026-04-04T05:30:29.454Z",
   "userStories": [
     {
       "id": "US-000",
@@ -120,11 +120,22 @@
         "complexity": "simple",
         "testStrategy": "no-test",
         "reasoning": "Pure type-only additions to a single file — no runtime behavior, no logic, no imports added. Purely additive so existing code is unaffected. ~15 LOC.",
-        "modelTier": "balanced",
+        "modelTier": "powerful",
         "initialComplexity": "simple"
       },
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Tests failed with runtime crash (exit code TEST_FAILURE)"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "escalation",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "cost": 0.25935089999999994,
+          "timestamp": "2026-04-04T05:30:27.432Z"
+        }
+      ],
       "storyPoints": 1,
       "storyGitRef": "1a7aa0925ffecc5112f49d29b663b9d75e4ea75f"
     },

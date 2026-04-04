@@ -17,7 +17,7 @@
     "pending": 8
   },
   "cost": {
-    "spent": 2.94938065,
+    "spent": 3.20873155,
     "limit": 30
   },
   "current": {
@@ -25,12 +25,12 @@
     "title": "Add DebateMode type, Rebuttal interface, and mode/rebuttals fields to debate types",
     "complexity": "simple",
     "tddStrategy": "no-test",
-    "model": "balanced",
+    "model": "powerful",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-04-04T05:28:54.680Z",
-  "durationMs": 2160046,
-  "lastHeartbeat": "2026-04-04T05:28:54.680Z"
+  "iterations": 3,
+  "updatedAt": "2026-04-04T05:30:54.680Z",
+  "durationMs": 2280046,
+  "lastHeartbeat": "2026-04-04T05:30:54.680Z"
 }
