@@ -208,10 +208,20 @@ export function isStalled(prd: PRD): boolean {
   );
 }
 
+/** Minimal interface for statusWriter to support post-run status reset. */
+export interface PostRunStatusWriter {
+  resetPostRunStatus(): void;
+}
+
 /**
  * Mark a story as blocked (e.g., dependency failed, unresolvable issue).
  */
-export function markStoryAsBlocked(prd: PRD, storyId: string, reason: string): void {
+export function markStoryAsBlocked(
+  prd: PRD,
+  storyId: string,
+  reason: string,
+  statusWriter?: PostRunStatusWriter,
+): void {
   const story = prd.userStories.find((s) => s.id === storyId);
   if (story) {
     story.status = "blocked";
