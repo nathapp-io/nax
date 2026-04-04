@@ -3,7 +3,7 @@
   "feature": "rerun-postrun-tracking",
   "branchName": "feat/rerun-postrun-tracking",
   "createdAt": "2026-04-04T12:00:00.000Z",
-  "updatedAt": "2026-04-04T10:08:53.979Z",
+  "updatedAt": "2026-04-04T10:39:56.330Z",
   "userStories": [
     {
       "id": "US-001",
@@ -191,7 +191,7 @@
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "validated from LLM output",
         "initialComplexity": "medium",
-        "modelTier": "balanced"
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/execution/runner-completion.ts",
@@ -199,8 +199,29 @@
         "src/execution/lifecycle/run-completion.ts",
         "src/execution/status-writer.ts"
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Autofix exhausted: review still failing after fix attempts"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "review",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "reviewFindings": [
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/lifecycle/acceptance-loop.ts",
+              "line": 115,
+              "message": "buildResult() function does not populate failedACs and retries fields in the AcceptanceLoopResult return value. These fields are defined in the AcceptanceLoopResult interface (lines 63-65) and required by AC3, but are never set. The function only returns { success, prd, totalCost, iterations, storiesCompleted, prdDirty }, causing acceptanceResult.failedACs and acceptanceResult.retries to be undefined in runner-completion.ts line 123-124. This results in statusWriter.setPostRunPhase() being called with failedACs: [] and retries: 0 instead of the actual failed AC list and retry count as specified in AC3.",
+              "source": "semantic-review"
+            }
+          ],
+          "cost": 3.3066625000000003,
+          "timestamp": "2026-04-04T10:39:54.307Z"
+        }
+      ],
       "storyPoints": 1,
       "storyGitRef": "1b3fed006fe180042d1ad3a78d29501a373b8050"
     },

@@ -17,7 +17,7 @@
     "pending": 3
   },
   "cost": {
-    "spent": 1.7920321000000001,
+    "spent": 5.0986946,
     "limit": 30
   },
   "current": {
@@ -25,12 +25,12 @@
     "title": "Write acceptance and regression phase status at boundaries",
     "complexity": "medium",
     "tddStrategy": "three-session-tdd-lite",
-    "model": "balanced",
+    "model": "powerful",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 5,
-  "updatedAt": "2026-04-04T10:37:18.160Z",
-  "durationMs": 3240223,
-  "lastHeartbeat": "2026-04-04T10:37:18.160Z"
+  "iterations": 6,
+  "updatedAt": "2026-04-04T10:45:18.180Z",
+  "durationMs": 3720243,
+  "lastHeartbeat": "2026-04-04T10:45:18.180Z"
 }
