@@ -7,7 +7,7 @@
 
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../../config";
 import type { UserStory } from "../../prd/types";
-import { extractJsonFromMarkdown } from "../../utils/llm-json";
+import { extractJsonFromMarkdown, wrapJsonPrompt } from "../../utils/llm-json";
 import { determineTestStrategy } from "../router";
 import type { RoutingDecision } from "../router";
 
@@ -22,7 +22,7 @@ export function buildRoutingPrompt(story: UserStory, config: NaxConfig): string 
   const { title, description, acceptanceCriteria, tags } = story;
   const criteria = acceptanceCriteria.map((c, i) => `${i + 1}. ${c}`).join("\n");
 
-  return `You are a code task router. Classify a user story's complexity and select the cheapest model tier that will succeed.
+  const core = `You are a code task router. Classify a user story's complexity and select the cheapest model tier that will succeed.
 
 ## Story
 Title: ${title}
@@ -48,8 +48,10 @@ Tags: ${tags.join(", ")}
 - Many files ≠ complex — copy-paste refactors across files are simple.
 - Pure refactoring/deletion with no new behavior → simple.
 
-Respond with ONLY this JSON (no markdown, no explanation):
+Respond with:
 {"complexity":"simple|medium|complex|expert","modelTier":"fast|balanced|powerful","reasoning":"<one line>"}`;
+
+  return wrapJsonPrompt(core);
 }
 
 /**
@@ -71,7 +73,7 @@ ${criteria}
     })
     .join("\n\n");
 
-  return `You are a code task router. Classify each story's complexity and select the cheapest model tier that will succeed.
+  const batchCore = `You are a code task router. Classify each story's complexity and select the cheapest model tier that will succeed.
 
 ## Stories
 ${storyBlocks}
@@ -93,8 +95,10 @@ ${storyBlocks}
 - Many files ≠ complex — copy-paste refactors across files are simple.
 - Pure refactoring/deletion with no new behavior → simple.
 
-Respond with ONLY a JSON array (no markdown, no explanation):
+Respond with a JSON array:
 [{"id":"US-001","complexity":"simple|medium|complex|expert","modelTier":"fast|balanced|powerful","reasoning":"<one line>"}]`;
+
+  return wrapJsonPrompt(batchCore);
 }
 
 /**

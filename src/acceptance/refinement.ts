@@ -10,7 +10,7 @@ import { createAgentRegistry } from "../agents/registry";
 import { resolveModelForAgent } from "../config";
 import { getLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
-import { extractJsonFromMarkdown, stripTrailingCommas } from "../utils/llm-json";
+import { extractJsonFromMarkdown, stripTrailingCommas, wrapJsonPrompt } from "../utils/llm-json";
 import type { RefinedCriterion, RefinementContext } from "./types";
 
 /**
@@ -61,7 +61,7 @@ export function buildRefinementPrompt(
   const strategySection = buildStrategySection(options);
   const refinedExample = buildRefinedExample(options?.testStrategy);
 
-  return `You are an acceptance criteria refinement assistant. Your task is to convert raw acceptance criteria into concrete, machine-verifiable assertions.
+  const core = `You are an acceptance criteria refinement assistant. Your task is to convert raw acceptance criteria into concrete, machine-verifiable assertions.
 
 CODEBASE CONTEXT:
 ${codebaseContext}
@@ -70,7 +70,7 @@ ACCEPTANCE CRITERIA TO REFINE:
 ${criteriaList}
 
 For each criterion, produce a refined version that is concrete and automatically testable where possible.
-Respond with ONLY a JSON array (no markdown code fences):
+Respond with a JSON array:
 [{
   "original": "<exact original criterion text>",
   "refined": "<concrete, machine-verifiable description>",
@@ -82,8 +82,9 @@ Rules:
 - "original" must match the input criterion text exactly
 - "refined" must be a concrete assertion (e.g., ${refinedExample})
 - "testable" is false only if the criterion cannot be automatically verified (e.g., "UX feels responsive", "design looks good")
-- "storyId" leave as empty string — it will be assigned by the caller
-- Respond with ONLY the JSON array`;
+- "storyId" leave as empty string — it will be assigned by the caller`;
+
+  return wrapJsonPrompt(core);
 }
 
 /**

@@ -16,7 +16,7 @@ import type { DebateSessionOptions } from "../debate";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
 import { getMergeBase, isGitRefValid } from "../utils/git";
-import { extractJsonFromMarkdown, extractJsonObject, stripTrailingCommas } from "../utils/llm-json";
+import { extractJsonFromMarkdown, extractJsonObject, stripTrailingCommas, wrapJsonPrompt } from "../utils/llm-json";
 import type { ReviewCheckResult, SemanticReviewConfig } from "./types";
 
 /** Story fields required for semantic review */
@@ -132,9 +132,7 @@ function buildPrompt(story: SemanticStory, semanticConfig: SemanticReviewConfig,
       ? `\n## Additional Review Rules\n${semanticConfig.rules.map((r, i) => `${i + 1}. ${r}`).join("\n")}\n`
       : "";
 
-  return `IMPORTANT: Your entire response must be a single JSON object. Do not explain your reasoning. Do not use markdown formatting. Output ONLY the JSON object.
-
-You are a semantic code reviewer with access to the repository files. Your job is to verify that the implementation satisfies the story's acceptance criteria (ACs). You are NOT a linter or style checker — lint, typecheck, and convention checks are handled separately.
+  const core = `You are a semantic code reviewer with access to the repository files. Your job is to verify that the implementation satisfies the story's acceptance criteria (ACs). You are NOT a linter or style checker — lint, typecheck, and convention checks are handled separately.
 
 ## Story: ${story.title}
 
@@ -181,9 +179,9 @@ Respond with JSON only — no explanation text before or after:
   ]
 }
 
-If all ACs are correctly implemented, respond with { "passed": true, "findings": [] }.
+If all ACs are correctly implemented, respond with { "passed": true, "findings": [] }.`;
 
-YOUR RESPONSE MUST START WITH { AND END WITH }. No other text.`;
+  return wrapJsonPrompt(core);
 }
 
 interface LLMFinding {
