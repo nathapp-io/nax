@@ -10,8 +10,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { NaxConfigSchema } from "../../../src/config/schemas";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { NaxConfigSchema } from "../../../src/config/schemas";
 
 /** Minimal valid config base — everything except models */
 function baseConfig(models: unknown): Record<string, unknown> {
@@ -247,7 +247,13 @@ describe("StorySizeGateConfigSchema — action and maxReplanAttempts (US-001)", 
   }
 
   test("action defaults to 'block' when omitted", () => {
-    const config = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, maxReplanAttempts: 3 });
+    const config = basePrecheckConfig({
+      enabled: true,
+      maxAcCount: 10,
+      maxDescriptionLength: 3000,
+      maxBulletPoints: 12,
+      maxReplanAttempts: 3,
+    });
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
     if (!result.success) return;
@@ -257,25 +263,52 @@ describe("StorySizeGateConfigSchema — action and maxReplanAttempts (US-001)", 
   });
 
   test("action accepts 'warn'", () => {
-    const config = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, maxReplanAttempts: 3, action: "warn" });
+    const config = basePrecheckConfig({
+      enabled: true,
+      maxAcCount: 10,
+      maxDescriptionLength: 3000,
+      maxBulletPoints: 12,
+      maxReplanAttempts: 3,
+      action: "warn",
+    });
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
   });
 
   test("action accepts 'skip'", () => {
-    const config = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, maxReplanAttempts: 3, action: "skip" });
+    const config = basePrecheckConfig({
+      enabled: true,
+      maxAcCount: 10,
+      maxDescriptionLength: 3000,
+      maxBulletPoints: 12,
+      maxReplanAttempts: 3,
+      action: "skip",
+    });
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
   });
 
   test("action rejects invalid values", () => {
-    const config = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, maxReplanAttempts: 3, action: "invalid" });
+    const config = basePrecheckConfig({
+      enabled: true,
+      maxAcCount: 10,
+      maxDescriptionLength: 3000,
+      maxBulletPoints: 12,
+      maxReplanAttempts: 3,
+      action: "invalid",
+    });
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
   });
 
   test("maxReplanAttempts defaults to 3 when omitted", () => {
-    const config = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block" });
+    const config = basePrecheckConfig({
+      enabled: true,
+      maxAcCount: 10,
+      maxDescriptionLength: 3000,
+      maxBulletPoints: 12,
+      action: "block",
+    });
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(true);
     if (!result.success) return;
@@ -285,7 +318,14 @@ describe("StorySizeGateConfigSchema — action and maxReplanAttempts (US-001)", 
   });
 
   test("maxReplanAttempts rejects 0 (must be >= 1)", () => {
-    const config = basePrecheckConfig({ enabled: true, maxAcCount: 10, maxDescriptionLength: 3000, maxBulletPoints: 12, action: "block", maxReplanAttempts: 0 });
+    const config = basePrecheckConfig({
+      enabled: true,
+      maxAcCount: 10,
+      maxDescriptionLength: 3000,
+      maxBulletPoints: 12,
+      action: "block",
+      maxReplanAttempts: 0,
+    });
     const result = NaxConfigSchema.safeParse(config);
     expect(result.success).toBe(false);
   });
@@ -382,5 +422,32 @@ describe("DebateStageConfigSchema — mode field (US-001-B)", () => {
       debate: { stages: { plan: { mode: "sequential" } } },
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("QualityConfigSchema — scopeTestThreshold (US-001)", () => {
+  test("NaxConfigSchema.parse({}).quality.scopeTestThreshold === 10", () => {
+    const result = NaxConfigSchema.parse({});
+    expect(result.quality.scopeTestThreshold).toBe(10);
+  });
+
+  test("NaxConfigSchema.parse({ quality: { scopeTestThreshold: 5 } }).quality.scopeTestThreshold === 5", () => {
+    const result = NaxConfigSchema.parse({ quality: { scopeTestThreshold: 5 } });
+    expect(result.quality.scopeTestThreshold).toBe(5);
+  });
+
+  test("scopeTestThreshold rejects negative values", () => {
+    const result = NaxConfigSchema.safeParse({ quality: { scopeTestThreshold: -1 } });
+    expect(result.success).toBe(false);
+  });
+
+  test("scopeTestThreshold accepts zero", () => {
+    const result = NaxConfigSchema.parse({ quality: { scopeTestThreshold: 0 } });
+    expect(result.quality.scopeTestThreshold).toBe(0);
+  });
+
+  test("scopeTestThreshold accepts large values", () => {
+    const result = NaxConfigSchema.parse({ quality: { scopeTestThreshold: 1000 } });
+    expect(result.quality.scopeTestThreshold).toBe(1000);
   });
 });

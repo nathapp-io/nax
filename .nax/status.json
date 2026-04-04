@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-04-04T12-01-52-976Z",
-    "feature": "rerun-postrun-tracking",
-    "startedAt": "2026-04-04T12:01:52.976Z",
-    "status": "completed",
+    "id": "run-2026-04-04T14-48-13-722Z",
+    "feature": "scope-test-threshold",
+    "startedAt": "2026-04-04T14:48:13.722Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 9269
+    "pid": 32964
   },
   "progress": {
-    "total": 7,
-    "passed": 7,
+    "total": 2,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 2
   },
   "cost": {
-    "spent": 0.28359470000000003,
+    "spent": 0,
     "limit": 30
   },
-  "current": null,
-  "iterations": 2,
-  "updatedAt": "2026-04-04T12:27:43.125Z",
-  "durationMs": 1550149
+  "current": {
+    "storyId": "US-001",
+    "title": "Config field + threshold check + warning log",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 1,
+  "updatedAt": "2026-04-04T15:07:13.751Z",
+  "durationMs": 1140029,
+  "lastHeartbeat": "2026-04-04T15:07:13.751Z"
 }

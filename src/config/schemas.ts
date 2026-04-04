@@ -145,6 +145,7 @@ const QualityConfigSchema = z.object({
   requireTypecheck: z.boolean(),
   requireLint: z.boolean(),
   requireTests: z.boolean(),
+  scopeTestThreshold: z.number().int().min(0).default(10),
   commands: z.object({
     typecheck: z.string().optional(),
     lint: z.string().optional(),
@@ -594,6 +595,7 @@ export const NaxConfigSchema = z
       requireTypecheck: true,
       requireLint: true,
       requireTests: true,
+      scopeTestThreshold: 10,
       commands: {},
       autofix: {
         enabled: true,

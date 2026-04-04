@@ -149,6 +149,8 @@ export interface QualityConfig {
   requireLint: boolean;
   /** Require tests to pass */
   requireTests: boolean;
+  /** Threshold for scoped test strategy — when changed source files exceed this count, fall back to full suite */
+  scopeTestThreshold?: number;
   /** Custom quality commands */
   commands: {
     typecheck?: string;
