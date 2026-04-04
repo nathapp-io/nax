@@ -146,6 +146,7 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
       } else {
         statusWriter.setPostRunPhase("regression", {
           status: "failed",
+          failedTests: [],
           affectedStories: regressionResult.affectedStories,
           lastRunAt,
         });
