@@ -3,7 +3,7 @@
   "feature": "token-usage-metrics",
   "branchName": "feat/token-usage-metrics",
   "createdAt": "2026-04-04T00:00:00.000Z",
-  "updatedAt": "2026-04-04T14:56:25.534Z",
+  "updatedAt": "2026-04-04T15:15:11.842Z",
   "userStories": [
     {
       "id": "US-001",
@@ -23,8 +23,8 @@
         "types"
       ],
       "dependencies": [],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {
@@ -70,7 +70,9 @@
       "routing": {
         "complexity": "medium",
         "testStrategy": "tdd-simple",
-        "reasoning": "validated from LLM output"
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
       },
       "contextFiles": [
         "src/agents/acp/adapter.ts",
@@ -80,7 +82,8 @@
       ],
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "27266205e353a5b14e1b33de6b498f2ca2a9dc60"
     },
     {
       "id": "US-003",
