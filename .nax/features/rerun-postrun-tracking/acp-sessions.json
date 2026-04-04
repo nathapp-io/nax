@@ -6,5 +6,9 @@
   "US-001-B:implementer": {
     "sessionName": "nax-6411f7e6-rerun-postrun-tracking-us-001-b-implementer",
     "agentName": "claude"
+  },
+  "US-001-B:verifier": {
+    "sessionName": "nax-6411f7e6-rerun-postrun-tracking-us-001-b-verifier",
+    "agentName": "claude"
   }
 }
