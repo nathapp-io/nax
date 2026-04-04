@@ -7,7 +7,7 @@
 /**
  * Token usage metrics for LLM calls
  */
-export interface TokenUsage {
+export class TokenUsage {
   /** Number of input tokens consumed */
   input_tokens: number;
   /** Number of output tokens generated */
@@ -16,6 +16,32 @@ export interface TokenUsage {
   cache_read_input_tokens?: number;
   /** Number of input tokens used for cache creation (optional) */
   cache_creation_input_tokens?: number;
+
+  constructor(data: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  }) {
+    this.input_tokens = data.input_tokens;
+    this.output_tokens = data.output_tokens;
+    this.cache_read_input_tokens = data.cache_read_input_tokens;
+    this.cache_creation_input_tokens = data.cache_creation_input_tokens;
+  }
+
+  toJSON(): Record<string, unknown> {
+    const result: Record<string, unknown> = {
+      input_tokens: this.input_tokens,
+      output_tokens: this.output_tokens,
+    };
+    if (this.cache_read_input_tokens !== 0) {
+      result.cache_read_input_tokens = this.cache_read_input_tokens;
+    }
+    if (this.cache_creation_input_tokens !== 0) {
+      result.cache_creation_input_tokens = this.cache_creation_input_tokens;
+    }
+    return result;
+  }
 }
 
 /**
