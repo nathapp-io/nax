@@ -1148,8 +1148,9 @@ describe("AC-36: regression failed with failedTests and affectedStories on failu
 
     _runCompletionDeps.runDeferredRegression = mock(async () => ({
       success: false,
-      failedTests: ["test-a"],
-      passedTests: [],
+      failedTests: 1,
+      failedTestFiles: ["test-a"],
+      passedTests: 0,
       rectificationAttempts: 0,
       affectedStories: ["story-1"],
     } as DeferredRegressionResult));
