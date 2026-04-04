@@ -18,5 +18,9 @@
   "US-004-B:implementer": {
     "sessionName": "nax-4a1cdab1-debate-session-mode-us-004-b-implementer",
     "agentName": "claude"
+  },
+  "US-004-B:verifier": {
+    "sessionName": "nax-4a1cdab1-debate-session-mode-us-004-b-verifier",
+    "agentName": "claude"
   }
 }
