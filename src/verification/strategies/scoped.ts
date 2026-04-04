@@ -71,7 +71,7 @@ export class ScopedStrategy implements IVerificationStrategy {
 
       const threshold = ctx.config?.quality?.scopeTestThreshold ?? 10;
       if (sourceFiles.length > threshold) {
-        logger?.warn(
+        logger.warn(
           "verify[scoped]",
           `Source file count ${sourceFiles.length} exceeds threshold ${threshold} — falling back to full suite`,
           {

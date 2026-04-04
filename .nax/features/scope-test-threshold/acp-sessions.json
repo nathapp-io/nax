@@ -10,5 +10,13 @@
   "US-001:verifier": {
     "sessionName": "nax-f8fde79b-scope-test-threshold-us-001-verifier",
     "agentName": "opencode"
+  },
+  "US-001:diagnose": {
+    "sessionName": "nax-f8fde79b-scope-test-threshold-us-001-diagnose",
+    "agentName": "opencode"
+  },
+  "US-001:source-fix": {
+    "sessionName": "nax-f8fde79b-scope-test-threshold-us-001-source-fix",
+    "agentName": "opencode"
   }
 }

@@ -164,6 +164,8 @@ export function makePassResult(
     rawOutput: opts.rawOutput,
     durationMs: opts.durationMs ?? 0,
     countsTowardEscalation: false,
-    scopeTestFallback: opts.scopeTestFallback,
+    ...(opts.scopeTestFallback !== undefined && {
+      scopeTestFallback: opts.scopeTestFallback,
+    }),
   };
 }
