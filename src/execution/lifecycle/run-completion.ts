@@ -200,6 +200,9 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
     durationMs,
     totalCost,
   });
+  // Drain async subscriber Promises (reporter.onRunEnd file writes, etc.) before
+  // proceeding. Without this, run:completed handlers may not finish before caller returns.
+  await pipelineEventBus.drain();
 
   // Save run metrics (best-effort — disk write errors do not fail the run)
   const runMetrics = {

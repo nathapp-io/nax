@@ -21,7 +21,10 @@ export class CLIInteractionPlugin implements InteractionPlugin {
 
   async init(config: Record<string, unknown> = {}): Promise<void> {
     CLIConfigSchema.parse(config);
-    // Initialize readline interface
+    // Guard: readline.createInterface calls setRawMode, which throws errno:5 on
+    // non-TTY stdin (pipes, CI, test runners). Skip init silently — send/receive
+    // will throw if called without a valid rl, but the chain still initialises.
+    if (!process.stdin.isTTY) return;
     this.rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,

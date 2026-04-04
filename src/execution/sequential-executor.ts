@@ -160,7 +160,12 @@ export async function executeSequential(
       pipelineEventBus.emit({
         type: "story:started",
         storyId: selection.story.id,
-        story: selection.story,
+        story: {
+          id: selection.story.id,
+          title: selection.story.title,
+          status: selection.story.status,
+          attempts: selection.story.attempts,
+        },
         workdir: ctx.workdir,
         modelTier: selection.routing.modelTier,
         agent: ctx.config.autoMode.defaultAgent,
@@ -168,6 +173,7 @@ export async function executeSequential(
       });
 
       const iter = await runIteration(ctx, prd, selection, iterations, totalCost, allStoryMetrics);
+      await pipelineEventBus.drain();
       [prd, storiesCompleted, totalCost, prdDirty] = [
         iter.prd,
         storiesCompleted + iter.storiesCompletedDelta,

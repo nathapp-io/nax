@@ -123,6 +123,16 @@ export async function runIteration(
   const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, ctx.eventEmitter);
   const currentPrd = pipelineResult.context.prd;
 
+  // Release heavy context fields so the GC can collect LLM response buffers,
+  // prompts, and context markdown before the next story begins. See #253.
+  pipelineContext.agentResult = undefined;
+  pipelineContext.prompt = undefined;
+  pipelineContext.contextMarkdown = undefined;
+  pipelineContext.builtContext = undefined;
+  pipelineContext.verifyResult = undefined;
+  pipelineContext.reviewResult = undefined;
+  pipelineContext.constitution = undefined;
+
   const handlerCtx = {
     config: ctx.config,
     prd: currentPrd,

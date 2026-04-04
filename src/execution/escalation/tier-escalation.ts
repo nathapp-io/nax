@@ -337,7 +337,9 @@ export async function handleTierEscalation(ctx: EscalationHandlerContext): Promi
         attempts: shouldResetAttempts ? 0 : (s.attempts ?? 0) + 1,
         routing: updatedRouting,
         priorErrors: [...(s.priorErrors || []), errorMessage],
-        priorFailures: [...(s.priorFailures || []), escalationFailure],
+        // Cap at 3 entries — only the most recent failures are useful for the next tier.
+        // Prevents unbounded growth with stack traces across many escalations. See #253.
+        priorFailures: [...(s.priorFailures || []), escalationFailure].slice(-3),
       } as UserStory;
     }) as PRD["userStories"],
   } as PRD;

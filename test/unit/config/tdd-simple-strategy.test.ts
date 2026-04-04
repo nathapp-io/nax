@@ -5,10 +5,21 @@
  * - TestStrategy type includes 'tdd-simple'
  * - determineTestStrategy returns tdd-simple for simple complexity in auto mode
  * - test-after is only returned when tddStrategy is 'off'
+ *
+ * Imports use leaf modules (classify.ts, llm-prompts.ts) instead of the router
+ * barrel to avoid pulling in createAgentRegistry → AcpAgentAdapter background
+ * handles that prevent Bun from exiting after the test suite completes.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import { initLogger, resetLogger } from "../../../src/logger";
+import { determineTestStrategy } from "../../../src/routing/classify";
+import {
+  buildBatchRoutingPrompt,
+  buildRoutingPrompt,
+  validateRoutingDecision,
+} from "../../../src/routing/strategies/llm-prompts";
 
 beforeEach(() => {
   resetLogger();
@@ -25,38 +36,28 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("TS-001: determineTestStrategy returns tdd-simple for simple complexity", () => {
-  test("simple + auto → tdd-simple", async () => {
-    const { determineTestStrategy } = await import("../../../src/routing/router");
-
+  test("simple + auto → tdd-simple", () => {
     const result = determineTestStrategy("simple", "Update label", "Change button copy", [], "auto");
     expect(result as string).toBe("tdd-simple");
   });
 
-  test("simple + default tddStrategy → tdd-simple", async () => {
-    const { determineTestStrategy } = await import("../../../src/routing/router");
-
+  test("simple + default tddStrategy → tdd-simple", () => {
     // tddStrategy defaults to 'auto' when omitted
     const result = determineTestStrategy("simple", "Add tooltip", "Show help text on hover", []);
     expect(result as string).toBe("tdd-simple");
   });
 
-  test("simple + off → test-after (off disables TDD)", async () => {
-    const { determineTestStrategy } = await import("../../../src/routing/router");
-
+  test("simple + off → test-after (off disables TDD)", () => {
     const result = determineTestStrategy("simple", "Update config", "Change defaults", [], "off");
     expect(result).toBe("test-after");
   });
 
-  test("simple + strict → three-session-tdd (strict overrides all)", async () => {
-    const { determineTestStrategy } = await import("../../../src/routing/router");
-
+  test("simple + strict → three-session-tdd (strict overrides all)", () => {
     const result = determineTestStrategy("simple", "Update config", "Change defaults", [], "strict");
     expect(result).toBe("three-session-tdd");
   });
 
-  test("tdd-simple is in the set of valid TestStrategy values", async () => {
-    const { determineTestStrategy } = await import("../../../src/routing/router");
-
+  test("tdd-simple is in the set of valid TestStrategy values", () => {
     const validStrategies = ["test-after", "tdd-simple", "three-session-tdd-lite", "three-session-tdd"];
     const result = determineTestStrategy("simple", "Add button", "A simple story", [], "auto");
 
@@ -70,10 +71,7 @@ describe("TS-001: determineTestStrategy returns tdd-simple for simple complexity
 // ---------------------------------------------------------------------------
 
 describe("TS-001: LLM routing derives tdd-simple for simple stories", () => {
-  test("validateRoutingDecision derives tdd-simple for simple complexity", async () => {
-    const { validateRoutingDecision } = await import("../../../src/routing/strategies/llm-prompts");
-    const { DEFAULT_CONFIG } = await import("../../../src/config/defaults");
-
+  test("validateRoutingDecision derives tdd-simple for simple complexity", () => {
     const story = {
       id: "TS-001",
       title: "Add submit button",
@@ -103,10 +101,7 @@ describe("TS-001: LLM routing derives tdd-simple for simple stories", () => {
 // ---------------------------------------------------------------------------
 
 describe("TS-001: LLM routing prompt describes tdd-simple strategy", () => {
-  test("buildRoutingPrompt output mentions tdd-simple", async () => {
-    const { buildRoutingPrompt } = await import("../../../src/routing/strategies/llm-prompts");
-    const { DEFAULT_CONFIG } = await import("../../../src/config/defaults");
-
+  test("buildRoutingPrompt output mentions tdd-simple", () => {
     const story = {
       id: "TS-001",
       title: "Add submit button",
@@ -128,10 +123,7 @@ describe("TS-001: LLM routing prompt describes tdd-simple strategy", () => {
     expect(prompt).toContain("complex");
   });
 
-  test("buildRoutingPrompt does not mention test strategies (derived in code since BUG-045)", async () => {
-    const { buildRoutingPrompt } = await import("../../../src/routing/strategies/llm-prompts");
-    const { DEFAULT_CONFIG } = await import("../../../src/config/defaults");
-
+  test("buildRoutingPrompt does not mention test strategies (derived in code since BUG-045)", () => {
     const story = {
       id: "TS-001",
       title: "Add submit button",
@@ -152,10 +144,7 @@ describe("TS-001: LLM routing prompt describes tdd-simple strategy", () => {
     expect(prompt).not.toContain("three-session-tdd");
   });
 
-  test("buildBatchRoutingPrompt uses same structure as single prompt", async () => {
-    const { buildBatchRoutingPrompt } = await import("../../../src/routing/strategies/llm-prompts");
-    const { DEFAULT_CONFIG } = await import("../../../src/config/defaults");
-
+  test("buildBatchRoutingPrompt uses same structure as single prompt", () => {
     const stories = [
       {
         id: "TS-001",

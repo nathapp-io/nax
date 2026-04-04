@@ -65,7 +65,12 @@ export const completionStage: PipelineStage = {
       pipelineEventBus.emit({
         type: "story:completed",
         storyId: completedStory.id,
-        story: completedStory,
+        story: {
+          id: completedStory.id,
+          title: completedStory.title,
+          status: completedStory.status,
+          attempts: completedStory.attempts,
+        },
         passed: true,
         runElapsedMs: storyMetric?.durationMs ?? 0,
         cost: costPerStory,

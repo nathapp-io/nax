@@ -44,9 +44,10 @@ describe("initInteractionChain — headless mode", () => {
     expect(result).toBeNull();
   });
 
-  test("CLI plugin initialises normally when not headless", async () => {
+  test("CLI plugin initialises normally when not headless (non-TTY: rl skipped)", async () => {
     const { initInteractionChain } = await import("../../../src/interaction/init");
-    // CLI plugin doesn't need special init — should return a chain
+    // In non-TTY environments (test runners, CI) stdin.isTTY is false so the
+    // readline init is skipped. The chain still initialises successfully.
     const result = await initInteractionChain(makeConfig("cli"), false);
     expect(result).not.toBeNull();
   });

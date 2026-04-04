@@ -182,7 +182,7 @@ export async function handlePipelineFailure(
       pipelineEventBus.emit({
         type: "story:failed",
         storyId: ctx.story.id,
-        story: ctx.story,
+        story: { id: ctx.story.id, title: ctx.story.title, status: ctx.story.status, attempts: ctx.story.attempts },
         reason: pipelineResult.reason || "Pipeline failed",
         countsTowardEscalation: true,
         feature: ctx.feature,

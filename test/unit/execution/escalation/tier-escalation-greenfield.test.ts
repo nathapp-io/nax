@@ -1,17 +1,16 @@
 // RE-ARCH: keep
 /**
- * S5: Strategy Fallback Tests
+ * S5: Strategy Fallback Tests — greenfield-no-tests → test-after
  *
- * Tests for greenfield-no-tests → test-after strategy switch.
- *
- * When a story fails with greenfield-no-tests failure category,
- * it should switch to test-after strategy (once) instead of escalating tier.
+ * Moved from test/integration/context/ — pure logic, no integration surface.
+ * Import goes to the leaf module, not runner.ts barrel, to avoid importing
+ * heavy ACP/registry side-effects that can keep the Bun process alive.
  */
 
 import { describe, expect, test } from "bun:test";
-import { resolveMaxAttemptsOutcome } from "../../../src/execution/runner";
-import type { UserStory } from "../../../src/prd";
-import type { FailureCategory } from "../../../src/tdd/types";
+import { resolveMaxAttemptsOutcome } from "../../../../src/execution/escalation/tier-escalation";
+import type { UserStory } from "../../../../src/prd";
+import type { FailureCategory } from "../../../../src/tdd/types";
 
 describe("S5: greenfield-no-tests fallback", () => {
   /**
@@ -66,7 +65,6 @@ describe("S5: greenfield-no-tests fallback", () => {
 
       const { routing, attempts } = applyGreenfieldFallbackRouting(story, "greenfield-no-tests", "balanced");
 
-      // Should switch to test-after WITHOUT escalating tier
       expect(routing?.testStrategy).toBe("test-after");
       expect(routing?.modelTier).toBe("fast"); // Tier stays the same
       expect(attempts).toBe(0); // Attempts reset on strategy switch
@@ -123,16 +121,12 @@ describe("S5: greenfield-no-tests fallback", () => {
 
       const { routing, attempts } = applyGreenfieldFallbackRouting(story, "greenfield-no-tests", "balanced");
 
-      // Should NOT switch strategy (already test-after)
       expect(routing?.testStrategy).toBe("test-after");
-      // Should escalate tier normally
-      expect(routing?.modelTier).toBe("balanced");
-      // Attempts reset on tier escalation
-      expect(attempts).toBe(0);
+      expect(routing?.modelTier).toBe("balanced"); // Tier escalates
+      expect(attempts).toBe(0); // Attempts reset on tier escalation
     });
 
     test("greenfield-no-tests fires twice on same story (second time escalates)", () => {
-      // First occurrence: three-session-tdd → test-after
       let story: UserStory = {
         id: "US-004",
         title: "Double Greenfield",
@@ -154,11 +148,7 @@ describe("S5: greenfield-no-tests fallback", () => {
 
       // First greenfield-no-tests: switch to test-after
       let result = applyGreenfieldFallbackRouting(story, "greenfield-no-tests", "balanced");
-      story = {
-        ...story,
-        attempts: result.attempts,
-        routing: result.routing,
-      };
+      story = { ...story, attempts: result.attempts, routing: result.routing };
 
       expect(story.routing?.testStrategy).toBe("test-after");
       expect(story.routing?.modelTier).toBe("fast");
@@ -166,11 +156,7 @@ describe("S5: greenfield-no-tests fallback", () => {
 
       // Second greenfield-no-tests: already on test-after, escalate tier
       result = applyGreenfieldFallbackRouting(story, "greenfield-no-tests", "balanced");
-      story = {
-        ...story,
-        attempts: result.attempts,
-        routing: result.routing,
-      };
+      story = { ...story, attempts: result.attempts, routing: result.routing };
 
       expect(story.routing?.testStrategy).toBe("test-after"); // Stays test-after
       expect(story.routing?.modelTier).toBe("balanced"); // Tier escalates
@@ -180,15 +166,11 @@ describe("S5: greenfield-no-tests fallback", () => {
 
   describe("resolveMaxAttemptsOutcome for greenfield-no-tests", () => {
     test("greenfield-no-tests returns pause (requires human review)", () => {
-      const result = resolveMaxAttemptsOutcome("greenfield-no-tests");
-      expect(result).toBe("pause");
+      expect(resolveMaxAttemptsOutcome("greenfield-no-tests")).toBe("pause");
     });
 
     test("greenfield-no-tests pauses only when max attempts exhausted", () => {
-      // This test documents that pause only happens AFTER the one-time switch
-      // When canEscalate=false (max attempts reached), resolveMaxAttemptsOutcome fires
-      const result = resolveMaxAttemptsOutcome("greenfield-no-tests");
-      expect(result).toBe("pause");
+      expect(resolveMaxAttemptsOutcome("greenfield-no-tests")).toBe("pause");
     });
   });
 
@@ -213,11 +195,9 @@ describe("S5: greenfield-no-tests fallback", () => {
         },
       };
 
-      const { routing, attempts } = applyGreenfieldFallbackRouting(story, "isolation-violation", "balanced");
+      const { routing } = applyGreenfieldFallbackRouting(story, "isolation-violation", "balanced");
 
-      // Should NOT switch to test-after (different failure category)
       expect(routing?.testStrategy).toBe("three-session-tdd");
-      // Should escalate tier normally
       expect(routing?.modelTier).toBe("balanced");
     });
 
@@ -241,7 +221,7 @@ describe("S5: greenfield-no-tests fallback", () => {
         },
       };
 
-      const { routing, attempts } = applyGreenfieldFallbackRouting(story, "tests-failing", "balanced");
+      const { routing } = applyGreenfieldFallbackRouting(story, "tests-failing", "balanced");
 
       expect(routing?.testStrategy).toBe("three-session-tdd");
       expect(routing?.modelTier).toBe("balanced");
@@ -264,7 +244,7 @@ describe("S5: greenfield-no-tests fallback", () => {
         routing: undefined,
       };
 
-      const { routing, attempts } = applyGreenfieldFallbackRouting(story, "greenfield-no-tests", "balanced");
+      const { routing } = applyGreenfieldFallbackRouting(story, "greenfield-no-tests", "balanced");
 
       expect(routing).toBeUndefined();
     });
@@ -289,7 +269,7 @@ describe("S5: greenfield-no-tests fallback", () => {
         },
       };
 
-      const { routing, attempts } = applyGreenfieldFallbackRouting(story, undefined, "balanced");
+      const { routing } = applyGreenfieldFallbackRouting(story, undefined, "balanced");
 
       expect(routing?.testStrategy).toBe("three-session-tdd");
       expect(routing?.modelTier).toBe("balanced");
