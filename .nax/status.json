@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 9,
-    "passed": 4,
+    "passed": 5,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 5
+    "pending": 4
   },
   "cost": {
-    "spent": 0.49256659999999997,
+    "spent": 0.8823817500000001,
     "limit": 30
   },
   "current": {
-    "storyId": "US-002",
-    "title": "Route run() by mode with hybrid fallback to panel",
+    "storyId": "US-003",
+    "title": "buildRebuttalContext prompt builder",
     "complexity": "simple",
     "tddStrategy": "tdd-simple",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 4,
-  "updatedAt": "2026-04-04T06:14:17.820Z",
-  "durationMs": 1740088,
-  "lastHeartbeat": "2026-04-04T06:14:17.820Z"
+  "iterations": 5,
+  "updatedAt": "2026-04-04T06:17:17.826Z",
+  "durationMs": 1920094,
+  "lastHeartbeat": "2026-04-04T06:17:17.826Z"
 }
