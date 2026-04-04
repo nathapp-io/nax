@@ -32,6 +32,12 @@ function buildPlanModeDecomposePrompt(options: DecomposeOptions): string {
   const siblingsSummary =
     siblings.length > 0 ? `\n## Sibling Stories\n\n${siblings.map((s) => `- ${s.id}: ${s.title}`).join("\n")}\n` : "";
 
+  const maxAcCount = options.config?.precheck?.storySizeGate?.maxAcCount;
+  const acConstraint =
+    maxAcCount != null
+      ? `\n## Acceptance Criteria Constraint\n\nEvery sub-story must have at most ${maxAcCount} acceptance criteria. If a story would exceed this limit, split it into additional sub-stories instead of adding more ACs.\n`
+      : "";
+
   return `You are a senior software architect decomposing a complex user story into smaller, implementable sub-stories.
 
 ## Target Story
@@ -40,7 +46,7 @@ ${JSON.stringify(targetStory, null, 2)}${siblingsSummary}
 ## Codebase Context
 
 ${options.codebaseContext}
-
+${acConstraint}
 ${COMPLEXITY_GUIDE}
 
 ${TEST_STRATEGY_GUIDE}

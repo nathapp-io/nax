@@ -766,6 +766,7 @@ export async function planDecomposeCommand(
 
   const timeoutSeconds = config?.plan?.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
   const maxAcCount = config?.precheck?.storySizeGate?.maxAcCount ?? Number.POSITIVE_INFINITY;
+  const maxReplanAttempts = config?.precheck?.storySizeGate?.maxReplanAttempts ?? 3;
 
   if (typeof (adapter as { decompose?: unknown }).decompose !== "function") {
     throw new NaxError(
@@ -779,65 +780,85 @@ export async function planDecomposeCommand(
   const debateDecompEnabled = config?.debate?.enabled && debateStages?.decompose?.enabled;
 
   let decompStories: DecomposedStory[] | undefined;
+  let repairHint = "";
 
-  if (debateDecompEnabled) {
-    const decomposeStageConfig = debateStages.decompose as DebateStageConfig;
-    const prompt = buildDecomposePrompt({
-      specContent: "",
-      codebaseContext,
-      workdir,
-      targetStory,
-      siblings,
-      featureName: options.feature,
-      storyId: options.storyId,
-      config,
-    });
-    const debateSession = _planDeps.createDebateSession({
-      storyId: options.storyId,
-      stage: "decompose",
-      stageConfig: decomposeStageConfig,
-      config,
-      workdir,
-      featureName: options.feature,
-      timeoutSeconds,
-    });
-    const debateResult = await debateSession.run(prompt);
-    if (debateResult.outcome !== "failed" && debateResult.output) {
-      decompStories = parseDecomposeOutput(debateResult.output);
-    }
-  }
-
-  if (!decompStories) {
-    const result = await adapter.decompose({
-      specContent: "",
-      codebaseContext,
-      workdir,
-      targetStory,
-      siblings,
-      featureName: options.feature,
-      storyId: options.storyId,
-      config,
-    });
-    decompStories = result.stories;
-  }
-
-  for (const sub of decompStories) {
-    if (!sub.complexity || !sub.testStrategy) {
-      throw new NaxError(`Sub-story "${sub.id}" is missing required routing fields`, "DECOMPOSE_VALIDATION_FAILED", {
-        stage: "decompose",
-        storyId: sub.id,
+  for (let attempt = 0; attempt < maxReplanAttempts; attempt++) {
+    if (attempt === 0 && debateDecompEnabled) {
+      const decomposeStageConfig = debateStages.decompose as DebateStageConfig;
+      const prompt = buildDecomposePrompt({
+        specContent: "",
+        codebaseContext,
+        workdir,
+        targetStory,
+        siblings,
+        featureName: options.feature,
+        storyId: options.storyId,
+        config,
       });
+      const debateSession = _planDeps.createDebateSession({
+        storyId: options.storyId,
+        stage: "decompose",
+        stageConfig: decomposeStageConfig,
+        config,
+        workdir,
+        featureName: options.feature,
+        timeoutSeconds,
+      });
+      const debateResult = await debateSession.run(prompt);
+      if (debateResult.outcome !== "failed" && debateResult.output) {
+        decompStories = parseDecomposeOutput(debateResult.output);
+      }
     }
-    if (sub.acceptanceCriteria && sub.acceptanceCriteria.length > maxAcCount) {
+
+    if (!decompStories) {
+      const effectiveContext = repairHint ? `${codebaseContext}\n\n${repairHint}` : codebaseContext;
+      const result = await adapter.decompose({
+        specContent: "",
+        codebaseContext: effectiveContext,
+        workdir,
+        targetStory,
+        siblings,
+        featureName: options.feature,
+        storyId: options.storyId,
+        config,
+      });
+      decompStories = result.stories;
+    }
+
+    // Structural validation: throw immediately — no retry benefit
+    for (const sub of decompStories) {
+      if (!sub.complexity || !sub.testStrategy) {
+        throw new NaxError(`Sub-story "${sub.id}" is missing required routing fields`, "DECOMPOSE_VALIDATION_FAILED", {
+          stage: "decompose",
+          storyId: sub.id,
+        });
+      }
+    }
+
+    // AC-count check: retryable within shared maxReplanAttempts budget
+    const violations = decompStories.filter(
+      (sub) => sub.acceptanceCriteria && sub.acceptanceCriteria.length > maxAcCount,
+    );
+    if (violations.length === 0) break;
+
+    const violationSummary = violations
+      .map((v) => `"${v.id}" (${v.acceptanceCriteria.length} ACs, max ${maxAcCount})`)
+      .join(", ");
+
+    if (attempt + 1 >= maxReplanAttempts) {
       throw new NaxError(
-        `Sub-story "${sub.id}" has ${sub.acceptanceCriteria.length} ACs, exceeds maxAcCount of ${maxAcCount}`,
+        `Decompose AC repair failed after ${maxReplanAttempts} attempts. Oversized sub-stories: ${violationSummary}`,
         "DECOMPOSE_VALIDATION_FAILED",
-        { stage: "decompose", storyId: sub.id },
+        { stage: "decompose", storyId: options.storyId },
       );
     }
+
+    repairHint = `REPAIR REQUIRED (attempt ${attempt + 1}/${maxReplanAttempts}): The following sub-stories exceeded maxAcCount of ${maxAcCount}: ${violationSummary}. Split each offending story further so every sub-story has at most ${maxAcCount} acceptance criteria.`;
+    decompStories = undefined;
   }
 
-  const subStoriesWithParent: UserStory[] = mapDecomposedStoriesToUserStories(decompStories, options.storyId);
+  // biome-ignore lint/style/noNonNullAssertion: loop guarantees decompStories is set (maxReplanAttempts >= 1 per schema)
+  const subStoriesWithParent: UserStory[] = mapDecomposedStoriesToUserStories(decompStories!, options.storyId);
 
   const updatedStories = prd.userStories.map((s) =>
     s.id === options.storyId ? { ...s, status: "decomposed" as StoryStatus } : s,
