@@ -34,9 +34,5 @@
   "US-003:verifier": {
     "sessionName": "nax-6411f7e6-rerun-postrun-tracking-us-003-verifier",
     "agentName": "claude"
-  },
-  "US-004": {
-    "sessionName": "nax-6411f7e6-rerun-postrun-tracking-us-004",
-    "agentName": "claude"
   }
 }
