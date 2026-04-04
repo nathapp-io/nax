@@ -160,7 +160,12 @@ export async function executeSequential(
       pipelineEventBus.emit({
         type: "story:started",
         storyId: selection.story.id,
-        story: { id: selection.story.id, title: selection.story.title, status: selection.story.status, attempts: selection.story.attempts },
+        story: {
+          id: selection.story.id,
+          title: selection.story.title,
+          status: selection.story.status,
+          attempts: selection.story.attempts,
+        },
         workdir: ctx.workdir,
         modelTier: selection.routing.modelTier,
         agent: ctx.config.autoMode.defaultAgent,
