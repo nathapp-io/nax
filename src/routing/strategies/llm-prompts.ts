@@ -7,6 +7,7 @@
 
 import type { Complexity, ModelTier, NaxConfig, TddStrategy, TestStrategy } from "../../config";
 import type { UserStory } from "../../prd/types";
+import { extractJsonFromMarkdown } from "../../utils/llm-json";
 import { determineTestStrategy } from "../router";
 import type { RoutingDecision } from "../router";
 
@@ -147,17 +148,19 @@ export function validateRoutingDecision(
   };
 }
 
-/** Strip markdown code fences from LLM output. */
+/**
+ * Strip markdown code fences from LLM output.
+ * @deprecated Use extractJsonFromMarkdown from utils/llm-json directly.
+ */
 export function stripCodeFences(text: string): string {
-  let result = text.trim();
-  if (result.startsWith("```")) {
-    const lines = result.split("\n");
-    result = lines.slice(1, -1).join("\n").trim();
+  const trimmed = text.trim();
+  const fromFence = extractJsonFromMarkdown(trimmed);
+  if (fromFence !== trimmed) return fromFence;
+  // Handle bare 'json\n...' pattern (LLM outputs language hint without backticks)
+  if (trimmed.startsWith("json")) {
+    return trimmed.slice(4).trim();
   }
-  if (result.startsWith("json")) {
-    result = result.slice(4).trim();
-  }
-  return result;
+  return trimmed;
 }
 
 /**
@@ -170,7 +173,7 @@ export function stripCodeFences(text: string): string {
  * @throws Error if JSON parsing or validation fails
  */
 export function parseRoutingResponse(output: string, story: UserStory, config: NaxConfig): RoutingDecision {
-  const jsonText = stripCodeFences(output);
+  const jsonText = extractJsonFromMarkdown(output.trim());
   const parsed = JSON.parse(jsonText);
   return validateRoutingDecision(parsed, config, story);
 }
@@ -189,17 +192,7 @@ export function parseBatchResponse(
   stories: UserStory[],
   config: NaxConfig,
 ): Map<string, RoutingDecision> {
-  // Strip markdown code blocks if present
-  let jsonText = output.trim();
-  if (jsonText.startsWith("```")) {
-    const lines = jsonText.split("\n");
-    jsonText = lines.slice(1, -1).join("\n").trim();
-  }
-  if (jsonText.startsWith("json")) {
-    jsonText = jsonText.slice(4).trim();
-  }
-
-  const parsed = JSON.parse(jsonText);
+  const parsed = JSON.parse(extractJsonFromMarkdown(output.trim()));
 
   if (!Array.isArray(parsed)) {
     throw new Error("Batch LLM response must be a JSON array");

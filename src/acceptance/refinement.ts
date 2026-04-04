@@ -10,6 +10,7 @@ import { createAgentRegistry } from "../agents/registry";
 import { resolveModelForAgent } from "../config";
 import { getLogger } from "../logger";
 import { errorMessage } from "../utils/errors";
+import { extractJsonFromMarkdown, stripTrailingCommas } from "../utils/llm-json";
 import type { RefinedCriterion, RefinementContext } from "./types";
 
 /**
@@ -151,7 +152,9 @@ export function parseRefinementResponse(response: string, criteria: string[]): R
   }
 
   try {
-    const parsed: unknown = JSON.parse(response);
+    const fromFence = extractJsonFromMarkdown(response);
+    const cleaned = stripTrailingCommas(fromFence !== response ? fromFence : response);
+    const parsed: unknown = JSON.parse(cleaned);
 
     if (!Array.isArray(parsed)) {
       return fallbackCriteria(criteria);

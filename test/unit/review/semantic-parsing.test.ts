@@ -1,0 +1,174 @@
+/**
+ * Unit tests for semantic.ts — multi-tier JSON parsing hardening
+ *
+ * Tests cover the two observed production failure modes:
+ * 1. Preamble + fenced JSON (LLM narrates before ```json block)
+ * 2. Bare JSON embedded in narration (no fences)
+ * 3. Trailing commas in JSON (common LLM quirk)
+ * 4. Pure narration — still fail-open (no regression)
+ */
+
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
+import type { SemanticStory } from "../../../src/review/semantic";
+import type { SemanticReviewConfig } from "../../../src/review/types";
+import type { AgentAdapter } from "../../../src/agents/types";
+
+// ---------------------------------------------------------------------------
+// Helpers (mirrors semantic.test.ts patterns)
+// ---------------------------------------------------------------------------
+
+const STORY: SemanticStory = {
+  id: "US-parse-01",
+  title: "Parsing hardening test",
+  description: "Ensure LLM response parser handles all output patterns",
+  acceptanceCriteria: ["Parser handles preamble + fenced JSON", "Parser handles bare JSON in narration"],
+};
+
+const CONFIG: SemanticReviewConfig = {
+  modelTier: "balanced",
+  rules: [],
+  excludePatterns: [],
+  timeoutMs: 60_000,
+};
+
+function makeMockAgent(response: string): AgentAdapter {
+  return {
+    name: "mock",
+    displayName: "Mock Agent",
+    binary: "mock",
+    capabilities: { supportedTiers: [], supportedTestStrategies: [], features: {} } as unknown as AgentAdapter["capabilities"],
+    isInstalled: mock(async () => true),
+    run: mock(async () => { throw new Error("not used"); }),
+    buildCommand: mock(() => []),
+    plan: mock(async () => { throw new Error("not used"); }),
+    decompose: mock(async () => { throw new Error("not used"); }),
+    complete: mock(async (_prompt: string) => response),
+  } as unknown as AgentAdapter;
+}
+
+function makeSpawnMock(stdout: string, exitCode = 0) {
+  return mock((_opts: unknown) => ({
+    exited: Promise.resolve(exitCode),
+    stdout: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(stdout));
+        controller.close();
+      },
+    }),
+    stderr: new ReadableStream({
+      start(controller) { controller.close(); },
+    }),
+    kill: () => {},
+  })) as unknown as typeof _semanticDeps.spawn;
+}
+
+// ---------------------------------------------------------------------------
+// Test suite
+// ---------------------------------------------------------------------------
+
+describe("runSemanticReview — multi-tier JSON parsing", () => {
+  let origSpawn: typeof _semanticDeps.spawn;
+  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
+  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+
+  beforeEach(() => {
+    origSpawn = _semanticDeps.spawn;
+    origIsGitRefValid = _semanticDeps.isGitRefValid;
+    origGetMergeBase = _semanticDeps.getMergeBase;
+    _semanticDeps.isGitRefValid = mock(async () => true);
+    _semanticDeps.getMergeBase = mock(async () => undefined);
+  });
+
+  afterEach(() => {
+    _semanticDeps.spawn = origSpawn;
+    _semanticDeps.isGitRefValid = origIsGitRefValid;
+    _semanticDeps.getMergeBase = origGetMergeBase;
+  });
+
+  // Failure mode 2: preamble + fenced JSON (production log pattern)
+  test("parses passed=true from preamble + ```json fence", async () => {
+    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    const response =
+      "I'll verify each acceptance criterion by reading the actual implementation files.\n" +
+      "```json\n" +
+      JSON.stringify({ passed: true, findings: [] }) +
+      "\n```";
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
+    expect(result.success).toBe(true);
+    expect(result.output).not.toContain("could not parse");
+  });
+
+  test("parses passed=false with findings from preamble + fence", async () => {
+    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    const payload = {
+      passed: false,
+      findings: [{ severity: "error", file: "src/foo.ts", line: 10, issue: "missing impl", suggestion: "implement it" }],
+    };
+    const response =
+      "Let me check the implementation.\n```json\n" + JSON.stringify(payload) + "\n```";
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("Semantic review failed");
+  });
+
+  test("parses from preamble + plain ``` fence", async () => {
+    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    const response =
+      "After reviewing the diff:\n" +
+      "```\n" +
+      JSON.stringify({ passed: true, findings: [] }) +
+      "\n```";
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
+    expect(result.success).toBe(true);
+    expect(result.output).not.toContain("could not parse");
+  });
+
+  // Bare JSON embedded in narration (tier 3)
+  test("parses passed=true from JSON embedded in narration", async () => {
+    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    const response =
+      'After analysis: {"passed":true,"findings":[]} All ACs are correctly implemented.';
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
+    expect(result.success).toBe(true);
+    expect(result.output).not.toContain("could not parse");
+  });
+
+  test("parses passed=false from JSON embedded in narration", async () => {
+    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    const payload = {
+      passed: false,
+      findings: [{ severity: "error", file: "src/bar.ts", line: 5, issue: "stub", suggestion: "implement" }],
+    };
+    const response = "I found issues. " + JSON.stringify(payload) + " That concludes my review.";
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
+    expect(result.success).toBe(false);
+  });
+
+  // Trailing commas
+  test("parses JSON with trailing commas in fence", async () => {
+    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    const response = '```json\n{"passed":true,"findings":[],}\n```';
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
+    expect(result.success).toBe(true);
+    expect(result.output).not.toContain("could not parse");
+  });
+
+  // Failure mode 1: pure narration — must still fail-open
+  test("still fails-open on pure narration with no JSON", async () => {
+    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    const response =
+      "I'll verify each acceptance criterion by examining the actual files to ensure all i18n keys exist and are correctly wired.";
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("fail-open");
+  });
+
+  // Tier 1: clean JSON still works
+  test("tier 1 still parses clean JSON directly", async () => {
+    _semanticDeps.spawn = makeSpawnMock("some diff", 0);
+    const response = JSON.stringify({ passed: true, findings: [] });
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, CONFIG, () => makeMockAgent(response));
+    expect(result.success).toBe(true);
+  });
+});
