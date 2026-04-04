@@ -17,6 +17,8 @@ import { isComplete } from "../prd";
 import type { PRD } from "../prd";
 import { autoCommitIfDirty } from "../utils/git";
 import { stopHeartbeat, writeExitSummary } from "./crash-recovery";
+import type { AcceptanceLoopContext, AcceptanceLoopResult } from "./lifecycle/acceptance-loop";
+import type { RunCompletionOptions, RunCompletionResult } from "./lifecycle/run-completion";
 import { hookCtx } from "./story-context";
 
 /**
@@ -57,6 +59,24 @@ export interface RunnerCompletionResult {
   durationMs: number;
   runCompletedAt: string;
 }
+
+/**
+ * Injectable dependencies for testing (avoids mock.module() which leaks in Bun 1.x).
+ * @internal - test use only.
+ */
+export const _runnerCompletionDeps: {
+  runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<AcceptanceLoopResult>;
+  handleRunCompletion(opts: RunCompletionOptions): Promise<RunCompletionResult>;
+} = {
+  async runAcceptanceLoop(ctx) {
+    const { runAcceptanceLoop } = await import("./lifecycle/acceptance-loop");
+    return runAcceptanceLoop(ctx);
+  },
+  async handleRunCompletion(opts) {
+    const { handleRunCompletion } = await import("./lifecycle/run-completion");
+    return handleRunCompletion(opts);
+  },
+};
 
 /**
  * Execute the completion phase of the run.

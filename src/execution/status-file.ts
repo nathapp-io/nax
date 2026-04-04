@@ -41,6 +41,8 @@ export interface RegressionPhaseStatus {
   failedTests?: string[];
   /** Story IDs affected by regression failures */
   affectedStories?: string[];
+  /** True when deferred regression was smart-skipped (all stories passed full-suite gate) */
+  skipped?: boolean;
 }
 
 /** Aggregate post-run phase statuses */

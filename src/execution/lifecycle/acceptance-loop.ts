@@ -59,6 +59,10 @@ export interface AcceptanceLoopResult {
   iterations: number;
   storiesCompleted: number;
   prdDirty: boolean;
+  /** Acceptance criteria that failed — populated when success=false */
+  failedACs?: string[];
+  /** Number of acceptance retries performed */
+  retries?: number;
 }
 
 export function isStubTestFile(content: string): boolean {
