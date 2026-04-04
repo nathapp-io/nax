@@ -1,0 +1,506 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "After split, no file in src/debate/ exceeds 400 lines",
+    "refined": "Running `find src/debate -name '*.ts' | xargs wc -l` shows every file has fewer than 400 lines of code",
+    "testable": true,
+    "storyId": "US-000"
+  },
+  {
+    "acId": "AC-2",
+    "original": "DebateSession.run() with sessionMode 'one-shot' delegates to the extracted runOneShot logic and returns identical DebateResult as before",
+    "refined": "Unit test: calling DebateSession.run() with sessionMode='one-shot' returns a DebateResult object with the same shape (fields: winner, reasoning, rounds, transcript) as the pre-refactor implementation, and the internal runOneShot function is invoked exactly once",
+    "testable": true,
+    "storyId": "US-000"
+  },
+  {
+    "acId": "AC-3",
+    "original": "DebateSession.run() with sessionMode 'stateful' delegates to the extracted runStateful logic and returns identical DebateResult as before",
+    "refined": "Unit test: calling DebateSession.run() with sessionMode='stateful' returns a DebateResult object with the same shape (fields: winner, reasoning, rounds, transcript) as the pre-refactor implementation, and the internal runStateful function is invoked exactly once",
+    "testable": true,
+    "storyId": "US-000"
+  },
+  {
+    "acId": "AC-4",
+    "original": "DebateSession.runPlan() delegates to the extracted runPlan logic and returns identical DebateResult as before",
+    "refined": "Unit test: calling DebateSession.runPlan() returns a DebateResult object with the same shape as the pre-refactor implementation, and the extracted runPlan function is invoked exactly once",
+    "testable": true,
+    "storyId": "US-000"
+  },
+  {
+    "acId": "AC-5",
+    "original": "_debateSessionDeps is exported from session-helpers.ts and re-exported through the barrel index.ts",
+    "refined": "Static check: `grep -n '_debateSessionDeps' src/debate/session-helpers.ts` finds an export declaration, and `grep -n '_debateSessionDeps' src/debate/index.ts` finds a re-export; TypeScript compilation with --noEmit passes without errors referencing this symbol",
+    "testable": true,
+    "storyId": "US-000"
+  },
+  {
+    "acId": "AC-6",
+    "original": "resolveDebaterModel() is exported from session-helpers.ts and re-exported through the barrel index.ts",
+    "refined": "Static check: `grep -n 'export.*resolveDebaterModel' src/debate/session-helpers.ts` finds an export declaration, and `grep -n 'resolveDebaterModel' src/debate/index.ts` finds a re-export; TypeScript compilation with --noEmit passes without errors referencing this symbol",
+    "testable": true,
+    "storyId": "US-000"
+  },
+  {
+    "acId": "AC-7",
+    "original": "DebateSessionOptions type is exported from session-helpers.ts and re-exported through the barrel index.ts",
+    "refined": "Static check: `grep -n 'export.*DebateSessionOptions' src/debate/session-helpers.ts` finds an export declaration, and `grep -n 'DebateSessionOptions' src/debate/index.ts` finds a re-export; TypeScript compilation with --noEmit passes without errors referencing this type",
+    "testable": true,
+    "storyId": "US-000"
+  },
+  {
+    "acId": "AC-8",
+    "original": "All existing debate tests pass without modification to test files",
+    "refined": "Running `bun test test/unit/debate` and `bun test test/integration/debate` (or equivalent debate test paths) exits with code 0 and zero failing tests, with no changes made to any file under the test/ directory",
+    "testable": true,
+    "storyId": "US-000"
+  },
+  {
+    "acId": "AC-9",
+    "original": "NaxConfigSchema.parse({}).debate.stages.plan.mode equals 'panel'",
+    "refined": "NaxConfigSchema.parse({}).debate.stages.plan.mode === 'panel'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "NaxConfigSchema.parse({}).debate.stages.review.mode equals 'panel'",
+    "refined": "NaxConfigSchema.parse({}).debate.stages.review.mode === 'panel'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "NaxConfigSchema.parse({}).debate.stages.acceptance.mode equals 'panel'",
+    "refined": "NaxConfigSchema.parse({}).debate.stages.acceptance.mode === 'panel'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-12",
+    "original": "NaxConfigSchema.parse({}).debate.stages.rectification.mode equals 'panel'",
+    "refined": "NaxConfigSchema.parse({}).debate.stages.rectification.mode === 'panel'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-13",
+    "original": "NaxConfigSchema.parse({}).debate.stages.escalation.mode equals 'panel'",
+    "refined": "NaxConfigSchema.parse({}).debate.stages.escalation.mode === 'panel'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-14",
+    "original": "NaxConfigSchema.parse({ debate: { stages: { plan: { mode: 'hybrid' } } } }) parses without error and stages.plan.mode equals 'hybrid'",
+    "refined": "NaxConfigSchema.parse({ debate: { stages: { plan: { mode: 'hybrid' } } } }) does not throw and the returned object's debate.stages.plan.mode === 'hybrid'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-15",
+    "original": "NaxConfigSchema.safeParse({ debate: { stages: { plan: { mode: 'sequential' } } } }).success equals false",
+    "refined": "NaxConfigSchema.safeParse({ debate: { stages: { plan: { mode: 'sequential' } } } }).success === false",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-16",
+    "original": "DebateStageConfig interface includes mode property typed as DebateMode",
+    "refined": "TypeScript type check passes: a value of type DebateStageConfig must have a mode property assignable to DebateMode; assigning an invalid mode (e.g. 'sequential') produces a compile-time type error",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-17",
+    "original": "DebateResult interface includes optional rebuttals property typed as Rebuttal[]",
+    "refined": "TypeScript type check passes: DebateResult can be constructed without rebuttals (optional) and with rebuttals set to a Rebuttal[]; assigning a non-Rebuttal[] value produces a compile-time type error",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-18",
+    "original": "Rebuttal interface has debater typed as Debater, round typed as number, and output typed as string",
+    "refined": "TypeScript type check passes: a Rebuttal object must have debater: Debater, round: number, and output: string; omitting any field or using wrong types produces a compile-time type error",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-19",
+    "original": "Existing code compiles without changes — mode and rebuttals fields are optional with defaults",
+    "refined": "Running tsc --noEmit on the project exits with code 0 after adding mode (optional, default 'panel') and rebuttals (optional) fields to the schema/types",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-20",
+    "original": "DebateMode type is exported from src/debate/types.ts and equals the union 'panel' | 'hybrid'",
+    "refined": "Running `tsc --noEmit` passes and `import { DebateMode } from 'src/debate/types'` resolves to a type assignable only to 'panel' or 'hybrid'; assigning any other string literal causes a compile error",
+    "testable": true,
+    "storyId": "US-001-A"
+  },
+  {
+    "acId": "AC-21",
+    "original": "DebateStageConfig interface has a mode property typed as DebateMode",
+    "refined": "In src/debate/types.ts, DebateStageConfig declares `mode: DebateMode`; tsc confirms that assigning a non-DebateMode value to `mode` produces a type error",
+    "testable": true,
+    "storyId": "US-001-A"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Rebuttal interface is exported and has debater typed as Debater, round typed as number, and output typed as string",
+    "refined": "src/debate/types.ts exports `Rebuttal` with fields `debater: Debater`, `round: number`, `output: string`; tsc --noEmit passes and a test asserting the shape `{ debater, round, output }` satisfies the Rebuttal type compiles without error",
+    "testable": true,
+    "storyId": "US-001-A"
+  },
+  {
+    "acId": "AC-23",
+    "original": "DebateResult interface has an optional rebuttals property typed as Rebuttal[]",
+    "refined": "src/debate/types.ts declares `rebuttals?: Rebuttal[]` on DebateResult; tsc --noEmit passes; a DebateResult object omitting rebuttals and one including a Rebuttal[] both satisfy the type without error",
+    "testable": true,
+    "storyId": "US-001-A"
+  },
+  {
+    "acId": "AC-24",
+    "original": "All existing consumers of DebateStageConfig and DebateResult compile without changes (mode and rebuttals are additive)",
+    "refined": "Running `tsc --noEmit` across the full codebase produces zero new errors after adding `mode` to DebateStageConfig and `rebuttals` to DebateResult; existing files that construct or destructure these types require no modifications",
+    "testable": true,
+    "storyId": "US-001-A"
+  },
+  {
+    "acId": "AC-25",
+    "original": "NaxConfigSchema.parse({}).debate.stages.plan.mode equals 'panel'",
+    "refined": "NaxConfigSchema.parse({}).debate.stages.plan.mode === 'panel'",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-26",
+    "original": "NaxConfigSchema.parse({}).debate.stages.review.mode equals 'panel'",
+    "refined": "NaxConfigSchema.parse({}).debate.stages.review.mode === 'panel'",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-27",
+    "original": "NaxConfigSchema.parse({}).debate.stages.acceptance.mode equals 'panel'",
+    "refined": "NaxConfigSchema.parse({}).debate.stages.acceptance.mode === 'panel'",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-28",
+    "original": "NaxConfigSchema.parse({}).debate.stages.rectification.mode equals 'panel'",
+    "refined": "NaxConfigSchema.parse({}).debate.stages.rectification.mode === 'panel'",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-29",
+    "original": "NaxConfigSchema.parse({}).debate.stages.escalation.mode equals 'panel'",
+    "refined": "NaxConfigSchema.parse({}).debate.stages.escalation.mode === 'panel'",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-30",
+    "original": "NaxConfigSchema.parse({ debate: { stages: { plan: { mode: 'hybrid' } } } }) succeeds and stages.plan.mode equals 'hybrid'",
+    "refined": "NaxConfigSchema.parse({ debate: { stages: { plan: { mode: 'hybrid' } } } }).debate.stages.plan.mode === 'hybrid' without throwing",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-31",
+    "original": "NaxConfigSchema.safeParse({ debate: { stages: { plan: { mode: 'sequential' } } } }).success equals false",
+    "refined": "NaxConfigSchema.safeParse({ debate: { stages: { plan: { mode: 'sequential' } } } }).success === false",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-32",
+    "original": "Existing code compiles without changes after the schema addition",
+    "refined": "Running bun run typecheck exits with code 0 after schema addition with no new type errors",
+    "testable": true,
+    "storyId": "US-001-B"
+  },
+  {
+    "acId": "AC-33",
+    "original": "run() with mode 'panel' and sessionMode 'one-shot' calls runOneShot and returns its result",
+    "refined": "When run() is called with mode='panel' and sessionMode='one-shot', the runOneShot function is invoked exactly once and run() returns the same value that runOneShot returns",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-34",
+    "original": "run() with mode 'panel' and sessionMode 'stateful' calls runStateful and returns its result",
+    "refined": "When run() is called with mode='panel' and sessionMode='stateful', the runStateful function is invoked exactly once and run() returns the same value that runStateful returns",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-35",
+    "original": "run() with mode undefined and sessionMode 'one-shot' calls runOneShot (backward compat — mode defaults to panel)",
+    "refined": "When run() is called with mode=undefined and sessionMode='one-shot', the runOneShot function is invoked exactly once (mode defaults to 'panel'), and runStateful and runHybrid are not called",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-36",
+    "original": "run() with mode 'hybrid' and sessionMode 'stateful' calls runHybrid",
+    "refined": "When run() is called with mode='hybrid' and sessionMode='stateful', the runHybrid function is invoked exactly once and runOneShot and runStateful are not called",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-37",
+    "original": "run() with mode 'hybrid' and sessionMode 'one-shot' calls runOneShot and logs a warning containing 'hybrid mode requires sessionMode: stateful'",
+    "refined": "When run() is called with mode='hybrid' and sessionMode='one-shot', runOneShot is invoked exactly once, runHybrid is not called, and a warning message containing the substring 'hybrid mode requires sessionMode: stateful' is emitted to the logger",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-38",
+    "original": "run() with mode 'hybrid' and sessionMode undefined calls runOneShot and logs a warning containing 'hybrid mode requires sessionMode: stateful'",
+    "refined": "When run() is called with mode='hybrid' and sessionMode=undefined, runOneShot is invoked exactly once, runHybrid is not called, and a warning message containing the substring 'hybrid mode requires sessionMode: stateful' is emitted to the logger",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-39",
+    "original": "buildRebuttalContext() with 2 proposals and 0 rebuttals returns string containing '## Proposals' section with both proposals and no '## Previous Rebuttals' section",
+    "refined": "buildRebuttalContext() called with 2 proposals and empty rebuttals array returns a string that includes '## Proposals' substring, includes both proposal contents, and does NOT include '## Previous Rebuttals' substring",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-40",
+    "original": "buildRebuttalContext() with 2 proposals and 3 rebuttals returns string containing '## Previous Rebuttals' section with all 3 rebuttals numbered",
+    "refined": "buildRebuttalContext() called with 2 proposals and 3 rebuttals returns a string that includes '## Previous Rebuttals' substring and includes '1.', '2.', and '3.' numbered entries corresponding to each rebuttal",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-41",
+    "original": "buildRebuttalContext() with currentDebaterIndex 0 returns string containing 'You are debater 1' (1-indexed in output)",
+    "refined": "buildRebuttalContext() called with currentDebaterIndex=0 returns a string that includes the substring 'You are debater 1'",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-42",
+    "original": "buildRebuttalContext() includes each proposal labeled with the debater's agent name",
+    "refined": "buildRebuttalContext() called with proposals where each has an agentName returns a string containing each agentName value as a label associated with that proposal's content",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-43",
+    "original": "buildRebuttalContext() is exported from src/debate/index.ts barrel",
+    "refined": "The file src/debate/index.ts contains an export of buildRebuttalContext, verifiable by checking that 'buildRebuttalContext' appears in an export statement in that file",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-44",
+    "original": "runHybrid() with 2 debaters and rounds: 1 calls runStatefulTurn() for rebuttals exactly 2 times (once per debater) in sequential order",
+    "refined": "When runHybrid() is called with 2 debaters and rounds=1, the mock/spy for runStatefulTurn() is called exactly 2 times for rebuttal turns, and the calls occur in sequential debater index order (debaterIndex 0 before debaterIndex 1).",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-45",
+    "original": "runHybrid() with 3 debaters and rounds: 2 calls runStatefulTurn() for rebuttals exactly 6 times (3 debaters x 2 rounds)",
+    "refined": "When runHybrid() is called with 3 debaters and rounds=2, the mock/spy for runStatefulTurn() is called exactly 6 times for rebuttal turns (3 debaters × 2 rounds), with calls ordered by round then debaterIndex.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-46",
+    "original": "Each rebuttal turn's prompt (via buildRebuttalContext) contains all proposal outputs",
+    "refined": "For each rebuttal turn, the prompt string passed to runStatefulTurn() (constructed via buildRebuttalContext) contains the output text of all successful proposal turns; asserting that each proposal's output substring is present in the prompt.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-47",
+    "original": "Round 2 rebuttal prompts include all round 1 rebuttal outputs in the previous rebuttals section",
+    "refined": "For each debater's round 2 rebuttal call, the prompt passed to runStatefulTurn() contains the output text of all round 1 rebuttal results in a 'previous rebuttals' section; asserting each round-1 rebuttal output substring is present in the round-2 prompt.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-48",
+    "original": "When a rebuttal turn fails, runHybrid() logs a warning and continues with remaining debaters in that round",
+    "refined": "When runStatefulTurn() throws or returns a failure for one debater's rebuttal turn, runHybrid() (a) emits a warning-level log entry containing the debater index and round, and (b) continues to invoke runStatefulTurn() for the remaining debaters in that round without throwing.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-49",
+    "original": "When fewer than 2 proposals succeed, runHybrid() returns single-agent fallback result (same as panel stateful mode)",
+    "refined": "When 0 or 1 proposal turns succeed, runHybrid() returns a DebateResult with a 'fallback' indicator (e.g., result.fallback === true or result.mode === 'single-agent') and the result matches what runPanelStateful() would return for a single agent; no rebuttal turns are executed.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-50",
+    "original": "Proposal sessionRole is 'debate-hybrid-${debaterIndex}' and rebuttal sessionRole reuses the same value for the same debater",
+    "refined": "For debaterIndex N, the sessionRole argument passed to runStatefulTurn() for both the proposal turn and all rebuttal turns equals the string 'debate-hybrid-N'; verified by inspecting call arguments on the runStatefulTurn() spy for matching debaterIndex across proposal and rebuttal calls.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-51",
+    "original": "All runStatefulTurn() calls for rebuttals use keepSessionOpen: true (sessions are closed explicitly after the loop)",
+    "refined": "Every runStatefulTurn() call made during the rebuttal loop has the option keepSessionOpen set to true; verified by inspecting all rebuttal-phase call arguments on the runStatefulTurn() spy and asserting keepSessionOpen === true for each.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-52",
+    "original": "After rebuttal loop completes, closeStatefulSession() is called for every debater whose session was opened",
+    "refined": "After the rebuttal loop finishes without error, closeStatefulSession() is called exactly once per debater whose proposal turn succeeded (i.e., whose session was opened), with the correct sessionRole argument for each debater; verified via spy call count and arguments.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-53",
+    "original": "When the rebuttal loop throws, closeStatefulSession() is still called for all opened sessions (try/finally guarantee)",
+    "refined": "When runStatefulTurn() throws an unrecoverable error during the rebuttal loop, closeStatefulSession() is still called for every debater whose session was previously opened (try/finally block guarantees cleanup); verified by asserting closeStatefulSession() spy call count equals the number of opened sessions even when an error is thrown.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-54",
+    "original": "Rebuttal turn costs are accumulated into totalCostUsd on the returned DebateResult",
+    "refined": "The totalCostUsd field on the returned DebateResult equals the sum of costUsd from all proposal turns plus the sum of costUsd from all successful rebuttal turns; verified by setting known cost values on mocked runStatefulTurn() return values and asserting the exact sum.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-55",
+    "original": "DebateResult.rebuttals contains one entry per successful rebuttal turn with correct debater, round, and output",
+    "refined": "The rebuttals array on the returned DebateResult has length equal to the number of successful rebuttal turns; each entry has debaterIndex matching the debater, round matching the round number (1-based), and output matching the string returned by runStatefulTurn() for that turn.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-56",
+    "original": "runHybrid() logs 'debate:rebuttal-start' with round and debaterIndex before each rebuttal turn",
+    "refined": "Before each runStatefulTurn() call in the rebuttal loop, a log entry with the event key 'debate:rebuttal-start' is emitted containing the current round number and debaterIndex; verified by capturing logger calls and asserting the log entry appears before the corresponding runStatefulTurn() invocation in call order.",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-57",
+    "original": "sessionRole for each proposal call is 'debate-hybrid-${debaterIndex}' (index 0-based)",
+    "refined": "Each call to the proposal function receives a sessionRole argument equal to 'debate-hybrid-0', 'debate-hybrid-1', etc., where the index matches the 0-based position of the debater in the debaters array. Verified by asserting spy/mock call arguments for each invocation.",
+    "testable": true,
+    "storyId": "US-004-A"
+  },
+  {
+    "acId": "AC-58",
+    "original": "All proposal calls are made in parallel via allSettledBounded respecting maxConcurrentDebaters",
+    "refined": "allSettledBounded is called exactly once with the array of proposal thunks and a concurrency limit equal to config.maxConcurrentDebaters. Verified by spy on allSettledBounded asserting call count === 1 and second argument === maxConcurrentDebaters.",
+    "testable": true,
+    "storyId": "US-004-A"
+  },
+  {
+    "acId": "AC-59",
+    "original": "Every proposal call uses keepSessionOpen: true",
+    "refined": "Each individual proposal invocation receives an options object where keepSessionOpen === true. Verified by inspecting all mock call argument lists and asserting every call includes { keepSessionOpen: true }.",
+    "testable": true,
+    "storyId": "US-004-A"
+  },
+  {
+    "acId": "AC-60",
+    "original": "When fewer than 2 proposals succeed, runHybrid() returns the single-agent fallback result (same shape as panel stateful fallback)",
+    "refined": "When 0 or 1 proposal calls resolve with a fulfilled status, runHybrid() returns an object structurally identical to the panel stateful fallback shape (same top-level keys and value types). Verified with two parameterized test cases: (a) all proposals rejected, (b) exactly 1 proposal fulfilled — both assert returned object deeply matches the fallback schema.",
+    "testable": true,
+    "storyId": "US-004-A"
+  },
+  {
+    "acId": "AC-61",
+    "original": "Successful proposal outputs are collected and available as proposalOutputs for the resolve() call",
+    "refined": "The resolve() function is called with a parameter whose proposalOutputs property is an array containing exactly the output values of all fulfilled proposal calls, in the order they appear in the settled results, with rejected entries excluded. Verified by spy on resolve() asserting proposalOutputs deep-equals the filtered fulfilled values.",
+    "testable": true,
+    "storyId": "US-004-A"
+  },
+  {
+    "acId": "AC-62",
+    "original": "Adapters are resolved via the shared helper imported from session-helpers.ts (not inline)",
+    "refined": "The module under test imports the adapter-resolution helper from 'session-helpers.ts' and calls it to obtain each debater adapter; no inline adapter construction logic exists in the runHybrid source file. Verified by static import graph check (grep/AST) confirming the import exists and no duplicate resolution logic is present inline.",
+    "testable": true,
+    "storyId": "US-004-A"
+  },
+  {
+    "acId": "AC-63",
+    "original": "With 2 debaters and rounds=1, runStatefulTurn() is called exactly 2 times in sequential debater order",
+    "refined": "Given a hybrid debate with 2 debaters and rounds=1, a spy on runStatefulTurn() records exactly 2 invocations; the first call uses debaterIndex 0 and the second uses debaterIndex 1",
+    "testable": true,
+    "storyId": "US-004-B"
+  },
+  {
+    "acId": "AC-64",
+    "original": "With 3 debaters and rounds=2, runStatefulTurn() is called exactly 6 times (3 debaters × 2 rounds, inner loop is debaters)",
+    "refined": "Given a hybrid debate with 3 debaters and rounds=2, a spy on runStatefulTurn() records exactly 6 invocations ordered as [d0r1, d1r1, d2r1, d0r2, d1r2, d2r2] (debater index is the inner loop)",
+    "testable": true,
+    "storyId": "US-004-B"
+  },
+  {
+    "acId": "AC-65",
+    "original": "Each rebuttal turn's prompt (via buildRebuttalContext) includes all successful proposal outputs",
+    "refined": "For each rebuttal turn, the prompt string passed to runStatefulTurn() contains the output text of every debater whose proposal turn succeeded; debaters whose proposal threw are absent from the prompt",
+    "testable": true,
+    "storyId": "US-004-B"
+  },
+  {
+    "acId": "AC-66",
+    "original": "Round 2 rebuttal prompts include all round 1 rebuttal outputs in the previous-rebuttals section",
+    "refined": "The prompt for every round-2 rebuttal turn contains all round-1 rebuttal output strings in a section labelled 'previous-rebuttals' (or equivalent field passed to buildRebuttalContext); round-1 outputs that failed are excluded",
+    "testable": true,
+    "storyId": "US-004-B"
+  },
+  {
+    "acId": "AC-67",
+    "original": "When a rebuttal turn throws, runHybrid() logs a warning and continues with the remaining debaters in that round",
+    "refined": "Given debater[1] of 3 throws during a rebuttal turn, runHybrid() resolves without rethrowing, the logger.warn spy is called at least once referencing that debater, and runStatefulTurn() is subsequently called for debater[2] in the same round",
+    "testable": true,
+    "storyId": "US-004-B"
+  },
+  {
+    "acId": "AC-68",
+    "original": "Every rebuttal runStatefulTurn() call uses the same sessionRole as the proposal round for that debater and keepSessionOpen: true",
+    "refined": "Each rebuttal invocation of runStatefulTurn() is called with an options object where sessionRole equals the sessionRole used in that debater's proposal turn and keepSessionOpen is strictly true",
+    "testable": true,
+    "storyId": "US-004-B"
+  },
+  {
+    "acId": "AC-69",
+    "original": "After the rebuttal loop completes normally, closeStatefulSession() is called once per opened debater session",
+    "refined": "When the rebuttal loop completes without error for N debaters, closeStatefulSession() is called exactly N times, once per unique debaterIndex that had an open session",
+    "testable": true,
+    "storyId": "US-004-B"
+  },
+  {
+    "acId": "AC-70",
+    "original": "When the rebuttal loop throws, closeStatefulSession() is still called for all opened sessions (try/finally guarantee)",
+    "refined": "When an unrecoverable error causes the rebuttal loop to throw, closeStatefulSession() is still called for every debater session that was opened before the throw; the number of closeStatefulSession() calls equals the number of sessions opened",
+    "testable": true,
+    "storyId": "US-004-B"
+  },
+  {
+    "acId": "AC-71",
+    "original": "Per-turn rebuttal costs are summed and reflected in totalCostUsd on the returned DebateResult",
+    "refined": "Given each rebuttal runStatefulTurn() returns a cost value, DebateResult.totalCostUsd equals the sum of all proposal costs plus all rebuttal costs (arithmetic sum verified to within floating-point epsilon)",
+    "testable": true,
+    "storyId": "US-004-B"
+  },
+  {
+    "acId": "AC-72",
+    "original": "DebateResult.rebuttals contains one entry per successful rebuttal turn with correct debaterIndex, round, and output; debug event 'debate:rebuttal-start' is emitted before each turn",
+    "refined": "DebateResult.rebuttals is an array whose length equals the count of non-throwing rebuttal turns; each entry has debaterIndex matching the turn's debater, round matching the turn's round number, and output matching the string returned by runStatefulTurn(); additionally the event emitter emits 'debate:rebuttal-start' exactly once before each runStatefulTurn() call, verified by an event spy ordered before the runStatefulTurn() spy",
+    "testable": true,
+    "storyId": "US-004-B"
+  }
+]

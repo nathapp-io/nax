@@ -1,27 +1,27 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-04-03T09-51-18-560Z",
-    "feature": "decompose-path-consolidation",
-    "startedAt": "2026-04-03T09:51:18.560Z",
+    "id": "run-2026-04-04T08-42-38-886Z",
+    "feature": "debate-session-mode",
+    "startedAt": "2026-04-04T08:42:38.886Z",
     "status": "completed",
     "dryRun": false,
-    "pid": 18904
+    "pid": 30247
   },
   "progress": {
-    "total": 5,
-    "passed": 5,
+    "total": 9,
+    "passed": 9,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
     "pending": 0
   },
   "cost": {
-    "spent": 11.97697835,
+    "spent": 0,
     "limit": 30
   },
   "current": null,
-  "iterations": 6,
-  "updatedAt": "2026-04-03T11:56:46.783Z",
-  "durationMs": 7528223
+  "iterations": 0,
+  "updatedAt": "2026-04-04T08:43:37.199Z",
+  "durationMs": 58313
 }

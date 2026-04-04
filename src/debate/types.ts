@@ -10,6 +10,9 @@ export type ResolverType = "synthesis" | "majority-fail-closed" | "majority-fail
 /** How agent sessions are managed across debate rounds */
 export type SessionMode = "one-shot" | "stateful";
 
+/** Debate execution mode */
+export type DebateMode = "panel" | "hybrid";
+
 /** A single debater agent in a debate */
 export interface Debater {
   /** Agent name (e.g. 'claude', 'opencode') */
@@ -38,6 +41,8 @@ export interface DebateStageConfig {
   resolver: ResolverConfig;
   /** Session mode for debater agents */
   sessionMode: SessionMode;
+  /** Debate execution mode */
+  mode: DebateMode;
   /** Number of debate rounds */
   rounds: number;
   /** Optional debaters array — resolved from config.autoMode.defaultAgent when absent (min 2 entries) */
@@ -67,6 +72,16 @@ export interface DebateConfig {
     /** Escalation phase debate */
     escalation: DebateStageConfig;
   };
+}
+
+/** A single debater's rebuttal in a debate round */
+export interface Rebuttal {
+  /** Debater identity */
+  debater: Debater;
+  /** Round number this rebuttal was produced in */
+  round: number;
+  /** Output from the debater's rebuttal */
+  output: string;
 }
 
 /** A single debater's proposal output */
@@ -99,4 +114,6 @@ export interface DebateResult {
   summary?: string;
   /** Resolved output text from the debate (populated by the resolver; used as rawResponse in plan/review) */
   output?: string;
+  /** Per-debater rebuttals across rounds */
+  rebuttals?: Rebuttal[];
 }

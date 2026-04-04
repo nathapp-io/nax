@@ -9,7 +9,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { buildCritiquePrompt, buildJudgePrompt, buildSynthesisPrompt } from "../../../src/debate/prompts";
+import {
+  buildCritiquePrompt,
+  buildJudgePrompt,
+  buildSynthesisPrompt,
+  buildRebuttalContext,
+} from "../../../src/debate/prompts";
+import type { Debater } from "../../../src/debate/types";
 
 // ─── buildCritiquePrompt ─────────────────────────────────────────────────────
 
@@ -150,5 +156,141 @@ describe("buildJudgePrompt()", () => {
 
     // They should be different prompts (judge vs synthesizer has different framing)
     expect(judgePrompt).not.toBe(synthesisPrompt);
+  });
+});
+
+// ─── buildRebuttalContext ────────────────────────────────────────────────────
+
+describe("buildRebuttalContext()", () => {
+  test("with 2 proposals and 0 rebuttals returns string containing '## Proposals' section with both proposals and no '## Previous Rebuttals' section", () => {
+    const prompt = "original prompt";
+    const debater1: Debater = { agent: "agent-a" };
+    const debater2: Debater = { agent: "agent-b" };
+    const proposals = [
+      { debater: debater1, output: "proposal from agent-a" },
+      { debater: debater2, output: "proposal from agent-b" },
+    ];
+    const rebuttalOutputs: string[] = [];
+
+    const result = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 0);
+
+    expect(result).toContain("## Proposals");
+    expect(result).toContain("proposal from agent-a");
+    expect(result).toContain("proposal from agent-b");
+    expect(result).not.toContain("## Previous Rebuttals");
+  });
+
+  test("with 2 proposals and 3 rebuttals returns string containing '## Previous Rebuttals' section with all 3 rebuttals numbered", () => {
+    const prompt = "original prompt";
+    const debater1: Debater = { agent: "agent-a" };
+    const debater2: Debater = { agent: "agent-b" };
+    const proposals = [
+      { debater: debater1, output: "proposal from agent-a" },
+      { debater: debater2, output: "proposal from agent-b" },
+    ];
+    const rebuttalOutputs = ["rebuttal 1", "rebuttal 2", "rebuttal 3"];
+
+    const result = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 0);
+
+    expect(result).toContain("## Previous Rebuttals");
+    expect(result).toContain("rebuttal 1");
+    expect(result).toContain("rebuttal 2");
+    expect(result).toContain("rebuttal 3");
+  });
+
+  test("with currentDebaterIndex 0 returns string containing 'You are debater 1' (1-indexed in output)", () => {
+    const prompt = "original prompt";
+    const debater1: Debater = { agent: "agent-a" };
+    const debater2: Debater = { agent: "agent-b" };
+    const proposals = [
+      { debater: debater1, output: "proposal from agent-a" },
+      { debater: debater2, output: "proposal from agent-b" },
+    ];
+    const rebuttalOutputs: string[] = [];
+
+    const result = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 0);
+
+    expect(result).toContain("You are debater 1");
+  });
+
+  test("includes each proposal labeled with the debater's agent name", () => {
+    const prompt = "original prompt";
+    const debater1: Debater = { agent: "claude-3-opus" };
+    const debater2: Debater = { agent: "gpt-4-turbo" };
+    const proposals = [
+      { debater: debater1, output: "opus proposal content" },
+      { debater: debater2, output: "gpt proposal content" },
+    ];
+    const rebuttalOutputs: string[] = [];
+
+    const result = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 0);
+
+    expect(result).toContain("claude-3-opus");
+    expect(result).toContain("gpt-4-turbo");
+    expect(result).toContain("opus proposal content");
+    expect(result).toContain("gpt proposal content");
+  });
+
+  test("returns a non-empty string", () => {
+    const prompt = "test prompt";
+    const debater: Debater = { agent: "test-agent" };
+    const proposals = [{ debater, output: "test output" }];
+    const rebuttalOutputs: string[] = [];
+
+    const result = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 0);
+
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  test("includes the original prompt", () => {
+    const prompt = "custom task description for rebuttal";
+    const debater: Debater = { agent: "test-agent" };
+    const proposals = [{ debater, output: "test output" }];
+    const rebuttalOutputs: string[] = [];
+
+    const result = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 0);
+
+    expect(result).toContain(prompt);
+  });
+
+  test("correctly 1-indexes debater number for different indices", () => {
+    const prompt = "original prompt";
+    const debater1: Debater = { agent: "agent-a" };
+    const debater2: Debater = { agent: "agent-b" };
+    const debater3: Debater = { agent: "agent-c" };
+    const proposals = [
+      { debater: debater1, output: "proposal 1" },
+      { debater: debater2, output: "proposal 2" },
+      { debater: debater3, output: "proposal 3" },
+    ];
+    const rebuttalOutputs: string[] = [];
+
+    // Debater at index 0 should see "You are debater 1"
+    const result0 = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 0);
+    expect(result0).toContain("You are debater 1");
+
+    // Debater at index 1 should see "You are debater 2"
+    const result1 = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 1);
+    expect(result1).toContain("You are debater 2");
+
+    // Debater at index 2 should see "You are debater 3"
+    const result2 = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 2);
+    expect(result2).toContain("You are debater 3");
+  });
+
+  test("rebuttals section includes numbered rebuttals", () => {
+    const prompt = "original prompt";
+    const debater: Debater = { agent: "agent-a" };
+    const proposals = [{ debater, output: "proposal" }];
+    const rebuttalOutputs = ["first rebuttal", "second rebuttal"];
+
+    const result = buildRebuttalContext(prompt, proposals, rebuttalOutputs, 0);
+
+    // Check that rebuttals are numbered
+    expect(result).toContain("1.");
+    expect(result).toContain("2.");
+    expect(result).toContain("first rebuttal");
+    expect(result).toContain("second rebuttal");
   });
 });

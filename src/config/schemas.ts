@@ -476,6 +476,7 @@ const DebateStageConfigSchema = (defaults: {
       resolver: makeResolverSchema(defaults.resolverType),
       sessionMode: z.enum(["one-shot", "stateful"]).default(defaults.sessionMode),
       rounds: z.number().int().min(1).default(defaults.rounds),
+      mode: z.enum(["panel", "hybrid"]).default("panel"),
       debaters: z.array(DebaterSchema).min(2, "debaters must have at least 2 entries").optional(),
       timeoutSeconds: z.number().int().positive().default(600),
     }),
@@ -758,6 +759,7 @@ export const NaxConfigSchema = z
           resolver: { type: "synthesis" as const },
           sessionMode: "stateful" as const,
           rounds: 3,
+          mode: "panel" as const,
           timeoutSeconds: 600,
         },
         review: {
@@ -765,6 +767,7 @@ export const NaxConfigSchema = z
           resolver: { type: "majority-fail-closed" as const },
           sessionMode: "one-shot" as const,
           rounds: 2,
+          mode: "panel" as const,
           timeoutSeconds: 600,
         },
         acceptance: {
@@ -772,6 +775,7 @@ export const NaxConfigSchema = z
           resolver: { type: "majority-fail-closed" as const },
           sessionMode: "one-shot" as const,
           rounds: 1,
+          mode: "panel" as const,
           timeoutSeconds: 600,
         },
         rectification: {
@@ -779,6 +783,7 @@ export const NaxConfigSchema = z
           resolver: { type: "synthesis" as const },
           sessionMode: "one-shot" as const,
           rounds: 1,
+          mode: "panel" as const,
           timeoutSeconds: 600,
         },
         escalation: {
@@ -786,6 +791,7 @@ export const NaxConfigSchema = z
           resolver: { type: "majority-fail-closed" as const },
           sessionMode: "one-shot" as const,
           rounds: 1,
+          mode: "panel" as const,
           timeoutSeconds: 600,
         },
       },

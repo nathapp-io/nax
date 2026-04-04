@@ -4,6 +4,8 @@
  * Prompt builders for critique, synthesis, and judge rounds.
  */
 
+import type { Debater } from "./types";
+
 /**
  * Build a critique prompt for a debater.
  * Includes all other debaters' proposals but excludes the current debater's own proposal.
@@ -60,4 +62,34 @@ export function buildJudgePrompt(proposals: string[], critiques: string[]): stri
 ${proposalsSection}${critiquesSection}
 
 As the judge, provide your final verdict with clear reasoning, selecting or synthesizing the best approach.`;
+}
+
+/**
+ * Build a rebuttal context prompt for a debater in a rebuttal round.
+ * Includes all proposals, previous rebuttals, and task instruction addressing the current debater by index.
+ */
+export function buildRebuttalContext(
+  prompt: string,
+  proposals: Array<{ debater: Debater; output: string }>,
+  rebuttalOutputs: string[],
+  currentDebaterIndex: number,
+): string {
+  const proposalsSection = proposals
+    .map((p, i) => `### Proposal ${i + 1} (${p.debater.agent})\n${p.output}`)
+    .join("\n\n");
+
+  const rebuttalsSection =
+    rebuttalOutputs.length > 0
+      ? `\n\n## Previous Rebuttals\n${rebuttalOutputs.map((r, i) => `${i + 1}. ${r}`).join("\n\n")}`
+      : "";
+
+  const debaterNumber = currentDebaterIndex + 1;
+
+  return `${prompt}
+
+## Proposals
+${proposalsSection}${rebuttalsSection}
+
+## Your Task
+You are debater ${debaterNumber}. Provide your rebuttal to the proposals and previous rebuttals above.`;
 }
