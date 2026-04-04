@@ -364,6 +364,48 @@ async function displayFeatureDetails(featureName: string, featureDir: string): P
 
   console.log();
 
+  // Display post-run status if present
+  if (status?.postRun) {
+    console.log(chalk.bold("Post-Run Status:\n"));
+
+    // Display acceptance phase status
+    const acceptance = status.postRun.acceptance;
+    if (acceptance.status === "passed") {
+      const timestamp = acceptance.lastRunAt ? ` (${acceptance.lastRunAt})` : "";
+      console.log(chalk.green(`   Acceptance: passed${timestamp}`));
+    } else if (acceptance.status === "failed") {
+      const failedInfo =
+        acceptance.failedACs && acceptance.failedACs.length > 0 ? ` (${acceptance.failedACs.length} AC(s))` : "";
+      console.log(chalk.red(`   Acceptance: failed${failedInfo}`));
+    } else if (acceptance.status === "running") {
+      console.log(chalk.yellow("   Acceptance: running"));
+    } else {
+      console.log(chalk.dim("   Acceptance: not-run"));
+    }
+
+    // Display regression phase status
+    const regression = status.postRun.regression;
+    if (regression.status === "passed" && regression.skipped) {
+      console.log(chalk.yellow("   Regression: skipped (smart-skip)"));
+    } else if (regression.status === "passed") {
+      const timestamp = regression.lastRunAt ? ` (${regression.lastRunAt})` : "";
+      console.log(chalk.green(`   Regression: passed${timestamp}`));
+    } else if (regression.status === "failed") {
+      const failedInfo =
+        regression.failedTests && regression.failedTests.length > 0
+          ? ` (${regression.failedTests.length} test(s))`
+          : "";
+      const timestamp = regression.lastRunAt ? ` ${regression.lastRunAt}` : "";
+      console.log(chalk.red(`   Regression: failed${failedInfo}${timestamp}`));
+    } else if (regression.status === "running") {
+      console.log(chalk.yellow("   Regression: running"));
+    } else {
+      console.log(chalk.dim("   Regression: not-run"));
+    }
+
+    console.log();
+  }
+
   // Display last run info if completed
   if (status && status.run.status !== "running") {
     console.log(chalk.dim(`Last run: ${status.run.id}`));
