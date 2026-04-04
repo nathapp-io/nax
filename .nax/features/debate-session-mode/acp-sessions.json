@@ -1,14 +1,1 @@
-{
-  "US-000:test-writer": {
-    "sessionName": "nax-4a1cdab1-debate-session-mode-us-000-test-writer",
-    "agentName": "claude"
-  },
-  "US-000:implementer": {
-    "sessionName": "nax-4a1cdab1-debate-session-mode-us-000-implementer",
-    "agentName": "claude"
-  },
-  "US-000:verifier": {
-    "sessionName": "nax-4a1cdab1-debate-session-mode-us-000-verifier",
-    "agentName": "claude"
-  }
-}
+{}
