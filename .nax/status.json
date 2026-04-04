@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 9,
-    "passed": 1,
+    "passed": 2,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 8
+    "pending": 7
   },
   "cost": {
-    "spent": 0,
+    "spent": 0.24011224999999997,
     "limit": 30
   },
   "current": {
-    "storyId": "US-001-A",
-    "title": "Add DebateMode type, Rebuttal interface, and mode/rebuttals fields to debate types",
+    "storyId": "US-001-B",
+    "title": "Add mode field to DebateStageConfigSchema and update all stage defaults to 'panel'",
     "complexity": "simple",
-    "tddStrategy": "no-test",
-    "model": "powerful",
-    "attempt": 2,
+    "tddStrategy": "tdd-simple",
+    "model": "balanced",
+    "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-04-04T06:06:17.774Z",
-  "durationMs": 1260042,
-  "lastHeartbeat": "2026-04-04T06:06:17.774Z"
+  "iterations": 3,
+  "updatedAt": "2026-04-04T06:07:17.774Z",
+  "durationMs": 1320042,
+  "lastHeartbeat": "2026-04-04T06:07:17.774Z"
 }

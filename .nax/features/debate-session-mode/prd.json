@@ -3,7 +3,7 @@
   "feature": "debate-session-mode",
   "branchName": "feat/debate-session-mode",
   "createdAt": "2026-04-04T12:00:00.000Z",
-  "updatedAt": "2026-04-04T05:45:17.920Z",
+  "updatedAt": "2026-04-04T06:06:46.516Z",
   "userStories": [
     {
       "id": "US-000",
@@ -111,8 +111,8 @@
         "src/debate/types.ts",
         "src/debate/index.ts"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "escalations": [],
       "attempts": 1,
       "parentStoryId": "US-001",
@@ -175,11 +175,13 @@
         "complexity": "simple",
         "testStrategy": "tdd-simple",
         "reasoning": "Single-file schema change (~10 LOC) with clear behavioral verification via NaxConfigSchema.parse() assertions. Inline default object update is mechanical. All 8 ACs are directly testable with bun:test. Depends on US-001-A for the DebateMode type to exist in the interface layer.",
-        "modelTier": "balanced"
+        "modelTier": "balanced",
+        "initialComplexity": "simple"
       },
       "priorErrors": [],
       "priorFailures": [],
-      "storyPoints": 1
+      "storyPoints": 1,
+      "storyGitRef": "5c37a7ad84c663e41a86c6e0760a9db1f5e54f8c"
     },
     {
       "id": "US-002",
