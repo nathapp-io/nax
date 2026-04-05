@@ -277,8 +277,51 @@ export async function regenerateAcceptanceTest(testPath: string, acceptanceConte
   const { unlink } = await import("node:fs/promises");
   await unlink(testPath);
 
-  const { acceptanceSetupStage } = await import("../../pipeline/stages/acceptance-setup");
-  await acceptanceSetupStage.execute(acceptanceContext);
+  // Collect implementation context from git diff when storyGitRef is available
+  let implementationContext: Array<{ path: string; content: string }> | undefined;
+  const storyGitRef = acceptanceContext.storyGitRef;
+  const workdir = acceptanceContext.workdir;
+
+  if (storyGitRef) {
+    try {
+      const diffOutput = await _regenerateDeps.spawnGitDiff(workdir, storyGitRef);
+      const changedFiles = diffOutput
+        .split("\n")
+        .map((f) => f.trim())
+        .filter((f) => f.length > 0);
+
+      const MAX_BYTES = 50 * 1024;
+      let totalBytes = 0;
+      const entries: Array<{ path: string; content: string }> = [];
+
+      for (const file of changedFiles) {
+        if (totalBytes >= MAX_BYTES) break;
+        const filePath = path.join(workdir, file);
+        try {
+          const fileContent = await _regenerateDeps.readFile(filePath);
+          const remaining = MAX_BYTES - totalBytes;
+          const trimmed = fileContent.length > remaining ? fileContent.slice(0, remaining) : fileContent;
+          entries.push({ path: file, content: trimmed });
+          totalBytes += trimmed.length;
+        } catch {
+          // skip unreadable files
+        }
+      }
+
+      if (entries.length > 0) {
+        implementationContext = entries;
+      }
+    } catch {
+      // git diff failed — proceed without implementation context
+    }
+  }
+
+  const contextForSetup: PipelineContext & { implementationContext?: Array<{ path: string; content: string }> } = {
+    ...acceptanceContext,
+    ...(implementationContext ? { implementationContext } : {}),
+  };
+
+  await _regenerateDeps.acceptanceSetupExecute(contextForSetup as PipelineContext);
 
   if (!(await Bun.file(testPath).exists())) {
     logger?.error("acceptance", "Acceptance test regeneration failed — manual intervention required");
