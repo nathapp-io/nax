@@ -316,6 +316,9 @@ export const acceptanceSetupStage: PipelineStage = {
           testStrategy: ctx.config.acceptance.testStrategy,
           testFramework: ctx.config.acceptance.testFramework,
           adapter: agent ?? undefined,
+          ...("implementationContext" in ctx && ctx.implementationContext
+            ? { implementationContext: ctx.implementationContext as Array<{ path: string; content: string }> }
+            : {}),
         });
 
         await _acceptanceSetupDeps.writeFile(testPath, result.testCode);
