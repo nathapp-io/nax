@@ -63,10 +63,13 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
   private config: WebhookConfig = {};
   private server: Server | null = null;
   private serverStartPromise: Promise<void> | null = null;
+  private isDestroyed = false;
   /** Legacy map for responses that arrive before receive() is called */
   private pendingResponses = new Map<string, InteractionResponse>();
   /** Event-driven callbacks: requestId → resolve fn (set by receive(), called by handleRequest) */
   private receiveCallbacks = new Map<string, (response: InteractionResponse) => void>();
+  /** Active receive timeout handles by requestId */
+  private receiveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   /** The actual port the callback server is listening on; null if not yet started. */
   get callbackServerPort(): number | null {
@@ -76,6 +79,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
 
   async init(config: Record<string, unknown>): Promise<void> {
     const cfg = WebhookConfigSchema.parse(config);
+    this.isDestroyed = false;
     this.config = {
       url: cfg.url,
       callbackPort: cfg.callbackPort ?? 8765,
@@ -88,6 +92,10 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
   }
 
   async destroy(): Promise<void> {
+    this.isDestroyed = true;
+    this.resolvePendingReceivesOnDestroy();
+    this.pendingResponses.clear();
+
     if (this.server) {
       await this.stopServer();
     }
@@ -130,8 +138,24 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
   }
 
   async receive(requestId: string, timeout = 60000): Promise<InteractionResponse> {
+    const destroyedResponse: InteractionResponse = {
+      requestId,
+      action: "skip",
+      respondedBy: "destroyed",
+      respondedAt: Date.now(),
+    };
+
+    if (this.isDestroyed) {
+      return destroyedResponse;
+    }
+
     // Start HTTP server to receive callback
     await this.startServer();
+
+    // destroy() may have been called while startServer() was in-flight
+    if (this.isDestroyed) {
+      return destroyedResponse;
+    }
 
     // Check if a response already arrived before receive() was called
     const early = this.pendingResponses.get(requestId);
@@ -142,7 +166,19 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
 
     // Event-driven: resolve immediately when handleRequest delivers the response
     return new Promise<InteractionResponse>((resolve) => {
+      const existingCallback = this.receiveCallbacks.get(requestId);
+      if (existingCallback) {
+        this.clearReceiveTimer(requestId);
+        existingCallback({
+          requestId,
+          action: "skip",
+          respondedBy: "superseded",
+          respondedAt: Date.now(),
+        });
+      }
+
       const timer = setTimeout(() => {
+        this.clearReceiveTimer(requestId);
         this.receiveCallbacks.delete(requestId);
         resolve({
           requestId,
@@ -151,9 +187,10 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
           respondedAt: Date.now(),
         });
       }, timeout);
+      this.receiveTimers.set(requestId, timer);
 
       this.receiveCallbacks.set(requestId, (response) => {
-        clearTimeout(timer);
+        this.clearReceiveTimer(requestId);
         this.receiveCallbacks.delete(requestId);
         resolve(response);
       });
@@ -161,6 +198,7 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
   }
 
   async cancel(requestId: string): Promise<void> {
+    this.clearReceiveTimer(requestId);
     this.pendingResponses.delete(requestId);
     this.receiveCallbacks.delete(requestId);
   }
@@ -169,6 +207,10 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
    * Deliver a response to a waiting receive() callback, or store for later pickup.
    */
   private deliverResponse(requestId: string, response: InteractionResponse): void {
+    if (this.isDestroyed) {
+      return;
+    }
+
     const cb = this.receiveCallbacks.get(requestId);
     if (cb) {
       cb(response);
@@ -176,6 +218,34 @@ export class WebhookInteractionPlugin implements InteractionPlugin {
       // receive() hasn't been called yet — store for early-pickup path
       this.pendingResponses.set(requestId, response);
     }
+  }
+
+  private clearReceiveTimer(requestId: string): void {
+    const timer = this.receiveTimers.get(requestId);
+    if (timer) {
+      clearTimeout(timer);
+      this.receiveTimers.delete(requestId);
+    }
+  }
+
+  private resolvePendingReceivesOnDestroy(): void {
+    const now = Date.now();
+
+    for (const [requestId, callback] of this.receiveCallbacks.entries()) {
+      callback({
+        requestId,
+        action: "skip",
+        respondedBy: "destroyed",
+        respondedAt: now,
+      });
+    }
+
+    for (const timer of this.receiveTimers.values()) {
+      clearTimeout(timer);
+    }
+
+    this.receiveTimers.clear();
+    this.receiveCallbacks.clear();
   }
 
   /**
