@@ -855,6 +855,20 @@ export class AcpAgentAdapter implements AgentAdapter {
         ? estimateCostFromTokenUsage(totalTokenUsage, options.modelDef.model)
         : 0);
 
+    const tokenUsage =
+      totalTokenUsage.input_tokens > 0 || totalTokenUsage.output_tokens > 0
+        ? {
+            inputTokens: totalTokenUsage.input_tokens,
+            outputTokens: totalTokenUsage.output_tokens,
+            ...(totalTokenUsage.cache_read_input_tokens > 0 && {
+              cache_read_input_tokens: totalTokenUsage.cache_read_input_tokens,
+            }),
+            ...(totalTokenUsage.cache_creation_input_tokens > 0 && {
+              cache_creation_input_tokens: totalTokenUsage.cache_creation_input_tokens,
+            }),
+          }
+        : undefined;
+
     return {
       success,
       exitCode: success ? 0 : 1,
@@ -863,6 +877,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       sessionError: isSessionError,
       durationMs,
       estimatedCost,
+      tokenUsage,
     };
   }
 

@@ -9,6 +9,7 @@ import { resolveModelForAgent } from "../config/schema";
 import type { PipelineContext } from "../pipeline/types";
 import { loadJsonFile, saveJsonFile } from "../utils/json-file";
 import type { RunMetrics, StoryMetrics } from "./types";
+import { TokenUsage } from "./types";
 
 /**
  * Collect metrics for a single story execution.
@@ -95,6 +96,20 @@ export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string
     completedAt: new Date().toISOString(),
     fullSuiteGatePassed,
     runtimeCrashes: ctx.storyRuntimeCrashes ?? 0,
+    tokens: agentResult?.tokenUsage
+      ? new TokenUsage({
+          input_tokens:
+            ((agentResult.tokenUsage as unknown as Record<string, unknown>).input_tokens as number) ??
+            ((agentResult.tokenUsage as unknown as Record<string, unknown>).inputTokens as number),
+          output_tokens:
+            ((agentResult.tokenUsage as unknown as Record<string, unknown>).output_tokens as number) ??
+            ((agentResult.tokenUsage as unknown as Record<string, unknown>).outputTokens as number),
+          cache_read_input_tokens: (agentResult.tokenUsage as unknown as Record<string, unknown>)
+            .cache_read_input_tokens as number | undefined,
+          cache_creation_input_tokens: (agentResult.tokenUsage as unknown as Record<string, unknown>)
+            .cache_creation_input_tokens as number | undefined,
+        })
+      : undefined,
     ...(ctx.verifyResult?.scopeTestFallback !== undefined && {
       scopeTestFallback: ctx.verifyResult.scopeTestFallback,
     }),
@@ -193,6 +208,34 @@ export function collectBatchMetrics(ctx: PipelineContext, storyStartTime: string
  */
 export async function saveRunMetrics(workdir: string, runMetrics: RunMetrics): Promise<void> {
   const metricsPath = path.join(workdir, ".nax", "metrics.json");
+
+  // Compute totalTokens by summing all story tokens
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalCacheReadInputTokens = 0;
+  let totalCacheCreationInputTokens = 0;
+
+  for (const story of runMetrics.stories) {
+    if (story.tokens) {
+      totalInputTokens += story.tokens.input_tokens;
+      totalOutputTokens += story.tokens.output_tokens;
+      totalCacheReadInputTokens += story.tokens.cache_read_input_tokens ?? 0;
+      totalCacheCreationInputTokens += story.tokens.cache_creation_input_tokens ?? 0;
+    }
+  }
+
+  // Only add totalTokens if there's actual non-zero token data
+  const hasTokenData =
+    totalInputTokens > 0 || totalOutputTokens > 0 || totalCacheReadInputTokens > 0 || totalCacheCreationInputTokens > 0;
+
+  if (hasTokenData) {
+    runMetrics.totalTokens = new TokenUsage({
+      input_tokens: totalInputTokens,
+      output_tokens: totalOutputTokens,
+      cache_read_input_tokens: totalCacheReadInputTokens,
+      cache_creation_input_tokens: totalCacheCreationInputTokens,
+    });
+  }
 
   // Load existing metrics (returns empty array if file doesn't exist or is invalid)
   const existing = await loadJsonFile<RunMetrics[]>(metricsPath, "metrics");

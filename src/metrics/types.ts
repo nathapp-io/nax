@@ -5,6 +5,54 @@
  */
 
 /**
+ * Token usage metrics for LLM calls
+ */
+export interface TokenUsage {
+  /** Number of input tokens consumed */
+  input_tokens: number;
+  /** Number of output tokens generated */
+  output_tokens: number;
+  /** Number of input tokens read from cache (optional, omitted when 0) */
+  cache_read_input_tokens?: number;
+  /** Number of input tokens used for cache creation (optional, omitted when 0) */
+  cache_creation_input_tokens?: number;
+}
+
+// biome-ignore lint/suspicious/noUnsafeDeclarationMerging: TokenUsage must be both an interface (for type checking) and a class (for runtime construction with toJSON)
+export class TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
+
+  constructor(data: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  }) {
+    this.input_tokens = data.input_tokens;
+    this.output_tokens = data.output_tokens;
+    this.cache_read_input_tokens = data.cache_read_input_tokens;
+    this.cache_creation_input_tokens = data.cache_creation_input_tokens;
+  }
+
+  toJSON(): Record<string, unknown> {
+    const result: Record<string, unknown> = {
+      input_tokens: this.input_tokens,
+      output_tokens: this.output_tokens,
+    };
+    if (this.cache_read_input_tokens !== 0) {
+      result.cache_read_input_tokens = this.cache_read_input_tokens;
+    }
+    if (this.cache_creation_input_tokens !== 0) {
+      result.cache_creation_input_tokens = this.cache_creation_input_tokens;
+    }
+    return result;
+  }
+}
+
+/**
  * Per-story execution metrics
  */
 export interface StoryMetrics {
@@ -44,6 +92,8 @@ export interface StoryMetrics {
   fullSuiteGatePassed?: boolean;
   /** Cost incurred only during rectification (only set when source === 'rectification') */
   rectificationCost?: number;
+  /** Token usage for this story */
+  tokens?: TokenUsage;
   /** When ScopedStrategy.verify() falls back to full suite due to threshold (US-002) */
   scopeTestFallback?: boolean;
 }
@@ -72,6 +122,8 @@ export interface RunMetrics {
   totalDurationMs: number;
   /** Per-story metrics */
   stories: StoryMetrics[];
+  /** Total token usage for the run */
+  totalTokens?: TokenUsage;
 }
 
 /**

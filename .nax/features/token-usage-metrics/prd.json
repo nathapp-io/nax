@@ -1,0 +1,130 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "token-usage-metrics",
+  "branchName": "feat/token-usage-metrics",
+  "createdAt": "2026-04-04T00:00:00.000Z",
+  "updatedAt": "2026-04-04T15:36:57.192Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add TokenUsage type and extend StoryMetrics/RunMetrics",
+      "description": "Add the TokenUsage interface to src/metrics/types.ts with input_tokens, output_tokens, cache_read_input_tokens, and cache_creation_input_tokens fields. Extend StoryMetrics with optional tokens field and RunMetrics with optional totalTokens field. Re-export TokenUsage from src/metrics/index.ts barrel.",
+      "acceptanceCriteria": [
+        "TokenUsage interface is exported from src/metrics/types.ts with input_tokens: number, output_tokens: number, cache_read_input_tokens?: number, cache_creation_input_tokens?: number",
+        "StoryMetrics interface has optional tokens?: TokenUsage field",
+        "RunMetrics interface has optional totalTokens?: TokenUsage field",
+        "TokenUsage is re-exported from src/metrics/index.ts barrel export",
+        "Existing code compiles without changes (all new fields are optional)",
+        "When cache_read_input_tokens and cache_creation_input_tokens are both 0 or undefined, they are omitted from TokenUsage instances"
+      ],
+      "tags": [
+        "feature",
+        "metrics",
+        "types"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
+      },
+      "contextFiles": [
+        "src/metrics/types.ts",
+        "src/metrics/index.ts",
+        "src/metrics/tracker.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5c0f30bec29de2860594bb8b0f7fd9a3de42d854"
+    },
+    {
+      "id": "US-002",
+      "title": "Thread token usage from ACP adapter through to StoryMetrics",
+      "description": "Update the ACP adapter's run() method to include tokenUsage in the returned AgentResult. The adapter accumulates totalTokenUsage (SessionTokenUsage, snake_case) during multi-turn execution. Convert to camelCase TokenUsage and include in return at lines 858-866. In collectStoryMetrics(), read ctx.agentResult.tokenUsage and set storyMetrics.tokens when present. When tokenUsage is absent (CLI adapter), tokens remains undefined.",
+      "acceptanceCriteria": [
+        "ACP adapter run() return includes tokenUsage with inputTokens, outputTokens, cache_read_input_tokens, and cache_creation_input_tokens converted from accumulated SessionTokenUsage",
+        "collectStoryMetrics() reads ctx.agentResult.tokenUsage and sets storyMetrics.tokens when present",
+        "When ctx.agentResult.tokenUsage is undefined (CLI adapter), storyMetrics.tokens is undefined",
+        "When cache_read_input_tokens and cache_creation_input_tokens are both 0, they are omitted from the tokenUsage object",
+        "AgentResult type in src/agents/types.ts already has tokenUsage?: TokenUsage field (line 43) - no type change needed"
+      ],
+      "tags": [
+        "feature",
+        "metrics",
+        "acp-adapter"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/agents/acp/adapter.ts",
+        "src/agents/types.ts",
+        "src/agents/cost/types.ts",
+        "src/metrics/tracker.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "27266205e353a5b14e1b33de6b498f2ca2a9dc60"
+    },
+    {
+      "id": "US-003",
+      "title": "Aggregate totalTokens in saveRunMetrics()",
+      "description": "In saveRunMetrics(), before writing RunMetrics to disk, compute totalTokens by summing all story.tokens fields. Sum input_tokens, output_tokens, cache_read_input_tokens (treating undefined as 0), and cache_creation_input_tokens (treating undefined as 0). Omit totalTokens from the written output when no stories have token data (all values are 0). Ensure loadRunMetrics() handles existing metrics.json without totalTokens field.",
+      "acceptanceCriteria": [
+        "saveRunMetrics() computes totalTokens by iterating over runMetrics.stories and summing each story.tokens fields",
+        "totalTokens.input_tokens equals the sum of all story.tokens.input_tokens values",
+        "totalTokens.cache_read_input_tokens equals the sum of all story.tokens.cache_read_input_tokens values, treating undefined as 0",
+        "totalTokens.cache_creation_input_tokens equals the sum of all story.tokens.cache_creation_input_tokens values, treating undefined as 0",
+        "When no stories have tokens data, totalTokens is absent from the written RunMetrics object",
+        "loadRunMetrics() successfully loads existing metrics.json files that lack totalTokens field"
+      ],
+      "tags": [
+        "feature",
+        "metrics",
+        "aggregation"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/metrics/tracker.ts",
+        "src/metrics/types.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "101606624015e8154a17d4faac8101d084c1c8fa"
+    }
+  ],
+  "analysis": "## Key Files and Locations\n\n### Files to Modify\n1. **src/metrics/types.ts** - Add `TokenUsage` interface, extend `StoryMetrics` and `RunMetrics` with optional token fields\n2. **src/metrics/tracker.ts** - Update `collectStoryMetrics()` to read `ctx.agentResult.tokenUsage`, update `saveRunMetrics()` to aggregate into `totalTokens`\n3. **src/metrics/index.ts** - Re-export `TokenUsage` from types\n4. **src/agents/acp/adapter.ts** (lines 858-866) - Include `tokenUsage` in the returned `AgentResult` from `run()` method\n\n### Existing Types\n- **AgentResult** (`src/agents/types.ts:27-48`) already has `tokenUsage?: TokenUsage` field (line 43)\n- **TokenUsage** in `src/agents/cost/types.ts:16-19` is camelCase (`inputTokens`, `outputTokens`) - different from ACP wire format\n- **SessionTokenUsage** in `src/agents/cost/types.ts:38-44` is snake_case matching ACP format with cache fields\n- ACP adapter accumulates `totalTokenUsage` as `SessionTokenUsage` (lines 739-744) but does NOT return it in `AgentResult`\n\n### Type Conversion Required\nThe ACP adapter accumulates in snake_case (`SessionTokenUsage`) but `AgentResult.tokenUsage` type is camelCase (`TokenUsage` from `./cost`). The adapter's `run()` must convert snake_case to camelCase when populating `tokenUsage` in the return value.\n\n### Data Flow\n1. ACP adapter's multi-turn loop (lines 753-806) accumulates into `totalTokenUsage` (snake_case `SessionTokenUsage`)\n2. On success, `run()` returns `AgentResult` (lines 858-866) - currently missing `tokenUsage`\n3. `collectStoryMetrics()` reads `ctx.agentResult.tokenUsage` and copies to `storyMetrics.tokens`\n4. `saveRunMetrics()` sums all `story.tokens` into `totalTokens`\n\n### Backward Compatibility\n- All new fields are optional (`tokens?`, `totalTokens?`)\n- CLI adapter doesn't populate `tokenUsage` → `tokens` remains undefined\n- Existing `metrics.json` loads fine (undefined fields ignored)\n\n### Complexity Classification\n- US-001: Type additions only, purely additive → **simple**\n- US-002: Thread data through adapter → tracker, type conversion needed → **medium**\n- US-003: Aggregation logic in `saveRunMetrics()` → **medium**\n\n### Risks\n1. **Type mismatch**: `AgentResult.tokenUsage` expects camelCase `TokenUsage` from `./cost`, but ACP adapter has snake_case `SessionTokenUsage`. Must convert at return boundary.\n2. **Zero cache tokens**: Omit `cache_read_input_tokens` and `cache_creation_input_tokens` when both are 0 (per spec)\n3. **No token data**: When `ctx.agentResult.tokenUsage` is absent (CLI adapter), `storyMetrics.tokens` stays undefined"
+}
