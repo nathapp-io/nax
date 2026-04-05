@@ -1,10 +1,1 @@
-{
-  "US-001:diagnose": {
-    "sessionName": "nax-fb28bb61-token-usage-metrics-us-001-diagnose",
-    "agentName": "opencode"
-  },
-  "US-001:source-fix": {
-    "sessionName": "nax-fb28bb61-token-usage-metrics-us-001-source-fix",
-    "agentName": "opencode"
-  }
-}
+{}
