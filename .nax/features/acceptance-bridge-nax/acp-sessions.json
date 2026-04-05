@@ -34,5 +34,9 @@
   "US-003:verifier": {
     "sessionName": "nax-e7173556-acceptance-bridge-nax-us-003-verifier",
     "agentName": "claude"
+  },
+  "US-004:test-writer": {
+    "sessionName": "nax-e7173556-acceptance-bridge-nax-us-004-test-writer",
+    "agentName": "claude"
   }
 }

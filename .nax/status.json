@@ -11,26 +11,26 @@
   "progress": {
     "total": 4,
     "passed": 2,
-    "failed": 0,
+    "failed": 1,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 7.859795100000001,
+    "spent": 9.536982400000001,
     "limit": 30
   },
   "current": {
-    "storyId": "US-001",
-    "title": "Acceptance context in implementer prompt",
+    "storyId": "US-004",
+    "title": "Semantic-aware diagnosis routing",
     "complexity": "medium",
     "tddStrategy": "three-session-tdd-lite",
-    "model": "powerful",
+    "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 4,
-  "updatedAt": "2026-04-05T12:53:46.592Z",
-  "durationMs": 5280174,
-  "lastHeartbeat": "2026-04-05T12:53:46.592Z"
+  "iterations": 5,
+  "updatedAt": "2026-04-05T13:08:46.623Z",
+  "durationMs": 6180205,
+  "lastHeartbeat": "2026-04-05T13:08:46.623Z"
 }
