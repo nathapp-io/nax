@@ -414,16 +414,11 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
   const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
   const fixMaxRetries = ctx.config.acceptance.fix?.maxRetries ?? 2;
 
-  const { loadAcceptanceTestContent: loadContent } = await import("../../acceptance/content-loader");
   const testPaths = ctx.acceptanceTestPaths;
-  const testEntries = testPaths
-    ? await loadContent(testPaths.map((tp) => tp.testPath))
-    : await loadContent(
-        ctx.featureDir ? path.join(ctx.featureDir, ctx.config.acceptance.testPath ?? "acceptance.test.ts") : undefined,
-      );
-  const primaryEntry = testEntries[0] ?? { content: "", testPath: "" };
+  const testEntries = await loadAcceptanceTestContent(ctx.featureDir, testPaths ?? undefined);
+  const primaryEntry = testEntries[0] ?? { content: "", path: "" };
   const testFileContent = primaryEntry.content;
-  const acceptanceTestPath = primaryEntry.testPath;
+  const acceptanceTestPath = primaryEntry.path;
   const firstStory = prd?.userStories?.[0];
   const storyId = firstStory?.id ?? "unknown";
 
