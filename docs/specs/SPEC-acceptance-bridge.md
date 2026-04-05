@@ -2,9 +2,9 @@
 
 ## Summary
 
-Close the critical gap where the acceptance test generator and the implementing agent operate in mutual blindness. Introduce an "acceptance bridge" that: (1) feeds acceptance test paths and content into the implementer's prompt, (2) regenerates tests using actual implementation when retrying, (3) fixes hardcoded paths in the acceptance loop, and (4) enriches fix prompts with test content.
+Close the critical gaps where (a) the acceptance test generator and the implementing agent operate in mutual blindness, and (b) semantic review verdicts — which already confirm AC implementation correctness — are discarded before acceptance tests run. Introduce an "acceptance bridge" that: (1) feeds acceptance test paths and content into the implementer's prompt, (2) regenerates tests using actual implementation when retrying, (3) fixes hardcoded paths in the acceptance loop, (4) enriches fix prompts with test content, (5) persists semantic review verdicts so they survive to the acceptance loop, and (6) uses semantic pass signals to short-circuit diagnosis routing when the LLM already confirmed ACs are correctly implemented.
 
-Addresses GAP 1–7 from `SPEC-acceptance-gap-analysis.md`.
+Addresses GAP 1–9 from `SPEC-acceptance-gap-analysis.md`.
 
 ## Motivation
 
@@ -19,6 +19,10 @@ Today, acceptance tests persistently fail even when the feature is correctly imp
 4. **Fix prompts lack test content** (GAP 4). The fix executor tells the agent "fix the source" but doesn't include what the test actually asserts.
 
 5. **Hardcoded `acceptance.test.ts` path** (GAP 6). The acceptance loop uses a fixed filename instead of per-package paths from `ctx.acceptanceTestPaths`.
+
+6. **Semantic review verdicts are garbage-collected** (GAP 8, Critical). Semantic review (pipeline stage 10) validates each AC against the implementation diff per-story. When it passes, the LLM has confirmed the ACs are satisfied. But `iteration-runner.ts:133` sets `ctx.reviewResult = undefined` after each story (heap cleanup), and the acceptance loop has zero access to semantic results. When acceptance tests then fail on a semantically-verified implementation, the system defaults to "source_bug" and wastes retries fixing correct code.
+
+7. **No semantic-aware diagnosis routing** (GAP 9). The diagnosis prompt has no information about whether semantic review already confirmed the ACs. `isTestLevelFailure()` only triggers at >80% AC failure rate. If semantic passed and 3/5 ACs fail due to test import errors (60%), the system tries to fix correct source code instead of regenerating the test.
 
 ## Design
 
@@ -173,6 +177,108 @@ const fixContext: PipelineContext = {
 };
 ```
 
+### 6. Semantic Review Verdict Persistence & Diagnosis Short-Circuit (GAP 8 + GAP 9)
+
+Semantic review (pipeline stage 10) already validates each AC against the implementation diff. When it passes, the LLM has confirmed the ACs are correctly implemented. But `iteration-runner.ts:133` garbage-collects `ctx.reviewResult` after each story, so the acceptance loop operates blind.
+
+#### 6a. Persist Per-Story Semantic Verdicts
+
+After the review stage completes (and before the GC in `iteration-runner.ts:133`), write a lightweight verdict file per story:
+
+```typescript
+// Written to: <featureDir>/semantic-verdicts/<storyId>.json
+interface SemanticVerdict {
+  storyId: string;
+  passed: boolean;
+  timestamp: string;
+  acCount: number;
+  findings: ReviewFinding[];  // empty when passed
+}
+```
+
+**Integration point:** `src/pipeline/stages/completion.ts` — after `markStoryPassed()`, read `ctx.reviewResult` to extract the semantic check result and persist it. At this point `ctx.reviewResult` is still alive; it's only nulled in `iteration-runner.ts:133` AFTER the full pipeline completes.
+
+```typescript
+// src/pipeline/stages/completion.ts — in execute(), after markStoryPassed()
+if (ctx.featureDir && ctx.reviewResult) {
+  const semanticCheck = ctx.reviewResult.checks?.find(c => c.check === "semantic");
+  if (semanticCheck) {
+    await persistSemanticVerdict(ctx.featureDir, completedStory.id, {
+      storyId: completedStory.id,
+      passed: semanticCheck.success,
+      timestamp: new Date().toISOString(),
+      acCount: completedStory.acceptanceCriteria.length,
+      findings: semanticCheck.findings ?? [],
+    });
+  }
+}
+```
+
+#### 6b. Load Semantic Verdicts in Acceptance Loop
+
+In `acceptance-loop.ts`, before running fix routing, load all persisted verdicts:
+
+```typescript
+// src/execution/lifecycle/acceptance-loop.ts — before fix routing
+const semanticVerdicts = await loadSemanticVerdicts(ctx.featureDir);
+const allSemanticPassed = semanticVerdicts.length > 0
+  && semanticVerdicts.every(v => v.passed);
+```
+
+#### 6c. Semantic-Aware Diagnosis Short-Circuit
+
+When semantic review passed for **ALL stories** and acceptance tests fail:
+- Skip the LLM diagnosis call entirely
+- Set verdict to `"test_bug"` with `confidence: 1.0` and reasoning: `"Semantic review confirmed all ACs are implemented — acceptance test failure is a test generation issue"`
+- Route directly to test regeneration with implementation context (US-003)
+
+When semantic review passed for **SOME stories**:
+- Include semantic verdicts in the diagnosis prompt as strong prior context
+- Append to diagnosis prompt: `"Semantic review already confirmed these ACs are correctly implemented: [list]. If the acceptance test for a confirmed AC fails, the failure is likely in the test, not the source."`
+
+```typescript
+// src/execution/lifecycle/acceptance-loop.ts — in runFixRouting()
+if (allSemanticPassed) {
+  logger?.info("acceptance", "All semantic verdicts passed — routing to test regeneration");
+  const diagnosis: DiagnosisResult = {
+    verdict: "test_bug",
+    reasoning: "Semantic review confirmed all ACs are implemented — acceptance test failure is a test generation issue",
+    confidence: 1.0,
+  };
+  // Route to test regeneration (skip LLM diagnosis call)
+  ...
+}
+```
+
+#### 6d. Smarter `isTestLevelFailure()` Heuristic
+
+Currently `isTestLevelFailure()` triggers only at >80% AC failure rate. With semantic verdicts:
+
+```typescript
+// src/execution/lifecycle/acceptance-loop.ts
+export function isTestLevelFailure(
+  failedACs: string[],
+  totalACs: number,
+  semanticVerdicts?: SemanticVerdict[],
+): boolean {
+  if (failedACs.includes("AC-ERROR")) return true;
+
+  // NEW: semantic review passed → any acceptance failure is a test-level failure
+  const allSemanticPassed = semanticVerdicts?.length
+    && semanticVerdicts.every(v => v.passed);
+  if (allSemanticPassed && failedACs.length > 0) return true;
+
+  if (totalACs === 0) return false;
+  return failedACs.length / totalACs > 0.8;
+}
+```
+
+This prevents the scenario where 3/5 ACs fail (60%) due to test import errors on a semantically-verified implementation, bypassing the heuristic and triggering source fixes on correct code.
+
+#### 6e. Cleanup
+
+Verdict files are cleaned up when `acceptance-setup` regenerates tests (fresh fingerprint mismatch). This ensures stale verdicts from a previous run don't influence a new run where the implementation may have changed.
+
 ### Failure Handling
 
 - **Test file read failure:** If acceptance test content can't be read for the prompt, log a warning and proceed without the section. The implementer still gets ACs as text (current behavior — graceful degradation).
@@ -249,3 +355,36 @@ Include test file content in `buildSourceFixPrompt()` and forward `acceptanceTes
 - `executeFixStory()` in `acceptance-loop.ts` sets `fixContext.acceptanceTestPaths = ctx.acceptanceTestPaths` when available
 - When test file content is empty or unavailable, `buildSourceFixPrompt()` omits the content section and includes only the path (current behavior)
 - Fix story pipeline contexts have access to acceptance test paths for prompt injection (via US-001/US-002 wiring)
+
+### US-006: Semantic Verdict Persistence
+
+**Dependencies:** none  
+**Complexity:** simple
+
+Persist per-story semantic review verdicts to `<featureDir>/semantic-verdicts/` so they survive the GC in `iteration-runner.ts:133` and are available to the acceptance loop.
+
+**Acceptance Criteria:**
+- After review stage completes, completion stage reads `ctx.reviewResult.checks` for the semantic check and writes a `<storyId>.json` verdict file to `<featureDir>/semantic-verdicts/`
+- Verdict file contains `{storyId, passed, timestamp, acCount, findings}`
+- When semantic review fails (findings with blocking severity), the verdict records `passed: false` with the findings array
+- When semantic review passes, the verdict records `passed: true` with an empty findings array
+- When review stage is skipped or semantic check is disabled in config, no verdict file is written
+- `ctx.reviewResult` is read in `completion.ts` before the GC in `iteration-runner.ts:133` nulls it — verified by code path ordering
+- Verdict files are cleaned up when `acceptance-setup` regenerates tests (fingerprint mismatch triggers fresh run)
+- A `loadSemanticVerdicts(featureDir)` utility returns all verdict files as `SemanticVerdict[]`, returning an empty array when the directory doesn't exist
+
+### US-007: Semantic-Aware Diagnosis Routing
+
+**Dependencies:** US-006  
+**Complexity:** medium
+
+Use persisted semantic verdicts to short-circuit acceptance diagnosis when semantic review already confirmed ACs are correctly implemented.
+
+**Acceptance Criteria:**
+- `runAcceptanceLoop()` loads semantic verdicts from `<featureDir>/semantic-verdicts/` before entering the fix routing path
+- When ALL semantic verdicts have `passed: true`, acceptance test failure routes directly to test regeneration with verdict `"test_bug"` (confidence 1.0) — the LLM diagnosis call in `diagnoseAcceptanceFailure()` is skipped entirely
+- When SOME semantic verdicts have `passed: true`, the diagnosis prompt in `buildDiagnosisPrompt()` includes: "Semantic review already confirmed these ACs are correctly implemented: [list]. If the acceptance test for a confirmed AC fails, the failure is likely in the test, not the source."
+- `isTestLevelFailure()` accepts an optional `semanticVerdicts` parameter; when all verdicts passed AND any acceptance test fails, it returns `true` regardless of failure count (overrides the 80% threshold)
+- When no semantic verdict files exist (disabled, first run, pre-US-006 code), all functions fall back to current behavior (backward compatible)
+- Test regeneration uses implementation context per US-003 when available
+- Semantic short-circuit is logged: `logger.info("acceptance", "All semantic verdicts passed — routing to test regeneration", { storyId, verdictCount })`
