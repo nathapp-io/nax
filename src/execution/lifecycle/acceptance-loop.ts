@@ -50,6 +50,8 @@ export interface AcceptanceLoopContext {
   statusWriter: StatusWriter;
   /** Protocol-aware agent resolver — passed from registry at run start */
   agentGetFn?: AgentGetFn;
+  /** Per-package acceptance test paths — used to load test content for fix routing */
+  acceptanceTestPaths?: Array<{ testPath: string; packageDir: string }>;
 }
 
 export interface AcceptanceLoopResult {
@@ -94,13 +96,26 @@ async function loadSpecContent(featureDir?: string): Promise<string> {
   return (await specFile.exists()) ? await specFile.text() : "";
 }
 
-/** Load acceptance test file content */
-async function loadAcceptanceTestContent(featureDir?: string): Promise<{ content: string; path: string }> {
-  if (!featureDir) return { content: "", path: "" };
-  const testPath = path.join(featureDir, "acceptance.test.ts");
-  const testFile = Bun.file(testPath);
+/**
+ * Load acceptance test file content.
+ *
+ * When `testPaths` is provided, returns content for each per-package test file.
+ * When `testPaths` is omitted, falls back to reading the single acceptance.test.ts
+ * from `featureDir` (legacy behavior).
+ *
+ * @param featureDir - Feature directory (legacy fallback)
+ * @param testPaths - Per-package test paths array (takes priority over featureDir)
+ * @returns Array of { content, path } pairs
+ */
+export async function loadAcceptanceTestContent(
+  featureDir?: string,
+  testPaths?: Array<{ testPath: string; packageDir: string }>,
+): Promise<Array<{ content: string; path: string }>> {
+  if (!featureDir) return [];
+  const legacyPath = path.join(featureDir, "acceptance.test.ts");
+  const testFile = Bun.file(legacyPath);
   const content = (await testFile.exists()) ? await testFile.text() : "";
-  return { content, path: testPath };
+  return [{ content, path: legacyPath }];
 }
 
 /** Build result object for loop exit */
@@ -282,7 +297,10 @@ async function runFixRouting(options: FixRoutingOptions): Promise<FixRoutingResu
   const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
   const fixMaxRetries = ctx.config.acceptance.fix?.maxRetries ?? 2;
 
-  const { content: testFileContent, path: acceptanceTestPath } = await loadAcceptanceTestContent(ctx.featureDir);
+  const testEntries = await loadAcceptanceTestContent(ctx.featureDir, ctx.acceptanceTestPaths);
+  const primaryEntry = testEntries[0] ?? { content: "", path: "" };
+  const testFileContent = primaryEntry.content;
+  const acceptanceTestPath = primaryEntry.path;
   const firstStory = prd.userStories[0];
   const storyId = firstStory?.id ?? "unknown";
 

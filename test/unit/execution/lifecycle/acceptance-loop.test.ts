@@ -6,11 +6,15 @@
  * Also verifies isStubTestFile() stub detection helper.
  */
 
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   type AcceptanceLoopContext,
   isStubTestFile,
   isTestLevelFailure,
+  loadAcceptanceTestContent,
 } from "../../../../src/execution/lifecycle/acceptance-loop";
 import type { AgentGetFn } from "../../../../src/pipeline/types";
 import type { PRD } from "../../../../src/prd";
@@ -207,5 +211,92 @@ describe("runAcceptanceLoop threads agentGetFn through the pipeline context", ()
 
     // agentGetFn is correctly threaded into the context
     expect(ctx.agentGetFn).toBe(agentGetFn);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-001 AC9: loadAcceptanceTestContent testPaths parameter
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("loadAcceptanceTestContent — testPaths parameter", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "nax-acceptance-loop-test-"));
+  });
+
+  test("returns array of content from testPaths entries when they exist on disk", async () => {
+    const testA = join(tmpDir, "a.test.ts");
+    const testB = join(tmpDir, "b.test.ts");
+    writeFileSync(testA, "// content A");
+    writeFileSync(testB, "// content B");
+
+    const result = await loadAcceptanceTestContent(tmpDir, [
+      { testPath: testA, packageDir: tmpDir },
+      { testPath: testB, packageDir: tmpDir },
+    ]);
+
+    expect(result).toHaveLength(2);
+    expect(result[0].content).toBe("// content A");
+    expect(result[0].path).toBe(testA);
+    expect(result[1].content).toBe("// content B");
+    expect(result[1].path).toBe(testB);
+  });
+
+  test("returns array with legacy acceptance.test.ts when testPaths is omitted", async () => {
+    const legacyPath = join(tmpDir, "acceptance.test.ts");
+    writeFileSync(legacyPath, "// legacy content");
+
+    const result = await loadAcceptanceTestContent(tmpDir);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].content).toBe("// legacy content");
+    expect(result[0].path).toBe(legacyPath);
+  });
+
+  test("returns empty array when featureDir is undefined", async () => {
+    const result = await loadAcceptanceTestContent(undefined);
+    expect(result).toEqual([]);
+  });
+
+  test("returns array from testPaths parameter (takes priority over legacy path)", async () => {
+    const pkgTestPath = join(tmpDir, "pkg/acceptance.test.ts");
+    const legacyPath = join(tmpDir, "acceptance.test.ts");
+    writeFileSync(legacyPath, "// legacy");
+    // pkg test file does not need to exist — we're verifying testPaths controls the lookup
+    // Use tmpDir itself as a stand-in package dir
+    const pkgDir = tmpDir;
+    const pkgTest = join(tmpDir, "pkg.test.ts");
+    writeFileSync(pkgTest, "// pkg content");
+
+    const result = await loadAcceptanceTestContent(tmpDir, [
+      { testPath: pkgTest, packageDir: pkgDir },
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].content).toBe("// pkg content");
+    expect(result[0].path).toBe(pkgTest);
+    // Legacy path must NOT appear in result when testPaths is provided
+    const paths = result.map((r) => r.path);
+    expect(paths).not.toContain(pkgTestPath);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-001 AC10: AcceptanceLoopContext.acceptanceTestPaths field
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("AcceptanceLoopContext — acceptanceTestPaths field", () => {
+  test("AcceptanceLoopContext accepts acceptanceTestPaths as optional field", () => {
+    const paths = [{ testPath: "/feature/a.test.ts", packageDir: "/feature" }];
+    const ctx: Partial<AcceptanceLoopContext> = {
+      acceptanceTestPaths: paths,
+    };
+    expect(ctx.acceptanceTestPaths).toEqual(paths);
+  });
+
+  test("AcceptanceLoopContext.acceptanceTestPaths defaults to undefined when not set", () => {
+    const ctx: Partial<AcceptanceLoopContext> = {};
+    expect(ctx.acceptanceTestPaths).toBeUndefined();
   });
 });

@@ -25,6 +25,14 @@ import { getLogger } from "../../logger";
 import { PromptBuilder } from "../../prompts";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
+export const _promptStageDeps = {
+  async readFile(filePath: string): Promise<{ exists: boolean; text: string }> {
+    const file = Bun.file(filePath);
+    const exists = await file.exists();
+    return { exists, text: exists ? await file.text() : "" };
+  },
+};
+
 export const promptStage: PipelineStage = {
   name: "prompt",
   enabled: (ctx) =>
