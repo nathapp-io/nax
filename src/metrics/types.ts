@@ -94,6 +94,8 @@ export interface StoryMetrics {
   rectificationCost?: number;
   /** Token usage for this story */
   tokens?: TokenUsage;
+  /** When ScopedStrategy.verify() falls back to full suite due to threshold (US-002) */
+  scopeTestFallback?: boolean;
 }
 
 /**

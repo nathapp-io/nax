@@ -73,6 +73,8 @@ export interface VerifyResult {
   countsTowardEscalation: boolean;
   /** #89: Exit code from the test command (to distinguish passing from infra failure) */
   exitCode?: number;
+  /** When ScopedStrategy.verify() falls back to full suite due to threshold, set to true (US-002) */
+  scopeTestFallback?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -88,7 +90,11 @@ export interface IVerificationStrategy {
 // Helpers
 // ---------------------------------------------------------------------------
 
-export function makeSkippedResult(storyId: string, strategy: VerifyStrategy): VerifyResult {
+export function makeSkippedResult(
+  storyId: string,
+  strategy: VerifyStrategy,
+  scopeTestFallback?: boolean,
+): VerifyResult {
   return {
     success: true,
     status: "SKIPPED",
@@ -100,6 +106,7 @@ export function makeSkippedResult(storyId: string, strategy: VerifyStrategy): Ve
     failures: [],
     durationMs: 0,
     countsTowardEscalation: false,
+    scopeTestFallback,
   };
 }
 
@@ -115,6 +122,7 @@ export function makeFailResult(
     durationMs?: number;
     countsTowardEscalation?: boolean;
     exitCode?: number;
+    scopeTestFallback?: boolean;
   } = {},
 ): VerifyResult {
   return {
@@ -130,6 +138,7 @@ export function makeFailResult(
     durationMs: opts.durationMs ?? 0,
     countsTowardEscalation: opts.countsTowardEscalation ?? true,
     exitCode: opts.exitCode,
+    scopeTestFallback: opts.scopeTestFallback,
   };
 }
 
@@ -140,6 +149,7 @@ export function makePassResult(
     rawOutput?: string;
     passCount?: number;
     durationMs?: number;
+    scopeTestFallback?: boolean;
   } = {},
 ): VerifyResult {
   return {
@@ -154,5 +164,8 @@ export function makePassResult(
     rawOutput: opts.rawOutput,
     durationMs: opts.durationMs ?? 0,
     countsTowardEscalation: false,
+    ...(opts.scopeTestFallback !== undefined && {
+      scopeTestFallback: opts.scopeTestFallback,
+    }),
   };
 }

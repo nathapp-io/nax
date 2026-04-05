@@ -110,6 +110,9 @@ export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string
             .cache_creation_input_tokens as number | undefined,
         })
       : undefined,
+    ...(ctx.verifyResult?.scopeTestFallback !== undefined && {
+      scopeTestFallback: ctx.verifyResult.scopeTestFallback,
+    }),
   };
 }
 

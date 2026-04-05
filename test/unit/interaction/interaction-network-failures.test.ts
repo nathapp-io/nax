@@ -5,7 +5,7 @@
  * Tests network error handling, exponential backoff, payload limits, and malformed input.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import type { InteractionRequest } from "../../../src/interaction";
 import { TelegramInteractionPlugin } from "../../../src/interaction/plugins/telegram";
 import { WebhookInteractionPlugin, _webhookPluginDeps } from "../../../src/interaction/plugins/webhook";
@@ -13,6 +13,10 @@ import { WebhookInteractionPlugin, _webhookPluginDeps } from "../../../src/inter
 // Disable real backoff sleeps — tests verify behavior, not wall-clock timing
 const origWebhookSleep = _webhookPluginDeps.sleep;
 _webhookPluginDeps.sleep = async (_ms: number) => {};
+
+afterAll(() => {
+  _webhookPluginDeps.sleep = origWebhookSleep;
+});
 
 describe("TelegramInteractionPlugin - Network Failures", () => {
   test("should handle network error in send()", async () => {
@@ -230,7 +234,7 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
     await plugin.destroy();
   });
 
-  test("should apply exponential backoff in receive() polling", async () => {
+  test("should return timeout skip response when no callback arrives", async () => {
     const plugin = new WebhookInteractionPlugin();
     await plugin.init({ url: "https://example.com/webhook" });
 
@@ -242,6 +246,97 @@ describe("WebhookInteractionPlugin - Network Failures", () => {
     expect(response.respondedBy).toBe("timeout");
 
     await plugin.destroy();
+  });
+
+  test("should resolve in-flight receive immediately when destroyed", async () => {
+    const plugin = new WebhookInteractionPlugin();
+    await plugin.init({ url: "https://example.com/webhook" });
+
+    const receivePromise = plugin.receive("destroy-inflight", 60_000);
+    await Promise.resolve();
+
+    await plugin.destroy();
+
+    const settled = await Promise.race([
+      receivePromise.then(() => "resolved" as const),
+      Bun.sleep(150).then(() => "hung" as const),
+    ]);
+
+    expect(settled).toBe("resolved");
+    const response = await receivePromise;
+    expect(response.action).toBe("skip");
+    expect(response.respondedBy).toBe("destroyed");
+  });
+
+  test("should clear pending response/callback/timer maps on destroy", async () => {
+    const plugin = new WebhookInteractionPlugin();
+    await plugin.init({ url: "https://example.com/webhook" });
+
+    const handleRequest = (plugin as unknown as { handleRequest: (req: Request) => Promise<Response> }).handleRequest;
+
+    const earlyResponse = await handleRequest.call(
+      plugin,
+      new Request("http://localhost:8765/nax/interact/early-response", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: "early-response",
+          action: "approve",
+          respondedAt: Date.now(),
+        }),
+      }),
+    );
+    expect(earlyResponse.status).toBe(200);
+
+    const receivePromise = plugin.receive("destroy-callback", 60_000);
+    await Promise.resolve();
+
+    await plugin.destroy();
+    await receivePromise;
+
+    const internals = plugin as unknown as {
+      pendingResponses: Map<string, unknown>;
+      receiveCallbacks: Map<string, unknown>;
+      receiveTimers?: Map<string, unknown>;
+    };
+
+    expect(internals.pendingResponses.size).toBe(0);
+    expect(internals.receiveCallbacks.size).toBe(0);
+    expect(internals.receiveTimers?.size ?? -1).toBe(0);
+  });
+
+  test("should supersede previous in-flight receive for same requestId", async () => {
+    const plugin = new WebhookInteractionPlugin();
+    await plugin.init({ url: "https://example.com/webhook" });
+
+    const firstReceive = plugin.receive("duplicate-id", 60_000);
+    await Promise.resolve();
+
+    const secondReceive = plugin.receive("duplicate-id", 60_000);
+
+    const firstSettled = await Promise.race([
+      firstReceive,
+      Bun.sleep(150).then(() => null),
+    ]);
+
+    expect(firstSettled).not.toBeNull();
+    expect(firstSettled?.action).toBe("skip");
+    expect(firstSettled?.respondedBy).toBe("superseded");
+
+    await plugin.destroy();
+
+    const secondSettled = await Promise.race([
+      secondReceive.then(() => "resolved" as const),
+      Bun.sleep(150).then(() => "hung" as const),
+    ]);
+    expect(secondSettled).toBe("resolved");
+
+    const internals = plugin as unknown as {
+      receiveCallbacks: Map<string, unknown>;
+      receiveTimers?: Map<string, unknown>;
+    };
+    expect(internals.receiveCallbacks.size).toBe(0);
+    expect(internals.receiveTimers?.size ?? -1).toBe(0);
   });
 });
 

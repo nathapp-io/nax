@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-04-04T14-48-13-722Z",
+    "feature": "scope-test-threshold",
+    "startedAt": "2026-04-04T14:48:13.722Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 32964
+  },
+  "progress": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 0.63787689,
+    "limit": 30
+  },
+  "current": null,
+  "iterations": 3,
+  "updatedAt": "2026-04-04T16:29:15.266Z",
+  "durationMs": 6061544
+}

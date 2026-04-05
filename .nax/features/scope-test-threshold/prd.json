@@ -1,0 +1,88 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "scope-test-threshold",
+  "branchName": "feat/scope-test-threshold",
+  "createdAt": "2026-04-04T00:00:00.000Z",
+  "updatedAt": "2026-04-04T15:33:15.900Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Config field + threshold check + warning log",
+      "description": "Add `quality.scopeTestThreshold` to QualityConfigSchema with default 10. In ScopedStrategy.verify(), after getChangedSourceFiles(), check source file count against threshold. When exceeded, log a warning with file count and threshold, then execute quality.commands.test (full suite) instead of building scoped command.",
+      "acceptanceCriteria": [
+        "NaxConfigSchema.parse({}).quality.scopeTestThreshold === 10",
+        "NaxConfigSchema.parse({ quality: { scopeTestThreshold: 5 } }).quality.scopeTestThreshold === 5",
+        "ScopedStrategy.verify() with 3 source files and threshold 10 proceeds to scoped test mapping (no fallback)",
+        "ScopedStrategy.verify() with 12 source files and threshold 10 executes quality.commands.test instead of scoped command",
+        "When fallback triggers, logger.warn(\"verify[scoped]\", ...) is called with message containing file count and threshold",
+        "When fallback triggers, the test command used is quality.commands.test (not the scoped file list)"
+      ],
+      "tags": [
+        "feature",
+        "verification"
+      ],
+      "dependencies": [],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/config/schemas.ts",
+        "src/verification/strategies/scoped.ts",
+        "src/verification/smart-runner.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "5c0f30bec29de2860594bb8b0f7fd9a3de42d854"
+    },
+    {
+      "id": "US-002",
+      "title": "Story metric scopeTestFallback flag",
+      "description": "When ScopedStrategy.verify() falls back to full suite due to threshold, set scopeTestFallback: true on the verify result metadata so it propagates to StoryMetrics. Add scopeTestFallback?: boolean to VerifyResult and StoryMetrics interfaces, and propagate in collectStoryMetrics().",
+      "acceptanceCriteria": [
+        "StoryMetrics interface includes optional scopeTestFallback?: boolean",
+        "VerifyResult interface includes optional scopeTestFallback?: boolean",
+        "When scoped strategy falls back due to threshold, the returned verify result includes scopeTestFallback: true in metadata",
+        "collectStoryMetrics() propagates scopeTestFallback from verify result to StoryMetrics",
+        "When scoped strategy runs normally (no fallback), scopeTestFallback is absent from StoryMetrics"
+      ],
+      "tags": [
+        "feature",
+        "metrics"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "passed",
+      "passes": true,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
+      },
+      "contextFiles": [
+        "src/metrics/types.ts",
+        "src/metrics/tracker.ts",
+        "src/verification/orchestrator-types.ts",
+        "src/verification/strategies/scoped.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "6a3911600fd687dc67a1ef9f0ee659aa1649c519"
+    }
+  ],
+  "analysis": "The feature requires modifying 4 files across the verification and metrics subsystems.\n\n**Key files to modify:**\n\n1. **`src/config/schemas.ts`** (line ~144): Add `scopeTestThreshold: z.number().int().min(1).default(10)` to `QualityConfigSchema`. This is a simple additive field with a sensible default of 10.\n\n2. **`src/verification/strategies/scoped.ts`** (lines 54-144): Add threshold check in `ScopedStrategy.execute()` after `getChangedSourceFiles()` returns (line 69). The check must:\n   - Get threshold from `ctx.config?.quality?.scopeTestThreshold ?? 10`\n   - When exceeded, set `effectiveCommand = ctx.testCommand` and `isFullSuite = true`\n   - Log warning via `logger.warn(\"verify[scoped]\", ...)` with fileCount and threshold\n   - Set a flag `_thresholdExceeded = true` to bypass the subsequent \"No mapped tests\" log and deferred-mode early-return that would incorrectly skip execution\n   - The threshold check must be placed BEFORE the pass1/pass2 mapping logic so we skip mapping entirely when threshold is exceeded\n\n3. **`src/verification/orchestrator-types.ts`** (line ~62): Add `scopeTestFallback?: boolean` to `VerifyResult` interface so the flag can propagate from ScopedStrategy to metrics collection.\n\n4. **`src/metrics/types.ts`** (line ~10): Add `scopeTestFallback?: boolean` to `StoryMetrics` interface.\n\n5. **`src/metrics/tracker.ts`** (line ~81): In `collectStoryMetrics()`, propagate `scopeTestFallback` from `ctx.verifyResult?.scopeTestFallback` to the returned `StoryMetrics` object.\n\n**Architecture decisions:**\n\n- The `_thresholdExceeded` flag in ScopedStrategy is necessary because `isFullSuite = true` is reused for both \"no tests mapped\" and \"threshold exceeded\" cases, but they need different handling:\n  - \"No tests mapped\" + deferred mode → skip (defer to run-end)\n  - \"Threshold exceeded\" → always run full suite immediately (don't defer)\n  - \"No tests mapped\" + per-story mode → run full suite\n- Without `_thresholdExceeded`, the deferred-mode check at line 92 (`isFullSuite && regressionMode === \"deferred\"`) would incorrectly skip execution when threshold is exceeded and mode is deferred.\n\n**Dependency order:**\n- US-001 must be implemented before US-002 since US-002 depends on the field existing in the schema to read from.\n\n**Testing approach:**\n- The `_scopedDeps` object in scoped.ts provides injectable dependencies for testing (getChangedSourceFiles, regression, etc.)\n- Tests can mock `_scopedDeps.getChangedSourceFiles` to return arrays of specific lengths\n- Tests can capture logger calls to verify warning is logged\n- Tests can inspect the result object for `scopeTestFallback` flag"
+}

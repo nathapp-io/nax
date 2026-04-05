@@ -1,0 +1,79 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "NaxConfigSchema.parse({}).quality.scopeTestThreshold === 10",
+    "refined": "assert(NaxConfigSchema.parse({}).quality.scopeTestThreshold === 10, 'Default scopeTestThreshold must be 10')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "NaxConfigSchema.parse({ quality: { scopeTestThreshold: 5 } }).quality.scopeTestThreshold === 5",
+    "refined": "assert(NaxConfigSchema.parse({ quality: { scopeTestThreshold: 5 } }).quality.scopeTestThreshold === 5, 'Custom scopeTestThreshold of 5 must be preserved')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "ScopedStrategy.verify() with 3 source files and threshold 10 proceeds to scoped test mapping (no fallback)",
+    "refined": "const result = ScopedStrategy.verify({ sourceFiles: ['a.ts','b.ts','c.ts'], threshold: 10, config }); assert(result.fallbackTriggered === false && result.scopedCommand !== undefined, 'With 3 files under threshold 10, no fallback triggered and scoped command returned')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "ScopedStrategy.verify() with 12 source files and threshold 10 executes quality.commands.test instead of scoped command",
+    "refined": "const result = ScopedStrategy.verify({ sourceFiles: [12 file entries], threshold: 10, config }); assert(result.fallbackTriggered === true && result.executedCommand === config.quality.commands.test, 'With 12 files over threshold 10, fallback triggered and quality.commands.test executed')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When fallback triggers, logger.warn(\"verify[scoped]\", ...) is called with message containing file count and threshold",
+    "refined": "const warnCalls = logger.warn.mock.calls; const verifyScopedCall = warnCalls.find(c => c[0] === 'verify[scoped]'); assert(verifyScopedCall !== undefined && verifyScopedCall[1].includes(fileCount) && verifyScopedCall[1].includes(threshold), 'logger.warn called with verify[scoped] containing file count and threshold')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When fallback triggers, the test command used is quality.commands.test (not the scoped file list)",
+    "refined": "const result = ScopedStrategy.verify({ sourceFiles: [over threshold], threshold: 10, config }); assert(result.executedCommand === config.quality.commands.test && Array.isArray(result.scopedFiles) === false, 'Fallback executes quality.commands.test string, not scoped file array')",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "StoryMetrics interface includes optional scopeTestFallback?: boolean",
+    "refined": "TypeScript type check passes: StoryMetrics type has property 'scopeTestFallback?: boolean'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "VerifyResult interface includes optional scopeTestFallback?: boolean",
+    "refined": "TypeScript type check passes: VerifyResult type has property 'scopeTestFallback?: boolean'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When scoped strategy falls back due to threshold, the returned verify result includes scopeTestFallback: true in metadata",
+    "refined": "When ScopedStrategy.execute() returns fallback due to cost/time exceeding threshold, VerifyResult.metadata contains scopeTestFallback === true",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "collectStoryMetrics() propagates scopeTestFallback from verify result to StoryMetrics",
+    "refined": "Calling collectStoryMetrics() with a verifyResult containing scopeTestFallback: true in metadata returns StoryMetrics where scopeTestFallback === true",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "When scoped strategy runs normally (no fallback), scopeTestFallback is absent from StoryMetrics",
+    "refined": "When ScopedStrategy.execute() completes without fallback, the returned StoryMetrics object does not contain 'scopeTestFallback' key (property is undefined/not present)",
+    "testable": true,
+    "storyId": "US-002"
+  }
+]
