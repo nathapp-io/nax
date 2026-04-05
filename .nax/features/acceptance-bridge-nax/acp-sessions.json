@@ -38,5 +38,9 @@
   "US-004:test-writer": {
     "sessionName": "nax-e7173556-acceptance-bridge-nax-us-004-test-writer",
     "agentName": "claude"
+  },
+  "US-004:implementer": {
+    "sessionName": "nax-e7173556-acceptance-bridge-nax-us-004-implementer",
+    "agentName": "claude"
   }
 }
