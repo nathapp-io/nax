@@ -40,3 +40,6 @@ export {
   parseACTextFromSpec,
   convertFixStoryToUserStory,
 } from "./fix-generator";
+
+export type { AcceptanceEntry } from "./content-loader";
+export { loadAcceptanceTestContent } from "./content-loader";

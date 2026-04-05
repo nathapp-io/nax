@@ -14,7 +14,7 @@ import type { DiagnosisResult } from "./types";
 
 export interface ExecuteSourceFixOptions {
   testOutput: string;
-  testFileContent: string;
+  testFileContent?: string;
   diagnosis: DiagnosisResult;
   config: NaxConfig;
   workdir: string;
@@ -28,8 +28,8 @@ export interface ExecuteSourceFixResult {
   cost: number;
 }
 
-function buildSourceFixPrompt(options: ExecuteSourceFixOptions): string {
-  const { testOutput, diagnosis, acceptanceTestPath } = options;
+export function buildSourceFixPrompt(options: ExecuteSourceFixOptions): string {
+  const { testOutput, diagnosis, acceptanceTestPath, testFileContent } = options;
 
   let prompt = `ACCEPTANCE TEST FAILURE:\n${testOutput}\n\n`;
 
@@ -38,6 +38,11 @@ function buildSourceFixPrompt(options: ExecuteSourceFixOptions): string {
   }
 
   prompt += `ACCEPTANCE TEST FILE: ${acceptanceTestPath}\n\n`;
+
+  if (testFileContent && testFileContent.length > 0) {
+    prompt += `\`\`\`typescript\n${testFileContent}\n\`\`\`\n\n`;
+  }
+
   prompt += "Fix the source implementation. Do NOT modify the test file.";
 
   return prompt;

@@ -103,6 +103,10 @@ export interface GenerateFromPRDOptions {
   adapter?: AgentAdapter;
   /** Target language for test generation (e.g. 'go', 'python', 'rust') — defaults to TypeScript */
   language?: string;
+  /** Implementation context — files to include in the prompt so the generator writes tests against the real API */
+  implementationContext?: Array<{ path: string; content: string }>;
+  /** Previous failure message — included in prompt to help generator avoid the same mistake */
+  previousFailure?: string;
 }
 
 export interface GenerateAcceptanceTestsOptions {
@@ -143,6 +147,24 @@ export interface AcceptanceTestResult {
   testCode: string;
   /** Acceptance criteria that were processed */
   criteria: AcceptanceCriterion[];
+}
+
+/**
+ * Persisted semantic review verdict for a story.
+ * Written to <featureDir>/semantic-verdicts/<storyId>.json by completion.ts
+ * and loaded by the acceptance loop.
+ */
+export interface SemanticVerdict {
+  /** Story ID this verdict belongs to */
+  storyId: string;
+  /** Whether the semantic review passed */
+  passed: boolean;
+  /** ISO timestamp when the verdict was recorded */
+  timestamp: string;
+  /** Number of acceptance criteria in scope at review time */
+  acCount: number;
+  /** Structured findings from the semantic check (empty when passed) */
+  findings: import("../plugins/types").ReviewFinding[];
 }
 
 /** Diagnosis result from acceptance test failure analysis (US-001) */

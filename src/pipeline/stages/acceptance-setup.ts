@@ -24,7 +24,7 @@ import path from "node:path";
 import { buildAcceptanceRunCommand, resolveAcceptanceTestFile } from "../../acceptance/generator";
 import type { RefinedCriterion } from "../../acceptance/types";
 import { getAgent } from "../../agents/registry";
-import { resolveModelForAgent } from "../../config";
+import { type ModelDef, resolveModelForAgent } from "../../config";
 import { getSafeLogger } from "../../logger";
 import type { UserStory } from "../../prd/types";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
@@ -81,7 +81,25 @@ export const _acceptanceSetupDeps = {
   },
   deleteFile: async (filePath: string): Promise<void> => {
     const { unlink } = await import("node:fs/promises");
-    await unlink(filePath);
+    try {
+      await unlink(filePath);
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
+  },
+  deleteSemanticVerdicts: async (featureDir: string): Promise<void> => {
+    const dir = `${featureDir}/semantic-verdicts`;
+    const { readdir, unlink } = await import("node:fs/promises");
+    let files: string[];
+    try {
+      files = await readdir(dir);
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw err;
+    }
+    for (const file of files) {
+      await unlink(`${dir}/${file}`);
+    }
   },
   readMeta: async (metaPath: string): Promise<AcceptanceMeta | null> => {
     const f = Bun.file(metaPath);
@@ -177,7 +195,7 @@ export const acceptanceSetupStage: PipelineStage = {
 
     // Build test paths for each workdir group — tests go under packageDir/.nax/features/<feature>/
     // to avoid collisions between features targeting the same package.
-    const featureName = ctx.prd.feature;
+    const featureName = ctx.prd.feature ?? (ctx.prd as unknown as Record<string, string>).featureName;
     const testPaths: Array<{ testPath: string; packageDir: string }> = [];
     for (const [workdir] of workdirGroups) {
       const packageDir = workdir ? path.join(ctx.workdir, workdir) : ctx.workdir;
@@ -224,6 +242,8 @@ export const acceptanceSetupStage: PipelineStage = {
           await _acceptanceSetupDeps.deleteFile(testPath);
         }
       }
+      // Clear semantic verdicts so stale results don't influence the acceptance loop
+      await _acceptanceSetupDeps.deleteSemanticVerdicts(ctx.featureDir);
       shouldGenerate = true;
     } else {
       // Fingerprint matches — reuse existing tests. If the file is missing (e.g.,
@@ -300,22 +320,33 @@ export const acceptanceSetupStage: PipelineStage = {
         const groupStoryIds = new Set(group.stories.map((s) => s.id));
         const groupRefined = allRefinedCriteria.filter((r) => groupStoryIds.has(r.storyId));
 
+        let modelDef: ModelDef;
+        try {
+          modelDef = resolveModelForAgent(
+            ctx.config.models,
+            ctx.routing.agent ?? ctx.config.autoMode.defaultAgent,
+            ctx.config.acceptance.model ?? "fast",
+            ctx.config.autoMode.defaultAgent,
+          );
+        } catch {
+          const tier = ctx.config.acceptance.model ?? "fast";
+          modelDef = { provider: "anthropic", model: tier } as ModelDef;
+        }
+
         const result = await _acceptanceSetupDeps.generate(group.stories, groupRefined, {
           featureName: ctx.prd.feature,
           workdir: packageDir,
           featureDir: ctx.featureDir,
           codebaseContext: "",
           modelTier: ctx.config.acceptance.model ?? "fast",
-          modelDef: resolveModelForAgent(
-            ctx.config.models,
-            ctx.routing.agent ?? ctx.config.autoMode.defaultAgent,
-            ctx.config.acceptance.model ?? "fast",
-            ctx.config.autoMode.defaultAgent,
-          ),
+          modelDef,
           config: ctx.config,
           testStrategy: ctx.config.acceptance.testStrategy,
           testFramework: ctx.config.acceptance.testFramework,
           adapter: agent ?? undefined,
+          ...("implementationContext" in ctx && ctx.implementationContext
+            ? { implementationContext: ctx.implementationContext as Array<{ path: string; content: string }> }
+            : {}),
         });
 
         await _acceptanceSetupDeps.writeFile(testPath, result.testCode);

@@ -1,0 +1,247 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "buildAcceptanceSection([{ testPath: 'test.ts', content: 'import { foo }...' }]) returns a markdown string containing the test file path as a heading and content in a fenced TypeScript code block",
+    "refined": "Calling buildAcceptanceSection([{ testPath: 'test.ts', content: 'import { foo }...' }]) returns a string that (1) includes '## test.ts' or '### test.ts' as a markdown heading, and (2) includes the content wrapped in a fenced code block starting with '```typescript' and ending with '```'",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "buildAcceptanceSection([]) returns an empty string",
+    "refined": "Calling buildAcceptanceSection([]) returns exactly the empty string ''  (String.length === 0)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "When total test content across all entries exceeds 50KB, buildAcceptanceSection() truncates the longest entry first and appends '[truncated — full file at <path>]'",
+    "refined": "Given entries whose total content byte length exceeds 51200 bytes, buildAcceptanceSection() (1) identifies the entry with the longest content, (2) truncates that entry's content so total length is at or below 51200 bytes, and (3) appends the literal string '[truncated — full file at <path>]' (with <path> replaced by the entry's testPath) to the truncated entry's output block",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "PromptBuilder.acceptanceContext(entries) stores test path entries and build() includes the acceptance section after the story section",
+    "refined": "After calling promptBuilder.acceptanceContext([{ testPath: 'test.ts', content: '...' }]), calling build() returns a string where the acceptance section (containing 'test.ts') appears at a string index greater than the end index of the story section",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "When acceptanceContext() is not called on PromptBuilder, build() output is identical to current behavior (no acceptance section emitted)",
+    "refined": "Calling build() on a freshly instantiated PromptBuilder without calling acceptanceContext() returns a string that contains no fenced TypeScript code block referencing test file paths and is byte-for-byte identical to the output produced before the acceptance feature was introduced (baseline snapshot comparison)",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "promptStage.execute() reads each file in ctx.acceptanceTestPaths via Bun.file() and calls builder.acceptanceContext() with { testPath, content } pairs",
+    "refined": "When ctx.acceptanceTestPaths is ['a.test.ts', 'b.test.ts'], promptStage.execute() calls Bun.file() exactly twice with those paths, and calls builder.acceptanceContext() exactly once with an array of two objects each having 'testPath' and 'content' keys matching the respective file paths and their read contents",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "When ctx.acceptanceTestPaths is undefined or empty, promptStage does not call acceptanceContext()",
+    "refined": "When ctx.acceptanceTestPaths is undefined, promptStage.execute() does not call builder.acceptanceContext(); when ctx.acceptanceTestPaths is [], promptStage.execute() does not call builder.acceptanceContext()",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "When a test file in ctx.acceptanceTestPaths does not exist on disk, it is skipped with a debug-level log and not included in the acceptance context",
+    "refined": "Given ctx.acceptanceTestPaths containing a path to a non-existent file, promptStage.execute() (1) does not throw, (2) calls logger.debug() at least once referencing the missing path, and (3) calls builder.acceptanceContext() with an array that does not contain an entry with that testPath",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "loadAcceptanceTestContent() in acceptance-loop.ts accepts an optional testPaths array parameter and returns content from all per-package test files as an array",
+    "refined": "Calling loadAcceptanceTestContent(['pkg/a.test.ts', 'pkg/b.test.ts']) returns a Promise that resolves to an array of exactly two objects, each with 'testPath' and 'content' string properties matching the given paths; calling loadAcceptanceTestContent() with no arguments returns a Promise resolving to an array derived from per-package default test file discovery",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-10",
+    "original": "runFixRouting() uses ctx.acceptanceTestPaths to load test content, falling back to path.join(ctx.featureDir, config.acceptance.testPath) when ctx.acceptanceTestPaths is undefined",
+    "refined": "When ctx.acceptanceTestPaths is defined, runFixRouting() calls loadAcceptanceTestContent with ctx.acceptanceTestPaths and does not construct a path using ctx.featureDir; when ctx.acceptanceTestPaths is undefined, runFixRouting() calls loadAcceptanceTestContent with path.join(ctx.featureDir, config.acceptance.testPath) as the source",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-11",
+    "original": "GenerateFromPRDOptions has an optional implementationContext field of type Array<{ path: string; content: string }>",
+    "refined": "The TypeScript type GenerateFromPRDOptions includes an optional property `implementationContext` typed as `Array<{ path: string; content: string }>`, verifiable by compiling the type definition without errors and confirming the property is not required (i.e., omitting it does not cause a type error).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When implementationContext is provided with entries, generateFromPRD() prompt includes an 'Implementation (already exists)' section listing each file path and content in fenced code blocks",
+    "refined": "When generateFromPRD() is called with implementationContext containing at least one entry (e.g., [{ path: 'src/foo.ts', content: 'const x = 1;' }]), the returned prompt string contains the literal heading 'Implementation (already exists)' followed by each entry formatted as a fenced code block with the file path and its content, in the same order as the input array.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "When implementationContext is empty or undefined, generateFromPRD() prompt is identical to current behavior",
+    "refined": "When generateFromPRD() is called with implementationContext set to an empty array [] or with implementationContext omitted (undefined), the returned prompt string does not contain the string 'Implementation (already exists)' and is byte-for-byte identical to the prompt produced by the same call without the implementationContext field.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "GenerateFromPRDOptions has an optional previousFailure field of type string",
+    "refined": "The TypeScript type GenerateFromPRDOptions includes an optional property `previousFailure` typed as `string`, verifiable by compiling the type definition without errors and confirming the property is not required (i.e., omitting it does not cause a type error).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "When previousFailure is provided, generateFromPRD() prompt includes 'Previous test failed because: ...' with the failure text",
+    "refined": "When generateFromPRD() is called with previousFailure set to a non-empty string (e.g., 'Assertion error: expected 1 but got 2'), the returned prompt string contains the substring 'Previous test failed because: Assertion error: expected 1 but got 2' with the exact failure text appended after the colon and space.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "regenerateAcceptanceTest() in acceptance-loop.ts collects changed files via git diff --name-only against ctx.storyGitRef, reads their content capped at 50KB total, and passes them as implementationContext to the generator",
+    "refined": "In acceptance-loop.ts, regenerateAcceptanceTest() invokes git with arguments ['diff', '--name-only', ctx.storyGitRef] to obtain changed file paths, reads the content of each file in order until the cumulative byte count reaches or exceeds 51200 bytes (50 * 1024), then calls the acceptance test generator with an implementationContext array containing objects { path, content } for each file read, where content is truncated so the total does not exceed 50KB.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "buildSourceFixPrompt() includes test file content as a fenced TypeScript code block in the prompt body, not just the file path reference",
+    "refined": "When buildSourceFixPrompt() is called with a non-empty testFileContent string in ExecuteSourceFixOptions, the returned prompt string contains the testFileContent wrapped in a fenced TypeScript code block (i.e., the block starts with the line '```typescript' and ends with the line '```'), and the raw file path alone does not appear as the sole reference to the test file content.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-18",
+    "original": "When testFileContent in ExecuteSourceFixOptions is empty or undefined, buildSourceFixPrompt() includes only the acceptance test path (current behavior preserved)",
+    "refined": "When buildSourceFixPrompt() is called with testFileContent set to an empty string or undefined in ExecuteSourceFixOptions, the returned prompt string does not contain a fenced code block for the test file content (no '```typescript' block containing file content) and includes only the acceptance test file path as a reference, matching the output produced before this feature was added.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-19",
+    "original": "SemanticVerdict type is exported from src/acceptance/types.ts with fields: storyId (string), passed (boolean), timestamp (string), acCount (number), findings (ReviewFinding[])",
+    "refined": "Importing SemanticVerdict from src/acceptance/types.ts succeeds at runtime; an object assigned as SemanticVerdict with fields storyId:string, passed:boolean, timestamp:string, acCount:number, findings:ReviewFinding[] passes TypeScript strict type checking with no errors",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "persistSemanticVerdict(featureDir, storyId, verdict) writes JSON to <featureDir>/semantic-verdicts/<storyId>.json matching the SemanticVerdict schema",
+    "refined": "After calling persistSemanticVerdict('/tmp/feat', 'story-1', verdict), the file '/tmp/feat/semantic-verdicts/story-1.json' exists, JSON.parse of its contents returns an object with keys storyId, passed, timestamp, acCount, findings, and the values match the input verdict object",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When featureDir directory does not exist for semantic-verdicts, persistSemanticVerdict() creates the semantic-verdicts subdirectory before writing",
+    "refined": "Given a featureDir where '<featureDir>/semantic-verdicts/' does not exist, calling persistSemanticVerdict(featureDir, storyId, verdict) results in '<featureDir>/semantic-verdicts/' being created and '<featureDir>/semantic-verdicts/<storyId>.json' being written without throwing",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "completion.ts extracts the entry where check === 'semantic' from ctx.reviewResult.checks and calls persistSemanticVerdict() after markStoryPassed()",
+    "refined": "In a unit test with a stubbed ctx where ctx.reviewResult.checks contains an entry with check==='semantic', running the completion stage results in persistSemanticVerdict being called exactly once with the correct featureDir and storyId, and the call occurs after markStoryPassed() has been invoked",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "When ctx.reviewResult is undefined or has no entry where check === 'semantic', completion.ts does not write a verdict file",
+    "refined": "When the completion stage runs with ctx.reviewResult===undefined, persistSemanticVerdict is not called; when ctx.reviewResult.checks contains no entry with check==='semantic', persistSemanticVerdict is also not called; in both cases no file is written to the semantic-verdicts directory",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When the semantic check has success: true, the verdict file has passed: true and findings: []",
+    "refined": "After completion stage runs with ctx.reviewResult.checks containing {check:'semantic', success:true}, reading and parsing the written verdict JSON file yields an object where passed===true and findings is an array of length 0",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When the semantic check has success: false, the verdict file has passed: false and findings populated from the check result",
+    "refined": "After completion stage runs with ctx.reviewResult.checks containing {check:'semantic', success:false, findings:[...N items]}, reading and parsing the written verdict JSON file yields an object where passed===false and findings is an array of length N matching the check's findings",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "loadSemanticVerdicts(featureDir) reads all *.json files from <featureDir>/semantic-verdicts/, parses them as SemanticVerdict[], and returns empty array when directory does not exist",
+    "refined": "Given a featureDir with M valid SemanticVerdict JSON files in '<featureDir>/semantic-verdicts/', loadSemanticVerdicts(featureDir) returns an array of length M with each element satisfying the SemanticVerdict schema; given a featureDir where '<featureDir>/semantic-verdicts/' does not exist, the function returns [] without throwing",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-27",
+    "original": "loadSemanticVerdicts() skips files that fail JSON.parse and logs a debug warning per skipped file",
+    "refined": "Given a featureDir where '<featureDir>/semantic-verdicts/' contains 2 valid JSON files and 1 malformed JSON file, loadSemanticVerdicts(featureDir) returns an array of length 2 (the valid ones), does not throw, and the logger.debug or logger.warn method is called exactly once with a message referencing the skipped file",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-28",
+    "original": "When acceptance-setup detects a fingerprint mismatch and regenerates tests, all files in <featureDir>/semantic-verdicts/ are deleted",
+    "refined": "After acceptance-setup runs in a scenario where fingerprint mismatch is detected, the directory '<featureDir>/semantic-verdicts/' contains zero files; if the directory previously had N files (N>0), all N files are absent post-run",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-29",
+    "original": "runAcceptanceLoop() calls loadSemanticVerdicts(ctx.featureDir) before entering the fix routing path and passes verdicts to runFixRouting()",
+    "refined": "When runAcceptanceLoop() is invoked and acceptance tests fail, a spy/mock on loadSemanticVerdicts confirms it is called exactly once with ctx.featureDir, and the return value is passed as the semanticVerdicts argument to runFixRouting()",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-30",
+    "original": "When all loaded verdicts have passed: true, runFixRouting() returns { verdict: 'test_bug', confidence: 1.0, reasoning: 'Semantic review confirmed all ACs are implemented — acceptance test failure is a test generation issue' } without calling diagnoseAcceptanceFailure()",
+    "refined": "Given semanticVerdicts = [{passed: true}, {passed: true}], runFixRouting() returns exactly { verdict: 'test_bug', confidence: 1.0, reasoning: 'Semantic review confirmed all ACs are implemented — acceptance test failure is a test generation issue' } and diagnoseAcceptanceFailure is not called (call count === 0)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-31",
+    "original": "When some but not all verdicts have passed: true, buildDiagnosisPrompt() appends a section listing the confirmed story IDs and stating their failures are likely test bugs",
+    "refined": "Given semanticVerdicts = [{storyId: 'S1', passed: true}, {storyId: 'S2', passed: false}], the string returned by buildDiagnosisPrompt() contains 'S1' and contains the substring 'test bug' (case-insensitive) in a section following the confirmed story IDs",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-32",
+    "original": "isTestLevelFailure(failedACs, totalACs, semanticVerdicts) returns true when semanticVerdicts is non-empty and all have passed: true, regardless of failedACs count",
+    "refined": "For all combinations of failedACs in [1, 5, 10] and totalACs in [1, 5, 10] where failedACs <= totalACs, isTestLevelFailure(failedACs, totalACs, [{passed:true},{passed:true}]) === true",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-33",
+    "original": "When semanticVerdicts parameter is undefined or empty array, isTestLevelFailure() uses the existing failedACs.length / totalACs > 0.8 heuristic",
+    "refined": "isTestLevelFailure(9, 10, undefined) === true and isTestLevelFailure(9, 10, []) === true (9/10 > 0.8); isTestLevelFailure(1, 10, undefined) === false and isTestLevelFailure(1, 10, []) === false (1/10 <= 0.8)",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-34",
+    "original": "When no semantic verdict files exist on disk, runAcceptanceLoop() and runFixRouting() fall back to current behavior with no behavioral change",
+    "refined": "When loadSemanticVerdicts returns [] (empty array), runAcceptanceLoop() and runFixRouting() produce the same return value and side-effects as when called without the semanticVerdicts parameter; diagnoseAcceptanceFailure call count and arguments are identical to the baseline (no-verdicts) control run",
+    "testable": true,
+    "storyId": "US-004"
+  },
+  {
+    "acId": "AC-35",
+    "original": "Semantic short-circuit is logged via logger.info('acceptance', 'All semantic verdicts passed — routing to test regeneration', { storyId: ctx.story.id, verdictCount })",
+    "refined": "When all semanticVerdicts have passed: true, a spy on logger.info records exactly one call with arguments ('acceptance', 'All semantic verdicts passed — routing to test regeneration', { storyId: <ctx.story.id value>, verdictCount: <number equal to semanticVerdicts.length> })",
+    "testable": true,
+    "storyId": "US-004"
+  }
+]
