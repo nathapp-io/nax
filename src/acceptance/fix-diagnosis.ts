@@ -74,7 +74,7 @@ export function buildDiagnosisPrompt(options: {
   let verdictSection = "";
   if (options.semanticVerdicts && options.semanticVerdicts.length > 0) {
     const lines = options.semanticVerdicts.map((v) => {
-      const status = v.passed ? "passed" : "test bug";
+      const status = v.passed ? "likely test bug (semantic review confirmed AC implementation)" : "unconfirmed";
       return `- ${v.storyId}: ${status}`;
     });
     verdictSection = `\nSEMANTIC VERDICTS:\n${lines.join("\n")}\n`;
