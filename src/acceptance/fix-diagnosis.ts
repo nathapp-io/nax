@@ -18,6 +18,7 @@ export interface DiagnoseOptions {
   workdir: string;
   featureName?: string;
   storyId?: string;
+  semanticVerdicts?: SemanticVerdict[];
 }
 
 const MAX_SOURCE_FILES = 5;
@@ -134,6 +135,7 @@ export async function diagnoseAcceptanceFailure(
     testOutput,
     testFileContent,
     sourceFiles: validSourceFiles,
+    semanticVerdicts: options.semanticVerdicts,
   });
 
   try {

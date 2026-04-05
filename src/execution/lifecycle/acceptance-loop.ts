@@ -392,7 +392,7 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
   const semanticVerdicts = options.semanticVerdicts;
   if (semanticVerdicts && semanticVerdicts.length > 0 && semanticVerdicts.every((v) => v.passed)) {
     const verdictCount = semanticVerdicts.length;
-    const storyId = prd?.userStories?.[0]?.id ?? "unknown";
+    const storyId = acceptanceContext?.story?.id ?? prd?.userStories?.[0]?.id ?? "unknown";
     logger?.info("acceptance", "All semantic verdicts passed — routing to test regeneration", {
       storyId,
       verdictCount,
@@ -489,6 +489,7 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
     workdir: ctx.workdir,
     featureName: ctx.feature,
     storyId,
+    semanticVerdicts: options.semanticVerdicts as import("../../acceptance/types").SemanticVerdict[] | undefined,
   });
 
   logger?.info("acceptance.diagnosis", "Diagnosis complete", {
