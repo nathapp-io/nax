@@ -1,0 +1,176 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "acceptance-bridge-nax",
+  "branchName": "feat/acceptance-bridge-nax",
+  "createdAt": "2026-04-05T12:00:00.000Z",
+  "updatedAt": "2026-04-05T09:43:37.130Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Acceptance context in implementer prompt",
+      "description": "Add buildAcceptanceSection() to the prompt builder and wire promptStage to inject acceptance test content into the implementer's prompt. The implementer currently never sees the generated acceptance test file, leading to API surface mismatches (wrong import paths, function names). This story makes the test content visible in the prompt so the implementer writes code that matches the test's expectations. Also fix per-package test path resolution in acceptance-loop.ts to use ctx.acceptanceTestPaths instead of hardcoded paths.",
+      "acceptanceCriteria": [
+        "buildAcceptanceSection([{ testPath: 'test.ts', content: 'import { foo }...' }]) returns a markdown string containing the test file path as a heading and content in a fenced TypeScript code block",
+        "buildAcceptanceSection([]) returns an empty string",
+        "When total test content across all entries exceeds 50KB, buildAcceptanceSection() truncates the longest entry first and appends '[truncated — full file at <path>]'",
+        "PromptBuilder.acceptanceContext(entries) stores test path entries and build() includes the acceptance section after the story section",
+        "When acceptanceContext() is not called on PromptBuilder, build() output is identical to current behavior (no acceptance section emitted)",
+        "promptStage.execute() reads each file in ctx.acceptanceTestPaths via Bun.file() and calls builder.acceptanceContext() with { testPath, content } pairs",
+        "When ctx.acceptanceTestPaths is undefined or empty, promptStage does not call acceptanceContext()",
+        "When a test file in ctx.acceptanceTestPaths does not exist on disk, it is skipped with a debug-level log and not included in the acceptance context",
+        "loadAcceptanceTestContent() in acceptance-loop.ts accepts an optional testPaths array parameter and returns content from all per-package test files as an array",
+        "runFixRouting() uses ctx.acceptanceTestPaths to load test content, falling back to path.join(ctx.featureDir, config.acceptance.testPath) when ctx.acceptanceTestPaths is undefined"
+      ],
+      "tags": [
+        "feature",
+        "prompt",
+        "acceptance"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "contextFiles": [
+        "src/prompts/builder.ts",
+        "src/prompts/sections/story.ts",
+        "src/pipeline/stages/prompt.ts",
+        "src/execution/lifecycle/acceptance-loop.ts",
+        "src/pipeline/types.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "96ef988fb4e9895c6c3a7b75d1bff1efc38829a0"
+    },
+    {
+      "id": "US-002",
+      "title": "Implementation-aware test regeneration and enriched fix prompts",
+      "description": "When regenerating acceptance tests after failure, pass the existing implementation as context so the generator writes tests against the real API surface instead of guessing. Also enrich fix executor prompts with test file content (fenced code block) so the fix agent understands what the test asserts. Currently, regenerateAcceptanceTest() calls the generator blind, and buildSourceFixPrompt() includes only the test file path without its content.",
+      "acceptanceCriteria": [
+        "GenerateFromPRDOptions has an optional implementationContext field of type Array<{ path: string; content: string }>",
+        "When implementationContext is provided with entries, generateFromPRD() prompt includes an 'Implementation (already exists)' section listing each file path and content in fenced code blocks",
+        "When implementationContext is empty or undefined, generateFromPRD() prompt is identical to current behavior",
+        "GenerateFromPRDOptions has an optional previousFailure field of type string",
+        "When previousFailure is provided, generateFromPRD() prompt includes 'Previous test failed because: ...' with the failure text",
+        "regenerateAcceptanceTest() in acceptance-loop.ts collects changed files via git diff --name-only against ctx.storyGitRef, reads their content capped at 50KB total, and passes them as implementationContext to the generator",
+        "buildSourceFixPrompt() includes test file content as a fenced TypeScript code block in the prompt body, not just the file path reference",
+        "When testFileContent in ExecuteSourceFixOptions is empty or undefined, buildSourceFixPrompt() includes only the acceptance test path (current behavior preserved)"
+      ],
+      "tags": [
+        "feature",
+        "acceptance",
+        "regeneration"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/acceptance/generator.ts",
+        "src/acceptance/fix-executor.ts",
+        "src/execution/lifecycle/acceptance-loop.ts",
+        "src/acceptance/types.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-003",
+      "title": "Semantic verdict persistence",
+      "description": "Persist per-story semantic review verdicts to <featureDir>/semantic-verdicts/<storyId>.json so they survive the GC in iteration-runner.ts:133 and are available to the acceptance loop. The iteration-runner nulls ctx.reviewResult after each story completes, destroying the semantic review verdict before the acceptance loop can use it. This story adds file-based persistence in completion.ts (before GC) and a loader for the acceptance loop.",
+      "acceptanceCriteria": [
+        "SemanticVerdict type is exported from src/acceptance/types.ts with fields: storyId (string), passed (boolean), timestamp (string), acCount (number), findings (ReviewFinding[])",
+        "persistSemanticVerdict(featureDir, storyId, verdict) writes JSON to <featureDir>/semantic-verdicts/<storyId>.json matching the SemanticVerdict schema",
+        "When featureDir directory does not exist for semantic-verdicts, persistSemanticVerdict() creates the semantic-verdicts subdirectory before writing",
+        "completion.ts extracts the entry where check === 'semantic' from ctx.reviewResult.checks and calls persistSemanticVerdict() after markStoryPassed()",
+        "When ctx.reviewResult is undefined or has no entry where check === 'semantic', completion.ts does not write a verdict file",
+        "When the semantic check has success: true, the verdict file has passed: true and findings: []",
+        "When the semantic check has success: false, the verdict file has passed: false and findings populated from the check result",
+        "loadSemanticVerdicts(featureDir) reads all *.json files from <featureDir>/semantic-verdicts/, parses them as SemanticVerdict[], and returns empty array when directory does not exist",
+        "loadSemanticVerdicts() skips files that fail JSON.parse and logs a debug warning per skipped file",
+        "When acceptance-setup detects a fingerprint mismatch and regenerates tests, all files in <featureDir>/semantic-verdicts/ are deleted"
+      ],
+      "tags": [
+        "feature",
+        "persistence",
+        "semantic-review"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/pipeline/stages/completion.ts",
+        "src/pipeline/stages/review.ts",
+        "src/acceptance/types.ts",
+        "src/review/types.ts",
+        "src/pipeline/stages/acceptance-setup.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-004",
+      "title": "Semantic-aware diagnosis routing",
+      "description": "Use persisted semantic verdicts to short-circuit acceptance diagnosis when semantic review already confirmed ACs are correctly implemented. When all verdicts pass, skip the expensive LLM diagnosis call and route directly to test regeneration. When partial verdicts pass, enrich the diagnosis prompt with that context. This eliminates the most expensive failure mode: wasting fix retries on correct code that the semantic reviewer already verified.",
+      "acceptanceCriteria": [
+        "runAcceptanceLoop() calls loadSemanticVerdicts(ctx.featureDir) before entering the fix routing path and passes verdicts to runFixRouting()",
+        "When all loaded verdicts have passed: true, runFixRouting() returns { verdict: 'test_bug', confidence: 1.0, reasoning: 'Semantic review confirmed all ACs are implemented — acceptance test failure is a test generation issue' } without calling diagnoseAcceptanceFailure()",
+        "When some but not all verdicts have passed: true, buildDiagnosisPrompt() appends a section listing the confirmed story IDs and stating their failures are likely test bugs",
+        "isTestLevelFailure(failedACs, totalACs, semanticVerdicts) returns true when semanticVerdicts is non-empty and all have passed: true, regardless of failedACs count",
+        "When semanticVerdicts parameter is undefined or empty array, isTestLevelFailure() uses the existing failedACs.length / totalACs > 0.8 heuristic",
+        "When no semantic verdict files exist on disk, runAcceptanceLoop() and runFixRouting() fall back to current behavior with no behavioral change",
+        "Semantic short-circuit is logged via logger.info('acceptance', 'All semantic verdicts passed — routing to test regeneration', { storyId: ctx.story.id, verdictCount })"
+      ],
+      "tags": [
+        "feature",
+        "acceptance",
+        "diagnosis",
+        "optimization"
+      ],
+      "dependencies": [
+        "US-003"
+      ],
+      "status": "pending",
+      "passes": false,
+      "attempts": 0,
+      "escalations": [],
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "validated from LLM output"
+      },
+      "contextFiles": [
+        "src/execution/lifecycle/acceptance-loop.ts",
+        "src/acceptance/fix-diagnosis.ts",
+        "src/acceptance/types.ts"
+      ],
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    }
+  ],
+  "analysis": "## Key Files Requiring Modification\n\n### 1. src/prompts/builder.ts\n- PromptBuilder class needs a new `acceptanceContext()` chainable method storing test path+content pairs.\n- `build()` must compose a new acceptance section after the story section using `buildAcceptanceSection()`.\n- Current section order: constitution → role-task → story → verdict → isolation → tdd-lang → hermetic → context → conventions. Acceptance section slots between story and verdict.\n\n### 2. src/pipeline/stages/prompt.ts\n- promptStage.execute() builds the prompt via PromptBuilder. Must read `ctx.acceptanceTestPaths` (set by acceptanceSetupStage), load file contents via Bun.file(), and call `builder.acceptanceContext()` with `{ testPath, content }` pairs.\n- Graceful degradation: skip missing files with debug log.\n\n### 3. src/pipeline/stages/completion.ts\n- After `markStoryPassed()`, must extract the semantic check from `ctx.reviewResult.checks` (where `check === 'semantic'`) and call `persistSemanticVerdict()` to write `<featureDir>/semantic-verdicts/<storyId>.json`.\n- Must handle: reviewResult undefined, no semantic check entry, featureDir undefined.\n\n### 4. src/execution/iteration-runner.ts\n- GC at lines ~126-134 nulls `ctx.reviewResult`. Verdict persistence in completion.ts runs BEFORE this GC, so no changes needed here. The GC is the root cause motivating US-003.\n\n### 5. src/execution/lifecycle/acceptance-loop.ts\n- `loadAcceptanceTestContent()` currently loads a single file. Must accept optional `testPaths` array and return content from all per-package test files.\n- `runFixRouting()` must use `ctx.acceptanceTestPaths` for test content, falling back to legacy path.\n- `isTestLevelFailure()` needs optional `semanticVerdicts` parameter — returns true when all verdicts passed regardless of failure count.\n- `runAcceptanceLoop()` must call `loadSemanticVerdicts()` before fix routing and pass verdicts downstream.\n\n### 6. src/acceptance/generator.ts\n- `GenerateFromPRDOptions` needs `implementationContext?: Array<{ path: string; content: string }>` and `previousFailure?: string`.\n- `generateFromPRD()` prompt must include implementation context section when provided.\n- `regenerateAcceptanceTest()` in acceptance-loop.ts must collect changed files via git diff and pass as implementationContext.\n\n### 7. src/acceptance/fix-diagnosis.ts\n- `DiagnoseOptions` needs `semanticVerdicts?: SemanticVerdict[]`.\n- `buildDiagnosisPrompt()` must append semantic verdict context when verdicts confirm ACs.\n\n### 8. src/acceptance/fix-executor.ts\n- `buildSourceFixPrompt()` must include test file content as fenced code block, not just path.\n- `ExecuteSourceFixOptions` needs `testFileContent` field (already has `testFileContent` per the explorer — verify exact current usage).\n\n### 9. src/acceptance/types.ts\n- Add `SemanticVerdict` interface: `{ storyId, passed, timestamp, acCount, findings }`.\n- Add persistence/load utility function signatures.\n\n### 10. src/pipeline/types.ts\n- `acceptanceTestPaths` already exists as `Array<{ testPath: string; packageDir: string }>`. No schema change needed.\n- `reviewResult` already typed as `ReviewResult`. No change needed.\n\n## Risks & Considerations\n\n1. **Backward compatibility**: All new fields are optional. All load functions return empty arrays on missing data. Zero behavioral change when features aren't used.\n2. **50KB cap on implementation context**: Must implement truncation with `[truncated]` markers to avoid prompt bloat.\n3. **Semantic verdict file lifecycle**: Verdicts must be cleaned up when acceptance-setup regenerates tests (fingerprint mismatch) to prevent stale verdicts.\n4. **File I/O in pipeline stages**: Use Bun.file() per project conventions. Handle read failures gracefully (fail-open).\n5. **Review types dependency**: `ReviewFinding` from `src/plugins/types.ts` or `src/review/types.ts` is used in SemanticVerdict. Must use correct import path via barrel.\n6. **The iteration-runner GC**: completion.ts runs as a pipeline stage BEFORE the GC in iteration-runner.ts, so verdict persistence happens in time. This ordering is guaranteed by the pipeline stage sequence.\n7. **Per-package test paths**: acceptanceTestPaths is already an array of `{ testPath, packageDir }` — the infrastructure exists but consumers need updating to use all entries instead of just the first."
+}

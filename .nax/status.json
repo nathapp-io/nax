@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-04-04T14-48-13-722Z",
-    "feature": "scope-test-threshold",
-    "startedAt": "2026-04-04T14:48:13.722Z",
-    "status": "completed",
+    "id": "run-2026-04-05T09-23-07-239Z",
+    "feature": "acceptance-bridge-nax",
+    "startedAt": "2026-04-05T09:23:07.239Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 32964
+    "pid": 6342
   },
   "progress": {
-    "total": 2,
-    "passed": 2,
+    "total": 4,
+    "passed": 0,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 0
+    "pending": 4
   },
   "cost": {
-    "spent": 0.63787689,
+    "spent": 0,
     "limit": 30
   },
-  "current": null,
-  "iterations": 3,
-  "updatedAt": "2026-04-04T16:29:15.264Z",
-  "durationMs": 6061542
+  "current": {
+    "storyId": "US-001",
+    "title": "Acceptance context in implementer prompt",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
+    "model": "balanced",
+    "attempt": 1,
+    "phase": "routing"
+  },
+  "iterations": 1,
+  "updatedAt": "2026-04-05T09:51:07.253Z",
+  "durationMs": 1680014,
+  "lastHeartbeat": "2026-04-05T09:51:07.253Z"
 }
