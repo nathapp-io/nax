@@ -18,5 +18,9 @@
   "US-002:implementer": {
     "sessionName": "nax-e7173556-acceptance-bridge-nax-us-002-implementer",
     "agentName": "claude"
+  },
+  "US-002:verifier": {
+    "sessionName": "nax-e7173556-acceptance-bridge-nax-us-002-verifier",
+    "agentName": "claude"
   }
 }
