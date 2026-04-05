@@ -391,14 +391,20 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
   // Fast path: when all semantic verdicts passed, skip diagnosis — it's a test bug
   const semanticVerdicts = options.semanticVerdicts;
   if (semanticVerdicts && semanticVerdicts.length > 0 && semanticVerdicts.every((v) => v.passed)) {
-    logger?.info("acceptance", "All semantic verdicts passed", { verdictCount: semanticVerdicts.length });
+    const verdictCount = semanticVerdicts.length;
+    const storyId = prd?.userStories?.[0]?.id ?? "unknown";
+    logger?.info("acceptance", "All semantic verdicts passed — routing to test regeneration", {
+      storyId,
+      verdictCount,
+    });
     return {
       fixed: false,
       cost: 0,
       prdDirty: false,
       verdict: "test_bug",
       confidence: 1.0,
-      reasoning: "Semantic review confirmed all stories passed — failure is in the test",
+      reasoning:
+        "Semantic review confirmed all ACs are implemented — acceptance test failure is a test generation issue",
     };
   }
 
@@ -824,11 +830,13 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     if (strategy === "diagnose-first" || strategy === "implement-only") {
       logger?.info("acceptance", `Running fix routing with strategy: ${strategy}`);
 
+      const semanticVerdicts = ctx.featureDir ? await _acceptanceLoopDeps.loadSemanticVerdicts(ctx.featureDir) : [];
       const fixResult = await runFixRouting({
         ctx,
         failures,
         prd,
         acceptanceContext,
+        semanticVerdicts,
       });
 
       totalCost += fixResult.cost;

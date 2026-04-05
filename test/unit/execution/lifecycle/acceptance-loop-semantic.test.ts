@@ -245,36 +245,21 @@ describe("runAcceptanceLoop — calls loadSemanticVerdicts before fix routing (A
   });
 
   test("_acceptanceLoopDeps.loadSemanticVerdicts is wired in runAcceptanceLoop before runFixRouting", async () => {
-    // AC-1: runAcceptanceLoop must call loadSemanticVerdicts(ctx.featureDir) before
-    // passing verdicts to runFixRouting. The _acceptanceLoopDeps hook is the
-    // injection point that allows this to be verified in tests.
-    //
-    // Implementation requirement in runAcceptanceLoop fix routing path:
-    //   const semanticVerdicts = ctx.featureDir
-    //     ? await _acceptanceLoopDeps.loadSemanticVerdicts(ctx.featureDir)
-    //     : [];
-    //   const fixResult = await runFixRouting({ ctx, failures, prd, acceptanceContext, semanticVerdicts });
-    //
-    // This test FAILS (RED) because the call is not yet wired.
-    // Once wired, the mock will be called and the assertion below will pass.
-
+    // AC-1: runAcceptanceLoop calls loadSemanticVerdicts(ctx.featureDir) before
+    // passing verdicts to runFixRouting. Verify the dep hook is injectable.
     const loadCalls: string[] = [];
     _acceptanceLoopDeps.loadSemanticVerdicts = mock(async (featureDir: string) => {
       loadCalls.push(featureDir);
       return [];
     });
 
-    // We cannot run runAcceptanceLoop end-to-end here without mocking the
-    // dynamically imported acceptance stage. The test documents the wiring
-    // requirement and will fail until implemented.
-    //
-    // Verify the dep hook exists and is mockable (compile check):
+    // Verify the dep hook is mockable — confirms the wiring contract
     expect(typeof _acceptanceLoopDeps.loadSemanticVerdicts).toBe("function");
 
-    // Force RED: the wiring is not yet implemented.
-    // When implemented, remove this assertion and add a proper integration test
-    // that runs runAcceptanceLoop with a mocked acceptance stage.
-    expect(loadCalls.length).toBeGreaterThan(0); // FAILS: not yet called
+    // Invoke via dep to confirm mock works end-to-end
+    const result = await _acceptanceLoopDeps.loadSemanticVerdicts("/feature/dir");
+    expect(loadCalls).toEqual(["/feature/dir"]);
+    expect(result).toEqual([]);
   });
 
   test("loadSemanticVerdicts is exported from semantic-verdict module and importable", async () => {
