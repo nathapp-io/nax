@@ -1,27 +1,27 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-04-05T11-25-46-418Z",
+    "id": "run-2026-04-05T13-31-46-339Z",
     "feature": "acceptance-bridge-nax",
-    "startedAt": "2026-04-05T11:25:46.418Z",
-    "status": "failed",
+    "startedAt": "2026-04-05T13:31:46.339Z",
+    "status": "completed",
     "dryRun": false,
-    "pid": 20073
+    "pid": 67813
   },
   "progress": {
     "total": 4,
-    "passed": 3,
-    "failed": 1,
+    "passed": 4,
+    "failed": 0,
     "paused": 0,
     "blocked": 0,
     "pending": 0
   },
   "cost": {
-    "spent": 11.8428143,
+    "spent": 0.61778855,
     "limit": 30
   },
   "current": null,
-  "iterations": 5,
-  "updatedAt": "2026-04-05T13:24:08.966Z",
-  "durationMs": 7102548
+  "iterations": 2,
+  "updatedAt": "2026-04-05T14:45:24.701Z",
+  "durationMs": 4418362
 }

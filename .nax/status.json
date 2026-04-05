@@ -4,33 +4,24 @@
     "id": "run-2026-04-05T13-31-46-339Z",
     "feature": "acceptance-bridge-nax",
     "startedAt": "2026-04-05T13:31:46.339Z",
-    "status": "running",
+    "status": "completed",
     "dryRun": false,
     "pid": 67813
   },
   "progress": {
     "total": 4,
-    "passed": 3,
+    "passed": 4,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 1
+    "pending": 0
   },
   "cost": {
-    "spent": 0,
+    "spent": 0.61778855,
     "limit": 30
   },
-  "current": {
-    "storyId": "US-001",
-    "title": "Acceptance context in implementer prompt",
-    "complexity": "medium",
-    "tddStrategy": "three-session-tdd-lite",
-    "model": "powerful",
-    "attempt": 2,
-    "phase": "routing"
-  },
-  "iterations": 1,
-  "updatedAt": "2026-04-05T13:45:46.430Z",
-  "durationMs": 840091,
-  "lastHeartbeat": "2026-04-05T13:45:46.430Z"
+  "current": null,
+  "iterations": 2,
+  "updatedAt": "2026-04-05T14:45:24.701Z",
+  "durationMs": 4418362
 }

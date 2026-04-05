@@ -11,6 +11,7 @@
 
 import path, { join } from "node:path";
 import { type FixStory, convertFixStoryToUserStory, generateFixStories } from "../../acceptance";
+import { loadAcceptanceTestContent as loadAcceptanceTestContentModule } from "../../acceptance/content-loader";
 import { diagnoseAcceptanceFailure } from "../../acceptance/fix-diagnosis";
 import { executeSourceFix } from "../../acceptance/fix-executor";
 import { loadSemanticVerdicts } from "../../acceptance/semantic-verdict";
@@ -415,7 +416,18 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
   const fixMaxRetries = ctx.config.acceptance.fix?.maxRetries ?? 2;
 
   const testPaths = ctx.acceptanceTestPaths;
-  const testEntries = await loadAcceptanceTestContent(ctx.featureDir, testPaths ?? undefined);
+  let testEntries: Array<{ content: string; path: string }>;
+  if (testPaths && testPaths.length > 0) {
+    const pathStrings = testPaths.map((p) => (typeof p === "string" ? p : p.testPath));
+    const moduleEntries = await loadAcceptanceTestContentModule(pathStrings);
+    testEntries = moduleEntries.map((e) => ({ content: e.content, path: e.testPath }));
+  } else {
+    const fallbackPath = ctx.featureDir
+      ? path.join(ctx.featureDir, ctx.config.acceptance.testPath ?? "acceptance.test.ts")
+      : undefined;
+    const moduleEntries = await loadAcceptanceTestContentModule(fallbackPath);
+    testEntries = moduleEntries.map((e) => ({ content: e.content, path: e.testPath }));
+  }
   const primaryEntry = testEntries[0] ?? { content: "", path: "" };
   const testFileContent = primaryEntry.content;
   const acceptanceTestPath = primaryEntry.path;
