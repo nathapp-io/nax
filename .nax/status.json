@@ -1,12 +1,12 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-04-05T09-23-07-239Z",
+    "id": "run-2026-04-05T11-25-46-418Z",
     "feature": "acceptance-bridge-nax",
-    "startedAt": "2026-04-05T09:23:07.239Z",
+    "startedAt": "2026-04-05T11:25:46.418Z",
     "status": "running",
     "dryRun": false,
-    "pid": 6342
+    "pid": 20073
   },
   "progress": {
     "total": 4,
@@ -30,7 +30,7 @@
     "phase": "routing"
   },
   "iterations": 1,
-  "updatedAt": "2026-04-05T09:51:07.253Z",
-  "durationMs": 1680014,
-  "lastHeartbeat": "2026-04-05T09:51:07.253Z"
+  "updatedAt": "2026-04-05T11:32:46.488Z",
+  "durationMs": 420070,
+  "lastHeartbeat": "2026-04-05T11:32:46.488Z"
 }
