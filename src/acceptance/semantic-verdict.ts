@@ -49,10 +49,10 @@ export async function persistSemanticVerdict(
   storyId: string,
   verdict: SemanticVerdict,
 ): Promise<void> {
-  // TODO: implement in US-003
-  void featureDir;
-  void storyId;
-  void verdict;
+  const dir = path.join(featureDir, "semantic-verdicts");
+  await _semanticVerdictDeps.mkdirp(dir);
+  const filePath = path.join(dir, `${storyId}.json`);
+  await _semanticVerdictDeps.writeFile(filePath, JSON.stringify(verdict, null, 2));
 }
 
 /**
@@ -65,7 +65,25 @@ export async function persistSemanticVerdict(
  * @returns Array of parsed SemanticVerdict objects
  */
 export async function loadSemanticVerdicts(featureDir: string): Promise<SemanticVerdict[]> {
-  // TODO: implement in US-003
-  void featureDir;
-  return [];
+  const dir = path.join(featureDir, "semantic-verdicts");
+  let files: string[];
+  try {
+    files = await _semanticVerdictDeps.readdir(dir);
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+
+  const results: SemanticVerdict[] = [];
+  for (const file of files) {
+    if (!file.endsWith(".json")) continue;
+    const filePath = path.join(dir, file);
+    const content = await _semanticVerdictDeps.readFile(filePath);
+    try {
+      results.push(JSON.parse(content) as SemanticVerdict);
+    } catch {
+      _semanticVerdictDeps.logDebug(`Skipping invalid JSON in semantic-verdicts/${file}`);
+    }
+  }
+  return results;
 }

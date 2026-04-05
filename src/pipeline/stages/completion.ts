@@ -13,6 +13,7 @@
  */
 
 import { persistSemanticVerdict } from "../../acceptance/semantic-verdict";
+import type { SemanticVerdict } from "../../acceptance/types";
 import { appendProgress } from "../../execution/progress";
 import { checkReviewGate, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
@@ -90,6 +91,19 @@ export const completionStage: PipelineStage = {
           logger.warn("completion", "Story marked for re-review", { storyId: completedStory.id });
         }
       }
+    }
+
+    // Persist semantic verdict if a semantic check was run (AC-4 through AC-7)
+    const semanticCheck = ctx.reviewResult?.checks?.find((c) => c.check === "semantic");
+    if (ctx.featureDir && semanticCheck) {
+      const verdict: SemanticVerdict = {
+        storyId: ctx.story.id,
+        passed: semanticCheck.success,
+        timestamp: new Date().toISOString(),
+        acCount: ctx.story.acceptanceCriteria?.length ?? 0,
+        findings: semanticCheck.success ? [] : (semanticCheck.findings ?? []),
+      };
+      await _completionDeps.persistSemanticVerdict(ctx.featureDir, ctx.story.id, verdict);
     }
 
     // Save PRD

@@ -83,8 +83,19 @@ export const _acceptanceSetupDeps = {
     const { unlink } = await import("node:fs/promises");
     await unlink(filePath);
   },
-  deleteSemanticVerdicts: async (_featureDir: string): Promise<void> => {
-    // TODO: implement in US-003 — delete all files in <featureDir>/semantic-verdicts/
+  deleteSemanticVerdicts: async (featureDir: string): Promise<void> => {
+    const dir = `${featureDir}/semantic-verdicts`;
+    const { readdir, unlink } = await import("node:fs/promises");
+    let files: string[];
+    try {
+      files = await readdir(dir);
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw err;
+    }
+    for (const file of files) {
+      await unlink(`${dir}/${file}`);
+    }
   },
   readMeta: async (metaPath: string): Promise<AcceptanceMeta | null> => {
     const f = Bun.file(metaPath);
@@ -227,6 +238,8 @@ export const acceptanceSetupStage: PipelineStage = {
           await _acceptanceSetupDeps.deleteFile(testPath);
         }
       }
+      // Clear semantic verdicts so stale results don't influence the acceptance loop
+      await _acceptanceSetupDeps.deleteSemanticVerdicts(ctx.featureDir);
       shouldGenerate = true;
     } else {
       // Fingerprint matches — reuse existing tests. If the file is missing (e.g.,
