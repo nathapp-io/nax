@@ -410,7 +410,7 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
   const { loadAcceptanceTestContent: loadContent } = await import("../../acceptance/content-loader");
   const testPaths = ctx.acceptanceTestPaths;
   const testEntries = testPaths
-    ? await loadContent(testPaths as unknown as string[])
+    ? await loadContent(testPaths.map((tp) => tp.testPath))
     : await loadContent(
         ctx.featureDir ? path.join(ctx.featureDir, ctx.config.acceptance.testPath ?? "acceptance.test.ts") : undefined,
       );
