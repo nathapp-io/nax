@@ -13,6 +13,7 @@ import path, { join } from "node:path";
 import { type FixStory, convertFixStoryToUserStory, generateFixStories } from "../../acceptance";
 import { diagnoseAcceptanceFailure } from "../../acceptance/fix-diagnosis";
 import { executeSourceFix } from "../../acceptance/fix-executor";
+import { loadSemanticVerdicts } from "../../acceptance/semantic-verdict";
 import type { DiagnosisResult } from "../../acceptance/types";
 import { getAgent } from "../../agents/registry";
 import type { AgentAdapter } from "../../agents/types";
@@ -160,7 +161,7 @@ function buildResult(
   return { success, prd, totalCost, iterations, storiesCompleted, prdDirty, failedACs, retries };
 }
 
-export const _acceptanceLoopDeps = { getAgent };
+export const _acceptanceLoopDeps = { getAgent, loadSemanticVerdicts };
 
 /** Injectable dependencies for regenerateAcceptanceTest — allows tests to mock I/O without real disk or git. */
 export const _regenerateDeps = {
