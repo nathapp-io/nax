@@ -8,12 +8,13 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG } from "../../../src/config/defaults";
 import type { NaxConfig } from "../../../src/config";
+import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { collectStoryMetrics } from "../../../src/metrics/tracker";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd";
 import type { StoryRouting } from "../../../src/prd/types";
-import { collectStoryMetrics } from "../../../src/metrics/tracker";
+import type { VerifyResult } from "../../../src/verification/orchestrator-types";
 
 const WORKDIR = `/tmp/nax-tracker-test-${randomUUID()}`;
 
@@ -52,7 +53,11 @@ function makeConfig(): NaxConfig {
   return { ...DEFAULT_CONFIG };
 }
 
-function makeCtx(story: UserStory, routingOverrides?: Partial<PipelineContext["routing"]>): PipelineContext {
+function makeCtx(
+  story: UserStory,
+  routingOverrides?: Partial<PipelineContext["routing"]>,
+  verifyResult?: VerifyResult,
+): PipelineContext {
   return {
     config: makeConfig(),
     prd: makePRD(story),
@@ -73,6 +78,7 @@ function makeCtx(story: UserStory, routingOverrides?: Partial<PipelineContext["r
       estimatedCost: 0.01,
       durationMs: 5000,
     },
+    verifyResult,
   } as unknown as PipelineContext;
 }
 
@@ -98,9 +104,9 @@ describe("collectStoryMetrics - initialComplexity field", () => {
 
   test("initialComplexity differs from complexity when story was escalated", () => {
     const routing: StoryRouting = {
-      complexity: "medium",         // complexity as classified
-      initialComplexity: "simple",  // original first-classify prediction
-      modelTier: "powerful",        // escalated tier
+      complexity: "medium", // complexity as classified
+      initialComplexity: "simple", // original first-classify prediction
+      modelTier: "powerful", // escalated tier
       testStrategy: "three-session-tdd",
       reasoning: "escalated",
     };
@@ -218,5 +224,63 @@ describe("collectStoryMetrics - agentUsed field", () => {
     const metrics = collectStoryMetrics(ctx, new Date().toISOString());
 
     expect("agentUsed" in metrics).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-002: collectStoryMetrics propagates scopeTestFallback
+// ---------------------------------------------------------------------------
+
+describe("collectStoryMetrics - scopeTestFallback field (US-002)", () => {
+  test("scopeTestFallback is propagated from verifyResult to StoryMetrics when set", () => {
+    const story = makeStory();
+    const verifyResult: VerifyResult = {
+      success: true,
+      status: "PASS",
+      storyId: story.id,
+      strategy: "scoped",
+      passCount: 10,
+      failCount: 0,
+      totalCount: 10,
+      failures: [],
+      durationMs: 5000,
+      countsTowardEscalation: false,
+      scopeTestFallback: true,
+    };
+    const ctx = makeCtx(story, {}, verifyResult);
+
+    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.scopeTestFallback).toBe(true);
+  });
+
+  test("scopeTestFallback is absent from StoryMetrics when verifyResult does not have it", () => {
+    const story = makeStory();
+    const verifyResult: VerifyResult = {
+      success: true,
+      status: "PASS",
+      storyId: story.id,
+      strategy: "scoped",
+      passCount: 10,
+      failCount: 0,
+      totalCount: 10,
+      failures: [],
+      durationMs: 5000,
+      countsTowardEscalation: false,
+    };
+    const ctx = makeCtx(story, {}, verifyResult);
+
+    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.scopeTestFallback).toBeUndefined();
+  });
+
+  test("scopeTestFallback is absent from StoryMetrics when verifyResult is undefined", () => {
+    const story = makeStory();
+    const ctx = makeCtx(story);
+
+    const metrics = collectStoryMetrics(ctx, new Date().toISOString());
+
+    expect(metrics.scopeTestFallback).toBeUndefined();
   });
 });

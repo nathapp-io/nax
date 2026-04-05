@@ -1,0 +1,2 @@
+[2026-04-04T15:25:16.999Z] US-001 — PASSED — Config field + threshold check + warning log — Cost: $0.4508
+[2026-04-04T15:33:15.898Z] US-002 — PASSED — Story metric scopeTestFallback flag — Cost: $0.1870

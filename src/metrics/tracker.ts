@@ -95,6 +95,9 @@ export function collectStoryMetrics(ctx: PipelineContext, storyStartTime: string
     completedAt: new Date().toISOString(),
     fullSuiteGatePassed,
     runtimeCrashes: ctx.storyRuntimeCrashes ?? 0,
+    ...(ctx.verifyResult?.scopeTestFallback !== undefined && {
+      scopeTestFallback: ctx.verifyResult.scopeTestFallback,
+    }),
   };
 }
 

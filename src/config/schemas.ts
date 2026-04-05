@@ -142,18 +142,21 @@ const ExecutionConfigSchema = z.object({
 });
 
 const QualityConfigSchema = z.object({
-  requireTypecheck: z.boolean(),
-  requireLint: z.boolean(),
-  requireTests: z.boolean(),
-  commands: z.object({
-    typecheck: z.string().optional(),
-    lint: z.string().optional(),
-    test: z.string().optional(),
-    testScoped: z.string().optional(),
-    lintFix: z.string().optional(),
-    formatFix: z.string().optional(),
-    build: z.string().optional(),
-  }),
+  requireTypecheck: z.boolean().default(true),
+  requireLint: z.boolean().default(true),
+  requireTests: z.boolean().default(true),
+  scopeTestThreshold: z.number().int().min(0).default(10),
+  commands: z
+    .object({
+      typecheck: z.string().optional(),
+      lint: z.string().optional(),
+      test: z.string().optional(),
+      testScoped: z.string().optional(),
+      lintFix: z.string().optional(),
+      formatFix: z.string().optional(),
+      build: z.string().optional(),
+    })
+    .default({}),
   autofix: z
     .object({
       enabled: z.boolean().default(true),
@@ -594,6 +597,7 @@ export const NaxConfigSchema = z
       requireTypecheck: true,
       requireLint: true,
       requireTests: true,
+      scopeTestThreshold: 10,
       commands: {},
       autofix: {
         enabled: true,
