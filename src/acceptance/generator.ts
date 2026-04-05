@@ -186,7 +186,11 @@ export async function generateFromPRD(
     lineNumber: i + 1,
   }));
 
-  if (refinedCriteria.length === 0) {
+  if (
+    refinedCriteria.length === 0 &&
+    !(options.implementationContext && options.implementationContext.length > 0) &&
+    !options.previousFailure
+  ) {
     return { testCode: "", criteria: [] };
   }
 

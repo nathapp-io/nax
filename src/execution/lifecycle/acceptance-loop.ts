@@ -15,6 +15,7 @@ import { diagnoseAcceptanceFailure } from "../../acceptance/fix-diagnosis";
 import { executeSourceFix } from "../../acceptance/fix-executor";
 import type { DiagnosisResult } from "../../acceptance/types";
 import { getAgent } from "../../agents/registry";
+import type { AgentAdapter } from "../../agents/types";
 import type { NaxConfig } from "../../config";
 import { resolveModelForAgent } from "../../config";
 import { loadConfigForWorkdir } from "../../config/loader";
@@ -76,16 +77,30 @@ export function isStubTestFile(content: string): boolean {
  * Detect test-level failure (P1-D, D2).
  *
  * Returns true when the failure is likely a test bug rather than implementation gaps:
+ * - All semantic verdicts passed (overrides ratio check)
  * - Test crashed with no ACs parsed ("AC-ERROR" sentinel)
  * - More than 80% of total ACs failed
  *
- * @param failedACs - ACs that failed in this run
+ * @param failedACs - ACs that failed in this run (or number of failed ACs)
  * @param totalACs - Total ACs across all non-fix stories
+ * @param semanticVerdicts - Optional semantic verdicts; when all passed, returns true
  */
-export function isTestLevelFailure(failedACs: string[], totalACs: number): boolean {
-  if (failedACs.includes("AC-ERROR")) return true;
+export function isTestLevelFailure(
+  failedACs: string[] | number,
+  totalACs: number,
+  semanticVerdicts?: Array<{ passed: boolean }>,
+): boolean {
+  // When all semantic verdicts passed, this is a test-level failure
+  if (semanticVerdicts && semanticVerdicts.length > 0 && semanticVerdicts.every((v) => v.passed)) {
+    return true;
+  }
+
+  const failedCount = typeof failedACs === "number" ? failedACs : failedACs.length;
+  const hasACError = Array.isArray(failedACs) && failedACs.includes("AC-ERROR");
+
+  if (hasACError) return true;
   if (totalACs === 0) return false;
-  return failedACs.length / totalACs > 0.8;
+  return failedCount / totalACs > 0.8;
 }
 
 /** Load spec.md content for AC text */
@@ -332,17 +347,27 @@ export async function regenerateAcceptanceTest(testPath: string, acceptanceConte
   return true;
 }
 
-interface FixRoutingOptions {
+export interface FixRoutingOptions {
   ctx: AcceptanceLoopContext;
   failures: { failedACs: string[]; testOutput: string };
-  prd: PRD;
-  acceptanceContext: PipelineContext;
+  prd?: PRD;
+  acceptanceContext?: PipelineContext;
+  semanticVerdicts?: Array<{
+    storyId: string;
+    passed: boolean;
+    timestamp: string;
+    acCount: number;
+    findings: unknown[];
+  }>;
 }
 
 interface FixRoutingResult {
   fixed: boolean;
   cost: number;
   prdDirty: boolean;
+  verdict?: string;
+  confidence?: number;
+  reasoning?: string;
 }
 
 /**
@@ -357,29 +382,56 @@ interface FixRoutingResult {
  *
  * Emits JSONL events for acceptance.diagnosis, acceptance.source-fix, and acceptance.test-regen.
  */
-async function runFixRouting(options: FixRoutingOptions): Promise<FixRoutingResult> {
+export async function runFixRouting(options: FixRoutingOptions): Promise<FixRoutingResult> {
   const logger = getSafeLogger();
-  const { ctx, failures, prd, acceptanceContext } = options;
+  const { ctx, failures, acceptanceContext } = options;
+  const prd = options.prd ?? (ctx as unknown as { prd: PRD }).prd;
+
+  // Fast path: when all semantic verdicts passed, skip diagnosis — it's a test bug
+  const semanticVerdicts = options.semanticVerdicts;
+  if (semanticVerdicts && semanticVerdicts.length > 0 && semanticVerdicts.every((v) => v.passed)) {
+    logger?.info("acceptance", "All semantic verdicts passed", { verdictCount: semanticVerdicts.length });
+    return {
+      fixed: false,
+      cost: 0,
+      prdDirty: false,
+      verdict: "test_bug",
+      confidence: 1.0,
+      reasoning: "Semantic review confirmed all stories passed — failure is in the test",
+    };
+  }
 
   const agentName = ctx.config.autoMode.defaultAgent;
   const agent = (ctx.agentGetFn ?? _acceptanceLoopDeps.getAgent)(agentName);
-  if (!agent) {
-    logger?.error("acceptance", "Agent not found for fix routing");
-    return { fixed: false, cost: 0, prdDirty: false };
-  }
 
   const strategy = ctx.config.acceptance.fix?.strategy ?? "diagnose-first";
   const fixMaxRetries = ctx.config.acceptance.fix?.maxRetries ?? 2;
 
-  const testEntries = await loadAcceptanceTestContent(ctx.featureDir, ctx.acceptanceTestPaths);
-  const primaryEntry = testEntries[0] ?? { content: "", path: "" };
+  const { loadAcceptanceTestContent: loadContent } = await import("../../acceptance/content-loader");
+  const testPaths = ctx.acceptanceTestPaths;
+  const testEntries = testPaths
+    ? await loadContent(testPaths as unknown as string[])
+    : await loadContent(
+        ctx.featureDir ? path.join(ctx.featureDir, ctx.config.acceptance.testPath ?? "acceptance.test.ts") : undefined,
+      );
+  const primaryEntry = testEntries[0] ?? { content: "", testPath: "" };
   const testFileContent = primaryEntry.content;
-  const acceptanceTestPath = primaryEntry.path;
-  const firstStory = prd.userStories[0];
+  const acceptanceTestPath = primaryEntry.testPath;
+  const firstStory = prd?.userStories?.[0];
   const storyId = firstStory?.id ?? "unknown";
+
+  // No failures to fix — return early
+  if (failures.failedACs.length === 0) {
+    return { fixed: true, cost: 0, prdDirty: false };
+  }
 
   if (strategy === "implement-only") {
     logger?.info("acceptance", "Strategy is implement-only — executing source fix directly");
+
+    if (!agent) {
+      logger?.error("acceptance", "Agent not found for fix routing");
+      return { fixed: false, cost: 0, prdDirty: false };
+    }
 
     let fixAttempts = 0;
     while (fixAttempts < fixMaxRetries) {
@@ -423,7 +475,7 @@ async function runFixRouting(options: FixRoutingOptions): Promise<FixRoutingResu
   }
 
   logger?.info("acceptance", "Strategy is diagnose-first — running diagnosis");
-  const diagnosis = await diagnoseAcceptanceFailure(agent, {
+  const diagnosis = await diagnoseAcceptanceFailure(agent as AgentAdapter, {
     testOutput: failures.testOutput,
     testFileContent,
     config: ctx.config,
@@ -440,6 +492,11 @@ async function runFixRouting(options: FixRoutingOptions): Promise<FixRoutingResu
 
   if (diagnosis.verdict === "source_bug") {
     logger?.info("acceptance", "Diagnosis: source_bug — executing source fix");
+
+    if (!agent) {
+      logger?.error("acceptance", "Agent not found for source fix execution");
+      return { fixed: false, cost: 0, prdDirty: false };
+    }
 
     let fixAttempts = 0;
     while (fixAttempts < fixMaxRetries) {
@@ -491,7 +548,7 @@ async function runFixRouting(options: FixRoutingOptions): Promise<FixRoutingResu
       return { fixed: false, cost: 0, prdDirty: false };
     }
 
-    const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext);
+    const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext as PipelineContext);
 
     logger?.info("acceptance.test-regen", "Test regeneration completed", {
       outcome: regenerated ? "success" : "failure",
@@ -502,7 +559,7 @@ async function runFixRouting(options: FixRoutingOptions): Promise<FixRoutingResu
     }
 
     const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
-    const acceptanceResult = await acceptanceStage.execute(acceptanceContext);
+    const acceptanceResult = await acceptanceStage.execute(acceptanceContext as PipelineContext);
 
     if (acceptanceResult.action === "continue") {
       logger?.info("acceptance", "Acceptance passed after test regeneration");
@@ -515,6 +572,11 @@ async function runFixRouting(options: FixRoutingOptions): Promise<FixRoutingResu
 
   if (diagnosis.verdict === "both") {
     logger?.info("acceptance", "Diagnosis: both — executing source fix then regenerating test if needed");
+
+    if (!agent) {
+      logger?.error("acceptance", "Agent not found for source fix execution");
+      return { fixed: false, cost: 0, prdDirty: false };
+    }
 
     let sourceFixSuccess = false;
     let sourceFixCost = 0;
@@ -561,7 +623,7 @@ async function runFixRouting(options: FixRoutingOptions): Promise<FixRoutingResu
     logger?.info("acceptance", "Source fix succeeded — re-running acceptance to verify");
 
     const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
-    const acceptanceResult = await acceptanceStage.execute(acceptanceContext);
+    const acceptanceResult = await acceptanceStage.execute(acceptanceContext as PipelineContext);
 
     if (acceptanceResult.action === "continue") {
       logger?.info("acceptance", "Acceptance passed after source fix");
@@ -582,7 +644,7 @@ async function runFixRouting(options: FixRoutingOptions): Promise<FixRoutingResu
       return { fixed: false, cost: sourceFixCost, prdDirty: false };
     }
 
-    const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext);
+    const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext as PipelineContext);
 
     logger?.info("acceptance.test-regen", "Test regeneration completed", {
       outcome: regenerated ? "success" : "failure",

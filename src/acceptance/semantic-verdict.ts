@@ -9,6 +9,7 @@
 import path from "node:path";
 import { getLogger } from "../logger";
 import type { SemanticVerdict } from "./types";
+export type { SemanticVerdict } from "./types";
 
 /**
  * Injectable dependencies for semantic verdict persistence.

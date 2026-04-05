@@ -9,7 +9,7 @@ import { buildSessionName } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config/schema";
 import { type ModelTier, resolveModelForAgent } from "../config/schema-types";
-import type { DiagnosisResult } from "./types";
+import type { DiagnosisResult, SemanticVerdict } from "./types";
 
 export interface DiagnoseOptions {
   testOutput: string;
@@ -58,10 +58,11 @@ async function readSourceFileContent(
   }
 }
 
-function buildDiagnosisPrompt(options: {
+export function buildDiagnosisPrompt(options: {
   testOutput: string;
   testFileContent: string;
   sourceFiles: Array<{ path: string; content: string }>;
+  semanticVerdicts?: SemanticVerdict[];
 }): string {
   const truncatedOutput = options.testOutput.slice(0, MAX_TEST_OUTPUT_CHARS);
 
@@ -69,6 +70,15 @@ function buildDiagnosisPrompt(options: {
     options.sourceFiles.length > 0
       ? options.sourceFiles.map((f) => `FILE: ${f.path}\n\`\`\`\n${f.content}\n\`\`\``).join("\n\n")
       : "(No source files could be resolved from imports)";
+
+  let verdictSection = "";
+  if (options.semanticVerdicts && options.semanticVerdicts.length > 0) {
+    const lines = options.semanticVerdicts.map((v) => {
+      const status = v.passed ? "passed" : "test bug";
+      return `- ${v.storyId}: ${status}`;
+    });
+    verdictSection = `\nSEMANTIC VERDICTS:\n${lines.join("\n")}\n`;
+  }
 
   return `You are a debugging expert. An acceptance test has failed.
 
@@ -84,7 +94,7 @@ ${options.testFileContent}
 
 SOURCE FILES (auto-detected from imports, up to ${MAX_FILE_LINES} lines each):
 ${sourceFilesSection}
-
+${verdictSection}
 Respond with ONLY a JSON object in this exact format (no markdown, no extra text):
 {
   "verdict": "source_bug" | "test_bug" | "both",

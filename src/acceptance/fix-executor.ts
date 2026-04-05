@@ -28,7 +28,7 @@ export interface ExecuteSourceFixResult {
   cost: number;
 }
 
-function buildSourceFixPrompt(options: ExecuteSourceFixOptions): string {
+export function buildSourceFixPrompt(options: ExecuteSourceFixOptions): string {
   const { testOutput, diagnosis, acceptanceTestPath, testFileContent } = options;
 
   let prompt = `ACCEPTANCE TEST FAILURE:\n${testOutput}\n\n`;

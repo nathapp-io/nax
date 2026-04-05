@@ -42,16 +42,17 @@ async function _loadAcceptanceEntries(
     return [];
   }
   const entries: AcceptanceEntry[] = [];
-  for (const { testPath } of ctx.acceptanceTestPaths) {
-    const { exists, text } = await _promptStageDeps.readFile(testPath);
-    if (!exists) {
+  for (const item of ctx.acceptanceTestPaths) {
+    const testPath = typeof item === "string" ? item : item.testPath;
+    const file = Bun.file(testPath);
+    if (!(await file.exists())) {
       logger.debug("prompt", "Acceptance test file not found, skipping", {
         storyId: ctx.story?.id ?? "batch",
         testPath,
       });
       continue;
     }
-    entries.push({ testPath, content: text });
+    entries.push({ testPath, content: await file.text() });
   }
   return entries;
 }
