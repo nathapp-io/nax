@@ -112,6 +112,19 @@ export async function loadAcceptanceTestContent(
   testPaths?: Array<{ testPath: string; packageDir: string }>,
 ): Promise<Array<{ content: string; path: string }>> {
   if (!featureDir) return [];
+
+  if (testPaths && testPaths.length > 0) {
+    const results: Array<{ content: string; path: string }> = [];
+    for (const { testPath } of testPaths) {
+      const testFile = Bun.file(testPath);
+      if (await testFile.exists()) {
+        const content = await testFile.text();
+        results.push({ content, path: testPath });
+      }
+    }
+    return results;
+  }
+
   const legacyPath = path.join(featureDir, "acceptance.test.ts");
   const testFile = Bun.file(legacyPath);
   const content = (await testFile.exists()) ? await testFile.text() : "";
