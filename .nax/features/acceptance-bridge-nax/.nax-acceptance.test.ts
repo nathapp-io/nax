@@ -33,6 +33,7 @@ import { buildSourceFixPrompt } from "../../../src/acceptance/fix-executor";
 import type { ExecuteSourceFixOptions } from "../../../src/acceptance/fix-executor";
 import {
   _acceptanceLoopDeps,
+  _regenerateDeps,
   isTestLevelFailure,
   runFixRouting,
 } from "../../../src/execution/lifecycle/acceptance-loop";
@@ -234,6 +235,7 @@ describe("promptStage acceptance file loading", () => {
     expect(callArg).toHaveLength(2);
     expect((callArg[0] as Record<string, string>).testPath).toBe("a.test.ts");
     expect((callArg[1] as Record<string, string>).testPath).toBe("b.test.ts");
+    spy.mockRestore();
   });
 
   test("AC-7: acceptanceContext not called when acceptanceTestPaths is undefined or empty", async () => {
@@ -271,9 +273,7 @@ describe("promptStage acceptance file loading", () => {
 
     const ctx = makeCtx({ acceptanceTestPaths: ["exists.test.ts", "missing.test.ts"] });
 
-    await expect(
-      promptStage.execute(ctx as Parameters<typeof promptStage.execute>[0]),
-    ).resolves.not.toThrow();
+    await promptStage.execute(ctx as Parameters<typeof promptStage.execute>[0]);
 
     const callArg = (spy.mock.calls[0]?.[0] as unknown[]) ?? [];
     const paths = callArg.map((e) => (e as Record<string, string>).testPath);
@@ -462,45 +462,34 @@ describe("regenerateAcceptanceTest git integration", () => {
     const tmpDir = makeTempDir();
     const testPath = join(tmpDir, "acceptance.test.ts");
     writeFileSync(testPath, "// stub");
-    writeFileSync(join(tmpDir, "src", "foo.ts"), "const x = 1;").catch(() => {});
+    mkdirSync(join(tmpDir, "src"), { recursive: true });
+    writeFileSync(join(tmpDir, "src", "foo.ts"), "const x = 1;");
 
-    const spawnCalls: { cmd: string[] }[] = [];
-    const origSpawn = Bun.spawn;
-    (Bun as unknown as Record<string, unknown>).spawn = (cmd: string[], opts: unknown) => {
-      spawnCalls.push({ cmd });
-      const text = async () => "src/foo.ts\n";
-      return {
-        exitCode: Promise.resolve(0),
-        stdout: { text },
-        exited: Promise.resolve(0),
-      };
+    const savedRegen = { ..._regenerateDeps };
+    const gitCalls: Array<{ workdir: string; gitRef: string }> = [];
+    _regenerateDeps.spawnGitDiff = async (workdir: string, gitRef: string) => {
+      gitCalls.push({ workdir, gitRef });
+      return "src/foo.ts";
     };
-
-    const origFile = Bun.file;
-    (Bun as unknown as Record<string, unknown>).file = (p: string) => ({
-      exists: () => Promise.resolve(p === testPath),
-      text: () => Promise.resolve("const x = 1;"),
-    });
+    _regenerateDeps.readFile = async () => "const x = 1;";
+    _regenerateDeps.acceptanceSetupExecute = async () => {};
 
     const ctx = makeCtx({
       featureDir: tmpDir,
       story: { ...makeStory(), storyGitRef: "HEAD~1" },
+      storyGitRef: "HEAD~1",
+      workdir: tmpDir,
     });
 
     try {
       await regenerateAcceptanceTest(testPath, ctx as Parameters<typeof regenerateAcceptanceTest>[1]);
-    } catch {
-      // May fail due to missing setup stage — we check spawn calls only
+      expect(gitCalls).toHaveLength(1);
+      expect(gitCalls[0]?.gitRef).toBe("HEAD~1");
+      expect(gitCalls[0]?.workdir).toBe(tmpDir);
+    } finally {
+      Object.assign(_regenerateDeps, savedRegen);
+      rmSync(tmpDir, { recursive: true, force: true });
     }
-
-    const gitCall = spawnCalls.find((c) => c.cmd.includes("diff") && c.cmd.includes("--name-only"));
-    expect(gitCall).toBeDefined();
-    expect(gitCall?.cmd).toContain("--name-only");
-    expect(gitCall?.cmd).toContain("HEAD~1");
-
-    (Bun as unknown as Record<string, unknown>).spawn = origSpawn;
-    (Bun as unknown as Record<string, unknown>).file = origFile;
-    rmSync(tmpDir, { recursive: true });
   });
 });
 
@@ -593,7 +582,7 @@ describe("persistSemanticVerdict", () => {
 
   test("AC-21: creates semantic-verdicts/ dir if it does not exist, no throw", async () => {
     const verdict = makeVerdict({ storyId: "story-x" });
-    await expect(persistSemanticVerdict(tmpDir, "story-x", verdict)).resolves.not.toThrow();
+    await persistSemanticVerdict(tmpDir, "story-x", verdict);
     expect(existsSync(join(tmpDir, "semantic-verdicts", "story-x.json"))).toBe(true);
   });
 });
