@@ -17,20 +17,20 @@
     "pending": 4
   },
   "cost": {
-    "spent": 0,
+    "spent": 1.9720224,
     "limit": 30
   },
   "current": {
-    "storyId": "US-001",
-    "title": "Acceptance context in implementer prompt",
+    "storyId": "US-002",
+    "title": "Implementation-aware test regeneration and enriched fix prompts",
     "complexity": "medium",
     "tddStrategy": "three-session-tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 1,
-  "updatedAt": "2026-04-05T11:41:46.501Z",
-  "durationMs": 960083,
-  "lastHeartbeat": "2026-04-05T11:41:46.501Z"
+  "iterations": 2,
+  "updatedAt": "2026-04-05T11:52:46.528Z",
+  "durationMs": 1620110,
+  "lastHeartbeat": "2026-04-05T11:52:46.528Z"
 }

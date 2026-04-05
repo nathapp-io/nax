@@ -3,7 +3,7 @@
   "feature": "acceptance-bridge-nax",
   "branchName": "feat/acceptance-bridge-nax",
   "createdAt": "2026-04-05T12:00:00.000Z",
-  "updatedAt": "2026-04-05T11:25:46.511Z",
+  "updatedAt": "2026-04-05T11:44:44.942Z",
   "userStories": [
     {
       "id": "US-001",
@@ -36,7 +36,7 @@
         "testStrategy": "three-session-tdd-lite",
         "reasoning": "validated from LLM output",
         "initialComplexity": "medium",
-        "modelTier": "balanced"
+        "modelTier": "powerful"
       },
       "contextFiles": [
         "src/prompts/builder.ts",
@@ -45,8 +45,69 @@
         "src/execution/lifecycle/acceptance-loop.ts",
         "src/pipeline/types.ts"
       ],
-      "priorErrors": [],
-      "priorFailures": [],
+      "priorErrors": [
+        "Attempt 1 failed with model tier: balanced: Autofix exhausted: review still failing after fix attempts"
+      ],
+      "priorFailures": [
+        {
+          "attempt": 1,
+          "modelTier": "balanced",
+          "stage": "review",
+          "summary": "Failed with tier balanced, escalating to next tier",
+          "reviewFindings": [
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/lifecycle/acceptance-loop.ts",
+              "line": 128,
+              "message": "AC-10 violation: loadAcceptanceTestContent() hardcodes 'acceptance.test.ts' as fallback path instead of using config.acceptance.testPath. The config default is '.nax-acceptance.test.ts', so the fallback will never find the actual generated test file.",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/lifecycle/acceptance-loop.ts",
+              "line": 168,
+              "message": "Same hardcoded 'acceptance.test.ts' path used in generateAndAddFixStories, inconsistent with config.acceptance.testPath default of '.nax-acceptance.test.ts'",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/lifecycle/acceptance-loop.ts",
+              "line": 426,
+              "message": "Same hardcoded 'acceptance.test.ts' path used in runFixRouting, inconsistent with config.acceptance.testPath",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/lifecycle/acceptance-loop.ts",
+              "line": 517,
+              "message": "Same hardcoded 'acceptance.test.ts' path used in runFixRouting, inconsistent with config.acceptance.testPath",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/lifecycle/acceptance-loop.ts",
+              "line": 635,
+              "message": "Same hardcoded 'acceptance.test.ts' path used in runAcceptanceLoop, inconsistent with config.acceptance.testPath",
+              "source": "semantic-review"
+            },
+            {
+              "ruleId": "semantic",
+              "severity": "error",
+              "file": "src/execution/lifecycle/acceptance-loop.ts",
+              "line": 678,
+              "message": "Same hardcoded 'acceptance.test.ts' path used in runAcceptanceLoop, inconsistent with config.acceptance.testPath",
+              "source": "semantic-review"
+            }
+          ],
+          "cost": 1.9720224,
+          "timestamp": "2026-04-05T11:44:42.916Z"
+        }
+      ],
       "storyPoints": 1,
       "storyGitRef": "96ef988fb4e9895c6c3a7b75d1bff1efc38829a0"
     },
