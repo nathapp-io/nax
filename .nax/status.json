@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 4,
-    "passed": 0,
+    "passed": 1,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 1.9720224,
+    "spent": 4.6358022000000005,
     "limit": 30
   },
   "current": {
-    "storyId": "US-002",
-    "title": "Implementation-aware test regeneration and enriched fix prompts",
+    "storyId": "US-003",
+    "title": "Semantic verdict persistence",
     "complexity": "medium",
     "tddStrategy": "three-session-tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-04-05T12:04:46.518Z",
-  "durationMs": 2340100,
-  "lastHeartbeat": "2026-04-05T12:04:46.518Z"
+  "iterations": 3,
+  "updatedAt": "2026-04-05T12:14:46.536Z",
+  "durationMs": 2940118,
+  "lastHeartbeat": "2026-04-05T12:14:46.536Z"
 }
