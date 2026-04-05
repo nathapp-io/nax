@@ -147,6 +147,24 @@ function buildResult(
 
 export const _acceptanceLoopDeps = { getAgent };
 
+/** Injectable dependencies for regenerateAcceptanceTest — allows tests to mock I/O without real disk or git. */
+export const _regenerateDeps = {
+  spawnGitDiff: async (workdir: string, gitRef: string): Promise<string> => {
+    const proc = Bun.spawn(["git", "diff", "--name-only", gitRef], {
+      cwd: workdir,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+    return stdout.trim();
+  },
+  readFile: async (filePath: string): Promise<string> => Bun.file(filePath).text(),
+  acceptanceSetupExecute: async (ctx: PipelineContext): Promise<void> => {
+    const { acceptanceSetupStage } = await import("../../pipeline/stages/acceptance-setup");
+    await acceptanceSetupStage.execute(ctx);
+  },
+};
+
 /** Generate and add fix stories to PRD */
 async function generateAndAddFixStories(
   ctx: AcceptanceLoopContext,

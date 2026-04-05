@@ -14,7 +14,7 @@ import type { DiagnosisResult } from "./types";
 
 export interface ExecuteSourceFixOptions {
   testOutput: string;
-  testFileContent: string;
+  testFileContent?: string;
   diagnosis: DiagnosisResult;
   config: NaxConfig;
   workdir: string;

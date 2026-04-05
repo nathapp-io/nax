@@ -12,11 +12,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type AcceptanceLoopContext,
+  _regenerateDeps,
   isStubTestFile,
   isTestLevelFailure,
   loadAcceptanceTestContent,
+  regenerateAcceptanceTest,
 } from "../../../../src/execution/lifecycle/acceptance-loop";
-import type { AgentGetFn } from "../../../../src/pipeline/types";
+import type { AgentGetFn, PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD } from "../../../../src/prd";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -298,5 +300,182 @@ describe("AcceptanceLoopContext — acceptanceTestPaths field", () => {
   test("AcceptanceLoopContext.acceptanceTestPaths defaults to undefined when not set", () => {
     const ctx: Partial<AcceptanceLoopContext> = {};
     expect(ctx.acceptanceTestPaths).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// US-002 AC-6: regenerateAcceptanceTest collects changed files via git diff
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeMinimalPipelineContext(overrides: Partial<PipelineContext> = {}): PipelineContext {
+  return {
+    config: { acceptance: { maxRetries: 1 }, autoMode: { defaultAgent: "claude" } } as never,
+    effectiveConfig: { acceptance: { maxRetries: 1 }, autoMode: { defaultAgent: "claude" } } as never,
+    prd: { project: "p", feature: "f", branchName: "b", createdAt: "", updatedAt: "", userStories: [] },
+    story: {
+      id: "US-001",
+      title: "t",
+      description: "d",
+      acceptanceCriteria: [],
+      dependencies: [],
+      tags: [],
+      status: "pending",
+      passes: false,
+      escalations: [],
+      attempts: 0,
+    },
+    stories: [],
+    routing: { complexity: "simple", modelTier: "fast", testStrategy: "no-test", reasoning: "" },
+    workdir: "/tmp/workdir",
+    hooks: {} as never,
+    ...overrides,
+  };
+}
+
+describe("regenerateAcceptanceTest — collects implementation context via git diff (US-002 AC-6)", () => {
+  let tmpDir: string;
+  let origSpawnGitDiff: typeof _regenerateDeps.spawnGitDiff;
+  let origReadFile: typeof _regenerateDeps.readFile;
+  let origAcceptanceSetupExecute: typeof _regenerateDeps.acceptanceSetupExecute;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "nax-regen-test-"));
+    origSpawnGitDiff = _regenerateDeps.spawnGitDiff;
+    origReadFile = _regenerateDeps.readFile;
+    origAcceptanceSetupExecute = _regenerateDeps.acceptanceSetupExecute;
+    // Prevent real acceptanceSetupStage execution
+    (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = mock(async () => {});
+  });
+
+  afterEach(() => {
+    (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = origSpawnGitDiff;
+    (_regenerateDeps as { readFile: unknown }).readFile = origReadFile;
+    (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = origAcceptanceSetupExecute;
+  });
+
+  test("calls spawnGitDiff with workdir and storyGitRef when storyGitRef is present", async () => {
+    const testPath = join(tmpDir, ".nax-acceptance.test.ts");
+    writeFileSync(testPath, "test content");
+
+    const spawnMock = mock(async (_workdir: string, _ref: string) => "src/add.ts\nsrc/utils.ts");
+    (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = spawnMock;
+    (_regenerateDeps as { readFile: unknown }).readFile = mock(async () => "// file content");
+
+    const ctx = makeMinimalPipelineContext({
+      workdir: tmpDir,
+      storyGitRef: "abc1234",
+    });
+
+    // Create the test file so Bun.file(testPath).text() works
+    await Bun.write(join(tmpDir, ".nax-acceptance.test.ts.bak-expect"), "");
+
+    await regenerateAcceptanceTest(testPath, ctx);
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const [calledWorkdir, calledRef] = (spawnMock as unknown as { mock: { calls: Array<[string, string]> } }).mock.calls[0];
+    expect(calledWorkdir).toBe(tmpDir);
+    expect(calledRef).toBe("abc1234");
+  });
+
+  test("does NOT call spawnGitDiff when storyGitRef is undefined", async () => {
+    const testPath = join(tmpDir, ".nax-acceptance.test.ts");
+    writeFileSync(testPath, "test content");
+
+    const spawnMock = mock(async () => "");
+    (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = spawnMock;
+
+    const ctx = makeMinimalPipelineContext({
+      workdir: tmpDir,
+      storyGitRef: undefined,
+    });
+
+    await regenerateAcceptanceTest(testPath, ctx);
+
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  test("reads each changed file returned by git diff", async () => {
+    const testPath = join(tmpDir, ".nax-acceptance.test.ts");
+    writeFileSync(testPath, "test content");
+
+    const changedFiles = ["src/add.ts", "src/utils.ts"];
+    (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = mock(async () => changedFiles.join("\n"));
+    const readMock = mock(async () => "// file content");
+    (_regenerateDeps as { readFile: unknown }).readFile = readMock;
+
+    const ctx = makeMinimalPipelineContext({
+      workdir: tmpDir,
+      storyGitRef: "deadbeef",
+    });
+
+    await regenerateAcceptanceTest(testPath, ctx);
+
+    expect(readMock).toHaveBeenCalledTimes(2);
+    const readPaths = (readMock as unknown as { mock: { calls: Array<[string]> } }).mock.calls.map((c) => c[0]);
+    expect(readPaths.some((p) => p.includes("src/add.ts"))).toBe(true);
+    expect(readPaths.some((p) => p.includes("src/utils.ts"))).toBe(true);
+  });
+
+  test("caps total content at 50KB when reading changed files", async () => {
+    const testPath = join(tmpDir, ".nax-acceptance.test.ts");
+    writeFileSync(testPath, "test content");
+
+    // Return many files from git diff
+    const manyFiles = Array.from({ length: 20 }, (_, i) => `src/file${i}.ts`).join("\n");
+    (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = mock(async () => manyFiles);
+
+    // Each file has 5KB of content
+    const fiveKB = "x".repeat(5 * 1024);
+    const readMock = mock(async () => fiveKB);
+    (_regenerateDeps as { readFile: unknown }).readFile = readMock;
+
+    // Capture what implementationContext is passed to acceptanceSetupExecute
+    let capturedCtx: PipelineContext | null = null;
+    (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = mock(async (ctx: PipelineContext) => {
+      capturedCtx = ctx;
+    });
+
+    const ctx = makeMinimalPipelineContext({
+      workdir: tmpDir,
+      storyGitRef: "abc1234",
+    });
+
+    await regenerateAcceptanceTest(testPath, ctx);
+
+    // The acceptanceSetupExecute mock must have been called with the context
+    expect(capturedCtx).not.toBeNull();
+    // Total content passed as implementationContext must not exceed 50KB
+    const passed = capturedCtx as PipelineContext & { implementationContext?: Array<{ content: string }> };
+    expect(passed.implementationContext).toBeDefined();
+    const totalBytes = (passed.implementationContext ?? []).reduce((sum, f) => sum + f.content.length, 0);
+    expect(totalBytes).toBeLessThanOrEqual(50 * 1024);
+  });
+
+  test("passes implementationContext to acceptanceSetupStage when git diff returns files", async () => {
+    const testPath = join(tmpDir, ".nax-acceptance.test.ts");
+    writeFileSync(testPath, "test content");
+
+    (_regenerateDeps as { spawnGitDiff: unknown }).spawnGitDiff = mock(async () => "src/add.ts");
+    (_regenerateDeps as { readFile: unknown }).readFile = mock(async () => "export function add() {}");
+
+    let capturedCtx: PipelineContext | null = null;
+    (_regenerateDeps as { acceptanceSetupExecute: unknown }).acceptanceSetupExecute = mock(async (ctx: PipelineContext) => {
+      capturedCtx = ctx;
+    });
+
+    const ctx = makeMinimalPipelineContext({
+      workdir: tmpDir,
+      storyGitRef: "abc1234",
+    });
+
+    await regenerateAcceptanceTest(testPath, ctx);
+
+    expect(capturedCtx).not.toBeNull();
+    // The context passed to acceptanceSetupExecute must carry implementationContext
+    const passed = capturedCtx as PipelineContext & { implementationContext?: Array<{ path: string; content: string }> };
+    expect(passed.implementationContext).toBeDefined();
+    expect(passed.implementationContext).toHaveLength(1);
+    expect(passed.implementationContext?.[0].path).toBe("src/add.ts");
+    expect(passed.implementationContext?.[0].content).toBe("export function add() {}");
   });
 });

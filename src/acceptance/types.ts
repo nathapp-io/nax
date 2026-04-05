@@ -103,6 +103,10 @@ export interface GenerateFromPRDOptions {
   adapter?: AgentAdapter;
   /** Target language for test generation (e.g. 'go', 'python', 'rust') — defaults to TypeScript */
   language?: string;
+  /** Implementation context — files to include in the prompt so the generator writes tests against the real API */
+  implementationContext?: Array<{ path: string; content: string }>;
+  /** Previous failure message — included in prompt to help generator avoid the same mistake */
+  previousFailure?: string;
 }
 
 export interface GenerateAcceptanceTestsOptions {
