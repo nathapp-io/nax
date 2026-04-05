@@ -3,7 +3,7 @@
 **This is the single source of truth for test writing rules in nax.**
 
 All agents (Claude Code, Codex, Gemini CLI, etc.) and human contributors must follow these rules.
-Pointers to this file live in `AGENTS.md`, `CONTRIBUTING.md`, and `.claude/rules/03-test-writing.md`.
+Pointers to this file live in `AGENTS.md`, `CONTRIBUTING.md`, and `.claude/rules/test-writing.md`.
 
 ---
 
