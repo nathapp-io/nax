@@ -1,0 +1,3 @@
+[2026-04-04T15:15:09.766Z] US-001 — PASSED — Add TokenUsage type and extend StoryMetrics/RunMetrics — Cost: $0.0560
+[2026-04-04T15:28:37.333Z] US-002 — PASSED — Thread token usage from ACP adapter through to StoryMetrics — Cost: $0.3332
+[2026-04-04T15:36:57.190Z] US-003 — PASSED — Aggregate totalTokens in saveRunMetrics() — Cost: $0.1344

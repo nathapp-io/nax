@@ -19,6 +19,7 @@ import { DebateSession, _debateSessionDeps, resolveDebaterModel } from "../../..
 import type { DebateStageConfig, Debater } from "../../../src/debate/types";
 import type { NaxConfig } from "../../../src/config";
 import type { AgentAdapter, CompleteOptions, CompleteResult } from "../../../src/agents/types";
+import { waitForCondition } from "../../helpers/timeout";
 
 // ─── Mock Helpers ──────────────────────────────────────────────────────────────
 
@@ -199,8 +200,7 @@ describe("DebateSession.run() — parallel execution", () => {
 
     const runPromise = session.run("test prompt");
 
-    // Give event loop a tick — both should have started
-    await new Promise((r) => setTimeout(r, 20));
+    await waitForCondition(() => startTimes.length === 2);
     expect(startTimes.length).toBe(2);
 
     // Unblock all

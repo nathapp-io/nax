@@ -1,0 +1,121 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "TokenUsage interface is exported from src/metrics/types.ts with input_tokens: number, output_tokens: number, cache_read_input_tokens?: number, cache_creation_input_tokens?: number",
+    "refined": "Interface 'TokenUsage' is defined in src/metrics/types.ts with required fields input_tokens: number and output_tokens: number, and optional fields cache_read_input_tokens?: number and cache_creation_input_tokens?: number. The interface is exported with 'export interface TokenUsage'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "StoryMetrics interface has optional tokens?: TokenUsage field",
+    "refined": "The 'tokens' field of type 'TokenUsage | undefined' is present in the StoryMetrics interface in src/metrics/types.ts and is marked optional with the '?' modifier.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "RunMetrics interface has optional totalTokens?: TokenUsage field",
+    "refined": "The 'totalTokens' field of type 'TokenUsage | undefined' is present in the RunMetrics interface in src/metrics/types.ts and is marked optional with the '?' modifier.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "TokenUsage is re-exported from src/metrics/index.ts barrel export",
+    "refined": "The TokenUsage type is included in the 'export type { ... }' statement in src/metrics/index.ts alongside the existing exports of StoryMetrics, RunMetrics, and AggregateMetrics.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "Existing code compiles without changes (all new fields are optional)",
+    "refined": "Running 'bun run typecheck' completes with exit code 0 and no TypeScript errors after TokenUsage interface and its field additions to StoryMetrics and RunMetrics are implemented.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "When cache_read_input_tokens and cache_creation_input_tokens are both 0 or undefined, they are omitted from TokenUsage instances",
+    "refined": "A TokenUsage object with only { input_tokens: n, output_tokens: m } where n and m are non-zero, and cache_read_input_tokens and cache_creation_input_tokens are either undefined or 0, serializes to JSON without including cache_read_input_tokens or cache_creation_input_tokens keys (verified via JSON.stringify).",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "ACP adapter run() return includes tokenUsage with inputTokens, outputTokens, cache_read_input_tokens, and cache_creation_input_tokens converted from accumulated SessionTokenUsage",
+    "refined": "The return value of ACP adapter's run() method contains a tokenUsage property that is an object with exactly these four number fields: inputTokens, outputTokens, cache_read_input_tokens, and cache_creation_input_tokens. Each field value equals the corresponding accumulated value from SessionTokenUsage.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-8",
+    "original": "collectStoryMetrics() reads ctx.agentResult.tokenUsage and sets storyMetrics.tokens when present",
+    "refined": "After calling collectStoryMetrics(ctx), when ctx.agentResult.tokenUsage is defined, storyMetrics.tokens is an object containing inputTokens, outputTokens, cache_read_input_tokens, and cache_creation_input_tokens with non-undefined number values.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-9",
+    "original": "When ctx.agentResult.tokenUsage is undefined (CLI adapter), storyMetrics.tokens is undefined",
+    "refined": "After calling collectStoryMetrics(ctx) where ctx.agentResult.tokenUsage is undefined, the property storyMetrics.tokens does not exist (is undefined).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "When cache_read_input_tokens and cache_creation_input_tokens are both 0, they are omitted from the tokenUsage object",
+    "refined": "When the ACP adapter's run() returns tokenUsage where both cache_read_input_tokens and cache_creation_input_tokens equal 0, these two properties are absent from the returned tokenUsage object (Object.hasOwnProperty or 'in' operator returns false for both).",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "AgentResult type in src/agents/types.ts already has tokenUsage?: TokenUsage field (line 43) - no type change needed",
+    "refined": "The AgentResult interface in src/agents/types.ts at approximately line 43 includes tokenUsage?: TokenUsage as an optional property. Code that sets this field compiles without type errors.",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "saveRunMetrics() computes totalTokens by iterating over runMetrics.stories and summing each story.tokens fields",
+    "refined": "When saveRunMetrics(runMetrics) is called with runMetrics.stories containing tokens data, the resulting object includes totalTokens whose input_tokens, cache_read_input_tokens, and cache_creation_input_tokens fields equal the sums of the corresponding fields from all story.tokens entries",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-13",
+    "original": "totalTokens.input_tokens equals the sum of all story.tokens.input_tokens values",
+    "refined": "After calling saveRunMetrics(), totalTokens.input_tokens === runMetrics.stories.reduce((sum, s) => sum + (s.tokens?.input_tokens ?? 0), 0)",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-14",
+    "original": "totalTokens.cache_read_input_tokens equals the sum of all story.tokens.cache_read_input_tokens values, treating undefined as 0",
+    "refined": "After calling saveRunMetrics(), totalTokens.cache_read_input_tokens === runMetrics.stories.reduce((sum, s) => sum + (s.tokens?.cache_read_input_tokens ?? 0), 0)",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-15",
+    "original": "totalTokens.cache_creation_input_tokens equals the sum of all story.tokens.cache_creation_input_tokens values, treating undefined as 0",
+    "refined": "After calling saveRunMetrics(), totalTokens.cache_creation_input_tokens === runMetrics.stories.reduce((sum, s) => sum + (s.tokens?.cache_creation_input_tokens ?? 0), 0)",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-16",
+    "original": "When no stories have tokens data, totalTokens is absent from the written RunMetrics object",
+    "refined": "When saveRunMetrics() is called with stories where all story.tokens are undefined, the written object does not contain a 'totalTokens' property (Object.hasOwnProperty.call(result, 'totalTokens') === false)",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-17",
+    "original": "loadRunMetrics() successfully loads existing metrics.json files that lack totalTokens field",
+    "refined": "loadRunMetrics(filePath) returns a valid RunMetrics object and does not throw when the file contains stories but no totalTokens field, with all story data preserved",
+    "testable": true,
+    "storyId": "US-003"
+  }
+]

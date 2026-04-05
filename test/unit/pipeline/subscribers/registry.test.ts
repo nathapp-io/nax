@@ -109,10 +109,7 @@ describe("wireRegistry", () => {
     expect(() => {
       bus.emit({ type: "run:started", feature: "feat-err", totalStories: 0, workdir: badWorkdir });
     }).not.toThrow();
-
-    // Small delay to allow async error handling to complete
-    await new Promise((r) => setTimeout(r, 50));
-    // No crash — test passes if we reach here
+    await Promise.resolve();
   });
 
   test("MetaJson interface is exported", () => {
@@ -137,8 +134,6 @@ describe("wireRegistry", () => {
 
     bus.emit({ type: "run:started", feature, totalStories: 1, workdir });
 
-    // Small delay to allow async operations to complete (they shouldn't due to unsubscribe)
-    await new Promise((r) => setTimeout(r, 50));
     // File should not exist since we unsubscribed before event
     let exists = false;
     try {

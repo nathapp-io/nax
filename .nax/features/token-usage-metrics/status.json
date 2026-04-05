@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "run": {
+    "id": "run-2026-04-04T14-49-13-529Z",
+    "feature": "token-usage-metrics",
+    "startedAt": "2026-04-04T14:49:13.529Z",
+    "status": "completed",
+    "dryRun": false,
+    "pid": 34115
+  },
+  "progress": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "paused": 0,
+    "blocked": 0,
+    "pending": 0
+  },
+  "cost": {
+    "spent": 0.52359354,
+    "limit": 30
+  },
+  "current": null,
+  "iterations": 4,
+  "updatedAt": "2026-04-04T17:58:17.575Z",
+  "durationMs": 11344046
+}

@@ -40,3 +40,21 @@ export async function executeWithTimeout<T>(
 ): Promise<T> {
   return withTimeout(Promise.resolve(fn()), timeoutMs, operation);
 }
+
+/**
+ * Poll until a predicate returns true or timeout is reached.
+ * Useful for event-driven assertions without fixed sleeps.
+ */
+export async function waitForCondition(
+  predicate: () => boolean,
+  timeoutMs = 1_000,
+  pollMs = 5,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+
+  throw new Error(`Condition not met within ${timeoutMs}ms`);
+}
