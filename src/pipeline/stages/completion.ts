@@ -12,6 +12,7 @@
  * - `continue`: Stories marked complete, events emitted
  */
 
+import { persistSemanticVerdict } from "../../acceptance/semantic-verdict";
 import { appendProgress } from "../../execution/progress";
 import { checkReviewGate, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
@@ -113,4 +114,5 @@ export const completionStage: PipelineStage = {
  */
 export const _completionDeps = {
   checkReviewGate,
+  persistSemanticVerdict,
 };

@@ -83,6 +83,9 @@ export const _acceptanceSetupDeps = {
     const { unlink } = await import("node:fs/promises");
     await unlink(filePath);
   },
+  deleteSemanticVerdicts: async (_featureDir: string): Promise<void> => {
+    // TODO: implement in US-003 — delete all files in <featureDir>/semantic-verdicts/
+  },
   readMeta: async (metaPath: string): Promise<AcceptanceMeta | null> => {
     const f = Bun.file(metaPath);
     if (!(await f.exists())) return null;

@@ -149,6 +149,24 @@ export interface AcceptanceTestResult {
   criteria: AcceptanceCriterion[];
 }
 
+/**
+ * Persisted semantic review verdict for a story.
+ * Written to <featureDir>/semantic-verdicts/<storyId>.json by completion.ts
+ * and loaded by the acceptance loop.
+ */
+export interface SemanticVerdict {
+  /** Story ID this verdict belongs to */
+  storyId: string;
+  /** Whether the semantic review passed */
+  passed: boolean;
+  /** ISO timestamp when the verdict was recorded */
+  timestamp: string;
+  /** Number of acceptance criteria in scope at review time */
+  acCount: number;
+  /** Structured findings from the semantic check (empty when passed) */
+  findings: import("../plugins/types").ReviewFinding[];
+}
+
 /** Diagnosis result from acceptance test failure analysis (US-001) */
 export interface DiagnosisResult {
   /** Verdict of the diagnosis */
