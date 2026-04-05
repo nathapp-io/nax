@@ -4,6 +4,13 @@
 
 Replace the stateless one-shot semantic review with a persistent `ReviewerSession` that uses `agent.run()` for tool-enabled AC verification and stays open for the story's lifetime. The autofix agent communicates with the reviewer through a dialogue channel — requesting clarification on findings and receiving targeted guidance — instead of attempting blind fixes from serialized JSON. Re-reviews build on previous context rather than starting from scratch.
 
+## Prerequisites
+
+**`SPEC-semantic-session-continuity.md` must ship first.** This spec depends on:
+- `featureName` being threaded through the review call chain (continuity US-002) — required for `createReviewerSession()` to receive it
+- Session naming being consistent across all strategies (continuity US-001) — required so the fallback path (`runSemanticReview()` with `dialogue.enabled: false`) correctly resumes the implementer session
+- `runSemanticReview()` using `agent.run()` (continuity US-003) — becomes the fallback path when dialogue is disabled
+
 ## Motivation
 
 Today's semantic review flow has three structural problems:
@@ -134,8 +141,12 @@ The autofix stage detects this pattern via regex (`/^CLARIFY:\s*(.+)$/ms`), call
 
 ### Backward Compatibility
 
-- **Feature gated:** `review.dialogue.enabled` (default: `false`). When disabled, existing one-shot `runSemanticReview()` behavior is unchanged.
-- **Debate compatibility:** When `debate.stages.review.enabled` and `review.dialogue.enabled` are both true, dialogue takes precedence (debate = multi-reviewer; dialogue = reviewer↔implementer — different concerns).
+- **Feature gated:** `review.dialogue.enabled` (default: `false`). When disabled, existing one-shot `runSemanticReview()` behavior is unchanged — including the implementer session resumption from `SPEC-semantic-session-continuity.md` US-003.
+
+- **Implementer context tradeoff:** `SPEC-semantic-session-continuity.md` US-003 gives `runSemanticReview()` (the non-dialogue fallback) access to the implementer's session history by resuming it via `acpSessionName`. When `review.dialogue.enabled` is `true`, the `ReviewerSession` opens a dedicated `agent.run()` session instead — ACP sessions are isolated, so the implementer's session history is not accessible. This is an intentional tradeoff: the dialogue path gains tool access, persistent cross-round context, and the clarification channel; the reviewer works from the diff only for the initial review prompt. Do NOT attempt to pass `acpSessionName: implementerSession` into the `ReviewerSession`'s `agent.run()` call — that would collapse the two sessions into one and break the persistent review model.
+
+- **Debate compatibility:** `review.dialogue.enabled` and `debate.stages.review.enabled` address different concerns and are NOT mutually exclusive. Dialogue is the reviewer↔implementer channel; debate is how the reviewer's verdict is produced. Full integration of `ReviewerSession` with the debate resolver (resolver calling `ReviewerSession.review()` instead of `complete()`) is **deferred** — it requires the resolver to be aware of `ReviewerSession` state and is a non-trivial architectural change. Until that integration lands, when both flags are enabled: debate runs as normal (resolver uses `complete()`), dialogue is not applied to the debate path. `majority` resolver type has no LLM call — not applicable in either case. See `SPEC-semantic-session-continuity.md` US-004 for the resolver-side implementer session wiring (independent of this spec).
+
 - **Acceptance bridge upgrade:** `SPEC-acceptance-bridge-nax.md` US-003 persists semantic verdicts via file I/O from `ctx.reviewResult.checks`. When this spec lands, `persistSemanticVerdict()` swaps to `reviewerSession.getVerdict()` — same `SemanticVerdict` type, only the producer changes.
 
 ### Failure Handling
@@ -167,7 +178,7 @@ Add `ReviewDialogueConfig` to the config schema and implement the `ReviewerSessi
 - `ReviewDialogueConfigSchema` has `enabled` (boolean, default `false`), `maxClarificationsPerAttempt` (number, min 0, max 10, default `2`), `maxDialogueMessages` (number, min 5, max 100, default `20`)
 - `ReviewConfig` includes a `dialogue` field of type `ReviewDialogueConfig`
 - `DEFAULT_CONFIG.review.dialogue.enabled` is `false`
-- `createReviewerSession(agent, storyId, workdir, config)` returns a `ReviewerSession` with `active: true` and empty `history`
+- `createReviewerSession(agent, storyId, workdir, featureName, config)` returns a `ReviewerSession` with `active: true` and empty `history` — `featureName` is stored on the session for future use but does not affect the session created here (the `ReviewerSession` opens its own dedicated `agent.run()` session, not the implementer's)
 - `ReviewerSession.review(diff, story, semanticConfig)` calls `agent.run()` with the semantic review prompt, parses the JSON response into a `ReviewDialogueResult` containing `checkResult` and `findingReasoning`
 - `review()` appends the prompt (role: `"implementer"`) and response (role: `"reviewer"`) to `history`
 - `ReviewerSession.destroy()` closes the `agent.run()` session, sets `active: false`, and clears `history`
@@ -211,7 +222,7 @@ Wire `ReviewerSession` into the review stage, autofix stage, and completion stag
 - `src/review/orchestrator.ts` — review orchestrator (route to dialogue vs one-shot)
 
 #### Acceptance Criteria
-- `reviewStage.execute()` creates a `ReviewerSession` via `createReviewerSession()` when `config.review.dialogue.enabled` is `true` and stores it in `ctx.reviewerSession`
+- `reviewStage.execute()` creates a `ReviewerSession` via `createReviewerSession(agent, storyId, workdir, ctx.prd.feature, config)` when `config.review.dialogue.enabled` is `true` and stores it in `ctx.reviewerSession`
 - On re-review (autofix retry loop), `reviewStage.execute()` calls `ctx.reviewerSession.reReview(updatedDiff)` instead of `runSemanticReview()`
 - `buildDialogueAwareRectificationPrompt()` in `autofix-prompts.ts` includes `findingReasoning` from `ctx.reviewerSession` and `dialogueHistory` from `ctx.reviewerSession.history`
 - When the autofix agent's output matches `/^CLARIFY:\s*(.+)$/ms`, the autofix stage calls `ctx.reviewerSession.clarify(extractedQuestion)` and appends the response to the agent's context before re-prompting
