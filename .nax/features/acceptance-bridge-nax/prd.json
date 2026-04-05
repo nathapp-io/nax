@@ -3,7 +3,7 @@
   "feature": "acceptance-bridge-nax",
   "branchName": "feat/acceptance-bridge-nax",
   "createdAt": "2026-04-05T12:00:00.000Z",
-  "updatedAt": "2026-04-05T12:57:25.741Z",
+  "updatedAt": "2026-04-05T13:23:28.439Z",
   "userStories": [
     {
       "id": "US-001",
@@ -214,8 +214,8 @@
       "dependencies": [
         "US-003"
       ],
-      "status": "pending",
-      "passes": false,
+      "status": "passed",
+      "passes": true,
       "attempts": 0,
       "escalations": [],
       "routing": {

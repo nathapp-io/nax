@@ -4,7 +4,7 @@
     "id": "run-2026-04-05T11-25-46-418Z",
     "feature": "acceptance-bridge-nax",
     "startedAt": "2026-04-05T11:25:46.418Z",
-    "status": "stalled",
+    "status": "failed",
     "dryRun": false,
     "pid": 20073
   },
@@ -22,6 +22,6 @@
   },
   "current": null,
   "iterations": 5,
-  "updatedAt": "2026-04-05T13:24:08.965Z",
-  "durationMs": 7102547
+  "updatedAt": "2026-04-05T13:24:08.966Z",
+  "durationMs": 7102548
 }
