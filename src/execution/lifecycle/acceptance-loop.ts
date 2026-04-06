@@ -171,7 +171,27 @@ function buildResult(
   return { success, prd, totalCost, iterations, storiesCompleted, prdDirty, failedACs, retries };
 }
 
-export const _acceptanceLoopDeps = { getAgent, loadSemanticVerdicts };
+export const _acceptanceLoopDeps = {
+  getAgent,
+  loadSemanticVerdicts,
+  executeTestRegen: async (
+    ctx: AcceptanceLoopContext,
+    acceptanceContext: PipelineContext,
+  ): Promise<"passed" | "failed" | "no_test_file"> => {
+    const testPath = await findExistingAcceptanceTestPathFromOptions({
+      acceptanceTestPaths: ctx.acceptanceTestPaths,
+      featureDir: ctx.featureDir,
+      testPathConfig: ctx.config.acceptance.testPath,
+      language: ctx.config.project?.language,
+    });
+    if (!testPath) return "no_test_file";
+    const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext);
+    if (!regenerated) return "failed";
+    const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
+    const result = await acceptanceStage.execute(acceptanceContext);
+    return result.action === "continue" ? "passed" : "failed";
+  },
+};
 
 /** Injectable dependencies for regenerateAcceptanceTest — allows tests to mock I/O without real disk or git. */
 export const _regenerateDeps = {
@@ -409,10 +429,31 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
       storyId,
       verdictCount,
     });
+
+    // Guard: need featureDir and acceptanceContext to regenerate
+    if (!ctx.featureDir || !acceptanceContext) {
+      logger?.warn("acceptance", "Cannot regenerate test — featureDir or acceptanceContext missing", { storyId });
+      return {
+        fixed: false,
+        cost: 0,
+        prdDirty: false,
+        verdict: "test_bug",
+        confidence: 1.0,
+        reasoning:
+          "Semantic review confirmed all ACs are implemented — acceptance test failure is a test generation issue",
+      };
+    }
+
+    const regenOutcome = await _acceptanceLoopDeps.executeTestRegen(ctx, acceptanceContext);
+    logger?.info("acceptance.test-regen", "Test regeneration completed", { storyId, outcome: regenOutcome });
+
+    if (regenOutcome === "passed") {
+      return { fixed: true, cost: 0, prdDirty: true };
+    }
     return {
       fixed: false,
       cost: 0,
-      prdDirty: false,
+      prdDirty: regenOutcome !== "no_test_file",
       verdict: "test_bug",
       confidence: 1.0,
       reasoning:
