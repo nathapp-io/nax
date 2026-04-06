@@ -7,11 +7,16 @@
  * - Mixed failures produce combined prompt with both sections
  * - Semantic prompt includes false-positive verification instructions
  * - Monorepo scope constraint works for all prompt variants
+ * - buildDialogueAwareRectificationPrompt includes findingReasoning and dialogue history (AC4)
  */
 
 import { describe, expect, test } from "bun:test";
-import { buildReviewRectificationPrompt } from "../../../../src/pipeline/stages/autofix-prompts";
+import {
+  buildReviewRectificationPrompt,
+  buildDialogueAwareRectificationPrompt,
+} from "../../../../src/pipeline/stages/autofix-prompts";
 import type { ReviewCheckResult } from "../../../../src/review/types";
+import type { DialogueMessage } from "../../../../src/review/dialogue";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -123,5 +128,109 @@ describe("buildReviewRectificationPrompt", () => {
 
       expect(prompt).toContain("Only modify files within `apps/web/`");
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC4: buildDialogueAwareRectificationPrompt
+// ---------------------------------------------------------------------------
+
+describe("buildDialogueAwareRectificationPrompt (AC4)", () => {
+  const FAILED_CHECKS_SEMANTIC = [makeCheck("semantic", "AC2 not implemented")];
+
+  test("is exported from autofix-prompts.ts", () => {
+    expect(typeof buildDialogueAwareRectificationPrompt).toBe("function");
+  });
+
+  test("includes findingReasoning entries in the prompt", () => {
+    const findingReasoning = new Map<string, string>([
+      ["AC1", "AC1 is missing because the handler doesn't call saveUser()"],
+      ["AC2", "AC2 fails because the response format is wrong"],
+    ]);
+
+    const prompt = buildDialogueAwareRectificationPrompt(FAILED_CHECKS_SEMANTIC, STORY_BASE, {
+      findingReasoning,
+      history: [],
+    });
+
+    expect(prompt).toContain("AC1");
+    expect(prompt).toContain("AC1 is missing because the handler doesn't call saveUser()");
+    expect(prompt).toContain("AC2");
+    expect(prompt).toContain("AC2 fails because the response format is wrong");
+  });
+
+  test("includes the last N dialogue history messages", () => {
+    const history: DialogueMessage[] = [
+      { role: "implementer", content: "First implementer message" },
+      { role: "reviewer", content: "First reviewer response" },
+      { role: "implementer", content: "Second implementer message" },
+      { role: "reviewer", content: "Second reviewer response" },
+    ];
+
+    const prompt = buildDialogueAwareRectificationPrompt(FAILED_CHECKS_SEMANTIC, STORY_BASE, {
+      findingReasoning: new Map(),
+      history,
+      maxHistoryMessages: 2,
+    });
+
+    // Should include the last 2 messages
+    expect(prompt).toContain("Second implementer message");
+    expect(prompt).toContain("Second reviewer response");
+  });
+
+  test("omits older history messages beyond maxHistoryMessages", () => {
+    const history: DialogueMessage[] = [
+      { role: "implementer", content: "Old implementer message from round 1" },
+      { role: "reviewer", content: "Old reviewer response from round 1" },
+      { role: "implementer", content: "Recent implementer message" },
+      { role: "reviewer", content: "Recent reviewer response" },
+    ];
+
+    const prompt = buildDialogueAwareRectificationPrompt(FAILED_CHECKS_SEMANTIC, STORY_BASE, {
+      findingReasoning: new Map(),
+      history,
+      maxHistoryMessages: 2,
+    });
+
+    // Older messages should NOT be included
+    expect(prompt).not.toContain("Old implementer message from round 1");
+    expect(prompt).not.toContain("Old reviewer response from round 1");
+  });
+
+  test("works with empty findingReasoning and empty history", () => {
+    const prompt = buildDialogueAwareRectificationPrompt(FAILED_CHECKS_SEMANTIC, STORY_BASE, {
+      findingReasoning: new Map(),
+      history: [],
+    });
+
+    // Should still produce a valid prompt
+    expect(typeof prompt).toBe("string");
+    expect(prompt.length).toBeGreaterThan(0);
+    expect(prompt).toContain(STORY_BASE.id);
+  });
+
+  test("includes failed check output alongside reasoning", () => {
+    const findingReasoning = new Map<string, string>([
+      ["AC1", "The handler is missing"],
+    ]);
+
+    const prompt = buildDialogueAwareRectificationPrompt(FAILED_CHECKS_SEMANTIC, STORY_BASE, {
+      findingReasoning,
+      history: [],
+    });
+
+    // The check output should appear
+    expect(prompt).toContain("AC2 not implemented");
+    // And the reasoning should also appear
+    expect(prompt).toContain("The handler is missing");
+  });
+
+  test("includes scope constraint for monorepo stories", () => {
+    const prompt = buildDialogueAwareRectificationPrompt(FAILED_CHECKS_SEMANTIC, STORY_MONOREPO, {
+      findingReasoning: new Map(),
+      history: [],
+    });
+
+    expect(prompt).toContain("Only modify files within `apps/web/`");
   });
 });

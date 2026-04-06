@@ -277,6 +277,12 @@ const SemanticReviewConfigSchema = z.object({
     .default([":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"]),
 });
 
+export const ReviewDialogueConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  maxClarificationsPerAttempt: z.number().int().min(0).max(10).default(2),
+  maxDialogueMessages: z.number().int().min(5).max(100).default(20),
+});
+
 const ReviewConfigSchema = z.object({
   enabled: z.boolean(),
   checks: z.array(z.enum(["typecheck", "lint", "test", "build", "semantic"])),
@@ -288,6 +294,11 @@ const ReviewConfigSchema = z.object({
   }),
   pluginMode: z.enum(["per-story", "deferred"]).default("per-story"),
   semantic: SemanticReviewConfigSchema.optional(),
+  dialogue: ReviewDialogueConfigSchema.default({
+    enabled: false,
+    maxClarificationsPerAttempt: 2,
+    maxDialogueMessages: 20,
+  }),
 });
 
 const PlanConfigSchema = z.object({
@@ -692,6 +703,11 @@ export const NaxConfigSchema = z
         rules: [],
         timeoutMs: 600_000,
         excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"],
+      },
+      dialogue: {
+        enabled: false,
+        maxClarificationsPerAttempt: 2,
+        maxDialogueMessages: 20,
       },
     }),
     plan: PlanConfigSchema.default({

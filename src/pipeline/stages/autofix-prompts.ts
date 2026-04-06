@@ -8,7 +8,15 @@
  */
 
 import type { UserStory } from "../../prd";
+import type { DialogueMessage } from "../../review/dialogue";
 import type { ReviewCheckResult } from "../../review/types";
+
+export interface DialogueAwarePromptOptions {
+  findingReasoning: Map<string, string>;
+  history: DialogueMessage[];
+  /** Max number of history messages to include (default: all) */
+  maxHistoryMessages?: number;
+}
 
 function formatCheckErrors(checks: ReviewCheckResult[]): string {
   return checks.map((c) => `## ${c.check} errors (exit code ${c.exitCode})\n\`\`\`\n${c.output}\n\`\`\``).join("\n\n");
@@ -108,5 +116,51 @@ ${semanticSection}
 
 Do NOT change test files or test behavior.
 Do NOT add new features — only fix the identified issues.
+Commit your fixes when done.${scopeConstraint}`;
+}
+
+export function buildDialogueAwareRectificationPrompt(
+  failedChecks: ReviewCheckResult[],
+  story: UserStory,
+  opts: DialogueAwarePromptOptions,
+): string {
+  const { findingReasoning, history, maxHistoryMessages } = opts;
+  const scopeConstraint = story.workdir
+    ? `\n\nIMPORTANT: Only modify files within \`${story.workdir}/\`. Do NOT touch files outside this directory.`
+    : "";
+
+  const errors = formatCheckErrors(failedChecks);
+
+  // Build reasoning section from findingReasoning map
+  let reasoningSection = "";
+  if (findingReasoning.size > 0) {
+    const entries = Array.from(findingReasoning.entries())
+      .map(([key, reason]) => `**${key}:** ${reason}`)
+      .join("\n");
+    reasoningSection = `\n\n### Finding Reasoning\n${entries}`;
+  }
+
+  // Build dialogue history section (last N messages)
+  let historySection = "";
+  if (history.length > 0) {
+    const slice = maxHistoryMessages !== undefined ? history.slice(-maxHistoryMessages) : history;
+    const lines = slice.map((m) => `**${m.role}:** ${m.content}`).join("\n\n");
+    historySection = `\n\n### Dialogue History\n${lines}`;
+  }
+
+  return `You are fixing acceptance criteria compliance issues found during semantic review.
+
+Story: ${story.title} (${story.id})
+
+### Semantic Review Findings
+${errors}${reasoningSection}${historySection}
+
+**Important:** The semantic reviewer only analyzed the git diff and may have flagged false positives. Before making any changes:
+1. Read the relevant files to verify each finding is a real issue
+2. Only fix findings that are actually valid problems
+3. Do NOT add keys, functions, or imports that already exist — check first
+
+Do NOT change test files or test behavior.
+Do NOT add new features — only fix valid issues.
 Commit your fixes when done.${scopeConstraint}`;
 }

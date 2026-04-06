@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { getAgent } from "../../agents";
 import { checkSecurityReview, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
+import { createReviewerSession } from "../../review/dialogue";
 import { reviewOrchestrator } from "../../review/orchestrator";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -27,6 +28,7 @@ export const reviewStage: PipelineStage = {
 
     // PKG-004: use centrally resolved effective config
     const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
+    const dialogueEnabled = effectiveConfig.review?.dialogue?.enabled ?? false;
 
     logger.info("review", "Running review phase", { storyId: ctx.story.id });
 
@@ -43,6 +45,106 @@ export const reviewStage: PipelineStage = {
     // #136: Consume retrySkipChecks once (cleared after use so subsequent retries re-evaluate)
     const retrySkipChecks = ctx.retrySkipChecks;
     ctx.retrySkipChecks = undefined;
+
+    // AC3: When dialogue is enabled and a session already exists (retry loop), use reReview()
+    if (dialogueEnabled && ctx.reviewerSession) {
+      try {
+        const diff = ctx.storyGitRef ?? "";
+        const reReviewResult = await ctx.reviewerSession.reReview(diff);
+        const passed = reReviewResult.checkResult.success;
+        ctx.reviewResult = {
+          success: passed,
+          checks: passed
+            ? []
+            : [
+                {
+                  check: "semantic",
+                  success: false,
+                  command: "reviewer-session-rereview",
+                  exitCode: 1,
+                  output: reReviewResult.checkResult.findings.map((f) => f.message).join("\n"),
+                  durationMs: 0,
+                  findings: reReviewResult.checkResult.findings,
+                },
+              ],
+          totalDurationMs: 0,
+        };
+        if (passed) {
+          logger.info("review", "Review passed (dialogue reReview)", { storyId: ctx.story.id });
+        } else {
+          logger.warn("review", "Review failed (dialogue reReview) — handing off to autofix", {
+            storyId: ctx.story.id,
+          });
+        }
+        return { action: "continue" };
+      } catch (err) {
+        logger.warn("review", "ReviewerSession.reReview() failed — proceeding without dialogue", {
+          storyId: ctx.story.id,
+        });
+        // Fall through to orchestrator
+      }
+    }
+
+    // AC2: When dialogue is enabled and no session exists (first run), create one
+    if (dialogueEnabled && !ctx.reviewerSession) {
+      const agent = agentName ? (agentResolver(agentName) ?? null) : null;
+      // Always create the session (agent may be provided by _reviewDeps mock in tests)
+      ctx.reviewerSession = _reviewDeps.createReviewerSession(
+        // biome-ignore lint/suspicious/noExplicitAny: agent may be null when no defaultAgent configured
+        (agent ?? null) as any,
+        ctx.story.id,
+        effectiveWorkdir,
+        ctx.prd.feature ?? "",
+        ctx.config,
+      );
+
+      // AC9: Try using the session for the semantic review; fall back to orchestrator on error
+      const semanticConfig = effectiveConfig.review?.semantic;
+      if (semanticConfig && agent) {
+        try {
+          const diff = ctx.storyGitRef ?? "";
+          const story = {
+            id: ctx.story.id,
+            title: ctx.story.title,
+            description: ctx.story.description,
+            acceptanceCriteria: ctx.story.acceptanceCriteria,
+          };
+          const sessionResult = await ctx.reviewerSession.review(diff, story, semanticConfig);
+          const passed = sessionResult.checkResult.success;
+          ctx.reviewResult = {
+            success: passed,
+            checks: passed
+              ? []
+              : [
+                  {
+                    check: "semantic",
+                    success: false,
+                    command: "reviewer-session-review",
+                    exitCode: 1,
+                    output: sessionResult.checkResult.findings.map((f) => f.message).join("\n"),
+                    durationMs: 0,
+                    findings: sessionResult.checkResult.findings,
+                  },
+                ],
+            totalDurationMs: 0,
+          };
+          if (passed) {
+            logger.info("review", "Review passed (dialogue session)", { storyId: ctx.story.id });
+          } else {
+            logger.warn("review", "Review failed (dialogue session) — handing off to autofix", {
+              storyId: ctx.story.id,
+            });
+          }
+          return { action: "continue" };
+        } catch (err) {
+          logger.warn("review", "ReviewerSession.review() failed — falling back to one-shot review", {
+            storyId: ctx.story.id,
+          });
+          // Fall through to orchestrator (AC9)
+        }
+      }
+      // No semanticConfig or agent — fall through to orchestrator with session stored
+    }
 
     const result = await reviewOrchestrator.review(
       effectiveConfig.review,
@@ -120,4 +222,5 @@ export const reviewStage: PipelineStage = {
  */
 export const _reviewDeps = {
   checkSecurityReview,
+  createReviewerSession,
 };
