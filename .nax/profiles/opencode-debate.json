@@ -1,0 +1,87 @@
+{
+    "models": {
+        "claude": {
+            "fast": "haiku",
+            "balanced": "sonnet",
+            "powerful": "sonnet"
+        },
+        "opencode": {
+            "fast": "minimax/MiniMax-M2.7",
+            "balanced": "minimax/MiniMax-M2.7",
+            "powerful": "minimax/MiniMax-M2.7"
+        }
+    },
+  "autoMode": {
+    "defaultAgent": "opencode",
+    "fallbackOrder": ["opencode"]
+  },
+    "debate": {
+        "enabled": true,
+        "agents": 2,
+        "stages": {
+            "plan": {
+                "enabled": true,
+                "rounds": 2,
+                "sessionMode": "stateful",
+                "resolver": {
+                    "type": "synthesis",
+                    "agent": "claude"
+                },
+                "debaters": [
+                    {
+                        "agent": "opencode",
+                        "model": "fast"
+                    },
+                    {
+                        "agent": "opencode",
+                        "model": "fast"
+                    }
+                ]
+            },
+            "review": {
+                "enabled": true,
+                "rounds": 2,
+                "sessionMode": "one-shot",
+                "resolver": {
+                    "type": "majority-fail-closed",
+                    "agent": "claude",
+                    "model": "fast"
+                },
+                "debaters": [
+                    {
+                        "agent": "opencode",
+                        "model": "fast"
+                    },
+                    {
+                        "agent": "opencode",
+                        "model": "fast"
+                    }
+                ]
+            },
+            "acceptance": {
+                "enabled": false,
+                "rounds": 1,
+                "sessionMode": "one-shot",
+                "resolver": {
+                    "type": "majority-fail-closed"
+                }
+            },
+            "rectification": {
+                "enabled": false,
+                "rounds": 1,
+                "sessionMode": "one-shot",
+                "resolver": {
+                    "type": "majority-fail-closed"
+                }
+            },
+            "escalation": {
+                "enabled": false,
+                "rounds": 1,
+                "sessionMode": "one-shot",
+                "resolver": {
+                    "type": "majority-fail-closed"
+                }
+            }
+        }
+    }    
+}

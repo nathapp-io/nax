@@ -59,26 +59,8 @@
     },
     "execution": {
         "permissionProfile": "unrestricted",
-        "maxIterations": 6,
-        "iterationDelayMs": 2000,
-        "costLimit": 30.0,
-        "sessionTimeoutSeconds": 7200,
-        "verificationTimeoutSeconds": 600,
-        "maxStoriesPerFeature": 15,
-        "rectification": {
-            "enabled": true,
-            "maxRetries": 2,
-            "fullSuiteTimeoutSeconds": 600,
-            "maxFailureSummaryChars": 2000,
-            "abortOnIncreasingFailures": true
-        },
-        "regressionGate": {
-            "enabled": true,
-            "mode": "deferred",
-            "timeoutSeconds": 600,
-            "acceptOnTimeout": true,
-            "maxRectificationAttempts": 2
-        }
+        "sessionTimeoutSeconds": 3600,
+        "maxStoriesPerFeature": 15
     },
     "quality": {
         "requireTypecheck": true,
