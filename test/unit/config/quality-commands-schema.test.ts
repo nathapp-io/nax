@@ -8,9 +8,9 @@
  * template was never applied and scoped tests fell back to buildSmartTestCommand.
  */
 
-import { describe, test, expect } from "bun:test";
-import { NaxConfigSchema } from "../../../src/config/schemas";
+import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../src/config/defaults";
+import { NaxConfigSchema } from "../../../src/config/schemas";
 
 function buildConfigWithCommands(commands: Record<string, unknown>) {
   return {
@@ -80,5 +80,46 @@ describe("quality.commands schema", () => {
     const input = buildConfigWithCommands({});
     const result = NaxConfigSchema.parse(input);
     expect(result.quality.commands.build).toBeUndefined();
+  });
+});
+
+describe("review.commands schema — lintFix/formatFix not stripped by Zod", () => {
+  function buildConfigWithReviewCommands(commands: Record<string, unknown>) {
+    return {
+      ...DEFAULT_CONFIG,
+      review: {
+        ...DEFAULT_CONFIG.review,
+        commands: {
+          ...DEFAULT_CONFIG.review.commands,
+          ...commands,
+        },
+      },
+    };
+  }
+
+  test("lintFix in review.commands is preserved after schema parse", () => {
+    const input = buildConfigWithReviewCommands({ lintFix: "bun run lint:fix" });
+    const result = NaxConfigSchema.parse(input);
+    expect(result.review.commands.lintFix).toBe("bun run lint:fix");
+  });
+
+  test("formatFix in review.commands is preserved after schema parse", () => {
+    const input = buildConfigWithReviewCommands({ formatFix: "bun run format --write" });
+    const result = NaxConfigSchema.parse(input);
+    expect(result.review.commands.formatFix).toBe("bun run format --write");
+  });
+
+  test("lintFix and formatFix coexist with standard review commands", () => {
+    const input = buildConfigWithReviewCommands({
+      lint: "bun run lint",
+      typecheck: "bun run typecheck",
+      lintFix: "bun run lint:fix",
+      formatFix: "bun run format --write",
+    });
+    const result = NaxConfigSchema.parse(input);
+    expect(result.review.commands.lint).toBe("bun run lint");
+    expect(result.review.commands.typecheck).toBe("bun run typecheck");
+    expect(result.review.commands.lintFix).toBe("bun run lint:fix");
+    expect(result.review.commands.formatFix).toBe("bun run format --write");
   });
 });

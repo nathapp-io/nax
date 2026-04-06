@@ -291,6 +291,8 @@ const ReviewConfigSchema = z.object({
     lint: z.string().optional(),
     test: z.string().optional(),
     build: z.string().optional(),
+    lintFix: z.string().optional(),
+    formatFix: z.string().optional(),
   }),
   pluginMode: z.enum(["per-story", "deferred"]).default("per-story"),
   semantic: SemanticReviewConfigSchema.optional(),

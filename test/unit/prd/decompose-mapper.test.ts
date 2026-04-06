@@ -162,6 +162,44 @@ describe("mapDecomposedStoriesToUserStories — direct field mapping", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// workdir inheritance — sub-stories must inherit parent workdir (PKG-003)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("mapDecomposedStoriesToUserStories — workdir inheritance", () => {
+  test("sub-stories inherit parentWorkdir when provided", () => {
+    const stories = [
+      makeDecomposedStory({ id: "US-002-A" }),
+      makeDecomposedStory({ id: "US-002-B" }),
+    ];
+    const result = mapDecomposedStoriesToUserStories(stories, "US-002", "apps/api");
+    expect(result[0].workdir).toBe("apps/api");
+    expect(result[1].workdir).toBe("apps/api");
+  });
+
+  test("workdir is absent when parentWorkdir is not provided", () => {
+    const [result] = mapDecomposedStoriesToUserStories([makeDecomposedStory()], "US-001");
+    expect(result.workdir).toBeUndefined();
+  });
+
+  test("workdir is absent when parentWorkdir is undefined", () => {
+    const [result] = mapDecomposedStoriesToUserStories([makeDecomposedStory()], "US-001", undefined);
+    expect(result.workdir).toBeUndefined();
+  });
+
+  test("all sub-stories get the same workdir as the parent", () => {
+    const stories = [
+      makeDecomposedStory({ id: "VCS-P1-002-A" }),
+      makeDecomposedStory({ id: "VCS-P1-002-B" }),
+      makeDecomposedStory({ id: "VCS-P1-002-C" }),
+    ];
+    const result = mapDecomposedStoriesToUserStories(stories, "VCS-P1-002", "apps/api");
+    for (const story of result) {
+      expect(story.workdir).toBe("apps/api");
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AC3: validation — missing id
 // ─────────────────────────────────────────────────────────────────────────────
 

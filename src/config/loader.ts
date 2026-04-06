@@ -209,7 +209,7 @@ export async function loadConfigForWorkdir(rootConfigPath: string, packageDir?: 
   const packageOverride = await loadJsonFile<Partial<NaxConfig>>(packageConfigPath, "config");
 
   if (!packageOverride) {
-    logger.debug("config", "Per-package config not found — falling back to root config", {
+    logger.info("config", "Per-package config not found — falling back to root config", {
       packageConfigPath,
       packageDir,
     });

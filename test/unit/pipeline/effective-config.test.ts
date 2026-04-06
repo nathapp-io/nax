@@ -13,6 +13,7 @@ import { mergePackageConfig } from "../../../src/config/merge";
 import type { NaxConfig } from "../../../src/config/schema";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../src/prd/types";
+import type { ReviewResult } from "../../../src/review/types";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -207,7 +208,12 @@ describe("stage effectiveConfig fallback", () => {
       prd: makePrd(),
       story: makeStory(),
       stories: [makeStory()],
-      routing: { complexity: "simple" as const, modelTier: "fast" as const, testStrategy: "test-after" as const, reasoning: "" },
+      routing: {
+        complexity: "simple" as const,
+        modelTier: "fast" as const,
+        testStrategy: "test-after" as const,
+        reasoning: "",
+      },
       workdir: "/tmp/test",
       hooks: { hooks: {} },
     } as Parameters<typeof verifyStage.execute>[0];
@@ -338,5 +344,129 @@ describe("effectiveConfig per-story isolation", () => {
     // No workdir means effectiveConfig === root
     const result = mergePackageConfig(root, {});
     expect(result).toBe(root);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// autofix stage reads lintFix/formatFix from review.commands as fallback
+// ---------------------------------------------------------------------------
+
+describe("autofix stage lintFix source", () => {
+  test("uses quality.commands.lintFix when defined", async () => {
+    const { autofixStage, _autofixDeps } = await import("../../../src/pipeline/stages/autofix");
+
+    const saved = { ..._autofixDeps };
+    const commandsRun: string[] = [];
+    _autofixDeps.runQualityCommand = async (opts) => {
+      commandsRun.push(opts.commandName);
+      return {
+        commandName: opts.commandName,
+        command: opts.command,
+        success: true,
+        exitCode: 0,
+        output: "",
+        durationMs: 0,
+        timedOut: false,
+      };
+    };
+    _autofixDeps.recheckReview = async () => true;
+
+    const config = makeBaseConfig({
+      quality: { ...DEFAULT_CONFIG.quality, commands: { lintFix: "bun run lint:fix" }, autofix: { enabled: true } },
+      review: { ...DEFAULT_CONFIG.review, commands: {} },
+    });
+    const ctx = makeCtx({
+      effectiveConfig: config,
+      reviewResult: {
+        success: false,
+        checks: [
+          { check: "lint", success: false, command: "bun run lint", exitCode: 1, output: "lint error", durationMs: 0 },
+        ],
+        totalDurationMs: 0,
+      } satisfies ReviewResult,
+    });
+
+    await autofixStage.execute(ctx);
+    Object.assign(_autofixDeps, saved);
+
+    expect(commandsRun).toContain("lintFix");
+  });
+
+  test("falls back to review.commands.lintFix when quality.commands.lintFix is absent", async () => {
+    const { autofixStage, _autofixDeps } = await import("../../../src/pipeline/stages/autofix");
+
+    const saved = { ..._autofixDeps };
+    const commandsRun: string[] = [];
+    _autofixDeps.runQualityCommand = async (opts) => {
+      commandsRun.push(opts.commandName);
+      return {
+        commandName: opts.commandName,
+        command: opts.command,
+        success: true,
+        exitCode: 0,
+        output: "",
+        durationMs: 0,
+        timedOut: false,
+      };
+    };
+    _autofixDeps.recheckReview = async () => true;
+
+    const config = makeBaseConfig({
+      quality: { ...DEFAULT_CONFIG.quality, commands: {}, autofix: { enabled: true } },
+      review: { ...DEFAULT_CONFIG.review, commands: { lintFix: "bun run lint:fix" } },
+    });
+    const ctx = makeCtx({
+      effectiveConfig: config,
+      reviewResult: {
+        success: false,
+        checks: [
+          { check: "lint", success: false, command: "bun run lint", exitCode: 1, output: "lint error", durationMs: 0 },
+        ],
+      } as any,
+    });
+
+    await autofixStage.execute(ctx);
+    Object.assign(_autofixDeps, saved);
+
+    expect(commandsRun).toContain("lintFix");
+  });
+
+  test("skips mechanical fix when neither quality.commands nor review.commands defines lintFix", async () => {
+    const { autofixStage, _autofixDeps } = await import("../../../src/pipeline/stages/autofix");
+
+    const saved = { ..._autofixDeps };
+    let qualityCommandCalled = false;
+    _autofixDeps.runQualityCommand = async (opts) => {
+      qualityCommandCalled = true;
+      return {
+        commandName: opts.commandName,
+        command: opts.command,
+        success: true,
+        exitCode: 0,
+        output: "",
+        durationMs: 0,
+        timedOut: false,
+      };
+    };
+    _autofixDeps.runAgentRectification = async () => false;
+
+    const config = makeBaseConfig({
+      quality: { ...DEFAULT_CONFIG.quality, commands: {}, autofix: { enabled: true } },
+      review: { ...DEFAULT_CONFIG.review, commands: {} },
+    });
+    const ctx = makeCtx({
+      effectiveConfig: config,
+      reviewResult: {
+        success: false,
+        checks: [
+          { check: "lint", success: false, command: "bun run lint", exitCode: 1, output: "lint error", durationMs: 0 },
+        ],
+      } as any,
+    });
+
+    await autofixStage.execute(ctx);
+    Object.assign(_autofixDeps, saved);
+
+    expect(qualityCommandCalled).toBe(false);
   });
 });
