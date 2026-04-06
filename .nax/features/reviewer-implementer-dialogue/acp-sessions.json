@@ -26,5 +26,9 @@
   "US-003:test-writer": {
     "sessionName": "nax-5a6e1741-reviewer-implementer-dialogue-us-003-test-writer",
     "agentName": "claude"
+  },
+  "US-003:implementer": {
+    "sessionName": "nax-5a6e1741-reviewer-implementer-dialogue-us-003-implementer",
+    "agentName": "claude"
   }
 }
