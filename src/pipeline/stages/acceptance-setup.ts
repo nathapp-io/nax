@@ -21,7 +21,8 @@
  */
 
 import path from "node:path";
-import { buildAcceptanceRunCommand, resolveAcceptanceTestFile } from "../../acceptance/generator";
+import { buildAcceptanceRunCommand } from "../../acceptance/generator";
+import { resolveAcceptancePackageFeatureTestPath } from "../../acceptance/test-path";
 import type { RefinedCriterion } from "../../acceptance/types";
 import { getAgent } from "../../agents/registry";
 import { type ModelDef, resolveModelForAgent } from "../../config";
@@ -160,7 +161,8 @@ export const acceptanceSetupStage: PipelineStage = {
       return { action: "fail", reason: "[acceptance-setup] featureDir is not set" };
     }
 
-    const language = (ctx.effectiveConfig ?? ctx.config).project?.language;
+    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
+    const language = effectiveConfig.project?.language;
     const testPathConfig = (ctx.effectiveConfig ?? ctx.config).acceptance.testPath;
     const metaPath = path.join(ctx.featureDir, "acceptance-meta.json");
 
@@ -199,13 +201,7 @@ export const acceptanceSetupStage: PipelineStage = {
     const testPaths: Array<{ testPath: string; packageDir: string }> = [];
     for (const [workdir] of workdirGroups) {
       const packageDir = workdir ? path.join(ctx.workdir, workdir) : ctx.workdir;
-      const testPath = path.join(
-        packageDir,
-        ".nax",
-        "features",
-        featureName,
-        resolveAcceptanceTestFile(language, testPathConfig),
-      );
+      const testPath = resolveAcceptancePackageFeatureTestPath(packageDir, featureName, testPathConfig, language);
       testPaths.push({ testPath, packageDir });
     }
 
@@ -308,13 +304,7 @@ export const acceptanceSetupStage: PipelineStage = {
       // Generate one acceptance test file per workdir group
       for (const [workdir, group] of workdirGroups) {
         const packageDir = workdir ? path.join(ctx.workdir, workdir) : ctx.workdir;
-        const testPath = path.join(
-          packageDir,
-          ".nax",
-          "features",
-          featureName,
-          resolveAcceptanceTestFile(language, testPathConfig),
-        );
+        const testPath = resolveAcceptancePackageFeatureTestPath(packageDir, featureName, testPathConfig, language);
 
         // Filter refined criteria to this group's stories
         const groupStoryIds = new Set(group.stories.map((s) => s.id));
@@ -373,7 +363,6 @@ export const acceptanceSetupStage: PipelineStage = {
 
     // BUG-084: Use testFramework-aware single-file command (not quality.commands.test which runs full suite)
     // Run RED gate for each per-package test file from its package directory
-    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
     let redFailCount = 0;
     for (const { testPath, packageDir } of testPaths) {
       const runCmd = buildAcceptanceRunCommand(

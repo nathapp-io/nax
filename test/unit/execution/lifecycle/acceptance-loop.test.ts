@@ -245,15 +245,16 @@ describe("loadAcceptanceTestContent — testPaths parameter", () => {
     expect(result[1].path).toBe(testB);
   });
 
-  test("returns array with legacy acceptance.test.ts when testPaths is omitted", async () => {
-    const legacyPath = join(tmpDir, "acceptance.test.ts");
-    writeFileSync(legacyPath, "// legacy content");
+  test("returns array with configured test path when testPaths is omitted", async () => {
+    const configuredPath = ".nax-acceptance.test.ts";
+    const resolvedPath = join(tmpDir, configuredPath);
+    writeFileSync(resolvedPath, "// configured content");
 
-    const result = await loadAcceptanceTestContent(tmpDir);
+    const result = await loadAcceptanceTestContent(tmpDir, undefined, configuredPath);
 
     expect(result).toHaveLength(1);
-    expect(result[0].content).toBe("// legacy content");
-    expect(result[0].path).toBe(legacyPath);
+    expect(result[0].content).toBe("// configured content");
+    expect(result[0].path).toBe(resolvedPath);
   });
 
   test("returns empty array when featureDir is undefined", async () => {

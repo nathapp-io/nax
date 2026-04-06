@@ -8,6 +8,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { generateAcceptanceTests } from "../acceptance";
+import { resolveAcceptanceFeatureTestPath } from "../acceptance/test-path";
 import { createAgentRegistry } from "../agents/registry";
 import { scanCodebase } from "../analyze/scanner";
 import type { NaxConfig } from "../config";
@@ -202,7 +203,11 @@ async function generateAcceptanceTestsForFeature(
       config,
     });
 
-    const acceptanceTestPath = join(featureDir, config.acceptance.testPath);
+    const acceptanceTestPath = resolveAcceptanceFeatureTestPath(
+      featureDir,
+      config.acceptance.testPath,
+      config.project?.language,
+    );
     await Bun.write(acceptanceTestPath, result.testCode);
     logger.info("cli", "[OK] Acceptance tests generated", {
       criteriaCount: result.criteria.length,

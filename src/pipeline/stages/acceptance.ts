@@ -28,8 +28,8 @@
  * ```
  */
 
-import path from "node:path";
 import { buildAcceptanceRunCommand } from "../../acceptance/generator";
+import { resolveAcceptanceFeatureTestPath } from "../../acceptance/test-path";
 import { getLogger } from "../../logger";
 import { countStories } from "../../prd";
 import { logTestOutput } from "../../utils/log-test-output";
@@ -126,7 +126,11 @@ export const acceptanceStage: PipelineStage = {
     // Fall back to single-file behavior (pre-ACC-002 or disabled acceptance-setup).
     const testGroups: Array<{ testPath: string; packageDir: string }> = ctx.acceptanceTestPaths ?? [
       {
-        testPath: path.join(ctx.featureDir, effectiveConfig.acceptance.testPath),
+        testPath: resolveAcceptanceFeatureTestPath(
+          ctx.featureDir,
+          effectiveConfig.acceptance.testPath,
+          effectiveConfig.project?.language,
+        ),
         packageDir: ctx.workdir,
       },
     ];
