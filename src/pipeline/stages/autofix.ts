@@ -132,7 +132,7 @@ export const autofixStage: PipelineStage = {
     }
 
     // Phase 2: Agent rectification — spawn agent with review error context
-    const agentFixed = await _autofixDeps.runAgentRectification(ctx);
+    const agentFixed = await _autofixDeps.runAgentRectification(ctx, lintFixCmd, formatFixCmd, effectiveWorkdir);
     if (agentFixed) {
       if (ctx.reviewResult) ctx.reviewResult = { ...ctx.reviewResult, success: true };
       // #136: Skip checks that already passed — only re-run checks that originally failed.
@@ -209,7 +209,12 @@ Your previous fix attempt (attempt ${attempt}) did not resolve the quality error
   });
 }
 
-async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
+async function runAgentRectification(
+  ctx: PipelineContext,
+  lintFixCmd: string | undefined,
+  formatFixCmd: string | undefined,
+  effectiveWorkdir: string,
+): Promise<boolean> {
   const logger = getLogger();
   const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
   const maxPerCycle = effectiveConfig.quality.autofix?.maxAttempts ?? 2;
@@ -337,8 +342,45 @@ async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
       }
 
       const updatedFailed = collectFailedChecks(ctx);
+
+      // If the agent introduced new lint/format issues, run mechanical fix before next agent attempt.
+      // This avoids spending a full agent session (~45s) on errors that lintFix (~77ms) can resolve.
+      const hasNewLintFailure = updatedFailed.some((c) => c.check === "lint");
+      if (hasNewLintFailure && (lintFixCmd || formatFixCmd)) {
+        if (lintFixCmd) {
+          logger.debug("autofix", "Agent introduced lint errors — running lintFix before next attempt", {
+            storyId: ctx.story.id,
+          });
+          pipelineEventBus.emit({ type: "autofix:started", storyId: ctx.story.id, command: lintFixCmd });
+          await _autofixDeps.runQualityCommand({
+            commandName: "lintFix",
+            command: lintFixCmd,
+            workdir: effectiveWorkdir,
+            storyId: ctx.story.id,
+          });
+        }
+        if (formatFixCmd) {
+          pipelineEventBus.emit({ type: "autofix:started", storyId: ctx.story.id, command: formatFixCmd });
+          await _autofixDeps.runQualityCommand({
+            commandName: "formatFix",
+            command: formatFixCmd,
+            workdir: effectiveWorkdir,
+            storyId: ctx.story.id,
+          });
+        }
+        // Re-check after mechanical fix; if it passes, no need for another agent attempt
+        const mechPassed = await _autofixDeps.recheckReview(ctx);
+        pipelineEventBus.emit({ type: "autofix:completed", storyId: ctx.story.id, fixed: mechPassed });
+        if (mechPassed) {
+          logger.info("autofix", `[OK] Mechanical fix resolved agent-introduced lint errors on attempt ${attempt}`, {
+            storyId: ctx.story.id,
+          });
+          return true;
+        }
+      }
+
       if (updatedFailed.length > 0) {
-        state.failedChecks.splice(0, state.failedChecks.length, ...updatedFailed);
+        state.failedChecks.splice(0, state.failedChecks.length, ...collectFailedChecks(ctx));
       }
       return false;
     },
@@ -367,6 +409,11 @@ export const _autofixDeps = {
   getAgent,
   runQualityCommand,
   recheckReview,
-  runAgentRectification,
+  runAgentRectification: (
+    ctx: PipelineContext,
+    lintFixCmd: string | undefined,
+    formatFixCmd: string | undefined,
+    effectiveWorkdir: string,
+  ) => runAgentRectification(ctx, lintFixCmd, formatFixCmd, effectiveWorkdir),
   loadConfigForWorkdir,
 };
