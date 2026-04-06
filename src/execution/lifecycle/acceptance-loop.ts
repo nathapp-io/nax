@@ -117,16 +117,18 @@ async function loadSpecContent(featureDir?: string): Promise<string> {
  * Load acceptance test file content.
  *
  * When `testPaths` is provided, returns content for each per-package test file.
- * When `testPaths` is omitted, falls back to reading the single acceptance.test.ts
- * from `featureDir` (legacy behavior).
+ * When `testPaths` is omitted, falls back to reading the configured single test file
+ * from `featureDir`.
  *
  * @param featureDir - Feature directory (legacy fallback)
  * @param testPaths - Per-package test paths array (takes priority over featureDir)
+ * @param configuredTestPath - Configured acceptance test path relative to featureDir
  * @returns Array of { content, path } pairs
  */
 export async function loadAcceptanceTestContent(
   featureDir?: string,
   testPaths?: Array<{ testPath: string; packageDir: string }>,
+  configuredTestPath?: string,
 ): Promise<Array<{ content: string; path: string }>> {
   if (!featureDir) return [];
 
@@ -142,10 +144,12 @@ export async function loadAcceptanceTestContent(
     return results;
   }
 
-  const legacyPath = path.join(featureDir, "acceptance.test.ts");
-  const testFile = Bun.file(legacyPath);
+  if (!configuredTestPath) return [];
+
+  const resolvedPath = path.join(featureDir, configuredTestPath);
+  const testFile = Bun.file(resolvedPath);
   const content = (await testFile.exists()) ? await testFile.text() : "";
-  return [{ content, path: legacyPath }];
+  return [{ content, path: resolvedPath }];
 }
 
 /** Build result object for loop exit */
@@ -163,6 +167,29 @@ function buildResult(
 }
 
 export const _acceptanceLoopDeps = { getAgent, loadSemanticVerdicts };
+
+function resolveConfiguredAcceptanceTestPath(ctx: AcceptanceLoopContext): string | undefined {
+  if (!ctx.featureDir) return undefined;
+  return path.join(ctx.featureDir, ctx.config.acceptance.testPath);
+}
+
+function resolveAcceptanceTestCandidates(ctx: AcceptanceLoopContext): string[] {
+  if (ctx.acceptanceTestPaths && ctx.acceptanceTestPaths.length > 0) {
+    return ctx.acceptanceTestPaths.map((p) => p.testPath);
+  }
+  const fallback = resolveConfiguredAcceptanceTestPath(ctx);
+  return fallback ? [fallback] : [];
+}
+
+async function findExistingAcceptanceTestPath(ctx: AcceptanceLoopContext): Promise<string | undefined> {
+  const candidates = resolveAcceptanceTestCandidates(ctx);
+  for (const testPath of candidates) {
+    if (await Bun.file(testPath).exists()) {
+      return testPath;
+    }
+  }
+  return undefined;
+}
 
 /** Injectable dependencies for regenerateAcceptanceTest — allows tests to mock I/O without real disk or git. */
 export const _regenerateDeps = {
@@ -200,7 +227,7 @@ async function generateAndAddFixStories(
     ctx.config.analyze.model,
     ctx.config.autoMode.defaultAgent,
   );
-  const testFilePath = ctx.featureDir ? path.join(ctx.featureDir, "acceptance.test.ts") : undefined;
+  const testFilePath = resolveConfiguredAcceptanceTestPath(ctx);
   const fixStories = await generateFixStories(agent, {
     failedACs: failures.failedACs,
     testOutput: failures.testOutput,
@@ -277,8 +304,8 @@ async function executeFixStory(
  * Back up and regenerate the acceptance test file (P1-D, D2).
  *
  * Steps:
- * 1. Copy acceptance.test.ts → acceptance.test.ts.bak
- * 2. Delete acceptance.test.ts
+ * 1. Copy configured acceptance test file → <file>.bak
+ * 2. Delete configured acceptance test file
  * 3. Re-run acceptance-setup to generate fresh test
  *
  * @returns true if regeneration succeeded, false otherwise
@@ -422,9 +449,7 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
     const moduleEntries = await loadAcceptanceTestContentModule(pathStrings);
     testEntries = moduleEntries.map((e) => ({ content: e.content, path: e.testPath }));
   } else {
-    const fallbackPath = ctx.featureDir
-      ? path.join(ctx.featureDir, ctx.config.acceptance.testPath ?? "acceptance.test.ts")
-      : undefined;
+    const fallbackPath = resolveConfiguredAcceptanceTestPath(ctx);
     const moduleEntries = await loadAcceptanceTestContentModule(fallbackPath);
     testEntries = moduleEntries.map((e) => ({ content: e.content, path: e.testPath }));
   }
@@ -478,6 +503,12 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
       if (fixResult.success) {
         return { fixed: true, cost: fixResult.cost, prdDirty: false };
       }
+      logger?.warn("acceptance.source-fix", "Source fix attempt failed", {
+        attempt: fixAttempts,
+        maxRetries: fixMaxRetries,
+        cost: fixResult.cost,
+        willRetry: fixAttempts < fixMaxRetries,
+      });
 
       if (fixAttempts >= fixMaxRetries) {
         logger?.error("acceptance", `Source fix failed after ${fixMaxRetries} attempts`);
@@ -538,6 +569,12 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
       if (fixResult.success) {
         return { fixed: true, cost: fixResult.cost, prdDirty: false };
       }
+      logger?.warn("acceptance.source-fix", "Source fix attempt failed", {
+        attempt: fixAttempts,
+        maxRetries: fixMaxRetries,
+        cost: fixResult.cost,
+        willRetry: fixAttempts < fixMaxRetries,
+      });
 
       if (fixAttempts >= fixMaxRetries) {
         logger?.error("acceptance", `Source fix failed after ${fixMaxRetries} attempts`);
@@ -556,10 +593,11 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
       return { fixed: false, cost: 0, prdDirty: false };
     }
 
-    const testPath = path.join(ctx.featureDir, "acceptance.test.ts");
-    const testFile = Bun.file(testPath);
-    if (!(await testFile.exists())) {
-      logger?.error("acceptance", "Acceptance test file not found for regeneration");
+    const testPath = await findExistingAcceptanceTestPath(ctx);
+    if (!testPath) {
+      logger?.error("acceptance", "Acceptance test file not found for regeneration", {
+        candidates: resolveAcceptanceTestCandidates(ctx),
+      });
       return { fixed: false, cost: 0, prdDirty: false };
     }
 
@@ -624,6 +662,12 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
       if (fixResult.success) {
         break;
       }
+      logger?.warn("acceptance.source-fix", "Source fix attempt failed", {
+        attempt: fixAttempts,
+        maxRetries: fixMaxRetries,
+        cost: fixResult.cost,
+        willRetry: fixAttempts < fixMaxRetries,
+      });
 
       if (fixAttempts >= fixMaxRetries) {
         logger?.error("acceptance", `Source fix failed after ${fixMaxRetries} attempts`);
@@ -652,10 +696,11 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
       return { fixed: false, cost: sourceFixCost, prdDirty: false };
     }
 
-    const testPath = path.join(ctx.featureDir, "acceptance.test.ts");
-    const testFile = Bun.file(testPath);
-    if (!(await testFile.exists())) {
-      logger?.error("acceptance", "Acceptance test file not found for regeneration");
+    const testPath = await findExistingAcceptanceTestPath(ctx);
+    if (!testPath) {
+      logger?.error("acceptance", "Acceptance test file not found for regeneration", {
+        candidates: resolveAcceptanceTestCandidates(ctx),
+      });
       return { fixed: false, cost: sourceFixCost, prdDirty: false };
     }
 
@@ -770,17 +815,18 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
 
     // Check for stub test file before other checks
     if (ctx.featureDir) {
-      const testPath = path.join(ctx.featureDir, "acceptance.test.ts");
-      const testFile = Bun.file(testPath);
-      if (await testFile.exists()) {
-        const testContent = await testFile.text();
+      const existingStubPath = await findExistingAcceptanceTestPath(ctx);
+      if (existingStubPath) {
+        const testContent = await Bun.file(existingStubPath).text();
         if (isStubTestFile(testContent)) {
-          logger?.warn("acceptance", "Stub tests detected — re-generating acceptance tests");
+          logger?.warn("acceptance", "Stub tests detected — re-generating acceptance tests", {
+            testPath: existingStubPath,
+          });
           const { unlink } = await import("node:fs/promises");
-          await unlink(testPath);
+          await unlink(existingStubPath);
           const { acceptanceSetupStage } = await import("../../pipeline/stages/acceptance-setup");
           await acceptanceSetupStage.execute(acceptanceContext);
-          const newContent = await Bun.file(testPath).text();
+          const newContent = await Bun.file(existingStubPath).text();
           if (isStubTestFile(newContent)) {
             logger?.error(
               "acceptance",
@@ -813,9 +859,8 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         "acceptance",
         `Test-level failure detected (${failures.failedACs.length}/${totalACs} ACs failed) — regenerating acceptance test`,
       );
-      const testPath = path.join(ctx.featureDir, "acceptance.test.ts");
-      const testFile = Bun.file(testPath);
-      if (await testFile.exists()) {
+      const testPath = await findExistingAcceptanceTestPath(ctx);
+      if (testPath) {
         const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext);
         if (!regenerated) {
           return buildResult(
