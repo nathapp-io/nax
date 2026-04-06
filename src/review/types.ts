@@ -67,6 +67,16 @@ export interface ReviewResult {
   pluginReviewers?: PluginReviewerResult[];
 }
 
+/** Reviewer-implementer dialogue configuration */
+export interface ReviewDialogueConfig {
+  /** Enable reviewer-implementer dialogue mode */
+  enabled: boolean;
+  /** Maximum clarification exchanges per attempt */
+  maxClarificationsPerAttempt: number;
+  /** Maximum total messages in a dialogue session */
+  maxDialogueMessages: number;
+}
+
 /** Review configuration */
 export interface ReviewConfig {
   /** Enable review phase */
@@ -84,4 +94,6 @@ export interface ReviewConfig {
   pluginMode?: "per-story" | "deferred";
   /** Semantic review configuration (when 'semantic' is in checks) */
   semantic?: SemanticReviewConfig;
+  /** Reviewer-implementer dialogue configuration */
+  dialogue?: ReviewDialogueConfig;
 }

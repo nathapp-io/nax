@@ -277,6 +277,8 @@ const SemanticReviewConfigSchema = z.object({
     .default([":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"]),
 });
 
+export const ReviewDialogueConfigSchema = z.object({});
+
 const ReviewConfigSchema = z.object({
   enabled: z.boolean(),
   checks: z.array(z.enum(["typecheck", "lint", "test", "build", "semantic"])),
