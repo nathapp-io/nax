@@ -1,27 +1,36 @@
 {
   "version": 1,
   "run": {
-    "id": "run-2026-04-06T02-08-43-557Z",
+    "id": "run-2026-04-06T03-27-03-320Z",
     "feature": "semantic-session-continuity",
-    "startedAt": "2026-04-06T02:08:43.557Z",
-    "status": "stalled",
+    "startedAt": "2026-04-06T03:27:03.320Z",
+    "status": "running",
     "dryRun": false,
-    "pid": 4085
+    "pid": 24084
   },
   "progress": {
     "total": 4,
     "passed": 1,
     "failed": 0,
-    "paused": 1,
+    "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 3
   },
   "cost": {
-    "spent": 4.1881839,
+    "spent": 0,
     "limit": 30
   },
-  "current": null,
-  "iterations": 2,
-  "updatedAt": "2026-04-06T02:50:20.131Z",
-  "durationMs": 2496574
+  "current": {
+    "storyId": "US-002",
+    "title": "Thread featureName through semantic review call chain and fix debate path bug",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
+    "model": "balanced",
+    "attempt": 2,
+    "phase": "routing"
+  },
+  "iterations": 1,
+  "updatedAt": "2026-04-06T03:29:03.378Z",
+  "durationMs": 120058,
+  "lastHeartbeat": "2026-04-06T03:29:03.378Z"
 }
