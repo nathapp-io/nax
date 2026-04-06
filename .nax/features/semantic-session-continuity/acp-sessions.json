@@ -6,5 +6,9 @@
   "US-002:verifier": {
     "sessionName": "nax-0a32cb69-semantic-session-continuity-us-002-verifier",
     "agentName": "claude"
+  },
+  "US-003:test-writer": {
+    "sessionName": "nax-0a32cb69-semantic-session-continuity-us-003-test-writer",
+    "agentName": "claude"
   }
 }
