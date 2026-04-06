@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 4,
-    "passed": 0,
+    "passed": 1,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 4
+    "pending": 3
   },
   "cost": {
-    "spent": 0,
+    "spent": 0.37196340000000006,
     "limit": 30
   },
   "current": {
-    "storyId": "US-001",
-    "title": "Normalize implementer session role in execution stage",
-    "complexity": "simple",
-    "tddStrategy": "tdd-simple",
+    "storyId": "US-002",
+    "title": "Thread featureName through semantic review call chain and fix debate path bug",
+    "complexity": "medium",
+    "tddStrategy": "three-session-tdd-lite",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 1,
-  "updatedAt": "2026-04-06T02:26:43.740Z",
-  "durationMs": 1080183,
-  "lastHeartbeat": "2026-04-06T02:26:43.740Z"
+  "iterations": 2,
+  "updatedAt": "2026-04-06T02:39:43.809Z",
+  "durationMs": 1860252,
+  "lastHeartbeat": "2026-04-06T02:39:43.809Z"
 }
