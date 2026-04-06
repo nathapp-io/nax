@@ -20,4 +20,5 @@ export const NAX_GITIGNORE_ENTRIES = [
   ".nax-wt/",
   "**/.nax-acceptance*",
   "**/.nax/features/*/",
+  ".nax/prompt-audit/",
 ];
