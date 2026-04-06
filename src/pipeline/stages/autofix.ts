@@ -34,6 +34,8 @@ import {
 import { pipelineEventBus } from "../event-bus";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
+const CLARIFY_REGEX = /^CLARIFY:\s*(.+)$/ms;
+
 export const autofixStage: PipelineStage = {
   name: "autofix",
 
@@ -287,7 +289,7 @@ async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
       );
       const rectificationWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
 
-      await agent.run({
+      const result = await agent.run({
         prompt,
         workdir: rectificationWorkdir,
         modelTier,
@@ -300,6 +302,28 @@ async function runAgentRectification(ctx: PipelineContext): Promise<boolean> {
         storyId: ctx.story.id,
         sessionRole: "implementer",
       });
+
+      // AC5/AC6/AC10: Detect CLARIFY blocks and relay to reviewerSession
+      if (ctx.reviewerSession && result.output) {
+        const maxClarifications = effectiveConfig.review?.dialogue?.maxClarificationsPerAttempt ?? 3;
+        let clarifyCount = 0;
+        const clarifyRegex = new RegExp(CLARIFY_REGEX.source, `${CLARIFY_REGEX.flags}g`);
+        let match: RegExpExecArray | null;
+        // biome-ignore lint/suspicious/noAssignInExpressions: standard regex exec loop
+        while ((match = clarifyRegex.exec(result.output)) !== null) {
+          if (clarifyCount >= maxClarifications) break;
+          const question = match[1]?.trim() ?? "";
+          if (!question) continue;
+          try {
+            await ctx.reviewerSession.clarify(question);
+            clarifyCount++;
+          } catch (err) {
+            logger.debug("autofix", "reviewerSession.clarify() failed — proceeding without clarification", {
+              storyId: ctx.story.id,
+            });
+          }
+        }
+      }
     },
     checkResult: async (attempt, state) => {
       const passed = await _autofixDeps.recheckReview(ctx);

@@ -119,6 +119,15 @@ export const completionStage: PipelineStage = {
       failed: updatedCounts.failed,
     });
 
+    // AC7: Destroy the reviewer session if it exists (regardless of pass/fail)
+    if (ctx.reviewerSession) {
+      try {
+        await ctx.reviewerSession.destroy();
+      } catch {
+        // Ignore destroy errors — cleanup is best-effort
+      }
+    }
+
     return { action: "continue" };
   },
 };

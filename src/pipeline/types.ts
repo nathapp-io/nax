@@ -141,6 +141,8 @@ export interface PipelineContext {
   storyRuntimeCrashes?: number;
   /** Structured review findings from plugin reviewers — passed to escalation for retry context */
   reviewFindings?: import("../plugins/types").ReviewFinding[];
+  /** Active reviewer-implementer dialogue session (set by reviewStage when dialogue.enabled) */
+  reviewerSession?: import("../review/dialogue").ReviewerSession;
   /** Accumulated cost across all prior escalation attempts (BUG-067) */
   accumulatedAttemptCost?: number;
   /**
