@@ -167,16 +167,6 @@ export async function executeParallel(
             }
           }
         }
-
-        // #93: Resolve per-package effective config so testScoped/test overrides apply (same as iteration-runner PKG-003)
-        const rootConfigPath = join(projectRoot, ".nax", "config.json");
-        if (!story.workdir) {
-          logger?.debug("parallel", "No story.workdir — skipping per-package config, using root config", {
-            storyId: story.id,
-          });
-        }
-        const effectiveConfig = story.workdir ? await loadConfigForWorkdir(rootConfigPath, story.workdir) : config;
-        storyEffectiveConfigs.set(story.id, effectiveConfig);
       } catch (error) {
         markStoryFailed(currentPrd, story.id, undefined, undefined, statusWriter);
         logger?.error("parallel", "Failed to create worktree", {
@@ -185,6 +175,23 @@ export async function executeParallel(
         });
       }
     }
+
+    // #93: Resolve per-story effective configs in parallel (PKG-003).
+    // Runs after all worktrees are created so git state is stable.
+    // Only loads for stories whose worktrees were successfully created.
+    const rootConfigPath = join(projectRoot, ".nax", "config.json");
+    await Promise.all(
+      batch
+        .filter((story) => worktreePaths.has(story.id))
+        .map(async (story) => {
+          if (!story.workdir) {
+            logger?.debug("parallel", "No story.workdir — using root config", { storyId: story.id });
+            return;
+          }
+          const effectiveConfig = await loadConfigForWorkdir(rootConfigPath, story.workdir);
+          storyEffectiveConfigs.set(story.id, effectiveConfig);
+        }),
+    );
 
     // Execute batch in parallel
     const batchResult = await executeParallelBatch(

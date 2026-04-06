@@ -5,7 +5,7 @@
  * cost accumulator, and current stage information.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PipelineEventEmitter, RunSummary } from "../../pipeline/events";
 import type { UserStory } from "../../prd/types";
 import type { StoryDisplayState } from "../types";
@@ -68,9 +68,14 @@ export function usePipelineEvents(events: PipelineEventEmitter, initialStories: 
     elapsedMs: 0,
   }));
 
-  const startTime = Date.now();
+  // Capture run start time once per mount. Using useRef prevents a new Date.now() value
+  // from appearing on every render, which would cause the effect to re-run (and re-subscribe
+  // all event listeners) on every render cycle.
+  const startTimeRef = useRef(Date.now());
 
   useEffect(() => {
+    const startTime = startTimeRef.current;
+
     // Elapsed timer — only runs when a story is active
     let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -177,7 +182,7 @@ export function usePipelineEvents(events: PipelineEventEmitter, initialStories: 
       events.off("stage:enter", onStageEnter);
       events.off("run:complete", onRunComplete);
     };
-  }, [events, startTime]);
+  }, [events]);
 
   return state;
 }

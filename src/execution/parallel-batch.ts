@@ -138,14 +138,17 @@ export async function runParallelBatch(options: RunParallelBatchOptions): Promis
   // PKG-003 (parallel): Resolve per-story effective configs so per-package quality/review
   // command overrides apply in parallel mode (same as iteration-runner does for sequential).
   // Without this, all parallel stories use the root config regardless of story.workdir.
+  // Loads run concurrently (Promise.all) since each is an independent file-system read.
   const rootConfigPath = path.join(workdir, ".nax", "config.json");
   const storyEffectiveConfigs = new Map<string, NaxConfig>();
-  for (const story of stories) {
-    if (story.workdir) {
-      const effectiveConfig = await loadConfigForWorkdir(rootConfigPath, story.workdir);
-      storyEffectiveConfigs.set(story.id, effectiveConfig);
-    }
-  }
+  await Promise.all(
+    stories
+      .filter((story) => story.workdir)
+      .map(async (story) => {
+        const effectiveConfig = await loadConfigForWorkdir(rootConfigPath, story.workdir as string);
+        storyEffectiveConfigs.set(story.id, effectiveConfig);
+      }),
+  );
 
   // 2. Execute all stories in parallel
   const workerResult = await _parallelBatchDeps.executeParallelBatch(

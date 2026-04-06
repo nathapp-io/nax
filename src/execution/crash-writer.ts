@@ -30,7 +30,7 @@ export async function writeFatalLog(jsonlFilePath: string | undefined, signal: s
     const line = `${JSON.stringify(fatalEntry)}\n`;
     appendFileSync(jsonlFilePath, line);
   } catch (err) {
-    console.error("[crash-recovery] Failed to write fatal log:", err);
+    process.stderr.write(`[crash-recovery] Failed to write fatal log: ${String(err)}\n`);
   }
 }
 
@@ -84,7 +84,7 @@ export async function writeRunComplete(ctx: RunCompleteContext, exitReason: stri
     appendFileSync(ctx.jsonlFilePath, line);
     logger?.debug("crash-recovery", "run.complete event written", { exitReason });
   } catch (err) {
-    console.error("[crash-recovery] Failed to write run.complete event:", err);
+    process.stderr.write(`[crash-recovery] Failed to write run.complete event: ${String(err)}\n`);
   }
 }
 
@@ -112,7 +112,7 @@ export async function updateStatusToCrashed(
       });
     }
   } catch (err) {
-    console.error("[crash-recovery] Failed to update status.json:", err);
+    process.stderr.write(`[crash-recovery] Failed to update status.json: ${String(err)}\n`);
   }
 }
 

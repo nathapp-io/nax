@@ -12,8 +12,6 @@
  */
 
 import { join } from "node:path";
-import { getAgent } from "../../agents/registry";
-import type { NaxConfig } from "../../config";
 import { isGreenfieldStory } from "../../context/greenfield";
 import { getLogger } from "../../logger";
 import { savePRD } from "../../prd";
@@ -34,6 +32,12 @@ export const routingStage: PipelineStage = {
     const agentName = effectiveConfig.execution?.agent ?? "claude";
     // Only use adapter when explicitly provided via agentGetFn — prevents real LLM calls in tests
     const adapter = ctx.agentGetFn ? ctx.agentGetFn(agentName) : undefined;
+
+    // Clear LLM routing cache at the start of each run (first story only) to prevent
+    // cross-run cache pollution when story IDs repeat across features (e.g. "us-001").
+    if (ctx.story.id === ctx.stories[0]?.id) {
+      _routingDeps.clearCache();
+    }
 
     // Classify story via resolveRouting() (plugin routers > LLM > keyword)
     const decision = await _routingDeps.resolveRouting(ctx.story, effectiveConfig, ctx.plugins, adapter);
@@ -107,5 +111,4 @@ export const _routingDeps = {
   isGreenfieldStory,
   clearCache,
   savePRD,
-  getAgent,
 };

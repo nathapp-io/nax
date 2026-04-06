@@ -166,8 +166,11 @@ export async function executeParallelBatch(
 
     executing.add(executePromise);
 
-    // Wait if we've hit the concurrency limit
-    if (executing.size >= maxConcurrency) {
+    // Drain until we are below the concurrency limit. Using `while` (not `if`) handles
+    // the case where multiple promises resolve between two awaits: each iteration of
+    // Promise.race flushes one completion, and the .finally() cleanup runs as a microtask
+    // before the next loop evaluation, so the Set size converges correctly.
+    while (executing.size >= maxConcurrency) {
       await Promise.race(executing);
     }
   }
