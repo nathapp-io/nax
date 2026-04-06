@@ -1,0 +1,137 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "reviewer-implementer-dialogue",
+  "analysis": "## Key Files & Impact Analysis\n\n### Files to Modify\n\n1. **src/config/schemas.ts** (lines 280-291) — `ReviewConfigSchema` needs `dialogue` field added via new `ReviewDialogueConfigSchema`. Currently has `enabled`, `checks`, `commands`, `pluginMode`, `semantic`. The new schema nests under `review.dialogue`.\n\n2. **src/review/types.ts** (lines 71-87) — `ReviewConfig` interface needs `dialogue?: ReviewDialogueConfig` field. Currently has `enabled`, `checks`, `commands`, `pluginMode`, `semantic`.\n\n3. **src/config/schema-types.ts** — May need `ReviewDialogueConfig` type export if not inferred from Zod.\n\n4. **src/pipeline/types.ts** (line 60-153) — `PipelineContext` needs `reviewerSession?: ReviewerSession` field. Already has `reviewResult`, `reviewFindings`, `retrySkipChecks`.\n\n5. **src/pipeline/stages/review.ts** (124 lines) — Must create `ReviewerSession` when `dialogue.enabled`, store in `ctx.reviewerSession`. On re-review (retry loop), call `ctx.reviewerSession.reReview()` instead of fresh `runSemanticReview()`. Currently delegates entirely to `reviewOrchestrator.review()`.\n\n6. **src/pipeline/stages/autofix.ts** (347 lines) — Must detect `CLARIFY:` blocks in agent output (lines 273-302 `runAttempt`), relay to `reviewerSession.clarify()`, and inject response. Must pass `findingReasoning` and `dialogueHistory` to prompt builder.\n\n7. **src/pipeline/stages/autofix-prompts.ts** (113 lines) — New `buildDialogueAwareRectificationPrompt()` that includes per-finding reasoning and dialogue history from `ReviewerSession`.\n\n8. **src/pipeline/stages/completion.ts** (133 lines) — Must call `ctx.reviewerSession?.destroy()` on story pass/fail. Currently persists semantic verdict at lines 96-107.\n\n### New Files\n\n9. **src/review/dialogue.ts** — Core `ReviewerSession` class with `createReviewerSession()` factory. Contains `DialogueMessage`, `ReviewDialogueResult`, `ReviewerSession` implementation. Follows `debate/session-stateful.ts` pattern for `agent.run()` with `keepSessionOpen: true`.\n\n### Integration Patterns\n\n- **agent.run() pattern**: Follow `autofix.ts:290-302` and `debate/session-stateful.ts:49-63` for `run()` call shape. Key params: `prompt`, `workdir`, `modelTier`, `modelDef`, `timeoutSeconds`, `dangerouslySkipPermissions`, `pipelineStage`, `config`, `sessionRole`, `keepSessionOpen`.\n- **Session persistence**: `keepSessionOpen: true` on initial `review()`, `keepSessionOpen: false` on `destroy()`. The ACP adapter closes sessions in `finally` after `complete()` — must use `run()` for persistence.\n- **buildSessionName**: Use `sessionRole: 'reviewer'` to disambiguate from implementer sessions.\n- **Permission resolution**: Must call `resolvePermissions(config, 'review')` — never hardcode.\n- **Model resolution**: Must call `resolveModelForAgent()` from `src/config/schema-types.ts`.\n- **Agent resolution**: Must use `ctx.agentGetFn ?? getAgent` (adapter-wiring Rule 3).\n\n### Existing Patterns to Follow\n\n- **_deps pattern**: All external calls (agent, fs, logger) go through `_deps` object for testability. See `_completionDeps`, `_reviewDeps`, `_autofixDeps`, `_semanticDeps`.\n- **NaxError**: All errors use `NaxError(message, code, context)` with `stage` in context.\n- **Logging**: Project logger with `storyId` as first key in data object.\n- **Finding parsing**: `parseLLMResponse()` in `semantic.ts:224-255` handles JSON extraction from LLM output.\n\n### Risks & Considerations\n\n1. **Session isolation**: ReviewerSession opens its own `agent.run()` session — cannot share with implementer session. This is intentional per spec.\n2. **Debate compatibility**: When both `review.dialogue.enabled` and `debate.stages.review.enabled` are true, debate runs normally and dialogue is NOT applied to the debate path. Full integration deferred.\n3. **Context overflow**: History exceeding `maxDialogueMessages` triggers session destruction and fresh session with compacted summary.\n4. **Fallback**: Any `ReviewerSession` method failure falls back to stateless one-shot `runSemanticReview()`. Fail-open.\n5. **Backward compatibility**: Feature gated behind `review.dialogue.enabled` (default `false`). Existing behavior completely unchanged when disabled.\n6. **Acceptance bridge**: `completion.ts` currently builds `SemanticVerdict` from `ctx.reviewResult.checks`. When dialogue is enabled, it should use `reviewerSession.getVerdict()` instead — same type, different producer.\n\n### Test Coverage\n\nExisting test files to check for regression:\n- `test/unit/pipeline/stages/review.test.ts` (if exists)\n- `test/unit/pipeline/stages/autofix.test.ts` (if exists)\n- `test/unit/review/semantic.test.ts` (if exists)\n- `test/unit/config/schemas.test.ts` (if exists)\n\nNew test files needed:\n- `test/unit/review/dialogue.test.ts` — ReviewerSession core (create, review, destroy)\n- `test/unit/review/dialogue-rereview.test.ts` — reReview, clarify, getVerdict\n- `test/unit/pipeline/stages/review-dialogue.test.ts` — pipeline integration\n- `test/unit/pipeline/stages/autofix-dialogue.test.ts` — clarification relay",
+  "branchName": "feat/reviewer-implementer-dialogue",
+  "createdAt": "2026-04-06T12:00:00.000Z",
+  "updatedAt": "2026-04-06T05:20:29.701Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Config schema + ReviewerSession core with review() and destroy()",
+      "description": "Add `ReviewDialogueConfig` to the config schema (nested under `review.dialogue`) and implement the `ReviewerSession` type in a new `src/review/dialogue.ts` file. The session wraps `agent.run()` with `keepSessionOpen: true` to maintain a persistent reviewer context. The factory `createReviewerSession()` initializes the session. `review()` sends the semantic review prompt via `agent.run()`, parses the JSON response into `ReviewDialogueResult` (containing `checkResult` and `findingReasoning`), and appends both prompt and response to `history`. `destroy()` closes the session and sets `active: false`. Add `ReviewDialogueConfig` to `ReviewConfig` in `src/review/types.ts` and add `dialogue` to `ReviewConfigSchema` in `src/config/schemas.ts`.",
+      "acceptanceCriteria": [
+        "ReviewDialogueConfigSchema in src/config/schemas.ts defines `enabled` as z.boolean().default(false), `maxClarificationsPerAttempt` as z.number().int().min(0).max(10).default(2), and `maxDialogueMessages` as z.number().int().min(5).max(100).default(20)",
+        "ReviewConfigSchema includes a `dialogue` field using ReviewDialogueConfigSchema.default({}) so that DEFAULT_CONFIG.review.dialogue.enabled resolves to false",
+        "ReviewConfig interface in src/review/types.ts includes `dialogue?: ReviewDialogueConfig` matching the Zod-inferred type",
+        "createReviewerSession(agent, storyId, workdir, featureName, config) returns a ReviewerSession with active === true and history.length === 0",
+        "ReviewerSession.review(diff, story, semanticConfig) calls agent.run() with sessionRole 'reviewer', keepSessionOpen true, and pipelineStage 'review'",
+        "review() parses the agent.run() JSON response into a ReviewDialogueResult where checkResult contains success boolean and findings array, and findingReasoning is a Map from finding identifier to reasoning string",
+        "review() appends exactly two DialogueMessage entries to history: one with role 'implementer' containing the prompt, and one with role 'reviewer' containing the response",
+        "ReviewerSession.destroy() sets active to false, clears history to empty array, and subsequent review() calls throw NaxError with code 'REVIEWER_SESSION_DESTROYED'"
+      ],
+      "contextFiles": [
+        "src/config/schemas.ts",
+        "src/review/types.ts",
+        "src/review/semantic.ts",
+        "src/debate/session-stateful.ts",
+        "src/agents/types.ts"
+      ],
+      "tags": [
+        "feature",
+        "review",
+        "config"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "New file (dialogue.ts) ~150 LOC + schema changes across 3 files. Follows established agent.run() patterns from debate/session-stateful.ts. Medium complexity due to JSON parsing, session lifecycle, and _deps injection.",
+        "initialComplexity": "medium",
+        "modelTier": "balanced"
+      },
+      "escalations": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "58d58103d75f73bd4410029d1630c05cb1e0d354"
+    },
+    {
+      "id": "US-002",
+      "title": "Re-review, clarification, and verdict extraction",
+      "description": "Extend `ReviewerSession` with `reReview()`, `clarify()`, and `getVerdict()` methods. `reReview(updatedDiff)` sends a follow-up prompt to the same open `agent.run()` session referencing previous findings and returns a `ReviewDialogueResult` with `deltaSummary`. When `history.length` exceeds `maxDialogueMessages`, the session is destroyed and recreated with a compacted summary. `clarify(question)` sends the question as a follow-up and returns the raw response. `getVerdict()` extracts a `SemanticVerdict` from the last review result for acceptance bridge consumption.",
+      "acceptanceCriteria": [
+        "reReview(updatedDiff) sends a follow-up prompt to the same agent.run() session (keepSessionOpen true) that includes text referencing the last checkResult.findings by AC identifier",
+        "reReview() returns a ReviewDialogueResult where deltaSummary is a non-empty string describing which previous findings are resolved vs still present",
+        "reReview() appends exactly two DialogueMessage entries to history (role 'implementer' for prompt, role 'reviewer' for response)",
+        "When history.length exceeds config maxDialogueMessages after a reReview() call, the session is destroyed and a fresh session is created with a compacted summary injected as initial context",
+        "clarify(question) sends the question as a follow-up prompt to the same session and returns the raw response string",
+        "clarify() appends two DialogueMessage entries to history with roles 'implementer' and 'reviewer'",
+        "getVerdict() returns a SemanticVerdict with storyId, passed (from last checkResult.success), timestamp (ISO string), acCount, and findings (from last checkResult.findings)",
+        "getVerdict() throws NaxError with code 'NO_REVIEW_RESULT' when called before any review() has been executed"
+      ],
+      "contextFiles": [
+        "src/review/dialogue.ts",
+        "src/review/semantic.ts",
+        "src/acceptance/types.ts",
+        "src/agents/types.ts"
+      ],
+      "tags": [
+        "feature",
+        "review"
+      ],
+      "dependencies": [
+        "US-001"
+      ],
+      "status": "pending",
+      "passes": false,
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Adds 3 methods to existing ReviewerSession (~120 LOC). reReview involves session overflow detection and compacted summary injection. clarify is straightforward. getVerdict maps to existing SemanticVerdict type."
+      },
+      "escalations": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-003",
+      "title": "Pipeline integration: review stage, autofix clarification relay, and completion cleanup",
+      "description": "Wire `ReviewerSession` into the pipeline. The review stage (`src/pipeline/stages/review.ts`) creates a `ReviewerSession` via `createReviewerSession()` when `config.review.dialogue.enabled` is true and stores it in `ctx.reviewerSession`. On re-review (autofix retry), it calls `ctx.reviewerSession.reReview()` instead of `runSemanticReview()`. The autofix stage (`src/pipeline/stages/autofix.ts`) detects `CLARIFY:` blocks in agent output via `/^CLARIFY:\\s*(.+)$/ms` regex, relays to `reviewerSession.clarify()`, and appends the response before re-prompting. Clarification round-trips are capped at `config.review.dialogue.maxClarificationsPerAttempt`. The autofix prompt builder gets a new `buildDialogueAwareRectificationPrompt()` that includes `findingReasoning` and dialogue history. The completion stage calls `ctx.reviewerSession?.destroy()`. Add `reviewerSession?: ReviewerSession` to `PipelineContext`. All fallback behavior is preserved: ReviewerSession failures fall back to one-shot, disabled dialogue uses existing paths.",
+      "acceptanceCriteria": [
+        "PipelineContext in src/pipeline/types.ts includes an optional reviewerSession field typed as ReviewerSession",
+        "reviewStage.execute() creates a ReviewerSession via createReviewerSession() when effectiveConfig.review.dialogue.enabled is true and stores it in ctx.reviewerSession",
+        "When ctx.reviewerSession exists and reviewStage runs again (retry loop), it calls ctx.reviewerSession.reReview(updatedDiff) instead of the full reviewOrchestrator.review() for the semantic check",
+        "buildDialogueAwareRectificationPrompt() in autofix-prompts.ts includes findingReasoning entries and the last N dialogue history messages from ctx.reviewerSession",
+        "When the autofix agent output matches /^CLARIFY:\\s*(.+)$/ms, the autofix stage calls ctx.reviewerSession.clarify(extractedQuestion) and appends the response to the agent context",
+        "Clarification round-trips within a single rectification attempt are capped at effectiveConfig.review.dialogue.maxClarificationsPerAttempt, and excess requests are silently skipped",
+        "completionStage.execute() calls ctx.reviewerSession.destroy() when ctx.reviewerSession exists, regardless of story pass or fail",
+        "When review.dialogue.enabled is false, no ReviewerSession is created and all stages use existing one-shot behavior unchanged",
+        "When ReviewerSession.review() throws, the review stage falls back to one-shot runSemanticReview() and logs at warn level with storyId",
+        "When ReviewerSession.clarify() throws, the autofix stage proceeds without clarification and logs at debug level with storyId"
+      ],
+      "contextFiles": [
+        "src/pipeline/stages/review.ts",
+        "src/pipeline/stages/autofix.ts",
+        "src/pipeline/stages/autofix-prompts.ts",
+        "src/pipeline/stages/completion.ts",
+        "src/pipeline/types.ts"
+      ],
+      "tags": [
+        "feature",
+        "pipeline",
+        "integration"
+      ],
+      "dependencies": [
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "routing": {
+        "complexity": "complex",
+        "testStrategy": "three-session-tdd",
+        "reasoning": "Touches 5 files across pipeline stages. Requires careful integration with existing autofix retry loop, review orchestrator, and completion flow. Must preserve all existing fallback behavior. Cross-cutting concern across the pipeline."
+      },
+      "escalations": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    }
+  ]
+}

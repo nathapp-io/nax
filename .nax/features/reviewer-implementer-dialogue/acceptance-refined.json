@@ -1,0 +1,184 @@
+[
+  {
+    "acId": "AC-1",
+    "original": "ReviewDialogueConfigSchema in src/config/schemas.ts defines `enabled` as z.boolean().default(false), `maxClarificationsPerAttempt` as z.number().int().min(0).max(10).default(2), and `maxDialogueMessages` as z.number().int().min(5).max(100).default(20)",
+    "refined": "In src/config/schemas.ts, ReviewDialogueConfigSchema exists and: (1) parsing {} yields { enabled: false, maxClarificationsPerAttempt: 2, maxDialogueMessages: 20 }; (2) parsing { enabled: true, maxClarificationsPerAttempt: 11 } fails Zod validation; (3) parsing { maxClarificationsPerAttempt: -1 } fails Zod validation; (4) parsing { maxDialogueMessages: 4 } fails Zod validation; (5) parsing { maxDialogueMessages: 101 } fails Zod validation.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-2",
+    "original": "ReviewConfigSchema includes a `dialogue` field using ReviewDialogueConfigSchema.default({}) so that DEFAULT_CONFIG.review.dialogue.enabled resolves to false",
+    "refined": "Importing DEFAULT_CONFIG from src/config/defaults.ts (or equivalent SSOT), the expression DEFAULT_CONFIG.review.dialogue.enabled strictly equals false, DEFAULT_CONFIG.review.dialogue.maxClarificationsPerAttempt strictly equals 2, and DEFAULT_CONFIG.review.dialogue.maxDialogueMessages strictly equals 20.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-3",
+    "original": "ReviewConfig interface in src/review/types.ts includes `dialogue?: ReviewDialogueConfig` matching the Zod-inferred type",
+    "refined": "In src/review/types.ts, the ReviewConfig TypeScript interface declares an optional property `dialogue` of type ReviewDialogueConfig (or equivalent inferred type). TypeScript compilation (tsc --noEmit) succeeds when assigning a valid ReviewDialogueConfig object to ReviewConfig.dialogue and when omitting the dialogue field entirely.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-4",
+    "original": "createReviewerSession(agent, storyId, workdir, featureName, config) returns a ReviewerSession with active === true and history.length === 0",
+    "refined": "Calling createReviewerSession(mockAgent, 'story-1', '/tmp/work', 'feature-x', validConfig) returns an object where: (1) result.active === true; (2) Array.isArray(result.history) === true; (3) result.history.length === 0.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-5",
+    "original": "ReviewerSession.review(diff, story, semanticConfig) calls agent.run() with sessionRole 'reviewer', keepSessionOpen true, and pipelineStage 'review'",
+    "refined": "When ReviewerSession.review(diff, story, semanticConfig) is called, the agent.run() spy is called exactly once with an options object satisfying: options.sessionRole === 'reviewer', options.keepSessionOpen === true, and options.pipelineStage === 'review'.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-6",
+    "original": "review() parses the agent.run() JSON response into a ReviewDialogueResult where checkResult contains success boolean and findings array, and findingReasoning is a Map from finding identifier to reasoning string",
+    "refined": "Given agent.run() resolves with a JSON string containing { checkResult: { success: true, findings: ['f1'] }, findingReasoning: { 'f1': 'reason text' } }, review() returns a ReviewDialogueResult where: (1) result.checkResult.success === true; (2) Array.isArray(result.checkResult.findings) && result.checkResult.findings[0] === 'f1'; (3) result.findingReasoning instanceof Map; (4) result.findingReasoning.get('f1') === 'reason text'. If agent.run() returns invalid JSON or missing fields, review() throws a NaxError.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-7",
+    "original": "review() appends exactly two DialogueMessage entries to history: one with role 'implementer' containing the prompt, and one with role 'reviewer' containing the response",
+    "refined": "After a successful call to review(diff, story, semanticConfig): (1) session.history.length === 2; (2) session.history[0].role === 'implementer' and typeof session.history[0].content === 'string' and session.history[0].content.length > 0; (3) session.history[1].role === 'reviewer' and typeof session.history[1].content === 'string' and session.history[1].content.length > 0. After a second call to review(), session.history.length === 4.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-8",
+    "original": "ReviewerSession.destroy() sets active to false, clears history to empty array, and subsequent review() calls throw NaxError with code 'REVIEWER_SESSION_DESTROYED'",
+    "refined": "After calling session.destroy(): (1) session.active === false; (2) Array.isArray(session.history) && session.history.length === 0. A subsequent call to session.review(diff, story, semanticConfig) throws an instance of NaxError where error.code === 'REVIEWER_SESSION_DESTROYED'. Calling destroy() a second time does not throw and session.active remains false.",
+    "testable": true,
+    "storyId": "US-001"
+  },
+  {
+    "acId": "AC-9",
+    "original": "reReview(updatedDiff) sends a follow-up prompt to the same agent.run() session (keepSessionOpen true) that includes text referencing the last checkResult.findings by AC identifier",
+    "refined": "When reReview(updatedDiff) is called after review(), agent.run() is called with keepSessionOpen=true and the prompt string contains each AC identifier (e.g. 'AC-1', 'AC-2') from the last checkResult.findings array",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-10",
+    "original": "reReview() returns a ReviewDialogueResult where deltaSummary is a non-empty string describing which previous findings are resolved vs still present",
+    "refined": "reReview(updatedDiff) returns a ReviewDialogueResult object where typeof result.deltaSummary === 'string' && result.deltaSummary.length > 0",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-11",
+    "original": "reReview() appends exactly two DialogueMessage entries to history (role 'implementer' for prompt, role 'reviewer' for response)",
+    "refined": "After reReview(updatedDiff), dialogue.history.length increases by exactly 2; the second-to-last entry has role === 'implementer' and the last entry has role === 'reviewer'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-12",
+    "original": "When history.length exceeds config maxDialogueMessages after a reReview() call, the session is destroyed and a fresh session is created with a compacted summary injected as initial context",
+    "refined": "When dialogue.history.length would exceed config.maxDialogueMessages after reReview(), agent.destroySession() is called once, a new session is started, and the first prompt of the new session contains a compacted summary string derived from prior history entries",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-13",
+    "original": "clarify(question) sends the question as a follow-up prompt to the same session and returns the raw response string",
+    "refined": "clarify(question) calls agent.run() with keepSessionOpen=true and a prompt containing the exact question string, and returns a string equal to the raw agent response text",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-14",
+    "original": "clarify() appends two DialogueMessage entries to history with roles 'implementer' and 'reviewer'",
+    "refined": "After clarify(question), dialogue.history.length increases by exactly 2; the second-to-last entry has role === 'implementer' and the last entry has role === 'reviewer'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-15",
+    "original": "getVerdict() returns a SemanticVerdict with storyId, passed (from last checkResult.success), timestamp (ISO string), acCount, and findings (from last checkResult.findings)",
+    "refined": "getVerdict() returns an object where: result.storyId === dialogue.storyId, result.passed === lastCheckResult.success, typeof result.timestamp === 'string' && !isNaN(Date.parse(result.timestamp)), result.acCount === lastCheckResult.findings.length, and result.findings deep-equals lastCheckResult.findings",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-16",
+    "original": "getVerdict() throws NaxError with code 'NO_REVIEW_RESULT' when called before any review() has been executed",
+    "refined": "When getVerdict() is called on a fresh ReviewDialogueSession before review() has been called, it throws an instance of NaxError with error.code === 'NO_REVIEW_RESULT'",
+    "testable": true,
+    "storyId": "US-002"
+  },
+  {
+    "acId": "AC-17",
+    "original": "PipelineContext in src/pipeline/types.ts includes an optional reviewerSession field typed as ReviewerSession",
+    "refined": "TypeScript compilation succeeds and `keyof PipelineContext` includes 'reviewerSession'; the field type is `ReviewerSession | undefined` as declared in src/pipeline/types.ts",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-18",
+    "original": "reviewStage.execute() creates a ReviewerSession via createReviewerSession() when effectiveConfig.review.dialogue.enabled is true and stores it in ctx.reviewerSession",
+    "refined": "When reviewStage.execute() is called with effectiveConfig.review.dialogue.enabled === true, createReviewerSession() is called exactly once and ctx.reviewerSession is set to the returned ReviewerSession instance; when enabled === false, createReviewerSession() is not called and ctx.reviewerSession remains undefined",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-19",
+    "original": "When ctx.reviewerSession exists and reviewStage runs again (retry loop), it calls ctx.reviewerSession.reReview(updatedDiff) instead of the full reviewOrchestrator.review() for the semantic check",
+    "refined": "When reviewStage.execute() is called with ctx.reviewerSession already set, ctx.reviewerSession.reReview() is called with the current diff string and reviewOrchestrator.review() is NOT called for the semantic check path; verified by spy/mock call counts",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-20",
+    "original": "buildDialogueAwareRectificationPrompt() in autofix-prompts.ts includes findingReasoning entries and the last N dialogue history messages from ctx.reviewerSession",
+    "refined": "buildDialogueAwareRectificationPrompt() returns a string containing each findingReasoning entry text and the last N messages from ctx.reviewerSession.getHistory() where N equals effectiveConfig.review.dialogue.historyWindowSize; verified by unit test with known fixture data",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-21",
+    "original": "When the autofix agent output matches /^CLARIFY:\\s*(.+)$/ms, the autofix stage calls ctx.reviewerSession.clarify(extractedQuestion) and appends the response to the agent context",
+    "refined": "When autofix agent output matches /^CLARIFY:\\s*(.+)$/ms, ctx.reviewerSession.clarify() is called with the captured group string as argument and its return value is appended to the agent context string; verified by unit test asserting spy call argument and resulting context content",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-22",
+    "original": "Clarification round-trips within a single rectification attempt are capped at effectiveConfig.review.dialogue.maxClarificationsPerAttempt, and excess requests are silently skipped",
+    "refined": "After ctx.reviewerSession.clarify() has been called maxClarificationsPerAttempt times within a single rectification attempt, subsequent CLARIFY: matches do not invoke ctx.reviewerSession.clarify() and no error or warning is logged; verified by unit test asserting spy call count equals maxClarificationsPerAttempt and no log.warn/error emitted for the skipped calls",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-23",
+    "original": "completionStage.execute() calls ctx.reviewerSession.destroy() when ctx.reviewerSession exists, regardless of story pass or fail",
+    "refined": "When completionStage.execute() is called with ctx.reviewerSession set, ctx.reviewerSession.destroy() is called exactly once for both passing stories (verdict === 'pass') and failing stories (verdict === 'fail'); when ctx.reviewerSession is undefined, destroy() is not called",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-24",
+    "original": "When review.dialogue.enabled is false, no ReviewerSession is created and all stages use existing one-shot behavior unchanged",
+    "refined": "When effectiveConfig.review.dialogue.enabled === false, createReviewerSession() is never called across reviewStage, autofix stage, and completionStage execution; reviewOrchestrator.review() is called for the semantic check; no CLARIFY: handling is attempted; verified by spy/mock assertions in integration-style unit tests",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-25",
+    "original": "When ReviewerSession.review() throws, the review stage falls back to one-shot runSemanticReview() and logs at warn level with storyId",
+    "refined": "When ctx.reviewerSession.reReview() throws any error, reviewStage catches the error, calls runSemanticReview() exactly once as fallback, and emits exactly one logger.warn call whose data object contains storyId equal to ctx.story.id; verified by unit test with mocked throwing reReview()",
+    "testable": true,
+    "storyId": "US-003"
+  },
+  {
+    "acId": "AC-26",
+    "original": "When ReviewerSession.clarify() throws, the autofix stage proceeds without clarification and logs at debug level with storyId",
+    "refined": "When ctx.reviewerSession.clarify() throws any error, the autofix stage catches the error, does not append any clarification response to agent context, continues execution normally, and emits exactly one logger.debug call whose data object contains storyId equal to ctx.story.id; verified by unit test with mocked throwing clarify()",
+    "testable": true,
+    "storyId": "US-003"
+  }
+]
