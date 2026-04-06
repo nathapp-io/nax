@@ -142,11 +142,22 @@ class SpawnAcpSession implements AcpSession {
       const exitCode = await proc.exited;
 
       // Bun bug: piped streams may not close after kill (e.g. cancelActivePrompt SIGTERM).
-      // Race drain against a 5 s deadline so prompt() always resolves instead of hanging.
-      const drained = Bun.sleep(_spawnClientDeps.streamDrainTimeoutMs).then(() => "");
+      // Race each stream against its own cancellable drain timer so prompt() always resolves
+      // instead of hanging. Timers are cancelled as soon as the stream resolves to avoid
+      // keeping uncancellable Bun.sleep timers alive across multi-turn sessions.
+      const makeDrain = (ms: number): { promise: Promise<string>; cancel: () => void } => {
+        let id: ReturnType<typeof setTimeout> | undefined;
+        const promise = new Promise<string>((resolve) => {
+          id = setTimeout(() => resolve(""), ms);
+        });
+        // Promise executor runs synchronously — id is set before return.
+        return { promise, cancel: () => clearTimeout(id) };
+      };
+      const drainA = makeDrain(_spawnClientDeps.streamDrainTimeoutMs);
+      const drainB = makeDrain(_spawnClientDeps.streamDrainTimeoutMs);
       const [stdout, stderr] = await Promise.all([
-        Promise.race([stdoutPromise, drained]),
-        Promise.race([stderrPromise, drained]),
+        Promise.race([stdoutPromise, drainA.promise]).finally(() => drainA.cancel()),
+        Promise.race([stderrPromise, drainB.promise]).finally(() => drainB.cancel()),
       ]);
 
       if (exitCode !== 0) {
