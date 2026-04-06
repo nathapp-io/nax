@@ -10,27 +10,27 @@
   },
   "progress": {
     "total": 3,
-    "passed": 1,
+    "passed": 2,
     "failed": 0,
     "paused": 0,
     "blocked": 0,
-    "pending": 2
+    "pending": 1
   },
   "cost": {
-    "spent": 2.4011111999999994,
+    "spent": 3.9173255499999993,
     "limit": 30
   },
   "current": {
-    "storyId": "US-002",
-    "title": "Re-review, clarification, and verdict extraction",
-    "complexity": "medium",
-    "tddStrategy": "three-session-tdd-lite",
+    "storyId": "US-003",
+    "title": "Pipeline integration: review stage, autofix clarification relay, and completion cleanup",
+    "complexity": "complex",
+    "tddStrategy": "three-session-tdd",
     "model": "balanced",
     "attempt": 1,
     "phase": "routing"
   },
-  "iterations": 2,
-  "updatedAt": "2026-04-06T05:56:07.269Z",
-  "durationMs": 2580128,
-  "lastHeartbeat": "2026-04-06T05:56:07.269Z"
+  "iterations": 3,
+  "updatedAt": "2026-04-06T06:08:07.293Z",
+  "durationMs": 3300152,
+  "lastHeartbeat": "2026-04-06T06:08:07.293Z"
 }

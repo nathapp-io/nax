@@ -1,1 +1,2 @@
 [2026-04-06T05:37:47.194Z] US-001 — PASSED — Config schema + ReviewerSession core with review() and destroy() — Cost: $2.4011
+[2026-04-06T05:56:34.293Z] US-002 — PASSED — Re-review, clarification, and verdict extraction — Cost: $1.5162
