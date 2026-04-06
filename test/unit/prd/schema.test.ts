@@ -254,6 +254,20 @@ describe("validatePlanOutput — auto-fix LLM quirks (AC-7)", () => {
     expect(prd.userStories[0]!.id).toBe("ST-001");
   });
 
+  test("strips backtick wrapping from story ID (LLM markdown artifact from interactive plan)", () => {
+    // Claude sometimes wraps IDs in backticks for emphasis when writing directly to file.
+    // The JSON is valid so nax run works, but validatePlanOutput was crashing on the backtick.
+    const input = makeInput([makeStory({ id: "`US-001`" })]);
+    const prd = validatePlanOutput(input, "feat", "branch");
+    expect(prd.userStories[0]!.id).toBe("US-001");
+  });
+
+  test("strips backtick wrapping and normalizes separator-less ID (e.g. `ST001`)", () => {
+    const input = makeInput([makeStory({ id: "`ST001`" })]);
+    const prd = validatePlanOutput(input, "feat", "branch");
+    expect(prd.userStories[0]!.id).toBe("ST-001");
+  });
+
   test("normalizes complexity 'Simple' to 'simple'", () => {
     const input = makeInput([makeStory({ complexity: "Simple" })]);
     const prd = validatePlanOutput(input, "feat", "branch");

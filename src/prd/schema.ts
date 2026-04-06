@@ -6,7 +6,7 @@
 
 import type { Complexity, TestStrategy } from "../config";
 import { resolveTestStrategy } from "../config/test-strategy";
-import { extractJsonFromMarkdown, stripTrailingCommas } from "../utils/llm-json";
+import { extractJsonFromMarkdown, extractJsonObject, stripTrailingCommas } from "../utils/llm-json";
 export { extractJsonFromMarkdown };
 import type { PRD, UserStory } from "./types";
 import { validateStoryId } from "./validate";
@@ -22,14 +22,18 @@ const STORY_ID_NO_SEPARATOR = /^([A-Za-z]+)(\d+)$/;
 
 /**
  * Normalize a story ID: convert e.g. ST001 → ST-001.
+ * Also strips markdown backtick wrapping (e.g. `US-001` → US-001) that LLMs
+ * sometimes add for emphasis when writing directly to file in interactive plan mode.
  * Leaves IDs that already have separators unchanged.
  */
 function normalizeStoryId(id: string): string {
-  const match = id.match(STORY_ID_NO_SEPARATOR);
+  // Strip leading/trailing backticks (LLM markdown emphasis artifact)
+  const stripped = id.replace(/^`+|`+$/g, "");
+  const match = stripped.match(STORY_ID_NO_SEPARATOR);
   if (match) {
     return `${match[1]}-${match[2]}`;
   }
-  return id;
+  return stripped;
 }
 
 /**
@@ -226,7 +230,18 @@ function sanitizeInvalidEscapes(text: string): string {
  * Throws with parse error context on failure.
  */
 function parseRawString(text: string): unknown {
-  const extracted = extractJsonFromMarkdown(text);
+  // Pass 1: strip markdown code fence if present
+  let extracted = extractJsonFromMarkdown(text);
+
+  // Pass 2: if no fence was found (returned unchanged), try extracting the bare JSON
+  // object/array by scanning for the first { or [ and last matching } or ].
+  // This handles LLM output that wraps JSON in single backticks, adds preamble/postamble
+  // text, or omits code fences entirely.
+  if (extracted === text) {
+    const bare = extractJsonObject(text);
+    if (bare) extracted = bare;
+  }
+
   const cleaned = stripTrailingCommas(extracted);
   const sanitized = sanitizeInvalidEscapes(cleaned);
 
