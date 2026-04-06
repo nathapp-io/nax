@@ -61,8 +61,10 @@ export const autofixStage: PipelineStage = {
 
     // PKG-004: use centrally resolved effective config (ctx.effectiveConfig set once per story)
     const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
-    const lintFixCmd = effectiveConfig.quality.commands.lintFix;
-    const formatFixCmd = effectiveConfig.quality.commands.formatFix;
+    // Check quality.commands first, then fall back to review.commands — users often define
+    // lintFix/formatFix in review.commands alongside other review commands (lint, typecheck).
+    const lintFixCmd = effectiveConfig.quality.commands.lintFix ?? effectiveConfig.review.commands.lintFix;
+    const formatFixCmd = effectiveConfig.quality.commands.formatFix ?? effectiveConfig.review.commands.formatFix;
 
     // Effective workdir for running commands (scoped to package if monorepo)
     const effectiveWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;

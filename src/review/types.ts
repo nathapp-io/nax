@@ -89,6 +89,10 @@ export interface ReviewConfig {
     lint?: string;
     test?: string;
     build?: string;
+    /** Auto-fix lint errors — used by autofix stage when lint fails */
+    lintFix?: string;
+    /** Auto-fix formatting — used by autofix stage when lint fails */
+    formatFix?: string;
   };
   /** When to run plugin reviewers: per-story (default) or deferred (skip per-story, run once at end) */
   pluginMode?: "per-story" | "deferred";

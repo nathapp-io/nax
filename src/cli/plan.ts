@@ -870,8 +870,12 @@ export async function planDecomposeCommand(
     decompStories = undefined;
   }
 
-  // biome-ignore lint/style/noNonNullAssertion: loop guarantees decompStories is set (maxReplanAttempts >= 1 per schema)
-  const subStoriesWithParent: UserStory[] = mapDecomposedStoriesToUserStories(decompStories!, options.storyId);
+  const subStoriesWithParent: UserStory[] = mapDecomposedStoriesToUserStories(
+    // biome-ignore lint/style/noNonNullAssertion: loop guarantees decompStories is set
+    decompStories!,
+    options.storyId,
+    targetStory.workdir,
+  );
 
   const updatedStories = prd.userStories.map((s) =>
     s.id === options.storyId ? { ...s, status: "decomposed" as StoryStatus } : s,

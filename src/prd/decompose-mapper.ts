@@ -15,13 +15,19 @@ import type { UserStory } from "./types";
  * - Moves complexity, testStrategy, and reasoning into routing sub-object
  * - Sets lifecycle defaults: status='pending', passes=false, escalations=[], attempts=0
  * - Validates required fields (id, contextFiles) and throws with entry index on failure
+ * - Inherits workdir from parent story so per-package config is applied to sub-stories
  *
  * @param stories - Flat decompose output from adapter
  * @param parentStoryId - ID of the parent story being decomposed
+ * @param parentWorkdir - workdir of the parent story (inherited by all sub-stories)
  * @returns Mapped UserStory array ready for PRD insertion
  * @throws {NaxError} code=DECOMPOSE_VALIDATION_FAILED when required fields are missing
  */
-export function mapDecomposedStoriesToUserStories(stories: DecomposedStory[], parentStoryId: string): UserStory[] {
+export function mapDecomposedStoriesToUserStories(
+  stories: DecomposedStory[],
+  parentStoryId: string,
+  parentWorkdir?: string,
+): UserStory[] {
   return stories.map((story, entryIndex) => {
     if (!story.id) {
       throw new NaxError(`Entry at index ${entryIndex} is missing required field: id`, "DECOMPOSE_VALIDATION_FAILED", {
@@ -53,6 +59,7 @@ export function mapDecomposedStoriesToUserStories(stories: DecomposedStory[], pa
       escalations: [],
       attempts: 0,
       parentStoryId,
+      ...(parentWorkdir !== undefined && { workdir: parentWorkdir }),
       routing: {
         complexity: story.complexity,
         testStrategy: story.testStrategy ?? ("test-after" as const),
