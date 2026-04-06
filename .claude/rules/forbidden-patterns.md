@@ -12,7 +12,7 @@ These patterns are **banned** from the nax codebase. Violations must be caught d
 | `console.log` / `console.error` in src/ | Project logger (`src/logger`) | Unstructured output breaks test capture and log parsing |
 | `fs.readFileSync` / `fs.writeFileSync` | `Bun.file()` / `Bun.write()` | Bun-native project — no Node.js file APIs |
 | `child_process.spawn` / `child_process.exec` | `Bun.spawn()` / `Bun.spawnSync()` | Bun-native project — no Node.js process APIs |
-| `setTimeout` / `setInterval` for delays | `Bun.sleep()` | Bun-native equivalent |
+| `setTimeout` / `setInterval` for delays | `Bun.sleep()` | Bun-native equivalent. **Exception:** `setTimeout` is permitted (not `setInterval`) when the timer handle must be cancelled mid-flight via `clearTimeout` (e.g. kill/drain races). Document this at the call-site. |
 | Hardcoded timeouts in logic | Config values from schema | Hardcoded values can't be tuned per-environment |
 | `import from "src/module/internal-file"` | `import from "src/module"` (barrel) | Prevents singleton fragmentation (BUG-035) |
 | Files > 400 lines | Split by concern | Unmaintainable; violates project convention |

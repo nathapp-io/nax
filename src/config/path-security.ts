@@ -5,7 +5,7 @@
  */
 
 import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { isAbsolute, normalize, resolve } from "node:path";
+import { basename, isAbsolute, normalize, resolve } from "node:path";
 
 /** Maximum directory depth to prevent infinite loops */
 export const MAX_DIRECTORY_DEPTH = 10;
@@ -93,12 +93,16 @@ export function validateFilePath(filePath: string, baseDir: string): string {
   // Get real path (resolves symlinks)
   let realPath: string;
   try {
-    // For non-existent files, use parent directory's real path
+    // For non-existent files, use parent directory's real path.
+    // Use basename(resolved) — not filePath.split("/").pop() — so that any ".." components
+    // in the original filePath have already been eliminated by resolve() before we take
+    // the final path component. This prevents a traversal input like "../../etc/passwd"
+    // from being silently reduced to "passwd" when joined to an in-bounds parent.
     if (!existsSync(resolved)) {
       const parent = resolve(resolved, "..");
       if (existsSync(parent)) {
         const realParent = realpathSync(parent);
-        realPath = resolve(realParent, filePath.split("/").pop() || "");
+        realPath = resolve(realParent, basename(resolved));
       } else {
         realPath = resolved;
       }
