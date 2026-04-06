@@ -1,10 +1,11 @@
 /**
  * Unit tests for run-initialization.ts — ENH-007
  *
- * Verifies reconcileState behavior:
- * - Only review/autofix failures are reconcilable (re-runs review gate)
- * - All other failure stages (execution, verify, etc.) are NOT reconciled
- * - No failureStage => NOT reconciled (unknown failure = not safe)
+ * Verifies reconcileState + resetFailedStoriesToPending behavior:
+ * - Only review/autofix failures are reconcilable (re-runs review gate → "passed")
+ * - All other failure stages (execution, verify, etc.) are NOT reconciled to "passed"
+ *   but ARE reset to "pending" for re-run
+ * - No failureStage => NOT reconciled to "passed", reset to "pending" for re-run
  */
 
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -99,14 +100,14 @@ describe("reconcileState", () => {
     }
   });
 
-  test("no failureStage + commits => NOT reconciled (unknown failure stage)", async () => {
+  test("no failureStage + commits => NOT reconciled to passed (unknown failure stage), reset to pending for re-run", async () => {
     _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(true));
     _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
 
     const prd = makePrd({ status: "failed" }); // no failureStage
     const result = await runReconcile(prd, "-1");
 
-    expect(result.userStories[0].status).toBe("failed");
+    expect(result.userStories[0].status).toBe("pending");
     expect(_reconcileDeps.runReview).not.toHaveBeenCalled();
   });
 
@@ -121,14 +122,14 @@ describe("reconcileState", () => {
     expect(_reconcileDeps.runReview).toHaveBeenCalledTimes(1);
   });
 
-  test("failureStage=review + review still fails => NOT reconciled", async () => {
+  test("failureStage=review + review still fails => NOT reconciled to passed, reset to pending for re-run", async () => {
     _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(true));
     _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewFailure("typecheck failed")));
 
     const prd = makePrd({ status: "failed", failureStage: "review" });
     const result = await runReconcile(prd, "-3");
 
-    expect(result.userStories[0].status).toBe("failed");
+    expect(result.userStories[0].status).toBe("pending");
     expect(_reconcileDeps.runReview).toHaveBeenCalledTimes(1);
   });
 
@@ -143,47 +144,47 @@ describe("reconcileState", () => {
     expect(_reconcileDeps.runReview).toHaveBeenCalledTimes(1);
   });
 
-  test("failureStage=execution + commits => NOT reconciled", async () => {
+  test("failureStage=execution + commits => NOT reconciled to passed, reset to pending for re-run", async () => {
     _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(true));
     _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
 
     const prd = makePrd({ status: "failed", failureStage: "execution" });
     const result = await runReconcile(prd, "-5");
 
-    expect(result.userStories[0].status).toBe("failed");
+    expect(result.userStories[0].status).toBe("pending");
     expect(_reconcileDeps.runReview).not.toHaveBeenCalled();
   });
 
-  test("failureStage=verify + commits => NOT reconciled", async () => {
+  test("failureStage=verify + commits => NOT reconciled to passed, reset to pending for re-run", async () => {
     _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(true));
     _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
 
     const prd = makePrd({ status: "failed", failureStage: "verify" });
     const result = await runReconcile(prd, "-8");
 
-    expect(result.userStories[0].status).toBe("failed");
+    expect(result.userStories[0].status).toBe("pending");
     expect(_reconcileDeps.runReview).not.toHaveBeenCalled();
   });
 
-  test("failureStage=regression + commits => NOT reconciled", async () => {
+  test("failureStage=regression + commits => NOT reconciled to passed, reset to pending for re-run", async () => {
     _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(true));
     _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
 
     const prd = makePrd({ status: "failed", failureStage: "regression" });
     const result = await runReconcile(prd, "-9");
 
-    expect(result.userStories[0].status).toBe("failed");
+    expect(result.userStories[0].status).toBe("pending");
     expect(_reconcileDeps.runReview).not.toHaveBeenCalled();
   });
 
-  test("no commits => NOT reconciled (existing behavior)", async () => {
+  test("no commits => NOT reconciled to passed, reset to pending for re-run", async () => {
     _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(false));
     _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
 
     const prd = makePrd({ status: "failed", failureStage: "review" });
     const result = await runReconcile(prd, "-6");
 
-    expect(result.userStories[0].status).toBe("failed");
+    expect(result.userStories[0].status).toBe("pending");
     expect(_reconcileDeps.runReview).not.toHaveBeenCalled();
   });
 
@@ -200,5 +201,27 @@ describe("reconcileState", () => {
     await runReconcile(prd, "-7");
 
     expect(capturedWorkdir).toBe(join(tmpDir, "packages/api"));
+  });
+
+  test("re-run: failed story is reset to pending and attempts count is preserved", async () => {
+    _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(false));
+    _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
+
+    const prd = makePrd({ status: "failed", failureStage: "execution", attempts: 2 });
+    const result = await runReconcile(prd, "-10");
+
+    expect(result.userStories[0].status).toBe("pending");
+    expect(result.userStories[0].attempts).toBe(2);
+  });
+
+  test("re-run: already-passed story is not touched", async () => {
+    _reconcileDeps.hasCommitsForStory = mock(() => Promise.resolve(false));
+    _reconcileDeps.runReview = mock(() => Promise.resolve(makeReviewSuccess()));
+
+    const prd = makePrd({ status: "passed", passes: true, attempts: 1 });
+    const result = await runReconcile(prd, "-11");
+
+    expect(result.userStories[0].status).toBe("passed");
+    expect(result.userStories[0].passes).toBe(true);
   });
 });

@@ -15,7 +15,7 @@ import type { NaxConfig } from "../../config";
 import { AgentNotFoundError, AgentNotInstalledError, StoryLimitExceededError } from "../../errors";
 import { getSafeLogger } from "../../logger";
 import type { AgentGetFn } from "../../pipeline/types";
-import { countStories, loadPRD, markStoryPassed, savePRD } from "../../prd";
+import { countStories, loadPRD, markStoryPassed, resetFailedStoriesToPending, savePRD } from "../../prd";
 import type { PRD } from "../../prd/types";
 import { runReview } from "../../review/runner";
 import type { ReviewConfig } from "../../review/types";
@@ -184,6 +184,16 @@ export async function initializeRun(ctx: InitializationContext): Promise<Initial
   // Load and reconcile PRD
   let prd = await loadPRD(ctx.prdPath);
   prd = await reconcileState(prd, ctx.prdPath, ctx.workdir, ctx.config);
+
+  // Reset failed stories to pending so they are retried on re-run.
+  // reconcileState runs first to promote failed→passed for git-committed stories;
+  // remaining failed stories (incomplete work) are reset here so they re-enter the queue.
+  const hadFailedStories = resetFailedStoriesToPending(prd);
+  if (hadFailedStories) {
+    const resetIds = prd.userStories.filter((s) => s.status === "pending" && (s.attempts ?? 0) > 0).map((s) => s.id);
+    logger?.info("run-initialization", "Reset failed stories to pending for re-run", { storyIds: resetIds });
+    await savePRD(prd, ctx.prdPath);
+  }
 
   // Validate story counts
   const counts = countStories(prd);
