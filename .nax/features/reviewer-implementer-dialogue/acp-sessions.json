@@ -10,5 +10,9 @@
   "US-001:verifier": {
     "sessionName": "nax-5a6e1741-reviewer-implementer-dialogue-us-001-verifier",
     "agentName": "claude"
+  },
+  "US-002:test-writer": {
+    "sessionName": "nax-5a6e1741-reviewer-implementer-dialogue-us-002-test-writer",
+    "agentName": "claude"
   }
 }
