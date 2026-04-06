@@ -5,6 +5,7 @@
  * across DebateSession and its extracted sub-modules.
  */
 
+import { buildSessionName } from "../agents/acp/adapter";
 import { createAgentRegistry, getAgent } from "../agents/registry";
 import type { AgentAdapter, CompleteOptions, CompleteResult } from "../agents/types";
 import type { ModelTier } from "../config";
@@ -180,15 +181,27 @@ export async function resolveOutcome(
   config: NaxConfig | undefined,
   storyId: string,
   timeoutMs: number,
+  workdir?: string,
+  featureName?: string,
 ): Promise<ResolveOutcome> {
   const resolverConfig = stageConfig.resolver;
+  const logger = _debateSessionDeps.getSafeLogger();
 
   if (resolverConfig.type === "majority-fail-closed" || resolverConfig.type === "majority-fail-open") {
+    if (workdir !== undefined) {
+      logger?.warn(
+        "debate",
+        "majority resolver does not support implementer session resumption — switch to synthesis or custom resolver for context-aware semantic review",
+      );
+    }
     return {
       outcome: majorityResolver(proposalOutputs, resolverConfig.type === "majority-fail-open"),
       resolverCostUsd: 0,
     };
   }
+
+  const implementerSessionName =
+    workdir !== undefined ? buildSessionName(workdir, featureName, storyId, "implementer") : undefined;
 
   if (resolverConfig.type === "synthesis") {
     const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
@@ -202,6 +215,7 @@ export async function resolveOutcome(
           storyId,
           sessionRole: "synthesis",
           timeoutMs,
+          ...(implementerSessionName !== undefined && { sessionName: implementerSessionName }),
         },
       });
       return {
@@ -223,6 +237,7 @@ export async function resolveOutcome(
         storyId,
         sessionRole: "judge",
         timeoutMs,
+        ...(implementerSessionName !== undefined && { sessionName: implementerSessionName }),
       },
     });
     return {
