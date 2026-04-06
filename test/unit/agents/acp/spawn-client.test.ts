@@ -131,6 +131,23 @@ describe("SpawnAcpClient — PID registration (#228)", () => {
     expect(registry.registered.size).toBe(0);
   });
 
+  test("closeSession registers and unregisters PID with pidRegistry", async () => {
+    _spawnClientDeps.spawn = (_cmd, _opts) => makeSpawnResult(0);
+
+    const registry = makeMockPidRegistry();
+    const client = new SpawnAcpClient("acpx claude", "/tmp", undefined, registry as never);
+    await client.closeSession("test-session", "claude");
+
+    expect(registry.registered.size).toBe(0);
+  });
+
+  test("closeSession does not throw when close command fails", async () => {
+    _spawnClientDeps.spawn = (_cmd, _opts) => makeSpawnResult(1);
+
+    const client = new SpawnAcpClient("acpx claude", "/tmp");
+    await expect(client.closeSession("missing-session", "claude")).resolves.toBeUndefined();
+  });
+
   test("session.cancelActivePrompt registers and unregisters PID with pidRegistry", async () => {
     let callCount = 0;
     _spawnClientDeps.spawn = (_cmd, _opts) => {

@@ -209,7 +209,7 @@ describe("sweepFeatureSessions", () => {
     expect(clientStartCalled).toBe(false);
   });
 
-  test("calls loadSession and session.close() for each entry in sidecar", async () => {
+  test("calls closeSession() for each entry in sidecar when available", async () => {
     const featureName = "sweep-feat";
     const sidecarDir = join(tmpDir, ".nax", "features", featureName);
     const sidecarPath = join(sidecarDir, "acp-sessions.json");
@@ -222,32 +222,55 @@ describe("sweepFeatureSessions", () => {
       }),
     );
 
-    const loadedSessions: string[] = [];
     const closedSessions: string[] = [];
-
-    const makeLoadableSession = (name: string) => ({
-      prompt: async (_: string) => ({ messages: [], stopReason: "end_turn" }),
-      close: async () => {
-        closedSessions.push(name);
-      },
-      cancelActivePrompt: async () => {},
-    });
 
     const client = {
       start: async () => {},
       close: async () => {},
-      createSession: async (_opts: { agentName: string; permissionMode: string }) => makeLoadableSession("new"),
-      loadSession: async (name: string, _agent: string, _perm: string) => {
-        loadedSessions.push(name);
-        return makeLoadableSession(name);
+      createSession: async (_opts: { agentName: string; permissionMode: string }) => makeSession(),
+      closeSession: async (name: string, _agent: string) => {
+        closedSessions.push(name);
       },
     };
     _acpAdapterDeps.createClient = mock((_cmd: string) => client);
 
     await sweepFeatureSessions(tmpDir, featureName);
 
-    expect(loadedSessions).toHaveLength(2);
     expect(closedSessions).toHaveLength(2);
+  });
+
+  test("falls back to loadSession().close() when closeSession() is unavailable", async () => {
+    const featureName = "sweep-fallback-feat";
+    const sidecarDir = join(tmpDir, ".nax", "features", featureName);
+    const sidecarPath = join(sidecarDir, "acp-sessions.json");
+
+    await Bun.write(
+      sidecarPath,
+      JSON.stringify({ "story-001": "nax-abc123-sweep-fallback-feat-story-001" }),
+    );
+
+    let loaded = 0;
+    let closed = 0;
+    const client = {
+      start: async () => {},
+      close: async () => {},
+      createSession: async (_opts: { agentName: string; permissionMode: string }) => makeSession(),
+      loadSession: async (_name: string, _agent: string, _perm: string) => {
+        loaded++;
+        return {
+          ...makeSession(),
+          close: async () => {
+            closed++;
+          },
+        };
+      },
+    };
+    _acpAdapterDeps.createClient = mock((_cmd: string) => client);
+
+    await sweepFeatureSessions(tmpDir, featureName);
+
+    expect(loaded).toBe(1);
+    expect(closed).toBe(1);
   });
 
   test("clears sidecar after sweep", async () => {
@@ -261,7 +284,7 @@ describe("sweepFeatureSessions", () => {
       start: async () => {},
       close: async () => {},
       createSession: async (_opts: { agentName: string; permissionMode: string }) => makeSession(),
-      loadSession: async (_name: string, _agent: string, _perm: string) => makeSession(),
+      closeSession: async (_name: string, _agent: string) => {},
     };
     _acpAdapterDeps.createClient = mock((_cmd: string) => client);
 
@@ -297,7 +320,7 @@ describe("sweepFeatureSessions", () => {
     _acpAdapterDeps.createClient = origCreate;
   });
 
-  test("continues sweeping remaining sessions if one loadSession fails", async () => {
+  test("continues sweeping remaining sessions if one closeSession fails", async () => {
     const featureName = "partial-fail-feat";
     const sidecarDir = join(tmpDir, ".nax", "features", featureName);
     const sidecarPath = join(sidecarDir, "acp-sessions.json");
@@ -317,21 +340,15 @@ describe("sweepFeatureSessions", () => {
       start: async () => {},
       close: async () => {},
       createSession: async (_opts: { agentName: string; permissionMode: string }) => makeSession(),
-      loadSession: async (name: string, _agent: string, _perm: string) => {
+      closeSession: async (name: string, _agent: string) => {
         callCount++;
         if (callCount === 1) throw new Error("session not found");
-        return {
-          prompt: async (_: string) => ({ messages: [], stopReason: "end_turn" }),
-          close: async () => {
-            closedSessions.push(name);
-          },
-          cancelActivePrompt: async () => {},
-        };
+        closedSessions.push(name);
       },
     };
     _acpAdapterDeps.createClient = mock((_cmd: string) => client);
 
-    // Should not throw even if first loadSession fails
+    // Should not throw even if first closeSession fails
     await expect(sweepFeatureSessions(tmpDir, featureName)).resolves.toBeUndefined();
     // Second session should still be closed
     expect(closedSessions).toHaveLength(1);

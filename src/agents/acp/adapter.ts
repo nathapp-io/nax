@@ -106,6 +106,8 @@ export interface AcpClient {
   createSession(opts: { agentName: string; permissionMode: string; sessionName?: string }): Promise<AcpSession>;
   /** Resume an existing named session. Returns null if the session is not found. */
   loadSession?(sessionName: string, agentName: string, permissionMode: string): Promise<AcpSession | null>;
+  /** Close a named session directly without first ensuring/loading it. */
+  closeSession?(sessionName: string, agentName: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -415,11 +417,12 @@ export async function sweepFeatureSessions(
       await client.start();
       for (const sessionName of sessionNames) {
         try {
-          if (client.loadSession) {
+          if (client.closeSession) {
+            await client.closeSession(sessionName, agentName);
+          } else if (client.loadSession) {
+            // Back-compat fallback for mock/test clients that only implement loadSession().
             const session = await client.loadSession(sessionName, agentName, "approve-reads");
-            if (session) {
-              await session.close().catch(() => {});
-            }
+            if (session) await session.close().catch(() => {});
           }
         } catch (err) {
           logger?.warn("acp-adapter", `[sweep] Failed to close session ${sessionName}`, { error: String(err) });

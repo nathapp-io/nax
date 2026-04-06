@@ -419,6 +419,19 @@ export class SpawnAcpClient implements AcpClient {
     });
   }
 
+  async closeSession(sessionName: string, agentName: string): Promise<void> {
+    const cmd = ["acpx", "--cwd", this.cwd, agentName, "sessions", "close", sessionName];
+    const { exitCode, stderr } = await this.trackedSpawn(cmd);
+    if (exitCode !== 0) {
+      getSafeLogger()?.debug("acp-adapter", "Session close failed (ignored)", {
+        sessionName,
+        agentName,
+        exitCode,
+        stderr: stderr.slice(0, 200),
+      });
+    }
+  }
+
   async close(): Promise<void> {
     // No-op — spawn-based client has no persistent connection
   }
