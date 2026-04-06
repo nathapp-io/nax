@@ -9,7 +9,9 @@
  */
 
 import path from "node:path";
+import { resolveAcceptanceFeatureTestPath } from "../acceptance/test-path";
 import { findProjectDir, validateDirectory } from "../config";
+import { loadConfig } from "../config/loader";
 import { NaxError } from "../errors";
 import { getLogger } from "../logger";
 import { loadPRD, savePRD } from "../prd";
@@ -98,11 +100,12 @@ export async function acceptCommand(options: AcceptOptions): Promise<void> {
 
   // Save PRD
   await savePRD(prd, prdPath);
+  const config = await loadConfig(projectDir);
 
   logger.info("cli", "✓ Override added", {
     acId,
     reason,
     prdPath,
-    hint: `Re-run acceptance tests: bun test ${path.join(featureDir, "acceptance.test.ts")}`,
+    hint: `Re-run acceptance tests: bun test ${resolveAcceptanceFeatureTestPath(featureDir, config.acceptance.testPath, config.project?.language)}`,
   });
 }

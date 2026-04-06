@@ -11,6 +11,7 @@ import type { AgentAdapter } from "../agents/types";
 import type { ModelDef, NaxConfig } from "../config/schema";
 import { getLogger } from "../logger";
 import type { PRD, UserStory } from "../prd/types";
+import { resolveAcceptanceTestFile } from "./test-path";
 
 const MAX_FIX_STORIES = 8;
 
@@ -29,7 +30,7 @@ const MAX_FIX_STORIES = 8;
  *   testOutput: "Expected undefined, got 'value'",
  *   relatedStories: ["US-002"],
  *   description: "Update TTL implementation to properly expire entries...",
- *   testFilePath: "/repo/nax/features/cache/acceptance.test.ts",
+ *   testFilePath: "/repo/nax/features/cache/.nax-acceptance.test.ts",
  * };
  * ```
  */
@@ -66,7 +67,7 @@ export interface FixStory {
  *   specContent: "# Feature...",
  *   workdir: "/project",
  *   modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
- *   testFilePath: "/project/nax/features/cache/acceptance.test.ts",
+ *   testFilePath: "/project/nax/features/cache/.nax-acceptance.test.ts",
  * };
  * ```
  */
@@ -259,7 +260,7 @@ Respond with ONLY the fix description (no JSON, no markdown, just the descriptio
  *   specContent: "...",
  *   workdir: "/project",
  *   modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
- *   testFilePath: "/project/nax/features/cache/acceptance.test.ts",
+ *   testFilePath: "/project/nax/features/cache/.nax-acceptance.test.ts",
  * });
  * ```
  */
@@ -393,7 +394,7 @@ export function convertFixStoryToUserStory(fixStory: FixStory): UserStory {
   const batchedACs = fixStory.batchedACs ?? [fixStory.failedAC];
   const acList = batchedACs.join(", ");
   const truncatedOutput = fixStory.testOutput.slice(0, 1000);
-  const testFilePath = fixStory.testFilePath ?? "acceptance.test.ts";
+  const testFilePath = fixStory.testFilePath ?? resolveAcceptanceTestFile();
 
   const enrichedDescription = [
     fixStory.description,

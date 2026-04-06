@@ -15,6 +15,11 @@ import { loadAcceptanceTestContent as loadAcceptanceTestContentModule } from "..
 import { diagnoseAcceptanceFailure } from "../../acceptance/fix-diagnosis";
 import { executeSourceFix } from "../../acceptance/fix-executor";
 import { loadSemanticVerdicts } from "../../acceptance/semantic-verdict";
+import {
+  findExistingAcceptanceTestPath as findExistingAcceptanceTestPathFromOptions,
+  resolveAcceptanceFeatureTestPath,
+  resolveAcceptanceTestCandidates,
+} from "../../acceptance/test-path";
 import type { DiagnosisResult } from "../../acceptance/types";
 import { getAgent } from "../../agents/registry";
 import type { AgentAdapter } from "../../agents/types";
@@ -168,29 +173,6 @@ function buildResult(
 
 export const _acceptanceLoopDeps = { getAgent, loadSemanticVerdicts };
 
-function resolveConfiguredAcceptanceTestPath(ctx: AcceptanceLoopContext): string | undefined {
-  if (!ctx.featureDir) return undefined;
-  return path.join(ctx.featureDir, ctx.config.acceptance.testPath);
-}
-
-function resolveAcceptanceTestCandidates(ctx: AcceptanceLoopContext): string[] {
-  if (ctx.acceptanceTestPaths && ctx.acceptanceTestPaths.length > 0) {
-    return ctx.acceptanceTestPaths.map((p) => p.testPath);
-  }
-  const fallback = resolveConfiguredAcceptanceTestPath(ctx);
-  return fallback ? [fallback] : [];
-}
-
-async function findExistingAcceptanceTestPath(ctx: AcceptanceLoopContext): Promise<string | undefined> {
-  const candidates = resolveAcceptanceTestCandidates(ctx);
-  for (const testPath of candidates) {
-    if (await Bun.file(testPath).exists()) {
-      return testPath;
-    }
-  }
-  return undefined;
-}
-
 /** Injectable dependencies for regenerateAcceptanceTest — allows tests to mock I/O without real disk or git. */
 export const _regenerateDeps = {
   spawnGitDiff: async (workdir: string, gitRef: string): Promise<string> => {
@@ -227,7 +209,9 @@ async function generateAndAddFixStories(
     ctx.config.analyze.model,
     ctx.config.autoMode.defaultAgent,
   );
-  const testFilePath = resolveConfiguredAcceptanceTestPath(ctx);
+  const testFilePath = ctx.featureDir
+    ? resolveAcceptanceFeatureTestPath(ctx.featureDir, ctx.config.acceptance.testPath, ctx.config.project?.language)
+    : undefined;
   const fixStories = await generateFixStories(agent, {
     failedACs: failures.failedACs,
     testOutput: failures.testOutput,
@@ -449,7 +433,9 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
     const moduleEntries = await loadAcceptanceTestContentModule(pathStrings);
     testEntries = moduleEntries.map((e) => ({ content: e.content, path: e.testPath }));
   } else {
-    const fallbackPath = resolveConfiguredAcceptanceTestPath(ctx);
+    const fallbackPath = ctx.featureDir
+      ? resolveAcceptanceFeatureTestPath(ctx.featureDir, ctx.config.acceptance.testPath, ctx.config.project?.language)
+      : undefined;
     const moduleEntries = await loadAcceptanceTestContentModule(fallbackPath);
     testEntries = moduleEntries.map((e) => ({ content: e.content, path: e.testPath }));
   }
@@ -593,10 +579,20 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
       return { fixed: false, cost: 0, prdDirty: false };
     }
 
-    const testPath = await findExistingAcceptanceTestPath(ctx);
+    const testPath = await findExistingAcceptanceTestPathFromOptions({
+      acceptanceTestPaths: ctx.acceptanceTestPaths,
+      featureDir: ctx.featureDir,
+      testPathConfig: ctx.config.acceptance.testPath,
+      language: ctx.config.project?.language,
+    });
     if (!testPath) {
       logger?.error("acceptance", "Acceptance test file not found for regeneration", {
-        candidates: resolveAcceptanceTestCandidates(ctx),
+        candidates: resolveAcceptanceTestCandidates({
+          acceptanceTestPaths: ctx.acceptanceTestPaths,
+          featureDir: ctx.featureDir,
+          testPathConfig: ctx.config.acceptance.testPath,
+          language: ctx.config.project?.language,
+        }),
       });
       return { fixed: false, cost: 0, prdDirty: false };
     }
@@ -696,10 +692,20 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
       return { fixed: false, cost: sourceFixCost, prdDirty: false };
     }
 
-    const testPath = await findExistingAcceptanceTestPath(ctx);
+    const testPath = await findExistingAcceptanceTestPathFromOptions({
+      acceptanceTestPaths: ctx.acceptanceTestPaths,
+      featureDir: ctx.featureDir,
+      testPathConfig: ctx.config.acceptance.testPath,
+      language: ctx.config.project?.language,
+    });
     if (!testPath) {
       logger?.error("acceptance", "Acceptance test file not found for regeneration", {
-        candidates: resolveAcceptanceTestCandidates(ctx),
+        candidates: resolveAcceptanceTestCandidates({
+          acceptanceTestPaths: ctx.acceptanceTestPaths,
+          featureDir: ctx.featureDir,
+          testPathConfig: ctx.config.acceptance.testPath,
+          language: ctx.config.project?.language,
+        }),
       });
       return { fixed: false, cost: sourceFixCost, prdDirty: false };
     }
@@ -815,7 +821,12 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
 
     // Check for stub test file before other checks
     if (ctx.featureDir) {
-      const existingStubPath = await findExistingAcceptanceTestPath(ctx);
+      const existingStubPath = await findExistingAcceptanceTestPathFromOptions({
+        acceptanceTestPaths: ctx.acceptanceTestPaths,
+        featureDir: ctx.featureDir,
+        testPathConfig: ctx.config.acceptance.testPath,
+        language: ctx.config.project?.language,
+      });
       if (existingStubPath) {
         const testContent = await Bun.file(existingStubPath).text();
         if (isStubTestFile(testContent)) {
@@ -859,7 +870,12 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         "acceptance",
         `Test-level failure detected (${failures.failedACs.length}/${totalACs} ACs failed) — regenerating acceptance test`,
       );
-      const testPath = await findExistingAcceptanceTestPath(ctx);
+      const testPath = await findExistingAcceptanceTestPathFromOptions({
+        acceptanceTestPaths: ctx.acceptanceTestPaths,
+        featureDir: ctx.featureDir,
+        testPathConfig: ctx.config.acceptance.testPath,
+        language: ctx.config.project?.language,
+      });
       if (testPath) {
         const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext);
         if (!regenerated) {

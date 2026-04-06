@@ -1,7 +1,7 @@
 /**
  * Acceptance Test Generator
  *
- * Parses spec.md acceptance criteria (AC-N lines) and generates acceptance.test.ts
+ * Parses spec.md acceptance criteria (AC-N lines) and generates configured acceptance tests
  * via LLM call to the agent adapter.
  */
 
@@ -10,6 +10,10 @@ import { createAgentRegistry } from "../agents/registry";
 import type { AgentAdapter } from "../agents/types";
 import { getLogger } from "../logger";
 import type { UserStory } from "../prd/types";
+import {
+  acceptanceTestFilename as defaultAcceptanceTestFilename,
+  resolveAcceptanceTestFile as defaultResolveAcceptanceTestFile,
+} from "./test-path";
 import type {
   AcceptanceCriterion,
   AcceptanceTestResult,
@@ -95,32 +99,8 @@ function hasLikelyTestContent(content: string): boolean {
   );
 }
 
-/**
- * Return the acceptance test filename for a given language.
- * Files are dot-prefixed and placed at the package root (not inside .nax/).
- */
-export function acceptanceTestFilename(language?: string): string {
-  switch (language?.toLowerCase()) {
-    case "go":
-      return ".nax-acceptance_test.go";
-    case "python":
-      return ".nax-acceptance.test.py";
-    case "rust":
-      return ".nax-acceptance.rs";
-    default:
-      return ".nax-acceptance.test.ts";
-  }
-}
-
-/**
- * resolveAcceptanceTestFile determines the filename for the acceptance test based on language and config.
- * @param language - Programming language of the project
- * @param testPathConfig - Optional custom test path from configuration
- * @returns The resolved acceptance test filename
- */
-export function resolveAcceptanceTestFile(language?: string, testPathConfig?: string): string {
-  return testPathConfig ?? acceptanceTestFilename(language);
-}
+export const acceptanceTestFilename = defaultAcceptanceTestFilename;
+export const resolveAcceptanceTestFile = defaultResolveAcceptanceTestFile;
 
 /**
  * Build the command to run a single acceptance test file.
@@ -455,8 +435,11 @@ export function buildAcceptanceTestPrompt(
   criteria: AcceptanceCriterion[],
   featureName: string,
   codebaseContext: string,
+  testPathConfig?: string,
+  language?: string,
 ): string {
   const criteriaList = criteria.map((ac) => `${ac.id}: ${ac.text}`).join("\n");
+  const resolvedTestPath = resolveAcceptanceTestFile(language, testPathConfig);
 
   return `You are a senior test engineer. Your task is to generate a complete acceptance test file for the "${featureName}" feature.
 
@@ -491,7 +474,7 @@ Rules:
 - Every test MUST have real assertions that PASS when the feature is correctly implemented and FAIL when it is broken
 - **Prefer behavioral tests** — import functions and call them rather than reading source files. For example, to verify "getPostRunActions() returns empty array", import PluginRegistry and call getPostRunActions(), don't grep the source file for the method name.
 - Output raw code only — no markdown fences, start directly with the language's import or package declaration
-- **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/.nax/features/${featureName}/acceptance.test.ts\` and will ALWAYS run from the repo root. The repo root is exactly 4 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..', '..')\`. For monorepo projects, navigate into packages from root (e.g. \`join(root, 'apps/api/src')\`).`;
+- **Path anchor (CRITICAL)**: This test file will be saved at \`<repo-root>/.nax/features/${featureName}/${resolvedTestPath}\` and will ALWAYS run from the repo root. The repo root is exactly 4 \`../\` levels above \`__dirname\`: \`join(__dirname, '..', '..', '..', '..')\`. For monorepo projects, navigate into packages from root (e.g. \`join(root, 'apps/api/src')\`).`;
 }
 
 /**
@@ -517,7 +500,7 @@ Rules:
  *   modelDef: { provider: "anthropic", model: "claude-sonnet-4-5" },
  * });
  *
- * await Bun.write("acceptance.test.ts", result.testCode);
+ * await Bun.write(".nax-acceptance.test.ts", result.testCode);
  * ```
  */
 export async function generateAcceptanceTests(
@@ -540,7 +523,13 @@ export async function generateAcceptanceTests(
   logger.info("acceptance", "Found acceptance criteria", { count: criteria.length });
 
   // Build prompt
-  const prompt = buildAcceptanceTestPrompt(criteria, options.featureName, options.codebaseContext);
+  const prompt = buildAcceptanceTestPrompt(
+    criteria,
+    options.featureName,
+    options.codebaseContext,
+    options.config?.acceptance?.testPath,
+    options.config?.project?.language,
+  );
 
   try {
     // Call adapter to generate tests
