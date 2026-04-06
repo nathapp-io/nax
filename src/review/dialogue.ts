@@ -86,6 +86,75 @@ function buildReviewPrompt(diff: string, story: SemanticStory, _semanticConfig: 
   ].join("\n");
 }
 
+function buildReReviewPrompt(updatedDiff: string, previousFindings: ReviewFinding[]): string {
+  const findingsList =
+    previousFindings.length > 0 ? previousFindings.map((f) => `- ${f.ruleId}: ${f.message}`).join("\n") : "(none)";
+  return [
+    "This is a follow-up re-review. Please review the updated diff below.",
+    "",
+    "## Previous Findings",
+    findingsList,
+    "",
+    "## Updated Diff",
+    updatedDiff,
+    "",
+    "Respond with JSON: { passed: boolean, findings: [...], findingReasoning: { [id]: string }, deltaSummary: string }",
+    "deltaSummary should describe which previous findings are resolved vs still present.",
+  ].join("\n");
+}
+
+function extractDeltaSummary(
+  rawOutput: string,
+  previousFindings: ReviewFinding[],
+  newFindings: ReviewFinding[],
+): string {
+  try {
+    const parsed = JSON.parse(rawOutput) as Record<string, unknown>;
+    if (typeof parsed.deltaSummary === "string" && parsed.deltaSummary.length > 0) {
+      return parsed.deltaSummary;
+    }
+  } catch {
+    // fall through to computed summary
+  }
+
+  const newIds = new Set(newFindings.map((f) => f.ruleId));
+  const prevIds = new Set(previousFindings.map((f) => f.ruleId));
+
+  const resolved = previousFindings.filter((f) => !newIds.has(f.ruleId));
+  const stillPresent = newFindings.filter((f) => prevIds.has(f.ruleId));
+  const added = newFindings.filter((f) => !prevIds.has(f.ruleId));
+
+  const parts: string[] = [];
+  if (resolved.length > 0) {
+    parts.push(`Resolved: ${resolved.map((f) => f.ruleId).join(", ")}.`);
+  }
+  if (stillPresent.length > 0) {
+    parts.push(`Still present: ${stillPresent.map((f) => f.ruleId).join(", ")}.`);
+  }
+  if (added.length > 0) {
+    parts.push(`New findings: ${added.map((f) => f.ruleId).join(", ")}.`);
+  }
+  if (parts.length === 0) {
+    return previousFindings.length > 0 ? "All previous findings resolved." : "No changes from previous review.";
+  }
+  return parts.join(" ");
+}
+
+function compactHistory(history: DialogueMessage[]): void {
+  const summaryLines = ["[Compacted conversation summary]"];
+  for (const msg of history.slice(0, -2)) {
+    const preview = msg.content.length > 200 ? `${msg.content.slice(0, 200)}...` : msg.content;
+    summaryLines.push(`${msg.role}: ${preview}`);
+  }
+  const summary = summaryLines.join("\n");
+  const lastImplementer = history[history.length - 2] as DialogueMessage;
+  const lastReviewer = history[history.length - 1] as DialogueMessage;
+  history.length = 0;
+  history.push({ role: "implementer", content: summary });
+  history.push(lastImplementer);
+  history.push(lastReviewer);
+}
+
 function parseReviewResponse(output: string): ReviewDialogueResult {
   let parsed: Record<string, unknown>;
   try {
@@ -127,6 +196,19 @@ export function createReviewerSession(
 ): ReviewerSession {
   const history: DialogueMessage[] = [];
   let active = true;
+  let lastCheckResult: ReviewDialogueResult | null = null;
+  let lastStory: SemanticStory | null = null;
+  let lastSemanticConfig: SemanticReviewConfig | null = null;
+
+  function resolveRunParams(semanticConfig: SemanticReviewConfig) {
+    const modelTier = semanticConfig.modelTier;
+    const defaultAgent = _config.autoMode?.defaultAgent ?? "claude";
+    const modelDef = resolveModelForAgent(_config.models, defaultAgent, modelTier, defaultAgent);
+    const timeoutSeconds = semanticConfig.timeoutMs
+      ? Math.ceil(semanticConfig.timeoutMs / 1000)
+      : (_config.execution?.sessionTimeoutSeconds ?? 3600);
+    return { modelTier, modelDef, timeoutSeconds };
+  }
 
   return {
     get active() {
@@ -149,13 +231,7 @@ export function createReviewerSession(
       }
 
       const prompt = buildReviewPrompt(diff, story, semanticConfig);
-
-      const modelTier = semanticConfig.modelTier;
-      const defaultAgent = _config.autoMode?.defaultAgent ?? "claude";
-      const modelDef = resolveModelForAgent(_config.models, defaultAgent, modelTier, defaultAgent);
-      const timeoutSeconds = semanticConfig.timeoutMs
-        ? Math.ceil(semanticConfig.timeoutMs / 1000)
-        : (_config.execution?.sessionTimeoutSeconds ?? 3600);
+      const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(semanticConfig);
 
       const result = await agent.run({
         prompt,
@@ -174,25 +250,108 @@ export function createReviewerSession(
       history.push({ role: "implementer", content: prompt });
       history.push({ role: "reviewer", content: result.output });
 
-      return parseReviewResponse(result.output);
+      const parsed = parseReviewResponse(result.output);
+      lastCheckResult = parsed;
+      lastStory = story;
+      lastSemanticConfig = semanticConfig;
+      return parsed;
     },
-    async reReview(_updatedDiff: string): Promise<ReviewDialogueResult> {
-      throw new NaxError("[dialogue] reReview() is not yet implemented", "NOT_IMPLEMENTED", {
-        stage: "review",
+    async reReview(updatedDiff: string): Promise<ReviewDialogueResult> {
+      if (!active) {
+        throw new NaxError(
+          `[dialogue] ReviewerSession for story ${storyId} has been destroyed`,
+          "REVIEWER_SESSION_DESTROYED",
+          { stage: "review", storyId, featureName },
+        );
+      }
+      if (!lastCheckResult || !lastSemanticConfig) {
+        throw new NaxError(`[dialogue] reReview() called before any review() on story ${storyId}`, "NO_REVIEW_RESULT", {
+          stage: "review",
+          storyId,
+        });
+      }
+
+      const previousFindings = lastCheckResult.checkResult.findings;
+      const prompt = buildReReviewPrompt(updatedDiff, previousFindings);
+      const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(lastSemanticConfig);
+
+      const result = await agent.run({
+        prompt,
+        workdir,
+        modelTier,
+        modelDef,
+        timeoutSeconds,
+        sessionRole: "reviewer",
+        keepSessionOpen: true,
+        pipelineStage: "review",
+        config: _config,
         storyId,
+        featureName,
       });
+
+      history.push({ role: "implementer", content: prompt });
+      history.push({ role: "reviewer", content: result.output });
+
+      const parsed = parseReviewResponse(result.output);
+      const deltaSummary = extractDeltaSummary(result.output, previousFindings, parsed.checkResult.findings);
+      const dialogueResult: ReviewDialogueResult = { ...parsed, deltaSummary };
+      lastCheckResult = dialogueResult;
+
+      const maxMessages = _config.review?.dialogue?.maxDialogueMessages ?? 20;
+      if (history.length > maxMessages) {
+        compactHistory(history);
+      }
+
+      return dialogueResult;
     },
-    async clarify(_question: string): Promise<string> {
-      throw new NaxError("[dialogue] clarify() is not yet implemented", "NOT_IMPLEMENTED", {
-        stage: "review",
+    async clarify(question: string): Promise<string> {
+      if (!active) {
+        throw new NaxError(
+          `[dialogue] ReviewerSession for story ${storyId} has been destroyed`,
+          "REVIEWER_SESSION_DESTROYED",
+          { stage: "review", storyId, featureName },
+        );
+      }
+
+      const effectiveSemanticConfig =
+        lastSemanticConfig ??
+        ({ modelTier: "balanced", rules: [], timeoutMs: 60_000, excludePatterns: [] } as SemanticReviewConfig);
+      const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(effectiveSemanticConfig);
+
+      const result = await agent.run({
+        prompt: question,
+        workdir,
+        modelTier,
+        modelDef,
+        timeoutSeconds,
+        sessionRole: "reviewer",
+        keepSessionOpen: true,
+        pipelineStage: "review",
+        config: _config,
         storyId,
+        featureName,
       });
+
+      history.push({ role: "implementer", content: question });
+      history.push({ role: "reviewer", content: result.output });
+
+      return result.output;
     },
     getVerdict(): SemanticVerdict {
-      throw new NaxError("[dialogue] getVerdict() is not yet implemented", "NOT_IMPLEMENTED", {
-        stage: "review",
+      if (!lastCheckResult || !lastStory) {
+        throw new NaxError(
+          `[dialogue] getVerdict() called before any review() on story ${storyId}`,
+          "NO_REVIEW_RESULT",
+          { stage: "review", storyId },
+        );
+      }
+      return {
         storyId,
-      });
+        passed: lastCheckResult.checkResult.success,
+        timestamp: new Date().toISOString(),
+        acCount: lastStory.acceptanceCriteria.length,
+        findings: lastCheckResult.checkResult.findings,
+      };
     },
     async destroy(): Promise<void> {
       if (!active) return;
