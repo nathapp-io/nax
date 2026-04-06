@@ -72,6 +72,12 @@ function parseReviewResponse(output: string): ReviewDialogueResult {
     });
   }
 
+  if (!("passed" in parsed)) {
+    throw new NaxError("[dialogue] Reviewer response missing required 'passed' field", "REVIEWER_PARSE_FAILED", {
+      stage: "review",
+      output,
+    });
+  }
   const success = Boolean(parsed.passed);
   const findings = Array.isArray(parsed.findings) ? (parsed.findings as ReviewFinding[]) : [];
   const reasoningObj =
@@ -102,7 +108,7 @@ export function createReviewerSession(
       return active;
     },
     get history() {
-      return history;
+      return [...history];
     },
     async review(
       diff: string,
