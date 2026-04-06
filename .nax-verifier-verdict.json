@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "approved": false,
+  "tests": {
+    "allPassing": false,
+    "passCount": 19,
+    "failCount": 11
+  },
+  "testModifications": {
+    "detected": false,
+    "files": [],
+    "legitimate": true,
+    "reasoning": "No test files were modified by the implementer. All test failures are due to implementation gaps."
+  },
+  "acceptanceCriteria": {
+    "allMet": false,
+    "criteria": [
+      { "criterion": "AC-1: runSemanticReview() signature includes featureName parameter", "met": true },
+      { "criterion": "AC-2: runReview() in runner.ts includes featureName and forwards it", "met": true },
+      { "criterion": "AC-3: ReviewOrchestrator.review() includes featureName and forwards it", "met": true },
+      { "criterion": "AC-4: review.ts stage passes ctx.prd.feature as featureName", "met": true },
+      { "criterion": "AC-5: buildSessionName() deterministic", "met": true },
+      { "criterion": "AC-6: runSemanticReview() signature contains featureName parameter", "met": true },
+      { "criterion": "AC-7: runReview() has featureName param and passes it to runSemanticReview", "met": true },
+      { "criterion": "AC-8: ReviewOrchestrator.review() has featureName parameter", "met": true },
+      { "criterion": "AC-9: review.ts passes ctx.prd.feature as featureName", "met": true },
+      { "criterion": "AC-10: semantic.ts uses buildSessionName() instead of hardcoded string", "met": true },
+      { "criterion": "AC-11: createDebateSession() receives featureName (not story.id) - debate path", "met": true },
+      { "criterion": "AC-12: undefined-featureName code path calls buildSessionName() with debug log", "met": true },
+      { "criterion": "AC-13: No occurrences of nax-semantic-${story.id} template literal", "met": false, "note": "Test expects grep to fail (no matches), but grep found matches in non-src paths or in debug output" },
+      { "criterion": "AC-14: Non-debate path calls agent.run() NOT agent.complete()", "met": false, "note": "Implementation uses agent.complete() at line 480, should use agent.run()" },
+      { "criterion": "AC-15: agent.run() acpSessionName uses buildSessionName(workdir, featureName, storyId, 'implementer')", "met": false, "note": "Session name uses 'semantic' role instead of 'implementer'; also uses complete() not run()" },
+      { "criterion": "AC-16: agent.run() keepSessionOpen === false in non-debate path", "met": false, "note": "Using complete() which doesn't set keepSessionOpen; should use run()" },
+      { "criterion": "AC-17: runSemanticReview signature includes featureName and buildSessionName called correctly", "met": true },
+      { "criterion": "AC-18: Logger.debug called with 'implementer session not found' when session is new", "met": false, "note": "Expected message not found in semantic.ts; should be logged when session.created === false" },
+      { "criterion": "AC-19: rawResponse from AgentRunResult.output (not CompleteResult)", "met": false, "note": "Using agent.complete() instead of agent.run()" },
+      { "criterion": "AC-20: runSemanticReview() return value satisfies ReviewCheckResult", "met": false, "note": "Incomplete due to implementation using complete() instead of run()" },
+      { "criterion": "AC-21: Debate path invokes agent.complete() when debate enabled", "met": true },
+      { "criterion": "AC-22-29: resolveOutcome() workdir/featureName parameters", "met": false, "note": "resolveOutcome() called at session-stateful.ts:269 without passing workdir/featureName" }
+    ]
+  },
+  "quality": {
+    "rating": "poor",
+    "issues": [
+      {
+        "severity": "critical",
+        "category": "Architecture",
+        "issue": "Non-debate semantic review path uses agent.complete() instead of agent.run()",
+        "location": "src/review/semantic.ts:480-487",
+        "details": "The code should call agent.run() with proper session management for non-debate path, but instead calls agent.complete(). This affects AC-14, AC-15, AC-16, AC-18, AC-19.",
+        "impact": "11 acceptance tests failing due to this single architectural flaw"
+      },
+      {
+        "severity": "critical",
+        "category": "Session Management",
+        "issue": "Session role is 'semantic' but should be 'implementer'",
+        "location": "src/review/semantic.ts:481",
+        "details": "buildSessionName() is called with 'semantic' as the role, but it should be 'implementer' per AC-15. Also note this line is in the wrong code path (complete vs run).",
+        "impact": "Breaks session continuity design; prevents implementer session resumption"
+      },
+      {
+        "severity": "critical",
+        "category": "Logging",
+        "issue": "Missing log message when implementer session not found",
+        "location": "src/review/semantic.ts",
+        "details": "Expected to log 'implementer session not found — semantic review running in new session' when agent.run() returns sessionCreated===false, but this logic is missing entirely since code uses complete() instead.",
+        "impact": "Prevents visibility into session lifecycle"
+      },
+      {
+        "severity": "high",
+        "category": "API Contract",
+        "issue": "resolveOutcome() not receiving workdir and featureName parameters",
+        "location": "src/debate/session-stateful.ts:269-276",
+        "details": "Call to resolveOutcome() has 6 parameters but should have 8: workdir (line 269 after ctx.timeoutSeconds) and featureName should be added to enable session resumption in synthesis/judge resolvers.",
+        "impact": "Debate resolution cannot resume implementer session for semantic review stage"
+      },
+      {
+        "severity": "high",
+        "category": "Type Safety",
+        "issue": "Session role parameter type mismatch",
+        "location": "src/review/semantic.ts:481",
+        "details": "buildSessionName() expects role to match the session role wired in AgentRunOptions, but 'semantic' doesn't match session lifecycle expectations.",
+        "impact": "Breaks semantic session naming convention"
+      }
+    ]
+  },
+  "fixes": [],
+  "reasoning": "The implementation has correctly added the featureName parameter through the call chain (review.ts → orchestrator.ts → runner.ts → semantic.ts) and it's being passed correctly from the stage. However, the non-debate path implementation in semantic.ts has a critical architectural flaw: it uses agent.complete() instead of agent.run(). This breaks 11 acceptance criteria. Additionally, resolveOutcome() in the debate path is not receiving the workdir and featureName parameters needed for session resumption. The session role is also incorrectly set to 'semantic' instead of 'implementer'. These are not minor issues that can be fixed during verification—they require architectural changes to the implementation. The test writer correctly anticipated these requirements, but the implementer chose a different approach that doesn't meet the story's acceptance criteria. Cannot approve until these critical issues are resolved."
+}
