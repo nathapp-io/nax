@@ -62,6 +62,7 @@ export const reviewStage: PipelineStage = {
       modelResolver,
       ctx.config,
       retrySkipChecks,
+      ctx.prd.feature,
     );
 
     ctx.reviewResult = result.builtIn;

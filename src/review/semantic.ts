@@ -8,6 +8,7 @@
  */
 
 import { spawn } from "bun";
+import { buildSessionName } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import type { ModelTier } from "../config/schema-types";
@@ -295,9 +296,16 @@ export async function runSemanticReview(
   semanticConfig: SemanticReviewConfig,
   modelResolver: ModelResolver,
   naxConfig?: NaxConfig,
+  featureName?: string,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
+
+  if (featureName === undefined) {
+    logger?.debug("semantic", "featureName missing — semantic session name will not include feature", {
+      storyId: story.id,
+    });
+  }
 
   // BUG-114: Resolve effective git ref for the diff range.
   // Priority 1: use the supplied ref if valid (persisted from story start).
@@ -389,7 +397,7 @@ export async function runSemanticReview(
       stageConfig: reviewStageConfig,
       config: naxConfig,
       workdir,
-      featureName: story.id,
+      featureName: featureName,
       timeoutSeconds: naxConfig?.execution?.sessionTimeoutSeconds,
     });
     const debateResult = await debateSession.run(prompt);
@@ -470,7 +478,7 @@ export async function runSemanticReview(
   let rawResponse: string;
   try {
     const completeResult = await agent.complete(prompt, {
-      sessionName: `nax-semantic-${story.id}`,
+      sessionName: buildSessionName(workdir, featureName, story.id, "semantic"),
       workdir,
       timeoutMs: semanticConfig.timeoutMs,
       modelTier: semanticConfig.modelTier,
