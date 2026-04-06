@@ -85,6 +85,7 @@ export class ReviewOrchestrator {
     modelResolver?: (tier: ModelTier) => AgentAdapter | null | undefined,
     naxConfig?: NaxConfig,
     retrySkipChecks?: Set<string>,
+    featureName?: string,
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
@@ -99,6 +100,7 @@ export class ReviewOrchestrator {
       modelResolver,
       naxConfig,
       retrySkipChecks,
+      featureName,
     );
 
     if (!builtIn.success) {

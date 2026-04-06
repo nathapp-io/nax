@@ -202,6 +202,7 @@ export async function runReview(
   modelResolver?: (tier: ModelTier) => AgentAdapter | null | undefined,
   naxConfig?: NaxConfig,
   retrySkipChecks?: Set<string>,
+  featureName?: string,
 ): Promise<ReviewResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -270,14 +271,26 @@ export async function runReview(
         timeoutMs: 600_000,
         excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"],
       };
-      const result = await _reviewSemanticDeps.runSemanticReview(
-        workdir,
-        storyGitRef,
-        semanticStory,
-        semanticCfg,
-        modelResolver ?? (() => null),
-        naxConfig,
-      );
+      const runSemantic = _reviewSemanticDeps.runSemanticReview;
+      const result =
+        featureName !== undefined
+          ? await runSemantic(
+              workdir,
+              storyGitRef,
+              semanticStory,
+              semanticCfg,
+              modelResolver ?? (() => null),
+              naxConfig,
+              featureName,
+            )
+          : await runSemantic(
+              workdir,
+              storyGitRef,
+              semanticStory,
+              semanticCfg,
+              modelResolver ?? (() => null),
+              naxConfig,
+            );
       checks.push(result);
       if (!result.success && !firstFailure) {
         firstFailure = `${checkName} failed`;

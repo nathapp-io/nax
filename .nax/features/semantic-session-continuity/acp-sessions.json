@@ -1,0 +1,38 @@
+{
+  "US-002:implementer": {
+    "sessionName": "nax-0a32cb69-semantic-session-continuity-us-002-implementer",
+    "agentName": "claude"
+  },
+  "US-002:verifier": {
+    "sessionName": "nax-0a32cb69-semantic-session-continuity-us-002-verifier",
+    "agentName": "claude"
+  },
+  "US-003:test-writer": {
+    "sessionName": "nax-0a32cb69-semantic-session-continuity-us-003-test-writer",
+    "agentName": "claude"
+  },
+  "US-003:implementer": {
+    "sessionName": "nax-0a32cb69-semantic-session-continuity-us-003-implementer",
+    "agentName": "claude"
+  },
+  "US-003:verifier": {
+    "sessionName": "nax-0a32cb69-semantic-session-continuity-us-003-verifier",
+    "agentName": "claude"
+  },
+  "US-004:test-writer": {
+    "sessionName": "nax-0a32cb69-semantic-session-continuity-us-004-test-writer",
+    "agentName": "claude"
+  },
+  "US-004:implementer": {
+    "sessionName": "nax-0a32cb69-semantic-session-continuity-us-004-implementer",
+    "agentName": "claude"
+  },
+  "US-004:verifier": {
+    "sessionName": "nax-0a32cb69-semantic-session-continuity-us-004-verifier",
+    "agentName": "claude"
+  },
+  "US-001:diagnose": {
+    "sessionName": "nax-0a32cb69-semantic-session-continuity-us-001-diagnose",
+    "agentName": "claude"
+  }
+}
