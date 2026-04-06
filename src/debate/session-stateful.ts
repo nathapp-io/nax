@@ -273,6 +273,8 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
     ctx.config,
     ctx.storyId,
     ctx.timeoutSeconds * 1000,
+    ctx.workdir,
+    ctx.featureName,
   );
   totalCostUsd += outcome.resolverCostUsd;
 

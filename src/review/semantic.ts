@@ -8,8 +8,10 @@
  */
 
 import { spawn } from "bun";
+import { buildSessionName, readAcpSession } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
+import { resolveModelForAgent } from "../config/schema-types";
 import type { ModelTier } from "../config/schema-types";
 import { DebateSession } from "../debate";
 import type { DebateSessionOptions } from "../debate";
@@ -36,6 +38,7 @@ export const _semanticDeps = {
   isGitRefValid,
   getMergeBase,
   createDebateSession: (opts: DebateSessionOptions): DebateSession => new DebateSession(opts),
+  readAcpSession,
 };
 
 /**
@@ -295,9 +298,16 @@ export async function runSemanticReview(
   semanticConfig: SemanticReviewConfig,
   modelResolver: ModelResolver,
   naxConfig?: NaxConfig,
+  featureName?: string,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
+
+  if (featureName === undefined) {
+    logger?.debug("semantic", "featureName missing — semantic session name will not include feature", {
+      storyId: story.id,
+    });
+  }
 
   // BUG-114: Resolve effective git ref for the diff range.
   // Priority 1: use the supplied ref if valid (persisted from story start).
@@ -389,7 +399,7 @@ export async function runSemanticReview(
       stageConfig: reviewStageConfig,
       config: naxConfig,
       workdir,
-      featureName: story.id,
+      featureName: featureName,
       timeoutSeconds: naxConfig?.execution?.sessionTimeoutSeconds,
     });
     const debateResult = await debateSession.run(prompt);
@@ -466,17 +476,62 @@ export async function runSemanticReview(
     };
   }
 
-  // Call LLM
+  // Check if implementer session exists (fail-open — proceed regardless)
+  const implementerSidecarKey = `${story.id}:implementer`;
+  const existingSession = await _semanticDeps.readAcpSession(workdir, featureName ?? "", implementerSidecarKey);
+  if (!existingSession) {
+    logger?.debug("semantic", "implementer session not found — semantic review running in new session", {
+      storyId: story.id,
+    });
+  }
+
+  // Call LLM via agent.run() targeting the implementer session
+  const implementerSessionName = buildSessionName(workdir, featureName, story.id, "implementer");
+  const defaultAgent = naxConfig?.autoMode?.defaultAgent ?? "claude";
+  let resolvedModelDef = { provider: "anthropic", model: "claude-sonnet-4-5-20250514" };
+  try {
+    if (naxConfig?.models) {
+      resolvedModelDef = resolveModelForAgent(naxConfig.models, defaultAgent, semanticConfig.modelTier, defaultAgent);
+    }
+  } catch {
+    // Use default model if resolution fails
+  }
   let rawResponse: string;
   try {
-    const completeResult = await agent.complete(prompt, {
-      sessionName: `nax-semantic-${story.id}`,
-      workdir,
-      timeoutMs: semanticConfig.timeoutMs,
-      modelTier: semanticConfig.modelTier,
-      config: naxConfig,
-    });
-    rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
+    let runErr: unknown;
+    let runSucceeded = false;
+    let runOutput = "";
+    try {
+      const runResult = await agent.run({
+        prompt,
+        workdir,
+        acpSessionName: implementerSessionName,
+        keepSessionOpen: false,
+        timeoutSeconds: semanticConfig.timeoutMs ? Math.ceil(semanticConfig.timeoutMs / 1000) : 3600,
+        modelTier: semanticConfig.modelTier,
+        modelDef: resolvedModelDef,
+        config: naxConfig,
+      });
+      runOutput = runResult.output;
+      runSucceeded = true;
+    } catch (err) {
+      runErr = err;
+    }
+
+    if (runSucceeded) {
+      rawResponse = runOutput;
+    } else {
+      // Fallback to complete() when run() is unavailable (e.g. CLI adapter without run() support)
+      const completeResult = await agent.complete(prompt, {
+        sessionName: buildSessionName(workdir, featureName, story.id, "semantic"),
+        workdir,
+        timeoutMs: semanticConfig.timeoutMs,
+        modelTier: semanticConfig.modelTier,
+        config: naxConfig,
+      });
+      rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
+      void runErr;
+    }
   } catch (err) {
     logger?.warn("semantic", "LLM call failed — fail-open", { cause: String(err) });
     return {
