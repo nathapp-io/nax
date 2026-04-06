@@ -14,5 +14,9 @@
   "US-003:implementer": {
     "sessionName": "nax-0a32cb69-semantic-session-continuity-us-003-implementer",
     "agentName": "claude"
+  },
+  "US-003:verifier": {
+    "sessionName": "nax-0a32cb69-semantic-session-continuity-us-003-verifier",
+    "agentName": "claude"
   }
 }
