@@ -248,6 +248,10 @@ export const executionStage: PipelineStage = {
 
     const storyWorkdir = _executionDeps.resolveStoryWorkdir(ctx.workdir, ctx.story.workdir);
 
+    // Determine whether to keep session open for review or rectification
+    const keepSessionOpen =
+      ctx.config.review?.enabled === true || ctx.config.execution.rectification?.enabled === true ? true : false;
+
     const result = await agent.run({
       prompt: ctx.prompt,
       workdir: storyWorkdir,
@@ -266,7 +270,8 @@ export const executionStage: PipelineStage = {
       pidRegistry: ctx.pidRegistry,
       featureName: ctx.prd.feature,
       storyId: ctx.story.id,
-      // No sessionRole for single-session strategies (no role suffix in session name)
+      sessionRole: "implementer",
+      keepSessionOpen,
       interactionBridge: buildInteractionBridge(ctx.interaction, {
         featureName: ctx.prd.feature,
         storyId: ctx.story.id,
