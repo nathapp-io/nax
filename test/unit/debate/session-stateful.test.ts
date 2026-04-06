@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DebateSession, _debateSessionDeps } from "../../../src/debate/session";
 import type { AgentAdapter, AgentRunOptions, CompleteOptions, CompleteResult } from "../../../src/agents/types";
 import type { DebateStageConfig } from "../../../src/debate/types";
+import { buildSessionName } from "../../../src/agents/acp/adapter";
 
 function makeMockAdapter(
   name: string,
@@ -233,6 +234,54 @@ describe("DebateSession.run() — stateful mode uses adapter.run SSOT", () => {
     expect(result.outcome).toBe("passed");
     expect(result.debaters).toEqual(["claude"]);
     expect(runCalls.some((c) => c.prompt === "Close this debate session." && c.keepSessionOpen === false)).toBe(true);
+  });
+});
+
+// ─── AC4: call site passes ctx.workdir and ctx.featureName to resolveOutcome ──
+
+describe("runStateful() — resolveOutcome receives workdir and featureName (US-004 AC4)", () => {
+  test("synthesis resolver receives sessionName built from ctx.workdir and ctx.featureName", async () => {
+    const completeCalls: { opts?: CompleteOptions }[] = [];
+
+    _debateSessionDeps.getAgent = mock((name: string) =>
+      makeMockAdapter(name, {
+        runFn: async (_opts) => ({
+          success: true,
+          exitCode: 0,
+          output: '{"passed": true}',
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCost: 0.05,
+        }),
+        completeFn: async (_prompt: string, opts?: CompleteOptions) => {
+          completeCalls.push({ opts });
+          return { output: "synthesis resolved", costUsd: 0.01, source: "exact" as const };
+        },
+      }),
+    );
+
+    const workdir = "/tmp/stateful-work";
+    const featureName = "stateful-feature";
+    const storyId = "US-004-stateful";
+
+    const session = new DebateSession({
+      storyId,
+      stage: "review",
+      stageConfig: makeStageConfig({ resolver: { type: "synthesis" }, rounds: 1 }),
+      workdir,
+      featureName,
+      timeoutSeconds: 60,
+    });
+
+    await session.run("review prompt");
+
+    // The synthesis resolver's complete() should have been called with the implementer sessionName.
+    // RED: resolveOutcome() call site does not yet forward workdir/featureName,
+    //      so the sessionName in completeOptions will be undefined instead of the expected value.
+    const synthesisCall = completeCalls.find((c) => c.opts !== undefined);
+    expect(synthesisCall).toBeDefined();
+    const expectedSessionName = buildSessionName(workdir, featureName, storyId, "implementer");
+    expect(synthesisCall?.opts?.sessionName).toBe(expectedSessionName);
   });
 });
 
