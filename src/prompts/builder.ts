@@ -13,6 +13,8 @@
 
 import type { NaxConfig } from "../config/types";
 import type { UserStory } from "../prd";
+import type { AcceptanceEntry } from "./sections/acceptance";
+import { buildAcceptanceSection } from "./sections/acceptance";
 import { buildConventionsSection } from "./sections/conventions";
 import { buildHermeticSection } from "./sections/hermetic";
 import { buildIsolationSection } from "./sections/isolation";
@@ -37,6 +39,7 @@ export class PromptBuilder {
   private _testCommand: string | undefined;
   private _hermeticConfig: { hermetic?: boolean; externalBoundaries?: string[]; mockGuidance?: string } | undefined;
   private _noTestJustification: string | undefined;
+  private _acceptanceEntries: AcceptanceEntry[] | undefined;
 
   private constructor(role: PromptRole, options: PromptOptions = {}) {
     this._role = role;
@@ -95,6 +98,11 @@ export class PromptBuilder {
     return this;
   }
 
+  acceptanceContext(entries: AcceptanceEntry[]): PromptBuilder {
+    this._acceptanceEntries = entries;
+    return this;
+  }
+
   async build(): Promise<string> {
     const sections: string[] = [];
 
@@ -113,6 +121,12 @@ export class PromptBuilder {
       sections.push(buildBatchStorySection(this._stories));
     } else if (this._story) {
       sections.push(buildStorySection(this._story));
+    }
+
+    // (3.5) Acceptance test context — injected when acceptanceContext() was called
+    if (this._acceptanceEntries && this._acceptanceEntries.length > 0) {
+      const acceptanceSection = buildAcceptanceSection(this._acceptanceEntries);
+      if (acceptanceSection) sections.push(acceptanceSection);
     }
 
     // (4) Verdict section — verifier only, non-overridable

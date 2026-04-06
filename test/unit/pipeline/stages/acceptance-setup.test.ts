@@ -1014,3 +1014,99 @@ describe("US-001: per-package test file generation by workdir", () => {
     expect(ctx.acceptanceTestPaths!.some((p) => p.packageDir.endsWith("apps/cli"))).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// US-003 AC-10: semantic-verdicts/ cleared on fingerprint mismatch
+// ---------------------------------------------------------------------------
+
+describe("US-003: semantic-verdicts cleared on fingerprint mismatch", () => {
+  test("calls deleteSemanticVerdicts when fingerprint mismatches", async () => {
+    let deleteSemanticVerdictsCalled = false;
+
+    _acceptanceSetupDeps.fileExists = async () => true;
+    _acceptanceSetupDeps.readMeta = async () => ({
+      generatedAt: "2026-01-01T00:00:00Z",
+      acFingerprint: "sha256:outdated",
+      storyCount: 2,
+      acCount: 3,
+      generator: "nax",
+    });
+    _acceptanceSetupDeps.copyFile = async () => {};
+    _acceptanceSetupDeps.deleteFile = async () => {};
+    _acceptanceSetupDeps.deleteSemanticVerdicts = async () => {
+      deleteSemanticVerdictsCalled = true;
+    };
+    _acceptanceSetupDeps.refine = async (criteria) =>
+      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
+    _acceptanceSetupDeps.generate = async () => ({
+      testCode: 'test("AC-1", () => { throw new Error("red") })',
+      criteria: [],
+    });
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    await acceptanceSetupStage.execute(makeCtx());
+
+    expect(deleteSemanticVerdictsCalled).toBe(true);
+  });
+
+  test("passes featureDir to deleteSemanticVerdicts", async () => {
+    let capturedFeatureDir = "";
+
+    _acceptanceSetupDeps.fileExists = async () => true;
+    _acceptanceSetupDeps.readMeta = async () => ({
+      generatedAt: "2026-01-01T00:00:00Z",
+      acFingerprint: "sha256:outdated",
+      storyCount: 2,
+      acCount: 3,
+      generator: "nax",
+    });
+    _acceptanceSetupDeps.copyFile = async () => {};
+    _acceptanceSetupDeps.deleteFile = async () => {};
+    _acceptanceSetupDeps.deleteSemanticVerdicts = async (featureDir) => {
+      capturedFeatureDir = featureDir;
+    };
+    _acceptanceSetupDeps.refine = async (criteria) =>
+      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: "US-001" }));
+    _acceptanceSetupDeps.generate = async () => ({
+      testCode: 'test("AC-1", () => {})',
+      criteria: [],
+    });
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.writeMeta = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    const ctx = makeCtx();
+    await acceptanceSetupStage.execute(ctx);
+
+    expect(capturedFeatureDir).toBe(ctx.featureDir);
+  });
+
+  test("does not call deleteSemanticVerdicts when fingerprint matches", async () => {
+    let deleteSemanticVerdictsCalled = false;
+
+    const criteria = ["AC-1: first criterion", "AC-2: second criterion", "AC-1: third criterion"];
+    const matchingFingerprint = computeACFingerprint(criteria);
+
+    _acceptanceSetupDeps.fileExists = async () => true;
+    _acceptanceSetupDeps.readMeta = async () => ({
+      generatedAt: "2026-01-01T00:00:00Z",
+      acFingerprint: matchingFingerprint,
+      storyCount: 2,
+      acCount: 3,
+      generator: "nax",
+    });
+    _acceptanceSetupDeps.deleteSemanticVerdicts = async () => {
+      deleteSemanticVerdictsCalled = true;
+    };
+    _acceptanceSetupDeps.refine = async () => [];
+    _acceptanceSetupDeps.generate = async () => ({ testCode: "", criteria: [] });
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+
+    await acceptanceSetupStage.execute(makeCtx());
+
+    expect(deleteSemanticVerdictsCalled).toBe(false);
+  });
+});

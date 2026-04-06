@@ -443,3 +443,105 @@ describe("src/prompts/types exports — batch", () => {
     expect(roles).toHaveLength(6);
   });
 });
+
+// ---------------------------------------------------------------------------
+// US-001 AC4: PromptBuilder.acceptanceContext() — stores entries, builds section
+// US-001 AC5: When acceptanceContext() not called, build() is identical to baseline
+// ---------------------------------------------------------------------------
+
+describe("PromptBuilder — acceptanceContext() method (US-001 AC4)", () => {
+  test(".acceptanceContext() is chainable", () => {
+    const builder = PromptBuilder.for("implementer")
+      .story(makeStory())
+      .acceptanceContext([{ testPath: "test/a.test.ts", content: "// test" }]);
+    expect(builder).toBeInstanceOf(PromptBuilder);
+  });
+
+  test("build() includes acceptance test content when acceptanceContext() is called", async () => {
+    const entries = [{ testPath: "test/acceptance.test.ts", content: "ACCEPTANCE_CONTENT_MARKER" }];
+    const prompt = await PromptBuilder.for("implementer")
+      .story(makeStory())
+      .acceptanceContext(entries)
+      .build();
+    expect(prompt).toContain("ACCEPTANCE_CONTENT_MARKER");
+  });
+
+  test("build() includes the test file path heading when acceptanceContext() is called", async () => {
+    const entries = [{ testPath: "test/unit/my-feature.test.ts", content: "// test" }];
+    const prompt = await PromptBuilder.for("implementer")
+      .story(makeStory())
+      .acceptanceContext(entries)
+      .build();
+    expect(prompt).toContain("test/unit/my-feature.test.ts");
+  });
+
+  test("acceptance section appears after story section in build() output", async () => {
+    const story = makeStory({ title: "STORY_BEFORE_ACCEPTANCE" });
+    const entries = [{ testPath: "test.ts", content: "ACCEPTANCE_AFTER_STORY_MARKER" }];
+    const prompt = await PromptBuilder.for("implementer")
+      .story(story)
+      .acceptanceContext(entries)
+      .build();
+
+    const storyIdx = prompt.indexOf("STORY_BEFORE_ACCEPTANCE");
+    const acceptanceIdx = prompt.indexOf("ACCEPTANCE_AFTER_STORY_MARKER");
+    expect(storyIdx).toBeGreaterThanOrEqual(0);
+    expect(acceptanceIdx).toBeGreaterThanOrEqual(0);
+    expect(storyIdx).toBeLessThan(acceptanceIdx);
+  });
+
+  test("build() wraps acceptance content in a fenced TypeScript code block", async () => {
+    const entries = [{ testPath: "test/foo.test.ts", content: "FENCED_CONTENT_MARKER" }];
+    const prompt = await PromptBuilder.for("implementer")
+      .story(makeStory())
+      .acceptanceContext(entries)
+      .build();
+    expect(prompt).toContain("```typescript");
+    expect(prompt).toContain("FENCED_CONTENT_MARKER");
+  });
+
+  test("acceptanceContext() with multiple entries includes all test paths", async () => {
+    const entries = [
+      { testPath: "test/a.test.ts", content: "CONTENT_A" },
+      { testPath: "test/b.test.ts", content: "CONTENT_B" },
+    ];
+    const prompt = await PromptBuilder.for("implementer")
+      .story(makeStory())
+      .acceptanceContext(entries)
+      .build();
+    expect(prompt).toContain("test/a.test.ts");
+    expect(prompt).toContain("test/b.test.ts");
+    expect(prompt).toContain("CONTENT_A");
+    expect(prompt).toContain("CONTENT_B");
+  });
+});
+
+describe("PromptBuilder — no acceptance section when acceptanceContext() not called (US-001 AC5)", () => {
+  test("build() output has no acceptance section marker when acceptanceContext() is not called", async () => {
+    const prompt = await PromptBuilder.for("implementer")
+      .story(makeStory())
+      .build();
+    // The acceptance section includes fenced typescript blocks with file paths — none expected
+    expect(prompt).not.toContain("[truncated — full file at");
+  });
+
+  test("build() output is deterministic when acceptanceContext() is not called", async () => {
+    const story = makeStory({ title: "BASELINE_STORY_AC5" });
+    const promptA = await PromptBuilder.for("implementer").story(story).build();
+    const promptB = await PromptBuilder.for("implementer").story(story).build();
+    expect(promptA).toBe(promptB);
+  });
+
+  test("build() without acceptanceContext() does not contain acceptance-only markers", async () => {
+    const withAcceptance = await PromptBuilder.for("implementer")
+      .story(makeStory())
+      .acceptanceContext([{ testPath: "test/x.test.ts", content: "UNIQUE_AC5_MARKER" }])
+      .build();
+    const withoutAcceptance = await PromptBuilder.for("implementer")
+      .story(makeStory())
+      .build();
+
+    expect(withAcceptance).toContain("UNIQUE_AC5_MARKER");
+    expect(withoutAcceptance).not.toContain("UNIQUE_AC5_MARKER");
+  });
+});

@@ -186,7 +186,11 @@ export async function generateFromPRD(
     lineNumber: i + 1,
   }));
 
-  if (refinedCriteria.length === 0) {
+  if (
+    refinedCriteria.length === 0 &&
+    !(options.implementationContext && options.implementationContext.length > 0) &&
+    !options.previousFailure
+  ) {
     return { testCode: "", criteria: [] };
   }
 
@@ -232,7 +236,17 @@ Rules:
 - **File output (REQUIRED)**: Write the acceptance test file DIRECTLY to the path shown below. Do NOT output the test code in your response. After writing the file, reply with a brief confirmation.
 - **Path anchor (CRITICAL)**: Write the test file to this exact path: \`${join(options.workdir, ".nax", "features", options.featureName, resolveAcceptanceTestFile(options.language, options.config?.acceptance?.testPath))}\`. Import from package sources using relative paths like \`../../../src/...\` (3 levels up from \`.nax/features/<name>/\` to the package root).`;
 
-  const prompt = basePrompt;
+  const implementationSection =
+    options.implementationContext && options.implementationContext.length > 0
+      ? `\n\n## Implementation (already exists)\n\n${options.implementationContext.map((f) => `### ${f.path}\n\`\`\`\n${f.content}\n\`\`\``).join("\n\n")}`
+      : "";
+
+  const previousFailureSection =
+    options.previousFailure && options.previousFailure.length > 0
+      ? `\n\nPrevious test failed because: ${options.previousFailure}`
+      : "";
+
+  const prompt = basePrompt + implementationSection + previousFailureSection;
 
   logger.info("acceptance", "Generating tests from PRD refined criteria", { count: refinedCriteria.length });
 
