@@ -2,5 +2,9 @@
   "US-001:test-writer": {
     "sessionName": "nax-5a6e1741-reviewer-implementer-dialogue-us-001-test-writer",
     "agentName": "claude"
+  },
+  "US-001:implementer": {
+    "sessionName": "nax-5a6e1741-reviewer-implementer-dialogue-us-001-implementer",
+    "agentName": "claude"
   }
 }
