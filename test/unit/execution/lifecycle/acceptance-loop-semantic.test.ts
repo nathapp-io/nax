@@ -188,6 +188,71 @@ describe("runFixRouting — semantic short-circuit when all verdicts pass (AC-2)
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Fast path test regeneration: when featureDir available, execute regeneration
+// ─────────────────────────────────────────────────────────────────────────────
+
+import type { PipelineContext } from "../../../../src/pipeline/types";
+
+describe("runFixRouting — fast path executes test regeneration when featureDir available", () => {
+  let origExecuteTestRegen: typeof _acceptanceLoopDeps.executeTestRegen;
+
+  beforeEach(() => {
+    origExecuteTestRegen = _acceptanceLoopDeps.executeTestRegen;
+  });
+  afterEach(() => {
+    _acceptanceLoopDeps.executeTestRegen = origExecuteTestRegen;
+  });
+
+  const ctxWithDir = {
+    featureDir: "/tmp/test-feature",
+    config: { acceptance: { testPath: undefined }, project: {} },
+    acceptanceTestPaths: undefined,
+  } as unknown as AcceptanceLoopContext;
+
+  const mockAcCtx = {} as PipelineContext;
+
+  test("returns fixed: true and prdDirty: true when regeneration passes", async () => {
+    _acceptanceLoopDeps.executeTestRegen = mock(async () => "passed" as const);
+    const result = await runFixRouting({
+      ctx: ctxWithDir,
+      failures: { failedACs: ["AC-1"], testOutput: "error" },
+      prd: makePrd(),
+      acceptanceContext: mockAcCtx,
+      semanticVerdicts: [makePassingVerdict("US-001")],
+    });
+    expect(result.fixed).toBe(true);
+    expect(result.prdDirty).toBe(true);
+  });
+
+  test("returns fixed: false and verdict: test_bug when regeneration fails", async () => {
+    _acceptanceLoopDeps.executeTestRegen = mock(async () => "failed" as const);
+    const result = await runFixRouting({
+      ctx: ctxWithDir,
+      failures: { failedACs: ["AC-1"], testOutput: "error" },
+      prd: makePrd(),
+      acceptanceContext: mockAcCtx,
+      semanticVerdicts: [makePassingVerdict("US-001")],
+    });
+    expect(result.fixed).toBe(false);
+    expect(result.verdict).toBe("test_bug");
+    expect(result.prdDirty).toBe(true);
+  });
+
+  test("returns fixed: false and prdDirty: false when no test file found", async () => {
+    _acceptanceLoopDeps.executeTestRegen = mock(async () => "no_test_file" as const);
+    const result = await runFixRouting({
+      ctx: ctxWithDir,
+      failures: { failedACs: ["AC-1"], testOutput: "error" },
+      prd: makePrd(),
+      acceptanceContext: mockAcCtx,
+      semanticVerdicts: [makePassingVerdict("US-001")],
+    });
+    expect(result.fixed).toBe(false);
+    expect(result.prdDirty).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AC-6: runFixRouting falls back to current behavior when no verdicts
 // ─────────────────────────────────────────────────────────────────────────────
 
