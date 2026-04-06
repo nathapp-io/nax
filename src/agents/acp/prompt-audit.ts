@@ -111,13 +111,17 @@ function buildAuditContent(entry: PromptAuditEntry, epochMs: number): string {
  */
 export async function writePromptAudit(entry: PromptAuditEntry): Promise<void> {
   try {
-    // Resolve audit directory
-    let resolvedDir: string;
+    // Resolve audit base directory
+    let baseDir: string;
     if (entry.auditDir) {
-      resolvedDir = isAbsolute(entry.auditDir) ? entry.auditDir : join(entry.workdir, entry.auditDir);
+      baseDir = isAbsolute(entry.auditDir) ? entry.auditDir : join(entry.workdir, entry.auditDir);
     } else {
-      resolvedDir = join(entry.workdir, ".nax", "prompt-audit");
+      baseDir = join(entry.workdir, ".nax", "prompt-audit");
     }
+
+    // Organise by feature name so each feature has its own subfolder.
+    // Falls back to "_unknown" when no featureName is available.
+    const resolvedDir = join(baseDir, entry.featureName ?? "_unknown");
 
     _promptAuditDeps.mkdirSync(resolvedDir);
 

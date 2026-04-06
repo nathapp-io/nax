@@ -174,37 +174,48 @@ describe("writePromptAudit() — directory resolution", () => {
     mock.restore();
   });
 
-  test("absent auditDir defaults to <workdir>/.nax/prompt-audit/", async () => {
+  test("absent auditDir defaults to <workdir>/.nax/prompt-audit/<featureName>/", async () => {
     let capturedDir = "";
     _promptAuditDeps.mkdirSync = mock((path: string) => {
       capturedDir = path;
     });
 
-    await writePromptAudit(makeEntry({ auditDir: undefined }));
+    await writePromptAudit(makeEntry({ auditDir: undefined, featureName: "my-feature" }));
 
-    expect(capturedDir).toBe(join(WORKDIR, ".nax", "prompt-audit"));
+    expect(capturedDir).toBe(join(WORKDIR, ".nax", "prompt-audit", "my-feature"));
   });
 
-  test("absolute auditDir is used verbatim without joining workdir", async () => {
+  test("absent featureName falls back to _unknown subfolder", async () => {
     let capturedDir = "";
     _promptAuditDeps.mkdirSync = mock((path: string) => {
       capturedDir = path;
     });
 
-    await writePromptAudit(makeEntry({ auditDir: "/custom/absolute/audit" }));
+    await writePromptAudit(makeEntry({ auditDir: undefined, featureName: undefined }));
 
-    expect(capturedDir).toBe("/custom/absolute/audit");
+    expect(capturedDir).toBe(join(WORKDIR, ".nax", "prompt-audit", "_unknown"));
   });
 
-  test("relative auditDir is joined with workdir", async () => {
+  test("absolute auditDir is combined with featureName", async () => {
     let capturedDir = "";
     _promptAuditDeps.mkdirSync = mock((path: string) => {
       capturedDir = path;
     });
 
-    await writePromptAudit(makeEntry({ auditDir: "my-audit" }));
+    await writePromptAudit(makeEntry({ auditDir: "/custom/absolute/audit", featureName: "my-feature" }));
 
-    expect(capturedDir).toBe(join(WORKDIR, "my-audit"));
+    expect(capturedDir).toBe("/custom/absolute/audit/my-feature");
+  });
+
+  test("relative auditDir is joined with workdir then featureName", async () => {
+    let capturedDir = "";
+    _promptAuditDeps.mkdirSync = mock((path: string) => {
+      capturedDir = path;
+    });
+
+    await writePromptAudit(makeEntry({ auditDir: "my-audit", featureName: "my-feature" }));
+
+    expect(capturedDir).toBe(join(WORKDIR, "my-audit", "my-feature"));
   });
 
   test("writeFile is called with path inside resolved dir", async () => {
@@ -214,9 +225,9 @@ describe("writePromptAudit() — directory resolution", () => {
       capturedPath = path;
     });
 
-    await writePromptAudit(makeEntry({ callType: "run", turn: 1, pipelineStage: "run" }));
+    await writePromptAudit(makeEntry({ callType: "run", turn: 1, pipelineStage: "run", featureName: "my-feature" }));
 
-    const expectedDir = join(WORKDIR, ".nax", "prompt-audit");
+    const expectedDir = join(WORKDIR, ".nax", "prompt-audit", "my-feature");
     expect(capturedPath.startsWith(expectedDir)).toBe(true);
     expect(capturedPath).toContain(`-t01.txt`);
   });
