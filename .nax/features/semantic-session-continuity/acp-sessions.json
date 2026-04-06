@@ -22,5 +22,9 @@
   "US-004:test-writer": {
     "sessionName": "nax-0a32cb69-semantic-session-continuity-us-004-test-writer",
     "agentName": "claude"
+  },
+  "US-004:implementer": {
+    "sessionName": "nax-0a32cb69-semantic-session-continuity-us-004-implementer",
+    "agentName": "claude"
   }
 }
