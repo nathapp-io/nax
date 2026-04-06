@@ -202,6 +202,7 @@ export async function runReview(
   modelResolver?: (tier: ModelTier) => AgentAdapter | null | undefined,
   naxConfig?: NaxConfig,
   retrySkipChecks?: Set<string>,
+  featureName?: string,
 ): Promise<ReviewResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();

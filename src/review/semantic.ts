@@ -295,6 +295,7 @@ export async function runSemanticReview(
   semanticConfig: SemanticReviewConfig,
   modelResolver: ModelResolver,
   naxConfig?: NaxConfig,
+  featureName?: string,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();

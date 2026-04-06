@@ -1,5 +1,6 @@
 /**
  * Unit tests for ReviewOrchestrator — pluginMode deferred behavior (DR-002)
+ * and featureName forwarding (US-002 AC-3)
  *
  * Covers:
  * - pluginMode "deferred": plugin reviewers NOT called
@@ -8,6 +9,7 @@
  * - pluginMode "deferred": built-in failure still propagates
  * - pluginMode "per-story": plugin reviewers run (no regression)
  * - pluginMode undefined: plugin reviewers run (no regression)
+ * - AC-3: review() signature includes featureName? and forwards it to runReview/runSemanticReview
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
@@ -15,7 +17,7 @@ import type { NaxConfig } from "../../../src/config";
 import type { PluginRegistry } from "../../../src/plugins";
 import type { IReviewPlugin } from "../../../src/plugins/extensions";
 import { ReviewOrchestrator, _orchestratorDeps } from "../../../src/review/orchestrator";
-import { _reviewGitDeps as _runnerDeps } from "../../../src/review/runner";
+import { _reviewGitDeps as _runnerDeps, _reviewSemanticDeps as _semanticDeps } from "../../../src/review/runner";
 import type { ReviewConfig } from "../../../src/review/types";
 import { withDepsRestore } from "../../helpers/deps";
 
@@ -182,5 +184,84 @@ describe("ReviewOrchestrator — pluginMode undefined (no regression)", () => {
     await orchestrator.review(makeReviewConfig(undefined), "/tmp/workdir", minimalExecConfig, registry);
 
     expect(reviewer.check).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// featureName forwarding — US-002 AC-3
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("ReviewOrchestrator.review — featureName forwarding (US-002 AC-3)", () => {
+  let origRunSemanticReview: typeof _semanticDeps.runSemanticReview;
+
+  const PASSING_SEMANTIC_RESULT = {
+    check: "semantic" as const,
+    success: true,
+    command: "",
+    exitCode: 0,
+    output: "passed",
+    durationMs: 0,
+  };
+
+  function makeSemanticReviewConfig(): ReviewConfig {
+    return {
+      enabled: true,
+      checks: ["semantic"],
+      commands: {},
+    } as unknown as ReviewConfig;
+  }
+
+  beforeEach(() => {
+    origRunSemanticReview = _semanticDeps.runSemanticReview;
+    // Clean tree so runReview proceeds past dirty-tree guard
+    _runnerDeps.getUncommittedFiles = mock(async () => []);
+  });
+
+  afterEach(() => {
+    _semanticDeps.runSemanticReview = origRunSemanticReview;
+  });
+
+  test("forwards featureName to runSemanticReview when provided", async () => {
+    const semanticMock = mock(async () => PASSING_SEMANTIC_RESULT);
+    _semanticDeps.runSemanticReview = semanticMock;
+
+    const orchestrator = new ReviewOrchestrator();
+    await orchestrator.review(
+      makeSemanticReviewConfig(),
+      "/tmp/workdir",
+      minimalExecConfig,
+      undefined, // plugins
+      undefined, // storyGitRef
+      undefined, // scopePrefix
+      undefined, // qualityCommands
+      "US-002",  // storyId
+      undefined, // story
+      undefined, // modelResolver
+      undefined, // naxConfig
+      undefined, // retrySkipChecks
+      "my-feature", // featureName
+    );
+
+    expect(semanticMock).toHaveBeenCalled();
+    // runSemanticReview(workdir, storyGitRef, story, semanticCfg, modelResolver, naxConfig, featureName)
+    // featureName is the 7th arg (index 6)
+    const callArgs = semanticMock.mock.calls[0] as unknown[];
+    expect(callArgs[6]).toBe("my-feature");
+  });
+
+  test("forwards undefined featureName to runSemanticReview when not provided", async () => {
+    const semanticMock = mock(async () => PASSING_SEMANTIC_RESULT);
+    _semanticDeps.runSemanticReview = semanticMock;
+
+    const orchestrator = new ReviewOrchestrator();
+    await orchestrator.review(
+      makeSemanticReviewConfig(),
+      "/tmp/workdir",
+      minimalExecConfig,
+    );
+
+    expect(semanticMock).toHaveBeenCalled();
+    const callArgs = semanticMock.mock.calls[0] as unknown[];
+    expect(callArgs[6]).toBeUndefined();
   });
 });
