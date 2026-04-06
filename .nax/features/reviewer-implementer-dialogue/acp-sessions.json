@@ -34,5 +34,9 @@
   "US-003:verifier": {
     "sessionName": "nax-5a6e1741-reviewer-implementer-dialogue-us-003-verifier",
     "agentName": "claude"
+  },
+  "US-001:diagnose": {
+    "sessionName": "nax-5a6e1741-reviewer-implementer-dialogue-us-001-diagnose",
+    "agentName": "claude"
   }
 }
