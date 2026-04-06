@@ -5,6 +5,7 @@
  * The reviewer holds full conversation context across multiple review() calls.
  */
 
+import type { SemanticVerdict } from "../acceptance/types";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
@@ -12,6 +13,8 @@ import { NaxError } from "../errors";
 import type { ReviewFinding } from "../plugins/types";
 import type { SemanticStory } from "./semantic";
 import type { SemanticReviewConfig } from "./types";
+
+export type { SemanticVerdict };
 
 /** A single message in the reviewer-implementer dialogue history */
 export interface DialogueMessage {
@@ -21,7 +24,7 @@ export interface DialogueMessage {
   content: string;
 }
 
-/** Result of a single review() call */
+/** Result of a single review() or reReview() call */
 export interface ReviewDialogueResult {
   /** Structured check outcome */
   checkResult: {
@@ -32,6 +35,11 @@ export interface ReviewDialogueResult {
   };
   /** Map from finding identifier to detailed reasoning string */
   findingReasoning: Map<string, string>;
+  /**
+   * Summary of delta between previous and current findings.
+   * Populated by reReview() — undefined for the initial review() call.
+   */
+  deltaSummary?: string;
 }
 
 /** A stateful reviewer session wrapping a persistent agent.run() call */
@@ -42,6 +50,23 @@ export interface ReviewerSession {
   history: DialogueMessage[];
   /** Send a review request and receive structured feedback */
   review(diff: string, story: SemanticStory, semanticConfig: SemanticReviewConfig): Promise<ReviewDialogueResult>;
+  /**
+   * Send a follow-up re-review for an updated diff.
+   * References previous findings by AC identifier in the prompt.
+   * Destroys and recreates the session with a compacted summary when
+   * history.length would exceed config.review.dialogue.maxDialogueMessages.
+   */
+  reReview(updatedDiff: string): Promise<ReviewDialogueResult>;
+  /**
+   * Send a clarification question to the reviewer.
+   * Returns the raw response string.
+   */
+  clarify(question: string): Promise<string>;
+  /**
+   * Extract a SemanticVerdict from the last review result.
+   * Throws NaxError('NO_REVIEW_RESULT') if no review() has been executed yet.
+   */
+  getVerdict(): SemanticVerdict;
   /** Close the session and mark it inactive */
   destroy(): Promise<void>;
 }
@@ -150,6 +175,24 @@ export function createReviewerSession(
       history.push({ role: "reviewer", content: result.output });
 
       return parseReviewResponse(result.output);
+    },
+    async reReview(_updatedDiff: string): Promise<ReviewDialogueResult> {
+      throw new NaxError("[dialogue] reReview() is not yet implemented", "NOT_IMPLEMENTED", {
+        stage: "review",
+        storyId,
+      });
+    },
+    async clarify(_question: string): Promise<string> {
+      throw new NaxError("[dialogue] clarify() is not yet implemented", "NOT_IMPLEMENTED", {
+        stage: "review",
+        storyId,
+      });
+    },
+    getVerdict(): SemanticVerdict {
+      throw new NaxError("[dialogue] getVerdict() is not yet implemented", "NOT_IMPLEMENTED", {
+        stage: "review",
+        storyId,
+      });
     },
     async destroy(): Promise<void> {
       if (!active) return;
