@@ -1,0 +1,173 @@
+{
+  "project": "@nathapp/nax",
+  "feature": "semantic-session-continuity",
+  "analysis": "## Key Files & Integration Points\n\n### Session Naming & ACP Infrastructure\n- `src/agents/acp/adapter.ts:184-202` — `buildSessionName(workdir, featureName?, storyId?, sessionRole?)` produces `nax-<hash8>-<feature>-<storyId>-<role>`. `ensureAcpSession()` (lines 212-238) resumes an existing named session or creates a new one (fail-open).\n- `src/agents/types.ts:53-96` — `AgentRunOptions` already has `sessionRole?: string`, `keepSessionOpen?: boolean`, `acpSessionName?: string`, `featureName?: string`, `storyId?: string`.\n\n### Execution Stage (US-001 target)\n- `src/pipeline/stages/execution.ts:251-275` — single-session `agent.run()` for no-test/test-after strategies. Currently passes `featureName: ctx.prd.feature` and `storyId: ctx.story.id` but NO `sessionRole` (line 269 comment: 'No sessionRole for single-session strategies'). No `keepSessionOpen`. This produces session name `nax-<hash>-<feature>-<storyId>` (no role suffix), mismatching TDD's `nax-<hash>-<feature>-<storyId>-implementer`.\n\n### TDD Session (reference pattern)\n- `src/tdd/session-runner.ts:171` — `keepSessionOpen = role === 'implementer' && (config.execution.rectification?.enabled ?? false)`. Line 191: passes `sessionRole: role`. This is the pattern to replicate.\n- `src/tdd/rectification-gate.ts:150-152` — `buildSessionName(workdir, featureName, story.id, 'implementer')` — exact pattern for resuming implementer session.\n\n### Semantic Review (US-002/US-003 targets)\n- `src/review/semantic.ts:291-298` — `runSemanticReview(workdir, storyGitRef, story, semanticConfig, modelResolver, naxConfig)` — current signature has no `featureName` parameter.\n- `src/review/semantic.ts:472-478` — `agent.complete()` with hardcoded `sessionName: \\`nax-semantic-${story.id}\\`` — bypasses `buildSessionName()`. Must be replaced with `agent.run()` targeting the implementer session.\n- `src/review/semantic.ts:382-393` — debate branch creates `DebateSession` with `featureName: story.id` (BUG: story ID used as feature name).\n\n### Review Call Chain\n- `src/pipeline/stages/review.ts:47-65` — calls `reviewOrchestrator.review()` with `ctx.config`, `ctx.story`, etc. Has access to `ctx.prd.feature` but does NOT pass it as a separate `featureName` param.\n- `src/review/orchestrator.ts:75-102` — `ReviewOrchestrator.review()` calls `runReview()` — no `featureName` parameter threaded through.\n- `src/review/runner.ts:273-280` — `runSemanticReview()` call site — passes `workdir, storyGitRef, semanticStory, semanticCfg, modelResolver, naxConfig`. No `featureName`.\n\n### Debate Resolution (US-004 target)\n- `src/debate/session-helpers.ts:176-235` — `resolveOutcome(proposalOutputs, critiqueOutputs, stageConfig, config, storyId, timeoutMs)` — no `workdir` or `featureName` params. Synthesis resolver (line 197-206) and judge resolver (line 217-227) pass `completeOptions` but no `acpSessionName`.\n- `src/debate/session-stateful.ts:27-35` — `StatefulCtx` type has `workdir` and `featureName` fields (already present).\n- `src/debate/session-stateful.ts:268-276` — calls `resolveOutcome()` with `ctx.storyId, ctx.config, ctx.stageConfig` — does NOT pass `ctx.workdir` or `ctx.featureName`.\n\n### Autofix (reference pattern)\n- `src/pipeline/stages/autofix.ts:290-302` — `agent.run()` with `sessionRole: 'implementer'` — consistent with TDD. Parallel pattern for US-003.\n\n## Risks & Mitigations\n1. **Backward compatibility:** All changes are additive (new optional params). Existing callers without `featureName` produce slightly different session names (missing feature segment) but `ensureAcpSession()` fails open — no regression.\n2. **Session lifetime:** Adding `keepSessionOpen: true` to execution.ts means sessions persist longer. Must ensure the condition is gated on `review.enabled || rectification.enabled` to avoid dangling sessions.\n3. **complete() → run() in semantic review:** `agent.run()` returns `AgentRunResult` vs `agent.complete()` returning `string | CompleteResult`. The response extraction logic must adapt. `run()` result has `.output` field.\n4. **Debate resolver uses complete() not run():** The synthesis/custom resolvers call `adapter.complete()` via `synthesisResolver()`/`judgeResolver()`. These need `acpSessionName` in their `completeOptions` to target the implementer session. `complete()` already supports `sessionName` option.\n5. **Feature name threading:** Requires adding `featureName` param through 4 layers: review.ts → orchestrator.ts → runner.ts → semantic.ts. Each layer is a simple optional param addition.",
+  "branchName": "feat/semantic-session-continuity",
+  "createdAt": "2026-04-06T12:00:00.000Z",
+  "updatedAt": "2026-04-06T02:23:49.717Z",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Normalize implementer session role in execution stage",
+      "description": "Add `sessionRole: \"implementer\"` and conditional `keepSessionOpen: true` to the single-session `agent.run()` call in `execution.ts` so that no-test and test-after strategies produce the same session name (`nax-<hash>-<feature>-<storyId>-implementer`) as TDD strategies. Gate `keepSessionOpen` on review or rectification being enabled to avoid dangling sessions.",
+      "acceptanceCriteria": [
+        "agent.run() in execution.ts (line 251) passes `sessionRole: \"implementer\"` for all test strategies it handles (no-test, test-after)",
+        "When `ctx.config.review.enabled` is true, execution.ts passes `keepSessionOpen: true` to agent.run()",
+        "When `ctx.config.execution.rectification?.enabled` is true, execution.ts passes `keepSessionOpen: true` to agent.run()",
+        "When both `ctx.config.review.enabled` and `ctx.config.execution.rectification?.enabled` are falsy, execution.ts passes `keepSessionOpen: false` to agent.run()",
+        "buildSessionName(storyWorkdir, ctx.prd.feature, ctx.story.id, \"implementer\") produces the same name as buildSessionName(workdir, featureName, story.id, \"implementer\") in autofix.ts:301 for identical inputs"
+      ],
+      "contextFiles": [
+        "src/pipeline/stages/execution.ts",
+        "src/tdd/session-runner.ts",
+        "src/agents/types.ts",
+        "src/pipeline/stages/autofix.ts"
+      ],
+      "tags": [
+        "feature",
+        "session-management"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "routing": {
+        "complexity": "simple",
+        "testStrategy": "tdd-simple",
+        "reasoning": "Single-file change adding two properties to an existing agent.run() call. ~10 LOC. Follows established pattern from session-runner.ts:171.",
+        "initialComplexity": "simple",
+        "modelTier": "fast"
+      },
+      "escalations": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1,
+      "storyGitRef": "ad1f77bb70b86a33cfa3322b1d5607524dd4bada"
+    },
+    {
+      "id": "US-002",
+      "title": "Thread featureName through semantic review call chain and fix debate path bug",
+      "description": "Add `featureName?: string` parameter through the review call chain: review.ts → orchestrator.ts → runner.ts → semantic.ts. Replace the hardcoded `nax-semantic-${story.id}` session name with `buildSessionName(workdir, featureName, story.id, \"semantic\")`. Fix the `featureName: story.id` bug in the debate branch at semantic.ts:392 where story ID is incorrectly used as the feature name.",
+      "acceptanceCriteria": [
+        "runSemanticReview() signature includes `featureName?: string` as a parameter",
+        "runReview() in runner.ts signature includes `featureName?: string` and forwards it to runSemanticReview()",
+        "ReviewOrchestrator.review() in orchestrator.ts signature includes `featureName?: string` and forwards it to runReview()",
+        "review.ts stage passes `ctx.prd.feature` as `featureName` to reviewOrchestrator.review()",
+        "The complete() call in semantic.ts uses `buildSessionName(workdir, featureName, story.id, \"semantic\")` instead of the hardcoded `nax-semantic-${story.id}`",
+        "The debate branch at semantic.ts:392 passes the received `featureName` parameter instead of `story.id` as featureName to createDebateSession()",
+        "When featureName is undefined, buildSessionName() is still called and a debug log is emitted: \"featureName missing — semantic session name will not include feature\"",
+        "The literal string `nax-semantic-${story.id}` no longer appears anywhere in the codebase"
+      ],
+      "contextFiles": [
+        "src/review/semantic.ts",
+        "src/review/runner.ts",
+        "src/review/orchestrator.ts",
+        "src/pipeline/stages/review.ts",
+        "src/agents/acp/adapter.ts"
+      ],
+      "tags": [
+        "feature",
+        "bug-fix",
+        "session-management"
+      ],
+      "dependencies": [],
+      "status": "pending",
+      "passes": false,
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Touches 4 files threading a new parameter through the call chain. ~80 LOC across files. Includes a bug fix for the debate featureName. Medium complexity due to multi-file coordination."
+      },
+      "escalations": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-003",
+      "title": "Semantic review resumes implementer session via agent.run()",
+      "description": "Replace `agent.complete()` in the non-debate path of semantic review with `agent.run()` that targets the implementer session by name using `acpSessionName: buildSessionName(workdir, featureName, storyId, \"implementer\")`. The reviewer inherits the implementer's full session context. When the session is not found, ensureAcpSession() creates a new one (fail-open). The debate path (DebateSession) is not modified — covered by US-004.",
+      "acceptanceCriteria": [
+        "runSemanticReview() calls agent.run() instead of agent.complete() for the non-debate code path",
+        "agent.run() receives `acpSessionName: buildSessionName(workdir, featureName, storyId, \"implementer\")` targeting the implementer session",
+        "agent.run() passes `keepSessionOpen: false` since semantic review is the last consumer",
+        "runSemanticReview() receives `workdir` (already present) and `featureName` (from US-002) and uses both in buildSessionName()",
+        "When agent.run() creates a new session (implementer session not found), a debug log is emitted: \"implementer session not found — semantic review running in new session\"",
+        "The response extraction from agent.run() result correctly populates `rawResponse` — handles AgentRunResult.output instead of CompleteResult",
+        "ReviewCheckResult shape returned by runSemanticReview() is unchanged — callers receive the same interface",
+        "The debate path (reviewDebateEnabled branch at semantic.ts:382) is not modified by this story"
+      ],
+      "contextFiles": [
+        "src/review/semantic.ts",
+        "src/tdd/rectification-gate.ts",
+        "src/agents/acp/adapter.ts",
+        "src/pipeline/stages/autofix.ts",
+        "src/agents/types.ts"
+      ],
+      "tags": [
+        "feature",
+        "session-management"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Replaces complete() with run() in semantic.ts — changes method call, session targeting, and response extraction. ~60 LOC. Follows established pattern from rectification-gate.ts. Medium due to behavioral change in how semantic review operates."
+      },
+      "escalations": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    },
+    {
+      "id": "US-004",
+      "title": "Debate resolver resumes implementer session",
+      "description": "Extend `resolveOutcome()` in session-helpers.ts to accept `workdir` and `featureName` so the synthesis and custom resolvers can target the implementer session via `acpSessionName: buildSessionName(workdir, featureName, storyId, \"implementer\")`. Thread `workdir` and `featureName` from StatefulCtx through the call site in session-stateful.ts. The majority resolver performs no LLM call and is unaffected. Individual debaters continue operating in their own per-debater sessions.",
+      "acceptanceCriteria": [
+        "resolveOutcome() signature adds `workdir?: string` and `featureName?: string` parameters",
+        "synthesisResolver() receives `acpSessionName: buildSessionName(workdir, featureName, storyId, \"implementer\")` in completeOptions when workdir is defined",
+        "judgeResolver() receives `acpSessionName: buildSessionName(workdir, featureName, storyId, \"implementer\")` in completeOptions when workdir is defined",
+        "The call site in session-stateful.ts passes `ctx.workdir` and `ctx.featureName` to resolveOutcome()",
+        "When resolveOutcome() is called with workdir defined but resolver type is majority-fail-closed or majority-fail-open, a warn log is emitted: \"majority resolver does not support implementer session resumption — switch to synthesis or custom resolver for context-aware semantic review\"",
+        "majority resolver behavior is unchanged — it returns vote count with resolverCostUsd: 0",
+        "When workdir is undefined, acpSessionName is not passed to synthesisResolver() or judgeResolver() (omitted from completeOptions)",
+        "DebateResult shape is unchanged — callers receive the same interface"
+      ],
+      "contextFiles": [
+        "src/debate/session-helpers.ts",
+        "src/debate/session-stateful.ts",
+        "src/agents/acp/adapter.ts",
+        "src/tdd/rectification-gate.ts",
+        "src/debate/types.ts"
+      ],
+      "tags": [
+        "feature",
+        "session-management",
+        "debate"
+      ],
+      "dependencies": [
+        "US-001",
+        "US-002"
+      ],
+      "status": "pending",
+      "passes": false,
+      "routing": {
+        "complexity": "medium",
+        "testStrategy": "three-session-tdd-lite",
+        "reasoning": "Touches 2 files (session-helpers.ts, session-stateful.ts) adding session targeting to resolver calls. ~50 LOC. Follows same buildSessionName pattern. Medium due to conditional logic around resolver types and warn logging for majority."
+      },
+      "escalations": [],
+      "attempts": 0,
+      "priorErrors": [],
+      "priorFailures": [],
+      "storyPoints": 1
+    }
+  ]
+}

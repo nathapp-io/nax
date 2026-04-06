@@ -249,8 +249,9 @@ export const executionStage: PipelineStage = {
     const storyWorkdir = _executionDeps.resolveStoryWorkdir(ctx.workdir, ctx.story.workdir);
 
     // Determine whether to keep session open for review or rectification
-    const keepSessionOpen =
-      ctx.config.review?.enabled === true || ctx.config.execution.rectification?.enabled === true ? true : false;
+    const keepSessionOpen = !!(
+      ctx.config.review?.enabled === true || ctx.config.execution.rectification?.enabled === true
+    );
 
     const result = await agent.run({
       prompt: ctx.prompt,
