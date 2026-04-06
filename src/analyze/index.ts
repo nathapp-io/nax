@@ -13,4 +13,3 @@ export type {
 } from "./types";
 
 export { scanCodebase } from "./scanner";
-export { classifyStories } from "./classifier";
