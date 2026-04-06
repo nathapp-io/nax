@@ -8,7 +8,6 @@
  * - `init`: Initialize nax in a project directory
  * - `run`: Execute the orchestration loop for a feature
  * - `features create/list`: Manage feature definitions
- * - `analyze`: Parse spec.md into prd.json (deprecated — use `nax plan`)
  * - `agents`: Check available coding agent installations
  * - `status`: Show current feature progress
  *
@@ -25,9 +24,6 @@
  *
  * # Create feature
  * nax features create auth-system
- *
- * # Analyze spec/tasks into PRD
- * nax analyze --feature auth-system
  *
  * # Run orchestration
  * nax run --feature auth-system
@@ -46,7 +42,6 @@ import { Command } from "commander";
 import {
   acceptCommand,
   agentsListCommand,
-  analyzeFeature,
   displayCostMetrics,
   displayFeatureStatus,
   displayLastRunMetrics,
@@ -790,75 +785,6 @@ program
         console.log(chalk.dim(`   Log: ${planLogPath}`));
         console.log(chalk.dim(`\nNext: nax run -f ${options.feature}`));
       }
-    } catch (err) {
-      console.error(chalk.red(`Error: ${(err as Error).message}`));
-      process.exit(1);
-    }
-  });
-
-// ── analyze ──────────────────────────────────────────
-program
-  .command("analyze")
-  .description("(deprecated) Parse spec.md into prd.json via agent decompose — use 'nax plan' instead")
-  .requiredOption("-f, --feature <name>", "Feature name")
-  .option("-b, --branch <name>", "Branch name", "feat/<feature>")
-  .option("--from <path>", "Explicit spec path (overrides default spec.md)")
-  .option("--reclassify", "Re-classify existing prd.json without decompose", false)
-  .option("-d, --dir <path>", "Project directory", process.cwd())
-  .action(async (options) => {
-    // AC-1: Print deprecation warning to stderr
-    const deprecationMsg = "⚠️  'nax analyze' is deprecated. Use 'nax plan -f <feature> --from <spec> --auto' instead.";
-    process.stderr.write(`${chalk.yellow(deprecationMsg)}\n`);
-
-    // Validate directory path
-    let workdir: string;
-    try {
-      workdir = validateDirectory(options.dir);
-    } catch (err) {
-      console.error(chalk.red(`Invalid directory: ${(err as Error).message}`));
-      process.exit(1);
-    }
-
-    const naxDir = findProjectDir(workdir);
-    if (!naxDir) {
-      console.error(chalk.red("nax not initialized. Run: nax init"));
-      process.exit(1);
-    }
-
-    const featureDir = join(naxDir, "features", options.feature);
-    if (!existsSync(featureDir)) {
-      console.error(chalk.red(`Feature "${options.feature}" not found.`));
-      process.exit(1);
-    }
-
-    const branchName = options.branch.replace("<feature>", options.feature);
-
-    // Load config for validation
-    const config = await loadConfig(workdir);
-
-    try {
-      const prd = await analyzeFeature({
-        featureDir,
-        featureName: options.feature,
-        branchName,
-        config,
-        specPath: options.from,
-        reclassify: options.reclassify,
-      });
-
-      const prdPath = join(featureDir, "prd.json");
-      await Bun.write(prdPath, JSON.stringify(prd, null, 2));
-
-      const c = countStories(prd);
-      console.log(chalk.green(`\n✅ Generated prd.json for ${options.feature}`));
-      console.log(chalk.dim(`   Stories: ${c.total}`));
-      console.log(chalk.dim(`   Path: ${prdPath}`));
-
-      for (const story of prd.userStories) {
-        const routing = story.routing ? chalk.dim(` [${story.routing.complexity}]`) : "";
-        console.log(chalk.dim(`   ${story.id}: ${story.title}${routing}`));
-      }
-      console.log();
     } catch (err) {
       console.error(chalk.red(`Error: ${(err as Error).message}`));
       process.exit(1);
