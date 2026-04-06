@@ -47,6 +47,7 @@ orchestrator/
 nax.lock
 .nax/features/*/runs/
 .nax/features/*/plan/
+.nax/prompt-audit/
 test/tmp/
 TEST_SUMMARY_*.md
 .nax-pids
