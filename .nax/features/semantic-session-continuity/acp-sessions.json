@@ -2,5 +2,9 @@
   "US-002:implementer": {
     "sessionName": "nax-0a32cb69-semantic-session-continuity-us-002-implementer",
     "agentName": "claude"
+  },
+  "US-002:verifier": {
+    "sessionName": "nax-0a32cb69-semantic-session-continuity-us-002-verifier",
+    "agentName": "claude"
   }
 }
