@@ -7,6 +7,8 @@
 
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
+import { resolveModelForAgent } from "../config/schema-types";
+import { NaxError } from "../errors";
 import type { ReviewFinding } from "../plugins/types";
 import type { SemanticStory } from "./semantic";
 import type { SemanticReviewConfig } from "./types";
@@ -44,16 +46,109 @@ export interface ReviewerSession {
   destroy(): Promise<void>;
 }
 
+function buildReviewPrompt(diff: string, story: SemanticStory, _semanticConfig: SemanticReviewConfig): string {
+  const criteria = story.acceptanceCriteria.map((c) => `- ${c}`).join("\n");
+  return [
+    `Review the following code diff for story ${story.id}: ${story.title}`,
+    "",
+    "## Acceptance Criteria",
+    criteria,
+    "",
+    "## Diff",
+    diff,
+    "",
+    "Respond with JSON: { passed: boolean, findings: [...], findingReasoning: { [id]: string } }",
+  ].join("\n");
+}
+
+function parseReviewResponse(output: string): ReviewDialogueResult {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(output) as Record<string, unknown>;
+  } catch {
+    throw new NaxError("[dialogue] Failed to parse reviewer JSON response", "REVIEWER_PARSE_FAILED", {
+      stage: "review",
+      output,
+    });
+  }
+
+  const success = Boolean(parsed.passed);
+  const findings = Array.isArray(parsed.findings) ? (parsed.findings as ReviewFinding[]) : [];
+  const reasoningObj =
+    parsed.findingReasoning && typeof parsed.findingReasoning === "object"
+      ? (parsed.findingReasoning as Record<string, string>)
+      : {};
+
+  const findingReasoning = new Map<string, string>(Object.entries(reasoningObj));
+
+  return { checkResult: { success, findings }, findingReasoning };
+}
+
 /**
  * Create a new ReviewerSession.
- * Stub — not yet implemented.
  */
 export function createReviewerSession(
-  _agent: AgentAdapter,
-  _storyId: string,
-  _workdir: string,
-  _featureName: string,
+  agent: AgentAdapter,
+  storyId: string,
+  workdir: string,
+  featureName: string,
   _config: NaxConfig,
 ): ReviewerSession {
-  throw new Error("not implemented");
+  const history: DialogueMessage[] = [];
+  let active = true;
+
+  return {
+    get active() {
+      return active;
+    },
+    get history() {
+      return history;
+    },
+    async review(
+      diff: string,
+      story: SemanticStory,
+      semanticConfig: SemanticReviewConfig,
+    ): Promise<ReviewDialogueResult> {
+      if (!active) {
+        throw new NaxError(
+          `[dialogue] ReviewerSession for story ${storyId} has been destroyed`,
+          "REVIEWER_SESSION_DESTROYED",
+          { stage: "review", storyId, featureName },
+        );
+      }
+
+      const prompt = buildReviewPrompt(diff, story, semanticConfig);
+
+      const modelTier = semanticConfig.modelTier;
+      const defaultAgent = _config.autoMode?.defaultAgent ?? "claude";
+      const modelDef = resolveModelForAgent(_config.models, defaultAgent, modelTier, defaultAgent);
+      const timeoutSeconds = semanticConfig.timeoutMs
+        ? Math.ceil(semanticConfig.timeoutMs / 1000)
+        : (_config.execution?.sessionTimeoutSeconds ?? 3600);
+
+      const result = await agent.run({
+        prompt,
+        workdir,
+        modelTier,
+        modelDef,
+        timeoutSeconds,
+        sessionRole: "reviewer",
+        keepSessionOpen: true,
+        pipelineStage: "review",
+        config: _config,
+        storyId,
+        featureName,
+      });
+
+      history.push({ role: "implementer", content: prompt });
+      history.push({ role: "reviewer", content: result.output });
+
+      return parseReviewResponse(result.output);
+    },
+    async destroy(): Promise<void> {
+      if (!active) return;
+      active = false;
+      history.length = 0;
+    },
+  };
 }
