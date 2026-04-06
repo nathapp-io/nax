@@ -37,7 +37,7 @@ import type { PipelineContext, RoutingResult } from "../../pipeline/types";
 import type { PluginRegistry } from "../../plugins";
 import { loadPRD, savePRD } from "../../prd";
 import type { PRD, UserStory } from "../../prd/types";
-import { routeTask } from "../../routing";
+import { resolveRouting } from "../../routing";
 import { hookCtx } from "../helpers";
 import type { StatusWriter } from "../status-writer";
 
@@ -264,7 +264,7 @@ async function executeFixStory(
   iterations: number,
 ): Promise<{ success: boolean; cost: number; metrics?: StoryMetrics[] }> {
   const logger = getSafeLogger();
-  const routing = routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, ctx.config);
+  const routing = await resolveRouting(story, ctx.config, ctx.pluginRegistry);
   logger?.info("acceptance", `Starting fix story: ${story.id}`, { storyId: story.id, storyTitle: story.title });
   await fireHook(
     ctx.hooks,
@@ -782,7 +782,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
   logger?.info("acceptance", "All stories complete, running acceptance validation");
 
   while (acceptanceRetries < maxRetries) {
-    // Run acceptance validation — always from repo root (covers single repo + monorepo)
+    // Run acceptance validation — use per-package test paths when available (monorepo aware)
     const firstStory = prd.userStories[0];
     const acceptanceContext: PipelineContext = {
       config: ctx.config,
@@ -801,6 +801,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       hooks: ctx.hooks,
       plugins: ctx.pluginRegistry,
       agentGetFn: ctx.agentGetFn,
+      acceptanceTestPaths: ctx.acceptanceTestPaths,
     };
 
     const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
