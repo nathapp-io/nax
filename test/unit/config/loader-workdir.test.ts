@@ -94,25 +94,25 @@ describe("loadConfigForWorkdir", () => {
     expect(result.quality.commands.test).toBe("bun test");
   });
 
-  test("BUG-134: logs debug when package config not found (fallback to root)", async () => {
+  test("BUG-134: logs info when package config not found (fallback to root)", async () => {
     writeFileSync(
       join(tempDir, ".nax", "config.json"),
       JSON.stringify({ quality: { commands: { test: "bun test" } } }),
     );
 
     const logger = getLogger();
-    const debugSpy = spyOn(logger, "debug");
+    const infoSpy = spyOn(logger, "info");
 
     const rootConfigPath = join(tempDir, ".nax", "config.json");
     await loadConfigForWorkdir(rootConfigPath, "packages/missing");
 
-    const fallbackCall = debugSpy.mock.calls.find(
+    const fallbackCall = infoSpy.mock.calls.find(
       (args) => typeof args[1] === "string" && args[1].includes("Per-package config not found"),
     );
     expect(fallbackCall).toBeDefined();
     expect(fallbackCall?.[2]).toMatchObject({ packageDir: "packages/missing" });
 
-    debugSpy.mockRestore();
+    infoSpy.mockRestore();
   });
 
   test("BUG-134: logs debug when packageDir is undefined (no per-package resolution)", async () => {
