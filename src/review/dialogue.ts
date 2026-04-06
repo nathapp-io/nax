@@ -140,7 +140,7 @@ function extractDeltaSummary(
   return parts.join(" ");
 }
 
-function compactHistory(history: DialogueMessage[]): void {
+function compactHistory(history: DialogueMessage[]): string {
   const summaryLines = ["[Compacted conversation summary]"];
   for (const msg of history.slice(0, -2)) {
     const preview = msg.content.length > 200 ? `${msg.content.slice(0, 200)}...` : msg.content;
@@ -153,6 +153,7 @@ function compactHistory(history: DialogueMessage[]): void {
   history.push({ role: "implementer", content: summary });
   history.push(lastImplementer);
   history.push(lastReviewer);
+  return summary;
 }
 
 function parseReviewResponse(output: string): ReviewDialogueResult {
@@ -199,6 +200,17 @@ export function createReviewerSession(
   let lastCheckResult: ReviewDialogueResult | null = null;
   let lastStory: SemanticStory | null = null;
   let lastSemanticConfig: SemanticReviewConfig | null = null;
+  /**
+   * Tracks session lifecycle for compaction-triggered resets.
+   * - generation: incremented each time history overflow causes a session reset.
+   * - pendingCompactionContext: when non-null, the next agent.run() call must
+   *   inject this compacted context as initial context and use a new acpSessionName
+   *   to start a fresh session (satisfying AC4 session destruction + recreation).
+   */
+  const sessionState = {
+    generation: 1,
+    pendingCompactionContext: null as string | null,
+  };
 
   function resolveRunParams(semanticConfig: SemanticReviewConfig) {
     const modelTier = semanticConfig.modelTier;
@@ -208,6 +220,29 @@ export function createReviewerSession(
       ? Math.ceil(semanticConfig.timeoutMs / 1000)
       : (_config.execution?.sessionTimeoutSeconds ?? 3600);
     return { modelTier, modelDef, timeoutSeconds };
+  }
+
+  /**
+   * Builds the effective prompt and acpSessionName for an agent.run() call.
+   *
+   * When a compaction reset occurred (pendingCompactionContext is set), the
+   * compacted context is prepended to the prompt so the fresh session receives
+   * the full prior conversation summary as initial context (AC4).
+   * acpSessionName is set to a generation-scoped name so the adapter creates
+   * a new session rather than reusing the previous one.
+   */
+  function buildEffectiveRunArgs(prompt: string): { effectivePrompt: string; acpSessionName: string | undefined } {
+    if (sessionState.pendingCompactionContext !== null) {
+      const context = sessionState.pendingCompactionContext;
+      sessionState.pendingCompactionContext = null;
+      return {
+        effectivePrompt: `${context}\n\n---\n\n${prompt}`,
+        acpSessionName: `nax-reviewer-${storyId}-gen${sessionState.generation}`,
+      };
+    }
+    const acpSessionName =
+      sessionState.generation > 1 ? `nax-reviewer-${storyId}-gen${sessionState.generation}` : undefined;
+    return { effectivePrompt: prompt, acpSessionName };
   }
 
   return {
@@ -232,9 +267,10 @@ export function createReviewerSession(
 
       const prompt = buildReviewPrompt(diff, story, semanticConfig);
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(semanticConfig);
+      const { effectivePrompt, acpSessionName } = buildEffectiveRunArgs(prompt);
 
       const result = await agent.run({
-        prompt,
+        prompt: effectivePrompt,
         workdir,
         modelTier,
         modelDef,
@@ -245,6 +281,7 @@ export function createReviewerSession(
         config: _config,
         storyId,
         featureName,
+        acpSessionName,
       });
 
       history.push({ role: "implementer", content: prompt });
@@ -274,9 +311,10 @@ export function createReviewerSession(
       const previousFindings = lastCheckResult.checkResult.findings;
       const prompt = buildReReviewPrompt(updatedDiff, previousFindings);
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(lastSemanticConfig);
+      const { effectivePrompt, acpSessionName } = buildEffectiveRunArgs(prompt);
 
       const result = await agent.run({
-        prompt,
+        prompt: effectivePrompt,
         workdir,
         modelTier,
         modelDef,
@@ -287,6 +325,7 @@ export function createReviewerSession(
         config: _config,
         storyId,
         featureName,
+        acpSessionName,
       });
 
       history.push({ role: "implementer", content: prompt });
@@ -299,7 +338,15 @@ export function createReviewerSession(
 
       const maxMessages = _config.review?.dialogue?.maxDialogueMessages ?? 20;
       if (history.length > maxMessages) {
-        compactHistory(history);
+        // AC4: destroy the current session and prepare a fresh one.
+        // compactHistory() returns the summary string; store it so the next
+        // agent.run() call injects it as initial context for the new session.
+        // Incrementing sessionState.generation causes buildEffectiveRunArgs()
+        // to use a new acpSessionName, which forces the adapter to create a
+        // fresh session rather than resuming the previous one.
+        const compactedSummary = compactHistory(history);
+        sessionState.generation++;
+        sessionState.pendingCompactionContext = compactedSummary;
       }
 
       return dialogueResult;
@@ -317,9 +364,10 @@ export function createReviewerSession(
         lastSemanticConfig ??
         ({ modelTier: "balanced", rules: [], timeoutMs: 60_000, excludePatterns: [] } as SemanticReviewConfig);
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(effectiveSemanticConfig);
+      const { effectivePrompt, acpSessionName } = buildEffectiveRunArgs(question);
 
       const result = await agent.run({
-        prompt: question,
+        prompt: effectivePrompt,
         workdir,
         modelTier,
         modelDef,
@@ -330,6 +378,7 @@ export function createReviewerSession(
         config: _config,
         storyId,
         featureName,
+        acpSessionName,
       });
 
       history.push({ role: "implementer", content: question });
