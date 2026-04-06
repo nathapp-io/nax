@@ -19,6 +19,7 @@ import { getSafeLogger } from "../../logger";
 import { sleep, which } from "../../utils/bun-deps";
 import { buildDecomposePrompt, parseDecomposeOutput } from "../shared/decompose";
 import { parseAgentError } from "./parse-agent-error";
+import { writePromptAudit } from "./prompt-audit";
 import { createSpawnAcpClient } from "./spawn-client";
 
 import type {
@@ -754,6 +755,21 @@ export class AcpAgentAdapter implements AgentAdapter {
         turnCount++;
         getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
 
+        // Audit: fire-and-forget prompt write — never blocks or throws
+        if (options.config?.agent?.promptAudit?.enabled) {
+          void writePromptAudit({
+            prompt: currentPrompt,
+            sessionName,
+            workdir: options.workdir,
+            auditDir: options.config.agent.promptAudit.dir,
+            storyId: options.storyId,
+            featureName: options.featureName,
+            pipelineStage: options.pipelineStage ?? "run",
+            callType: "run",
+            turn: turnCount,
+          });
+        }
+
         const turnResult = await runSessionPrompt(session, currentPrompt, options.timeoutSeconds * 1000);
 
         if (turnResult.timedOut) {
@@ -922,6 +938,20 @@ export class AcpAgentAdapter implements AgentAdapter {
           _options?.sessionName ??
           buildSessionName(workdir ?? process.cwd(), _options?.featureName, _options?.storyId, _options?.sessionRole);
         session = await client.createSession({ agentName, permissionMode, sessionName: completeSessionName });
+
+        // Audit: fire-and-forget prompt write — never blocks or throws
+        if (config?.agent?.promptAudit?.enabled) {
+          void writePromptAudit({
+            prompt,
+            sessionName: completeSessionName,
+            workdir: workdir ?? process.cwd(),
+            auditDir: config.agent.promptAudit.dir,
+            storyId: _options?.storyId,
+            featureName: _options?.featureName,
+            pipelineStage: "complete",
+            callType: "complete",
+          });
+        }
 
         let timeoutId: ReturnType<typeof setTimeout> | undefined;
         const timeoutPromise = new Promise<never>((_, reject) => {

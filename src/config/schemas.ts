@@ -408,9 +408,20 @@ const StorySizeGateConfigSchema = z.object({
   maxReplanAttempts: z.number().int().min(1).default(3),
 });
 
+const PromptAuditConfigSchema = z.object({
+  /** When true, every prompt sent to ACP is written to a file for auditing. Default: false. */
+  enabled: z.boolean().default(false),
+  /**
+   * Directory to write audit files into.
+   * Absolute path, or relative to workdir. Defaults to <workdir>/.nax/prompt-audit/ when absent.
+   */
+  dir: z.string().optional(),
+});
+
 const AgentConfigSchema = z.object({
   protocol: z.enum(["acp", "cli"]).default("acp"),
   maxInteractionTurns: z.number().int().min(1).max(100).default(10),
+  promptAudit: PromptAuditConfigSchema.default({ enabled: false }),
 });
 
 const PrecheckConfigSchema = z.object({
@@ -739,6 +750,7 @@ export const NaxConfigSchema = z
     agent: AgentConfigSchema.optional().default({
       protocol: "acp",
       maxInteractionTurns: 10,
+      promptAudit: { enabled: false },
     }),
     precheck: PrecheckConfigSchema.optional().default({
       storySizeGate: {

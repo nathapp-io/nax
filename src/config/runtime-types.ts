@@ -556,10 +556,23 @@ export interface GenerateConfig {
   agents?: Array<"claude" | "codex" | "opencode" | "cursor" | "windsurf" | "aider" | "gemini">;
 }
 
+/** Prompt audit configuration — opt-in file-based audit of all ACP-bound prompts. */
+export interface PromptAuditConfig {
+  /** When true, every prompt sent to ACP is written to a file for auditing. */
+  enabled: boolean;
+  /**
+   * Directory to write audit files into.
+   * Absolute path, or relative to workdir. Defaults to <workdir>/.nax/prompt-audit/ when absent.
+   */
+  dir?: string;
+}
+
 /** Agent protocol configuration (ACP-003) */
 export interface AgentConfig {
   /** Protocol to use for agent communication (default: 'acp') */
   protocol?: "acp" | "cli";
   /** Max interaction turns when interactionBridge is active (default: 10) */
   maxInteractionTurns?: number;
+  /** Prompt audit — write every ACP-bound prompt to a file for auditing. */
+  promptAudit?: PromptAuditConfig;
 }
