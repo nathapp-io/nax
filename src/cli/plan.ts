@@ -768,6 +768,18 @@ export async function planDecomposeCommand(
   const maxAcCount = config?.precheck?.storySizeGate?.maxAcCount ?? Number.POSITIVE_INFINITY;
   const maxReplanAttempts = config?.precheck?.storySizeGate?.maxReplanAttempts ?? 3;
 
+  let decomposeModelDef: import("../config").ModelDef | undefined;
+  try {
+    const decomposeTier = config?.plan?.model ?? "balanced";
+    const { resolveModelForAgent } = await import("../config/schema");
+    if (config?.models) {
+      const defaultAgent = config.autoMode?.defaultAgent ?? "claude";
+      decomposeModelDef = resolveModelForAgent(config.models, agentName, decomposeTier, defaultAgent);
+    }
+  } catch {
+    // fall through — adapter will use its own fallback
+  }
+
   if (typeof (adapter as { decompose?: unknown }).decompose !== "function") {
     throw new NaxError(
       `Agent "${agentName}" does not support decompose() required by plan --decompose`,
@@ -821,6 +833,7 @@ export async function planDecomposeCommand(
         featureName: options.feature,
         storyId: options.storyId,
         config,
+        modelDef: decomposeModelDef,
       });
       decompStories = result.stories;
     }
