@@ -100,6 +100,7 @@ export class ReviewOrchestrator {
       modelResolver,
       naxConfig,
       retrySkipChecks,
+      featureName,
     );
 
     if (!builtIn.success) {
