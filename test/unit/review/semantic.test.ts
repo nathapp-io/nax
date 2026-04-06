@@ -11,6 +11,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { buildSessionName } from "../../../src/agents/acp/adapter";
+import type { AgentResult } from "../../../src/agents/types";
 import { _semanticDeps, runSemanticReview } from "../../../src/review/semantic";
 import type { SemanticStory } from "../../../src/review/semantic";
 import type { SemanticReviewConfig } from "../../../src/review/types";
@@ -814,5 +816,280 @@ describe("runSemanticReview — BUG-114 storyGitRef fallback (merge-base)", () =
 
     expect(result.success).toBe(true);
     expect(result.output).toContain("skipped: no git ref");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-003: agent.run() replaces agent.complete() in the non-debate path
+// ---------------------------------------------------------------------------
+
+/** Build a mock AgentAdapter whose run() resolves to a proper AgentResult */
+function makeRunMockAgent(output: string, success = true): AgentAdapter {
+  const agentResult: AgentResult = {
+    success,
+    exitCode: success ? 0 : 1,
+    output,
+    rateLimited: false,
+    durationMs: 100,
+    estimatedCost: 0,
+  };
+  return {
+    name: "mock",
+    displayName: "Mock Run Agent",
+    binary: "mock",
+    capabilities: {
+      supportedTiers: [],
+      maxContextTokens: 128_000,
+      features: new Set(),
+    } as unknown as AgentAdapter["capabilities"],
+    isInstalled: mock(async () => true),
+    run: mock(async () => agentResult),
+    buildCommand: mock(() => []),
+    plan: mock(async () => { throw new Error("plan not used"); }),
+    decompose: mock(async () => { throw new Error("decompose not used"); }),
+    complete: mock(async (_prompt: string) => { throw new Error("complete() must NOT be called in non-debate path (US-003)"); }),
+  } as unknown as AgentAdapter;
+}
+
+describe("runSemanticReview — uses agent.run() instead of agent.complete() (US-003)", () => {
+  let origSpawn: typeof _semanticDeps.spawn;
+  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
+  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+  let origReadAcpSession: typeof _semanticDeps.readAcpSession;
+
+  beforeEach(() => {
+    origSpawn = _semanticDeps.spawn;
+    origIsGitRefValid = _semanticDeps.isGitRefValid;
+    origGetMergeBase = _semanticDeps.getMergeBase;
+    origReadAcpSession = _semanticDeps.readAcpSession;
+    _semanticDeps.isGitRefValid = mock(async () => true);
+    _semanticDeps.getMergeBase = mock(async () => undefined);
+    _semanticDeps.spawn = makeSpawnMock("some diff content", 0);
+    _semanticDeps.readAcpSession = mock(async () => "nax-abc123-feature-us-003-implementer");
+  });
+
+  afterEach(() => {
+    _semanticDeps.spawn = origSpawn;
+    _semanticDeps.isGitRefValid = origIsGitRefValid;
+    _semanticDeps.getMergeBase = origGetMergeBase;
+    _semanticDeps.readAcpSession = origReadAcpSession;
+  });
+
+  test("calls agent.run() for the non-debate path", async () => {
+    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(agent.run).toHaveBeenCalled();
+  });
+
+  test("does NOT call agent.complete() for the non-debate path", async () => {
+    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(agent.complete).not.toHaveBeenCalled();
+  });
+
+  test("agent.run() receives acpSessionName targeting the implementer session", async () => {
+    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+    const workdir = "/my/project";
+    const featureName = "my-feature";
+    const expectedSession = buildSessionName(workdir, featureName, STORY.id, "implementer");
+
+    await runSemanticReview(workdir, "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent, undefined, featureName);
+
+    expect(agent.run).toHaveBeenCalled();
+    const runOpts = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
+    expect(runOpts.acpSessionName).toBe(expectedSession);
+  });
+
+  test("agent.run() receives keepSessionOpen: false", async () => {
+    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(agent.run).toHaveBeenCalled();
+    const runOpts = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
+    expect(runOpts.keepSessionOpen).toBe(false);
+  });
+
+  test("acpSessionName encodes workdir hash in session name", async () => {
+    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+    const workdirA = "/project/alpha";
+    const workdirB = "/project/beta";
+    const sessionA = buildSessionName(workdirA, "feat", STORY.id, "implementer");
+    const sessionB = buildSessionName(workdirB, "feat", STORY.id, "implementer");
+
+    await runSemanticReview(workdirA, "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent, undefined, "feat");
+    const runOptsA = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
+
+    expect(runOptsA.acpSessionName).toBe(sessionA);
+    expect(runOptsA.acpSessionName).not.toBe(sessionB);
+  });
+
+  test("acpSessionName encodes featureName in session name", async () => {
+    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+    const featureName = "semantic-continuity";
+    const expectedSession = buildSessionName("/tmp/wd", featureName, STORY.id, "implementer");
+
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent, undefined, featureName);
+
+    const runOpts = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
+    expect(runOpts.acpSessionName).toBe(expectedSession);
+  });
+
+  test("acpSessionName encodes storyId in session name", async () => {
+    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+    const storyWithDifferentId: SemanticStory = { ...STORY, id: "US-999" };
+    const expectedSession = buildSessionName("/tmp/wd", "feat", "US-999", "implementer");
+
+    await runSemanticReview("/tmp/wd", "abc123", storyWithDifferentId, DEFAULT_SEMANTIC_CONFIG, () => agent, undefined, "feat");
+
+    const runOpts = (agent.run as ReturnType<typeof mock>).mock.calls[0][0] as Record<string, unknown>;
+    expect(runOpts.acpSessionName).toBe(expectedSession);
+  });
+
+  test("extracts rawResponse from AgentRunResult.output field — passed=true", async () => {
+    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain("Semantic review passed");
+  });
+
+  test("extracts rawResponse from AgentRunResult.output field — passed=false with findings", async () => {
+    const agent = makeRunMockAgent(FAILING_LLM_RESPONSE);
+
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(result.success).toBe(false);
+    expect(result.output).toContain("Function is a stub");
+  });
+
+  test("ReviewCheckResult has check='semantic' field after run() path", async () => {
+    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(result.check).toBe("semantic");
+  });
+
+  test("ReviewCheckResult has exitCode=0 when run() returns passed=true", async () => {
+    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(result.exitCode).toBe(0);
+  });
+
+  test("ReviewCheckResult has exitCode=1 when run() returns passed=false", async () => {
+    const agent = makeRunMockAgent(FAILING_LLM_RESPONSE);
+
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(result.exitCode).toBe(1);
+  });
+
+  test("ReviewCheckResult has command='' field", async () => {
+    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(result.command).toBe("");
+  });
+
+  test("ReviewCheckResult has durationMs field as number", async () => {
+    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(typeof result.durationMs).toBe("number");
+  });
+
+  test("ReviewCheckResult includes findings when run() output has failing findings", async () => {
+    const agent = makeRunMockAgent(FAILING_LLM_RESPONSE);
+
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent);
+
+    expect(result.findings).toBeDefined();
+    expect(Array.isArray(result.findings)).toBe(true);
+    expect((result.findings?.length ?? 0)).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-003 AC-5: debug log when implementer session not found
+// ---------------------------------------------------------------------------
+
+describe("runSemanticReview — reads implementer session sidecar before run() (US-003 AC-5)", () => {
+  let origSpawn: typeof _semanticDeps.spawn;
+  let origIsGitRefValid: typeof _semanticDeps.isGitRefValid;
+  let origGetMergeBase: typeof _semanticDeps.getMergeBase;
+  let origReadAcpSession: typeof _semanticDeps.readAcpSession;
+
+  beforeEach(() => {
+    origSpawn = _semanticDeps.spawn;
+    origIsGitRefValid = _semanticDeps.isGitRefValid;
+    origGetMergeBase = _semanticDeps.getMergeBase;
+    origReadAcpSession = _semanticDeps.readAcpSession;
+    _semanticDeps.isGitRefValid = mock(async () => true);
+    _semanticDeps.getMergeBase = mock(async () => undefined);
+    _semanticDeps.spawn = makeSpawnMock("some diff content", 0);
+  });
+
+  afterEach(() => {
+    _semanticDeps.spawn = origSpawn;
+    _semanticDeps.isGitRefValid = origIsGitRefValid;
+    _semanticDeps.getMergeBase = origGetMergeBase;
+    _semanticDeps.readAcpSession = origReadAcpSession;
+  });
+
+  test("calls readAcpSession to check if implementer session exists", async () => {
+    _semanticDeps.readAcpSession = mock(async () => null);
+    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent, undefined, "my-feature");
+
+    expect(_semanticDeps.readAcpSession).toHaveBeenCalled();
+  });
+
+  test("still calls agent.run() when implementer session is not found (fail-open)", async () => {
+    _semanticDeps.readAcpSession = mock(async () => null);
+    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent, undefined, "my-feature");
+
+    expect(agent.run).toHaveBeenCalled();
+    expect(result.success).toBe(true);
+  });
+
+  test("still calls agent.run() when implementer session exists (happy path)", async () => {
+    _semanticDeps.readAcpSession = mock(async () => "nax-abc12345-feature-us-002-implementer");
+    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+
+    const result = await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent, undefined, "my-feature");
+
+    expect(agent.run).toHaveBeenCalled();
+    expect(result.success).toBe(true);
+  });
+
+  test("checks sidecar with implementer role key for the story", async () => {
+    const readMock = mock(async () => null);
+    _semanticDeps.readAcpSession = readMock;
+    const agent = makeRunMockAgent(PASSING_LLM_RESPONSE);
+
+    await runSemanticReview("/tmp/wd", "abc123", STORY, DEFAULT_SEMANTIC_CONFIG, () => agent, undefined, "my-feature");
+
+    // readAcpSession should be called with workdir and featureName and a key containing storyId and "implementer"
+    expect(readMock).toHaveBeenCalled();
+    const callArgs = readMock.mock.calls[0] as unknown[];
+    expect(callArgs[0]).toBe("/tmp/wd");
+    expect(callArgs[1]).toBe("my-feature");
+    // The sidecar key should include storyId and implementer role
+    const sidecarKey = callArgs[2] as string;
+    expect(sidecarKey).toContain(STORY.id);
+    expect(sidecarKey.toLowerCase()).toContain("implementer");
   });
 });

@@ -8,7 +8,7 @@
  */
 
 import { spawn } from "bun";
-import { buildSessionName } from "../agents/acp/adapter";
+import { buildSessionName, readAcpSession } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import type { ModelTier } from "../config/schema-types";
@@ -37,6 +37,7 @@ export const _semanticDeps = {
   isGitRefValid,
   getMergeBase,
   createDebateSession: (opts: DebateSessionOptions): DebateSession => new DebateSession(opts),
+  readAcpSession,
 };
 
 /**
