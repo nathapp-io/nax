@@ -211,6 +211,23 @@ export function markStoryFailed(
   }
 }
 
+/**
+ * Reset all failed stories to pending so they are eligible for re-execution
+ * on a fresh run. Keeps `attempts` intact so the history is preserved.
+ *
+ * @returns true if any stories were reset (PRD is dirty and should be saved)
+ */
+export function resetFailedStoriesToPending(prd: PRD): boolean {
+  let modified = false;
+  for (const story of prd.userStories) {
+    if (story.status === "failed") {
+      story.status = "pending";
+      modified = true;
+    }
+  }
+  return modified;
+}
+
 /** Mark a story as skipped */
 export function markStorySkipped(prd: PRD, storyId: string): void {
   const story = prd.userStories.find((s) => s.id === storyId);

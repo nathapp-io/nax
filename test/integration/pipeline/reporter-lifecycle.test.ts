@@ -719,8 +719,11 @@ describe("Reporter Lifecycle Events (US-004)", () => {
     expect(await Bun.file(workingRunEnd).exists()).toBe(true);
   });
 
-  test("AC6: Events fire even when the run fails or is aborted (onRunEnd still fires)", async () => {
-    // Create PRD with a story that will be marked as failed
+  test("AC6: Events fire even when the run exits with incomplete stories (onRunEnd still fires)", async () => {
+    // Use a paused story — paused is a terminal state that is not reset on re-run,
+    // so the run exits without executing anything. This verifies hooks fire on non-completion.
+    // Note: "failed" stories are now reset to "pending" on re-run (they are retried), so
+    // paused is used here to simulate a run that exits with unfinished stories.
     const prd = {
       feature: "test-feature",
       userStories: [
@@ -729,7 +732,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
           title: "Story 1",
           description: "Test story 1",
           acceptanceCriteria: ["AC1: Should work"],
-          status: "failed" as const,
+          status: "paused" as const,
           dependencies: [],
         },
       ],
@@ -739,7 +742,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
 
     const hooks = await loadHooksConfig(workdir);
 
-    // Run should complete even though story is already failed
+    // Run should complete even though no story can be executed
     await run({
       prdPath,
       workdir,
@@ -751,7 +754,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
       skipPrecheck: true,
     });
 
-    // Verify onRunStart and onRunEnd were still called
+    // Verify onRunStart and onRunEnd were still called regardless of story outcome
     const runStartFile = path.join(tmpDir, "run-start.json");
     const runEndFile = path.join(tmpDir, "run-end.json");
 
@@ -759,7 +762,7 @@ describe("Reporter Lifecycle Events (US-004)", () => {
     expect(await Bun.file(runEndFile).exists()).toBe(true);
 
     const runEndData = JSON.parse(await Bun.file(runEndFile).text());
-    expect(runEndData.storySummary.failed).toBeGreaterThan(0);
+    expect(runEndData.storySummary.paused).toBeGreaterThan(0);
   });
 
   test("onStoryComplete receives correct status for paused stories", async () => {
