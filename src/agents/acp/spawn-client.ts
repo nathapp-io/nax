@@ -17,7 +17,7 @@ import { getSafeLogger } from "../../logger";
 import { typedSpawn } from "../../utils/bun-deps";
 import { buildAllowedEnv } from "../shared/env";
 import type { AcpClient, AcpSession, AcpSessionResponse } from "./adapter";
-import { parseAcpxJsonOutput } from "./parser";
+import { type AcpxParseState, createParseState, finalizeParseState, parseAcpxJsonLine } from "./parser";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -36,6 +36,43 @@ export const _spawnClientDeps = {
   /** Stream drain timeout after proc.exited — injectable so tests can use a short value. */
   streamDrainTimeoutMs: ACPX_STREAM_DRAIN_TIMEOUT_MS,
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Line-reader helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Read chunks from a stream, split on newlines, and feed each complete line
+ * into an AcpxParseState incrementally. Discards raw bytes immediately after
+ * parsing so only the extracted fields (strings + numbers) are held in memory.
+ *
+ * The caller races this promise against a drain timeout to handle the Bun bug
+ * where piped streams may not close after SIGTERM.
+ */
+async function readAndParseLines(stream: ReadableStream<Uint8Array>, state: AcpxParseState): Promise<void> {
+  const decoder = new TextDecoder();
+  let remainder = "";
+  const reader = stream.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      remainder += decoder.decode(value, { stream: true });
+      for (;;) {
+        const nl = remainder.indexOf("\n");
+        if (nl < 0) break;
+        const line = remainder.slice(0, nl);
+        remainder = remainder.slice(nl + 1);
+        if (line.trim()) parseAcpxJsonLine(line, state);
+      }
+    }
+    // Flush decoder and process any content after the last newline
+    remainder += decoder.decode();
+    if (remainder.trim()) parseAcpxJsonLine(remainder.trim(), state);
+  } finally {
+    reader.releaseLock();
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Env builder
@@ -134,19 +171,33 @@ class SpawnAcpSession implements AcpSession {
         });
       }
 
-      // Start reads before proc.exited to prevent pipe-buffer deadlock on large output.
-      // .catch(() => "") guards against stream errors (e.g. acpx crash mid-run).
-      const stdoutPromise = new Response(proc.stdout).text().catch(() => "");
+      // Line-reader: parse stdout incrementally as lines arrive instead of buffering
+      // the full NDJSON output. Only extracted fields (strings + numbers) are held in
+      // memory — raw bytes are discarded immediately after each line is processed.
+      // .catch(() => {}) guards against stream errors (e.g. acpx crash mid-run).
+      const parseState = createParseState();
+      const parsePromise = readAndParseLines(proc.stdout, parseState).catch(() => {});
       const stderrPromise = new Response(proc.stderr).text().catch(() => "");
 
       const exitCode = await proc.exited;
 
       // Bun bug: piped streams may not close after kill (e.g. cancelActivePrompt SIGTERM).
-      // Race drain against a 5 s deadline so prompt() always resolves instead of hanging.
-      const drained = Bun.sleep(_spawnClientDeps.streamDrainTimeoutMs).then(() => "");
-      const [stdout, stderr] = await Promise.all([
-        Promise.race([stdoutPromise, drained]),
-        Promise.race([stderrPromise, drained]),
+      // Race each stream against its own cancellable drain timer so prompt() always resolves
+      // instead of hanging. Timers are cancelled as soon as the stream resolves to avoid
+      // keeping uncancellable timers alive across multi-turn sessions.
+      const makeDrain = (ms: number): { promise: Promise<string>; cancel: () => void } => {
+        let id: ReturnType<typeof setTimeout> | undefined;
+        const promise = new Promise<string>((resolve) => {
+          id = setTimeout(() => resolve(""), ms);
+        });
+        // Promise executor runs synchronously — id is set before return.
+        return { promise, cancel: () => clearTimeout(id) };
+      };
+      const drainA = makeDrain(_spawnClientDeps.streamDrainTimeoutMs);
+      const drainB = makeDrain(_spawnClientDeps.streamDrainTimeoutMs);
+      const [, stderr] = await Promise.all([
+        Promise.race([parsePromise, drainA.promise]).finally(() => drainA.cancel()),
+        Promise.race([stderrPromise, drainB.promise]).finally(() => drainB.cancel()),
       ]);
 
       if (exitCode !== 0) {
@@ -162,7 +213,7 @@ class SpawnAcpSession implements AcpSession {
       }
 
       try {
-        const parsed = parseAcpxJsonOutput(stdout);
+        const parsed = finalizeParseState(parseState);
         return {
           messages: [{ role: "assistant", content: parsed.text || "" }],
           stopReason: parsed.stopReason ?? "end_turn",

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseAcpxJsonOutput } from "../../../../src/agents/acp/parser";
+import { createParseState, finalizeParseState, parseAcpxJsonLine, parseAcpxJsonOutput } from "../../../../src/agents/acp/parser";
 
 // Real acpx JSON-RPC envelope format (captured from live acpx v0.3.0)
 const REAL_ACPX_OUTPUT = [
@@ -72,5 +72,66 @@ describe("parseAcpxJsonOutput — legacy flat NDJSON format", () => {
     const result = parseAcpxJsonOutput(output);
     expect(result.tokenUsage?.input_tokens).toBe(100);
     expect(result.tokenUsage?.output_tokens).toBe(50);
+  });
+});
+
+describe("incremental API — createParseState / parseAcpxJsonLine / finalizeParseState", () => {
+  const LINES = [
+    '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"x","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hello"}}}}',
+    '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"x","update":{"sessionUpdate":"usage_update","used":24848,"size":200000,"cost":{"amount":0.15539,"currency":"USD"}}}}',
+    '{"jsonrpc":"2.0","id":2,"result":{"stopReason":"end_turn","usage":{"inputTokens":3,"outputTokens":4,"cachedReadTokens":0,"cachedWriteTokens":24844}}}',
+  ];
+
+  test("produces same result as batch parseAcpxJsonOutput", () => {
+    const state = createParseState();
+    for (const line of LINES) parseAcpxJsonLine(line, state);
+    const incremental = finalizeParseState(state);
+    const batch = parseAcpxJsonOutput(LINES.join("\n"));
+    expect(incremental).toEqual(batch);
+  });
+
+  test("state is empty before any lines are processed", () => {
+    const state = createParseState();
+    const result = finalizeParseState(state);
+    expect(result.text).toBe("");
+    expect(result.tokenUsage).toBeUndefined();
+    expect(result.exactCostUsd).toBeUndefined();
+    expect(result.stopReason).toBeUndefined();
+  });
+
+  test("text accumulates across multiple chunk lines", () => {
+    const state = createParseState();
+    parseAcpxJsonLine(LINES[0], state); // "hello"
+    parseAcpxJsonLine(
+      '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"x","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" world"}}}}',
+      state,
+    );
+    expect(finalizeParseState(state).text).toBe("hello world");
+  });
+
+  test("cost and token fields are captured independently", () => {
+    const state = createParseState();
+    parseAcpxJsonLine(LINES[1], state); // usage_update
+    expect(finalizeParseState(state).exactCostUsd).toBe(0.15539);
+    expect(finalizeParseState(state).tokenUsage).toBeUndefined(); // not yet — comes in result line
+
+    parseAcpxJsonLine(LINES[2], state); // result
+    const final = finalizeParseState(state);
+    expect(final.stopReason).toBe("end_turn");
+    expect(final.tokenUsage?.input_tokens).toBe(3);
+    expect(final.tokenUsage?.output_tokens).toBe(4);
+  });
+
+  test("invalid JSON line is ignored if text already accumulated", () => {
+    const state = createParseState();
+    parseAcpxJsonLine(LINES[0], state);
+    parseAcpxJsonLine("not-json", state);
+    expect(finalizeParseState(state).text).toBe("hello");
+  });
+
+  test("invalid JSON line used as fallback text when state is empty", () => {
+    const state = createParseState();
+    parseAcpxJsonLine("bare fallback text", state);
+    expect(finalizeParseState(state).text).toBe("bare fallback text");
   });
 });
