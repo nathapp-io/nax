@@ -19,7 +19,6 @@
  * - `escalate`                 — max attempts exhausted or agent unavailable
  */
 
-import { join } from "node:path";
 import { getAgent } from "../../agents";
 import { resolveModelForAgent } from "../../config";
 import { loadConfigForWorkdir } from "../../config/loader";

@@ -11,7 +11,6 @@
  * - `continue`: Routing determined, proceed to next stage
  */
 
-import { join } from "node:path";
 import { isGreenfieldStory } from "../../context/greenfield";
 import { getLogger } from "../../logger";
 import { savePRD } from "../../prd";

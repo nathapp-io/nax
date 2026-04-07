@@ -11,7 +11,6 @@
  */
 
 // RE-ARCH: rewrite
-import { join } from "node:path";
 import { getAgent } from "../../agents";
 import { checkSecurityReview, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
@@ -32,16 +31,9 @@ export const reviewStage: PipelineStage = {
 
     // MW-010: workdir is already resolved to the package directory at context creation
 
-    // Build model resolver for semantic review — returns the default agent adapter.
-    // The tier param from SemanticReviewConfig is informational (selects model cost tier)
-    // but AgentAdapter.complete() always uses the agent's own configured model.
+    // Build agent resolver for dialogue session creation
     const agentResolver = ctx.agentGetFn ?? getAgent;
     const agentName = ctx.rootConfig.autoMode?.defaultAgent;
-    const modelResolver = (_tier: string) => (agentName ? (agentResolver(agentName) ?? null) : null);
-
-    // #136: Consume retrySkipChecks once (cleared after use so subsequent retries re-evaluate)
-    const retrySkipChecks = ctx.retrySkipChecks;
-    ctx.retrySkipChecks = undefined;
 
     // AC3: When dialogue is enabled and a session already exists (retry loop), use reReview()
     if (dialogueEnabled && ctx.reviewerSession) {
@@ -143,26 +135,8 @@ export const reviewStage: PipelineStage = {
       // No semanticConfig or agent — fall through to orchestrator with session stored
     }
 
-    const result = await reviewOrchestrator.review(
-      ctx.config.review,
-      ctx.workdir,
-      ctx.config.execution,
-      ctx.plugins,
-      ctx.storyGitRef,
-      ctx.story.workdir, // MW-010: scope changed-file checks to package
-      ctx.config.quality?.commands, // fallback for review.commands
-      ctx.story.id,
-      {
-        id: ctx.story.id,
-        title: ctx.story.title,
-        description: ctx.story.description,
-        acceptanceCriteria: ctx.story.acceptanceCriteria,
-      },
-      modelResolver,
-      ctx.config,
-      retrySkipChecks,
-      ctx.prd.feature,
-    );
+    // reviewFromContext reads and clears ctx.retrySkipChecks internally (#136)
+    const result = await reviewOrchestrator.reviewFromContext(ctx);
 
     ctx.reviewResult = result.builtIn;
 

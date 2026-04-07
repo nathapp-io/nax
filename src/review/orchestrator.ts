@@ -13,6 +13,7 @@ import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import type { ModelTier } from "../config/schema-types";
 import { getSafeLogger } from "../logger";
+import type { PipelineContext } from "../pipeline/types";
 import type { PluginRegistry } from "../plugins";
 import { errorMessage } from "../utils/errors";
 import { runReview } from "./runner";
@@ -170,6 +171,46 @@ export class ReviewOrchestrator {
     }
 
     return { builtIn, success: true, pluginFailed: false };
+  }
+
+  /**
+   * Run review with a PipelineContext — reads all inputs from ctx.
+   * Preferred API for pipeline stages.
+   *
+   * Consumes ctx.retrySkipChecks once (clears it after reading) so
+   * subsequent retries re-evaluate all checks.
+   */
+  reviewFromContext(ctx: PipelineContext): Promise<OrchestratorReviewResult> {
+    // #136: Consume retrySkipChecks once — cleared so subsequent retries re-evaluate
+    const retrySkipChecks = ctx.retrySkipChecks;
+    ctx.retrySkipChecks = undefined;
+
+    const agentResolver = ctx.agentGetFn ?? undefined;
+    const agentName = ctx.rootConfig.autoMode?.defaultAgent;
+    const modelResolver = agentName
+      ? (_tier: string) => (agentResolver ? (agentResolver(agentName) ?? null) : null)
+      : undefined;
+
+    return this.review(
+      ctx.config.review,
+      ctx.workdir,
+      ctx.config.execution,
+      ctx.plugins,
+      ctx.storyGitRef,
+      ctx.story.workdir, // relative path for git diff scoping (unchanged)
+      ctx.config.quality?.commands,
+      ctx.story.id,
+      {
+        id: ctx.story.id,
+        title: ctx.story.title,
+        description: ctx.story.description,
+        acceptanceCriteria: ctx.story.acceptanceCriteria,
+      },
+      modelResolver,
+      ctx.config,
+      retrySkipChecks,
+      ctx.prd.feature,
+    );
   }
 }
 

@@ -9,7 +9,7 @@
  * - `escalate`: TIMEOUT or RUNTIME_CRASH (structural — rectify can't fix these)
  */
 
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import type { SmartTestRunnerConfig } from "../../config/types";
 import { getLogger } from "../../logger";
 import { logTestOutput } from "../../utils/log-test-output";

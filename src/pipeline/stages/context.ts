@@ -20,7 +20,6 @@
  * ```
  */
 
-import { join } from "node:path";
 import type { ContextElement } from "../../context/types";
 import { buildStoryContextFull } from "../../execution/helpers";
 import { getLogger } from "../../logger";
