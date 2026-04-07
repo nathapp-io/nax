@@ -61,12 +61,11 @@ export function buildRefinementPrompt(
   const strategySection = buildStrategySection(options);
   const refinedExample = buildRefinedExample(options?.testStrategy);
 
+  const codebaseSection = codebaseContext ? `CODEBASE CONTEXT:\n${codebaseContext}\n` : "";
+
   const core = `You are an acceptance criteria refinement assistant. Your task is to convert raw acceptance criteria into concrete, machine-verifiable assertions.
 
-CODEBASE CONTEXT:
-${codebaseContext}
-${strategySection}
-ACCEPTANCE CRITERIA TO REFINE:
+${codebaseSection}${strategySection}ACCEPTANCE CRITERIA TO REFINE:
 ${criteriaList}
 
 For each criterion, produce a refined version that is concrete and automatically testable where possible.
