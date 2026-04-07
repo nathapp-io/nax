@@ -95,6 +95,7 @@ export function getNextStory(prd: PRD, currentStoryId?: string | null, maxRetrie
     }
   }
 
+  const storyIds = new Set(prd.userStories.map((s) => s.id));
   const completedIds = new Set(
     prd.userStories.filter((s) => s.passes || s.status === "passed" || s.status === "skipped").map((s) => s.id),
   );
@@ -109,7 +110,8 @@ export function getNextStory(prd: PRD, currentStoryId?: string | null, maxRetrie
         s.status !== "failed" &&
         s.status !== "paused" &&
         s.status !== "decomposed" &&
-        s.dependencies.every((dep) => completedIds.has(dep)),
+        // A dep is fulfilled if it is not in this PRD (external/prior-phase) or it is completed.
+        s.dependencies.every((dep) => !storyIds.has(dep) || completedIds.has(dep)),
     ) ?? null
   );
 }

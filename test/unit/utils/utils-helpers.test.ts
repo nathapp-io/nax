@@ -157,6 +157,36 @@ describe("getAllReadyStories", () => {
     expect(ready.length).toBe(1);
     expect(ready[0].id).toBe("US-002");
   });
+
+  it("treats external dependencies (not in this PRD) as fulfilled", () => {
+    // VCS-P2-001 is from a prior phase and not in this PRD — US-001 should be ready
+    const prd = createMockPRD([mockStory("US-001", false, "pending", ["VCS-P2-001"])]);
+
+    const ready = getAllReadyStories(prd);
+    expect(ready.length).toBe(1);
+    expect(ready[0].id).toBe("US-001");
+  });
+
+  it("handles mix of external and internal dependencies — ready when internal dep is done", () => {
+    const prd = createMockPRD([
+      mockStory("US-001", true, "pending"), // internal dep, completed
+      mockStory("US-002", false, "pending", ["EXT-PHASE1-001", "US-001"]), // one external + one internal
+    ]);
+
+    const ready = getAllReadyStories(prd);
+    expect(ready.length).toBe(1);
+    expect(ready[0].id).toBe("US-002");
+  });
+
+  it("blocks story when internal dep is not yet done, even if external dep would pass", () => {
+    const prd = createMockPRD([
+      mockStory("US-001", false, "pending"), // internal dep, NOT done
+      mockStory("US-002", false, "pending", ["EXT-PHASE1-001", "US-001"]),
+    ]);
+
+    const ready = getAllReadyStories(prd);
+    expect(ready.map((s) => s.id)).toEqual(["US-001"]); // only US-001 is ready, not US-002
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
