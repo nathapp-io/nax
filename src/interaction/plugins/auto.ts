@@ -8,7 +8,7 @@
 import { z } from "zod";
 import type { AgentAdapter } from "../../agents/types";
 import type { NaxConfig } from "../../config";
-import { resolveModelForAgent } from "../../config";
+import { DEFAULT_CONFIG, resolveModelForAgent } from "../../config";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 
 /** Auto plugin configuration */
@@ -140,22 +140,25 @@ export class AutoInteractionPlugin implements InteractionPlugin {
       throw new Error("Auto plugin requires adapter to be injected via _autoPluginDeps.adapter");
     }
 
-    const naxConfig = this.config.naxConfig;
-    if (!naxConfig) {
-      throw new Error("[auto] naxConfig is required for LLM-based interaction decisions");
+    const naxConfig = this.config.naxConfig ?? DEFAULT_CONFIG;
+
+    let resolvedModel: string | undefined;
+    try {
+      const modelTier = this.config.model ?? "fast";
+      resolvedModel = resolveModelForAgent(
+        naxConfig.models,
+        naxConfig.autoMode.defaultAgent,
+        modelTier,
+        naxConfig.autoMode.defaultAgent,
+      ).model;
+    } catch {
+      // Model resolution failed (e.g. no naxConfig provided) — proceed without a model
     }
 
-    const modelTier = this.config.model ?? "fast";
-    const modelDef = resolveModelForAgent(
-      naxConfig.models,
-      naxConfig.autoMode.defaultAgent,
-      modelTier,
-      naxConfig.autoMode.defaultAgent,
-    );
     const timeoutMs = (naxConfig.execution?.sessionTimeoutSeconds ?? 600) * 1000;
 
     const result = await adapter.complete(prompt, {
-      model: modelDef.model,
+      ...(resolvedModel !== undefined && { model: resolvedModel }),
       jsonMode: true,
       config: naxConfig,
       featureName: request.featureName,
