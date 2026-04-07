@@ -16,8 +16,8 @@
  * an audit write failure can never interrupt an active run.
  */
 
-import { mkdirSync } from "node:fs";
-import { isAbsolute, join, sep } from "node:path";
+import { existsSync as fsExistsSync, mkdirSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { getSafeLogger } from "../../logger";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -52,6 +52,9 @@ export interface PromptAuditEntry {
 export const _promptAuditDeps = {
   mkdirSync(path: string): void {
     mkdirSync(path, { recursive: true });
+  },
+  existsSync(path: string): boolean {
+    return fsExistsSync(path);
   },
   async writeFile(path: string, content: string): Promise<void> {
     await Bun.write(path, content);
@@ -102,6 +105,32 @@ function buildAuditContent(entry: PromptAuditEntry, epochMs: number): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MAX_NAX_WALK_DEPTH = 10;
+
+/**
+ * Walk up from startDir to find the nearest ancestor that contains `.nax/config.json`.
+ * Returns that ancestor (the nax project root). Falls back to startDir if not found.
+ *
+ * This consolidates monorepo audit files at the project root even when individual
+ * stories run with a package subdir as their workdir (e.g. apps/api/).
+ */
+function findNaxProjectRoot(startDir: string): string {
+  let dir = resolve(startDir);
+  for (let depth = 0; depth < MAX_NAX_WALK_DEPTH; depth++) {
+    if (_promptAuditDeps.existsSync(join(dir, ".nax", "config.json"))) {
+      return dir;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break; // filesystem root reached
+    dir = parent;
+  }
+  return startDir; // fallback: use workdir as-is
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -112,17 +141,22 @@ function buildAuditContent(entry: PromptAuditEntry, epochMs: number): string {
 export async function writePromptAudit(entry: PromptAuditEntry): Promise<void> {
   try {
     // Resolve audit base directory.
-    // When running in a parallel worktree (path contains /.nax-wt/), always write to
-    // the main project root so audit files are consolidated in one place rather than
-    // scattered across worktree directories.
-    // Worktrees are always at <projectRoot>/.nax-wt/<storyId>/ (WorktreeManager convention).
+    // Two normalisations are applied when auditDir is absent:
+    //   1. Worktree strip: paths containing /.nax-wt/<storyId>/ are trimmed to the
+    //      project root so parallel-worktree audit files are not written to the
+    //      ephemeral worktree directory (WorktreeManager convention).
+    //   2. Monorepo walk-up: after stripping, walk up from the effective workdir to
+    //      the nearest ancestor containing .nax/config.json. This ensures monorepo
+    //      per-package stories (e.g. workdir=apps/api/) write to the project root
+    //      instead of the package subdirectory.
     let baseDir: string;
     if (entry.auditDir) {
       baseDir = isAbsolute(entry.auditDir) ? entry.auditDir : join(entry.workdir, entry.auditDir);
     } else {
       const wtMarker = `${sep}.nax-wt${sep}`;
       const wtIdx = entry.workdir.indexOf(wtMarker);
-      const projectRoot = wtIdx !== -1 ? entry.workdir.substring(0, wtIdx) : entry.workdir;
+      const strippedWorkdir = wtIdx !== -1 ? entry.workdir.substring(0, wtIdx) : entry.workdir;
+      const projectRoot = findNaxProjectRoot(strippedWorkdir);
       baseDir = join(projectRoot, ".nax", "prompt-audit");
     }
 
