@@ -70,18 +70,12 @@ function makeCtx(
 const originalGetAgent = _executionDeps.getAgent;
 const originalValidateAgentForTier = _executionDeps.validateAgentForTier;
 const originalDetectMergeConflict = _executionDeps.detectMergeConflict;
-const originalResolveStoryWorkdir = _executionDeps.resolveStoryWorkdir;
-const originalAutoCommitIfDirty = _executionDeps.autoCommitIfDirty;
 
 afterEach(() => {
   mock.restore();
   _executionDeps.getAgent = originalGetAgent;
   _executionDeps.validateAgentForTier = originalValidateAgentForTier;
   _executionDeps.detectMergeConflict = originalDetectMergeConflict;
-  _executionDeps.resolveStoryWorkdir = originalResolveStoryWorkdir;
-  if (_executionDeps.autoCommitIfDirty) {
-    _executionDeps.autoCommitIfDirty = originalAutoCommitIfDirty;
-  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

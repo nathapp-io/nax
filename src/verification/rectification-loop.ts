@@ -18,7 +18,7 @@ import type { DebateStageConfig, Debater } from "../debate/types";
 import { escalateTier as _escalateTier } from "../execution/escalation/escalation";
 import { parseBunTestOutput } from "../execution/test-output-parser";
 import { getSafeLogger } from "../logger";
-import type { AgentGetFn } from "../pipeline/types";
+import type { AgentGetFn, PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
 import { formatFailureSummary } from "./parser";
@@ -411,5 +411,26 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       return false;
     }
     throw error;
+  });
+}
+
+/**
+ * Run the rectification loop from a PipelineContext.
+ * Stage-specific params (testCommand, testOutput, promptPrefix) must still be provided.
+ */
+export function runRectificationLoopFromCtx(
+  ctx: PipelineContext,
+  opts: { testCommand: string; testOutput: string; promptPrefix?: string },
+): Promise<boolean> {
+  return runRectificationLoop({
+    config: ctx.config,
+    workdir: ctx.workdir,
+    story: ctx.story,
+    testCommand: opts.testCommand,
+    timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
+    testOutput: opts.testOutput,
+    promptPrefix: opts.promptPrefix,
+    featureName: ctx.prd.feature,
+    agentGetFn: ctx.agentGetFn,
   });
 }

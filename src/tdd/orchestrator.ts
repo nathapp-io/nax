@@ -14,6 +14,7 @@ import { isGreenfieldStory } from "../context/greenfield";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import type { InteractionChain } from "../interaction/chain";
 import { getLogger } from "../logger";
+import type { PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef } from "../utils/git";
@@ -415,4 +416,27 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     lite,
     fullSuiteGatePassed,
   };
+}
+
+/**
+ * Run the three-session TDD pipeline from a PipelineContext.
+ * Stage-specific params (agent, dryRun, lite) must still be provided.
+ */
+export function runThreeSessionTddFromCtx(
+  ctx: PipelineContext,
+  opts: { agent: AgentAdapter; dryRun?: boolean; lite?: boolean },
+): Promise<ThreeSessionTddResult> {
+  return runThreeSessionTdd({
+    agent: opts.agent,
+    story: ctx.story,
+    config: ctx.config,
+    workdir: ctx.workdir,
+    modelTier: ctx.routing.modelTier,
+    featureName: ctx.prd.feature,
+    contextMarkdown: ctx.contextMarkdown,
+    constitution: ctx.constitution?.content,
+    dryRun: opts.dryRun ?? false,
+    lite: opts.lite ?? false,
+    interactionChain: ctx.interaction,
+  });
 }

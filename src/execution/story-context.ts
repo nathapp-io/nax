@@ -9,6 +9,7 @@ import { buildContext, formatContextAsMarkdown } from "../context";
 import type { BuiltContext, ContextBudget, StoryContext } from "../context";
 import type { HookContext } from "../hooks";
 import { getLogger } from "../logger";
+import type { PipelineContext } from "../pipeline/types";
 import type { PRD, UserStory } from "../prd";
 
 /** Safely get logger instance, returns null if not initialized */
@@ -195,6 +196,17 @@ export async function buildStoryContextFull(
     });
     return undefined;
   }
+}
+
+/**
+ * Build story context from a PipelineContext.
+ * Uses ctx.workdir as the package workdir when the story has a sub-directory.
+ */
+export function buildStoryContextFullFromCtx(
+  ctx: PipelineContext,
+): Promise<{ markdown: string; builtContext: BuiltContext } | undefined> {
+  const packageWorkdir = ctx.story.workdir ? ctx.workdir : undefined;
+  return buildStoryContextFull(ctx.prd, ctx.story, ctx.config, packageWorkdir);
 }
 
 /**

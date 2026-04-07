@@ -46,14 +46,12 @@ describe("resolveStoryWorkdir (MW-002)", () => {
 const originalGetAgent = _executionDeps.getAgent;
 const originalValidateAgentForTier = _executionDeps.validateAgentForTier;
 const originalDetectMergeConflict = _executionDeps.detectMergeConflict;
-const originalAutoCommitIfDirty = _executionDeps.resolveStoryWorkdir;
 
 afterEach(() => {
   mock.restore();
   _executionDeps.getAgent = originalGetAgent;
   _executionDeps.validateAgentForTier = originalValidateAgentForTier;
   _executionDeps.detectMergeConflict = originalDetectMergeConflict;
-  _executionDeps.resolveStoryWorkdir = originalAutoCommitIfDirty;
 });
 
 function makeStory(overrides: Partial<UserStory> = {}): UserStory {

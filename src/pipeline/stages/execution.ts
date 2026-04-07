@@ -40,7 +40,7 @@ import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import type { FailureCategory } from "../../tdd";
-import { runThreeSessionTdd } from "../../tdd";
+import { runThreeSessionTddFromCtx } from "../../tdd";
 import { autoCommitIfDirty, detectMergeConflict } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -153,19 +153,7 @@ export const executionStage: PipelineStage = {
         lite: isLiteMode,
       });
 
-      const tddResult = await runThreeSessionTdd({
-        agent,
-        story: ctx.story,
-        config: ctx.config,
-        workdir: ctx.workdir,
-        modelTier: ctx.routing.modelTier,
-        featureName: ctx.prd.feature,
-        contextMarkdown: ctx.contextMarkdown,
-        constitution: ctx.constitution?.content,
-        dryRun: false,
-        lite: isLiteMode,
-        interactionChain: ctx.interaction,
-      });
+      const tddResult = await runThreeSessionTddFromCtx(ctx, { agent, dryRun: false, lite: isLiteMode });
 
       ctx.agentResult = {
         success: tddResult.success,
@@ -348,5 +336,4 @@ export const _executionDeps = {
   checkMergeConflict,
   isAmbiguousOutput,
   checkStoryAmbiguity,
-  resolveStoryWorkdir,
 };

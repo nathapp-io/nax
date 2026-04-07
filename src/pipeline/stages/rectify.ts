@@ -60,15 +60,7 @@ export const rectifyStage: PipelineStage = {
     });
 
     const testCommand = ctx.config.review?.commands?.test ?? ctx.config.quality.commands.test ?? "bun test";
-    const fixed = await _rectifyDeps.runRectificationLoop({
-      config: ctx.config,
-      workdir: ctx.workdir,
-      story: ctx.story,
-      testCommand,
-      timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
-      testOutput,
-      agentGetFn: ctx.agentGetFn,
-    });
+    const fixed = await _rectifyDeps.runRectificationLoop(ctx, { testCommand, testOutput });
 
     pipelineEventBus.emit({
       type: "rectify:completed",
@@ -95,5 +87,5 @@ export const rectifyStage: PipelineStage = {
 /**
  * Injectable deps for testing.
  */
-import { runRectificationLoop } from "../../verification/rectification-loop";
-export const _rectifyDeps = { runRectificationLoop };
+import { runRectificationLoopFromCtx } from "../../verification/rectification-loop";
+export const _rectifyDeps = { runRectificationLoop: runRectificationLoopFromCtx };
