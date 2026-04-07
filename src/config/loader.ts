@@ -182,21 +182,43 @@ export async function loadConfig(startDir?: string, cliOverrides?: Record<string
 }
 
 /**
+ * In-process cache: rootConfigPath → root NaxConfig promise.
+ * Avoids re-reading and re-parsing the root config for each package in a monorepo run.
+ * Keyed by the resolved absolute path of the root .nax/config.json.
+ * @internal
+ */
+const _rootConfigCache = new Map<string, Promise<NaxConfig>>();
+
+/** Clear the root config cache (for testing). @internal */
+export function _clearRootConfigCache(): void {
+  _rootConfigCache.clear();
+}
+
+/**
  * Load config for a specific working directory (monorepo package).
  *
  * Resolution order:
- * 1. Load root nax/config.json via loadConfig()
- * 2. If packageDir is set, check <repoRoot>/<packageDir>/nax/config.json
- * 3. If package config exists → merge quality.commands over root
- * 4. Return merged config
+ * 1. Load (and cache) root nax/config.json via loadConfig()
+ * 2. If packageDir is set, check <repoRoot>/.nax/mono/<packageDir>/config.json
+ * 3. If package config exists → merge whitelisted fields over root
+ * 4. If package config specifies a profile, apply it on top
+ * 5. Return merged config
  *
  * @param rootConfigPath - Absolute path to the root .nax/config.json
  * @param packageDir - Package directory relative to repo root (e.g. "packages/api")
  */
 export async function loadConfigForWorkdir(rootConfigPath: string, packageDir?: string): Promise<NaxConfig> {
   const logger = getLogger();
-  const rootNaxDir = dirname(rootConfigPath);
-  const rootConfig = await loadConfig(rootNaxDir);
+  const resolvedRootConfigPath = resolve(rootConfigPath);
+  const rootNaxDir = dirname(resolvedRootConfigPath);
+
+  // Cache root config load — avoids repeated I/O for each package in a monorepo run
+  let rootConfigPromise = _rootConfigCache.get(resolvedRootConfigPath);
+  if (!rootConfigPromise) {
+    rootConfigPromise = loadConfig(rootNaxDir);
+    _rootConfigCache.set(resolvedRootConfigPath, rootConfigPromise);
+  }
+  const rootConfig = await rootConfigPromise;
 
   if (!packageDir) {
     logger.debug("config", "No packageDir — using root config");
@@ -206,7 +228,7 @@ export async function loadConfigForWorkdir(rootConfigPath: string, packageDir?: 
   const repoRoot = dirname(rootNaxDir);
   const packageConfigPath = join(repoRoot, PROJECT_NAX_DIR, "mono", packageDir, "config.json");
 
-  const packageOverride = await loadJsonFile<Partial<NaxConfig>>(packageConfigPath, "config");
+  const packageOverride = await loadJsonFile<Partial<NaxConfig> & { profile?: string }>(packageConfigPath, "config");
 
   if (!packageOverride) {
     logger.info("config", "Per-package config not found — falling back to root config", {
@@ -217,5 +239,25 @@ export async function loadConfigForWorkdir(rootConfigPath: string, packageDir?: 
   }
 
   logger.debug("config", "Per-package config loaded", { packageConfigPath, packageDir });
-  return mergePackageConfig(rootConfig, packageOverride);
+  const { profile: packageProfile, ...packageFields } = packageOverride;
+  let merged = mergePackageConfig(rootConfig, packageFields);
+
+  // Per-package profile: apply profile overlay on top of merged config
+  if (packageProfile && packageProfile !== "default") {
+    const packageRoot = join(repoRoot, packageDir);
+    const profileData = await loadProfile(packageProfile, packageRoot);
+    const rawMerged = deepMergeConfig(merged as unknown as Record<string, unknown>, profileData);
+    rawMerged.profile = packageProfile;
+    const result = NaxConfigSchema.safeParse(rawMerged);
+    if (result.success) {
+      merged = result.data as NaxConfig;
+    } else {
+      logger.warn("config", "Per-package profile failed validation — using merged config without profile", {
+        packageDir,
+        packageProfile,
+      });
+    }
+  }
+
+  return merged;
 }

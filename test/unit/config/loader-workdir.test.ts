@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfigForWorkdir } from "../../../src/config/loader";
+import { _clearRootConfigCache, loadConfigForWorkdir } from "../../../src/config/loader";
 import { getLogger } from "../../../src/logger";
 import { makeTempDir } from "../../helpers/temp";
 
@@ -18,6 +18,7 @@ describe("loadConfigForWorkdir", () => {
     mkdirSync(join(tempDir, ".nax"), { recursive: true });
     originalGlobalDir = process.env.NAX_GLOBAL_CONFIG_DIR;
     process.env.NAX_GLOBAL_CONFIG_DIR = join(tempDir, ".global-nax");
+    _clearRootConfigCache();
   });
 
   afterEach(() => {
@@ -150,5 +151,87 @@ describe("loadConfigForWorkdir", () => {
     const result = await loadConfigForWorkdir(rootConfigPath, "packages/web");
 
     expect(result.quality.commands.test).toBe("bun test");
+  });
+
+  test("caches root config: second call with same path skips I/O (same promise)", async () => {
+    writeFileSync(
+      join(tempDir, ".nax", "config.json"),
+      JSON.stringify({ quality: { commands: { test: "bun test" } } }),
+    );
+    mkdirSync(join(tempDir, ".nax", "mono", "packages", "api"), { recursive: true });
+    writeFileSync(
+      join(tempDir, ".nax", "mono", "packages", "api", "config.json"),
+      JSON.stringify({ quality: { commands: { test: "npm test" } } }),
+    );
+    mkdirSync(join(tempDir, ".nax", "mono", "packages", "web"), { recursive: true });
+    writeFileSync(
+      join(tempDir, ".nax", "mono", "packages", "web", "config.json"),
+      JSON.stringify({ quality: { commands: { test: "yarn test" } } }),
+    );
+
+    const rootConfigPath = join(tempDir, ".nax", "config.json");
+    // Two different packages load config with the same root path
+    const [api, web] = await Promise.all([
+      loadConfigForWorkdir(rootConfigPath, "packages/api"),
+      loadConfigForWorkdir(rootConfigPath, "packages/web"),
+    ]);
+
+    expect(api.quality.commands.test).toBe("npm test");
+    expect(web.quality.commands.test).toBe("yarn test");
+  });
+
+  test("caches root config: clearing cache allows fresh load after config file changes", async () => {
+    writeFileSync(
+      join(tempDir, ".nax", "config.json"),
+      JSON.stringify({ quality: { commands: { test: "bun test v1" } } }),
+    );
+
+    const rootConfigPath = join(tempDir, ".nax", "config.json");
+    const first = await loadConfigForWorkdir(rootConfigPath);
+    expect(first.quality.commands.test).toBe("bun test v1");
+
+    // Simulate config file change + cache clear
+    writeFileSync(
+      join(tempDir, ".nax", "config.json"),
+      JSON.stringify({ quality: { commands: { test: "bun test v2" } } }),
+    );
+    _clearRootConfigCache();
+
+    const second = await loadConfigForWorkdir(rootConfigPath);
+    expect(second.quality.commands.test).toBe("bun test v2");
+  });
+
+  test("per-package agent.protocol override is applied", async () => {
+    writeFileSync(
+      join(tempDir, ".nax", "config.json"),
+      JSON.stringify({ agent: { protocol: "acp" } }),
+    );
+    mkdirSync(join(tempDir, ".nax", "mono", "packages", "legacy"), { recursive: true });
+    writeFileSync(
+      join(tempDir, ".nax", "mono", "packages", "legacy", "config.json"),
+      JSON.stringify({ agent: { protocol: "cli" } }),
+    );
+
+    const rootConfigPath = join(tempDir, ".nax", "config.json");
+    const result = await loadConfigForWorkdir(rootConfigPath, "packages/legacy");
+
+    expect(result.agent?.protocol).toBe("cli");
+  });
+
+  test("per-package routing.strategy override is applied", async () => {
+    writeFileSync(
+      join(tempDir, ".nax", "config.json"),
+      JSON.stringify({ routing: { strategy: "keyword" } }),
+    );
+    mkdirSync(join(tempDir, ".nax", "mono", "packages", "ml"), { recursive: true });
+    writeFileSync(
+      join(tempDir, ".nax", "mono", "packages", "ml", "config.json"),
+      JSON.stringify({ routing: { strategy: "llm" } }),
+    );
+
+    const rootConfigPath = join(tempDir, ".nax", "config.json");
+    const result = await loadConfigForWorkdir(rootConfigPath, "packages/ml");
+
+    expect(result.routing?.strategy).toBe("llm");
   });
 });
