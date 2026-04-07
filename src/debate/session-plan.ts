@@ -149,14 +149,17 @@ export async function runPlan(
 
   // Multiple proposals — resolve to pick the winning PRD
   const proposalOutputs = successful.map((p) => p.output);
-  // timeoutMs not tracked per-plan — use 0 as sentinel for resolver calls
+  // Pass the full outer session timeout so the resolver gets the same budget
+  // as the debate session itself. Using 0 bypassed the outer timeout entirely,
+  // causing the inner acpx call to use a 120s default and get killed.
+  const resolverTimeoutMs = (ctx.stageConfig.timeoutSeconds ?? 600) * 1000;
   const outcome: ResolveOutcome = await resolveOutcome(
     proposalOutputs,
     [],
     ctx.stageConfig,
     ctx.config,
     ctx.storyId,
-    0,
+    resolverTimeoutMs,
   );
 
   // Winning output: synthesis resolver returns combined PRD via synthesisResolver output;

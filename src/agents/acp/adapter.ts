@@ -899,9 +899,7 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async complete(prompt: string, _options?: CompleteOptions): Promise<CompleteResult> {
-    // Use default when timeoutMs is undefined; 0 is used as sentinel (meaning "no timeout override")
-    // but must be coerced to the actual default so setTimeout(fn, 0) doesn't fire immediately.
-    const timeoutMs = _options?.timeoutMs || 120_000;
+    const timeoutMs = _options?.timeoutMs ?? 120_000;
     const permissionMode = resolvePermissions(_options?.config, "complete").mode;
     const workdir = _options?.workdir;
     const config = _options?.config;
