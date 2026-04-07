@@ -218,6 +218,46 @@ describe("writePromptAudit() — directory resolution", () => {
     expect(capturedDir).toBe(join(WORKDIR, "my-audit", "my-feature"));
   });
 
+  test("worktree workdir — strips /.nax-wt/<story>/ and writes to project root", async () => {
+    const projectRoot = "/project/my-app";
+    const worktreeWorkdir = `${projectRoot}/.nax-wt/vcs-p2-001`;
+    let capturedDir = "";
+    _promptAuditDeps.mkdirSync = mock((path: string) => {
+      capturedDir = path;
+    });
+
+    await writePromptAudit(makeEntry({ workdir: worktreeWorkdir, auditDir: undefined, featureName: "my-feature" }));
+
+    expect(capturedDir).toBe(join(projectRoot, ".nax", "prompt-audit", "my-feature"));
+  });
+
+  test("worktree workdir with no auditDir — falls back to project root not worktree", async () => {
+    const projectRoot = "/home/user/project";
+    const worktreeWorkdir = `${projectRoot}/.nax-wt/feat-story-id`;
+    let capturedDir = "";
+    _promptAuditDeps.mkdirSync = mock((path: string) => {
+      capturedDir = path;
+    });
+
+    await writePromptAudit(makeEntry({ workdir: worktreeWorkdir, auditDir: undefined, featureName: undefined }));
+
+    expect(capturedDir).toBe(join(projectRoot, ".nax", "prompt-audit", "_unknown"));
+  });
+
+  test("absolute auditDir in worktree context — still uses the explicit absolute dir", async () => {
+    const worktreeWorkdir = "/project/.nax-wt/some-story";
+    let capturedDir = "";
+    _promptAuditDeps.mkdirSync = mock((path: string) => {
+      capturedDir = path;
+    });
+
+    await writePromptAudit(
+      makeEntry({ workdir: worktreeWorkdir, auditDir: "/custom/audit", featureName: "my-feature" }),
+    );
+
+    expect(capturedDir).toBe("/custom/audit/my-feature");
+  });
+
   test("writeFile is called with path inside resolved dir", async () => {
     let capturedPath = "";
     _promptAuditDeps.mkdirSync = mock(() => {});

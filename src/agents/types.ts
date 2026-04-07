@@ -154,6 +154,11 @@ export interface CompleteOptions {
    * instead of using the default. Has no effect when `model` is explicitly set.
    */
   modelTier?: ModelTier;
+  /**
+   * Pipeline stage label for prompt audit logs.
+   * Defaults to "complete" when not provided.
+   */
+  pipelineStage?: import("../config/permissions").PipelineStage;
 }
 
 /**

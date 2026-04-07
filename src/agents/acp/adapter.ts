@@ -165,12 +165,6 @@ function resolveRegistryEntry(agentName: string): AgentRegistryEntry {
   return AGENT_REGISTRY[agentName] ?? DEFAULT_ENTRY;
 }
 
-function isRateLimitError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const msg = err.message.toLowerCase();
-  return msg.includes("rate limit") || msg.includes("rate_limit") || msg.includes("429");
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Session naming
 // ─────────────────────────────────────────────────────────────────────────────
@@ -534,7 +528,10 @@ export class AcpAgentAdapter implements AgentAdapter {
   readonly capabilities: AgentCapabilities;
   private _unavailableAgents: Set<string>;
 
-  constructor(agentName: string) {
+  constructor(
+    agentName: string,
+    private readonly naxConfig?: import("../../config").NaxConfig,
+  ) {
     const entry = resolveRegistryEntry(agentName);
     this.name = agentName;
     this.displayName = entry.displayName;
@@ -759,12 +756,13 @@ export class AcpAgentAdapter implements AgentAdapter {
         getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
 
         // Audit: fire-and-forget prompt write — never blocks or throws
-        if (options.config?.agent?.promptAudit?.enabled) {
+        const _runAuditConfig = options.config ?? this.naxConfig;
+        if (_runAuditConfig?.agent?.promptAudit?.enabled) {
           void writePromptAudit({
             prompt: currentPrompt,
             sessionName,
             workdir: options.workdir,
-            auditDir: options.config.agent.promptAudit.dir,
+            auditDir: _runAuditConfig.agent.promptAudit.dir,
             storyId: options.storyId,
             featureName: options.featureName,
             pipelineStage: options.pipelineStage ?? "run",
@@ -943,15 +941,16 @@ export class AcpAgentAdapter implements AgentAdapter {
         session = await client.createSession({ agentName, permissionMode, sessionName: completeSessionName });
 
         // Audit: fire-and-forget prompt write — never blocks or throws
-        if (config?.agent?.promptAudit?.enabled) {
+        const _completeAuditConfig = config ?? this.naxConfig;
+        if (_completeAuditConfig?.agent?.promptAudit?.enabled) {
           void writePromptAudit({
             prompt,
             sessionName: completeSessionName,
             workdir: workdir ?? process.cwd(),
-            auditDir: config.agent.promptAudit.dir,
+            auditDir: _completeAuditConfig.agent.promptAudit.dir,
             storyId: _options?.storyId,
             featureName: _options?.featureName,
-            pipelineStage: "complete",
+            pipelineStage: _options?.pipelineStage ?? "complete",
             callType: "complete",
           });
         }

@@ -87,7 +87,7 @@ export function createAgentRegistry(config: NaxConfig): AgentRegistry {
       const known = ALL_AGENTS.find((a) => a.name === name);
       if (!known) return undefined;
       if (!acpCache.has(name)) {
-        acpCache.set(name, new AcpAgentAdapter(name));
+        acpCache.set(name, new AcpAgentAdapter(name, config));
         logger?.debug("agents", `Created AcpAgentAdapter for ${name}`, { name, protocol });
       }
       return acpCache.get(name);
@@ -104,7 +104,7 @@ export function createAgentRegistry(config: NaxConfig): AgentRegistry {
       protocol === "acp"
         ? ALL_AGENTS.map((a) => {
             if (!acpCache.has(a.name)) {
-              acpCache.set(a.name, new AcpAgentAdapter(a.name));
+              acpCache.set(a.name, new AcpAgentAdapter(a.name, config));
             }
             return acpCache.get(a.name) as AcpAgentAdapter;
           })
@@ -118,7 +118,7 @@ export function createAgentRegistry(config: NaxConfig): AgentRegistry {
       protocol === "acp"
         ? ALL_AGENTS.map((a) => {
             if (!acpCache.has(a.name)) {
-              acpCache.set(a.name, new AcpAgentAdapter(a.name));
+              acpCache.set(a.name, new AcpAgentAdapter(a.name, config));
             }
             return acpCache.get(a.name) as AcpAgentAdapter;
           })
