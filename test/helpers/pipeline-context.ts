@@ -69,6 +69,7 @@ export function makeTestContext(overrides: Partial<PipelineContext> = {}): Pipel
     story,
     stories: [story],
     routing: DEFAULT_TEST_ROUTING,
+    projectDir: "/tmp/nax-test",
     workdir: "/tmp/nax-test",
     hooks: { hooks: {} },
     ...overrides,

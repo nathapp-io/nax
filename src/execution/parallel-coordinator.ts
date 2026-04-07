@@ -115,6 +115,7 @@ export async function executeParallel(
       config,
       effectiveConfig: config,
       prd: currentPrd,
+      projectDir: projectRoot,
       featureDir,
       hooks,
       plugins,

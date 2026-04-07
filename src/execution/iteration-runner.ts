@@ -95,6 +95,7 @@ export async function runIteration(
     story,
     stories: storiesToExecute,
     routing,
+    projectDir: ctx.workdir,
     workdir: ctx.workdir,
     prdPath: ctx.prdPath,
     featureDir: ctx.featureDir,

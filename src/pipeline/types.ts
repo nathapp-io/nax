@@ -75,6 +75,12 @@ export interface PipelineContext {
   stories: UserStory[];
   /** Routing result from complexity classification */
   routing: RoutingResult;
+  /**
+   * Absolute path to the repository root where `.nax/` lives.
+   * Never changes — stable in worktree mode (where workdir points to .nax-wt/<id>/)
+   * and in monorepo mode (where workdir may be joined with story.workdir).
+   */
+  projectDir: string;
   /** Working directory (project root) */
   workdir: string;
   /** Absolute path to the prd.json file (used by routing stage to persist initial classification) */

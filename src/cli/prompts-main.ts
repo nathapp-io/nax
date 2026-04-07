@@ -111,6 +111,7 @@ export async function promptsCommand(options: PromptsCommandOptions): Promise<st
         testStrategy: "test-after",
         reasoning: "Placeholder routing",
       }, // Will be set by routingStage
+      projectDir: workdir,
       workdir,
       featureDir,
       hooks: { hooks: {} }, // Empty hooks config

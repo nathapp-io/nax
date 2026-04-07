@@ -125,6 +125,7 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
       prd,
       story,
       stories: [story],
+      projectDir: workdir,
       workdir: worktreePath,
       featureDir: undefined,
       hooks,

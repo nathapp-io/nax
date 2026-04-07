@@ -47,6 +47,7 @@ export async function executeStoryInWorktree(
       effectiveConfig: context.effectiveConfig ?? context.config,
       story,
       stories: [story],
+      projectDir: context.projectDir,
       workdir: worktreePath,
       routing,
       storyGitRef: storyGitRef ?? undefined,

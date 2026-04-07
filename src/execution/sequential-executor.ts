@@ -92,6 +92,7 @@ export async function executeSequential(
       config: ctx.config,
       effectiveConfig: ctx.config,
       prd,
+      projectDir: ctx.workdir,
       workdir: ctx.workdir,
       featureDir: ctx.featureDir,
       story: prd.userStories[0],

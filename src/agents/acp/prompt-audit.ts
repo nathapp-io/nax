@@ -31,6 +31,11 @@ export interface PromptAuditEntry {
   sessionName: string;
   /** Working directory — used to resolve the default audit dir. */
   workdir: string;
+  /**
+   * Repository root where `.nax/` lives. When provided, skips the
+   * parent-directory walk in findNaxProjectRoot(). Carries PipelineContext.projectDir.
+   */
+  projectDir?: string;
   /** Override for the audit directory. Absolute or relative to workdir. */
   auditDir?: string;
   /** Story ID for the metadata header. */
@@ -152,7 +157,11 @@ export async function writePromptAudit(entry: PromptAuditEntry): Promise<void> {
     let baseDir: string;
     if (entry.auditDir) {
       baseDir = isAbsolute(entry.auditDir) ? entry.auditDir : join(entry.workdir, entry.auditDir);
+    } else if (entry.projectDir) {
+      // Fast path: PipelineContext.projectDir is the stable repo root — no walk needed.
+      baseDir = join(entry.projectDir, ".nax", "prompt-audit");
     } else {
+      // Fallback: strip worktree path then walk up to find .nax/config.json.
       const wtMarker = `${sep}.nax-wt${sep}`;
       const wtIdx = entry.workdir.indexOf(wtMarker);
       const strippedWorkdir = wtIdx !== -1 ? entry.workdir.substring(0, wtIdx) : entry.workdir;
