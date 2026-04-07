@@ -246,6 +246,79 @@ describe("acceptance-setup: calls refinement and generation", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Decomposed story exclusion (P5 fix)
+// ---------------------------------------------------------------------------
+
+describe("acceptance-setup: decomposed story exclusion", () => {
+  function makeDecomposedCtx() {
+    const parentStory = {
+      ...makeStory("US-PARENT", ["parent AC-1", "child AC-1", "child AC-2"]),
+      status: "decomposed" as const,
+    } as unknown as ReturnType<typeof makeStory>;
+    const childA = makeStory("US-CHILD-A", ["child AC-1"]);
+    const childB = makeStory("US-CHILD-B", ["child AC-2"]);
+    return makeCtx({ prd: makePrd([parentStory, childA, childB]), stories: [parentStory, childA, childB] });
+  }
+
+  beforeEach(() => {
+    _acceptanceSetupDeps.fileExists = async () => false;
+    _acceptanceSetupDeps.readMeta = async () => null;
+    _acceptanceSetupDeps.writeFile = async () => {};
+    _acceptanceSetupDeps.runTest = async () => ({ exitCode: 1, output: "1 fail" });
+  });
+
+  test("decomposed story is not passed to refine", async () => {
+    const refinedStoryIds: string[] = [];
+    _acceptanceSetupDeps.refine = async (criteria, context) => {
+      refinedStoryIds.push(context.storyId);
+      return criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
+    };
+    _acceptanceSetupDeps.generate = async () => ({ testCode: 'test("x", () => {})', criteria: [] });
+
+    await acceptanceSetupStage.execute(makeDecomposedCtx());
+
+    expect(refinedStoryIds).not.toContain("US-PARENT");
+    expect(refinedStoryIds).toContain("US-CHILD-A");
+    expect(refinedStoryIds).toContain("US-CHILD-B");
+  });
+
+  test("decomposed story ACs are excluded from the fingerprint", async () => {
+    const capturedCriteria: string[] = [];
+    _acceptanceSetupDeps.refine = async (criteria, context) =>
+      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
+    _acceptanceSetupDeps.generate = async () => ({ testCode: 'test("x", () => {})', criteria: [] });
+    _acceptanceSetupDeps.writeMeta = async (_path, meta) => {
+      capturedCriteria.push(...Array(meta.acCount).fill("x"));
+    };
+
+    await acceptanceSetupStage.execute(makeDecomposedCtx());
+
+    // Only child ACs (2 total) should be counted — not the 3 parent ACs
+    const ctx = makeDecomposedCtx();
+    const childOnlyCount = ctx.prd.userStories
+      .filter((s) => s.status !== "decomposed" && !s.id.startsWith("US-FIX-"))
+      .flatMap((s) => s.acceptanceCriteria).length;
+    expect(childOnlyCount).toBe(2);
+  });
+
+  test("decomposed story is not passed to generate", async () => {
+    let generatedStories: { id: string }[] = [];
+    _acceptanceSetupDeps.refine = async (criteria, context) =>
+      criteria.map((c) => ({ original: c, refined: c, testable: true, storyId: context.storyId }));
+    _acceptanceSetupDeps.generate = async (stories) => {
+      generatedStories = stories as { id: string }[];
+      return { testCode: 'test("x", () => {})', criteria: [] };
+    };
+
+    await acceptanceSetupStage.execute(makeDecomposedCtx());
+
+    expect(generatedStories.map((s) => s.id)).not.toContain("US-PARENT");
+    expect(generatedStories.map((s) => s.id)).toContain("US-CHILD-A");
+    expect(generatedStories.map((s) => s.id)).toContain("US-CHILD-B");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Refinement bounded concurrency (#226)
 // ---------------------------------------------------------------------------
 

@@ -165,16 +165,21 @@ export const acceptanceSetupStage: PipelineStage = {
     const testPathConfig = ctx.config.acceptance.testPath;
     const metaPath = path.join(ctx.featureDir, "acceptance-meta.json");
 
-    // All criteria from original stories only — fix stories (US-FIX-*) are excluded
-    // so that the fingerprint remains stable when fix stories are added during the
-    // acceptance loop. This prevents unnecessary test regeneration on re-runs.
+    // All criteria from original stories only — fix stories (US-FIX-*) and decomposed
+    // parent stories are excluded. Fix stories are excluded so the fingerprint stays
+    // stable when fix stories are added during the acceptance loop. Decomposed stories
+    // are excluded because their ACs are fully covered by their children, and including
+    // them would inflate the fingerprint with duplicate criteria.
     const allCriteria: string[] = ctx.prd.userStories
-      .filter((s) => !s.id.startsWith("US-FIX-"))
+      .filter((s) => !s.id.startsWith("US-FIX-") && s.status !== "decomposed")
       .flatMap((s) => s.acceptanceCriteria);
 
     // US-001: Group non-fix stories by story.workdir.
     // Each group gets its own test file at <package-root>/.nax-acceptance.test.ts.
-    const nonFixStories = ctx.prd.userStories.filter((s) => !s.id.startsWith("US-FIX-"));
+    // Decomposed stories are parent containers whose ACs are fully covered by their
+    // children — including them causes duplicate refine LLM calls and duplicate
+    // acceptance test cases.
+    const nonFixStories = ctx.prd.userStories.filter((s) => !s.id.startsWith("US-FIX-") && s.status !== "decomposed");
     const workdirGroups = new Map<string, { stories: UserStory[]; criteria: string[] }>();
 
     for (const story of nonFixStories) {
