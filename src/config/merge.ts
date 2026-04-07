@@ -3,7 +3,8 @@
  *
  * Merges a package-level partial config override into a root config.
  * Covers all fields that make sense at the per-package level.
- * Root-only fields (models, autoMode, routing, agent, etc.) are unchanged.
+ * Root-only fields (autoMode, generate, tdd, decompose, plan, constitution,
+ * interaction) are unchanged.
  */
 
 import type { NaxConfig } from "./schema";
@@ -12,14 +13,18 @@ import type { NaxConfig } from "./schema";
  * Merge a package-level partial config override into a root config.
  *
  * Mergeable sections:
+ * - agent: protocol, maxInteractionTurns, promptAudit (deep)
+ * - models: per-agent model tier mappings (deep)
+ * - routing: strategy, llm (deep)
  * - execution: smartTestRunner, regressionGate (deep), verificationTimeoutSeconds
  * - review: enabled, checks, commands (deep), pluginMode, semantic (deep)
  * - acceptance: enabled, generateTests, testPath
  * - quality: requireTests, requireTypecheck, requireLint, commands (deep), testing (deep)
  * - context: testCoverage (deep)
+ * - project: type, language, frameworks
  *
- * All other sections (models, autoMode, routing, agent, generate, tdd,
- * decompose, plan, constitution, interaction) remain root-only.
+ * Root-only sections (autoMode, generate, tdd, decompose, plan, constitution,
+ * interaction) are never overridden by package-level config.
  *
  * @param root - Full root NaxConfig (already validated)
  * @param packageOverride - Partial package-level override
@@ -27,6 +32,9 @@ import type { NaxConfig } from "./schema";
  */
 export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<NaxConfig>): NaxConfig {
   const hasAnyMergeableField =
+    packageOverride.agent !== undefined ||
+    packageOverride.models !== undefined ||
+    packageOverride.routing !== undefined ||
     packageOverride.execution !== undefined ||
     packageOverride.review !== undefined ||
     packageOverride.acceptance !== undefined ||
@@ -40,6 +48,26 @@ export function mergePackageConfig(root: NaxConfig, packageOverride: Partial<Nax
 
   return {
     ...root,
+    agent:
+      packageOverride.agent !== undefined
+        ? {
+            ...root.agent,
+            ...packageOverride.agent,
+            promptAudit: {
+              enabled: packageOverride.agent.promptAudit?.enabled ?? root.agent?.promptAudit?.enabled ?? false,
+              ...(packageOverride.agent.promptAudit?.dir !== undefined
+                ? { dir: packageOverride.agent.promptAudit.dir }
+                : root.agent?.promptAudit?.dir !== undefined
+                  ? { dir: root.agent.promptAudit.dir }
+                  : {}),
+            },
+          }
+        : root.agent,
+    models: packageOverride.models !== undefined ? { ...root.models, ...packageOverride.models } : root.models,
+    routing:
+      packageOverride.routing !== undefined
+        ? { ...root.routing, ...packageOverride.routing, llm: { ...root.routing?.llm, ...packageOverride.routing.llm } }
+        : root.routing,
     execution: {
       ...root.execution,
       ...packageOverride.execution,

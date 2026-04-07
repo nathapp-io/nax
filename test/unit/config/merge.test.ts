@@ -78,16 +78,16 @@ describe("mergePackageConfig", () => {
     expect(root.quality.commands.test).toBe(originalTest);
   });
 
-  test("routing (root-only field) from packageOverride is ignored", () => {
+  test("routing from packageOverride is merged (whitelisted in #291)", () => {
     const root = makeRoot();
     const result = mergePackageConfig(root, {
       quality: { commands: { test: "npm test" } },
-      routing: { strategy: "keyword" } as NaxConfig["routing"],
+      routing: { strategy: "llm" } as NaxConfig["routing"],
     } as Partial<NaxConfig>);
 
-    // routing not changed
-    expect(result.routing).toBe(root.routing);
-    // quality.commands merged
+    // routing is now merged
+    expect(result.routing?.strategy).toBe("llm");
+    // quality.commands also merged
     expect(result.quality.commands.test).toBe("npm test");
   });
 

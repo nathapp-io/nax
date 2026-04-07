@@ -167,7 +167,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
   async plan(options: PlanOptions): Promise<PlanResult> {
     const pidRegistry = this.getPidRegistry(options.workdir);
-    return runPlan(this.binary, options, pidRegistry, this.buildAllowedEnv.bind(this));
+    return runPlan(this.binary, options, pidRegistry);
   }
 
   async decompose(options: DecomposeOptions): Promise<DecomposeResult> {
@@ -194,13 +194,8 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
     const pidRegistry = this.getPidRegistry(options.workdir);
 
-    const env = this.buildAllowedEnv({
-      workdir: options.workdir,
-      modelDef,
-      prompt: "",
-      modelTier: options.modelTier || "balanced",
-      timeoutSeconds: 600,
-    });
+    // buildAllowedEnv reads only modelEnv/env; decompose has neither, so call with no args.
+    const env = buildAllowedEnv();
 
     // Add session context fields for session naming
     if (options.featureName) {

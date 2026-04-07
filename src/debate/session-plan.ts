@@ -22,7 +22,7 @@ interface PlanCtx {
   readonly storyId: string;
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
-  readonly config: NaxConfig | undefined;
+  readonly config: NaxConfig;
 }
 
 export async function runPlan(

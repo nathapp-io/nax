@@ -218,6 +218,39 @@ describe("writePromptAudit() — directory resolution", () => {
     expect(capturedDir).toBe(join(WORKDIR, "my-audit", "my-feature"));
   });
 
+  test("monorepo package subdir — walks up to find nax project root", async () => {
+    const projectRoot = "/project/koda";
+    const packageWorkdir = `${projectRoot}/apps/api`;
+    let capturedDir = "";
+    _promptAuditDeps.mkdirSync = mock((path: string) => {
+      capturedDir = path;
+    });
+    const origExistsSync = _promptAuditDeps.existsSync;
+    _promptAuditDeps.existsSync = mock((path: string) =>
+      path === `${projectRoot}/.nax/config.json`,
+    );
+
+    await writePromptAudit(makeEntry({ workdir: packageWorkdir, auditDir: undefined, featureName: "my-feature" }));
+
+    _promptAuditDeps.existsSync = origExistsSync;
+    expect(capturedDir).toBe(join(projectRoot, ".nax", "prompt-audit", "my-feature"));
+  });
+
+  test("monorepo — no .nax/config.json found anywhere, falls back to workdir", async () => {
+    const packageWorkdir = "/project/koda/apps/web";
+    let capturedDir = "";
+    _promptAuditDeps.mkdirSync = mock((path: string) => {
+      capturedDir = path;
+    });
+    const origExistsSync = _promptAuditDeps.existsSync;
+    _promptAuditDeps.existsSync = mock(() => false);
+
+    await writePromptAudit(makeEntry({ workdir: packageWorkdir, auditDir: undefined, featureName: "my-feature" }));
+
+    _promptAuditDeps.existsSync = origExistsSync;
+    expect(capturedDir).toBe(join(packageWorkdir, ".nax", "prompt-audit", "my-feature"));
+  });
+
   test("worktree workdir — strips /.nax-wt/<story>/ and writes to project root", async () => {
     const projectRoot = "/project/my-app";
     const worktreeWorkdir = `${projectRoot}/.nax-wt/vcs-p2-001`;
@@ -318,7 +351,7 @@ describe("writePromptAudit() — error resilience", () => {
     });
 
     // Must not throw
-    await expect(writePromptAudit(makeEntry())).resolves.toBeUndefined();
+    expect(await writePromptAudit(makeEntry())).toBeUndefined();
 
     _promptAuditDeps.writeFile = origWrite;
     _promptAuditDeps.mkdirSync = origMkdir;
@@ -336,7 +369,7 @@ describe("writePromptAudit() — error resilience", () => {
     });
     _promptAuditDeps.writeFile = mock(async () => {});
 
-    await expect(writePromptAudit(makeEntry())).resolves.toBeUndefined();
+    expect(await writePromptAudit(makeEntry())).toBeUndefined();
 
     _promptAuditDeps.writeFile = origWrite;
     _promptAuditDeps.mkdirSync = origMkdir;

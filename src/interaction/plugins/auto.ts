@@ -8,7 +8,7 @@
 import { z } from "zod";
 import type { AgentAdapter } from "../../agents/types";
 import type { NaxConfig } from "../../config";
-import { resolveModelForAgent } from "../../config";
+import { DEFAULT_CONFIG, resolveModelForAgent } from "../../config";
 import type { InteractionPlugin, InteractionRequest, InteractionResponse } from "../types";
 
 /** Auto plugin configuration */
@@ -140,32 +140,31 @@ export class AutoInteractionPlugin implements InteractionPlugin {
       throw new Error("Auto plugin requires adapter to be injected via _autoPluginDeps.adapter");
     }
 
-    // Resolve model option if naxConfig is available
-    let modelArg: string | undefined;
-    if (this.config.naxConfig) {
+    const naxConfig = this.config.naxConfig ?? DEFAULT_CONFIG;
+
+    let resolvedModel: string | undefined;
+    try {
       const modelTier = this.config.model ?? "fast";
-      const naxConfig = this.config.naxConfig;
-      const modelDef = resolveModelForAgent(
+      resolvedModel = resolveModelForAgent(
         naxConfig.models,
         naxConfig.autoMode.defaultAgent,
         modelTier,
         naxConfig.autoMode.defaultAgent,
-      );
-      modelArg = modelDef.model;
+      ).model;
+    } catch {
+      // Model resolution failed (e.g. no naxConfig provided) — proceed without a model
     }
 
-    // Use adapter.complete() for one-shot LLM call
-    const timeoutMs = this.config.naxConfig
-      ? (this.config.naxConfig.execution?.sessionTimeoutSeconds ?? 600) * 1000
-      : undefined;
+    const timeoutMs = (naxConfig.execution?.sessionTimeoutSeconds ?? 600) * 1000;
+
     const result = await adapter.complete(prompt, {
-      ...(modelArg && { model: modelArg }),
+      ...(resolvedModel !== undefined && { model: resolvedModel }),
       jsonMode: true,
-      ...(this.config.naxConfig && { config: this.config.naxConfig }),
+      config: naxConfig,
       featureName: request.featureName,
       storyId: request.storyId,
       sessionRole: "auto",
-      ...(timeoutMs !== undefined && { timeoutMs }),
+      timeoutMs,
     });
 
     const output = typeof result === "string" ? result : result.output;
