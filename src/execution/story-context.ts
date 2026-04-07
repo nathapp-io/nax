@@ -204,6 +204,7 @@ export async function buildStoryContextFull(
  * @returns Array of stories that can be executed now
  */
 export function getAllReadyStories(prd: PRD): UserStory[] {
+  const storyIds = new Set(prd.userStories.map((s) => s.id));
   const completedIds = new Set(prd.userStories.filter((s) => s.passes || s.status === "skipped").map((s) => s.id));
 
   const logger = getSafeLogger();
@@ -219,7 +220,8 @@ export function getAllReadyStories(prd: PRD): UserStory[] {
       s.status !== "failed" &&
       s.status !== "paused" &&
       s.status !== "blocked" &&
-      s.dependencies.every((dep) => completedIds.has(dep)),
+      // A dep is fulfilled if it is not in this PRD (external/prior-phase) or it is completed.
+      s.dependencies.every((dep) => !storyIds.has(dep) || completedIds.has(dep)),
   );
 }
 

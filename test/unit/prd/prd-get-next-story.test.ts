@@ -212,5 +212,40 @@ describe("getNextStory() — run order S1-I1 -> S1-I2 (retry) -> S2-I1", () => {
     const pick = getNextStory(prd, "US-002", maxRetries);
     expect(pick?.id).toBe("US-001");
   });
+});
 
+// ── External dependencies (prior-phase) ─────────────────────────────────────
+
+describe("getNextStory() — external dependencies treated as fulfilled", () => {
+  test("returns story whose only dependency is external (not in PRD)", () => {
+    // VCS-P2-001 is from a prior feature run and is absent from this PRD
+    const prd = makePrd([makeStory("VCS-P3-001-A", { dependencies: ["VCS-P2-001"] })]);
+    expect(getNextStory(prd)?.id).toBe("VCS-P3-001-A");
+  });
+
+  test("returns story with mix of external + satisfied internal dependency", () => {
+    const prd = makePrd([
+      makeStory("US-001", { status: "passed", passes: true }),
+      makeStory("US-002", { dependencies: ["EXT-PHASE1", "US-001"] }),
+    ]);
+    expect(getNextStory(prd)?.id).toBe("US-002");
+  });
+
+  test("does not return story when internal dependency is unsatisfied even if external is absent", () => {
+    const prd = makePrd([
+      makeStory("US-001"), // pending, not done
+      makeStory("US-002", { dependencies: ["EXT-PHASE1", "US-001"] }),
+    ]);
+    // US-001 should be picked (it has no unmet deps), not US-002
+    expect(getNextStory(prd)?.id).toBe("US-001");
+  });
+
+  test("skips decomposed stories that have only external deps", () => {
+    const prd = makePrd([
+      makeStory("VCS-P3-001", { status: "decomposed", dependencies: ["VCS-P2-001"] }),
+      makeStory("VCS-P3-001-A", { dependencies: ["VCS-P2-001"] }),
+    ]);
+    // VCS-P3-001 is decomposed → skipped; VCS-P3-001-A is pending and ready
+    expect(getNextStory(prd)?.id).toBe("VCS-P3-001-A");
+  });
 });
