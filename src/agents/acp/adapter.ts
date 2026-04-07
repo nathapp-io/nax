@@ -762,6 +762,7 @@ export class AcpAgentAdapter implements AgentAdapter {
             prompt: currentPrompt,
             sessionName,
             workdir: options.workdir,
+            projectDir: options.projectDir,
             auditDir: _runAuditConfig.agent.promptAudit.dir,
             storyId: options.storyId,
             featureName: options.featureName,

@@ -46,6 +46,7 @@ export async function runFullSuiteGate(
   lite: boolean,
   logger: ReturnType<typeof getLogger>,
   featureName?: string,
+  projectDir?: string,
 ): Promise<boolean> {
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
   if (!rectificationEnabled) return false;
@@ -82,6 +83,7 @@ export async function runFullSuiteGate(
         testCmd,
         fullSuiteTimeout,
         featureName,
+        projectDir,
       );
     }
 
@@ -134,6 +136,7 @@ async function runRectificationLoop(
   testCmd: string,
   fullSuiteTimeout: number,
   featureName?: string,
+  projectDir?: string,
 ): Promise<boolean> {
   const rectificationState: RectificationState = {
     attempt: 0,
@@ -199,6 +202,7 @@ async function runRectificationLoop(
         dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
         pipelineStage: "rectification",
         config,
+        projectDir,
         maxInteractionTurns: config.agent?.maxInteractionTurns,
         featureName,
         storyId: story.id,

@@ -251,6 +251,7 @@ export const executionStage: PipelineStage = {
       dangerouslySkipPermissions: resolvePermissions(ctx.config, "run").skipPermissions,
       pipelineStage: "run",
       config: ctx.config,
+      projectDir: ctx.projectDir,
       maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
       pidRegistry: ctx.pidRegistry,
       featureName: ctx.prd.feature,

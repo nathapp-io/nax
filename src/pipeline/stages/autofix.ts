@@ -299,6 +299,7 @@ async function runAgentRectification(
         dangerouslySkipPermissions: resolvePermissions(ctx.config, "rectification").skipPermissions,
         pipelineStage: "rectification",
         config: ctx.config,
+        projectDir: ctx.projectDir,
         maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
         storyId: ctx.story.id,
         sessionRole: "implementer",

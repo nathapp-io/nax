@@ -42,6 +42,8 @@ export interface RectificationLoopOptions {
   featureName?: string;
   /** Protocol-aware agent resolver (ACP wiring). Falls back to static getAgent when absent. */
   agentGetFn?: AgentGetFn;
+  /** Absolute path to repo root — forwarded to agent.run() for prompt audit fast path */
+  projectDir?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,8 +120,18 @@ export const _rectificationDeps = {
 
 /** Run the rectification retry loop. Returns true if all failures were fixed. */
 export async function runRectificationLoop(opts: RectificationLoopOptions): Promise<boolean> {
-  const { config, workdir, story, testCommand, timeoutSeconds, testOutput, promptPrefix, featureName, agentGetFn } =
-    opts;
+  const {
+    config,
+    workdir,
+    story,
+    testCommand,
+    timeoutSeconds,
+    testOutput,
+    promptPrefix,
+    featureName,
+    agentGetFn,
+    projectDir,
+  } = opts;
   const logger = getSafeLogger();
   const rectificationConfig = config.execution.rectification;
   const testSummary = parseBunTestOutput(testOutput);
@@ -216,6 +228,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
         dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
         pipelineStage: "rectification",
         config,
+        projectDir,
         maxInteractionTurns: config.agent?.maxInteractionTurns,
         featureName,
         storyId: story.id,
@@ -367,6 +380,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
         dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
         pipelineStage: "rectification",
         config,
+        projectDir,
         maxInteractionTurns: config.agent?.maxInteractionTurns,
         featureName,
         storyId: story.id,
@@ -432,5 +446,6 @@ export function runRectificationLoopFromCtx(
     promptPrefix: opts.promptPrefix,
     featureName: ctx.prd.feature,
     agentGetFn: ctx.agentGetFn,
+    projectDir: ctx.projectDir,
   });
 }

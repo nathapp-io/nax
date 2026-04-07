@@ -87,6 +87,12 @@ export interface AgentRunOptions {
   /** Full nax config — required so adapters can call resolvePermissions() and audit prompts */
   config: NaxConfig;
   /**
+   * Absolute path to repo root where `.nax/` lives. When provided, prompt audit skips
+   * the parent-directory walk and writes directly to `<projectDir>/.nax/prompt-audit/`.
+   * Carries PipelineContext.projectDir.
+   */
+  projectDir?: string;
+  /**
    * When true, the adapter will NOT close the session after a successful run.
    * Use this for rectification loops where the same session must persist across
    * multiple attempts so the agent retains full conversation context.
