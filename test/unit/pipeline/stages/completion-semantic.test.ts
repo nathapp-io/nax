@@ -14,6 +14,7 @@ import { _completionDeps } from "../../../../src/pipeline/stages/completion";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { ReviewResult } from "../../../../src/review/types";
 import type { PRD, UserStory } from "../../../../src/prd";
+import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { NaxConfig } from "../../../../src/config";
 import type { SemanticVerdict } from "../../../../src/acceptance/types";
 import { withTempDir } from "../../../helpers/temp";
@@ -90,7 +91,9 @@ function makeCtx(
     story: makeStory(),
     stories: [makeStory()],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    rootConfig: DEFAULT_CONFIG,
     workdir: tempDir,
+    projectDir: tempDir,
     featureDir: tempDir,
     agentResult: { success: true, estimatedCost: 0.01, output: "", stderr: "", exitCode: 0, rateLimited: false },
     hooks: {} as PipelineContext["hooks"],

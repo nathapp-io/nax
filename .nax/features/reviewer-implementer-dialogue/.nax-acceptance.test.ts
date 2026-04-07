@@ -1372,8 +1372,8 @@ function makeMinimalCtxWithDialogue(agent: ReturnType<typeof makeMockAgent>, dia
   };
 
   return {
-    config: DEFAULT_CONFIG,
-    effectiveConfig,
+    config: effectiveConfig,
+    rootConfig: DEFAULT_CONFIG,
     story: { id: "story-1", title: "Test story", description: "desc", acceptanceCriteria: ["AC-1: something"], status: "pending", attempts: 0 },
     stories: [{ id: "story-1", title: "Test story", description: "desc", acceptanceCriteria: ["AC-1: something"], status: "pending", attempts: 0 }],
     prd: { feature: "feature-x", version: "1.0.0", stories: [] },
@@ -1390,7 +1390,7 @@ function makeMinimalCompletionCtx(): Record<string, unknown> & { reviewerSession
 
   return {
     config: DEFAULT_CONFIG,
-    effectiveConfig: DEFAULT_CONFIG,
+    rootConfig: DEFAULT_CONFIG,
     story: { id: "story-1", title: "Test story", description: "desc", acceptanceCriteria: [], status: "pending", attempts: 0 },
     stories: [{ id: "story-1", title: "Test story", description: "desc", acceptanceCriteria: [], status: "pending", attempts: 0 }],
     prd: { feature: "feature-x", version: "1.0.0", stories: [{ id: "story-1", title: "Test story", description: "desc", acceptanceCriteria: [], status: "pending", attempts: 0 }] },

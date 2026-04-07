@@ -9,7 +9,7 @@
  * - `escalate`: TIMEOUT or RUNTIME_CRASH (structural — rectify can't fix these)
  */
 
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import type { SmartTestRunnerConfig } from "../../config/types";
 import { getLogger } from "../../logger";
 import { logTestOutput } from "../../utils/log-test-output";
@@ -90,19 +90,15 @@ export const verifyStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
-    // PKG-003: use centrally resolved effective config (set once per story in iteration-runner)
-    // Falls back to ctx.config for contexts that predate PKG-003 (e.g., acceptance-loop)
-    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
-
     // Skip verification if tests are not required
-    if (!effectiveConfig.quality.requireTests) {
+    if (!ctx.config.quality.requireTests) {
       logger.debug("verify", "Skipping verification (quality.requireTests = false)", { storyId: ctx.story.id });
       return { action: "continue" };
     }
 
     // Skip verification if no test command is configured
-    const testCommand = effectiveConfig.review?.commands?.test ?? effectiveConfig.quality.commands.test;
-    const testScopedTemplate = effectiveConfig.quality.commands.testScoped;
+    const testCommand = ctx.config.review?.commands?.test ?? ctx.config.quality.commands.test;
+    const testScopedTemplate = ctx.config.quality.commands.testScoped;
     if (!testCommand) {
       logger.debug("verify", "Skipping verification (no test command configured)", { storyId: ctx.story.id });
       return { action: "continue" };
@@ -110,20 +106,19 @@ export const verifyStage: PipelineStage = {
 
     logger.info("verify", "Running verification", { storyId: ctx.story.id });
 
-    // MW-006: resolve effective workdir for test execution
-    const effectiveWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+    // MW-006: workdir is already resolved to the package directory at context creation
 
     // Determine effective test command (smart runner or full suite)
     let effectiveCommand = testCommand;
     let isFullSuite = true;
-    const smartRunnerConfig = coerceSmartTestRunner(effectiveConfig.execution.smartTestRunner);
-    const regressionMode = effectiveConfig.execution.regressionGate?.mode ?? "deferred";
+    const smartRunnerConfig = coerceSmartTestRunner(ctx.config.execution.smartTestRunner);
+    const regressionMode = ctx.config.execution.regressionGate?.mode ?? "deferred";
 
     // Resolve {{package}} in testScoped template for monorepo stories.
     // Returns null if package.json is absent (non-JS project) — falls through to smart-runner.
     let resolvedTestScopedTemplate: string | undefined = testScopedTemplate;
     if (testScopedTemplate && ctx.story.workdir) {
-      const resolved = await resolvePackageTemplate(testScopedTemplate, effectiveWorkdir);
+      const resolved = await resolvePackageTemplate(testScopedTemplate, ctx.workdir);
       resolvedTestScopedTemplate = resolved ?? undefined; // null → skip template
     }
 
@@ -149,14 +144,10 @@ export const verifyStage: PipelineStage = {
       }
     } else if (smartRunnerConfig.enabled) {
       // MW-006: pass packagePrefix so git diff is scoped to the package in monorepos
-      const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(
-        effectiveWorkdir,
-        ctx.storyGitRef,
-        ctx.story.workdir,
-      );
+      const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(ctx.workdir, ctx.storyGitRef, ctx.story.workdir);
 
       // Pass 1: path convention mapping
-      const pass1Files = await _smartRunnerDeps.mapSourceToTests(sourceFiles, effectiveWorkdir);
+      const pass1Files = await _smartRunnerDeps.mapSourceToTests(sourceFiles, ctx.workdir);
       if (pass1Files.length > 0) {
         logger.info("verify", `[smart-runner] Pass 1: path convention matched ${pass1Files.length} test files`, {
           storyId: ctx.story.id,
@@ -167,7 +158,7 @@ export const verifyStage: PipelineStage = {
         // Pass 2: import-grep fallback
         const pass2Files = await _smartRunnerDeps.importGrepFallback(
           sourceFiles,
-          effectiveWorkdir,
+          ctx.workdir,
           smartRunnerConfig.testFilePatterns,
         );
         if (pass2Files.length > 0) {
@@ -203,10 +194,10 @@ export const verifyStage: PipelineStage = {
 
     // Use unified regression gate (includes 2s wait for agent process cleanup)
     const result = await _verifyDeps.regression({
-      workdir: effectiveWorkdir,
+      workdir: ctx.workdir,
       command: effectiveCommand,
-      timeoutSeconds: effectiveConfig.execution.verificationTimeoutSeconds,
-      acceptOnTimeout: effectiveConfig.execution.regressionGate?.acceptOnTimeout ?? true,
+      timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
+      acceptOnTimeout: ctx.config.execution.regressionGate?.acceptOnTimeout ?? true,
     });
 
     // Store result on context for rectify stage
@@ -234,7 +225,7 @@ export const verifyStage: PipelineStage = {
     if (!result.success) {
       // BUG-019: Distinguish timeout from actual test failures
       if (result.status === "TIMEOUT") {
-        const timeout = effectiveConfig.execution.verificationTimeoutSeconds;
+        const timeout = ctx.config.execution.verificationTimeoutSeconds;
         logger.error(
           "verify",
           `Test suite exceeded timeout (${timeout}s). This is NOT a test failure — consider increasing execution.verificationTimeoutSeconds or scoping tests.`,
@@ -263,7 +254,7 @@ export const verifyStage: PipelineStage = {
           action: "escalate",
           reason:
             result.status === "TIMEOUT"
-              ? `Test suite TIMEOUT after ${effectiveConfig.execution.verificationTimeoutSeconds}s (not a code failure)`
+              ? `Test suite TIMEOUT after ${ctx.config.execution.verificationTimeoutSeconds}s (not a code failure)`
               : `Tests failed with runtime crash (exit code ${result.status ?? "non-zero"})`,
         };
       }

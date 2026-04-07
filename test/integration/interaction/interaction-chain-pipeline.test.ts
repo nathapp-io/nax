@@ -97,7 +97,7 @@ describe("AC1: interactionChain accessible in PipelineContext", () => {
 
     const ctx: PipelineContext = {
       config: baseConfig as NaxConfig,
-      effectiveConfig: baseConfig as NaxConfig,
+      rootConfig: baseConfig as NaxConfig,
       prd: basePrd,
       story: baseStory,
       stories: [baseStory],
@@ -117,7 +117,7 @@ describe("AC1: interactionChain accessible in PipelineContext", () => {
     // A context without 'interaction' should still be valid
     const ctx: PipelineContext = {
       config: baseConfig as NaxConfig,
-      effectiveConfig: baseConfig as NaxConfig,
+      rootConfig: baseConfig as NaxConfig,
       prd: basePrd,
       story: baseStory,
       stories: [baseStory],
@@ -139,7 +139,7 @@ describe("AC1: interactionChain accessible in PipelineContext", () => {
 
     const ctx: PipelineContext = {
       config: baseConfig as NaxConfig,
-      effectiveConfig: baseConfig as NaxConfig,
+      rootConfig: baseConfig as NaxConfig,
       prd: basePrd,
       story: baseStory,
       stories: [baseStory],

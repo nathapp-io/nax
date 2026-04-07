@@ -58,15 +58,19 @@ export interface RoutingResult {
 export type AgentGetFn = (name: string) => import("../agents/types").AgentAdapter | undefined;
 
 export interface PipelineContext {
-  /** Ngent configuration */
-  config: NaxConfig;
   /**
-   * Resolved config for this story's package.
+   * Effective config for this story's package.
    * When story.workdir is set, this is root config merged with package config.
-   * When no workdir, this equals ctx.config (root).
+   * When no workdir, this equals rootConfig.
    * Set once per story in the iteration runner before pipeline execution.
    */
-  effectiveConfig: NaxConfig;
+  config: NaxConfig;
+  /**
+   * Root-level NaxConfig loaded from .nax/config.json. Unmerged with package overrides.
+   * Use only for fields that must reflect the global project config:
+   * autoMode.defaultAgent, models, autoMode.escalation.
+   */
+  rootConfig: NaxConfig;
   /** Full PRD document */
   prd: PRD;
   /** Current story (or batch leader) */
@@ -75,6 +79,12 @@ export interface PipelineContext {
   stories: UserStory[];
   /** Routing result from complexity classification */
   routing: RoutingResult;
+  /**
+   * Absolute path to the repository root where `.nax/` lives.
+   * Never changes — stable in worktree mode (where workdir points to .nax-wt/<id>/)
+   * and in monorepo mode (where workdir may be joined with story.workdir).
+   */
+  projectDir: string;
   /** Working directory (project root) */
   workdir: string;
   /** Absolute path to the prd.json file (used by routing stage to persist initial classification) */

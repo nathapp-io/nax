@@ -104,4 +104,4 @@ Deep reference for each subsystem — consult when working on a specific module.
 
 ---
 
-*Created: 2026-03-10. Last updated: 2026-04-04. Maintained by nax-dev.*
+*Created: 2026-03-10. Last updated: 2026-04-07. Maintained by nax-dev.*

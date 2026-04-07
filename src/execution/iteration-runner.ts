@@ -89,13 +89,14 @@ export async function runIteration(
     : ctx.config;
 
   const pipelineContext: PipelineContext = {
-    config: ctx.config,
-    effectiveConfig,
+    config: effectiveConfig,
+    rootConfig: ctx.config,
     prd,
     story,
     stories: storiesToExecute,
     routing,
-    workdir: ctx.workdir,
+    projectDir: ctx.workdir,
+    workdir: story.workdir ? join(ctx.workdir, story.workdir) : ctx.workdir,
     prdPath: ctx.prdPath,
     featureDir: ctx.featureDir,
     hooks: ctx.hooks,

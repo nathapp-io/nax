@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { initLogger, resetLogger } from "../../../src/logger";
 import { _routingDeps, routingStage } from "../../../src/pipeline/stages/routing";
+import { DEFAULT_CONFIG } from "../../../src/config";
 import type { NaxConfig } from "../../../src/config";
 import type { PipelineContext } from "../../../src/pipeline/types";
 import type { UserStory } from "../../../src/prd/types";
@@ -63,10 +64,12 @@ function makeCtx(story: UserStory): PipelineContext {
       routing: { strategy: "llm", llm: { mode: "per-story" } },
       execution: { agent: "claude" },
     } as unknown as NaxConfig,
+    rootConfig: DEFAULT_CONFIG,
     story,
     stories: [story],
     routing: {} as PipelineContext["routing"],
     workdir: WORKDIR,
+    projectDir: WORKDIR,
     prd: { feature: "test", userStories: [story] } as PipelineContext["prd"],
     hooks: {} as PipelineContext["hooks"],
   } as PipelineContext;

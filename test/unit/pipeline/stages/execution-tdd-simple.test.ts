@@ -13,6 +13,7 @@
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { NaxConfig } from "../../../../src/config";
 import { executionStage, _executionDeps } from "../../../../src/pipeline/stages/execution";
 import type { PipelineContext } from "../../../../src/pipeline/types";
@@ -115,7 +116,9 @@ function makeCtx(
       testStrategy,
       reasoning: "",
     },
+    rootConfig: DEFAULT_CONFIG,
     workdir: WORKDIR,
+    projectDir: WORKDIR,
     prompt: "Your tdd-simple task: write tests first, then implement.",
     hooks: {} as PipelineContext["hooks"],
     ...overrides,

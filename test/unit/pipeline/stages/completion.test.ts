@@ -94,7 +94,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   const story = makeStory();
   return {
     config: DEFAULT_CONFIG,
-    effectiveConfig: DEFAULT_CONFIG,
+    rootConfig: DEFAULT_CONFIG,
     prd: makePRD([story]),
     story,
     stories: [story],

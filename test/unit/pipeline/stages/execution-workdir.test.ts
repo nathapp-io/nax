@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { _executionDeps, executionStage, resolveStoryWorkdir } from "../../../../src/pipeline/stages/execution";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { PRD, UserStory } from "../../../../src/prd";
+import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { NaxConfig } from "../../../../src/config";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,14 +46,12 @@ describe("resolveStoryWorkdir (MW-002)", () => {
 const originalGetAgent = _executionDeps.getAgent;
 const originalValidateAgentForTier = _executionDeps.validateAgentForTier;
 const originalDetectMergeConflict = _executionDeps.detectMergeConflict;
-const originalAutoCommitIfDirty = _executionDeps.resolveStoryWorkdir;
 
 afterEach(() => {
   mock.restore();
   _executionDeps.getAgent = originalGetAgent;
   _executionDeps.validateAgentForTier = originalValidateAgentForTier;
   _executionDeps.detectMergeConflict = originalDetectMergeConflict;
-  _executionDeps.resolveStoryWorkdir = originalAutoCommitIfDirty;
 });
 
 function makeStory(overrides: Partial<UserStory> = {}): UserStory {
@@ -89,7 +88,9 @@ function makeCtx(storyOverrides: Partial<UserStory> = {}): PipelineContext {
     story,
     stories: [story],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    rootConfig: DEFAULT_CONFIG,
     workdir: "/repo",
+    projectDir: "/repo",
     hooks: {},
     prompt: "Do the thing",
   } as unknown as PipelineContext;
@@ -132,11 +133,14 @@ test("execution stage passes resolved package workdir when story.workdir is set"
 
   _executionDeps.validateAgentForTier = () => true;
   _executionDeps.detectMergeConflict = () => false;
-  // Mock resolveStoryWorkdir to avoid filesystem check in unit test
-  _executionDeps.resolveStoryWorkdir = (root: string, pkg?: string) =>
-    pkg ? join(root, pkg) : root;
 
-  const ctx = makeCtx({ workdir: "packages/api" });
+  // workdir is resolved at context creation (Phase 3) — pass already-resolved path
+  const story = makeStory({ workdir: "packages/api" });
+  const ctx: PipelineContext = {
+    ...makeCtx(),
+    story,
+    workdir: join("/repo", "packages/api"),
+  };
   await executionStage.execute(ctx);
 
   expect(capturedWorkdir).toBe(join("/repo", "packages/api"));

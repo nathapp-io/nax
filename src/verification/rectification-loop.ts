@@ -18,7 +18,7 @@ import type { DebateStageConfig, Debater } from "../debate/types";
 import { escalateTier as _escalateTier } from "../execution/escalation/escalation";
 import { parseBunTestOutput } from "../execution/test-output-parser";
 import { getSafeLogger } from "../logger";
-import type { AgentGetFn } from "../pipeline/types";
+import type { AgentGetFn, PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
 import { formatFailureSummary } from "./parser";
@@ -42,6 +42,8 @@ export interface RectificationLoopOptions {
   featureName?: string;
   /** Protocol-aware agent resolver (ACP wiring). Falls back to static getAgent when absent. */
   agentGetFn?: AgentGetFn;
+  /** Absolute path to repo root — forwarded to agent.run() for prompt audit fast path */
+  projectDir?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,8 +120,18 @@ export const _rectificationDeps = {
 
 /** Run the rectification retry loop. Returns true if all failures were fixed. */
 export async function runRectificationLoop(opts: RectificationLoopOptions): Promise<boolean> {
-  const { config, workdir, story, testCommand, timeoutSeconds, testOutput, promptPrefix, featureName, agentGetFn } =
-    opts;
+  const {
+    config,
+    workdir,
+    story,
+    testCommand,
+    timeoutSeconds,
+    testOutput,
+    promptPrefix,
+    featureName,
+    agentGetFn,
+    projectDir,
+  } = opts;
   const logger = getSafeLogger();
   const rectificationConfig = config.execution.rectification;
   const testSummary = parseBunTestOutput(testOutput);
@@ -216,6 +228,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
         dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
         pipelineStage: "rectification",
         config,
+        projectDir,
         maxInteractionTurns: config.agent?.maxInteractionTurns,
         featureName,
         storyId: story.id,
@@ -367,6 +380,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
         dangerouslySkipPermissions: resolvePermissions(config, "rectification").skipPermissions,
         pipelineStage: "rectification",
         config,
+        projectDir,
         maxInteractionTurns: config.agent?.maxInteractionTurns,
         featureName,
         storyId: story.id,
@@ -411,5 +425,27 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
       return false;
     }
     throw error;
+  });
+}
+
+/**
+ * Run the rectification loop from a PipelineContext.
+ * Stage-specific params (testCommand, testOutput, promptPrefix) must still be provided.
+ */
+export function runRectificationLoopFromCtx(
+  ctx: PipelineContext,
+  opts: { testCommand: string; testOutput: string; promptPrefix?: string },
+): Promise<boolean> {
+  return runRectificationLoop({
+    config: ctx.config,
+    workdir: ctx.workdir,
+    story: ctx.story,
+    testCommand: opts.testCommand,
+    timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
+    testOutput: opts.testOutput,
+    promptPrefix: opts.promptPrefix,
+    featureName: ctx.prd.feature,
+    agentGetFn: ctx.agentGetFn,
+    projectDir: ctx.projectDir,
   });
 }

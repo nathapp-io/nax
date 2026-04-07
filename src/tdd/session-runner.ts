@@ -119,6 +119,7 @@ export async function runTddSession(
   constitution?: string,
   featureName?: string,
   interactionBridge?: InteractionBridge,
+  projectDir?: string,
 ): Promise<TddSessionResult> {
   const startTime = Date.now();
 
@@ -185,6 +186,7 @@ export async function runTddSession(
     dangerouslySkipPermissions: resolvePermissions(config, "run").skipPermissions,
     pipelineStage: "run",
     config,
+    projectDir,
     maxInteractionTurns: config.agent?.maxInteractionTurns,
     featureName,
     storyId: story.id,

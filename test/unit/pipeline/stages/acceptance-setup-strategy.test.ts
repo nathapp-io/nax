@@ -66,7 +66,9 @@ function makeCtx(acceptanceOverrides: Record<string, unknown> = {}): PipelineCon
     story: stories[0],
     stories,
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    rootConfig: DEFAULT_CONFIG,
     workdir: "/tmp/test-workdir",
+    projectDir: "/tmp/test-workdir",
     featureDir: "/tmp/test-workdir/nax/features/test-feature",
     hooks: {} as any,
   };

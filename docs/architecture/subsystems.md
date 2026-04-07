@@ -79,11 +79,27 @@ interface PipelineStage {
 
 ### PipelineContext
 
-The shared mutable state passed through all stages:
+The shared mutable state passed through all stages. Acts as the single source of truth (SSOT) for config, paths, and story state — downstream functions (`reviewFromContext`, `runThreeSessionTddFromCtx`, `runRectificationLoopFromCtx`, `buildStoryContextFullFromCtx`) accept it directly instead of positional args.
 
-- **Inputs:** `config`, `effectiveConfig`, `prd`, `story`, `stories`, `routing`, `workdir`, `hooks`, `plugins`
-- **Intermediate results:** `constitution`, `contextMarkdown`, `builtContext`, `prompt`, `agentResult`, `verifyResult`, `reviewResult`, `acceptanceFailures`, `tddFailureCategory`, `fullSuiteGatePassed`
-- **Metadata:** `storyStartTime`, `rectifyAttempt`, `autofixAttempt`, `storyGitRef`, `accumulatedAttemptCost`, `reviewFindings`
+**Path fields (resolved at context creation — never mutated by stages):**
+
+| Field | Description |
+|:------|:------------|
+| `projectDir` | Absolute path to repo root where `.nax/` lives. Stable across worktree and monorepo mode. Used as the prompt audit base dir (fast path — no parent-dir walk). |
+| `workdir` | Resolved execution directory. Includes `story.workdir` sub-path when set: `story.workdir ? join(base, story.workdir) : base`. In parallel mode, `base` is the worktree path. |
+
+**Config fields:**
+
+| Field | Description |
+|:------|:------------|
+| `config` | Always the effective merged config for this story (global → project → per-package). Use for execution decisions, feature flags, timeouts. |
+| `rootConfig` | The global project config — use only for `autoMode.defaultAgent`, `models`, and `autoMode.escalation`. Never use for per-package overrides. |
+
+**Stage inputs:** `prd`, `story`, `stories`, `routing`, `hooks`, `plugins`
+
+**Intermediate results:** `constitution`, `contextMarkdown`, `builtContext`, `prompt`, `agentResult`, `verifyResult`, `reviewResult`, `acceptanceFailures`, `tddFailureCategory`, `fullSuiteGatePassed`
+
+**Metadata:** `storyStartTime`, `rectifyAttempt`, `autofixAttempt`, `storyGitRef`, `accumulatedAttemptCost`, `reviewFindings`
 
 ---
 

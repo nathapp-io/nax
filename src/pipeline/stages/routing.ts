@@ -11,7 +11,6 @@
  * - `continue`: Routing determined, proceed to next stage
  */
 
-import { join } from "node:path";
 import { isGreenfieldStory } from "../../context/greenfield";
 import { getLogger } from "../../logger";
 import { savePRD } from "../../prd";
@@ -26,10 +25,7 @@ export const routingStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
-    // Use effectiveConfig for per-package overrides (monorepo), fall back to base config
-    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
-
-    const agentName = effectiveConfig.execution?.agent ?? "claude";
+    const agentName = ctx.config.execution?.agent ?? "claude";
     // Only use adapter when explicitly provided via agentGetFn — prevents real LLM calls in tests
     const adapter = ctx.agentGetFn ? ctx.agentGetFn(agentName) : undefined;
 
@@ -40,7 +36,7 @@ export const routingStage: PipelineStage = {
     }
 
     // Classify story via resolveRouting() (plugin routers > LLM > keyword)
-    const decision = await _routingDeps.resolveRouting(ctx.story, effectiveConfig, ctx.plugins, adapter);
+    const decision = await _routingDeps.resolveRouting(ctx.story, ctx.config, ctx.plugins, adapter);
 
     // BUG-032: Only preserve a previously-stored modelTier when it represents an escalation
     // (i.e., a higher tier than what routing freshly derives). This prevents stale tiers
@@ -70,9 +66,9 @@ export const routingStage: PipelineStage = {
     // BUG-010: Greenfield detection — force test-after if no test files exist
     // MW-011: Scan story.workdir for monorepo, not repo root
     // STRAT-001: no-test is exempt from greenfield override
-    const greenfieldDetectionEnabled = effectiveConfig.tdd.greenfieldDetection ?? true;
+    const greenfieldDetectionEnabled = ctx.config.tdd.greenfieldDetection ?? true;
     if (greenfieldDetectionEnabled && routing.testStrategy.startsWith("three-session-tdd")) {
-      const greenfieldScanDir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+      const greenfieldScanDir = ctx.workdir;
       const isGreenfield = await _routingDeps.isGreenfieldStory(ctx.story, greenfieldScanDir);
       if (isGreenfield) {
         logger.info("routing", "Greenfield detected — forcing test-after strategy", {

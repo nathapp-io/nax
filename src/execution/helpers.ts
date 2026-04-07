@@ -29,6 +29,7 @@ export {
   maybeGetContext,
   buildStoryContext,
   buildStoryContextFull,
+  buildStoryContextFullFromCtx,
   getAllReadyStories,
   type StoryCounts,
   formatProgress,

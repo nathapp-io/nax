@@ -12,7 +12,7 @@ export {
   verifyTestWriterIsolation,
   verifyImplementerIsolation,
 } from "./isolation";
-export { runThreeSessionTdd } from "./orchestrator";
+export { runThreeSessionTdd, runThreeSessionTddFromCtx } from "./orchestrator";
 export { cleanupProcessTree, getPgid } from "./cleanup";
 export {
   buildImplementerRectificationPrompt,

@@ -298,7 +298,7 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
     };
     return {
       config,
-      effectiveConfig: config,
+      rootConfig: config,
       prd: makePRD(),
       story,
       stories: [story],
@@ -417,7 +417,7 @@ describe("verifyStage — monorepo orchestrator + {{package}}", () => {
       };
       const ctx = {
         config,
-        effectiveConfig: config,
+        rootConfig: config,
         prd: makePRD(),
         story,
         stories: [story],

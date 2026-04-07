@@ -121,10 +121,11 @@ export async function rectifyConflictedStory(options: RectifyConflictedStoryOpti
 
     const pipelineContext = {
       config,
-      effectiveConfig: config,
+      rootConfig: config,
       prd,
       story,
       stories: [story],
+      projectDir: workdir,
       workdir: worktreePath,
       featureDir: undefined,
       hooks,

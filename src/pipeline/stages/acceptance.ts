@@ -97,8 +97,7 @@ export const acceptanceStage: PipelineStage = {
     // Only run when:
     // 1. Acceptance validation is enabled
     // 2. All stories are complete
-    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
-    if (!effectiveConfig.acceptance.enabled) {
+    if (!ctx.config.acceptance.enabled) {
       return false;
     }
 
@@ -111,9 +110,6 @@ export const acceptanceStage: PipelineStage = {
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
-
-    // PKG-004: use centrally resolved effective config
-    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
 
     logger.info("acceptance", "Running acceptance tests", { storyId: ctx.story.id });
 
@@ -128,8 +124,8 @@ export const acceptanceStage: PipelineStage = {
       {
         testPath: resolveAcceptanceFeatureTestPath(
           ctx.featureDir,
-          effectiveConfig.acceptance.testPath,
-          effectiveConfig.project?.language,
+          ctx.config.acceptance.testPath,
+          ctx.config.project?.language,
         ),
         packageDir: ctx.workdir,
       },
@@ -155,8 +151,8 @@ export const acceptanceStage: PipelineStage = {
       // Resolution order: acceptance.command override → testFramework-aware command → bun test fallback
       const testCmdParts = buildAcceptanceRunCommand(
         testPath,
-        effectiveConfig.project?.testFramework,
-        effectiveConfig.acceptance.command,
+        ctx.config.project?.testFramework,
+        ctx.config.acceptance.command,
       );
       logger.info("acceptance", "Running acceptance command", {
         storyId: ctx.story.id,

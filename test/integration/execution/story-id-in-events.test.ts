@@ -140,6 +140,7 @@ function createTestContext(overrides?: Partial<PipelineContext>): PipelineContex
 
   return {
     config,
+    rootConfig: config,
     prd,
     story,
     stories: [story],
@@ -149,6 +150,7 @@ function createTestContext(overrides?: Partial<PipelineContext>): PipelineContex
       testStrategy: "test-after",
       reasoning: "Test routing",
     },
+    projectDir: "/test/workdir",
     workdir: "/test/workdir",
     hooks: { hooks: {} },
     ...overrides,

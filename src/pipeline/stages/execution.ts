@@ -40,7 +40,7 @@ import { buildInteractionBridge } from "../../interaction/bridge-builder";
 import { checkMergeConflict, checkStoryAmbiguity, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
 import type { FailureCategory } from "../../tdd";
-import { runThreeSessionTdd } from "../../tdd";
+import { runThreeSessionTddFromCtx } from "../../tdd";
 import { autoCommitIfDirty, detectMergeConflict } from "../../utils/git";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
@@ -133,11 +133,11 @@ export const executionStage: PipelineStage = {
     const logger = getLogger();
 
     // HARD FAILURE: No agent available — cannot proceed without an agent
-    const agent = (ctx.agentGetFn ?? _executionDeps.getAgent)(ctx.config.autoMode.defaultAgent);
+    const agent = (ctx.agentGetFn ?? _executionDeps.getAgent)(ctx.rootConfig.autoMode.defaultAgent);
     if (!agent) {
       return {
         action: "fail",
-        reason: `Agent "${ctx.config.autoMode.defaultAgent}" not found`,
+        reason: `Agent "${ctx.rootConfig.autoMode.defaultAgent}" not found`,
       };
     }
 
@@ -153,21 +153,7 @@ export const executionStage: PipelineStage = {
         lite: isLiteMode,
       });
 
-      const effectiveWorkdir = _executionDeps.resolveStoryWorkdir(ctx.workdir, ctx.story.workdir);
-
-      const tddResult = await runThreeSessionTdd({
-        agent,
-        story: ctx.story,
-        config: ctx.config,
-        workdir: effectiveWorkdir,
-        modelTier: ctx.routing.modelTier,
-        featureName: ctx.prd.feature,
-        contextMarkdown: ctx.contextMarkdown,
-        constitution: ctx.constitution?.content,
-        dryRun: false,
-        lite: isLiteMode,
-        interactionChain: ctx.interaction,
-      });
+      const tddResult = await runThreeSessionTddFromCtx(ctx, { agent, dryRun: false, lite: isLiteMode });
 
       ctx.agentResult = {
         success: tddResult.success,
@@ -246,8 +232,6 @@ export const executionStage: PipelineStage = {
       });
     }
 
-    const storyWorkdir = _executionDeps.resolveStoryWorkdir(ctx.workdir, ctx.story.workdir);
-
     // Determine whether to keep session open for review or rectification
     const keepSessionOpen = !!(
       ctx.config.review?.enabled === true || ctx.config.execution.rectification?.enabled === true
@@ -255,18 +239,19 @@ export const executionStage: PipelineStage = {
 
     const result = await agent.run({
       prompt: ctx.prompt,
-      workdir: storyWorkdir,
+      workdir: ctx.workdir,
       modelTier: ctx.routing.modelTier,
       modelDef: resolveModelForAgent(
-        ctx.config.models,
-        ctx.routing.agent ?? ctx.config.autoMode.defaultAgent,
+        ctx.rootConfig.models,
+        ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent,
         ctx.routing.modelTier,
-        ctx.config.autoMode.defaultAgent,
+        ctx.rootConfig.autoMode.defaultAgent,
       ),
       timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
       dangerouslySkipPermissions: resolvePermissions(ctx.config, "run").skipPermissions,
       pipelineStage: "run",
       config: ctx.config,
+      projectDir: ctx.projectDir,
       maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
       pidRegistry: ctx.pidRegistry,
       featureName: ctx.prd.feature,
@@ -283,7 +268,7 @@ export const executionStage: PipelineStage = {
     ctx.agentResult = result;
 
     // BUG-058: Auto-commit if agent left uncommitted changes (single-session/test-after)
-    await autoCommitIfDirty(storyWorkdir, "execution", "single-session", ctx.story.id);
+    await autoCommitIfDirty(ctx.workdir, "execution", "single-session", ctx.story.id);
 
     // merge-conflict trigger: detect CONFLICT markers in agent output
     const combinedOutput = (result.output ?? "") + (result.stderr ?? "");
@@ -352,5 +337,4 @@ export const _executionDeps = {
   checkMergeConflict,
   isAmbiguousOutput,
   checkStoryAmbiguity,
-  resolveStoryWorkdir,
 };

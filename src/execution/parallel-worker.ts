@@ -44,10 +44,12 @@ export async function executeStoryInWorktree(
 
     const pipelineContext: PipelineContext = {
       ...context,
-      effectiveConfig: context.effectiveConfig ?? context.config,
+      config: context.config,
+      rootConfig: context.rootConfig,
       story,
       stories: [story],
-      workdir: worktreePath,
+      projectDir: context.projectDir,
+      workdir: story.workdir ? join(worktreePath, story.workdir) : worktreePath,
       routing,
       storyGitRef: storyGitRef ?? undefined,
     };
@@ -103,7 +105,7 @@ export async function executeParallelBatch(
   worktreePaths: Map<string, string>,
   maxConcurrency: number,
   eventEmitter?: PipelineEventEmitter,
-  // #93: Per-story effective configs (PKG-003) — if absent falls back to context.effectiveConfig
+  // #93: Per-story effective configs (PKG-003) — if absent falls back to context.config
   storyEffectiveConfigs?: Map<string, NaxConfig>,
 ): Promise<ParallelBatchResult> {
   const logger = getSafeLogger();
@@ -131,9 +133,9 @@ export async function executeParallelBatch(
 
     const routing = routeTask(story.title, story.description, story.acceptanceCriteria, story.tags, config);
 
-    // #93: Override effectiveConfig with per-story resolved config (PKG-003) if available
+    // #93: Override config with per-story resolved config (PKG-003) if available
     const storyConfig = storyEffectiveConfigs?.get(story.id);
-    const storyContext = storyConfig ? { ...context, effectiveConfig: storyConfig } : context;
+    const storyContext = storyConfig ? { ...context, config: storyConfig } : context;
 
     const executePromise = executeStoryInWorktree(
       story,

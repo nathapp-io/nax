@@ -14,6 +14,7 @@ import { isGreenfieldStory } from "../context/greenfield";
 import { buildInteractionBridge } from "../interaction/bridge-builder";
 import type { InteractionChain } from "../interaction/chain";
 import { getLogger } from "../logger";
+import type { PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { errorMessage } from "../utils/errors";
 import { captureGitRef } from "../utils/git";
@@ -39,6 +40,8 @@ export interface ThreeSessionTddOptions {
   _recursionDepth?: number;
   /** Interaction chain for multi-turn Q&A during test-writer and implementer sessions */
   interactionChain?: InteractionChain | null;
+  /** Absolute path to repo root — forwarded to agent.run() for prompt audit fast path */
+  projectDir?: string;
 }
 
 /**
@@ -58,6 +61,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     lite = false,
     _recursionDepth = 0,
     interactionChain,
+    projectDir,
   } = options;
   const logger = getLogger();
 
@@ -150,6 +154,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
       constitution,
       featureName,
       buildInteractionBridge(interactionChain, { featureName, storyId: story.id, stage: "execution" }),
+      projectDir,
     );
     sessions.push(session1);
   }
@@ -257,6 +262,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     constitution,
     featureName,
     buildInteractionBridge(interactionChain, { featureName, storyId: story.id, stage: "execution" }),
+    projectDir,
   );
   sessions.push(session2);
 
@@ -287,6 +293,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     lite,
     logger,
     featureName,
+    projectDir,
   );
 
   // Session 3: Verifier
@@ -305,6 +312,8 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     false,
     constitution,
     featureName,
+    undefined,
+    projectDir,
   );
   sessions.push(session3);
 
@@ -415,4 +424,28 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     lite,
     fullSuiteGatePassed,
   };
+}
+
+/**
+ * Run the three-session TDD pipeline from a PipelineContext.
+ * Stage-specific params (agent, dryRun, lite) must still be provided.
+ */
+export function runThreeSessionTddFromCtx(
+  ctx: PipelineContext,
+  opts: { agent: AgentAdapter; dryRun?: boolean; lite?: boolean },
+): Promise<ThreeSessionTddResult> {
+  return runThreeSessionTdd({
+    agent: opts.agent,
+    story: ctx.story,
+    config: ctx.config,
+    workdir: ctx.workdir,
+    modelTier: ctx.routing.modelTier,
+    featureName: ctx.prd.feature,
+    contextMarkdown: ctx.contextMarkdown,
+    constitution: ctx.constitution?.content,
+    dryRun: opts.dryRun ?? false,
+    lite: opts.lite ?? false,
+    interactionChain: ctx.interaction,
+    projectDir: ctx.projectDir,
+  });
 }

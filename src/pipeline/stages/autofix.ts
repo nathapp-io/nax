@@ -19,7 +19,6 @@
  * - `escalate`                 — max attempts exhausted or agent unavailable
  */
 
-import { join } from "node:path";
 import { getAgent } from "../../agents";
 import { resolveModelForAgent } from "../../config";
 import { loadConfigForWorkdir } from "../../config/loader";
@@ -42,7 +41,7 @@ export const autofixStage: PipelineStage = {
   enabled(ctx: PipelineContext): boolean {
     if (!ctx.reviewResult) return false;
     if (ctx.reviewResult.success) return false;
-    const autofixEnabled = (ctx.effectiveConfig ?? ctx.config).quality.autofix?.enabled ?? true;
+    const autofixEnabled = ctx.config.quality.autofix?.enabled ?? true;
     return autofixEnabled;
   },
 
@@ -59,15 +58,12 @@ export const autofixStage: PipelineStage = {
       return { action: "continue" };
     }
 
-    // PKG-004: use centrally resolved effective config (ctx.effectiveConfig set once per story)
-    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
     // Check quality.commands first, then fall back to review.commands — users often define
     // lintFix/formatFix in review.commands alongside other review commands (lint, typecheck).
-    const lintFixCmd = effectiveConfig.quality.commands.lintFix ?? effectiveConfig.review.commands.lintFix;
-    const formatFixCmd = effectiveConfig.quality.commands.formatFix ?? effectiveConfig.review.commands.formatFix;
+    const lintFixCmd = ctx.config.quality.commands.lintFix ?? ctx.config.review.commands.lintFix;
+    const formatFixCmd = ctx.config.quality.commands.formatFix ?? ctx.config.review.commands.formatFix;
 
-    // Effective workdir for running commands (scoped to package if monorepo)
-    const effectiveWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+    // Effective workdir for running commands — workdir is already resolved at context creation
 
     // Identify which checks failed
     const failedCheckNames = new Set((reviewResult.checks ?? []).filter((c) => !c.success).map((c) => c.check));
@@ -76,7 +72,7 @@ export const autofixStage: PipelineStage = {
     logger.info("autofix", "Starting autofix", {
       storyId: ctx.story.id,
       failedChecks: [...failedCheckNames],
-      workdir: effectiveWorkdir,
+      workdir: ctx.workdir,
     });
 
     // Phase 1: Mechanical fix — only for lint failures (lintFix/formatFix cannot fix typecheck errors)
@@ -86,7 +82,7 @@ export const autofixStage: PipelineStage = {
         const lintResult = await _autofixDeps.runQualityCommand({
           commandName: "lintFix",
           command: lintFixCmd,
-          workdir: effectiveWorkdir,
+          workdir: ctx.workdir,
           storyId: ctx.story.id,
         });
         logger.debug("autofix", `lintFix exit=${lintResult.exitCode}`, { storyId: ctx.story.id, command: lintFixCmd });
@@ -103,7 +99,7 @@ export const autofixStage: PipelineStage = {
         const fmtResult = await _autofixDeps.runQualityCommand({
           commandName: "formatFix",
           command: formatFixCmd,
-          workdir: effectiveWorkdir,
+          workdir: ctx.workdir,
           storyId: ctx.story.id,
         });
         logger.debug("autofix", `formatFix exit=${fmtResult.exitCode}`, {
@@ -132,7 +128,7 @@ export const autofixStage: PipelineStage = {
     }
 
     // Phase 2: Agent rectification — spawn agent with review error context
-    const agentFixed = await _autofixDeps.runAgentRectification(ctx, lintFixCmd, formatFixCmd, effectiveWorkdir);
+    const agentFixed = await _autofixDeps.runAgentRectification(ctx, lintFixCmd, formatFixCmd, ctx.workdir);
     if (agentFixed) {
       if (ctx.reviewResult) ctx.reviewResult = { ...ctx.reviewResult, success: true };
       // #136: Skip checks that already passed — only re-run checks that originally failed.
@@ -216,11 +212,10 @@ async function runAgentRectification(
   effectiveWorkdir: string,
 ): Promise<boolean> {
   const logger = getLogger();
-  const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
-  const maxPerCycle = effectiveConfig.quality.autofix?.maxAttempts ?? 2;
-  const maxTotal = effectiveConfig.quality.autofix?.maxTotalAttempts ?? 10;
-  const rethinkAtAttempt = effectiveConfig.quality.autofix?.rethinkAtAttempt ?? 2;
-  const urgencyAtAttempt = effectiveConfig.quality.autofix?.urgencyAtAttempt ?? 3;
+  const maxPerCycle = ctx.config.quality.autofix?.maxAttempts ?? 2;
+  const maxTotal = ctx.config.quality.autofix?.maxTotalAttempts ?? 10;
+  const rethinkAtAttempt = ctx.config.quality.autofix?.rethinkAtAttempt ?? 2;
+  const urgencyAtAttempt = ctx.config.quality.autofix?.urgencyAtAttempt ?? 3;
   const consumed = ctx.autofixAttempt ?? 0;
   const failedChecks = collectFailedChecks(ctx);
 
@@ -281,30 +276,30 @@ async function runAgentRectification(
     },
     runAttempt: async (attempt, prompt) => {
       ctx.autofixAttempt = consumed + attempt;
-      const agent = agentGetFn(ctx.config.autoMode.defaultAgent);
+      const agent = agentGetFn(ctx.rootConfig.autoMode.defaultAgent);
       if (!agent) {
         logger.error("autofix", "Agent not found — cannot run agent rectification", { storyId: ctx.story.id });
         throw new Error("AUTOFIX_AGENT_NOT_FOUND");
       }
 
-      const modelTier = ctx.story.routing?.modelTier ?? ctx.config.autoMode.escalation.tierOrder[0]?.tier ?? "balanced";
+      const modelTier =
+        ctx.story.routing?.modelTier ?? ctx.rootConfig.autoMode.escalation.tierOrder[0]?.tier ?? "balanced";
       const modelDef = resolveModelForAgent(
-        ctx.config.models,
-        ctx.routing.agent ?? ctx.config.autoMode.defaultAgent,
+        ctx.rootConfig.models,
+        ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent,
         modelTier,
-        ctx.config.autoMode.defaultAgent,
+        ctx.rootConfig.autoMode.defaultAgent,
       );
-      const rectificationWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
-
       const result = await agent.run({
         prompt,
-        workdir: rectificationWorkdir,
+        workdir: ctx.workdir,
         modelTier,
         modelDef,
         timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
         dangerouslySkipPermissions: resolvePermissions(ctx.config, "rectification").skipPermissions,
         pipelineStage: "rectification",
         config: ctx.config,
+        projectDir: ctx.projectDir,
         maxInteractionTurns: ctx.config.agent?.maxInteractionTurns,
         storyId: ctx.story.id,
         sessionRole: "implementer",
@@ -312,7 +307,7 @@ async function runAgentRectification(
 
       // AC5/AC6/AC10: Detect CLARIFY blocks and relay to reviewerSession
       if (ctx.reviewerSession && result.output) {
-        const maxClarifications = effectiveConfig.review?.dialogue?.maxClarificationsPerAttempt ?? 3;
+        const maxClarifications = ctx.config.review?.dialogue?.maxClarificationsPerAttempt ?? 3;
         let clarifyCount = 0;
         const clarifyRegex = new RegExp(CLARIFY_REGEX.source, `${CLARIFY_REGEX.flags}g`);
         let match: RegExpExecArray | null;

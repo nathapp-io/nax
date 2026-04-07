@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { NaxConfig } from "../../../../src/config";
 import { initLogger, resetLogger } from "../../../../src/logger";
 import { _routingDeps, routingStage } from "../../../../src/pipeline/stages/routing";
@@ -55,7 +56,10 @@ function makeCtx(story: UserStory, repoRoot: string): PipelineContext {
     prd: { project: "test", branchName: "feat/test", feature: "cli", userStories: [story] },
     story,
     stories: [story],
-    workdir: repoRoot,
+    rootConfig: DEFAULT_CONFIG,
+    // Phase 3: workdir is resolved at context creation — include story.workdir if set
+    workdir: story.workdir ? join(repoRoot, story.workdir) : repoRoot,
+    projectDir: repoRoot,
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "three-session-tdd", reasoning: "" },
     hooks: {},
   } as unknown as PipelineContext;

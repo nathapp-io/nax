@@ -102,7 +102,7 @@ function makePRD(): PRD {
 function makeCtx(config: NaxConfig, overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
     config,
-    effectiveConfig: config,
+    rootConfig: config,
     prd: makePRD(),
     story: makeStory(),
     stories: [makeStory()],
@@ -170,7 +170,7 @@ describe("PipelineContext — reviewerSession type field (AC1)", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("reviewStage — dialogue session creation (AC2)", () => {
-  test("calls createReviewerSession() when effectiveConfig.review.dialogue.enabled is true", async () => {
+  test("calls createReviewerSession() when ctx.config.review.dialogue.enabled is true", async () => {
     const mockSession = makeSession();
     const createSessionMock = mock(() => mockSession);
     // biome-ignore lint/suspicious/noExplicitAny: _reviewDeps.createReviewerSession does not exist yet

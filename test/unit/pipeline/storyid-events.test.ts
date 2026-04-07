@@ -8,6 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { DEFAULT_CONFIG } from "../../../src/config";
 import type { NaxConfig } from "../../../src/config";
 import { getLogger, initLogger, resetLogger } from "../../../src/logger";
 import type { PipelineContext } from "../../../src/pipeline/types";
@@ -98,7 +99,9 @@ function makeCtx(
       testStrategy: "test-after",
       reasoning: "test fixture",
     },
+    rootConfig: DEFAULT_CONFIG,
     workdir: WORKDIR,
+    projectDir: WORKDIR,
     prd: { feature: "test", userStories: [mockStory] },
     hooks: {} as any,
   } as PipelineContext;

@@ -59,18 +59,8 @@ export const rectifyStage: PipelineStage = {
       testOutput,
     });
 
-    // PKG-004: use centrally resolved effective config
-    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
-    const testCommand = effectiveConfig.review?.commands?.test ?? effectiveConfig.quality.commands.test ?? "bun test";
-    const fixed = await _rectifyDeps.runRectificationLoop({
-      config: ctx.config,
-      workdir: ctx.workdir,
-      story: ctx.story,
-      testCommand,
-      timeoutSeconds: effectiveConfig.execution.verificationTimeoutSeconds,
-      testOutput,
-      agentGetFn: ctx.agentGetFn,
-    });
+    const testCommand = ctx.config.review?.commands?.test ?? ctx.config.quality.commands.test ?? "bun test";
+    const fixed = await _rectifyDeps.runRectificationLoop(ctx, { testCommand, testOutput });
 
     pipelineEventBus.emit({
       type: "rectify:completed",
@@ -97,5 +87,5 @@ export const rectifyStage: PipelineStage = {
 /**
  * Injectable deps for testing.
  */
-import { runRectificationLoop } from "../../verification/rectification-loop";
-export const _rectifyDeps = { runRectificationLoop };
+import { runRectificationLoopFromCtx } from "../../verification/rectification-loop";
+export const _rectifyDeps = { runRectificationLoop: runRectificationLoopFromCtx };

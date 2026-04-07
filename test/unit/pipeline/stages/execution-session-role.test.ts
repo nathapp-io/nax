@@ -54,7 +54,7 @@ function makeCtx(
   const story = makeStory(storyOverrides);
   return {
     config: configOverride ?? makeConfig(),
-    effectiveConfig: configOverride ?? makeConfig(),
+    rootConfig: configOverride ?? makeConfig(),
     prd: { project: "p", feature: "test-feature", branchName: "b", createdAt: "", updatedAt: "", userStories: [story] } as PRD,
     story,
     stories: [story],
@@ -74,14 +74,12 @@ function makeCtx(
 const originalGetAgent = _executionDeps.getAgent;
 const originalValidateAgentForTier = _executionDeps.validateAgentForTier;
 const originalDetectMergeConflict = _executionDeps.detectMergeConflict;
-const originalResolveStoryWorkdir = _executionDeps.resolveStoryWorkdir;
 
 afterEach(() => {
   mock.restore();
   _executionDeps.getAgent = originalGetAgent;
   _executionDeps.validateAgentForTier = originalValidateAgentForTier;
   _executionDeps.detectMergeConflict = originalDetectMergeConflict;
-  _executionDeps.resolveStoryWorkdir = originalResolveStoryWorkdir;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -104,7 +102,6 @@ describe("execution stage — session role normalization (AC-1)", () => {
 
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
-    _executionDeps.resolveStoryWorkdir = (_, wd) => wd || "/repo";
 
     const ctx = makeCtx({}, { testStrategy: "test-after" });
     await executionStage.execute(ctx);
@@ -127,7 +124,6 @@ describe("execution stage — session role normalization (AC-1)", () => {
 
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
-    _executionDeps.resolveStoryWorkdir = (_, wd) => wd || "/repo";
 
     const ctx = makeCtx({}, { testStrategy: "no-test" });
     await executionStage.execute(ctx);
@@ -156,7 +152,6 @@ describe("execution stage — keepSessionOpen when review enabled (AC-2)", () =>
 
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
-    _executionDeps.resolveStoryWorkdir = (_, wd) => wd || "/repo";
 
     const configWithReview = makeConfig({ review: { enabled: true } });
     const ctx = makeCtx({}, { testStrategy: "test-after" }, configWithReview);
@@ -186,7 +181,6 @@ describe("execution stage — keepSessionOpen when rectification enabled (AC-3)"
 
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
-    _executionDeps.resolveStoryWorkdir = (_, wd) => wd || "/repo";
 
     const configWithRectification = makeConfig({
       execution: { sessionTimeoutSeconds: 30, verificationTimeoutSeconds: 60, rectification: { enabled: true } },
@@ -218,7 +212,6 @@ describe("execution stage — keepSessionOpen when review and rectification disa
 
     _executionDeps.validateAgentForTier = () => true;
     _executionDeps.detectMergeConflict = () => false;
-    _executionDeps.resolveStoryWorkdir = (_, wd) => wd || "/repo";
 
     const configWithoutReviewOrRectification = makeConfig({
       review: { enabled: false },

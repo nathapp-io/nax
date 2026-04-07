@@ -817,7 +817,7 @@ describe("AC-32: Story metrics include agentUsed", () => {
 
     const ctx: PipelineContext = {
       config,
-      effectiveConfig: config,
+      rootConfig: config,
       prd: { id: "PRD-001", title: "PRD", version: 1, userStories: [story] },
       story,
       stories: [story],

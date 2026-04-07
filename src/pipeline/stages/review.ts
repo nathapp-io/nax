@@ -11,7 +11,6 @@
  */
 
 // RE-ARCH: rewrite
-import { join } from "node:path";
 import { getAgent } from "../../agents";
 import { checkSecurityReview, isTriggerEnabled } from "../../interaction/triggers";
 import { getLogger } from "../../logger";
@@ -21,30 +20,20 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const reviewStage: PipelineStage = {
   name: "review",
-  enabled: (ctx) => (ctx.effectiveConfig ?? ctx.config).review.enabled,
+  enabled: (ctx) => ctx.config.review.enabled,
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
-    // PKG-004: use centrally resolved effective config
-    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
-    const dialogueEnabled = effectiveConfig.review?.dialogue?.enabled ?? false;
+    const dialogueEnabled = ctx.config.review?.dialogue?.enabled ?? false;
 
     logger.info("review", "Running review phase", { storyId: ctx.story.id });
 
-    // MW-010: scope review to package directory when story.workdir is set
-    const effectiveWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+    // MW-010: workdir is already resolved to the package directory at context creation
 
-    // Build model resolver for semantic review — returns the default agent adapter.
-    // The tier param from SemanticReviewConfig is informational (selects model cost tier)
-    // but AgentAdapter.complete() always uses the agent's own configured model.
+    // Build agent resolver for dialogue session creation
     const agentResolver = ctx.agentGetFn ?? getAgent;
-    const agentName = effectiveConfig.autoMode?.defaultAgent;
-    const modelResolver = (_tier: string) => (agentName ? (agentResolver(agentName) ?? null) : null);
-
-    // #136: Consume retrySkipChecks once (cleared after use so subsequent retries re-evaluate)
-    const retrySkipChecks = ctx.retrySkipChecks;
-    ctx.retrySkipChecks = undefined;
+    const agentName = ctx.rootConfig.autoMode?.defaultAgent;
 
     // AC3: When dialogue is enabled and a session already exists (retry loop), use reReview()
     if (dialogueEnabled && ctx.reviewerSession) {
@@ -93,13 +82,13 @@ export const reviewStage: PipelineStage = {
         // biome-ignore lint/suspicious/noExplicitAny: agent may be null when no defaultAgent configured
         (agent ?? null) as any,
         ctx.story.id,
-        effectiveWorkdir,
+        ctx.workdir,
         ctx.prd.feature ?? "",
         ctx.config,
       );
 
       // AC9: Try using the session for the semantic review; fall back to orchestrator on error
-      const semanticConfig = effectiveConfig.review?.semantic;
+      const semanticConfig = ctx.config.review?.semantic;
       if (semanticConfig && agent) {
         try {
           const diff = ctx.storyGitRef ?? "";
@@ -146,26 +135,8 @@ export const reviewStage: PipelineStage = {
       // No semanticConfig or agent — fall through to orchestrator with session stored
     }
 
-    const result = await reviewOrchestrator.review(
-      effectiveConfig.review,
-      effectiveWorkdir,
-      effectiveConfig.execution,
-      ctx.plugins,
-      ctx.storyGitRef,
-      ctx.story.workdir, // MW-010: scope changed-file checks to package
-      effectiveConfig.quality?.commands, // fallback for review.commands
-      ctx.story.id,
-      {
-        id: ctx.story.id,
-        title: ctx.story.title,
-        description: ctx.story.description,
-        acceptanceCriteria: ctx.story.acceptanceCriteria,
-      },
-      modelResolver,
-      ctx.config,
-      retrySkipChecks,
-      ctx.prd.feature,
-    );
+    // reviewFromContext reads and clears ctx.retrySkipChecks internally (#136)
+    const result = await reviewOrchestrator.reviewFromContext(ctx);
 
     ctx.reviewResult = result.builtIn;
 
@@ -183,10 +154,10 @@ export const reviewStage: PipelineStage = {
 
       if (result.pluginFailed) {
         // security-review trigger: prompt before permanently failing
-        if (ctx.interaction && isTriggerEnabled("security-review", effectiveConfig)) {
+        if (ctx.interaction && isTriggerEnabled("security-review", ctx.config)) {
           const shouldContinue = await _reviewDeps.checkSecurityReview(
             { featureName: ctx.prd.feature, storyId: ctx.story.id },
-            effectiveConfig,
+            ctx.config,
             ctx.interaction,
           );
           if (!shouldContinue) {

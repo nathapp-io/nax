@@ -282,13 +282,14 @@ async function executeFixStory(
     ? await loadConfigForWorkdir(join(ctx.workdir, ".nax", "config.json"), story.workdir)
     : ctx.config;
   const fixContext: PipelineContext = {
-    config: ctx.config,
-    effectiveConfig: fixEffectiveConfig,
+    config: fixEffectiveConfig,
+    rootConfig: ctx.config,
     prd,
     story,
     stories: [story],
     routing: routing as RoutingResult,
-    workdir: ctx.workdir,
+    projectDir: ctx.workdir,
+    workdir: story.workdir ? join(ctx.workdir, story.workdir) : ctx.workdir,
     featureDir: ctx.featureDir,
     hooks: ctx.hooks,
     plugins: ctx.pluginRegistry,
@@ -786,7 +787,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     const firstStory = prd.userStories[0];
     const acceptanceContext: PipelineContext = {
       config: ctx.config,
-      effectiveConfig: ctx.config,
+      rootConfig: ctx.config,
       prd,
       story: firstStory,
       stories: [firstStory],
@@ -796,6 +797,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
         testStrategy: "test-after",
         reasoning: "Acceptance validation",
       },
+      projectDir: ctx.workdir,
       workdir: ctx.workdir,
       featureDir: ctx.featureDir,
       hooks: ctx.hooks,
