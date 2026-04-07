@@ -5,6 +5,9 @@
  * for nax/config.json.
  */
 
+// existsSync / readFileSync: the entire detection chain is synchronous by design
+// (called once at CLI init time). Bun has no native sync equivalent for existsSync,
+// and async-ifying the chain would be significant churn for a one-shot startup scan.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 

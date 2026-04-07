@@ -18,11 +18,11 @@ import type { NaxPlugin, PluginConfigEntry } from "./types";
 import { validatePlugin } from "./validator";
 
 /**
- * Swappable error sink — defaults to console.error.
+ * Swappable error sink — defaults to no-op; logger calls are sufficient in production.
  * Tests can replace this to capture plugin error output.
  * @internal
  */
-export let _pluginErrorSink: (...args: unknown[]) => void = (...args) => console.error(...args);
+export let _pluginErrorSink: (...args: unknown[]) => void = () => {};
 
 /** @internal — for testing only */
 export function _setPluginErrorSink(fn: (...args: unknown[]) => void): void {
@@ -31,7 +31,7 @@ export function _setPluginErrorSink(fn: (...args: unknown[]) => void): void {
 
 /** @internal — reset to default */
 export function _resetPluginErrorSink(): void {
-  _pluginErrorSink = (...args) => console.error(...args);
+  _pluginErrorSink = () => {};
 }
 
 /**

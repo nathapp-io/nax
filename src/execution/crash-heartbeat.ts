@@ -40,6 +40,8 @@ async function heartbeatLoop(
           },
         };
         const line = `${JSON.stringify(heartbeatEntry)}\n`;
+        // appendFileSync: Bun has no built-in async append API (Bun.write overwrites).
+        // Synchronous append is acceptable here since this loop ticks every 60s.
         appendFileSync(jsonlFilePath, line);
       }
 

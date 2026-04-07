@@ -109,8 +109,15 @@ export async function executeWithTimeout(
     // Send SIGTERM to process group to kill children too
     killProcessGroup(pid, "SIGTERM");
 
-    // Wait for graceful shutdown
-    await Bun.sleep(gracePeriodMs);
+    // Wait for graceful shutdown, but bail early if process already exited.
+    // Bun.sleep is not cancellable; use Promise.race so parallel kills in
+    // high-concurrency runs don't each block for the full grace period unnecessarily.
+    await Promise.race([
+      proc.exited,
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, gracePeriodMs);
+      }),
+    ]);
 
     // Force SIGKILL entire process group if still running
     killProcessGroup(pid, "SIGKILL");

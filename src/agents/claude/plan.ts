@@ -1,12 +1,13 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 /**
  * Claude Code Plan Logic
  *
  * Extracted from claude.ts: plan(), buildPlanCommand()
  */
 
+import { validateFilePath } from "../../config/path-security";
 import { resolvePermissions } from "../../config/permissions";
 import type { PidRegistry } from "../../execution/pid-registry";
 import { withProcessTimeout } from "../../execution/timeout-handler";
@@ -46,17 +47,9 @@ export function buildPlanCommand(binary: string, options: PlanOptions): string[]
     fullPrompt = `${options.codebaseContext}\n\n${options.prompt}`;
   }
 
-  // For non-interactive mode, include input file content in the prompt
-  if (options.inputFile) {
-    try {
-      const inputContent = require("node:fs").readFileSync(
-        require("node:path").resolve(options.workdir, options.inputFile),
-        "utf-8",
-      );
-      fullPrompt = `${fullPrompt}\n\n## Input Requirements\n\n${inputContent}`;
-    } catch (error) {
-      throw new Error(`Failed to read input file ${options.inputFile}: ${(error as Error).message}`);
-    }
+  // Append pre-read input file content when provided (populated by runPlan before this call)
+  if (options.resolvedInputContent) {
+    fullPrompt = `${fullPrompt}\n\n## Input Requirements\n\n${options.resolvedInputContent}`;
   }
 
   if (!options.interactive) {
@@ -75,7 +68,16 @@ export function buildPlanCommand(binary: string, options: PlanOptions): string[]
 export async function runPlan(binary: string, options: PlanOptions, pidRegistry: PidRegistry): Promise<PlanResult> {
   const { resolveBalancedModelDef } = await import("../shared/model-resolution");
 
-  const cmd = buildPlanCommand(binary, options);
+  // Read inputFile here (async, with path boundary check) so buildPlanCommand
+  // stays synchronous and never touches the filesystem directly.
+  let resolvedOptions = options;
+  if (options.inputFile) {
+    const inputPath = validateFilePath(resolve(options.workdir, options.inputFile), options.workdir);
+    const resolvedInputContent = await Bun.file(inputPath).text();
+    resolvedOptions = { ...options, resolvedInputContent };
+  }
+
+  const cmd = buildPlanCommand(binary, resolvedOptions);
 
   // Resolve model: explicit modelDef > config.models.balanced > throw
   let modelDef = options.modelDef;

@@ -49,24 +49,30 @@ export interface CrashRecoveryContext {
   onShutdown?: () => Promise<void>;
 }
 
-let handlersInstalled = false;
+// Stores the active cleanup function so a second installCrashHandlers() call
+// can deregister the stale handlers before installing the new context's handlers,
+// rather than returning a silent no-op that leaves the old context registered.
+let activeCleanup: (() => void) | null = null;
 
 /**
  * Install crash handlers for recovery
  */
 export function installCrashHandlers(ctx: CrashRecoveryContext): () => void {
-  if (handlersInstalled) {
-    return () => {};
+  // Deregister any previous handlers so the new context replaces stale ones
+  // (guards against a prior run's cleanup never being called due to a crash).
+  if (activeCleanup) {
+    activeCleanup();
   }
 
   const cleanup = installSignalHandlers(ctx);
-  handlersInstalled = true;
 
-  return () => {
+  activeCleanup = () => {
     cleanup();
     stopHeartbeat();
-    handlersInstalled = false;
+    activeCleanup = null;
   };
+
+  return activeCleanup;
 }
 
 /**
@@ -74,6 +80,6 @@ export function installCrashHandlers(ctx: CrashRecoveryContext): () => void {
  * @internal
  */
 export function resetCrashHandlers(): void {
-  handlersInstalled = false;
+  activeCleanup = null;
   stopHeartbeat();
 }
