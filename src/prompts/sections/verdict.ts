@@ -28,36 +28,10 @@ Set \`approved: false\` when ANY of these conditions are true:
 - Critical acceptance criteria are not met
 - Code quality is poor (security issues, severe bugs, etc.)
 
-**Full JSON schema example** (fill in all fields with real values):
+**JSON schema** (fill in all fields with real values):
 
 \`\`\`json
-{
-  "version": 1,
-  "approved": true,
-  "tests": {
-    "allPassing": true,
-    "passCount": 42,
-    "failCount": 0
-  },
-  "testModifications": {
-    "detected": false,
-    "files": [],
-    "legitimate": true,
-    "reasoning": "No test files were modified by the implementer"
-  },
-  "acceptanceCriteria": {
-    "allMet": true,
-    "criteria": [
-      { "criterion": "Example criterion", "met": true }
-    ]
-  },
-  "quality": {
-    "rating": "good",
-    "issues": []
-  },
-  "fixes": [],
-  "reasoning": "All tests pass, implementation is clean, all acceptance criteria are met."
-}
+{"version":1,"approved":true,"tests":{"allPassing":true,"passCount":42,"failCount":0},"testModifications":{"detected":false,"files":[],"legitimate":true,"reasoning":"..."},"acceptanceCriteria":{"allMet":true,"criteria":[{"criterion":"...","met":true}]},"quality":{"rating":"good","issues":[]},"fixes":[],"reasoning":"..."}
 \`\`\`
 
 **Field notes:**
