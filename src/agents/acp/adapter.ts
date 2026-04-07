@@ -561,11 +561,9 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async run(options: AgentRunOptions): Promise<AgentResult> {
-    // TODO: _unavailableAgents persists across stories in a run because adapter instances
-    // are cached by createAgentRegistry(). A transient auth failure in story A can permanently
-    // exclude an agent for subsequent stories. The correct fix is to reset at story boundaries
-    // (runner.ts story loop), not here — clearing in run() would break the deliberate
-    // complete()→run() sharing that enables within-story fallback (see adapter-run-fallback tests).
+    // _unavailableAgents is reset between stories via AgentRegistry.resetStoryState(),
+    // called from the unified executor at each story boundary. Within a story,
+    // the set is intentionally shared between run() and complete() for fallback continuity.
     const startTime = Date.now();
     const config = options.config;
     const hasActiveFallbacks = (config?.autoMode?.fallbackOrder?.length ?? 0) > 0;
@@ -1191,6 +1189,15 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
 
     return { stories };
+  }
+
+  /**
+   * Reset per-story availability state.
+   * Called by AgentRegistry.resetStoryState() at each story boundary so transient
+   * auth failures in one story do not carry over to the next.
+   */
+  clearUnavailableAgents(): void {
+    this._unavailableAgents.clear();
   }
 
   private markUnavailable(agentName: string): void {

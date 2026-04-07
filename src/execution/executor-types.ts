@@ -41,6 +41,12 @@ export interface SequentialExecutionContext {
   pidRegistry?: PidRegistry;
   /** Max parallel sessions: undefined=sequential, 0=auto-detect, N>0=cap at N */
   parallelCount?: number;
+  /**
+   * Called just before each story (or parallel batch) begins execution.
+   * Used to reset per-story adapter state (e.g. _unavailableAgents) so transient
+   * auth failures from a previous story do not carry over.
+   */
+  onBeforeStory?: () => void;
 }
 
 export interface SequentialExecutionResult {

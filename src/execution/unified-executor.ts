@@ -149,6 +149,8 @@ export async function executeUnified(
         const batch = _unifiedExecutorDeps.selectIndependentBatch(readyStories, ctx.parallelCount as number);
 
         if (batch.length > 1) {
+          // Reset per-story adapter state before dispatching the batch
+          ctx.onBeforeStory?.();
           // Emit story:started for each batch story before dispatch (AC-5)
           for (const story of batch) {
             pipelineEventBus.emit({
@@ -325,6 +327,7 @@ export async function executeUnified(
             pipelineEventBus.emit({ type: "run:resumed", feature: ctx.feature });
           }
 
+          ctx.onBeforeStory?.();
           pipelineEventBus.emit({
             type: "story:started",
             storyId: singleStory.id,
@@ -406,6 +409,7 @@ export async function executeUnified(
         pipelineEventBus.emit({ type: "run:resumed", feature: ctx.feature });
       }
 
+      ctx.onBeforeStory?.();
       pipelineEventBus.emit({
         type: "story:started",
         storyId: selection.story.id,

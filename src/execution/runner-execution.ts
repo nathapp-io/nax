@@ -45,6 +45,8 @@ export interface RunnerExecutionOptions {
   parallel?: number;
   /** Protocol-aware agent resolver — created once in runner.ts from createAgentRegistry(config) */
   agentGetFn?: AgentGetFn;
+  /** Called before each story starts — resets per-story adapter state (e.g. _unavailableAgents). */
+  onBeforeStory?: () => void;
   /** PID registry for crash recovery — passed to agent.run() to register child processes. */
   pidRegistry?: PidRegistry;
   /** Interaction chain for cost/pre-merge triggers during sequential execution. */
@@ -155,6 +157,7 @@ export async function runExecutionPhase(
       startTime: options.startTime,
       parallelCount: options.parallel,
       agentGetFn: options.agentGetFn,
+      onBeforeStory: options.onBeforeStory,
       pidRegistry: options.pidRegistry,
       interactionChain: options.interactionChain,
       batchPlan,
