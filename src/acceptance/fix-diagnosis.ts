@@ -139,12 +139,14 @@ export async function diagnoseAcceptanceFailure(
   });
 
   try {
+    const timeoutSeconds = (config.acceptance?.timeoutMs ?? 120_000) / 1000;
+
     const result = await agent.run({
       prompt,
       workdir,
       modelTier: undefined as unknown as "fast" | "balanced" | "powerful",
       modelDef,
-      timeoutSeconds: 300,
+      timeoutSeconds,
       sessionRole: "diagnose",
       acpSessionName: sessionName,
       featureName,
