@@ -118,8 +118,10 @@ export const _rectificationDeps = {
   runDebate: _defaultRunDebate as typeof _defaultRunDebate,
 };
 
-/** Run the rectification retry loop. Returns true if all failures were fixed. */
-export async function runRectificationLoop(opts: RectificationLoopOptions): Promise<boolean> {
+/** Run the rectification retry loop. Returns whether all failures were fixed and the accumulated agent cost. */
+export async function runRectificationLoop(
+  opts: RectificationLoopOptions,
+): Promise<{ succeeded: boolean; cost: number }> {
   const {
     config,
     workdir,
@@ -144,7 +146,9 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
     lastExitCode: 1, // Assume failure since we entered the loop
   };
 
-  return runSharedRectificationLoop({
+  let costAccum = 0;
+
+  const succeeded = await runSharedRectificationLoop({
     stage: "rectification",
     storyId: story.id,
     maxAttempts: rectificationConfig.maxRetries,
@@ -235,6 +239,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
         sessionRole: "implementer",
       });
 
+      costAccum += agentResult.estimatedCost ?? 0;
       if (agentResult.success) {
         logger?.info("rectification", `Agent ${label} session complete`, {
           storyId: story.id,
@@ -387,6 +392,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
         sessionRole: "implementer",
       });
 
+      costAccum += escalationRunResult.estimatedCost ?? 0;
       logger?.info("rectification", "escalated rectification attempt cost", {
         storyId: story.id,
         escalatedTier,
@@ -426,6 +432,8 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
     }
     throw error;
   });
+
+  return { succeeded, cost: costAccum };
 }
 
 /**
@@ -435,7 +443,7 @@ export async function runRectificationLoop(opts: RectificationLoopOptions): Prom
 export function runRectificationLoopFromCtx(
   ctx: PipelineContext,
   opts: { testCommand: string; testOutput: string; promptPrefix?: string },
-): Promise<boolean> {
+): Promise<{ succeeded: boolean; cost: number }> {
   return runRectificationLoop({
     config: ctx.config,
     workdir: ctx.workdir,

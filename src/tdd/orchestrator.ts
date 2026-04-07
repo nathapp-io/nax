@@ -283,7 +283,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
   }
 
   // Full-Suite Gate (v0.11 Rectification)
-  const fullSuiteGatePassed = await runFullSuiteGate(
+  const { passed: fullSuiteGatePassed, cost: fullSuiteGateCost } = await runFullSuiteGate(
     story,
     config,
     workdir,
@@ -385,7 +385,7 @@ export async function runThreeSessionTdd(options: ThreeSessionTddOptions): Promi
     }
   }
 
-  const totalCost = sessions.reduce((sum, s) => sum + s.estimatedCost, 0);
+  const totalCost = sessions.reduce((sum, s) => sum + s.estimatedCost, 0) + fullSuiteGateCost;
 
   logger.info("tdd", allSuccessful ? "[OK] Three-session TDD complete" : "[WARN] Three-session TDD needs review", {
     storyId: story.id,

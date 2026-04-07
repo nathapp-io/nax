@@ -731,7 +731,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
       { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
     );
 
-    expect(result).toBe(false);
+    expect(result.passed).toBe(false);
   });
 
   test("returns true when full suite passes without regressions", async () => {
@@ -766,7 +766,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
       { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
     );
 
-    expect(result).toBe(true);
+    expect(result.passed).toBe(true);
   });
 
   test("calls agent.run() via AcpAgentAdapter during rectification loop", async () => {
@@ -834,7 +834,7 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
 
     // Rectification agent was invoked via AcpAgentAdapter
     expect(clientsCreated).toBeGreaterThanOrEqual(1);
-    expect(result).toBe(true);
+    expect(result.passed).toBe(true);
   });
 
   test("rectification gate returns false after max retries with persistent failures", async () => {
@@ -887,6 +887,6 @@ describe("runFullSuiteGate with AcpAgentAdapter", () => {
       { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} } as any,
     );
 
-    expect(result).toBe(false);
+    expect(result.passed).toBe(false);
   });
 });

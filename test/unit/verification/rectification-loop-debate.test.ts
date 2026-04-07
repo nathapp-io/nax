@@ -307,6 +307,6 @@ describe("runRectificationLoop — debate fallback when all debaters fail", () =
       testOutput: FAILING_TEST_OUTPUT,
     });
 
-    expect(result).toBe(true);
+    expect(result.succeeded).toBe(true);
   });
 });

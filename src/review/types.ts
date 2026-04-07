@@ -35,6 +35,8 @@ export interface ReviewCheckResult {
   durationMs: number;
   /** Structured findings (populated by semantic review when LLM returns findings) */
   findings?: import("../plugins/types").ReviewFinding[];
+  /** LLM cost incurred for this check (populated by semantic review) */
+  cost?: number;
 }
 
 /** Plugin reviewer result */

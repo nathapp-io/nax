@@ -138,7 +138,7 @@ describe("runRectificationLoop — session context params", () => {
       featureName: "my-feature",
     });
 
-    expect(result).toBe(true);
+    expect(result.succeeded).toBe(true);
     expect(capturedOptions).toHaveLength(1);
     expect(capturedOptions[0].featureName).toBe("my-feature");
     expect(capturedOptions[0].storyId).toBe("TS-001");
@@ -198,7 +198,7 @@ describe("runRectificationLoop — session context params", () => {
       featureName: "my-feature",
     });
 
-    expect(result).toBe(false);
+    expect(result.succeeded).toBe(false);
   });
 
   test("passes config into fallback _rectificationDeps.getAgent when agentGetFn is omitted", async () => {
@@ -240,7 +240,7 @@ describe("runRectificationLoop — session context params", () => {
       testOutput: FAILING_TEST_OUTPUT,
     });
 
-    expect(result).toBe(true);
+    expect(result.succeeded).toBe(true);
     expect(capturedConfig).toBe(config);
   });
 
@@ -318,7 +318,7 @@ describe("runRectificationLoop — session context params", () => {
       testOutput: FAILING_TEST_OUTPUT,
     });
 
-    expect(result).toBe(false);
+    expect(result.succeeded).toBe(false);
     expect(verifyCallCount).toBeGreaterThanOrEqual(1);
     expect(capturedConfigs.length).toBeGreaterThanOrEqual(2);
     expect(capturedConfigs[0]).toBe(config);
@@ -657,7 +657,7 @@ Error: Test failed
       testOutput: FAILING_TEST_OUTPUT,
     });
 
-    expect(result).toBe(true);
+    expect(result.succeeded).toBe(true);
     expect(agentRunCount).toBe(1);
     expect(verificationCalls).toBe(1);
   });

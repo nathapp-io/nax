@@ -117,6 +117,7 @@ export const reviewStage: PipelineStage = {
                 ],
             totalDurationMs: 0,
           };
+          const dialogueCost = sessionResult.cost ?? 0;
           if (passed) {
             logger.info("review", "Review passed (dialogue session)", { storyId: ctx.story.id });
           } else {
@@ -124,7 +125,7 @@ export const reviewStage: PipelineStage = {
               storyId: ctx.story.id,
             });
           }
-          return { action: "continue" };
+          return { action: "continue", cost: dialogueCost || undefined };
         } catch (err) {
           logger.warn("review", "ReviewerSession.review() failed — falling back to one-shot review", {
             storyId: ctx.story.id,
@@ -139,6 +140,9 @@ export const reviewStage: PipelineStage = {
     const result = await reviewOrchestrator.reviewFromContext(ctx);
 
     ctx.reviewResult = result.builtIn;
+
+    // Sum LLM costs from checks (populated by semantic review)
+    const reviewCost = (result.builtIn.checks ?? []).reduce((sum, c) => sum + (c.cost ?? 0), 0) || undefined;
 
     if (!result.success) {
       // Collect structured findings from plugin reviewers for escalation context
@@ -162,14 +166,14 @@ export const reviewStage: PipelineStage = {
           );
           if (!shouldContinue) {
             logger.error("review", `Plugin reviewer failed: ${result.failureReason}`, { storyId: ctx.story.id });
-            return { action: "fail", reason: `Review failed: ${result.failureReason}` };
+            return { action: "fail", reason: `Review failed: ${result.failureReason}`, cost: reviewCost };
           }
           logger.warn("review", "Security-review trigger escalated — retrying story", { storyId: ctx.story.id });
-          return { action: "escalate", reason: `Review failed: ${result.failureReason}` };
+          return { action: "escalate", reason: `Review failed: ${result.failureReason}`, cost: reviewCost };
         }
 
         logger.error("review", `Plugin reviewer failed: ${result.failureReason}`, { storyId: ctx.story.id });
-        return { action: "fail", reason: `Review failed: ${result.failureReason}` };
+        return { action: "fail", reason: `Review failed: ${result.failureReason}`, cost: reviewCost };
       }
 
       logger.warn("review", "Review failed (built-in checks) — handing off to autofix", {
@@ -177,14 +181,14 @@ export const reviewStage: PipelineStage = {
         storyId: ctx.story.id,
       });
       // ctx.reviewResult is already set with success:false — autofixStage handles it next
-      return { action: "continue" };
+      return { action: "continue", cost: reviewCost };
     }
 
     logger.info("review", "Review passed", {
       durationMs: result.builtIn.totalDurationMs,
       storyId: ctx.story.id,
     });
-    return { action: "continue" };
+    return { action: "continue", cost: reviewCost };
   },
 };
 

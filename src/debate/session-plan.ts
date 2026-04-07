@@ -40,6 +40,8 @@ export async function runPlan(
   const logger = _debateSessionDeps.getSafeLogger();
   const config = ctx.stageConfig;
   const debaters = config.debaters ?? [];
+  // NOTE: adapter.plan() returns PlanResult which does not expose estimatedCost.
+  // Cost tracking for plan-mode debates requires PlanResult to include cost — tracked separately.
   const totalCostUsd = 0;
 
   // Resolve adapters — skip unavailable agents

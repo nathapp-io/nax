@@ -404,6 +404,7 @@ export async function runSemanticReview(
       timeoutSeconds: naxConfig?.execution?.sessionTimeoutSeconds,
     });
     const debateResult = await debateSession.run(prompt);
+    const debateCost = debateResult.totalCostUsd ?? 0;
 
     // Compute majority vote and merge findings from all proposals
     let passCount = 0;
@@ -450,6 +451,7 @@ export async function runSemanticReview(
           output: `Semantic review failed:\n\n${formatFindings(debateBlocking)}`,
           durationMs,
           findings: toReviewFindings(debateBlocking),
+          cost: debateCost,
         };
       }
       // All findings were non-blocking — override to pass
@@ -464,6 +466,7 @@ export async function runSemanticReview(
         exitCode: 0,
         output: "Semantic review passed (debate, all findings were unverifiable or informational)",
         durationMs,
+        cost: debateCost,
       };
     }
     logger?.info("review", "Semantic review passed (debate)", { storyId: story.id, durationMs });
@@ -474,6 +477,7 @@ export async function runSemanticReview(
       exitCode: 0,
       output: "Semantic review passed",
       durationMs,
+      cost: debateCost,
     };
   }
 
@@ -498,6 +502,7 @@ export async function runSemanticReview(
     // Use default model if resolution fails
   }
   let rawResponse: string;
+  let llmCost = 0;
   try {
     let runErr: unknown;
     let runSucceeded = false;
@@ -514,6 +519,7 @@ export async function runSemanticReview(
         config: naxConfig ?? DEFAULT_CONFIG,
       });
       runOutput = runResult.output;
+      llmCost = runResult.estimatedCost ?? 0;
       runSucceeded = true;
     } catch (err) {
       runErr = err;
@@ -531,6 +537,7 @@ export async function runSemanticReview(
         config: naxConfig ?? DEFAULT_CONFIG,
       });
       rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
+      llmCost = typeof completeResult === "string" ? 0 : (completeResult.costUsd ?? 0);
       void runErr;
     }
   } catch (err) {
@@ -564,6 +571,7 @@ export async function runSemanticReview(
         output:
           "semantic review: LLM response truncated but indicated failure (passed:false found in partial response)",
         durationMs: Date.now() - startTime,
+        cost: llmCost,
       };
     }
 
@@ -575,6 +583,7 @@ export async function runSemanticReview(
       exitCode: 0,
       output: "semantic review: could not parse LLM response (fail-open)",
       durationMs: Date.now() - startTime,
+      cost: llmCost,
     };
   }
 
@@ -619,6 +628,7 @@ export async function runSemanticReview(
       output,
       durationMs,
       findings: toReviewFindings(blockingFindings),
+      cost: llmCost,
     };
   }
 
@@ -633,6 +643,7 @@ export async function runSemanticReview(
       exitCode: 0,
       output: "Semantic review passed (all findings were unverifiable or informational)",
       durationMs,
+      cost: llmCost,
     };
   }
 
@@ -647,5 +658,6 @@ export async function runSemanticReview(
     exitCode: parsed.passed ? 0 : 1,
     output: parsed.passed ? "Semantic review passed" : "Semantic review failed (no findings)",
     durationMs,
+    cost: llmCost,
   };
 }
