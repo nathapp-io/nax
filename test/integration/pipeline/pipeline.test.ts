@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { DEFAULT_CONFIG } from "../../../src/config";
 import type { NaxConfig } from "../../../src/config/schema";
 import { initLogger, resetLogger } from "../../../src/logger";
 import { runPipeline } from "../../../src/pipeline/runner";
@@ -39,6 +40,7 @@ function createTestContext(overrides?: Partial<PipelineContext>): PipelineContex
 
   return {
     config: {} as NaxConfig,
+    rootConfig: DEFAULT_CONFIG,
     prd,
     story,
     stories: [story],
@@ -49,6 +51,7 @@ function createTestContext(overrides?: Partial<PipelineContext>): PipelineContex
       reasoning: "Test routing",
     },
     workdir: "/test/workdir",
+    projectDir: "/test/workdir",
     hooks: { hooks: {} },
     ...overrides,
   };

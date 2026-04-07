@@ -10,6 +10,7 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { NaxConfig } from "../../../../src/config";
 import { InteractionChain } from "../../../../src/interaction/chain";
 import type { InteractionPlugin, InteractionResponse } from "../../../../src/interaction/types";
@@ -85,7 +86,9 @@ function makeCtx(overrides: Partial<PipelineContext>): PipelineContext {
     story: makeStory(),
     stories: [makeStory()],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    rootConfig: DEFAULT_CONFIG,
     workdir: "/tmp/test",
+    projectDir: "/tmp/test",
     hooks: {} as PipelineContext["hooks"],
     ...overrides,
   } as unknown as PipelineContext;

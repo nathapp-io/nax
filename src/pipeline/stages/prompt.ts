@@ -66,9 +66,6 @@ export const promptStage: PipelineStage = {
     const logger = getLogger();
     const isBatch = ctx.stories.length > 1;
 
-    // PKG-004: use centrally resolved effective config
-    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
-
     // AC6–AC8: load acceptance test file content from ctx.acceptanceTestPaths
     const acceptanceEntries = await _loadAcceptanceEntries(ctx, logger);
 
@@ -79,8 +76,8 @@ export const promptStage: PipelineStage = {
         .stories(ctx.stories)
         .context(ctx.contextMarkdown)
         .constitution(ctx.constitution?.content)
-        .testCommand(effectiveConfig.quality?.commands?.test)
-        .hermeticConfig(effectiveConfig.quality?.testing);
+        .testCommand(ctx.config.quality?.commands?.test)
+        .hermeticConfig(ctx.config.quality?.testing);
       if (acceptanceEntries.length > 0) builder.acceptanceContext(acceptanceEntries);
       prompt = await builder.build();
     } else {
@@ -91,8 +88,8 @@ export const promptStage: PipelineStage = {
         .story(ctx.story)
         .context(ctx.contextMarkdown)
         .constitution(ctx.constitution?.content)
-        .testCommand(effectiveConfig.quality?.commands?.test)
-        .hermeticConfig(effectiveConfig.quality?.testing)
+        .testCommand(ctx.config.quality?.commands?.test)
+        .hermeticConfig(ctx.config.quality?.testing)
         .noTestJustification(ctx.story.routing?.noTestJustification);
       if (acceptanceEntries.length > 0) builder.acceptanceContext(acceptanceEntries);
       prompt = await builder.build();

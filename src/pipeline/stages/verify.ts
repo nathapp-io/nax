@@ -90,19 +90,15 @@ export const verifyStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
-    // PKG-003: use centrally resolved effective config (set once per story in iteration-runner)
-    // Falls back to ctx.config for contexts that predate PKG-003 (e.g., acceptance-loop)
-    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
-
     // Skip verification if tests are not required
-    if (!effectiveConfig.quality.requireTests) {
+    if (!ctx.config.quality.requireTests) {
       logger.debug("verify", "Skipping verification (quality.requireTests = false)", { storyId: ctx.story.id });
       return { action: "continue" };
     }
 
     // Skip verification if no test command is configured
-    const testCommand = effectiveConfig.review?.commands?.test ?? effectiveConfig.quality.commands.test;
-    const testScopedTemplate = effectiveConfig.quality.commands.testScoped;
+    const testCommand = ctx.config.review?.commands?.test ?? ctx.config.quality.commands.test;
+    const testScopedTemplate = ctx.config.quality.commands.testScoped;
     if (!testCommand) {
       logger.debug("verify", "Skipping verification (no test command configured)", { storyId: ctx.story.id });
       return { action: "continue" };
@@ -116,8 +112,8 @@ export const verifyStage: PipelineStage = {
     // Determine effective test command (smart runner or full suite)
     let effectiveCommand = testCommand;
     let isFullSuite = true;
-    const smartRunnerConfig = coerceSmartTestRunner(effectiveConfig.execution.smartTestRunner);
-    const regressionMode = effectiveConfig.execution.regressionGate?.mode ?? "deferred";
+    const smartRunnerConfig = coerceSmartTestRunner(ctx.config.execution.smartTestRunner);
+    const regressionMode = ctx.config.execution.regressionGate?.mode ?? "deferred";
 
     // Resolve {{package}} in testScoped template for monorepo stories.
     // Returns null if package.json is absent (non-JS project) — falls through to smart-runner.
@@ -205,8 +201,8 @@ export const verifyStage: PipelineStage = {
     const result = await _verifyDeps.regression({
       workdir: effectiveWorkdir,
       command: effectiveCommand,
-      timeoutSeconds: effectiveConfig.execution.verificationTimeoutSeconds,
-      acceptOnTimeout: effectiveConfig.execution.regressionGate?.acceptOnTimeout ?? true,
+      timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
+      acceptOnTimeout: ctx.config.execution.regressionGate?.acceptOnTimeout ?? true,
     });
 
     // Store result on context for rectify stage
@@ -234,7 +230,7 @@ export const verifyStage: PipelineStage = {
     if (!result.success) {
       // BUG-019: Distinguish timeout from actual test failures
       if (result.status === "TIMEOUT") {
-        const timeout = effectiveConfig.execution.verificationTimeoutSeconds;
+        const timeout = ctx.config.execution.verificationTimeoutSeconds;
         logger.error(
           "verify",
           `Test suite exceeded timeout (${timeout}s). This is NOT a test failure — consider increasing execution.verificationTimeoutSeconds or scoping tests.`,
@@ -263,7 +259,7 @@ export const verifyStage: PipelineStage = {
           action: "escalate",
           reason:
             result.status === "TIMEOUT"
-              ? `Test suite TIMEOUT after ${effectiveConfig.execution.verificationTimeoutSeconds}s (not a code failure)`
+              ? `Test suite TIMEOUT after ${ctx.config.execution.verificationTimeoutSeconds}s (not a code failure)`
               : `Tests failed with runtime crash (exit code ${result.status ?? "non-zero"})`,
         };
       }

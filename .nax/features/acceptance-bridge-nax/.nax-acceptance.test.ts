@@ -98,7 +98,7 @@ function makeCtx(overrides: Record<string, unknown> = {}): Record<string, unknow
   const story = makeStory();
   return {
     config: makeConfig(),
-    effectiveConfig: makeConfig(),
+    rootConfig: makeConfig(),
     prd: { userStories: [story], featureName: "test-feature" },
     story,
     stories: [story],

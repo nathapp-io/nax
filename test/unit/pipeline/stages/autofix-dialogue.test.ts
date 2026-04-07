@@ -91,7 +91,7 @@ function makeDialogueConfig(
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
     config: makeDialogueConfig(true),
-    effectiveConfig: makeDialogueConfig(true),
+    rootConfig: makeDialogueConfig(true),
     prd: { feature: "my-feature", userStories: [] } as import("../../../../src/prd").PRD,
     story: {
       id: "US-001",
@@ -175,8 +175,8 @@ describe("autofixStage — CLARIFY relay (AC5)", () => {
     const ctx = makeCtx({
       reviewResult: makeFailedReviewResult([{ check: "semantic" }]),
       reviewerSession: mockSession,
-      effectiveConfig: config,
       config,
+      rootConfig: config,
     });
 
     await autofixStage.execute(ctx);
@@ -276,8 +276,8 @@ describe("autofixStage — clarification cap (AC6)", () => {
     const ctx = makeCtx({
       reviewResult: makeFailedReviewResult([{ check: "semantic" }]),
       reviewerSession: mockSession,
-      effectiveConfig: config,
       config,
+      rootConfig: config,
     });
 
     await autofixStage.execute(ctx);
@@ -307,8 +307,8 @@ describe("autofixStage — clarification cap (AC6)", () => {
     const ctx = makeCtx({
       reviewResult: makeFailedReviewResult([{ check: "semantic" }]),
       reviewerSession: mockSession,
-      effectiveConfig: config,
       config,
+      rootConfig: config,
     });
 
     // Must not throw

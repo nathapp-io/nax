@@ -90,7 +90,7 @@ export async function executeSequential(
     logger?.info("execution", "Running pre-run pipeline (acceptance test setup)");
     const preRunCtx: PipelineContext = {
       config: ctx.config,
-      effectiveConfig: ctx.config,
+      rootConfig: ctx.config,
       prd,
       projectDir: ctx.workdir,
       workdir: ctx.workdir,

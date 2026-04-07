@@ -21,14 +21,12 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
 
 export const reviewStage: PipelineStage = {
   name: "review",
-  enabled: (ctx) => (ctx.effectiveConfig ?? ctx.config).review.enabled,
+  enabled: (ctx) => ctx.config.review.enabled,
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
-    // PKG-004: use centrally resolved effective config
-    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
-    const dialogueEnabled = effectiveConfig.review?.dialogue?.enabled ?? false;
+    const dialogueEnabled = ctx.config.review?.dialogue?.enabled ?? false;
 
     logger.info("review", "Running review phase", { storyId: ctx.story.id });
 
@@ -39,7 +37,7 @@ export const reviewStage: PipelineStage = {
     // The tier param from SemanticReviewConfig is informational (selects model cost tier)
     // but AgentAdapter.complete() always uses the agent's own configured model.
     const agentResolver = ctx.agentGetFn ?? getAgent;
-    const agentName = effectiveConfig.autoMode?.defaultAgent;
+    const agentName = ctx.rootConfig.autoMode?.defaultAgent;
     const modelResolver = (_tier: string) => (agentName ? (agentResolver(agentName) ?? null) : null);
 
     // #136: Consume retrySkipChecks once (cleared after use so subsequent retries re-evaluate)
@@ -99,7 +97,7 @@ export const reviewStage: PipelineStage = {
       );
 
       // AC9: Try using the session for the semantic review; fall back to orchestrator on error
-      const semanticConfig = effectiveConfig.review?.semantic;
+      const semanticConfig = ctx.config.review?.semantic;
       if (semanticConfig && agent) {
         try {
           const diff = ctx.storyGitRef ?? "";
@@ -147,13 +145,13 @@ export const reviewStage: PipelineStage = {
     }
 
     const result = await reviewOrchestrator.review(
-      effectiveConfig.review,
+      ctx.config.review,
       effectiveWorkdir,
-      effectiveConfig.execution,
+      ctx.config.execution,
       ctx.plugins,
       ctx.storyGitRef,
       ctx.story.workdir, // MW-010: scope changed-file checks to package
-      effectiveConfig.quality?.commands, // fallback for review.commands
+      ctx.config.quality?.commands, // fallback for review.commands
       ctx.story.id,
       {
         id: ctx.story.id,
@@ -183,10 +181,10 @@ export const reviewStage: PipelineStage = {
 
       if (result.pluginFailed) {
         // security-review trigger: prompt before permanently failing
-        if (ctx.interaction && isTriggerEnabled("security-review", effectiveConfig)) {
+        if (ctx.interaction && isTriggerEnabled("security-review", ctx.config)) {
           const shouldContinue = await _reviewDeps.checkSecurityReview(
             { featureName: ctx.prd.feature, storyId: ctx.story.id },
-            effectiveConfig,
+            ctx.config,
             ctx.interaction,
           );
           if (!shouldContinue) {

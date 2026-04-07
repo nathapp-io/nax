@@ -161,9 +161,8 @@ export const acceptanceSetupStage: PipelineStage = {
       return { action: "fail", reason: "[acceptance-setup] featureDir is not set" };
     }
 
-    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
-    const language = effectiveConfig.project?.language;
-    const testPathConfig = (ctx.effectiveConfig ?? ctx.config).acceptance.testPath;
+    const language = ctx.config.project?.language;
+    const testPathConfig = ctx.config.acceptance.testPath;
     const metaPath = path.join(ctx.featureDir, "acceptance-meta.json");
 
     // All criteria from original stories only — fix stories (US-FIX-*) are excluded
@@ -251,7 +250,7 @@ export const acceptanceSetupStage: PipelineStage = {
     if (shouldGenerate) {
       totalCriteria = allCriteria.length;
 
-      const agent = (ctx.agentGetFn ?? _acceptanceSetupDeps.getAgent)(ctx.config.autoMode.defaultAgent);
+      const agent = (ctx.agentGetFn ?? _acceptanceSetupDeps.getAgent)(ctx.rootConfig.autoMode.defaultAgent);
 
       // Refine criteria per-story (preserves storyId association for per-group filtering)
       let allRefinedCriteria: RefinedCriterion[];
@@ -313,10 +312,10 @@ export const acceptanceSetupStage: PipelineStage = {
         let modelDef: ModelDef;
         try {
           modelDef = resolveModelForAgent(
-            ctx.config.models,
-            ctx.routing.agent ?? ctx.config.autoMode.defaultAgent,
+            ctx.rootConfig.models,
+            ctx.routing.agent ?? ctx.rootConfig.autoMode.defaultAgent,
             ctx.config.acceptance.model ?? "fast",
-            ctx.config.autoMode.defaultAgent,
+            ctx.rootConfig.autoMode.defaultAgent,
           );
         } catch {
           const tier = ctx.config.acceptance.model ?? "fast";
@@ -367,8 +366,8 @@ export const acceptanceSetupStage: PipelineStage = {
     for (const { testPath, packageDir } of testPaths) {
       const runCmd = buildAcceptanceRunCommand(
         testPath,
-        effectiveConfig.project?.testFramework,
-        effectiveConfig.acceptance.command,
+        ctx.config.project?.testFramework,
+        ctx.config.acceptance.command,
       );
       getSafeLogger()?.info("acceptance-setup", "Running acceptance RED gate command", {
         cmd: runCmd.join(" "),

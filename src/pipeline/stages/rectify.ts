@@ -59,15 +59,13 @@ export const rectifyStage: PipelineStage = {
       testOutput,
     });
 
-    // PKG-004: use centrally resolved effective config
-    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
-    const testCommand = effectiveConfig.review?.commands?.test ?? effectiveConfig.quality.commands.test ?? "bun test";
+    const testCommand = ctx.config.review?.commands?.test ?? ctx.config.quality.commands.test ?? "bun test";
     const fixed = await _rectifyDeps.runRectificationLoop({
       config: ctx.config,
       workdir: ctx.workdir,
       story: ctx.story,
       testCommand,
-      timeoutSeconds: effectiveConfig.execution.verificationTimeoutSeconds,
+      timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
       testOutput,
       agentGetFn: ctx.agentGetFn,
     });

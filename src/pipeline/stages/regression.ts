@@ -24,28 +24,24 @@ export const regressionStage: PipelineStage = {
   name: "regression",
 
   enabled(ctx: PipelineContext): boolean {
-    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
-    const mode = effectiveConfig.execution.regressionGate?.mode ?? "deferred";
+    const mode = ctx.config.execution.regressionGate?.mode ?? "deferred";
     if (mode !== "per-story") return false;
     // Only run when verify passed (or was skipped/not set)
     if (ctx.verifyResult && !ctx.verifyResult.success) return false;
-    const gateEnabled = effectiveConfig.execution.regressionGate?.enabled ?? true;
+    const gateEnabled = ctx.config.execution.regressionGate?.enabled ?? true;
     return gateEnabled;
   },
 
   skipReason(ctx: PipelineContext): string {
-    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
-    const mode = effectiveConfig.execution.regressionGate?.mode ?? "deferred";
+    const mode = ctx.config.execution.regressionGate?.mode ?? "deferred";
     if (mode !== "per-story") return `not needed (regression mode is '${mode}', not 'per-story')`;
     return "disabled (regression gate not enabled in config)";
   },
 
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
-    // PKG-004: use centrally resolved effective config
-    const effectiveConfig = ctx.effectiveConfig ?? ctx.config;
-    const testCommand = effectiveConfig.review?.commands?.test ?? effectiveConfig.quality.commands.test ?? "bun test";
-    const timeoutSeconds = effectiveConfig.execution.regressionGate?.timeoutSeconds ?? 120;
+    const testCommand = ctx.config.review?.commands?.test ?? ctx.config.quality.commands.test ?? "bun test";
+    const timeoutSeconds = ctx.config.execution.regressionGate?.timeoutSeconds ?? 120;
 
     logger.info("regression", "Running full-suite regression gate", { storyId: ctx.story.id });
 
@@ -54,7 +50,7 @@ export const regressionStage: PipelineStage = {
       testCommand,
       timeoutSeconds,
       storyId: ctx.story.id,
-      acceptOnTimeout: effectiveConfig.execution.regressionGate?.acceptOnTimeout ?? true,
+      acceptOnTimeout: ctx.config.execution.regressionGate?.acceptOnTimeout ?? true,
       config: ctx.config,
     };
 

@@ -9,6 +9,7 @@
  */
 
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { NaxConfig } from "../../../../src/config";
 import { InteractionChain } from "../../../../src/interaction/chain";
 import type { InteractionPlugin, InteractionResponse } from "../../../../src/interaction/types";
@@ -95,7 +96,9 @@ function makeCtx(config: NaxConfig, tempDir: string, interaction?: InteractionCh
     story: makeStory(),
     stories: [makeStory()],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    rootConfig: DEFAULT_CONFIG,
     workdir: tempDir,
+    projectDir: tempDir,
     featureDir: tempDir,
     agentResult: { success: true, estimatedCost: 0.01, output: "", stderr: "", exitCode: 0, rateLimited: false },
     hooks: {} as PipelineContext["hooks"],

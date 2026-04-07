@@ -64,7 +64,7 @@ export function makeTestContext(overrides: Partial<PipelineContext> = {}): Pipel
 
   return {
     config: DEFAULT_CONFIG,
-    effectiveConfig: DEFAULT_CONFIG,
+    rootConfig: DEFAULT_CONFIG,
     prd,
     story,
     stories: [story],

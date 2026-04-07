@@ -311,7 +311,7 @@ describe("AcceptanceLoopContext — acceptanceTestPaths field", () => {
 function makeMinimalPipelineContext(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
     config: { acceptance: { maxRetries: 1 }, autoMode: { defaultAgent: "claude" } } as never,
-    effectiveConfig: { acceptance: { maxRetries: 1 }, autoMode: { defaultAgent: "claude" } } as never,
+    rootConfig: { acceptance: { maxRetries: 1 }, autoMode: { defaultAgent: "claude" } } as never,
     prd: { project: "p", feature: "f", branchName: "b", createdAt: "", updatedAt: "", userStories: [] },
     story: {
       id: "US-001",

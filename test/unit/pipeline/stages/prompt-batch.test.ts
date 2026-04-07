@@ -9,6 +9,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { DEFAULT_CONFIG } from "../../../../src/config";
 import type { NaxConfig } from "../../../../src/config";
 import { promptStage } from "../../../../src/pipeline/stages/prompt";
 import type { PipelineContext } from "../../../../src/pipeline/types";
@@ -87,7 +88,9 @@ function makeCtx(
       testStrategy,
       reasoning: "",
     },
+    rootConfig: DEFAULT_CONFIG,
     workdir: WORKDIR,
+    projectDir: WORKDIR,
     hooks: {} as PipelineContext["hooks"],
     ...overrides,
   } as unknown as PipelineContext;

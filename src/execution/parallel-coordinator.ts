@@ -113,7 +113,7 @@ export async function executeParallel(
     // Build context for this batch (shared across all stories in batch)
     const baseContext = {
       config,
-      effectiveConfig: config,
+      rootConfig: config,
       prd: currentPrd,
       projectDir: projectRoot,
       featureDir,

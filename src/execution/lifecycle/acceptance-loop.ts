@@ -282,8 +282,8 @@ async function executeFixStory(
     ? await loadConfigForWorkdir(join(ctx.workdir, ".nax", "config.json"), story.workdir)
     : ctx.config;
   const fixContext: PipelineContext = {
-    config: ctx.config,
-    effectiveConfig: fixEffectiveConfig,
+    config: fixEffectiveConfig,
+    rootConfig: ctx.config,
     prd,
     story,
     stories: [story],
@@ -787,7 +787,7 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
     const firstStory = prd.userStories[0];
     const acceptanceContext: PipelineContext = {
       config: ctx.config,
-      effectiveConfig: ctx.config,
+      rootConfig: ctx.config,
       prd,
       story: firstStory,
       stories: [firstStory],

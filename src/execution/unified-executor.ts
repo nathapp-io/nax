@@ -94,7 +94,7 @@ export async function executeUnified(
       logger?.info("execution", "Running pre-run pipeline (acceptance test setup)");
       preRunCtx = {
         config: ctx.config,
-        effectiveConfig: ctx.config,
+        rootConfig: ctx.config,
         prd,
         projectDir: ctx.workdir,
         workdir: ctx.workdir,
@@ -179,7 +179,7 @@ export async function executeUnified(
               maxConcurrency: ctx.parallelCount as number,
               pipelineContext: {
                 config: ctx.config,
-                effectiveConfig: ctx.config,
+                rootConfig: ctx.config,
                 prd,
                 projectDir: ctx.workdir,
                 hooks: ctx.hooks,

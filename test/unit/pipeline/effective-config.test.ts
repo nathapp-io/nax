@@ -2,9 +2,9 @@
  * Unit tests for per-package effective config resolution (PKG-003, PKG-005)
  *
  * Tests that:
- * - effectiveConfig falls back to ctx.config when effectiveConfig is absent (legacy contexts)
- * - effectiveConfig is passed correctly when set
- * - Stages use effectiveConfig for package-relevant fields
+ * - ctx.config carries the effective (merged) config for the story's package
+ * - ctx.rootConfig carries the unmerged root config
+ * - Stages use ctx.config for package-relevant fields
  */
 
 import { describe, expect, mock, test } from "bun:test";
@@ -57,7 +57,7 @@ function makeCtx(overrides?: Partial<PipelineContext>): PipelineContext {
   const config = makeBaseConfig();
   return {
     config,
-    effectiveConfig: config,
+    rootConfig: config,
     prd: makePrd(story),
     story,
     stories: [story],
@@ -73,7 +73,7 @@ function makeCtx(overrides?: Partial<PipelineContext>): PipelineContext {
 // ---------------------------------------------------------------------------
 
 describe("mergePackageConfig integration", () => {
-  test("no package override → effectiveConfig equals root", () => {
+  test("no package override → merged config equals root", () => {
     const root = makeBaseConfig();
     const result = mergePackageConfig(root, {});
     expect(result).toBe(root);
@@ -155,11 +155,11 @@ describe("mergePackageConfig integration", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Stage fallback behavior — effectiveConfig ?? ctx.config
+// Stage behavior — ctx.config carries the effective (merged) config
 // ---------------------------------------------------------------------------
 
-describe("stage effectiveConfig fallback", () => {
-  test("verify stage uses ctx.effectiveConfig when set", async () => {
+describe("stage config usage", () => {
+  test("verify stage uses ctx.config (effective config) when set", async () => {
     const { verifyStage, _verifyDeps } = await import("../../../src/pipeline/stages/verify");
 
     const packageConfig: NaxConfig = {
@@ -171,7 +171,7 @@ describe("stage effectiveConfig fallback", () => {
       },
     };
 
-    const ctx = makeCtx({ effectiveConfig: packageConfig });
+    const ctx = makeCtx({ config: packageConfig });
 
     const origRegression = _verifyDeps.regression;
     let regressionCalled = false;
@@ -190,7 +190,7 @@ describe("stage effectiveConfig fallback", () => {
     }
   });
 
-  test("verify stage falls back to ctx.config when effectiveConfig is absent", async () => {
+  test("verify stage uses ctx.config.quality.requireTests", async () => {
     const { verifyStage, _verifyDeps } = await import("../../../src/pipeline/stages/verify");
 
     const config = makeBaseConfig({
@@ -201,22 +201,7 @@ describe("stage effectiveConfig fallback", () => {
       },
     });
 
-    // Construct ctx without effectiveConfig (legacy context)
-    const ctx = {
-      config,
-      // effectiveConfig intentionally absent
-      prd: makePrd(),
-      story: makeStory(),
-      stories: [makeStory()],
-      routing: {
-        complexity: "simple" as const,
-        modelTier: "fast" as const,
-        testStrategy: "test-after" as const,
-        reasoning: "",
-      },
-      workdir: "/tmp/test",
-      hooks: { hooks: {} },
-    } as Parameters<typeof verifyStage.execute>[0];
+    const ctx = makeCtx({ config });
 
     const origRegression = _verifyDeps.regression;
     let regressionCalled = false;
@@ -227,7 +212,7 @@ describe("stage effectiveConfig fallback", () => {
 
     try {
       const result = await verifyStage.execute(ctx);
-      // Falls back to ctx.config → requireTests=false → continue
+      // ctx.config.requireTests=false → continue
       expect(result.action).toBe("continue");
       expect(regressionCalled).toBe(false);
     } finally {
@@ -235,7 +220,7 @@ describe("stage effectiveConfig fallback", () => {
     }
   });
 
-  test("review stage uses ctx.effectiveConfig.review.enabled to gate execution", () => {
+  test("review stage uses ctx.config.review.enabled to gate execution", () => {
     const { reviewStage } = require("../../../src/pipeline/stages/review");
 
     const packageConfig: NaxConfig = {
@@ -243,12 +228,12 @@ describe("stage effectiveConfig fallback", () => {
       review: { enabled: false, checks: [], commands: {}, pluginMode: "per-story" },
     };
 
-    const ctx = makeCtx({ effectiveConfig: packageConfig });
-    // enabled() should return false since effectiveConfig.review.enabled = false
+    const ctx = makeCtx({ config: packageConfig });
+    // enabled() should return false since ctx.config.review.enabled = false
     expect(reviewStage.enabled(ctx)).toBe(false);
   });
 
-  test("review stage enabled=true when effectiveConfig.review.enabled=true", () => {
+  test("review stage enabled=true when ctx.config.review.enabled=true", () => {
     const { reviewStage } = require("../../../src/pipeline/stages/review");
 
     const packageConfig: NaxConfig = {
@@ -256,11 +241,11 @@ describe("stage effectiveConfig fallback", () => {
       review: { enabled: true, checks: [], commands: {}, pluginMode: "per-story" },
     };
 
-    const ctx = makeCtx({ effectiveConfig: packageConfig });
+    const ctx = makeCtx({ config: packageConfig });
     expect(reviewStage.enabled(ctx)).toBe(true);
   });
 
-  test("regression stage uses effectiveConfig.execution.regressionGate.mode", () => {
+  test("regression stage uses ctx.config.execution.regressionGate.mode", () => {
     const { regressionStage } = require("../../../src/pipeline/stages/regression");
 
     const packageConfig: NaxConfig = {
@@ -271,11 +256,11 @@ describe("stage effectiveConfig fallback", () => {
       },
     };
 
-    const ctx = makeCtx({ effectiveConfig: packageConfig });
+    const ctx = makeCtx({ config: packageConfig });
     expect(regressionStage.enabled(ctx)).toBe(true);
   });
 
-  test("regression stage disabled when effectiveConfig.execution.regressionGate.mode=deferred", () => {
+  test("regression stage disabled when ctx.config.execution.regressionGate.mode=deferred", () => {
     const { regressionStage } = require("../../../src/pipeline/stages/regression");
 
     const packageConfig: NaxConfig = {
@@ -286,11 +271,11 @@ describe("stage effectiveConfig fallback", () => {
       },
     };
 
-    const ctx = makeCtx({ effectiveConfig: packageConfig });
+    const ctx = makeCtx({ config: packageConfig });
     expect(regressionStage.enabled(ctx)).toBe(false);
   });
 
-  test("acceptance stage uses effectiveConfig.acceptance.enabled", () => {
+  test("acceptance stage uses ctx.config.acceptance.enabled", () => {
     const { acceptanceStage } = require("../../../src/pipeline/stages/acceptance");
 
     const packageConfig: NaxConfig = {
@@ -302,7 +287,7 @@ describe("stage effectiveConfig fallback", () => {
     const story = makeStory({ status: "passed" });
     const prd = makePrd(story);
     const ctx = makeCtx({
-      effectiveConfig: packageConfig,
+      config: packageConfig,
       story,
       prd,
     });
@@ -312,11 +297,11 @@ describe("stage effectiveConfig fallback", () => {
 });
 
 // ---------------------------------------------------------------------------
-// effectiveConfig is the correct merged config for a monorepo story
+// ctx.config is the correct merged config for a monorepo story
 // ---------------------------------------------------------------------------
 
-describe("effectiveConfig per-story isolation", () => {
-  test("two stories with different package configs get different effectiveConfigs", () => {
+describe("per-story config isolation", () => {
+  test("two stories with different package configs get different merged configs", () => {
     const rootConfig = makeBaseConfig();
 
     const pkgApiOverride: Partial<NaxConfig> = {
@@ -339,9 +324,9 @@ describe("effectiveConfig per-story isolation", () => {
     expect(rootConfig.quality.commands.test).toBe("bun test");
   });
 
-  test("story without workdir gets root config as effectiveConfig", () => {
+  test("story without workdir gets root config as effective config", () => {
     const root = makeBaseConfig();
-    // No workdir means effectiveConfig === root
+    // No workdir means ctx.config === rootConfig
     const result = mergePackageConfig(root, {});
     expect(result).toBe(root);
   });
@@ -376,7 +361,7 @@ describe("autofix stage lintFix source", () => {
       review: { ...DEFAULT_CONFIG.review, commands: {} },
     });
     const ctx = makeCtx({
-      effectiveConfig: config,
+      config,
       reviewResult: {
         success: false,
         checks: [
@@ -416,7 +401,7 @@ describe("autofix stage lintFix source", () => {
       review: { ...DEFAULT_CONFIG.review, commands: { lintFix: "bun run lint:fix" } },
     });
     const ctx = makeCtx({
-      effectiveConfig: config,
+      config,
       reviewResult: {
         success: false,
         checks: [
@@ -455,7 +440,7 @@ describe("autofix stage lintFix source", () => {
       review: { ...DEFAULT_CONFIG.review, commands: {} },
     });
     const ctx = makeCtx({
-      effectiveConfig: config,
+      config,
       reviewResult: {
         success: false,
         checks: [

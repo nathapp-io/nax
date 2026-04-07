@@ -54,7 +54,7 @@ function makeCtx(
   const story = makeStory(storyOverrides);
   return {
     config: configOverride ?? makeConfig(),
-    effectiveConfig: configOverride ?? makeConfig(),
+    rootConfig: configOverride ?? makeConfig(),
     prd: { project: "p", feature: "test-feature", branchName: "b", createdAt: "", updatedAt: "", userStories: [story] } as PRD,
     story,
     stories: [story],

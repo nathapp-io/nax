@@ -19,7 +19,9 @@ function makeCtx(mode: "deferred" | "per-story" | "disabled" = "per-story"): Pip
     story: { id: "US-001", title: "t", status: "in-progress", acceptanceCriteria: [] } as any,
     stories: [],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
+    rootConfig: DEFAULT_CONFIG,
     workdir: "/tmp",
+    projectDir: "/tmp",
     hooks: {},
   };
 }

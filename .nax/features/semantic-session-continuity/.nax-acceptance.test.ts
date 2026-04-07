@@ -131,7 +131,7 @@ function makeExecutionCtx(opts: {
   const config = opts.config ?? makeNaxConfig();
   return {
     config,
-    effectiveConfig: config,
+    rootConfig: config,
     routing: {
       testStrategy: opts.testStrategy ?? "test-after",
       modelTier: "fast",

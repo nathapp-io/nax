@@ -56,7 +56,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   const story = makeStory();
   return {
     config: makeConfig(),
-    effectiveConfig: makeConfig(),
+    rootConfig: makeConfig(),
     prd: makePRD(),
     story,
     stories: [story],

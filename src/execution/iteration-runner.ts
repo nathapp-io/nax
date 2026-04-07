@@ -89,8 +89,8 @@ export async function runIteration(
     : ctx.config;
 
   const pipelineContext: PipelineContext = {
-    config: ctx.config,
-    effectiveConfig,
+    config: effectiveConfig,
+    rootConfig: ctx.config,
     prd,
     story,
     stories: storiesToExecute,

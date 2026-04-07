@@ -40,7 +40,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
         testPath: "acceptance.test.ts",
       },
     } as any,
-    effectiveConfig: undefined as any,
+    rootConfig: DEFAULT_CONFIG,
     prd: {
       project: "test-project",
       feature: "test-feature",

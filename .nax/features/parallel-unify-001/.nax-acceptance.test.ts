@@ -79,7 +79,7 @@ function makeCtx(workdir: string): ParallelBatchCtx {
     maxConcurrency: 2,
     pipelineContext: {
       config: DEFAULT_CONFIG as NaxConfig,
-      effectiveConfig: DEFAULT_CONFIG as NaxConfig,
+      rootConfig: DEFAULT_CONFIG as NaxConfig,
       prd: makePrd([]),
       hooks: {} as LoadedHooksConfig,
       plugins: {} as PluginRegistry,
