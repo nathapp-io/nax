@@ -28,6 +28,9 @@ export async function writeFatalLog(jsonlFilePath: string | undefined, signal: s
     };
 
     const line = `${JSON.stringify(fatalEntry)}\n`;
+    // appendFileSync: intentional — called from signal/exception handlers where the async
+    // event loop may be in an inconsistent state. Sync write ensures the entry is flushed
+    // to disk before process.exit() is reached, regardless of loop state.
     appendFileSync(jsonlFilePath, line);
   } catch (err) {
     process.stderr.write(`[crash-recovery] Failed to write fatal log: ${String(err)}\n`);

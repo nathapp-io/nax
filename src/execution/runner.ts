@@ -175,6 +175,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
         headless,
         parallel,
         agentGetFn,
+        onBeforeStory: () => registry.resetStoryState(),
         pidRegistry,
         interactionChain,
       },

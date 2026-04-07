@@ -561,6 +561,9 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async run(options: AgentRunOptions): Promise<AgentResult> {
+    // _unavailableAgents is reset between stories via AgentRegistry.resetStoryState(),
+    // called from the unified executor at each story boundary. Within a story,
+    // the set is intentionally shared between run() and complete() for fallback continuity.
     const startTime = Date.now();
     const config = options.config;
     const hasActiveFallbacks = (config?.autoMode?.fallbackOrder?.length ?? 0) > 0;
@@ -1186,6 +1189,15 @@ export class AcpAgentAdapter implements AgentAdapter {
     }
 
     return { stories };
+  }
+
+  /**
+   * Reset per-story availability state.
+   * Called by AgentRegistry.resetStoryState() at each story boundary so transient
+   * auth failures in one story do not carry over to the next.
+   */
+  clearUnavailableAgents(): void {
+    this._unavailableAgents.clear();
   }
 
   private markUnavailable(agentName: string): void {

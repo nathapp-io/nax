@@ -5,8 +5,8 @@
  * Replaces the old constitution generator.
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { existsSync } from "node:fs";
+import { join, relative } from "node:path";
 import type { NaxConfig } from "../config";
 import { validateFilePath } from "../config/path-security";
 import { aiderGenerator } from "./generators/aider";
@@ -25,7 +25,6 @@ import type { AgentContextGenerator, AgentType, ContextContent, GeneratorMap } f
  */
 export const _generatorDeps = {
   existsSync: (p: string) => existsSync(p),
-  readFileSync: (p: string, enc: BufferEncoding) => readFileSync(p, enc),
   readTextFile: (p: string) => Bun.file(p).text(),
   writeFile: (p: string, content: string) => Bun.write(p, content),
   buildProjectMetadata,
@@ -226,58 +225,52 @@ export async function discoverWorkspacePackages(repoRoot: string): Promise<strin
 
   // 2. turbo v2+: turbo.json top-level "packages" array
   const turboPath = join(repoRoot, "turbo.json");
-  if (_generatorDeps.existsSync(turboPath)) {
-    try {
-      const turbo = JSON.parse(_generatorDeps.readFileSync(turboPath, "utf-8")) as Record<string, unknown>;
-      if (Array.isArray(turbo.packages)) {
-        await resolveGlobs(turbo.packages as string[]);
-      }
-    } catch {
-      // malformed turbo.json — skip
+  try {
+    const turbo = JSON.parse(await _generatorDeps.readTextFile(turboPath)) as Record<string, unknown>;
+    if (Array.isArray(turbo.packages)) {
+      await resolveGlobs(turbo.packages as string[]);
     }
+  } catch {
+    // file absent or malformed turbo.json — skip
   }
 
   // 3. root package.json "workspaces" (npm/yarn/bun/turbo v1)
   const pkgPath = join(repoRoot, "package.json");
-  if (_generatorDeps.existsSync(pkgPath)) {
-    try {
-      const pkg = JSON.parse(_generatorDeps.readFileSync(pkgPath, "utf-8")) as Record<string, unknown>;
-      const ws = pkg.workspaces;
-      const patterns: string[] = Array.isArray(ws)
-        ? (ws as string[])
-        : Array.isArray((ws as Record<string, unknown>)?.packages)
-          ? ((ws as Record<string, unknown>).packages as string[])
-          : [];
-      if (patterns.length > 0) await resolveGlobs(patterns);
-    } catch {
-      // malformed package.json — skip
-    }
+  try {
+    const pkg = JSON.parse(await _generatorDeps.readTextFile(pkgPath)) as Record<string, unknown>;
+    const ws = pkg.workspaces;
+    const patterns: string[] = Array.isArray(ws)
+      ? (ws as string[])
+      : Array.isArray((ws as Record<string, unknown>)?.packages)
+        ? ((ws as Record<string, unknown>).packages as string[])
+        : [];
+    if (patterns.length > 0) await resolveGlobs(patterns);
+  } catch {
+    // file absent or malformed package.json — skip
   }
 
   // 4. pnpm-workspace.yaml
   const pnpmPath = join(repoRoot, "pnpm-workspace.yaml");
-  if (_generatorDeps.existsSync(pnpmPath)) {
-    try {
-      const raw = _generatorDeps.readFileSync(pnpmPath, "utf-8");
-      // Simple YAML parse for "packages:\n  - 'packages/*'" without full YAML dep
-      const lines = raw.split("\n");
-      let inPackages = false;
-      const patterns: string[] = [];
-      for (const line of lines) {
-        if (/^packages\s*:/.test(line)) {
-          inPackages = true;
-          continue;
-        }
-        if (inPackages && /^\s+-\s+/.test(line)) {
-          patterns.push(line.replace(/^\s+-\s+['"]?/, "").replace(/['"]?\s*$/, ""));
-        } else if (inPackages && !/^\s/.test(line)) {
-          break;
-        }
+  try {
+    const raw = await _generatorDeps.readTextFile(pnpmPath);
+    // Simple YAML parse for "packages:\n  - 'packages/*'" without full YAML dep
+    const lines = raw.split("\n");
+    let inPackages = false;
+    const patterns: string[] = [];
+    for (const line of lines) {
+      if (/^packages\s*:/.test(line)) {
+        inPackages = true;
+        continue;
       }
-      if (patterns.length > 0) await resolveGlobs(patterns);
-    } catch {
-      // malformed yaml — skip
+      if (inPackages && /^\s+-\s+/.test(line)) {
+        patterns.push(line.replace(/^\s+-\s+['"]?/, "").replace(/['"]?\s*$/, ""));
+      } else if (inPackages && !/^\s/.test(line)) {
+        break;
+      }
     }
+    if (patterns.length > 0) await resolveGlobs(patterns);
+  } catch {
+    // file absent or malformed yaml — skip
   }
 
   return results.sort();

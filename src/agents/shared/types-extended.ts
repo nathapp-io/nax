@@ -24,6 +24,12 @@ export interface PlanOptions {
   codebaseContext?: string;
   /** Optional input file path for non-interactive mode */
   inputFile?: string;
+  /**
+   * Pre-read content of inputFile — populated by runPlan() before calling
+   * buildPlanCommand() so the command builder never touches the filesystem directly.
+   * @internal
+   */
+  resolvedInputContent?: string;
   /** Model tier to use for planning (default: "balanced") */
   modelTier?: ModelTier;
   /** Resolved model definition */
