@@ -214,6 +214,17 @@ describe("buildRefinementPrompt", () => {
       expect(prompt).toContain(criterion);
     }
   });
+
+  test("omits CODEBASE CONTEXT section when codebaseContext is empty", () => {
+    const prompt = buildRefinementPrompt(SAMPLE_CRITERIA, "");
+    expect(prompt).not.toContain("CODEBASE CONTEXT:");
+  });
+
+  test("includes CODEBASE CONTEXT section when codebaseContext is provided", () => {
+    const prompt = buildRefinementPrompt(SAMPLE_CRITERIA, CODEBASE_CONTEXT);
+    expect(prompt).toContain("CODEBASE CONTEXT:");
+    expect(prompt).toContain(CODEBASE_CONTEXT);
+  });
 });
 
 describe("parseRefinementResponse", () => {
