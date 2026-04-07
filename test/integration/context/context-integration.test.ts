@@ -474,7 +474,8 @@ describe("Context Builder Integration", () => {
       expect(markdown).toContain("US-001");
       expect(markdown).toContain("US-002");
       expect(markdown).toContain("Test error");
-      expect(markdown).toContain("Dep description");
+      // US-001 is passed — compact format omits description, shows status instead
+      expect(markdown).toContain("US-001 (passed): Dependency");
       expect(markdown).toContain("Current description");
     });
 
