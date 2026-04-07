@@ -899,7 +899,6 @@ export class AcpAgentAdapter implements AgentAdapter {
   }
 
   async complete(prompt: string, _options?: CompleteOptions): Promise<CompleteResult> {
-    // Default 120s when timeoutMs is undefined. 
     const timeoutMs = _options?.timeoutMs ?? 120_000;
     const permissionMode = resolvePermissions(_options?.config, "complete").mode;
     const workdir = _options?.workdir;
