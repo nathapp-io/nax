@@ -17,7 +17,7 @@
  */
 
 import { mkdirSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, sep } from "node:path";
 import { getSafeLogger } from "../../logger";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,12 +111,19 @@ function buildAuditContent(entry: PromptAuditEntry, epochMs: number): string {
  */
 export async function writePromptAudit(entry: PromptAuditEntry): Promise<void> {
   try {
-    // Resolve audit base directory
+    // Resolve audit base directory.
+    // When running in a parallel worktree (path contains /.nax-wt/), always write to
+    // the main project root so audit files are consolidated in one place rather than
+    // scattered across worktree directories.
+    // Worktrees are always at <projectRoot>/.nax-wt/<storyId>/ (WorktreeManager convention).
     let baseDir: string;
     if (entry.auditDir) {
       baseDir = isAbsolute(entry.auditDir) ? entry.auditDir : join(entry.workdir, entry.auditDir);
     } else {
-      baseDir = join(entry.workdir, ".nax", "prompt-audit");
+      const wtMarker = `${sep}.nax-wt${sep}`;
+      const wtIdx = entry.workdir.indexOf(wtMarker);
+      const projectRoot = wtIdx !== -1 ? entry.workdir.substring(0, wtIdx) : entry.workdir;
+      baseDir = join(projectRoot, ".nax", "prompt-audit");
     }
 
     // Organise by feature name so each feature has its own subfolder.
