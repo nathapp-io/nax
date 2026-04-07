@@ -10,6 +10,7 @@
 import { spawn } from "bun";
 import { buildSessionName, readAcpSession } from "../agents/acp/adapter";
 import type { AgentAdapter } from "../agents/types";
+import { DEFAULT_CONFIG } from "../config";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
 import type { ModelTier } from "../config/schema-types";
@@ -297,7 +298,7 @@ export async function runSemanticReview(
   story: SemanticStory,
   semanticConfig: SemanticReviewConfig,
   modelResolver: ModelResolver,
-  naxConfig: NaxConfig,
+  naxConfig?: NaxConfig,
   featureName?: string,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
@@ -397,7 +398,7 @@ export async function runSemanticReview(
       storyId: story.id,
       stage: "review",
       stageConfig: reviewStageConfig,
-      config: naxConfig,
+      config: naxConfig ?? DEFAULT_CONFIG,
       workdir,
       featureName: featureName,
       timeoutSeconds: naxConfig?.execution?.sessionTimeoutSeconds,
@@ -510,7 +511,7 @@ export async function runSemanticReview(
         timeoutSeconds: semanticConfig.timeoutMs ? Math.ceil(semanticConfig.timeoutMs / 1000) : 3600,
         modelTier: semanticConfig.modelTier,
         modelDef: resolvedModelDef,
-        config: naxConfig,
+        config: naxConfig ?? DEFAULT_CONFIG,
       });
       runOutput = runResult.output;
       runSucceeded = true;
@@ -527,7 +528,7 @@ export async function runSemanticReview(
         workdir,
         timeoutMs: semanticConfig.timeoutMs,
         modelTier: semanticConfig.modelTier,
-        config: naxConfig,
+        config: naxConfig ?? DEFAULT_CONFIG,
       });
       rawResponse = typeof completeResult === "string" ? completeResult : completeResult.output;
       void runErr;
