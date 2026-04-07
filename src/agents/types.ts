@@ -84,8 +84,8 @@ export interface AgentRunOptions {
   maxInteractionTurns?: number;
   /** Pipeline stage this run belongs to — used by resolvePermissions() (default: "run") */
   pipelineStage?: import("../config/permissions").PipelineStage;
-  /** Full nax config — passed through so adapters can call resolvePermissions() */
-  config?: NaxConfig;
+  /** Full nax config — required so adapters can call resolvePermissions() and audit prompts */
+  config: NaxConfig;
   /**
    * When true, the adapter will NOT close the session after a successful run.
    * Use this for rectification loops where the same session must persist across
@@ -132,10 +132,10 @@ export interface CompleteOptions {
    */
   timeoutMs?: number;
   /**
-   * Full nax config — used by resolvePermissions() to determine permission mode.
-   * Pass when available so complete() honours permissionProfile / dangerouslySkipPermissions.
+   * Full nax config — required so resolvePermissions() can determine permission mode
+   * and prompt audit is always active when enabled.
    */
-  config?: NaxConfig;
+  config: NaxConfig;
   /**
    * Named session to use for this completion call.
    * If omitted, a timestamp-based ephemeral session name is generated.

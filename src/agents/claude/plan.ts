@@ -11,9 +11,9 @@ import { resolvePermissions } from "../../config/permissions";
 import type { PidRegistry } from "../../execution/pid-registry";
 import { withProcessTimeout } from "../../execution/timeout-handler";
 import { getLogger } from "../../logger";
+import { buildAllowedEnv } from "../shared/env";
 import { resolveBalancedModelDef } from "../shared/model-resolution";
 import type { PlanOptions, PlanResult } from "../shared/types-extended";
-import type { AgentRunOptions } from "../types";
 
 /**
  * Build the CLI command for plan mode.
@@ -72,12 +72,7 @@ export function buildPlanCommand(binary: string, options: PlanOptions): string[]
 /**
  * Run Claude Code in plan mode to generate a feature specification.
  */
-export async function runPlan(
-  binary: string,
-  options: PlanOptions,
-  pidRegistry: PidRegistry,
-  buildAllowedEnv: (options: AgentRunOptions) => Record<string, string | undefined>,
-): Promise<PlanResult> {
+export async function runPlan(binary: string, options: PlanOptions, pidRegistry: PidRegistry): Promise<PlanResult> {
   const { resolveBalancedModelDef } = await import("../shared/model-resolution");
 
   const cmd = buildPlanCommand(binary, options);
@@ -91,13 +86,7 @@ export async function runPlan(
     modelDef = resolveBalancedModelDef(options.config);
   }
 
-  const envOptions: AgentRunOptions = {
-    workdir: options.workdir,
-    modelDef,
-    prompt: "",
-    modelTier: options.modelTier || "balanced",
-    timeoutSeconds: options.timeoutSeconds ?? 600,
-  };
+  // buildAllowedEnv reads only modelEnv/env; plan path provides neither.
 
   const planTimeoutMs = (options.timeoutSeconds ?? 600) * 1000;
 
@@ -108,7 +97,7 @@ export async function runPlan(
       stdin: "inherit",
       stdout: "inherit",
       stderr: "inherit",
-      env: buildAllowedEnv(envOptions),
+      env: buildAllowedEnv(),
     });
 
     // Register PID
@@ -143,7 +132,7 @@ export async function runPlan(
       stdin: "ignore",
       stdout: Bun.file(outFile),
       stderr: Bun.file(errFile),
-      env: buildAllowedEnv(envOptions),
+      env: buildAllowedEnv(),
     });
 
     // Register PID

@@ -49,7 +49,7 @@ export interface DebateSessionOptions {
   storyId: string;
   stage: string;
   stageConfig: DebateStageConfig;
-  config?: NaxConfig;
+  config: NaxConfig;
   workdir?: string;
   featureName?: string;
   timeoutSeconds?: number;
@@ -75,7 +75,7 @@ export const _debateSessionDeps = {
  * When absent, default to "fast" tier.
  * Falls back to the raw debater.model string if config resolution fails (backward compat).
  */
-export function resolveDebaterModel(debater: Debater, config?: NaxConfig): string | undefined {
+export function resolveDebaterModel(debater: Debater, config: NaxConfig): string | undefined {
   const tier = debater.model ?? "fast";
   if (!config?.models) return debater.model;
   try {
@@ -145,7 +145,7 @@ export function pipelineStageForDebate(stage: string): PipelineStage {
   }
 }
 
-export function resolveModelDefForDebater(debater: Debater, tier: ModelTier, config: NaxConfig | undefined): ModelDef {
+export function resolveModelDefForDebater(debater: Debater, tier: ModelTier, config: NaxConfig): ModelDef {
   if (debater.model && !isTierLabel(debater.model)) {
     return resolveModel(debater.model);
   }
@@ -178,7 +178,7 @@ export async function resolveOutcome(
   proposalOutputs: string[],
   critiqueOutputs: string[],
   stageConfig: DebateStageConfig,
-  config: NaxConfig | undefined,
+  config: NaxConfig,
   storyId: string,
   timeoutMs: number,
   workdir?: string,
