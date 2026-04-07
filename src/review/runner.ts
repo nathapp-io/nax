@@ -259,6 +259,12 @@ export async function runReview(
 
     // Semantic check: delegate to LLM-based runner instead of shell command
     if (checkName === "semantic") {
+      if (!naxConfig) {
+        logger?.warn("review", "Semantic review requested but naxConfig is missing — skipping", {
+          storyId: storyId ?? "",
+        });
+        continue;
+      }
       const semanticStory: SemanticStory = {
         id: storyId ?? "",
         title: story?.title ?? "",

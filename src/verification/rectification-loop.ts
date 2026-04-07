@@ -52,7 +52,7 @@ async function _defaultRunDebate(
   storyId: string,
   stageConfig: DebateStageConfig,
   prompt: string,
-  config?: NaxConfig,
+  config: NaxConfig,
 ): Promise<{ output: string | null; totalCostUsd: number }> {
   const logger = getSafeLogger();
   const debaters: Debater[] = stageConfig.debaters ?? [];
@@ -69,7 +69,7 @@ async function _defaultRunDebate(
     return { output: null, totalCostUsd: 0 };
   }
 
-  const timeoutMs = (config?.execution?.sessionTimeoutSeconds ?? 600) * 1000;
+  const timeoutMs = (config.execution?.sessionTimeoutSeconds ?? 600) * 1000;
   const startMs = Date.now();
   const proposalSettled = await Promise.allSettled(
     resolved.map(({ debater, adapter }) =>

@@ -140,32 +140,28 @@ export class AutoInteractionPlugin implements InteractionPlugin {
       throw new Error("Auto plugin requires adapter to be injected via _autoPluginDeps.adapter");
     }
 
-    // Resolve model option if naxConfig is available
-    let modelArg: string | undefined;
-    if (this.config.naxConfig) {
-      const modelTier = this.config.model ?? "fast";
-      const naxConfig = this.config.naxConfig;
-      const modelDef = resolveModelForAgent(
-        naxConfig.models,
-        naxConfig.autoMode.defaultAgent,
-        modelTier,
-        naxConfig.autoMode.defaultAgent,
-      );
-      modelArg = modelDef.model;
+    const naxConfig = this.config.naxConfig;
+    if (!naxConfig) {
+      throw new Error("[auto] naxConfig is required for LLM-based interaction decisions");
     }
 
-    // Use adapter.complete() for one-shot LLM call
-    const timeoutMs = this.config.naxConfig
-      ? (this.config.naxConfig.execution?.sessionTimeoutSeconds ?? 600) * 1000
-      : undefined;
+    const modelTier = this.config.model ?? "fast";
+    const modelDef = resolveModelForAgent(
+      naxConfig.models,
+      naxConfig.autoMode.defaultAgent,
+      modelTier,
+      naxConfig.autoMode.defaultAgent,
+    );
+    const timeoutMs = (naxConfig.execution?.sessionTimeoutSeconds ?? 600) * 1000;
+
     const result = await adapter.complete(prompt, {
-      ...(modelArg && { model: modelArg }),
+      model: modelDef.model,
       jsonMode: true,
-      ...(this.config.naxConfig && { config: this.config.naxConfig }),
+      config: naxConfig,
       featureName: request.featureName,
       storyId: request.storyId,
       sessionRole: "auto",
-      ...(timeoutMs !== undefined && { timeoutMs }),
+      timeoutMs,
     });
 
     const output = typeof result === "string" ? result : result.output;

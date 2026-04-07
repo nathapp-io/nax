@@ -28,7 +28,7 @@ interface StatefulCtx {
   readonly storyId: string;
   readonly stage: string;
   readonly stageConfig: DebateStageConfig;
-  readonly config: NaxConfig | undefined;
+  readonly config: NaxConfig;
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;

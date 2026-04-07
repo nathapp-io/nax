@@ -23,7 +23,7 @@ export class DebateSession {
   private readonly storyId: string;
   private readonly stage: string;
   private readonly stageConfig: DebateStageConfig;
-  private readonly config: NaxConfig | undefined;
+  private readonly config: NaxConfig;
   private readonly workdir: string;
   private readonly featureName: string;
   private readonly timeoutSeconds: number;

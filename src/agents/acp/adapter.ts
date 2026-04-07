@@ -530,7 +530,7 @@ export class AcpAgentAdapter implements AgentAdapter {
 
   constructor(
     agentName: string,
-    private readonly naxConfig?: import("../../config").NaxConfig,
+    private readonly naxConfig: import("../../config").NaxConfig,
   ) {
     const entry = resolveRegistryEntry(agentName);
     this.name = agentName;
@@ -756,7 +756,7 @@ export class AcpAgentAdapter implements AgentAdapter {
         getSafeLogger()?.debug("acp-adapter", `Session turn ${turnCount}/${MAX_TURNS}`, { sessionName });
 
         // Audit: fire-and-forget prompt write — never blocks or throws
-        const _runAuditConfig = options.config ?? this.naxConfig;
+        const _runAuditConfig = options.config;
         if (_runAuditConfig?.agent?.promptAudit?.enabled) {
           void writePromptAudit({
             prompt: currentPrompt,
@@ -1129,12 +1129,9 @@ export class AcpAgentAdapter implements AgentAdapter {
       modelTier: options.modelTier ?? "balanced",
       modelDef,
       timeoutSeconds,
-      dangerouslySkipPermissions: resolvePermissions(
-        options.config as import("../../config").NaxConfig | undefined,
-        "plan",
-      ).skipPermissions,
+      dangerouslySkipPermissions: resolvePermissions(this.naxConfig, "plan").skipPermissions,
       pipelineStage: "plan",
-      config: options.config as import("../../config").NaxConfig | undefined,
+      config: this.naxConfig,
       interactionBridge: options.interactionBridge,
       maxInteractionTurns: options.maxInteractionTurns,
       featureName: options.featureName,
@@ -1168,7 +1165,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       const completeResult = await this.complete(prompt, {
         model,
         jsonMode: true,
-        config: options.config as import("../../config").NaxConfig | undefined,
+        config: this.naxConfig,
         workdir: options.workdir,
         featureName: options.featureName,
         storyId: options.storyId,
