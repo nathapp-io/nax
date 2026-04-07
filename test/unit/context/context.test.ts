@@ -243,8 +243,111 @@ describe("Context Builder", () => {
       expect(element.type).toBe("dependency");
       expect(element.storyId).toBe("US-002");
       expect(element.priority).toBe(50);
-      expect(element.content).toContain("US-002: Dependency Story");
+      expect(element.content).toContain("US-002 (passed): Dependency Story");
       expect(element.tokens).toBeGreaterThan(0);
+    });
+
+    test("passed dependency uses compact format — omits full AC list", () => {
+      const story: UserStory = {
+        id: "US-002",
+        title: "Add VcsPrStatus type",
+        description: "Define VcsPrStatus interface",
+        acceptanceCriteria: ["AC1", "AC2", "AC3", "AC4", "AC5"],
+        dependencies: [],
+        tags: [],
+        status: "passed",
+        passes: true,
+        escalations: [],
+        attempts: 0,
+      };
+
+      const element = createDependencyContext(story, 50);
+
+      expect(element.content).toContain("US-002 (passed): Add VcsPrStatus type");
+      expect(element.content).not.toContain("**Acceptance Criteria:**");
+      expect(element.content).not.toContain("**Description:**");
+    });
+
+    test("passed dependency with diffSummary includes changes block", () => {
+      const story: UserStory = {
+        id: "US-002",
+        title: "Add VcsPrStatus type",
+        description: "Define VcsPrStatus interface",
+        acceptanceCriteria: ["AC1"],
+        dependencies: [],
+        tags: [],
+        status: "passed",
+        passes: true,
+        escalations: [],
+        attempts: 0,
+        diffSummary: "src/vcs/types.ts | 12 ++",
+      };
+
+      const element = createDependencyContext(story, 50);
+
+      expect(element.content).toContain("**Changes made:**");
+      expect(element.content).toContain("src/vcs/types.ts | 12 ++");
+      expect(element.content).not.toContain("**Acceptance Criteria:**");
+    });
+
+    test("passed dependency without diffSummary shows fallback message", () => {
+      const story: UserStory = {
+        id: "US-002",
+        title: "Add VcsPrStatus type",
+        description: "Define VcsPrStatus interface",
+        acceptanceCriteria: ["AC1"],
+        dependencies: [],
+        tags: [],
+        status: "passed",
+        passes: true,
+        escalations: [],
+        attempts: 0,
+      };
+
+      const element = createDependencyContext(story, 50);
+
+      expect(element.content).toContain("no diff summary available");
+    });
+
+    test("decomposed dependency uses compact format", () => {
+      const story: UserStory = {
+        id: "US-001",
+        title: "Parent Story",
+        description: "Parent story description",
+        acceptanceCriteria: ["AC1", "AC2"],
+        dependencies: [],
+        tags: [],
+        status: "decomposed",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+      };
+
+      const element = createDependencyContext(story, 50);
+
+      expect(element.content).toContain("US-001 (decomposed): Parent Story");
+      expect(element.content).not.toContain("**Acceptance Criteria:**");
+    });
+
+    test("pending dependency uses full format with AC list", () => {
+      const story: UserStory = {
+        id: "US-003",
+        title: "Pending Dependency",
+        description: "Not done yet",
+        acceptanceCriteria: ["AC1", "AC2"],
+        dependencies: [],
+        tags: [],
+        status: "pending",
+        passes: false,
+        escalations: [],
+        attempts: 0,
+      };
+
+      const element = createDependencyContext(story, 50);
+
+      expect(element.content).toContain("**Acceptance Criteria:**");
+      expect(element.content).toContain("AC1");
+      expect(element.content).toContain("AC2");
     });
   });
 

@@ -17,12 +17,34 @@ export function createStoryContext(story: UserStory, priority: number): ContextE
 
 /** Create context element from dependency story, including diff summary if available */
 export function createDependencyContext(story: UserStory, priority: number): ContextElement {
+  const content = isCompletedDependency(story) ? formatCompletedDependency(story) : formatFullDependency(story);
+  return { type: "dependency", storyId: story.id, content, priority, tokens: estimateTokens(content) };
+}
+
+/** Whether a dependency story is complete and should use the compact format */
+function isCompletedDependency(story: UserStory): boolean {
+  return story.status === "passed" || story.status === "decomposed" || story.status === "skipped";
+}
+
+/**
+ * Compact format for completed dependencies.
+ * The agent doesn't need to re-implement these — only needs to know what they produced.
+ */
+function formatCompletedDependency(story: UserStory): string {
+  const header = `## ${story.id} (${story.status}): ${story.title}`;
+  if (story.diffSummary) {
+    return `${header}\n\n**Changes made:**\n\`\`\`\n${story.diffSummary}\n\`\`\``;
+  }
+  return `${header}\n\nStatus: ${story.status} (no diff summary available)`;
+}
+
+/** Full format for incomplete/blocked dependencies — retains full AC list for reference */
+function formatFullDependency(story: UserStory): string {
   let content = formatStoryAsText(story);
-  // Inject diff summary so the agent knows what the dependency actually changed
   if (story.diffSummary) {
     content += `\n\n**Changes made by this story:**\n\`\`\`\n${story.diffSummary}\n\`\`\``;
   }
-  return { type: "dependency", storyId: story.id, content, priority, tokens: estimateTokens(content) };
+  return content;
 }
 
 /** Create context element from error */

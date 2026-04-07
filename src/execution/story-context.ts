@@ -185,7 +185,12 @@ export async function buildStoryContextFull(
       return undefined;
     }
 
-    const baseMarkdown = built.elements.length > 0 ? formatContextAsMarkdown(built) : "";
+    // Exclude the current story element from context markdown — PromptBuilder.build() already
+    // injects it as a dedicated section (3) via buildStorySection(). Including it here too
+    // produces a duplicate "# Story Context" / "## Current Story" block in every run prompt.
+    const elementsForMarkdown = built.elements.filter((e) => e.type !== "story");
+    const baseMarkdown =
+      elementsForMarkdown.length > 0 ? formatContextAsMarkdown({ ...built, elements: elementsForMarkdown }) : "";
     const markdown = packageSection ? `${baseMarkdown}${packageSection}` : baseMarkdown;
 
     return { markdown, builtContext: built };
