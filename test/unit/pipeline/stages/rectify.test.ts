@@ -76,7 +76,7 @@ describe("rectifyStage", () => {
 
   test("returns retry when rectification succeeds", async () => {
     const saved = { ..._rectifyDeps };
-    _rectifyDeps.runRectificationLoop = async () => true;
+    _rectifyDeps.runRectificationLoop = async () => ({ succeeded: true, cost: 0 });
 
     const ctx = makeCtx({ verifyResult: makeVerifyResult(false) });
     const result = await rectifyStage.execute(ctx);
@@ -91,7 +91,7 @@ describe("rectifyStage", () => {
 
   test("returns escalate when rectification exhausted", async () => {
     const saved = { ..._rectifyDeps };
-    _rectifyDeps.runRectificationLoop = async () => false;
+    _rectifyDeps.runRectificationLoop = async () => ({ succeeded: false, cost: 0 });
 
     const ctx = makeCtx({ verifyResult: makeVerifyResult(false) });
     const result = await rectifyStage.execute(ctx);

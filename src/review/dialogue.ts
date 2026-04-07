@@ -40,6 +40,8 @@ export interface ReviewDialogueResult {
    * Populated by reReview() — undefined for the initial review() call.
    */
   deltaSummary?: string;
+  /** LLM cost incurred for this dialogue turn */
+  cost?: number;
 }
 
 /** A stateful reviewer session wrapping a persistent agent.run() call */
@@ -288,10 +290,11 @@ export function createReviewerSession(
       history.push({ role: "reviewer", content: result.output });
 
       const parsed = parseReviewResponse(result.output);
-      lastCheckResult = parsed;
+      const reviewResult: ReviewDialogueResult = { ...parsed, cost: result.estimatedCost ?? 0 };
+      lastCheckResult = reviewResult;
       lastStory = story;
       lastSemanticConfig = semanticConfig;
-      return parsed;
+      return reviewResult;
     },
     async reReview(updatedDiff: string): Promise<ReviewDialogueResult> {
       if (!active) {
@@ -333,7 +336,7 @@ export function createReviewerSession(
 
       const parsed = parseReviewResponse(result.output);
       const deltaSummary = extractDeltaSummary(result.output, previousFindings, parsed.checkResult.findings);
-      const dialogueResult: ReviewDialogueResult = { ...parsed, deltaSummary };
+      const dialogueResult: ReviewDialogueResult = { ...parsed, deltaSummary, cost: result.estimatedCost ?? 0 };
       lastCheckResult = dialogueResult;
 
       const maxMessages = _config.review?.dialogue?.maxDialogueMessages ?? 20;

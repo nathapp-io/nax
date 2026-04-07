@@ -129,6 +129,6 @@ describe("runRectificationLoop — debate cost included in story total", () => {
       testOutput: FAILING_TEST_OUTPUT,
     });
 
-    expect(result).toBe(true);
+    expect(result.succeeded).toBe(true);
   });
 });

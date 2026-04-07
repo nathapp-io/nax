@@ -278,7 +278,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
 
     // Only maxRetries calls, no escalation
     expect(agentRunCalls.length).toBe(2); // maxRetries = 2
-    expect(result).toBe(false);
+    expect(result.succeeded).toBe(false);
   });
 
   test("returns true and logs info with both tier names when escalated verification succeeds", async () => {
@@ -318,7 +318,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
       testOutput: FAILING_TEST_OUTPUT,
     });
 
-    expect(result).toBe(true);
+    expect(result.succeeded).toBe(true);
 
     // Should log info message containing both tier names
     const escalationSuccessLog = capturedInfos.find(
@@ -361,7 +361,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
       testOutput: FAILING_TEST_OUTPUT,
     });
 
-    expect(result).toBe(false);
+    expect(result.succeeded).toBe(false);
 
     const warnLog = capturedWarns.find((w) =>
       String(w.message).includes("escalated rectification also failed"),
@@ -413,7 +413,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
 
     // Only maxRetries calls, no escalation
     expect(agentRunCalls.length).toBe(2);
-    expect(result).toBe(false);
+    expect(result.succeeded).toBe(false);
   });
 
   test("no escalation when abortOnIncreasingFailures exits early (attempt < maxRetries)", async () => {
@@ -470,7 +470,7 @@ describe("runRectificationLoop — escalation on exhaustion", () => {
 
     // Should abort after 1 attempt (not maxRetries=3), so no escalation
     expect(agentRunCalls.length).toBe(1);
-    expect(result).toBe(false);
+    expect(result.succeeded).toBe(false);
   });
 
   test("total agent.run invocations equals maxRetries + 1 when escalation fires", async () => {

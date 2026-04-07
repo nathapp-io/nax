@@ -558,6 +558,8 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
     semanticVerdicts: options.semanticVerdicts as import("../../acceptance/types").SemanticVerdict[] | undefined,
   });
 
+  const diagnosisCost = diagnosis.cost ?? 0;
+
   logger?.info("acceptance.diagnosis", "Diagnosis complete", {
     verdict: diagnosis.verdict,
     confidence: diagnosis.confidence,
@@ -569,7 +571,7 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
 
     if (!agent) {
       logger?.error("acceptance", "Agent not found for source fix execution");
-      return { fixed: false, cost: 0, prdDirty: false };
+      return { fixed: false, cost: diagnosisCost, prdDirty: false };
     }
 
     let fixAttempts = 0;
@@ -595,7 +597,7 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
       });
 
       if (fixResult.success) {
-        return { fixed: true, cost: fixResult.cost, prdDirty: false };
+        return { fixed: true, cost: fixResult.cost + diagnosisCost, prdDirty: false };
       }
       logger?.warn("acceptance.source-fix", "Source fix attempt failed", {
         attempt: fixAttempts,
@@ -610,7 +612,7 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
       }
     }
 
-    return { fixed: false, cost: 0, prdDirty: false };
+    return { fixed: false, cost: diagnosisCost, prdDirty: false };
   }
 
   if (diagnosis.verdict === "test_bug") {
@@ -618,7 +620,7 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
 
     if (!ctx.featureDir) {
       logger?.error("acceptance", "Cannot regenerate test without featureDir");
-      return { fixed: false, cost: 0, prdDirty: false };
+      return { fixed: false, cost: diagnosisCost, prdDirty: false };
     }
 
     const testPath = await findExistingAcceptanceTestPathFromOptions({
@@ -636,7 +638,7 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
           language: ctx.config.project?.language,
         }),
       });
-      return { fixed: false, cost: 0, prdDirty: false };
+      return { fixed: false, cost: diagnosisCost, prdDirty: false };
     }
 
     const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext as PipelineContext);
@@ -646,7 +648,7 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
     });
 
     if (!regenerated) {
-      return { fixed: false, cost: 0, prdDirty: false };
+      return { fixed: false, cost: diagnosisCost, prdDirty: false };
     }
 
     const { acceptanceStage } = await import("../../pipeline/stages/acceptance");
@@ -654,11 +656,11 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
 
     if (acceptanceResult.action === "continue") {
       logger?.info("acceptance", "Acceptance passed after test regeneration");
-      return { fixed: true, cost: 0, prdDirty: true };
+      return { fixed: true, cost: diagnosisCost, prdDirty: true };
     }
 
     logger?.warn("acceptance", "Acceptance still failing after test regeneration");
-    return { fixed: false, cost: 0, prdDirty: true };
+    return { fixed: false, cost: diagnosisCost, prdDirty: true };
   }
 
   if (diagnosis.verdict === "both") {
@@ -666,7 +668,7 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
 
     if (!agent) {
       logger?.error("acceptance", "Agent not found for source fix execution");
-      return { fixed: false, cost: 0, prdDirty: false };
+      return { fixed: false, cost: diagnosisCost, prdDirty: false };
     }
 
     let sourceFixSuccess = false;
@@ -714,7 +716,7 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
     }
 
     if (!sourceFixSuccess) {
-      return { fixed: false, cost: sourceFixCost, prdDirty: false };
+      return { fixed: false, cost: sourceFixCost + diagnosisCost, prdDirty: false };
     }
 
     logger?.info("acceptance", "Source fix succeeded — re-running acceptance to verify");
@@ -724,14 +726,14 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
 
     if (acceptanceResult.action === "continue") {
       logger?.info("acceptance", "Acceptance passed after source fix");
-      return { fixed: true, cost: sourceFixCost, prdDirty: false };
+      return { fixed: true, cost: sourceFixCost + diagnosisCost, prdDirty: false };
     }
 
     logger?.info("acceptance", "Acceptance still failing after source fix — regenerating test");
 
     if (!ctx.featureDir) {
       logger?.error("acceptance", "Cannot regenerate test without featureDir");
-      return { fixed: false, cost: sourceFixCost, prdDirty: false };
+      return { fixed: false, cost: sourceFixCost + diagnosisCost, prdDirty: false };
     }
 
     const testPath = await findExistingAcceptanceTestPathFromOptions({
@@ -749,7 +751,7 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
           language: ctx.config.project?.language,
         }),
       });
-      return { fixed: false, cost: sourceFixCost, prdDirty: false };
+      return { fixed: false, cost: sourceFixCost + diagnosisCost, prdDirty: false };
     }
 
     const regenerated = await regenerateAcceptanceTest(testPath, acceptanceContext as PipelineContext);
@@ -758,10 +760,10 @@ export async function runFixRouting(options: FixRoutingOptions): Promise<FixRout
       outcome: regenerated ? "success" : "failure",
     });
 
-    return { fixed: regenerated, cost: sourceFixCost, prdDirty: regenerated };
+    return { fixed: regenerated, cost: sourceFixCost + diagnosisCost, prdDirty: regenerated };
   }
 
-  return { fixed: false, cost: 0, prdDirty: false };
+  return { fixed: false, cost: diagnosisCost, prdDirty: false };
 }
 
 /**

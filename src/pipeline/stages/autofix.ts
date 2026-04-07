@@ -128,7 +128,12 @@ export const autofixStage: PipelineStage = {
     }
 
     // Phase 2: Agent rectification — spawn agent with review error context
-    const agentFixed = await _autofixDeps.runAgentRectification(ctx, lintFixCmd, formatFixCmd, ctx.workdir);
+    const { succeeded: agentFixed, cost: agentCost } = await _autofixDeps.runAgentRectification(
+      ctx,
+      lintFixCmd,
+      formatFixCmd,
+      ctx.workdir,
+    );
     if (agentFixed) {
       if (ctx.reviewResult) ctx.reviewResult = { ...ctx.reviewResult, success: true };
       // #136: Skip checks that already passed — only re-run checks that originally failed.
@@ -143,11 +148,15 @@ export const autofixStage: PipelineStage = {
         });
       }
       logger.info("autofix", "Agent rectification succeeded — retrying review", { storyId: ctx.story.id });
-      return { action: "retry", fromStage: "review" };
+      return { action: "retry", fromStage: "review", cost: agentCost };
     }
 
     logger.warn("autofix", "Autofix exhausted — escalating", { storyId: ctx.story.id });
-    return { action: "escalate", reason: "Autofix exhausted: review still failing after fix attempts" };
+    return {
+      action: "escalate",
+      reason: "Autofix exhausted: review still failing after fix attempts",
+      cost: agentCost,
+    };
   },
 };
 
@@ -210,7 +219,7 @@ async function runAgentRectification(
   lintFixCmd: string | undefined,
   formatFixCmd: string | undefined,
   effectiveWorkdir: string,
-): Promise<boolean> {
+): Promise<{ succeeded: boolean; cost: number }> {
   const logger = getLogger();
   const maxPerCycle = ctx.config.quality.autofix?.maxAttempts ?? 2;
   const maxTotal = ctx.config.quality.autofix?.maxTotalAttempts ?? 10;
@@ -221,7 +230,7 @@ async function runAgentRectification(
 
   if (failedChecks.length === 0) {
     logger.debug("autofix", "No failed checks found — skipping agent rectification", { storyId: ctx.story.id });
-    return false;
+    return { succeeded: false, cost: 0 };
   }
 
   // Global budget check — escalate if total attempts exhausted across all cycles
@@ -231,7 +240,7 @@ async function runAgentRectification(
       totalAttempts: consumed,
       maxTotalAttempts: maxTotal,
     });
-    return false;
+    return { succeeded: false, cost: 0 };
   }
 
   // Cap this cycle's attempts to not exceed global budget
@@ -243,8 +252,9 @@ async function runAgentRectification(
     attempt: 0,
     failedChecks,
   };
+  let autofixCostAccum = 0;
 
-  return runSharedRectificationLoop({
+  const succeeded = await runSharedRectificationLoop({
     stage: "autofix",
     storyId: ctx.story.id,
     maxAttempts,
@@ -304,6 +314,8 @@ async function runAgentRectification(
         storyId: ctx.story.id,
         sessionRole: "implementer",
       });
+
+      autofixCostAccum += result.estimatedCost ?? 0;
 
       // AC5/AC6/AC10: Detect CLARIFY blocks and relay to reviewerSession
       if (ctx.reviewerSession && result.output) {
@@ -395,6 +407,8 @@ async function runAgentRectification(
     }
     throw error;
   });
+
+  return { succeeded, cost: autofixCostAccum };
 }
 
 /**

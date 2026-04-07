@@ -124,16 +124,6 @@ export async function runIteration(
   const pipelineResult = await runPipeline(defaultPipeline, pipelineContext, ctx.eventEmitter);
   const currentPrd = pipelineResult.context.prd;
 
-  // Release heavy context fields so the GC can collect LLM response buffers,
-  // prompts, and context markdown before the next story begins. See #253.
-  pipelineContext.agentResult = undefined;
-  pipelineContext.prompt = undefined;
-  pipelineContext.contextMarkdown = undefined;
-  pipelineContext.builtContext = undefined;
-  pipelineContext.verifyResult = undefined;
-  pipelineContext.reviewResult = undefined;
-  pipelineContext.constitution = undefined;
-
   const handlerCtx = {
     config: ctx.config,
     prd: currentPrd,
@@ -157,26 +147,42 @@ export async function runIteration(
     statusWriter: ctx.statusWriter,
   };
 
+  // Collect result from handlers BEFORE GC clearing — pipelineResult.context is the same
+  // object as pipelineContext, so clearing agentResult before handlers read
+  // agentResult.estimatedCost caused costDelta to always be 0. See #253.
+  let iterResult: IterationResult;
   if (pipelineResult.success) {
     const r = await handlePipelineSuccess(handlerCtx, pipelineResult);
-    return {
+    iterResult = {
       prd: r.prd,
       storiesCompletedDelta: r.storiesCompletedDelta,
       costDelta: r.costDelta,
       prdDirty: r.prdDirty,
       finalAction: pipelineResult.finalAction,
     };
+  } else {
+    const r = await handlePipelineFailure(handlerCtx, pipelineResult);
+    iterResult = {
+      prd: r.prd,
+      storiesCompletedDelta: 0,
+      costDelta: r.costDelta,
+      prdDirty: r.prdDirty,
+      finalAction: pipelineResult.finalAction,
+      reason: pipelineResult.reason,
+      subStoryCount: pipelineResult.subStoryCount,
+    };
   }
-  const r = await handlePipelineFailure(handlerCtx, pipelineResult);
-  return {
-    prd: r.prd,
-    storiesCompletedDelta: 0,
-    costDelta: r.costDelta,
-    prdDirty: r.prdDirty,
-    finalAction: pipelineResult.finalAction,
-    reason: pipelineResult.reason,
-    subStoryCount: pipelineResult.subStoryCount,
-  };
+
+  // Release heavy context fields after handlers are done reading them.
+  pipelineContext.agentResult = undefined;
+  pipelineContext.prompt = undefined;
+  pipelineContext.contextMarkdown = undefined;
+  pipelineContext.builtContext = undefined;
+  pipelineContext.verifyResult = undefined;
+  pipelineContext.reviewResult = undefined;
+  pipelineContext.constitution = undefined;
+
+  return iterResult;
 }
 
 /**

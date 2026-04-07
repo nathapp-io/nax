@@ -69,7 +69,7 @@ describe("autofixStage", () => {
 
   test("escalates when no fix commands configured and agent rectification fails", async () => {
     const saved = { ..._autofixDeps };
-    _autofixDeps.runAgentRectification = async () => false;
+    _autofixDeps.runAgentRectification = async () => ({ succeeded: false, cost: 0 });
 
     const ctx = makeCtx({
       reviewResult: makeReviewResult(false),
@@ -108,7 +108,7 @@ describe("autofixStage", () => {
     const saved = { ..._autofixDeps };
     _autofixDeps.runQualityCommand = async () => ({ commandName: "lintFix", command: "", success: false, exitCode: 1, output: "lint error", durationMs: 0, timedOut: false });
     _autofixDeps.recheckReview = async () => false;
-    _autofixDeps.runAgentRectification = async () => false;
+    _autofixDeps.runAgentRectification = async () => ({ succeeded: false, cost: 0 });
 
     const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
     const result = await autofixStage.execute(ctx);
@@ -125,7 +125,7 @@ describe("autofixStage", () => {
     let agentRectificationCalled = false;
     _autofixDeps.runAgentRectification = async () => {
       agentRectificationCalled = true;
-      return false;
+      return { succeeded: false, cost: 0 };
     };
 
     const ctx = makeCtx({
@@ -153,7 +153,7 @@ describe("autofixStage", () => {
     _autofixDeps.recheckReview = async () => false;
     _autofixDeps.runAgentRectification = async () => {
       agentRectificationCalled = true;
-      return false;
+      return { succeeded: false, cost: 0 };
     };
 
     const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
@@ -168,7 +168,7 @@ describe("autofixStage", () => {
     const saved = { ..._autofixDeps };
     _autofixDeps.runQualityCommand = async () => ({ commandName: "lintFix", command: "", success: false, exitCode: 1, output: "", durationMs: 0, timedOut: false });
     _autofixDeps.recheckReview = async () => false;
-    _autofixDeps.runAgentRectification = async () => true;
+    _autofixDeps.runAgentRectification = async () => ({ succeeded: true, cost: 0 });
 
     const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
     const result = await autofixStage.execute(ctx);
@@ -183,7 +183,7 @@ describe("autofixStage", () => {
     const saved = { ..._autofixDeps };
     _autofixDeps.runQualityCommand = async () => ({ commandName: "lintFix", command: "", success: false, exitCode: 1, output: "", durationMs: 0, timedOut: false });
     _autofixDeps.recheckReview = async () => false;
-    _autofixDeps.runAgentRectification = async () => false;
+    _autofixDeps.runAgentRectification = async () => ({ succeeded: false, cost: 0 });
 
     const ctx = makeCtx({ reviewResult: makeReviewResult(false) });
     const result = await autofixStage.execute(ctx);
@@ -200,7 +200,7 @@ describe("autofixStage", () => {
     _autofixDeps.recheckReview = async () => true;
     _autofixDeps.runAgentRectification = async () => {
       agentRectificationCalled = true;
-      return true;
+      return { succeeded: true, cost: 0 };
     };
 
     // Must have a lint failure to trigger Phase 1 (mechanical fix)
@@ -223,7 +223,7 @@ describe("autofixStage", () => {
     };
     _autofixDeps.runAgentRectification = async () => {
       agentRectificationCalled = true;
-      return false;
+      return { succeeded: false, cost: 0 };
     };
 
     // Only typecheck failed — no lint failure → Phase 1 (mechanical fix) should be skipped

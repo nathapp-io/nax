@@ -179,4 +179,6 @@ export interface DiagnosisResult {
   testIssues?: string[];
   /** Issues found in the source code (optional) */
   sourceIssues?: string[];
+  /** LLM cost incurred for the diagnosis agent session */
+  cost?: number;
 }

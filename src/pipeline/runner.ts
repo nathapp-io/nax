@@ -26,6 +26,12 @@ export interface PipelineRunResult {
   stoppedAtStage?: string;
   /** Updated context after pipeline execution */
   context: PipelineContext;
+  /**
+   * Sum of cost reported by secondary agent calls within pipeline stages
+   * (e.g. rectification loops, semantic review, acceptance diagnosis).
+   * Distinct from context.agentResult.estimatedCost which holds the main execution cost.
+   */
+  stageCost?: number;
 }
 
 /** Maximum number of retries per stage to prevent infinite loops. */
@@ -48,6 +54,7 @@ export async function runPipeline(
   const logger = getLogger();
   const retryCountMap = new Map<string, number>();
   let i = 0;
+  let stageCostAccum = 0;
 
   while (i < stages.length) {
     const stage = stages[i];
@@ -71,9 +78,17 @@ export async function runPipeline(
         reason: `Stage "${stage.name}" threw error: ${errorMessage(error)}`,
       };
       eventEmitter?.emit("stage:exit", stage.name, failResult);
-      return { success: false, finalAction: "fail", reason: failResult.reason, stoppedAtStage: stage.name, context };
+      return {
+        success: false,
+        finalAction: "fail",
+        reason: failResult.reason,
+        stoppedAtStage: stage.name,
+        context,
+        stageCost: stageCostAccum > 0 ? stageCostAccum : undefined,
+      };
     }
 
+    if (result.cost) stageCostAccum += result.cost;
     eventEmitter?.emit("stage:exit", stage.name, result);
 
     switch (result.action) {
@@ -82,10 +97,24 @@ export async function runPipeline(
         continue;
 
       case "skip":
-        return { success: false, finalAction: "skip", reason: result.reason, stoppedAtStage: stage.name, context };
+        return {
+          success: false,
+          finalAction: "skip",
+          reason: result.reason,
+          stoppedAtStage: stage.name,
+          context,
+          stageCost: stageCostAccum > 0 ? stageCostAccum : undefined,
+        };
 
       case "fail":
-        return { success: false, finalAction: "fail", reason: result.reason, stoppedAtStage: stage.name, context };
+        return {
+          success: false,
+          finalAction: "fail",
+          reason: result.reason,
+          stoppedAtStage: stage.name,
+          context,
+          stageCost: stageCostAccum > 0 ? stageCostAccum : undefined,
+        };
 
       case "escalate":
         return {
@@ -94,10 +123,18 @@ export async function runPipeline(
           reason: result.reason ?? "Stage requested escalation to higher tier",
           stoppedAtStage: stage.name,
           context,
+          stageCost: stageCostAccum > 0 ? stageCostAccum : undefined,
         };
 
       case "pause":
-        return { success: false, finalAction: "pause", reason: result.reason, stoppedAtStage: stage.name, context };
+        return {
+          success: false,
+          finalAction: "pause",
+          reason: result.reason,
+          stoppedAtStage: stage.name,
+          context,
+          stageCost: stageCostAccum > 0 ? stageCostAccum : undefined,
+        };
 
       case "retry": {
         const retries = (retryCountMap.get(result.fromStage) ?? 0) + 1;
@@ -109,6 +146,7 @@ export async function runPipeline(
             reason: `Stage "${stage.name}" exceeded max retries (${MAX_STAGE_RETRIES}) for "${result.fromStage}"`,
             stoppedAtStage: stage.name,
             context,
+            stageCost: stageCostAccum > 0 ? stageCostAccum : undefined,
           };
         }
         retryCountMap.set(result.fromStage, retries);
@@ -121,6 +159,7 @@ export async function runPipeline(
             reason: `Retry target stage "${result.fromStage}" not found`,
             stoppedAtStage: stage.name,
             context,
+            stageCost: stageCostAccum > 0 ? stageCostAccum : undefined,
           };
         }
         logger.debug("pipeline", `Retrying from stage "${result.fromStage}" (attempt ${retries}/${MAX_STAGE_RETRIES})`);
@@ -135,5 +174,10 @@ export async function runPipeline(
     }
   }
 
-  return { success: true, finalAction: "complete", context };
+  return {
+    success: true,
+    finalAction: "complete",
+    context,
+    stageCost: stageCostAccum > 0 ? stageCostAccum : undefined,
+  };
 }

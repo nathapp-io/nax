@@ -60,26 +60,27 @@ export const rectifyStage: PipelineStage = {
     });
 
     const testCommand = ctx.config.review?.commands?.test ?? ctx.config.quality.commands.test ?? "bun test";
-    const fixed = await _rectifyDeps.runRectificationLoop(ctx, { testCommand, testOutput });
+    const { succeeded, cost } = await _rectifyDeps.runRectificationLoop(ctx, { testCommand, testOutput });
 
     pipelineEventBus.emit({
       type: "rectify:completed",
       storyId: ctx.story.id,
       attempt: rectifyAttempt,
-      fixed,
+      fixed: succeeded,
     });
 
-    if (fixed) {
+    if (succeeded) {
       logger.info("rectify", "Rectification succeeded — retrying verify", { storyId: ctx.story.id });
       // Clear verifyResult so verify stage re-runs fresh
       ctx.verifyResult = undefined;
-      return { action: "retry", fromStage: "verify" };
+      return { action: "retry", fromStage: "verify", cost };
     }
 
     logger.warn("rectify", "Rectification exhausted — escalating", { storyId: ctx.story.id });
     return {
       action: "escalate",
       reason: `Rectification exhausted after ${maxRetries} attempts (${verifyResult.failCount} test failures)`,
+      cost,
     };
   },
 };

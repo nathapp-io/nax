@@ -47,9 +47,9 @@ export async function runFullSuiteGate(
   logger: ReturnType<typeof getLogger>,
   featureName?: string,
   projectDir?: string,
-): Promise<boolean> {
+): Promise<{ passed: boolean; cost: number }> {
   const rectificationEnabled = config.execution.rectification?.enabled ?? false;
-  if (!rectificationEnabled) return false;
+  if (!rectificationEnabled) return { passed: false, cost: 0 };
 
   const rectificationConfig = config.execution.rectification;
   const testCmd = config.quality?.commands?.test ?? "bun test";
@@ -98,7 +98,7 @@ export async function runFullSuiteGate(
         exitCode: fullSuiteResult.exitCode,
         passedTests: testSummary.passed,
       });
-      return true;
+      return { passed: true, cost: 0 };
     }
 
     // No tests passed AND no tests failed — output is likely truncated/crashed
@@ -108,17 +108,17 @@ export async function runFullSuiteGate(
       outputLength: fullSuiteResult.output.length,
       outputTail: fullSuiteResult.output.slice(-200),
     });
-    return false;
+    return { passed: false, cost: 0 };
   }
   if (fullSuitePassed) {
     logger.info("tdd", "Full suite gate passed", { storyId: story.id });
-    return true;
+    return { passed: true, cost: 0 };
   }
   logger.warn("tdd", "Full suite gate execution failed (no output)", {
     storyId: story.id,
     exitCode: fullSuiteResult.exitCode,
   });
-  return false;
+  return { passed: false, cost: 0 };
 }
 
 /** Run the rectification retry loop when full suite gate detects regressions. */
@@ -127,6 +127,7 @@ async function runRectificationLoop(
   config: NaxConfig,
   workdir: string,
   agent: AgentAdapter,
+
   implementerTier: ModelTier,
   contextMarkdown: string | undefined,
   lite: boolean,
@@ -137,7 +138,7 @@ async function runRectificationLoop(
   fullSuiteTimeout: number,
   featureName?: string,
   projectDir?: string,
-): Promise<boolean> {
+): Promise<{ passed: boolean; cost: number }> {
   const rectificationState: RectificationState = {
     attempt: 0,
     initialFailures: testSummary.failed,
@@ -162,6 +163,7 @@ async function runRectificationLoop(
     ...rectificationState,
     isolationPassed: true,
   };
+  let gateCostAccum = 0;
 
   const fixed = await runSharedRectificationLoop({
     stage: "tdd",
@@ -214,6 +216,8 @@ async function runRectificationLoop(
       if (!rectifyResult.success && rectifyResult.pid) {
         await cleanupProcessTree(rectifyResult.pid);
       }
+
+      gateCostAccum += rectifyResult.estimatedCost ?? 0;
 
       if (rectifyResult.success) {
         logger.info("tdd", "Rectification agent session complete", {
@@ -283,7 +287,7 @@ async function runRectificationLoop(
   });
 
   if (fixed) {
-    return true;
+    return { passed: true, cost: gateCostAccum };
   }
 
   const finalFullSuite = await _rectificationGateDeps.executeWithTimeout(testCmd, fullSuiteTimeout, undefined, {
@@ -297,8 +301,8 @@ async function runRectificationLoop(
       attempts: rectificationState.attempt,
       remainingFailures: rectificationState.currentFailures,
     });
-    return false;
+    return { passed: false, cost: gateCostAccum };
   }
   logger.info("tdd", "Full suite gate passed", { storyId: story.id });
-  return true;
+  return { passed: true, cost: gateCostAccum };
 }
