@@ -289,7 +289,7 @@ async function executeFixStory(
     stories: [story],
     routing: routing as RoutingResult,
     projectDir: ctx.workdir,
-    workdir: ctx.workdir,
+    workdir: story.workdir ? join(ctx.workdir, story.workdir) : ctx.workdir,
     featureDir: ctx.featureDir,
     hooks: ctx.hooks,
     plugins: ctx.pluginRegistry,

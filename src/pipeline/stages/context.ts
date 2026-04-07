@@ -34,8 +34,8 @@ export const contextStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
-    // MW-003: resolve package workdir for per-package context.md loading
-    const packageWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : undefined;
+    // MW-003: workdir is already resolved at context creation; pass it when story has a package subdir
+    const packageWorkdir = ctx.story.workdir ? ctx.workdir : undefined;
 
     // Build context from PRD with element-level tracking
     const result = await buildStoryContextFull(ctx.prd, ctx.story, ctx.config, packageWorkdir);

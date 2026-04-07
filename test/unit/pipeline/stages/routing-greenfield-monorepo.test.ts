@@ -57,7 +57,8 @@ function makeCtx(story: UserStory, repoRoot: string): PipelineContext {
     story,
     stories: [story],
     rootConfig: DEFAULT_CONFIG,
-    workdir: repoRoot,
+    // Phase 3: workdir is resolved at context creation — include story.workdir if set
+    workdir: story.workdir ? join(repoRoot, story.workdir) : repoRoot,
     projectDir: repoRoot,
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "three-session-tdd", reasoning: "" },
     hooks: {},

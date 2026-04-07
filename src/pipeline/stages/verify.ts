@@ -106,8 +106,7 @@ export const verifyStage: PipelineStage = {
 
     logger.info("verify", "Running verification", { storyId: ctx.story.id });
 
-    // MW-006: resolve effective workdir for test execution
-    const effectiveWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+    // MW-006: workdir is already resolved to the package directory at context creation
 
     // Determine effective test command (smart runner or full suite)
     let effectiveCommand = testCommand;
@@ -119,7 +118,7 @@ export const verifyStage: PipelineStage = {
     // Returns null if package.json is absent (non-JS project) — falls through to smart-runner.
     let resolvedTestScopedTemplate: string | undefined = testScopedTemplate;
     if (testScopedTemplate && ctx.story.workdir) {
-      const resolved = await resolvePackageTemplate(testScopedTemplate, effectiveWorkdir);
+      const resolved = await resolvePackageTemplate(testScopedTemplate, ctx.workdir);
       resolvedTestScopedTemplate = resolved ?? undefined; // null → skip template
     }
 
@@ -145,14 +144,10 @@ export const verifyStage: PipelineStage = {
       }
     } else if (smartRunnerConfig.enabled) {
       // MW-006: pass packagePrefix so git diff is scoped to the package in monorepos
-      const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(
-        effectiveWorkdir,
-        ctx.storyGitRef,
-        ctx.story.workdir,
-      );
+      const sourceFiles = await _smartRunnerDeps.getChangedSourceFiles(ctx.workdir, ctx.storyGitRef, ctx.story.workdir);
 
       // Pass 1: path convention mapping
-      const pass1Files = await _smartRunnerDeps.mapSourceToTests(sourceFiles, effectiveWorkdir);
+      const pass1Files = await _smartRunnerDeps.mapSourceToTests(sourceFiles, ctx.workdir);
       if (pass1Files.length > 0) {
         logger.info("verify", `[smart-runner] Pass 1: path convention matched ${pass1Files.length} test files`, {
           storyId: ctx.story.id,
@@ -163,7 +158,7 @@ export const verifyStage: PipelineStage = {
         // Pass 2: import-grep fallback
         const pass2Files = await _smartRunnerDeps.importGrepFallback(
           sourceFiles,
-          effectiveWorkdir,
+          ctx.workdir,
           smartRunnerConfig.testFilePatterns,
         );
         if (pass2Files.length > 0) {
@@ -199,7 +194,7 @@ export const verifyStage: PipelineStage = {
 
     // Use unified regression gate (includes 2s wait for agent process cleanup)
     const result = await _verifyDeps.regression({
-      workdir: effectiveWorkdir,
+      workdir: ctx.workdir,
       command: effectiveCommand,
       timeoutSeconds: ctx.config.execution.verificationTimeoutSeconds,
       acceptOnTimeout: ctx.config.execution.regressionGate?.acceptOnTimeout ?? true,

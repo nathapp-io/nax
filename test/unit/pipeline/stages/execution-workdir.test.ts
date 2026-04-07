@@ -135,11 +135,14 @@ test("execution stage passes resolved package workdir when story.workdir is set"
 
   _executionDeps.validateAgentForTier = () => true;
   _executionDeps.detectMergeConflict = () => false;
-  // Mock resolveStoryWorkdir to avoid filesystem check in unit test
-  _executionDeps.resolveStoryWorkdir = (root: string, pkg?: string) =>
-    pkg ? join(root, pkg) : root;
 
-  const ctx = makeCtx({ workdir: "packages/api" });
+  // workdir is resolved at context creation (Phase 3) — pass already-resolved path
+  const story = makeStory({ workdir: "packages/api" });
+  const ctx: PipelineContext = {
+    ...makeCtx(),
+    story,
+    workdir: join("/repo", "packages/api"),
+  };
   await executionStage.execute(ctx);
 
   expect(capturedWorkdir).toBe(join("/repo", "packages/api"));

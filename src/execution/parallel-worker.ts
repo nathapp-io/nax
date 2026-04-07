@@ -49,7 +49,7 @@ export async function executeStoryInWorktree(
       story,
       stories: [story],
       projectDir: context.projectDir,
-      workdir: worktreePath,
+      workdir: story.workdir ? join(worktreePath, story.workdir) : worktreePath,
       routing,
       storyGitRef: storyGitRef ?? undefined,
     };

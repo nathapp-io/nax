@@ -30,8 +30,7 @@ export const reviewStage: PipelineStage = {
 
     logger.info("review", "Running review phase", { storyId: ctx.story.id });
 
-    // MW-010: scope review to package directory when story.workdir is set
-    const effectiveWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+    // MW-010: workdir is already resolved to the package directory at context creation
 
     // Build model resolver for semantic review — returns the default agent adapter.
     // The tier param from SemanticReviewConfig is informational (selects model cost tier)
@@ -91,7 +90,7 @@ export const reviewStage: PipelineStage = {
         // biome-ignore lint/suspicious/noExplicitAny: agent may be null when no defaultAgent configured
         (agent ?? null) as any,
         ctx.story.id,
-        effectiveWorkdir,
+        ctx.workdir,
         ctx.prd.feature ?? "",
         ctx.config,
       );
@@ -146,7 +145,7 @@ export const reviewStage: PipelineStage = {
 
     const result = await reviewOrchestrator.review(
       ctx.config.review,
-      effectiveWorkdir,
+      ctx.workdir,
       ctx.config.execution,
       ctx.plugins,
       ctx.storyGitRef,

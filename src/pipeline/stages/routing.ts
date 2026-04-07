@@ -69,7 +69,7 @@ export const routingStage: PipelineStage = {
     // STRAT-001: no-test is exempt from greenfield override
     const greenfieldDetectionEnabled = ctx.config.tdd.greenfieldDetection ?? true;
     if (greenfieldDetectionEnabled && routing.testStrategy.startsWith("three-session-tdd")) {
-      const greenfieldScanDir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+      const greenfieldScanDir = ctx.workdir;
       const isGreenfield = await _routingDeps.isGreenfieldStory(ctx.story, greenfieldScanDir);
       if (isGreenfield) {
         logger.info("routing", "Greenfield detected — forcing test-after strategy", {

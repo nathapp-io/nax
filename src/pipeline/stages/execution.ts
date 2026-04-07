@@ -153,13 +153,11 @@ export const executionStage: PipelineStage = {
         lite: isLiteMode,
       });
 
-      const effectiveWorkdir = _executionDeps.resolveStoryWorkdir(ctx.workdir, ctx.story.workdir);
-
       const tddResult = await runThreeSessionTdd({
         agent,
         story: ctx.story,
         config: ctx.config,
-        workdir: effectiveWorkdir,
+        workdir: ctx.workdir,
         modelTier: ctx.routing.modelTier,
         featureName: ctx.prd.feature,
         contextMarkdown: ctx.contextMarkdown,
@@ -246,8 +244,6 @@ export const executionStage: PipelineStage = {
       });
     }
 
-    const storyWorkdir = _executionDeps.resolveStoryWorkdir(ctx.workdir, ctx.story.workdir);
-
     // Determine whether to keep session open for review or rectification
     const keepSessionOpen = !!(
       ctx.config.review?.enabled === true || ctx.config.execution.rectification?.enabled === true
@@ -255,7 +251,7 @@ export const executionStage: PipelineStage = {
 
     const result = await agent.run({
       prompt: ctx.prompt,
-      workdir: storyWorkdir,
+      workdir: ctx.workdir,
       modelTier: ctx.routing.modelTier,
       modelDef: resolveModelForAgent(
         ctx.rootConfig.models,
@@ -283,7 +279,7 @@ export const executionStage: PipelineStage = {
     ctx.agentResult = result;
 
     // BUG-058: Auto-commit if agent left uncommitted changes (single-session/test-after)
-    await autoCommitIfDirty(storyWorkdir, "execution", "single-session", ctx.story.id);
+    await autoCommitIfDirty(ctx.workdir, "execution", "single-session", ctx.story.id);
 
     // merge-conflict trigger: detect CONFLICT markers in agent output
     const combinedOutput = (result.output ?? "") + (result.stderr ?? "");

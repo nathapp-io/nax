@@ -96,7 +96,7 @@ export async function runIteration(
     stories: storiesToExecute,
     routing,
     projectDir: ctx.workdir,
-    workdir: ctx.workdir,
+    workdir: story.workdir ? join(ctx.workdir, story.workdir) : ctx.workdir,
     prdPath: ctx.prdPath,
     featureDir: ctx.featureDir,
     hooks: ctx.hooks,

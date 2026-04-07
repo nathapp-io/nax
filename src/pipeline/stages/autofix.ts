@@ -64,8 +64,7 @@ export const autofixStage: PipelineStage = {
     const lintFixCmd = ctx.config.quality.commands.lintFix ?? ctx.config.review.commands.lintFix;
     const formatFixCmd = ctx.config.quality.commands.formatFix ?? ctx.config.review.commands.formatFix;
 
-    // Effective workdir for running commands (scoped to package if monorepo)
-    const effectiveWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
+    // Effective workdir for running commands — workdir is already resolved at context creation
 
     // Identify which checks failed
     const failedCheckNames = new Set((reviewResult.checks ?? []).filter((c) => !c.success).map((c) => c.check));
@@ -74,7 +73,7 @@ export const autofixStage: PipelineStage = {
     logger.info("autofix", "Starting autofix", {
       storyId: ctx.story.id,
       failedChecks: [...failedCheckNames],
-      workdir: effectiveWorkdir,
+      workdir: ctx.workdir,
     });
 
     // Phase 1: Mechanical fix — only for lint failures (lintFix/formatFix cannot fix typecheck errors)
@@ -84,7 +83,7 @@ export const autofixStage: PipelineStage = {
         const lintResult = await _autofixDeps.runQualityCommand({
           commandName: "lintFix",
           command: lintFixCmd,
-          workdir: effectiveWorkdir,
+          workdir: ctx.workdir,
           storyId: ctx.story.id,
         });
         logger.debug("autofix", `lintFix exit=${lintResult.exitCode}`, { storyId: ctx.story.id, command: lintFixCmd });
@@ -101,7 +100,7 @@ export const autofixStage: PipelineStage = {
         const fmtResult = await _autofixDeps.runQualityCommand({
           commandName: "formatFix",
           command: formatFixCmd,
-          workdir: effectiveWorkdir,
+          workdir: ctx.workdir,
           storyId: ctx.story.id,
         });
         logger.debug("autofix", `formatFix exit=${fmtResult.exitCode}`, {
@@ -130,7 +129,7 @@ export const autofixStage: PipelineStage = {
     }
 
     // Phase 2: Agent rectification — spawn agent with review error context
-    const agentFixed = await _autofixDeps.runAgentRectification(ctx, lintFixCmd, formatFixCmd, effectiveWorkdir);
+    const agentFixed = await _autofixDeps.runAgentRectification(ctx, lintFixCmd, formatFixCmd, ctx.workdir);
     if (agentFixed) {
       if (ctx.reviewResult) ctx.reviewResult = { ...ctx.reviewResult, success: true };
       // #136: Skip checks that already passed — only re-run checks that originally failed.
@@ -292,11 +291,9 @@ async function runAgentRectification(
         modelTier,
         ctx.rootConfig.autoMode.defaultAgent,
       );
-      const rectificationWorkdir = ctx.story.workdir ? join(ctx.workdir, ctx.story.workdir) : ctx.workdir;
-
       const result = await agent.run({
         prompt,
-        workdir: rectificationWorkdir,
+        workdir: ctx.workdir,
         modelTier,
         modelDef,
         timeoutSeconds: ctx.config.execution.sessionTimeoutSeconds,
