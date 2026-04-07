@@ -116,6 +116,21 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
   const testCommand = config.quality.commands.test ?? "bun test";
   const timeoutSeconds = config.execution.regressionGate?.timeoutSeconds ?? 120;
   const maxRectificationAttempts = config.execution.regressionGate?.maxRectificationAttempts ?? 2;
+  const acceptOnTimeout = config.execution.regressionGate?.acceptOnTimeout ?? true;
+
+  const verifyOpts = {
+    workdir,
+    command: testCommand,
+    timeoutSeconds,
+    forceExit: config.quality.forceExit,
+    detectOpenHandles: config.quality.detectOpenHandles,
+    detectOpenHandlesRetries: config.quality.detectOpenHandlesRetries,
+    timeoutRetryCount: 0 as const,
+    gracePeriodMs: config.quality.gracePeriodMs,
+    drainTimeoutMs: config.quality.drainTimeoutMs,
+    shell: config.quality.shell,
+    stripEnvVars: config.quality.stripEnvVars,
+  };
 
   // Only check stories that have been marked as passed
   const counts = countStories(prd);
@@ -139,19 +154,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
   });
 
   // Step 1: Run full test suite
-  const fullSuiteResult = await _regressionDeps.runVerification({
-    workdir: workdir,
-    command: testCommand,
-    timeoutSeconds,
-    forceExit: config.quality.forceExit,
-    detectOpenHandles: config.quality.detectOpenHandles,
-    detectOpenHandlesRetries: config.quality.detectOpenHandlesRetries,
-    timeoutRetryCount: 0,
-    gracePeriodMs: config.quality.gracePeriodMs,
-    drainTimeoutMs: config.quality.drainTimeoutMs,
-    shell: config.quality.shell,
-    stripEnvVars: config.quality.stripEnvVars,
-  });
+  const fullSuiteResult = await _regressionDeps.runVerification(verifyOpts);
 
   if (fullSuiteResult.success) {
     logger?.info("regression", "Full suite passed");
@@ -166,7 +169,6 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
   }
 
   // Handle timeout
-  const acceptOnTimeout = config.execution.regressionGate?.acceptOnTimeout ?? true;
   if (fullSuiteResult.status === "TIMEOUT" && acceptOnTimeout) {
     logger?.warn("regression", "Full-suite regression gate timed out (accepted as pass)");
     return {
@@ -269,8 +271,10 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
     };
   }
 
-  // Step 3: Attempt rectification per story
+  // Step 3: Attempt rectification per story, with early-exit after each success
   let rectificationAttempts = 0;
+  let storiesRectified = 0;
+  let currentTestOutput = fullSuiteResult.output;
   const affectedStoriesList = Array.from(affectedStoriesObjs.values());
 
   for (const story of affectedStoriesList) {
@@ -285,33 +289,57 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
         story,
         testCommand,
         timeoutSeconds,
-        testOutput: fullSuiteResult.output,
+        testOutput: currentTestOutput,
         promptPrefix: `# DEFERRED REGRESSION: Full-Suite Failures\n\nYour story ${story.id} broke tests in the full suite. Fix these regressions.`,
         agentGetFn,
       });
 
       if (fixed) {
+        storiesRectified++;
         logger?.info("regression", `Story ${story.id} rectified successfully`);
+
+        // Early-exit check: re-run full suite before touching remaining stories
+        logger?.info("regression", "Re-running full suite after story rectification", {
+          storyId: story.id,
+          storiesRectified,
+          storiesRemaining: affectedStoriesList.length - storiesRectified,
+        });
+
+        const midResult = await _regressionDeps.runVerification(verifyOpts);
+        const midSuccess = midResult.success || (midResult.status === "TIMEOUT" && acceptOnTimeout);
+
+        if (midSuccess) {
+          logger?.info("regression", "Full suite passed after story rectification — early exit", {
+            storyId: story.id,
+            storiesRectified,
+            storiesSkipped: affectedStoriesList.length - storiesRectified,
+            passCount: midResult.passCount ?? 0,
+          });
+          return {
+            success: true,
+            failedTests: testFilesInFailures.size,
+            failedTestFiles: Array.from(testFilesInFailures),
+            passedTests: midResult.passCount ?? 0,
+            rectificationAttempts,
+            affectedStories: Array.from(affectedStories),
+          };
+        }
+
+        // Still failing — update test output context for the next story's agent
+        logger?.warn("regression", "Full suite still failing after story rectification — continuing", {
+          storyId: story.id,
+          failCount: midResult.failCount ?? 0,
+          passCount: midResult.passCount ?? 0,
+        });
+        if (midResult.output) currentTestOutput = midResult.output;
         break; // Move to next story
       }
     }
   }
 
-  // Step 4: Re-run full suite to confirm
+  // Step 4: Re-run full suite to confirm (reached only when no early exit fired)
   logger?.info("regression", "Re-running full suite after rectification");
-  const retryResult = await _regressionDeps.runVerification({
-    workdir: workdir,
-    command: testCommand,
-    timeoutSeconds,
-    forceExit: config.quality.forceExit,
-    detectOpenHandles: config.quality.detectOpenHandles,
-    detectOpenHandlesRetries: config.quality.detectOpenHandlesRetries,
-    timeoutRetryCount: 0,
-    gracePeriodMs: config.quality.gracePeriodMs,
-    drainTimeoutMs: config.quality.drainTimeoutMs,
-    shell: config.quality.shell,
-    stripEnvVars: config.quality.stripEnvVars,
-  });
+  const retryResult = await _regressionDeps.runVerification(verifyOpts);
 
   const success = retryResult.success || (retryResult.status === "TIMEOUT" && acceptOnTimeout);
 
