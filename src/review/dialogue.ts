@@ -206,7 +206,6 @@ export function createReviewerSession(
   // Tracks whether the last review call was resolveDebate() (vs review()).
   // reReviewDebate() requires a prior resolveDebate() to avoid using findings
   // from a non-debate review() call as the delta baseline.
-  // biome-ignore lint/style/useConst: mutated by resolveDebate() and review()
   let lastWasDebateResolve = false;
   /**
    * Tracks session lifecycle for compaction-triggered resets.
