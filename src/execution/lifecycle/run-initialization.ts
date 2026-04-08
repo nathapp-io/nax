@@ -168,7 +168,7 @@ function validateStoryCount(counts: ReturnType<typeof countStories>, config: Nax
  */
 export function logActiveProtocol(config: NaxConfig): void {
   const logger = getSafeLogger();
-  const protocol = config.agent?.protocol ?? "cli";
+  const protocol = config.agent?.protocol;
   logger?.info("run-initialization", `Agent protocol: ${protocol}`, { protocol });
 }
 

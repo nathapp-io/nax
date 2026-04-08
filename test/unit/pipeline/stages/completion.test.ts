@@ -6,31 +6,13 @@
  *         when ctx.reviewerSession exists, regardless of story pass or fail
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../../../../src/config";
 import { _completionDeps, completionStage } from "../../../../src/pipeline/stages/completion";
 import type { PipelineContext } from "../../../../src/pipeline/types";
 import type { ReviewerSession } from "../../../../src/review/dialogue";
 import type { PRD, UserStory } from "../../../../src/prd";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Temp directory for file operations (savePRD writes to disk)
-// ─────────────────────────────────────────────────────────────────────────────
-
-let tmpDir: string;
-
-beforeAll(() => {
-  tmpDir = mkdtempSync(join(tmpdir(), "nax-test-completion-"));
-  // savePRD writes to workdir/nax/features/unknown/prd.json when featureDir is not set
-  mkdirSync(join(tmpDir, "nax", "features", "unknown"), { recursive: true });
-});
-
-afterAll(() => {
-  rmSync(tmpDir, { recursive: true, force: true });
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -99,7 +81,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     story,
     stories: [story],
     routing: { complexity: "simple", modelTier: "fast", testStrategy: "test-after", reasoning: "" },
-    workdir: tmpDir,
+    workdir: "/tmp/nax-test",
     // featureDir intentionally not set — avoids appendProgress file write
     hooks: {},
     agentResult: { output: "", exitCode: 0, success: true, estimatedCost: 0 },
@@ -111,9 +93,10 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
 const originalCompletionDeps = { ..._completionDeps };
 
 beforeEach(() => {
-  // Mock file-writing deps that hit the real file system
+  // Mock all file-writing deps so no real disk I/O occurs in unit tests
   _completionDeps.persistSemanticVerdict = mock(async () => {});
   _completionDeps.checkReviewGate = mock(async () => true);
+  _completionDeps.savePRD = mock(async () => {});
 });
 
 afterAll(() => {

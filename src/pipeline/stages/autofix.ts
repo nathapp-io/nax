@@ -19,8 +19,9 @@
  * - `escalate`                 — max attempts exhausted or agent unavailable
  */
 
-import { getAgent } from "../../agents";
+import { createAgentRegistry } from "../../agents/registry";
 import { resolveModelForAgent } from "../../config";
+import type { NaxConfig } from "../../config";
 import { loadConfigForWorkdir } from "../../config/loader";
 import { resolvePermissions } from "../../config/permissions";
 import { getLogger } from "../../logger";
@@ -247,7 +248,7 @@ async function runAgentRectification(
   const remainingBudget = maxTotal - consumed;
   const maxAttempts = Math.min(maxPerCycle, remainingBudget);
 
-  const agentGetFn = ctx.agentGetFn ?? _autofixDeps.getAgent;
+  const agentGetFn = ctx.agentGetFn ?? ((name: string) => _autofixDeps.getAgent(name, ctx.rootConfig));
   const loopState = {
     attempt: 0,
     failedChecks,
@@ -415,7 +416,8 @@ async function runAgentRectification(
  * Injectable deps for testing.
  */
 export const _autofixDeps = {
-  getAgent,
+  /** Protocol-aware agent factory. Override in tests to inject a mock agent. */
+  getAgent: (name: string, config: NaxConfig) => createAgentRegistry(config).getAgent(name),
   runQualityCommand,
   recheckReview,
   runAgentRectification: (

@@ -1006,6 +1006,9 @@ export async function runAcceptanceLoop(ctx: AcceptanceLoopContext): Promise<Acc
       if (result.success) {
         storiesCompleted++;
         totalCost += result.cost;
+        // Mutates ctx.allStoryMetrics in place — ctx.allStoryMetrics is the same array reference
+        // as options.allStoryMetrics in runner-completion.ts, so fix-story metrics are visible
+        // to shouldSkipDeferredRegression when handleRunCompletion is called after this loop.
         if (result.metrics) ctx.allStoryMetrics.push(...result.metrics);
       }
 

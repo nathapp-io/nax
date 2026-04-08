@@ -41,32 +41,32 @@ export class CLIInteractionPlugin implements InteractionPlugin {
   async send(request: InteractionRequest): Promise<void> {
     this.pendingRequests.set(request.id, request);
 
-    // Format and print the request
-    console.log(`\n${"=".repeat(80)}`);
-    console.log(`[INTERACTION] ${request.stage.toUpperCase()} — ${request.type.toUpperCase()}`);
-    console.log("=".repeat(80));
-    console.log(`\n${request.summary}\n`);
+    // Format and print the request directly to stdout (intentional terminal UI output)
+    process.stdout.write(`\n${"=".repeat(80)}\n`);
+    process.stdout.write(`[INTERACTION] ${request.stage.toUpperCase()} — ${request.type.toUpperCase()}\n`);
+    process.stdout.write(`${"=".repeat(80)}\n`);
+    process.stdout.write(`\n${request.summary}\n\n`);
 
     if (request.detail) {
-      console.log(request.detail);
-      console.log("");
+      process.stdout.write(`${request.detail}\n`);
+      process.stdout.write("\n");
     }
 
     if (request.options && request.options.length > 0) {
-      console.log("Options:");
+      process.stdout.write("Options:\n");
       for (const opt of request.options) {
         const desc = opt.description ? ` — ${opt.description}` : "";
-        console.log(`  [${opt.key}] ${opt.label}${desc}`);
+        process.stdout.write(`  [${opt.key}] ${opt.label}${desc}\n`);
       }
-      console.log("");
+      process.stdout.write("\n");
     }
 
     if (request.timeout) {
       const timeoutSec = Math.floor(request.timeout / 1000);
-      console.log(`[Timeout: ${timeoutSec}s | Fallback: ${request.fallback}]`);
+      process.stdout.write(`[Timeout: ${timeoutSec}s | Fallback: ${request.fallback}]\n`);
     }
 
-    console.log(`${"=".repeat(80)}\n`);
+    process.stdout.write(`${"=".repeat(80)}\n\n`);
   }
 
   async receive(requestId: string, timeout = 60000): Promise<InteractionResponse> {
