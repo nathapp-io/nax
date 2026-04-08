@@ -406,21 +406,16 @@ export async function runSemanticReview(
     const debateResult = await debateSession.run(prompt);
     const debateCost = debateResult.totalCostUsd ?? 0;
 
-    // Compute majority vote and merge findings from all proposals
-    let passCount = 0;
-    let failCount = 0;
+    // Use the resolver's verdict as the authoritative pass/fail.
+    // Collect findings from all proposals for deduplication and blocking-severity filter.
+    const resolverPassed = debateResult.outcome === "passed";
     const allFindings: LLMFinding[] = [];
     for (const p of debateResult.proposals) {
       const parsed = parseLLMResponse(p.output);
       if (parsed) {
-        if (parsed.passed) passCount++;
-        else failCount++;
         allFindings.push(...parsed.findings);
-      } else {
-        failCount++; // unparseable — fail-closed
       }
     }
-    const majorityPassed = passCount > failCount;
 
     // Deduplicate findings by AC id (primary) or file:line (fallback)
     const seen = new Set<string>();
@@ -437,7 +432,7 @@ export async function runSemanticReview(
     const debateBlocking = deduped.filter((f) => isBlockingSeverity(f.severity));
 
     const durationMs = Date.now() - startTime;
-    if (!majorityPassed) {
+    if (!resolverPassed) {
       if (debateBlocking.length > 0) {
         logger?.warn("review", `Semantic review failed (debate): ${debateBlocking.length} findings`, {
           storyId: story.id,

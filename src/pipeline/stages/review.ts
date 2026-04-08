@@ -25,7 +25,11 @@ export const reviewStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
-    const dialogueEnabled = ctx.config.review?.dialogue?.enabled ?? false;
+    // Dialogue is incompatible with debate mode on the review stage — when debate runs,
+    // it is the sole authority on pass/fail; the ReviewerSession path is not applied.
+    // See SPEC-reviewer-implementer-dialogue.md §Backward Compatibility.
+    const reviewDebateEnabled = ctx.rootConfig?.debate?.enabled && ctx.rootConfig?.debate?.stages?.review?.enabled;
+    const dialogueEnabled = !reviewDebateEnabled && (ctx.config.review?.dialogue?.enabled ?? false);
 
     logger.info("review", "Running review phase", { storyId: ctx.story.id });
 

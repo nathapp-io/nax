@@ -41,6 +41,8 @@ export interface SuccessfulProposal {
 export interface ResolveOutcome {
   outcome: "passed" | "failed" | "skipped";
   resolverCostUsd: number;
+  /** Synthesised output from synthesis/custom resolver — undefined for majority resolver */
+  output?: string;
 }
 
 // ─── Exported public API ──────────────────────────────────────────────────────
@@ -145,16 +147,34 @@ export function pipelineStageForDebate(stage: string): PipelineStage {
   }
 }
 
+/** Common model shorthand aliases → tier mapping for debater config convenience */
+const MODEL_SHORTHAND_TIERS: Record<string, ModelTier> = {
+  haiku: "fast",
+  sonnet: "balanced",
+  opus: "powerful",
+};
+
 export function resolveModelDefForDebater(debater: Debater, tier: ModelTier, config: NaxConfig): ModelDef {
-  if (debater.model && !isTierLabel(debater.model)) {
-    return resolveModel(debater.model);
+  const modelOverride = debater.model;
+  let effectiveTier = tier;
+  if (modelOverride) {
+    // Check alias first (haiku/sonnet/opus → fast/balanced/powerful).
+    const aliasedTier = MODEL_SHORTHAND_TIERS[modelOverride.toLowerCase()];
+    if (aliasedTier) {
+      // Shorthand alias — resolve through config.models with the mapped tier.
+      effectiveTier = aliasedTier;
+    } else if (!isTierLabel(modelOverride)) {
+      // Full model ID (e.g. "claude-haiku-4-5-20251001") — pass through directly.
+      return resolveModel(modelOverride);
+    }
+    // Explicit tier label (fast/balanced/powerful) — fall through to config-based resolution.
   }
 
   const configModels = config?.models ?? DEFAULT_CONFIG.models;
   const configDefaultAgent = config?.autoMode?.defaultAgent ?? DEFAULT_CONFIG.autoMode.defaultAgent;
 
   try {
-    return resolveModelForAgent(configModels, debater.agent, tier, configDefaultAgent);
+    return resolveModelForAgent(configModels, debater.agent, effectiveTier, configDefaultAgent);
   } catch {
     // Fall through to secondary fallback strategies.
   }
@@ -163,7 +183,7 @@ export function resolveModelDefForDebater(debater: Debater, tier: ModelTier, con
     return resolveModelForAgent(
       DEFAULT_CONFIG.models,
       DEFAULT_CONFIG.autoMode.defaultAgent,
-      tier,
+      effectiveTier,
       DEFAULT_CONFIG.autoMode.defaultAgent,
     );
   } catch {
@@ -221,6 +241,7 @@ export async function resolveOutcome(
       return {
         outcome: "passed",
         resolverCostUsd: resolverResult.costUsd,
+        output: resolverResult.output,
       };
     }
     return { outcome: "passed", resolverCostUsd: 0 };
@@ -243,6 +264,7 @@ export async function resolveOutcome(
     return {
       outcome: "passed",
       resolverCostUsd: resolverResult.costUsd,
+      output: resolverResult.output,
     };
   }
 

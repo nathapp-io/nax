@@ -76,6 +76,8 @@ export class DebateSession {
           stageConfig: this.stageConfig,
           config: this.config,
           timeoutMs: this.timeoutMs,
+          workdir: this.workdir,
+          featureName: this.featureName,
         },
         prompt,
       );
@@ -104,6 +106,8 @@ export class DebateSession {
         stageConfig: this.stageConfig,
         config: this.config,
         timeoutMs: this.timeoutMs,
+        workdir: this.workdir,
+        featureName: this.featureName,
       },
       prompt,
     );

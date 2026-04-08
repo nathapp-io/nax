@@ -839,11 +839,17 @@ export class AcpAgentAdapter implements AgentAdapter {
       // On failure, keep session open so retry can resume with full context.
       // When keepSessionOpen=true (e.g. rectification loop), skip close even on success
       // so all attempts share the same conversation context.
+      // Exception: session errors ("needs reconnect") mean the session is broken —
+      // close it so the retry loop creates a fresh one instead of resuming the same broken session.
+      const isSessionBroken = !runState.succeeded && lastResponse?.stopReason === "error";
       if (runState.succeeded && !options.keepSessionOpen) {
         await closeAcpSession(session);
         if (options.featureName && options.storyId) {
           await clearAcpSession(options.workdir, options.featureName, options.storyId, options.sessionRole);
         }
+      } else if (isSessionBroken) {
+        getSafeLogger()?.debug("acp-adapter", "Closing broken session for retry", { sessionName });
+        await closeAcpSession(session);
       } else if (!runState.succeeded) {
         getSafeLogger()?.info("acp-adapter", "Keeping session open for retry", { sessionName });
       } else {
@@ -1157,7 +1163,7 @@ export class AcpAgentAdapter implements AgentAdapter {
       throw new Error("[acp-adapter] plan() returned empty spec content");
     }
 
-    return { specContent };
+    return { specContent, costUsd: result.estimatedCost };
   }
 
   async decompose(options: DecomposeOptions): Promise<DecomposeResult> {

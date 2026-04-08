@@ -6,7 +6,7 @@
 
 import { join } from "node:path";
 import type { NaxConfig } from "../config";
-import type { ModelTier } from "../config/schema-types";
+import type { ModelDef } from "../config";
 import { allSettledBounded } from "./concurrency";
 import {
   type ResolveOutcome,
@@ -14,9 +14,12 @@ import {
   type SuccessfulProposal,
   _debateSessionDeps,
   buildFailedResult,
+  modelTierFromDebater,
+  resolveModelDefForDebater,
   resolveOutcome,
 } from "./session-helpers";
-import type { DebateResult, DebateStageConfig } from "./types";
+import { type HybridCtx, runRebuttalLoop } from "./session-hybrid";
+import type { DebateResult, DebateStageConfig, Rebuttal } from "./types";
 
 interface PlanCtx {
   readonly storyId: string;
@@ -40,9 +43,8 @@ export async function runPlan(
   const logger = _debateSessionDeps.getSafeLogger();
   const config = ctx.stageConfig;
   const debaters = config.debaters ?? [];
-  // NOTE: adapter.plan() returns PlanResult which does not expose estimatedCost.
-  // Cost tracking for plan-mode debates requires PlanResult to include cost — tracked separately.
-  const totalCostUsd = 0;
+  // Mutable: plan debater costs accumulated below; hybrid rebuttal loop adds cost via adapter.run().
+  let totalCostUsd = 0;
 
   // Resolve adapters — skip unavailable agents
   const resolved: ResolvedDebater[] = [];
@@ -69,13 +71,17 @@ export async function runPlan(
       const tempOutputPath = join(opts.outputDir, `prd-debate-${i}.json`);
       const debaterPrompt = `${basePrompt}\n\nWrite the PRD JSON directly to this file path: ${tempOutputPath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`;
 
-      await adapter.plan({
+      const modelTier = modelTierFromDebater(debater);
+      const modelDef: ModelDef = resolveModelDefForDebater(debater, modelTier, ctx.config);
+
+      const planResult = await adapter.plan({
         prompt: debaterPrompt,
         workdir: opts.workdir,
         interactive: false,
         timeoutSeconds: opts.timeoutSeconds,
         config: ctx.config,
-        modelTier: (debater.model ?? "balanced") as ModelTier,
+        modelTier,
+        modelDef,
         dangerouslySkipPermissions: opts.dangerouslySkipPermissions,
         maxInteractionTurns: opts.maxInteractionTurns,
         featureName: opts.feature,
@@ -84,7 +90,7 @@ export async function runPlan(
       });
 
       const output = await _debateSessionDeps.readFile(tempOutputPath);
-      return { debater, adapter, output, cost: 0 };
+      return { debater, adapter, output, cost: planResult.costUsd ?? 0 };
     }),
     concurrencyLimit,
   );
@@ -94,6 +100,7 @@ export async function runPlan(
     const res = settled[i];
     if (res.status === "fulfilled") {
       successful.push(res.value);
+      totalCostUsd += res.value.cost;
     } else {
       const { debater } = resolved[i];
       logger?.warn("debate", "debate:debater-failed", {
@@ -149,24 +156,51 @@ export async function runPlan(
     };
   }
 
-  // Multiple proposals — resolve to pick the winning PRD
+  // Multiple proposals — run hybrid rebuttal loop if configured, then resolve
   const proposalOutputs = successful.map((p) => p.output);
+
+  // Hybrid rebuttal loop — delegates to session-hybrid.ts (SSOT)
+  const mode = ctx.stageConfig.mode ?? "panel";
+  const sessionMode = ctx.stageConfig.sessionMode ?? "one-shot";
+  let critiqueOutputs: string[] = [];
+  let rebuttalList: Rebuttal[] | undefined;
+
+  if (mode === "hybrid" && sessionMode === "stateful") {
+    const hybridCtx: HybridCtx = {
+      storyId: ctx.storyId,
+      stage: ctx.stage,
+      stageConfig: ctx.stageConfig,
+      config: ctx.config,
+      workdir: opts.workdir,
+      featureName: opts.feature,
+      timeoutSeconds: opts.timeoutSeconds ?? 600,
+    };
+    const { rebuttals, costUsd } = await runRebuttalLoop(hybridCtx, successful, basePrompt, "plan-hybrid");
+    critiqueOutputs = rebuttals.map((r) => r.output);
+    rebuttalList = rebuttals;
+    totalCostUsd += costUsd;
+  } else if (mode === "hybrid") {
+    logger?.warn("debate", "hybrid mode requires sessionMode: stateful for plan — running as panel");
+  }
+
   // Pass the full outer session timeout so the resolver gets the same budget
   // as the debate session itself. Using 0 bypassed the outer timeout entirely,
   // causing the inner acpx call to use a 120s default and get killed.
   const resolverTimeoutMs = (ctx.stageConfig.timeoutSeconds ?? 600) * 1000;
   const outcome: ResolveOutcome = await resolveOutcome(
     proposalOutputs,
-    [],
+    critiqueOutputs,
     ctx.stageConfig,
     ctx.config,
     ctx.storyId,
     resolverTimeoutMs,
+    opts.workdir,
+    opts.feature,
   );
 
-  // Winning output: synthesis resolver returns combined PRD via synthesisResolver output;
-  // for majority/custom, use the first proposal as the baseline winner.
-  const winningOutput = successful[0].output;
+  // Winning output: synthesis/custom resolver returns a combined PRD — use it when available.
+  // For majority resolver, outcome.output is undefined; fall back to first proposal.
+  const winningOutput = outcome.output ?? successful[0].output;
 
   const proposals = successful.map((p) => ({ debater: p.debater, output: p.output }));
 
@@ -179,10 +213,11 @@ export async function runPlan(
     storyId: ctx.storyId,
     stage: ctx.stage,
     outcome: outcome.outcome,
-    rounds: 1,
+    rounds: rebuttalList ? config.rounds : 1,
     debaters: successful.map((p) => p.debater.agent),
     resolverType: config.resolver.type,
     proposals,
+    rebuttals: rebuttalList,
     output: winningOutput,
     totalCostUsd,
   };
