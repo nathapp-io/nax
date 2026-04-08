@@ -203,6 +203,11 @@ export function createReviewerSession(
   let lastCheckResult: ReviewDialogueResult | null = null;
   let lastStory: SemanticStory | null = null;
   let lastSemanticConfig: SemanticReviewConfig | null = null;
+  // Tracks whether the last review call was resolveDebate() (vs review()).
+  // reReviewDebate() requires a prior resolveDebate() to avoid using findings
+  // from a non-debate review() call as the delta baseline.
+  // biome-ignore lint/style/useConst: mutated by resolveDebate() and review()
+  let lastWasDebateResolve = false;
   /**
    * Tracks session lifecycle for compaction-triggered resets.
    * - generation: incremented each time history overflow causes a session reset.
@@ -295,6 +300,7 @@ export function createReviewerSession(
       lastCheckResult = reviewResult;
       lastStory = story;
       lastSemanticConfig = semanticConfig;
+      lastWasDebateResolve = false;
       return reviewResult;
     },
     async reReview(updatedDiff: string): Promise<ReviewDialogueResult> {
@@ -433,6 +439,7 @@ export function createReviewerSession(
       lastCheckResult = reviewResult;
       lastStory = story;
       lastSemanticConfig = semanticConfig;
+      lastWasDebateResolve = true;
       return reviewResult;
     },
     async reReviewDebate(
@@ -448,7 +455,7 @@ export function createReviewerSession(
           { stage: "review", storyId, featureName },
         );
       }
-      if (!lastCheckResult || !lastSemanticConfig) {
+      if (!lastCheckResult || !lastSemanticConfig || !lastWasDebateResolve) {
         throw new NaxError(
           `[dialogue] reReviewDebate() called before any resolveDebate() on story ${storyId}`,
           "NO_REVIEW_RESULT",

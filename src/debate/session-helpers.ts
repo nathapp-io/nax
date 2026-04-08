@@ -47,11 +47,7 @@ export interface ResolveOutcome {
   dialogueResult?: import("../review/dialogue").ReviewDialogueResult;
 }
 
-/**
- * Context required by resolveOutcome() when a ReviewerSession is used.
- * Only populated from the review-debate-dialogue path in semantic.ts.
- * All other callers (plan, stateful, hybrid, one-shot) pass undefined.
- */
+/** Context required by resolveOutcome() when a ReviewerSession is used. Only populated from semantic.ts debate path. */
 export interface ResolverContext {
   diff: string;
   story: { id: string; title: string; acceptanceCriteria: string[] };
@@ -62,10 +58,7 @@ export interface ResolverContext {
   isReReview?: boolean;
 }
 
-/**
- * Input type for DebateSessionOptions — same as ResolverContext but without
- * labeledProposals, which are added by sub-modules once proposals are collected.
- */
+/** Input type for DebateSessionOptions — ResolverContext without labeledProposals (added by sub-modules after proposals collected). */
 export type ResolverContextInput = Omit<ResolverContext, "labeledProposals">;
 
 export interface DebateSessionOptions {
@@ -96,12 +89,7 @@ export const _debateSessionDeps = {
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
 };
 
-/**
- * Resolve the model string for a debater.
- * When debater.model is set, treat it as a tier name and resolve via config.models.
- * When absent, default to "fast" tier.
- * Falls back to the raw debater.model string if config resolution fails (backward compat).
- */
+/** Resolve the model string for a debater. Defaults to "fast" tier; falls back to raw model string on config error. */
 export function resolveDebaterModel(debater: Debater, config: NaxConfig): string | undefined {
   const tier = debater.model ?? "fast";
   if (!config?.models) return debater.model;
@@ -307,6 +295,15 @@ export async function resolveOutcome(
   }
 
   // Stateless paths (no ReviewerSession, or fallback after error)
+  // US-004 AC: warn when session supplied without resolverContext (cannot call resolveDebate without diff/story)
+  if (reviewerSession && !resolverContext) {
+    logger?.warn(
+      "debate",
+      "ReviewerSession provided but resolverContext is undefined — falling back to stateless resolver",
+      { storyId },
+    );
+  }
+
   if (resolverConfig.type === "majority-fail-closed" || resolverConfig.type === "majority-fail-open") {
     if (workdir !== undefined && !reviewerSession) {
       logger?.warn(

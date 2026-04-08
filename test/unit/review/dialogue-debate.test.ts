@@ -237,6 +237,16 @@ describe("ReviewerSession.reReviewDebate()", () => {
     await expect(session.reReviewDebate(PROPOSALS, CRITIQUES, DIFF, ctx)).rejects.toBeInstanceOf(NaxError);
   });
 
+  test("throws NO_REVIEW_RESULT when called after review() but not resolveDebate() (prevents wrong delta baseline)", async () => {
+    // review() sets lastCheckResult/lastSemanticConfig but lastWasDebateResolve stays false —
+    // reReviewDebate() must not accept non-debate findings as the delta baseline.
+    const session = createReviewerSession(makeAdapter(makeRunFn(PASSING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
+    await session.review(DIFF, STORY, SEMANTIC_CONFIG);
+    const ctx: DebateResolverContext = { resolverType: "synthesis" };
+
+    await expect(session.reReviewDebate(PROPOSALS, CRITIQUES, DIFF, ctx)).rejects.toBeInstanceOf(NaxError);
+  });
+
   test("throws REVIEWER_SESSION_DESTROYED when session is inactive", async () => {
     const session = createReviewerSession(makeAdapter(makeRunFn(PASSING_RESPONSE)), "story-1", "/workdir", "feature", MOCK_CONFIG);
     await session.destroy();
