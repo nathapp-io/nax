@@ -20,6 +20,12 @@ import {
 import { closeStatefulSession, runStatefulTurn } from "./session-stateful";
 import type { DebateResult, DebateStageConfig, Rebuttal } from "./types";
 
+/** Result of the rebuttal loop — rebuttals collected + accumulated cost. */
+export interface RebuttalLoopResult {
+  rebuttals: Rebuttal[];
+  costUsd: number;
+}
+
 export interface HybridCtx {
   readonly storyId: string;
   readonly stage: string;
@@ -31,12 +37,89 @@ export interface HybridCtx {
 }
 
 /**
+ * Run the sequential rebuttal loop across all debaters for N rounds,
+ * then close all sessions in a finally block.
+ *
+ * SSOT for hybrid-mode rebuttal logic — called by runHybrid() and runPlan().
+ *
+ * @param ctx                - Session context (must include workdir/featureName/timeoutSeconds)
+ * @param proposals          - Successful proposals with adapter references
+ * @param originalPrompt     - The original debate prompt (included in rebuttal context)
+ * @param sessionRolePrefix  - Prefix for session roles (e.g. "debate-hybrid", "plan-hybrid")
+ */
+export async function runRebuttalLoop(
+  ctx: HybridCtx,
+  proposals: SuccessfulProposal[],
+  originalPrompt: string,
+  sessionRolePrefix: string,
+): Promise<RebuttalLoopResult> {
+  const logger = _debateSessionDeps.getSafeLogger();
+  const config = ctx.stageConfig;
+  const rebuttals: Rebuttal[] = [];
+  let costUsd = 0;
+
+  const proposalList = proposals.map((s) => ({ debater: s.debater, output: s.output }));
+
+  try {
+    for (let round = 1; round <= config.rounds; round++) {
+      const priorRebuttals = rebuttals.filter((r) => r.round < round).map((r) => r.output);
+
+      for (let debaterIdx = 0; debaterIdx < proposals.length; debaterIdx++) {
+        const proposal = proposals[debaterIdx];
+        const sessionRole = `${sessionRolePrefix}-${debaterIdx}`;
+
+        logger?.info("debate:rebuttal-start", "debate:rebuttal-start", {
+          storyId: ctx.storyId,
+          round,
+          debaterIndex: debaterIdx,
+        });
+
+        const rebuttalPrompt = buildRebuttalContext(originalPrompt, proposalList, priorRebuttals, debaterIdx);
+
+        try {
+          const turnResult = await runStatefulTurn(
+            ctx,
+            proposal.adapter,
+            proposal.debater,
+            rebuttalPrompt,
+            sessionRole,
+            true,
+          );
+          costUsd += turnResult.cost;
+          rebuttals.push({ debater: proposal.debater, round, output: turnResult.output });
+        } catch (err) {
+          logger?.warn("debate", "debate:rebuttal-failed", {
+            storyId: ctx.storyId,
+            round,
+            debaterIndex: debaterIdx,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+  } finally {
+    for (let debaterIdx = 0; debaterIdx < proposals.length; debaterIdx++) {
+      const proposal = proposals[debaterIdx];
+      const sessionRole = `${sessionRolePrefix}-${debaterIdx}`;
+      try {
+        const closeCost = await closeStatefulSession(ctx, proposal.adapter, proposal.debater, sessionRole);
+        costUsd += closeCost;
+      } catch {
+        // Ignore close errors
+      }
+    }
+  }
+
+  return { rebuttals, costUsd };
+}
+
+/**
  * Run a hybrid-mode debate session.
  *
  * Proposal phase: all debaters run in parallel via allSettledBounded with
  * sessionRole 'debate-hybrid-{debaterIndex}' and keepSessionOpen: true.
  * If fewer than 2 proposals succeed, returns the single-agent fallback result.
- * The rebuttal loop is a stub (TODO: implement in US-004-B).
+ * Rebuttal loop delegates to runRebuttalLoop() (SSOT).
  *
  * @param ctx    - Hybrid session context
  * @param prompt - The debate prompt
@@ -142,57 +225,9 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
   const proposalOutputs = successfulProposals.map((s) => s.output);
   const proposalList = successfulProposals.map((s) => ({ debater: s.debater, output: s.output }));
 
-  // Rebuttal loop — sequential per round, per debater
-  const rebuttals: Rebuttal[] = [];
-  try {
-    for (let round = 1; round <= config.rounds; round++) {
-      const priorRebuttals = rebuttals.filter((r) => r.round < round).map((r) => r.output);
-
-      for (let debaterIdx = 0; debaterIdx < successfulProposals.length; debaterIdx++) {
-        const proposal = successfulProposals[debaterIdx];
-        const sessionRole = `debate-hybrid-${debaterIdx}`;
-
-        logger?.info("debate:rebuttal-start", "debate:rebuttal-start", {
-          storyId: ctx.storyId,
-          round,
-          debaterIndex: debaterIdx,
-        });
-
-        const rebuttalPrompt = buildRebuttalContext(prompt, proposalList, priorRebuttals, debaterIdx);
-
-        try {
-          const turnResult = await runStatefulTurn(
-            ctx,
-            proposal.adapter,
-            proposal.debater,
-            rebuttalPrompt,
-            sessionRole,
-            true,
-          );
-          totalCostUsd += turnResult.cost;
-          rebuttals.push({ debater: proposal.debater, round, output: turnResult.output });
-        } catch (err) {
-          logger?.warn("debate", "debate:rebuttal-failed", {
-            storyId: ctx.storyId,
-            round,
-            debaterIndex: debaterIdx,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-    }
-  } finally {
-    for (let debaterIdx = 0; debaterIdx < successfulProposals.length; debaterIdx++) {
-      const proposal = successfulProposals[debaterIdx];
-      const sessionRole = `debate-hybrid-${debaterIdx}`;
-      try {
-        const closeCost = await closeStatefulSession(ctx, proposal.adapter, proposal.debater, sessionRole);
-        totalCostUsd += closeCost;
-      } catch {
-        // Ignore close errors
-      }
-    }
-  }
+  // Rebuttal loop + session cleanup — delegated to SSOT
+  const { rebuttals, costUsd: rebuttalCost } = await runRebuttalLoop(ctx, successfulProposals, prompt, "debate-hybrid");
+  totalCostUsd += rebuttalCost;
 
   const critiqueOutputs = rebuttals.map((r) => r.output);
 
@@ -203,6 +238,8 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
     ctx.config,
     ctx.storyId,
     ctx.timeoutSeconds * 1000,
+    ctx.workdir,
+    ctx.featureName,
   );
   totalCostUsd += resolveResult.resolverCostUsd;
 

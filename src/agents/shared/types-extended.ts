@@ -75,6 +75,8 @@ export interface PlanResult {
   specContent: string;
   /** Optional conversation log (for debugging/review) */
   conversationLog?: string;
+  /** Estimated cost in USD for this plan session */
+  costUsd?: number;
 }
 
 /**

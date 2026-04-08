@@ -8,6 +8,7 @@ function makeStageConfig(overrides: Partial<DebateStageConfig> = {}): DebateStag
     enabled: true,
     resolver: { type: "majority-fail-closed" },
     sessionMode: "one-shot",
+    mode: "panel",
     rounds: 1,
     debaters: [{ agent: "opencode" }, { agent: "opencode" }],
     timeoutSeconds: 60,
@@ -132,6 +133,195 @@ describe("DebateSession.runPlan()", () => {
     });
 
     expect(storyIds).toEqual(["config-ssot", "config-ssot"]);
+  });
+
+  test("runs hybrid rebuttal loop when mode=hybrid and sessionMode=stateful", async () => {
+    const runCalls: Array<{ prompt: string; sessionRole?: string; keepSessionOpen?: boolean }> = [];
+
+    _debateSessionDeps.getAgent = mock(() => ({
+      name: "opencode",
+      displayName: "opencode",
+      binary: "opencode",
+      capabilities: {
+        supportedTiers: ["fast"] as const,
+        maxContextTokens: 100_000,
+        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
+      },
+      isInstalled: async () => true,
+      run: async (options: { prompt?: string; sessionRole?: string; keepSessionOpen?: boolean }) => {
+        runCalls.push({
+          prompt: options.prompt ?? "",
+          sessionRole: options.sessionRole,
+          keepSessionOpen: options.keepSessionOpen,
+        });
+        return {
+          success: true,
+          exitCode: 0,
+          output: `run-output-${options.sessionRole}`,
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCost: 0.05,
+        };
+      },
+      buildCommand: () => [],
+      plan: async (options: { sessionRole?: string }) => {
+        return { specContent: "ok" };
+      },
+      decompose: async () => ({ stories: [] }),
+      complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
+    }));
+
+    _debateSessionDeps.readFile = mock(async (path: string) => `{"proposal":"from ${path}"}`);
+
+    const session = new DebateSession({
+      storyId: "plan-hybrid-test",
+      stage: "plan",
+      stageConfig: makeStageConfig({
+        mode: "hybrid",
+        sessionMode: "stateful",
+        rounds: 1,
+      }),
+      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
+    });
+
+    const result = await session.runPlan("base prompt", {
+      workdir: "/tmp/workdir",
+      feature: "plan-hybrid-test",
+      outputDir: "/tmp/out",
+    });
+
+    // Rebuttal calls should use adapter.run() with plan-hybrid-{idx} session roles
+    const rebuttalCalls = runCalls.filter(
+      (c) => c.prompt.includes("You are debater") && c.prompt.includes("## Your Task"),
+    );
+    expect(rebuttalCalls).toHaveLength(2);
+    expect(rebuttalCalls[0]?.sessionRole).toBe("plan-hybrid-0");
+    expect(rebuttalCalls[1]?.sessionRole).toBe("plan-hybrid-1");
+
+    // Session close calls
+    const closeCalls = runCalls.filter((c) => c.prompt === "Close this debate session.");
+    expect(closeCalls).toHaveLength(2);
+
+    // Result should include rebuttals and correct round count
+    expect(result.rebuttals).toBeDefined();
+    expect(result.rebuttals).toHaveLength(2);
+    expect(result.rounds).toBe(1);
+  });
+
+  test("skips rebuttal loop when mode is panel (default)", async () => {
+    const runCalls: Array<{ prompt: string }> = [];
+
+    _debateSessionDeps.getAgent = mock(() => ({
+      name: "opencode",
+      displayName: "opencode",
+      binary: "opencode",
+      capabilities: {
+        supportedTiers: ["fast"] as const,
+        maxContextTokens: 100_000,
+        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
+      },
+      isInstalled: async () => true,
+      run: async (options: { prompt?: string }) => {
+        runCalls.push({ prompt: options.prompt ?? "" });
+        return {
+          success: true,
+          exitCode: 0,
+          output: "run-output",
+          rateLimited: false,
+          durationMs: 1,
+          estimatedCost: 0,
+        };
+      },
+      buildCommand: () => [],
+      plan: async () => {
+        return { specContent: "ok" };
+      },
+      decompose: async () => ({ stories: [] }),
+      complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
+    }));
+
+    _debateSessionDeps.readFile = mock(async () => "{}");
+
+    const session = new DebateSession({
+      storyId: "plan-panel-test",
+      stage: "plan",
+      stageConfig: makeStageConfig(), // defaults to panel mode
+      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
+    });
+
+    const result = await session.runPlan("base prompt", {
+      workdir: "/tmp/workdir",
+      feature: "plan-panel-test",
+      outputDir: "/tmp/out",
+    });
+
+    // No adapter.run() calls should happen in panel mode
+    expect(runCalls).toHaveLength(0);
+    expect(result.rebuttals).toBeUndefined();
+    expect(result.rounds).toBe(1);
+  });
+
+  test("warns and skips rebuttal when mode=hybrid but sessionMode=one-shot", async () => {
+    const warnings: string[] = [];
+    const origLogger = _debateSessionDeps.getSafeLogger;
+    _debateSessionDeps.getSafeLogger = mock(
+      () =>
+        ({
+          warn: (_stage: string, msg: string) => warnings.push(msg),
+          info: () => {},
+          debug: () => {},
+          error: () => {},
+        }) as ReturnType<typeof _debateSessionDeps.getSafeLogger>,
+    );
+
+    _debateSessionDeps.getAgent = mock(() => ({
+      name: "opencode",
+      displayName: "opencode",
+      binary: "opencode",
+      capabilities: {
+        supportedTiers: ["fast"] as const,
+        maxContextTokens: 100_000,
+        features: new Set<"review" | "tdd" | "refactor" | "batch">(["review"]),
+      },
+      isInstalled: async () => true,
+      run: async () => ({
+        success: true,
+        exitCode: 0,
+        output: "",
+        rateLimited: false,
+        durationMs: 0,
+        estimatedCost: 0,
+      }),
+      buildCommand: () => [],
+      plan: async () => ({ specContent: "ok" }),
+      decompose: async () => ({ stories: [] }),
+      complete: async () => ({ output: "", costUsd: 0, source: "fallback" as const }),
+    }));
+
+    _debateSessionDeps.readFile = mock(async () => "{}");
+
+    const session = new DebateSession({
+      storyId: "plan-hybrid-oneshot",
+      stage: "plan",
+      stageConfig: makeStageConfig({
+        mode: "hybrid",
+        sessionMode: "one-shot",
+        rounds: 2,
+      }),
+      config: { ...TEST_CONFIG, debate: { enabled: true, agents: 2, maxConcurrentDebaters: 2 } },
+    });
+
+    const result = await session.runPlan("base prompt", {
+      workdir: "/tmp/workdir",
+      feature: "plan-hybrid-oneshot",
+      outputDir: "/tmp/out",
+    });
+
+    expect(warnings.some((w) => w.includes("hybrid") && w.includes("stateful"))).toBe(true);
+    expect(result.rebuttals).toBeUndefined();
+    expect(result.rounds).toBe(1);
+
+    _debateSessionDeps.getSafeLogger = origLogger;
   });
 
   test("runs plan debaters in parallel (when limit >= agents)", async () => {

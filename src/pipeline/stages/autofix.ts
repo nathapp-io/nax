@@ -119,6 +119,16 @@ export const autofixStage: PipelineStage = {
       pipelineEventBus.emit({ type: "autofix:completed", storyId: ctx.story.id, fixed: recheckPassed });
 
       if (recheckPassed) {
+        // #136: Skip checks that already passed — mechanical fix only touched lint/format.
+        // Semantic/debate review doesn't need to re-run after a lint-only fix.
+        const passedChecks = (ctx.reviewResult?.checks ?? []).filter((c) => c.success).map((c) => c.check);
+        if (passedChecks.length > 0) {
+          ctx.retrySkipChecks = new Set(passedChecks);
+          logger.debug("autofix", "Skipping already-passed checks on retry", {
+            storyId: ctx.story.id,
+            skippedChecks: passedChecks,
+          });
+        }
         logger.info("autofix", "Mechanical autofix succeeded — retrying review", { storyId: ctx.story.id });
         return { action: "retry", fromStage: "review" };
       }

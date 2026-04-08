@@ -26,6 +26,8 @@ interface OneShotCtx {
   readonly stageConfig: DebateStageConfig;
   readonly config: NaxConfig;
   readonly timeoutMs: number;
+  readonly workdir?: string;
+  readonly featureName?: string;
 }
 
 export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<DebateResult> {
@@ -211,6 +213,8 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
     ctx.config,
     ctx.storyId,
     ctx.timeoutMs,
+    ctx.workdir,
+    ctx.featureName,
   );
   totalCostUsd += outcome.resolverCostUsd;
 

@@ -107,7 +107,7 @@ describe("_runWithClient — conditional session close", () => {
     expect(closeCalled).toBe(false);
   });
 
-  test("does NOT close session when stopReason is error (failure)", async () => {
+  test("closes session when stopReason is error (broken session)", async () => {
     let closeCalled = false;
     const session = makeSession({
       promptFn: async (_: string) => ({
@@ -130,7 +130,7 @@ describe("_runWithClient — conditional session close", () => {
       storyId: "TS-001",
     });
 
-    expect(closeCalled).toBe(false);
+    expect(closeCalled).toBe(true);
   });
 
   test("client.close() is always called regardless of success or failure", async () => {
