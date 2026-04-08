@@ -155,7 +155,12 @@ export async function handleRunCompletion(options: RunCompletionOptions): Promis
           lastRunAt,
         });
 
-        // Mark affected stories as regression-failed (RL-004)
+        // Mark affected stories as regression-failed in-memory for current-run event counts (RL-004).
+        // Intentionally NOT saved to prd.json — rerun resume is driven by status.json via
+        // setPostRunPhase("regression", { status: "failed" }) above. On rerun, runner-completion.ts
+        // reads getPostRunStatus().regression.status from status.json and re-runs the regression
+        // phase when it is not "passed". Saving this to prd.json is unnecessary and would require
+        // prdPath to be threaded into handleRunCompletion. See PR #254 / issue #250.
         for (const storyId of regressionResult.affectedStories) {
           const story = prd.userStories.find((s) => s.id === storyId);
           if (story) {
