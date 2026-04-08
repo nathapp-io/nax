@@ -43,9 +43,23 @@ export interface ResolveOutcome {
   resolverCostUsd: number;
   /** Synthesised output from synthesis/custom resolver — undefined for majority resolver */
   output?: string;
+  /** Structured dialogue result from ReviewerSession resolver (debate+dialogue mode only) */
+  dialogueResult?: import("../review/dialogue").ReviewDialogueResult;
 }
 
-// ─── Exported public API ──────────────────────────────────────────────────────
+/** Context required by resolveOutcome() when a ReviewerSession is used. Only populated from semantic.ts debate path. */
+export interface ResolverContext {
+  diff: string;
+  story: { id: string; title: string; acceptanceCriteria: string[] };
+  semanticConfig: import("../review/types").SemanticReviewConfig;
+  labeledProposals: Array<{ debater: string; output: string }>;
+  resolverType: import("./types").ResolverType;
+  /** True when this is a re-review after autofix (calls reReviewDebate instead of resolveDebate) */
+  isReReview?: boolean;
+}
+
+/** Input type for DebateSessionOptions — ResolverContext without labeledProposals (added by sub-modules after proposals collected). */
+export type ResolverContextInput = Omit<ResolverContext, "labeledProposals">;
 
 export interface DebateSessionOptions {
   storyId: string;
@@ -55,6 +69,10 @@ export interface DebateSessionOptions {
   workdir?: string;
   featureName?: string;
   timeoutSeconds?: number;
+  /** Optional ReviewerSession for debate+dialogue mode (US-001/US-002) */
+  reviewerSession?: import("../review/dialogue").ReviewerSession;
+  /** Outer resolver context (without labeledProposals) — sub-modules complete it */
+  resolverContextInput?: ResolverContextInput;
 }
 
 /** Injectable deps for testability */
@@ -71,12 +89,7 @@ export const _debateSessionDeps = {
   readFile: (path: string): Promise<string> => Bun.file(path).text(),
 };
 
-/**
- * Resolve the model string for a debater.
- * When debater.model is set, treat it as a tier name and resolve via config.models.
- * When absent, default to "fast" tier.
- * Falls back to the raw debater.model string if config resolution fails (backward compat).
- */
+/** Resolve the model string for a debater. Defaults to "fast" tier; falls back to raw model string on config error. */
 export function resolveDebaterModel(debater: Debater, config: NaxConfig): string | undefined {
   const tier = debater.model ?? "fast";
   if (!config?.models) return debater.model;
@@ -191,9 +204,7 @@ export function resolveModelDefForDebater(debater: Debater, tier: ModelTier, con
   }
 }
 
-/**
- * Standalone implementation of the resolver logic (extracted from DebateSession.resolve()).
- */
+/** Standalone resolver logic — extracted from DebateSession.resolve(). */
 export async function resolveOutcome(
   proposalOutputs: string[],
   critiqueOutputs: string[],
@@ -203,12 +214,98 @@ export async function resolveOutcome(
   timeoutMs: number,
   workdir?: string,
   featureName?: string,
+  reviewerSession?: import("../review/dialogue").ReviewerSession,
+  resolverContext?: ResolverContext,
 ): Promise<ResolveOutcome> {
   const resolverConfig = stageConfig.resolver;
   const logger = _debateSessionDeps.getSafeLogger();
 
+  // ── Debate + dialogue path ───────────────────────────────────────────────
+  // When a ReviewerSession and resolver context are both provided, delegate
+  // to the session for a tool-verified verdict. Falls back to stateless on error.
+  if (reviewerSession && resolverContext) {
+    try {
+      const debateCtx: import("../review/dialogue-prompts").DebateResolverContext = {
+        resolverType: resolverConfig.type,
+      };
+
+      // For majority resolvers: compute raw vote + tally first, pass as context.
+      if (resolverConfig.type === "majority-fail-closed" || resolverConfig.type === "majority-fail-open") {
+        const failOpen = resolverConfig.type === "majority-fail-open";
+        const rawOutcome = majorityResolver(proposalOutputs, failOpen);
+        let passCount = 0;
+        let failCount = 0;
+        for (const proposal of proposalOutputs) {
+          try {
+            const stripped = proposal
+              .trim()
+              .replace(/^```(?:json)?\s*\n?/, "")
+              .replace(/\n?```\s*$/, "");
+            const parsed = JSON.parse(stripped) as Record<string, unknown>;
+            if (typeof parsed.passed === "boolean" && parsed.passed) passCount++;
+            else if (failOpen) passCount++;
+            else failCount++;
+          } catch {
+            if (failOpen) passCount++;
+            else failCount++;
+          }
+        }
+        debateCtx.majorityVote = { passed: rawOutcome === "passed", passCount, failCount };
+      }
+
+      const story = {
+        id: resolverContext.story.id,
+        title: resolverContext.story.title,
+        description: "",
+        acceptanceCriteria: resolverContext.story.acceptanceCriteria,
+      };
+
+      let dialogueResult: import("../review/dialogue").ReviewDialogueResult;
+      if (resolverContext.isReReview) {
+        dialogueResult = await reviewerSession.reReviewDebate(
+          resolverContext.labeledProposals,
+          critiqueOutputs,
+          resolverContext.diff,
+          debateCtx,
+        );
+      } else {
+        dialogueResult = await reviewerSession.resolveDebate(
+          resolverContext.labeledProposals,
+          critiqueOutputs,
+          resolverContext.diff,
+          story,
+          resolverContext.semanticConfig,
+          debateCtx,
+        );
+      }
+
+      const outcome = dialogueResult.checkResult.success ? "passed" : "failed";
+      return {
+        outcome,
+        resolverCostUsd: dialogueResult.cost ?? 0,
+        dialogueResult,
+      };
+    } catch (err) {
+      logger?.warn("debate", "ReviewerSession.resolveDebate() failed — falling back to stateless resolver", {
+        storyId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Fall through to stateless resolver
+    }
+  }
+
+  // Stateless paths (no ReviewerSession, or fallback after error)
+  // US-004 AC: warn when session supplied without resolverContext (cannot call resolveDebate without diff/story)
+  if (reviewerSession && !resolverContext) {
+    logger?.warn(
+      "debate",
+      "ReviewerSession provided but resolverContext is undefined — falling back to stateless resolver",
+      { storyId },
+    );
+  }
+
   if (resolverConfig.type === "majority-fail-closed" || resolverConfig.type === "majority-fail-open") {
-    if (workdir !== undefined) {
+    if (workdir !== undefined && !reviewerSession) {
       logger?.warn(
         "debate",
         "majority resolver does not support implementer session resumption — switch to synthesis or custom resolver for context-aware semantic review",

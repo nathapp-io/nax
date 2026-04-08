@@ -14,6 +14,7 @@ import { buildCritiquePrompt } from "./prompts";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
+  type ResolverContextInput,
   type SuccessfulProposal,
   _debateSessionDeps,
   buildFailedResult,
@@ -32,6 +33,8 @@ interface StatefulCtx {
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;
+  readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
+  readonly resolverContextInput?: ResolverContextInput;
 }
 
 export async function runStatefulTurn(
@@ -266,6 +269,12 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
 
   // Resolve outcome
   const proposalOutputs = successfulProposals.map((s) => s.output);
+  const fullResolverContext = ctx.resolverContextInput
+    ? {
+        ...ctx.resolverContextInput,
+        labeledProposals: successfulProposals.map((s) => ({ debater: s.debater.agent, output: s.output })),
+      }
+    : undefined;
   const outcome: ResolveOutcome = await resolveOutcome(
     proposalOutputs,
     critiqueOutputs,
@@ -275,6 +284,8 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
     ctx.timeoutSeconds * 1000,
     ctx.workdir,
     ctx.featureName,
+    ctx.reviewerSession,
+    fullResolverContext,
   );
   totalCostUsd += outcome.resolverCostUsd;
 

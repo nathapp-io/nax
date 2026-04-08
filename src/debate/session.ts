@@ -27,6 +27,8 @@ export class DebateSession {
   private readonly workdir: string;
   private readonly featureName: string;
   private readonly timeoutSeconds: number;
+  private readonly reviewerSession: import("./session-helpers").DebateSessionOptions["reviewerSession"];
+  private readonly resolverContextInput: import("./session-helpers").DebateSessionOptions["resolverContextInput"];
   private get timeoutMs(): number {
     return this.timeoutSeconds * 1000;
   }
@@ -39,6 +41,8 @@ export class DebateSession {
     this.workdir = opts.workdir ?? process.cwd();
     this.featureName = opts.featureName ?? opts.stage;
     this.timeoutSeconds = opts.timeoutSeconds ?? opts.stageConfig.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
+    this.reviewerSession = opts.reviewerSession;
+    this.resolverContextInput = opts.resolverContextInput;
   }
 
   async run(prompt: string): Promise<DebateResult> {
@@ -57,6 +61,8 @@ export class DebateSession {
             workdir: this.workdir,
             featureName: this.featureName,
             timeoutSeconds: this.timeoutSeconds,
+            reviewerSession: this.reviewerSession,
+            resolverContextInput: this.resolverContextInput,
           },
           prompt,
         );
@@ -78,6 +84,8 @@ export class DebateSession {
           timeoutMs: this.timeoutMs,
           workdir: this.workdir,
           featureName: this.featureName,
+          reviewerSession: this.reviewerSession,
+          resolverContextInput: this.resolverContextInput,
         },
         prompt,
       );
@@ -94,6 +102,8 @@ export class DebateSession {
           workdir: this.workdir,
           featureName: this.featureName,
           timeoutSeconds: this.timeoutSeconds,
+          reviewerSession: this.reviewerSession,
+          resolverContextInput: this.resolverContextInput,
         },
         prompt,
       );
@@ -108,6 +118,8 @@ export class DebateSession {
         timeoutMs: this.timeoutMs,
         workdir: this.workdir,
         featureName: this.featureName,
+        reviewerSession: this.reviewerSession,
+        resolverContextInput: this.resolverContextInput,
       },
       prompt,
     );

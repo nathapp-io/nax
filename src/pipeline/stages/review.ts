@@ -25,11 +25,8 @@ export const reviewStage: PipelineStage = {
   async execute(ctx: PipelineContext): Promise<StageResult> {
     const logger = getLogger();
 
-    // Dialogue is incompatible with debate mode on the review stage — when debate runs,
-    // it is the sole authority on pass/fail; the ReviewerSession path is not applied.
-    // See SPEC-reviewer-implementer-dialogue.md §Backward Compatibility.
     const reviewDebateEnabled = ctx.rootConfig?.debate?.enabled && ctx.rootConfig?.debate?.stages?.review?.enabled;
-    const dialogueEnabled = !reviewDebateEnabled && (ctx.config.review?.dialogue?.enabled ?? false);
+    const dialogueEnabled = ctx.config.review?.dialogue?.enabled ?? false;
 
     logger.info("review", "Running review phase", { storyId: ctx.story.id });
 
@@ -39,8 +36,8 @@ export const reviewStage: PipelineStage = {
     const agentResolver = ctx.agentGetFn ?? getAgent;
     const agentName = ctx.rootConfig.autoMode?.defaultAgent;
 
-    // AC3: When dialogue is enabled and a session already exists (retry loop), use reReview()
-    if (dialogueEnabled && ctx.reviewerSession) {
+    // AC3: When dialogue is enabled (non-debate) and a session already exists (retry loop), use reReview()
+    if (dialogueEnabled && !reviewDebateEnabled && ctx.reviewerSession) {
       try {
         const diff = ctx.storyGitRef ?? "";
         const reReviewResult = await ctx.reviewerSession.reReview(diff);
@@ -91,53 +88,56 @@ export const reviewStage: PipelineStage = {
         ctx.config,
       );
 
-      // AC9: Try using the session for the semantic review; fall back to orchestrator on error
-      const semanticConfig = ctx.config.review?.semantic;
-      if (semanticConfig && agent) {
-        try {
-          const diff = ctx.storyGitRef ?? "";
-          const story = {
-            id: ctx.story.id,
-            title: ctx.story.title,
-            description: ctx.story.description,
-            acceptanceCriteria: ctx.story.acceptanceCriteria,
-          };
-          const sessionResult = await ctx.reviewerSession.review(diff, story, semanticConfig);
-          const passed = sessionResult.checkResult.success;
-          ctx.reviewResult = {
-            success: passed,
-            checks: passed
-              ? []
-              : [
-                  {
-                    check: "semantic",
-                    success: false,
-                    command: "reviewer-session-review",
-                    exitCode: 1,
-                    output: sessionResult.checkResult.findings.map((f) => f.message).join("\n"),
-                    durationMs: 0,
-                    findings: sessionResult.checkResult.findings,
-                  },
-                ],
-            totalDurationMs: 0,
-          };
-          const dialogueCost = sessionResult.cost ?? 0;
-          if (passed) {
-            logger.info("review", "Review passed (dialogue session)", { storyId: ctx.story.id });
-          } else {
-            logger.warn("review", "Review failed (dialogue session) — handing off to autofix", {
+      // For debate+dialogue: session stored, fall through to orchestrator (which uses reReviewDebate/resolveDebate)
+      // For pure dialogue (no debate): try direct session.review(); fall back to orchestrator on error (AC9)
+      if (!reviewDebateEnabled) {
+        const semanticConfig = ctx.config.review?.semantic;
+        if (semanticConfig && agent) {
+          try {
+            const diff = ctx.storyGitRef ?? "";
+            const story = {
+              id: ctx.story.id,
+              title: ctx.story.title,
+              description: ctx.story.description,
+              acceptanceCriteria: ctx.story.acceptanceCriteria,
+            };
+            const sessionResult = await ctx.reviewerSession.review(diff, story, semanticConfig);
+            const passed = sessionResult.checkResult.success;
+            ctx.reviewResult = {
+              success: passed,
+              checks: passed
+                ? []
+                : [
+                    {
+                      check: "semantic",
+                      success: false,
+                      command: "reviewer-session-review",
+                      exitCode: 1,
+                      output: sessionResult.checkResult.findings.map((f) => f.message).join("\n"),
+                      durationMs: 0,
+                      findings: sessionResult.checkResult.findings,
+                    },
+                  ],
+              totalDurationMs: 0,
+            };
+            const dialogueCost = sessionResult.cost ?? 0;
+            if (passed) {
+              logger.info("review", "Review passed (dialogue session)", { storyId: ctx.story.id });
+            } else {
+              logger.warn("review", "Review failed (dialogue session) — handing off to autofix", {
+                storyId: ctx.story.id,
+              });
+            }
+            return { action: "continue", cost: dialogueCost || undefined };
+          } catch (err) {
+            logger.warn("review", "ReviewerSession.review() failed — falling back to one-shot review", {
               storyId: ctx.story.id,
             });
+            // Fall through to orchestrator (AC9)
           }
-          return { action: "continue", cost: dialogueCost || undefined };
-        } catch (err) {
-          logger.warn("review", "ReviewerSession.review() failed — falling back to one-shot review", {
-            storyId: ctx.story.id,
-          });
-          // Fall through to orchestrator (AC9)
         }
       }
-      // No semanticConfig or agent — fall through to orchestrator with session stored
+      // No semanticConfig/agent, debate mode, or AC9 fallback — fall through to orchestrator
     }
 
     // reviewFromContext reads and clears ctx.retrySkipChecks internally (#136)

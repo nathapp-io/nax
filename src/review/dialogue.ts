@@ -11,10 +11,17 @@ import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
 import { NaxError } from "../errors";
 import type { ReviewFinding } from "../plugins/types";
+import {
+  buildDebateReReviewPrompt,
+  buildDebateResolverPrompt,
+  buildReReviewPrompt,
+  buildReviewPrompt,
+} from "./dialogue-prompts";
 import type { SemanticStory } from "./semantic";
 import type { SemanticReviewConfig } from "./types";
 
 export type { SemanticVerdict };
+export type { DebateResolverContext } from "./dialogue-prompts";
 
 /** A single message in the reviewer-implementer dialogue history */
 export interface DialogueMessage {
@@ -65,44 +72,38 @@ export interface ReviewerSession {
    */
   clarify(question: string): Promise<string>;
   /**
+   * Resolve a debate by reviewing N debater proposals using agent.run() with tool
+   * access (READ, GREP). Prompt strategy varies by resolverType:
+   * - majority: includes vote tally; reviewer verifies failing findings
+   * - synthesis: reviewer synthesizes proposals into a single verdict
+   * - custom: reviewer acts as independent judge
+   * Stores result as lastCheckResult so getVerdict() and reReviewDebate() work.
+   */
+  resolveDebate(
+    proposals: Array<{ debater: string; output: string }>,
+    critiques: string[],
+    diff: string,
+    story: SemanticStory,
+    semanticConfig: SemanticReviewConfig,
+    resolverContext: import("./dialogue-prompts").DebateResolverContext,
+  ): Promise<ReviewDialogueResult>;
+  /**
+   * Re-resolve a debate after implementer changes.
+   * Same session — references previous findings and debater proposals.
+   */
+  reReviewDebate(
+    proposals: Array<{ debater: string; output: string }>,
+    critiques: string[],
+    updatedDiff: string,
+    resolverContext: import("./dialogue-prompts").DebateResolverContext,
+  ): Promise<ReviewDialogueResult>;
+  /**
    * Extract a SemanticVerdict from the last review result.
    * Throws NaxError('NO_REVIEW_RESULT') if no review() has been executed yet.
    */
   getVerdict(): SemanticVerdict;
   /** Close the session and mark it inactive */
   destroy(): Promise<void>;
-}
-
-function buildReviewPrompt(diff: string, story: SemanticStory, _semanticConfig: SemanticReviewConfig): string {
-  const criteria = story.acceptanceCriteria.map((c) => `- ${c}`).join("\n");
-  return [
-    `Review the following code diff for story ${story.id}: ${story.title}`,
-    "",
-    "## Acceptance Criteria",
-    criteria,
-    "",
-    "## Diff",
-    diff,
-    "",
-    "Respond with JSON: { passed: boolean, findings: [...], findingReasoning: { [id]: string } }",
-  ].join("\n");
-}
-
-function buildReReviewPrompt(updatedDiff: string, previousFindings: ReviewFinding[]): string {
-  const findingsList =
-    previousFindings.length > 0 ? previousFindings.map((f) => `- ${f.ruleId}: ${f.message}`).join("\n") : "(none)";
-  return [
-    "This is a follow-up re-review. Please review the updated diff below.",
-    "",
-    "## Previous Findings",
-    findingsList,
-    "",
-    "## Updated Diff",
-    updatedDiff,
-    "",
-    "Respond with JSON: { passed: boolean, findings: [...], findingReasoning: { [id]: string }, deltaSummary: string }",
-    "deltaSummary should describe which previous findings are resolved vs still present.",
-  ].join("\n");
 }
 
 function extractDeltaSummary(
@@ -202,6 +203,10 @@ export function createReviewerSession(
   let lastCheckResult: ReviewDialogueResult | null = null;
   let lastStory: SemanticStory | null = null;
   let lastSemanticConfig: SemanticReviewConfig | null = null;
+  // Tracks whether the last review call was resolveDebate() (vs review()).
+  // reReviewDebate() requires a prior resolveDebate() to avoid using findings
+  // from a non-debate review() call as the delta baseline.
+  let lastWasDebateResolve = false;
   /**
    * Tracks session lifecycle for compaction-triggered resets.
    * - generation: incremented each time history overflow causes a session reset.
@@ -294,6 +299,7 @@ export function createReviewerSession(
       lastCheckResult = reviewResult;
       lastStory = story;
       lastSemanticConfig = semanticConfig;
+      lastWasDebateResolve = false;
       return reviewResult;
     },
     async reReview(updatedDiff: string): Promise<ReviewDialogueResult> {
@@ -388,6 +394,110 @@ export function createReviewerSession(
       history.push({ role: "reviewer", content: result.output });
 
       return result.output;
+    },
+    async resolveDebate(
+      proposals: Array<{ debater: string; output: string }>,
+      critiques: string[],
+      diff: string,
+      story: SemanticStory,
+      semanticConfig: SemanticReviewConfig,
+      resolverContext: import("./dialogue-prompts").DebateResolverContext,
+    ): Promise<ReviewDialogueResult> {
+      if (!active) {
+        throw new NaxError(
+          `[dialogue] ReviewerSession for story ${storyId} has been destroyed`,
+          "REVIEWER_SESSION_DESTROYED",
+          { stage: "review", storyId, featureName },
+        );
+      }
+
+      const prompt = buildDebateResolverPrompt(proposals, critiques, diff, story, semanticConfig, resolverContext);
+      const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(semanticConfig);
+      const { effectivePrompt, acpSessionName } = buildEffectiveRunArgs(prompt);
+
+      const result = await agent.run({
+        prompt: effectivePrompt,
+        workdir,
+        modelTier,
+        modelDef,
+        timeoutSeconds,
+        sessionRole: "reviewer",
+        keepSessionOpen: true,
+        pipelineStage: "review",
+        config: _config,
+        storyId,
+        featureName,
+        acpSessionName,
+      });
+
+      history.push({ role: "implementer", content: prompt });
+      history.push({ role: "reviewer", content: result.output });
+
+      const parsed = parseReviewResponse(result.output);
+      const reviewResult: ReviewDialogueResult = { ...parsed, cost: result.estimatedCost ?? 0 };
+      lastCheckResult = reviewResult;
+      lastStory = story;
+      lastSemanticConfig = semanticConfig;
+      lastWasDebateResolve = true;
+      return reviewResult;
+    },
+    async reReviewDebate(
+      proposals: Array<{ debater: string; output: string }>,
+      critiques: string[],
+      updatedDiff: string,
+      resolverContext: import("./dialogue-prompts").DebateResolverContext,
+    ): Promise<ReviewDialogueResult> {
+      if (!active) {
+        throw new NaxError(
+          `[dialogue] ReviewerSession for story ${storyId} has been destroyed`,
+          "REVIEWER_SESSION_DESTROYED",
+          { stage: "review", storyId, featureName },
+        );
+      }
+      if (!lastCheckResult || !lastSemanticConfig || !lastWasDebateResolve) {
+        throw new NaxError(
+          `[dialogue] reReviewDebate() called before any resolveDebate() on story ${storyId}`,
+          "NO_REVIEW_RESULT",
+          { stage: "review", storyId },
+        );
+      }
+
+      const previousFindings = lastCheckResult.checkResult.findings;
+      const prompt = buildDebateReReviewPrompt(proposals, critiques, updatedDiff, previousFindings, resolverContext);
+      const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(lastSemanticConfig);
+      const { effectivePrompt, acpSessionName } = buildEffectiveRunArgs(prompt);
+
+      const result = await agent.run({
+        prompt: effectivePrompt,
+        workdir,
+        modelTier,
+        modelDef,
+        timeoutSeconds,
+        sessionRole: "reviewer",
+        keepSessionOpen: true,
+        pipelineStage: "review",
+        config: _config,
+        storyId,
+        featureName,
+        acpSessionName,
+      });
+
+      history.push({ role: "implementer", content: prompt });
+      history.push({ role: "reviewer", content: result.output });
+
+      const parsed = parseReviewResponse(result.output);
+      const deltaSummary = extractDeltaSummary(result.output, previousFindings, parsed.checkResult.findings);
+      const dialogueResult: ReviewDialogueResult = { ...parsed, deltaSummary, cost: result.estimatedCost ?? 0 };
+      lastCheckResult = dialogueResult;
+
+      const maxMessages = _config.review?.dialogue?.maxDialogueMessages ?? 20;
+      if (history.length > maxMessages) {
+        const compactedSummary = compactHistory(history);
+        sessionState.generation++;
+        sessionState.pendingCompactionContext = compactedSummary;
+      }
+
+      return dialogueResult;
     },
     getVerdict(): SemanticVerdict {
       if (!lastCheckResult || !lastStory) {
