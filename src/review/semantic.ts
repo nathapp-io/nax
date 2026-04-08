@@ -49,16 +49,18 @@ export const _semanticDeps = {
  */
 const DIFF_CAP_BYTES = 51_200;
 
+/** Patterns always excluded from semantic diff — nax metadata is never production code. */
+const ALWAYS_EXCLUDED = [":!.nax/", ":!.nax-pids"];
+
 /**
  * Collect git diff for the story range (production code only).
  * Excludes test files via configurable pathspec patterns — semantic review
  * validates behavior against ACs, not test style or conventions.
+ * Always excludes .nax/ metadata regardless of user config.
  */
 async function collectDiff(workdir: string, storyGitRef: string, excludePatterns: string[]): Promise<string> {
-  const cmd = ["git", "diff", "--unified=3", `${storyGitRef}..HEAD`];
-  if (excludePatterns.length > 0) {
-    cmd.push("--", ".", ...excludePatterns);
-  }
+  const merged = [...new Set([...excludePatterns, ...ALWAYS_EXCLUDED])];
+  const cmd = ["git", "diff", "--unified=3", `${storyGitRef}..HEAD`, "--", ".", ...merged];
   const proc = _semanticDeps.spawn({
     cmd,
     cwd: workdir,

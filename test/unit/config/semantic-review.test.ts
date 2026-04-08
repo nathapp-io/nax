@@ -107,7 +107,7 @@ describe("ReviewConfig semantic field", () => {
         modelTier: "balanced",
         rules: [],
         timeoutMs: 600_000,
-        excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"],
+        excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/", ":!.nax/", ":!.nax-pids"],
       });
     }
   });
@@ -221,7 +221,7 @@ describe("DEFAULT_CONFIG.review.semantic", () => {
       modelTier: "balanced",
       rules: [],
       timeoutMs: 600_000,
-      excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"],
+      excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/", ":!.nax/", ":!.nax-pids"],
     });
   });
 });

@@ -35,7 +35,7 @@ const STORY: SemanticStory = {
 const DEFAULT_SEMANTIC_CONFIG: SemanticReviewConfig = {
   modelTier: "balanced",
   rules: [],
-  excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"],
+  excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/", ":!.nax/", ":!.nax-pids"],
 };
 
 /** Build a mock AgentAdapter whose complete() resolves to the supplied JSON string */

@@ -270,7 +270,16 @@ export async function runReview(
         modelTier: "balanced" as const,
         rules: [] as string[],
         timeoutMs: 600_000,
-        excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"],
+        excludePatterns: [
+          ":!test/",
+          ":!tests/",
+          ":!*_test.go",
+          ":!*.test.ts",
+          ":!*.spec.ts",
+          ":!**/__tests__/",
+          ":!.nax/",
+          ":!.nax-pids",
+        ],
       };
       const runSemantic = _reviewSemanticDeps.runSemanticReview;
       const result = await runSemantic(

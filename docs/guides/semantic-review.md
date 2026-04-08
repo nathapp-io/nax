@@ -46,13 +46,13 @@ Semantic review does **NOT** check:
 
 ## Test File Exclusion
 
-Test files are **excluded from the diff** sent to the LLM via configurable git pathspec patterns. The default patterns cover common test directory conventions across languages:
+Test files and nax metadata are **excluded from the diff** sent to the LLM via configurable git pathspec patterns. The default patterns cover common test directory conventions across languages, plus `.nax/` metadata that would otherwise consume the diff budget:
 
 ```json
 {
   "review": {
     "semantic": {
-      "excludePatterns": [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"]
+      "excludePatterns": [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/", ":!.nax/", ":!.nax-pids"]
     }
   }
 }

@@ -274,7 +274,16 @@ const SemanticReviewConfigSchema = z.object({
   timeoutMs: z.number().int().positive().default(600_000),
   excludePatterns: z
     .array(z.string())
-    .default([":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"]),
+    .default([
+      ":!test/",
+      ":!tests/",
+      ":!*_test.go",
+      ":!*.test.ts",
+      ":!*.spec.ts",
+      ":!**/__tests__/",
+      ":!.nax/",
+      ":!.nax-pids",
+    ]),
 });
 
 export const ReviewDialogueConfigSchema = z.object({
@@ -704,7 +713,16 @@ export const NaxConfigSchema = z
         modelTier: "balanced",
         rules: [],
         timeoutMs: 600_000,
-        excludePatterns: [":!test/", ":!tests/", ":!*_test.go", ":!*.test.ts", ":!*.spec.ts", ":!**/__tests__/"],
+        excludePatterns: [
+          ":!test/",
+          ":!tests/",
+          ":!*_test.go",
+          ":!*.test.ts",
+          ":!*.spec.ts",
+          ":!**/__tests__/",
+          ":!.nax/",
+          ":!.nax-pids",
+        ],
       },
       dialogue: {
         enabled: false,
