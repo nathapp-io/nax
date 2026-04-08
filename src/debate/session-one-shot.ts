@@ -10,6 +10,7 @@ import { buildCritiquePrompt } from "./prompts";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
+  type ResolverContextInput,
   type SuccessfulProposal,
   _debateSessionDeps,
   buildFailedResult,
@@ -28,6 +29,8 @@ interface OneShotCtx {
   readonly timeoutMs: number;
   readonly workdir?: string;
   readonly featureName?: string;
+  readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
+  readonly resolverContextInput?: ResolverContextInput;
 }
 
 export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<DebateResult> {
@@ -206,6 +209,12 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
 
   // Step 5: Resolve outcome
   const proposalOutputs = successful.map((p) => p.output);
+  const fullResolverContext = ctx.resolverContextInput
+    ? {
+        ...ctx.resolverContextInput,
+        labeledProposals: successful.map((p) => ({ debater: p.debater.agent, output: p.output })),
+      }
+    : undefined;
   const outcome: ResolveOutcome = await resolveOutcome(
     proposalOutputs,
     critiqueOutputs,
@@ -215,6 +224,8 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
     ctx.timeoutMs,
     ctx.workdir,
     ctx.featureName,
+    ctx.reviewerSession,
+    fullResolverContext,
   );
   totalCostUsd += outcome.resolverCostUsd;
 

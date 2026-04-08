@@ -87,6 +87,7 @@ export class ReviewOrchestrator {
     naxConfig?: NaxConfig,
     retrySkipChecks?: Set<string>,
     featureName?: string,
+    resolverSession?: import("./dialogue").ReviewerSession,
   ): Promise<OrchestratorReviewResult> {
     const logger = getSafeLogger();
 
@@ -102,6 +103,7 @@ export class ReviewOrchestrator {
       naxConfig,
       retrySkipChecks,
       featureName,
+      resolverSession,
     );
 
     if (!builtIn.success) {
@@ -191,6 +193,11 @@ export class ReviewOrchestrator {
       ? (_tier: string) => (agentResolver ? (agentResolver(agentName) ?? null) : null)
       : undefined;
 
+    // When debate+dialogue are both enabled, pass the existing ReviewerSession as the resolver
+    // session so runSemanticReview() can thread it through to the DebateSession.
+    const reviewDebateEnabled = ctx.rootConfig?.debate?.enabled && ctx.rootConfig?.debate?.stages?.review?.enabled;
+    const resolverSession = reviewDebateEnabled ? ctx.reviewerSession : undefined;
+
     return this.review(
       ctx.config.review,
       ctx.workdir,
@@ -210,6 +217,7 @@ export class ReviewOrchestrator {
       ctx.config,
       retrySkipChecks,
       ctx.prd.feature,
+      resolverSession,
     );
   }
 }

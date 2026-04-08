@@ -300,6 +300,7 @@ export async function runSemanticReview(
   modelResolver: ModelResolver,
   naxConfig?: NaxConfig,
   featureName?: string,
+  resolverSession?: import("./dialogue").ReviewerSession,
 ): Promise<ReviewCheckResult> {
   const startTime = Date.now();
   const logger = getSafeLogger();
@@ -394,6 +395,7 @@ export async function runSemanticReview(
   if (reviewDebateEnabled) {
     // Safe: reviewDebateEnabled guard confirms naxConfig.debate.stages.review is defined
     const reviewStageConfig = naxConfig?.debate?.stages.review as import("../debate").DebateStageConfig;
+    const isReReview = resolverSession !== undefined && resolverSession.history.length > 0;
     const debateSession = _semanticDeps.createDebateSession({
       storyId: story.id,
       stage: "review",
@@ -402,12 +404,68 @@ export async function runSemanticReview(
       workdir,
       featureName: featureName,
       timeoutSeconds: naxConfig?.execution?.sessionTimeoutSeconds,
+      reviewerSession: resolverSession,
+      resolverContextInput: resolverSession
+        ? {
+            diff,
+            story: { id: story.id, title: story.title, acceptanceCriteria: story.acceptanceCriteria },
+            semanticConfig,
+            resolverType: reviewStageConfig.resolver.type,
+            isReReview,
+          }
+        : undefined,
     });
+    // Track history length before to detect if the session was actually used by the resolver
+    const historyLenBefore = resolverSession?.history.length ?? 0;
     const debateResult = await debateSession.run(prompt);
     const debateCost = debateResult.totalCostUsd ?? 0;
 
-    // Use the resolver's verdict as the authoritative pass/fail.
-    // Collect findings from all proposals for deduplication and blocking-severity filter.
+    // When the ReviewerSession was used by the resolver (history grew), use its tool-verified
+    // verdict via getVerdict() instead of re-deriving from raw proposals.
+    const sessionUsed = resolverSession && resolverSession.history.length > historyLenBefore;
+    if (sessionUsed) {
+      const durationMs = Date.now() - startTime;
+      try {
+        const verdict = resolverSession.getVerdict();
+        const findings = verdict.findings ?? [];
+        if (!verdict.passed && findings.length > 0) {
+          logger?.warn("review", `Semantic review failed (debate+dialogue): ${findings.length} findings`, {
+            storyId: story.id,
+            durationMs,
+          });
+          return {
+            check: "semantic",
+            success: false,
+            command: "",
+            exitCode: 1,
+            output: `Semantic review failed:\n\n${findings.map((f) => `${f.ruleId}: ${f.message}`).join("\n")}`,
+            durationMs,
+            findings,
+            cost: debateCost,
+          };
+        }
+        const label = verdict.passed
+          ? "Semantic review passed (debate+dialogue)"
+          : "Semantic review passed (debate+dialogue, all findings non-blocking)";
+        logger?.info("review", label, { storyId: story.id, durationMs });
+        return {
+          check: "semantic",
+          success: true,
+          command: "",
+          exitCode: 0,
+          output: label,
+          durationMs,
+          cost: debateCost,
+        };
+      } catch {
+        // getVerdict() threw (e.g. session destroyed) — fall through to stateless path
+        logger?.warn("review", "getVerdict() failed after debate+dialogue — falling back to stateless verdict", {
+          storyId: story.id,
+        });
+      }
+    }
+
+    // Stateless fallback: re-derive verdict from proposals (existing behavior)
     const resolverPassed = debateResult.outcome === "passed";
     const allFindings: LLMFinding[] = [];
     for (const p of debateResult.proposals) {

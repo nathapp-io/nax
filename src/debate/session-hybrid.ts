@@ -12,6 +12,7 @@ import { buildRebuttalContext } from "./prompts";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
+  type ResolverContextInput,
   type SuccessfulProposal,
   _debateSessionDeps,
   buildFailedResult,
@@ -34,6 +35,8 @@ export interface HybridCtx {
   readonly workdir: string;
   readonly featureName: string;
   readonly timeoutSeconds: number;
+  readonly reviewerSession?: import("../review/dialogue").ReviewerSession;
+  readonly resolverContextInput?: ResolverContextInput;
 }
 
 /**
@@ -231,6 +234,12 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
 
   const critiqueOutputs = rebuttals.map((r) => r.output);
 
+  const fullResolverContext = ctx.resolverContextInput
+    ? {
+        ...ctx.resolverContextInput,
+        labeledProposals: successfulProposals.map((s) => ({ debater: s.debater.agent, output: s.output })),
+      }
+    : undefined;
   const resolveResult: ResolveOutcome = await resolveOutcome(
     proposalOutputs,
     critiqueOutputs,
@@ -240,6 +249,8 @@ export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateR
     ctx.timeoutSeconds * 1000,
     ctx.workdir,
     ctx.featureName,
+    ctx.reviewerSession,
+    fullResolverContext,
   );
   totalCostUsd += resolveResult.resolverCostUsd;
 
