@@ -1,15 +1,7 @@
-/**
- * session-helpers.ts
- *
- * Shared types, constants, injectable deps, and pure helper functions used
- * across DebateSession and its extracted sub-modules.
- */
-
 import { buildSessionName } from "../agents/acp/adapter";
 import { createAgentRegistry, getAgent } from "../agents/registry";
 import type { AgentAdapter, CompleteOptions, CompleteResult } from "../agents/types";
-import type { ModelTier } from "../config";
-import type { NaxConfig } from "../config";
+import type { ModelTier, NaxConfig } from "../config";
 import { DEFAULT_CONFIG, resolveModel, resolveModelForAgent } from "../config";
 import type { PipelineStage } from "../config/permissions";
 import type { ModelDef } from "../config/schema-types";
@@ -216,6 +208,7 @@ export async function resolveOutcome(
   featureName?: string,
   reviewerSession?: import("../review/dialogue").ReviewerSession,
   resolverContext?: ResolverContext,
+  promptSuffix?: string,
 ): Promise<ResolveOutcome> {
   const resolverConfig = stageConfig.resolver;
   const logger = _debateSessionDeps.getSafeLogger();
@@ -317,22 +310,24 @@ export async function resolveOutcome(
     };
   }
 
-  const implementerSessionName =
-    workdir !== undefined ? buildSessionName(workdir, featureName, storyId, "implementer") : undefined;
-
   if (resolverConfig.type === "synthesis") {
     const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
     const adapter = _debateSessionDeps.getAgent(agentName, config);
     if (adapter) {
+      const synthesisSessionName =
+        workdir !== undefined ? buildSessionName(workdir, featureName, storyId, "synthesis") : undefined;
       const resolverResult = await synthesisResolver(proposalOutputs, critiqueOutputs, {
         adapter,
+        promptSuffix,
         completeOptions: {
           model: resolveDebaterModel({ agent: agentName }, config),
           config,
           storyId,
+          featureName,
+          workdir,
           sessionRole: "synthesis",
           timeoutMs,
-          ...(implementerSessionName !== undefined && { sessionName: implementerSessionName }),
+          ...(synthesisSessionName !== undefined && { sessionName: synthesisSessionName }),
         },
       });
       return {
@@ -346,6 +341,8 @@ export async function resolveOutcome(
 
   if (resolverConfig.type === "custom") {
     const agentName = resolverConfig.agent ?? RESOLVER_FALLBACK_AGENT;
+    const judgeSessionName =
+      workdir !== undefined ? buildSessionName(workdir, featureName, storyId, "judge") : undefined;
     const resolverResult = await judgeResolver(proposalOutputs, critiqueOutputs, resolverConfig, {
       getAgent: (name: string) => _debateSessionDeps.getAgent(name, config),
       defaultAgentName: RESOLVER_FALLBACK_AGENT,
@@ -353,9 +350,11 @@ export async function resolveOutcome(
         model: resolveDebaterModel({ agent: agentName }, config),
         config,
         storyId,
+        featureName,
+        workdir,
         sessionRole: "judge",
         timeoutMs,
-        ...(implementerSessionName !== undefined && { sessionName: implementerSessionName }),
+        ...(judgeSessionName !== undefined && { sessionName: judgeSessionName }),
       },
     });
     return {

@@ -187,6 +187,8 @@ export async function runPlan(
   // as the debate session itself. Using 0 bypassed the outer timeout entirely,
   // causing the inner acpx call to use a 120s default and get killed.
   const resolverTimeoutMs = (ctx.stageConfig.timeoutSeconds ?? 600) * 1000;
+  const planSynthesisSuffix =
+    "IMPORTANT: Your response must be a single valid JSON object in PRD format (with project, feature, branchName, userStories array, etc.). Do NOT wrap it in markdown fences. Output raw JSON only.";
   const outcome: ResolveOutcome = await resolveOutcome(
     proposalOutputs,
     critiqueOutputs,
@@ -196,6 +198,9 @@ export async function runPlan(
     resolverTimeoutMs,
     opts.workdir,
     opts.feature,
+    /* reviewerSession */ undefined,
+    /* resolverContext */ undefined,
+    planSynthesisSuffix,
   );
 
   // Winning output: synthesis/custom resolver returns a combined PRD — use it when available.

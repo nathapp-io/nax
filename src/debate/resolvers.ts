@@ -65,9 +65,10 @@ export function majorityResolver(proposals: string[], failOpen: boolean): "passe
 export async function synthesisResolver(
   proposals: string[],
   critiques: string[],
-  opts: { adapter: AgentAdapter; completeOptions?: CompleteOptions },
+  opts: { adapter: AgentAdapter; completeOptions?: CompleteOptions; promptSuffix?: string },
 ): Promise<CompleteResult> {
-  const prompt = buildSynthesisPrompt(proposals, critiques);
+  const base = buildSynthesisPrompt(proposals, critiques);
+  const prompt = opts.promptSuffix ? `${base}\n\n${opts.promptSuffix}` : base;
   return opts.adapter.complete(prompt, opts.completeOptions);
 }
 

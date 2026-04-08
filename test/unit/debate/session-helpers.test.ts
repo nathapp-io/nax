@@ -292,8 +292,7 @@ describe("resolveOutcome() — synthesis resolver acpSessionName (US-004 AC2)", 
 
     expect(captured.length).toBeGreaterThan(0);
     const capturedOpts = captured[0]?.opts;
-    const expectedSessionName = buildSessionName(workdir, featureName, storyId, "implementer");
-    // RED: sessionName is not yet passed to completeOptions — this assertion will fail
+    const expectedSessionName = buildSessionName(workdir, featureName, storyId, "synthesis");
     expect(capturedOpts?.sessionName).toBe(expectedSessionName);
   });
 
@@ -319,7 +318,7 @@ describe("resolveOutcome() — synthesis resolver acpSessionName (US-004 AC2)", 
   });
 });
 
-// ─── AC3: judgeResolver receives sessionName=implementer when workdir set ─────
+// ─── AC3: judgeResolver receives sessionName=judge when workdir set ─────
 
 describe("resolveOutcome() — custom/judge resolver acpSessionName (US-004 AC3)", () => {
   let origGetAgent: typeof _debateSessionDeps.getAgent;
@@ -333,7 +332,7 @@ describe("resolveOutcome() — custom/judge resolver acpSessionName (US-004 AC3)
     mock.restore();
   });
 
-  test("custom resolver: passes sessionName=buildSessionName(...,'implementer') in completeOptions", async () => {
+  test("custom resolver: passes sessionName=buildSessionName(...,'judge') in completeOptions", async () => {
     const captured: { opts?: CompleteOptions }[] = [];
     _debateSessionDeps.getAgent = mock(() => makeCaptureAdapter(captured));
 
@@ -356,8 +355,7 @@ describe("resolveOutcome() — custom/judge resolver acpSessionName (US-004 AC3)
 
     expect(captured.length).toBeGreaterThan(0);
     const capturedOpts = captured[0]?.opts;
-    const expectedSessionName = buildSessionName(workdir, featureName, storyId, "implementer");
-    // RED: sessionName is not yet passed to judgeResolver completeOptions
+    const expectedSessionName = buildSessionName(workdir, featureName, storyId, "judge");
     expect(capturedOpts?.sessionName).toBe(expectedSessionName);
   });
 

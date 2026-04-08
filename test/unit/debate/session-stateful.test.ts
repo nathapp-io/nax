@@ -275,12 +275,10 @@ describe("runStateful() — resolveOutcome receives workdir and featureName (US-
 
     await session.run("review prompt");
 
-    // The synthesis resolver's complete() should have been called with the implementer sessionName.
-    // RED: resolveOutcome() call site does not yet forward workdir/featureName,
-    //      so the sessionName in completeOptions will be undefined instead of the expected value.
+    // The synthesis resolver's complete() should have been called with the synthesis sessionName.
     const synthesisCall = completeCalls.find((c) => c.opts !== undefined);
     expect(synthesisCall).toBeDefined();
-    const expectedSessionName = buildSessionName(workdir, featureName, storyId, "implementer");
+    const expectedSessionName = buildSessionName(workdir, featureName, storyId, "synthesis");
     expect(synthesisCall?.opts?.sessionName).toBe(expectedSessionName);
   });
 });
