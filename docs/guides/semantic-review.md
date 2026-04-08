@@ -206,3 +206,30 @@ Semantic review failed:
 Semantic review requires a git history — it compares `${storyGitRef}..HEAD`. If no git ref exists for the story (e.g., first run on a new branch), the check is skipped.
 
 The LLM model must be configured in `models` for the chosen `modelTier`.
+
+---
+
+## Behavior Matrix — Review Stage
+
+The review stage behavior depends on three flags: `debate.enabled` + `debate.stages.review.enabled` (shown as **debate**), `review.dialogue.enabled` (shown as **dialogue**), and the debate `sessionMode`.
+
+| debate | dialogue | sessionMode | Reviewer | Resolver | Tools | Clarify | Re-review ctx |
+|:---:|:---:|:---:|:---|:---|:---:|:---:|:---:|
+| off | off | — | `agent.run()` resumes implementer session | N/A (single reviewer) | No | No | No |
+| off | on | — | `ReviewerSession.review()` | N/A (single reviewer) | Yes | Yes | Yes |
+| on | off | one-shot | N debaters via `agent.complete()` | Stateless (`majorityResolver` / `synthesisResolver` / `judgeResolver`) | No | No | No |
+| on | off | stateful | N debaters via `agent.run()` + rebuttal loop | Stateless (resolver resumes implementer session) | No | No | No |
+| on | **on** | one-shot | N debaters via `agent.complete()` | **`reviewerSession.resolveDebate()`** — all resolver types | **Yes** | **Yes** | **Yes** |
+| on | **on** | stateful | N debaters via `agent.run()` + rebuttal loop | **`reviewerSession.resolveDebate()`** — all resolver types | **Yes** | **Yes** | **Yes** |
+
+**Key:** Tools = READ/GREP tool access for the resolver. Clarify = `CLARIFY:` relay from autofix implementer. Re-review ctx = session continuity across autofix re-review rounds.
+
+When both `debate` and `dialogue` are enabled, a `ReviewerSession` is created and stored on `ctx.reviewerSession`. Individual debaters remain stateless — only the resolver gains session continuity and tool access. All three resolver types (`majority`, `synthesis`, `custom`) go through `reviewerSession.resolveDebate()`:
+
+- **majority** — raw vote tally is computed first, then passed as context to `resolveDebate()` so the reviewer can verify disputed findings with tools before giving the authoritative verdict.
+- **synthesis** — reviewer synthesises N proposals into a single coherent, tool-verified verdict.
+- **custom** — reviewer acts as an independent judge, evaluating proposals and verifying claims with tools.
+
+If `resolveDebate()` throws, the review stage falls back to the stateless resolver path (current behavior pre-dialogue). `ctx.reviewerSession` remains set so the `CLARIFY:` channel is still available.
+
+See also: [Debate Resolver Reference](./debate.md#resolver-types).
