@@ -29,11 +29,20 @@
  */
 
 import { buildAcceptanceRunCommand } from "../../acceptance/generator";
+import type { HardeningContext } from "../../acceptance/hardening";
 import { resolveAcceptanceFeatureTestPath } from "../../acceptance/test-path";
 import { getLogger } from "../../logger";
 import { countStories } from "../../prd";
 import { logTestOutput } from "../../utils/log-test-output";
 import type { PipelineContext, PipelineStage, StageResult } from "../types";
+
+/** Injectable deps for testability */
+export const _acceptanceStageDeps = {
+  runHardeningPass: async (ctx: HardeningContext) => {
+    const { runHardeningPass } = await import("../../acceptance/hardening");
+    return runHardeningPass(ctx);
+  },
+};
 
 /**
  * Parse bun test output to extract failed test names.
@@ -54,7 +63,7 @@ import type { PipelineContext, PipelineStage, StageResult } from "../types";
  * // Returns: ["AC-2"]
  * ```
  */
-function parseTestFailures(output: string): string[] {
+export function parseTestFailures(output: string): string[] {
   const failedACs: string[] = [];
   const lines = output.split("\n");
 
@@ -226,6 +235,34 @@ export const acceptanceStage: PipelineStage = {
     // All packages passed
     if (allFailedACs.length === 0) {
       logger.info("acceptance", "All acceptance tests passed", { storyId: ctx.story.id });
+
+      // Hardening pass: test debater-suggested criteria (non-blocking)
+      const hardeningEnabled = ctx.config.acceptance?.hardening?.enabled !== false;
+      const hasAnySuggested = ctx.prd.userStories.some((s) => s.suggestedCriteria && s.suggestedCriteria.length > 0);
+      if (hardeningEnabled && hasAnySuggested && ctx.featureDir) {
+        try {
+          const prdPath = ctx.prdPath ?? `${ctx.featureDir}/prd.json`;
+          const result = await _acceptanceStageDeps.runHardeningPass({
+            prd: ctx.prd,
+            prdPath,
+            featureDir: ctx.featureDir,
+            workdir: ctx.workdir,
+            config: ctx.config,
+            agentGetFn: ctx.agentGetFn,
+          });
+          logger.info("acceptance", "Hardening pass complete", {
+            storyId: ctx.story.id,
+            promoted: result.promoted.length,
+            discarded: result.discarded.length,
+          });
+        } catch (err) {
+          logger.warn("acceptance", "Hardening pass failed (non-blocking)", {
+            storyId: ctx.story.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
       return { action: "continue" };
     }
 

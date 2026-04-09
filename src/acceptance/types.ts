@@ -107,6 +107,8 @@ export interface GenerateFromPRDOptions {
   implementationContext?: Array<{ path: string; content: string }>;
   /** Previous failure message — included in prompt to help generator avoid the same mistake */
   previousFailure?: string;
+  /** Override the target test file path in the generator prompt — used by hardening pass for suggested test files */
+  targetTestFile?: string;
 }
 
 export interface GenerateAcceptanceTestsOptions {
