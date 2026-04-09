@@ -4,20 +4,28 @@
  * Prompt builders for critique, synthesis, and judge rounds.
  */
 
+import { buildDebaterLabel, buildPersonaBlock } from "./personas";
 import type { Debater } from "./types";
 
 /**
  * Build a critique prompt for a debater.
  * Includes all other debaters' proposals but excludes the current debater's own proposal.
+ * When currentDebater has a persona, injects a ## Your Role block after the task.
  */
-export function buildCritiquePrompt(taskPrompt: string, allProposals: string[], debaterIndex: number): string {
+export function buildCritiquePrompt(
+  taskPrompt: string,
+  allProposals: string[],
+  debaterIndex: number,
+  currentDebater?: Debater,
+): string {
   const othersProposals = allProposals.filter((_, i) => i !== debaterIndex);
   const proposalsSection = othersProposals.map((p, i) => `### Proposal ${i + 1}\n${p}`).join("\n\n");
+  const personaBlock = currentDebater ? buildPersonaBlock(currentDebater) : "";
 
   return `You are reviewing proposals from other agents for the following task.
 
 ## Task
-${taskPrompt}
+${taskPrompt}${personaBlock}
 
 ## Other Agents' Proposals
 ${proposalsSection}
@@ -82,7 +90,7 @@ export function buildRebuttalContext(
   const contextBlock = sessionMode === "one-shot" ? `${taskContext}\n\n` : "";
 
   const proposalsSection = proposals
-    .map((p, i) => `### Proposal ${i + 1} (${p.debater.agent})\n${p.output}`)
+    .map((p, i) => `### Proposal ${i + 1} (${buildDebaterLabel(p.debater)})\n${p.output}`)
     .join("\n\n");
 
   const rebuttalsSection =
@@ -91,9 +99,11 @@ export function buildRebuttalContext(
       : "";
 
   const debaterNumber = currentDebaterIndex + 1;
+  const currentDebater = proposals[currentDebaterIndex]?.debater;
+  const personaBlock = currentDebater ? buildPersonaBlock(currentDebater) : "";
 
   return `${contextBlock}## Proposals
-${proposalsSection}${rebuttalsSection}
+${proposalsSection}${rebuttalsSection}${personaBlock}
 
 ## Your Task
 You are debater ${debaterNumber}. Provide your critique in prose.

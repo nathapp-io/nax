@@ -8,6 +8,7 @@
 
 import type { NaxConfig } from "../config";
 import { allSettledBounded } from "./concurrency";
+import { resolvePersonas } from "./personas";
 import { buildRebuttalContext } from "./prompts";
 import {
   type ResolveOutcome,
@@ -131,7 +132,9 @@ export async function runRebuttalLoop(
 export async function runHybrid(ctx: HybridCtx, prompt: string): Promise<DebateResult> {
   const logger = _debateSessionDeps.getSafeLogger();
   const config = ctx.stageConfig;
-  const debaters = config.debaters ?? [];
+  const personaStage: "plan" | "review" = ctx.stage === "plan" ? "plan" : "review";
+  const rawDebaters = config.debaters ?? [];
+  const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
   let totalCostUsd = 0;
 
   // Resolve adapters via shared helper — skip unavailable agents

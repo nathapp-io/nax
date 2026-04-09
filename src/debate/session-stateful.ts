@@ -10,6 +10,7 @@ import type { ModelDef, ModelTier } from "../config";
 import type { NaxConfig } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import { allSettledBounded } from "./concurrency";
+import { resolvePersonas } from "./personas";
 import { buildCritiquePrompt } from "./prompts";
 import {
   type ResolveOutcome,
@@ -110,7 +111,9 @@ export async function closeStatefulSession(
 export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<DebateResult> {
   const logger = _debateSessionDeps.getSafeLogger();
   const config = ctx.stageConfig;
-  const debaters = config.debaters ?? [];
+  const personaStage: "plan" | "review" = ctx.stage === "plan" ? "plan" : "review";
+  const rawDebaters = config.debaters ?? [];
+  const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
   let totalCostUsd = 0;
 
   // Resolve adapters — skip unavailable agents
@@ -248,7 +251,7 @@ export async function runStateful(ctx: StatefulCtx, prompt: string): Promise<Deb
             ctx,
             proposal.adapter,
             proposal.debater,
-            buildCritiquePrompt(prompt, proposalOutputs, successfulIdx),
+            buildCritiquePrompt(prompt, proposalOutputs, successfulIdx, proposal.debater),
             proposal.roleKey ?? `debate-${ctx.stage}-${successfulIdx}`,
             false,
           ),

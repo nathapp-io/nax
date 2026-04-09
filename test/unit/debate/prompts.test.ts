@@ -15,6 +15,7 @@ import {
   buildSynthesisPrompt,
   buildRebuttalContext,
 } from "../../../src/debate/prompts";
+import { PERSONA_FRAGMENTS } from "../../../src/debate/personas";
 import type { Debater } from "../../../src/debate/types";
 
 // ─── buildCritiquePrompt ─────────────────────────────────────────────────────
@@ -314,5 +315,72 @@ describe("buildRebuttalContext()", () => {
     expect(result).toContain("2.");
     expect(result).toContain("first rebuttal");
     expect(result).toContain("second rebuttal");
+  });
+
+  test("persona debater: label includes 'agent (persona)' format in proposals section", () => {
+    const debaterWithPersona: Debater = { agent: "claude", persona: "challenger" };
+    const debaterPlain: Debater = { agent: "gpt" };
+    const proposals = [
+      { debater: debaterWithPersona, output: "proposal A" },
+      { debater: debaterPlain, output: "proposal B" },
+    ];
+
+    const result = buildRebuttalContext("ctx", proposals, [], 1, "stateful");
+
+    expect(result).toContain("claude (challenger)");
+    expect(result).toContain("gpt");
+  });
+
+  test("persona debater: injects ## Your Role block before ## Your Task", () => {
+    const debaterWithPersona: Debater = { agent: "claude", persona: "pragmatist" };
+    const proposals = [
+      { debater: debaterWithPersona, output: "proposal A" },
+      { debater: { agent: "gpt" }, output: "proposal B" },
+    ];
+
+    const result = buildRebuttalContext("ctx", proposals, [], 0, "stateful");
+
+    expect(result).toContain("## Your Role");
+    expect(result).toContain(PERSONA_FRAGMENTS.pragmatist.identity);
+    // Role block must appear before task block
+    expect(result.indexOf("## Your Role")).toBeLessThan(result.indexOf("## Your Task"));
+  });
+
+  test("no persona: does not inject ## Your Role block", () => {
+    const debater: Debater = { agent: "claude" };
+    const proposals = [{ debater, output: "proposal" }];
+
+    const result = buildRebuttalContext("ctx", proposals, [], 0, "stateful");
+
+    expect(result).not.toContain("## Your Role");
+  });
+});
+
+// ─── buildCritiquePrompt persona injection ───────────────────────────────────
+
+describe("buildCritiquePrompt() persona injection", () => {
+  test("with persona: injects ## Your Role block after task", () => {
+    const debaterWithPersona: Debater = { agent: "claude", persona: "security" };
+
+    const result = buildCritiquePrompt("evaluate this code", ["p1", "p2"], 0, debaterWithPersona);
+
+    expect(result).toContain("## Your Role");
+    expect(result).toContain(PERSONA_FRAGMENTS.security.identity);
+    expect(result).toContain("## Task");
+    expect(result.indexOf("## Your Role")).toBeGreaterThan(result.indexOf("## Task"));
+  });
+
+  test("without currentDebater: no ## Your Role block", () => {
+    const result = buildCritiquePrompt("evaluate this code", ["p1", "p2"], 0);
+
+    expect(result).not.toContain("## Your Role");
+  });
+
+  test("with debater but no persona: no ## Your Role block", () => {
+    const debaterPlain: Debater = { agent: "claude" };
+
+    const result = buildCritiquePrompt("evaluate this code", ["p1", "p2"], 0, debaterPlain);
+
+    expect(result).not.toContain("## Your Role");
   });
 });

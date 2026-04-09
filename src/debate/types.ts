@@ -13,12 +13,17 @@ export type SessionMode = "one-shot" | "stateful";
 /** Debate execution mode */
 export type DebateMode = "panel" | "hybrid";
 
+/** Analytical lens assigned to a debater to ensure differentiated perspectives */
+export type DebaterPersona = "challenger" | "pragmatist" | "completionist" | "security" | "testability";
+
 /** A single debater agent in a debate */
 export interface Debater {
   /** Agent name (e.g. 'claude', 'opencode') */
   agent: string;
   /** Optional model override — resolved from config.models.fast at runtime when absent */
   model?: string;
+  /** Optional analytical persona — injected as a ## Your Role block in the prompt */
+  persona?: DebaterPersona;
 }
 
 /** Resolver configuration for a debate stage */
@@ -49,6 +54,8 @@ export interface DebateStageConfig {
   debaters?: Debater[];
   /** Timeout for debate session in seconds (default: 600) */
   timeoutSeconds: number;
+  /** When true, auto-assign personas to debaters that have no explicit persona. Default: false. */
+  autoPersona?: boolean;
 }
 
 /** Top-level debate configuration */

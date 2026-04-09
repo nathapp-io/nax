@@ -8,6 +8,7 @@ import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import type { ModelDef } from "../config";
 import { allSettledBounded } from "./concurrency";
+import { buildPersonaBlock, resolvePersonas } from "./personas";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
@@ -43,7 +44,8 @@ export async function runPlan(
 ): Promise<DebateResult> {
   const logger = _debateSessionDeps.getSafeLogger();
   const config = ctx.stageConfig;
-  const debaters = config.debaters ?? [];
+  const rawDebaters = config.debaters ?? [];
+  const debaters = resolvePersonas(rawDebaters, "plan", config.autoPersona ?? false);
   // Mutable: plan debater costs accumulated below; hybrid rebuttal loop adds cost via adapter.run().
   let totalCostUsd = 0;
 
@@ -70,7 +72,8 @@ export async function runPlan(
   const settled = await allSettledBounded(
     resolved.map(({ debater, adapter }, i) => async () => {
       const tempOutputPath = join(opts.outputDir, `prd-debate-${i}.json`);
-      const debaterPrompt = `${taskContext}\n\n${outputFormat}\n\nWrite the PRD JSON directly to this file path: ${tempOutputPath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`;
+      const personaBlock = buildPersonaBlock(debater);
+      const debaterPrompt = `${taskContext}${personaBlock}\n\n${outputFormat}\n\nWrite the PRD JSON directly to this file path: ${tempOutputPath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`;
 
       const modelTier = modelTierFromDebater(debater);
       const modelDef: ModelDef = resolveModelDefForDebater(debater, modelTier, ctx.config);

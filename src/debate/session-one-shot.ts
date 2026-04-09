@@ -6,6 +6,7 @@
 
 import type { NaxConfig } from "../config";
 import { allSettledBounded } from "./concurrency";
+import { resolvePersonas } from "./personas";
 import { buildCritiquePrompt } from "./prompts";
 import {
   type ResolveOutcome,
@@ -36,7 +37,9 @@ interface OneShotCtx {
 export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<DebateResult> {
   const logger = _debateSessionDeps.getSafeLogger();
   const config = ctx.stageConfig;
-  const debaters = config.debaters ?? [];
+  const personaStage: "plan" | "review" = ctx.stage === "plan" ? "plan" : "review";
+  const rawDebaters = config.debaters ?? [];
+  const debaters = resolvePersonas(rawDebaters, personaStage, config.autoPersona ?? false);
   let totalCostUsd = 0;
 
   // Step 1: Resolve adapters — skip unavailable agents
@@ -183,7 +186,7 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
           () =>
             runComplete(
               adapter,
-              buildCritiquePrompt(prompt, proposalOutputs, i),
+              buildCritiquePrompt(prompt, proposalOutputs, i, debater),
               {
                 model: resolveDebaterModel(debater, ctx.config),
                 featureName: ctx.stage,
