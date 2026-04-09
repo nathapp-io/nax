@@ -7,7 +7,7 @@
 import type { NaxConfig } from "../config";
 import { allSettledBounded } from "./concurrency";
 import { resolvePersonas } from "./personas";
-import { buildCritiquePrompt } from "./prompts";
+import { DebatePromptBuilder } from "./prompt-builder";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
@@ -179,14 +179,18 @@ export async function runOneShot(ctx: OneShotCtx, prompt: string): Promise<Debat
   // Step 4: Critique rounds (when rounds > 1)
   let critiqueOutputs: string[] = [];
   if (config.rounds > 1) {
-    const proposalOutputs = successful.map((p) => p.output);
+    const proposals = successful.map((p) => ({ debater: p.debater, output: p.output }));
+    const critiqueBuilder = new DebatePromptBuilder(
+      { taskContext: prompt, outputFormat: "", stage: ctx.stage },
+      { debaters: proposals.map((p) => p.debater), sessionMode: ctx.stageConfig.sessionMode ?? "one-shot" },
+    );
     const critiqueSettled = await allSettledBounded(
       successful.map(
         ({ debater, adapter }, i) =>
           () =>
             runComplete(
               adapter,
-              buildCritiquePrompt(prompt, proposalOutputs, i, debater),
+              critiqueBuilder.buildCritiquePrompt(i, proposals),
               {
                 model: resolveDebaterModel(debater, ctx.config),
                 featureName: ctx.stage,

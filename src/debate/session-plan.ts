@@ -8,7 +8,8 @@ import { join } from "node:path";
 import type { NaxConfig } from "../config";
 import type { ModelDef } from "../config";
 import { allSettledBounded } from "./concurrency";
-import { buildPersonaBlock, resolvePersonas } from "./personas";
+import { resolvePersonas } from "./personas";
+import { DebatePromptBuilder } from "./prompt-builder";
 import {
   type ResolveOutcome,
   type ResolvedDebater,
@@ -69,14 +70,17 @@ export async function runPlan(
   // Run plan() bounded parallel
   const debate = ctx.config?.debate;
   const concurrencyLimit = debate?.maxConcurrentDebaters ?? 2;
+  const proposalBuilder = new DebatePromptBuilder(
+    { taskContext, outputFormat, stage: "plan" },
+    { debaters: resolved.map((r) => r.debater), sessionMode: ctx.stageConfig.sessionMode ?? "one-shot" },
+  );
   const settled = await allSettledBounded(
-    resolved.map(({ debater, adapter }, i) => async () => {
+    resolved.map(({ debater: rd, adapter }, i) => async () => {
       const tempOutputPath = join(opts.outputDir, `prd-debate-${i}.json`);
-      const personaBlock = buildPersonaBlock(debater);
-      const debaterPrompt = `${taskContext}${personaBlock}\n\n${outputFormat}\n\nWrite the PRD JSON directly to this file path: ${tempOutputPath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`;
+      const debaterPrompt = `${proposalBuilder.buildProposalPrompt(i)}\n\nWrite the PRD JSON directly to this file path: ${tempOutputPath}\nDo NOT output the JSON to the conversation. Write the file, then reply with a brief confirmation.`;
 
-      const modelTier = modelTierFromDebater(debater);
-      const modelDef: ModelDef = resolveModelDefForDebater(debater, modelTier, ctx.config);
+      const modelTier = modelTierFromDebater(rd);
+      const modelDef: ModelDef = resolveModelDefForDebater(rd, modelTier, ctx.config);
 
       const planResult = await adapter.plan({
         prompt: debaterPrompt,
@@ -94,7 +98,7 @@ export async function runPlan(
       });
 
       const output = await _debateSessionDeps.readFile(tempOutputPath);
-      return { debater, adapter, output, cost: planResult.costUsd ?? 0 };
+      return { debater: rd, adapter, output, cost: planResult.costUsd ?? 0 };
     }),
     concurrencyLimit,
   );
@@ -179,7 +183,11 @@ export async function runPlan(
       featureName: opts.feature,
       timeoutSeconds: opts.timeoutSeconds ?? 600,
     };
-    const { rebuttals, costUsd } = await runRebuttalLoop(hybridCtx, successful, taskContext, "plan-hybrid");
+    const rebuttalBuilder = new DebatePromptBuilder(
+      { taskContext, outputFormat: "", stage: "plan" },
+      { debaters: successful.map((p) => p.debater), sessionMode },
+    );
+    const { rebuttals, costUsd } = await runRebuttalLoop(hybridCtx, successful, rebuttalBuilder, "plan-hybrid");
     critiqueOutputs = rebuttals.map((r) => r.output);
     rebuttalList = rebuttals;
     totalCostUsd += costUsd;
