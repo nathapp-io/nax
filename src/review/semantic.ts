@@ -19,7 +19,7 @@ import type { DebateSessionOptions } from "../debate";
 import { getSafeLogger } from "../logger";
 import type { ReviewFinding } from "../plugins/types";
 import { getMergeBase, isGitRefValid } from "../utils/git";
-import { extractJsonFromMarkdown, extractJsonObject, stripTrailingCommas, wrapJsonPrompt } from "../utils/llm-json";
+import { tryParseLLMJson, wrapJsonPrompt } from "../utils/llm-json";
 import type { ReviewCheckResult, SemanticReviewConfig } from "./types";
 
 /** Story fields required for semantic review */
@@ -217,44 +217,14 @@ function validateLLMShape(parsed: unknown): LLMResponse | null {
 
 /**
  * Parse and validate LLM JSON response using multi-tier extraction.
- *
- * Tier 1: Direct JSON.parse (clean responses)
- * Tier 2: Markdown fence extraction — non-anchored, handles preamble text before fence
- * Tier 3: Bare JSON object extraction — handles JSON embedded in narration
- *
- * Returns null only when all tiers fail.
+ * Returns null only when all tiers fail or shape validation fails.
  */
 function parseLLMResponse(raw: string): LLMResponse | null {
-  const text = raw.trim();
-
-  // Tier 1: direct parse
   try {
-    return validateLLMShape(JSON.parse(text));
+    return validateLLMShape(tryParseLLMJson(raw));
   } catch {
-    /* not raw JSON */
+    return null;
   }
-
-  // Tier 2: extract from markdown fences (non-anchored — handles preamble)
-  const fromFence = extractJsonFromMarkdown(text);
-  if (fromFence !== text) {
-    try {
-      return validateLLMShape(JSON.parse(stripTrailingCommas(fromFence)));
-    } catch {
-      /* fence content not valid JSON */
-    }
-  }
-
-  // Tier 3: extract bare JSON object from narration
-  const bareJson = extractJsonObject(text);
-  if (bareJson) {
-    try {
-      return validateLLMShape(JSON.parse(stripTrailingCommas(bareJson)));
-    } catch {
-      /* extracted text not valid JSON */
-    }
-  }
-
-  return null;
 }
 
 /**

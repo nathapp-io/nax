@@ -14,7 +14,7 @@ import type { AgentGetFn } from "../../pipeline/types";
 import type { PRD, UserStory } from "../../prd";
 import { countStories } from "../../prd";
 import { hasCommitsForStory } from "../../utils/git";
-import { parseBunTestOutput } from "../../verification";
+import { parseTestOutput } from "../../verification";
 import { runRectificationLoop } from "../../verification/rectification-loop";
 import { fullSuite } from "../../verification/runners";
 import { reverseMapTestToSource } from "../../verification/smart-runner";
@@ -26,7 +26,7 @@ import { reverseMapTestToSource } from "../../verification/smart-runner";
 export const _regressionDeps = {
   runVerification: fullSuite,
   runRectificationLoop,
-  parseBunTestOutput,
+  parseTestOutput,
   reverseMapTestToSource,
 };
 
@@ -194,7 +194,7 @@ export async function runDeferredRegression(options: DeferredRegressionOptions):
   }
 
   // Step 2: Parse failures and map to source files to stories
-  const testSummary = _regressionDeps.parseBunTestOutput(fullSuiteResult.output);
+  const testSummary = _regressionDeps.parseTestOutput(fullSuiteResult.output);
 
   // Guard: if no test results could be parsed (0 pass + 0 fail), the test runner
   // itself crashed or had a compilation error — there are no actual test regressions.

@@ -11,6 +11,7 @@ import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
 import { NaxError } from "../errors";
 import type { ReviewFinding } from "../plugins/types";
+import { parseLLMJson, tryParseLLMJson } from "../utils/llm-json";
 import {
   buildDebateReReviewPrompt,
   buildDebateResolverPrompt,
@@ -111,13 +112,9 @@ function extractDeltaSummary(
   previousFindings: ReviewFinding[],
   newFindings: ReviewFinding[],
 ): string {
-  try {
-    const parsed = JSON.parse(rawOutput) as Record<string, unknown>;
-    if (typeof parsed.deltaSummary === "string" && parsed.deltaSummary.length > 0) {
-      return parsed.deltaSummary;
-    }
-  } catch {
-    // fall through to computed summary
+  const parsed = tryParseLLMJson<Record<string, unknown>>(rawOutput);
+  if (parsed && typeof parsed.deltaSummary === "string" && parsed.deltaSummary.length > 0) {
+    return parsed.deltaSummary;
   }
 
   const newIds = new Set(newFindings.map((f) => f.ruleId));
@@ -162,7 +159,7 @@ function compactHistory(history: DialogueMessage[]): string {
 function parseReviewResponse(output: string): ReviewDialogueResult {
   let parsed: Record<string, unknown>;
   try {
-    parsed = JSON.parse(output) as Record<string, unknown>;
+    parsed = parseLLMJson<Record<string, unknown>>(output);
   } catch {
     throw new NaxError("[dialogue] Failed to parse reviewer JSON response", "REVIEWER_PARSE_FAILED", {
       stage: "review",

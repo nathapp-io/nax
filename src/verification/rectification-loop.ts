@@ -16,11 +16,11 @@ import { resolveModelForAgent } from "../config";
 import { resolvePermissions } from "../config/permissions";
 import type { DebateStageConfig, Debater } from "../debate/types";
 import { escalateTier as _escalateTier } from "../execution/escalation/escalation";
-import { parseBunTestOutput } from "../execution/test-output-parser";
 import { getSafeLogger } from "../logger";
 import type { AgentGetFn, PipelineContext } from "../pipeline/types";
 import type { UserStory } from "../prd";
 import { getExpectedFiles } from "../prd";
+import { parseTestOutput } from "./parser";
 import { formatFailureSummary } from "./parser";
 import {
   type RectificationState,
@@ -136,7 +136,7 @@ export async function runRectificationLoop(
   } = opts;
   const logger = getSafeLogger();
   const rectificationConfig = config.execution.rectification;
-  const testSummary = parseBunTestOutput(testOutput);
+  const testSummary = parseTestOutput(testOutput);
   const label = promptPrefix ? "regression rectification" : "rectification";
 
   const rectificationState: RectificationState = {
@@ -280,14 +280,18 @@ export async function runRectificationLoop(
       }
 
       if (retryVerification.output) {
-        const newTestSummary = parseBunTestOutput(retryVerification.output);
+        const newTestSummary = parseTestOutput(retryVerification.output);
         state.currentFailures = newTestSummary.failed;
         state.lastExitCode = retryVerification.status === "SUCCESS" ? 0 : 1;
         testSummary.failures = newTestSummary.failures;
         testSummary.failed = newTestSummary.failed;
         testSummary.passed = newTestSummary.passed;
 
-        if (newTestSummary.failed === 0) {
+        // Trust "0 failures" only when the parser found real evidence:
+        // either the runner exited clean (status SUCCESS) or it saw passing
+        // tests (passed > 0). If both are 0, the parser couldn't read the
+        // output format — treat it as unresolved to avoid false-positives.
+        if (newTestSummary.failed === 0 && (retryVerification.status === "SUCCESS" || newTestSummary.passed > 0)) {
           state.lastExitCode = 0;
           logger?.info("rectification", `[OK] ${label} succeeded after parsing retry output`, {
             storyId: story.id,

@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { sleep } from "../utils/bun-deps";
 import { buildTestCommand, executeWithTimeout, normalizeEnvironment } from "./executor";
-import { parseTestOutput } from "./parser";
+import { analyzeTestExitCode } from "./parser";
 import type { AssetVerificationResult, VerificationGateOptions, VerificationResult } from "./types";
 
 /** Verify all expected files exist before running tests. */
@@ -75,7 +75,7 @@ async function runVerificationCore(options: VerificationGateOptions): Promise<Ve
 
   const exitCode = execution.exitCode ?? 1;
   if (exitCode !== 0 && execution.output) {
-    const analysis = parseTestOutput(execution.output, exitCode);
+    const analysis = analyzeTestExitCode(execution.output, exitCode);
     if (analysis.isEnvironmentalFailure) {
       return {
         status: "ENVIRONMENTAL_FAILURE",

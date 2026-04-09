@@ -12,7 +12,7 @@
 import { getSafeLogger } from "../../logger";
 import type { IVerificationStrategy, VerifyContext, VerifyResult } from "../orchestrator-types";
 import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrator-types";
-import { parseBunTestOutput } from "../parser";
+import { parseTestOutput } from "../parser";
 import { fullSuite } from "../runners";
 
 export class RegressionStrategy implements IVerificationStrategy {
@@ -47,7 +47,7 @@ export class RegressionStrategy implements IVerificationStrategy {
     const durationMs = Date.now() - start;
 
     if (result.success) {
-      const parsed = result.output ? parseBunTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
+      const parsed = result.output ? parseTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
       return makePassResult(ctx.storyId, "regression", {
         rawOutput: result.output,
         passCount: parsed.passed,
@@ -67,7 +67,7 @@ export class RegressionStrategy implements IVerificationStrategy {
       return makeFailResult(ctx.storyId, "regression", "TIMEOUT", { rawOutput: result.output, durationMs });
     }
 
-    const parsed = result.output ? parseBunTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
+    const parsed = result.output ? parseTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
     return makeFailResult(ctx.storyId, "regression", "TEST_FAILURE", {
       rawOutput: result.output,
       passCount: parsed.passed,

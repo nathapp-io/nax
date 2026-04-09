@@ -81,7 +81,7 @@ beforeEach(() => {
 
   origDeps = {
     executeWithTimeout: _rectificationGateDeps.executeWithTimeout,
-    parseBunTestOutput: _rectificationGateDeps.parseBunTestOutput,
+    parseTestOutput: _rectificationGateDeps.parseTestOutput,
     shouldRetryRectification: _rectificationGateDeps.shouldRetryRectification,
   };
 
@@ -91,7 +91,7 @@ beforeEach(() => {
     suiteCallCount++;
     return r;
   }) as any;
-  _rectificationGateDeps.parseBunTestOutput = mock((output: string) => ({
+  _rectificationGateDeps.parseTestOutput = mock((output: string) => ({
     failed: output.includes("34 fail") ? 34 : 0,
     passed: 0,
     failures: [{ file: "some.test.ts", testName: "some test", error: "Expected 1", stackTrace: [] }],

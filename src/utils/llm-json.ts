@@ -87,3 +87,57 @@ export function extractJsonObject(text: string): string | null {
 export function wrapJsonPrompt(prompt: string): string {
   return `IMPORTANT: Your entire response must be a single JSON object or array. Do not explain your reasoning. Do not use markdown formatting. Output ONLY the JSON.\n\n${prompt.trim()}\n\nYOUR RESPONSE MUST START WITH { OR [ AND END WITH } OR ]. No other text.`;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// High-level SSOT parsers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Parse JSON from raw LLM output using multi-tier extraction.
+ *
+ * Tier 1: Direct JSON.parse (clean responses)
+ * Tier 2: Markdown fence extraction — non-anchored, handles preamble text
+ * Tier 3: Bare JSON object/array extraction — handles JSON embedded in narration
+ *
+ * @throws {SyntaxError} when all three tiers fail to produce valid JSON
+ */
+export function parseLLMJson<T = unknown>(text: string): T {
+  const trimmed = text.trim();
+
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    /* not raw JSON */
+  }
+
+  const fromFence = extractJsonFromMarkdown(trimmed);
+  if (fromFence !== trimmed) {
+    try {
+      return JSON.parse(stripTrailingCommas(fromFence)) as T;
+    } catch {
+      /* fence content not valid JSON */
+    }
+  }
+
+  const bareJson = extractJsonObject(trimmed);
+  if (bareJson) {
+    try {
+      return JSON.parse(stripTrailingCommas(bareJson)) as T;
+    } catch {
+      /* extracted text not valid JSON */
+    }
+  }
+
+  throw new SyntaxError("[llm-json] Failed to parse LLM response as JSON");
+}
+
+/**
+ * Same as parseLLMJson but returns null instead of throwing when all tiers fail.
+ */
+export function tryParseLLMJson<T = unknown>(text: string): T | null {
+  try {
+    return parseLLMJson<T>(text);
+  } catch {
+    return null;
+  }
+}

@@ -13,7 +13,7 @@
 import { getLogger } from "../../logger";
 import type { IVerificationStrategy, StructuredTestFailure, VerifyContext, VerifyResult } from "../orchestrator-types";
 import { makeFailResult, makePassResult, makeSkippedResult } from "../orchestrator-types";
-import { parseBunTestOutput } from "../parser";
+import { parseTestOutput } from "../parser";
 import { regression } from "../runners";
 import { _smartRunnerDeps } from "../smart-runner";
 
@@ -129,7 +129,7 @@ export class ScopedStrategy implements IVerificationStrategy {
     const durationMs = Date.now() - start;
 
     if (result.success) {
-      const parsed = result.output ? parseBunTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
+      const parsed = result.output ? parseTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
       return makePassResult(ctx.storyId, "scoped", {
         rawOutput: result.output,
         passCount: parsed.passed,
@@ -147,7 +147,7 @@ export class ScopedStrategy implements IVerificationStrategy {
       });
     }
 
-    const parsed = result.output ? parseBunTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
+    const parsed = result.output ? parseTestOutput(result.output) : { passed: 0, failed: 0, failures: [] };
     return makeFailResult(ctx.storyId, "scoped", "TEST_FAILURE", {
       rawOutput: result.output,
       passCount: parsed.passed,

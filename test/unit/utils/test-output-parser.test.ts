@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { type TestFailure, formatFailureSummary, parseBunTestOutput } from "../../../src/execution/test-output-parser";
+import { type TestFailure, formatFailureSummary, parseTestOutput } from "../../../src/verification/parser";
 
-describe("parseBunTestOutput", () => {
+describe("parseTestOutput", () => {
   test("parses passing output (0 failures)", () => {
     const output = `
 bun test v1.0.0
@@ -14,7 +14,7 @@ test/example.test.ts:
 3 tests passed [1.5ms]
     `.trim();
 
-    const result = parseBunTestOutput(output);
+    const result = parseTestOutput(output);
 
     expect(result.passed).toBe(3);
     expect(result.failed).toBe(0);
@@ -37,7 +37,7 @@ Error: Expected 1 to equal 2
 1 passed, 1 failed [1.7ms]
     `.trim();
 
-    const result = parseBunTestOutput(output);
+    const result = parseTestOutput(output);
 
     expect(result.passed).toBe(1);
     expect(result.failed).toBe(1);
@@ -63,7 +63,7 @@ Error: Assertion failed
 1 passed, 1 failed [1.0ms]
     `.trim();
 
-    const result = parseBunTestOutput(output);
+    const result = parseTestOutput(output);
 
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0].testName).toBe("describe block > nested block > inner test");
@@ -91,7 +91,7 @@ Error: Stack overflow
 0 passed, 1 failed [2.0ms]
     `.trim();
 
-    const result = parseBunTestOutput(output);
+    const result = parseTestOutput(output);
 
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0].stackTrace).toHaveLength(5);
@@ -100,12 +100,12 @@ Error: Stack overflow
   });
 
   test("handles empty/malformed input", () => {
-    const emptyResult = parseBunTestOutput("");
+    const emptyResult = parseTestOutput("");
     expect(emptyResult.passed).toBe(0);
     expect(emptyResult.failed).toBe(0);
     expect(emptyResult.failures).toHaveLength(0);
 
-    const malformedResult = parseBunTestOutput("random text\nno test output");
+    const malformedResult = parseTestOutput("random text\nno test output");
     expect(malformedResult.passed).toBe(0);
     expect(malformedResult.failed).toBe(0);
     expect(malformedResult.failures).toHaveLength(0);
@@ -121,7 +121,7 @@ bun test v1.3.9
 test/unit/agents/claude.test.ts:
 `.trim();
 
-    const result = parseBunTestOutput(crashOutput);
+    const result = parseTestOutput(crashOutput);
     expect(result.passed).toBe(0);
     expect(result.failed).toBe(0);
     expect(result.failures).toHaveLength(0);
@@ -140,7 +140,7 @@ test/unit/agents/claude.test.ts:
 Killed
 `.trim();
 
-    const result = parseBunTestOutput(oomOutput);
+    const result = parseTestOutput(oomOutput);
     // Some tests passed before crash, but output is incomplete
     expect(result.passed).toBe(2);
     expect(result.failed).toBe(0);
@@ -150,7 +150,7 @@ Killed
   test("returns passed:0, failed:0 for segfault output (BUG-059)", () => {
     const segfaultOutput = "Segmentation fault (core dumped)";
 
-    const result = parseBunTestOutput(segfaultOutput);
+    const result = parseTestOutput(segfaultOutput);
     expect(result.passed).toBe(0);
     expect(result.failed).toBe(0);
     expect(result.failures).toHaveLength(0);
@@ -179,7 +179,7 @@ Error: File 2 error
 2 passed, 2 failed [2.8ms]
     `.trim();
 
-    const result = parseBunTestOutput(output);
+    const result = parseTestOutput(output);
 
     expect(result.passed).toBe(2);
     expect(result.failed).toBe(2);
@@ -204,7 +204,7 @@ Error: JS test error
 0 passed, 1 failed [1.0ms]
     `.trim();
 
-    const result = parseBunTestOutput(output);
+    const result = parseTestOutput(output);
 
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0].file).toBe("test/example.test.js");
@@ -223,7 +223,7 @@ Error: No file context
 0 passed, 1 failed [1.0ms]
     `.trim();
 
-    const result = parseBunTestOutput(output);
+    const result = parseTestOutput(output);
 
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0].file).toBe("unknown");
@@ -241,7 +241,7 @@ test/minimal.test.ts:
 0 passed, 1 failed [0.5ms]
     `.trim();
 
-    const result = parseBunTestOutput(output);
+    const result = parseTestOutput(output);
 
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0].error).toBe("Unknown error");
@@ -262,7 +262,7 @@ Error: Alternative marks error
 1 passed, 1 failed [0.7ms]
     `.trim();
 
-    const result = parseBunTestOutput(output);
+    const result = parseTestOutput(output);
 
     expect(result.passed).toBe(1);
     expect(result.failed).toBe(1);

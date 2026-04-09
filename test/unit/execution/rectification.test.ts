@@ -11,7 +11,7 @@ import {
   createEscalatedRectificationPrompt,
   shouldRetryRectification,
 } from "../../../src/verification/rectification";
-import type { TestFailure } from "../../../src/execution/test-output-parser";
+import type { TestFailure } from "../../../src/verification/parser";
 import type { UserStory } from "../../../src/prd";
 
 describe("shouldRetryRectification", () => {
