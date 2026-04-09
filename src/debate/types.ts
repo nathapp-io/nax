@@ -81,6 +81,13 @@ export interface DebateConfig {
   };
 }
 
+/** Context passed to resolveDebate() — varies by resolver type */
+export interface DebateResolverContext {
+  resolverType: ResolverType;
+  /** For majority resolvers: the raw vote tally (computed before resolveDebate is called) */
+  majorityVote?: { passed: boolean; passCount: number; failCount: number };
+}
+
 /** A single debater's rebuttal in a debate round */
 export interface Rebuttal {
   /** Debater identity */

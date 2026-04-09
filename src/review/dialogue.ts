@@ -9,20 +9,16 @@ import type { SemanticVerdict } from "../acceptance/types";
 import type { AgentAdapter } from "../agents/types";
 import type { NaxConfig } from "../config";
 import { resolveModelForAgent } from "../config/schema-types";
+import { DebatePromptBuilder } from "../debate/prompt-builder";
+import type { DebateResolverContext } from "../debate/types";
 import { NaxError } from "../errors";
 import type { ReviewFinding } from "../plugins/types";
 import { parseLLMJson, tryParseLLMJson } from "../utils/llm-json";
-import {
-  buildDebateReReviewPrompt,
-  buildDebateResolverPrompt,
-  buildReReviewPrompt,
-  buildReviewPrompt,
-} from "./dialogue-prompts";
 import type { SemanticStory } from "./semantic";
 import type { SemanticReviewConfig } from "./types";
 
 export type { SemanticVerdict };
-export type { DebateResolverContext } from "./dialogue-prompts";
+export type { DebateResolverContext } from "../debate/types";
 
 /** A single message in the reviewer-implementer dialogue history */
 export interface DialogueMessage {
@@ -86,7 +82,7 @@ export interface ReviewerSession {
     diff: string,
     story: SemanticStory,
     semanticConfig: SemanticReviewConfig,
-    resolverContext: import("./dialogue-prompts").DebateResolverContext,
+    resolverContext: DebateResolverContext,
   ): Promise<ReviewDialogueResult>;
   /**
    * Re-resolve a debate after implementer changes.
@@ -96,7 +92,7 @@ export interface ReviewerSession {
     proposals: Array<{ debater: string; output: string }>,
     critiques: string[],
     updatedDiff: string,
-    resolverContext: import("./dialogue-prompts").DebateResolverContext,
+    resolverContext: DebateResolverContext,
   ): Promise<ReviewDialogueResult>;
   /**
    * Extract a SemanticVerdict from the last review result.
@@ -215,6 +211,11 @@ export function createReviewerSession(
     generation: 1,
     pendingCompactionContext: null as string | null,
   };
+  // Shared builder instance — review-specific methods are self-contained and don't use stageContext/options.
+  const promptBuilder = new DebatePromptBuilder(
+    { taskContext: "", outputFormat: "", stage: "review" },
+    { debaters: [], sessionMode: "stateful" },
+  );
 
   function resolveRunParams(semanticConfig: SemanticReviewConfig) {
     const modelTier = semanticConfig.modelTier;
@@ -269,7 +270,7 @@ export function createReviewerSession(
         );
       }
 
-      const prompt = buildReviewPrompt(diff, story, semanticConfig);
+      const prompt = promptBuilder.buildReviewPrompt(diff, story);
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(semanticConfig);
       const { effectivePrompt, acpSessionName } = buildEffectiveRunArgs(prompt);
 
@@ -315,7 +316,7 @@ export function createReviewerSession(
       }
 
       const previousFindings = lastCheckResult.checkResult.findings;
-      const prompt = buildReReviewPrompt(updatedDiff, previousFindings);
+      const prompt = promptBuilder.buildReReviewPrompt(updatedDiff, previousFindings);
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(lastSemanticConfig);
       const { effectivePrompt, acpSessionName } = buildEffectiveRunArgs(prompt);
 
@@ -398,7 +399,7 @@ export function createReviewerSession(
       diff: string,
       story: SemanticStory,
       semanticConfig: SemanticReviewConfig,
-      resolverContext: import("./dialogue-prompts").DebateResolverContext,
+      resolverContext: DebateResolverContext,
     ): Promise<ReviewDialogueResult> {
       if (!active) {
         throw new NaxError(
@@ -408,7 +409,7 @@ export function createReviewerSession(
         );
       }
 
-      const prompt = buildDebateResolverPrompt(proposals, critiques, diff, story, semanticConfig, resolverContext);
+      const prompt = promptBuilder.buildResolverPrompt(proposals, critiques, diff, story, resolverContext);
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(semanticConfig);
       const { effectivePrompt, acpSessionName } = buildEffectiveRunArgs(prompt);
 
@@ -442,7 +443,7 @@ export function createReviewerSession(
       proposals: Array<{ debater: string; output: string }>,
       critiques: string[],
       updatedDiff: string,
-      resolverContext: import("./dialogue-prompts").DebateResolverContext,
+      resolverContext: DebateResolverContext,
     ): Promise<ReviewDialogueResult> {
       if (!active) {
         throw new NaxError(
@@ -460,7 +461,13 @@ export function createReviewerSession(
       }
 
       const previousFindings = lastCheckResult.checkResult.findings;
-      const prompt = buildDebateReReviewPrompt(proposals, critiques, updatedDiff, previousFindings, resolverContext);
+      const prompt = promptBuilder.buildReResolverPrompt(
+        proposals,
+        critiques,
+        updatedDiff,
+        previousFindings,
+        resolverContext,
+      );
       const { modelTier, modelDef, timeoutSeconds } = resolveRunParams(lastSemanticConfig);
       const { effectivePrompt, acpSessionName } = buildEffectiveRunArgs(prompt);
 
