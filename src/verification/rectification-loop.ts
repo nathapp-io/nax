@@ -287,7 +287,11 @@ export async function runRectificationLoop(
         testSummary.failed = newTestSummary.failed;
         testSummary.passed = newTestSummary.passed;
 
-        if (newTestSummary.failed === 0 && retryVerification.status === "SUCCESS") {
+        // Trust "0 failures" only when the parser found real evidence:
+        // either the runner exited clean (status SUCCESS) or it saw passing
+        // tests (passed > 0). If both are 0, the parser couldn't read the
+        // output format — treat it as unresolved to avoid false-positives.
+        if (newTestSummary.failed === 0 && (retryVerification.status === "SUCCESS" || newTestSummary.passed > 0)) {
           state.lastExitCode = 0;
           logger?.info("rectification", `[OK] ${label} succeeded after parsing retry output`, {
             storyId: story.id,
